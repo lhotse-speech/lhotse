@@ -13,20 +13,20 @@ def get_audio_set() -> AudioSet:
 
 
 @lru_cache(1)
-def expected_channel_1() -> np.ndarray:
+def expected_channel_0() -> np.ndarray:
     return np.arange(0, 4000) / INT16MAX
 
 
 @lru_cache(1)
-def expected_channel_2() -> np.ndarray:
+def expected_channel_1() -> np.ndarray:
     return np.arange(4000, 8000) / INT16MAX
 
 
 @lru_cache(1)
 def expected_stereo() -> np.ndarray:
     return np.vstack([
-        expected_channel_1(),
-        expected_channel_2()
+        expected_channel_0(),
+        expected_channel_1()
     ])
 
 
@@ -79,8 +79,8 @@ def test_get_audio_from_multiple_files():
     ['channels', 'expected_audio'],
     [
         (None, expected_stereo()),
-        (0, expected_channel_1()),
-        (1, expected_channel_2()),
+        (0, expected_channel_0()),
+        (1, expected_channel_1()),
         ([0, 1], expected_stereo()),
         param(1000, 'irrelevant', marks=mark.xfail)
     ]
@@ -106,5 +106,5 @@ def test_get_audio_multichannel(channels, expected_audio):
 def test_get_audio_chunks(begin_at, duration, expected_start_sample, expected_end_sample):
     audio_set = get_audio_set()
     actual_audio = audio_set.load_audio('recording-1', channels=0, offset_seconds=begin_at, duration_seconds=duration)
-    expected_audio = expected_channel_1()[expected_start_sample: expected_end_sample]
+    expected_audio = expected_channel_0()[expected_start_sample: expected_end_sample]
     np.testing.assert_almost_equal(actual_audio, expected_audio)
