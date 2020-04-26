@@ -1,1 +1,4 @@
 pytest
+pyyaml
+numpy
+librosa

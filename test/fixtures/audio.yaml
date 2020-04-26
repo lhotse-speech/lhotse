@@ -1,0 +1,12 @@
+---
+- id: 'recording-1'
+  sampling_rate: 8000
+  num_samples: 4000
+  duration_seconds: 0.5
+  sources:
+    - type: file
+      channel_ids: [0]
+      source: 'test/fixtures/dummy.wav'
+    - type: command
+      channel_ids: [1]
+      source: 'cat test/fixtures/dummy.pcm | cat'  # test whether pipes work
