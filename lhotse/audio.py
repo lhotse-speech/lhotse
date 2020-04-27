@@ -1,4 +1,6 @@
 from dataclasses import dataclass, asdict
+from dataclasses import dataclass, asdict
+from io import BytesIO
 from subprocess import run, PIPE
 from typing import List, Optional, Dict, Union
 
@@ -6,7 +8,7 @@ import librosa
 import numpy as np
 import yaml
 
-from lhotse.utils import Pathlike, INT16MAX, DummySet
+from lhotse.utils import Pathlike, SetContainingAnything
 
 Channels = Union[int, List[int]]
 
@@ -16,9 +18,8 @@ class AudioSource:
     """
     AudioSource represents audio data that can be retrieved from somewhere.
     Supported sources of audio are currently:
-    - a file (possibly multi-channel)
-    - a command/unix pipe (single-channel only)
-    - a collection of any of the above (see AudioSourceCollection)
+    - a file (formats supported by librosa, possibly multi-channel)
+    - a command/unix pipe (must be WAVE, possibly multi-channel)
     """
     type: str
     channel_ids: List[int]
@@ -29,24 +30,31 @@ class AudioSource:
             offset_seconds: float = 0.0,
             duration_seconds: Optional[float] = None
     ) -> np.ndarray:
+        """
+        Load the AudioSource (both files and commands) with librosa,
+        accounting for many audio formats and multi-channel inputs.
+        Returns numpy array with shapes: (n_samples) for single-channel,
+        (n_channels, n_samples) for multi-channel.
+        """
         assert self.type in ('file', 'command')
 
-        if self.type == 'file':
-            # TODO(pzelasko): make sure that librosa loads multi-channel audio
-            #                 in the expected format (n_channels, n_samples)
-            return librosa.load(
-                self.source,
-                sr=None,  # 'None' uses the native sampling rate
-                offset=offset_seconds,
-                duration=duration_seconds
-            )[0]  # discard returned sampling rate
+        if self.type == 'command':
+            if offset_seconds != 0.0 or duration_seconds is not None:
+                # TODO(pzelasko): How should we support chunking for commands?
+                #                 We risk being very inefficient when reading many chunks from the same file
+                #                 without some caching scheme, because we'll be re-running commands.
+                raise ValueError("Reading audio chunks from command AudioSource type is currently not supported.")
+            source = BytesIO(run(self.source, shell=True, stdout=PIPE).stdout)
+        else:
+            source = self.source
 
-        # TODO(pzelasko): the following naively assumes we're dealing with raw PCM...
-        #                 not sure if that's how we should do it
-        #                 also, how should we support chunking for commands?
-        raw_audio = run(self.source, shell=True, stdout=PIPE).stdout
-        int16_audio = np.frombuffer(raw_audio, dtype=np.int16)
-        return int16_audio / INT16MAX
+        return librosa.load(
+            source,
+            sr=None,  # 'None' uses the native sampling rate
+            mono=False,  # Retain multi-channel if it's there
+            offset=offset_seconds,
+            duration=duration_seconds
+        )[0]  # discard returned sampling rate
 
 
 @dataclass
@@ -74,7 +82,7 @@ class Recording:
             duration_seconds: Optional[float] = None
     ) -> np.ndarray:
         if channels is None:
-            channels = DummySet()
+            channels = SetContainingAnything()
         elif isinstance(channels, int):
             channels = frozenset([channels])
         else:
