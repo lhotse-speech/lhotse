@@ -6,7 +6,7 @@ Pathlike = Union[Path, str]
 INT16MAX = 32768
 
 
-class DummySet:
+class SetContainingAnything:
     def __contains__(self, item):
         return True
 

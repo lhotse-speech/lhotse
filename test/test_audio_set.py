@@ -14,20 +14,32 @@ def get_audio_set() -> AudioSet:
 
 @lru_cache(1)
 def expected_channel_0() -> np.ndarray:
+    """Contents of test/fixtures/mono_c0.wav"""
     return np.arange(0, 4000) / INT16MAX
 
 
 @lru_cache(1)
 def expected_channel_1() -> np.ndarray:
+    """Contents of test/fixtures/mono_c1.wav"""
     return np.arange(4000, 8000) / INT16MAX
 
 
 @lru_cache(1)
-def expected_stereo() -> np.ndarray:
+def expected_stereo_two_sources() -> np.ndarray:
+    """Combined contents of test/fixtures/mono_c{0,1}.wav as channels 0 and 1"""
     return np.vstack([
         expected_channel_0(),
         expected_channel_1()
     ])
+
+
+@lru_cache(1)
+def expected_stereo_single_source() -> np.ndarray:
+    """Contents of test/fixtures/stereo.wav"""
+    return np.vstack([
+        np.arange(8000, 16000, dtype=np.int16),
+        np.arange(16000, 24000, dtype=np.int16)
+    ]) / INT16MAX
 
 
 def test_get_metadata():
@@ -46,12 +58,12 @@ def test_serialization():
                 AudioSource(
                     type='file',
                     channel_ids=[0],
-                    source='text/fixtures/dummy.wav'
+                    source='text/fixtures/mono_c0.wav'
                 ),
                 AudioSource(
                     type='command',
                     channel_ids=[1],
-                    source='cat text/fixtures/dummy.wav'
+                    source='cat text/fixtures/mono_c1.wav'
                 )
             ],
             sampling_rate=8000,
@@ -72,16 +84,22 @@ def test_iteration():
 def test_get_audio_from_multiple_files():
     audio_set = get_audio_set()
     samples = audio_set.load_audio('recording-1')
-    np.testing.assert_almost_equal(samples, expected_stereo())
+    np.testing.assert_almost_equal(samples, expected_stereo_two_sources())
+
+
+def test_get_stereo_audio_from_single_file():
+    audio_set = get_audio_set()
+    samples = audio_set.load_audio('recording-2')
+    np.testing.assert_almost_equal(samples, expected_stereo_single_source())
 
 
 @mark.parametrize(
     ['channels', 'expected_audio'],
     [
-        (None, expected_stereo()),
+        (None, expected_stereo_two_sources()),
         (0, expected_channel_0()),
         (1, expected_channel_1()),
-        ([0, 1], expected_stereo()),
+        ([0, 1], expected_stereo_two_sources()),
         param(1000, 'irrelevant', marks=mark.xfail)
     ]
 )
