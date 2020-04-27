@@ -63,7 +63,7 @@ def test_serialization():
                 AudioSource(
                     type='command',
                     channel_ids=[1],
-                    source='cat text/fixtures/mono_c0.wav'
+                    source='cat text/fixtures/mono_c1.wav'
                 )
             ],
             sampling_rate=8000,
