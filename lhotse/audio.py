@@ -1,8 +1,7 @@
 from dataclasses import dataclass, asdict
-from dataclasses import dataclass, asdict
 from io import BytesIO
 from subprocess import run, PIPE
-from typing import List, Optional, Dict, Union
+from typing import List, Optional, Dict, Union, Iterable
 
 import librosa
 import numpy as np
@@ -129,7 +128,7 @@ class AudioSet:
 
     def to_yaml(self, path: Pathlike):
         with open(path, 'w') as f:
-            yaml.safe_dump([asdict(r) for r in self.recordings.values()], stream=f)
+            yaml.safe_dump([asdict(r) for r in self], stream=f)
 
     def load_audio(
             self,
@@ -156,5 +155,5 @@ class AudioSet:
     def duration_seconds(self, recording_id: str) -> float:
         return self.recordings[recording_id].duration_seconds
 
-    def __iter__(self):
+    def __iter__(self) -> Iterable[Recording]:
         return iter(self.recordings.values())

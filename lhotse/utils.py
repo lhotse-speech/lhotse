@@ -3,6 +3,8 @@ from typing import Union
 
 Pathlike = Union[Path, str]
 
+Seconds = float
+
 INT16MAX = 32768
 
 
