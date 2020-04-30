@@ -2,7 +2,7 @@
 This file is just a rough sketch for now.
 """
 from dataclasses import dataclass
-from typing import Union, List, Dict, Optional, Iterable, Any
+from typing import Union, List, Optional, Iterable, Any
 
 import numpy as np
 
@@ -13,7 +13,7 @@ from lhotse.utils import Seconds
 
 @dataclass
 class Features:
-    """Represents """
+    """Represents features extracted for some particular time range in a given recording and channel."""
     recording_id: str
     channel_id: int
     start: Seconds
@@ -36,7 +36,14 @@ class Features:
 
 @dataclass
 class FeatureSet:
-    features: Dict[str, Features]  # <recording_id> -> Features
+    """
+    Represents a feature manifest, and allows to read features for given recordings
+    within particular channels and time ranges.
+    When a given recording/time-range/channel is unavailable, raises a KeyError.
+    """
+    # TODO(pzelasko): we might need some efficient indexing structure,
+    #                 e.g. Dict[<recording-id>, Dict[<channel-id>, IntervalTree]] (pip install intervaltree)
+    features: List[Features]
 
     @staticmethod
     def from_yaml(param):
@@ -46,27 +53,18 @@ class FeatureSet:
     def to_yaml(param):
         pass
 
-    # Option 1
-    # quite a lot of things to specify
-    # raise a KeyError when any of the requirements is not met
-    def get(
+    def load(
             self,
             recording_id: str,
             channel_id: int,
             start: Seconds,
             duration: Seconds,
     ) -> np.ndarray:
-        pass
-
-    # Option 2
-    # assuming we tie features to supervision_id (but allow some extra left/right context)
-    # we can just obtain it by supervision_id and specifying the channel (in case supervision covers more than one,
-    # but maybe we should just have separate [possibly duplicated] supervisions per each channel)
-    def load(self, supervision_id: str, channel_id: int) -> np.ndarray:
+        # raise a KeyError when any of the requirements is not met
         pass
 
     def __iter__(self) -> Iterable[Features]:
-        return iter(self.features.values())
+        return iter(self.features)
 
     def __len__(self) -> int:
         return len(self.features)
@@ -74,7 +72,9 @@ class FeatureSet:
 
 @dataclass
 class FeatureSegment:
-    """PZ: Now that I've written it, seems redundant with SupervisionSegment..."""
+    """
+    PZ: Now that I've written it, seems redundant with SupervisionSegment... maybe it should be a base class for it
+    """
     recording_id: str
     channel: int
     start: Seconds

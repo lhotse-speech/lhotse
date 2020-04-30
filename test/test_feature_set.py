@@ -1,4 +1,5 @@
 import numpy as np
+from pytest import mark, param
 
 from lhotse.audio import AudioSet
 from lhotse.features import FeatureSet, FeatureExtractor, FeatureSegment
@@ -8,7 +9,9 @@ other_params = {}
 some_augmentation = None
 
 
-def test_feature_set():
+def test_create_feature_set():
+    # TODO(pzelasko): will be split into several tests
+
     # Use case #1 - pre-computed features, stored somewhere, specified by an existing manifest
     feature_set = FeatureSet.from_yaml('...')
 
@@ -42,7 +45,7 @@ def test_feature_set():
             .extract()
     )
 
-    # Variant C: custom segmentation (perhaps redundant)
+    # Variant C: custom segmentation
     segmentation = [
         #               recording-id  channel  start  duration
         FeatureSegment('recording-1', 0, 0.5, 0.5),
@@ -59,7 +62,20 @@ def test_feature_set():
             .extract()
     )
 
-    # Use case #3 - load some features
-    feature_set: FeatureSet
-    features_description = {}  # recording id, start, duration, channel etc.
-    features: np.ndarray = feature_set.load(**features_description)
+
+@mark.parametrize(
+    ['recording_id', 'channel', 'start', 'duration'],
+    [
+        ('recording-1', 0, 0.0, None),  # whole recording
+        ('recording-2', 0, 1.0, 0.5),
+        ('recording-2', 0, 1.5, 0.5),
+        ('recording-2', 1, 1.5, 0.5),
+        param('recording-nonexistent', 0, 0.0, None, mark=mark.xfail),  # no recording
+        param('recording-1', 1000, 0.0, None, mark=mark.xfail),  # no channel
+        param('recording-2', 0.0, 0.5, 1.0, mark=mark.xfail),  # no features between [0.0, 1.0]
+        param('recording-2', 0.0, 1.5, None, mark=mark.xfail),  # no features after 2.0
+    ]
+)
+def test_load_features(recording_id, channel, start, duration):
+    feature_set = FeatureSet([])
+    features: np.ndarray = feature_set.load(recording_id, channel, start, duration)
