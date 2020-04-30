@@ -62,7 +62,7 @@ class FeatureSet:
     # assuming we tie features to supervision_id (but allow some extra left/right context)
     # we can just obtain it by supervision_id and specifying the channel (in case supervision covers more than one,
     # but maybe we should just have separate [possibly duplicated] supervisions per each channel)
-    def get(self, supervision_id: str, channel_id: int) -> np.ndarray:
+    def load(self, supervision_id: str, channel_id: int) -> np.ndarray:
         pass
 
     def __iter__(self) -> Iterable[Features]:

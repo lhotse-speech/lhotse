@@ -1,3 +1,5 @@
+import numpy as np
+
 from lhotse.audio import AudioSet
 from lhotse.features import FeatureSet, FeatureExtractor, FeatureSegment
 from lhotse.supervision import SupervisionSet
@@ -56,3 +58,8 @@ def test_feature_set():
             .with_segmentation(segmentation)
             .extract()
     )
+
+    # Use case #3 - load some features
+    feature_set: FeatureSet
+    features_description = {}  # recording id, start, duration, channel etc.
+    features: np.ndarray = feature_set.load(**features_description)
