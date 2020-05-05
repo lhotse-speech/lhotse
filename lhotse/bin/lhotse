@@ -16,7 +16,7 @@ import lilcom
 import numpy as np
 
 from lhotse.audio import AudioSet
-from lhotse.features import FeatureExtractor
+from lhotse.features import FeatureExtractor, FeatureSet
 from lhotse.utils import Pathlike
 
 
@@ -69,7 +69,9 @@ def make_feats(
     output_dir = Path(output_dir)
     output_dir.mkdir(exist_ok=True, parents=True)
 
+
     # TODO: sketch; convert into class with methods
+    feature_set = FeatureSet()  # TODO: build it up
     for recording in audio_set:
         for channel in recording.channel_ids:
             samples = recording.load_audio(channels=channel)
@@ -78,10 +80,11 @@ def make_feats(
             if compressed:
                 # TODO: use segmentation manifest here
                 serialized_feats = lilcom.compress(feats, tick_power=lilcom_tick_power)
-                with open(output_dir / 'some_file', 'wb') as f:
+                with open(output_dir / 'storage' / 'some_file', 'wb') as f:
                     f.write(serialized_feats)
             else:
-                np.save(output_dir / 'some_file', feats, allow_pickle=False)
+                np.save(output_dir / 'storage' / 'some_file', feats, allow_pickle=False)
+    feature_set.to_yaml(output_dir / 'feature_manifest.yml')
 
 
 if __name__ == '__main__':
