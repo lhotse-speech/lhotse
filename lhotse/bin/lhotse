@@ -1,0 +1,88 @@
+#!/usr/bin/env python
+"""
+Use this script like:
+
+$ lhotse --help
+
+$ lhotse make_feats --help
+
+$ lhotse make_feats --compressed audio_manifest.yml mfcc_dir
+"""
+from pathlib import Path
+from typing import Optional
+
+import click
+import lilcom
+import numpy as np
+
+from lhotse.audio import AudioSet
+from lhotse.features import FeatureExtractor
+from lhotse.utils import Pathlike
+
+
+@click.group()
+def cli():
+    """
+    The shell entry point to Lhotse, a tool and a library for audio data manipulation in high altitudes.
+    """
+    pass
+
+
+@cli.command()
+@click.argument('audio_manifest', type=click.Path(exists=True, dir_okay=False))
+@click.argument('output_dir', type=click.Path())
+@click.option('-s', '--segmentation-manifest', type=click.Path(exists=True, dir_okay=False),
+              help='Optional manifest specifying the regions, for which features are to be extracted. '
+                   'When not specified, features will be extracted for the entire recording. '
+                   'Supervision manifest can be used here.')
+@click.option('-a', '--augmentation-manifest', type=click.Path(exists=True, dir_okay=False),
+              help='Optional manifest specifying augmentation transforms that can be applied to recordings.')
+@click.option('--compressed/--not-compressed', default=True, help='Enable/disable lilcom for features compression.')
+@click.option('-t', '--lilcom-tick-power', type=int, default=-8,
+              help='Determines the compression accuracy; '
+                   'the input will be compressed to integer multiples of 2^tick_power')
+@click.option('-j', '--num-jobs', type=int, default=1, help='Number of parallel processes.')
+def make_feats(
+        audio_manifest: Pathlike,
+        output_dir: Pathlike,
+        # TODO: segmentation should be either:
+        # - none (full recording)
+        # - from supervision manifest (use segments as they are)
+        # - from "segmentation" manifest, which is effectively a subset of supervision manifest (a supervision manifest with no supervision)
+        segmentation_manifest: Optional[Pathlike],
+        # TODO: augmentation manifest should specify a number of transforms and probability of their application
+        # e.g.:
+        # "add_noise", "prob": 0.5, "noise_recordings": ["path1.wav", "path2.wav"]
+        # "reverberate", "prob": 0.2, "rirs": ["rir1.wav", "rir2.wav"] (or however the RIRs are stored like... can be params for simulation)
+        augmentation_manifest: Optional[Pathlike],
+        compressed: bool,
+        lilcom_tick_power: int
+):
+    """
+    Extract features for recordings in a given AUDIO_MANIFEST. The features are stored in OUTPUT_DIR,
+    with one file per recording (or segment).
+    """
+    audio_set = AudioSet.from_yaml(audio_manifest)
+
+    feature_extractor = FeatureExtractor()
+
+    output_dir = Path(output_dir)
+    output_dir.mkdir(exist_ok=True, parents=True)
+
+    # TODO: sketch; convert into class with methods
+    for recording in audio_set:
+        for channel in recording.channel_ids:
+            samples = recording.load_audio(channels=channel)
+            # TODO: use augmentation manifest here
+            feats: np.ndarray = feature_extractor.mfcc(samples)
+            if compressed:
+                # TODO: use segmentation manifest here
+                serialized_feats = lilcom.compress(feats, tick_power=lilcom_tick_power)
+                with open(output_dir / 'some_file', 'wb') as f:
+                    f.write(serialized_feats)
+            else:
+                np.save(output_dir / 'some_file', feats, allow_pickle=False)
+
+
+if __name__ == '__main__':
+    cli()

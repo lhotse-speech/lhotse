@@ -2,3 +2,5 @@ pytest
 pyyaml
 numpy
 librosa
+click
+lilcom

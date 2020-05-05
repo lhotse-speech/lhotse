@@ -74,6 +74,10 @@ class Recording:
     def num_channels(self):
         return sum(len(source.channel_ids) for source in self.sources)
 
+    @property
+    def channel_ids(self):
+        return sorted(cid for source in self.sources for cid in source.channel_ids)
+
     def load_audio(
             self,
             channels: Optional[Channels] = None,
@@ -157,3 +161,6 @@ class AudioSet:
 
     def __iter__(self) -> Iterable[Recording]:
         return iter(self.recordings.values())
+
+    def __len__(self) -> int:
+        return len(self.recordings)
