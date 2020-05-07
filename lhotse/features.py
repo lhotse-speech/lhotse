@@ -1,34 +1,31 @@
 """
 This file is just a rough sketch for now.
 """
-from dataclasses import dataclass
-from typing import Union, List, Optional, Iterable, Any
+from dataclasses import dataclass, field, asdict
+from typing import Union, List, Iterable
 
 import numpy as np
+import torch
+import torchaudio
+import yaml
 
-from lhotse.audio import AudioSet
-from lhotse.supervision import SupervisionSet
-from lhotse.utils import Seconds
+from lhotse.utils import Seconds, Milliseconds, Pathlike
 
 
 @dataclass
 class Features:
-    """Represents features extracted for some particular time range in a given recording and channel."""
+    """
+    Represents features extracted for some particular time range in a given recording and channel.
+    It contains metadata about how it's stored: storage_type describes "how to read it", for now
+    it supports numpy arrays serialized with np.save, as well as arrays compressed with lilcom;
+    storage_path is the path to the file on the local filesystem.
+    """
     recording_id: str
     channel_id: int
     start: Seconds
     duration: Seconds
-
-    # Variant A: path to a single-segment lilcom archive serialized in some storage
+    storage_type: str  # e.g. 'lilcom', 'numpy'
     storage_path: str
-
-    # Variant B: path to a multi-segment lilcom archive serialized in some storage AND key to access it
-    storage_path: str
-    storage_key: str
-
-    # When created from SupervisionSet maybe it makes sense to remember where this comes from... or not...
-    # if we limited ourselves to just using SupervisionSet, it could serve as the "storage_key"
-    supervision_id: Optional[str] = None
 
     def load(self) -> np.ndarray:
         pass
@@ -43,7 +40,7 @@ class FeatureSet:
     """
     # TODO(pzelasko): we might need some efficient indexing structure,
     #                 e.g. Dict[<recording-id>, Dict[<channel-id>, IntervalTree]] (pip install intervaltree)
-    features: List[Features]
+    features: List[Features] = field(default_factory=lambda: list())
 
     @staticmethod
     def from_yaml(param):
@@ -71,46 +68,81 @@ class FeatureSet:
 
 
 @dataclass
-class FeatureSegment:
-    """
-    PZ: Now that I've written it, seems redundant with SupervisionSegment... maybe it should be a base class for it
-    """
-    recording_id: str
-    channel: int
-    start: Seconds
-    duration: Seconds
+class SpectrogramConfig:
+    dither: float = 0.0
+    window_type: str = "povey"
+    frame_length: Milliseconds = 25.0
+    frame_shift: Milliseconds = 10.0
+    remove_dc_offset: bool = False
+    round_to_power_of_two: bool = False
+    energy_floor: float = 1.0
+    min_duration: float = 0.0
+    preemphasis_coefficient: float = 0.97
+    raw_energy: bool = True
+    snip_edges: bool = True
 
 
+@dataclass
+class MfccFbankCommonConfig:
+    low_freq: float = 20.0
+    high_freq: float = 0.0
+    num_mel_bins: int = 23
+    use_energy: bool = True
+    vtln_low: float = 100.0
+    vtln_high: float = -500.0
+    vtln_warp: float = 1.0
+
+
+@dataclass
+class FbankSpecificConfig:
+    use_log_fbank: bool = True
+
+
+@dataclass
+class MfccSpecificConfig:
+    cepstral_lifter: float = 22.0
+
+
+@dataclass
 class FeatureExtractor:
-    def with_audio_set(self, audio_set: AudioSet) -> 'FeatureExtractor':
-        self.audio_set = audio_set
-        return self
+    type: str = "mfcc"  # supported: mfcc/fbank/spectrogram
+    spectrogram_config: SpectrogramConfig = SpectrogramConfig()
+    mfcc_fbank_common_config: MfccFbankCommonConfig = MfccFbankCommonConfig()
+    fbank_config: FbankSpecificConfig = FbankSpecificConfig()
+    mfcc_config: MfccSpecificConfig = MfccSpecificConfig()
 
-    def with_augmentation(self, augmentation: Any) -> 'FeatureExtractor':
-        self.augmentation = augmentation
-        return self
+    def __post_init__(self):
+        assert self.type in ('spectrogram', 'mfcc', 'fbank')
 
-    def with_algorithm(
-            self,
-            method='mfcc',
-            frame_size: Seconds = 0.025,
-            frame_shift: Seconds = 0.01,
-            **basically_a_lot_of_other_params
-    ) -> 'FeatureExtractor':
-        self.algorithm = None  # TODO
-        return self
+    @staticmethod
+    def from_yaml(path: Pathlike) -> 'FeatureExtractor':
+        with open(path) as f:
+            raw_dict = yaml.safe_load(f)
+        return FeatureExtractor(
+            type=raw_dict['type'],
+            spectrogram_config=SpectrogramConfig(**raw_dict['spectrogram_config']),
+            mfcc_fbank_common_config=MfccFbankCommonConfig(**raw_dict['mfcc_fbank_common_config']),
+            fbank_config=FbankSpecificConfig(**raw_dict['fbank_config']),
+            mfcc_config=MfccSpecificConfig(**raw_dict['mfcc_config'])
+        )
 
-    def with_segmentation(
-            self,
-            segmentation: Union[SupervisionSet, List[FeatureSegment]],
-            extra_left_seconds: Seconds = 0.0,
-            extra_right_seconds: Seconds = 0.0
-    ) -> 'FeatureExtractor':
-        self.segmentation = segmentation
-        self.extra_left_seconds = extra_left_seconds
-        self.extra_right_seconds = extra_right_seconds
-        return self
+    def to_yaml(self, path: Pathlike):
+        with open(path, 'w') as f:
+            yaml.safe_dump(asdict(self), stream=f)
 
-    def extract(self) -> FeatureSet:
-        # TODO: the juicy stuff (librosa, torchaudio, eventually also augmentation etc.) goes here
-        return FeatureSet()
+    def extract(self, samples: Union[np.ndarray, torch.Tensor], sampling_rate: int):
+        params = asdict(self.spectrogram_config)
+        params.update({"sample_frequency": sampling_rate})
+        feature_fn = None
+        if self.type == 'spectrogram':
+            feature_fn = torchaudio.compliance.kaldi.spectrogram
+        else:
+            params.update(asdict(self.mfcc_fbank_common_config))
+            if self.type == 'mfcc':
+                params.update(asdict(self.mfcc_config))
+                feature_fn = torchaudio.compliance.kaldi.mfcc
+            elif self.type == 'fbank':
+                params.update(asdict(self.fbank_config))
+                feature_fn = torchaudio.compliance.kaldi.fbank
+
+        return feature_fn(waveform=samples, **params)

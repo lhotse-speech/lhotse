@@ -1,12 +1,35 @@
+from tempfile import NamedTemporaryFile
+
 import numpy as np
+import torch
 from pytest import mark, param
 
 from lhotse.audio import AudioSet
-from lhotse.features import FeatureSet, FeatureExtractor, FeatureSegment
+from lhotse.features import FeatureSet, FeatureExtractor
 from lhotse.supervision import SupervisionSet
 
 other_params = {}
 some_augmentation = None
+
+
+@mark.parametrize('feature_type', [
+    'mfcc',
+    'fbank',
+    'spectrogram',
+    param('pitch', marks=mark.xfail)
+])
+def test_feature_extractor(feature_type):
+    # Only test that it doesn't crash
+    fe = FeatureExtractor(type=feature_type)
+    fe.extract(torch.rand(1, 4000), sampling_rate=8000)
+
+
+def test_feature_extractor_serialization():
+    fe = FeatureExtractor()
+    with NamedTemporaryFile() as f:
+        fe.to_yaml(f.name)
+        fe_deserialized = FeatureExtractor.from_yaml(f.name)
+    assert fe_deserialized == fe
 
 
 def test_create_feature_set():
@@ -70,10 +93,10 @@ def test_create_feature_set():
         ('recording-2', 0, 1.0, 0.5),
         ('recording-2', 0, 1.5, 0.5),
         ('recording-2', 1, 1.5, 0.5),
-        param('recording-nonexistent', 0, 0.0, None, mark=mark.xfail),  # no recording
-        param('recording-1', 1000, 0.0, None, mark=mark.xfail),  # no channel
-        param('recording-2', 0.0, 0.5, 1.0, mark=mark.xfail),  # no features between [0.0, 1.0]
-        param('recording-2', 0.0, 1.5, None, mark=mark.xfail),  # no features after 2.0
+        param('recording-nonexistent', 0, 0.0, None, marks=mark.xfail),  # no recording
+        param('recording-1', 1000, 0.0, None, marks=mark.xfail),  # no channel
+        param('recording-2', 0.0, 0.5, 1.0, marks=mark.xfail),  # no features between [0.0, 1.0]
+        param('recording-2', 0.0, 1.5, None, marks=mark.xfail),  # no features after 2.0
     ]
 )
 def test_load_features(recording_id, channel, start, duration):

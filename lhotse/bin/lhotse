@@ -14,9 +14,10 @@ from typing import Optional
 import click
 import lilcom
 import numpy as np
+import torch
 
 from lhotse.audio import AudioSet
-from lhotse.features import FeatureExtractor, FeatureSet
+from lhotse.features import FeatureExtractor, FeatureSet, Features
 from lhotse.utils import Pathlike
 
 
@@ -37,6 +38,8 @@ def cli():
                    'Supervision manifest can be used here.')
 @click.option('-a', '--augmentation-manifest', type=click.Path(exists=True, dir_okay=False),
               help='Optional manifest specifying augmentation transforms that can be applied to recordings.')
+@click.option('-f', '--feature-manifest', type=click.Path(exists=True, dir_okay=False),
+              help='Optional manifest specifying feature extractor configuration.')
 @click.option('--compressed/--not-compressed', default=True, help='Enable/disable lilcom for features compression.')
 @click.option('-t', '--lilcom-tick-power', type=int, default=-8,
               help='Determines the compression accuracy; '
@@ -55,6 +58,7 @@ def make_feats(
         # "add_noise", "prob": 0.5, "noise_recordings": ["path1.wav", "path2.wav"]
         # "reverberate", "prob": 0.2, "rirs": ["rir1.wav", "rir2.wav"] (or however the RIRs are stored like... can be params for simulation)
         augmentation_manifest: Optional[Pathlike],
+        feature_manifest: Optional[Pathlike],
         compressed: bool,
         lilcom_tick_power: int
 ):
@@ -64,19 +68,22 @@ def make_feats(
     """
     audio_set = AudioSet.from_yaml(audio_manifest)
 
-    feature_extractor = FeatureExtractor()
+    feature_extractor = (FeatureExtractor.from_yaml(feature_manifest)
+                         if feature_manifest is not None else FeatureExtractor())
 
     output_dir = Path(output_dir)
     output_dir.mkdir(exist_ok=True, parents=True)
 
-
     # TODO: sketch; convert into class with methods
-    feature_set = FeatureSet()  # TODO: build it up
+    feature_set = FeatureSet()
     for recording in audio_set:
         for channel in recording.channel_ids:
-            samples = recording.load_audio(channels=channel)
+            samples = torch.from_numpy(recording.load_audio(channels=channel))
             # TODO: use augmentation manifest here
-            feats: np.ndarray = feature_extractor.mfcc(samples)
+            feats = feature_extractor.extract(
+                samples=samples,
+                sampling_rate=recording.sampling_rate
+            ).numpy()
             if compressed:
                 # TODO: use segmentation manifest here
                 serialized_feats = lilcom.compress(feats, tick_power=lilcom_tick_power)
@@ -84,6 +91,15 @@ def make_feats(
                     f.write(serialized_feats)
             else:
                 np.save(output_dir / 'storage' / 'some_file', feats, allow_pickle=False)
+            feature_set.features.append(Features(
+                recording_id=recording.id,
+                channel_id=channel,
+                # TODO: revise start and duration with segmentation manifest info
+                start=0.0,
+                duration=recording.duration_seconds,
+                storage_type='lilcom' if compressed else 'numpy',
+                storage_path=output_dir / 'storage' / 'some_file'
+            ))
     feature_set.to_yaml(output_dir / 'feature_manifest.yml')
 
 
