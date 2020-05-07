@@ -5,7 +5,7 @@ import torch
 from pytest import mark, param
 
 from lhotse.audio import AudioSet
-from lhotse.features import FeatureSet, FeatureExtractor
+from lhotse.features import FeatureSet, FeatureExtractor, Features
 from lhotse.supervision import SupervisionSet
 
 other_params = {}
@@ -30,6 +30,26 @@ def test_feature_extractor_serialization():
         fe.to_yaml(f.name)
         fe_deserialized = FeatureExtractor.from_yaml(f.name)
     assert fe_deserialized == fe
+
+
+def test_feature_set_serialization():
+    feature_set = FeatureSet(
+        feature_extractor=FeatureExtractor(),
+        features=[
+            Features(
+                recording_id='irrelevant',
+                channel_id=0,
+                start=0.0,
+                duration=20.0,
+                storage_type='lilcom',
+                storage_path='/irrelevant/path.llc'
+            )
+        ]
+    )
+    with NamedTemporaryFile() as f:
+        feature_set.to_yaml(f.name)
+        feature_set_deserialized = FeatureSet.from_yaml(f.name)
+    assert feature_set_deserialized == feature_set
 
 
 def test_create_feature_set():

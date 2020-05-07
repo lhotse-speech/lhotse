@@ -2,7 +2,7 @@
 This file is just a rough sketch for now.
 """
 from dataclasses import dataclass, field, asdict
-from typing import Union, List, Iterable
+from typing import Union, List, Iterable, Dict
 
 import numpy as np
 import torch
@@ -10,61 +10,6 @@ import torchaudio
 import yaml
 
 from lhotse.utils import Seconds, Milliseconds, Pathlike
-
-
-@dataclass
-class Features:
-    """
-    Represents features extracted for some particular time range in a given recording and channel.
-    It contains metadata about how it's stored: storage_type describes "how to read it", for now
-    it supports numpy arrays serialized with np.save, as well as arrays compressed with lilcom;
-    storage_path is the path to the file on the local filesystem.
-    """
-    recording_id: str
-    channel_id: int
-    start: Seconds
-    duration: Seconds
-    storage_type: str  # e.g. 'lilcom', 'numpy'
-    storage_path: str
-
-    def load(self) -> np.ndarray:
-        pass
-
-
-@dataclass
-class FeatureSet:
-    """
-    Represents a feature manifest, and allows to read features for given recordings
-    within particular channels and time ranges.
-    When a given recording/time-range/channel is unavailable, raises a KeyError.
-    """
-    # TODO(pzelasko): we might need some efficient indexing structure,
-    #                 e.g. Dict[<recording-id>, Dict[<channel-id>, IntervalTree]] (pip install intervaltree)
-    features: List[Features] = field(default_factory=lambda: list())
-
-    @staticmethod
-    def from_yaml(param):
-        pass
-
-    @staticmethod
-    def to_yaml(param):
-        pass
-
-    def load(
-            self,
-            recording_id: str,
-            channel_id: int,
-            start: Seconds,
-            duration: Seconds,
-    ) -> np.ndarray:
-        # raise a KeyError when any of the requirements is not met
-        pass
-
-    def __iter__(self) -> Iterable[Features]:
-        return iter(self.features)
-
-    def __len__(self) -> int:
-        return len(self.features)
 
 
 @dataclass
@@ -117,13 +62,16 @@ class FeatureExtractor:
     @staticmethod
     def from_yaml(path: Pathlike) -> 'FeatureExtractor':
         with open(path) as f:
-            raw_dict = yaml.safe_load(f)
+            return FeatureExtractor.from_dict(yaml.safe_load(f))
+
+    @staticmethod
+    def from_dict(data: Dict) -> 'FeatureExtractor':
         return FeatureExtractor(
-            type=raw_dict['type'],
-            spectrogram_config=SpectrogramConfig(**raw_dict['spectrogram_config']),
-            mfcc_fbank_common_config=MfccFbankCommonConfig(**raw_dict['mfcc_fbank_common_config']),
-            fbank_config=FbankSpecificConfig(**raw_dict['fbank_config']),
-            mfcc_config=MfccSpecificConfig(**raw_dict['mfcc_config'])
+            type=data['type'],
+            spectrogram_config=SpectrogramConfig(**data.get('spectrogram_config', {})),
+            mfcc_fbank_common_config=MfccFbankCommonConfig(**data.get('mfcc_fbank_common_config', {})),
+            fbank_config=FbankSpecificConfig(**data.get('fbank_config', {})),
+            mfcc_config=MfccSpecificConfig(**data.get('mfcc_config', {}))
         )
 
     def to_yaml(self, path: Pathlike):
@@ -146,3 +94,65 @@ class FeatureExtractor:
                 feature_fn = torchaudio.compliance.kaldi.fbank
 
         return feature_fn(waveform=samples, **params)
+
+
+@dataclass
+class Features:
+    """
+    Represents features extracted for some particular time range in a given recording and channel.
+    It contains metadata about how it's stored: storage_type describes "how to read it", for now
+    it supports numpy arrays serialized with np.save, as well as arrays compressed with lilcom;
+    storage_path is the path to the file on the local filesystem.
+    """
+    recording_id: str
+    channel_id: int
+    start: Seconds
+    duration: Seconds
+    storage_type: str  # e.g. 'lilcom', 'numpy'
+    storage_path: str
+
+    def load(self) -> np.ndarray:
+        pass
+
+
+@dataclass
+class FeatureSet:
+    """
+    Represents a feature manifest, and allows to read features for given recordings
+    within particular channels and time ranges.
+    It also keeps information about the feature extractor parameters used to obtain this set.
+    When a given recording/time-range/channel is unavailable, raises a KeyError.
+    """
+    # TODO(pzelasko): we might need some efficient indexing structure,
+    #                 e.g. Dict[<recording-id>, Dict[<channel-id>, IntervalTree]] (pip install intervaltree)
+    feature_extractor: FeatureExtractor
+    features: List[Features] = field(default_factory=lambda: list())
+
+    @staticmethod
+    def from_yaml(path: Pathlike) -> 'FeatureSet':
+        with open(path) as f:
+            data = yaml.safe_load(f)
+        return FeatureSet(
+            feature_extractor=FeatureExtractor.from_dict(data['feature_extractor']),
+            features=[Features(**feature_data) for feature_data in data['features']],
+        )
+
+    def to_yaml(self, path: Pathlike):
+        with open(path, 'w') as f:
+            yaml.safe_dump(asdict(self), stream=f)
+
+    def load(
+            self,
+            recording_id: str,
+            channel_id: int,
+            start: Seconds,
+            duration: Seconds,
+    ) -> np.ndarray:
+        # raise a KeyError when any of the requirements is not met
+        pass
+
+    def __iter__(self) -> Iterable[Features]:
+        return iter(self.features)
+
+    def __len__(self) -> int:
+        return len(self.features)
