@@ -108,8 +108,8 @@ class Recording:
                 samples = np.delete(samples, channels_to_remove, axis=0)
             samples_per_source.append(samples)
 
-        # shapes: single-channel (n_samples); multi-channel (n_channels, n_samples)
-        return np.vstack(samples_per_source) if len(samples_per_source) > 1 else samples_per_source[0]
+        # shape: (n_channels, n_samples)
+        return np.vstack(samples_per_source)
 
 
 @dataclass
