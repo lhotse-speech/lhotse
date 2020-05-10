@@ -3,4 +3,4 @@ pyyaml
 numpy
 librosa
 click
-lilcom
+lilcom>= 1.1.0
