@@ -24,11 +24,12 @@ class SpectrogramConfig:
     window_type: str = "povey"
     frame_length: Milliseconds = 25.0
     frame_shift: Milliseconds = 10.0
-    remove_dc_offset: bool = False
-    round_to_power_of_two: bool = False
-    energy_floor: float = 1.0
+    remove_dc_offset: bool = True
+    round_to_power_of_two: bool = True
+    energy_floor: float = 0.0
     min_duration: float = 0.0
     preemphasis_coefficient: float = 0.97
+    blackman_coeff: float = 0.42
     raw_energy: bool = True
     snip_edges: bool = True
 
@@ -38,7 +39,7 @@ class MfccFbankCommonConfig:
     low_freq: float = 20.0
     high_freq: float = 0.0
     num_mel_bins: int = 23
-    use_energy: bool = True
+    use_energy: bool = False
     vtln_low: float = 100.0
     vtln_high: float = -500.0
     vtln_warp: float = 1.0
@@ -52,6 +53,7 @@ class FbankSpecificConfig:
 @dataclass
 class MfccSpecificConfig:
     cepstral_lifter: float = 22.0
+    num_ceps: int = 13
 
 
 @dataclass
@@ -99,6 +101,9 @@ class FeatureExtractor:
                 params.update(asdict(self.fbank_config))
                 feature_fn = torchaudio.compliance.kaldi.fbank
 
+        if not isinstance(samples, torch.Tensor):
+            samples = torch.from_numpy(samples)
+
         return feature_fn(waveform=samples, **params)
 
 
@@ -120,12 +125,13 @@ class Features:
     def __post_init__(self):
         assert self.storage_type in ('lilcom', 'numpy')
 
-    def load(self) -> np.ndarray:
+    def load(self, root_dir: Optional[Pathlike] = None) -> np.ndarray:
+        storage_path = self.storage_path if root_dir is None else Path(root_dir) / self.storage_path
         if self.storage_type == 'lilcom':
-            with open(self.storage_path, 'rb') as f:
+            with open(storage_path, 'rb') as f:
                 return lilcom.decompress(f.read())
         if self.storage_type == 'numpy':
-            return np.load(self.storage_path, allow_pickle=False)
+            return np.load(storage_path, allow_pickle=False)
         raise ValueError(f"Unknown storage_type: {self.storage_type}")
 
     @property
@@ -168,6 +174,7 @@ class FeatureSet:
             channel_id: int,
             start: Seconds,
             duration: Seconds,
+            root_dir: Optional[Pathlike] = None
     ) -> np.ndarray:
         # TODO: naive linear search; will likely require optimization
         end = start + duration
@@ -183,7 +190,7 @@ class FeatureSet:
         # by minimizing the MSE of the time markers...
         feature_info = min(candidates, key=lambda f: (start - f.start) ** 2 + (end - f.end) ** 2)
 
-        features = feature_info.load()
+        features = feature_info.load(root_dir)
 
         # in case we have features for longer segment than required, trim them
         if not isclose(start, feature_info.start):

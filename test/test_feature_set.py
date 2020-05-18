@@ -1,7 +1,7 @@
 from tempfile import NamedTemporaryFile
 
 import numpy as np
-import torch
+import torchaudio
 from pytest import mark, param
 
 from lhotse.features import FeatureSet, FeatureExtractor, Features
@@ -17,9 +17,10 @@ some_augmentation = None
     param('pitch', marks=mark.xfail)
 ])
 def test_feature_extractor(feature_type):
-    # Only test that it doesn't crash
+    # TODO: test that the output is similar to Kaldi
     fe = FeatureExtractor(type=feature_type)
-    fe.extract(torch.rand(1, 4000), sampling_rate=8000)
+    samples, sr = torchaudio.load('fixtures/libri-1088-134315-0000.wav')
+    fe.extract(samples=samples, sampling_rate=sr)
 
 
 def test_feature_extractor_serialization():
