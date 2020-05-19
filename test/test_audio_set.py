@@ -1,4 +1,5 @@
 from functools import lru_cache
+from tempfile import NamedTemporaryFile
 
 import numpy as np
 from pytest import param, mark
@@ -71,8 +72,9 @@ def test_serialization():
             duration_seconds=0.5
         )
     })
-    audio_set.to_yaml('.test.yaml')
-    deserialized = AudioSet.from_yaml('.test.yaml')
+    with NamedTemporaryFile() as f:
+        audio_set.to_yaml(f.name)
+        deserialized = AudioSet.from_yaml(f.name)
     assert deserialized == audio_set
 
 
