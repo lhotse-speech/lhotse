@@ -1,7 +1,10 @@
 """
 This file is just a rough sketch for now.
 """
+from concurrent.futures.process import ProcessPoolExecutor
 from dataclasses import dataclass, field, asdict
+from functools import partial
+from itertools import chain
 from math import isclose, ceil
 from pathlib import Path
 from typing import Union, List, Iterable, Dict, Optional
@@ -227,6 +230,10 @@ class FeatureSet:
     def __len__(self) -> int:
         return len(self.features)
 
+    def __add__(self, other: 'FeatureSet') -> 'FeatureSet':
+        assert self.feature_extractor == other.feature_extractor
+        return FeatureSet(feature_extractor=self.feature_extractor, features=self.features + other.features)
+
 
 class FeatureSetBuilder:
     def __init__(
@@ -236,18 +243,39 @@ class FeatureSetBuilder:
             augmentation_manifest=None
     ):
         self.feature_extractor = feature_extractor
-        self.feature_set = FeatureSet(feature_extractor=feature_extractor)
         self.output_dir = Path(output_dir)
-        (self.output_dir / 'storage').mkdir(parents=True, exist_ok=True)
         self.augmentation_manifest = augmentation_manifest  # TODO: implement and use
 
-    def process_and_store_recording(
+    def process_and_store_recordings(
+            self,
+            recordings: Iterable[Recording],
+            segmentation: Optional[SupervisionSegment] = None,
+            compressed: bool = True,
+            lilcom_tick_power: int = -8,
+            num_jobs: int = 1
+    ):
+        (self.output_dir / 'storage').mkdir(parents=True, exist_ok=True)
+        do_work = partial(
+            self._process_and_store_recording,
+            segmentation=segmentation,
+            compressed=compressed,
+            lilcom_tick_power=lilcom_tick_power
+        )
+        with ProcessPoolExecutor(num_jobs) as ex:
+            feature_set = FeatureSet(
+                feature_extractor=self.feature_extractor,
+                features=list(chain.from_iterable(ex.map(do_work, recordings)))
+            )
+        feature_set.to_yaml(self.output_dir / 'feature_manifest.yml')
+
+    def _process_and_store_recording(
             self,
             recording: Recording,
             segmentation: Optional[SupervisionSegment] = None,
             compressed: bool = True,
             lilcom_tick_power: int = -8,
-    ):
+    ) -> List[Features]:
+        results = []
         for channel in recording.channel_ids:
             output_features_path = (
                     self.output_dir / 'storage' / str(uuid4())
@@ -269,7 +297,7 @@ class FeatureSetBuilder:
             else:
                 np.save(output_features_path, feats, allow_pickle=False)
 
-            self.feature_set.features.append(Features(
+            results.append(Features(
                 recording_id=recording.id,
                 channel_id=channel,
                 # TODO: revise start and duration with segmentation manifest info
@@ -278,9 +306,7 @@ class FeatureSetBuilder:
                 storage_type='lilcom' if compressed else 'numpy',
                 storage_path=str(output_features_path)
             ))
-
-    def store_manifest(self):
-        self.feature_set.to_yaml(self.output_dir / 'feature_manifest.yml')
+        return results
 
 
 def time_diff_to_num_frames(time_diff: Seconds, frame_length: Seconds, frame_shift: Seconds) -> int:

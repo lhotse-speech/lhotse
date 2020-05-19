@@ -3,10 +3,10 @@
 Use this script like:
 
 $ lhotse --help
+$ lhotse make-feats --help
+$ lhotse make-feats --compressed audio_manifest.yml mfcc_dir
 
-$ lhotse make_feats --help
-
-$ lhotse make_feats --compressed audio_manifest.yml mfcc_dir
+$ lhotse default-feature-config feat-conf.yml
 """
 from pathlib import Path
 from typing import Optional
@@ -25,6 +25,13 @@ def cli():
     The shell entry point to Lhotse, a tool and a library for audio data manipulation in high altitudes.
     """
     pass
+
+
+@cli.command()
+@click.argument('output_config', type=click.Path())
+def default_feature_config(output_config):
+    """Save a default feature extraction config to OUTPUT_CONFIG."""
+    FeatureExtractor().to_yaml(output_config)
 
 
 @cli.command()
@@ -55,7 +62,7 @@ def make_feats(
         feature_manifest: Optional[Pathlike],
         compressed: bool,
         lilcom_tick_power: int,
-        num_jobs: int  # TODO: make it parallel
+        num_jobs: int
 ):
     """
     Extract features for recordings in a given AUDIO_MANIFEST. The features are stored in OUTPUT_DIR,
@@ -78,14 +85,13 @@ def make_feats(
         output_dir=output_dir,
         augmentation_manifest=augmentation_manifest
     )
-    for recording in audio_set:
-        feature_set_builder.process_and_store_recording(
-            recording=recording,
-            segmentation=None,  # TODO: implement and use
-            compressed=compressed,
-            lilcom_tick_power=lilcom_tick_power
-        )
-    feature_set_builder.store_manifest()
+    feature_set_builder.process_and_store_recordings(
+        recordings=audio_set,
+        segmentation=None,  # TODO: implement and use
+        compressed=compressed,
+        lilcom_tick_power=lilcom_tick_power,
+        num_jobs=num_jobs
+    )
 
 
 if __name__ == '__main__':
