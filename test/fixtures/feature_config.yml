@@ -1,0 +1,28 @@
+feature_extractor:
+  fbank_config:
+    use_log_fbank: true
+  mfcc_config:
+    cepstral_lifter: 22.0
+    num_ceps: 13
+  mfcc_fbank_common_config:
+    high_freq: 0.0
+    low_freq: 20.0
+    num_mel_bins: 23
+    use_energy: false
+    vtln_high: -500.0
+    vtln_low: 100.0
+    vtln_warp: 1.0
+  spectrogram_config:
+    blackman_coeff: 0.42
+    dither: 0.0
+    energy_floor: 0.0
+    frame_length: 25.0
+    frame_shift: 10.0
+    min_duration: 0.0
+    preemphasis_coefficient: 0.97
+    raw_energy: true
+    remove_dc_offset: true
+    round_to_power_of_two: true
+    snip_edges: true
+    window_type: povey
+  type: mfcc

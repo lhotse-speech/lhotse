@@ -2,7 +2,7 @@
 This file is just a rough sketch for now.
 """
 from dataclasses import dataclass, field, asdict
-from math import isclose
+from math import isclose, ceil
 from pathlib import Path
 from typing import Union, List, Iterable, Dict, Optional
 from uuid import uuid4
@@ -171,32 +171,53 @@ class FeatureSet:
     def load(
             self,
             recording_id: str,
-            channel_id: int,
-            start: Seconds,
-            duration: Seconds,
+            channel_id: int = 0,
+            start: Seconds = 0.0,
+            duration: Optional[Seconds] = None,
             root_dir: Optional[Pathlike] = None
     ) -> np.ndarray:
+        if duration is not None:
+            end = start + duration
         # TODO: naive linear search; will likely require optimization
-        end = start + duration
-        candidates = (f for f in self.features if f.recording_id == recording_id)
-        candidates = (f for f in candidates if f.channel_id == channel_id)
-        candidates = (f for f in candidates if f.start <= start)
-        candidates = [f for f in candidates if f.end >= end]
+        candidates = (
+            f for f in self.features
+            if f.recording_id == recording_id
+               and f.channel_id == channel_id
+               and f.start <= start < f.end
+            # filter edge case: start 1.5, features available till 1.0, duration is None
+        )
+        if duration is not None:
+            candidates = (f for f in candidates if f.end >= end)
+
+        candidates = list(candidates)
 
         if not candidates:
             raise KeyError("No features available for the requested recording/channel/region.")
 
         # in case there is more than one candidate feature segment, select the best fit
         # by minimizing the MSE of the time markers...
-        feature_info = min(candidates, key=lambda f: (start - f.start) ** 2 + (end - f.end) ** 2)
+        if duration is not None:
+            feature_info = min(candidates, key=lambda f: (start - f.start) ** 2 + (end - f.end) ** 2)
+        else:
+            feature_info = min(candidates, key=lambda f: (start - f.start) ** 2)
 
         features = feature_info.load(root_dir)
 
         # in case we have features for longer segment than required, trim them
         if not isclose(start, feature_info.start):
-            pass
-        if not isclose(end, feature_info.end):
-            pass
+            frames_to_trim = time_diff_to_num_frames(
+                time_diff=start - feature_info.start,
+                frame_length=self.feature_extractor.spectrogram_config.frame_length / 1000.0,
+                frame_shift=self.feature_extractor.spectrogram_config.frame_shift / 1000.0
+            )
+            features = features[frames_to_trim:, :]
+        if duration is not None and not isclose(end, feature_info.end):
+            frames_to_trim = time_diff_to_num_frames(
+                time_diff=feature_info.end - end,
+                frame_length=self.feature_extractor.spectrogram_config.frame_length / 1000.0,
+                frame_shift=self.feature_extractor.spectrogram_config.frame_shift / 1000.0
+            )
+            features = features[:-frames_to_trim, :]
 
         return features
 
@@ -260,3 +281,8 @@ class FeatureSetBuilder:
 
     def store_manifest(self):
         self.feature_set.to_yaml(self.output_dir / 'feature_manifest.yml')
+
+
+def time_diff_to_num_frames(time_diff: Seconds, frame_length: Seconds, frame_shift: Seconds) -> int:
+    """Convert duration to an equivalent number of frames, so as to not exceed the duration."""
+    return int(ceil((time_diff - frame_length) / frame_shift))

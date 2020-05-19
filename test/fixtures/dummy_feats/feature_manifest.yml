@@ -1,0 +1,53 @@
+feature_extractor:
+  fbank_config:
+    use_log_fbank: true
+  mfcc_config:
+    cepstral_lifter: 22.0
+    num_ceps: 13
+  mfcc_fbank_common_config:
+    high_freq: 0.0
+    low_freq: 20.0
+    num_mel_bins: 23
+    use_energy: false
+    vtln_high: -500.0
+    vtln_low: 100.0
+    vtln_warp: 1.0
+  spectrogram_config:
+    blackman_coeff: 0.42
+    dither: 0.0
+    energy_floor: 0.0
+    frame_length: 25.0
+    frame_shift: 10.0
+    min_duration: 0.0
+    preemphasis_coefficient: 0.97
+    raw_energy: true
+    remove_dc_offset: true
+    round_to_power_of_two: true
+    snip_edges: true
+    window_type: povey
+  type: mfcc
+features:
+  - channel_id: 0
+    duration: 0.5
+    recording_id: recording-1
+    start: 0.0
+    storage_path: test/fixtures/dummy_feats/storage/e66b6386-aee5-4a5a-8369-fdde1d2b97c7.llc
+    storage_type: lilcom
+  - channel_id: 1
+    duration: 0.5
+    recording_id: recording-1
+    start: 0.0
+    storage_path: test/fixtures/dummy_feats/storage/fcad32c9-d6a4-44d2-b8ba-3afd70cd5cbb.llc
+    storage_type: lilcom
+  - channel_id: 0
+    duration: 1.0
+    recording_id: recording-2
+    start: 0.0
+    storage_path: test/fixtures/dummy_feats/storage/66aeed86-6be7-43c7-808f-52727d47bd34.llc
+    storage_type: lilcom
+  - channel_id: 1
+    duration: 1.0
+    recording_id: recording-2
+    start: 0.0
+    storage_path: test/fixtures/dummy_feats/storage/9fb7d65a-5f8f-4dce-a194-c86b3b9f3e04.llc
+    storage_type: lilcom
