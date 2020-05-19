@@ -61,7 +61,7 @@ class MfccSpecificConfig:
 
 @dataclass
 class FeatureExtractor:
-    type: str = "mfcc"  # supported: mfcc/fbank/spectrogram
+    type: str = "fbank"  # supported: mfcc/fbank/spectrogram
     spectrogram_config: SpectrogramConfig = SpectrogramConfig()
     mfcc_fbank_common_config: MfccFbankCommonConfig = MfccFbankCommonConfig()
     fbank_config: FbankSpecificConfig = FbankSpecificConfig()
