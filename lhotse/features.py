@@ -32,9 +32,8 @@ class SpectrogramConfig:
     energy_floor: float = 0.0
     min_duration: float = 0.0
     preemphasis_coefficient: float = 0.97
-    blackman_coeff: float = 0.42
     raw_energy: bool = True
-    snip_edges: bool = True
+    snip_edges: bool = False
 
 
 @dataclass
