@@ -1,6 +1,6 @@
 from collections import defaultdict
 from pathlib import Path
-from typing import Tuple, Optional
+from typing import Tuple, Optional, Dict
 
 from lhotse.audio import AudioSet, Recording, AudioSource
 from lhotse.supervision import SupervisionSet, SupervisionSegment
@@ -8,14 +8,18 @@ from lhotse.utils import Pathlike
 
 
 def load_kaldi_data_dir(path: Pathlike, sampling_rate: int) -> Tuple[AudioSet, Optional[SupervisionSet]]:
+    """
+    Load a Kaldi data directory and convert it to a Lhotse AudioSet and SupervisionSet manifests.
+    For this to work, at least the wav.scp file must exist.
+    SupervisionSet is created only when a segments file exists.
+    All the other files (text, utt2spk, etc.) are optional, and some of them might not be handled yet.
+    In particular, feats.scp files are ignored.
+    """
     path = Path(path)
     assert path.is_dir()
 
     # must exist for AudioSet
-    wav_scp = path / 'wav.scp'
-    assert wav_scp.is_file()
-    with wav_scp.open() as f:
-        recordings = dict(line.strip().split(' ', maxsplit=1) for line in f)
+    recordings = load_kaldi_text_mapping(path / 'wav.scp', must_exist=True)
 
     durations = defaultdict(float)
     reco2dur = path / 'reco2dur'
@@ -50,31 +54,34 @@ def load_kaldi_data_dir(path: Pathlike, sampling_rate: int) -> Tuple[AudioSet, O
     with segments.open() as f:
         supervision_segments = [l.strip().split() for l in f]
 
-    texts = defaultdict(lambda: None)
-    text_path = path / 'text'
-    if text_path.is_file():
-        with text_path.open() as f:
-            texts = dict(line.strip().split(' ', maxsplit=1) for line in f)
-
-    speakers = defaultdict(lambda: None)
-    utt2spk = path / 'utt2spk'
-    if utt2spk.is_file():
-        with utt2spk.open() as f:
-            speakers = dict(line.strip().split(' ', maxsplit=1) for line in f)
-
-    # TODO: spk2gender
+    texts = load_kaldi_text_mapping(path / 'text')
+    speakers = load_kaldi_text_mapping(path / 'utt2spk')
+    genders = load_kaldi_text_mapping(path / 'spk2gender')
+    languages = load_kaldi_text_mapping(path / 'utt2lang')
 
     supervision_set = SupervisionSet({
         segment_id: SupervisionSegment(
             id=segment_id,
             recording_id=recording_id,
             start=float(start),
-            duration=float(duration),  # TODO: check again what's the second time field in segments
+            duration=float(duration) - float(start),
+            channel_id=0,
             text=texts[segment_id],
-            language=None,
-            speaker=speakers[segment_id]
+            language=languages[segment_id],
+            speaker=speakers[segment_id],
+            gender=genders[speakers[segment_id]]
         )
         for segment_id, recording_id, start, duration in supervision_segments
     })
 
     return audio_set, supervision_set
+
+
+def load_kaldi_text_mapping(path: Path, must_exist: bool = False) -> Dict[str, Optional[str]]:
+    mapping = defaultdict(lambda: None)
+    if path.is_file():
+        with path.open() as f:
+            mapping = dict(line.strip().split(' ', maxsplit=1) for line in f)
+    elif must_exist:
+        raise ValueError(f"No such file: {path}")
+    return mapping
