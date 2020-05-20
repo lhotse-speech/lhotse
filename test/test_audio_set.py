@@ -1,16 +1,18 @@
+from contextlib import nullcontext as does_not_raise
 from functools import lru_cache
 from tempfile import NamedTemporaryFile
 
 import numpy as np
-from pytest import param, mark
+from pytest import mark, raises
 
 from lhotse.audio import AudioSet, Recording, AudioSource
+from lhotse.test_utils import DummyManifest
 from lhotse.utils import INT16MAX
 
 
 @lru_cache(1)
 def get_audio_set() -> AudioSet:
-    return AudioSet.from_yaml('test/fixtures/audio.yaml')
+    return AudioSet.from_yaml('test/fixtures/audio.yml')
 
 
 @lru_cache(1)
@@ -96,35 +98,48 @@ def test_get_stereo_audio_from_single_file():
 
 
 @mark.parametrize(
-    ['channels', 'expected_audio'],
+    ['channels', 'expected_audio', 'exception_expectation'],
     [
-        (None, expected_stereo_two_sources()),
-        (0, expected_channel_0()),
-        (1, expected_channel_1()),
-        ([0, 1], expected_stereo_two_sources()),
-        param(1000, 'irrelevant', marks=mark.xfail)
+        (None, expected_stereo_two_sources(), does_not_raise()),
+        (0, expected_channel_0(), does_not_raise()),
+        (1, expected_channel_1(), does_not_raise()),
+        ([0, 1], expected_stereo_two_sources(), does_not_raise()),
+        (1000, 'irrelevant', raises(ValueError))
     ]
 )
-def test_get_audio_multichannel(channels, expected_audio):
+def test_get_audio_multichannel(channels, expected_audio, exception_expectation):
     audio_set = get_audio_set()
-    np.testing.assert_almost_equal(
-        audio_set.load_audio('recording-1', channels=channels),
-        expected_audio
-    )
+    with exception_expectation:
+        loaded_audio = audio_set.load_audio('recording-1', channels=channels)
+        np.testing.assert_almost_equal(loaded_audio, expected_audio)
 
 
 @mark.parametrize(
-    ['begin_at', 'duration', 'expected_start_sample', 'expected_end_sample'],
+    ['begin_at', 'duration', 'expected_start_sample', 'expected_end_sample', 'exception_expectation'],
     [
-        (None, None, 0, 4000),
-        (0.1, None, 800, 4000),
-        (None, 0.3, 0, 2400),
-        (0.1, 0.2, 800, 2400),
-        param(0.3, 0.1, 'irrelevant', 'irrelevant', marks=mark.xfail)
+        (None, None, 0, 4000, does_not_raise()),
+        (0.1, None, 800, 4000, does_not_raise()),
+        (None, 0.3, 0, 2400, does_not_raise()),
+        (0.1, 0.2, 800, 2400, does_not_raise()),
+        (0.3, 10.0, 'irrelevant', 'irrelevant', raises(ValueError))  # requested more audio than available
     ]
 )
-def test_get_audio_chunks(begin_at, duration, expected_start_sample, expected_end_sample):
+def test_get_audio_chunks(begin_at, duration, expected_start_sample, expected_end_sample, exception_expectation):
     audio_set = get_audio_set()
-    actual_audio = audio_set.load_audio('recording-1', channels=0, offset_seconds=begin_at, duration_seconds=duration)
-    expected_audio = expected_channel_0()[:, expected_start_sample: expected_end_sample]
-    np.testing.assert_almost_equal(actual_audio, expected_audio)
+    with exception_expectation:
+        actual_audio = audio_set.load_audio(
+            recording_id='recording-1',
+            channels=0,
+            offset_seconds=begin_at,
+            duration_seconds=duration
+        )
+        expected_audio = expected_channel_0()[:, expected_start_sample: expected_end_sample]
+        np.testing.assert_almost_equal(actual_audio, expected_audio)
+
+
+def test_add_audio_sets():
+    expected = DummyManifest(AudioSet, begin_id=0, end_id=10)
+    audio_set_1 = DummyManifest(AudioSet, begin_id=0, end_id=5)
+    audio_set_2 = DummyManifest(AudioSet, begin_id=5, end_id=10)
+    combined = audio_set_1 + audio_set_2
+    assert combined == expected

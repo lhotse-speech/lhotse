@@ -1,9 +1,12 @@
+from functools import reduce
 from math import ceil
+from operator import add
 from typing import Union, List
 
 from lhotse.audio import AudioSet
 from lhotse.features import FeatureSet
 from lhotse.supervision import SupervisionSet
+from lhotse.utils import Pathlike
 
 Manifest = Union[AudioSet, SupervisionSet, FeatureSet]
 
@@ -34,3 +37,19 @@ def split(manifest: Manifest, num_splits: int) -> List[Manifest]:
         ]
 
     raise ValueError(f"Unknown type of manifest: {type(manifest)}")
+
+
+def combine(*manifests: Manifest) -> Manifest:
+    return reduce(add, manifests)
+
+
+def load_manifest(path: Pathlike):
+    data_set = None
+    for manifest_type in [AudioSet, SupervisionSet, FeatureSet]:
+        try:
+            data_set = manifest_type.from_yaml(path)
+        except Exception:
+            pass
+    if data_set is None:
+        raise ValueError(f'Unknown type of manifest: {path}')
+    return data_set

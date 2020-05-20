@@ -67,7 +67,8 @@ class FeatureExtractor:
     mfcc_config: MfccSpecificConfig = MfccSpecificConfig()
 
     def __post_init__(self):
-        assert self.type in ('spectrogram', 'mfcc', 'fbank')
+        if self.type not in ('spectrogram', 'mfcc', 'fbank'):
+            raise ValueError(f"Unsupported feature type: '{self.type}'")
 
     @staticmethod
     def from_yaml(path: Pathlike) -> 'FeatureExtractor':
@@ -231,6 +232,7 @@ class FeatureSet:
 
     def __add__(self, other: 'FeatureSet') -> 'FeatureSet':
         assert self.feature_extractor == other.feature_extractor
+        # TODO: when validating, assert that there is no overlap between regions which have extracted features
         return FeatureSet(feature_extractor=self.feature_extractor, features=self.features + other.features)
 
 

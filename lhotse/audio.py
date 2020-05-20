@@ -53,13 +53,24 @@ class AudioSource:
         else:
             source = self.source if root_dir is None else Path(root_dir) / self.source
 
-        return librosa.load(
+        samples, sampling_rate = librosa.load(
             source,
             sr=None,  # 'None' uses the native sampling rate
             mono=False,  # Retain multi-channel if it's there
             offset=offset_seconds,
             duration=duration_seconds
-        )[0]  # discard returned sampling rate
+        )
+
+        # explicit sanity check for duration as librosa does not complain here
+        if duration_seconds is not None:
+            num_samples = samples.shape[0] if len(samples.shape) == 1 else samples.shape[1]
+            available_duration = num_samples / sampling_rate
+            if available_duration < duration_seconds - 1e-5:
+                raise ValueError(
+                    f'Requested more audio ({duration_seconds:.2f}s) than available ({available_duration:.2f}s)'
+                )
+
+        return samples
 
 
 @dataclass
@@ -177,3 +188,6 @@ class AudioSet:
 
     def __len__(self) -> int:
         return len(self.recordings)
+
+    def __add__(self, other: 'AudioSet') -> 'AudioSet':
+        return AudioSet(recordings={**self.recordings, **other.recordings})
