@@ -1,4 +1,5 @@
 from functools import lru_cache
+from tempfile import NamedTemporaryFile
 
 from lhotse.supervision import SupervisionSet, SupervisionSegment
 
@@ -81,6 +82,7 @@ def test_supervision_set_serialization():
             )
         }
     )
-    supervision_set.to_yaml('.test.supervision.yaml')
-    restored = supervision_set.from_yaml('.test.supervision.yaml')
+    with NamedTemporaryFile() as f:
+        supervision_set.to_yaml(f.name)
+        restored = supervision_set.from_yaml(f.name)
     assert supervision_set == restored

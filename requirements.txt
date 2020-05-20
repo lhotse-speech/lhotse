@@ -2,3 +2,7 @@ pytest
 pyyaml
 numpy
 librosa
+click
+lilcom>=1.1.0
+torch>=1.5
+torchaudio>=0.5

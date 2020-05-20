@@ -1,4 +1,5 @@
 from functools import lru_cache
+from tempfile import NamedTemporaryFile
 
 import numpy as np
 from pytest import param, mark
@@ -15,13 +16,13 @@ def get_audio_set() -> AudioSet:
 @lru_cache(1)
 def expected_channel_0() -> np.ndarray:
     """Contents of test/fixtures/mono_c0.wav"""
-    return np.arange(0, 4000) / INT16MAX
+    return np.reshape(np.arange(0, 4000) / INT16MAX, (1, -1))
 
 
 @lru_cache(1)
 def expected_channel_1() -> np.ndarray:
     """Contents of test/fixtures/mono_c1.wav"""
-    return np.arange(4000, 8000) / INT16MAX
+    return np.reshape(np.arange(4000, 8000) / INT16MAX, (1, -1))
 
 
 @lru_cache(1)
@@ -71,8 +72,9 @@ def test_serialization():
             duration_seconds=0.5
         )
     })
-    audio_set.to_yaml('.test.yaml')
-    deserialized = AudioSet.from_yaml('.test.yaml')
+    with NamedTemporaryFile() as f:
+        audio_set.to_yaml(f.name)
+        deserialized = AudioSet.from_yaml(f.name)
     assert deserialized == audio_set
 
 
@@ -124,5 +126,5 @@ def test_get_audio_multichannel(channels, expected_audio):
 def test_get_audio_chunks(begin_at, duration, expected_start_sample, expected_end_sample):
     audio_set = get_audio_set()
     actual_audio = audio_set.load_audio('recording-1', channels=0, offset_seconds=begin_at, duration_seconds=duration)
-    expected_audio = expected_channel_0()[expected_start_sample: expected_end_sample]
+    expected_audio = expected_channel_0()[:, expected_start_sample: expected_end_sample]
     np.testing.assert_almost_equal(actual_audio, expected_audio)
