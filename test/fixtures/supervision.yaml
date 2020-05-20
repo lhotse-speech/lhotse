@@ -1,6 +1,7 @@
 ---
 - id: 'segment-1'
   recording_id: 'recording-1'
+  channel_id: 0
   start: 0.1
   duration: 0.3
   text: 'transcript of the first segment'

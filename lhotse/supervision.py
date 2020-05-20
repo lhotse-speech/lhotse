@@ -12,9 +12,11 @@ class SupervisionSegment:
     recording_id: str
     start: Seconds
     duration: Seconds
+    channel_id: int = 0
     text: Optional[str] = None
     language: Optional[str] = None
     speaker: Optional[str] = None
+    gender: Optional[str] = None
 
     @property
     def end(self) -> Seconds:
