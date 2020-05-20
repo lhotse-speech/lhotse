@@ -13,7 +13,6 @@ feature_extractor:
     vtln_low: 100.0
     vtln_warp: 1.0
   spectrogram_config:
-    blackman_coeff: 0.42
     dither: 0.0
     energy_floor: 0.0
     frame_length: 25.0
@@ -23,6 +22,6 @@ feature_extractor:
     raw_energy: true
     remove_dc_offset: true
     round_to_power_of_two: true
-    snip_edges: true
+    snip_edges: false
     window_type: povey
   type: mfcc
