@@ -5,7 +5,7 @@ Use this script like:
 $ lhotse --help
 $ lhotse make-feats --help
 $ lhotse make-feats --compressed audio_manifest.yml mfcc_dir/
-$ lhotse default-feature-config feat-conf.yml
+$ lhotse write-default-feature-config feat-conf.yml
 $ lhotse convert-kaldi data/train/ 16000 train_manifests/
 $ lhotse split 3 audio.yml split_manifests/
 $ lhotse combine feature.1.yml feature.2.yml combined_feature.yml
@@ -74,7 +74,7 @@ def combine(manifests: Pathlike, output_manifest: Pathlike):
 
 @cli.command()
 @click.argument('output_config', type=click.Path())
-def default_feature_config(output_config):
+def write_default_feature_config(output_config):
     """Save a default feature extraction config to OUTPUT_CONFIG."""
     FeatureExtractor().to_yaml(output_config)
 
