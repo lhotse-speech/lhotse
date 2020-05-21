@@ -55,3 +55,6 @@ class SupervisionSet:
 
     def __len__(self) -> int:
         return len(self.segments)
+
+    def __add__(self, other: 'SupervisionSet') -> 'SupervisionSet':
+        return SupervisionSet(segments={**self.segments, **other.segments})

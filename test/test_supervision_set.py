@@ -2,11 +2,12 @@ from functools import lru_cache
 from tempfile import NamedTemporaryFile
 
 from lhotse.supervision import SupervisionSet, SupervisionSegment
+from lhotse.test_utils import DummyManifest
 
 
 @lru_cache(1)
 def load_supervision_set():
-    return SupervisionSet.from_yaml('test/fixtures/supervision.yaml')
+    return SupervisionSet.from_yaml('test/fixtures/supervision.yml')
 
 
 def test_supervision_segment_with_full_metadata():
@@ -86,3 +87,11 @@ def test_supervision_set_serialization():
         supervision_set.to_yaml(f.name)
         restored = supervision_set.from_yaml(f.name)
     assert supervision_set == restored
+
+
+def test_add_supervision_sets():
+    expected = DummyManifest(SupervisionSet, begin_id=0, end_id=10)
+    supervision_set_1 = DummyManifest(SupervisionSet, begin_id=0, end_id=5)
+    supervision_set_2 = DummyManifest(SupervisionSet, begin_id=5, end_id=10)
+    combined = supervision_set_1 + supervision_set_2
+    assert combined == expected
