@@ -6,6 +6,16 @@ from lhotse.supervision import SupervisionSegment
 from lhotse.utils import Seconds
 
 
+# (PZ): After writing this, I'm thinking of making Cut an interface that might not necessarily expose
+#  begin, end and channel (duration could stay I guess, ID I'm not sure about yet).
+#  Then, there would be 2 (or more?) classes satisfying the interface: SingleCut and MultiCut.
+#  That would make implementation of all the manipulations easier, I guess.
+
+# I'm striving for maximally "lazy" implementation, e.g. when overlaying Cuts, I'd rather sum the feature matrices
+#  only when somebody actually calls "load_features". Actually I might remove "features" from the interface too
+#  for that reason.
+
+
 @dataclass
 class Cut:
     id: str
@@ -33,11 +43,14 @@ class Cut:
         #  Or all of those, but controllable with flags...
         raise NotImplementedError()
 
-    def overlay(self, other: 'Cut', offset: Seconds = 0.0):
+    def overlay(self, other: 'Cut', offset: Seconds = 0.0) -> 'Cut':
         """
         Return a new Cut that consists of supervisions of both input cuts,
         and feature matrix that consists of the sum of both cuts' feature matrices.
         """
+        # TODO: "combination" of the feature matrices might be actually feature type dependent
+        #  (e.g. for spectrograms we might want to just add, and
+        #  for log-mel-energies we might want to exp first and log after)
         if self.duration < other.duration:
             # Simplification so that this function handles only the case when self is longer or equal to other.
             return other.overlay(self, offset=offset)

@@ -25,8 +25,8 @@ def test_cut_set():
     # Each Cut contains a feature matrix
     features = cut.features
     # TODO: need to push the "trimming" capability from FeatureSet to Features
-    features.load(
-        channel=cut.channel,  # or cut.channels[N]???
+    feat_matrix = features.load(
+        channel=cut.channel,
         begin=cut.begin,
         duration=cut.duration
     )
@@ -36,7 +36,7 @@ def test_cut_set():
     concatenated_cuts = cut + another_cut
 
     # Truncate Cuts
-    cut.truncate(offset=0, duration=cut.duration - 0.5)
+    truncated_cut = cut.truncate(offset=0, duration=cut.duration - 0.5)
 
     # Overlay Cuts - meaning, add their feature matrices and gather supervisions into a common list
     overlayed_cut = cut.overlay(another_cut)
