@@ -128,14 +128,53 @@ class Features:
     def __post_init__(self):
         assert self.storage_type in ('lilcom', 'numpy')
 
-    def load(self, root_dir: Optional[Pathlike] = None) -> np.ndarray:
+    def load(
+            self,
+            root_dir: Optional[Pathlike] = None,
+            start: Seconds = 0.0,
+            duration: Optional[Seconds] = None,
+            frame_length: Optional[Milliseconds] = None,
+            frame_shift: Optional[Milliseconds] = None
+    ) -> np.ndarray:
+
+        # Validate arguments
+        load_all_requested = start == 0.0 and duration is None
+        trimming_args_supplied = (frame_length is not None and frame_length > 0
+                                  and frame_shift is not None and frame_shift > 0)
+        assert load_all_requested or trimming_args_supplied
+
+        # Load the features from the storage
         storage_path = self.storage_path if root_dir is None else Path(root_dir) / self.storage_path
         if self.storage_type == 'lilcom':
             with open(storage_path, 'rb') as f:
-                return lilcom.decompress(f.read())
-        if self.storage_type == 'numpy':
-            return np.load(storage_path, allow_pickle=False)
-        raise ValueError(f"Unknown storage_type: {self.storage_type}")
+                features = lilcom.decompress(f.read())
+        elif self.storage_type == 'numpy':
+            features = np.load(storage_path, allow_pickle=False)
+        else:
+            raise ValueError(f"Unknown storage_type: {self.storage_type}")
+
+        # In case the caller requested only a subset of features, trim them
+
+        # Left trim
+        if not isclose(start, self.start):
+            frames_to_trim = time_diff_to_num_frames(
+                time_diff=start - self.start,
+                frame_length=frame_length / 1000.0,
+                frame_shift=frame_shift / 1000.0
+            )
+            features = features[frames_to_trim:, :]
+
+        # Right trim
+        end = start + duration if duration is not None else None
+        if duration is not None and not isclose(end, self.end):
+            frames_to_trim = time_diff_to_num_frames(
+                time_diff=self.end - end,
+                frame_length=frame_length / 1000.0,
+                frame_shift=frame_shift / 1000.0
+            )
+            features = features[:-frames_to_trim, :]
+
+        return features
 
     @property
     def end(self):
@@ -204,23 +243,13 @@ class FeatureSet:
         else:
             feature_info = min(candidates, key=lambda f: (start - f.start) ** 2)
 
-        features = feature_info.load(root_dir)
-
-        # in case we have features for longer segment than required, trim them
-        if not isclose(start, feature_info.start):
-            frames_to_trim = time_diff_to_num_frames(
-                time_diff=start - feature_info.start,
-                frame_length=self.feature_extractor.spectrogram_config.frame_length / 1000.0,
-                frame_shift=self.feature_extractor.spectrogram_config.frame_shift / 1000.0
-            )
-            features = features[frames_to_trim:, :]
-        if duration is not None and not isclose(end, feature_info.end):
-            frames_to_trim = time_diff_to_num_frames(
-                time_diff=feature_info.end - end,
-                frame_length=self.feature_extractor.spectrogram_config.frame_length / 1000.0,
-                frame_shift=self.feature_extractor.spectrogram_config.frame_shift / 1000.0
-            )
-            features = features[:-frames_to_trim, :]
+        features = feature_info.load(
+            root_dir,
+            start=start,
+            duration=duration,
+            frame_length=self.feature_extractor.spectrogram_config.frame_length,
+            frame_shift=self.feature_extractor.spectrogram_config.frame_shift
+        )
 
         return features
 
