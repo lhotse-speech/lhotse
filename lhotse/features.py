@@ -18,7 +18,7 @@ import yaml
 
 from lhotse.audio import Recording
 from lhotse.supervision import SupervisionSegment
-from lhotse.utils import Seconds, Milliseconds, Pathlike, time_diff_to_num_frames
+from lhotse.utils import Seconds, Milliseconds, Pathlike, time_diff_to_num_frames, Decibels
 
 
 @dataclass
@@ -330,3 +330,52 @@ class FeatureSetBuilder:
                 storage_path=str(output_features_path)
             ))
         return results
+
+
+def overlay_fbank(
+        left_feats: np.ndarray,
+        right_feats: np.ndarray,
+        snr: Optional[Decibels] = None,
+        offset_right_by: Seconds = 0,
+        frame_length: Optional[Milliseconds] = None,
+        frame_shift: Optional[Milliseconds] = None,
+) -> np.ndarray:
+    """
+    Mix two log-mel energy feature matrices together to form a single signal.
+
+    :param left_feats: The first feature matrix (assumed to be signal).
+    :param right_feats: The second feature matrix (assumed to be noise).
+    :param snr: float, decibels, optional: will rescale right_feats to meet the SNR criterion
+    :param offset_right_by: float, seconds, optional: will shift right_feats forward in time
+    :param frame_length: float, milliseconds, optional: required for offset_right_by
+    :param frame_shift: float, milliseconds, optional: required for offset_right_by
+    :return: np.ndarray; a mixed feature matrix of log-mel energies
+    """
+    # First deal with the offset
+    if offset_right_by > 0:
+        assert frame_length is not None and frame_shift is not None
+        num_frames_offset = time_diff_to_num_frames(
+            offset_right_by,
+            frame_length=frame_length,
+            frame_shift=frame_shift
+        )
+        padded_left_feats = np.hstack(left_feats, np.zeros((1, num_frames_offset)))
+        padded_right_feats = np.hstack(np.zeros((1, num_frames_offset)), right_feats)
+    else:
+        padded_left_feats, padded_right_feats = left_feats, right_feats
+
+    # Then overlay - for SNR re-scale the right signal, otherwise logsumexp
+    if snr is not None:
+        # TODO: The SNR stuff here might be tricky. For prototyping assume the following:
+        #  - always dealing with log mel filterbank feats
+        #  - total signal energy can be approximated by summing individual bands energies
+        #    (assumes no spectral leakage...) across time and frequencies
+        #  - achieve the final SNR by determining the signal energy ratio and then scaling
+        #    the signals to satisfy requested SNR
+        left_energy, right_energy = [np.sum(np.exp(f)) for f in [left_feats, right_feats]]
+        requested_right_energy = left_energy * (10.0 ** (-snr / 10))
+        overlayed_feats = padded_left_feats + (requested_right_energy / right_energy) * padded_right_feats
+    else:
+        overlayed_feats = np.log(np.exp(padded_left_feats) + np.exp(padded_right_feats))
+
+    return overlayed_feats

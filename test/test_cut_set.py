@@ -1,4 +1,3 @@
-from cytoolz import sliding_window
 from pytest import mark
 
 from lhotse.cut import CutSet, Cut
@@ -103,16 +102,11 @@ def test_cut_set():
     supervisions = cut.supervisions
     assert 3 == len(supervisions)
 
-    # Supervision segments cannot overlap
-    for left_segment, right_segment in sliding_window(2, sorted(supervisions, key=lambda s: s.start)):
-        assert left_segment.end <= right_segment.start
-
     # Each Cut contains a feature matrix
     features = cut.features
     # TODO: need to push the "trimming" capability from FeatureSet to Features
     feat_matrix = features.load(
-        channel=cut.channel,
-        begin=cut.start,
+        start=cut.start,
         duration=cut.duration
     )
 
