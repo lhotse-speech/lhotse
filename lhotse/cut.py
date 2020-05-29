@@ -47,14 +47,7 @@ class Cut:
         return self.begin + self.duration
 
     def load_features(self, root_dir: Optional[Pathlike] = None) -> np.ndarray:
-        return self.features.load(
-            root_dir=root_dir,
-            start=self.begin,
-            duration=self.duration,
-            # TODO: Oops. Need to move frame shift/length info into the Features object
-            frame_length=None,
-            frame_shift=None
-        )
+        return self.features.load(root_dir=root_dir, start=self.begin, duration=self.duration)
 
     def supervisions(self) -> Dict[str, np.ndarray]:
         pass

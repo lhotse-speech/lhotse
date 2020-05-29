@@ -122,6 +122,12 @@ class Features:
     channel_id: int
     start: Seconds
     duration: Seconds
+
+    # The Features object must know its frame length and shift to trim the features matrix when loading.
+    frame_length: Milliseconds
+    frame_shift: Milliseconds
+
+    # Parameters related to storage - they define how to load the feature matrix.
     storage_type: str  # e.g. 'lilcom', 'numpy'
     storage_path: str
 
@@ -133,16 +139,7 @@ class Features:
             root_dir: Optional[Pathlike] = None,
             start: Seconds = 0.0,
             duration: Optional[Seconds] = None,
-            frame_length: Optional[Milliseconds] = None,
-            frame_shift: Optional[Milliseconds] = None
     ) -> np.ndarray:
-
-        # Validate arguments
-        load_all_requested = start == 0.0 and duration is None
-        trimming_args_supplied = (frame_length is not None and frame_length > 0
-                                  and frame_shift is not None and frame_shift > 0)
-        assert load_all_requested or trimming_args_supplied
-
         # Load the features from the storage
         storage_path = self.storage_path if root_dir is None else Path(root_dir) / self.storage_path
         if self.storage_type == 'lilcom':
@@ -159,8 +156,8 @@ class Features:
         if not isclose(start, self.start):
             frames_to_trim = time_diff_to_num_frames(
                 time_diff=start - self.start,
-                frame_length=frame_length / 1000.0,
-                frame_shift=frame_shift / 1000.0
+                frame_length=self.frame_length / 1000.0,
+                frame_shift=self.frame_shift / 1000.0
             )
             features = features[frames_to_trim:, :]
 
@@ -169,8 +166,8 @@ class Features:
         if duration is not None and not isclose(end, self.end):
             frames_to_trim = time_diff_to_num_frames(
                 time_diff=self.end - end,
-                frame_length=frame_length / 1000.0,
-                frame_shift=frame_shift / 1000.0
+                frame_length=self.frame_length / 1000.0,
+                frame_shift=self.frame_shift / 1000.0
             )
             features = features[:-frames_to_trim, :]
 
@@ -243,13 +240,7 @@ class FeatureSet:
         else:
             feature_info = min(candidates, key=lambda f: (start - f.start) ** 2)
 
-        features = feature_info.load(
-            root_dir,
-            start=start,
-            duration=duration,
-            frame_length=self.feature_extractor.spectrogram_config.frame_length,
-            frame_shift=self.feature_extractor.spectrogram_config.frame_shift
-        )
+        features = feature_info.load(root_dir=root_dir, start=start, duration=duration)
 
         return features
 

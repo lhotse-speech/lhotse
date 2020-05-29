@@ -48,6 +48,8 @@ def test_feature_set_serialization():
                 channel_id=0,
                 start=0.0,
                 duration=20.0,
+                frame_length=25,
+                frame_shift=10,
                 storage_type='lilcom',
                 storage_path='/irrelevant/path.llc'
             )
