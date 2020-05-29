@@ -5,9 +5,9 @@ from tempfile import NamedTemporaryFile
 import torchaudio
 from pytest import mark, raises
 
-from lhotse.features import FeatureSet, FeatureExtractor, Features, time_diff_to_num_frames
+from lhotse.features import FeatureSet, FeatureExtractor, Features
 from lhotse.test_utils import DummyManifest
-from lhotse.utils import Seconds
+from lhotse.utils import Seconds, time_diff_to_num_frames
 
 other_params = {}
 some_augmentation = None

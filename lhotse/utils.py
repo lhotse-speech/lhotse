@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from math import ceil
 from pathlib import Path
 from typing import Union, Any
 
@@ -35,3 +36,8 @@ def overlaps(lhs: Any, rhs: Any) -> bool:
 
 def overspans(spanning: Any, spanned: Any) -> bool:
     return spanning.start <= spanned.start <= spanned.end <= spanning.end
+
+
+def time_diff_to_num_frames(time_diff: Seconds, frame_length: Seconds, frame_shift: Seconds) -> int:
+    """Convert duration to an equivalent number of frames, so as to not exceed the duration."""
+    return int(ceil((time_diff - frame_length) / frame_shift))

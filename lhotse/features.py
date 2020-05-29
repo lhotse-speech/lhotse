@@ -5,7 +5,7 @@ from concurrent.futures.process import ProcessPoolExecutor
 from dataclasses import dataclass, field, asdict
 from functools import partial
 from itertools import chain
-from math import isclose, ceil
+from math import isclose
 from pathlib import Path
 from typing import Union, List, Iterable, Dict, Optional
 from uuid import uuid4
@@ -18,7 +18,7 @@ import yaml
 
 from lhotse.audio import Recording
 from lhotse.supervision import SupervisionSegment
-from lhotse.utils import Seconds, Milliseconds, Pathlike
+from lhotse.utils import Seconds, Milliseconds, Pathlike, time_diff_to_num_frames
 
 
 @dataclass
@@ -323,13 +323,10 @@ class FeatureSetBuilder:
                 channel_id=channel,
                 # TODO: revise start and duration with segmentation manifest info
                 start=0.0,
+                frame_length=self.feature_extractor.spectrogram_config.frame_length,
+                frame_shift=self.feature_extractor.spectrogram_config.frame_shift,
                 duration=recording.duration_seconds,
                 storage_type='lilcom' if compressed else 'numpy',
                 storage_path=str(output_features_path)
             ))
         return results
-
-
-def time_diff_to_num_frames(time_diff: Seconds, frame_length: Seconds, frame_shift: Seconds) -> int:
-    """Convert duration to an equivalent number of frames, so as to not exceed the duration."""
-    return int(ceil((time_diff - frame_length) / frame_shift))
