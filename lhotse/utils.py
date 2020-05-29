@@ -21,17 +21,17 @@ class SetContainingAnything:
 
 @dataclass
 class TimeSpan:
-    begin: Seconds
+    start: Seconds
     end: Seconds
 
 
 # TODO: Ugh, Protocols are only in Python 3.8+...
 def overlaps(lhs: Any, rhs: Any) -> bool:
     return (
-            lhs.begin < rhs.end
-            and rhs.begin < lhs.end
+            lhs.start < rhs.end
+            and rhs.start < lhs.end
     )
 
 
 def overspans(spanning: Any, spanned: Any) -> bool:
-    return spanning.begin <= spanned.begin <= spanned.end <= spanning.end
+    return spanning.start <= spanned.start <= spanned.end <= spanning.end

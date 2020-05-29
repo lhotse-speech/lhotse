@@ -31,7 +31,7 @@ class Cut:
     channel: int
 
     # Begin and duration are needed to specify which chunk of features to load.
-    begin: Seconds
+    start: Seconds
     duration: Seconds
 
     # The features can span longer than the actual cut - the Features object "knows" its start and end time
@@ -44,28 +44,30 @@ class Cut:
     supervisions: List[SupervisionSegment]
 
     def end(self) -> Seconds:
-        return self.begin + self.duration
+        return self.start + self.duration
 
     def load_features(self, root_dir: Optional[Pathlike] = None) -> np.ndarray:
-        return self.features.load(root_dir=root_dir, start=self.begin, duration=self.duration)
+        return self.features.load(root_dir=root_dir, start=self.start, duration=self.duration)
 
     def supervisions(self) -> Dict[str, np.ndarray]:
         pass
 
     def truncate(
             self,
+            *,
             offset: Seconds = 0.0,
-            duration: Seconds = 0.0,
+            until: Optional[Seconds] = None,
             keep_excessive_supervisions: bool = True
     ) -> 'Cut':
-        new_begin = self.begin + offset
-        new_duration = self.duration if duration <= 0.0 else duration
-        new_time_span = TimeSpan(begin=new_begin, end=new_begin + new_duration)
+        new_start = self.start + offset
+        new_duration = self.duration if until is None else until
+        assert new_duration > 0.0
+        new_time_span = TimeSpan(start=new_start, end=new_duration)
         criterion = overlaps if keep_excessive_supervisions else overspans
         return Cut(
             id=str(uuid4()),
             channel=self.channel,
-            begin=new_begin,
+            start=new_start,
             duration=new_duration,
             supervisions=[
                 segment for segment in self.supervisions if criterion(new_time_span, segment)
