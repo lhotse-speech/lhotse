@@ -207,14 +207,17 @@ class FeatureSet:
         with open(path, 'w') as f:
             yaml.safe_dump(asdict(self), stream=f)
 
-    def load(
+    def find(
             self,
             recording_id: str,
             channel_id: int = 0,
             start: Seconds = 0.0,
             duration: Optional[Seconds] = None,
-            root_dir: Optional[Pathlike] = None
-    ) -> np.ndarray:
+    ) -> Features:
+        """
+        Find and return a Features object that best satisfies the search criteria.
+        Raise a KeyError when no such object is available.
+        """
         if duration is not None:
             end = start + duration
         # TODO: naive linear search; will likely require optimization
@@ -240,8 +243,27 @@ class FeatureSet:
         else:
             feature_info = min(candidates, key=lambda f: (start - f.start) ** 2)
 
-        features = feature_info.load(root_dir=root_dir, start=start, duration=duration)
+        return feature_info
 
+    def load(
+            self,
+            recording_id: str,
+            channel_id: int = 0,
+            start: Seconds = 0.0,
+            duration: Optional[Seconds] = None,
+            root_dir: Optional[Pathlike] = None
+    ) -> np.ndarray:
+        """
+        Find a Features object that best satisfies the search criteria and load the features as a numpy ndarray.
+        Raise a KeyError when no such object is available.
+        """
+        feature_info = self.find(
+            recording_id=recording_id,
+            channel_id=channel_id,
+            start=start,
+            duration=duration
+        )
+        features = feature_info.load(root_dir=root_dir, start=start, duration=duration)
         return features
 
     def __iter__(self) -> Iterable[Features]:
@@ -374,7 +396,10 @@ def overlay_fbank(
         #    the signals to satisfy requested SNR
         left_energy, right_energy = [np.sum(np.exp(f)) for f in [left_feats, right_feats]]
         requested_right_energy = left_energy * (10.0 ** (-snr / 10))
-        overlayed_feats = padded_left_feats + (requested_right_energy / right_energy) * padded_right_feats
+        overlayed_feats = np.log(
+            np.exp(padded_left_feats) +
+            (requested_right_energy / right_energy) * np.exp(padded_right_feats)
+        )
     else:
         overlayed_feats = np.log(np.exp(padded_left_feats) + np.exp(padded_right_feats))
 

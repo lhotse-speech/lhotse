@@ -1,3 +1,5 @@
+from tempfile import NamedTemporaryFile
+
 from pytest import mark
 
 from lhotse.cut import CutSet, Cut
@@ -85,6 +87,40 @@ def test_truncate_cut(offset, until, keep_excessive_supervisions, expected_super
     )
     remaining_supervision_ids = [s.id for s in truncated_cut.supervisions]
     assert remaining_supervision_ids == expected_supervision_ids
+
+
+def test_cut_set_serialization():
+    cut_set = CutSet(cuts={
+        'cut-1': Cut(
+            id='cut-1',
+            channel=0,
+            start=0.0,
+            duration=0.5,
+            features=Features(
+                recording_id='recording-1',
+                channel_id=0,
+                start=0,
+                duration=0.5,
+                frame_length=25.0,
+                frame_shift=10.0,
+                storage_type='lilcom',
+                storage_path='test/fixtures/dummy_feats/storage/e66b6386-aee5-4a5a-8369-fdde1d2b97c7.llc'
+            ),
+            supervisions=[
+                SupervisionSegment(
+                    id='s1',
+                    recording_id='recording-1',
+                    start=0.0,
+                    duration=0.5,
+                    channel_id=0
+                ),
+            ]
+        )
+    })
+    with NamedTemporaryFile() as f:
+        cut_set.to_yaml(f.name)
+        restored = cut_set.from_yaml(f.name)
+    assert cut_set == restored
 
 
 def test_cut_set():

@@ -12,11 +12,13 @@ $ lhotse combine feature.1.yml feature.2.yml combined_feature.yml
 """
 from pathlib import Path
 from typing import Optional
+from uuid import uuid4
 
 import click
 
 from lhotse.audio import AudioSet
-from lhotse.features import FeatureExtractor, FeatureSetBuilder
+from lhotse.cut import CutSet, Cut
+from lhotse.features import FeatureExtractor, FeatureSetBuilder, FeatureSet
 from lhotse.kaldi import load_kaldi_data_dir
 from lhotse.manipulation import split as split_manifest, combine as combine_manifests, load_manifest
 from lhotse.supervision import SupervisionSet
@@ -137,6 +139,41 @@ def make_feats(
         lilcom_tick_power=lilcom_tick_power,
         num_jobs=num_jobs
     )
+
+
+@cli.command()
+@click.argument('supervision_manifest', type=click.Path(exists=True, dir_okay=False))
+@click.argument('feature_manifest', type=click.Path(exists=True, dir_okay=False))
+@click.argument('output_cut_manifest', type=click.Path())
+def make_trivial_cuts(
+        supervision_manifest: Pathlike,
+        feature_manifest: Pathlike,
+        output_cut_manifest: Pathlike,
+):
+    """
+    Create a CutSet stored in OUTPUT_CUT_MANIFEST that contains supervision regions from SUPERVISION_MANIFEST
+    and features supplied by FEATURE_MANIFEST. This is the most trivial way to create Cuts.
+    """
+    supervision_set = SupervisionSet.from_yaml(supervision_manifest)
+    feature_set = FeatureSet.from_yaml(feature_manifest)
+    cuts = (
+        Cut(
+            id=str(uuid4()),
+            channel=supervision.channel_id,
+            start=supervision.start,
+            duration=supervision.duration,
+            features=feature_set.find(
+                recording_id=supervision.recording_id,
+                channel_id=supervision.channel_id,
+                start=supervision.start,
+                duration=supervision.duration,
+            ),
+            supervisions=[supervision]
+        )
+        for idx, supervision in enumerate(supervision_set)
+    )
+    cut_set = CutSet(cuts={cut.id: cut for cut in cuts})
+    cut_set.to_yaml(output_cut_manifest)
 
 
 if __name__ == '__main__':

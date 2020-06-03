@@ -5,7 +5,9 @@ from pathlib import Path
 from subprocess import run, PIPE
 from typing import List, Optional, Dict, Union, Iterable
 
-import librosa
+with warnings.catch_warnings():
+    warnings.simplefilter('ignore')
+    import librosa
 import numpy as np
 import yaml
 

@@ -1,12 +1,13 @@
-from dataclasses import dataclass
-from typing import Dict, List, Optional
+from dataclasses import dataclass, asdict
+from typing import Dict, List, Optional, Iterable, Any
 from uuid import uuid4
 
 import numpy as np
+import yaml
 
 from lhotse.features import Features
 from lhotse.supervision import SupervisionSegment
-from lhotse.utils import Seconds, Decibels, overlaps, TimeSpan, overspans, Pathlike
+from lhotse.utils import Seconds, Decibels, overlaps, TimeSpan, overspans, Pathlike, time_diff_to_num_frames
 
 
 # (PZ): After writing this, I'm thinking of making Cut an interface that might not necessarily expose
@@ -49,9 +50,6 @@ class Cut:
     def load_features(self, root_dir: Optional[Pathlike] = None) -> np.ndarray:
         return self.features.load(root_dir=root_dir, start=self.start, duration=self.duration)
 
-    def supervisions(self) -> Dict[str, np.ndarray]:
-        pass
-
     def truncate(
             self,
             *,
@@ -75,7 +73,7 @@ class Cut:
             features=self.features
         )
 
-    def overlay(self, other: 'Cut', offset: Seconds = 0.0, snr: Decibels = 0.0) -> 'Cut':
+    def overlay(self, other: 'Cut', offset_other_by: Seconds = 0.0, snr: Decibels = 0.0) -> 'Cut':
         pass
 
     def __add__(self, other: 'Cut', snr: float) -> 'Cut':
@@ -86,7 +84,30 @@ class Cut:
 class CutSet:
     cuts: Dict[str, Cut]
 
-    # TODO: from_yaml, to_yaml, ...
+    @staticmethod
+    def from_yaml(path: Pathlike) -> 'CutSet':
+        with open(path) as f:
+            raw_cuts = yaml.safe_load(f)
+
+        def deserialize_one(cut: Dict[str, Any]):
+            feature_info = cut['features']
+            del cut['features']
+            supervision_infos = cut['supervisions']
+            del cut['supervisions']
+            return Cut(
+                **cut,
+                features=Features(**feature_info),
+                supervisions=[SupervisionSegment(**s) for s in supervision_infos]
+            )
+
+        return CutSet(cuts={cut['id']: deserialize_one(cut) for cut in raw_cuts})
+
+    def to_yaml(self, path: Pathlike):
+        with open(path, 'w') as f:
+            yaml.safe_dump([asdict(cut) for cut in self], stream=f)
 
     def __len__(self) -> int:
         return len(self.cuts)
+
+    def __iter__(self) -> Iterable[Cut]:
+        return iter(self.cuts.values())
