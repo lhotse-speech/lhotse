@@ -90,6 +90,7 @@ def test_truncate_cut(offset, until, keep_excessive_supervisions, expected_super
 
 
 def test_cut_set_serialization():
+    # TODO: include OverlayedCut
     cut_set = CutSet(cuts={
         'cut-1': Cut(
             id='cut-1',
@@ -121,6 +122,10 @@ def test_cut_set_serialization():
         cut_set.to_yaml(f.name)
         restored = cut_set.from_yaml(f.name)
     assert cut_set == restored
+
+
+def test_overlayed_cut():
+    raise NotImplementedError()
 
 
 def test_cut_set():
