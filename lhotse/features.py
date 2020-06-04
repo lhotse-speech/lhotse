@@ -7,7 +7,7 @@ from functools import partial
 from itertools import chain
 from math import isclose
 from pathlib import Path
-from typing import Union, List, Iterable, Dict, Optional
+from typing import Union, List, Iterable, Dict, Optional, Tuple
 from uuid import uuid4
 
 import lilcom
@@ -361,6 +361,7 @@ def overlay_fbank(
         offset_right_by: Seconds = 0,
         frame_length: Optional[Milliseconds] = None,
         frame_shift: Optional[Milliseconds] = None,
+        log_energy_floor: float = -1000.0
 ) -> np.ndarray:
     """
     Mix two log-mel energy feature matrices together to form a single signal.
@@ -371,6 +372,7 @@ def overlay_fbank(
     :param offset_right_by: float, seconds, optional: will shift right_feats forward in time
     :param frame_length: float, milliseconds, optional: required for offset_right_by
     :param frame_shift: float, milliseconds, optional: required for offset_right_by
+    :param log_energy_floor: value used for padding frames when offsetting
     :return: np.ndarray; a mixed feature matrix of log-mel energies
     """
     # First deal with the offset
@@ -378,11 +380,12 @@ def overlay_fbank(
         assert frame_length is not None and frame_shift is not None
         num_frames_offset = time_diff_to_num_frames(
             offset_right_by,
-            frame_length=frame_length,
-            frame_shift=frame_shift
+            frame_length=frame_length / 1000,
+            frame_shift=frame_shift / 1000
         )
-        padded_left_feats = np.hstack(left_feats, np.zeros((1, num_frames_offset)))
-        padded_right_feats = np.hstack(np.zeros((1, num_frames_offset)), right_feats)
+        num_feats = left_feats.shape[1]
+        padded_left_feats = np.vstack([left_feats, log_energy_floor * np.ones((num_frames_offset, num_feats))])
+        padded_right_feats = np.vstack([log_energy_floor * np.ones((num_frames_offset, num_feats)), right_feats])
     else:
         padded_left_feats, padded_right_feats = left_feats, right_feats
 
@@ -404,3 +407,22 @@ def overlay_fbank(
         overlayed_feats = np.log(np.exp(padded_left_feats) + np.exp(padded_right_feats))
 
     return overlayed_feats
+
+
+def pad_shorter(
+        left_feats: np.ndarray,
+        right_feats: np.ndarray,
+        log_energy_floor: float = -1000.0
+) -> Tuple[np.ndarray, np.ndarray]:
+    num_feats = left_feats.shape[1]
+    if num_feats != right_feats.shape[1]:
+        raise ValueError('Cannot pad feature matrices with different number of features.')
+
+    size_diff = abs(left_feats.shape[0] - right_feats.shape[0])
+    if not size_diff:
+        return left_feats, right_feats
+
+    if left_feats.shape[0] > right_feats.shape[0]:
+        return left_feats, np.vstack([right_feats, log_energy_floor * np.ones((size_diff, num_feats))])
+    else:
+        return np.vstack([left_feats, log_energy_floor * np.ones((size_diff, num_feats))]), right_feats

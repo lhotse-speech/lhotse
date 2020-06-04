@@ -127,8 +127,8 @@ def test_add_feature_sets():
 def test_overlay_fbank():
     # Treat it more like a test of "it runs" rather than "it works"
     t = np.linspace(0, 1, 8000, dtype=np.float32)
-    x1 = np.sin(t).reshape(1, -1)
-    x2 = 0.1 * np.sin(10 * t).reshape(1, -1)  # 20 dB SNR
+    x1 = np.sin(440.0 * t).reshape(1, -1)
+    x2 = np.sin(55.0 * t).reshape(1, -1)
 
     feature_extractor = FeatureExtractor(type='fbank')
     f1 = feature_extractor.extract(x1, 8000).numpy()

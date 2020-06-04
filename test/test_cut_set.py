@@ -1,5 +1,7 @@
+from math import isclose
 from tempfile import NamedTemporaryFile
 
+import numpy as np
 from pytest import mark
 
 from lhotse.cut import CutSet, Cut
@@ -124,39 +126,39 @@ def test_cut_set_serialization():
     assert cut_set == restored
 
 
-def test_overlayed_cut():
-    raise NotImplementedError()
+def test_mixed_cut_load_features():
+    cut_set = CutSet.from_yaml('test/fixtures/mix_cut_test/overlayed_cut_manifest.yml')
 
+    mixed_cut = cut_set.cuts['mixed-cut-id']
+    assert mixed_cut.offset_right_by == 3.89
 
-def test_cut_set():
-    cut_set = CutSet(cuts={})
+    ingredient_cut1 = cut_set.cuts[mixed_cut.left_cut_id]
+    assert ingredient_cut1.duration == 7.78
 
-    # CutSet consists of elements with IDs
-    cut = cut_set.cuts['cut-1']
+    ingredient_cut2 = cut_set.cuts[mixed_cut.right_cut_id]
+    assert ingredient_cut2.duration == 9.705
 
-    # Each Cut specifies standard time info
-    assert 10.0 == cut.start
-    assert 15.0 == cut.duration
-    assert 25.0 == cut.end
+    feats = mixed_cut.with_cut_set(cut_set).load_features()
+    expected_duration = mixed_cut.offset_right_by + ingredient_cut2.duration
+    assert isclose(expected_duration, 13.595)
+    expected_frame_count = 1358
+    assert feats.shape[0] == expected_frame_count
 
-    # Each Cut consists of supervision segments
-    supervisions = cut.supervisions
-    assert 3 == len(supervisions)
-
-    # Each Cut contains a feature matrix
-    features = cut.features
-    # TODO: need to push the "trimming" capability from FeatureSet to Features
-    feat_matrix = features.load(
-        start=cut.start,
-        duration=cut.duration
+    same_mixed_cut = ingredient_cut1.overlay(
+        ingredient_cut2,
+        offset_other_by=0.5 * ingredient_cut1.duration,
+        snr=20.0
     )
+    same_feats = same_mixed_cut.with_cut_set(cut_set).load_features()
 
-    # Append Cuts
-    another_cut = cut_set.cuts['cut-2']
-    concatenated_cuts = cut + another_cut
+    np.testing.assert_almost_equal(feats, same_feats)
 
-    # Truncate Cuts
-    truncated_cut = cut.truncate(offset=0, until=cut.duration - 0.5)
 
-    # Overlay Cuts - meaning, add their feature matrices and gather supervisions into a common list
-    overlayed_cut = cut.overlay(another_cut)
+def test_append_cut():
+    cut_set = CutSet.from_yaml('test/fixtures/mix_cut_test/overlayed_cut_manifest.yml')
+    ingredient_cut1 = cut_set.cuts['0c5fdf79-efe7-4d45-b612-3d90d9af8c4e']
+    assert ingredient_cut1.duration == 7.78
+    ingredient_cut2 = cut_set.cuts['78bef88d-e62e-4cfa-9946-a1311442c6f7']
+    assert ingredient_cut2.duration == 9.705
+    appended_cut = ingredient_cut1.append(ingredient_cut2, snr=5.0).with_cut_set(cut_set)
+    assert appended_cut.duration == 7.78 + 9.705

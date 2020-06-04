@@ -11,7 +11,7 @@ with warnings.catch_warnings():
 import numpy as np
 import yaml
 
-from lhotse.utils import Pathlike, SetContainingAnything
+from lhotse.utils import Pathlike, SetContainingAnything, Seconds
 
 Channels = Union[int, List[int]]
 
@@ -84,7 +84,7 @@ class Recording:
     sources: List[AudioSource]
     sampling_rate: int
     num_samples: int
-    duration_seconds: float
+    duration_seconds: Seconds
 
     def __post_init__(self):
         self.sources = [AudioSource(**s) if isinstance(s, dict) else s for s in self.sources]

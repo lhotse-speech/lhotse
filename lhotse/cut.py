@@ -5,7 +5,7 @@ from uuid import uuid4
 import numpy as np
 import yaml
 
-from lhotse.features import Features, FeatureSet, overlay_fbank
+from lhotse.features import Features, FeatureSet, overlay_fbank, pad_shorter
 from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import Seconds, Decibels, overlaps, TimeSpan, overspans, Pathlike
 
@@ -73,68 +73,78 @@ class Cut:
             features=self.features
         )
 
-    def overlay(self, other: 'Cut', offset_other_by: Seconds = 0.0, snr: Decibels = 0.0) -> 'OverlayCut':
-        return OverlayCut(
+    def overlay(self, other: 'Cut', offset_other_by: Seconds = 0.0, snr: Decibels = 0.0) -> 'MixedCut':
+        return MixedCut(
+            id=str(uuid4()),
             left_cut_id=self.id,
             right_cut_id=other.id,
             offset_right_by=offset_other_by,
             snr=snr
         )
 
-    def __add__(self, other: 'Cut', snr: float) -> 'Cut':
-        pass
+    def append(self, other: 'Cut', snr: float) -> 'MixedCut':
+        return self.overlay(other=other, offset_other_by=self.duration, snr=snr)
 
 
 @dataclass
-class ConcatCut:
-    left_cut_id: str
-    right_cut_id: str
-
-    def with_cut_set(self, cut_set: 'CutSet'):
-        self._cut_set = cut_set
-
-    def load_features(self, root_dir: Optional[Pathlike] = None) -> np.ndarray:
-        cuts = [self._cut_set.cuts[id_] for id_ in [self.left_cut_id, self.right_cut_id]]
-        feats = [cut.load_features(root_dir=root_dir) for cut in cuts]
-        return np.hstack(feats)
-
-
-@dataclass
-class OverlayCut:
+class MixedCut:
+    """
+    Represents a Cut that's created from other Cuts via overlay or append operations.
+    The actual mixing operations are performed upon loading the features into memory.
+    In order to load the features, it needs to access the CutSet object that holds the "ingredient" cuts,
+    as it only holds their IDs ("pointers").
+    """
+    # TODO: it could actually consist of more than two cuts by having a list of "ingredient" ids, offsets and snrs
+    id: str
     left_cut_id: str
     right_cut_id: str
     offset_right_by: Seconds
     snr: Decibels
 
-    @property
-    def id(self) -> str:
-        return f'{self.left_cut_id}+{self.right_cut_id}-OFFSET{self.offset_right_by}-SNR{self.snr}'
-
-    def with_cut_set(self, cut_set: 'CutSet'):
+    def with_cut_set(self, cut_set: 'CutSet') -> 'MixedCut':
         # TODO: temporary workaround; think how to design this part better
-        #  maybe make OverlayCut "own" the Cuts that it consists of (but then the manifests are gonna be really thick)
-        #  or just pass the CutSet object in here which is not elegant but better than this
+        #  maybe make MixedCut "own" the Cuts that it consists of (but then the manifests are gonna be really thick)
+        #  or just pass the CutSet object in here which is not elegant but maybe better than this
         self._cut_set = cut_set
+        return self
+
+    @property
+    def supervisions(self) -> List[SupervisionSegment]:
+        return self._cut_set.cuts[self.left_cut_id].supervisions + self._cut_set.cuts[self.right_cut_id].supervisions
+
+    @property
+    def duration(self) -> Seconds:
+        return max(
+            self._cut_set.cuts[self.left_cut_id].duration,
+            self.offset_right_by + self._cut_set.cuts[self.right_cut_id].duration
+        )
 
     def load_features(self, root_dir: Optional[Pathlike] = None) -> np.ndarray:
         cuts = [self._cut_set.cuts[id_] for id_ in [self.left_cut_id, self.right_cut_id]]
-        assert cuts[0].features.frame_length == cuts[1].features.frame_length
-        assert cuts[0].features.frame_shift == cuts[1].features.frame_shift
+        frame_length, frame_shift = cuts[0].features.frame_length, cuts[0].features.frame_shift
+        assert frame_length == cuts[1].features.frame_length
+        assert frame_shift == cuts[1].features.frame_shift
         feats = [cut.load_features(root_dir=root_dir) for cut in cuts]
+        feats = pad_shorter(*feats)
         overlayed_feats = overlay_fbank(
             feats[0],
             feats[1],
             snr=self.snr,
             offset_right_by=self.offset_right_by,
-            frame_length=cuts[0].features.frame_length,
-            frame_shift=cuts[1].features.frame_shift
+            frame_length=frame_length,
+            frame_shift=frame_shift
         )
         return overlayed_feats
 
 
 @dataclass
 class CutSet:
-    cuts: Dict[str, Union[Cut, OverlayCut]]
+    """
+    CutSet combines features with their corresponding supervisions.
+    It may have wider span than the actual supervisions, provided the features for the whole span exist.
+    It is the basic building block of PyTorch-style Datasets for speech/audio processing tasks.
+    """
+    cuts: Dict[str, Union[Cut, MixedCut]]
 
     @staticmethod
     def from_yaml(path: Pathlike) -> 'CutSet':
@@ -147,8 +157,8 @@ class CutSet:
             cut_type = cut['type']
             del cut['type']
 
-            if cut_type == 'OverlayCut':
-                return OverlayCut(**cut)
+            if cut_type == 'MixedCut':
+                return MixedCut(**cut)
             elif cut_type != 'Cut':
                 raise ValueError(f"Unexpected cut type during deserialization: '{cut_type}'")
 
@@ -178,7 +188,7 @@ class CutSet:
         return CutSet(cuts={**self.cuts, **other.cuts})
 
 
-def trivial_cut_set(supervision_set: SupervisionSet, feature_set: FeatureSet) -> CutSet:
+def make_trivial_cut_set(supervision_set: SupervisionSet, feature_set: FeatureSet) -> CutSet:
     cuts = (
         Cut(
             id=str(uuid4()),
