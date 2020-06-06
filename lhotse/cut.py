@@ -146,12 +146,18 @@ class CutSet:
     """
     cuts: Dict[str, Union[Cut, MixedCut]]
 
+    @property
+    def mixed_cuts(self) -> Dict[str, MixedCut]:
+        return {id_: cut for id_, cut in self.cuts.items() if isinstance(cut, MixedCut)}
+
+    @property
+    def simple_cuts(self) -> Dict[str, Cut]:
+        return {id_: cut for id_, cut in self.cuts.items() if isinstance(cut, Cut)}
+
     @staticmethod
     def from_yaml(path: Pathlike) -> 'CutSet':
         with open(path) as f:
             raw_cuts = yaml.safe_load(f)
-
-        # TODO: refactor into a separate serializer object
 
         def deserialize_one(cut: Dict[str, Any]):
             cut_type = cut['type']
@@ -177,6 +183,11 @@ class CutSet:
     def to_yaml(self, path: Pathlike):
         with open(path, 'w') as f:
             yaml.safe_dump([{**asdict(cut), 'type': type(cut).__name__} for cut in self], stream=f)
+
+    def with_source_cuts_from(self, source: 'CutSet'):
+        for cut in self.mixed_cuts.values():
+            cut.with_cut_set(source)
+        return self
 
     def __len__(self) -> int:
         return len(self.cuts)
