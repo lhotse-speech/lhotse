@@ -9,6 +9,11 @@ $ lhotse write-default-feature-config feat-conf.yml
 $ lhotse convert-kaldi data/train/ 16000 train_manifests/
 $ lhotse split 3 audio.yml split_manifests/
 $ lhotse combine feature.1.yml feature.2.yml combined_feature.yml
+$ lhotse recipe --help
+$ lhotse recipe librimix path/to/librimix.csv output_manifests_dir/
+$ lhotse cut --help
+$ lhotse cut simple supervisions.yml features.yml simple_cuts.yml
+$ lhotse cut stereo-overlayed supervisions.yml features.yml mixed_cuts.yml
 """
 from lhotse.bin.modes import *
 
