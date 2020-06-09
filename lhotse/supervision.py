@@ -1,9 +1,9 @@
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass
 from typing import Dict, Optional, Iterable
 
 import yaml
 
-from lhotse.utils import Seconds, Pathlike
+from lhotse.utils import Seconds, Pathlike, asdict_nonull
 
 
 @dataclass
@@ -45,7 +45,7 @@ class SupervisionSet:
 
     def to_yaml(self, path: Pathlike):
         with open(path, 'w') as f:
-            yaml.safe_dump([asdict(s) for s in self], stream=f)
+            yaml.safe_dump([asdict_nonull(s) for s in self], stream=f)
 
     def get(self, segment_id: str) -> SupervisionSegment:
         return self.segments[segment_id]

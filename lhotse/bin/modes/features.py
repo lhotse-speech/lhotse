@@ -9,6 +9,8 @@ from lhotse.features import FeatureExtractor, FeatureSetBuilder
 from lhotse.supervision import SupervisionSet
 from lhotse.utils import Pathlike
 
+__all__ = ['write_default_feature_config', 'make_feats']
+
 
 @cli.command()
 @click.argument('output_config', type=click.Path())
@@ -32,6 +34,8 @@ def write_default_feature_config(output_config):
 @click.option('-t', '--lilcom-tick-power', type=int, default=-8,
               help='Determines the compression accuracy; '
                    'the input will be compressed to integer multiples of 2^tick_power')
+@click.option('-r', '--root-dir', type=click.Path(exists=True, file_okay=False), default=None,
+              help='Root directory - all paths in the manifest will use this as prefix.')
 @click.option('-j', '--num-jobs', type=int, default=1, help='Number of parallel processes.')
 def make_feats(
         audio_manifest: Pathlike,
@@ -45,6 +49,7 @@ def make_feats(
         feature_manifest: Optional[Pathlike],
         compressed: bool,
         lilcom_tick_power: int,
+        root_dir: Optional[Pathlike],
         num_jobs: int
 ):
     """
@@ -66,6 +71,7 @@ def make_feats(
     feature_set_builder = FeatureSetBuilder(
         feature_extractor=feature_extractor,
         output_dir=output_dir,
+        root_dir=root_dir,
         augmentation_manifest=augmentation_manifest
     )
     feature_set_builder.process_and_store_recordings(

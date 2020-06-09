@@ -1,4 +1,4 @@
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass
 from typing import Dict, List, Optional, Iterable, Any, Union
 from uuid import uuid4
 
@@ -7,18 +7,11 @@ import yaml
 
 from lhotse.features import Features, FeatureSet, overlay_fbank, pad_shorter
 from lhotse.supervision import SupervisionSegment, SupervisionSet
-from lhotse.utils import Seconds, Decibels, overlaps, TimeSpan, overspans, Pathlike
+from lhotse.utils import Seconds, Decibels, overlaps, TimeSpan, overspans, Pathlike, asdict_nonull
 
 
-# (PZ): After writing this, I'm thinking of making Cut an interface that might not necessarily expose
-#  begin, end and channel (duration could stay I guess, ID I'm not sure about yet).
-#  Then, there would be 2 (or more?) classes satisfying the interface: SingleCut and MultiCut.
-#  That would make implementation of all the manipulations easier, I guess.
-
-# I'm striving for maximally "lazy" implementation, e.g. when overlaying Cuts, I'd rather sum the feature matrices
-#  only when somebody actually calls "load_features". Actually I might remove "features" from the interface too
-#  for that reason.
-
+# One of the design principles for Cuts is a maximally "lazy" implementation, e.g. when overlaying/mixing Cuts,
+# we'd rather sum the feature matrices only after somebody actually calls "load_features".
 
 @dataclass
 class Cut:
@@ -27,8 +20,6 @@ class Cut:
     a piece of a recording, with zero or more SupervisionSegments.
     """
     id: str
-
-    # (PZ): I'm not super sure if this should be just one channel... but it's certainly easier to start this way
     channel: int
 
     # Begin and duration are needed to specify which chunk of features to load.
@@ -182,7 +173,7 @@ class CutSet:
 
     def to_yaml(self, path: Pathlike):
         with open(path, 'w') as f:
-            yaml.safe_dump([{**asdict(cut), 'type': type(cut).__name__} for cut in self], stream=f)
+            yaml.safe_dump([{**asdict_nonull(cut), 'type': type(cut).__name__} for cut in self], stream=f)
 
     def with_source_cuts_from(self, source: 'CutSet'):
         for cut in self.mixed_cuts.values():
@@ -199,7 +190,7 @@ class CutSet:
         return CutSet(cuts={**self.cuts, **other.cuts})
 
 
-def make_trivial_cut_set(supervision_set: SupervisionSet, feature_set: FeatureSet) -> CutSet:
+def make_cuts_from_supervisions(supervision_set: SupervisionSet, feature_set: FeatureSet) -> CutSet:
     cuts = (
         Cut(
             id=str(uuid4()),
@@ -217,3 +208,11 @@ def make_trivial_cut_set(supervision_set: SupervisionSet, feature_set: FeatureSe
         for idx, supervision in enumerate(supervision_set)
     )
     return CutSet(cuts={cut.id: cut for cut in cuts})
+
+
+def mix_stereo_cut_set(cut_set: CutSet) -> CutSet:
+    channels = list(set(c.channel for c in cut_set))
+    channel0_cuts = [c for c in cut_set if c.channel == channels[0]]
+    channel1_cuts = [c for c in cut_set if c.channel == channels[1]]
+    mixed_cuts = (c0.overlay(c1) for c0, c1 in zip(channel0_cuts, channel1_cuts))
+    return CutSet(cuts={cut.id: cut for cut in mixed_cuts})

@@ -283,8 +283,10 @@ class FeatureSetBuilder:
             self,
             feature_extractor: FeatureExtractor,
             output_dir: Pathlike,
+            root_dir: Optional[Pathlike] = None,
             augmentation_manifest=None
     ):
+        self.root_dir = root_dir
         self.feature_extractor = feature_extractor
         self.output_dir = Path(output_dir)
         self.augmentation_manifest = augmentation_manifest  # TODO: implement and use
@@ -324,7 +326,7 @@ class FeatureSetBuilder:
                     self.output_dir / 'storage' / str(uuid4())
             ).with_suffix('.llc' if compressed else '.npy')
 
-            samples = torch.from_numpy(recording.load_audio(channels=channel))
+            samples = torch.from_numpy(recording.load_audio(channels=channel, root_dir=self.root_dir))
 
             # TODO: use augmentation manifest here
             feats = self.feature_extractor.extract(

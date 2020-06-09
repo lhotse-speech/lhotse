@@ -21,8 +21,8 @@ class AudioSource:
     """
     AudioSource represents audio data that can be retrieved from somewhere.
     Supported sources of audio are currently:
-    - a file (formats supported by librosa, possibly multi-channel)
-    - a command/unix pipe (must be WAVE, possibly multi-channel)
+    - 'file' (formats supported by librosa, possibly multi-channel)
+    - 'command' [unix pipe] (must be WAVE, possibly multi-channel)
     """
     type: str
     channel_ids: List[int]

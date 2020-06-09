@@ -1,5 +1,7 @@
 import click
 
+__all__ = ['cli', 'recipe']
+
 
 @click.group()
 def cli():

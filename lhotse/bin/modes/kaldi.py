@@ -6,6 +6,8 @@ from lhotse.bin.modes.cli_base import cli
 from lhotse.kaldi import load_kaldi_data_dir
 from lhotse.utils import Pathlike
 
+__all__ = ['convert_kaldi']
+
 
 @cli.command()
 @click.argument('data_dir', type=click.Path(exists=True, file_okay=False))

@@ -1,7 +1,11 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, asdict
 from math import ceil
 from pathlib import Path
-from typing import Union, Any
+from random import random
+from typing import Union, Any, Dict
+
+import numpy as np
+import torch
 
 Pathlike = Union[Path, str]
 
@@ -10,6 +14,16 @@ Milliseconds = float
 Decibels = float
 
 INT16MAX = 32768
+
+
+def fix_random_seed(random_seed: int):
+    random.seed(random_seed)
+    np.random.seed(random_seed)
+    torch.random.manual_seed(random_seed)
+
+
+def asdict_nonull(dclass) -> Dict[str, Any]:
+    return {k: v for k, v in asdict(dclass).items() if v is not None}
 
 
 class SetContainingAnything:

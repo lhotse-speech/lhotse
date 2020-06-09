@@ -10,6 +10,8 @@ from lhotse.manipulation import (
 )
 from lhotse.utils import Pathlike
 
+__all__ = ['split', 'combine']
+
 
 @cli.command()
 @click.argument('num_splits', type=int)
