@@ -279,6 +279,15 @@ class FeatureSet:
 
 
 class FeatureSetBuilder:
+    """
+    An extended constructor for the FeatureSet. Think of it as a class wrapper for a feature extraction script.
+    It consumes an iterable of Recordings, extracts the features specified by the FeatureExtractor config,
+    and saves stores them on the disk.
+
+    Eventually, we plan to extend it with the capability to extract only the features in
+    specified regions of recordings and to perform some time-domain data augmentation.
+    """
+
     def __init__(
             self,
             feature_extractor: FeatureExtractor,
@@ -416,6 +425,10 @@ def pad_shorter(
         right_feats: np.ndarray,
         log_energy_floor: float = -1000.0
 ) -> Tuple[np.ndarray, np.ndarray]:
+    """
+    Finds the "shorter" feature matrix and pads it with low energy frames. Useful for overlaying the
+    features when the real acoustic context is not available.
+    """
     num_feats = left_feats.shape[1]
     if num_feats != right_feats.shape[1]:
         raise ValueError('Cannot pad feature matrices with different number of features.')
