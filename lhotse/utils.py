@@ -23,6 +23,7 @@ def fix_random_seed(random_seed: int):
 
 
 def asdict_nonull(dclass) -> Dict[str, Any]:
+    """Recursively convert a dataclass into a dict, removing the fields with `None` value on the top level."""
     return {k: v for k, v in asdict(dclass).items() if v is not None}
 
 
@@ -36,19 +37,19 @@ class SetContainingAnything:
 
 @dataclass
 class TimeSpan:
+    """Helper class for specifying a time span."""
     start: Seconds
     end: Seconds
 
 
 # TODO: Ugh, Protocols are only in Python 3.8+...
 def overlaps(lhs: Any, rhs: Any) -> bool:
-    return (
-            lhs.start < rhs.end
-            and rhs.start < lhs.end
-    )
+    """Indicates whether two time-spans/segments are overlapping or not."""
+    return lhs.start < rhs.end and rhs.start < lhs.end
 
 
 def overspans(spanning: Any, spanned: Any) -> bool:
+    """Indicates whether the left-hand-side time-span/segment covers the whole right-hand-side time-span/segment."""
     return spanning.start <= spanned.start <= spanned.end <= spanning.end
 
 

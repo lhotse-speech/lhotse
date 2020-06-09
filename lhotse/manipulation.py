@@ -14,6 +14,7 @@ Manifest = TypeVar('Manifest', AudioSet, SupervisionSet, FeatureSet, CutSet)
 
 
 def split(manifest: Manifest, num_splits: int, randomize: bool = False) -> List[Manifest]:
+    """Split a manifest into `num_splits` equal parts. The element order can be randomized."""
     num_items = len(manifest)
     if num_splits > num_items:
         raise ValueError(f"Cannot split manifest into more chunks ({num_splits}) than its number of items {num_items}")
@@ -52,10 +53,12 @@ def split(manifest: Manifest, num_splits: int, randomize: bool = False) -> List[
 
 
 def combine(*manifests: Manifest) -> Manifest:
+    """Combine multiple manifests of the same type into one."""
     return reduce(add, manifests)
 
 
 def load_manifest(path: Pathlike) -> Manifest:
+    """Generic utility for reading an arbitrary manifest."""
     data_set = None
     for manifest_type in [AudioSet, SupervisionSet, FeatureSet, CutSet]:
         try:
