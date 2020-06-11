@@ -5,7 +5,7 @@ from uuid import uuid4
 import numpy as np
 import yaml
 
-from lhotse.features import Features, FeatureSet, overlay_fbank, pad_shorter
+from lhotse.features import Features, FeatureSet, FbankMixer
 from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import Seconds, Decibels, overlaps, TimeSpan, overspans, Pathlike, asdict_nonull
 
@@ -93,13 +93,12 @@ class Cut:
         Returns a MixedCut, which only keeps the information about the mix; actual mixing is performed
         during the call to `load_features`.
         """
-        # TODO: allow mixing more than one cut together (make MixedCut a "list" of cuts)
         return MixedCut(
             id=str(uuid4()),
-            left_cut_id=self.id,
-            right_cut_id=other.id,
-            offset_right_by=offset_other_by,
-            snr=snr
+            tracks=[
+                MixTrack(cut_id=self.id, offset=0.0, snr=0.0),
+                MixTrack(cut_id=other.id, offset=offset_other_by, snr=snr)
+            ]
         )
 
     def append(self, other: 'Cut', snr: float) -> 'MixedCut':
@@ -114,19 +113,27 @@ class Cut:
 
 
 @dataclass
+class MixTrack:
+    """
+    Represents a single track in a mix of Cuts. Points to a specific Cut and holds information on
+    how to mix it with other Cuts, relative to the first track in a mix.
+    """
+    cut_id: str
+    offset: Seconds
+    snr: Decibels
+
+
+@dataclass
 class MixedCut:
     """
     Represents a Cut that's created from other Cuts via overlay or append operations.
     The actual mixing operations are performed upon loading the features into memory.
     In order to load the features, it needs to access the CutSet object that holds the "ingredient" cuts,
     as it only holds their IDs ("pointers").
+    The SNR and offset of all the tracks are specified relative to the first track.
     """
-    # TODO: it could actually consist of more than two cuts by having a list of "ingredient" ids, offsets and snrs
     id: str
-    left_cut_id: str
-    right_cut_id: str
-    offset_right_by: Seconds
-    snr: Decibels
+    tracks: List[MixTrack]
 
     def with_cut_set(self, cut_set: 'CutSet') -> 'MixedCut':
         """
@@ -139,32 +146,57 @@ class MixedCut:
     @property
     def supervisions(self) -> List[SupervisionSegment]:
         """Lists the supervisions of the underyling source cuts."""
-        return self._cut_set.cuts[self.left_cut_id].supervisions + self._cut_set.cuts[self.right_cut_id].supervisions
+        return sum([self._cut_set.cuts[track.cut_id].supervisions for track in self.tracks], [])
 
     @property
     def duration(self) -> Seconds:
-        return max(
-            self._cut_set.cuts[self.left_cut_id].duration,
-            self.offset_right_by + self._cut_set.cuts[self.right_cut_id].duration
+        track_durations = (track.offset + self._cut_set.cuts[track.cut_id].duration for track in self.tracks)
+        return max(track_durations)
+
+    def overlay(self, other: 'Cut', offset_other_by: Seconds = 0.0, snr: Decibels = 0.0) -> 'MixedCut':
+        """
+        Overlay, or mix, this Cut with the `other` Cut. Optionally the `other` Cut may be shifted by `offset_other_by`
+        Seconds and scaled down (positive SNR) or scaled up (negative SNR).
+        Returns a MixedCut, which only keeps the information about the mix; actual mixing is performed
+        during the call to `load_features`.
+        """
+        return MixedCut(
+            id=str(uuid4()),
+            tracks=self.tracks + [
+                MixTrack(cut_id=other.id, offset=offset_other_by, snr=snr)
+            ]
         )
+
+    def append(self, other: 'Cut', snr: float) -> 'MixedCut':
+        """
+        Append the `other` Cut after the current Cut. Conceptually the same as `overlay` but with an offset
+        matching the current cuts length. Optionally scale down (positive SNR) or scale up (negative SNR)
+        the `other` cut.
+        Returns a MixedCut, which only keeps the information about the mix; actual mixing is performed
+        during the call to `load_features`.
+        """
+        return self.overlay(other=other, offset_other_by=self.duration, snr=snr)
 
     def load_features(self, root_dir: Optional[Pathlike] = None) -> np.ndarray:
         """Loads the features of the source cuts and overlays them on-the-fly."""
-        cuts = [self._cut_set.cuts[id_] for id_ in [self.left_cut_id, self.right_cut_id]]
+        cuts = [self._cut_set.cuts[track.cut_id] for track in self.tracks]
         frame_length, frame_shift = cuts[0].features.frame_length, cuts[0].features.frame_shift
         assert frame_length == cuts[1].features.frame_length
         assert frame_shift == cuts[1].features.frame_shift
-        feats = [cut.load_features(root_dir=root_dir) for cut in cuts]
-        feats = pad_shorter(*feats)
-        overlayed_feats = overlay_fbank(
-            feats[0],
-            feats[1],
-            snr=self.snr,
-            offset_right_by=self.offset_right_by,
-            frame_length=frame_length,
-            frame_shift=frame_shift
+        # TODO: check if the 'pad_shorter' call is still necessary, it shouldn't be
+        # feats = pad_shorter(*feats)
+        mixer = FbankMixer(
+            base_feats=cuts[0].load_features(root_dir=root_dir),
+            frame_shift=frame_shift,
+            frame_length=frame_length
         )
-        return overlayed_feats
+        for cut, track in zip(cuts[1:], self.tracks[1:]):
+            mixer.add_to_mix(
+                feats_to_add=cut.load_features(root_dir=root_dir),
+                snr=track.snr,
+                offset=track.offset
+            )
+        return mixer.mixed_feats
 
 
 @dataclass
@@ -194,7 +226,7 @@ class CutSet:
             del cut['type']
 
             if cut_type == 'MixedCut':
-                return MixedCut(**cut)
+                return MixedCut(id=cut['id'], tracks=[MixTrack(**track) for track in cut['tracks']])
             elif cut_type != 'Cut':
                 raise ValueError(f"Unexpected cut type during deserialization: '{cut_type}'")
 

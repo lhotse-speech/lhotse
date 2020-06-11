@@ -1,5 +1,5 @@
 from dataclasses import dataclass, asdict
-from math import ceil
+from math import ceil, isclose
 from pathlib import Path
 from random import random
 from typing import Union, Any, Dict
@@ -55,4 +55,6 @@ def overspans(spanning: Any, spanned: Any) -> bool:
 
 def time_diff_to_num_frames(time_diff: Seconds, frame_length: Seconds, frame_shift: Seconds) -> int:
     """Convert duration to an equivalent number of frames, so as to not exceed the duration."""
+    if isclose(time_diff, 0.0):
+        return 0
     return int(ceil((time_diff - frame_length) / frame_shift))

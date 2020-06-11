@@ -134,16 +134,17 @@ def test_mixed_cut_load_features():
     cut_set = CutSet.from_yaml('test/fixtures/mix_cut_test/overlayed_cut_manifest.yml')
 
     mixed_cut = cut_set.cuts['mixed-cut-id']
-    assert mixed_cut.offset_right_by == 3.89
+    assert mixed_cut.tracks[0].offset == 0.0
+    assert mixed_cut.tracks[1].offset == 3.89
 
-    ingredient_cut1 = cut_set.cuts[mixed_cut.left_cut_id]
+    ingredient_cut1 = cut_set.cuts[mixed_cut.tracks[0].cut_id]
     assert ingredient_cut1.duration == 7.78
 
-    ingredient_cut2 = cut_set.cuts[mixed_cut.right_cut_id]
+    ingredient_cut2 = cut_set.cuts[mixed_cut.tracks[1].cut_id]
     assert ingredient_cut2.duration == 9.705
 
     feats = mixed_cut.with_cut_set(cut_set).load_features()
-    expected_duration = mixed_cut.offset_right_by + ingredient_cut2.duration
+    expected_duration = mixed_cut.tracks[1].offset + ingredient_cut2.duration
     assert isclose(expected_duration, 13.595)
     expected_frame_count = 1358
     assert feats.shape[0] == expected_frame_count
