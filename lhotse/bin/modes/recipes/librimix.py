@@ -14,12 +14,30 @@ __all__ = ['librimix']
 @recipe.command()
 @click.argument('librimix-csv', type=click.Path(exists=True, dir_okay=False))
 @click.argument('output_dir', type=click.Path())
-@click.option('--sampling-rate', type=int, default=16000)
-@click.option('--min-segment-seconds', type=float, default=3.0)
-def librimix(librimix_csv: Pathlike, output_dir: Pathlike, sampling_rate: int, min_segment_seconds: float):
+@click.option('--sampling-rate', type=int, default=16000, help='Sampling rate to set in the AudioSet manifest.')
+@click.option(
+    '--min-segment-seconds', type=float, default=3.0,
+    help='Remove segments shorter than MIN_SEGMENT_SECONDS.'
+)
+@click.option(
+    '--with-precomputed-mixtures/--no-precomputed-mixtures', type=bool, default=False,
+    help='Optionally create an AudioSet manifest including the precomputed LibriMix mixtures.'
+)
+def librimix(
+        librimix_csv: Pathlike,
+        output_dir: Pathlike,
+        sampling_rate: int,
+        min_segment_seconds: float,
+        with_precomputed_mixtures: bool
+):
     """Recipe to prepare the manifests for LibrMix source separation task."""
     df = pd.read_csv(librimix_csv)
 
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    # First, create the audio manifest that specifies the pairs of source recordings
+    # to be mixed together.
     audio = AudioSet(recordings={
         row['mixture_ID']: Recording(
             id=row['mixture_ID'],
@@ -42,7 +60,56 @@ def librimix(librimix_csv: Pathlike, output_dir: Pathlike, sampling_rate: int, m
         for idx, row in df.iterrows()
         if row['length'] / sampling_rate > min_segment_seconds
     })
+    audio.to_yaml(output_dir / 'audio.yml')
 
+    # When requested, create an audio manifest for the pre-computed mixtures.
+    # A different way of performing the mix would be using Lhotse's on-the-fly
+    # overlaying of audio Cuts.
+    if with_precomputed_mixtures:
+        audio_mix = AudioSet(recordings={
+            row['mixture_ID']: Recording(
+                id=row['mixture_ID'],
+                sources=[
+                    AudioSource(
+                        type='file',
+                        channel_ids=[0],
+                        source=row['mixture_path']
+                    ),
+                ],
+                sampling_rate=sampling_rate,
+                num_samples=int(row['length']),
+                duration_seconds=row['length'] / sampling_rate
+            )
+            for idx, row in df.iterrows()
+            if row['length'] / sampling_rate > min_segment_seconds
+        })
+        audio_mix.to_yaml(output_dir / 'audio_mix.yml')
+
+    # When the LibriMix CSV specifies noises, we create a separate AudioSet for them,
+    # so that we can extract their features and overlay them as Cuts later.
+    if 'noise_path' in df:
+        audio_noise = AudioSet(recordings={
+            row['mixture_ID']: Recording(
+                id=row['mixture_ID'],
+                sources=[
+                    AudioSource(
+                        type='file',
+                        channel_ids=[0],
+                        source=row['noise_path']
+                    ),
+                ],
+                sampling_rate=sampling_rate,
+                num_samples=int(row['length']),
+                duration_seconds=row['length'] / sampling_rate
+            )
+            for idx, row in df.iterrows()
+            if row['length'] / sampling_rate > min_segment_seconds
+        })
+        audio_noise.to_yaml(output_dir / 'audio_noise.yml')
+
+    # Finally, create a supervision set - in this case it just describes
+    # which segments are available in the corpus, as the actual supervisions for
+    # speech separation come from the source recordings.
     supervisions = SupervisionSet(segments={
         f'{recording.id}-c{source.channel_ids[0]}': SupervisionSegment(
             id=f'{recording.id}-c{source.channel_ids[0]}',
@@ -54,8 +121,4 @@ def librimix(librimix_csv: Pathlike, output_dir: Pathlike, sampling_rate: int, m
         for recording in audio
         for source in recording.sources
     })
-
-    output_dir = Path(output_dir)
-    output_dir.mkdir(parents=True, exist_ok=True)
-    audio.to_yaml(output_dir / 'audio.yml')
     supervisions.to_yaml(output_dir / 'supervisions.yml')
