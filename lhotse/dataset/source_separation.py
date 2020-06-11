@@ -7,6 +7,8 @@ from torch.utils.data import Dataset
 from lhotse.cut import CutSet
 from lhotse.utils import Pathlike
 
+EPS = 1e-8
+
 
 class SourceSeparationDataset(Dataset):
     """
@@ -15,7 +17,12 @@ class SourceSeparationDataset(Dataset):
     it returns a dict of {'sources': tensor, 'mixture': tensor}.
     """
 
-    def __init__(self, sources_set: CutSet, mixtures_set: CutSet, root_dir: Optional[Pathlike] = None):
+    def __init__(
+            self,
+            sources_set: CutSet,
+            mixtures_set: CutSet,
+            root_dir: Optional[Pathlike] = None
+    ):
         super().__init__()
         self.sources_set = sources_set
         self.mixtures_set = mixtures_set
@@ -32,9 +39,17 @@ class SourceSeparationDataset(Dataset):
             [torch.from_numpy(source_cut.load_features(root_dir=self.root_dir)) for source_cut in source_cuts],
             dim=0
         )
+
+        # Compute the masks given the source features
+        real_mask = sources / (sources.sum(1, keepdim=True) + EPS)
+        # Get the src idx having the maximum energy
+        binary_mask = real_mask.argmax(1)
+
         return {
             'sources': sources,
-            'mixture': mixture
+            'mixture': mixture,
+            'real_mask': real_mask,
+            'binary_mask': binary_mask
         }
 
     def __len__(self):
