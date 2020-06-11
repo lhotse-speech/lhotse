@@ -366,6 +366,11 @@ class FeatureSetBuilder:
 
 
 class FbankMixer:
+    """
+    Utility class to mix multiple log-mel energy feature matrices into a single one.
+    It pads the signals with low energy values to account for differing lengths and offsets.
+    """
+
     def __init__(
             self,
             base_feats: np.ndarray,
@@ -380,10 +385,11 @@ class FbankMixer:
         :param frame_length: Required to correctly compute offset and padding during the mix.
         :param log_energy_floor: The value used to pad the shorter features during the mix.
         """
+        # The mixing output will be available in self.mixed_feats
+        self.mixed_feats = base_feats
         # Keep a pre-computed energy value of the features that we initialize the Mixer with;
         # it is required to compute gain ratios that satisfy SNR during the mix.
         self.reference_energy = fbank_energy(base_feats)
-        self.mixed_feats = base_feats
         self.frame_shift: Seconds = frame_shift / 1000.0
         self.frame_length: Seconds = frame_length / 1000.0
         self.log_energy_floor = log_energy_floor
@@ -394,23 +400,32 @@ class FbankMixer:
 
     def add_to_mix(
             self,
-            feats_to_add: np.ndarray,
+            feats: np.ndarray,
             snr: Optional[Decibels] = None,
             offset: Seconds = 0.0
     ):
+        """
+        Add feature matrix of a new track into the mix.
+        :param feats: A 2-d feature matrix to be mixed in.
+        :param snr: Signal-to-noise ratio, assuming `feats` represents noise (positive SNR - lower `feats` energy,
+            negative SNR - higher `feats` energy)
+        :param offset: How many seconds to shift `feats` in time. For mixing, the signal will be padded before
+            the start with low energy values.
+        :return:
+        """
         assert offset >= 0.0, "Negative offset in mixing is not supported."
 
-        # TODO: determine padding by taking into account actual feature shapes and offsets
         num_frames_offset = time_diff_to_num_frames(
             offset,
             frame_length=self.frame_length,
             frame_shift=self.frame_shift
         )
         current_num_frames = self.mixed_feats.shape[0]
-        incoming_num_frames = feats_to_add.shape[0] + num_frames_offset
+        incoming_num_frames = feats.shape[0] + num_frames_offset
         mix_num_frames = max(current_num_frames, incoming_num_frames)
 
         existing_feats = self.mixed_feats
+        feats_to_add = feats
 
         # When the existing frames are less than what we anticipate after the mix,
         # we need to pad after the end of the existing features mixed so far.
@@ -448,7 +463,7 @@ class FbankMixer:
             #    the signals to satisfy requested SNR
 
             # Compute the added signal energy before it was padded
-            added_feats_energy = fbank_energy(feats_to_add)
+            added_feats_energy = fbank_energy(feats)
             target_energy = self.reference_energy * (10.0 ** (-snr / 10))
             gain = target_energy / added_feats_energy
 
