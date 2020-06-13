@@ -1,11 +1,11 @@
 from pathlib import Path
-from typing import Tuple
+from typing import Tuple, Optional
 
 import click
 import numpy as np
 
 from lhotse.bin.modes.cli_base import cli
-from lhotse.cut import make_cuts_from_supervisions, CutSet, mix_stereo_cut_set
+from lhotse.cut import make_cuts_from_supervisions, CutSet, mix_stereo_cut_set, make_cuts_from_features
 from lhotse.features import FeatureSet
 from lhotse.manipulation import split
 from lhotse.supervision import SupervisionSet
@@ -21,21 +21,26 @@ def cut():
 
 
 @cut.command()
-@click.argument('supervision_manifest', type=click.Path(exists=True, dir_okay=False))
 @click.argument('feature_manifest', type=click.Path(exists=True, dir_okay=False))
 @click.argument('output_cut_manifest', type=click.Path())
+@click.option('-s', '--supervision_manifest', type=click.Path(exists=True, dir_okay=False),
+              help='Optional supervision manifest - will be used to attach the supervisions to the cuts.')
 def simple(
-        supervision_manifest: Pathlike,
         feature_manifest: Pathlike,
         output_cut_manifest: Pathlike,
+        supervision_manifest: Optional[Pathlike],
 ):
     """
-    Create a CutSet stored in OUTPUT_CUT_MANIFEST that contains supervision regions from SUPERVISION_MANIFEST
-    and features supplied by FEATURE_MANIFEST. This is the simplest way to create Cuts.
+    Create a CutSet stored in OUTPUT_CUT_MANIFEST that contains the regions and features supplied by FEATURE_MANIFEST.
+    Optionally it can use a SUPERVISION_MANIFEST to select the regions and attach the corresponding supervisions to
+    the cuts. This is the simplest way to create Cuts.
     """
-    supervision_set = SupervisionSet.from_yaml(supervision_manifest)
     feature_set = FeatureSet.from_yaml(feature_manifest)
-    cut_set = make_cuts_from_supervisions(supervision_set=supervision_set, feature_set=feature_set)
+    if supervision_manifest is None:
+        cut_set = make_cuts_from_features(feature_set)
+    else:
+        supervision_set = SupervisionSet.from_yaml(supervision_manifest)
+        cut_set = make_cuts_from_supervisions(feature_set=feature_set, supervision_set=supervision_set)
     cut_set.to_yaml(output_cut_manifest)
 
 

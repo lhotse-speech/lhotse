@@ -21,7 +21,6 @@ class Cut:
     a piece of a recording, with zero or more SupervisionSegments.
     """
     id: str
-    channel: int
 
     # Begin and duration are needed to specify which chunk of features to load.
     start: Seconds
@@ -35,6 +34,14 @@ class Cut:
     # Supervisions that will be used as targets for model training later on. They don't have to cover the whole
     # cut duration. They also might overlap.
     supervisions: List[SupervisionSegment]
+
+    @property
+    def channel(self) -> int:
+        return self.features.channel_id
+
+    @property
+    def recording_id(self) -> str:
+        return self.features.recording_id
 
     @property
     def end(self) -> Seconds:
@@ -77,7 +84,6 @@ class Cut:
         criterion = overlaps if keep_excessive_supervisions else overspans
         return Cut(
             id=str(uuid4()),
-            channel=self.channel,
             start=new_start,
             duration=new_duration,
             supervisions=[
@@ -138,7 +144,7 @@ class MixedCut:
     def with_cut_set(self, cut_set: 'CutSet') -> 'MixedCut':
         """
         Provide the source cut set that can be looked up to resolve the MixedCut's dependencies.
-        This method is a necessary, because the MixedCut acts like a "pointer" to the cuts that were used to create it.
+        This method is necessary, because the MixedCut acts like a "pointer" to the cuts that were used to create it.
         """
         self._cut_set = cut_set
         return self
@@ -192,7 +198,7 @@ class MixedCut:
         )
         for cut, track in zip(cuts[1:], self.tracks[1:]):
             mixer.add_to_mix(
-                feats_to_add=cut.load_features(root_dir=root_dir),
+                feats=cut.load_features(root_dir=root_dir),
                 snr=track.snr,
                 offset=track.offset
             )
@@ -265,6 +271,23 @@ class CutSet:
         return CutSet(cuts={**self.cuts, **other.cuts})
 
 
+def make_cuts_from_features(feature_set: FeatureSet) -> CutSet:
+    """
+    Utility that converts a FeatureSet to a CutSet without any adjustment of the segment boundaries.
+    """
+    cuts = (
+        Cut(
+            id=str(uuid4()),
+            start=features.start,
+            duration=features.duration,
+            features=features,
+            supervisions=[]
+        )
+        for features in feature_set
+    )
+    return CutSet(cuts={cut.id: cut for cut in cuts})
+
+
 def make_cuts_from_supervisions(supervision_set: SupervisionSet, feature_set: FeatureSet) -> CutSet:
     """
     Utility that converts a SupervisionSet to a CutSet without any adjustment of the segment boundaries.
@@ -273,7 +296,6 @@ def make_cuts_from_supervisions(supervision_set: SupervisionSet, feature_set: Fe
     cuts = (
         Cut(
             id=str(uuid4()),
-            channel=supervision.channel_id,
             start=supervision.start,
             duration=supervision.duration,
             features=feature_set.find(

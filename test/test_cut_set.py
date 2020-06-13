@@ -41,7 +41,6 @@ def test_truncate_cut(offset, until, keep_excessive_supervisions, expected_super
     # TODO: refactor (simplify data) once I'm ready to make a test fixture builder
     cut = Cut(
         id='cut-1',
-        channel=0,
         start=0.0,
         duration=0.5,
         features=Features(
@@ -100,7 +99,6 @@ def test_cut_set_serialization():
     cut_set = CutSet(cuts={
         'cut-1': Cut(
             id='cut-1',
-            channel=0,
             start=0.0,
             duration=0.5,
             features=Features(

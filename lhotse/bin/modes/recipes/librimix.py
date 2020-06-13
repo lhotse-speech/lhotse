@@ -11,7 +11,7 @@ from lhotse.utils import Pathlike
 __all__ = ['librimix']
 
 
-@recipe.command()
+@recipe.command(context_settings=dict(show_default=True))
 @click.argument('librimix-csv', type=click.Path(exists=True, dir_okay=False))
 @click.argument('output_dir', type=click.Path())
 @click.option('--sampling-rate', type=int, default=16000, help='Sampling rate to set in the AudioSet manifest.')
@@ -38,7 +38,7 @@ def librimix(
 
     # First, create the audio manifest that specifies the pairs of source recordings
     # to be mixed together.
-    audio = AudioSet(recordings={
+    audio_sources = AudioSet(recordings={
         row['mixture_ID']: Recording(
             id=row['mixture_ID'],
             sources=[
@@ -60,7 +60,8 @@ def librimix(
         for idx, row in df.iterrows()
         if row['length'] / sampling_rate > min_segment_seconds
     })
-    audio.to_yaml(output_dir / 'audio.yml')
+    audio_sources.to_yaml(output_dir / 'audio_sources.yml')
+    make_corresponding_supervisions(audio_sources).to_yaml(output_dir / 'supervisions_sources.yml')
 
     # When requested, create an audio manifest for the pre-computed mixtures.
     # A different way of performing the mix would be using Lhotse's on-the-fly
@@ -84,6 +85,7 @@ def librimix(
             if row['length'] / sampling_rate > min_segment_seconds
         })
         audio_mix.to_yaml(output_dir / 'audio_mix.yml')
+        make_corresponding_supervisions(audio_mix).to_yaml(output_dir / 'supervisions_mix.yml')
 
     # When the LibriMix CSV specifies noises, we create a separate AudioSet for them,
     # so that we can extract their features and overlay them as Cuts later.
@@ -106,11 +108,14 @@ def librimix(
             if row['length'] / sampling_rate > min_segment_seconds
         })
         audio_noise.to_yaml(output_dir / 'audio_noise.yml')
+        make_corresponding_supervisions(audio_noise).to_yaml(output_dir / 'supervisions_noise.yml')
 
-    # Finally, create a supervision set - in this case it just describes
+
+def make_corresponding_supervisions(audio: AudioSet) -> SupervisionSet:
+    # Prepare a supervision set - in this case it just describes
     # which segments are available in the corpus, as the actual supervisions for
     # speech separation come from the source recordings.
-    supervisions = SupervisionSet(segments={
+    return SupervisionSet(segments={
         f'{recording.id}-c{source.channel_ids[0]}': SupervisionSegment(
             id=f'{recording.id}-c{source.channel_ids[0]}',
             recording_id=recording.id,
@@ -121,4 +126,3 @@ def librimix(
         for recording in audio
         for source in recording.sources
     })
-    supervisions.to_yaml(output_dir / 'supervisions.yml')

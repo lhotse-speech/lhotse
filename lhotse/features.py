@@ -234,7 +234,8 @@ class FeatureSet:
         candidates = list(candidates)
 
         if not candidates:
-            raise KeyError("No features available for the requested recording/channel/region.")
+            raise KeyError(
+                f"No features available for recording '{recording_id}', channel {channel_id} in time range [{start}s, {'end' if duration is None else duration}s]")
 
         # in case there is more than one candidate feature segment, select the best fit
         # by minimizing the MSE of the time markers...
