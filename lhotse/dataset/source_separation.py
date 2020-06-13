@@ -33,7 +33,9 @@ class SourceSeparationDataset(Dataset):
     def __getitem__(self, idx: int) -> Dict[str, torch.Tensor]:
         cut_id = self.cut_ids[idx]
         mixture_cut = self.mixtures_set.cuts[cut_id].with_cut_set(self.sources_set)
-        source_cuts = [self.sources_set.cuts[id_] for id_ in [mixture_cut.left_cut_id, mixture_cut.right_cut_id]]
+        source_cuts = [self.sources_set.cuts[track.cut_id] for track in mixture_cut.tracks]
+        if len(source_cuts) != 2:
+            raise NotImplementedError("Source separation for more than 2 sources is not yet supported.")
         mixture = torch.from_numpy(mixture_cut.load_features(root_dir=self.root_dir))
         sources = torch.stack(
             [torch.from_numpy(source_cut.load_features(root_dir=self.root_dir)) for source_cut in source_cuts],
