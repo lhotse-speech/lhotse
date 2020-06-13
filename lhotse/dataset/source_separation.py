@@ -45,7 +45,7 @@ class SourceSeparationDataset(Dataset):
         # Compute the masks given the source features
         real_mask = sources / (sources.sum(1, keepdim=True) + EPS)
         # Get the src idx having the maximum energy
-        binary_mask = real_mask.argmax(1)
+        binary_mask = real_mask.argmax(0)
 
         return {
             'sources': sources,
@@ -104,7 +104,7 @@ class PreMixedSourceSeparationDataset(Dataset):
         # Compute the masks given the source features
         real_mask = sources / (sources.sum(1, keepdim=True) + EPS)
         # Get the src idx having the maximum energy
-        binary_mask = real_mask.argmax(1)
+        binary_mask = real_mask.argmax(0)
 
         return {
             'sources': sources,
