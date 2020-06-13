@@ -10,11 +10,17 @@ from lhotse.utils import Pathlike
 EPS = 1e-8
 
 
+# TODO: add dynamic noise mixing to SourceSeparationDataset
+
+
 class SourceSeparationDataset(Dataset):
     """
     A PyTorch Dataset for the source separation task. It's created from two CutSets - one provides the audio
     cuts for the sources, and the other one the audio cuts for the signal mix. When queried for data samples,
     it returns a dict of {'sources': tensor, 'mixture': tensor}.
+
+    This Dataset performs on-the-fly feature-domain mixing of the sources. It expects the mixtures_set to contain
+    MixedCuts, so that it knows which Cuts should be mixed together.
     """
 
     def __init__(
@@ -32,7 +38,7 @@ class SourceSeparationDataset(Dataset):
 
     def __getitem__(self, idx: int) -> Dict[str, torch.Tensor]:
         cut_id = self.cut_ids[idx]
-        mixture_cut = self.mixtures_set.cuts[cut_id].with_cut_set(self.sources_set)
+        mixture_cut = self.mixtures_set.mixed_cuts[cut_id].with_cut_set(self.sources_set)
         source_cuts = [self.sources_set.cuts[track.cut_id] for track in mixture_cut.tracks]
         if len(source_cuts) != 2:
             raise NotImplementedError("Source separation for more than 2 sources is not yet supported.")
