@@ -261,6 +261,12 @@ class CutSet:
             cut.with_cut_set(source)
         return self
 
+    def __contains__(self, item: Union[str, Cut, MixedCut]) -> bool:
+        if isinstance(item, str):
+            return item in self.cuts
+        else:
+            return item.id in self.cuts
+
     def __len__(self) -> int:
         return len(self.cuts)
 
