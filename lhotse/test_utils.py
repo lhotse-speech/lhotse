@@ -47,6 +47,8 @@ def dummy_features(unique_id: int) -> Features:
         channel_id=0,
         start=0.0,
         duration=1.0,
+        frame_length=25.0,
+        frame_shift=10.0,
         storage_type='lilcom',
         storage_path='irrelevant'
     )

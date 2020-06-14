@@ -5,11 +5,13 @@ from pathlib import Path
 from subprocess import run, PIPE
 from typing import List, Optional, Dict, Union, Iterable
 
-import librosa
+with warnings.catch_warnings():
+    warnings.simplefilter('ignore')
+    import librosa
 import numpy as np
 import yaml
 
-from lhotse.utils import Pathlike, SetContainingAnything
+from lhotse.utils import Pathlike, SetContainingAnything, Seconds
 
 Channels = Union[int, List[int]]
 
@@ -19,8 +21,8 @@ class AudioSource:
     """
     AudioSource represents audio data that can be retrieved from somewhere.
     Supported sources of audio are currently:
-    - a file (formats supported by librosa, possibly multi-channel)
-    - a command/unix pipe (must be WAVE, possibly multi-channel)
+    - 'file' (formats supported by librosa, possibly multi-channel)
+    - 'command' [unix pipe] (must be WAVE, possibly multi-channel)
     """
     type: str
     channel_ids: List[int]
@@ -82,7 +84,7 @@ class Recording:
     sources: List[AudioSource]
     sampling_rate: int
     num_samples: int
-    duration_seconds: float
+    duration_seconds: Seconds
 
     def __post_init__(self):
         self.sources = [AudioSource(**s) if isinstance(s, dict) else s for s in self.sources]

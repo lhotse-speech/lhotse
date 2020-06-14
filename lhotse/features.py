@@ -5,9 +5,9 @@ from concurrent.futures.process import ProcessPoolExecutor
 from dataclasses import dataclass, field, asdict
 from functools import partial
 from itertools import chain
-from math import isclose, ceil
+from math import isclose
 from pathlib import Path
-from typing import Union, List, Iterable, Dict, Optional
+from typing import Union, List, Iterable, Dict, Optional, Tuple
 from uuid import uuid4
 
 import lilcom
@@ -18,7 +18,7 @@ import yaml
 
 from lhotse.audio import Recording
 from lhotse.supervision import SupervisionSegment
-from lhotse.utils import Seconds, Milliseconds, Pathlike
+from lhotse.utils import Seconds, Milliseconds, Pathlike, time_diff_to_num_frames, Decibels
 
 
 @dataclass
@@ -122,20 +122,56 @@ class Features:
     channel_id: int
     start: Seconds
     duration: Seconds
+
+    # The Features object must know its frame length and shift to trim the features matrix when loading.
+    frame_length: Milliseconds
+    frame_shift: Milliseconds
+
+    # Parameters related to storage - they define how to load the feature matrix.
     storage_type: str  # e.g. 'lilcom', 'numpy'
     storage_path: str
 
     def __post_init__(self):
         assert self.storage_type in ('lilcom', 'numpy')
 
-    def load(self, root_dir: Optional[Pathlike] = None) -> np.ndarray:
+    def load(
+            self,
+            root_dir: Optional[Pathlike] = None,
+            start: Seconds = 0.0,
+            duration: Optional[Seconds] = None,
+    ) -> np.ndarray:
+        # Load the features from the storage
         storage_path = self.storage_path if root_dir is None else Path(root_dir) / self.storage_path
         if self.storage_type == 'lilcom':
             with open(storage_path, 'rb') as f:
-                return lilcom.decompress(f.read())
-        if self.storage_type == 'numpy':
-            return np.load(storage_path, allow_pickle=False)
-        raise ValueError(f"Unknown storage_type: {self.storage_type}")
+                features = lilcom.decompress(f.read())
+        elif self.storage_type == 'numpy':
+            features = np.load(storage_path, allow_pickle=False)
+        else:
+            raise ValueError(f"Unknown storage_type: {self.storage_type}")
+
+        # In case the caller requested only a subset of features, trim them
+
+        # Left trim
+        if not isclose(start, self.start):
+            frames_to_trim = time_diff_to_num_frames(
+                time_diff=start - self.start,
+                frame_length=self.frame_length / 1000.0,
+                frame_shift=self.frame_shift / 1000.0
+            )
+            features = features[frames_to_trim:, :]
+
+        # Right trim
+        end = start + duration if duration is not None else None
+        if duration is not None and not isclose(end, self.end):
+            frames_to_trim = time_diff_to_num_frames(
+                time_diff=self.end - end,
+                frame_length=self.frame_length / 1000.0,
+                frame_shift=self.frame_shift / 1000.0
+            )
+            features = features[:-frames_to_trim, :]
+
+        return features
 
     @property
     def end(self):
@@ -171,14 +207,17 @@ class FeatureSet:
         with open(path, 'w') as f:
             yaml.safe_dump(asdict(self), stream=f)
 
-    def load(
+    def find(
             self,
             recording_id: str,
             channel_id: int = 0,
             start: Seconds = 0.0,
             duration: Optional[Seconds] = None,
-            root_dir: Optional[Pathlike] = None
-    ) -> np.ndarray:
+    ) -> Features:
+        """
+        Find and return a Features object that best satisfies the search criteria.
+        Raise a KeyError when no such object is available.
+        """
         if duration is not None:
             end = start + duration
         # TODO: naive linear search; will likely require optimization
@@ -204,24 +243,27 @@ class FeatureSet:
         else:
             feature_info = min(candidates, key=lambda f: (start - f.start) ** 2)
 
-        features = feature_info.load(root_dir)
+        return feature_info
 
-        # in case we have features for longer segment than required, trim them
-        if not isclose(start, feature_info.start):
-            frames_to_trim = time_diff_to_num_frames(
-                time_diff=start - feature_info.start,
-                frame_length=self.feature_extractor.spectrogram_config.frame_length / 1000.0,
-                frame_shift=self.feature_extractor.spectrogram_config.frame_shift / 1000.0
-            )
-            features = features[frames_to_trim:, :]
-        if duration is not None and not isclose(end, feature_info.end):
-            frames_to_trim = time_diff_to_num_frames(
-                time_diff=feature_info.end - end,
-                frame_length=self.feature_extractor.spectrogram_config.frame_length / 1000.0,
-                frame_shift=self.feature_extractor.spectrogram_config.frame_shift / 1000.0
-            )
-            features = features[:-frames_to_trim, :]
-
+    def load(
+            self,
+            recording_id: str,
+            channel_id: int = 0,
+            start: Seconds = 0.0,
+            duration: Optional[Seconds] = None,
+            root_dir: Optional[Pathlike] = None
+    ) -> np.ndarray:
+        """
+        Find a Features object that best satisfies the search criteria and load the features as a numpy ndarray.
+        Raise a KeyError when no such object is available.
+        """
+        feature_info = self.find(
+            recording_id=recording_id,
+            channel_id=channel_id,
+            start=start,
+            duration=duration
+        )
+        features = feature_info.load(root_dir=root_dir, start=start, duration=duration)
         return features
 
     def __iter__(self) -> Iterable[Features]:
@@ -237,12 +279,23 @@ class FeatureSet:
 
 
 class FeatureSetBuilder:
+    """
+    An extended constructor for the FeatureSet. Think of it as a class wrapper for a feature extraction script.
+    It consumes an iterable of Recordings, extracts the features specified by the FeatureExtractor config,
+    and saves stores them on the disk.
+
+    Eventually, we plan to extend it with the capability to extract only the features in
+    specified regions of recordings and to perform some time-domain data augmentation.
+    """
+
     def __init__(
             self,
             feature_extractor: FeatureExtractor,
             output_dir: Pathlike,
+            root_dir: Optional[Pathlike] = None,
             augmentation_manifest=None
     ):
+        self.root_dir = root_dir
         self.feature_extractor = feature_extractor
         self.output_dir = Path(output_dir)
         self.augmentation_manifest = augmentation_manifest  # TODO: implement and use
@@ -282,7 +335,7 @@ class FeatureSetBuilder:
                     self.output_dir / 'storage' / str(uuid4())
             ).with_suffix('.llc' if compressed else '.npy')
 
-            samples = torch.from_numpy(recording.load_audio(channels=channel))
+            samples = torch.from_numpy(recording.load_audio(channels=channel, root_dir=self.root_dir))
 
             # TODO: use augmentation manifest here
             feats = self.feature_extractor.extract(
@@ -303,6 +356,8 @@ class FeatureSetBuilder:
                 channel_id=channel,
                 # TODO: revise start and duration with segmentation manifest info
                 start=0.0,
+                frame_length=self.feature_extractor.spectrogram_config.frame_length,
+                frame_shift=self.feature_extractor.spectrogram_config.frame_shift,
                 duration=recording.duration_seconds,
                 storage_type='lilcom' if compressed else 'numpy',
                 storage_path=str(output_features_path)
@@ -310,6 +365,79 @@ class FeatureSetBuilder:
         return results
 
 
-def time_diff_to_num_frames(time_diff: Seconds, frame_length: Seconds, frame_shift: Seconds) -> int:
-    """Convert duration to an equivalent number of frames, so as to not exceed the duration."""
-    return int(ceil((time_diff - frame_length) / frame_shift))
+def overlay_fbank(
+        left_feats: np.ndarray,
+        right_feats: np.ndarray,
+        snr: Optional[Decibels] = None,
+        offset_right_by: Seconds = 0,
+        frame_length: Optional[Milliseconds] = None,
+        frame_shift: Optional[Milliseconds] = None,
+        log_energy_floor: float = -1000.0
+) -> np.ndarray:
+    """
+    Mix two log-mel energy feature matrices together to form a single signal.
+
+    :param left_feats: The first feature matrix (assumed to be signal).
+    :param right_feats: The second feature matrix (assumed to be noise).
+    :param snr: float, decibels, optional: will rescale right_feats to meet the SNR criterion
+    :param offset_right_by: float, seconds, optional: will shift right_feats forward in time
+    :param frame_length: float, milliseconds, optional: required for offset_right_by
+    :param frame_shift: float, milliseconds, optional: required for offset_right_by
+    :param log_energy_floor: value used for padding frames when offsetting
+    :return: np.ndarray; a mixed feature matrix of log-mel energies
+    """
+    # First deal with the offset
+    if offset_right_by > 0:
+        assert frame_length is not None and frame_shift is not None
+        num_frames_offset = time_diff_to_num_frames(
+            offset_right_by,
+            frame_length=frame_length / 1000,
+            frame_shift=frame_shift / 1000
+        )
+        num_feats = left_feats.shape[1]
+        padded_left_feats = np.vstack([left_feats, log_energy_floor * np.ones((num_frames_offset, num_feats))])
+        padded_right_feats = np.vstack([log_energy_floor * np.ones((num_frames_offset, num_feats)), right_feats])
+    else:
+        padded_left_feats, padded_right_feats = left_feats, right_feats
+
+    # Then overlay - for SNR re-scale the right signal, otherwise logsumexp
+    if snr is not None:
+        # TODO: The SNR stuff here might be tricky. For prototyping assume the following:
+        #  - always dealing with log mel filterbank feats
+        #  - total signal energy can be approximated by summing individual bands energies
+        #    (assumes no spectral leakage...) across time and frequencies
+        #  - achieve the final SNR by determining the signal energy ratio and then scaling
+        #    the signals to satisfy requested SNR
+        left_energy, right_energy = [np.sum(np.exp(f)) for f in [left_feats, right_feats]]
+        requested_right_energy = left_energy * (10.0 ** (-snr / 10))
+        overlayed_feats = np.log(
+            np.exp(padded_left_feats) +
+            (requested_right_energy / right_energy) * np.exp(padded_right_feats)
+        )
+    else:
+        overlayed_feats = np.log(np.exp(padded_left_feats) + np.exp(padded_right_feats))
+
+    return overlayed_feats
+
+
+def pad_shorter(
+        left_feats: np.ndarray,
+        right_feats: np.ndarray,
+        log_energy_floor: float = -1000.0
+) -> Tuple[np.ndarray, np.ndarray]:
+    """
+    Finds the "shorter" feature matrix and pads it with low energy frames. Useful for overlaying the
+    features when the real acoustic context is not available.
+    """
+    num_feats = left_feats.shape[1]
+    if num_feats != right_feats.shape[1]:
+        raise ValueError('Cannot pad feature matrices with different number of features.')
+
+    size_diff = abs(left_feats.shape[0] - right_feats.shape[0])
+    if not size_diff:
+        return left_feats, right_feats
+
+    if left_feats.shape[0] > right_feats.shape[0]:
+        return left_feats, np.vstack([right_feats, log_energy_floor * np.ones((size_diff, num_feats))])
+    else:
+        return np.vstack([left_feats, log_energy_floor * np.ones((size_diff, num_feats))]), right_feats

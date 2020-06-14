@@ -30,23 +30,31 @@ features:
     duration: 0.5
     recording_id: recording-1
     start: 0.0
+    frame_length: 25.0
+    frame_shift: 10.0
     storage_path: test/fixtures/dummy_feats/storage/e66b6386-aee5-4a5a-8369-fdde1d2b97c7.llc
     storage_type: lilcom
   - channel_id: 1
     duration: 0.5
     recording_id: recording-1
     start: 0.0
+    frame_length: 25.0
+    frame_shift: 10.0
     storage_path: test/fixtures/dummy_feats/storage/fcad32c9-d6a4-44d2-b8ba-3afd70cd5cbb.llc
     storage_type: lilcom
   - channel_id: 0
     duration: 1.0
     recording_id: recording-2
     start: 0.0
+    frame_length: 25.0
+    frame_shift: 10.0
     storage_path: test/fixtures/dummy_feats/storage/66aeed86-6be7-43c7-808f-52727d47bd34.llc
     storage_type: lilcom
   - channel_id: 1
     duration: 1.0
     recording_id: recording-2
     start: 0.0
+    frame_length: 25.0
+    frame_shift: 10.0
     storage_path: test/fixtures/dummy_feats/storage/9fb7d65a-5f8f-4dce-a194-c86b3b9f3e04.llc
     storage_type: lilcom

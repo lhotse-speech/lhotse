@@ -2,12 +2,13 @@ from contextlib import nullcontext as does_not_raise
 from math import ceil
 from tempfile import NamedTemporaryFile
 
+import numpy as np
 import torchaudio
 from pytest import mark, raises
 
-from lhotse.features import FeatureSet, FeatureExtractor, Features, time_diff_to_num_frames
+from lhotse.features import FeatureSet, FeatureExtractor, Features, overlay_fbank
 from lhotse.test_utils import DummyManifest
-from lhotse.utils import Seconds
+from lhotse.utils import Seconds, time_diff_to_num_frames
 
 other_params = {}
 some_augmentation = None
@@ -48,6 +49,8 @@ def test_feature_set_serialization():
                 channel_id=0,
                 start=0.0,
                 duration=20.0,
+                frame_length=25,
+                frame_shift=10,
                 storage_type='lilcom',
                 storage_path='/irrelevant/path.llc'
             )
@@ -119,3 +122,19 @@ def test_add_feature_sets():
     feature_set_2 = DummyManifest(FeatureSet, begin_id=5, end_id=10)
     combined = feature_set_1 + feature_set_2
     assert combined == expected
+
+
+def test_overlay_fbank():
+    # Treat it more like a test of "it runs" rather than "it works"
+    t = np.linspace(0, 1, 8000, dtype=np.float32)
+    x1 = np.sin(440.0 * t).reshape(1, -1)
+    x2 = np.sin(55.0 * t).reshape(1, -1)
+
+    feature_extractor = FeatureExtractor(type='fbank')
+    f1 = feature_extractor.extract(x1, 8000).numpy()
+    f2 = feature_extractor.extract(x2, 8000).numpy()
+    fmix_energies = overlay_fbank(f1, f2)
+
+    fmix_time = feature_extractor.extract(x1 + x2, 8000).numpy()
+
+    np.testing.assert_almost_equal(fmix_energies, fmix_time, decimal=0)
