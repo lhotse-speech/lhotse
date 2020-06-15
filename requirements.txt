@@ -1,7 +1,8 @@
 pytest
 pyyaml
 numpy
-librosa
+numba==0.48.0
+librosa==0.7.2
 click
 lilcom>=1.1.0
 torch>=1.5
