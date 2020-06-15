@@ -318,24 +318,4 @@ def make_cuts_from_supervisions(supervision_set: SupervisionSet, feature_set: Fe
     return CutSet(cuts={cut.id: cut for cut in cuts})
 
 
-def mix_stereo_cut_set(cut_set: CutSet) -> CutSet:
-    """
-    Utility that converts a CutSet that contains Cuts from both channels of a recording into a CutSet where
-    these channels are downmixed into mono (by overlaying their features with 0 SNR and 0 offset).
-    It assumes the CutSet is sorted by a tuple of (recording_id, channel); conceptually equivalent to:
-
-    [
-        Cut(channel=0, supervisions=[SupervisionSegment(recording_id='abcd', ...), ...], ...),
-        Cut(channel=1, supervisions=[SupervisionSegment(recording_id='abcd', ...), ...], ...),
-        Cut(channel=0, supervisions=[SupervisionSegment(recording_id='efgh', ...), ...], ...),
-        Cut(channel=1, supervisions=[SupervisionSegment(recording_id='efgh', ...), ...], ...),
-    ]
-    """
-    channels = list(set(c.channel for c in cut_set))
-    channel0_cuts = [c for c in cut_set if c.channel == channels[0]]
-    channel1_cuts = [c for c in cut_set if c.channel == channels[1]]
-    mixed_cuts = (c0.overlay(c1) for c0, c1 in zip(channel0_cuts, channel1_cuts))
-    return CutSet(cuts={cut.id: cut for cut in mixed_cuts})
-
-
 AnyCut = Union[Cut, MixedCut]

@@ -1,5 +1,4 @@
 from functools import reduce
-from pathlib import Path
 from typing import Tuple, Optional, List
 
 import click
@@ -7,13 +6,13 @@ import numpy as np
 from cytoolz.itertoolz import groupby
 
 from lhotse.bin.modes.cli_base import cli
-from lhotse.cut import make_cuts_from_supervisions, CutSet, mix_stereo_cut_set, make_cuts_from_features
+from lhotse.cut import make_cuts_from_supervisions, CutSet, make_cuts_from_features
 from lhotse.features import FeatureSet
 from lhotse.manipulation import split, combine
 from lhotse.supervision import SupervisionSet
 from lhotse.utils import Pathlike, fix_random_seed
 
-__all__ = ['cut', 'simple', 'random_overlayed', 'stereo_overlayed']
+__all__ = ['cut', 'simple', 'random_overlayed', 'mix_sequential', 'mix_by_recording_id']
 
 
 @cli.group()
@@ -93,32 +92,6 @@ def random_overlayed(
     # Make the overlayed cut set contain both the overlayed cuts and the source cuts
     overlayed_cut_set = CutSet(cuts={cut.id: cut for cut in cuts}) + source_cut_set
     overlayed_cut_set.to_yaml(output_cut_manifest)
-
-
-@cut.command()
-@click.argument('supervision_manifest', type=click.Path(exists=True, dir_okay=False))
-@click.argument('feature_manifest', type=click.Path(exists=True, dir_okay=False))
-@click.argument('output_dir', type=click.Path())
-def stereo_overlayed(
-        supervision_manifest: Pathlike,
-        feature_manifest: Pathlike,
-        output_dir: Pathlike,
-):
-    """
-    Create a CutSet stored in OUTPUT_CUT_MANIFEST that contains supervision regions from SUPERVISION_MANIFEST
-    and features supplied by FEATURE_MANIFEST. It assumes that every recording has two channels, for which both
-    the supervisions and the features exist. It sums the features of both channels producing a set of mixed cuts.
-    """
-    supervision_set = SupervisionSet.from_yaml(supervision_manifest)
-    feature_set = FeatureSet.from_yaml(feature_manifest)
-
-    source_cut_set = make_cuts_from_supervisions(supervision_set=supervision_set, feature_set=feature_set)
-    mixed_cut_set = mix_stereo_cut_set(source_cut_set)
-
-    output_dir = Path(output_dir)
-    output_dir.mkdir(exist_ok=True, parents=True)
-    source_cut_set.to_yaml(output_dir / 'source_cuts.yml')
-    mixed_cut_set.to_yaml(output_dir / 'mixed_cuts.yml')
 
 
 @cut.command()

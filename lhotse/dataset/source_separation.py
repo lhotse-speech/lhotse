@@ -43,26 +43,13 @@ class SourceSeparationDataset(Dataset):
     def _obtain_mixture(self, cut_id: str) -> Tuple[AnyCut, List[Cut]]:
         raise NotImplementedError("You are using SpeechSeparationDataset, which is an abstract base class; instead, "
                                   "use one of its derived classes that specify whether the mix is pre-computed or "
-                                  "done on-the-fly.")
-
-    def _derived_validate(self):
-        pass
+                                  "done dynamically (on-the-fly).")
 
     def validate(self):
-        mixture_ids = set(self.cut_ids)
-        sources_ids = set(self.mixtures_set.cuts.keys())
-        all_mixtures_have_sources = mixture_ids == mixture_ids.intersection(sources_ids)
-        if not all_mixtures_have_sources:
-            missing_ids = mixture_ids.difference(sources_ids)
-            raise ValueError(f"Cannot initialize SourceSeparationDataset: mixtures with the following IDs are "
-                             f"missing sources (showing first 5): {list(missing_ids)[:5]}")
-
         for cut in self.mixtures_set.mixed_cuts.values():
             _, source_cuts = self._obtain_mixture(cut.id)
             assert len(source_cuts) == 2, f"Source separation with more than two sources is currently not supported. " \
                                           f"Cut with ID '{cut.id}' has {len(source_cuts)} sources."
-
-        self._derived_validate()
 
     def __getitem__(self, idx: int) -> Dict[str, torch.Tensor]:
         cut_id = self.cut_ids[idx]
