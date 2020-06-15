@@ -1,13 +1,11 @@
 from pathlib import Path
-from typing import Dict, Optional, Tuple, Union, List
+from typing import Dict, Optional, Tuple, List
 
 import torch
 from torch.utils.data import Dataset
 
-from lhotse.cut import CutSet, Cut, MixedCut
+from lhotse.cut import CutSet, Cut, AnyCut
 from lhotse.utils import Pathlike
-
-AnyCut = Union[Cut, MixedCut]
 
 EPS = 1e-8
 

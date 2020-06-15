@@ -112,9 +112,11 @@ def librimix(
 
 
 def make_corresponding_supervisions(audio: AudioSet) -> SupervisionSet:
-    # Prepare a supervision set - in this case it just describes
-    # which segments are available in the corpus, as the actual supervisions for
-    # speech separation come from the source recordings.
+    """
+    Prepare a supervision set - in this case it just describes
+    which segments are available in the corpus, as the actual supervisions for
+    speech separation come from the source recordings.
+    """
     return SupervisionSet(segments={
         f'{recording.id}-c{source.channel_ids[0]}': SupervisionSegment(
             id=f'{recording.id}-c{source.channel_ids[0]}',

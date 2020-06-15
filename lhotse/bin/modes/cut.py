@@ -1,13 +1,15 @@
+from functools import reduce
 from pathlib import Path
-from typing import Tuple, Optional
+from typing import Tuple, Optional, List
 
 import click
 import numpy as np
+from cytoolz.itertoolz import groupby
 
 from lhotse.bin.modes.cli_base import cli
 from lhotse.cut import make_cuts_from_supervisions, CutSet, mix_stereo_cut_set, make_cuts_from_features
 from lhotse.features import FeatureSet
-from lhotse.manipulation import split
+from lhotse.manipulation import split, combine
 from lhotse.supervision import SupervisionSet
 from lhotse.utils import Pathlike, fix_random_seed
 
@@ -117,3 +119,46 @@ def stereo_overlayed(
     output_dir.mkdir(exist_ok=True, parents=True)
     source_cut_set.to_yaml(output_dir / 'source_cuts.yml')
     mixed_cut_set.to_yaml(output_dir / 'mixed_cuts.yml')
+
+
+@cut.command()
+@click.argument('cut_manifests', nargs=-1, type=click.Path(exists=True, dir_okay=False))
+@click.argument('output_cut_manifest', type=click.Path())
+def mix_sequential(
+        cut_manifests: List[Pathlike],
+        output_cut_manifest: Pathlike
+):
+    """
+    Create a CutSet stored in OUTPUT_CUT_MANIFEST by iterating jointly over CUT_MANIFESTS and mixing the Cuts
+    on the same positions. E.g. the first output cut is created from the first cuts in each input manifest.
+    The mix is performed by summing the features from all Cuts.
+    If the CUT_MANIFESTS have different number of Cuts, the mixing ends when the shorter manifest is depleted.
+    """
+    cut_manifests = [CutSet.from_yaml(path) for path in cut_manifests]
+    mixed_cuts = (
+        reduce(lambda left_cut, right_cut: left_cut.overlay(right_cut), cuts[1:], cuts[0])
+        for cuts in zip(*cut_manifests)
+    )
+    mixed_cut_set = CutSet(cuts={cut.id: cut for cut in mixed_cuts})
+    mixed_cut_set.to_yaml(output_cut_manifest)
+
+
+@cut.command()
+@click.argument('cut_manifests', nargs=-1, type=click.Path(exists=True, dir_okay=False))
+@click.argument('output_cut_manifest', type=click.Path())
+def mix_by_recording_id(
+        cut_manifests: List[Pathlike],
+        output_cut_manifest: Pathlike
+):
+    """
+    Create a CutSet stored in OUTPUT_CUT_MANIFEST by matching the Cuts from CUT_MANIFESTS by their recording IDs
+    and mixing them together.
+    """
+    all_cuts = combine(*[CutSet.from_yaml(path) for path in cut_manifests])
+    recording_id_to_cut = groupby(lambda cut: cut.recording_id, all_cuts)
+    mixed_cuts = (
+        reduce(lambda left_cut, right_cut: left_cut.overlay(right_cut), cuts[1:], cuts[0])
+        for recording_id, cuts in recording_id_to_cut.items()
+    )
+    mixed_cut_set = CutSet(cuts={cut.id: cut for cut in mixed_cuts})
+    mixed_cut_set.to_yaml(output_cut_manifest)

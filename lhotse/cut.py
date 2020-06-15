@@ -274,6 +274,7 @@ class CutSet:
         return iter(self.cuts.values())
 
     def __add__(self, other: 'CutSet') -> 'CutSet':
+        assert not set(self.cuts.keys()).intersection(other.cuts.keys()), "Conflicting IDs when concatenating CutSets!"
         return CutSet(cuts={**self.cuts, **other.cuts})
 
 
@@ -335,3 +336,6 @@ def mix_stereo_cut_set(cut_set: CutSet) -> CutSet:
     channel1_cuts = [c for c in cut_set if c.channel == channels[1]]
     mixed_cuts = (c0.overlay(c1) for c0, c1 in zip(channel0_cuts, channel1_cuts))
     return CutSet(cuts={cut.id: cut for cut in mixed_cuts})
+
+
+AnyCut = Union[Cut, MixedCut]
