@@ -5,6 +5,7 @@ import torch
 from torch.utils.data import Dataset
 
 from lhotse.cut import CutSet, Cut, AnyCut
+from lhotse.manipulation import combine
 from lhotse.utils import Pathlike
 
 EPS = 1e-8
@@ -92,8 +93,13 @@ class SourceSeparationDataset(Dataset):
 class DynamicallyMixedSourceSeparationDataset(SourceSeparationDataset):
     """
     A PyTorch Dataset for the source separation task.
-    It's created from two CutSets - one provides the audio cuts for the sources, and the other one the audio cuts for
-    the signal mix. When queried for data samples, it returns a dict of: {
+    It's created from a number of CutSets:
+    - sources_set: provides the audio cuts for the sources that (the targets of source separation),
+    - mixtures_set: provides the audio cuts for the signal mix (the input of source separation),
+    - nonsources_set: [optional] provides the audio cuts for other signals that are in the mix,
+        but are not the targets of source separation. Useful for adding noise.
+
+    When queried for data samples, it returns a dict of: {
         'sources': (N x T x F) tensor,
         'mixture': (T x F) tensor,
         'real_mask': (N x T x F) tensor,
@@ -108,9 +114,13 @@ class DynamicallyMixedSourceSeparationDataset(SourceSeparationDataset):
             self,
             sources_set: CutSet,
             mixtures_set: CutSet,
+            nonsources_set: Optional[CutSet] = None,
             root_dir: Optional[Pathlike] = None
     ):
         super().__init__(sources_set=sources_set, mixtures_set=mixtures_set, root_dir=root_dir)
+        self.nonsources_set = nonsources_set
+        if self.nonsources_set is not None:
+            self.mixtures_set.with_source_cuts_from(combine(self.sources_set, self.nonsources_set))
 
     def _obtain_mixture(self, cut_id: str) -> Tuple[AnyCut, List[Cut]]:
         mixture_cut = self.mixtures_set.mixed_cuts[cut_id]
