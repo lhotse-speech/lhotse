@@ -99,6 +99,9 @@ class Cut:
         Returns a MixedCut, which only keeps the information about the mix; actual mixing is performed
         during the call to `load_features`.
         """
+        if offset_other_by > self.duration:
+            raise ValueError(f"Cannot overlay cut '{other.id}' with offset {offset_other_by}, which is greater than "
+                             f"cuts {self.id} duration of {self.duration}")
         return MixedCut(
             id=str(uuid4()),
             tracks=[
@@ -151,8 +154,15 @@ class MixedCut:
 
     @property
     def supervisions(self) -> List[SupervisionSegment]:
-        """Lists the supervisions of the underyling source cuts."""
-        return sum([self._cut_set.cuts[track.cut_id].supervisions for track in self.tracks], [])
+        """
+        Lists the supervisions of the underyling source cuts.
+        Each segment start time will be adjusted by the track offset.
+        """
+        return [
+            segment.with_offset(track.offset)
+            for track in self.tracks
+            for segment in self._cut_set.cuts[track.cut_id].supervisions
+        ]
 
     @property
     def duration(self) -> Seconds:
@@ -166,6 +176,9 @@ class MixedCut:
         Returns a MixedCut, which only keeps the information about the mix; actual mixing is performed
         during the call to `load_features`.
         """
+        if offset_other_by > self.duration:
+            raise ValueError(f"Cannot overlay cut '{other.id}' with offset {offset_other_by}, which is greater than "
+                             f"cuts {self.id} duration of {self.duration}")
         return MixedCut(
             id=str(uuid4()),
             tracks=self.tracks + [

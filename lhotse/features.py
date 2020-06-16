@@ -131,9 +131,6 @@ class Features:
     storage_type: str  # e.g. 'lilcom', 'numpy'
     storage_path: str
 
-    def __post_init__(self):
-        assert self.storage_type in ('lilcom', 'numpy')
-
     def load(
             self,
             root_dir: Optional[Pathlike] = None,
