@@ -140,17 +140,17 @@ class PreMixedSourceSeparationDataset(SourceSeparationDataset):
             mixtures_set: CutSet,
             root_dir: Optional[Pathlike] = None
     ):
-        super().__init__(sources_set=sources_set, mixtures_set=mixtures_set, root_dir=root_dir)
-        # TODO: The following code assumes that the speech separation dataset is created from
-        #  cuts that span the whole recordings (i.e. one recording == one utterance), so it is safe to assume that
-        #  matching them by recording_id will yield correct mixture <=> sources mapping.
-        #  If we want to support datasets where cuts are parts of recordings (e.g. a single utterance in a
-        #  15 minute conversation), we will need to provide an external mapping here.
+        # The following code assumes that the speech separation dataset is created from
+        # cuts that span the whole recordings (i.e. one recording == one utterance), so it is safe to assume that
+        # matching them by recording_id will yield correct mixture <=> sources mapping.
+        # If we want to support datasets where cuts are parts of recordings (e.g. a single utterance in a
+        # 15 minute conversation), we will need to provide an external mapping here.
         self.mixture_to_source = {
             # We expect mixture and source cuts to share the same recording_ids
-            cut.id: [c.id for c in self.sources_set if c.recording_id == cut.recording_id]
-            for cut in self.mixtures_set
+            cut.id: [c.id for c in sources_set if c.recording_id == cut.recording_id]
+            for cut in mixtures_set
         }
+        super().__init__(sources_set=sources_set, mixtures_set=mixtures_set, root_dir=root_dir)
 
     def _obtain_mixture(self, cut_id: str) -> Tuple[AnyCut, List[Cut]]:
         mixture_cut = self.mixtures_set.cuts[cut_id]

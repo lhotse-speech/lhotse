@@ -308,7 +308,7 @@ class FeatureSetBuilder:
             compressed: bool = True,
             lilcom_tick_power: int = -8,
             num_jobs: int = 1
-    ):
+    ) -> FeatureSet:
         (self.output_dir / 'storage').mkdir(parents=True, exist_ok=True)
         do_work = partial(
             self._process_and_store_recording,
@@ -322,6 +322,7 @@ class FeatureSetBuilder:
                 features=list(chain.from_iterable(ex.map(do_work, recordings)))
             )
         feature_set.to_yaml(self.output_dir / 'feature_manifest.yml')
+        return feature_set
 
     def _process_and_store_recording(
             self,
