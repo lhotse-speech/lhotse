@@ -176,7 +176,9 @@ class MixedCut:
         Returns a MixedCut, which only keeps the information about the mix; actual mixing is performed
         during the call to `load_features`.
         """
-        if offset_other_by > self.duration:
+        # We can only check for "out-of-bounds" overlay operation when a MixedCut can access the Cuts
+        # that it consists of.
+        if hasattr(self, '_cut_set') and offset_other_by > self.duration:
             raise ValueError(f"Cannot overlay cut '{other.id}' with offset {offset_other_by}, which is greater than "
                              f"cuts {self.id} duration of {self.duration}")
         return MixedCut(
