@@ -92,7 +92,7 @@ class Cut:
             features=self.features
         )
 
-    def overlay(self, other: 'Cut', offset_other_by: Seconds = 0.0, snr: Decibels = 0.0) -> 'MixedCut':
+    def overlay(self, other: 'Cut', offset_other_by: Seconds = 0.0, snr: Optional[Decibels] = None) -> 'MixedCut':
         """
         Overlay, or mix, this Cut with the `other` Cut. Optionally the `other` Cut may be shifted by `offset_other_by`
         Seconds and scaled down (positive SNR) or scaled up (negative SNR).
@@ -102,12 +102,12 @@ class Cut:
         return MixedCut(
             id=str(uuid4()),
             tracks=[
-                MixTrack(cut_id=self.id, offset=0.0, snr=0.0),
+                MixTrack(cut_id=self.id),
                 MixTrack(cut_id=other.id, offset=offset_other_by, snr=snr)
             ]
         )
 
-    def append(self, other: 'Cut', snr: float) -> 'MixedCut':
+    def append(self, other: 'Cut', snr: Optional[Decibels] = None) -> 'MixedCut':
         """
         Append the `other` Cut after the current Cut. Conceptually the same as `overlay` but with an offset
         matching the current cuts length. Optionally scale down (positive SNR) or scale up (negative SNR)
@@ -125,8 +125,8 @@ class MixTrack:
     how to mix it with other Cuts, relative to the first track in a mix.
     """
     cut_id: str
-    offset: Seconds
-    snr: Decibels
+    offset: Seconds = 0.0
+    snr: Optional[Decibels] = None
 
 
 @dataclass
@@ -159,7 +159,7 @@ class MixedCut:
         track_durations = (track.offset + self._cut_set.cuts[track.cut_id].duration for track in self.tracks)
         return max(track_durations)
 
-    def overlay(self, other: 'Cut', offset_other_by: Seconds = 0.0, snr: Decibels = 0.0) -> 'MixedCut':
+    def overlay(self, other: 'Cut', offset_other_by: Seconds = 0.0, snr: Optional[Decibels] = None) -> 'MixedCut':
         """
         Overlay, or mix, this Cut with the `other` Cut. Optionally the `other` Cut may be shifted by `offset_other_by`
         Seconds and scaled down (positive SNR) or scaled up (negative SNR).
@@ -173,7 +173,7 @@ class MixedCut:
             ]
         )
 
-    def append(self, other: 'Cut', snr: float) -> 'MixedCut':
+    def append(self, other: 'Cut', snr: Optional[Decibels] = None) -> 'MixedCut':
         """
         Append the `other` Cut after the current Cut. Conceptually the same as `overlay` but with an offset
         matching the current cuts length. Optionally scale down (positive SNR) or scale up (negative SNR)
