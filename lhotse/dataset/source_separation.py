@@ -38,7 +38,6 @@ class SourceSeparationDataset(Dataset):
         self.root_dir = Path(root_dir) if root_dir else None
 
         self.cut_ids = list(self.mixtures_set.cuts.keys())
-        self.validate()
 
     def _obtain_mixture(self, cut_id: str) -> Tuple[AnyCut, List[Cut]]:
         raise NotImplementedError("You are using SpeechSeparationDataset, which is an abstract base class; instead, "
@@ -46,10 +45,10 @@ class SourceSeparationDataset(Dataset):
                                   "done dynamically (on-the-fly).")
 
     def validate(self):
+        # Make sure it's possible to iterate through the whole dataset and resolve the sources for each mixture
         for cut in self.mixtures_set.mixed_cuts.values():
             _, source_cuts = self._obtain_mixture(cut.id)
-            assert len(source_cuts) == 2, f"Source separation with more than two sources is currently not supported. " \
-                                          f"Cut with ID '{cut.id}' has {len(source_cuts)} sources."
+            assert len(source_cuts) > 1
 
     def __getitem__(self, idx: int) -> Dict[str, torch.Tensor]:
         cut_id = self.cut_ids[idx]
