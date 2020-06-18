@@ -48,6 +48,10 @@ class Cut:
     def end(self) -> Seconds:
         return self.start + self.duration
 
+    @property
+    def num_frames(self) -> int:
+        return self.features.num_frames
+
     def load_features(self, root_dir: Optional[Pathlike] = None) -> np.ndarray:
         """
         Load the features from the underlying storage and cut them to the relevant

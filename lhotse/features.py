@@ -131,6 +131,15 @@ class Features:
     storage_type: str  # e.g. 'lilcom', 'numpy'
     storage_path: str
 
+    @property
+    def end(self):
+        return self.start + self.duration
+
+    @property
+    def num_frames(self) -> int:
+        # TODO: ensure consistency when resolving issue https://github.com/pzelasko/lhotse/issues/20
+        return time_diff_to_num_frames(self.duration, frame_length=self.frame_length, frame_shift=self.frame_shift)
+
     def load(
             self,
             root_dir: Optional[Pathlike] = None,
@@ -169,10 +178,6 @@ class Features:
             features = features[:-frames_to_trim, :]
 
         return features
-
-    @property
-    def end(self):
-        return self.start + self.duration
 
 
 @dataclass
