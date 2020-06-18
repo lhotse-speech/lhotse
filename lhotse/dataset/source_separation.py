@@ -61,7 +61,8 @@ class SourceSeparationDataset(Dataset):
         )
 
         # Compute the masks given the source features
-        real_mask = sources / (sources.sum(1, keepdim=True) + EPS)
+        sources_exp = sources.exp()
+        real_mask = sources_exp / (sources_exp.sum(0, keepdim=True) + EPS)
         # Get the src idx having the maximum energy
         binary_mask = real_mask.argmax(0)
 
