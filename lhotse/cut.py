@@ -1,3 +1,4 @@
+import random
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Iterable, Any, Union
 from uuid import uuid4
@@ -220,6 +221,9 @@ class MixedCut:
         return mixer.mixed_feats
 
 
+AnyCut = Union[Cut, MixedCut]
+
+
 @dataclass
 class CutSet:
     """
@@ -227,7 +231,7 @@ class CutSet:
     It may have wider span than the actual supervisions, provided the features for the whole span exist.
     It is the basic building block of PyTorch-style Datasets for speech/audio processing tasks.
     """
-    cuts: Dict[str, Union[Cut, MixedCut]]
+    cuts: Dict[str, AnyCut]
 
     @property
     def mixed_cuts(self) -> Dict[str, MixedCut]:
@@ -242,7 +246,7 @@ class CutSet:
         with open(path) as f:
             raw_cuts = yaml.safe_load(f)
 
-        def deserialize_one(cut: Dict[str, Any]):
+        def deserialize_one(cut: Dict[str, Any]) -> AnyCut:
             cut_type = cut['type']
             del cut['type']
 
@@ -267,7 +271,7 @@ class CutSet:
         with open(path, 'w') as f:
             yaml.safe_dump([{**asdict_nonull(cut), 'type': type(cut).__name__} for cut in self], stream=f)
 
-    def with_source_cuts_from(self, source: 'CutSet'):
+    def with_source_cuts_from(self, source: 'CutSet') -> 'CutSet':
         """
         Provide the source cut set that can be looked up to resolve the dependencies of the MixedCut's in this CutSet.
         This method is a necessary, because the MixedCut acts like a "pointer" to the cuts that were used to create it.
@@ -275,6 +279,47 @@ class CutSet:
         for cut in self.mixed_cuts.values():
             cut.with_cut_set(source)
         return self
+
+    def truncate(
+            self,
+            max_duration: Seconds,
+            offset_type: str,
+            keep_excessive_supervisions: bool = True
+    ) -> 'CutSet':
+        """
+        Return a new CutSet with the Cuts truncated so that their durations are at most `max_duration`.
+        :param max_duration: float, the maximum duration in seconds of a cut in the resulting manifest.
+        :param offset_type: str, can be:
+            - 'start' => cuts are truncated from their start;
+            - 'end' => cuts are truncated from their end minus max_duration;
+            - 'random' => cuts are truncated randomly between their start and their end minus max_duration
+        :param keep_excessive_supervisions: When a cut is truncated in the middle of a supervision segment,
+            should the supervision be kept.
+        :return: a new CutSet instance with truncated cuts.
+        """
+        truncated_cuts = []
+        for cut in self:
+            if cut.duration <= max_duration:
+                truncated_cuts.append(cut)
+                continue
+
+            def compute_offset():
+                if offset_type == 'start':
+                    return 0.0
+                last_offset = cut.end - max_duration
+                if offset_type == 'end':
+                    return last_offset
+                if offset_type == 'random':
+                    return random.uniform(0.0, last_offset)
+                raise ValueError(f"Unknown 'offset_type' option: {offset_type}")
+
+            offset = compute_offset()
+            truncated_cuts.append(cut.truncate(
+                offset=compute_offset(),
+                until=offset + max_duration,
+                keep_excessive_supervisions=keep_excessive_supervisions
+            ))
+        return CutSet({cut.id: cut for cut in truncated_cuts})
 
     def __contains__(self, item: Union[str, Cut, MixedCut]) -> bool:
         if isinstance(item, str):
@@ -285,7 +330,7 @@ class CutSet:
     def __len__(self) -> int:
         return len(self.cuts)
 
-    def __iter__(self) -> Iterable[Cut]:
+    def __iter__(self) -> Iterable[AnyCut]:
         return iter(self.cuts.values())
 
     def __add__(self, other: 'CutSet') -> 'CutSet':
@@ -331,6 +376,3 @@ def make_cuts_from_supervisions(supervision_set: SupervisionSet, feature_set: Fe
         for idx, supervision in enumerate(supervision_set)
     )
     return CutSet(cuts={cut.id: cut for cut in cuts})
-
-
-AnyCut = Union[Cut, MixedCut]
