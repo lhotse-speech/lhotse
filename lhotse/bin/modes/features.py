@@ -16,7 +16,7 @@ __all__ = ['write_default_feature_config', 'make_feats']
 @click.argument('output_config', type=click.Path())
 def write_default_feature_config(output_config):
     """Save a default feature extraction config to OUTPUT_CONFIG."""
-    FeatureExtractor().to_yaml(output_config)
+    FeatureExtractor().to_yaml(output_config, include_defaults=True)
 
 
 @cli.command()
