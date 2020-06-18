@@ -42,7 +42,7 @@ def save_to_yaml(data: Any, path: Pathlike):
             # When pyyaml is installed with C extensions, it can speed up the (de)serialization noticeably
             return yaml.dump(data, stream=f, Dumper=yaml.CSafeDumper)
         except AttributeError:
-            return yaml.dump(data, stream=f, Loader=yaml.SafeDumper)
+            return yaml.dump(data, stream=f, Dumper=yaml.SafeDumper)
 
 
 def asdict_nonull(dclass) -> Dict[str, Any]:
