@@ -350,7 +350,7 @@ class FeatureSetBuilder:
             feature_extractor=self.feature_extractor,
             features=feature_infos
         )
-        feature_set.to_yaml(self.output_dir / 'feature_manifest.yml')
+        feature_set.to_yaml(self.output_dir / 'feature_manifest.yml.gz')
         return feature_set
 
     def _process_and_store_recording(

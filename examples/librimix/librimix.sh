@@ -26,13 +26,13 @@ for type in sources mix noise; do
   # Create cuts out of features - cuts_mix.yml will contain pre-mixed cuts for source separation
   lhotse cut simple \
     -s librimix/supervisions_${type}.yml \
-    librimix/feats_${type}/feature_manifest.yml \
-    librimix/cuts_${type}.yml
+    librimix/feats_${type}/feature_manifest.yml.gz \
+    librimix/cuts_${type}.yml.gz
 done
 
 # Prepare cuts with feature-domain mixes performed on-the-fly - clean
-lhotse cut mix-by-recording-id librimix/cuts_sources.yml librimix/cuts_mix_dynamic_clean.yml
+lhotse cut mix-by-recording-id librimix/cuts_sources.yml.gz librimix/cuts_mix_dynamic_clean.yml.gz
 # Prepare cuts with feature-domain mixes performed on-the-fly - noisy
-lhotse cut mix-by-recording-id librimix/cuts_sources.yml librimix/cuts_noise.yml librimix/cuts_mix_dynamic_noisy.yml
+lhotse cut mix-by-recording-id librimix/cuts_sources.yml.gz librimix/cuts_noise.yml.gz librimix/cuts_mix_dynamic_noisy.yml.gz
 
 # Processing complete - the resulting YAML mixed cut manifests can be loaded in Python to create a PyTorch dataset.
