@@ -1,11 +1,13 @@
 - id: mixed-cut-id
-  left_cut_id: 0c5fdf79-efe7-4d45-b612-3d90d9af8c4e
-  offset_right_by: 3.89
-  right_cut_id: 78bef88d-e62e-4cfa-9946-a1311442c6f7
-  snr: 20.0
+  tracks:
+    - cut_id: 0c5fdf79-efe7-4d45-b612-3d90d9af8c4e
+      offset: 0.0
+      snr: 0.0
+    - cut_id: 78bef88d-e62e-4cfa-9946-a1311442c6f7
+      offset: 3.89
+      snr: 20.0
   type: MixedCut
-- channel: 0
-  duration: 9.705
+- duration: 9.705
   features:
     channel_id: 0
     duration: 9.705
@@ -30,8 +32,7 @@
         WHO WERE THEMSELVES ON THE OTHER SIDE OF IT IF INDEED THERE WAS ANY ONE AT ALL
         COULD I HOPE TO CROSS IT
   type: Cut
-- channel: 0
-  duration: 7.78
+- duration: 7.78
   features:
     channel_id: 0
     duration: 7.78

@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, asdict
 from typing import Dict, Optional, Iterable
 
 import yaml
@@ -21,6 +21,11 @@ class SupervisionSegment:
     @property
     def end(self) -> Seconds:
         return self.start + self.duration
+
+    def with_offset(self, offset: Seconds) -> 'SupervisionSegment':
+        kwargs = asdict(self)
+        kwargs['start'] += offset
+        return SupervisionSegment(**kwargs)
 
 
 @dataclass

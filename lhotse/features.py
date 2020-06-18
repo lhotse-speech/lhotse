@@ -131,8 +131,14 @@ class Features:
     storage_type: str  # e.g. 'lilcom', 'numpy'
     storage_path: str
 
-    def __post_init__(self):
-        assert self.storage_type in ('lilcom', 'numpy')
+    @property
+    def end(self):
+        return self.start + self.duration
+
+    @property
+    def num_frames(self) -> int:
+        # TODO: ensure consistency when resolving issue https://github.com/pzelasko/lhotse/issues/20
+        return time_diff_to_num_frames(self.duration, frame_length=self.frame_length, frame_shift=self.frame_shift)
 
     def load(
             self,
@@ -172,10 +178,6 @@ class Features:
             features = features[:-frames_to_trim, :]
 
         return features
-
-    @property
-    def end(self):
-        return self.start + self.duration
 
 
 @dataclass
@@ -234,7 +236,8 @@ class FeatureSet:
         candidates = list(candidates)
 
         if not candidates:
-            raise KeyError("No features available for the requested recording/channel/region.")
+            raise KeyError(
+                f"No features available for recording '{recording_id}', channel {channel_id} in time range [{start}s, {'end' if duration is None else duration}s]")
 
         # in case there is more than one candidate feature segment, select the best fit
         # by minimizing the MSE of the time markers...
@@ -307,7 +310,7 @@ class FeatureSetBuilder:
             compressed: bool = True,
             lilcom_tick_power: int = -8,
             num_jobs: int = 1
-    ):
+    ) -> FeatureSet:
         (self.output_dir / 'storage').mkdir(parents=True, exist_ok=True)
         do_work = partial(
             self._process_and_store_recording,
@@ -321,6 +324,7 @@ class FeatureSetBuilder:
                 features=list(chain.from_iterable(ex.map(do_work, recordings)))
             )
         feature_set.to_yaml(self.output_dir / 'feature_manifest.yml')
+        return feature_set
 
     def _process_and_store_recording(
             self,
@@ -365,59 +369,113 @@ class FeatureSetBuilder:
         return results
 
 
-def overlay_fbank(
-        left_feats: np.ndarray,
-        right_feats: np.ndarray,
-        snr: Optional[Decibels] = None,
-        offset_right_by: Seconds = 0,
-        frame_length: Optional[Milliseconds] = None,
-        frame_shift: Optional[Milliseconds] = None,
-        log_energy_floor: float = -1000.0
-) -> np.ndarray:
+class FbankMixer:
     """
-    Mix two log-mel energy feature matrices together to form a single signal.
+    Utility class to mix multiple log-mel energy feature matrices into a single one.
+    It pads the signals with low energy values to account for differing lengths and offsets.
+    """
 
-    :param left_feats: The first feature matrix (assumed to be signal).
-    :param right_feats: The second feature matrix (assumed to be noise).
-    :param snr: float, decibels, optional: will rescale right_feats to meet the SNR criterion
-    :param offset_right_by: float, seconds, optional: will shift right_feats forward in time
-    :param frame_length: float, milliseconds, optional: required for offset_right_by
-    :param frame_shift: float, milliseconds, optional: required for offset_right_by
-    :param log_energy_floor: value used for padding frames when offsetting
-    :return: np.ndarray; a mixed feature matrix of log-mel energies
-    """
-    # First deal with the offset
-    if offset_right_by > 0:
-        assert frame_length is not None and frame_shift is not None
+    def __init__(
+            self,
+            base_feats: np.ndarray,
+            frame_shift: Milliseconds,
+            frame_length: Milliseconds,
+            log_energy_floor: float = -1000.0
+    ):
+        """
+        :param base_feats: The features used to initialize the FbankMixer are a point of reference
+            in terms of energy and offset for all features mixed into them.
+        :param frame_shift: Required to correctly compute offset and padding during the mix.
+        :param frame_length: Required to correctly compute offset and padding during the mix.
+        :param log_energy_floor: The value used to pad the shorter features during the mix.
+        """
+        # The mixing output will be available in self.mixed_feats
+        self.mixed_feats = base_feats
+        # Keep a pre-computed energy value of the features that we initialize the Mixer with;
+        # it is required to compute gain ratios that satisfy SNR during the mix.
+        self.reference_energy = fbank_energy(base_feats)
+        self.frame_shift: Seconds = frame_shift / 1000.0
+        self.frame_length: Seconds = frame_length / 1000.0
+        self.log_energy_floor = log_energy_floor
+
+    @property
+    def num_features(self):
+        return self.mixed_feats.shape[1]
+
+    def add_to_mix(
+            self,
+            feats: np.ndarray,
+            snr: Optional[Decibels] = None,
+            offset: Seconds = 0.0
+    ):
+        """
+        Add feature matrix of a new track into the mix.
+        :param feats: A 2-d feature matrix to be mixed in.
+        :param snr: Signal-to-noise ratio, assuming `feats` represents noise (positive SNR - lower `feats` energy,
+            negative SNR - higher `feats` energy)
+        :param offset: How many seconds to shift `feats` in time. For mixing, the signal will be padded before
+            the start with low energy values.
+        :return:
+        """
+        assert offset >= 0.0, "Negative offset in mixing is not supported."
+
         num_frames_offset = time_diff_to_num_frames(
-            offset_right_by,
-            frame_length=frame_length / 1000,
-            frame_shift=frame_shift / 1000
+            offset,
+            frame_length=self.frame_length,
+            frame_shift=self.frame_shift
         )
-        num_feats = left_feats.shape[1]
-        padded_left_feats = np.vstack([left_feats, log_energy_floor * np.ones((num_frames_offset, num_feats))])
-        padded_right_feats = np.vstack([log_energy_floor * np.ones((num_frames_offset, num_feats)), right_feats])
-    else:
-        padded_left_feats, padded_right_feats = left_feats, right_feats
+        current_num_frames = self.mixed_feats.shape[0]
+        incoming_num_frames = feats.shape[0] + num_frames_offset
+        mix_num_frames = max(current_num_frames, incoming_num_frames)
 
-    # Then overlay - for SNR re-scale the right signal, otherwise logsumexp
-    if snr is not None:
-        # TODO: The SNR stuff here might be tricky. For prototyping assume the following:
-        #  - always dealing with log mel filterbank feats
-        #  - total signal energy can be approximated by summing individual bands energies
-        #    (assumes no spectral leakage...) across time and frequencies
-        #  - achieve the final SNR by determining the signal energy ratio and then scaling
-        #    the signals to satisfy requested SNR
-        left_energy, right_energy = [np.sum(np.exp(f)) for f in [left_feats, right_feats]]
-        requested_right_energy = left_energy * (10.0 ** (-snr / 10))
-        overlayed_feats = np.log(
-            np.exp(padded_left_feats) +
-            (requested_right_energy / right_energy) * np.exp(padded_right_feats)
-        )
-    else:
-        overlayed_feats = np.log(np.exp(padded_left_feats) + np.exp(padded_right_feats))
+        existing_feats = self.mixed_feats
+        feats_to_add = feats
 
-    return overlayed_feats
+        # When the existing frames are less than what we anticipate after the mix,
+        # we need to pad after the end of the existing features mixed so far.
+        if current_num_frames < mix_num_frames:
+            existing_feats = np.vstack([
+                self.mixed_feats,
+                self.log_energy_floor * np.ones((mix_num_frames - current_num_frames, self.num_features))
+            ])
+
+        # When there is an offset, we need to pad before the start of the features we're adding.
+        if offset > 0:
+            feats_to_add = np.vstack([
+                self.log_energy_floor * np.ones((num_frames_offset, self.num_features)),
+                feats_to_add
+            ])
+
+        # When the features we're mixing in are shorter that the anticipated mix length,
+        # we need to pad after their end.
+        # Note: we're doing that non-efficiently, as it we potentially re-allocate numpy arrays twice,
+        # during this padding and the  offset padding before. If that's a bottleneck, we'll optimize.
+        if incoming_num_frames < mix_num_frames:
+            feats_to_add = np.vstack([
+                feats_to_add,
+                self.log_energy_floor * np.ones((mix_num_frames - incoming_num_frames, self.num_features))
+            ])
+
+        # When SNR is requested, find what gain is needed to satisfy the SNR
+        gain = 1.0
+        if snr is not None:
+            # TODO: The SNR stuff here might be tricky. For prototyping assume the following:
+            #  - always dealing with log mel filterbank feats
+            #  - total signal energy can be approximated by summing individual bands energies
+            #    (assumes no spectral leakage...) across time and frequencies
+            #  - achieve the final SNR by determining the signal energy ratio and then scaling
+            #    the signals to satisfy requested SNR
+
+            # Compute the added signal energy before it was padded
+            added_feats_energy = fbank_energy(feats)
+            target_energy = self.reference_energy * (10.0 ** (-snr / 10))
+            gain = target_energy / added_feats_energy
+
+        self.mixed_feats = np.log(np.exp(existing_feats) + gain * np.exp(feats_to_add))
+
+
+def fbank_energy(fbank: np.ndarray) -> float:
+    return float(np.sum(np.exp(fbank)))
 
 
 def pad_shorter(

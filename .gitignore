@@ -1,3 +1,11 @@
+# Custom
+.idea/
+deps/
+examples/librimix/MiniLibriMix/
+examples/librimix/MiniLibriMix.zip
+examples/librimix/librimix_nb/
+examples/librimix/librimix/
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]

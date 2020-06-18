@@ -6,7 +6,7 @@ import numpy as np
 import torchaudio
 from pytest import mark, raises
 
-from lhotse.features import FeatureSet, FeatureExtractor, Features, overlay_fbank
+from lhotse.features import FeatureSet, FeatureExtractor, Features, FbankMixer
 from lhotse.test_utils import DummyManifest
 from lhotse.utils import Seconds, time_diff_to_num_frames
 
@@ -133,8 +133,14 @@ def test_overlay_fbank():
     feature_extractor = FeatureExtractor(type='fbank')
     f1 = feature_extractor.extract(x1, 8000).numpy()
     f2 = feature_extractor.extract(x2, 8000).numpy()
-    fmix_energies = overlay_fbank(f1, f2)
+    mixer = FbankMixer(
+        base_feats=f1,
+        frame_shift=feature_extractor.spectrogram_config.frame_shift,
+        frame_length=feature_extractor.spectrogram_config.frame_length
+    )
+    mixer.add_to_mix(f2)
 
+    fmix_feat = mixer.mixed_feats
     fmix_time = feature_extractor.extract(x1 + x2, 8000).numpy()
 
-    np.testing.assert_almost_equal(fmix_energies, fmix_time, decimal=0)
+    np.testing.assert_almost_equal(fmix_feat, fmix_time, decimal=0)
