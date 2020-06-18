@@ -1,4 +1,3 @@
-from functools import reduce
 from typing import Tuple, Optional, List
 
 import click
@@ -6,7 +5,7 @@ import numpy as np
 from cytoolz.itertoolz import groupby
 
 from lhotse.bin.modes.cli_base import cli
-from lhotse.cut import make_cuts_from_supervisions, CutSet, make_cuts_from_features
+from lhotse.cut import make_cuts_from_supervisions, CutSet, make_cuts_from_features, mix_cuts
 from lhotse.features import FeatureSet
 from lhotse.manipulation import split, combine
 from lhotse.supervision import SupervisionSet
@@ -90,7 +89,7 @@ def random_overlayed(
     )
 
     # Make the overlayed cut set contain both the overlayed cuts and the source cuts
-    overlayed_cut_set = CutSet(cuts={cut.id: cut for cut in cuts}) + source_cut_set
+    overlayed_cut_set = CutSet.from_cuts(cuts) + source_cut_set
     overlayed_cut_set.to_yaml(output_cut_manifest)
 
 
@@ -108,11 +107,7 @@ def mix_sequential(
     If the CUT_MANIFESTS have different number of Cuts, the mixing ends when the shorter manifest is depleted.
     """
     cut_manifests = [CutSet.from_yaml(path) for path in cut_manifests]
-    mixed_cuts = (
-        reduce(lambda left_cut, right_cut: left_cut.overlay(right_cut), cuts[1:], cuts[0])
-        for cuts in zip(*cut_manifests)
-    )
-    mixed_cut_set = CutSet(cuts={cut.id: cut for cut in mixed_cuts})
+    mixed_cut_set = CutSet.from_cuts(mix_cuts(cuts) for cuts in zip(*cut_manifests))
     mixed_cut_set.to_yaml(output_cut_manifest)
 
 
@@ -128,12 +123,8 @@ def mix_by_recording_id(
     and mixing them together.
     """
     all_cuts = combine(*[CutSet.from_yaml(path) for path in cut_manifests])
-    recording_id_to_cut = groupby(lambda cut: cut.recording_id, all_cuts)
-    mixed_cuts = (
-        reduce(lambda left_cut, right_cut: left_cut.overlay(right_cut), cuts[1:], cuts[0])
-        for recording_id, cuts in recording_id_to_cut.items()
-    )
-    mixed_cut_set = CutSet(cuts={cut.id: cut for cut in mixed_cuts})
+    recording_id_to_cuts = groupby(lambda cut: cut.recording_id, all_cuts)
+    mixed_cut_set = CutSet.from_cuts(mix_cuts(cuts) for recording_id, cuts in recording_id_to_cuts.items())
     mixed_cut_set.to_yaml(output_cut_manifest)
 
 

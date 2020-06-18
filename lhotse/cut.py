@@ -1,5 +1,6 @@
 import random
 from dataclasses import dataclass
+from functools import reduce
 from typing import Dict, List, Optional, Iterable, Any, Union
 from uuid import uuid4
 
@@ -47,6 +48,10 @@ class Cut:
     @property
     def end(self) -> Seconds:
         return self.start + self.duration
+
+    @property
+    def num_frames(self) -> int:
+        return self.features.num_frames
 
     def load_features(self, root_dir: Optional[Pathlike] = None) -> np.ndarray:
         """
@@ -221,6 +226,7 @@ class MixedCut:
         return mixer.mixed_feats
 
 
+# Helper "typedef" to artbitrary Cut type as they do not share a common base class
 AnyCut = Union[Cut, MixedCut]
 
 
@@ -240,6 +246,10 @@ class CutSet:
     @property
     def simple_cuts(self) -> Dict[str, Cut]:
         return {id_: cut for id_, cut in self.cuts.items() if isinstance(cut, Cut)}
+
+    @staticmethod
+    def from_cuts(cuts: Iterable[AnyCut]) -> 'CutSet':
+        return CutSet({cut.id: cut for cut in cuts})
 
     @staticmethod
     def from_yaml(path: Pathlike) -> 'CutSet':
@@ -342,7 +352,7 @@ def make_cuts_from_features(feature_set: FeatureSet) -> CutSet:
     """
     Utility that converts a FeatureSet to a CutSet without any adjustment of the segment boundaries.
     """
-    cuts = (
+    return CutSet.from_cuts(
         Cut(
             id=str(uuid4()),
             start=features.start,
@@ -352,7 +362,6 @@ def make_cuts_from_features(feature_set: FeatureSet) -> CutSet:
         )
         for features in feature_set
     )
-    return CutSet(cuts={cut.id: cut for cut in cuts})
 
 
 def make_cuts_from_supervisions(supervision_set: SupervisionSet, feature_set: FeatureSet) -> CutSet:
@@ -360,7 +369,7 @@ def make_cuts_from_supervisions(supervision_set: SupervisionSet, feature_set: Fe
     Utility that converts a SupervisionSet to a CutSet without any adjustment of the segment boundaries.
     It attaches the relevant features from the corresponding FeatureSet.
     """
-    cuts = (
+    return CutSet.from_cuts(
         Cut(
             id=str(uuid4()),
             start=supervision.start,
@@ -375,4 +384,11 @@ def make_cuts_from_supervisions(supervision_set: SupervisionSet, feature_set: Fe
         )
         for idx, supervision in enumerate(supervision_set)
     )
-    return CutSet(cuts={cut.id: cut for cut in cuts})
+
+
+def mix_cuts(cuts: Iterable[AnyCut]) -> MixedCut:
+    """Return a MixedCut that consists of the input Cuts overlayed on each other as-is."""
+    cuts = list(cuts)
+    # The following is a fold (accumulate/aggregate) operation; it starts with cuts[0], and overlays it with cuts[1];
+    #  then takes their mix and overlays it with cuts[2]; and so on.
+    return reduce(lambda left_cut, right_cut: left_cut.overlay(right_cut), cuts[1:], cuts[0])
