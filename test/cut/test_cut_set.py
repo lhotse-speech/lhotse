@@ -1,17 +1,6 @@
 from tempfile import NamedTemporaryFile
 
-import pytest
-
-from lhotse.cut import CutSet, Cut, MixedCut, MixTrack
-
-
-@pytest.fixture
-def cut_set_with_mixed_cut(cut1, cut2):
-    mixed_cut = MixedCut(id='mixed-cut-id', tracks=[
-        MixTrack(cut_id=cut1.id),
-        MixTrack(cut_id=cut2.id, offset=1.0, snr=10)
-    ])
-    return CutSet({cut.id: cut for cut in [cut1, cut2, mixed_cut]})
+from lhotse.cut import Cut, MixedCut
 
 
 def test_cut_set_iteration(cut_set_with_mixed_cut):

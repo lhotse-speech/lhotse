@@ -113,7 +113,9 @@ class Cut:
             tracks=[
                 MixTrack(cut_id=self.id),
                 MixTrack(cut_id=other.id, offset=offset_other_by, snr=snr)
-            ]
+            ],
+            start=0.0,
+            duration=max(self.duration, offset_other_by + other.duration)
         )
 
     def append(self, other: 'Cut', snr: Optional[Decibels] = None) -> 'MixedCut':
@@ -148,7 +150,14 @@ class MixedCut:
     The SNR and offset of all the tracks are specified relative to the first track.
     """
     id: str
+
+    # A list of "pointers" to Cuts and the mix parameters
     tracks: List[MixTrack]
+
+    # Start here means "after we mix, at which offset to start loading features." It is relative to the mix and not
+    # to the original recordings. The start and duration fields can be used to keep truncation information.
+    start: Seconds
+    duration: Seconds
 
     def with_cut_set(self, cut_set: 'CutSet') -> 'MixedCut':
         """
@@ -171,9 +180,8 @@ class MixedCut:
         ]
 
     @property
-    def duration(self) -> Seconds:
-        track_durations = (track.offset + self._cut_set.cuts[track.cut_id].duration for track in self.tracks)
-        return max(track_durations)
+    def end(self) -> Seconds:
+        return self.start + self.duration
 
     def overlay(self, other: 'Cut', offset_other_by: Seconds = 0.0, snr: Optional[Decibels] = None) -> 'MixedCut':
         """
@@ -191,7 +199,9 @@ class MixedCut:
             id=str(uuid4()),
             tracks=self.tracks + [
                 MixTrack(cut_id=other.id, offset=offset_other_by, snr=snr)
-            ]
+            ],
+            start=self.start,
+            duration=max(self.duration, offset_other_by + other.duration)
         )
 
     def append(self, other: 'Cut', snr: Optional[Decibels] = None) -> 'MixedCut':
@@ -203,6 +213,38 @@ class MixedCut:
         during the call to `load_features`.
         """
         return self.overlay(other=other, offset_other_by=self.duration, snr=snr)
+
+    def truncate(
+            self,
+            *,
+            offset: Seconds = 0.0,
+            until: Optional[Seconds] = None,
+            keep_excessive_supervisions: bool = True
+    ) -> 'MixedCut':
+        """
+        Returns a new MixedCut that is a sub-region of the current MixedCut. The `offset` parameter controls the start
+        of the new cut relative to the current MixedCut's start, and `until` parameter controls the new cuts end.
+        Since trimming may happen inside a SupervisionSegment, the caller has an option to either keep or discard
+        such supervisions with `keep_excessive_supervision` flag.
+        Note that no operation is done on the actual features - it's only during load_features() when the actual
+        changes happen (a subset of features is loaded).
+
+        Example:
+        >>> from math import isclose
+        >>> cut = MixedCut(id='x', tracks='irrelevant', start=0.0, duration=8.0)
+        >>> trimmed_cut = cut.truncate(offset=5.0, until=7.0)
+        >>> trimmed_cut.start == 5.0 and isclose(trimmed_cut.duration, 2.0) and isclose(cut.end, 7.0)
+        """
+        new_start = self.start + offset
+        new_duration = self.duration - new_start if until is None else until - offset
+        assert new_duration > 0.0
+        assert new_start + new_duration <= self.start + self.duration + 1e-5
+        return MixedCut(
+            id=str(uuid4()),
+            tracks=self.tracks,
+            start=self.start + offset,
+            duration=new_duration
+        )
 
     def load_features(self, root_dir: Optional[Pathlike] = None) -> np.ndarray:
         """Loads the features of the source cuts and overlays them on-the-fly."""
