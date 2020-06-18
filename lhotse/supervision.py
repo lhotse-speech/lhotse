@@ -1,9 +1,7 @@
 from dataclasses import dataclass, asdict
 from typing import Dict, Optional, Iterable
 
-import yaml
-
-from lhotse.utils import Seconds, Pathlike, asdict_nonull
+from lhotse.utils import Seconds, Pathlike, asdict_nonull, load_yaml, save_to_yaml
 
 
 @dataclass
@@ -42,15 +40,12 @@ class SupervisionSet:
 
     @staticmethod
     def from_yaml(path: Pathlike) -> 'SupervisionSet':
-        with open(path) as f:
-            raw_segments = yaml.safe_load(f)
-        return SupervisionSet(segments={
-            s['id']: SupervisionSegment(**s) for s in raw_segments
-        })
+        raw_segments = load_yaml(path)
+        return SupervisionSet(segments={s['id']: SupervisionSegment(**s) for s in raw_segments})
 
     def to_yaml(self, path: Pathlike):
-        with open(path, 'w') as f:
-            yaml.safe_dump([asdict_nonull(s) for s in self], stream=f)
+        data = [asdict_nonull(s) for s in self]
+        save_to_yaml(data, path)
 
     def get(self, segment_id: str) -> SupervisionSegment:
         return self.segments[segment_id]

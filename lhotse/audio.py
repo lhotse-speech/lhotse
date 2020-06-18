@@ -9,9 +9,8 @@ with warnings.catch_warnings():
     warnings.simplefilter('ignore')
     import librosa
 import numpy as np
-import yaml
 
-from lhotse.utils import Pathlike, SetContainingAnything, Seconds
+from lhotse.utils import Pathlike, SetContainingAnything, Seconds, load_yaml, save_to_yaml
 
 Channels = Union[int, List[int]]
 
@@ -150,13 +149,13 @@ class AudioSet:
 
     @staticmethod
     def from_yaml(path: Pathlike) -> 'AudioSet':
-        with open(path) as f:
-            recordings = (Recording(**raw_rec) for raw_rec in yaml.safe_load(f))
+        raw_recordings = load_yaml(path)
+        recordings = (Recording(**raw_rec) for raw_rec in raw_recordings)
         return AudioSet(recordings={r.id: r for r in recordings})
 
     def to_yaml(self, path: Pathlike):
-        with open(path, 'w') as f:
-            yaml.safe_dump([asdict(r) for r in self], stream=f)
+        data = [asdict(r) for r in self]
+        save_to_yaml(data, path)
 
     def load_audio(
             self,

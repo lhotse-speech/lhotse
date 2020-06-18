@@ -4,11 +4,20 @@ from typing import Dict, List, Optional, Iterable, Any, Union
 from uuid import uuid4
 
 import numpy as np
-import yaml
 
 from lhotse.features import Features, FeatureSet, FbankMixer
 from lhotse.supervision import SupervisionSegment, SupervisionSet
-from lhotse.utils import Seconds, Decibels, overlaps, TimeSpan, overspans, Pathlike, asdict_nonull
+from lhotse.utils import (
+    Seconds,
+    Decibels,
+    overlaps,
+    TimeSpan,
+    overspans,
+    Pathlike,
+    asdict_nonull,
+    load_yaml,
+    save_to_yaml
+)
 
 
 # One of the design principles for Cuts is a maximally "lazy" implementation, e.g. when overlaying/mixing Cuts,
@@ -250,8 +259,7 @@ class CutSet:
 
     @staticmethod
     def from_yaml(path: Pathlike) -> 'CutSet':
-        with open(path) as f:
-            raw_cuts = yaml.safe_load(f)
+        raw_cuts = load_yaml(path)
 
         def deserialize_one(cut: Dict[str, Any]) -> AnyCut:
             cut_type = cut['type']
@@ -272,11 +280,11 @@ class CutSet:
                 supervisions=[SupervisionSegment(**s) for s in supervision_infos]
             )
 
-        return CutSet(cuts={cut['id']: deserialize_one(cut) for cut in raw_cuts})
+        return CutSet.from_cuts(deserialize_one(cut) for cut in raw_cuts)
 
     def to_yaml(self, path: Pathlike):
-        with open(path, 'w') as f:
-            yaml.safe_dump([{**asdict_nonull(cut), 'type': type(cut).__name__} for cut in self], stream=f)
+        data = [{**asdict_nonull(cut), 'type': type(cut).__name__} for cut in self]
+        save_to_yaml(data, path)
 
     def with_source_cuts_from(self, source: 'CutSet') -> 'CutSet':
         """

@@ -18,7 +18,7 @@ import yaml
 
 from lhotse.audio import Recording
 from lhotse.supervision import SupervisionSegment
-from lhotse.utils import Seconds, Pathlike, Decibels
+from lhotse.utils import Seconds, Pathlike, Decibels, load_yaml, save_to_yaml
 
 
 @dataclass
@@ -209,16 +209,14 @@ class FeatureSet:
 
     @staticmethod
     def from_yaml(path: Pathlike) -> 'FeatureSet':
-        with open(path) as f:
-            data = yaml.safe_load(f)
+        data = load_yaml(path)
         return FeatureSet(
             feature_extractor=FeatureExtractor.from_dict(data['feature_extractor']),
             features=[Features(**feature_data) for feature_data in data['features']],
         )
 
     def to_yaml(self, path: Pathlike):
-        with open(path, 'w') as f:
-            yaml.safe_dump(asdict(self), stream=f)
+        save_to_yaml(asdict(self), path)
 
     def find(
             self,
@@ -226,10 +224,22 @@ class FeatureSet:
             channel_id: int = 0,
             start: Seconds = 0.0,
             duration: Optional[Seconds] = None,
+            leeway: Seconds = 0.05
     ) -> Features:
         """
         Find and return a Features object that best satisfies the search criteria.
         Raise a KeyError when no such object is available.
+
+        :param recording_id: str, requested recording ID.
+        :param channel_id: int, requested channel.
+        :param start: float, requested start time in seconds for the feature chunk.
+        :param duration: optional float, requested duration in seconds for the feature chunk.
+            By default, return everything from the start.
+        :param leeway: float, controls how strictly we have to match the requested start and duration criteria.
+            It is necessary to keep a small positive value here (default 0.05s), as there might be differneces between
+            the duration of recording/supervision segment, and the duration of features. The latter one is constrained
+            to be a multiply of frame_shift, while the former can be arbitrary.
+        :return: a Features object satisfying the search criteria.
         """
         if duration is not None:
             end = start + duration
@@ -238,11 +248,11 @@ class FeatureSet:
             f for f in self.features
             if f.recording_id == recording_id
                and f.channel_id == channel_id
-               and f.start <= start < f.end
+               and f.start - leeway <= start < f.end + leeway
             # filter edge case: start 1.5, features available till 1.0, duration is None
         )
         if duration is not None:
-            candidates = (f for f in candidates if f.end >= end)
+            candidates = (f for f in candidates if f.end >= end - leeway)
 
         candidates = list(candidates)
 
