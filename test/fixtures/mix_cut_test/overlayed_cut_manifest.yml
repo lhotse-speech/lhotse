@@ -11,8 +11,9 @@
   features:
     channel_id: 0
     duration: 9.705
-    frame_length: 25.0
-    frame_shift: 10.0
+    type: fbank
+    num_frames: 970
+    num_features: 23
     recording_id: 2412-153948-0014
     start: 0.0
     storage_path: test/fixtures/mix_cut_test/feats/storage/5078e7eb-57a6-4000-b0f2-fa4bf9c52090.llc
@@ -36,8 +37,9 @@
   features:
     channel_id: 0
     duration: 7.78
-    frame_length: 25.0
-    frame_shift: 10.0
+    type: fbank
+    num_frames: 778
+    num_features: 23
     recording_id: 7850-286674-0014
     start: 0.0
     storage_path: test/fixtures/mix_cut_test/feats/storage/9dc645db-cbe4-4529-85e4-b6ed4f59c340.llc

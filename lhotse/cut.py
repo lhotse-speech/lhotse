@@ -206,15 +206,13 @@ class MixedCut:
     def load_features(self, root_dir: Optional[Pathlike] = None) -> np.ndarray:
         """Loads the features of the source cuts and overlays them on-the-fly."""
         cuts = [self._cut_set.cuts[track.cut_id] for track in self.tracks]
-        frame_length, frame_shift = cuts[0].features.frame_length, cuts[0].features.frame_shift
-        assert frame_length == cuts[1].features.frame_length
+        frame_shift = cuts[0].features.frame_shift
         assert frame_shift == cuts[1].features.frame_shift
         # TODO: check if the 'pad_shorter' call is still necessary, it shouldn't be
         # feats = pad_shorter(*feats)
         mixer = FbankMixer(
             base_feats=cuts[0].load_features(root_dir=root_dir),
             frame_shift=frame_shift,
-            frame_length=frame_length
         )
         for cut, track in zip(cuts[1:], self.tracks[1:]):
             mixer.add_to_mix(

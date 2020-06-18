@@ -16,8 +16,9 @@ def overlapping_supervisions_cut():
             channel_id=0,
             start=0,
             duration=0.5,
-            frame_length=25.0,
-            frame_shift=10.0,
+            type='fbank',
+            num_frames=50,
+            num_features=80,
             storage_type='lilcom',
             storage_path='test/fixtures/dummy_feats/storage/e66b6386-aee5-4a5a-8369-fdde1d2b97c7.llc'
         ),

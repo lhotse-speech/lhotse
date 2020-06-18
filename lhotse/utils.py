@@ -10,7 +10,6 @@ import torch
 Pathlike = Union[Path, str]
 
 Seconds = float
-Milliseconds = float
 Decibels = float
 
 INT16MAX = 32768
