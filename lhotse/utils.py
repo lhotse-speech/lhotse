@@ -29,7 +29,7 @@ def load_yaml(path: Pathlike) -> dict:
         try:
             # When pyyaml is installed with C extensions, it can speed up the (de)serialization noticeably
             return yaml.load(stream=f, Loader=yaml.CSafeLoader)
-        except ImportError:
+        except AttributeError:
             return yaml.load(stream=f, Loader=yaml.SafeLoader)
 
 
@@ -41,7 +41,7 @@ def save_to_yaml(data: Any, path: Pathlike):
         try:
             # When pyyaml is installed with C extensions, it can speed up the (de)serialization noticeably
             return yaml.dump(data, stream=f, Dumper=yaml.CSafeDumper)
-        except ImportError:
+        except AttributeError:
             return yaml.dump(data, stream=f, Loader=yaml.SafeDumper)
 
 
