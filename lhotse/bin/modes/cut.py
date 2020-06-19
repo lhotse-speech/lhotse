@@ -123,3 +123,37 @@ def mix_by_recording_id(
     recording_id_to_cuts = groupby(lambda cut: cut.recording_id, all_cuts)
     mixed_cut_set = CutSet.from_cuts(mix_cuts(cuts) for recording_id, cuts in recording_id_to_cuts.items())
     mixed_cut_set.to_yaml(output_cut_manifest)
+
+
+@cut.command(context_settings=dict(show_default=True))
+@click.argument('cut_manifest', type=click.Path(exists=True, dir_okay=False))
+@click.argument('output_cut_manifest', type=click.Path())
+@click.option('-d', '--max-duration', type=float, required=True,
+              help='The maximum duration in seconds of a cut in the resulting manifest.')
+@click.option('-o', '--offset-type', type=click.Choice(['start', 'end', 'random']), default='start',
+              help='Where should the truncated cut start: "start" - at the start of the original cut, '
+                   '"end" - MAX_DURATION before the end of the original cut, '
+                   '"random" - randomly choose somewhere between "start" and "end" options.')
+@click.option('--keep-overflowing-supervisions/--discard-overflowing-supervisions', type=bool, default=False,
+              help='When a cut is truncated in the middle of a supervision segment, should the supervision be kept.')
+@click.option('-r', '--random-seed', default=42, type=int, help='Random seed value.')
+def truncate(
+        cut_manifest: Pathlike,
+        output_cut_manifest: Pathlike,
+        max_duration: float,
+        offset_type: str,
+        keep_overflowing_supervisions: bool,
+        random_seed: int
+):
+    """
+    Truncate the cuts in the CUT_MANIFEST and write them to OUTPUT_CUT_MANIFEST.
+    Cuts shorter than MAX_DURATION will not be modified.
+    """
+    fix_random_seed(random_seed)
+    cut_set = CutSet.from_yaml(cut_manifest)
+    truncated_cut_set = cut_set.truncate(
+        max_duration=max_duration,
+        offset_type=offset_type,
+        keep_excessive_supervisions=keep_overflowing_supervisions
+    )
+    truncated_cut_set.to_yaml(output_cut_manifest)

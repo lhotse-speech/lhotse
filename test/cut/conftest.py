@@ -1,6 +1,6 @@
 import pytest
 
-from lhotse.cut import Cut, CutSet
+from lhotse.cut import Cut, CutSet, MixedCut, MixTrack
 from lhotse.features import Features
 from lhotse.supervision import SupervisionSegment
 
@@ -31,4 +31,22 @@ def cut2(dummy_features):
 
 @pytest.fixture
 def cut_set(cut1, cut2):
-    return CutSet({cut.id: cut for cut in [cut1, cut2]})
+    return CutSet.from_cuts([cut1, cut2])
+
+
+@pytest.fixture()
+def mixed_cut(cut1, cut2):
+    return MixedCut(
+        id='mixed-cut-id',
+        tracks=[
+            MixTrack(cut_id=cut1.id),
+            MixTrack(cut_id=cut2.id, offset=1.0, snr=10),
+        ],
+        start=0.0,
+        duration=11.0
+    )
+
+
+@pytest.fixture
+def cut_set_with_mixed_cut(cut1, cut2, mixed_cut):
+    return CutSet.from_cuts([cut1, cut2, mixed_cut])
