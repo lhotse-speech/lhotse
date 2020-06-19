@@ -1,9 +1,12 @@
-from pytest import mark
+from pathlib import Path
+from tempfile import NamedTemporaryFile
 
-from lhotse.utils import overlaps, TimeSpan, overspans
+import pytest
+
+from lhotse.utils import overlaps, TimeSpan, overspans, save_to_yaml, load_yaml
 
 
-@mark.parametrize(
+@pytest.mark.parametrize(
     ['lhs', 'rhs', 'expected'], [
         (TimeSpan(0, 1), TimeSpan(0, 1), True),
         (TimeSpan(0.5, 1), TimeSpan(0, 1), True),
@@ -20,7 +23,7 @@ def test_overlaps(lhs, rhs, expected):
     assert overlaps(rhs, lhs) == expected
 
 
-@mark.parametrize(
+@pytest.mark.parametrize(
     ['lhs', 'rhs', 'expected'], [
         (TimeSpan(0, 1), TimeSpan(0, 1), True),
         (TimeSpan(0.5, 1), TimeSpan(0, 1), False),
@@ -41,3 +44,14 @@ def test_overlaps(lhs, rhs, expected):
 )
 def test_overspans(lhs, rhs, expected):
     assert overspans(lhs, rhs) == expected
+
+
+@pytest.mark.parametrize('extension', ['.yml', '.yml.gz'])
+def test_yaml_save_load_roundtrip(extension):
+    data = {'some': ['data']}
+    with NamedTemporaryFile() as f:
+        path = Path(f.name).with_suffix(extension)
+        save_to_yaml(data, path)
+        f.flush()
+        data_deserialized = load_yaml(path)
+    assert data == data_deserialized

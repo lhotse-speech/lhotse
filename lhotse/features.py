@@ -18,22 +18,24 @@ import yaml
 
 from lhotse.audio import Recording
 from lhotse.supervision import SupervisionSegment
-from lhotse.utils import Seconds, Milliseconds, Pathlike, time_diff_to_num_frames, Decibels
+from lhotse.utils import Seconds, Pathlike, Decibels, load_yaml, save_to_yaml
 
 
 @dataclass
 class SpectrogramConfig:
+    # Note that `snip_edges` parameter is missing from config: in order to simplify the relationship between
+    #  the duration and the number of frames, we are always setting `snip_edges` to False.
     dither: float = 0.0
     window_type: str = "povey"
-    frame_length: Milliseconds = 25.0
-    frame_shift: Milliseconds = 10.0
+    # Note that frame_length and frame_shift will be converted to milliseconds before torchaudio/Kaldi sees them
+    frame_length: Seconds = 0.025
+    frame_shift: Seconds = 0.01
     remove_dc_offset: bool = True
     round_to_power_of_two: bool = True
     energy_floor: float = 0.0
     min_duration: float = 0.0
     preemphasis_coefficient: float = 0.97
     raw_energy: bool = True
-    snip_edges: bool = False
 
 
 @dataclass
@@ -61,10 +63,10 @@ class MfccSpecificConfig:
 @dataclass
 class FeatureExtractor:
     type: str = "fbank"  # supported: mfcc/fbank/spectrogram
-    spectrogram_config: SpectrogramConfig = SpectrogramConfig()
-    mfcc_fbank_common_config: MfccFbankCommonConfig = MfccFbankCommonConfig()
-    fbank_config: FbankSpecificConfig = FbankSpecificConfig()
-    mfcc_config: MfccSpecificConfig = MfccSpecificConfig()
+    spectrogram_config: SpectrogramConfig = field(default_factory=lambda: SpectrogramConfig())
+    mfcc_fbank_common_config: MfccFbankCommonConfig = field(default_factory=lambda: MfccFbankCommonConfig())
+    fbank_config: FbankSpecificConfig = field(default_factory=lambda: FbankSpecificConfig())
+    mfcc_config: MfccSpecificConfig = field(default_factory=lambda: MfccSpecificConfig())
 
     def __post_init__(self):
         if self.type not in ('spectrogram', 'mfcc', 'fbank'):
@@ -85,13 +87,31 @@ class FeatureExtractor:
             mfcc_config=MfccSpecificConfig(**data.get('mfcc_config', {}))
         )
 
-    def to_yaml(self, path: Pathlike):
+    def to_yaml(self, path: Pathlike, include_defaults: bool = False):
         with open(path, 'w') as f:
-            yaml.safe_dump(asdict(self), stream=f)
+            yaml.safe_dump(self.to_dict(include_defaults=include_defaults), stream=f)
+
+    def to_dict(self, include_defaults: bool = False) -> dict:
+        config = asdict(self)
+        if include_defaults:
+            return config
+        default_config = FeatureExtractor().to_dict(include_defaults=True)
+        for key, subconfig in default_config.items():
+            if key == 'type':
+                continue  # we always want to preserve features type field
+            for subkey, value in subconfig.items():
+                if config[key][subkey] == value:
+                    del config[key][subkey]
+            if not config[key]:
+                del config[key]
+        return config
 
     def extract(self, samples: Union[np.ndarray, torch.Tensor], sampling_rate: int):
         params = asdict(self.spectrogram_config)
         params.update({"sample_frequency": sampling_rate})
+        params['frame_shift'] *= 1000.0
+        params['frame_length'] *= 1000.0
+        params['snip_edges'] = False
         feature_fn = None
         if self.type == 'spectrogram':
             feature_fn = torchaudio.compliance.kaldi.spectrogram
@@ -123,22 +143,22 @@ class Features:
     start: Seconds
     duration: Seconds
 
-    # The Features object must know its frame length and shift to trim the features matrix when loading.
-    frame_length: Milliseconds
-    frame_shift: Milliseconds
+    # Useful information about the features - their type (fbank, mfcc) and shape
+    type: str
+    num_frames: int
+    num_features: int
 
     # Parameters related to storage - they define how to load the feature matrix.
     storage_type: str  # e.g. 'lilcom', 'numpy'
     storage_path: str
 
     @property
-    def end(self):
+    def end(self) -> Seconds:
         return self.start + self.duration
 
     @property
-    def num_frames(self) -> int:
-        # TODO: ensure consistency when resolving issue https://github.com/pzelasko/lhotse/issues/20
-        return time_diff_to_num_frames(self.duration, frame_length=self.frame_length, frame_shift=self.frame_shift)
+    def frame_shift(self) -> Seconds:
+        return round(self.duration / self.num_frames, ndigits=3)
 
     def load(
             self,
@@ -160,21 +180,13 @@ class Features:
 
         # Left trim
         if not isclose(start, self.start):
-            frames_to_trim = time_diff_to_num_frames(
-                time_diff=start - self.start,
-                frame_length=self.frame_length / 1000.0,
-                frame_shift=self.frame_shift / 1000.0
-            )
+            frames_to_trim = round((start - self.start) / self.frame_shift)
             features = features[frames_to_trim:, :]
 
         # Right trim
         end = start + duration if duration is not None else None
         if duration is not None and not isclose(end, self.end):
-            frames_to_trim = time_diff_to_num_frames(
-                time_diff=self.end - end,
-                frame_length=self.frame_length / 1000.0,
-                frame_shift=self.frame_shift / 1000.0
-            )
+            frames_to_trim = round((self.end - end) / self.frame_shift)
             features = features[:-frames_to_trim, :]
 
         return features
@@ -198,16 +210,14 @@ class FeatureSet:
 
     @staticmethod
     def from_yaml(path: Pathlike) -> 'FeatureSet':
-        with open(path) as f:
-            data = yaml.safe_load(f)
+        data = load_yaml(path)
         return FeatureSet(
             feature_extractor=FeatureExtractor.from_dict(data['feature_extractor']),
             features=[Features(**feature_data) for feature_data in data['features']],
         )
 
     def to_yaml(self, path: Pathlike):
-        with open(path, 'w') as f:
-            yaml.safe_dump(asdict(self), stream=f)
+        save_to_yaml(asdict(self), path)
 
     def find(
             self,
@@ -215,10 +225,22 @@ class FeatureSet:
             channel_id: int = 0,
             start: Seconds = 0.0,
             duration: Optional[Seconds] = None,
+            leeway: Seconds = 0.05
     ) -> Features:
         """
         Find and return a Features object that best satisfies the search criteria.
         Raise a KeyError when no such object is available.
+
+        :param recording_id: str, requested recording ID.
+        :param channel_id: int, requested channel.
+        :param start: float, requested start time in seconds for the feature chunk.
+        :param duration: optional float, requested duration in seconds for the feature chunk.
+            By default, return everything from the start.
+        :param leeway: float, controls how strictly we have to match the requested start and duration criteria.
+            It is necessary to keep a small positive value here (default 0.05s), as there might be differneces between
+            the duration of recording/supervision segment, and the duration of features. The latter one is constrained
+            to be a multiple of frame_shift, while the former can be arbitrary.
+        :return: a Features object satisfying the search criteria.
         """
         if duration is not None:
             end = start + duration
@@ -227,17 +249,18 @@ class FeatureSet:
             f for f in self.features
             if f.recording_id == recording_id
                and f.channel_id == channel_id
-               and f.start <= start < f.end
+               and f.start - leeway <= start < f.end + leeway
             # filter edge case: start 1.5, features available till 1.0, duration is None
         )
         if duration is not None:
-            candidates = (f for f in candidates if f.end >= end)
+            candidates = (f for f in candidates if f.end >= end - leeway)
 
         candidates = list(candidates)
 
         if not candidates:
             raise KeyError(
-                f"No features available for recording '{recording_id}', channel {channel_id} in time range [{start}s, {'end' if duration is None else duration}s]")
+                f"No features available for recording '{recording_id}', channel {channel_id} in time range [{start}s,"
+                f" {'end' if duration is None else duration}s]")
 
         # in case there is more than one candidate feature segment, select the best fit
         # by minimizing the MSE of the time markers...
@@ -318,12 +341,17 @@ class FeatureSetBuilder:
             compressed=compressed,
             lilcom_tick_power=lilcom_tick_power
         )
-        with ProcessPoolExecutor(num_jobs) as ex:
-            feature_set = FeatureSet(
-                feature_extractor=self.feature_extractor,
-                features=list(chain.from_iterable(ex.map(do_work, recordings)))
-            )
-        feature_set.to_yaml(self.output_dir / 'feature_manifest.yml')
+        if num_jobs == 1:
+            # Avoid spawning subprocesses for single threaded processing
+            feature_infos = list(chain.from_iterable(map(do_work, recordings)))
+        else:
+            with ProcessPoolExecutor(num_jobs) as ex:
+                feature_infos = list(chain.from_iterable(ex.map(do_work, recordings)))
+        feature_set = FeatureSet(
+            feature_extractor=self.feature_extractor,
+            features=feature_infos
+        )
+        feature_set.to_yaml(self.output_dir / 'feature_manifest.yml.gz')
         return feature_set
 
     def _process_and_store_recording(
@@ -360,9 +388,12 @@ class FeatureSetBuilder:
                 channel_id=channel,
                 # TODO: revise start and duration with segmentation manifest info
                 start=0.0,
-                frame_length=self.feature_extractor.spectrogram_config.frame_length,
-                frame_shift=self.feature_extractor.spectrogram_config.frame_shift,
-                duration=recording.duration_seconds,
+                # We simplify the relationship between num_frames and duration - we guarantee that
+                #  the duration is always num_frames * frame_shift
+                duration=feats.shape[0] * self.feature_extractor.spectrogram_config.frame_shift,
+                type=self.feature_extractor.type,
+                num_frames=feats.shape[0],
+                num_features=feats.shape[1],
                 storage_type='lilcom' if compressed else 'numpy',
                 storage_path=str(output_features_path)
             ))
@@ -378,8 +409,7 @@ class FbankMixer:
     def __init__(
             self,
             base_feats: np.ndarray,
-            frame_shift: Milliseconds,
-            frame_length: Milliseconds,
+            frame_shift: Seconds,
             log_energy_floor: float = -1000.0
     ):
         """
@@ -394,8 +424,7 @@ class FbankMixer:
         # Keep a pre-computed energy value of the features that we initialize the Mixer with;
         # it is required to compute gain ratios that satisfy SNR during the mix.
         self.reference_energy = fbank_energy(base_feats)
-        self.frame_shift: Seconds = frame_shift / 1000.0
-        self.frame_length: Seconds = frame_length / 1000.0
+        self.frame_shift = frame_shift
         self.log_energy_floor = log_energy_floor
 
     @property
@@ -419,11 +448,7 @@ class FbankMixer:
         """
         assert offset >= 0.0, "Negative offset in mixing is not supported."
 
-        num_frames_offset = time_diff_to_num_frames(
-            offset,
-            frame_length=self.frame_length,
-            frame_shift=self.frame_shift
-        )
+        num_frames_offset = round(offset / self.frame_shift)
         current_num_frames = self.mixed_feats.shape[0]
         incoming_num_frames = feats.shape[0] + num_frames_offset
         mix_num_frames = max(current_num_frames, incoming_num_frames)

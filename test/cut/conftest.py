@@ -9,7 +9,8 @@ from lhotse.supervision import SupervisionSegment
 def dummy_features():
     return Features(
         recording_id='irrelevant', channel_id=0, start=0.0, duration=10.0,
-        frame_length='irrelevant', frame_shift='irrelevant', storage_type='irrelevant', storage_path='irrelevant'
+        type='fbank', num_frames=1000, num_features=80,
+        storage_type='irrelevant', storage_path='irrelevant'
     )
 
 

@@ -1,12 +1,12 @@
 from contextlib import nullcontext as does_not_raise
-from math import ceil
-from tempfile import NamedTemporaryFile
+from tempfile import NamedTemporaryFile, TemporaryDirectory
 
 import numpy as np
 import torchaudio
 from pytest import mark, raises
 
-from lhotse.features import FeatureSet, FeatureExtractor, Features, FbankMixer
+from lhotse.audio import AudioSet
+from lhotse.features import FeatureSet, FeatureExtractor, Features, FbankMixer, FeatureSetBuilder
 from lhotse.test_utils import DummyManifest
 from lhotse.utils import Seconds, time_diff_to_num_frames
 
@@ -32,6 +32,13 @@ def test_feature_extractor(feature_type, exception_expectation):
         fe.extract(samples=samples, sampling_rate=sr)
 
 
+def test_feature_extractor_to_dict_no_defaults():
+    fe = FeatureExtractor()
+    fe.mfcc_fbank_common_config.num_mel_bins = 80
+    fe_dict = fe.to_dict()
+    assert fe_dict == {'type': 'fbank', 'mfcc_fbank_common_config': {'num_mel_bins': 80}}
+
+
 def test_feature_extractor_serialization():
     fe = FeatureExtractor()
     with NamedTemporaryFile() as f:
@@ -49,8 +56,9 @@ def test_feature_set_serialization():
                 channel_id=0,
                 start=0.0,
                 duration=20.0,
-                frame_length=25,
-                frame_shift=10,
+                type='fbank',
+                num_frames=2000,
+                num_features=20,
                 storage_type='lilcom',
                 storage_path='/irrelevant/path.llc'
             )
@@ -83,18 +91,50 @@ def test_load_features(recording_id: str, channel: int, start: float, duration: 
         # expect a matrix
         assert len(features.shape) == 2
         # expect time as the first dimension
-        fs = feature_set.feature_extractor.spectrogram_config.frame_shift / 1000.0
+        frame_shift = feature_set.feature_extractor.spectrogram_config.frame_shift
         if duration is not None:
             # left-hand expression ignores the frame_length - "maximize" the number of frames retained
             # also, allow a lee-way of +/- 2 frames
-            assert abs(ceil(duration / fs) - features.shape[0]) <= 2
+            assert duration / frame_shift == features.shape[0]
         # expect frequency as the second dimension
-        assert feature_set.feature_extractor.mfcc_config.num_ceps == features.shape[1]
+        assert feature_set.feature_extractor.mfcc_fbank_common_config.num_mel_bins == features.shape[1]
 
 
 def test_load_features_with_default_arguments():
     feature_set = FeatureSet.from_yaml('test/fixtures/dummy_feats/feature_manifest.yml')
     features = feature_set.load('recording-1')
+
+
+def test_feature_set_builder():
+    audio_set = AudioSet.from_yaml('test/fixtures/audio.yml')
+    with TemporaryDirectory() as output_dir:
+        builder = FeatureSetBuilder(feature_extractor=FeatureExtractor(), output_dir=output_dir)
+        feature_set = builder.process_and_store_recordings(recordings=audio_set)
+
+    assert len(feature_set) == 4
+
+    feature_infos = list(feature_set)
+
+    # Assert the properties shared by all features
+    for features in feature_infos:
+        # assert that fbank is the default feature type
+        assert features.type == 'fbank'
+        # assert that duration is always a multiple of frame_shift
+        assert features.num_frames == round(features.duration / features.frame_shift)
+        # assert that num_features is preserved
+        assert features.num_features == builder.feature_extractor.mfcc_fbank_common_config.num_mel_bins
+        # assert that lilcom is the default storate type
+        assert features.storage_type == 'lilcom'
+
+    # Assert the properties for recordings of duration 0.5 seconds
+    for features in feature_infos[:2]:
+        assert features.num_frames == 50
+        assert features.duration == 0.5
+
+    # Assert the properties for recordings of duration 1.0 seconds
+    for features in feature_infos[2:]:
+        assert features.num_frames == 100
+        assert features.duration == 1.0
 
 
 @mark.parametrize(
@@ -136,7 +176,6 @@ def test_overlay_fbank():
     mixer = FbankMixer(
         base_feats=f1,
         frame_shift=feature_extractor.spectrogram_config.frame_shift,
-        frame_length=feature_extractor.spectrogram_config.frame_length
     )
     mixer.add_to_mix(f2)
 

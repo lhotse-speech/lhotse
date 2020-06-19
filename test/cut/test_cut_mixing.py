@@ -54,5 +54,5 @@ def test_mixed_cut_load_features():
     feats = mixed_cut.with_cut_set(cut_set).load_features()
     expected_duration = mixed_cut.tracks[1].offset + ingredient_cut2.duration
     assert isclose(expected_duration, 13.595)
-    expected_frame_count = 1358
+    expected_frame_count = 1360
     assert feats.shape[0] == expected_frame_count

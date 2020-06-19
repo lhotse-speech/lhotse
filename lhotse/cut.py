@@ -4,11 +4,20 @@ from typing import Dict, List, Optional, Iterable, Any, Union
 from uuid import uuid4
 
 import numpy as np
-import yaml
 
 from lhotse.features import Features, FeatureSet, FbankMixer
 from lhotse.supervision import SupervisionSegment, SupervisionSet
-from lhotse.utils import Seconds, Decibels, overlaps, TimeSpan, overspans, Pathlike, asdict_nonull
+from lhotse.utils import (
+    Seconds,
+    Decibels,
+    overlaps,
+    TimeSpan,
+    overspans,
+    Pathlike,
+    asdict_nonull,
+    load_yaml,
+    save_to_yaml
+)
 
 
 # One of the design principles for Cuts is a maximally "lazy" implementation, e.g. when overlaying/mixing Cuts,
@@ -206,15 +215,13 @@ class MixedCut:
     def load_features(self, root_dir: Optional[Pathlike] = None) -> np.ndarray:
         """Loads the features of the source cuts and overlays them on-the-fly."""
         cuts = [self._cut_set.cuts[track.cut_id] for track in self.tracks]
-        frame_length, frame_shift = cuts[0].features.frame_length, cuts[0].features.frame_shift
-        assert frame_length == cuts[1].features.frame_length
+        frame_shift = cuts[0].features.frame_shift
         assert frame_shift == cuts[1].features.frame_shift
         # TODO: check if the 'pad_shorter' call is still necessary, it shouldn't be
         # feats = pad_shorter(*feats)
         mixer = FbankMixer(
             base_feats=cuts[0].load_features(root_dir=root_dir),
             frame_shift=frame_shift,
-            frame_length=frame_length
         )
         for cut, track in zip(cuts[1:], self.tracks[1:]):
             mixer.add_to_mix(
@@ -252,8 +259,7 @@ class CutSet:
 
     @staticmethod
     def from_yaml(path: Pathlike) -> 'CutSet':
-        with open(path) as f:
-            raw_cuts = yaml.safe_load(f)
+        raw_cuts = load_yaml(path)
 
         def deserialize_one(cut: Dict[str, Any]) -> AnyCut:
             cut_type = cut['type']
@@ -274,11 +280,11 @@ class CutSet:
                 supervisions=[SupervisionSegment(**s) for s in supervision_infos]
             )
 
-        return CutSet(cuts={cut['id']: deserialize_one(cut) for cut in raw_cuts})
+        return CutSet.from_cuts(deserialize_one(cut) for cut in raw_cuts)
 
     def to_yaml(self, path: Pathlike):
-        with open(path, 'w') as f:
-            yaml.safe_dump([{**asdict_nonull(cut), 'type': type(cut).__name__} for cut in self], stream=f)
+        data = [{**asdict_nonull(cut), 'type': type(cut).__name__} for cut in self]
+        save_to_yaml(data, path)
 
     def with_source_cuts_from(self, source: 'CutSet') -> 'CutSet':
         """
