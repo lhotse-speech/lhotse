@@ -27,6 +27,7 @@ class SpectrogramConfig:
     #  the duration and the number of frames, we are always setting `snip_edges` to False.
     dither: float = 0.0
     window_type: str = "povey"
+    # Note that frame_length and frame_shift will be converted to milliseconds before torchaudio/Kaldi sees them
     frame_length: Seconds = 0.025
     frame_shift: Seconds = 0.01
     remove_dc_offset: bool = True
@@ -238,7 +239,7 @@ class FeatureSet:
         :param leeway: float, controls how strictly we have to match the requested start and duration criteria.
             It is necessary to keep a small positive value here (default 0.05s), as there might be differneces between
             the duration of recording/supervision segment, and the duration of features. The latter one is constrained
-            to be a multiply of frame_shift, while the former can be arbitrary.
+            to be a multiple of frame_shift, while the former can be arbitrary.
         :return: a Features object satisfying the search criteria.
         """
         if duration is not None:

@@ -15,6 +15,7 @@ feature_extractor:
   spectrogram_config:
     dither: 0.0
     energy_floor: 0.0
+    # Note that frame_length and frame_shift will be converted to milliseconds before torchaudio/Kaldi sees them
     frame_length: 0.025
     frame_shift: 0.01
     min_duration: 0.0
