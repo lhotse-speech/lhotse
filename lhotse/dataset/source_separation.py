@@ -5,7 +5,6 @@ import torch
 from torch.utils.data import Dataset
 
 from lhotse.cut import CutSet, Cut, AnyCut
-from lhotse.manipulation import combine
 from lhotse.utils import Pathlike
 
 EPS = 1e-8
@@ -34,7 +33,7 @@ class SourceSeparationDataset(Dataset):
     ):
         super().__init__()
         self.sources_set = sources_set
-        self.mixtures_set = mixtures_set.with_source_cuts_from(self.sources_set)
+        self.mixtures_set = mixtures_set
         self.root_dir = Path(root_dir) if root_dir else None
 
         self.cut_ids = list(self.mixtures_set.cuts.keys())
@@ -106,15 +105,13 @@ class DynamicallyMixedSourceSeparationDataset(SourceSeparationDataset):
     ):
         super().__init__(sources_set=sources_set, mixtures_set=mixtures_set, root_dir=root_dir)
         self.nonsources_set = nonsources_set
-        if self.nonsources_set is not None:
-            self.mixtures_set.with_source_cuts_from(combine(self.sources_set, self.nonsources_set))
 
     def _obtain_mixture(self, cut_id: str) -> Tuple[AnyCut, List[Cut]]:
         mixture_cut = self.mixtures_set.mixed_cuts[cut_id]
         source_cuts = [
-            self.sources_set.cuts[track.cut_id]
+            track.cut
             for track in mixture_cut.tracks
-            if track.cut_id in self.sources_set  # tracks will be missing in the sources set when they are noise
+            if track.cut.id in self.sources_set  # tracks will be missing in the sources set when they are noise
         ]
         return mixture_cut, source_cuts
 

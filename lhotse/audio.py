@@ -73,6 +73,10 @@ class AudioSource:
 
         return samples
 
+    @staticmethod
+    def from_dict(data) -> 'AudioSource':
+        return AudioSource(**data)
+
 
 @dataclass
 class Recording:
@@ -84,9 +88,6 @@ class Recording:
     sampling_rate: int
     num_samples: int
     duration_seconds: Seconds
-
-    def __post_init__(self):
-        self.sources = [AudioSource(**s) if isinstance(s, dict) else s for s in self.sources]
 
     @property
     def num_channels(self):
@@ -134,6 +135,11 @@ class Recording:
         # shape: (n_channels, n_samples)
         return np.vstack(samples_per_source)
 
+    @staticmethod
+    def from_dict(data: dict) -> 'Recording':
+        raw_sources = data.pop('sources')
+        return Recording(sources=[AudioSource.from_dict(s) for s in raw_sources], **data)
+
 
 @dataclass
 class AudioSet:
@@ -148,10 +154,13 @@ class AudioSet:
     recordings: Dict[str, Recording]
 
     @staticmethod
+    def from_recordings(recordings: Iterable[Recording]) -> 'AudioSet':
+        return AudioSet(recordings={r.id: r for r in recordings})
+
+    @staticmethod
     def from_yaml(path: Pathlike) -> 'AudioSet':
         raw_recordings = load_yaml(path)
-        recordings = (Recording(**raw_rec) for raw_rec in raw_recordings)
-        return AudioSet(recordings={r.id: r for r in recordings})
+        return AudioSet.from_recordings(Recording.from_dict(raw_rec) for raw_rec in raw_recordings)
 
     def to_yaml(self, path: Pathlike):
         data = [asdict(r) for r in self]
@@ -183,6 +192,9 @@ class AudioSet:
 
     def duration_seconds(self, recording_id: str) -> float:
         return self.recordings[recording_id].duration_seconds
+
+    def __getitem__(self, item: str) -> Recording:
+        return self.recordings[item]
 
     def __iter__(self) -> Iterable[Recording]:
         return iter(self.recordings.values())

@@ -191,6 +191,10 @@ class Features:
 
         return features
 
+    @staticmethod
+    def from_dict(data: dict) -> 'Features':
+        return Features(**data)
+
 
 @dataclass
 class FeatureSet:

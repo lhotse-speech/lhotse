@@ -25,6 +25,10 @@ class SupervisionSegment:
         kwargs['start'] += offset
         return SupervisionSegment(**kwargs)
 
+    @staticmethod
+    def from_dict(data: dict) -> 'SupervisionSegment':
+        return SupervisionSegment(**data)
+
 
 @dataclass
 class SupervisionSet:
@@ -39,16 +43,20 @@ class SupervisionSet:
     segments: Dict[str, SupervisionSegment]
 
     @staticmethod
+    def from_segments(segments: Iterable[SupervisionSegment]) -> 'SupervisionSet':
+        return SupervisionSet(segments={s.id: s for s in segments})
+
+    @staticmethod
     def from_yaml(path: Pathlike) -> 'SupervisionSet':
         raw_segments = load_yaml(path)
-        return SupervisionSet(segments={s['id']: SupervisionSegment(**s) for s in raw_segments})
+        return SupervisionSet.from_segments(SupervisionSegment.from_dict(s) for s in raw_segments)
 
     def to_yaml(self, path: Pathlike):
         data = [asdict_nonull(s) for s in self]
         save_to_yaml(data, path)
 
-    def get(self, segment_id: str) -> SupervisionSegment:
-        return self.segments[segment_id]
+    def __getitem__(self, item: str) -> SupervisionSegment:
+        return self.segments[item]
 
     def __iter__(self) -> Iterable[SupervisionSegment]:
         return iter(self.segments.values())

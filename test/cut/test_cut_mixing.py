@@ -11,8 +11,8 @@ from lhotse.supervision import SupervisionSegment
 # Definitions for `cut1`, `cut2` and `cut_set` parameters are standard Pytest fixtures located in test/cut/conftest.py
 
 
-def test_append_cut_duration_and_supervisions(cut1, cut2, cut_set):
-    appended_cut = cut1.append(cut2).with_cut_set(cut_set)
+def test_append_cut_duration_and_supervisions(cut1, cut2):
+    appended_cut = cut1.append(cut2)
 
     assert isinstance(appended_cut, MixedCut)
     assert appended_cut.duration == 20.0
@@ -33,9 +33,9 @@ def test_append_cut_duration_and_supervisions(cut1, cut2, cut_set):
         (100, 'irrelevant', pytest.raises(ValueError))
     ]
 )
-def test_overlay_cut_duration_and_supervisions(offset, expected_duration, exception_expectation, cut1, cut2, cut_set):
+def test_overlay_cut_duration_and_supervisions(offset, expected_duration, exception_expectation, cut1, cut2):
     with exception_expectation:
-        mixed_cut = cut1.overlay(cut2, offset_other_by=offset).with_cut_set(cut_set)
+        mixed_cut = cut1.overlay(cut2, offset_other_by=offset)
 
         assert isinstance(mixed_cut, MixedCut)
         assert mixed_cut.duration == expected_duration
@@ -47,12 +47,11 @@ def test_overlay_cut_duration_and_supervisions(offset, expected_duration, except
 
 
 def test_mixed_cut_load_features():
-    cut_set = CutSet.from_yaml('test/fixtures/mix_cut_test/overlayed_cut_manifest.yml')
-    mixed_cut = cut_set.cuts['mixed-cut-id']
-    ingredient_cut2 = cut_set.cuts[mixed_cut.tracks[1].cut_id]
-
-    feats = mixed_cut.with_cut_set(cut_set).load_features()
-    expected_duration = mixed_cut.tracks[1].offset + ingredient_cut2.duration
-    assert isclose(expected_duration, 13.595)
     expected_frame_count = 1360
+    cut_set = CutSet.from_yaml('test/fixtures/mix_cut_test/overlayed_cut_manifest.yml')
+    mixed_cut = cut_set['mixed-cut-id']
+    assert mixed_cut.num_frames == expected_frame_count
+    assert isclose(mixed_cut.duration, 13.595)
+
+    feats = mixed_cut.load_features()
     assert feats.shape[0] == expected_frame_count

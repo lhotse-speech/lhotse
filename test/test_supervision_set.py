@@ -12,7 +12,7 @@ def load_supervision_set():
 
 def test_supervision_segment_with_full_metadata():
     supervision_set = load_supervision_set()
-    segment = supervision_set.get('segment-1')
+    segment = supervision_set['segment-1']
     assert 'segment-1' == segment.id
     assert 'recording-1' == segment.recording_id
     assert 0 == segment.channel_id
@@ -26,7 +26,7 @@ def test_supervision_segment_with_full_metadata():
 
 def test_supervision_segment_with_no_metadata():
     supervision_set = load_supervision_set()
-    segment = supervision_set.get('segment-2')
+    segment = supervision_set['segment-2']
     assert 'segment-2' == segment.id
     assert 'recording-1' == segment.recording_id
     assert 0 == segment.channel_id  # implicitly filled default value
@@ -68,21 +68,19 @@ def test_supervision_set_iteration():
 
 
 def test_supervision_set_serialization():
-    supervision_set = SupervisionSet(
-        segments={
-            'segment-1': SupervisionSegment(
-                id='segment-1',
-                recording_id='recording-1',
-                channel_id=0,
-                start=0.1,
-                duration=0.3,
-                text='transcript of the first segment',
-                language='english',
-                speaker='Norman Dyhrentfurth',
-                gender='male'
-            )
-        }
-    )
+    supervision_set = SupervisionSet.from_segments([
+        SupervisionSegment(
+            id='segment-1',
+            recording_id='recording-1',
+            channel_id=0,
+            start=0.1,
+            duration=0.3,
+            text='transcript of the first segment',
+            language='english',
+            speaker='Norman Dyhrentfurth',
+            gender='male'
+        )
+    ])
     with NamedTemporaryFile() as f:
         supervision_set.to_yaml(f.name)
         restored = supervision_set.from_yaml(f.name)

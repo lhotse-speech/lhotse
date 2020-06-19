@@ -25,8 +25,8 @@ def prepare_librimix(
 
     # First, create the audio manifest that specifies the pairs of source recordings
     # to be mixed together.
-    audio_sources = AudioSet(recordings={
-        row['mixture_ID']: Recording(
+    audio_sources = AudioSet.from_recordings(
+        Recording(
             id=row['mixture_ID'],
             sources=[
                 AudioSource(
@@ -46,7 +46,7 @@ def prepare_librimix(
         )
         for idx, row in df.iterrows()
         if row['length'] / sampling_rate > min_segment_seconds
-    })
+    )
     audio_sources.to_yaml(output_dir / 'audio_sources.yml')
     supervision_sources = make_corresponding_supervisions(audio_sources)
     supervision_sources.to_yaml(output_dir / 'supervisions_sources.yml')
@@ -60,8 +60,8 @@ def prepare_librimix(
     # A different way of performing the mix would be using Lhotse's on-the-fly
     # overlaying of audio Cuts.
     if with_precomputed_mixtures:
-        audio_mix = AudioSet(recordings={
-            row['mixture_ID']: Recording(
+        audio_mix = AudioSet.from_recordings(
+            Recording(
                 id=row['mixture_ID'],
                 sources=[
                     AudioSource(
@@ -76,7 +76,7 @@ def prepare_librimix(
             )
             for idx, row in df.iterrows()
             if row['length'] / sampling_rate > min_segment_seconds
-        })
+        )
         audio_mix.to_yaml(output_dir / 'audio_mix.yml')
         supervision_mix = make_corresponding_supervisions(audio_mix)
         supervision_mix.to_yaml(output_dir / 'supervisions_mix.yml')
@@ -88,8 +88,8 @@ def prepare_librimix(
     # When the LibriMix CSV specifies noises, we create a separate AudioSet for them,
     # so that we can extract their features and overlay them as Cuts later.
     if 'noise_path' in df:
-        audio_noise = AudioSet(recordings={
-            row['mixture_ID']: Recording(
+        audio_noise = AudioSet.from_recordings(
+            Recording(
                 id=row['mixture_ID'],
                 sources=[
                     AudioSource(
@@ -104,7 +104,7 @@ def prepare_librimix(
             )
             for idx, row in df.iterrows()
             if row['length'] / sampling_rate > min_segment_seconds
-        })
+        )
         audio_noise.to_yaml(output_dir / 'audio_noise.yml')
         supervision_noise = make_corresponding_supervisions(audio_noise)
         supervision_noise.to_yaml(output_dir / 'supervisions_noise.yml')
@@ -122,8 +122,8 @@ def make_corresponding_supervisions(audio: AudioSet) -> SupervisionSet:
     which segments are available in the corpus, as the actual supervisions for
     speech separation come from the source recordings.
     """
-    return SupervisionSet(segments={
-        f'{recording.id}-c{source.channel_ids[0]}': SupervisionSegment(
+    return SupervisionSet.from_segments(
+        SupervisionSegment(
             id=f'{recording.id}-c{source.channel_ids[0]}',
             recording_id=recording.id,
             start=0.0,
@@ -132,4 +132,4 @@ def make_corresponding_supervisions(audio: AudioSet) -> SupervisionSet:
         )
         for recording in audio
         for source in recording.sources
-    })
+    )
