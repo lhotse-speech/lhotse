@@ -181,11 +181,6 @@ class MixedCut:
     id: str
     tracks: List[MixTrack]
 
-    # Start here means "after we mix, at which offset to start loading features." It is relative to the mix and not
-    # to the original recordings. The start and duration fields can be used to keep truncation information.
-    start: Seconds
-    duration: Seconds
-
     def with_cut_set(self, cut_set: 'CutSet') -> 'MixedCut':
         """
         Provide the source cut set that can be looked up to resolve the MixedCut's dependencies.
@@ -254,7 +249,7 @@ class MixedCut:
             self,
             *,
             offset: Seconds = 0.0,
-            until: Optional[Seconds] = None,
+            duration: Optional[Seconds] = None,
             keep_excessive_supervisions: bool = True
     ) -> 'MixedCut':
         """
@@ -271,16 +266,41 @@ class MixedCut:
         >>> trimmed_cut = cut.truncate(offset=5.0, until=7.0)
         >>> trimmed_cut.start == 5.0 and isclose(trimmed_cut.duration, 2.0) and isclose(cut.end, 7.0)
         """
-        new_start = self.start + offset
-        new_duration = self.duration - new_start if until is None else until - offset
-        assert new_duration > 0.0
-        assert new_start + new_duration <= self.start + self.duration + 1e-5
-        return MixedCut(
-            id=str(uuid4()),
-            tracks=self.tracks,
-            start=self.start + offset,
-            duration=new_duration
-        )
+
+        new_tracks = []
+        old_duration = self.duration
+        new_mix_end = offset + duration if duration is not None else old_duration - offset
+
+        for track in sorted(self.tracks, key=lambda t: t.offset):
+            # First, determine how much beginning of this track we're going to truncate:
+            # when its offset is larger than the truncation offset, we are not truncating the beginning
+            effective_offset = max(offset - track.offset, 0)
+
+            # Compute the duration after trimming the start
+            new_duration = track.cut.duration - effective_offset
+            if new_duration <= 0:
+                # When the truncation offset is larger that the duration of a given track, we have to remove it
+                continue
+
+            # Compute the new duration after both trimming the start and the end
+            new_cut_end = (
+                (offset - track.offset) + duration
+                if duration is not None
+                else track.cut.end
+            )
+
+            new_tracks.append(
+                MixTrack(
+                    cut=track.cut.truncate(
+                        offset=effective_offset,
+                        until=new_duration,
+                        keep_excessive_supervisions=keep_excessive_supervisions
+                    ),
+                    offset=track.offset,
+                    snr=track.snr
+                )
+            )
+        return MixedCut(id=str(uuid4()), tracks=new_tracks)
 
     def load_features(self, root_dir: Optional[Pathlike] = None) -> np.ndarray:
         """Loads the features of the source cuts and overlays them on-the-fly."""
@@ -384,7 +404,7 @@ class CutSet:
                 until=offset + max_duration,
                 keep_excessive_supervisions=keep_excessive_supervisions
             ))
-        return CutSet({cut.id: cut for cut in truncated_cuts})
+        return CutSet.from_cuts(truncated_cuts)
 
     def __contains__(self, item: Union[str, Cut, MixedCut]) -> bool:
         if isinstance(item, str):
