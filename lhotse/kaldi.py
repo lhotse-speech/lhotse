@@ -29,8 +29,8 @@ def load_kaldi_data_dir(path: Pathlike, sampling_rate: int) -> Tuple[AudioSet, O
                 recording_id, dur = line.strip().split()
                 durations[recording_id] = float(dur)
 
-    audio_set = AudioSet({
-        recording_id: Recording(
+    audio_set = AudioSet.from_recordings(
+        Recording(
             id=recording_id,
             sources=[
                 AudioSource(
@@ -44,7 +44,7 @@ def load_kaldi_data_dir(path: Pathlike, sampling_rate: int) -> Tuple[AudioSet, O
             duration_seconds=durations[recording_id]
         )
         for recording_id, path_or_cmd in recordings.items()
-    })
+    )
 
     # must exist for SupervisionSet
     segments = path / 'segments'
@@ -59,8 +59,8 @@ def load_kaldi_data_dir(path: Pathlike, sampling_rate: int) -> Tuple[AudioSet, O
     genders = load_kaldi_text_mapping(path / 'spk2gender')
     languages = load_kaldi_text_mapping(path / 'utt2lang')
 
-    supervision_set = SupervisionSet({
-        segment_id: SupervisionSegment(
+    supervision_set = SupervisionSet.from_segments(
+        SupervisionSegment(
             id=segment_id,
             recording_id=recording_id,
             start=float(start),
@@ -72,7 +72,7 @@ def load_kaldi_data_dir(path: Pathlike, sampling_rate: int) -> Tuple[AudioSet, O
             gender=genders[speakers[segment_id]]
         )
         for segment_id, recording_id, start, duration in supervision_segments
-    })
+    )
 
     return audio_set, supervision_set
 

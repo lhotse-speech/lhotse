@@ -54,8 +54,8 @@ def test_get_metadata():
 
 
 def test_serialization():
-    audio_set = AudioSet(recordings={
-        'x': Recording(
+    audio_set = AudioSet.from_recordings([
+        Recording(
             id='x',
             sources=[
                 AudioSource(
@@ -73,7 +73,7 @@ def test_serialization():
             num_samples=4000,
             duration_seconds=0.5
         )
-    })
+    ])
     with NamedTemporaryFile() as f:
         audio_set.to_yaml(f.name)
         deserialized = AudioSet.from_yaml(f.name)

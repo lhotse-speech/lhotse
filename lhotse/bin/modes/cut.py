@@ -79,7 +79,7 @@ def random_overlayed(
     snrs = np.random.uniform(*snr_range, size=len(left_cuts)).tolist()
     relative_offsets = np.random.uniform(*offset_range, size=len(left_cuts)).tolist()
 
-    cuts = (
+    overlayed_cut_set = CutSet.from_cuts(
         left_cut.overlay(
             right_cut,
             offset_other_by=left_cut.duration * relative_offset,
@@ -87,9 +87,6 @@ def random_overlayed(
         )
         for left_cut, right_cut, snr, relative_offset in zip(left_cuts, right_cuts, snrs, relative_offsets)
     )
-
-    # Make the overlayed cut set contain both the overlayed cuts and the source cuts
-    overlayed_cut_set = CutSet.from_cuts(cuts) + source_cut_set
     overlayed_cut_set.to_yaml(output_cut_manifest)
 
 

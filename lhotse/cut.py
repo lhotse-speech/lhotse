@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 from functools import reduce
-from typing import Dict, List, Optional, Iterable, Any, Union
+from typing import Dict, List, Optional, Iterable, Union
 from uuid import uuid4
 
 import numpy as np
@@ -19,10 +19,15 @@ from lhotse.utils import (
     save_to_yaml
 )
 
-
 # One of the design principles for Cuts is a maximally "lazy" implementation, e.g. when overlaying/mixing Cuts,
 # we'd rather sum the feature matrices only after somebody actually calls "load_features". It helps to avoid
 # an excessive storage size for data augmented in various ways.
+
+
+# Helper "typedef" to artbitrary Cut type as they do not share a common base class.
+# The class names are strings here so that the Python interpreter resolves them after parsing the whole file.
+AnyCut = Union['Cut', 'MixedCut']
+
 
 @dataclass
 class Cut:
@@ -106,7 +111,7 @@ class Cut:
             features=self.features
         )
 
-    def overlay(self, other: 'Cut', offset_other_by: Seconds = 0.0, snr: Optional[Decibels] = None) -> 'MixedCut':
+    def overlay(self, other: AnyCut, offset_other_by: Seconds = 0.0, snr: Optional[Decibels] = None) -> 'MixedCut':
         """
         Overlay, or mix, this Cut with the `other` Cut. Optionally the `other` Cut may be shifted by `offset_other_by`
         Seconds and scaled down (positive SNR) or scaled up (negative SNR).
@@ -116,12 +121,14 @@ class Cut:
         if offset_other_by > self.duration:
             raise ValueError(f"Cannot overlay cut '{other.id}' with offset {offset_other_by}, which is greater than "
                              f"cuts {self.id} duration of {self.duration}")
+        new_tracks = (
+            [MixTrack(cut=other, offset=offset_other_by, snr=snr)]
+            if isinstance(other, Cut)
+            else other.tracks
+        )
         return MixedCut(
             id=str(uuid4()),
-            tracks=[
-                MixTrack(cut_id=self.id),
-                MixTrack(cut_id=other.id, offset=offset_other_by, snr=snr)
-            ]
+            tracks=[MixTrack(cut=self)] + new_tracks
         )
 
     def append(self, other: 'Cut', snr: Optional[Decibels] = None) -> 'MixedCut':
@@ -134,6 +141,16 @@ class Cut:
         """
         return self.overlay(other=other, offset_other_by=self.duration, snr=snr)
 
+    @staticmethod
+    def from_dict(data: dict) -> 'Cut':
+        feature_info = data.pop('features')
+        supervision_infos = data.pop('supervisions')
+        return Cut(
+            **data,
+            features=Features.from_dict(feature_info),
+            supervisions=[SupervisionSegment.from_dict(s) for s in supervision_infos]
+        )
+
 
 @dataclass
 class MixTrack:
@@ -141,9 +158,14 @@ class MixTrack:
     Represents a single track in a mix of Cuts. Points to a specific Cut and holds information on
     how to mix it with other Cuts, relative to the first track in a mix.
     """
-    cut_id: str
+    cut: Cut
     offset: Seconds = 0.0
     snr: Optional[Decibels] = None
+
+    @staticmethod
+    def from_dict(data: dict):
+        raw_cut = data.pop('cut')
+        return MixTrack(cut=Cut.from_dict(raw_cut), **data)
 
 
 @dataclass
@@ -158,51 +180,53 @@ class MixedCut:
     id: str
     tracks: List[MixTrack]
 
-    def with_cut_set(self, cut_set: 'CutSet') -> 'MixedCut':
-        """
-        Provide the source cut set that can be looked up to resolve the MixedCut's dependencies.
-        This method is necessary, because the MixedCut acts like a "pointer" to the cuts that were used to create it.
-        """
-        self._cut_set = cut_set
-        return self
-
     @property
     def supervisions(self) -> List[SupervisionSegment]:
         """
-        Lists the supervisions of the underyling source cuts.
+        Lists the supervisions of the underlying source cuts.
         Each segment start time will be adjusted by the track offset.
         """
         return [
             segment.with_offset(track.offset)
             for track in self.tracks
-            for segment in self._cut_set.cuts[track.cut_id].supervisions
+            for segment in track.cut.supervisions
         ]
 
     @property
     def duration(self) -> Seconds:
-        track_durations = (track.offset + self._cut_set.cuts[track.cut_id].duration for track in self.tracks)
+        track_durations = (track.offset + track.cut.duration for track in self.tracks)
         return max(track_durations)
 
-    def overlay(self, other: 'Cut', offset_other_by: Seconds = 0.0, snr: Optional[Decibels] = None) -> 'MixedCut':
+    @property
+    def num_frames(self) -> int:
+        return round(self.duration / self.tracks[0].cut.features.frame_shift)
+
+    def overlay(
+            self,
+            other: AnyCut,
+            offset_other_by: Seconds = 0.0,
+            snr: Optional[Decibels] = None
+    ) -> 'MixedCut':
         """
         Overlay, or mix, this Cut with the `other` Cut. Optionally the `other` Cut may be shifted by `offset_other_by`
         Seconds and scaled down (positive SNR) or scaled up (negative SNR).
         Returns a MixedCut, which only keeps the information about the mix; actual mixing is performed
         during the call to `load_features`.
         """
-        # We can only check for "out-of-bounds" overlay operation when a MixedCut can access the Cuts
-        # that it consists of.
-        if hasattr(self, '_cut_set') and offset_other_by > self.duration:
+        if offset_other_by > self.duration:
             raise ValueError(f"Cannot overlay cut '{other.id}' with offset {offset_other_by}, which is greater than "
                              f"cuts {self.id} duration of {self.duration}")
+        new_tracks = (
+            [MixTrack(cut=other, offset=offset_other_by, snr=snr)]
+            if isinstance(other, Cut)
+            else other.tracks
+        )
         return MixedCut(
             id=str(uuid4()),
-            tracks=self.tracks + [
-                MixTrack(cut_id=other.id, offset=offset_other_by, snr=snr)
-            ]
+            tracks=self.tracks + new_tracks
         )
 
-    def append(self, other: 'Cut', snr: Optional[Decibels] = None) -> 'MixedCut':
+    def append(self, other: AnyCut, snr: Optional[Decibels] = None) -> 'MixedCut':
         """
         Append the `other` Cut after the current Cut. Conceptually the same as `overlay` but with an offset
         matching the current cuts length. Optionally scale down (positive SNR) or scale up (negative SNR)
@@ -214,7 +238,7 @@ class MixedCut:
 
     def load_features(self, root_dir: Optional[Pathlike] = None) -> np.ndarray:
         """Loads the features of the source cuts and overlays them on-the-fly."""
-        cuts = [self._cut_set.cuts[track.cut_id] for track in self.tracks]
+        cuts = [track.cut for track in self.tracks]
         frame_shift = cuts[0].features.frame_shift
         assert frame_shift == cuts[1].features.frame_shift
         # TODO: check if the 'pad_shorter' call is still necessary, it shouldn't be
@@ -231,9 +255,9 @@ class MixedCut:
             )
         return mixer.mixed_feats
 
-
-# Helper "typedef" to artbitrary Cut type as they do not share a common base class
-AnyCut = Union[Cut, MixedCut]
+    @staticmethod
+    def from_dict(data: dict) -> 'MixedCut':
+        return MixedCut(id=data['id'], tracks=[MixTrack.from_dict(track) for track in data['tracks']])
 
 
 @dataclass
@@ -261,24 +285,13 @@ class CutSet:
     def from_yaml(path: Pathlike) -> 'CutSet':
         raw_cuts = load_yaml(path)
 
-        def deserialize_one(cut: Dict[str, Any]) -> AnyCut:
-            cut_type = cut['type']
-            del cut['type']
-
+        def deserialize_one(raw_cut: dict) -> AnyCut:
+            cut_type = raw_cut.pop('type')
+            if cut_type == 'Cut':
+                return Cut.from_dict(raw_cut)
             if cut_type == 'MixedCut':
-                return MixedCut(id=cut['id'], tracks=[MixTrack(**track) for track in cut['tracks']])
-            elif cut_type != 'Cut':
-                raise ValueError(f"Unexpected cut type during deserialization: '{cut_type}'")
-
-            feature_info = cut['features']
-            del cut['features']
-            supervision_infos = cut['supervisions']
-            del cut['supervisions']
-            return Cut(
-                **cut,
-                features=Features(**feature_info),
-                supervisions=[SupervisionSegment(**s) for s in supervision_infos]
-            )
+                return MixedCut.from_dict(raw_cut)
+            raise ValueError(f"Unexpected cut type during deserialization: '{cut_type}'")
 
         return CutSet.from_cuts(deserialize_one(cut) for cut in raw_cuts)
 
@@ -286,20 +299,14 @@ class CutSet:
         data = [{**asdict_nonull(cut), 'type': type(cut).__name__} for cut in self]
         save_to_yaml(data, path)
 
-    def with_source_cuts_from(self, source: 'CutSet') -> 'CutSet':
-        """
-        Provide the source cut set that can be looked up to resolve the dependencies of the MixedCut's in this CutSet.
-        This method is a necessary, because the MixedCut acts like a "pointer" to the cuts that were used to create it.
-        """
-        for cut in self.mixed_cuts.values():
-            cut.with_cut_set(source)
-        return self
-
     def __contains__(self, item: Union[str, Cut, MixedCut]) -> bool:
         if isinstance(item, str):
             return item in self.cuts
         else:
             return item.id in self.cuts
+
+    def __getitem__(self, item: str) -> 'AnyCut':
+        return self.cuts[item]
 
     def __len__(self) -> int:
         return len(self.cuts)
