@@ -67,6 +67,10 @@ class Cut:
     def num_frames(self) -> int:
         return self.features.num_frames
 
+    @property
+    def num_features(self) -> int:
+        return self.features.num_features
+
     def load_features(self, root_dir: Optional[Pathlike] = None) -> np.ndarray:
         """
         Load the features from the underlying storage and cut them to the relevant
@@ -94,7 +98,7 @@ class Cut:
             By default, the duration is (end of the cut before truncation) - (offset).
         :param keep_excessive_supervisions: bool. Since trimming may happen inside a SupervisionSegment, the caller has
             an option to either keep or discard such supervisions.
-        :return: a new MixedCut instance.
+        :return: a new Cut instance.
         """
         new_start = self.start + offset
         until = offset + (duration if duration is not None else self.duration)
@@ -120,9 +124,9 @@ class Cut:
         Returns a MixedCut, which only keeps the information about the mix; actual mixing is performed
         during the call to `load_features`.
         """
-        if offset_other_by > self.duration:
-            raise ValueError(f"Cannot overlay cut '{other.id}' with offset {offset_other_by}, which is greater than "
-                             f"cuts {self.id} duration of {self.duration}")
+        assert self.num_features == other.num_features, "Cannot overlay cuts with different feature dimensions."
+        assert offset_other_by <= self.duration, f"Cannot overlay cut '{other.id}' with offset {offset_other_by}, " \
+                                                 f"which is greater than cuts {self.id} duration of {self.duration}"
         new_tracks = (
             [MixTrack(cut=other, offset=offset_other_by, snr=snr)]
             if isinstance(other, Cut)
@@ -182,14 +186,6 @@ class MixedCut:
     id: str
     tracks: List[MixTrack]
 
-    def with_cut_set(self, cut_set: 'CutSet') -> 'MixedCut':
-        """
-        Provide the source cut set that can be looked up to resolve the MixedCut's dependencies.
-        This method is necessary, because the MixedCut acts like a "pointer" to the cuts that were used to create it.
-        """
-        self._cut_set = cut_set
-        return self
-
     @property
     def supervisions(self) -> List[SupervisionSegment]:
         """
@@ -211,6 +207,10 @@ class MixedCut:
     def num_frames(self) -> int:
         return round(self.duration / self.tracks[0].cut.features.frame_shift)
 
+    @property
+    def num_features(self) -> int:
+        return self.tracks[0].cut.num_features
+
     def overlay(
             self,
             other: AnyCut,
@@ -223,9 +223,9 @@ class MixedCut:
         Returns a MixedCut, which only keeps the information about the mix; actual mixing is performed
         during the call to `load_features`.
         """
-        if offset_other_by > self.duration:
-            raise ValueError(f"Cannot overlay cut '{other.id}' with offset {offset_other_by}, which is greater than "
-                             f"cuts {self.id} duration of {self.duration}")
+        assert self.num_features == other.num_features, "Cannot overlay cuts with different feature dimensions."
+        assert offset_other_by <= self.duration, f"Cannot overlay cut '{other.id}' with offset {offset_other_by}, " \
+                                                 f"which is greater than cuts {self.id} duration of {self.duration}"
         new_tracks = (
             [MixTrack(cut=other, offset=offset_other_by, snr=snr)]
             if isinstance(other, Cut)
@@ -319,7 +319,6 @@ class MixedCut:
         """Loads the features of the source cuts and overlays them on-the-fly."""
         cuts = [track.cut for track in self.tracks]
         frame_shift = cuts[0].features.frame_shift
-        assert frame_shift == cuts[1].features.frame_shift
         # TODO: check if the 'pad_shorter' call is still necessary, it shouldn't be
         # feats = pad_shorter(*feats)
         mixer = FbankMixer(
