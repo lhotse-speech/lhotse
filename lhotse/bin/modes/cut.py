@@ -5,7 +5,7 @@ import numpy as np
 from cytoolz.itertoolz import groupby
 
 from lhotse.bin.modes.cli_base import cli
-from lhotse.cut import make_cuts_from_supervisions, CutSet, make_cuts_from_features, mix_cuts
+from lhotse.cut import make_cuts_from_supervisions, CutSet, make_cuts_from_features, mix_cuts, append_cuts
 from lhotse.features import FeatureSet
 from lhotse.manipulation import split, combine
 from lhotse.supervision import SupervisionSet
@@ -157,3 +157,22 @@ def truncate(
         keep_excessive_supervisions=keep_overflowing_supervisions
     )
     truncated_cut_set.to_yaml(output_cut_manifest)
+
+
+@cut.command()
+@click.argument('cut_manifests', nargs=-1, type=click.Path(exists=True, dir_okay=False))
+@click.argument('output_cut_manifest', type=click.Path())
+def append(
+        cut_manifests: List[Pathlike],
+        output_cut_manifest: Pathlike,
+):
+    """
+    Create a new CutSet by appending the cuts in CUT_MANIFESTS. CUT_MANIFESTS are iterated position-wise (the
+    cuts on i'th position in each manfiest are appended to each other).
+    The cuts are appended in the order in which they appear in the
+    input argument list.
+    If CUT_MANIFESTS have different lengths, the script stops once the shortest CutSet is depleted.
+    """
+    cut_sets = [CutSet.from_yaml(path) for path in cut_manifests]
+    appended_cut_set = CutSet.from_cuts(append_cuts(cuts) for cuts in zip(*cut_sets))
+    appended_cut_set.to_yaml(output_cut_manifest)

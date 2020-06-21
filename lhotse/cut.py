@@ -385,6 +385,7 @@ class CutSet:
     ) -> 'CutSet':
         """
         Return a new CutSet with the Cuts truncated so that their durations are at most `max_duration`.
+        Cuts shorter than `max_duration` will not be changed.
         :param max_duration: float, the maximum duration in seconds of a cut in the resulting manifest.
         :param offset_type: str, can be:
             - 'start' => cuts are truncated from their start;
@@ -475,9 +476,34 @@ def make_cuts_from_supervisions(supervision_set: SupervisionSet, feature_set: Fe
     )
 
 
+def mix(
+        left_cut: AnyCut,
+        right_cut: AnyCut,
+        offset_right_by: Seconds = 0,
+        snr: Optional[Decibels] = None
+) -> MixedCut:
+    """Helper method for functional-style mixing of Cuts."""
+    return left_cut.overlay(right_cut, offset_other_by=offset_right_by, snr=snr)
+
+
+def append(
+        left_cut: AnyCut,
+        right_cut: AnyCut,
+        snr: Optional[Decibels] = None
+) -> MixedCut:
+    """Helper method for functional-style appending of Cuts."""
+    return left_cut.append(right_cut, snr=snr)
+
+
 def mix_cuts(cuts: Iterable[AnyCut]) -> MixedCut:
     """Return a MixedCut that consists of the input Cuts overlayed on each other as-is."""
-    cuts = list(cuts)
     # The following is a fold (accumulate/aggregate) operation; it starts with cuts[0], and overlays it with cuts[1];
     #  then takes their mix and overlays it with cuts[2]; and so on.
-    return reduce(lambda left_cut, right_cut: left_cut.overlay(right_cut), cuts[1:], cuts[0])
+    return reduce(mix, cuts)
+
+
+def append_cuts(cuts: Iterable[AnyCut]) -> AnyCut:
+    """Return a MixedCut that consists of the input Cuts appended to each other as-is."""
+    # The following is a fold (accumulate/aggregate) operation; it starts with cuts[0], and appends cuts[1] to it;
+    #  then takes their it concatenation and appends cuts[2] to it; and so on.
+    return reduce(append, cuts)
