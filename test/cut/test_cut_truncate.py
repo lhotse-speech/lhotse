@@ -35,49 +35,49 @@ def overlapping_supervisions_cut():
 
 
 @pytest.mark.parametrize(
-    ['offset', 'until', 'keep_excessive_supervisions', 'expected_duration', 'expected_supervision_ids'],
+    ['offset', 'duration', 'keep_excessive_supervisions', 'expected_end', 'expected_supervision_ids'],
     [
         (0.0, None, True, 0.5, ['s1', 's2', 's3', 's4']),
         (0.0, None, False, 0.5, ['s1', 's2', 's3', 's4']),
         (0.0, 0.5, True, 0.5, ['s1', 's2', 's3', 's4']),
         (0.0, 0.5, False, 0.5, ['s1', 's2', 's3', 's4']),
-        (0.1, None, True, 0.4, ['s1', 's2', 's3', 's4']),
-        (0.1, None, False, 0.4, ['s2', 's3', 's4']),
+        (0.1, None, True, 0.5, ['s1', 's2', 's3', 's4']),
+        (0.1, None, False, 0.5, ['s2', 's3', 's4']),
         (0.0, 0.4, True, 0.4, ['s1', 's2', 's3', 's4']),
         (0.0, 0.4, False, 0.4, ['s1', 's2', 's3']),
-        (0.1, 0.4, True, 0.3, ['s1', 's2', 's3', 's4']),
-        (0.1, 0.4, False, 0.3, ['s2', 's3']),
-        (0.1, 0.2, True, 0.1, ['s1', 's2']),
-        (0.1, 0.2, False, 0.1, []),
-        (0.2, None, True, 0.3, ['s2', 's3', 's4']),
-        (0.2, None, False, 0.3, ['s3', 's4']),
-        (0.2, 0.4, True, 0.2, ['s2', 's3', 's4']),
-        (0.2, 0.4, False, 0.2, ['s3']),
+        (0.1, 0.3, True, 0.4, ['s1', 's2', 's3', 's4']),
+        (0.1, 0.3, False, 0.4, ['s2', 's3']),
+        (0.1, 0.1, True, 0.2, ['s1', 's2']),
+        (0.1, 0.1, False, 0.2, []),
+        (0.2, None, True, 0.5, ['s2', 's3', 's4']),
+        (0.2, None, False, 0.5, ['s3', 's4']),
+        (0.2, 0.2, True, 0.4, ['s2', 's3', 's4']),
+        (0.2, 0.2, False, 0.4, ['s3']),
         (0.0, 0.1, True, 0.1, ['s1']),
         (0.0, 0.1, False, 0.1, []),
-        (0.1, 0.2, False, 0.1, []),
-        (0.2, 0.3, False, 0.1, []),
-        (0.3, 0.4, False, 0.1, []),
-        (0.4, 0.5, False, 0.1, []),
-        (0.27, 0.31, False, 0.04, []),
+        (0.1, 0.1, False, 0.2, []),
+        (0.2, 0.1, False, 0.3, []),
+        (0.3, 0.1, False, 0.4, []),
+        (0.4, 0.1, False, 0.5, []),
+        (0.27, 0.04, False, 0.31, []),
     ]
 )
 def test_truncate_cut(
         offset,
-        until,
+        duration,
         keep_excessive_supervisions,
-        expected_duration,
+        expected_end,
         expected_supervision_ids,
         overlapping_supervisions_cut
 ):
     truncated_cut = overlapping_supervisions_cut.truncate(
         offset=offset,
-        until=until,
+        duration=duration,
         keep_excessive_supervisions=keep_excessive_supervisions
     )
     remaining_supervision_ids = [s.id for s in truncated_cut.supervisions]
     assert remaining_supervision_ids == expected_supervision_ids
-    assert isclose(truncated_cut.duration, expected_duration)
+    assert isclose(truncated_cut.end, expected_end)
 
 
 @pytest.fixture
@@ -119,7 +119,6 @@ def test_truncate_mixed_cut_with_offset_exceeding_first_track(simple_mixed_cut):
 
     assert len(truncated_cut.tracks) == 1
 
-    assert truncated_cut.tracks[0].cut.id == 'cut2'
     assert truncated_cut.tracks[0].offset == 0.0
     assert truncated_cut.tracks[0].cut.start == 6.0
     assert truncated_cut.tracks[0].cut.duration == 4.0
@@ -151,7 +150,6 @@ def test_truncate_mixed_cut_decreased_duration_removing_last_cut(simple_mixed_cu
 
     assert len(truncated_cut.tracks) == 1
 
-    assert truncated_cut.tracks[0].cut.id == 'cut1'
     assert truncated_cut.tracks[0].offset == 0.0
     assert truncated_cut.tracks[0].cut.start == 0.0
     assert truncated_cut.tracks[0].cut.duration == 4.0
@@ -180,29 +178,35 @@ def test_truncate_mixed_cut_with_small_offset_and_duration(simple_mixed_cut):
 
 def test_truncate_cut_set_offset_start(cut_set):
     truncated_cut_set = cut_set.truncate(max_duration=5, offset_type='start')
-    for cut in truncated_cut_set:
-        assert isclose(cut.duration, 5.0)
-        assert isclose(cut.start, 0.0)
+    cut1, cut2 = truncated_cut_set
+    assert isclose(cut1.start, 0.0)
+    assert isclose(cut1.end, 5.0)
+    assert isclose(cut1.duration, 5.0)
+    assert isclose(cut2.start, 180.0)
+    assert isclose(cut2.end, 185.0)
+    assert isclose(cut2.duration, 5.0)
 
 
 def test_truncate_cut_set_offset_end(cut_set):
     truncated_cut_set = cut_set.truncate(max_duration=5, offset_type='end')
-    for cut in truncated_cut_set:
-        assert isclose(cut.duration, 5.0)
-        assert isclose(cut.start, 5.0)
+    cut1, cut2 = truncated_cut_set
+    assert isclose(cut1.start, 5.0)
+    assert isclose(cut1.end, 10.0)
+    assert isclose(cut1.duration, 5.0)
+    assert isclose(cut2.start, 185.0)
+    assert isclose(cut2.end, 190.0)
+    assert isclose(cut2.duration, 5.0)
 
 
 def test_truncate_cut_set_offset_random(cut_set):
     truncated_cut_set = cut_set.truncate(max_duration=5, offset_type='random')
-    for cut in truncated_cut_set:
-        assert isclose(cut.duration, 5.0)
-        assert 0.0 <= cut.start <= 5.0
-    # Check that "cut.start" is not the same in every cut
+    cut1, cut2 = truncated_cut_set
+    assert 0.0 <= cut1.start <= 5.0
+    assert 5.0 <= cut1.end <= 10.0
+    assert isclose(cut1.duration, 5.0)
+    assert 180.0 <= cut2.start <= 185.0
+    assert 185.0 <= cut2.end <= 190.0
+    assert isclose(cut2.duration, 5.0)
+    # Check that start and end is not the same in every cut
     assert len(set(cut.start for cut in truncated_cut_set)) > 1
-
-
-def test_truncate_cut_set_offset_start(cut_set):
-    truncated_cut_set = cut_set.truncate(max_duration=5, offset_type='start')
-    for cut in truncated_cut_set:
-        assert isclose(cut.duration, 5.0)
-        assert isclose(cut.start, 0.0)
+    assert len(set(cut.end for cut in truncated_cut_set)) > 1

@@ -79,25 +79,26 @@ class Cut:
             self,
             *,
             offset: Seconds = 0.0,
-            until: Optional[Seconds] = None,
+            duration: Optional[Seconds] = None,
             keep_excessive_supervisions: bool = True
     ) -> 'Cut':
         """
-        Returns a new Cut that is a sub-region of the current Cut. The `offset` parameter controls the start of the
-        new cut relative to the current Cut's start, and `until` parameter controls the new cuts end.
-        Since trimming may happen inside a SupervisionSegment, the caller has an option to either keep or discard
-        such supervisions with `keep_excessive_supervision` flag.
-        Note that no operation is done on the actual features - it's only during load_features() when the actual
-        changes happen (a subset of features is loaded).
+        Returns a new Cut that is a sub-region of the current Cut.
 
-        Example:
-        >>> from math import isclose
-        >>> cut = Cut(id='x', channel=0, start=3.0, duration=8.0, features='dummy', supervisions=[])
-        >>> trimmed_cut = cut.truncate(offset=5.0, until=7.0)
-        >>> trimmed_cut.start == 5.0 and isclose(trimmed_cut.duration, 2.0) and isclose(cut.end, 7.0)
+        Note that no operation is done on the actual features - it's only during the call to load_features()
+        when the actual changes happen (a subset of features is loaded).
+
+        :param offset: float (seconds), controls the start of the new cut relative to the current Cut's start.
+            E.g., if the current Cut starts at 10.0, and offset is 2.0, the new start is 12.0.
+        :param duration: optional float (seconds), controls the duration of the resulting Cut.
+            By default, the duration is (end of the cut before truncation) - (offset).
+        :param keep_excessive_supervisions: bool. Since trimming may happen inside a SupervisionSegment, the caller has
+            an option to either keep or discard such supervisions.
+        :return: a new MixedCut instance.
         """
         new_start = self.start + offset
-        new_duration = self.duration - new_start if until is None else until - offset
+        until = offset + (duration if duration is not None else self.duration)
+        new_duration = self.duration - new_start if duration is None else until - offset
         assert new_duration > 0.0
         assert new_start + new_duration <= self.start + self.duration + 1e-5
         new_time_span = TimeSpan(start=new_start, end=new_start + new_duration)
@@ -253,50 +254,62 @@ class MixedCut:
             keep_excessive_supervisions: bool = True
     ) -> 'MixedCut':
         """
-        Returns a new MixedCut that is a sub-region of the current MixedCut. The `offset` parameter controls the start
-        of the new cut relative to the current MixedCut's start, and `until` parameter controls the new cuts end.
-        Since trimming may happen inside a SupervisionSegment, the caller has an option to either keep or discard
-        such supervisions with `keep_excessive_supervision` flag.
-        Note that no operation is done on the actual features - it's only during load_features() when the actual
-        changes happen (a subset of features is loaded).
+        Returns a new MixedCut that is a sub-region of the current MixedCut. This method truncates the underlying Cuts
+        and modifies their offsets in the mix, as needed. Tracks that do not fit in the truncated cut are removed.
 
-        Example:
-        >>> from math import isclose
-        >>> cut = MixedCut(id='x', tracks='irrelevant', start=0.0, duration=8.0)
-        >>> trimmed_cut = cut.truncate(offset=5.0, until=7.0)
-        >>> trimmed_cut.start == 5.0 and isclose(trimmed_cut.duration, 2.0) and isclose(cut.end, 7.0)
+        Note that no operation is done on the actual features - it's only during the call to load_features()
+        when the actual changes happen (a subset of features is loaded).
+
+        :param offset: float (seconds), controls the start of the new cut relative to the current MixedCut's start.
+        :param duration: optional float (seconds), controls the duration of the resulting MixedCut.
+            By default, the duration is (end of the cut before truncation) - (offset).
+        :param keep_excessive_supervisions: bool. Since trimming may happen inside a SupervisionSegment, the caller has
+            an option to either keep or discard such supervisions.
+        :return: a new MixedCut instance.
         """
 
         new_tracks = []
         old_duration = self.duration
-        new_mix_end = offset + duration if duration is not None else old_duration - offset
+        new_mix_end = old_duration - offset if duration is None else offset + duration
 
         for track in sorted(self.tracks, key=lambda t: t.offset):
-            # First, determine how much beginning of this track we're going to truncate:
-            # when its offset is larger than the truncation offset, we are not truncating the beginning
-            effective_offset = max(offset - track.offset, 0)
+            # First, determine how much of the beginning of the current track we're going to truncate:
+            # when the track offset is larger than the truncation offset, we are not truncating the cut;
+            # just decreasing the track offset.
 
-            # Compute the duration after trimming the start
-            new_duration = track.cut.duration - effective_offset
-            if new_duration <= 0:
-                # When the truncation offset is larger that the duration of a given track, we have to remove it
+            # 'cut_offset' determines how much we're going to truncate the Cut for the current track.
+            cut_offset = max(offset - track.offset, 0)
+            # 'track_offset' determines the new track's offset after truncation.
+            track_offset = max(track.offset - offset, 0)
+            # 'track_end' is expressed relative to the beginning of the mix
+            # (not to be confused with the 'start' of the underlying Cut)
+            track_end = track.offset + track.cut.duration
+
+            if track_end < offset:
+                # Omit a Cut that ends before the truncation offset.
                 continue
 
-            # Compute the new duration after both trimming the start and the end
-            new_cut_end = (
-                (offset - track.offset) + duration
-                if duration is not None
-                else track.cut.end
-            )
+            cut_duration_decrease = 0
+            if track_end > new_mix_end:
+                if duration is not None:
+                    cut_duration_decrease = track_end - new_mix_end
+                else:
+                    cut_duration_decrease = track_end - old_duration
+
+            # Compute the new Cut's duration after trimming the start and the end.
+            new_duration = track.cut.duration - cut_offset - cut_duration_decrease
+            if new_duration <= 0:
+                # Omit a Cut that is completely outside the time span of the new truncated MixedCut.
+                continue
 
             new_tracks.append(
                 MixTrack(
                     cut=track.cut.truncate(
-                        offset=effective_offset,
-                        until=new_duration,
+                        offset=cut_offset,
+                        duration=new_duration,
                         keep_excessive_supervisions=keep_excessive_supervisions
                     ),
-                    offset=track.offset,
+                    offset=track_offset,
                     snr=track.snr
                 )
             )
@@ -391,17 +404,16 @@ class CutSet:
             def compute_offset():
                 if offset_type == 'start':
                     return 0.0
-                last_offset = cut.end - max_duration
+                last_offset = cut.duration - max_duration
                 if offset_type == 'end':
                     return last_offset
                 if offset_type == 'random':
                     return random.uniform(0.0, last_offset)
                 raise ValueError(f"Unknown 'offset_type' option: {offset_type}")
 
-            offset = compute_offset()
             truncated_cuts.append(cut.truncate(
                 offset=compute_offset(),
-                until=offset + max_duration,
+                duration=max_duration,
                 keep_excessive_supervisions=keep_excessive_supervisions
             ))
         return CutSet.from_cuts(truncated_cuts)
