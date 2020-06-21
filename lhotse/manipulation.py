@@ -1,15 +1,17 @@
 import random
 from functools import reduce
+from itertools import chain
 from math import ceil
 from operator import add
-from typing import List, TypeVar, Iterable, Any
+from typing import List, TypeVar, Iterable, Any, Optional
 
-from lhotse.audio import AudioSet
-from lhotse.cut import CutSet
-from lhotse.features import FeatureSet
-from lhotse.supervision import SupervisionSet
+from lhotse.audio import AudioSet, Recording
+from lhotse.cut import CutSet, Cut, MixedCut
+from lhotse.features import FeatureSet, Features
+from lhotse.supervision import SupervisionSet, SupervisionSegment
 from lhotse.utils import Pathlike
 
+ManifestItem = TypeVar('ManifestItem', Recording, SupervisionSegment, Features, Cut, MixedCut)
 Manifest = TypeVar('Manifest', AudioSet, SupervisionSet, FeatureSet, CutSet)
 
 
@@ -55,6 +57,31 @@ def split(manifest: Manifest, num_splits: int, randomize: bool = False) -> List[
 def combine(*manifests: Manifest) -> Manifest:
     """Combine multiple manifests of the same type into one."""
     return reduce(add, manifests)
+
+
+def to_manifest(items: Iterable[ManifestItem]) -> Optional[Manifest]:
+    """
+    Take an iterable of data types in Lhotse such as Recording, SupervisonSegment or Cut, and create the manifest of the
+    corresponding type. When the iterable is empty, returns None.
+    """
+    items = iter(items)
+    try:
+        first_item = next(items)
+    except StopIteration:
+        return None
+    items = chain([first_item], items)
+
+    if isinstance(first_item, Recording):
+        return AudioSet.from_recordings(items)
+    if isinstance(first_item, SupervisionSegment):
+        return SupervisionSet.from_segments(items)
+    if isinstance(first_item, (Cut, MixedCut)):
+        return CutSet.from_cuts(items)
+    if isinstance(first_item, Features):
+        raise ValueError("FeatureSet generic construction from iterable is not possible, as the config information "
+                         "would have been lost. Call FeatureSet.from_features() directly instead.")
+
+    raise ValueError(f"Unknown type of manifest item: {first_item}")
 
 
 def load_manifest(path: Pathlike) -> Manifest:
