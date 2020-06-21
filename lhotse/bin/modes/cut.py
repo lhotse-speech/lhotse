@@ -128,6 +128,8 @@ def mix_by_recording_id(
 @cut.command(context_settings=dict(show_default=True))
 @click.argument('cut_manifest', type=click.Path(exists=True, dir_okay=False))
 @click.argument('output_cut_manifest', type=click.Path())
+@click.option('--preserve-id', is_flag=True,
+              help='Should the cuts preserve IDs (by default, they will get new, random IDs)')
 @click.option('-d', '--max-duration', type=float, required=True,
               help='The maximum duration in seconds of a cut in the resulting manifest.')
 @click.option('-o', '--offset-type', type=click.Choice(['start', 'end', 'random']), default='start',
@@ -140,6 +142,7 @@ def mix_by_recording_id(
 def truncate(
         cut_manifest: Pathlike,
         output_cut_manifest: Pathlike,
+        preserve_id: bool,
         max_duration: float,
         offset_type: str,
         keep_overflowing_supervisions: bool,
@@ -154,7 +157,8 @@ def truncate(
     truncated_cut_set = cut_set.truncate(
         max_duration=max_duration,
         offset_type=offset_type,
-        keep_excessive_supervisions=keep_overflowing_supervisions
+        keep_excessive_supervisions=keep_overflowing_supervisions,
+        preserve_id=preserve_id
     )
     truncated_cut_set.to_yaml(output_cut_manifest)
 

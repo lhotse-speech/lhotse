@@ -84,7 +84,8 @@ class Cut:
             *,
             offset: Seconds = 0.0,
             duration: Optional[Seconds] = None,
-            keep_excessive_supervisions: bool = True
+            keep_excessive_supervisions: bool = True,
+            preserve_id: bool = False
     ) -> 'Cut':
         """
         Returns a new Cut that is a sub-region of the current Cut.
@@ -98,6 +99,7 @@ class Cut:
             By default, the duration is (end of the cut before truncation) - (offset).
         :param keep_excessive_supervisions: bool. Since trimming may happen inside a SupervisionSegment, the caller has
             an option to either keep or discard such supervisions.
+        :param preserve_id: bool. Should the truncated cut keep the same ID or get a new, random one.
         :return: a new Cut instance.
         """
         new_start = self.start + offset
@@ -108,7 +110,7 @@ class Cut:
         new_time_span = TimeSpan(start=new_start, end=new_start + new_duration)
         criterion = overlaps if keep_excessive_supervisions else overspans
         return Cut(
-            id=str(uuid4()),
+            id=self.id if preserve_id else str(uuid4()),
             start=new_start,
             duration=new_duration,
             supervisions=[
@@ -251,7 +253,8 @@ class MixedCut:
             *,
             offset: Seconds = 0.0,
             duration: Optional[Seconds] = None,
-            keep_excessive_supervisions: bool = True
+            keep_excessive_supervisions: bool = True,
+            preserve_id: bool = False,
     ) -> 'MixedCut':
         """
         Returns a new MixedCut that is a sub-region of the current MixedCut. This method truncates the underlying Cuts
@@ -265,6 +268,7 @@ class MixedCut:
             By default, the duration is (end of the cut before truncation) - (offset).
         :param keep_excessive_supervisions: bool. Since trimming may happen inside a SupervisionSegment, the caller has
             an option to either keep or discard such supervisions.
+        :param preserve_id: bool. Should the truncated cut keep the same ID or get a new, random one.
         :return: a new MixedCut instance.
         """
 
@@ -307,7 +311,8 @@ class MixedCut:
                     cut=track.cut.truncate(
                         offset=cut_offset,
                         duration=new_duration,
-                        keep_excessive_supervisions=keep_excessive_supervisions
+                        keep_excessive_supervisions=keep_excessive_supervisions,
+                        preserve_id=preserve_id
                     ),
                     offset=track_offset,
                     snr=track.snr
@@ -381,7 +386,8 @@ class CutSet:
             self,
             max_duration: Seconds,
             offset_type: str,
-            keep_excessive_supervisions: bool = True
+            keep_excessive_supervisions: bool = True,
+            preserve_id: bool = False
     ) -> 'CutSet':
         """
         Return a new CutSet with the Cuts truncated so that their durations are at most `max_duration`.
@@ -391,8 +397,9 @@ class CutSet:
             - 'start' => cuts are truncated from their start;
             - 'end' => cuts are truncated from their end minus max_duration;
             - 'random' => cuts are truncated randomly between their start and their end minus max_duration
-        :param keep_excessive_supervisions: When a cut is truncated in the middle of a supervision segment,
+        :param keep_excessive_supervisions: bool. When a cut is truncated in the middle of a supervision segment,
             should the supervision be kept.
+        :param preserve_id: bool. Should the truncated cut keep the same ID or get a new, random one.
         :return: a new CutSet instance with truncated cuts.
         """
         truncated_cuts = []
@@ -414,7 +421,8 @@ class CutSet:
             truncated_cuts.append(cut.truncate(
                 offset=compute_offset(),
                 duration=max_duration,
-                keep_excessive_supervisions=keep_excessive_supervisions
+                keep_excessive_supervisions=keep_excessive_supervisions,
+                preserve_id=preserve_id
             ))
         return CutSet.from_cuts(truncated_cuts)
 
