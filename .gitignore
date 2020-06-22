@@ -1,5 +1,6 @@
 # Custom
 .idea/
+.vscode/
 deps/
 examples/librimix/MiniLibriMix/
 examples/librimix/MiniLibriMix.zip
