@@ -5,6 +5,8 @@ set -eou pipefail
 LIBRIMIX_ROOT=$(pwd)
 LIBRIMIX_CSV=${LIBRIMIX_ROOT}/MiniLibriMix/metadata/mixture_train_mix_both.csv
 
+[[ `uname`=='Darwin' ]] && nj=`sysctl -n machdep.cpu.thread_count` || nj=`grep -c ^processor /proc/cpuinfo`
+
 # Obtain MiniLibriMix
 if [ ! -d MiniLibriMix ]; then
   wget https://zenodo.org/record/3871592/files/MiniLibriMix.zip
@@ -19,7 +21,7 @@ lhotse recipe librimix \
 
 for type in sources mix noise; do
   # Extract features for each type of audio file
-  lhotse make-feats -j 8 \
+  lhotse make-feats -j $nj \
     -r ${LIBRIMIX_ROOT} \
     librimix/audio_${type}.yml \
     librimix/feats_${type}

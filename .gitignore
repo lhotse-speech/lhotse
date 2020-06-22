@@ -1,5 +1,6 @@
 # Custom
 .idea/
+.vscode/
 deps/
 examples/librimix/MiniLibriMix/
 examples/librimix/MiniLibriMix.zip
@@ -135,3 +136,6 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
+
+# For macOS
+.DS_Store
