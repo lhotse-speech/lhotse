@@ -3,14 +3,14 @@ from contextlib import nullcontext as does_not_raise
 import pytest
 from pytest import mark, raises
 
-from lhotse.audio import AudioSet
+from lhotse.audio import RecordingSet
 from lhotse.features import FeatureSet
 from lhotse.manipulation import split, combine, load_manifest
 from lhotse.supervision import SupervisionSet
 from lhotse.test_utils import DummyManifest
 
 
-@mark.parametrize('manifest_type', [AudioSet, SupervisionSet, FeatureSet])
+@mark.parametrize('manifest_type', [RecordingSet, SupervisionSet, FeatureSet])
 def test_split_even(manifest_type):
     manifest = DummyManifest(manifest_type, begin_id=0, end_id=100)
     manifest_subsets = split(manifest, num_splits=2)
@@ -19,7 +19,7 @@ def test_split_even(manifest_type):
     assert manifest_subsets[1] == DummyManifest(manifest_type, begin_id=50, end_id=100)
 
 
-@mark.parametrize('manifest_type', [AudioSet, SupervisionSet, FeatureSet])
+@mark.parametrize('manifest_type', [RecordingSet, SupervisionSet, FeatureSet])
 def test_split_odd(manifest_type):
     manifest = DummyManifest(manifest_type, begin_id=0, end_id=100)
     manifest_subsets = split(manifest, num_splits=3)
@@ -29,14 +29,14 @@ def test_split_odd(manifest_type):
     assert manifest_subsets[2] == DummyManifest(manifest_type, begin_id=68, end_id=100)
 
 
-@mark.parametrize('manifest_type', [AudioSet, SupervisionSet, FeatureSet])
+@mark.parametrize('manifest_type', [RecordingSet, SupervisionSet, FeatureSet])
 def test_cannot_split_to_more_chunks_than_items(manifest_type):
     manifest = DummyManifest(manifest_type, begin_id=0, end_id=1)
     with pytest.raises(ValueError):
         split(manifest, num_splits=10)
 
 
-@mark.parametrize('manifest_type', [AudioSet, SupervisionSet, FeatureSet])
+@mark.parametrize('manifest_type', [RecordingSet, SupervisionSet, FeatureSet])
 def test_combine(manifest_type):
     expected = DummyManifest(manifest_type, begin_id=0, end_id=200)
     combined = combine(

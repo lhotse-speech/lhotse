@@ -4,7 +4,7 @@ from typing import Dict, Union
 
 import pandas as pd
 
-from lhotse.audio import AudioSet, Recording, AudioSource
+from lhotse.audio import RecordingSet, Recording, AudioSource
 from lhotse.supervision import SupervisionSet, SupervisionSegment
 from lhotse.utils import Pathlike, Seconds
 
@@ -15,7 +15,7 @@ def prepare_librimix(
         with_precomputed_mixtures: bool = False,
         sampling_rate: int = 16000,
         min_segment_seconds: Seconds = 3.0
-) -> Dict[str, Dict[str, Union[AudioSet, SupervisionSet]]]:
+) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet]]]:
     df = pd.read_csv(librimix_csv)
 
     output_dir = Path(output_dir)
@@ -25,7 +25,7 @@ def prepare_librimix(
 
     # First, create the audio manifest that specifies the pairs of source recordings
     # to be mixed together.
-    audio_sources = AudioSet.from_recordings(
+    audio_sources = RecordingSet.from_recordings(
         Recording(
             id=row['mixture_ID'],
             sources=[
@@ -60,7 +60,7 @@ def prepare_librimix(
     # A different way of performing the mix would be using Lhotse's on-the-fly
     # overlaying of audio Cuts.
     if with_precomputed_mixtures:
-        audio_mix = AudioSet.from_recordings(
+        audio_mix = RecordingSet.from_recordings(
             Recording(
                 id=row['mixture_ID'],
                 sources=[
@@ -85,10 +85,10 @@ def prepare_librimix(
             'supervisions': supervision_mix
         }
 
-    # When the LibriMix CSV specifies noises, we create a separate AudioSet for them,
+    # When the LibriMix CSV specifies noises, we create a separate RecordingSet for them,
     # so that we can extract their features and overlay them as Cuts later.
     if 'noise_path' in df:
-        audio_noise = AudioSet.from_recordings(
+        audio_noise = RecordingSet.from_recordings(
             Recording(
                 id=row['mixture_ID'],
                 sources=[
@@ -116,7 +116,7 @@ def prepare_librimix(
     return manifests
 
 
-def make_corresponding_supervisions(audio: AudioSet) -> SupervisionSet:
+def make_corresponding_supervisions(audio: RecordingSet) -> SupervisionSet:
     """
     Prepare a supervision set - in this case it just describes
     which segments are available in the corpus, as the actual supervisions for

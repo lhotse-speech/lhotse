@@ -3,7 +3,7 @@ from typing import Optional
 
 import click
 
-from lhotse.audio import AudioSet
+from lhotse.audio import RecordingSet
 from lhotse.bin.modes.cli_base import cli
 from lhotse.features import FeatureExtractor, FeatureSetBuilder
 from lhotse.supervision import SupervisionSet
@@ -56,7 +56,7 @@ def make_feats(
     Extract features for recordings in a given AUDIO_MANIFEST. The features are stored in OUTPUT_DIR,
     with one file per recording (or segment).
     """
-    audio_set = AudioSet.from_yaml(audio_manifest)
+    audio_set = RecordingSet.from_yaml(audio_manifest)
 
     feature_extractor = (FeatureExtractor.from_yaml(feature_manifest)
                          if feature_manifest is not None else FeatureExtractor())
