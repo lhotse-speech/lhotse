@@ -58,9 +58,8 @@ def windowed(
         cut_shift: Optional[float]
 ):
     """
-    Create a CutSet stored in OUTPUT_CUT_MANIFEST that contains the regions and features supplied by FEATURE_MANIFEST.
-    Optionally it can use a SUPERVISION_MANIFEST to select the regions and attach the corresponding supervisions to
-    the cuts. This is the simplest way to create Cuts.
+    Create a CutSet stored in OUTPUT_CUT_MANIFEST from feature regions in FEATURE_MANIFEST.
+    The feature matrices are traversed in windows with CUT_SHIFT increments, creating cuts of constant CUT_DURATION.
     """
     feature_set = FeatureSet.from_yaml(feature_manifest)
     cut_set = make_windowed_cuts_from_features(feature_set, cut_duration=cut_duration, cut_shift=cut_shift)
