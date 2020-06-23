@@ -6,6 +6,7 @@ from uuid import uuid4
 
 import numpy as np
 
+from lhotse.audio import RecordingSet
 from lhotse.features import Features, FeatureSet, FbankMixer
 from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import (
@@ -65,7 +66,7 @@ class Cut:
 
     @property
     def num_frames(self) -> int:
-        return self.features.num_frames
+        return round(self.duration / self.features.frame_shift)
 
     @property
     def num_features(self) -> int:
@@ -78,6 +79,25 @@ class Cut:
         Optionally specify a `root_dir` prefix to prefix the features path with.
         """
         return self.features.load(root_dir=root_dir, start=self.start, duration=self.duration)
+
+    def load_audio(self, recording_set: RecordingSet, root_dir: Optional[Pathlike] = None) -> np.ndarray:
+        """
+        Load the audio by locating the appropriate recording in the supplied RecordingSet.
+        The audio is trimmed to the [begin, end] range specified by the Cut.
+        Optionally specify a `root_dir` prefix to prefix the features path with.
+
+        :param recording_set: RecordingSet object containing the Recording pointed to by recording_id
+            member of this Cut.
+        :param root_dir: optional Path prefix to find the recording in the filesystem.
+        :return: a numpy ndarray with audio samples, with shape (1 <channel>, N <samples>)
+        """
+        return recording_set.load_audio(
+            self.recording_id,
+            channels=self.channel,
+            offset_seconds=self.start,
+            duration_seconds=self.duration,
+            root_dir=root_dir
+        )
 
     def truncate(
             self,
