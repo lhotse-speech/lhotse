@@ -1,6 +1,7 @@
 import random
 from dataclasses import dataclass
 from functools import reduce
+from math import ceil
 from typing import Dict, List, Optional, Iterable, Union
 from uuid import uuid4
 
@@ -480,6 +481,34 @@ def make_cuts_from_features(feature_set: FeatureSet) -> CutSet:
         )
         for features in feature_set
     )
+
+
+def make_windowed_cuts_from_features(
+        feature_set: FeatureSet,
+        cut_duration: Seconds,
+        cut_shift: Optional[Seconds] = None
+) -> CutSet:
+    """
+    Utility that converts a FeatureSet to a CutSet by traversing the
+    """
+    if cut_shift is None:
+        cut_shift = cut_duration
+    cuts = []
+    for features in feature_set:
+        # Skip the remaining audio portion at the end
+        n_cuts = ceil(features.duration / cut_shift)
+        for idx in range(n_cuts):
+            offset = features.start + idx * cut_shift
+            cuts.append(
+                Cut(
+                    id=str(uuid4()),
+                    start=offset,
+                    duration=cut_duration,
+                    features=features,
+                    supervisions=[]
+                )
+            )
+    return CutSet.from_cuts(cuts)
 
 
 def make_cuts_from_supervisions(supervision_set: SupervisionSet, feature_set: FeatureSet) -> CutSet:

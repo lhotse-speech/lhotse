@@ -5,7 +5,8 @@ import numpy as np
 from cytoolz.itertoolz import groupby
 
 from lhotse.bin.modes.cli_base import cli
-from lhotse.cut import make_cuts_from_supervisions, CutSet, make_cuts_from_features, mix_cuts, append_cuts
+from lhotse.cut import make_cuts_from_supervisions, CutSet, make_cuts_from_features, mix_cuts, append_cuts, \
+    make_windowed_cuts_from_features
 from lhotse.features import FeatureSet
 from lhotse.manipulation import split, combine
 from lhotse.supervision import SupervisionSet
@@ -41,6 +42,28 @@ def simple(
     else:
         supervision_set = SupervisionSet.from_yaml(supervision_manifest)
         cut_set = make_cuts_from_supervisions(feature_set=feature_set, supervision_set=supervision_set)
+    cut_set.to_yaml(output_cut_manifest)
+
+
+@cut.command()
+@click.argument('feature_manifest', type=click.Path(exists=True, dir_okay=False))
+@click.argument('output_cut_manifest', type=click.Path())
+@click.option('-d', '--cut-duration', type=float, default=5.0, help='How long should the cuts be in seconds.')
+@click.option('-s', '--cut-shift', type=float, default=None,
+              help='How much to shift the cutting window in seconds (by default the shift is equal to CUT_DURATION).')
+def windowed(
+        feature_manifest: Pathlike,
+        output_cut_manifest: Pathlike,
+        cut_duration: float,
+        cut_shift: Optional[float]
+):
+    """
+    Create a CutSet stored in OUTPUT_CUT_MANIFEST that contains the regions and features supplied by FEATURE_MANIFEST.
+    Optionally it can use a SUPERVISION_MANIFEST to select the regions and attach the corresponding supervisions to
+    the cuts. This is the simplest way to create Cuts.
+    """
+    feature_set = FeatureSet.from_yaml(feature_manifest)
+    cut_set = make_windowed_cuts_from_features(feature_set, cut_duration=cut_duration, cut_shift=cut_shift)
     cut_set.to_yaml(output_cut_manifest)
 
 
