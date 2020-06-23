@@ -24,7 +24,7 @@ def load_kaldi_data_dir(path: Pathlike, sampling_rate: int) -> Tuple[RecordingSe
     durations = defaultdict(float)
     reco2dur = path / 'reco2dur'
     if not reco2dur.is_file():
-        raise ValueError(f"No such file: '{reco2dur}' -- fix it by running: utils/get_reco2dur.sh <data-dir>")
+        raise ValueError(f"No such file: '{reco2dur}' -- fix it by running: utils/data/get_reco2dur.sh <data-dir>")
     with reco2dur.open() as f:
         for line in f:
             recording_id, dur = line.strip().split()
