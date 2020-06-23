@@ -97,8 +97,8 @@ class Cut:
             E.g., if the current Cut starts at 10.0, and offset is 2.0, the new start is 12.0.
         :param duration: optional float (seconds), controls the duration of the resulting Cut.
             By default, the duration is (end of the cut before truncation) - (offset).
-        :param keep_excessive_supervisions: bool. Since trimming may happen inside a SupervisionSegment, the caller has
-            an option to either keep or discard such supervisions.
+        :param keep_excessive_supervisions: bool. Since trimming may happen inside a SupervisionSegment,
+            the caller has an option to either keep or discard such supervisions.
         :param preserve_id: bool. Should the truncated cut keep the same ID or get a new, random one.
         :return: a new Cut instance.
         """

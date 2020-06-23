@@ -53,7 +53,7 @@ lhotse cut truncate \
   --preserve-id \
   librimix/cuts_mix_dynamic_clean.yml.gz librimix/cuts_mix_dynamic_clean_${DURATION}s.yml.gz
 
-# Truncate the dynamically-noisy clean cuts
+# Truncate the dynamically-mixed noisy cuts
 lhotse cut truncate \
   --max-duration $DURATION \
   --offset-type random \
