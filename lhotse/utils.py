@@ -1,8 +1,8 @@
 import gzip
+import random
 from dataclasses import dataclass, asdict
 from math import ceil, isclose
 from pathlib import Path
-from random import random
 from typing import Union, Any, Dict
 
 import numpy as np

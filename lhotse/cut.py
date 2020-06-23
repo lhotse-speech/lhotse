@@ -1,3 +1,4 @@
+import random
 from dataclasses import dataclass
 from functools import reduce
 from typing import Dict, List, Optional, Iterable, Union
@@ -66,6 +67,10 @@ class Cut:
     def num_frames(self) -> int:
         return self.features.num_frames
 
+    @property
+    def num_features(self) -> int:
+        return self.features.num_features
+
     def load_features(self, root_dir: Optional[Pathlike] = None) -> np.ndarray:
         """
         Load the features from the underlying storage and cut them to the relevant
@@ -78,31 +83,34 @@ class Cut:
             self,
             *,
             offset: Seconds = 0.0,
-            until: Optional[Seconds] = None,
-            keep_excessive_supervisions: bool = True
+            duration: Optional[Seconds] = None,
+            keep_excessive_supervisions: bool = True,
+            preserve_id: bool = False
     ) -> 'Cut':
         """
-        Returns a new Cut that is a sub-region of the current Cut. The `offset` parameter controls the start of the
-        new cut relative to the current Cut's start, and `until` parameter controls the new cuts end.
-        Since trimming may happen inside a SupervisionSegment, the caller has an option to either keep or discard
-        such supervisions with `keep_excessive_supervision` flag.
-        Note that no operation is done on the actual features - it's only during load_features() when the actual
-        changes happen (a subset of features is loaded).
+        Returns a new Cut that is a sub-region of the current Cut.
 
-        Example:
-        >>> from math import isclose
-        >>> cut = Cut(id='x', channel=0, start=3.0, duration=8.0, features='dummy', supervisions=[])
-        >>> trimmed_cut = cut.truncate(offset=5.0, until=7.0)
-        >>> trimmed_cut.start == 5.0 and isclose(trimmed_cut.duration, 2.0) and isclose(cut.end, 7.0)
+        Note that no operation is done on the actual features - it's only during the call to load_features()
+        when the actual changes happen (a subset of features is loaded).
+
+        :param offset: float (seconds), controls the start of the new cut relative to the current Cut's start.
+            E.g., if the current Cut starts at 10.0, and offset is 2.0, the new start is 12.0.
+        :param duration: optional float (seconds), controls the duration of the resulting Cut.
+            By default, the duration is (end of the cut before truncation) - (offset).
+        :param keep_excessive_supervisions: bool. Since trimming may happen inside a SupervisionSegment,
+            the caller has an option to either keep or discard such supervisions.
+        :param preserve_id: bool. Should the truncated cut keep the same ID or get a new, random one.
+        :return: a new Cut instance.
         """
         new_start = self.start + offset
-        new_duration = self.duration - new_start if until is None else until - offset
+        until = offset + (duration if duration is not None else self.duration)
+        new_duration = self.duration - new_start if duration is None else until - offset
         assert new_duration > 0.0
         assert new_start + new_duration <= self.start + self.duration + 1e-5
         new_time_span = TimeSpan(start=new_start, end=new_start + new_duration)
         criterion = overlaps if keep_excessive_supervisions else overspans
         return Cut(
-            id=str(uuid4()),
+            id=self.id if preserve_id else str(uuid4()),
             start=new_start,
             duration=new_duration,
             supervisions=[
@@ -118,9 +126,9 @@ class Cut:
         Returns a MixedCut, which only keeps the information about the mix; actual mixing is performed
         during the call to `load_features`.
         """
-        if offset_other_by > self.duration:
-            raise ValueError(f"Cannot overlay cut '{other.id}' with offset {offset_other_by}, which is greater than "
-                             f"cuts {self.id} duration of {self.duration}")
+        assert self.num_features == other.num_features, "Cannot overlay cuts with different feature dimensions."
+        assert offset_other_by <= self.duration, f"Cannot overlay cut '{other.id}' with offset {offset_other_by}, " \
+                                                 f"which is greater than cuts {self.id} duration of {self.duration}"
         new_tracks = (
             [MixTrack(cut=other, offset=offset_other_by, snr=snr)]
             if isinstance(other, Cut)
@@ -201,6 +209,10 @@ class MixedCut:
     def num_frames(self) -> int:
         return round(self.duration / self.tracks[0].cut.features.frame_shift)
 
+    @property
+    def num_features(self) -> int:
+        return self.tracks[0].cut.num_features
+
     def overlay(
             self,
             other: AnyCut,
@@ -213,9 +225,9 @@ class MixedCut:
         Returns a MixedCut, which only keeps the information about the mix; actual mixing is performed
         during the call to `load_features`.
         """
-        if offset_other_by > self.duration:
-            raise ValueError(f"Cannot overlay cut '{other.id}' with offset {offset_other_by}, which is greater than "
-                             f"cuts {self.id} duration of {self.duration}")
+        assert self.num_features == other.num_features, "Cannot overlay cuts with different feature dimensions."
+        assert offset_other_by <= self.duration, f"Cannot overlay cut '{other.id}' with offset {offset_other_by}, " \
+                                                 f"which is greater than cuts {self.id} duration of {self.duration}"
         new_tracks = (
             [MixTrack(cut=other, offset=offset_other_by, snr=snr)]
             if isinstance(other, Cut)
@@ -236,11 +248,82 @@ class MixedCut:
         """
         return self.overlay(other=other, offset_other_by=self.duration, snr=snr)
 
+    def truncate(
+            self,
+            *,
+            offset: Seconds = 0.0,
+            duration: Optional[Seconds] = None,
+            keep_excessive_supervisions: bool = True,
+            preserve_id: bool = False,
+    ) -> 'MixedCut':
+        """
+        Returns a new MixedCut that is a sub-region of the current MixedCut. This method truncates the underlying Cuts
+        and modifies their offsets in the mix, as needed. Tracks that do not fit in the truncated cut are removed.
+
+        Note that no operation is done on the actual features - it's only during the call to load_features()
+        when the actual changes happen (a subset of features is loaded).
+
+        :param offset: float (seconds), controls the start of the new cut relative to the current MixedCut's start.
+        :param duration: optional float (seconds), controls the duration of the resulting MixedCut.
+            By default, the duration is (end of the cut before truncation) - (offset).
+        :param keep_excessive_supervisions: bool. Since trimming may happen inside a SupervisionSegment, the caller has
+            an option to either keep or discard such supervisions.
+        :param preserve_id: bool. Should the truncated cut keep the same ID or get a new, random one.
+        :return: a new MixedCut instance.
+        """
+
+        new_tracks = []
+        old_duration = self.duration
+        new_mix_end = old_duration - offset if duration is None else offset + duration
+
+        for track in sorted(self.tracks, key=lambda t: t.offset):
+            # First, determine how much of the beginning of the current track we're going to truncate:
+            # when the track offset is larger than the truncation offset, we are not truncating the cut;
+            # just decreasing the track offset.
+
+            # 'cut_offset' determines how much we're going to truncate the Cut for the current track.
+            cut_offset = max(offset - track.offset, 0)
+            # 'track_offset' determines the new track's offset after truncation.
+            track_offset = max(track.offset - offset, 0)
+            # 'track_end' is expressed relative to the beginning of the mix
+            # (not to be confused with the 'start' of the underlying Cut)
+            track_end = track.offset + track.cut.duration
+
+            if track_end < offset:
+                # Omit a Cut that ends before the truncation offset.
+                continue
+
+            cut_duration_decrease = 0
+            if track_end > new_mix_end:
+                if duration is not None:
+                    cut_duration_decrease = track_end - new_mix_end
+                else:
+                    cut_duration_decrease = track_end - old_duration
+
+            # Compute the new Cut's duration after trimming the start and the end.
+            new_duration = track.cut.duration - cut_offset - cut_duration_decrease
+            if new_duration <= 0:
+                # Omit a Cut that is completely outside the time span of the new truncated MixedCut.
+                continue
+
+            new_tracks.append(
+                MixTrack(
+                    cut=track.cut.truncate(
+                        offset=cut_offset,
+                        duration=new_duration,
+                        keep_excessive_supervisions=keep_excessive_supervisions,
+                        preserve_id=preserve_id
+                    ),
+                    offset=track_offset,
+                    snr=track.snr
+                )
+            )
+        return MixedCut(id=str(uuid4()), tracks=new_tracks)
+
     def load_features(self, root_dir: Optional[Pathlike] = None) -> np.ndarray:
         """Loads the features of the source cuts and overlays them on-the-fly."""
         cuts = [track.cut for track in self.tracks]
         frame_shift = cuts[0].features.frame_shift
-        assert frame_shift == cuts[1].features.frame_shift
         # TODO: check if the 'pad_shorter' call is still necessary, it shouldn't be
         # feats = pad_shorter(*feats)
         mixer = FbankMixer(
@@ -298,6 +381,50 @@ class CutSet:
     def to_yaml(self, path: Pathlike):
         data = [{**asdict_nonull(cut), 'type': type(cut).__name__} for cut in self]
         save_to_yaml(data, path)
+
+    def truncate(
+            self,
+            max_duration: Seconds,
+            offset_type: str,
+            keep_excessive_supervisions: bool = True,
+            preserve_id: bool = False
+    ) -> 'CutSet':
+        """
+        Return a new CutSet with the Cuts truncated so that their durations are at most `max_duration`.
+        Cuts shorter than `max_duration` will not be changed.
+        :param max_duration: float, the maximum duration in seconds of a cut in the resulting manifest.
+        :param offset_type: str, can be:
+            - 'start' => cuts are truncated from their start;
+            - 'end' => cuts are truncated from their end minus max_duration;
+            - 'random' => cuts are truncated randomly between their start and their end minus max_duration
+        :param keep_excessive_supervisions: bool. When a cut is truncated in the middle of a supervision segment,
+            should the supervision be kept.
+        :param preserve_id: bool. Should the truncated cut keep the same ID or get a new, random one.
+        :return: a new CutSet instance with truncated cuts.
+        """
+        truncated_cuts = []
+        for cut in self:
+            if cut.duration <= max_duration:
+                truncated_cuts.append(cut)
+                continue
+
+            def compute_offset():
+                if offset_type == 'start':
+                    return 0.0
+                last_offset = cut.duration - max_duration
+                if offset_type == 'end':
+                    return last_offset
+                if offset_type == 'random':
+                    return random.uniform(0.0, last_offset)
+                raise ValueError(f"Unknown 'offset_type' option: {offset_type}")
+
+            truncated_cuts.append(cut.truncate(
+                offset=compute_offset(),
+                duration=max_duration,
+                keep_excessive_supervisions=keep_excessive_supervisions,
+                preserve_id=preserve_id
+            ))
+        return CutSet.from_cuts(truncated_cuts)
 
     def __contains__(self, item: Union[str, Cut, MixedCut]) -> bool:
         if isinstance(item, str):
@@ -357,9 +484,34 @@ def make_cuts_from_supervisions(supervision_set: SupervisionSet, feature_set: Fe
     )
 
 
+def mix(
+        left_cut: AnyCut,
+        right_cut: AnyCut,
+        offset_right_by: Seconds = 0,
+        snr: Optional[Decibels] = None
+) -> MixedCut:
+    """Helper method for functional-style mixing of Cuts."""
+    return left_cut.overlay(right_cut, offset_other_by=offset_right_by, snr=snr)
+
+
+def append(
+        left_cut: AnyCut,
+        right_cut: AnyCut,
+        snr: Optional[Decibels] = None
+) -> MixedCut:
+    """Helper method for functional-style appending of Cuts."""
+    return left_cut.append(right_cut, snr=snr)
+
+
 def mix_cuts(cuts: Iterable[AnyCut]) -> MixedCut:
     """Return a MixedCut that consists of the input Cuts overlayed on each other as-is."""
-    cuts = list(cuts)
     # The following is a fold (accumulate/aggregate) operation; it starts with cuts[0], and overlays it with cuts[1];
     #  then takes their mix and overlays it with cuts[2]; and so on.
-    return reduce(lambda left_cut, right_cut: left_cut.overlay(right_cut), cuts[1:], cuts[0])
+    return reduce(mix, cuts)
+
+
+def append_cuts(cuts: Iterable[AnyCut]) -> AnyCut:
+    """Return a MixedCut that consists of the input Cuts appended to each other as-is."""
+    # The following is a fold (accumulate/aggregate) operation; it starts with cuts[0], and appends cuts[1] to it;
+    #  then takes their it concatenation and appends cuts[2] to it; and so on.
+    return reduce(append, cuts)

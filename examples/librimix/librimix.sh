@@ -4,6 +4,7 @@ set -eou pipefail
 
 LIBRIMIX_ROOT=$(pwd)
 LIBRIMIX_CSV=${LIBRIMIX_ROOT}/MiniLibriMix/metadata/mixture_train_mix_both.csv
+DURATION=3
 
 [[ `uname`=='Darwin' ]] && nj=`sysctl -n machdep.cpu.thread_count` || nj=`grep -c ^processor /proc/cpuinfo`
 
@@ -15,6 +16,7 @@ fi
 
 # Prepare audio and supervision manifests
 lhotse recipe librimix \
+  --min-segment-seconds $DURATION \
   --with-precomputed-mixtures \
   ${LIBRIMIX_CSV} \
   librimix
@@ -36,5 +38,28 @@ done
 lhotse cut mix-by-recording-id librimix/cuts_sources.yml.gz librimix/cuts_mix_dynamic_clean.yml.gz
 # Prepare cuts with feature-domain mixes performed on-the-fly - noisy
 lhotse cut mix-by-recording-id librimix/cuts_sources.yml.gz librimix/cuts_noise.yml.gz librimix/cuts_mix_dynamic_noisy.yml.gz
+
+# The next step is truncation - it makes sure that the cuts all have the same duration and makes them easily batchable
+
+# Truncate the pre-mixed cuts
+lhotse cut truncate \
+  --max-duration $DURATION \
+  --offset-type random \
+  --preserve-id \
+  librimix/cuts_mix.yml.gz librimix/cuts_mix_${DURATION}s.yml.gz
+
+# Truncate the dynamically-mixed clean cuts
+lhotse cut truncate \
+  --max-duration $DURATION \
+  --offset-type random \
+  --preserve-id \
+  librimix/cuts_mix_dynamic_clean.yml.gz librimix/cuts_mix_dynamic_clean_${DURATION}s.yml.gz
+
+# Truncate the dynamically-mixed noisy cuts
+lhotse cut truncate \
+  --max-duration $DURATION \
+  --offset-type random \
+  --preserve-id \
+  librimix/cuts_mix_dynamic_noisy.yml.gz librimix/cuts_mix_dynamic_noisy_${DURATION}s.yml.gz
 
 # Processing complete - the resulting YAML mixed cut manifests can be loaded in Python to create a PyTorch dataset.
