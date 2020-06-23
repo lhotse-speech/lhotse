@@ -54,7 +54,7 @@ def combine(manifests: Pathlike, output_manifest: Pathlike):
 def filter(predicate: str, manifest: Pathlike, output_manifest: Pathlike):
     """
     Filter a MANIFEST according to the rule specified in PREDICATE, and save the result to OUTPUT_MANIFEST.
-    It is intended to work generically with most manifest types - it supports AudioSet, SupervisionSet and CutSet.
+    It is intended to work generically with most manifest types - it supports RecordingSet, SupervisionSet and CutSet.
 
     \b
     The PREDICATE specifies which attribute is used for item selection. Some examples:

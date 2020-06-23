@@ -1,6 +1,6 @@
 from typing import Type
 
-from lhotse.audio import AudioSet, Recording
+from lhotse.audio import RecordingSet, Recording
 from lhotse.cut import Cut
 from lhotse.features import FeatureSet, Features
 from lhotse.manipulation import Manifest
@@ -9,8 +9,8 @@ from lhotse.supervision import SupervisionSet, SupervisionSegment
 
 # noinspection PyPep8Naming
 def DummyManifest(type_: Type, *, begin_id: int, end_id: int) -> Manifest:
-    if type_ == AudioSet:
-        return AudioSet.from_recordings(dummy_recording(idx) for idx in range(begin_id, end_id))
+    if type_ == RecordingSet:
+        return RecordingSet.from_recordings(dummy_recording(idx) for idx in range(begin_id, end_id))
     if type_ == SupervisionSet:
         return SupervisionSet.from_segments(dummy_supervision(idx) for idx in range(begin_id, end_id))
     if type_ == FeatureSet:

@@ -6,7 +6,7 @@ dataloader on top of them.  I'll call things Set instead of Dataset in order to 
 
 Please treat this as just a proposal, that can be ripped up as well as modified.
 
-AudioSet: // I know this name has been taken already...
+RecordingSet: // I know this name has been taken already...
    - basically maps from string-valued recording-id -> the associated audio.
    - For each recording, you would be able to access: the number of channels, the sampling rate, the number of samples (and of course the length in seconds); and when needed you'd be able to access the audio (or at least, selected channels of it).  Of course the metadata would be in the manifest.
    - Where possible it would be nice to support getting a chunk of a selected subset of channels of the audio.  (i.e. have that in the interface, to account for cases where it's possible to seek in the data).
@@ -18,7 +18,7 @@ TextSupervisionSet:
    - Could be viewed as a list of segments within audio.
    - Could be viewed as a map from (utterance-id) -> (recording-id, start-time, end-time, text, ...), where "..." might include channel (in some scenarios), beamforming information in others.
    I'd rather not define in advance the set of possible fields.
-   - The utterance-id could be automatically generated, maybe?  In fact, we might not always need an utterance-id.  But my feeling is it might come in useful, and it would make the interface more consistent with AudioSet.
+   - The utterance-id could be automatically generated, maybe?  In fact, we might not always need an utterance-id.  But my feeling is it might come in useful, and it would make the interface more consistent with RecordingSet.
 
 FeatureSet:
    - Represents a set of extracted features associated with recordings.

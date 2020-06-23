@@ -5,14 +5,14 @@ from tempfile import NamedTemporaryFile
 import numpy as np
 from pytest import mark, raises
 
-from lhotse.audio import AudioSet, Recording, AudioSource
+from lhotse.audio import RecordingSet, Recording, AudioSource
 from lhotse.test_utils import DummyManifest
 from lhotse.utils import INT16MAX
 
 
 @lru_cache(1)
-def get_audio_set() -> AudioSet:
-    return AudioSet.from_yaml('test/fixtures/audio.yml')
+def get_audio_set() -> RecordingSet:
+    return RecordingSet.from_yaml('test/fixtures/audio.yml')
 
 
 @lru_cache(1)
@@ -54,7 +54,7 @@ def test_get_metadata():
 
 
 def test_serialization():
-    audio_set = AudioSet.from_recordings([
+    audio_set = RecordingSet.from_recordings([
         Recording(
             id='x',
             sources=[
@@ -76,7 +76,7 @@ def test_serialization():
     ])
     with NamedTemporaryFile() as f:
         audio_set.to_yaml(f.name)
-        deserialized = AudioSet.from_yaml(f.name)
+        deserialized = RecordingSet.from_yaml(f.name)
     assert deserialized == audio_set
 
 
@@ -138,8 +138,8 @@ def test_get_audio_chunks(begin_at, duration, expected_start_sample, expected_en
 
 
 def test_add_audio_sets():
-    expected = DummyManifest(AudioSet, begin_id=0, end_id=10)
-    audio_set_1 = DummyManifest(AudioSet, begin_id=0, end_id=5)
-    audio_set_2 = DummyManifest(AudioSet, begin_id=5, end_id=10)
+    expected = DummyManifest(RecordingSet, begin_id=0, end_id=10)
+    audio_set_1 = DummyManifest(RecordingSet, begin_id=0, end_id=5)
+    audio_set_2 = DummyManifest(RecordingSet, begin_id=5, end_id=10)
     combined = audio_set_1 + audio_set_2
     assert combined == expected
