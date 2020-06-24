@@ -1,5 +1,5 @@
 import random
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from functools import reduce
 from math import ceil, floor
 from typing import Dict, List, Optional, Iterable, Union
@@ -19,7 +19,7 @@ from lhotse.utils import (
     Pathlike,
     asdict_nonull,
     load_yaml,
-    save_to_yaml
+    save_to_yaml, EPS
 )
 
 # One of the design principles for Cuts is a maximally "lazy" implementation, e.g. when overlaying/mixing Cuts,
@@ -29,7 +29,7 @@ from lhotse.utils import (
 
 # Helper "typedef" to artbitrary Cut type as they do not share a common base class.
 # The class names are strings here so that the Python interpreter resolves them after parsing the whole file.
-AnyCut = Union['Cut', 'MixedCut']
+AnyCut = Union['Cut', 'MixedCut', 'PaddingCut']
 
 
 @dataclass
@@ -182,19 +182,94 @@ class Cut:
 
 
 @dataclass
+class PaddingCut:
+    id: str
+    duration: Seconds
+    num_frames: int
+    num_features: int
+
+    sampling_rate: int
+    use_log: bool
+
+    supervisions: List = field(default_factory=list)
+
+    @property
+    def frame_shift(self):
+        return round(self.duration / self.num_frames, ndigits=3)
+
+    # noinspection PyUnusedLocal
+    def load_features(self, *args, **kwargs) -> np.ndarray:
+        value = np.log(EPS) if self.use_log else EPS
+        return np.ones((self.num_frames, self.num_features)) * value
+
+    # noinspection PyUnusedLocal
+    def load_audio(self, *args, **kwargs) -> np.ndarray:
+        return np.zeros((1, round(self.duration * self.sampling_rate)))
+
+    # noinspection PyUnusedLocal
+    def truncate(
+            self,
+            *,
+            offset: Seconds = 0.0,
+            duration: Optional[Seconds] = None,
+            keep_excessive_supervisions: bool = True,
+            preserve_id: bool = False,
+    ) -> 'PaddingCut':
+        new_duration = self.duration - offset if duration is None else duration
+        assert new_duration > 0.0
+        return PaddingCut(
+            id=self.id if preserve_id else str(uuid4()),
+            duration=new_duration,
+            num_frames=round(new_duration / self.frame_shift),
+            num_features=self.num_features,
+            use_log=self.use_log,
+        )
+
+    def overlay(
+            self,
+            other: AnyCut,
+            offset_other_by: Seconds = 0.0,
+            snr: Optional[Decibels] = None
+    ) -> 'MixedCut':
+        assert self.num_features == other.num_features, "Cannot overlay cuts with different feature dimensions."
+        assert offset_other_by <= self.duration, f"Cannot overlay cut '{other.id}' with offset {offset_other_by}, " \
+                                                 f"which is greater than cuts {self.id} duration of {self.duration}"
+        new_tracks = (
+            other.tracks
+            if isinstance(other, MixedCut)
+            else [MixTrack(cut=other, offset=offset_other_by, snr=snr)]
+        )
+        return MixedCut(
+            id=str(uuid4()),
+            tracks=[MixTrack(cut=self)] + new_tracks
+        )
+
+    def append(self, other: AnyCut, snr: Optional[Decibels] = None) -> 'MixedCut':
+        return self.overlay(other=other, snr=snr)
+
+    @staticmethod
+    def from_dict(data: dict) -> 'PaddingCut':
+        return PaddingCut(**data)
+
+
+@dataclass
 class MixTrack:
     """
     Represents a single track in a mix of Cuts. Points to a specific Cut and holds information on
     how to mix it with other Cuts, relative to the first track in a mix.
     """
-    cut: Cut
+    cut: Union[Cut, PaddingCut]
     offset: Seconds = 0.0
     snr: Optional[Decibels] = None
 
     @staticmethod
     def from_dict(data: dict):
         raw_cut = data.pop('cut')
-        return MixTrack(cut=Cut.from_dict(raw_cut), **data)
+        try:
+            cut = Cut.from_dict(raw_cut)
+        except:
+            cut = PaddingCut.from_dict(raw_cut)
+        return MixTrack(cut, **data)
 
 
 @dataclass

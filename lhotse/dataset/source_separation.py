@@ -5,9 +5,7 @@ import torch
 from torch.utils.data import Dataset
 
 from lhotse.cut import CutSet, Cut, AnyCut
-from lhotse.utils import Pathlike
-
-EPS = 1e-8
+from lhotse.utils import Pathlike, EPS
 
 
 class SourceSeparationDataset(Dataset):
