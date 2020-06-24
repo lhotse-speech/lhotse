@@ -28,7 +28,7 @@ def test_feature_extractor(feature_type, exception_expectation):
     # TODO: test that the output is similar to Kaldi
     with exception_expectation:
         fe = FeatureExtractor(type=feature_type)
-        samples, sr = torchaudio.load('test/fixtures/libri-1088-134315-0000.wav')
+        samples, sr = torchaudio.load('test/fixtures/libri/libri-1088-134315-0000.wav')
         fe.extract(samples=samples, sampling_rate=sr)
 
 
