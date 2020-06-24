@@ -51,18 +51,27 @@ def simple(
 @click.option('-d', '--cut-duration', type=float, default=5.0, help='How long should the cuts be in seconds.')
 @click.option('-s', '--cut-shift', type=float, default=None,
               help='How much to shift the cutting window in seconds (by default the shift is equal to CUT_DURATION).')
+@click.option('--keep-shorter-windows/--discard-shorter-windows', type=bool, default=False,
+              help='When true, the last window will be used to create a Cut even if its duration is '
+                   'shorter than CUT_DURATION.')
 def windowed(
         feature_manifest: Pathlike,
         output_cut_manifest: Pathlike,
         cut_duration: float,
-        cut_shift: Optional[float]
+        cut_shift: Optional[float],
+        keep_shorter_windows: bool
 ):
     """
     Create a CutSet stored in OUTPUT_CUT_MANIFEST from feature regions in FEATURE_MANIFEST.
     The feature matrices are traversed in windows with CUT_SHIFT increments, creating cuts of constant CUT_DURATION.
     """
     feature_set = FeatureSet.from_yaml(feature_manifest)
-    cut_set = make_windowed_cuts_from_features(feature_set, cut_duration=cut_duration, cut_shift=cut_shift)
+    cut_set = make_windowed_cuts_from_features(
+        feature_set=feature_set,
+        cut_duration=cut_duration,
+        cut_shift=cut_shift,
+        keep_shorter_windows=keep_shorter_windows
+    )
     cut_set.to_yaml(output_cut_manifest)
 
 
