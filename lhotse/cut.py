@@ -1,6 +1,7 @@
 import random
 from dataclasses import dataclass
 from functools import reduce
+from math import ceil, floor
 from typing import Dict, List, Optional, Iterable, Union
 from uuid import uuid4
 
@@ -480,6 +481,51 @@ def make_cuts_from_features(feature_set: FeatureSet) -> CutSet:
         )
         for features in feature_set
     )
+
+
+def make_windowed_cuts_from_features(
+        feature_set: FeatureSet,
+        cut_duration: Seconds,
+        cut_shift: Optional[Seconds] = None,
+        keep_shorter_windows: bool = False
+) -> CutSet:
+    """
+    Converts a FeatureSet to a CutSet by traversing each Features object in - possibly overlapping - windows, and
+    creating a Cut out of that area. By default, the last window in traversal will be discarded if it cannot satisfy
+    the `cut_duration` requirement.
+
+    :param feature_set: a FeatureSet object.
+    :param cut_duration: float, duration of created Cuts in seconds.
+    :param cut_shift: optional float, specifies how many seconds are in between the starts of consecutive windows.
+        Equals `cut_duration` by default.
+    :param keep_shorter_windows: bool, when True, the last window will be used to create a Cut even if
+        its duration is shorter than `cut_duration`.
+    :return: a CutSet object.
+    """
+    if cut_shift is None:
+        cut_shift = cut_duration
+    round_fn = ceil if keep_shorter_windows else floor
+    cuts = []
+    for features in feature_set:
+        # Determine the number of cuts, depending on `keep_shorter_windows` argument.
+        # When its true, we'll want to include the residuals in the output; otherwise,
+        # we provide only full duration cuts.
+        n_cuts = round_fn(features.duration / cut_shift)
+        if (n_cuts - 1) * cut_shift + cut_duration > features.duration and not keep_shorter_windows:
+            n_cuts -= 1
+        for idx in range(n_cuts):
+            offset = features.start + idx * cut_shift
+            duration = min(cut_duration, features.end - offset)
+            cuts.append(
+                Cut(
+                    id=str(uuid4()),
+                    start=offset,
+                    duration=duration,
+                    features=features,
+                    supervisions=[]
+                )
+            )
+    return CutSet.from_cuts(cuts)
 
 
 def make_cuts_from_supervisions(supervision_set: SupervisionSet, feature_set: FeatureSet) -> CutSet:

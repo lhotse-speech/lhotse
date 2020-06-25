@@ -5,13 +5,18 @@ import numpy as np
 from cytoolz.itertoolz import groupby
 
 from lhotse.bin.modes.cli_base import cli
-from lhotse.cut import make_cuts_from_supervisions, CutSet, make_cuts_from_features, mix_cuts, append_cuts
+from lhotse.cut import (
+    CutSet,
+    make_cuts_from_features,
+    make_cuts_from_supervisions,
+    make_windowed_cuts_from_features,
+    append_cuts,
+    mix_cuts,
+)
 from lhotse.features import FeatureSet
 from lhotse.manipulation import split, combine
 from lhotse.supervision import SupervisionSet
 from lhotse.utils import Pathlike, fix_random_seed
-
-__all__ = ['cut', 'simple', 'random_overlayed', 'mix_sequential', 'mix_by_recording_id']
 
 
 @cli.group()
@@ -41,6 +46,36 @@ def simple(
     else:
         supervision_set = SupervisionSet.from_yaml(supervision_manifest)
         cut_set = make_cuts_from_supervisions(feature_set=feature_set, supervision_set=supervision_set)
+    cut_set.to_yaml(output_cut_manifest)
+
+
+@cut.command()
+@click.argument('feature_manifest', type=click.Path(exists=True, dir_okay=False))
+@click.argument('output_cut_manifest', type=click.Path())
+@click.option('-d', '--cut-duration', type=float, default=5.0, help='How long should the cuts be in seconds.')
+@click.option('-s', '--cut-shift', type=float, default=None,
+              help='How much to shift the cutting window in seconds (by default the shift is equal to CUT_DURATION).')
+@click.option('--keep-shorter-windows/--discard-shorter-windows', type=bool, default=False,
+              help='When true, the last window will be used to create a Cut even if its duration is '
+                   'shorter than CUT_DURATION.')
+def windowed(
+        feature_manifest: Pathlike,
+        output_cut_manifest: Pathlike,
+        cut_duration: float,
+        cut_shift: Optional[float],
+        keep_shorter_windows: bool
+):
+    """
+    Create a CutSet stored in OUTPUT_CUT_MANIFEST from feature regions in FEATURE_MANIFEST.
+    The feature matrices are traversed in windows with CUT_SHIFT increments, creating cuts of constant CUT_DURATION.
+    """
+    feature_set = FeatureSet.from_yaml(feature_manifest)
+    cut_set = make_windowed_cuts_from_features(
+        feature_set=feature_set,
+        cut_duration=cut_duration,
+        cut_shift=cut_shift,
+        keep_shorter_windows=keep_shorter_windows
+    )
     cut_set.to_yaml(output_cut_manifest)
 
 
