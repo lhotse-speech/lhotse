@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 set -eou pipefail
 
@@ -6,7 +6,7 @@ LIBRIMIX_ROOT=$(pwd)
 LIBRIMIX_CSV=${LIBRIMIX_ROOT}/MiniLibriMix/metadata/mixture_train_mix_both.csv
 DURATION=3
 
-[[ `uname`=='Darwin' ]] && nj=`sysctl -n machdep.cpu.thread_count` || nj=`grep -c ^processor /proc/cpuinfo`
+[[ `uname` == 'Darwin' ]] && nj=`sysctl -n machdep.cpu.thread_count` || nj=`grep -c ^processor /proc/cpuinfo`
 
 # Obtain MiniLibriMix
 if [ ! -d MiniLibriMix ]; then
