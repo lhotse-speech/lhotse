@@ -2,10 +2,7 @@
 .idea/
 .vscode/
 deps/
-examples/librimix/MiniLibriMix/
-examples/librimix/MiniLibriMix.zip
-examples/librimix/librimix_nb/
-examples/librimix/librimix/
+examples/*/env/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
