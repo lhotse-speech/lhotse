@@ -1,9 +1,12 @@
+import os
 import gzip
 import random
+
 from dataclasses import dataclass, asdict
 from math import ceil, isclose
 from pathlib import Path
-from typing import Union, Any, Dict
+from typing import Union, Any, Dict, List
+from fnmatch import fnmatch
 
 import numpy as np
 import torch
@@ -62,6 +65,16 @@ def asdict_nonull(dclass) -> Dict[str, Any]:
         return d
 
     return asdict(dclass, dict_factory=non_null_dict_factory)
+
+
+def find_files_in_directory(path: Pathlike = '.', pattern: str = '*') -> List[str]:
+    """ Recursively list files that match a specified pattern in a Directory."""
+    result = []
+    for root, dirs, files in os.walk(path):
+        for name in files:
+            if fnmatch(name, pattern):
+                result.append(os.path.join(root, name))
+    return result
 
 
 class SetContainingAnything:
