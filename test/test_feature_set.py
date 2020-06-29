@@ -5,7 +5,7 @@ import numpy as np
 import torchaudio
 from pytest import mark, raises
 
-from lhotse.audio import AudioSet
+from lhotse.audio import RecordingSet
 from lhotse.features import FeatureSet, FeatureExtractor, Features, FbankMixer, FeatureSetBuilder
 from lhotse.test_utils import DummyManifest
 from lhotse.utils import Seconds, time_diff_to_num_frames
@@ -28,7 +28,7 @@ def test_feature_extractor(feature_type, exception_expectation):
     # TODO: test that the output is similar to Kaldi
     with exception_expectation:
         fe = FeatureExtractor(type=feature_type)
-        samples, sr = torchaudio.load('test/fixtures/libri-1088-134315-0000.wav')
+        samples, sr = torchaudio.load('test/fixtures/libri/libri-1088-134315-0000.wav')
         fe.extract(samples=samples, sampling_rate=sr)
 
 
@@ -106,7 +106,7 @@ def test_load_features_with_default_arguments():
 
 
 def test_feature_set_builder():
-    audio_set = AudioSet.from_yaml('test/fixtures/audio.yml')
+    audio_set = RecordingSet.from_yaml('test/fixtures/audio.yml')
     with TemporaryDirectory() as output_dir:
         builder = FeatureSetBuilder(feature_extractor=FeatureExtractor(), output_dir=output_dir)
         feature_set = builder.process_and_store_recordings(recordings=audio_set)

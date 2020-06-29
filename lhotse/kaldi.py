@@ -2,14 +2,14 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Tuple, Optional, Dict
 
-from lhotse.audio import AudioSet, Recording, AudioSource
+from lhotse.audio import RecordingSet, Recording, AudioSource
 from lhotse.supervision import SupervisionSet, SupervisionSegment
 from lhotse.utils import Pathlike
 
 
-def load_kaldi_data_dir(path: Pathlike, sampling_rate: int) -> Tuple[AudioSet, Optional[SupervisionSet]]:
+def load_kaldi_data_dir(path: Pathlike, sampling_rate: int) -> Tuple[RecordingSet, Optional[SupervisionSet]]:
     """
-    Load a Kaldi data directory and convert it to a Lhotse AudioSet and SupervisionSet manifests.
+    Load a Kaldi data directory and convert it to a Lhotse RecordingSet and SupervisionSet manifests.
     For this to work, at least the wav.scp file must exist.
     SupervisionSet is created only when a segments file exists.
     All the other files (text, utt2spk, etc.) are optional, and some of them might not be handled yet.
@@ -18,18 +18,19 @@ def load_kaldi_data_dir(path: Pathlike, sampling_rate: int) -> Tuple[AudioSet, O
     path = Path(path)
     assert path.is_dir()
 
-    # must exist for AudioSet
+    # must exist for RecordingSet
     recordings = load_kaldi_text_mapping(path / 'wav.scp', must_exist=True)
 
     durations = defaultdict(float)
     reco2dur = path / 'reco2dur'
-    if reco2dur.is_file():
-        with reco2dur.open() as f:
-            for line in f:
-                recording_id, dur = line.strip().split()
-                durations[recording_id] = float(dur)
+    if not reco2dur.is_file():
+        raise ValueError(f"No such file: '{reco2dur}' -- fix it by running: utils/data/get_reco2dur.sh <data-dir>")
+    with reco2dur.open() as f:
+        for line in f:
+            recording_id, dur = line.strip().split()
+            durations[recording_id] = float(dur)
 
-    audio_set = AudioSet.from_recordings(
+    audio_set = RecordingSet.from_recordings(
         Recording(
             id=recording_id,
             sources=[

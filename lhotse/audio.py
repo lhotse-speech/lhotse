@@ -142,9 +142,9 @@ class Recording:
 
 
 @dataclass
-class AudioSet:
+class RecordingSet:
     """
-    AudioSet represents a dataset of recordings. It does not contain any annotation -
+    RecordingSet represents a dataset of recordings. It does not contain any annotation -
     just the information needed to retrieve a recording (possibly multi-channel, from files
     or from shell commands and pipes) and some metadata for each of them.
 
@@ -154,13 +154,13 @@ class AudioSet:
     recordings: Dict[str, Recording]
 
     @staticmethod
-    def from_recordings(recordings: Iterable[Recording]) -> 'AudioSet':
-        return AudioSet(recordings={r.id: r for r in recordings})
+    def from_recordings(recordings: Iterable[Recording]) -> 'RecordingSet':
+        return RecordingSet(recordings={r.id: r for r in recordings})
 
     @staticmethod
-    def from_yaml(path: Pathlike) -> 'AudioSet':
+    def from_yaml(path: Pathlike) -> 'RecordingSet':
         raw_recordings = load_yaml(path)
-        return AudioSet.from_recordings(Recording.from_dict(raw_rec) for raw_rec in raw_recordings)
+        return RecordingSet.from_recordings(Recording.from_dict(raw_rec) for raw_rec in raw_recordings)
 
     def to_yaml(self, path: Pathlike):
         data = [asdict(r) for r in self]
@@ -202,5 +202,5 @@ class AudioSet:
     def __len__(self) -> int:
         return len(self.recordings)
 
-    def __add__(self, other: 'AudioSet') -> 'AudioSet':
-        return AudioSet(recordings={**self.recordings, **other.recordings})
+    def __add__(self, other: 'RecordingSet') -> 'RecordingSet':
+        return RecordingSet(recordings={**self.recordings, **other.recordings})

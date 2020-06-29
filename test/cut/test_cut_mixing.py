@@ -30,7 +30,7 @@ def test_append_cut_duration_and_supervisions(cut1, cut2):
         (1, 11.0, does_not_raise()),
         (5, 15.0, does_not_raise()),
         (10, 20.0, does_not_raise()),
-        (100, 'irrelevant', pytest.raises(ValueError))
+        (100, 'irrelevant', pytest.raises(AssertionError))
     ]
 )
 def test_overlay_cut_duration_and_supervisions(offset, expected_duration, exception_expectation, cut1, cut2):

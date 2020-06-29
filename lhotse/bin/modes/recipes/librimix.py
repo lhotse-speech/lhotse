@@ -10,14 +10,14 @@ __all__ = ['librimix']
 @recipe.command(context_settings=dict(show_default=True))
 @click.argument('librimix-csv', type=click.Path(exists=True, dir_okay=False))
 @click.argument('output_dir', type=click.Path())
-@click.option('--sampling-rate', type=int, default=16000, help='Sampling rate to set in the AudioSet manifest.')
+@click.option('--sampling-rate', type=int, default=16000, help='Sampling rate to set in the RecordingSet manifest.')
 @click.option(
     '--min-segment-seconds', type=float, default=3.0,
     help='Remove segments shorter than MIN_SEGMENT_SECONDS.'
 )
 @click.option(
     '--with-precomputed-mixtures/--no-precomputed-mixtures', type=bool, default=False,
-    help='Optionally create an AudioSet manifest including the precomputed LibriMix mixtures.'
+    help='Optionally create an RecordingSet manifest including the precomputed LibriMix mixtures.'
 )
 def librimix(
         librimix_csv: Pathlike,
