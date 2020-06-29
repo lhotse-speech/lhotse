@@ -187,7 +187,8 @@ class Features:
         end = start + duration if duration is not None else None
         if duration is not None and not isclose(end, self.end):
             frames_to_trim = round((self.end - end) / self.frame_shift)
-            features = features[:-frames_to_trim, :]
+            if frames_to_trim: # check if zero
+                features = features[:-frames_to_trim, :]
 
         return features
 
