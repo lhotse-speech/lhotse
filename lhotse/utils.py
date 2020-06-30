@@ -67,16 +67,6 @@ def asdict_nonull(dclass) -> Dict[str, Any]:
     return asdict(dclass, dict_factory=non_null_dict_factory)
 
 
-def find_files_in_directory(path: Pathlike = '.', pattern: str = '*') -> List[str]:
-    """ Recursively list files that match a specified pattern in a Directory."""
-    result = []
-    for root, dirs, files in os.walk(path):
-        for name in files:
-            if fnmatch(name, pattern):
-                result.append(os.path.join(root, name))
-    return result
-
-
 class SetContainingAnything:
     def __contains__(self, item):
         return True

@@ -6,8 +6,6 @@ import pandas as pd
 
 from lhotse.audio import RecordingSet, Recording, AudioSource
 from lhotse.supervision import SupervisionSet, SupervisionSegment
-from lhotse.features import FeatureSet
-from lhotse.cut import CutSet
 from lhotse.utils import Pathlike, Seconds
 
 

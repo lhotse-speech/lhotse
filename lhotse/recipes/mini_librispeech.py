@@ -1,8 +1,8 @@
-import os
+import logging
 import re
 import tarfile
 import urllib.request
-import logging
+import shutil
 from collections import defaultdict, namedtuple
 from pathlib import Path
 from typing import Optional, Dict, Union
@@ -11,27 +11,28 @@ import torchaudio
 
 from lhotse.audio import RecordingSet, Recording, AudioSource
 from lhotse.supervision import SupervisionSet, SupervisionSegment
-from lhotse.features import FeatureSet
-from lhotse.cut import CutSet
-from lhotse.utils import Pathlike, Seconds, find_files_in_directory
+from lhotse.utils import Pathlike, Seconds
 
 dataset_parts = ('dev-clean-2', 'train-clean-5')
 
 
 def download_and_untar(
-        target_path: Pathlike = '.',
+        target_dir: Pathlike = '.',
         force_download: Optional[bool] = False,
         url: Optional[str] = 'http://www.openslr.org/resources/31'
 ) -> None:
+    target_dir.mkdir(parents=True, exist_ok=True)
     for part in dataset_parts:
         tar_name = f'{part}.tar.gz'
-        tar_path = target_path / tar_name
+        tar_path = target_dir / tar_name
         if force_download or not tar_path.is_file():
             urllib.request.urlretrieve(f'{url}/{tar_name}', filename=tar_path)
-        completed_detector = target_path / f'LibriSpeech/{part}/.completed'
+        part_dir = target_dir / f'LibriSpeech/{part}'
+        completed_detector = part_dir / '.completed'
         if not completed_detector.is_file():
+            shutil.rmtree(part_dir, ignore_errors=True)
             with tarfile.open(tar_path) as tar:
-                tar.extractall(path=target_path)
+                tar.extractall(path=target_dir)
                 completed_detector.touch()
 
 
