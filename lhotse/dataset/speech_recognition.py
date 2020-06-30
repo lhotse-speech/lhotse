@@ -18,23 +18,23 @@ class SpeechRecognitionDataset(Dataset):
 
     def __init__(
             self,
-            data_set: CutSet,
+            cuts: CutSet,
             root_dir: Optional[Pathlike] = None
     ):
         super().__init__()
-        self.data_set = data_set
+        self.cuts = cuts.cuts
         self.root_dir = Path(root_dir) if root_dir else None
-        self.cut_ids = list(self.data_set.cuts.keys())
+        self.cut_ids = list(self.cuts.keys())
 
     def __getitem__(self, idx: int) -> Dict[str, torch.Tensor]:
         cut_id = self.cut_ids[idx]
-        cut = self.data_set.cuts[cut_id]
+        cut = self.cuts[cut_id]
 
         feature = torch.from_numpy(cut.load_features(root_dir=self.root_dir))
 
         return {
             'feature': feature,
-            'text': cut.supervisions.text
+            'text': cut.supervisions[0].text
         }
 
     def __len__(self):

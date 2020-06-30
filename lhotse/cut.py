@@ -467,10 +467,7 @@ class CutSet:
         return CutSet(cuts={**self.cuts, **other.cuts})
 
 
-def make_cuts_from_features(
-        feature_set: FeatureSet,
-        supervision_set: Optional[SupervisionSet] = None,
-) -> CutSet:
+def make_cuts_from_features(feature_set: FeatureSet) -> CutSet:
     """
     Utility that converts a FeatureSet to a CutSet without any adjustment of the segment boundaries.
     """
@@ -480,7 +477,7 @@ def make_cuts_from_features(
             start=features.start,
             duration=features.duration,
             features=features,
-            supervisions=[] if supervision_set is None else supervision_set[features.recording_id]
+            supervisions=[]
         )
         for features in feature_set
     )

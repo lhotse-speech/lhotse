@@ -3,9 +3,9 @@ import re
 import tarfile
 import urllib.request
 import shutil
-from collections import defaultdict, namedtuple
+from collections import defaultdict
 from pathlib import Path
-from typing import Optional, Dict, Union
+from typing import Optional, Dict, Union, NamedTuple
 
 import torchaudio
 
@@ -36,11 +36,15 @@ def download_and_untar(
                 completed_detector.touch()
 
 
+class LibriSpeechMetaData(NamedTuple):
+    audio_path: Pathlike
+    audio_info: torchaudio.sox_signalinfo_t
+    text: str
+
 
 def prepare_mini_librispeech(
         corpus_dir: Pathlike,
-        output_dir: Pathlike,
-        min_segment_seconds: Seconds = 3.0
+        output_dir: Pathlike
 ) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet]]]:
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -49,8 +53,7 @@ def prepare_mini_librispeech(
 
     for part in dataset_parts:
         # Generate a mapping: utt_id -> (audio_path, audio_info, text)
-        metadata = defaultdict(dict)
-        MetaDataType = namedtuple('MetaType', ['audio_path', 'audio_info', 'text'])
+        metadata = {}
         part_path = corpus_dir / part
         for trans_path in part_path.rglob('*.txt'):
             with open(trans_path) as f:
@@ -58,8 +61,9 @@ def prepare_mini_librispeech(
                     idx, text = line.split(maxsplit=1)
                     audio_path = part_path / Path(idx.replace('-', '/')).parent / f'{idx}.flac'
                     if audio_path.is_file():
-                        audio_path = str(audio_path)
-                        metadata[idx] = MetaDataType(audio_path=audio_path, audio_info=torchaudio.info(audio_path), text=text)
+                        metadata[idx] = LibriSpeechMetaData(audio_path=audio_path,
+                                                            audio_info=torchaudio.info(str(audio_path))[0],
+                                                            text=text)
                     else:
                         logging.warning('No such file: {}'.format(audio_path))
 
@@ -71,12 +75,12 @@ def prepare_mini_librispeech(
                     AudioSource(
                         type='file',
                         channel_ids=[0],
-                        source=metadata[idx].audio_path
+                        source=str(metadata[idx].audio_path)
                     )
                 ],
-                sampling_rate=int(metadata[idx].audio_info[0].rate),
-                num_samples=metadata[idx].audio_info[0].length,
-                duration_seconds=(metadata[idx].audio_info[0].length / metadata[idx].audio_info[0].rate)
+                sampling_rate=int(metadata[idx].audio_info.rate),
+                num_samples=metadata[idx].audio_info.length,
+                duration_seconds=(metadata[idx].audio_info.length / metadata[idx].audio_info.rate)
             )
             for idx in metadata
         )
