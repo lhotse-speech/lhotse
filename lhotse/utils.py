@@ -1,12 +1,9 @@
-import os
 import gzip
 import random
-
 from dataclasses import dataclass, asdict
 from math import ceil, isclose
 from pathlib import Path
-from typing import Union, Any, Dict, List
-from fnmatch import fnmatch
+from typing import Union, Any, Dict
 
 import numpy as np
 import torch
