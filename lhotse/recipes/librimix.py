@@ -17,7 +17,7 @@ def prepare_librimix(
         with_precomputed_mixtures: bool = False,
         sampling_rate: int = 16000,
         min_segment_seconds: Seconds = 3.0
-) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet, FeatureSet, CutSet]]]:
+) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet]]]:
     df = pd.read_csv(librimix_csv)
 
     output_dir = Path(output_dir)

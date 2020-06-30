@@ -24,12 +24,12 @@ def download_and_untar(
         url: Optional[str] = 'http://www.openslr.org/resources/31'
 ) -> None:
     for part in dataset_parts:
-        tar_name = '{}.tar.gz'.format(part)
+        tar_name = f'{part}.tar.gz'
         tar_path = target_path / tar_name
-        if force_download or not os.path.isfile(tar_path):
+        if force_download or not tar_path.is_file():
             urllib.request.urlretrieve(f'{url}/{tar_name}', filename=tar_path)
         completed_detector = target_path / f'LibriSpeech/{part}/.completed'
-        if not os.path.isfile(completed_detector):
+        if not completed_detector.is_file():
             with tarfile.open(tar_path) as tar:
                 tar.extractall(path=target_path)
                 completed_detector.touch()
@@ -40,7 +40,7 @@ def prepare_mini_librispeech(
         corpus_dir: Pathlike,
         output_dir: Pathlike,
         min_segment_seconds: Seconds = 3.0
-) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet, FeatureSet, CutSet]]]:
+) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet]]]:
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -51,16 +51,16 @@ def prepare_mini_librispeech(
         metadata = defaultdict(dict)
         MetaDataType = namedtuple('MetaType', ['audio_path', 'audio_info', 'text'])
         part_path = corpus_dir / part
-        for trans_path in find_files_in_directory(part_path, '*.txt'):
-            with open(trans_path, 'r') as f:
+        for trans_path in part_path.rglob('*.txt'):
+            with open(trans_path) as f:
                 for line in f:
                     idx, text = line.split(maxsplit=1)
-                    audio_path = part_path / Path(idx.replace('-', '/')).parent / '{}.flac'.format(idx)
-                    if os.path.isfile(audio_path):
+                    audio_path = part_path / Path(idx.replace('-', '/')).parent / f'{idx}.flac'
+                    if audio_path.is_file():
                         audio_path = str(audio_path)
                         metadata[idx] = MetaDataType(audio_path=audio_path, audio_info=torchaudio.info(audio_path), text=text)
                     else:
-                        logging.warning('File not exists: {}'.format(audio_path))
+                        logging.warning('No such file: {}'.format(audio_path))
 
         # Audio
         audio = RecordingSet.from_recordings(
