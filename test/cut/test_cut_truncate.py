@@ -22,6 +22,7 @@ def overlapping_supervisions_cut():
             type='fbank',
             num_frames=50,
             num_features=80,
+            sampling_rate=16000,
             storage_type='lilcom',
             storage_path='test/fixtures/dummy_feats/storage/e66b6386-aee5-4a5a-8369-fdde1d2b97c7.llc'
         ),
