@@ -1,3 +1,4 @@
+import logging
 from pathlib import Path
 from typing import Dict, Optional, Tuple, List
 
@@ -31,6 +32,10 @@ class SpeechRecognitionDataset(Dataset):
         cut = self.cuts[cut_id]
 
         feature = torch.from_numpy(cut.load_features(root_dir=self.root_dir))
+
+        # We assume there is only one supervision for each cut in ASR tasks
+        if len(cut.supervisions) > 1:
+            logging.warning("More than one supervision in ASR task! Selected the first one and ignored others.")
 
         return {
             'feature': feature,
