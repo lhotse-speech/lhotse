@@ -41,3 +41,9 @@ def test_mixed_cut_set_serialization(cut_set_with_mixed_cut):
         cut_set_with_mixed_cut.to_yaml(f.name)
         restored = CutSet.from_yaml(f.name)
     assert cut_set_with_mixed_cut == restored
+
+
+def test_filter_cut_set(cut_set, cut1):
+    filtered = cut_set.filter(lambda cut: cut.id == 'cut-1')
+    assert len(filtered) == 1
+    assert list(filtered)[0] == cut1

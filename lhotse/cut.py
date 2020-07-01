@@ -3,7 +3,7 @@ import warnings
 from dataclasses import dataclass
 from functools import reduce
 from math import ceil, floor
-from typing import Dict, List, Optional, Iterable, Union
+from typing import Dict, List, Optional, Iterable, Union, Callable
 from uuid import uuid4
 
 import numpy as np
@@ -513,6 +513,15 @@ class CutSet:
     def to_yaml(self, path: Pathlike):
         data = [{**asdict_nonull(cut), 'type': type(cut).__name__} for cut in self]
         save_to_yaml(data, path)
+
+    def filter(self, predicate: Callable[[AnyCut], bool]) -> 'CutSet':
+        """
+        Return a new CutSet with the Cuts that satisfy the `predicate`.
+
+        :param predicate: a function that takes a cut as an argument and returns bool.
+        :return: a filtered CutSet.
+        """
+        return CutSet.from_cuts(cut for cut in self if predicate(cut))
 
     def pad(
             self,

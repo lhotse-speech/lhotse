@@ -3,7 +3,7 @@ from dataclasses import dataclass, asdict
 from io import BytesIO
 from pathlib import Path
 from subprocess import run, PIPE
-from typing import List, Optional, Dict, Union, Iterable
+from typing import List, Optional, Dict, Union, Iterable, Callable
 
 with warnings.catch_warnings():
     warnings.simplefilter('ignore')
@@ -165,6 +165,15 @@ class RecordingSet:
     def to_yaml(self, path: Pathlike):
         data = [asdict(r) for r in self]
         save_to_yaml(data, path)
+
+    def filter(self, predicate: Callable[[Recording], bool]) -> 'RecordingSet':
+        """
+        Return a new RecordingSet with the Recordings that satisfy the `predicate`.
+
+        :param predicate: a function that takes a recording as an argument and returns bool.
+        :return: a filtered RecordingSet.
+        """
+        return RecordingSet.from_recordings(rec for rec in self if predicate(rec))
 
     def load_audio(
             self,
