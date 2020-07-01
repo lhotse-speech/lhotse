@@ -1,5 +1,6 @@
 from contextlib import nullcontext as does_not_raise
 from tempfile import NamedTemporaryFile, TemporaryDirectory
+from typing import Optional
 
 import numpy as np
 import torchaudio
@@ -71,19 +72,27 @@ def test_feature_set_serialization():
 
 
 @mark.parametrize(
-    ['recording_id', 'channel', 'start', 'duration', 'exception_expectation'],
+    ['recording_id', 'channel', 'start', 'duration', 'exception_expectation', 'expected_num_frames'],
     [
-        ('recording-1', 0, 0.0, None, does_not_raise()),  # whole recording
-        ('recording-2', 0, 0.0, 0.7, does_not_raise()),
-        ('recording-2', 0, 0.5, 0.5, does_not_raise()),
-        ('recording-2', 1, 0.25, 0.65, does_not_raise()),
-        ('recording-nonexistent', 0, 0.0, None, raises(KeyError)),  # no recording
-        ('recording-1', 1000, 0.0, None, raises(KeyError)),  # no channel
-        ('recording-2', 0, 0.5, 1.0, raises(KeyError)),  # no features between [1.0, 1.5]
-        ('recording-2', 0, 1.5, None, raises(KeyError)),  # no features after 1.0
+        ('recording-1', 0, 0.0, None, does_not_raise(), 50),  # whole recording
+        ('recording-1', 0, 0.0, 0.499, does_not_raise(), 50),  # practically whole recording
+        ('recording-2', 0, 0.0, 0.7, does_not_raise(), 70),
+        ('recording-2', 0, 0.5, 0.5, does_not_raise(), 50),
+        ('recording-2', 1, 0.25, 0.65, does_not_raise(), 65),
+        ('recording-nonexistent', 0, 0.0, None, raises(KeyError), None),  # no recording
+        ('recording-1', 1000, 0.0, None, raises(KeyError), None),  # no channel
+        ('recording-2', 0, 0.5, 1.0, raises(KeyError), None),  # no features between [1.0, 1.5]
+        ('recording-2', 0, 1.5, None, raises(KeyError), None),  # no features after 1.0
     ]
 )
-def test_load_features(recording_id: str, channel: int, start: float, duration: float, exception_expectation):
+def test_load_features(
+        recording_id: str,
+        channel: int,
+        start: float,
+        duration: float,
+        exception_expectation,
+        expected_num_frames: Optional[float]
+):
     # just test that it loads
     feature_set = FeatureSet.from_yaml('test/fixtures/dummy_feats/feature_manifest.yml')
     with exception_expectation:
@@ -91,11 +100,7 @@ def test_load_features(recording_id: str, channel: int, start: float, duration: 
         # expect a matrix
         assert len(features.shape) == 2
         # expect time as the first dimension
-        frame_shift = feature_set.feature_extractor.spectrogram_config.frame_shift
-        if duration is not None:
-            # left-hand expression ignores the frame_length - "maximize" the number of frames retained
-            # also, allow a lee-way of +/- 2 frames
-            assert duration / frame_shift == features.shape[0]
+        assert features.shape[0] == expected_num_frames
         # expect frequency as the second dimension
         assert feature_set.feature_extractor.mfcc_fbank_common_config.num_mel_bins == features.shape[1]
 
