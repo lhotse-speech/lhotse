@@ -2,7 +2,7 @@
 
 set -eou pipefail
 
-LIBRIMIX_ROOT=$(pwd)/env
+LIBRIMIX_ROOT=$(pwd)/data
 CORPUS_PATH=${LIBRIMIX_ROOT}/MiniLibriMix
 LIBRIMIX_CSV=${CORPUS_PATH}/metadata/mixture_train_mix_both.csv
 OUTPUT_PATH=${LIBRIMIX_ROOT}/librimix

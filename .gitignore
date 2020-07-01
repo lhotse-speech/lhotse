@@ -1,8 +1,10 @@
 # Custom
+deps/
+examples/*/data/
+
+# IDEs / editors
 .idea/
 .vscode/
-deps/
-examples/*/env/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
