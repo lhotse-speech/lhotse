@@ -1,6 +1,6 @@
 import random
 import warnings
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from functools import reduce
 from math import ceil, floor
 from typing import Dict, List, Optional, Iterable, Union
@@ -78,6 +78,10 @@ class Cut:
     def num_features(self) -> int:
         return self.features.num_features
 
+    @property
+    def sampling_rate(self) -> int:
+        return self.features.sampling_rate
+
     def load_features(self, root_dir: Optional[Pathlike] = None) -> np.ndarray:
         """
         Load the features from the underlying storage and cut them to the relevant
@@ -149,7 +153,7 @@ class Cut:
         """Refer to mix() documentation."""
         return mix(self, other, offset_right_by=offset_other_by, snr=snr)
 
-    def append(self, other: 'Cut', snr: Optional[Decibels] = None) -> 'MixedCut':
+    def append(self, other: AnyCut, snr: Optional[Decibels] = None) -> 'MixedCut':
         """
         Append the `other` Cut after the current Cut. Conceptually the same as `overlay` but with an offset
         matching the current cuts length. Optionally scale down (positive SNR) or scale up (negative SNR)
@@ -158,6 +162,25 @@ class Cut:
         during the call to `load_features`.
         """
         return self.overlay(other=other, offset_other_by=self.duration, snr=snr)
+
+    def pad(self, desired_duration: Seconds) -> AnyCut:
+        """
+        Return a new MixedCut, padded to `desired_seconds` duration.
+
+        :param desired_duration: The cuts minimal duration after padding.
+        :return: a padded MixedCut, or self, when `desired_duration` is lower or equal to this Cuts duration.
+        """
+        if desired_duration <= self.duration:
+            return self
+        padding_duration = desired_duration - self.duration
+        return self.append(PaddingCut(
+            id=str(uuid4()),
+            duration=padding_duration,
+            num_features=self.num_features,
+            num_frames=round(padding_duration / self.frame_shift),
+            sampling_rate=self.features.sampling_rate,
+            use_log_energy=self.features.type in ('fbank', 'mfcc')
+        ))
 
     @staticmethod
     def from_dict(data: dict) -> 'Cut':
@@ -180,7 +203,9 @@ class PaddingCut:
     sampling_rate: int
     use_log_energy: bool
 
-    supervisions: List = field(default_factory=list)
+    @property
+    def supervisions(self):
+        return []
 
     @property
     def frame_shift(self):
@@ -226,6 +251,25 @@ class PaddingCut:
 
     def append(self, other: AnyCut, snr: Optional[Decibels] = None) -> 'MixedCut':
         return self.overlay(other=other, snr=snr)
+
+    def pad(self, desired_duration: Seconds) -> 'PaddingCut':
+        """
+        Create a new PaddingCut with `desired_duration` when its longer than this Cuts duration.
+        Helper function used in batch cut padding.
+
+        :param desired_duration: The cuts minimal duration after padding.
+        :return: self or a new PaddingCut, depending on `desired_duration`.
+        """
+        if desired_duration <= self.duration:
+            return self
+        return PaddingCut(
+            id=str(uuid4()),
+            duration=desired_duration,
+            num_features=self.num_features,
+            num_frames=round(desired_duration / self.frame_shift),
+            sampling_rate=self.sampling_rate,
+            use_log_energy=self.use_log_energy
+        )
 
     @staticmethod
     def from_dict(data: dict) -> 'PaddingCut':
@@ -288,6 +332,10 @@ class MixedCut:
     @property
     def num_features(self) -> int:
         return self.tracks[0].cut.num_features
+
+    @property
+    def features_type(self) -> str:
+        return self.tracks[0].cut.features.type
 
     def overlay(
             self,
@@ -380,6 +428,28 @@ class MixedCut:
             )
         return MixedCut(id=str(uuid4()), tracks=new_tracks)
 
+    def pad(self, desired_duration: Seconds) -> AnyCut:
+        """
+        Return a new Cut, padded to `desired_seconds` duration.
+
+        :param desired_duration: The cuts minimal duration after padding.
+        :return: a padded MixedCut, or self, when `desired_duration` is lower or equal to this Cuts duration.
+        """
+        if desired_duration <= self.duration:
+            return self
+        padding_duration = desired_duration - self.duration
+        return self.append(PaddingCut(
+            id=str(uuid4()),
+            duration=padding_duration,
+            num_features=self.num_features,
+            # The num_frames and sampling_rate fields are tricky, because it is possible to create a MixedCut
+            # from Cuts that have different sampling rates and frame shifts. In that case, we are assuming
+            # that we should use the values from the reference cut, i.e. the first one in the mix.
+            num_frames=round(padding_duration / self.tracks[0].cut.frame_shift),
+            sampling_rate=self.tracks[0].cut.sampling_rate,
+            use_log_energy=self.features_type in ('fbank', 'mfcc')
+        ))
+
     def load_features(self, root_dir: Optional[Pathlike] = None) -> np.ndarray:
         """Loads the features of the source cuts and overlays them on-the-fly."""
         cuts = [track.cut for track in self.tracks]
@@ -443,6 +513,22 @@ class CutSet:
     def to_yaml(self, path: Pathlike):
         data = [{**asdict_nonull(cut), 'type': type(cut).__name__} for cut in self]
         save_to_yaml(data, path)
+
+    def pad(
+            self,
+            desired_duration: Seconds = None,
+    ) -> 'CutSet':
+        """
+        Return a new CutSet with Cuts padded to `desired_duration` in seconds.
+        Cuts longer than `desired_duration` will not be affected.
+        Cuts will be padded to the right (i.e. after the signal).
+        :param desired_duration: The cuts minimal duration after padding.
+            When not specified, we'll choose the duration of the longest cut in the CutSet.
+        :return: A padded CutSet.
+        """
+        if desired_duration is None:
+            desired_duration = max(cut.duration for cut in self)
+        return CutSet.from_cuts(cut.pad(desired_duration=desired_duration) for cut in self)
 
     def truncate(
             self,

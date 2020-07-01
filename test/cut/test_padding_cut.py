@@ -1,7 +1,9 @@
+from tempfile import NamedTemporaryFile
+
 import numpy as np
 import pytest
 
-from lhotse.cut import PaddingCut, Cut
+from lhotse.cut import PaddingCut, Cut, CutSet
 from lhotse.features import Features
 
 PADDING_ENERGY = 1e-8
@@ -111,10 +113,6 @@ def test_overlay_in_the_middle(libri_cut, padding_cut):
 def test_overlay_pad_right(libri_cut, padding_cut):
     mixed = libri_cut.overlay(padding_cut, offset_other_by=10.0)
 
-    # Invariants
-    assert mixed.num_features == 23
-
-    # Variants
     assert mixed.duration == 20.0
     assert mixed.num_frames == 2000
 
@@ -130,10 +128,6 @@ def test_overlay_pad_right(libri_cut, padding_cut):
 def test_overlay_pad_left(libri_cut, padding_cut):
     mixed = padding_cut.overlay(libri_cut, offset_other_by=3.96)
 
-    # Invariants
-    assert mixed.num_features == 23
-
-    # Variants
     assert mixed.duration == 20.0
     assert mixed.num_frames == 2000
 
@@ -169,10 +163,6 @@ def test_mixed_overlay_in_the_middle(mixed_libri_cut, padding_cut):
 def test_mixed_overlay_pad_right(mixed_libri_cut, padding_cut):
     mixed = mixed_libri_cut.overlay(padding_cut, offset_other_by=10.0)
 
-    # Invariants
-    assert mixed.num_features == 23
-
-    # Variants
     assert mixed.duration == 20.0
     assert mixed.num_frames == 2000
 
@@ -188,10 +178,6 @@ def test_mixed_overlay_pad_right(mixed_libri_cut, padding_cut):
 def test_mixed_overlay_pad_left(mixed_libri_cut, padding_cut):
     mixed = padding_cut.overlay(mixed_libri_cut, offset_other_by=3.96)
 
-    # Invariants
-    assert mixed.num_features == 23
-
-    # Variants
     assert mixed.duration == 20.0
     assert mixed.num_frames == 2000
 
@@ -207,10 +193,6 @@ def test_mixed_overlay_pad_left(mixed_libri_cut, padding_cut):
 def test_append(libri_cut, padding_cut):
     appended = libri_cut.append(padding_cut)
 
-    # Invariants
-    assert appended.num_features == 23
-
-    # Variants
     assert appended.duration == 26.04
     assert appended.num_frames == 2604
 
@@ -221,3 +203,48 @@ def test_append(libri_cut, padding_cut):
 
     original_feats = libri_cut.load_features()
     np.testing.assert_allclose(original_feats, appended_feats[:1604, :], rtol=1e-2)
+
+
+def test_pad_simple_cut(libri_cut):
+    padded = libri_cut.pad(desired_duration=20.0)
+
+    assert padded.duration == 20.0
+    assert padded.num_frames == 2000
+
+    mixed_feats = padded.load_features()
+    assert mixed_feats.shape == (2000, 23)
+    np.testing.assert_equal(mixed_feats[1604:, :], PADDING_LOG_ENERGY)  # Only padding after 16.04s
+    np.testing.assert_array_less(PADDING_LOG_ENERGY, mixed_feats[1603, :])  # Padding didn't start before 16.04s
+
+    pre_mixed_feats = libri_cut.load_features()
+    np.testing.assert_almost_equal(pre_mixed_feats, mixed_feats[:1604, :])
+
+
+def test_pad_mixed_cut(mixed_libri_cut):
+    padded = mixed_libri_cut.pad(desired_duration=20.0)
+
+    assert padded.duration == 20.0
+    assert padded.num_frames == 2000
+
+    mixed_feats = padded.load_features()
+    assert mixed_feats.shape == (2000, 23)
+    np.testing.assert_equal(mixed_feats[1604:, :], PADDING_LOG_ENERGY)  # Only padding after 16.04s
+    np.testing.assert_array_less(PADDING_LOG_ENERGY, mixed_feats[1603, :])  # Padding didn't start before 16.04s
+
+    pre_mixed_feats = mixed_libri_cut.load_features()
+    np.testing.assert_almost_equal(pre_mixed_feats, mixed_feats[:1604, :])
+
+
+def test_pad_cut_set(cut_set):
+    # cut_set fixture is defined in test/cut/conftest.py
+    padded_cut_set = cut_set.pad(60.1)
+    assert all(cut.duration == 60.1 for cut in padded_cut_set)
+
+
+def test_serialize_padded_cut_set(cut_set):
+    # cut_set fixture is defined in test/cut/conftest.py
+    padded_cut_set = cut_set.pad(60.1)
+    with NamedTemporaryFile() as f:
+        padded_cut_set.to_yaml(f.name)
+        restored = CutSet.from_yaml(f.name)
+    assert padded_cut_set == restored
