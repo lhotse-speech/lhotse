@@ -61,9 +61,10 @@ def prepare_mini_librispeech(
                     idx, text = line.split(maxsplit=1)
                     audio_path = part_path / Path(idx.replace('-', '/')).parent / f'{idx}.flac'
                     if audio_path.is_file():
-                        metadata[idx] = LibriSpeechMetaData(audio_path=audio_path,
-                                                            audio_info=torchaudio.info(str(audio_path))[0],
-                                                            text=text)
+                        info = torchaudio.info(str(audio_path))
+                        # info[0]: info of the raw audio (e.g. channel number, sample rate, duration ... )
+                        # info[1]: info about the encoding (e.g. FLAC/ALAW/ULAW ...)
+                        metadata[idx] = LibriSpeechMetaData(audio_path=audio_path, audio_info=info[0], text=text)
                     else:
                         logging.warning('No such file: {}'.format(audio_path))
 
