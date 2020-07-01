@@ -1,0 +1,111 @@
+import logging
+import re
+import tarfile
+import urllib.request
+import shutil
+from collections import defaultdict
+from pathlib import Path
+from typing import Optional, Dict, Union, NamedTuple
+
+import torchaudio
+
+from lhotse.audio import RecordingSet, Recording, AudioSource
+from lhotse.supervision import SupervisionSet, SupervisionSegment
+from lhotse.utils import Pathlike, Seconds
+
+dataset_parts = ('dev-clean-2', 'train-clean-5')
+
+
+def download_and_untar(
+        target_dir: Pathlike = '.',
+        force_download: Optional[bool] = False,
+        url: Optional[str] = 'http://www.openslr.org/resources/31'
+) -> None:
+    target_dir.mkdir(parents=True, exist_ok=True)
+    for part in dataset_parts:
+        tar_name = f'{part}.tar.gz'
+        tar_path = target_dir / tar_name
+        if force_download or not tar_path.is_file():
+            urllib.request.urlretrieve(f'{url}/{tar_name}', filename=tar_path)
+        part_dir = target_dir / f'LibriSpeech/{part}'
+        completed_detector = part_dir / '.completed'
+        if not completed_detector.is_file():
+            shutil.rmtree(part_dir, ignore_errors=True)
+            with tarfile.open(tar_path) as tar:
+                tar.extractall(path=target_dir)
+                completed_detector.touch()
+
+
+class LibriSpeechMetaData(NamedTuple):
+    audio_path: Pathlike
+    audio_info: torchaudio.sox_signalinfo_t
+    text: str
+
+
+def prepare_mini_librispeech(
+        corpus_dir: Pathlike,
+        output_dir: Pathlike
+) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet]]]:
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    manifests = defaultdict(dict)
+
+    for part in dataset_parts:
+        # Generate a mapping: utt_id -> (audio_path, audio_info, text)
+        metadata = {}
+        part_path = corpus_dir / part
+        for trans_path in part_path.rglob('*.txt'):
+            with open(trans_path) as f:
+                for line in f:
+                    idx, text = line.split(maxsplit=1)
+                    audio_path = part_path / Path(idx.replace('-', '/')).parent / f'{idx}.flac'
+                    if audio_path.is_file():
+                        info = torchaudio.info(str(audio_path))
+                        # info[0]: info of the raw audio (e.g. channel number, sample rate, duration ... )
+                        # info[1]: info about the encoding (e.g. FLAC/ALAW/ULAW ...)
+                        metadata[idx] = LibriSpeechMetaData(audio_path=audio_path, audio_info=info[0], text=text)
+                    else:
+                        logging.warning('No such file: {}'.format(audio_path))
+
+        # Audio
+        audio = RecordingSet.from_recordings(
+            Recording(
+                id=idx,
+                sources=[
+                    AudioSource(
+                        type='file',
+                        channel_ids=[0],
+                        source=str(metadata[idx].audio_path)
+                    )
+                ],
+                sampling_rate=int(metadata[idx].audio_info.rate),
+                num_samples=metadata[idx].audio_info.length,
+                duration_seconds=(metadata[idx].audio_info.length / metadata[idx].audio_info.rate)
+            )
+            for idx in metadata
+        )
+        audio.to_yaml(output_dir / 'audio_{}.yml'.format(part))
+
+        # Supervision
+        supervision = SupervisionSet.from_segments(
+            SupervisionSegment(
+                id=idx,
+                recording_id=idx,
+                start=0.0,
+                duration=audio.recordings[idx].duration_seconds,
+                channel_id=0,
+                language='English',
+                speaker=re.sub(r'-.*', r'', idx),
+                text=metadata[idx].text
+            )
+            for idx in audio.recordings
+        )
+        supervision.to_yaml(output_dir / 'supervisions_{}.yml'.format(part))
+
+        manifests[part] = {
+            'audio': audio,
+            'supervisions': supervision
+        }
+
+    return manifests

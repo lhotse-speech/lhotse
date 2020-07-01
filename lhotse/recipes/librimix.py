@@ -1,12 +1,33 @@
+import zipfile
+import urllib.request
+import shutil
 from collections import defaultdict
 from pathlib import Path
-from typing import Dict, Union
+from typing import Optional, Dict, Union
 
 import pandas as pd
 
 from lhotse.audio import RecordingSet, Recording, AudioSource
 from lhotse.supervision import SupervisionSet, SupervisionSegment
 from lhotse.utils import Pathlike, Seconds
+
+
+def download_and_unzip(
+        target_dir: Pathlike = '.',
+        force_download: Optional[bool] = False,
+        url: Optional[str] = 'https://zenodo.org/record/3871592/files/MiniLibriMix.zip'
+) -> None:
+    target_dir.mkdir(parents=True, exist_ok=True)
+    zip_path = target_dir / 'MiniLibriMix.zip'
+    if force_download or not zip_path.is_file():
+        urllib.request.urlretrieve(url, filename=zip_path)
+    unzipped_dir = target_dir / 'MiniLibriMix'
+    completed_detector = unzipped_dir / '.completed'
+    if not completed_detector.is_file():
+        shutil.rmtree(unzipped_dir, ignore_errors=True)
+        with zipfile.ZipFile(zip_path) as zf:
+            zf.extractall(path=target_dir)
+            completed_detector.touch()
 
 
 def prepare_librimix(
