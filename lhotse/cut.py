@@ -1,4 +1,5 @@
 import random
+import warnings
 from dataclasses import dataclass, field
 from functools import reduce
 from math import ceil, floor
@@ -66,8 +67,12 @@ class Cut:
         return self.start + self.duration
 
     @property
+    def frame_shift(self) -> Seconds:
+        return self.features.frame_shift
+
+    @property
     def num_frames(self) -> int:
-        return round(self.duration / self.features.frame_shift)
+        return round(self.duration / self.frame_shift)
 
     @property
     def num_features(self) -> int:
@@ -150,10 +155,11 @@ class Cut:
         assert self.num_features == other.num_features, "Cannot overlay cuts with different feature dimensions."
         assert offset_other_by <= self.duration, f"Cannot overlay cut '{other.id}' with offset {offset_other_by}, " \
                                                  f"which is greater than cuts {self.id} duration of {self.duration}"
+        ditch_snr = isinstance(other, PaddingCut)
         new_tracks = (
-            [MixTrack(cut=other, offset=offset_other_by, snr=snr)]
-            if isinstance(other, Cut)
-            else other.tracks
+            other.tracks
+            if isinstance(other, MixedCut)
+            else [MixTrack(cut=other, offset=offset_other_by, snr=None if ditch_snr else snr)]
         )
         return MixedCut(
             id=str(uuid4()),
@@ -189,7 +195,7 @@ class PaddingCut:
     num_features: int
 
     sampling_rate: int
-    use_log: bool
+    use_log_energy: bool
 
     supervisions: List = field(default_factory=list)
 
@@ -199,7 +205,7 @@ class PaddingCut:
 
     # noinspection PyUnusedLocal
     def load_features(self, *args, **kwargs) -> np.ndarray:
-        value = np.log(EPS) if self.use_log else EPS
+        value = np.log(EPS) if self.use_log_energy else EPS
         return np.ones((self.num_frames, self.num_features)) * value
 
     # noinspection PyUnusedLocal
@@ -222,7 +228,8 @@ class PaddingCut:
             duration=new_duration,
             num_frames=round(new_duration / self.frame_shift),
             num_features=self.num_features,
-            use_log=self.use_log,
+            use_log_energy=self.use_log_energy,
+            sampling_rate=self.sampling_rate
         )
 
     def overlay(
@@ -231,13 +238,31 @@ class PaddingCut:
             offset_other_by: Seconds = 0.0,
             snr: Optional[Decibels] = None
     ) -> 'MixedCut':
+        if snr is not None:
+            warnings.warn('You are mixing cuts to a padding cut with a specified SNR - '
+                          'the resulting energies might be extremely low.')
         assert self.num_features == other.num_features, "Cannot overlay cuts with different feature dimensions."
         assert offset_other_by <= self.duration, f"Cannot overlay cut '{other.id}' with offset {offset_other_by}, " \
                                                  f"which is greater than cuts {self.id} duration of {self.duration}"
+        ditch_snr = isinstance(other, PaddingCut)
         new_tracks = (
-            other.tracks
+            [
+                MixTrack(
+                    cut=track.cut,
+                    offset=track.offset + offset_other_by,
+                    snr=(
+                        # when no new SNR is specified, retain whatever was there in the first place
+                        track.snr if snr is None
+                        # when new SNR is specified but none was specified before, assign the new SNR value
+                        else snr if track.snr is None
+                        # when both new and previous SNR were specified, assign their sum,
+                        # as the SNR for each track is defined with regard to the first track energy
+                        else track.snr + snr
+                    )
+                ) for track in other.tracks
+            ]
             if isinstance(other, MixedCut)
-            else [MixTrack(cut=other, offset=offset_other_by, snr=snr)]
+            else [MixTrack(cut=other, offset=offset_other_by, snr=None if ditch_snr else snr)]
         )
         return MixedCut(
             id=str(uuid4()),
@@ -303,7 +328,7 @@ class MixedCut:
 
     @property
     def num_frames(self) -> int:
-        return round(self.duration / self.tracks[0].cut.features.frame_shift)
+        return round(self.duration / self.tracks[0].cut.frame_shift)
 
     @property
     def num_features(self) -> int:
@@ -324,10 +349,11 @@ class MixedCut:
         assert self.num_features == other.num_features, "Cannot overlay cuts with different feature dimensions."
         assert offset_other_by <= self.duration, f"Cannot overlay cut '{other.id}' with offset {offset_other_by}, " \
                                                  f"which is greater than cuts {self.id} duration of {self.duration}"
+        ditch_snr = isinstance(other, PaddingCut)
         new_tracks = (
-            [MixTrack(cut=other, offset=offset_other_by, snr=snr)]
-            if isinstance(other, Cut)
-            else other.tracks
+            other.tracks
+            if isinstance(other, MixedCut)
+            else [MixTrack(cut=other, offset=offset_other_by, snr=None if ditch_snr else snr)]
         )
         return MixedCut(
             id=str(uuid4()),
@@ -419,7 +445,7 @@ class MixedCut:
     def load_features(self, root_dir: Optional[Pathlike] = None) -> np.ndarray:
         """Loads the features of the source cuts and overlays them on-the-fly."""
         cuts = [track.cut for track in self.tracks]
-        frame_shift = cuts[0].features.frame_shift
+        frame_shift = cuts[0].frame_shift
         # TODO: check if the 'pad_shorter' call is still necessary, it shouldn't be
         # feats = pad_shorter(*feats)
         mixer = FbankMixer(
@@ -433,6 +459,8 @@ class MixedCut:
                 offset=track.offset
             )
         return mixer.mixed_feats
+
+    # TODO: load_audio()
 
     @staticmethod
     def from_dict(data: dict) -> 'MixedCut':
