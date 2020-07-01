@@ -146,25 +146,8 @@ class Cut:
         )
 
     def overlay(self, other: AnyCut, offset_other_by: Seconds = 0.0, snr: Optional[Decibels] = None) -> 'MixedCut':
-        """
-        Overlay, or mix, this Cut with the `other` Cut. Optionally the `other` Cut may be shifted by `offset_other_by`
-        Seconds and scaled down (positive SNR) or scaled up (negative SNR).
-        Returns a MixedCut, which only keeps the information about the mix; actual mixing is performed
-        during the call to `load_features`.
-        """
-        assert self.num_features == other.num_features, "Cannot overlay cuts with different feature dimensions."
-        assert offset_other_by <= self.duration, f"Cannot overlay cut '{other.id}' with offset {offset_other_by}, " \
-                                                 f"which is greater than cuts {self.id} duration of {self.duration}"
-        ditch_snr = isinstance(other, PaddingCut)
-        new_tracks = (
-            other.tracks
-            if isinstance(other, MixedCut)
-            else [MixTrack(cut=other, offset=offset_other_by, snr=None if ditch_snr else snr)]
-        )
-        return MixedCut(
-            id=str(uuid4()),
-            tracks=[MixTrack(cut=self)] + new_tracks
-        )
+        """Refer to mix() documentation."""
+        return mix(self, other, offset_right_by=offset_other_by, snr=snr)
 
     def append(self, other: 'Cut', snr: Optional[Decibels] = None) -> 'MixedCut':
         """
@@ -238,36 +221,8 @@ class PaddingCut:
             offset_other_by: Seconds = 0.0,
             snr: Optional[Decibels] = None
     ) -> 'MixedCut':
-        if snr is not None:
-            warnings.warn('You are mixing cuts to a padding cut with a specified SNR - '
-                          'the resulting energies might be extremely low.')
-        assert self.num_features == other.num_features, "Cannot overlay cuts with different feature dimensions."
-        assert offset_other_by <= self.duration, f"Cannot overlay cut '{other.id}' with offset {offset_other_by}, " \
-                                                 f"which is greater than cuts {self.id} duration of {self.duration}"
-        ditch_snr = isinstance(other, PaddingCut)
-        new_tracks = (
-            [
-                MixTrack(
-                    cut=track.cut,
-                    offset=track.offset + offset_other_by,
-                    snr=(
-                        # when no new SNR is specified, retain whatever was there in the first place
-                        track.snr if snr is None
-                        # when new SNR is specified but none was specified before, assign the new SNR value
-                        else snr if track.snr is None
-                        # when both new and previous SNR were specified, assign their sum,
-                        # as the SNR for each track is defined with regard to the first track energy
-                        else track.snr + snr
-                    )
-                ) for track in other.tracks
-            ]
-            if isinstance(other, MixedCut)
-            else [MixTrack(cut=other, offset=offset_other_by, snr=None if ditch_snr else snr)]
-        )
-        return MixedCut(
-            id=str(uuid4()),
-            tracks=[MixTrack(cut=self)] + new_tracks
-        )
+        """Refer to mix() documentation."""
+        return mix(self, other, offset_right_by=offset_other_by, snr=snr)
 
     def append(self, other: AnyCut, snr: Optional[Decibels] = None) -> 'MixedCut':
         return self.overlay(other=other, snr=snr)
@@ -340,25 +295,8 @@ class MixedCut:
             offset_other_by: Seconds = 0.0,
             snr: Optional[Decibels] = None
     ) -> 'MixedCut':
-        """
-        Overlay, or mix, this Cut with the `other` Cut. Optionally the `other` Cut may be shifted by `offset_other_by`
-        Seconds and scaled down (positive SNR) or scaled up (negative SNR).
-        Returns a MixedCut, which only keeps the information about the mix; actual mixing is performed
-        during the call to `load_features`.
-        """
-        assert self.num_features == other.num_features, "Cannot overlay cuts with different feature dimensions."
-        assert offset_other_by <= self.duration, f"Cannot overlay cut '{other.id}' with offset {offset_other_by}, " \
-                                                 f"which is greater than cuts {self.id} duration of {self.duration}"
-        ditch_snr = isinstance(other, PaddingCut)
-        new_tracks = (
-            other.tracks
-            if isinstance(other, MixedCut)
-            else [MixTrack(cut=other, offset=offset_other_by, snr=None if ditch_snr else snr)]
-        )
-        return MixedCut(
-            id=str(uuid4()),
-            tracks=self.tracks + new_tracks
-        )
+        """Refer to mix() documentation."""
+        return mix(self, other, offset_right_by=offset_other_by, snr=snr)
 
     def append(self, other: AnyCut, snr: Optional[Decibels] = None) -> 'MixedCut':
         """
@@ -659,8 +597,61 @@ def mix(
         offset_right_by: Seconds = 0,
         snr: Optional[Decibels] = None
 ) -> MixedCut:
-    """Helper method for functional-style mixing of Cuts."""
-    return left_cut.overlay(right_cut, offset_other_by=offset_right_by, snr=snr)
+    """
+    Overlay, or mix, two cuts. Optionally the `right_cut` may be shifted by `offset_right_by`
+    Seconds and scaled down (positive SNR) or scaled up (negative SNR).
+    Returns a MixedCut, which contains both cuts and the mix information.
+    The actual feature mixing is performed during the call to `load_features`.
+
+    :param left_cut: The reference cut for the mix - offset and snr are specified w.r.t this cut.
+    :param right_cut: The mixed-in cut - it will be offset and rescaled to match the offset and snr parameters.
+    :param offset_right_by: How many seconds to shift the `right_cut` w.r.t. the `left_cut`.
+    :param snr: Desired SNR of the `right_cut` w.r.t. the `left_cut` in the mix.
+    :return: A MixedCut instance.
+    """
+    if any(isinstance(cut, PaddingCut) for cut in (left_cut, right_cut)) and snr is not None:
+        warnings.warn('You are mixing cuts to a padding cut with a specified SNR - '
+                      'the resulting energies would be extremely low or high. '
+                      'We are setting snr to None, so that the original signal energies will be retained instead.')
+        snr = None
+
+    assert left_cut.num_features == right_cut.num_features, "Cannot overlay cuts with different feature dimensions."
+    assert offset_right_by <= left_cut.duration, f"Cannot overlay cut '{right_cut.id}' with offset {offset_right_by}," \
+                                                 f" which is greater than cuts {left_cut.id} duration" \
+                                                 f" of {left_cut.duration}"
+    # When the left_cut is a MixedCut, take its existing tracks, otherwise create a new track.
+    old_tracks = (
+        left_cut.tracks
+        if isinstance(left_cut, MixedCut)
+        else [MixTrack(cut=left_cut)]
+    )
+    # When the right_cut is a MixedCut, adapt its existing tracks with the new offset and snr,
+    # otherwise create a new track.
+    new_tracks = (
+        [
+            MixTrack(
+                cut=track.cut,
+                offset=track.offset + offset_right_by,
+                snr=(
+                    # When no new SNR is specified, retain whatever was there in the first place.
+                    track.snr if snr is None
+                    # When new SNR is specified but none was specified before, assign the new SNR value.
+                    else snr if track.snr is None
+                    # When both new and previous SNR were specified, assign their sum,
+                    # as the SNR for each track is defined with regard to the first track energy.
+                    else track.snr + snr if snr is not None and track is not None
+                    # When no SNR was specified whatsoever, use none.
+                    else None
+                )
+            ) for track in right_cut.tracks
+        ]
+        if isinstance(right_cut, MixedCut)
+        else [MixTrack(cut=right_cut, offset=offset_right_by, snr=snr)]
+    )
+    return MixedCut(
+        id=str(uuid4()),
+        tracks=old_tracks + new_tracks
+    )
 
 
 def append(
