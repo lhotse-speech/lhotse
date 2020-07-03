@@ -1,7 +1,7 @@
 import click
 
 from lhotse.bin.modes import recipe
-from lhotse.recipes.librimix import prepare_librimix
+from lhotse.recipes.librimix import prepare_librimix, download_and_unzip
 from lhotse.utils import Pathlike
 
 __all__ = ['librimix']
@@ -34,3 +34,12 @@ def librimix(
         min_segment_seconds=min_segment_seconds,
         with_precomputed_mixtures=with_precomputed_mixtures
     )
+
+
+@recipe.command(context_settings=dict(show_default=True))
+@click.argument('target_dir', type=click.Path())
+def librimix_obtain(
+        target_dir: Pathlike
+):
+    """Obtain LibrMix dataset."""
+    download_and_unzip(target_dir)
