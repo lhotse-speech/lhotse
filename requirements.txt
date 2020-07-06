@@ -10,3 +10,4 @@ torchaudio>=0.5
 pandas>=1.0.3
 cytoolz
 matplotlib
+flake8
