@@ -1,0 +1,2 @@
+numpy>=1.18.1
+sphinx_rtd_theme

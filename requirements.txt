@@ -11,4 +11,3 @@ pandas>=1.0.3
 cytoolz
 matplotlib
 flake8
-sphinx_rtd_theme
