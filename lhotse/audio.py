@@ -15,6 +15,10 @@ from lhotse.utils import Pathlike, SetContainingAnything, Seconds, load_yaml, sa
 Channels = Union[int, List[int]]
 
 
+# TODO: document the dataclasses like this:
+# https://stackoverflow.com/a/3051356/5285891
+
+
 @dataclass
 class AudioSource:
     """
