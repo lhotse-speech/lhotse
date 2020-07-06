@@ -4,7 +4,7 @@ from lhotse.bin.modes import recipe
 from lhotse.recipes.librimix import prepare_librimix, download_and_unzip
 from lhotse.utils import Pathlike
 
-__all__ = ['librimix']
+__all__ = ['librimix_dataprep', 'librimix_obtain']
 
 
 @recipe.command(context_settings=dict(show_default=True))

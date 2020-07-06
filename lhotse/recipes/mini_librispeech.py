@@ -11,7 +11,7 @@ import torchaudio
 
 from lhotse.audio import RecordingSet, Recording, AudioSource
 from lhotse.supervision import SupervisionSet, SupervisionSegment
-from lhotse.utils import Pathlike, Seconds
+from lhotse.utils import Pathlike
 
 dataset_parts = ('dev-clean-2', 'train-clean-5')
 
