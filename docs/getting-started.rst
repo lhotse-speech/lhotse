@@ -11,6 +11,7 @@ Main goals of Lhotse are:
 - Provide **standard data preparation recipes** for commonly used corpora.
 - Provide **PyTorch Dataset classes** for speech and audio related tasks.
 - Flexible data preparation for model training with the notion of **audio cuts**.
+- **Efficiency**, especially in terms of I/O bandwidth and storage capacity.
 
 Installation
 ------------
