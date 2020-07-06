@@ -10,6 +10,13 @@ Welcome to lhotse's documentation!
    :maxdepth: 2
    :caption: Contents:
 
+   getting-started.rst
+   corpus.rst
+   cuts.rst
+   features.rst
+   datasets.rst
+   kaldi.rst
+   cli.rst
    api.rst
 
 
