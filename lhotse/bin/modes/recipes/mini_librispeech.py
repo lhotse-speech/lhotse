@@ -10,7 +10,7 @@ __all__ = ['mini_librispeech']
 @recipe.command(context_settings=dict(show_default=True))
 @click.argument('corpus_dir', type=click.Path(exists=True, dir_okay=True))
 @click.argument('output_dir', type=click.Path())
-def mini_librispeech(
+def mini_librispeech_dataprep(
         corpus_dir: Pathlike,
         output_dir: Pathlike
 ):

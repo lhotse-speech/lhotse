@@ -19,7 +19,7 @@ __all__ = ['librimix']
     '--with-precomputed-mixtures/--no-precomputed-mixtures', type=bool, default=False,
     help='Optionally create an RecordingSet manifest including the precomputed LibriMix mixtures.'
 )
-def librimix(
+def librimix_dataprep(
         librimix_csv: Pathlike,
         output_dir: Pathlike,
         sampling_rate: int,
