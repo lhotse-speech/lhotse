@@ -11,7 +11,7 @@ import torchaudio
 
 from lhotse.audio import RecordingSet, Recording, AudioSource
 from lhotse.supervision import SupervisionSet, SupervisionSegment
-from lhotse.utils import Pathlike, Seconds
+from lhotse.utils import Pathlike
 
 dataset_parts = ('dev-clean-2', 'train-clean-5')
 
@@ -21,6 +21,7 @@ def download_and_untar(
         force_download: Optional[bool] = False,
         url: Optional[str] = 'http://www.openslr.org/resources/31'
 ) -> None:
+    target_dir = Path(target_dir)
     target_dir.mkdir(parents=True, exist_ok=True)
     for part in dataset_parts:
         tar_name = f'{part}.tar.gz'
@@ -46,6 +47,7 @@ def prepare_mini_librispeech(
         corpus_dir: Pathlike,
         output_dir: Pathlike
 ) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet]]]:
+    corpus_dir = Path(corpus_dir)
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 

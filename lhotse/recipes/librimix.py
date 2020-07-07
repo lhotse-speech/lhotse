@@ -17,6 +17,7 @@ def download_and_unzip(
         force_download: Optional[bool] = False,
         url: Optional[str] = 'https://zenodo.org/record/3871592/files/MiniLibriMix.zip'
 ) -> None:
+    target_dir = Path(target_dir)
     target_dir.mkdir(parents=True, exist_ok=True)
     zip_path = target_dir / 'MiniLibriMix.zip'
     if force_download or not zip_path.is_file():

@@ -1,6 +1,6 @@
 import click
 
-__all__ = ['cli', 'recipe']
+__all__ = ['cli', 'prepare', 'obtain']
 
 
 @click.group()
@@ -12,6 +12,12 @@ def cli():
 
 
 @cli.group()
-def recipe():
+def prepare():
     """Command group with data preparation recipes."""
+    pass
+
+
+@cli.group()
+def obtain():
+    """Command group for download and extract data."""
     pass
