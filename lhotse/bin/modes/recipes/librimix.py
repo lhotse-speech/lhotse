@@ -1,13 +1,13 @@
 import click
 
-from lhotse.bin.modes import recipe
+from lhotse.bin.modes import prepare, obtain
 from lhotse.recipes.librimix import prepare_librimix, download_and_unzip
 from lhotse.utils import Pathlike
 
-__all__ = ['librimix_dataprep', 'librimix_obtain']
+__all__ = ['librimix']
 
 
-@recipe.command(context_settings=dict(show_default=True))
+@prepare.command(context_settings=dict(show_default=True))
 @click.argument('librimix-csv', type=click.Path(exists=True, dir_okay=False))
 @click.argument('output_dir', type=click.Path())
 @click.option('--sampling-rate', type=int, default=16000, help='Sampling rate to set in the RecordingSet manifest.')
@@ -19,7 +19,7 @@ __all__ = ['librimix_dataprep', 'librimix_obtain']
     '--with-precomputed-mixtures/--no-precomputed-mixtures', type=bool, default=False,
     help='Optionally create an RecordingSet manifest including the precomputed LibriMix mixtures.'
 )
-def librimix_dataprep(
+def librimix(
         librimix_csv: Pathlike,
         output_dir: Pathlike,
         sampling_rate: int,
@@ -36,9 +36,9 @@ def librimix_dataprep(
     )
 
 
-@recipe.command(context_settings=dict(show_default=True))
+@obtain.command(context_settings=dict(show_default=True))
 @click.argument('target_dir', type=click.Path())
-def librimix_obtain(
+def librimix(
         target_dir: Pathlike
 ):
     """Obtain LibrMix dataset."""

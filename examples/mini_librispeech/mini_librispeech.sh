@@ -11,10 +11,10 @@ data_parts='dev-clean-2 train-clean-5'
 [[ $(uname) == 'Darwin' ]] && nj=$(sysctl -n machdep.cpu.thread_count) || nj=$(grep -c ^processor /proc/cpuinfo)
 
 # Download and untar MiniLibriSpeech dataset
-lhotse recipe mini-librispeech-obtain ${MINI_LIBRISPEECH_ROOT}
+lhotse obtain mini-librispeech ${MINI_LIBRISPEECH_ROOT}
 
 # Prepare audio and supervision manifests
-lhotse recipe mini-librispeech-dataprep ${CORPUS_PATH} ${OUTPUT_PATH}
+lhotse prepare mini-librispeech ${CORPUS_PATH} ${OUTPUT_PATH}
 
 for part in ${data_parts}; do
   # Extract features

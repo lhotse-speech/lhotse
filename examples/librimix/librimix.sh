@@ -11,10 +11,10 @@ DURATION=3
 [[ $(uname) == 'Darwin' ]] && nj=$(sysctl -n machdep.cpu.thread_count) || nj=$(grep -c ^processor /proc/cpuinfo)
 
 # Download and unzip MiniLibriMix dataset
-lhotse recipe librimix-obtain ${LIBRIMIX_ROOT}
+lhotse obtain librimix ${LIBRIMIX_ROOT}
 
 # Prepare audio and supervision manifests
-lhotse recipe librimix-dataprep \
+lhotse prepare librimix \
   --min-segment-seconds $DURATION \
   --with-precomputed-mixtures \
   ${LIBRIMIX_CSV} \
