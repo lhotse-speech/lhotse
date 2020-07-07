@@ -1,11 +1,11 @@
 import logging
 from pathlib import Path
-from typing import Dict, Optional, Tuple, List
+from typing import Dict, Optional
 
 import torch
 from torch.utils.data import Dataset
 
-from lhotse.cut import CutSet, Cut, AnyCut
+from lhotse.cut import CutSet
 from lhotse.utils import Pathlike
 
 EPS = 1e-8

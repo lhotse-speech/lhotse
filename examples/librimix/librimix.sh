@@ -10,12 +10,11 @@ DURATION=3
 
 [[ $(uname) == 'Darwin' ]] && nj=$(sysctl -n machdep.cpu.thread_count) || nj=$(grep -c ^processor /proc/cpuinfo)
 
-# Obtain MiniLibriMix
-[ -f ${LIBRIMIX_ROOT}/MiniLibriMix.zip ] || wget https://zenodo.org/record/3871592/files/MiniLibriMix.zip -P ${LIBRIMIX_ROOT}
-[ -d ${CORPUS_PATH} ] || unzip ${LIBRIMIX_ROOT}/MiniLibriMix.zip -d ${LIBRIMIX_ROOT}
+# Download and unzip MiniLibriMix dataset
+lhotse obtain librimix ${LIBRIMIX_ROOT}
 
 # Prepare audio and supervision manifests
-lhotse recipe librimix \
+lhotse prepare librimix \
   --min-segment-seconds $DURATION \
   --with-precomputed-mixtures \
   ${LIBRIMIX_CSV} \
@@ -23,7 +22,7 @@ lhotse recipe librimix \
 
 for type in sources mix noise; do
   # Extract features for each type of audio file
-  lhotse make-feats -j "$nj" \
+  lhotse make-feats -j ${nj} \
     -r ${LIBRIMIX_ROOT} \
     ${OUTPUT_PATH}/audio_${type}.yml \
     ${OUTPUT_PATH}/feats_${type}
