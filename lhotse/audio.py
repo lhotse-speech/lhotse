@@ -8,7 +8,7 @@ from typing import List, Optional, Dict, Union, Iterable
 
 # Workaround for SoundFile (librosa dep) raising exception when a native library, libsndfile1, is not installed.
 # Read-the-docs does not allow to modify the Docker containers used to build documentation...
-if not os.environ['READTHEDOCS']:
+if not os.environ.get('READTHEDOCS', False):
     with warnings.catch_warnings():
         warnings.simplefilter('ignore')
         import librosa
