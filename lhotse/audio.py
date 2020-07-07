@@ -1,3 +1,4 @@
+import os
 import warnings
 from dataclasses import dataclass, asdict
 from io import BytesIO
@@ -5,9 +6,12 @@ from pathlib import Path
 from subprocess import run, PIPE
 from typing import List, Optional, Dict, Union, Iterable
 
-with warnings.catch_warnings():
-    warnings.simplefilter('ignore')
-    import librosa
+# Workaround for SoundFile (librosa dep) raising exception when a native library, libsndfile1, is not installed.
+# Read-the-docs does not allow to modify the Docker containers used to build documentation...
+if not os.environ.get('READTHEDOCS', False):
+    with warnings.catch_warnings():
+        warnings.simplefilter('ignore')
+        import librosa
 import numpy as np
 
 from lhotse.utils import Pathlike, SetContainingAnything, Seconds, load_yaml, save_to_yaml
