@@ -2,7 +2,7 @@ import random
 import warnings
 from dataclasses import dataclass
 from functools import reduce
-from math import ceil, floor
+from math import ceil, floor, log
 from typing import Dict, List, Optional, Iterable, Union, Callable
 from uuid import uuid4
 
@@ -20,7 +20,8 @@ from lhotse.utils import (
     Pathlike,
     asdict_nonull,
     load_yaml,
-    save_to_yaml, EPS
+    save_to_yaml,
+    EPSILON
 )
 
 # One of the design principles for Cuts is a maximally "lazy" implementation, e.g. when overlaying/mixing Cuts,
@@ -151,7 +152,7 @@ class Cut:
 
     def overlay(self, other: AnyCut, offset_other_by: Seconds = 0.0, snr: Optional[Decibels] = None) -> 'MixedCut':
         """Refer to mix() documentation."""
-        return mix(self, other, offset_right_by=offset_other_by, snr=snr)
+        return mix(self, other, offset=offset_other_by, snr=snr)
 
     def append(self, other: AnyCut, snr: Optional[Decibels] = None) -> 'MixedCut':
         """
@@ -164,11 +165,12 @@ class Cut:
         return self.overlay(other=other, offset_other_by=self.duration, snr=snr)
 
     def pad(self, desired_duration: Seconds) -> AnyCut:
-        """
-        Return a new MixedCut, padded to `desired_seconds` duration.
+        f"""
+        Return a new MixedCut, padded to `desired_seconds` duration with low-energy values in each bin.
+        We use {EPSILON} for energies, or {log(EPSILON)} for log-energies.
 
-        :param desired_duration: The cuts minimal duration after padding.
-        :return: a padded MixedCut, or self, when `desired_duration` is lower or equal to this Cuts duration.
+        :param desired_duration: The cut's minimal duration after padding.
+        :return: a padded MixedCut if desired_duration is greater than this cut's duration, otherwise self.
         """
         if desired_duration <= self.duration:
             return self
@@ -195,6 +197,12 @@ class Cut:
 
 @dataclass
 class PaddingCut:
+    f"""
+    This represents a cut filled with zeroes in the time domain, or low energy/log-energy values in the
+    frequency domain. It's used to make training samples evenly sized (same duration/number of frames).
+    
+    We use {EPSILON} for energies and {log(EPSILON)} for log-energies.
+    """
     id: str
     duration: Seconds
     num_frames: int
@@ -213,7 +221,7 @@ class PaddingCut:
 
     # noinspection PyUnusedLocal
     def load_features(self, *args, **kwargs) -> np.ndarray:
-        value = np.log(EPS) if self.use_log_energy else EPS
+        value = np.log(EPSILON) if self.use_log_energy else EPSILON
         return np.ones((self.num_frames, self.num_features)) * value
 
     # noinspection PyUnusedLocal
@@ -247,7 +255,7 @@ class PaddingCut:
             snr: Optional[Decibels] = None
     ) -> 'MixedCut':
         """Refer to mix() documentation."""
-        return mix(self, other, offset_right_by=offset_other_by, snr=snr)
+        return mix(self, other, offset=offset_other_by, snr=snr)
 
     def append(self, other: AnyCut, snr: Optional[Decibels] = None) -> 'MixedCut':
         return self.overlay(other=other, snr=snr)
@@ -344,7 +352,7 @@ class MixedCut:
             snr: Optional[Decibels] = None
     ) -> 'MixedCut':
         """Refer to mix() documentation."""
-        return mix(self, other, offset_right_by=offset_other_by, snr=snr)
+        return mix(self, other, offset=offset_other_by, snr=snr)
 
     def append(self, other: AnyCut, snr: Optional[Decibels] = None) -> 'MixedCut':
         """
@@ -429,11 +437,12 @@ class MixedCut:
         return MixedCut(id=str(uuid4()), tracks=new_tracks)
 
     def pad(self, desired_duration: Seconds) -> AnyCut:
-        """
-        Return a new Cut, padded to `desired_seconds` duration.
+        f"""
+        Return a new MixedCut, padded to `desired_seconds` duration with low-energy values in each bin.
+        We use {EPSILON} for energies, or {log(EPSILON)} for log-energies.
 
-        :param desired_duration: The cuts minimal duration after padding.
-        :return: a padded MixedCut, or self, when `desired_duration` is lower or equal to this Cuts duration.
+        :param desired_duration: The cut's minimal duration after padding.
+        :return: a padded MixedCut if desired_duration is greater than this cut's duration, otherwise self.
         """
         if desired_duration <= self.duration:
             return self
@@ -687,38 +696,38 @@ def make_cuts_from_supervisions(supervision_set: SupervisionSet, feature_set: Fe
 
 
 def mix(
-        left_cut: AnyCut,
-        right_cut: AnyCut,
-        offset_right_by: Seconds = 0,
+        reference_cut: AnyCut,
+        mixed_in_cut: AnyCut,
+        offset: Seconds = 0,
         snr: Optional[Decibels] = None
 ) -> MixedCut:
     """
-    Overlay, or mix, two cuts. Optionally the `right_cut` may be shifted by `offset_right_by`
-    Seconds and scaled down (positive SNR) or scaled up (negative SNR).
+    Overlay, or mix, two cuts. Optionally the `mixed_in_cut` may be shifted by `offset` seconds
+    and scaled down (positive SNR) or scaled up (negative SNR).
     Returns a MixedCut, which contains both cuts and the mix information.
-    The actual feature mixing is performed during the call to `load_features`.
+    The actual feature mixing is performed during the call to ``MixedCut.load_features()``.
 
-    :param left_cut: The reference cut for the mix - offset and snr are specified w.r.t this cut.
-    :param right_cut: The mixed-in cut - it will be offset and rescaled to match the offset and snr parameters.
-    :param offset_right_by: How many seconds to shift the `right_cut` w.r.t. the `left_cut`.
+    :param reference_cut: The reference cut for the mix - offset and snr are specified w.r.t this cut.
+    :param mixed_in_cut: The mixed-in cut - it will be offset and rescaled to match the offset and snr parameters.
+    :param offset: How many seconds to shift the ``mixed_in_cut`` w.r.t. the ``reference_cut``.
     :param snr: Desired SNR of the `right_cut` w.r.t. the `left_cut` in the mix.
     :return: A MixedCut instance.
     """
-    if any(isinstance(cut, PaddingCut) for cut in (left_cut, right_cut)) and snr is not None:
+    if any(isinstance(cut, PaddingCut) for cut in (reference_cut, mixed_in_cut)) and snr is not None:
         warnings.warn('You are mixing cuts to a padding cut with a specified SNR - '
                       'the resulting energies would be extremely low or high. '
                       'We are setting snr to None, so that the original signal energies will be retained instead.')
         snr = None
 
-    assert left_cut.num_features == right_cut.num_features, "Cannot overlay cuts with different feature dimensions."
-    assert offset_right_by <= left_cut.duration, f"Cannot overlay cut '{right_cut.id}' with offset {offset_right_by}," \
-                                                 f" which is greater than cuts {left_cut.id} duration" \
-                                                 f" of {left_cut.duration}"
+    assert reference_cut.num_features == mixed_in_cut.num_features, "Cannot overlay cuts with different feature dimensions."
+    assert offset <= reference_cut.duration, f"Cannot overlay cut '{mixed_in_cut.id}' with offset {offset}," \
+                                             f" which is greater than cuts {reference_cut.id} duration" \
+                                             f" of {reference_cut.duration}"
     # When the left_cut is a MixedCut, take its existing tracks, otherwise create a new track.
     old_tracks = (
-        left_cut.tracks
-        if isinstance(left_cut, MixedCut)
-        else [MixTrack(cut=left_cut)]
+        reference_cut.tracks
+        if isinstance(reference_cut, MixedCut)
+        else [MixTrack(cut=reference_cut)]
     )
     # When the right_cut is a MixedCut, adapt its existing tracks with the new offset and snr,
     # otherwise create a new track.
@@ -726,7 +735,7 @@ def mix(
         [
             MixTrack(
                 cut=track.cut,
-                offset=track.offset + offset_right_by,
+                offset=track.offset + offset,
                 snr=(
                     # When no new SNR is specified, retain whatever was there in the first place.
                     track.snr if snr is None
@@ -738,10 +747,10 @@ def mix(
                     # When no SNR was specified whatsoever, use none.
                     else None
                 )
-            ) for track in right_cut.tracks
+            ) for track in mixed_in_cut.tracks
         ]
-        if isinstance(right_cut, MixedCut)
-        else [MixTrack(cut=right_cut, offset=offset_right_by, snr=snr)]
+        if isinstance(mixed_in_cut, MixedCut)
+        else [MixTrack(cut=mixed_in_cut, offset=offset, snr=snr)]
     )
     return MixedCut(
         id=str(uuid4()),

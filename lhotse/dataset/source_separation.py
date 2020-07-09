@@ -5,7 +5,7 @@ import torch
 from torch.utils.data import Dataset
 
 from lhotse.cut import CutSet, Cut, AnyCut
-from lhotse.utils import Pathlike, EPS
+from lhotse.utils import Pathlike, EPSILON
 
 
 class SourceSeparationDataset(Dataset):
@@ -59,7 +59,7 @@ class SourceSeparationDataset(Dataset):
 
         # Compute the masks given the source features
         sources_exp = sources.exp()
-        real_mask = sources_exp / (sources_exp.sum(0, keepdim=True) + EPS)
+        real_mask = sources_exp / (sources_exp.sum(0, keepdim=True) + EPSILON)
         # Get the src idx having the maximum energy
         binary_mask = real_mask.argmax(0)
 
