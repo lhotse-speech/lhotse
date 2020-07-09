@@ -1,8 +1,12 @@
 Command-line interface
 ======================
 
-.. click:: lhotse.bin:recipe
-   :prog: lhotse recipe
+.. click:: lhotse.bin:obtain
+   :prog: lhotse obtain
+   :show-nested:
+
+.. click:: lhotse.bin:prepare
+   :prog: lhotse prepare
    :show-nested:
 
 .. click:: lhotse.bin:cut

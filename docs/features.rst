@@ -11,7 +11,7 @@ We support spectrograms, log-Mel energies (*fbank*) and MFCCs.
 We are striving for a simple relation between the audio duration, the number of frames,
 and the frame shift.
 You only need to know two of those values to compute the third one, regardless of the frame length.
-This is equivalent of having Kaldi's _snip_edges_ parameter set to False.
+This is equivalent of having Kaldi's ``snip_edges`` parameter set to False.
 
 
 Storing features
@@ -74,8 +74,8 @@ Currently, these arguments are the sum of all possible arguments for all feature
 in the future, and we might either move this section into a separate manifest or drop it entirely and store
 only the non-default values in each feature document.
 
-The feature documents contain the information necessary to tie them to a particular recording - start, duration,
-channel and recording_id. They currently do not have their own IDs.
+The feature documents contain the information necessary to tie them to a particular recording - ``start``, ``duration``,
+``channel`` and ``recording_id``. They currently do not have their own IDs.
 They also provide some useful information, such as the type of features, number of frames and feature dimension.
 Finally, they specify how the feature matrix is stored with ``storage_type`` (currently ``numpy`` or ``lilcom``),
 and where to find it with the ``storage_path``. In the future there might be more storage types.
@@ -131,4 +131,5 @@ By default, we turn off dithering for deterministic feature extraction.
 
 
 .. _Torchaudio: link: https://pytorch.org/audio/
+.. _lilcom: link: https://github.com/danpovey/lilcom
 
