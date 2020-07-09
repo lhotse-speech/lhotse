@@ -32,7 +32,7 @@ class SpectrogramConfig:
     frame_shift: Seconds = 0.01
     remove_dc_offset: bool = True
     round_to_power_of_two: bool = True
-    energy_floor: float = 0.0
+    energy_floor: float = 0.1
     min_duration: float = 0.0
     preemphasis_coefficient: float = 0.97
     raw_energy: bool = True
