@@ -12,15 +12,16 @@ class SourceSeparationDataset(Dataset):
     """
     An abstract base class, implementing PyTorch Dataset for the source separation task.
     It's created from two CutSets - one provides the audio cuts for the sources, and the other one the audio cuts for
-    the signal mix. When queried for data samples, it returns a dict of: {
-        'sources': (N x T x F) tensor,
-        'mixture': (T x F) tensor,
-        'real_mask': (N x T x F) tensor,
-        'binary_mask': (T x F) tensor
-    }.
+    the signal mix. When queried for data samples, it returns a dict of:
 
-    This Dataset performs on-the-fly feature-domain mixing of the sources. It expects the mixtures_set to contain
-    MixedCuts, so that it knows which Cuts should be mixed together.
+    .. code-block::
+
+        {
+            'sources': (N x T x F) tensor,
+            'mixture': (T x F) tensor,
+            'real_mask': (N x T x F) tensor,
+            'binary_mask': (T x F) tensor
+        }
     """
 
     def __init__(
@@ -78,17 +79,22 @@ class DynamicallyMixedSourceSeparationDataset(SourceSeparationDataset):
     """
     A PyTorch Dataset for the source separation task.
     It's created from a number of CutSets:
-    - sources_set: provides the audio cuts for the sources that (the targets of source separation),
-    - mixtures_set: provides the audio cuts for the signal mix (the input of source separation),
-    - nonsources_set: [optional] provides the audio cuts for other signals that are in the mix,
-        but are not the targets of source separation. Useful for adding noise.
 
-    When queried for data samples, it returns a dict of: {
-        'sources': (N x T x F) tensor,
-        'mixture': (T x F) tensor,
-        'real_mask': (N x T x F) tensor,
-        'binary_mask': (T x F) tensor
-    }.
+    - ``sources_set``: provides the audio cuts for the sources that (the targets of source separation),
+    - ``mixtures_set``: provides the audio cuts for the signal mix (the input of source separation),
+    - ``nonsources_set``: *(optional)* provides the audio cuts for other signals that are in the mix,
+      but are not the targets of source separation. Useful for adding noise.
+
+    When queried for data samples, it returns a dict of:
+
+    .. code-block::
+
+        {
+            'sources': (N x T x F) tensor,
+            'mixture': (T x F) tensor,
+            'real_mask': (N x T x F) tensor,
+            'binary_mask': (T x F) tensor
+        }
 
     This Dataset performs on-the-fly feature-domain mixing of the sources. It expects the mixtures_set to contain
     MixedCuts, so that it knows which Cuts should be mixed together.
@@ -118,12 +124,16 @@ class PreMixedSourceSeparationDataset(SourceSeparationDataset):
     """
     A PyTorch Dataset for the source separation task.
     It's created from two CutSets - one provides the audio cuts for the sources, and the other one the audio cuts for
-    the signal mix. When queried for data samples, it returns a dict of: {
-        'sources': (N x T x F) tensor,
-        'mixture': (T x F) tensor,
-        'real_mask': (N x T x F) tensor,
-        'binary_mask': (T x F) tensor
-    }.
+    the signal mix. When queried for data samples, it returns a dict of:
+
+    .. code-block::
+
+        {
+            'sources': (N x T x F) tensor,
+            'mixture': (T x F) tensor,
+            'real_mask': (N x T x F) tensor,
+            'binary_mask': (T x F) tensor
+        }
 
     It expects both CutSets to return regular Cuts, meaning that the signals were mixed in the time domain.
     In contrast to DynamicallyMixedSourceSeparationDataset, no on-the-fly feature-domain-mixing is performed.

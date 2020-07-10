@@ -450,9 +450,9 @@ class FbankMixer:
         Add feature matrix of a new track into the mix.
         :param feats: A 2-d feature matrix to be mixed in.
         :param snr: Signal-to-noise ratio, assuming `feats` represents noise (positive SNR - lower `feats` energy,
-            negative SNR - higher `feats` energy)
+        negative SNR - higher `feats` energy)
         :param offset: How many seconds to shift `feats` in time. For mixing, the signal will be padded before
-            the start with low energy values.
+        the start with low energy values.
         :return:
         """
         assert offset >= 0.0, "Negative offset in mixing is not supported."

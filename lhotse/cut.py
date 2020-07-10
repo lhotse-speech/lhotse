@@ -541,7 +541,7 @@ class CutSet:
         Cuts longer than `desired_duration` will not be affected.
         Cuts will be padded to the right (i.e. after the signal).
         :param desired_duration: The cuts minimal duration after padding.
-            When not specified, we'll choose the duration of the longest cut in the CutSet.
+        When not specified, we'll choose the duration of the longest cut in the CutSet.
         :return: A padded CutSet.
         """
         if desired_duration is None:
@@ -560,11 +560,11 @@ class CutSet:
         Cuts shorter than `max_duration` will not be changed.
         :param max_duration: float, the maximum duration in seconds of a cut in the resulting manifest.
         :param offset_type: str, can be:
-            - 'start' => cuts are truncated from their start;
-            - 'end' => cuts are truncated from their end minus max_duration;
-            - 'random' => cuts are truncated randomly between their start and their end minus max_duration
+        - 'start' => cuts are truncated from their start;
+        - 'end' => cuts are truncated from their end minus max_duration;
+        - 'random' => cuts are truncated randomly between their start and their end minus max_duration
         :param keep_excessive_supervisions: bool. When a cut is truncated in the middle of a supervision segment,
-            should the supervision be kept.
+        should the supervision be kept.
         :param preserve_id: bool. Should the truncated cut keep the same ID or get a new, random one.
         :return: a new CutSet instance with truncated cuts.
         """
