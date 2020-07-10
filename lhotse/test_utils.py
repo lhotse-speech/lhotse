@@ -49,6 +49,7 @@ def dummy_features(unique_id: int) -> Features:
         type='fbank',
         num_frames=100,
         num_features=20,
+        sampling_rate=16000,
         storage_type='lilcom',
         storage_path='irrelevant'
     )

@@ -15,6 +15,7 @@ Seconds = float
 Decibels = float
 
 INT16MAX = 32768
+EPSILON = 1e-8
 
 
 def fix_random_seed(random_seed: int):

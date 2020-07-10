@@ -215,3 +215,24 @@ def append(
     cut_sets = [CutSet.from_yaml(path) for path in cut_manifests]
     appended_cut_set = CutSet.from_cuts(append_cuts(cuts) for cuts in zip(*cut_sets))
     appended_cut_set.to_yaml(output_cut_manifest)
+
+
+@cut.command()
+@click.argument('cut_manifest', type=click.Path(exists=True, dir_okay=False))
+@click.argument('output_cut_manifest', type=click.Path())
+@click.option('-d', '--duration', default=None, type=float,
+              help="Desired duration of cuts after padding. "
+                   "Cuts longer than this won't be affected. "
+                   "By default, pad to the longest cut duration found in CUT_MANIFEST.")
+def pad(
+        cut_manifest: Pathlike,
+        output_cut_manifest: Pathlike,
+        duration: Optional[float]
+):
+    """
+    Create a new CutSet by padding the cuts in CUT_MANIFEST. The cuts will be right-padded, i.e. the padding
+    is placed after the signal ends.
+    """
+    cut_set = CutSet.from_yaml(cut_manifest)
+    padded_cut_set = cut_set.pad(desired_duration=duration)
+    padded_cut_set.to_yaml(output_cut_manifest)

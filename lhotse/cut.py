@@ -1,8 +1,9 @@
 import random
+import warnings
 from dataclasses import dataclass
 from functools import reduce
-from math import ceil, floor
-from typing import Dict, List, Optional, Iterable, Union
+from math import ceil, floor, log
+from typing import Dict, List, Optional, Iterable, Union, Callable
 from uuid import uuid4
 
 import numpy as np
@@ -19,7 +20,8 @@ from lhotse.utils import (
     Pathlike,
     asdict_nonull,
     load_yaml,
-    save_to_yaml
+    save_to_yaml,
+    EPSILON
 )
 
 # One of the design principles for Cuts is a maximally "lazy" implementation, e.g. when overlaying/mixing Cuts,
@@ -29,7 +31,7 @@ from lhotse.utils import (
 
 # Helper "typedef" to artbitrary Cut type as they do not share a common base class.
 # The class names are strings here so that the Python interpreter resolves them after parsing the whole file.
-AnyCut = Union['Cut', 'MixedCut']
+AnyCut = Union['Cut', 'MixedCut', 'PaddingCut']
 
 
 @dataclass
@@ -66,12 +68,20 @@ class Cut:
         return self.start + self.duration
 
     @property
+    def frame_shift(self) -> Seconds:
+        return self.features.frame_shift
+
+    @property
     def num_frames(self) -> int:
-        return round(self.duration / self.features.frame_shift)
+        return round(self.duration / self.frame_shift)
 
     @property
     def num_features(self) -> int:
         return self.features.num_features
+
+    @property
+    def sampling_rate(self) -> int:
+        return self.features.sampling_rate
 
     def load_features(self, root_dir: Optional[Pathlike] = None) -> np.ndarray:
         """
@@ -141,26 +151,10 @@ class Cut:
         )
 
     def overlay(self, other: AnyCut, offset_other_by: Seconds = 0.0, snr: Optional[Decibels] = None) -> 'MixedCut':
-        """
-        Overlay, or mix, this Cut with the `other` Cut. Optionally the `other` Cut may be shifted by `offset_other_by`
-        Seconds and scaled down (positive SNR) or scaled up (negative SNR).
-        Returns a MixedCut, which only keeps the information about the mix; actual mixing is performed
-        during the call to `load_features`.
-        """
-        assert self.num_features == other.num_features, "Cannot overlay cuts with different feature dimensions."
-        assert offset_other_by <= self.duration, f"Cannot overlay cut '{other.id}' with offset {offset_other_by}, " \
-                                                 f"which is greater than cuts {self.id} duration of {self.duration}"
-        new_tracks = (
-            [MixTrack(cut=other, offset=offset_other_by, snr=snr)]
-            if isinstance(other, Cut)
-            else other.tracks
-        )
-        return MixedCut(
-            id=str(uuid4()),
-            tracks=[MixTrack(cut=self)] + new_tracks
-        )
+        """Refer to mix() documentation."""
+        return mix(self, other, offset=offset_other_by, snr=snr)
 
-    def append(self, other: 'Cut', snr: Optional[Decibels] = None) -> 'MixedCut':
+    def append(self, other: AnyCut, snr: Optional[Decibels] = None) -> 'MixedCut':
         """
         Append the `other` Cut after the current Cut. Conceptually the same as `overlay` but with an offset
         matching the current cuts length. Optionally scale down (positive SNR) or scale up (negative SNR)
@@ -169,6 +163,26 @@ class Cut:
         during the call to `load_features`.
         """
         return self.overlay(other=other, offset_other_by=self.duration, snr=snr)
+
+    def pad(self, desired_duration: Seconds) -> AnyCut:
+        f"""
+        Return a new MixedCut, padded to `desired_seconds` duration with low-energy values in each bin.
+        We use {EPSILON} for energies, or {log(EPSILON)} for log-energies.
+
+        :param desired_duration: The cut's minimal duration after padding.
+        :return: a padded MixedCut if desired_duration is greater than this cut's duration, otherwise self.
+        """
+        if desired_duration <= self.duration:
+            return self
+        padding_duration = desired_duration - self.duration
+        return self.append(PaddingCut(
+            id=str(uuid4()),
+            duration=padding_duration,
+            num_features=self.num_features,
+            num_frames=round(padding_duration / self.frame_shift),
+            sampling_rate=self.features.sampling_rate,
+            use_log_energy=self.features.type in ('fbank', 'mfcc')
+        ))
 
     @staticmethod
     def from_dict(data: dict) -> 'Cut':
@@ -182,19 +196,112 @@ class Cut:
 
 
 @dataclass
+class PaddingCut:
+    f"""
+    This represents a cut filled with zeroes in the time domain, or low energy/log-energy values in the
+    frequency domain. It's used to make training samples evenly sized (same duration/number of frames).
+    
+    We use {EPSILON} for energies and {log(EPSILON)} for log-energies.
+    """
+    id: str
+    duration: Seconds
+    num_frames: int
+    num_features: int
+
+    sampling_rate: int
+    use_log_energy: bool
+
+    @property
+    def supervisions(self):
+        return []
+
+    @property
+    def frame_shift(self):
+        return round(self.duration / self.num_frames, ndigits=3)
+
+    # noinspection PyUnusedLocal
+    def load_features(self, *args, **kwargs) -> np.ndarray:
+        value = np.log(EPSILON) if self.use_log_energy else EPSILON
+        return np.ones((self.num_frames, self.num_features)) * value
+
+    # noinspection PyUnusedLocal
+    def load_audio(self, *args, **kwargs) -> np.ndarray:
+        return np.zeros((1, round(self.duration * self.sampling_rate)))
+
+    # noinspection PyUnusedLocal
+    def truncate(
+            self,
+            *,
+            offset: Seconds = 0.0,
+            duration: Optional[Seconds] = None,
+            keep_excessive_supervisions: bool = True,
+            preserve_id: bool = False,
+    ) -> 'PaddingCut':
+        new_duration = self.duration - offset if duration is None else duration
+        assert new_duration > 0.0
+        return PaddingCut(
+            id=self.id if preserve_id else str(uuid4()),
+            duration=new_duration,
+            num_frames=round(new_duration / self.frame_shift),
+            num_features=self.num_features,
+            use_log_energy=self.use_log_energy,
+            sampling_rate=self.sampling_rate
+        )
+
+    def overlay(
+            self,
+            other: AnyCut,
+            offset_other_by: Seconds = 0.0,
+            snr: Optional[Decibels] = None
+    ) -> 'MixedCut':
+        """Refer to mix() documentation."""
+        return mix(self, other, offset=offset_other_by, snr=snr)
+
+    def append(self, other: AnyCut, snr: Optional[Decibels] = None) -> 'MixedCut':
+        return self.overlay(other=other, snr=snr)
+
+    def pad(self, desired_duration: Seconds) -> 'PaddingCut':
+        """
+        Create a new PaddingCut with `desired_duration` when its longer than this Cuts duration.
+        Helper function used in batch cut padding.
+
+        :param desired_duration: The cuts minimal duration after padding.
+        :return: self or a new PaddingCut, depending on `desired_duration`.
+        """
+        if desired_duration <= self.duration:
+            return self
+        return PaddingCut(
+            id=str(uuid4()),
+            duration=desired_duration,
+            num_features=self.num_features,
+            num_frames=round(desired_duration / self.frame_shift),
+            sampling_rate=self.sampling_rate,
+            use_log_energy=self.use_log_energy
+        )
+
+    @staticmethod
+    def from_dict(data: dict) -> 'PaddingCut':
+        return PaddingCut(**data)
+
+
+@dataclass
 class MixTrack:
     """
     Represents a single track in a mix of Cuts. Points to a specific Cut and holds information on
     how to mix it with other Cuts, relative to the first track in a mix.
     """
-    cut: Cut
+    cut: Union[Cut, PaddingCut]
     offset: Seconds = 0.0
     snr: Optional[Decibels] = None
 
     @staticmethod
     def from_dict(data: dict):
         raw_cut = data.pop('cut')
-        return MixTrack(cut=Cut.from_dict(raw_cut), **data)
+        try:
+            cut = Cut.from_dict(raw_cut)
+        except:
+            cut = PaddingCut.from_dict(raw_cut)
+        return MixTrack(cut, **data)
 
 
 @dataclass
@@ -228,11 +335,15 @@ class MixedCut:
 
     @property
     def num_frames(self) -> int:
-        return round(self.duration / self.tracks[0].cut.features.frame_shift)
+        return round(self.duration / self.tracks[0].cut.frame_shift)
 
     @property
     def num_features(self) -> int:
         return self.tracks[0].cut.num_features
+
+    @property
+    def features_type(self) -> str:
+        return self.tracks[0].cut.features.type
 
     def overlay(
             self,
@@ -240,24 +351,8 @@ class MixedCut:
             offset_other_by: Seconds = 0.0,
             snr: Optional[Decibels] = None
     ) -> 'MixedCut':
-        """
-        Overlay, or mix, this Cut with the `other` Cut. Optionally the `other` Cut may be shifted by `offset_other_by`
-        Seconds and scaled down (positive SNR) or scaled up (negative SNR).
-        Returns a MixedCut, which only keeps the information about the mix; actual mixing is performed
-        during the call to `load_features`.
-        """
-        assert self.num_features == other.num_features, "Cannot overlay cuts with different feature dimensions."
-        assert offset_other_by <= self.duration, f"Cannot overlay cut '{other.id}' with offset {offset_other_by}, " \
-                                                 f"which is greater than cuts {self.id} duration of {self.duration}"
-        new_tracks = (
-            [MixTrack(cut=other, offset=offset_other_by, snr=snr)]
-            if isinstance(other, Cut)
-            else other.tracks
-        )
-        return MixedCut(
-            id=str(uuid4()),
-            tracks=self.tracks + new_tracks
-        )
+        """Refer to mix() documentation."""
+        return mix(self, other, offset=offset_other_by, snr=snr)
 
     def append(self, other: AnyCut, snr: Optional[Decibels] = None) -> 'MixedCut':
         """
@@ -341,10 +436,33 @@ class MixedCut:
             )
         return MixedCut(id=str(uuid4()), tracks=new_tracks)
 
+    def pad(self, desired_duration: Seconds) -> AnyCut:
+        f"""
+        Return a new MixedCut, padded to `desired_seconds` duration with low-energy values in each bin.
+        We use {EPSILON} for energies, or {log(EPSILON)} for log-energies.
+
+        :param desired_duration: The cut's minimal duration after padding.
+        :return: a padded MixedCut if desired_duration is greater than this cut's duration, otherwise self.
+        """
+        if desired_duration <= self.duration:
+            return self
+        padding_duration = desired_duration - self.duration
+        return self.append(PaddingCut(
+            id=str(uuid4()),
+            duration=padding_duration,
+            num_features=self.num_features,
+            # The num_frames and sampling_rate fields are tricky, because it is possible to create a MixedCut
+            # from Cuts that have different sampling rates and frame shifts. In that case, we are assuming
+            # that we should use the values from the reference cut, i.e. the first one in the mix.
+            num_frames=round(padding_duration / self.tracks[0].cut.frame_shift),
+            sampling_rate=self.tracks[0].cut.sampling_rate,
+            use_log_energy=self.features_type in ('fbank', 'mfcc')
+        ))
+
     def load_features(self, root_dir: Optional[Pathlike] = None) -> np.ndarray:
         """Loads the features of the source cuts and overlays them on-the-fly."""
         cuts = [track.cut for track in self.tracks]
-        frame_shift = cuts[0].features.frame_shift
+        frame_shift = cuts[0].frame_shift
         # TODO: check if the 'pad_shorter' call is still necessary, it shouldn't be
         # feats = pad_shorter(*feats)
         mixer = FbankMixer(
@@ -358,6 +476,8 @@ class MixedCut:
                 offset=track.offset
             )
         return mixer.mixed_feats
+
+    # TODO: load_audio()
 
     @staticmethod
     def from_dict(data: dict) -> 'MixedCut':
@@ -402,6 +522,31 @@ class CutSet:
     def to_yaml(self, path: Pathlike):
         data = [{**asdict_nonull(cut), 'type': type(cut).__name__} for cut in self]
         save_to_yaml(data, path)
+
+    def filter(self, predicate: Callable[[AnyCut], bool]) -> 'CutSet':
+        """
+        Return a new CutSet with the Cuts that satisfy the `predicate`.
+
+        :param predicate: a function that takes a cut as an argument and returns bool.
+        :return: a filtered CutSet.
+        """
+        return CutSet.from_cuts(cut for cut in self if predicate(cut))
+
+    def pad(
+            self,
+            desired_duration: Seconds = None,
+    ) -> 'CutSet':
+        """
+        Return a new CutSet with Cuts padded to `desired_duration` in seconds.
+        Cuts longer than `desired_duration` will not be affected.
+        Cuts will be padded to the right (i.e. after the signal).
+        :param desired_duration: The cuts minimal duration after padding.
+            When not specified, we'll choose the duration of the longest cut in the CutSet.
+        :return: A padded CutSet.
+        """
+        if desired_duration is None:
+            desired_duration = max(cut.duration for cut in self)
+        return CutSet.from_cuts(cut.pad(desired_duration=desired_duration) for cut in self)
 
     def truncate(
             self,
@@ -551,13 +696,66 @@ def make_cuts_from_supervisions(supervision_set: SupervisionSet, feature_set: Fe
 
 
 def mix(
-        left_cut: AnyCut,
-        right_cut: AnyCut,
-        offset_right_by: Seconds = 0,
+        reference_cut: AnyCut,
+        mixed_in_cut: AnyCut,
+        offset: Seconds = 0,
         snr: Optional[Decibels] = None
 ) -> MixedCut:
-    """Helper method for functional-style mixing of Cuts."""
-    return left_cut.overlay(right_cut, offset_other_by=offset_right_by, snr=snr)
+    """
+    Overlay, or mix, two cuts. Optionally the `mixed_in_cut` may be shifted by `offset` seconds
+    and scaled down (positive SNR) or scaled up (negative SNR).
+    Returns a MixedCut, which contains both cuts and the mix information.
+    The actual feature mixing is performed during the call to ``MixedCut.load_features()``.
+
+    :param reference_cut: The reference cut for the mix - offset and snr are specified w.r.t this cut.
+    :param mixed_in_cut: The mixed-in cut - it will be offset and rescaled to match the offset and snr parameters.
+    :param offset: How many seconds to shift the ``mixed_in_cut`` w.r.t. the ``reference_cut``.
+    :param snr: Desired SNR of the `right_cut` w.r.t. the `left_cut` in the mix.
+    :return: A MixedCut instance.
+    """
+    if any(isinstance(cut, PaddingCut) for cut in (reference_cut, mixed_in_cut)) and snr is not None:
+        warnings.warn('You are mixing cuts to a padding cut with a specified SNR - '
+                      'the resulting energies would be extremely low or high. '
+                      'We are setting snr to None, so that the original signal energies will be retained instead.')
+        snr = None
+
+    assert reference_cut.num_features == mixed_in_cut.num_features, "Cannot overlay cuts with different feature dimensions."
+    assert offset <= reference_cut.duration, f"Cannot overlay cut '{mixed_in_cut.id}' with offset {offset}," \
+                                             f" which is greater than cuts {reference_cut.id} duration" \
+                                             f" of {reference_cut.duration}"
+    # When the left_cut is a MixedCut, take its existing tracks, otherwise create a new track.
+    old_tracks = (
+        reference_cut.tracks
+        if isinstance(reference_cut, MixedCut)
+        else [MixTrack(cut=reference_cut)]
+    )
+    # When the right_cut is a MixedCut, adapt its existing tracks with the new offset and snr,
+    # otherwise create a new track.
+    new_tracks = (
+        [
+            MixTrack(
+                cut=track.cut,
+                offset=track.offset + offset,
+                snr=(
+                    # When no new SNR is specified, retain whatever was there in the first place.
+                    track.snr if snr is None
+                    # When new SNR is specified but none was specified before, assign the new SNR value.
+                    else snr if track.snr is None
+                    # When both new and previous SNR were specified, assign their sum,
+                    # as the SNR for each track is defined with regard to the first track energy.
+                    else track.snr + snr if snr is not None and track is not None
+                    # When no SNR was specified whatsoever, use none.
+                    else None
+                )
+            ) for track in mixed_in_cut.tracks
+        ]
+        if isinstance(mixed_in_cut, MixedCut)
+        else [MixTrack(cut=mixed_in_cut, offset=offset, snr=snr)]
+    )
+    return MixedCut(
+        id=str(uuid4()),
+        tracks=old_tracks + new_tracks
+    )
 
 
 def append(

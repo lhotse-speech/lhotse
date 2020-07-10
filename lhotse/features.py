@@ -147,6 +147,7 @@ class Features:
     type: str
     num_frames: int
     num_features: int
+    sampling_rate: int
 
     # Parameters related to storage - they define how to load the feature matrix.
     storage_type: str  # e.g. 'lilcom', 'numpy'
@@ -401,6 +402,7 @@ class FeatureSetBuilder:
                 type=self.feature_extractor.type,
                 num_frames=feats.shape[0],
                 num_features=feats.shape[1],
+                sampling_rate=recording.sampling_rate,
                 storage_type='lilcom' if compressed else 'numpy',
                 storage_path=str(output_features_path)
             ))

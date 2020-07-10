@@ -60,6 +60,7 @@ def test_feature_set_serialization():
                 type='fbank',
                 num_frames=2000,
                 num_features=20,
+                sampling_rate=16000,
                 storage_type='lilcom',
                 storage_path='/irrelevant/path.llc'
             )

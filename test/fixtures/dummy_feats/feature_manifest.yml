@@ -31,6 +31,7 @@ features:
     num_features: 23
     num_frames: 50
     recording_id: recording-1
+    sampling_rate: 16000
     start: 0.0
     storage_path: test/fixtures/dummy_feats/storage/89739de9-308c-4487-9fa5-1c690d44e718.llc
     storage_type: lilcom
@@ -40,6 +41,7 @@ features:
     num_features: 23
     num_frames: 50
     recording_id: recording-1
+    sampling_rate: 16000
     start: 0.0
     storage_path: test/fixtures/dummy_feats/storage/25959652-8816-4810-a88a-0b022d6b9b6d.llc
     storage_type: lilcom
@@ -49,6 +51,7 @@ features:
     num_features: 23
     num_frames: 100
     recording_id: recording-2
+    sampling_rate: 16000
     start: 0.0
     storage_path: test/fixtures/dummy_feats/storage/dbf9a0ec-f79d-4eb8-ae83-143a6d5de64d.llc
     storage_type: lilcom
@@ -58,6 +61,7 @@ features:
     num_features: 23
     num_frames: 100
     recording_id: recording-2
+    sampling_rate: 16000
     start: 0.0
     storage_path: test/fixtures/dummy_feats/storage/d3466ce9-d604-48c3-8c1f-26480aaf07d1.llc
     storage_type: lilcom
