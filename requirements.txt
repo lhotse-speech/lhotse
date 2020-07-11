@@ -1,13 +1,10 @@
-pytest
-pyyaml
-numpy
-numba==0.48.0
+pyyaml>=5.3.1
+numpy>=1.18.1
+numba==0.48.0  # Fix to librosa not respecting something deprecated
 librosa==0.7.2
-click
+click>=7.1.1
 lilcom>=1.1.0
-torch>=1.5
-torchaudio>=0.5
+torch>=1.5.1
+torchaudio>=0.5.1
 pandas>=1.0.3
-cytoolz
-matplotlib
-flake8
+cytoolz>=0.10.1
