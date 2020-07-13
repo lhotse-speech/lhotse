@@ -9,7 +9,7 @@ from uuid import uuid4
 import numpy as np
 
 from lhotse.audio import RecordingSet
-from lhotse.features import Features, FeatureSet, FbankMixer
+from lhotse.features import Features, FeatureSet, FeatureMixer, create_default_feature_extractor
 from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import (
     Seconds,
@@ -463,9 +463,10 @@ class MixedCut:
         """Loads the features of the source cuts and overlays them on-the-fly."""
         cuts = [track.cut for track in self.tracks]
         frame_shift = cuts[0].frame_shift
-        # TODO: check if the 'pad_shorter' call is still necessary, it shouldn't be
-        # feats = pad_shorter(*feats)
-        mixer = FbankMixer(
+        non_padding_cut = [c for c in cuts if not isinstance(c, PaddingCut)][0]
+        feature_extractor = create_default_feature_extractor(non_padding_cut.features.type)
+        mixer = FeatureMixer(
+            feature_extractor=feature_extractor,
             base_feats=cuts[0].load_features(root_dir=root_dir),
             frame_shift=frame_shift,
         )

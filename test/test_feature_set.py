@@ -3,11 +3,21 @@ from tempfile import NamedTemporaryFile, TemporaryDirectory
 from typing import Optional
 
 import numpy as np
+import pytest
 import torchaudio
 from pytest import mark, raises
 
 from lhotse.audio import RecordingSet
-from lhotse.features import FeatureSet, FeatureExtractor, Features, FbankMixer, FeatureSetBuilder
+from lhotse.features import (
+    FeatureSet,
+    Features,
+    FeatureMixer,
+    FeatureSetBuilder,
+    create_default_feature_extractor,
+    Fbank,
+    Mfcc,
+    Spectrogram
+)
 from lhotse.test_utils import DummyManifest
 from lhotse.utils import Seconds, time_diff_to_num_frames
 
@@ -21,36 +31,28 @@ some_augmentation = None
         ('mfcc', does_not_raise()),
         ('fbank', does_not_raise()),
         ('spectrogram', does_not_raise()),
-        ('pitch', raises(ValueError))
+        ('pitch', raises(Exception))
     ]
 )
 def test_feature_extractor(feature_type, exception_expectation):
     # For now, just test that it runs
     # TODO: test that the output is similar to Kaldi
     with exception_expectation:
-        fe = FeatureExtractor(type=feature_type)
+        fe = create_default_feature_extractor(feature_type)
         samples, sr = torchaudio.load('test/fixtures/libri/libri-1088-134315-0000.wav')
         fe.extract(samples=samples, sampling_rate=sr)
 
 
-def test_feature_extractor_to_dict_no_defaults():
-    fe = FeatureExtractor()
-    fe.mfcc_fbank_common_config.num_mel_bins = 80
-    fe_dict = fe.to_dict()
-    assert fe_dict == {'type': 'fbank', 'mfcc_fbank_common_config': {'num_mel_bins': 80}}
-
-
 def test_feature_extractor_serialization():
-    fe = FeatureExtractor()
+    fe = Fbank()
     with NamedTemporaryFile() as f:
         fe.to_yaml(f.name)
-        fe_deserialized = FeatureExtractor.from_yaml(f.name)
-    assert fe_deserialized == fe
+        fe_deserialized = Fbank.from_yaml(f.name)
+    assert fe_deserialized.config == fe.config
 
 
 def test_feature_set_serialization():
     feature_set = FeatureSet(
-        feature_extractor=FeatureExtractor(),
         features=[
             Features(
                 recording_id='irrelevant',
@@ -102,8 +104,6 @@ def test_load_features(
         assert len(features.shape) == 2
         # expect time as the first dimension
         assert features.shape[0] == expected_num_frames
-        # expect frequency as the second dimension
-        assert feature_set.feature_extractor.mfcc_fbank_common_config.num_mel_bins == features.shape[1]
 
 
 def test_load_features_with_default_arguments():
@@ -114,7 +114,7 @@ def test_load_features_with_default_arguments():
 def test_feature_set_builder():
     audio_set = RecordingSet.from_yaml('test/fixtures/audio.yml')
     with TemporaryDirectory() as output_dir:
-        builder = FeatureSetBuilder(feature_extractor=FeatureExtractor(), output_dir=output_dir)
+        builder = FeatureSetBuilder(feature_extractor=Fbank(), output_dir=output_dir)
         feature_set = builder.process_and_store_recordings(recordings=audio_set)
 
     assert len(feature_set) == 4
@@ -128,7 +128,7 @@ def test_feature_set_builder():
         # assert that duration is always a multiple of frame_shift
         assert features.num_frames == round(features.duration / features.frame_shift)
         # assert that num_features is preserved
-        assert features.num_features == builder.feature_extractor.mfcc_fbank_common_config.num_mel_bins
+        assert features.num_features == builder.feature_extractor.config.num_mel_bins
         # assert that lilcom is the default storate type
         assert features.storage_type == 'lilcom'
 
@@ -170,22 +170,26 @@ def test_add_feature_sets():
     assert combined == expected
 
 
-def test_overlay_fbank():
+@pytest.mark.parametrize(
+    'feature_extractor',
+    [Fbank(), Mfcc(), Spectrogram()]
+)
+def test_mixer(feature_extractor):
     # Treat it more like a test of "it runs" rather than "it works"
     t = np.linspace(0, 1, 8000, dtype=np.float32)
     x1 = np.sin(440.0 * t).reshape(1, -1)
     x2 = np.sin(55.0 * t).reshape(1, -1)
 
-    feature_extractor = FeatureExtractor(type='fbank')
-    f1 = feature_extractor.extract(x1, 8000).numpy()
-    f2 = feature_extractor.extract(x2, 8000).numpy()
-    mixer = FbankMixer(
+    f1 = feature_extractor.extract(x1, 8000)
+    f2 = feature_extractor.extract(x2, 8000)
+    mixer = FeatureMixer(
+        feature_extractor=feature_extractor,
         base_feats=f1,
-        frame_shift=feature_extractor.spectrogram_config.frame_shift,
+        frame_shift=feature_extractor.frame_shift,
     )
     mixer.add_to_mix(f2)
 
     fmix_feat = mixer.mixed_feats
-    fmix_time = feature_extractor.extract(x1 + x2, 8000).numpy()
+    fmix_time = feature_extractor.extract(x1 + x2, 8000)
 
     np.testing.assert_almost_equal(fmix_feat, fmix_time, decimal=0)

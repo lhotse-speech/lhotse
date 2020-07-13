@@ -1,20 +1,22 @@
 """
 This file is just a rough sketch for now.
 """
+from abc import ABCMeta, abstractmethod
 from concurrent.futures.process import ProcessPoolExecutor
-from dataclasses import dataclass, field, asdict
+from dataclasses import dataclass, field, asdict, is_dataclass
 from functools import partial
 from itertools import chain
 from math import isclose
 from pathlib import Path
-from typing import Union, List, Iterable, Dict, Optional, Tuple
+from typing import List, Iterable, Optional, Any
 from uuid import uuid4
 
 import lilcom
 import numpy as np
 import torch
 import torchaudio
-import yaml
+from scipy.fft import idct, dct
+from scipy.signal import stft
 
 from lhotse.audio import Recording
 from lhotse.supervision import SupervisionSegment
@@ -39,7 +41,48 @@ class SpectrogramConfig:
 
 
 @dataclass
-class MfccFbankCommonConfig:
+class MfccConfig:
+    # Spectogram-related part
+    dither: float = 0.0
+    window_type: str = "povey"
+    # Note that frame_length and frame_shift will be converted to milliseconds before torchaudio/Kaldi sees them
+    frame_length: Seconds = 0.025
+    frame_shift: Seconds = 0.01
+    remove_dc_offset: bool = True
+    round_to_power_of_two: bool = True
+    energy_floor: float = 0.1
+    min_duration: float = 0.0
+    preemphasis_coefficient: float = 0.97
+    raw_energy: bool = True
+
+    # MFCC-related part
+    low_freq: float = 20.0
+    high_freq: float = 0.0
+    num_mel_bins: int = 23
+    use_energy: bool = False
+    vtln_low: float = 100.0
+    vtln_high: float = -500.0
+    vtln_warp: float = 1.0
+    cepstral_lifter: float = 22.0
+    num_ceps: int = 13
+
+
+@dataclass
+class FbankConfig:
+    # Spectogram-related part
+    dither: float = 0.0
+    window_type: str = "povey"
+    # Note that frame_length and frame_shift will be converted to milliseconds before torchaudio/Kaldi sees them
+    frame_length: Seconds = 0.025
+    frame_shift: Seconds = 0.01
+    remove_dc_offset: bool = True
+    round_to_power_of_two: bool = True
+    energy_floor: float = 0.1
+    min_duration: float = 0.0
+    preemphasis_coefficient: float = 0.97
+    raw_energy: bool = True
+
+    # Fbank-related part
     low_freq: float = 20.0
     high_freq: float = 0.0
     num_mel_bins: int = 23
@@ -49,85 +92,143 @@ class MfccFbankCommonConfig:
     vtln_warp: float = 1.0
 
 
-@dataclass
-class FbankSpecificConfig:
-    use_log_fbank: bool = True
+class FeatureExtractor(metaclass=ABCMeta):
+    name = None
+    config_type = None
 
+    def __init__(self, config: Optional[Any] = None):
+        if config is None:
+            config = self.config_type()
+        assert is_dataclass(config), "The feature configuration object must be a dataclass."
+        self.config = config
 
-@dataclass
-class MfccSpecificConfig:
-    cepstral_lifter: float = 22.0
-    num_ceps: int = 13
+    @abstractmethod
+    def extract(self, samples: np.ndarray, sampling_rate: int) -> np.ndarray: ...
 
-
-@dataclass
-class FeatureExtractor:
-    type: str = "fbank"  # supported: mfcc/fbank/spectrogram
-    spectrogram_config: SpectrogramConfig = field(default_factory=lambda: SpectrogramConfig())
-    mfcc_fbank_common_config: MfccFbankCommonConfig = field(default_factory=lambda: MfccFbankCommonConfig())
-    fbank_config: FbankSpecificConfig = field(default_factory=lambda: FbankSpecificConfig())
-    mfcc_config: MfccSpecificConfig = field(default_factory=lambda: MfccSpecificConfig())
-
-    def __post_init__(self):
-        if self.type not in ('spectrogram', 'mfcc', 'fbank'):
-            raise ValueError(f"Unsupported feature type: '{self.type}'")
+    @property
+    @abstractmethod
+    def frame_shift(self) -> Seconds: ...
 
     @staticmethod
-    def from_yaml(path: Pathlike) -> 'FeatureExtractor':
-        with open(path) as f:
-            return FeatureExtractor.from_dict(yaml.safe_load(f))
+    def mix(features_a: np.ndarray, features_b: np.ndarray, gain_b: float) -> np.ndarray:
+        raise ValueError(f'The feature extractor\'s "mix" operation is undefined.')
 
     @staticmethod
-    def from_dict(data: Dict) -> 'FeatureExtractor':
-        return FeatureExtractor(
-            type=data['type'],
-            spectrogram_config=SpectrogramConfig(**data.get('spectrogram_config', {})),
-            mfcc_fbank_common_config=MfccFbankCommonConfig(**data.get('mfcc_fbank_common_config', {})),
-            fbank_config=FbankSpecificConfig(**data.get('fbank_config', {})),
-            mfcc_config=MfccSpecificConfig(**data.get('mfcc_config', {}))
-        )
+    def compute_energy(features: np.ndarray) -> float:
+        raise ValueError(f'The feature extractor\'s "compute_energy" is undefined.')
 
-    def to_yaml(self, path: Pathlike, include_defaults: bool = False):
-        with open(path, 'w') as f:
-            yaml.safe_dump(self.to_dict(include_defaults=include_defaults), stream=f)
+    @classmethod
+    def from_dict(cls, data: dict) -> 'FeatureExtractor':
+        del data['feature_type']
+        config = cls.config_type(**data)
+        return cls(config)
 
-    def to_dict(self, include_defaults: bool = False) -> dict:
-        config = asdict(self)
-        if include_defaults:
-            return config
-        default_config = FeatureExtractor().to_dict(include_defaults=True)
-        for key, subconfig in default_config.items():
-            if key == 'type':
-                continue  # we always want to preserve features type field
-            for subkey, value in subconfig.items():
-                if config[key][subkey] == value:
-                    del config[key][subkey]
-            if not config[key]:
-                del config[key]
-        return config
+    @classmethod
+    def from_yaml(cls, path: Pathlike) -> 'FeatureExtractor':
+        return cls.from_dict(load_yaml(path))
 
-    def extract(self, samples: Union[np.ndarray, torch.Tensor], sampling_rate: int):
-        params = asdict(self.spectrogram_config)
-        params.update({"sample_frequency": sampling_rate})
+    def to_yaml(self, path: Pathlike):
+        data = asdict(self.config)
+        data['feature_type'] = self.name  # Insert the typename for config readability
+        save_to_yaml(data, path=path)
+
+
+FEATURE_EXTRACTORS = {}
+
+
+def create_default_feature_extractor(name: str) -> 'Optional[FeatureExtractor]':
+    return FEATURE_EXTRACTORS[name]()
+
+
+def register_extractor(cls):
+    FEATURE_EXTRACTORS[cls.name] = cls
+    return cls
+
+
+@dataclass
+class ExampleFeatureExtractorConfig:
+    frame_shift: Seconds = 0.01
+
+
+class ExampleFeatureExtractor(FeatureExtractor):
+    name = 'example-feature-extractor'
+    config_type = ExampleFeatureExtractorConfig
+
+    def extract(self, samples: np.ndarray, sampling_rate: int) -> np.ndarray:
+        f, t, Zxx = stft(samples, sampling_rate, noverlap=round(self.frame_shift * sampling_rate))
+        return np.abs(Zxx)
+
+    @property
+    def frame_shift(self) -> Seconds:
+        return self.config.frame_shift
+
+
+class TorchaudioFeatureExtractor(FeatureExtractor):
+    feature_fn = None
+
+    def extract(self, samples: np.ndarray, sampling_rate: int) -> np.ndarray:
+        params = asdict(self.config)
+        params.update({
+            "sample_frequency": sampling_rate,
+            "snip_edges": False
+        })
         params['frame_shift'] *= 1000.0
         params['frame_length'] *= 1000.0
-        params['snip_edges'] = False
-        feature_fn = None
-        if self.type == 'spectrogram':
-            feature_fn = torchaudio.compliance.kaldi.spectrogram
-        else:
-            params.update(asdict(self.mfcc_fbank_common_config))
-            if self.type == 'mfcc':
-                params.update(asdict(self.mfcc_config))
-                feature_fn = torchaudio.compliance.kaldi.mfcc
-            elif self.type == 'fbank':
-                params.update(asdict(self.fbank_config))
-                feature_fn = torchaudio.compliance.kaldi.fbank
-
         if not isinstance(samples, torch.Tensor):
             samples = torch.from_numpy(samples)
+        features = self.feature_fn(samples, **params)
+        return features.numpy()
 
-        return feature_fn(waveform=samples, **params)
+    @property
+    def frame_shift(self) -> Seconds:
+        return self.config.frame_shift
+
+
+@register_extractor
+class Mfcc(TorchaudioFeatureExtractor):
+    name = 'mfcc'
+    config_type = MfccConfig
+    feature_fn = staticmethod(torchaudio.compliance.kaldi.mfcc)
+
+    def mix(self, features_a: np.ndarray, features_b: np.ndarray, gain_b: float) -> np.ndarray:
+        def to_energies(x):
+            return np.exp(idct(x, norm='ortho'))
+
+        return dct(np.log(to_energies(features_a) + gain_b * to_energies(features_b)), norm='ortho')
+
+    def compute_energy(self, features: np.ndarray) -> float:
+        fbank = idct(features, norm='ortho')
+        return float(np.sum(np.exp(fbank)))
+
+
+@register_extractor
+class Fbank(TorchaudioFeatureExtractor):
+    name = 'fbank'
+    config_type = FbankConfig
+    feature_fn = staticmethod(torchaudio.compliance.kaldi.fbank)
+
+    @staticmethod
+    def mix(features_a: np.ndarray, features_b: np.ndarray, gain_b: float) -> np.ndarray:
+        return np.log(np.exp(features_a) + gain_b * np.exp(features_b))
+
+    @staticmethod
+    def compute_energy(features: np.ndarray) -> float:
+        return float(np.sum(np.exp(features)))
+
+
+@register_extractor
+class Spectrogram(TorchaudioFeatureExtractor):
+    name = 'spectrogram'
+    config_type = SpectrogramConfig
+    feature_fn = staticmethod(torchaudio.compliance.kaldi.spectrogram)
+
+    @staticmethod
+    def mix(features_a: np.ndarray, features_b: np.ndarray, gain_b: float) -> np.ndarray:
+        return features_a + gain_b * features_b
+
+    @staticmethod
+    def compute_energy(features: np.ndarray) -> float:
+        return float(np.sum(features))
 
 
 @dataclass(order=True)
@@ -210,19 +311,22 @@ class FeatureSet:
     """
     # TODO(pzelasko): we might need some efficient indexing structure,
     #                 e.g. Dict[<recording-id>, Dict[<channel-id>, IntervalTree]] (pip install intervaltree)
-    feature_extractor: FeatureExtractor
     features: List[Features] = field(default_factory=lambda: list())
 
     def __post_init__(self):
         self.features = sorted(self.features)
 
     @staticmethod
+    def from_features(features: Iterable[Features]) -> 'FeatureSet':
+        return FeatureSet(list(features))  # just for consistency with other *Sets
+
+    @staticmethod
+    def from_dict(data: dict) -> 'FeatureSet':
+        return FeatureSet(features=[Features.from_dict(feature_data) for feature_data in data['features']])
+
+    @staticmethod
     def from_yaml(path: Pathlike) -> 'FeatureSet':
-        data = load_yaml(path)
-        return FeatureSet(
-            feature_extractor=FeatureExtractor.from_dict(data['feature_extractor']),
-            features=[Features(**feature_data) for feature_data in data['features']],
-        )
+        return FeatureSet.from_dict(load_yaml(path))
 
     def to_yaml(self, path: Pathlike):
         save_to_yaml(asdict(self), path)
@@ -307,9 +411,7 @@ class FeatureSet:
         return len(self.features)
 
     def __add__(self, other: 'FeatureSet') -> 'FeatureSet':
-        assert self.feature_extractor == other.feature_extractor
-        # TODO: when validating, assert that there is no overlap between regions which have extracted features
-        return FeatureSet(feature_extractor=self.feature_extractor, features=self.features + other.features)
+        return FeatureSet(features=self.features + other.features)
 
 
 class FeatureSetBuilder:
@@ -355,10 +457,7 @@ class FeatureSetBuilder:
         else:
             with ProcessPoolExecutor(num_jobs) as ex:
                 feature_infos = list(chain.from_iterable(ex.map(do_work, recordings)))
-        feature_set = FeatureSet(
-            feature_extractor=self.feature_extractor,
-            features=feature_infos
-        )
+        feature_set = FeatureSet.from_features(feature_infos)
         feature_set.to_yaml(self.output_dir / 'feature_manifest.yml.gz')
         return feature_set
 
@@ -375,13 +474,10 @@ class FeatureSetBuilder:
                     self.output_dir / 'storage' / str(uuid4())
             ).with_suffix('.llc' if compressed else '.npy')
 
-            samples = torch.from_numpy(recording.load_audio(channels=channel, root_dir=self.root_dir))
+            samples = recording.load_audio(channels=channel, root_dir=self.root_dir)
 
             # TODO: use augmentation manifest here
-            feats = self.feature_extractor.extract(
-                samples=samples,
-                sampling_rate=recording.sampling_rate
-            ).numpy()
+            feats = self.feature_extractor.extract(samples=samples, sampling_rate=recording.sampling_rate)
 
             if compressed:
                 # TODO: use segmentation manifest here
@@ -398,8 +494,8 @@ class FeatureSetBuilder:
                 start=0.0,
                 # We simplify the relationship between num_frames and duration - we guarantee that
                 #  the duration is always num_frames * frame_shift
-                duration=feats.shape[0] * self.feature_extractor.spectrogram_config.frame_shift,
-                type=self.feature_extractor.type,
+                duration=feats.shape[0] * self.feature_extractor.frame_shift,
+                type=self.feature_extractor.name,
                 num_frames=feats.shape[0],
                 num_features=feats.shape[1],
                 sampling_rate=recording.sampling_rate,
@@ -409,7 +505,7 @@ class FeatureSetBuilder:
         return results
 
 
-class FbankMixer:
+class FeatureMixer:
     """
     Utility class to mix multiple log-mel energy feature matrices into a single one.
     It pads the signals with low energy values to account for differing lengths and offsets.
@@ -417,6 +513,7 @@ class FbankMixer:
 
     def __init__(
             self,
+            feature_extractor: FeatureExtractor,
             base_feats: np.ndarray,
             frame_shift: Seconds,
             log_energy_floor: float = -1000.0
@@ -428,12 +525,13 @@ class FbankMixer:
         :param frame_length: Required to correctly compute offset and padding during the mix.
         :param log_energy_floor: The value used to pad the shorter features during the mix.
         """
+        self.feature_extractor = feature_extractor
         # The mixing output will be available in self.mixed_feats
         self.mixed_feats = base_feats
         # Keep a pre-computed energy value of the features that we initialize the Mixer with;
         # it is required to compute gain ratios that satisfy SNR during the mix.
-        self.reference_energy = fbank_energy(base_feats)
         self.frame_shift = frame_shift
+        self.reference_energy = feature_extractor.compute_energy(base_feats)
         self.log_energy_floor = log_energy_floor
 
     @property
@@ -493,43 +591,13 @@ class FbankMixer:
         # When SNR is requested, find what gain is needed to satisfy the SNR
         gain = 1.0
         if snr is not None:
-            # TODO: The SNR stuff here might be tricky. For prototyping assume the following:
-            #  - always dealing with log mel filterbank feats
-            #  - total signal energy can be approximated by summing individual bands energies
-            #    (assumes no spectral leakage...) across time and frequencies
-            #  - achieve the final SNR by determining the signal energy ratio and then scaling
-            #    the signals to satisfy requested SNR
-
             # Compute the added signal energy before it was padded
-            added_feats_energy = fbank_energy(feats)
+            added_feats_energy = self.feature_extractor.compute_energy(feats)
             target_energy = self.reference_energy * (10.0 ** (-snr / 10))
             gain = target_energy / added_feats_energy
 
-        self.mixed_feats = np.log(np.exp(existing_feats) + gain * np.exp(feats_to_add))
-
-
-def fbank_energy(fbank: np.ndarray) -> float:
-    return float(np.sum(np.exp(fbank)))
-
-
-def pad_shorter(
-        left_feats: np.ndarray,
-        right_feats: np.ndarray,
-        log_energy_floor: float = -1000.0
-) -> Tuple[np.ndarray, np.ndarray]:
-    """
-    Finds the "shorter" feature matrix and pads it with low energy frames. Useful for overlaying the
-    features when the real acoustic context is not available.
-    """
-    num_feats = left_feats.shape[1]
-    if num_feats != right_feats.shape[1]:
-        raise ValueError('Cannot pad feature matrices with different number of features.')
-
-    size_diff = abs(left_feats.shape[0] - right_feats.shape[0])
-    if not size_diff:
-        return left_feats, right_feats
-
-    if left_feats.shape[0] > right_feats.shape[0]:
-        return left_feats, np.vstack([right_feats, log_energy_floor * np.ones((size_diff, num_feats))])
-    else:
-        return np.vstack([left_feats, log_energy_floor * np.ones((size_diff, num_feats))]), right_feats
+        self.mixed_feats = self.feature_extractor.mix(
+            features_a=existing_feats,
+            features_b=feats_to_add,
+            gain_b=gain
+        )

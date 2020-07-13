@@ -1,7 +1,7 @@
 import pytest
 
 from lhotse.cut import make_windowed_cuts_from_features
-from lhotse.features import FeatureSet, FeatureExtractor, Features
+from lhotse.features import FeatureSet, Features
 
 
 def features(rec_id, start, duration):
@@ -14,7 +14,6 @@ def features(rec_id, start, duration):
 @pytest.fixture
 def feature_set():
     return FeatureSet(
-        feature_extractor=FeatureExtractor(),
         features=[
             features('rec-1', 0.0, 600.0),
             features('rec-2', 0.0, 357.0)
