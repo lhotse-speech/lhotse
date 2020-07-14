@@ -55,3 +55,14 @@ def test_mixed_cut_load_features():
 
     feats = mixed_cut.load_features()
     assert feats.shape[0] == expected_frame_count
+
+
+def test_mixed_cut_load_audio():
+    cut_set = CutSet.from_yaml('test/fixtures/mix_cut_test/overlayed_audio_cut_manifest.yml')
+    mixed_cut = cut_set['mixed-cut-id']
+    assert isclose(mixed_cut.duration, 11.66)
+
+    audio = mixed_cut.load_audio()
+    assert len(audio) == 2
+    assert audio[0].shape == (1, 186560)
+    assert audio[1].shape == (1, 168160)

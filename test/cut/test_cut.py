@@ -1,7 +1,8 @@
+from math import isclose
 import pytest
 
 from lhotse.audio import RecordingSet
-from lhotse.cut import CutSet
+from lhotse.cut import CutSet, make_cuts_from_recordings
 
 
 @pytest.fixture()
@@ -37,3 +38,10 @@ def test_load_features(libri_cut):
     feats = libri_cut.load_features()
     assert feats.shape[0] == libri_cut.num_frames
     assert feats.shape[1] == libri_cut.features.num_features
+
+
+def test_make_cuts_from_recordings(libri_recording_set):
+    expected_duration = 16.04
+    cutset = make_cuts_from_recordings(libri_recording_set)
+    duration = list(cutset.cuts.values())[0].duration
+    assert isclose(duration, expected_duration)

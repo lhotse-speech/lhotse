@@ -8,7 +8,7 @@ from uuid import uuid4
 
 import numpy as np
 
-from lhotse.audio import RecordingSet
+from lhotse.audio import Recording, RecordingSet
 from lhotse.features import Features, FeatureSet, FbankMixer
 from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import (
@@ -42,26 +42,30 @@ class Cut:
     """
     id: str
 
-    # Begin and duration are needed to specify which chunk of features to load.
+    # Begin and duration are needed to specify which chunk of features/recording to load.
     start: Seconds
     duration: Seconds
-
-    # The features can span longer than the actual cut - the Features object "knows" its start and end time
-    # within the underlying recording. We can expect the interval [begin, begin + duration] to be a subset of the
-    # interval represented in features.
-    features: Features
 
     # Supervisions that will be used as targets for model training later on. They don't have to cover the whole
     # cut duration. They also might overlap.
     supervisions: List[SupervisionSegment]
 
+    # The features can span longer than the actual cut - the Features object "knows" its start and end time
+    # within the underlying recording. We can expect the interval [begin, begin + duration] to be a subset of the
+    # interval represented in features.
+    features: Features = None
+
+    # For the cases that the model was trained by raw audio instead of features
+    recording: Recording = None
+
     @property
     def channel(self) -> int:
-        return self.features.channel_id
+        # Return the first channel's id
+        return self.features.channel_id if self.features is not None else self.recording.channel_ids[0]
 
     @property
     def recording_id(self) -> str:
-        return self.features.recording_id
+        return self.features.recording_id if self.features is not None else self.recording.id
 
     @property
     def end(self) -> Seconds:
@@ -69,19 +73,20 @@ class Cut:
 
     @property
     def frame_shift(self) -> Seconds:
-        return self.features.frame_shift
+        return self.features.frame_shift if self.features is not None else 0
 
     @property
     def num_frames(self) -> int:
-        return round(self.duration / self.frame_shift)
+        # Return samples number if this Cut only has raw audio
+        return round(self.duration / self.frame_shift) if self.features is not None else self.recording.num_samples
 
     @property
     def num_features(self) -> int:
-        return self.features.num_features
+        return self.features.num_features if self.features is not None else 0
 
     @property
     def sampling_rate(self) -> int:
-        return self.features.sampling_rate
+        return self.features.sampling_rate if self.features is not None else self.recording.sampling_rate
 
     def load_features(self, root_dir: Optional[Pathlike] = None) -> np.ndarray:
         """
@@ -89,9 +94,16 @@ class Cut:
         [begin, duration] region of the current Cut.
         Optionally specify a `root_dir` prefix to prefix the features path with.
         """
-        return self.features.load(root_dir=root_dir, start=self.start, duration=self.duration)
+        if self.features is not None:
+            return self.features.load(root_dir=root_dir, start=self.start, duration=self.duration)
+        else:
+            return None
 
-    def load_audio(self, recording_set: RecordingSet, root_dir: Optional[Pathlike] = None) -> np.ndarray:
+    def load_audio(
+            self,
+            recording_set: Optional[RecordingSet] = None,
+            root_dir: Optional[Pathlike] = None
+    ) -> np.ndarray:
         """
         Load the audio by locating the appropriate recording in the supplied RecordingSet.
         The audio is trimmed to the [begin, end] range specified by the Cut.
@@ -102,13 +114,21 @@ class Cut:
         :param root_dir: optional Path prefix to find the recording in the filesystem.
         :return: a numpy ndarray with audio samples, with shape (1 <channel>, N <samples>)
         """
-        return recording_set.load_audio(
-            self.recording_id,
-            channels=self.channel,
-            offset_seconds=self.start,
-            duration_seconds=self.duration,
-            root_dir=root_dir
-        )
+        if recording_set is None:
+            return self.recording.load_audio(
+                channels=self.channel,
+                offset_seconds=self.start,
+                duration_seconds=self.duration,
+                root_dir=root_dir
+            )
+        else:
+            return recording_set.load_audio(
+                self.recording_id,
+                channels=self.channel,
+                offset_seconds=self.start,
+                duration_seconds=self.duration,
+                root_dir=root_dir
+            )
 
     def truncate(
             self,
@@ -172,6 +192,9 @@ class Cut:
         :param desired_duration: The cut's minimal duration after padding.
         :return: a padded MixedCut if desired_duration is greater than this cut's duration, otherwise self.
         """
+        if self.features is None:
+            # TODO: fill zeros for raw audio
+            return self
         if desired_duration <= self.duration:
             return self
         padding_duration = desired_duration - self.duration
@@ -186,11 +209,13 @@ class Cut:
 
     @staticmethod
     def from_dict(data: dict) -> 'Cut':
-        feature_info = data.pop('features')
-        supervision_infos = data.pop('supervisions')
+        features = Features.from_dict(data.pop('features')) if 'features' in data else None
+        recording = Recording.from_dict(data.pop('recording')) if 'recording' in data else None
+        supervision_infos = data.pop('supervisions') if 'supervisions' in data else []
         return Cut(
             **data,
-            features=Features.from_dict(feature_info),
+            features=features,
+            recording=recording,
             supervisions=[SupervisionSegment.from_dict(s) for s in supervision_infos]
         )
 
@@ -299,7 +324,7 @@ class MixTrack:
         raw_cut = data.pop('cut')
         try:
             cut = Cut.from_dict(raw_cut)
-        except:
+        except TypeError:
             cut = PaddingCut.from_dict(raw_cut)
         return MixTrack(cut, **data)
 
@@ -343,7 +368,7 @@ class MixedCut:
 
     @property
     def features_type(self) -> str:
-        return self.tracks[0].cut.features.type
+        return self.tracks[0].cut.features.type if self.tracks[0].cut.features is not None else None
 
     def overlay(
             self,
@@ -477,7 +502,16 @@ class MixedCut:
             )
         return mixer.mixed_feats
 
-    # TODO: load_audio()
+    def load_audio(self,
+                   recording_set: Optional[RecordingSet] = None,
+                   root_dir: Optional[Pathlike] = None,
+    ) -> List:
+        """Loads the audios of the source cuts and put them into a list."""
+        cuts = [track.cut for track in self.tracks]
+        audios = []
+        for cut in cuts:
+            audios.append(cut.load_audio(recording_set, root_dir))
+        return audios
 
     @staticmethod
     def from_dict(data: dict) -> 'MixedCut':
@@ -673,7 +707,23 @@ def make_windowed_cuts_from_features(
     return CutSet.from_cuts(cuts)
 
 
-def make_cuts_from_supervisions(supervision_set: SupervisionSet, feature_set: FeatureSet) -> CutSet:
+def make_cuts_from_recordings(recording_set: RecordingSet) -> CutSet:
+    """
+    Utility that converts a RecordingSet to a CutSet without any adjustment of the segment boundaries.
+    """
+    return CutSet.from_cuts(
+        Cut(
+            id=str(uuid4()),
+            start=0,
+            duration=recording.duration_seconds,
+            recording=recording,
+            supervisions=[],
+        )
+        for recording in recording_set
+    )
+
+
+def make_cuts_from_supervisions_features(supervision_set: SupervisionSet, feature_set: FeatureSet) -> CutSet:
     """
     Utility that converts a SupervisionSet to a CutSet without any adjustment of the segment boundaries.
     It attaches the relevant features from the corresponding FeatureSet.
@@ -689,6 +739,23 @@ def make_cuts_from_supervisions(supervision_set: SupervisionSet, feature_set: Fe
                 start=supervision.start,
                 duration=supervision.duration,
             ),
+            supervisions=[supervision]
+        )
+        for idx, supervision in enumerate(supervision_set)
+    )
+
+
+def make_cuts_from_supervisions_recordings(supervision_set: SupervisionSet, recording_set: RecordingSet) -> CutSet:
+    """
+    Utility that converts a SupervisionSet to a CutSet without any adjustment of the segment boundaries.
+    It attaches the relevant recording from the corresponding RecordingSet.
+    """
+    return CutSet.from_cuts(
+        Cut(
+            id=str(uuid4()),
+            start=supervision.start,
+            duration=supervision.duration,
+            recording=recording_set[supervision.recording_id],
             supervisions=[supervision]
         )
         for idx, supervision in enumerate(supervision_set)
