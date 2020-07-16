@@ -76,9 +76,13 @@ We expect the configuration class to be a dataclass, so that it can be automatic
 The feature extractor should inherit from :ref:`lhotse.features.FeatureExtractor`,
 and implement a small number of methods/properties.
 The base class takes care of initialization (you need to pass a config object), serialization to YAML, etc.
-A minimal example of adding a new feature extractor:
+A minimal, complete example of adding a new feature extractor:
 
 .. code-block::
+
+    @dataclass
+    class ExampleFeatureExtractorConfig:
+        frame_shift: Seconds = 0.01
 
     class ExampleFeatureExtractor(FeatureExtractor):
         name = 'example-feature-extractor'
