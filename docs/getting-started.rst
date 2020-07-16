@@ -28,10 +28,15 @@ For development installation, you can fork/clone the GitHub repo and install wit
 
     git clone https://github.com/pzelasko/lhotse
     cd lhotse
-    pip install -e .
+    pip install -e '.[dev]'
 
-This is an editable installation, meaning that your changes to the source code are automatically
-reflected when importing lhotse (no re-install needed).
+    # Running unit tests
+    pytest test
+
+This is an editable installation (``-e`` option), meaning that your changes to the source code are automatically
+reflected when importing lhotse (no re-install needed). The ``[dev]`` part means you're installing extra dependencies
+that are used to run tests, build documentation or launch jupyter notebooks.
+
 
 Examples
 --------
