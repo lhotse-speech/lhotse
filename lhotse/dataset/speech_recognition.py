@@ -14,7 +14,16 @@ EPS = 1e-8
 class SpeechRecognitionDataset(Dataset):
     """
     The PyTorch Dataset for the speech recognition task.
-    Contains acoustic features and the corresponding text.
+    Returns a dict of:
+
+    .. code-block::
+
+        {
+            'features': (T x F) tensor
+            'text': string
+        }
+
+    In the future, will be extended by graph supervisions.
     """
 
     def __init__(
@@ -31,16 +40,16 @@ class SpeechRecognitionDataset(Dataset):
         cut_id = self.cut_ids[idx]
         cut = self.cuts[cut_id]
 
-        feature = torch.from_numpy(cut.load_features(root_dir=self.root_dir))
+        features = torch.from_numpy(cut.load_features(root_dir=self.root_dir))
 
-        # We assume there is only one supervision for each cut in ASR tasks
+        # We assume there is only one supervision for each cut in ASR tasks (for now)
         if len(cut.supervisions) > 1:
             logging.warning("More than one supervision in ASR task! Selected the first one and ignored others.")
 
         return {
-            'feature': feature,
+            'features': features,
             'text': cut.supervisions[0].text
         }
 
-    def __len__(self):
+    def __len__(self) -> int:
         return len(self.cut_ids)

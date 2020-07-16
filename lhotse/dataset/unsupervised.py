@@ -10,7 +10,8 @@ from lhotse.utils import Pathlike
 class UnsupervisedDataset(Dataset):
     """
     Dataset that contains no supervision - it only provides the features extracted from recordings.
-    The returned features are a torch Tensor of shape (T x F).
+    The returned features are a :class:`torch.Tensor` of shape ``(T x F)``, where T is the number of frames,
+    and F is the feature dimension.
     """
 
     def __init__(self, cuts: CutSet, root_dir: Optional[Pathlike] = None):
