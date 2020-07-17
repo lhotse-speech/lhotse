@@ -225,7 +225,7 @@ class PaddingCut:
     f"""
     This represents a cut filled with zeroes in the time domain, or low energy/log-energy values in the
     frequency domain. It's used to make training samples evenly sized (same duration/number of frames).
-    
+
     We use {EPSILON} for energies and {log(EPSILON)} for log-energies.
     """
     id: str
