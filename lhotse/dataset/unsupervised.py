@@ -30,7 +30,7 @@ class UnsupervisedDataset(Dataset):
 
 
 class UnsupervisedWaveformDataset(UnsupervisedDataset):
-    """A speacial UnsupervisedDataset which provides waveform instead of features."""
+    """A special UnsupervisedDataset which provides waveform instead of features."""
 
     def __getitem__(self, item: int) -> torch.Tensor:
         cut = self.cuts[self.cut_ids[item]]
