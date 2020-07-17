@@ -27,3 +27,12 @@ class UnsupervisedDataset(Dataset):
 
     def __len__(self):
         return len(self.cuts)
+
+
+class UnsupervisedWaveformDataset(UnsupervisedDataset):
+    """A speacial UnsupervisedDataset which provides waveform instead of features."""
+
+    def __getitem__(self, item: int) -> torch.Tensor:
+        cut = self.cuts[self.cut_ids[item]]
+        audio = cut.load_audio(root_dir=self.root_dir)
+        return torch.from_numpy(audio)

@@ -26,6 +26,13 @@ def test_load_audio(libri_cut, libri_recording_set):
     assert samples.shape[1] == 10 * 16000  # samples count = duration * sampling_rate
 
 
+def test_load_audio(libri_cut):
+    # Same as test_load_audio(libri_cut, libri_recording_set), but do not provide external recording_set
+    samples = libri_cut.load_audio()
+    assert samples.shape[0] == 1
+    assert samples.shape[1] == 10 * 16000
+
+
 def test_num_frames(libri_cut):
     expected_features_frame_count = round(16.04 / 0.01)  # duration / frame_shift
     assert libri_cut.features.num_frames == expected_features_frame_count
