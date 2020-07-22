@@ -48,4 +48,6 @@
             speaker: '174'
             start: 0.0
             text: 'THE HEART OF THAT EX CONVICT WAS FULL OF VIRGINITY'
+      offset: 3.89
+      snr: 20.0
   type: MixedCut

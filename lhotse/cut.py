@@ -8,7 +8,7 @@ from uuid import uuid4
 
 import numpy as np
 
-from lhotse.audio import Recording, RecordingSet
+from lhotse.audio import Recording, RecordingSet, AudioMixer
 from lhotse.features import Features, FeatureSet, FbankMixer
 from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import (
@@ -491,13 +491,26 @@ class MixedCut:
             )
         return mixer.mixed_feats
 
-    def load_audio(self, root_dir: Optional[Pathlike] = None) -> List:
-        """Loads the audios of the source cuts and put them into a list."""
+    def load_unmixed_audio(self, root_dir: Optional[Pathlike] = None) -> List:
+        """Loads the unmixed audios of the source cuts and put them into a list."""
         cuts = [track.cut for track in self.tracks]
         audios = []
         for cut in cuts:
             audios.append(cut.load_audio(root_dir))
         return audios
+
+    def load_audio(self, root_dir: Optional[Pathlike] = None) -> np.ndarray:
+        """Loads the audios of the source cuts and mix them on-the-fly.."""
+        unmixed_audio = self.load_unmixed_audio(root_dir)
+        mixer = AudioMixer(unmixed_audio[0])
+        for audio, track in zip(unmixed_audio[1:], self.tracks[1:]):
+            mixer.add_to_mix(
+                audio=audio,
+                snr=track.snr,
+                offset=track.offset,
+                sampling_rate=track.cut.sampling_rate
+            )
+        return mixer.mixed_audio
 
     @staticmethod
     def from_dict(data: dict) -> 'MixedCut':
