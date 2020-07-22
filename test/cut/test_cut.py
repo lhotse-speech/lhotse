@@ -81,6 +81,6 @@ def test_make_cuts_from_supervisions_features(supervision_set, libri_features_se
     assert len(cutset) == 2
 
 
-def test_make_cuts_from_supervisions_recordingss(supervision_set, libri_recording_set):
+def test_make_cuts_from_supervisions_recordings(supervision_set, libri_recording_set):
     cutset = make_cuts_from_supervisions_recordings(supervision_set, libri_recording_set)
     assert len(cutset) == 2

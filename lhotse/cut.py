@@ -53,10 +53,10 @@ class Cut:
     # The features can span longer than the actual cut - the Features object "knows" its start and end time
     # within the underlying recording. We can expect the interval [begin, begin + duration] to be a subset of the
     # interval represented in features.
-    features: Features = None
+    features: Optional[Features] = None
 
     # For the cases that the model was trained by raw audio instead of features
-    recording: Recording = None
+    recording: Optional[Recording] = None
 
     @property
     def channel(self) -> int:
@@ -88,7 +88,7 @@ class Cut:
     def sampling_rate(self) -> int:
         return self.features.sampling_rate if self.features is not None else self.recording.sampling_rate
 
-    def load_features(self, root_dir: Optional[Pathlike] = None) -> np.ndarray:
+    def load_features(self, root_dir: Optional[Pathlike] = None) -> Optional[np.ndarray]:
         """
         Load the features from the underlying storage and cut them to the relevant
         [begin, duration] region of the current Cut.
@@ -367,7 +367,7 @@ class MixedCut:
         return self.tracks[0].cut.num_features
 
     @property
-    def features_type(self) -> str:
+    def features_type(self) -> Optional[str]:
         return self.tracks[0].cut.features.type if self.tracks[0].cut.features is not None else None
 
     def overlay(
@@ -758,7 +758,7 @@ def make_cuts_from_supervisions_recordings(supervision_set: SupervisionSet, reco
             recording=recording_set[supervision.recording_id],
             supervisions=[supervision]
         )
-        for idx, supervision in enumerate(supervision_set)
+        for supervision in supervision_set
     )
 
 
