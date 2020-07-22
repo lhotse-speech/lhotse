@@ -183,12 +183,10 @@ class Cut:
         :param desired_duration: The cut's minimal duration after padding.
         :return: a padded MixedCut if desired_duration is greater than this cut's duration, otherwise self.
         """
-        if self.features is None:
-            # TODO: fill zeros for raw audio
-            return self
         if desired_duration <= self.duration:
             return self
         padding_duration = desired_duration - self.duration
+        assert self.features is not None
         return self.append(PaddingCut(
             id=str(uuid4()),
             duration=padding_duration,

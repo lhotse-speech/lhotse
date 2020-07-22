@@ -220,14 +220,6 @@ def test_pad_simple_cut(libri_cut):
     np.testing.assert_almost_equal(pre_mixed_feats, mixed_feats[:1604, :])
 
 
-def test_pad_cut_no_features(libri_cut):
-    libri_cut.features = None
-    padded = libri_cut.pad(desired_duration=20.0)
-
-    # TODO: implement padding for cut without features in libri_cut.pad()
-    assert padded.duration <= 20.0
-
-
 def test_pad_mixed_cut(mixed_libri_cut):
     padded = mixed_libri_cut.pad(desired_duration=20.0)
 

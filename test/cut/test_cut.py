@@ -37,6 +37,20 @@ def libri_cut(libri_cut_set):
     return libri_cut_set['849e13d8-61a2-4d09-a542-dac1aee1b544']
 
 
+def test_load_none_feats_cut_set():
+    cutset = CutSet.from_yaml('test/fixtures/libri/cuts_no_feats.yml')
+    cut = list(cutset.cuts.values())[0]
+    assert cut.features is None
+    assert cut.recording is not None
+
+
+def test_load_none_recording_cut_set():
+    cutset = CutSet.from_yaml('test/fixtures/libri/cuts_no_recording.yml')
+    cut = list(cutset.cuts.values())[0]
+    assert cut.recording is None
+    assert cut.features is not None
+
+
 def test_load_audio(libri_cut):
     samples = libri_cut.load_audio()
     assert samples.shape[0] == 1  # single channel
