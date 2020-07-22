@@ -102,22 +102,16 @@ class Cut:
         else:
             return None
 
-    def load_audio(
-            self,
-            recording_set: Optional[RecordingSet] = None,
-            root_dir: Optional[Pathlike] = None
-    ) -> np.ndarray:
+    def load_audio(self, root_dir: Optional[Pathlike] = None) -> Optional[np.ndarray]:
         """
         Load the audio by locating the appropriate recording in the supplied RecordingSet.
         The audio is trimmed to the [begin, end] range specified by the Cut.
         Optionally specify a `root_dir` prefix to prefix the features path with.
 
-        :param recording_set: RecordingSet object containing the Recording pointed to by recording_id
-            member of this Cut.
         :param root_dir: optional Path prefix to find the recording in the filesystem.
         :return: a numpy ndarray with audio samples, with shape (1 <channel>, N <samples>)
         """
-        if recording_set is None:
+        if self.recording is not None:
             return self.recording.load_audio(
                 channels=self.channel,
                 offset_seconds=self.start,
@@ -125,13 +119,7 @@ class Cut:
                 root_dir=root_dir
             )
         else:
-            return recording_set.load_audio(
-                self.recording_id,
-                channels=self.channel,
-                offset_seconds=self.start,
-                duration_seconds=self.duration,
-                root_dir=root_dir
-            )
+            return None
 
     def truncate(
             self,
@@ -505,15 +493,12 @@ class MixedCut:
             )
         return mixer.mixed_feats
 
-    def load_audio(self,
-                   recording_set: Optional[RecordingSet] = None,
-                   root_dir: Optional[Pathlike] = None,
-    ) -> List:
+    def load_audio(self, root_dir: Optional[Pathlike] = None) -> List:
         """Loads the audios of the source cuts and put them into a list."""
         cuts = [track.cut for track in self.tracks]
         audios = []
         for cut in cuts:
-            audios.append(cut.load_audio(recording_set, root_dir))
+            audios.append(cut.load_audio(root_dir))
         return audios
 
     @staticmethod

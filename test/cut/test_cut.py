@@ -37,16 +37,16 @@ def libri_cut(libri_cut_set):
     return libri_cut_set['849e13d8-61a2-4d09-a542-dac1aee1b544']
 
 
-def test_load_audio(libri_cut, libri_recording_set):
-    samples = libri_cut.load_audio(libri_recording_set)
+def test_load_audio(libri_cut):
+    samples = libri_cut.load_audio()
     assert samples.shape[0] == 1  # single channel
     assert samples.shape[1] == 10 * 16000  # samples count = duration * sampling_rate
 
 
-def test_load_audio_by_self(libri_cut):
-    # Same as test_load_audio(libri_cut, libri_recording_set), but do not provide external recording_set
+def test_load_none_audio(libri_cut):
+    libri_cut.recording = None
     samples = libri_cut.load_audio()
-    assert samples.shape == (1, 10 * 16000)
+    assert samples is None
 
 
 def test_num_frames(libri_cut):
