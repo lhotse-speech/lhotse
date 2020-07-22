@@ -15,6 +15,8 @@ class SupervisionSegment:
     language: Optional[str] = None
     speaker: Optional[str] = None
     gender: Optional[str] = None
+    # exmaple: "data/graph/train_si284/num.1.ark:9"
+    graph_archive: Optional[str] = None
 
     @property
     def end(self) -> Seconds:
