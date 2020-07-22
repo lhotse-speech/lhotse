@@ -72,17 +72,20 @@ class Cut:
         return self.start + self.duration
 
     @property
-    def frame_shift(self) -> Seconds:
-        return self.features.frame_shift if self.features is not None else 0
+    def frame_shift(self) -> Optional[Seconds]:
+        return self.features.frame_shift if self.features is not None else None
 
     @property
-    def num_frames(self) -> int:
-        # Return samples number if this Cut only has raw audio
-        return round(self.duration / self.frame_shift) if self.features is not None else self.recording.num_samples
+    def num_frames(self) -> Optional[int]:
+        return round(self.duration / self.frame_shift) if self.features is not None else None
 
     @property
-    def num_features(self) -> int:
-        return self.features.num_features if self.features is not None else 0
+    def num_samples(self) -> Optional[int]:
+        return self.recording.num_samples if self.recording is not None else None
+
+    @property
+    def num_features(self) -> Optional[int]:
+        return self.features.num_features if self.features is not None else None
 
     @property
     def sampling_rate(self) -> int:
