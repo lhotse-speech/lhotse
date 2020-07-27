@@ -296,7 +296,8 @@ class AudioMixer:
         gain = 1.0
         if snr is not None:
             added_audio_energy = audio_energy(audio)
-            gain = self.reference_energy / added_audio_energy
+            target_energy = self.reference_energy * (10.0 ** (-snr / 10))
+            gain = target_energy / added_audio_energy
 
         self.mixed_audio = existing_audio + gain * audio_to_add
 
