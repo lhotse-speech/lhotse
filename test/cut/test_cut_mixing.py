@@ -65,13 +65,6 @@ def mixed_audio_cut():
     return mixed_cut
 
 
-def test_mixed_cut_load_unmixed_audio(mixed_audio_cut):
-    audio = mixed_audio_cut.load_unmixed_audio()
-    assert len(audio) == 2
-    assert audio[0].shape == (1, 186560)
-    assert audio[1].shape == (1, 168160)
-
-
 def test_mixed_cut_load_audio(mixed_audio_cut):
     audio = mixed_audio_cut.load_audio()
     assert audio.shape == (1, 230400)

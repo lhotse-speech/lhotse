@@ -491,17 +491,14 @@ class MixedCut:
             )
         return mixer.mixed_feats
 
-    def load_unmixed_audio(self, root_dir: Optional[Pathlike] = None) -> List:
-        """Loads the unmixed audios of the source cuts and put them into a list."""
-        cuts = [track.cut for track in self.tracks]
-        audios = []
-        for cut in cuts:
-            audios.append(cut.load_audio(root_dir))
-        return audios
-
     def load_audio(self, root_dir: Optional[Pathlike] = None) -> np.ndarray:
-        """Loads the audios of the source cuts and mix them on-the-fly.."""
-        unmixed_audio = self.load_unmixed_audio(root_dir)
+        """
+        Loads the audios of the source cuts and mix them on-the-fly.
+
+        :return: the mixed audio samples in an ndarray, with the shape (1, sample_num)
+        """
+        cuts = [track.cut for track in self.tracks]
+        unmixed_audio = [cut.load_audio(root_dir) for cut in cuts]
         mixer = AudioMixer(unmixed_audio[0])
         for audio, track in zip(unmixed_audio[1:], self.tracks[1:]):
             mixer.add_to_mix(
