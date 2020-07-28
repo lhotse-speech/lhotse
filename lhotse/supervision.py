@@ -1,7 +1,7 @@
-from dataclasses import dataclass, asdict
-from typing import Dict, Optional, Iterable, Callable
+from dataclasses import asdict, dataclass
+from typing import Callable, Dict, Iterable, Optional
 
-from lhotse.utils import Seconds, Pathlike, asdict_nonull, load_yaml, save_to_yaml
+from lhotse.utils import Pathlike, Seconds, asdict_nonull, load_yaml, save_to_yaml
 
 
 @dataclass

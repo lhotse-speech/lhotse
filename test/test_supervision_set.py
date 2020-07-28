@@ -1,7 +1,7 @@
 from functools import lru_cache
 from tempfile import NamedTemporaryFile
 
-from lhotse.supervision import SupervisionSet, SupervisionSegment
+from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.test_utils import DummyManifest
 
 

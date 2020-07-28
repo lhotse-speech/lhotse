@@ -5,7 +5,7 @@ from pytest import mark, raises
 
 from lhotse.audio import RecordingSet
 from lhotse.features import FeatureSet
-from lhotse.manipulation import split, combine, load_manifest
+from lhotse.manipulation import combine, load_manifest, split
 from lhotse.supervision import SupervisionSet
 from lhotse.test_utils import DummyManifest
 

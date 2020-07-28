@@ -8,9 +8,10 @@ from cytoolz.functoolz import complement
 
 from lhotse.bin.modes.cli_base import cli
 from lhotse.manipulation import (
+    combine as combine_manifests,
     load_manifest,
     split as split_manifest,
-    combine as combine_manifests, to_manifest
+    to_manifest,
 )
 from lhotse.utils import Pathlike
 

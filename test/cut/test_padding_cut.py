@@ -3,7 +3,7 @@ from tempfile import NamedTemporaryFile
 import numpy as np
 import pytest
 
-from lhotse.cut import PaddingCut, Cut, CutSet
+from lhotse.cut import Cut, CutSet, PaddingCut
 from lhotse.features import Features
 
 PADDING_ENERGY = 1e-8

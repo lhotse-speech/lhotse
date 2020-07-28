@@ -2,7 +2,7 @@ from tempfile import NamedTemporaryFile
 
 import pytest
 
-from lhotse.cut import CutSet, Cut, MixedCut, MixTrack
+from lhotse.cut import Cut, CutSet, MixedCut, MixTrack
 
 
 @pytest.fixture

@@ -1,16 +1,16 @@
 import logging
 import re
+import shutil
 import tarfile
 import urllib.request
-import shutil
 from collections import defaultdict
 from pathlib import Path
-from typing import Optional, Dict, Union, NamedTuple
+from typing import Dict, NamedTuple, Optional, Union
 
 import torchaudio
 
-from lhotse.audio import RecordingSet, Recording, AudioSource
-from lhotse.supervision import SupervisionSet, SupervisionSegment
+from lhotse.audio import AudioSource, Recording, RecordingSet
+from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import Pathlike
 
 dataset_parts = ('dev-clean-2', 'train-clean-5')
