@@ -6,7 +6,6 @@ import pytest
 from lhotse.cut import CutSet, MixedCut
 from lhotse.supervision import SupervisionSegment
 
-
 # Note:
 # Definitions for `cut1`, `cut2` and `cut_set` parameters are standard Pytest fixtures located in test/cut/conftest.py
 

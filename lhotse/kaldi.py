@@ -1,9 +1,9 @@
 from collections import defaultdict
 from pathlib import Path
-from typing import Tuple, Optional, Dict
+from typing import Dict, Optional, Tuple
 
-from lhotse.audio import RecordingSet, Recording, AudioSource
-from lhotse.supervision import SupervisionSet, SupervisionSegment
+from lhotse.audio import AudioSource, Recording, RecordingSet
+from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import Pathlike
 
 

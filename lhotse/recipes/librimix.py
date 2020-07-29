@@ -1,14 +1,14 @@
-import zipfile
-import urllib.request
 import shutil
+import urllib.request
+import zipfile
 from collections import defaultdict
 from pathlib import Path
-from typing import Optional, Dict, Union
+from typing import Dict, Optional, Union
 
 import pandas as pd
 
-from lhotse.audio import RecordingSet, Recording, AudioSource
-from lhotse.supervision import SupervisionSet, SupervisionSegment
+from lhotse.audio import AudioSource, Recording, RecordingSet
+from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import Pathlike, Seconds
 
 

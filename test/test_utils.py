@@ -3,7 +3,7 @@ from tempfile import NamedTemporaryFile
 
 import pytest
 
-from lhotse.utils import overlaps, TimeSpan, overspans, save_to_yaml, load_yaml
+from lhotse.utils import TimeSpan, load_yaml, overlaps, overspans, save_to_yaml
 
 
 @pytest.mark.parametrize(

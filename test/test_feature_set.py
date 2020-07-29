@@ -7,7 +7,7 @@ import torchaudio
 from pytest import mark, raises
 
 from lhotse.audio import RecordingSet
-from lhotse.features import FeatureSet, FeatureExtractor, Features, FbankMixer, FeatureSetBuilder
+from lhotse.features import FbankMixer, FeatureExtractor, Features, FeatureSet, FeatureSetBuilder
 from lhotse.test_utils import DummyManifest
 from lhotse.utils import Seconds, time_diff_to_num_frames
 

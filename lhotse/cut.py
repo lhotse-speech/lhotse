@@ -3,25 +3,25 @@ import warnings
 from dataclasses import dataclass
 from functools import reduce
 from math import ceil, floor, log
-from typing import Dict, List, Optional, Iterable, Union, Callable
+from typing import Callable, Dict, Iterable, List, Optional, Union
 from uuid import uuid4
 
 import numpy as np
 
-from lhotse.audio import Recording, RecordingSet, AudioMixer
-from lhotse.features import Features, FeatureSet, FbankMixer
+from lhotse.audio import AudioMixer, Recording, RecordingSet
+from lhotse.features import FbankMixer, Features, FeatureSet
 from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import (
-    Seconds,
+    EPSILON,
     Decibels,
-    overlaps,
-    TimeSpan,
-    overspans,
     Pathlike,
+    Seconds,
+    TimeSpan,
     asdict_nonull,
     load_yaml,
+    overlaps,
+    overspans,
     save_to_yaml,
-    EPSILON
 )
 
 # One of the design principles for Cuts is a maximally "lazy" implementation, e.g. when overlaying/mixing Cuts,
