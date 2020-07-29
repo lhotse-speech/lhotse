@@ -5,6 +5,7 @@ import pytest
 
 from lhotse.cut import Cut, CutSet, PaddingCut
 from lhotse.features import Features
+from lhotse.audio import AudioSource, Recording
 
 PADDING_ENERGY = 1e-8
 PADDING_LOG_ENERGY = -18.420680743952367  # log(1e-8)
@@ -88,6 +89,18 @@ def libri_cut():
             storage_path='test/fixtures/libri/storage/dc2e0952-f2f8-423c-9b8c-f5481652ee1d.llc',
             storage_type='lilcom',
             type='fbank',
+        ),
+        recording=Recording(
+            id='recording-1',
+            sources=[
+                AudioSource(
+                    type='file',
+                    channel_ids=[1],
+                    source='test/fixtures/libri/libri-1088-134315-0000.wav',
+                )],
+            sampling_rate=16000,
+            num_samples=256640,
+            duration_seconds=1604,
         ),
         id='849e13d8-61a2-4d09-a542-dac1aee1b544',
         start=0.0,
@@ -218,6 +231,20 @@ def test_pad_simple_cut(libri_cut):
 
     pre_mixed_feats = libri_cut.load_features()
     np.testing.assert_almost_equal(pre_mixed_feats, mixed_feats[:1604, :])
+
+
+def test_pad_simple_cut_audio_only(libri_cut):
+    libri_cut.features = None
+    padded = libri_cut.pad(desired_duration=20.0)
+
+    assert padded.duration == 20.0
+    assert padded.num_samples == 20 * 16000
+
+    mixed_audio = padded.load_audio()
+    assert mixed_audio.shape == (1, padded.num_samples)
+
+    pre_mixed_audio = libri_cut.load_audio()
+    assert pre_mixed_audio.shape == (1, libri_cut.num_samples)
 
 
 def test_pad_mixed_cut(mixed_libri_cut):

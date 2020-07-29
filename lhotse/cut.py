@@ -186,14 +186,14 @@ class Cut:
         if desired_duration <= self.duration:
             return self
         padding_duration = desired_duration - self.duration
-        assert self.features is not None
         return self.append(PaddingCut(
             id=str(uuid4()),
             duration=padding_duration,
-            num_features=self.num_features,
-            num_frames=round(padding_duration / self.frame_shift),
-            sampling_rate=self.features.sampling_rate,
-            use_log_energy=self.features.type in ('fbank', 'mfcc')
+            num_features=self.num_features if self.features is not None else None,
+            num_frames=round(padding_duration / self.frame_shift) if self.features is not None else None,
+            num_samples=round(padding_duration * self.sampling_rate) if self.recording is not None else None,
+            sampling_rate=self.features.sampling_rate if self.features is not None else self.recording.sampling_rate,
+            use_log_energy=self.features.type in ('fbank', 'mfcc') if self.features is not None else False
         ))
 
     @staticmethod
@@ -219,11 +219,16 @@ class PaddingCut:
     """
     id: str
     duration: Seconds
-    num_frames: int
-    num_features: int
 
     sampling_rate: int
     use_log_energy: bool
+
+    # For frequency domain
+    num_frames: Optional[int] = None
+    num_features: Optional[int] = None
+
+    # For time domain
+    num_samples: Optional[int] = None
 
     @property
     def supervisions(self):
@@ -231,10 +236,12 @@ class PaddingCut:
 
     @property
     def frame_shift(self):
-        return round(self.duration / self.num_frames, ndigits=3)
+        return round(self.duration / self.num_frames, ndigits=3) if self.num_frames is not None else None
 
     # noinspection PyUnusedLocal
-    def load_features(self, *args, **kwargs) -> np.ndarray:
+    def load_features(self, *args, **kwargs) -> Optional[np.ndarray]:
+        if self.num_frames is None:
+            return None
         value = np.log(EPSILON) if self.use_log_energy else EPSILON
         return np.ones((self.num_frames, self.num_features)) * value
 
@@ -256,8 +263,9 @@ class PaddingCut:
         return PaddingCut(
             id=self.id if preserve_id else str(uuid4()),
             duration=new_duration,
-            num_frames=round(new_duration / self.frame_shift),
+            num_frames=round(new_duration / self.frame_shift) if self.num_frames is not None else None,
             num_features=self.num_features,
+            num_samples=round(new_duration * self.sampling_rate) if self.num_samples is not None else None,
             use_log_energy=self.use_log_energy,
             sampling_rate=self.sampling_rate
         )
@@ -348,8 +356,12 @@ class MixedCut:
         return max(track_durations)
 
     @property
-    def num_frames(self) -> int:
-        return round(self.duration / self.tracks[0].cut.frame_shift)
+    def num_frames(self) -> Optional[int]:
+        return None if self.tracks[0].cut.frame_shift is None else round(self.duration / self.tracks[0].cut.frame_shift)
+
+    @property
+    def num_samples(self) -> Optional[int]:
+        return None if self.tracks[0].cut.num_samples is None else round(self.duration * self.tracks[0].cut.sampling_rate)
 
     @property
     def num_features(self) -> int:
@@ -782,7 +794,9 @@ def mix(
                       'We are setting snr to None, so that the original signal energies will be retained instead.')
         snr = None
 
-    assert reference_cut.num_features == mixed_in_cut.num_features, "Cannot overlay cuts with different feature dimensions."
+    if reference_cut.num_features is not None:
+        assert reference_cut.num_features == mixed_in_cut.num_features, "Cannot overlay cuts with different feature " \
+                                                                        "dimensions. "
     assert offset <= reference_cut.duration, f"Cannot overlay cut '{mixed_in_cut.id}' with offset {offset}," \
                                              f" which is greater than cuts {reference_cut.id} duration" \
                                              f" of {reference_cut.duration}"
