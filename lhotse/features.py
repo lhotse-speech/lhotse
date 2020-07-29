@@ -2,12 +2,12 @@
 This file is just a rough sketch for now.
 """
 from concurrent.futures.process import ProcessPoolExecutor
-from dataclasses import dataclass, field, asdict
+from dataclasses import asdict, dataclass, field
 from functools import partial
 from itertools import chain
 from math import isclose
 from pathlib import Path
-from typing import Union, List, Iterable, Dict, Optional, Tuple
+from typing import Dict, Iterable, List, Optional, Tuple, Union
 from uuid import uuid4
 
 import lilcom
@@ -18,7 +18,7 @@ import yaml
 
 from lhotse.audio import Recording
 from lhotse.supervision import SupervisionSegment
-from lhotse.utils import Seconds, Pathlike, Decibels, load_yaml, save_to_yaml
+from lhotse.utils import Decibels, Pathlike, Seconds, load_yaml, save_to_yaml
 
 
 @dataclass

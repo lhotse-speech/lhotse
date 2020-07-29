@@ -1,10 +1,10 @@
 from typing import Type
 
-from lhotse.audio import RecordingSet, Recording
+from lhotse.audio import Recording, RecordingSet
 from lhotse.cut import Cut
-from lhotse.features import FeatureSet, Features
+from lhotse.features import Features, FeatureSet
 from lhotse.manipulation import Manifest
-from lhotse.supervision import SupervisionSet, SupervisionSegment
+from lhotse.supervision import SupervisionSegment, SupervisionSet
 
 
 # noinspection PyPep8Naming

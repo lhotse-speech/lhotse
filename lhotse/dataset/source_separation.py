@@ -1,11 +1,11 @@
 from pathlib import Path
-from typing import Dict, Optional, Tuple, List
+from typing import Dict, List, Optional, Tuple
 
 import torch
 from torch.utils.data import Dataset
 
-from lhotse.cut import CutSet, Cut, AnyCut
-from lhotse.utils import Pathlike, EPSILON
+from lhotse.cut import AnyCut, Cut, CutSet
+from lhotse.utils import EPSILON, Pathlike
 
 
 class SourceSeparationDataset(Dataset):

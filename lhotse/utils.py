@@ -1,9 +1,9 @@
 import gzip
 import random
-from dataclasses import dataclass, asdict
+from dataclasses import asdict, dataclass
 from math import ceil, isclose
 from pathlib import Path
-from typing import Union, Any, Dict
+from typing import Any, Dict, Union
 
 import numpy as np
 import torch

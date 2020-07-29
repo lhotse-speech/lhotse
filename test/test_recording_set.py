@@ -5,7 +5,7 @@ from tempfile import NamedTemporaryFile
 import numpy as np
 from pytest import mark, raises
 
-from lhotse.audio import RecordingSet, Recording, AudioSource
+from lhotse.audio import AudioSource, Recording, RecordingSet
 from lhotse.test_utils import DummyManifest
 from lhotse.utils import INT16MAX
 
