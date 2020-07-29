@@ -14,7 +14,7 @@ if not os.environ.get('READTHEDOCS', False):
         import librosa
 import numpy as np
 
-from lhotse.utils import Pathlike, Seconds, SetContainingAnything, load_yaml, save_to_yaml
+from lhotse.utils import Decibels, Pathlike, Seconds, SetContainingAnything, load_yaml, save_to_yaml
 
 Channels = Union[int, List[int]]
 
@@ -221,3 +221,86 @@ class RecordingSet:
 
     def __add__(self, other: 'RecordingSet') -> 'RecordingSet':
         return RecordingSet(recordings={**self.recordings, **other.recordings})
+
+
+class AudioMixer:
+    """
+    Utility class to mix multiple raw audio into a single one.
+    It pads the signals with zero samples for differing lengths and offsets.
+    """
+
+    def __init__(self, base_audio: np.ndarray):
+        """
+        :param base_audio: The raw audio used to initialize the AudioMixer are a point of reference
+            in terms of offset for all audios mixed into them.
+        """
+        # The mixing output will be available in self.mixed_audio
+        self.mixed_audio = base_audio
+        self.reference_energy = audio_energy(base_audio)
+
+    def add_to_mix(
+            self,
+            audio: np.ndarray,
+            snr: Optional[Decibels] = None,
+            offset: Seconds = 0.0,
+            sampling_rate: int = 16000,
+    ):
+        """
+        Add audio (only support mono-channel) of a new track into the mix.
+        :param audio: An array of audio samples to be mixed in.
+        :param snr: Signal-to-noise ratio, assuming `audio` represents noise (positive SNR - lower `audio` energy,
+        negative SNR - higher `audio` energy)
+        :param offset: How many seconds to shift `audio` in time. For mixing, the signal will be padded before
+        the start with low energy values.
+        :param sampling_rate: Sampling rate of the audio.
+        :return:
+        """
+        assert audio.shape[0] == 1  # TODO: support multi-channels
+        assert offset >= 0.0, "Negative offset in mixing is not supported."
+
+        num_samples_offset = round(offset * sampling_rate)
+        current_num_samples = self.mixed_audio.shape[1]
+
+        existing_audio = self.mixed_audio
+        audio_to_add = audio
+
+        # When there is an offset, we need to pad before the start of the audio we're adding.
+        if offset > 0:
+            audio_to_add = np.hstack([
+                np.zeros((1, num_samples_offset)),
+                audio_to_add
+            ])
+
+        incoming_num_samples = audio_to_add.shape[1]
+        mix_num_samples = max(current_num_samples, incoming_num_samples)
+
+        # When the existing samples are less than what we anticipate after the mix,
+        # we need to pad after the end of the existing audio mixed so far.
+        if current_num_samples < mix_num_samples:
+            existing_audio = np.hstack([
+                self.mixed_audio,
+                np.zeros((1, mix_num_samples - current_num_samples))
+            ])
+
+        # When the audio we're mixing in are shorter that the anticipated mix length,
+        # we need to pad after their end.
+        # Note: we're doing that non-efficiently, as it we potentially re-allocate numpy arrays twice,
+        # during this padding and the  offset padding before. If that's a bottleneck, we'll optimize.
+        if incoming_num_samples < mix_num_samples:
+            audio_to_add = np.hstack([
+                audio_to_add,
+                np.zeros((1, mix_num_samples - incoming_num_samples))
+            ])
+
+        # When SNR is requested, find what gain is needed to satisfy the SNR
+        gain = 1.0
+        if snr is not None:
+            added_audio_energy = audio_energy(audio)
+            target_energy = self.reference_energy * (10.0 ** (-snr / 10))
+            gain = target_energy / added_audio_energy
+
+        self.mixed_audio = existing_audio + gain * audio_to_add
+
+
+def audio_energy(audio: np.ndarray) -> float:
+    return float(np.average(audio ** 2))

@@ -10,16 +10,6 @@
     storage_path: test/fixtures/libri/storage/dc2e0952-f2f8-423c-9b8c-f5481652ee1d.llc
     storage_type: lilcom
     type: fbank
-  recording:
-    duration_seconds: 11.66
-    id: 2412-153948-0000
-    num_samples: 186560
-    sampling_rate: 16000
-    sources:
-      - channel_ids:
-          - 0
-        source: 'test/fixtures/libri/libri-1088-134315-0000.wav'
-        type: file
 
   id: 849e13d8-61a2-4d09-a542-dac1aee1b544
   start: 0.0

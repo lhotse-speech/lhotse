@@ -8,7 +8,7 @@ from uuid import uuid4
 
 import numpy as np
 
-from lhotse.audio import RecordingSet
+from lhotse.audio import AudioMixer, Recording, RecordingSet
 from lhotse.features import FbankMixer, Features, FeatureSet
 from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import (
@@ -42,73 +42,84 @@ class Cut:
     """
     id: str
 
-    # Begin and duration are needed to specify which chunk of features to load.
+    # Begin and duration are needed to specify which chunk of features/recording to load.
     start: Seconds
     duration: Seconds
-
-    # The features can span longer than the actual cut - the Features object "knows" its start and end time
-    # within the underlying recording. We can expect the interval [begin, begin + duration] to be a subset of the
-    # interval represented in features.
-    features: Features
 
     # Supervisions that will be used as targets for model training later on. They don't have to cover the whole
     # cut duration. They also might overlap.
     supervisions: List[SupervisionSegment]
 
+    # The features can span longer than the actual cut - the Features object "knows" its start and end time
+    # within the underlying recording. We can expect the interval [begin, begin + duration] to be a subset of the
+    # interval represented in features.
+    features: Optional[Features] = None
+
+    # For the cases that the model was trained by raw audio instead of features
+    recording: Optional[Recording] = None
+
     @property
     def channel(self) -> int:
-        return self.features.channel_id
+        # Return the first channel's id
+        return self.features.channel_id if self.features is not None else self.recording.channel_ids[0]
 
     @property
     def recording_id(self) -> str:
-        return self.features.recording_id
+        return self.features.recording_id if self.features is not None else self.recording.id
 
     @property
     def end(self) -> Seconds:
         return self.start + self.duration
 
     @property
-    def frame_shift(self) -> Seconds:
-        return self.features.frame_shift
+    def frame_shift(self) -> Optional[Seconds]:
+        return self.features.frame_shift if self.features is not None else None
 
     @property
-    def num_frames(self) -> int:
-        return round(self.duration / self.frame_shift)
+    def num_frames(self) -> Optional[int]:
+        return round(self.duration / self.frame_shift) if self.features is not None else None
 
     @property
-    def num_features(self) -> int:
-        return self.features.num_features
+    def num_samples(self) -> Optional[int]:
+        return self.recording.num_samples if self.recording is not None else None
+
+    @property
+    def num_features(self) -> Optional[int]:
+        return self.features.num_features if self.features is not None else None
 
     @property
     def sampling_rate(self) -> int:
-        return self.features.sampling_rate
+        return self.features.sampling_rate if self.features is not None else self.recording.sampling_rate
 
-    def load_features(self, root_dir: Optional[Pathlike] = None) -> np.ndarray:
+    def load_features(self, root_dir: Optional[Pathlike] = None) -> Optional[np.ndarray]:
         """
         Load the features from the underlying storage and cut them to the relevant
         [begin, duration] region of the current Cut.
         Optionally specify a `root_dir` prefix to prefix the features path with.
         """
-        return self.features.load(root_dir=root_dir, start=self.start, duration=self.duration)
+        if self.features is not None:
+            return self.features.load(root_dir=root_dir, start=self.start, duration=self.duration)
+        else:
+            return None
 
-    def load_audio(self, recording_set: RecordingSet, root_dir: Optional[Pathlike] = None) -> np.ndarray:
+    def load_audio(self, root_dir: Optional[Pathlike] = None) -> Optional[np.ndarray]:
         """
         Load the audio by locating the appropriate recording in the supplied RecordingSet.
         The audio is trimmed to the [begin, end] range specified by the Cut.
         Optionally specify a `root_dir` prefix to prefix the features path with.
 
-        :param recording_set: RecordingSet object containing the Recording pointed to by recording_id
-            member of this Cut.
         :param root_dir: optional Path prefix to find the recording in the filesystem.
         :return: a numpy ndarray with audio samples, with shape (1 <channel>, N <samples>)
         """
-        return recording_set.load_audio(
-            self.recording_id,
-            channels=self.channel,
-            offset_seconds=self.start,
-            duration_seconds=self.duration,
-            root_dir=root_dir
-        )
+        if self.recording is not None:
+            return self.recording.load_audio(
+                channels=self.channel,
+                offset_seconds=self.start,
+                duration_seconds=self.duration,
+                root_dir=root_dir
+            )
+        else:
+            return None
 
     def truncate(
             self,
@@ -178,19 +189,22 @@ class Cut:
         return self.append(PaddingCut(
             id=str(uuid4()),
             duration=padding_duration,
-            num_features=self.num_features,
-            num_frames=round(padding_duration / self.frame_shift),
-            sampling_rate=self.features.sampling_rate,
-            use_log_energy=self.features.type in ('fbank', 'mfcc')
+            num_features=self.num_features if self.features is not None else None,
+            num_frames=round(padding_duration / self.frame_shift) if self.features is not None else None,
+            num_samples=round(padding_duration * self.sampling_rate) if self.recording is not None else None,
+            sampling_rate=self.features.sampling_rate if self.features is not None else self.recording.sampling_rate,
+            use_log_energy=self.features.type in ('fbank', 'mfcc') if self.features is not None else False
         ))
 
     @staticmethod
     def from_dict(data: dict) -> 'Cut':
-        feature_info = data.pop('features')
-        supervision_infos = data.pop('supervisions')
+        features = Features.from_dict(data.pop('features')) if 'features' in data else None
+        recording = Recording.from_dict(data.pop('recording')) if 'recording' in data else None
+        supervision_infos = data.pop('supervisions') if 'supervisions' in data else []
         return Cut(
             **data,
-            features=Features.from_dict(feature_info),
+            features=features,
+            recording=recording,
             supervisions=[SupervisionSegment.from_dict(s) for s in supervision_infos]
         )
 
@@ -200,16 +214,21 @@ class PaddingCut:
     f"""
     This represents a cut filled with zeroes in the time domain, or low energy/log-energy values in the
     frequency domain. It's used to make training samples evenly sized (same duration/number of frames).
-    
+
     We use {EPSILON} for energies and {log(EPSILON)} for log-energies.
     """
     id: str
     duration: Seconds
-    num_frames: int
-    num_features: int
 
     sampling_rate: int
     use_log_energy: bool
+
+    # For frequency domain
+    num_frames: Optional[int] = None
+    num_features: Optional[int] = None
+
+    # For time domain
+    num_samples: Optional[int] = None
 
     @property
     def supervisions(self):
@@ -217,10 +236,12 @@ class PaddingCut:
 
     @property
     def frame_shift(self):
-        return round(self.duration / self.num_frames, ndigits=3)
+        return round(self.duration / self.num_frames, ndigits=3) if self.num_frames is not None else None
 
     # noinspection PyUnusedLocal
-    def load_features(self, *args, **kwargs) -> np.ndarray:
+    def load_features(self, *args, **kwargs) -> Optional[np.ndarray]:
+        if self.num_frames is None:
+            return None
         value = np.log(EPSILON) if self.use_log_energy else EPSILON
         return np.ones((self.num_frames, self.num_features)) * value
 
@@ -242,8 +263,9 @@ class PaddingCut:
         return PaddingCut(
             id=self.id if preserve_id else str(uuid4()),
             duration=new_duration,
-            num_frames=round(new_duration / self.frame_shift),
+            num_frames=round(new_duration / self.frame_shift) if self.num_frames is not None else None,
             num_features=self.num_features,
+            num_samples=round(new_duration * self.sampling_rate) if self.num_samples is not None else None,
             use_log_energy=self.use_log_energy,
             sampling_rate=self.sampling_rate
         )
@@ -299,7 +321,7 @@ class MixTrack:
         raw_cut = data.pop('cut')
         try:
             cut = Cut.from_dict(raw_cut)
-        except:
+        except TypeError:
             cut = PaddingCut.from_dict(raw_cut)
         return MixTrack(cut, **data)
 
@@ -334,16 +356,20 @@ class MixedCut:
         return max(track_durations)
 
     @property
-    def num_frames(self) -> int:
-        return round(self.duration / self.tracks[0].cut.frame_shift)
+    def num_frames(self) -> Optional[int]:
+        return None if self.tracks[0].cut.frame_shift is None else round(self.duration / self.tracks[0].cut.frame_shift)
+
+    @property
+    def num_samples(self) -> Optional[int]:
+        return None if self.tracks[0].cut.num_samples is None else round(self.duration * self.tracks[0].cut.sampling_rate)
 
     @property
     def num_features(self) -> int:
         return self.tracks[0].cut.num_features
 
     @property
-    def features_type(self) -> str:
-        return self.tracks[0].cut.features.type
+    def features_type(self) -> Optional[str]:
+        return self.tracks[0].cut.features.type if self.tracks[0].cut.features is not None else None
 
     def overlay(
             self,
@@ -477,7 +503,23 @@ class MixedCut:
             )
         return mixer.mixed_feats
 
-    # TODO: load_audio()
+    def load_audio(self, root_dir: Optional[Pathlike] = None) -> np.ndarray:
+        """
+        Loads the audios of the source cuts and mix them on-the-fly.
+
+        :return: the mixed audio samples in an ndarray, with the shape (1, sample_num)
+        """
+        cuts = [track.cut for track in self.tracks]
+        unmixed_audio = [cut.load_audio(root_dir) for cut in cuts]
+        mixer = AudioMixer(unmixed_audio[0])
+        for audio, track in zip(unmixed_audio[1:], self.tracks[1:]):
+            mixer.add_to_mix(
+                audio=audio,
+                snr=track.snr,
+                offset=track.offset,
+                sampling_rate=track.cut.sampling_rate
+            )
+        return mixer.mixed_audio
 
     @staticmethod
     def from_dict(data: dict) -> 'MixedCut':
@@ -673,7 +715,23 @@ def make_windowed_cuts_from_features(
     return CutSet.from_cuts(cuts)
 
 
-def make_cuts_from_supervisions(supervision_set: SupervisionSet, feature_set: FeatureSet) -> CutSet:
+def make_cuts_from_recordings(recording_set: RecordingSet) -> CutSet:
+    """
+    Utility that converts a RecordingSet to a CutSet without any adjustment of the segment boundaries.
+    """
+    return CutSet.from_cuts(
+        Cut(
+            id=str(uuid4()),
+            start=0,
+            duration=recording.duration_seconds,
+            recording=recording,
+            supervisions=[],
+        )
+        for recording in recording_set
+    )
+
+
+def make_cuts_from_supervisions_features(supervision_set: SupervisionSet, feature_set: FeatureSet) -> CutSet:
     """
     Utility that converts a SupervisionSet to a CutSet without any adjustment of the segment boundaries.
     It attaches the relevant features from the corresponding FeatureSet.
@@ -692,6 +750,23 @@ def make_cuts_from_supervisions(supervision_set: SupervisionSet, feature_set: Fe
             supervisions=[supervision]
         )
         for idx, supervision in enumerate(supervision_set)
+    )
+
+
+def make_cuts_from_supervisions_recordings(supervision_set: SupervisionSet, recording_set: RecordingSet) -> CutSet:
+    """
+    Utility that converts a SupervisionSet to a CutSet without any adjustment of the segment boundaries.
+    It attaches the relevant recording from the corresponding RecordingSet.
+    """
+    return CutSet.from_cuts(
+        Cut(
+            id=str(uuid4()),
+            start=supervision.start,
+            duration=supervision.duration,
+            recording=recording_set[supervision.recording_id],
+            supervisions=[supervision]
+        )
+        for supervision in supervision_set
     )
 
 
@@ -719,7 +794,9 @@ def mix(
                       'We are setting snr to None, so that the original signal energies will be retained instead.')
         snr = None
 
-    assert reference_cut.num_features == mixed_in_cut.num_features, "Cannot overlay cuts with different feature dimensions."
+    if reference_cut.num_features is not None:
+        assert reference_cut.num_features == mixed_in_cut.num_features, "Cannot overlay cuts with different feature " \
+                                                                        "dimensions. "
     assert offset <= reference_cut.duration, f"Cannot overlay cut '{mixed_in_cut.id}' with offset {offset}," \
                                              f" which is greater than cuts {reference_cut.id} duration" \
                                              f" of {reference_cut.duration}"

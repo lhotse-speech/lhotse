@@ -1,15 +1,4 @@
 - duration: 10.0
-  features:
-    channel_id: 0
-    duration: 16.04
-    num_features: 23
-    num_frames: 1604
-    recording_id: recording-1
-    sampling_rate: 16000
-    start: 0.0
-    storage_path: test/fixtures/libri/storage/dc2e0952-f2f8-423c-9b8c-f5481652ee1d.llc
-    storage_type: lilcom
-    type: fbank
   recording:
     duration_seconds: 11.66
     id: 2412-153948-0000

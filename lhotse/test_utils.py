@@ -34,7 +34,7 @@ def dummy_recording(unique_id: int) -> Recording:
 def dummy_supervision(unique_id: int, start: float = 0.0, duration: float = 1.0) -> SupervisionSegment:
     return SupervisionSegment(
         id=f'dummy-segment-{unique_id:04d}',
-        recording_id=f'dummy-recording',
+        recording_id='dummy-recording',
         start=start,
         duration=duration
     )
