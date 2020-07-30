@@ -61,35 +61,43 @@ class Cut:
     @property
     def channel(self) -> int:
         # Return the first channel's id
-        return self.features.channel_id if self.features is not None else self.recording.channel_ids[0]
+        return self.features.channel_id if self.has_features else self.recording.channel_ids[0]
 
     @property
     def recording_id(self) -> str:
-        return self.features.recording_id if self.features is not None else self.recording.id
+        return self.features.recording_id if self.has_features else self.recording.id
 
     @property
     def end(self) -> Seconds:
         return self.start + self.duration
 
     @property
+    def has_features(self) -> bool:
+        return self.features is not None
+
+    @property
+    def has_recording(self) -> bool:
+        return self.recording is not None
+
+    @property
     def frame_shift(self) -> Optional[Seconds]:
-        return self.features.frame_shift if self.features is not None else None
+        return self.features.frame_shift if self.has_features else None
 
     @property
     def num_frames(self) -> Optional[int]:
-        return round(self.duration / self.frame_shift) if self.features is not None else None
+        return round(self.duration / self.frame_shift) if self.has_features else None
 
     @property
     def num_samples(self) -> Optional[int]:
-        return self.recording.num_samples if self.recording is not None else None
+        return self.recording.num_samples if self.has_recording else None
 
     @property
     def num_features(self) -> Optional[int]:
-        return self.features.num_features if self.features is not None else None
+        return self.features.num_features if self.has_features else None
 
     @property
     def sampling_rate(self) -> int:
-        return self.features.sampling_rate if self.features is not None else self.recording.sampling_rate
+        return self.features.sampling_rate if self.has_features else self.recording.sampling_rate
 
     def load_features(self, root_dir: Optional[Pathlike] = None) -> Optional[np.ndarray]:
         """
@@ -97,10 +105,9 @@ class Cut:
         [begin, duration] region of the current Cut.
         Optionally specify a `root_dir` prefix to prefix the features path with.
         """
-        if self.features is not None:
+        if self.has_features:
             return self.features.load(root_dir=root_dir, start=self.start, duration=self.duration)
-        else:
-            return None
+        return None
 
     def load_audio(self, root_dir: Optional[Pathlike] = None) -> Optional[np.ndarray]:
         """
@@ -111,15 +118,14 @@ class Cut:
         :param root_dir: optional Path prefix to find the recording in the filesystem.
         :return: a numpy ndarray with audio samples, with shape (1 <channel>, N <samples>)
         """
-        if self.recording is not None:
+        if self.has_recording:
             return self.recording.load_audio(
                 channels=self.channel,
                 offset_seconds=self.start,
                 duration_seconds=self.duration,
                 root_dir=root_dir
             )
-        else:
-            return None
+        return None
 
     def truncate(
             self,
@@ -235,19 +241,29 @@ class PaddingCut:
         return []
 
     @property
+    def has_features(self) -> bool:
+        return self.num_frames is not None
+
+    @property
+    def has_recording(self) -> bool:
+        return self.num_samples is not None
+
+    @property
     def frame_shift(self):
-        return round(self.duration / self.num_frames, ndigits=3) if self.num_frames is not None else None
+        return round(self.duration / self.num_frames, ndigits=3) if self.has_features else None
 
     # noinspection PyUnusedLocal
     def load_features(self, *args, **kwargs) -> Optional[np.ndarray]:
-        if self.num_frames is None:
-            return None
-        value = np.log(EPSILON) if self.use_log_energy else EPSILON
-        return np.ones((self.num_frames, self.num_features)) * value
+        if self.has_features:
+            value = np.log(EPSILON) if self.use_log_energy else EPSILON
+            return np.ones((self.num_frames, self.num_features)) * value
+        return None
 
     # noinspection PyUnusedLocal
-    def load_audio(self, *args, **kwargs) -> np.ndarray:
-        return np.zeros((1, round(self.duration * self.sampling_rate)))
+    def load_audio(self, *args, **kwargs) -> Optional[np.ndarray]:
+        if self.has_recording:
+            return np.zeros((1, round(self.duration * self.sampling_rate)))
+        return None
 
     # noinspection PyUnusedLocal
     def truncate(
@@ -356,21 +372,36 @@ class MixedCut:
         return max(track_durations)
 
     @property
+    def has_features(self) -> bool:
+        return self._first_non_padding_cut.has_features
+
+    @property
+    def has_recording(self) -> bool:
+        return self._first_non_padding_cut.has_recording
+
+    @property
     def num_frames(self) -> Optional[int]:
-        return None if self.tracks[0].cut.frame_shift is None else round(self.duration / self.tracks[0].cut.frame_shift)
+        if self.has_features:
+            return round(self.duration / self._first_non_padding_cut.frame_shift)
+        return None
+
+    @property
+    def sampling_rate(self) -> Optional[int]:
+        return self._first_non_padding_cut.sampling_rate
 
     @property
     def num_samples(self) -> Optional[int]:
-        return None if self.tracks[0].cut.num_samples is None else round(
-            self.duration * self.tracks[0].cut.sampling_rate)
+        if self.has_recording:
+            return round(self.duration * self.sampling_rate)
+        return None
 
     @property
-    def num_features(self) -> int:
-        return self.tracks[0].cut.num_features
+    def num_features(self) -> Optional[int]:
+        return self._first_non_padding_cut.num_features
 
     @property
     def features_type(self) -> Optional[str]:
-        return self.tracks[0].cut.features.type if self.tracks[0].cut.features is not None else None
+        return self._first_non_padding_cut.features.type
 
     def overlay(
             self,
@@ -486,37 +517,38 @@ class MixedCut:
             use_log_energy=self.features_type in ('fbank', 'mfcc')
         ))
 
-    def load_features(self, root_dir: Optional[Pathlike] = None) -> np.ndarray:
+    def load_features(self, root_dir: Optional[Pathlike] = None) -> Optional[np.ndarray]:
         """Loads the features of the source cuts and overlays them on-the-fly."""
-        cuts = [track.cut for track in self.tracks]
-        frame_shift = cuts[0].frame_shift
-        non_padding_cut = [c for c in cuts if not isinstance(c, PaddingCut)][0]
-        feature_extractor = create_default_feature_extractor(non_padding_cut.features.type)
+        if not self.has_features:
+            return None
+        first_cut = self.tracks[0].cut
         mixer = FeatureMixer(
-            feature_extractor=feature_extractor,
-            base_feats=cuts[0].load_features(root_dir=root_dir),
-            frame_shift=frame_shift,
+            feature_extractor=create_default_feature_extractor(self._first_non_padding_cut.features.type),
+            base_feats=first_cut.load_features(root_dir=root_dir),
+            frame_shift=first_cut.frame_shift,
         )
-        for cut, track in zip(cuts[1:], self.tracks[1:]):
+        for track in self.tracks[1:]:
             mixer.add_to_mix(
-                feats=cut.load_features(root_dir=root_dir),
+                feats=track.cut.load_features(root_dir=root_dir),
                 snr=track.snr,
                 offset=track.offset
             )
         return mixer.mixed_feats
 
-    def load_audio(self, root_dir: Optional[Pathlike] = None) -> np.ndarray:
+    def load_audio(self, root_dir: Optional[Pathlike] = None) -> Optional[np.ndarray]:
         """
         Loads the audios of the source cuts and mix them on-the-fly.
 
         :return: the mixed audio samples in an ndarray, with the shape (1, sample_num)
         """
-        cuts = [track.cut for track in self.tracks]
-        unmixed_audio = [cut.load_audio(root_dir) for cut in cuts]
-        mixer = AudioMixer(unmixed_audio[0])
-        for audio, track in zip(unmixed_audio[1:], self.tracks[1:]):
+        if not self.has_recording:
+            return None
+        # cuts = [track.cut for track in self.tracks]
+        # unmixed_audio = [cut.load_audio(root_dir) for cut in cuts]
+        mixer = AudioMixer(self.tracks[0].cut.load_audio(root_dir=root_dir))
+        for track in self.tracks[1:]:
             mixer.add_to_mix(
-                audio=audio,
+                audio=track.cut.load_audio(root_dir=root_dir),
                 snr=track.snr,
                 offset=track.offset,
                 sampling_rate=track.cut.sampling_rate
@@ -526,6 +558,10 @@ class MixedCut:
     @staticmethod
     def from_dict(data: dict) -> 'MixedCut':
         return MixedCut(id=data['id'], tracks=[MixTrack.from_dict(track) for track in data['tracks']])
+
+    @property
+    def _first_non_padding_cut(self) -> Cut:
+        return [t.cut for t in self.tracks if not isinstance(t.cut, PaddingCut)][0]
 
 
 @dataclass

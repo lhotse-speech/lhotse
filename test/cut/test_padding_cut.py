@@ -19,6 +19,7 @@ def padding_cut():
         num_frames=1000,
         num_features=23,
         sampling_rate=16000,
+        num_samples=160000,
         use_log_energy=True
     )
 
