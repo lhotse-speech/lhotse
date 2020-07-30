@@ -1,97 +1,20 @@
-import os
 from abc import ABCMeta, abstractmethod
 from concurrent.futures.process import ProcessPoolExecutor
-from dataclasses import asdict, dataclass, field, is_dataclass
+from dataclasses import is_dataclass, asdict, dataclass, field
 from functools import partial
 from itertools import chain
 from math import isclose
 from pathlib import Path
-from typing import Iterable, List, Optional, Any
+from typing import Optional, Any, List, Iterable
 from uuid import uuid4
 
 import lilcom
 import numpy as np
 import torch
-from scipy.fft import idct, dct
-from scipy.signal import stft
-
-# Workaround for SoundFile (torchaudio dep) raising exception when a native library, libsndfile1, is not installed.
-# Read-the-docs does not allow to modify the Docker containers used to build documentation...
-if not os.environ.get('READTHEDOCS', False):
-    import torchaudio
 
 from lhotse.audio import Recording
 from lhotse.supervision import SupervisionSegment
-from lhotse.utils import Decibels, Pathlike, Seconds, load_yaml, save_to_yaml
-
-
-@dataclass
-class SpectrogramConfig:
-    # Note that `snip_edges` parameter is missing from config: in order to simplify the relationship between
-    #  the duration and the number of frames, we are always setting `snip_edges` to False.
-    dither: float = 0.0
-    window_type: str = "povey"
-    # Note that frame_length and frame_shift will be converted to milliseconds before torchaudio/Kaldi sees them
-    frame_length: Seconds = 0.025
-    frame_shift: Seconds = 0.01
-    remove_dc_offset: bool = True
-    round_to_power_of_two: bool = True
-    energy_floor: float = 0.1
-    min_duration: float = 0.0
-    preemphasis_coefficient: float = 0.97
-    raw_energy: bool = True
-
-
-@dataclass
-class MfccConfig:
-    # Spectogram-related part
-    dither: float = 0.0
-    window_type: str = "povey"
-    # Note that frame_length and frame_shift will be converted to milliseconds before torchaudio/Kaldi sees them
-    frame_length: Seconds = 0.025
-    frame_shift: Seconds = 0.01
-    remove_dc_offset: bool = True
-    round_to_power_of_two: bool = True
-    energy_floor: float = 0.1
-    min_duration: float = 0.0
-    preemphasis_coefficient: float = 0.97
-    raw_energy: bool = True
-
-    # MFCC-related part
-    low_freq: float = 20.0
-    high_freq: float = 0.0
-    num_mel_bins: int = 23
-    use_energy: bool = False
-    vtln_low: float = 100.0
-    vtln_high: float = -500.0
-    vtln_warp: float = 1.0
-    cepstral_lifter: float = 22.0
-    num_ceps: int = 13
-
-
-@dataclass
-class FbankConfig:
-    # Spectogram-related part
-    dither: float = 0.0
-    window_type: str = "povey"
-    # Note that frame_length and frame_shift will be converted to milliseconds before torchaudio/Kaldi sees them
-    frame_length: Seconds = 0.025
-    frame_shift: Seconds = 0.01
-    remove_dc_offset: bool = True
-    round_to_power_of_two: bool = True
-    energy_floor: float = 0.1
-    min_duration: float = 0.0
-    preemphasis_coefficient: float = 0.97
-    raw_energy: bool = True
-
-    # Fbank-related part
-    low_freq: float = 20.0
-    high_freq: float = 0.0
-    num_mel_bins: int = 23
-    use_energy: bool = False
-    vtln_low: float = 100.0
-    vtln_high: float = -500.0
-    vtln_warp: float = 1.0
+from lhotse.utils import Seconds, Pathlike, load_yaml, save_to_yaml
 
 
 class FeatureExtractor(metaclass=ABCMeta):
@@ -147,24 +70,6 @@ def register_extractor(cls):
     return cls
 
 
-@dataclass
-class ExampleFeatureExtractorConfig:
-    frame_shift: Seconds = 0.01
-
-
-class ExampleFeatureExtractor(FeatureExtractor):
-    name = 'example-feature-extractor'
-    config_type = ExampleFeatureExtractorConfig
-
-    def extract(self, samples: np.ndarray, sampling_rate: int) -> np.ndarray:
-        f, t, Zxx = stft(samples, sampling_rate, noverlap=round(self.frame_shift * sampling_rate))
-        return np.abs(Zxx)
-
-    @property
-    def frame_shift(self) -> Seconds:
-        return self.config.frame_shift
-
-
 class TorchaudioFeatureExtractor(FeatureExtractor):
     feature_fn = None
 
@@ -184,53 +89,6 @@ class TorchaudioFeatureExtractor(FeatureExtractor):
     @property
     def frame_shift(self) -> Seconds:
         return self.config.frame_shift
-
-
-@register_extractor
-class Mfcc(TorchaudioFeatureExtractor):
-    name = 'mfcc'
-    config_type = MfccConfig
-    feature_fn = staticmethod(torchaudio.compliance.kaldi.mfcc)
-
-    def mix(self, features_a: np.ndarray, features_b: np.ndarray, gain_b: float) -> np.ndarray:
-        def to_energies(x):
-            return np.exp(idct(x, norm='ortho'))
-
-        return dct(np.log(to_energies(features_a) + gain_b * to_energies(features_b)), norm='ortho')
-
-    def compute_energy(self, features: np.ndarray) -> float:
-        fbank = idct(features, norm='ortho')
-        return float(np.sum(np.exp(fbank)))
-
-
-@register_extractor
-class Fbank(TorchaudioFeatureExtractor):
-    name = 'fbank'
-    config_type = FbankConfig
-    feature_fn = staticmethod(torchaudio.compliance.kaldi.fbank)
-
-    @staticmethod
-    def mix(features_a: np.ndarray, features_b: np.ndarray, gain_b: float) -> np.ndarray:
-        return np.log(np.exp(features_a) + gain_b * np.exp(features_b))
-
-    @staticmethod
-    def compute_energy(features: np.ndarray) -> float:
-        return float(np.sum(np.exp(features)))
-
-
-@register_extractor
-class Spectrogram(TorchaudioFeatureExtractor):
-    name = 'spectrogram'
-    config_type = SpectrogramConfig
-    feature_fn = staticmethod(torchaudio.compliance.kaldi.spectrogram)
-
-    @staticmethod
-    def mix(features_a: np.ndarray, features_b: np.ndarray, gain_b: float) -> np.ndarray:
-        return features_a + gain_b * features_b
-
-    @staticmethod
-    def compute_energy(features: np.ndarray) -> float:
-        return float(np.sum(features))
 
 
 @dataclass(order=True)
@@ -505,101 +363,3 @@ class FeatureSetBuilder:
                 storage_path=str(output_features_path)
             ))
         return results
-
-
-class FeatureMixer:
-    """
-    Utility class to mix multiple log-mel energy feature matrices into a single one.
-    It pads the signals with low energy values to account for differing lengths and offsets.
-    """
-
-    def __init__(
-            self,
-            feature_extractor: FeatureExtractor,
-            base_feats: np.ndarray,
-            frame_shift: Seconds,
-            log_energy_floor: float = -1000.0
-    ):
-        """
-        :param base_feats: The features used to initialize the FbankMixer are a point of reference
-            in terms of energy and offset for all features mixed into them.
-        :param frame_shift: Required to correctly compute offset and padding during the mix.
-        :param frame_length: Required to correctly compute offset and padding during the mix.
-        :param log_energy_floor: The value used to pad the shorter features during the mix.
-        """
-        self.feature_extractor = feature_extractor
-        # The mixing output will be available in self.mixed_feats
-        self.mixed_feats = base_feats
-        # Keep a pre-computed energy value of the features that we initialize the Mixer with;
-        # it is required to compute gain ratios that satisfy SNR during the mix.
-        self.frame_shift = frame_shift
-        self.reference_energy = feature_extractor.compute_energy(base_feats)
-        self.log_energy_floor = log_energy_floor
-
-    @property
-    def num_features(self):
-        return self.mixed_feats.shape[1]
-
-    def add_to_mix(
-            self,
-            feats: np.ndarray,
-            snr: Optional[Decibels] = None,
-            offset: Seconds = 0.0
-    ):
-        """
-        Add feature matrix of a new track into the mix.
-        :param feats: A 2-d feature matrix to be mixed in.
-        :param snr: Signal-to-noise ratio, assuming `feats` represents noise (positive SNR - lower `feats` energy,
-        negative SNR - higher `feats` energy)
-        :param offset: How many seconds to shift `feats` in time. For mixing, the signal will be padded before
-        the start with low energy values.
-        :return:
-        """
-        assert offset >= 0.0, "Negative offset in mixing is not supported."
-
-        num_frames_offset = round(offset / self.frame_shift)
-        current_num_frames = self.mixed_feats.shape[0]
-        incoming_num_frames = feats.shape[0] + num_frames_offset
-        mix_num_frames = max(current_num_frames, incoming_num_frames)
-
-        existing_feats = self.mixed_feats
-        feats_to_add = feats
-
-        # When the existing frames are less than what we anticipate after the mix,
-        # we need to pad after the end of the existing features mixed so far.
-        if current_num_frames < mix_num_frames:
-            existing_feats = np.vstack([
-                self.mixed_feats,
-                self.log_energy_floor * np.ones((mix_num_frames - current_num_frames, self.num_features))
-            ])
-
-        # When there is an offset, we need to pad before the start of the features we're adding.
-        if offset > 0:
-            feats_to_add = np.vstack([
-                self.log_energy_floor * np.ones((num_frames_offset, self.num_features)),
-                feats_to_add
-            ])
-
-        # When the features we're mixing in are shorter that the anticipated mix length,
-        # we need to pad after their end.
-        # Note: we're doing that non-efficiently, as it we potentially re-allocate numpy arrays twice,
-        # during this padding and the  offset padding before. If that's a bottleneck, we'll optimize.
-        if incoming_num_frames < mix_num_frames:
-            feats_to_add = np.vstack([
-                feats_to_add,
-                self.log_energy_floor * np.ones((mix_num_frames - incoming_num_frames, self.num_features))
-            ])
-
-        # When SNR is requested, find what gain is needed to satisfy the SNR
-        gain = 1.0
-        if snr is not None:
-            # Compute the added signal energy before it was padded
-            added_feats_energy = self.feature_extractor.compute_energy(feats)
-            target_energy = self.reference_energy * (10.0 ** (-snr / 10))
-            gain = target_energy / added_feats_energy
-
-        self.mixed_feats = self.feature_extractor.mix(
-            features_a=existing_feats,
-            features_b=feats_to_add,
-            gain_b=gain
-        )
