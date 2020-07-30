@@ -8,10 +8,7 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Dict, NamedTuple, Optional, Union
 
-# Workaround for SoundFile (torchaudio dep) raising exception when a native library, libsndfile1, is not installed.
-# Read-the-docs does not allow to modify the Docker containers used to build documentation...
-if not os.environ.get('READTHEDOCS', False):
-    import torchaudio
+import torchaudio
 
 from lhotse.audio import AudioSource, Recording, RecordingSet
 from lhotse.supervision import SupervisionSegment, SupervisionSet
