@@ -1,7 +1,7 @@
 import pytest
 
 from lhotse.cut import CutSet
-from lhotse.dataset.unsupervised import UnsupervisedDataset, UnsupervisedWaveformDataset
+from lhotse.dataset import UnsupervisedDataset, UnsupervisedWaveformDataset
 
 
 @pytest.fixture

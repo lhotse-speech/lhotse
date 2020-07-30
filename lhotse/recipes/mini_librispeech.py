@@ -6,7 +6,7 @@ import tarfile
 import urllib.request
 from collections import defaultdict
 from pathlib import Path
-from typing import Dict, NamedTuple, Optional, Union
+from typing import Dict, NamedTuple, Optional, Union, Any
 
 # Workaround for SoundFile (torchaudio dep) raising exception when a native library, libsndfile1, is not installed.
 # Read-the-docs does not allow to modify the Docker containers used to build documentation...
@@ -43,7 +43,9 @@ def download_and_untar(
 
 class LibriSpeechMetaData(NamedTuple):
     audio_path: Pathlike
-    audio_info: torchaudio.sox_signalinfo_t
+    # HACK: the real type is "torchaudio.sox_signalinfo_t", but "import torchaudio" currently crashes our documentation
+    # builds, as it tries to import libsoundfile, that can't be installed in that environment....
+    audio_info: Any
     text: str
 
 
