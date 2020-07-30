@@ -1,2 +1,3 @@
 from .source_separation import SourceSeparationDataset
-from .unsupervised import UnsupervisedDataset
+from .speech_recognition import SpeechRecognitionDataset
+from .unsupervised import UnsupervisedDataset, UnsupervisedWaveformDataset
