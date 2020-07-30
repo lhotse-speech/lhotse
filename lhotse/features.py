@@ -1,6 +1,7 @@
 """
 This file is just a rough sketch for now.
 """
+import os
 from concurrent.futures.process import ProcessPoolExecutor
 from dataclasses import asdict, dataclass, field
 from functools import partial
@@ -13,7 +14,11 @@ from uuid import uuid4
 import lilcom
 import numpy as np
 import torch
-import torchaudio
+
+# Workaround for SoundFile (torchaudio dep) raising exception when a native library, libsndfile1, is not installed.
+# Read-the-docs does not allow to modify the Docker containers used to build documentation...
+if not os.environ.get('READTHEDOCS', False):
+    import torchaudio
 import yaml
 
 from lhotse.audio import Recording
