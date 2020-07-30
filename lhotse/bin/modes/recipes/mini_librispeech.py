@@ -1,7 +1,7 @@
 import click
 
-from lhotse.bin.modes import prepare, obtain
-from lhotse.recipes.mini_librispeech import prepare_mini_librispeech, download_and_untar
+from lhotse.bin.modes import obtain, prepare
+from lhotse.recipes.mini_librispeech import download_and_untar, prepare_mini_librispeech
 from lhotse.utils import Pathlike
 
 __all__ = ['mini_librispeech']

@@ -3,12 +3,12 @@ from functools import reduce
 from itertools import chain
 from math import ceil
 from operator import add
-from typing import List, TypeVar, Iterable, Any, Optional
+from typing import Any, Iterable, List, Optional, TypeVar
 
-from lhotse.audio import RecordingSet, Recording
-from lhotse.cut import CutSet, Cut, MixedCut
-from lhotse.features import FeatureSet, Features
-from lhotse.supervision import SupervisionSet, SupervisionSegment
+from lhotse.audio import Recording, RecordingSet
+from lhotse.cut import Cut, CutSet, MixedCut
+from lhotse.features import Features, FeatureSet
+from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import Pathlike
 
 ManifestItem = TypeVar('ManifestItem', Recording, SupervisionSegment, Features, Cut, MixedCut)

@@ -1,16 +1,20 @@
 import logging
+import os
 import re
+import shutil
 import tarfile
 import urllib.request
-import shutil
 from collections import defaultdict
 from pathlib import Path
-from typing import Optional, Dict, Union, NamedTuple
+from typing import Dict, NamedTuple, Optional, Union, Any
 
-import torchaudio
+# Workaround for SoundFile (torchaudio dep) raising exception when a native library, libsndfile1, is not installed.
+# Read-the-docs does not allow to modify the Docker containers used to build documentation...
+if not os.environ.get('READTHEDOCS', False):
+    import torchaudio
 
-from lhotse.audio import RecordingSet, Recording, AudioSource
-from lhotse.supervision import SupervisionSet, SupervisionSegment
+from lhotse.audio import AudioSource, Recording, RecordingSet
+from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import Pathlike
 
 dataset_parts = ('dev-clean-2', 'train-clean-5')
@@ -39,7 +43,9 @@ def download_and_untar(
 
 class LibriSpeechMetaData(NamedTuple):
     audio_path: Pathlike
-    audio_info: torchaudio.sox_signalinfo_t
+    # HACK: the real type is "torchaudio.sox_signalinfo_t", but "import torchaudio" currently crashes our documentation
+    # builds, as it tries to import libsoundfile, that can't be installed in that environment....
+    audio_info: Any
     text: str
 
 

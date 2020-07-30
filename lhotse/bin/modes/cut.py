@@ -1,4 +1,4 @@
-from typing import Tuple, Optional, List
+from typing import List, Optional, Tuple
 
 import click
 import numpy as np
@@ -7,14 +7,14 @@ from cytoolz.itertoolz import groupby
 from lhotse.bin.modes.cli_base import cli
 from lhotse.cut import (
     CutSet,
-    make_cuts_from_features,
-    make_cuts_from_supervisions,
-    make_windowed_cuts_from_features,
     append_cuts,
+    make_cuts_from_features,
+    make_cuts_from_supervisions_features,
+    make_windowed_cuts_from_features,
     mix_cuts,
 )
 from lhotse.features import FeatureSet
-from lhotse.manipulation import split, combine
+from lhotse.manipulation import combine, split
 from lhotse.supervision import SupervisionSet
 from lhotse.utils import Pathlike, fix_random_seed
 
@@ -45,7 +45,7 @@ def simple(
         cut_set = make_cuts_from_features(feature_set)
     else:
         supervision_set = SupervisionSet.from_yaml(supervision_manifest)
-        cut_set = make_cuts_from_supervisions(feature_set=feature_set, supervision_set=supervision_set)
+        cut_set = make_cuts_from_supervisions_features(feature_set=feature_set, supervision_set=supervision_set)
     cut_set.to_yaml(output_cut_manifest)
 
 
@@ -108,7 +108,7 @@ def random_overlayed(
     supervision_set = SupervisionSet.from_yaml(supervision_manifest)
     feature_set = FeatureSet.from_yaml(feature_manifest)
 
-    source_cut_set = make_cuts_from_supervisions(supervision_set=supervision_set, feature_set=feature_set)
+    source_cut_set = make_cuts_from_supervisions_features(supervision_set=supervision_set, feature_set=feature_set)
     left_cuts, right_cuts = split(source_cut_set, num_splits=2, randomize=True)
 
     snrs = np.random.uniform(*snr_range, size=len(left_cuts)).tolist()

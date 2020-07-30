@@ -1,26 +1,28 @@
-"""
-This file is just a rough sketch for now.
-"""
+import os
 from abc import ABCMeta, abstractmethod
 from concurrent.futures.process import ProcessPoolExecutor
-from dataclasses import dataclass, field, asdict, is_dataclass
+from dataclasses import asdict, dataclass, field, is_dataclass
 from functools import partial
 from itertools import chain
 from math import isclose
 from pathlib import Path
-from typing import List, Iterable, Optional, Any
+from typing import Iterable, List, Optional, Any
 from uuid import uuid4
 
 import lilcom
 import numpy as np
 import torch
-import torchaudio
 from scipy.fft import idct, dct
 from scipy.signal import stft
 
+# Workaround for SoundFile (torchaudio dep) raising exception when a native library, libsndfile1, is not installed.
+# Read-the-docs does not allow to modify the Docker containers used to build documentation...
+if not os.environ.get('READTHEDOCS', False):
+    import torchaudio
+
 from lhotse.audio import Recording
 from lhotse.supervision import SupervisionSegment
-from lhotse.utils import Seconds, Pathlike, Decibels, load_yaml, save_to_yaml
+from lhotse.utils import Decibels, Pathlike, Seconds, load_yaml, save_to_yaml
 
 
 @dataclass

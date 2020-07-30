@@ -109,6 +109,7 @@ def test_load_features(
 def test_load_features_with_default_arguments():
     feature_set = FeatureSet.from_yaml('test/fixtures/dummy_feats/feature_manifest.yml')
     features = feature_set.load('recording-1')
+    assert features.shape == (50, 23)
 
 
 def test_feature_set_builder():

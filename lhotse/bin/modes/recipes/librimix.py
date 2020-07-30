@@ -1,7 +1,7 @@
 import click
 
-from lhotse.bin.modes import prepare, obtain
-from lhotse.recipes.librimix import prepare_librimix, download_and_unzip
+from lhotse.bin.modes import obtain, prepare
+from lhotse.recipes.librimix import download_and_unzip, prepare_librimix
 from lhotse.utils import Pathlike
 
 __all__ = ['librimix']
