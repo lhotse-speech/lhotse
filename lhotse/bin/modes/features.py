@@ -5,7 +5,7 @@ import click
 
 from lhotse.audio import RecordingSet
 from lhotse.bin.modes.cli_base import cli
-from lhotse.features import FeatureExtractor, FeatureSetBuilder, create_default_feature_extractor
+from lhotse.features import FeatureExtractor, FeatureSetBuilder, create_default_feature_extractor, Fbank
 from lhotse.supervision import SupervisionSet
 from lhotse.utils import Pathlike
 
@@ -65,7 +65,7 @@ def extract(
     audio_set = RecordingSet.from_yaml(audio_manifest)
 
     feature_extractor = (FeatureExtractor.from_yaml(feature_manifest)
-                         if feature_manifest is not None else FeatureExtractor())
+                         if feature_manifest is not None else Fbank())
 
     # TODO: to be used (actually, only the segmentation info will be used, and all supervision info will be ignored)
     supervision_set = (SupervisionSet.from_yaml(segmentation_manifest)

@@ -16,7 +16,7 @@ from lhotse.features import (
     create_default_feature_extractor,
     Fbank,
     Mfcc,
-    Spectrogram
+    Spectrogram, FeatureExtractor
 )
 from lhotse.test_utils import DummyManifest
 from lhotse.utils import Seconds, time_diff_to_num_frames
@@ -48,6 +48,14 @@ def test_feature_extractor_serialization():
     with NamedTemporaryFile() as f:
         fe.to_yaml(f.name)
         fe_deserialized = Fbank.from_yaml(f.name)
+    assert fe_deserialized.config == fe.config
+
+
+def test_feature_extractor_generic_deserialization():
+    fe = Fbank()
+    with NamedTemporaryFile() as f:
+        fe.to_yaml(f.name)
+        fe_deserialized = FeatureExtractor.from_yaml(f.name)
     assert fe_deserialized.config == fe.config
 
 

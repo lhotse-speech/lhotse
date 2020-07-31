@@ -5,7 +5,7 @@ from functools import partial
 from itertools import chain
 from math import isclose
 from pathlib import Path
-from typing import Optional, Any, List, Iterable
+from typing import Optional, Any, List, Iterable, Type
 from uuid import uuid4
 
 import lilcom
@@ -59,9 +59,11 @@ class FeatureExtractor(metaclass=ABCMeta):
 
     @classmethod
     def from_dict(cls, data: dict) -> 'FeatureExtractor':
-        del data['feature_type']
-        config = cls.config_type(**data)
-        return cls(config)
+        feature_type = data.pop('feature_type')
+        extractor_type = get_extractor_type(feature_type)
+        # noinspection PyUnresolvedReferences
+        config = extractor_type.config_type(**data)
+        return extractor_type(config)
 
     @classmethod
     def from_yaml(cls, path: Pathlike) -> 'FeatureExtractor':
@@ -76,13 +78,22 @@ class FeatureExtractor(metaclass=ABCMeta):
 FEATURE_EXTRACTORS = {}
 
 
+def get_extractor_type(name: str) -> Type:
+    """
+    Return the feature extractor type corresponding to the given name.
+    :param name: specifies which feature extractor should be used.
+    :return: A feature extractors type.
+    """
+    return FEATURE_EXTRACTORS[name]
+
+
 def create_default_feature_extractor(name: str) -> 'Optional[FeatureExtractor]':
     """
     Create a feature extractor object with a default configuration.
     :param name: specifies which feature extractor should be used.
     :return: A new feature extractor instance.
     """
-    return FEATURE_EXTRACTORS[name]()
+    return get_extractor_type(name)()
 
 
 def register_extractor(cls):

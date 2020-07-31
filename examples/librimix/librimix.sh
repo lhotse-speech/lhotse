@@ -20,9 +20,12 @@ lhotse prepare librimix \
   ${LIBRIMIX_CSV} \
   ${OUTPUT_PATH}
 
+lhotse feat write-default-config -f spectrogram ${OUTPUT_PATH}/spectrogram.yml
+
 for type in sources mix noise; do
   # Extract features for each type of audio file
-  lhotse make-feats -j ${nj} \
+  lhotse feat extract -j ${nj} \
+    -f ${OUTPUT_PATH}/spectrogram.yml \
     -r ${LIBRIMIX_ROOT} \
     ${OUTPUT_PATH}/audio_${type}.yml \
     ${OUTPUT_PATH}/feats_${type}

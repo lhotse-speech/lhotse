@@ -105,7 +105,7 @@ def prepare_mini_librispeech(
                 channel_id=0,
                 language='English',
                 speaker=re.sub(r'-.*', r'', idx),
-                text=metadata[idx].text
+                text=metadata[idx].text.strip()
             )
             for idx in audio.recordings
         )
