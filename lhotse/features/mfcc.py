@@ -39,6 +39,7 @@ class MfccConfig:
 
 @register_extractor
 class Mfcc(TorchaudioFeatureExtractor):
+    """MFCC feature extractor based on ``torchaudio.compliance.kaldi.mfcc`` function."""
     name = 'mfcc'
     config_type = MfccConfig
     feature_fn = staticmethod(torchaudio.compliance.kaldi.mfcc)

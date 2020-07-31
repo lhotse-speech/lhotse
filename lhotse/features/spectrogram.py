@@ -31,6 +31,7 @@ class SpectrogramConfig:
 
 @register_extractor
 class Spectrogram(TorchaudioFeatureExtractor):
+    """Log spectrogram feature extractor based on ``torchaudio.compliance.kaldi.spectrogram`` function."""
     name = 'spectrogram'
     config_type = SpectrogramConfig
     feature_fn = staticmethod(torchaudio.compliance.kaldi.spectrogram)

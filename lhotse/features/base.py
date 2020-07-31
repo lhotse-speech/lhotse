@@ -23,8 +23,15 @@ class FeatureExtractor(metaclass=ABCMeta):
     It is initialized with a config object, specific to a particular feature extraction method.
     The config is expected to be a dataclass so that it can be easily serialized.
 
-    Any feature extractor must implement at least the ``extract`` method and the ``frame_shift`` property.
-    Feature extractors that support feature-domain mixing should additionaly specify ``compute_energy`` and ``mix``.
+    All derived feature extractors must implement at least the following:
+    - a ``name`` class attribute (how are these features called, e.g. 'mfcc')
+    - a ``config_type`` class attribute that points to the configuration dataclass type
+    - the ``extract`` method,
+    - the ``frame_shift`` property.
+
+    Feature extractors that support feature-domain mixing should additionally specify two static methods:
+    - ``compute_energy``, and
+    - ``mix``.
     """
     name = None
     config_type = None
@@ -70,15 +77,34 @@ FEATURE_EXTRACTORS = {}
 
 
 def create_default_feature_extractor(name: str) -> 'Optional[FeatureExtractor]':
+    """
+    Create a feature extractor object with a default configuration.
+    :param name: specifies which feature extractor should be used.
+    :return: A new feature extractor instance.
+    """
     return FEATURE_EXTRACTORS[name]()
 
 
 def register_extractor(cls):
+    """
+    This decorator is used to register feature extractor classes in Lhotse so they can be easily created
+    just by knowing their name.
+
+    An example of usage:
+
+    @register_extractor
+    class MyFeatureExtractor:
+        ...
+
+    :param cls: A type (class) that is being registered.
+    :return: Registered type.
+    """
     FEATURE_EXTRACTORS[cls.name] = cls
     return cls
 
 
 class TorchaudioFeatureExtractor(FeatureExtractor):
+    """Common abstract base class for all torchaudio based feature extractors."""
     feature_fn = None
 
     def extract(self, samples: np.ndarray, sampling_rate: int) -> np.ndarray:

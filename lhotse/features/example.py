@@ -12,7 +12,13 @@ class ExampleFeatureExtractorConfig:
     frame_shift: Seconds = 0.01
 
 
+# @register_extractor
 class ExampleFeatureExtractor(FeatureExtractor):
+    """
+    A minimal class example, showing how to implement a custom feature extractor in Lhotse.
+    Note that the "@register_extractor" decorator is commented out so that this example
+    is not visible beyond this file.
+    """
     name = 'example-feature-extractor'
     config_type = ExampleFeatureExtractorConfig
 

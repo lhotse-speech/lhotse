@@ -8,8 +8,10 @@ from lhotse.utils import Seconds, Decibels
 
 class FeatureMixer:
     """
-    Utility class to mix multiple log-mel energy feature matrices into a single one.
+    Utility class to mix multiple feature matrices into a single one.
     It pads the signals with low energy values to account for differing lengths and offsets.
+    It relies on the ``FeatureExtractor`` to have defined ``mix`` and ``compute_energy`` methods,
+    so that the ``FeatureMixer`` knows how to scale and add two feature matrices together.
     """
 
     def __init__(
@@ -20,10 +22,10 @@ class FeatureMixer:
             log_energy_floor: float = -1000.0
     ):
         """
-        :param base_feats: The features used to initialize the FbankMixer are a point of reference
+        :param feature_extractor: The ``FeatureExtractor`` that specifies how to mix the features.
+        :param base_feats: The features used to initialize the ``FeatureMixer`` are a point of reference
             in terms of energy and offset for all features mixed into them.
         :param frame_shift: Required to correctly compute offset and padding during the mix.
-        :param frame_length: Required to correctly compute offset and padding during the mix.
         :param log_energy_floor: The value used to pad the shorter features during the mix.
         """
         self.feature_extractor = feature_extractor
