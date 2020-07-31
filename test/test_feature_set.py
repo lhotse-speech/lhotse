@@ -172,10 +172,14 @@ def test_add_feature_sets():
 
 
 @pytest.mark.parametrize(
-    'feature_extractor',
-    [Fbank(), Mfcc(), Spectrogram()]
+    ['feature_extractor', 'decimal', 'exception_expectation'],
+    [
+        (Fbank(), 0, does_not_raise()),
+        (Spectrogram(), -1, does_not_raise()),
+        (Mfcc(), None, raises(ValueError)),
+    ]
 )
-def test_mixer(feature_extractor):
+def test_mixer(feature_extractor, decimal, exception_expectation):
     # Treat it more like a test of "it runs" rather than "it works"
     t = np.linspace(0, 1, 8000, dtype=np.float32)
     x1 = np.sin(440.0 * t).reshape(1, -1)
@@ -183,14 +187,15 @@ def test_mixer(feature_extractor):
 
     f1 = feature_extractor.extract(x1, 8000)
     f2 = feature_extractor.extract(x2, 8000)
-    mixer = FeatureMixer(
-        feature_extractor=feature_extractor,
-        base_feats=f1,
-        frame_shift=feature_extractor.frame_shift,
-    )
-    mixer.add_to_mix(f2)
+    with exception_expectation:
+        mixer = FeatureMixer(
+            feature_extractor=feature_extractor,
+            base_feats=f1,
+            frame_shift=feature_extractor.frame_shift,
+        )
+        mixer.add_to_mix(f2)
 
-    fmix_feat = mixer.mixed_feats
-    fmix_time = feature_extractor.extract(x1 + x2, 8000)
+        fmix_feat = mixer.mixed_feats
+        fmix_time = feature_extractor.extract(x1 + x2, 8000)
 
-    np.testing.assert_almost_equal(fmix_feat, fmix_time, decimal=0)
+        np.testing.assert_almost_equal(fmix_feat, fmix_time, decimal=decimal)

@@ -1,13 +1,10 @@
 import os
 from dataclasses import dataclass
 
-import numpy as np
-
 # Workaround for SoundFile (torchaudio dep) raising exception when a native library, libsndfile1, is not installed.
 # Read-the-docs does not allow to modify the Docker containers used to build documentation...
 if not os.environ.get('READTHEDOCS', False):
     import torchaudio
-from scipy.fft import idct, dct
 
 from lhotse.features.base import TorchaudioFeatureExtractor, register_extractor
 from lhotse.utils import Seconds
@@ -45,13 +42,3 @@ class Mfcc(TorchaudioFeatureExtractor):
     name = 'mfcc'
     config_type = MfccConfig
     feature_fn = staticmethod(torchaudio.compliance.kaldi.mfcc)
-
-    def mix(self, features_a: np.ndarray, features_b: np.ndarray, gain_b: float) -> np.ndarray:
-        def to_energies(x):
-            return np.exp(idct(x, norm='ortho'))
-
-        return dct(np.log(to_energies(features_a) + gain_b * to_energies(features_b)), norm='ortho')
-
-    def compute_energy(self, features: np.ndarray) -> float:
-        fbank = idct(features, norm='ortho')
-        return float(np.sum(np.exp(fbank)))
