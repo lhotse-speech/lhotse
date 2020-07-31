@@ -37,8 +37,10 @@ class Spectrogram(TorchaudioFeatureExtractor):
 
     @staticmethod
     def mix(features_a: np.ndarray, features_b: np.ndarray, gain_b: float) -> np.ndarray:
-        return features_a + gain_b * features_b
+        # Torchaudio returns log-power spectrum, hence the need for logsumexp
+        return np.log(np.exp(features_a) + gain_b * np.exp(features_b))
 
     @staticmethod
     def compute_energy(features: np.ndarray) -> float:
-        return float(np.sum(features))
+        # Torchaudio returns log-power spectrum, hence the need for exp before the sum
+        return float(np.sum(np.exp(features)))

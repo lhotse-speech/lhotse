@@ -164,7 +164,8 @@ class Cut:
             supervisions=[
                 segment for segment in self.supervisions if criterion(new_time_span, segment)
             ],
-            features=self.features
+            features=self.features,
+            recording=self.recording
         )
 
     def overlay(self, other: AnyCut, offset_other_by: Seconds = 0.0, snr: Optional[Decibels] = None) -> 'MixedCut':
@@ -678,8 +679,11 @@ class CutSet:
         else:
             return item.id in self.cuts
 
-    def __getitem__(self, item: str) -> 'AnyCut':
-        return self.cuts[item]
+    def __getitem__(self, cut_id_or_index: Union[int, str]) -> 'AnyCut':
+        if isinstance(cut_id_or_index, str):
+            return self.cuts[cut_id_or_index]
+        # ~100x faster than list(dict.values())[index] for 100k elements
+        return next(val for idx, val in enumerate(self.cuts.values()) if idx == cut_id_or_index)
 
     def __len__(self) -> int:
         return len(self.cuts)
