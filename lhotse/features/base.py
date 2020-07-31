@@ -301,7 +301,7 @@ class FeatureSetBuilder:
             recordings: Iterable[Recording],
             segmentation: Optional[SupervisionSegment] = None,
             compressed: bool = True,
-            lilcom_tick_power: int = -8,
+            lilcom_tick_power: int = -5,
             num_jobs: int = 1
     ) -> FeatureSet:
         (self.output_dir / 'storage').mkdir(parents=True, exist_ok=True)
@@ -326,7 +326,7 @@ class FeatureSetBuilder:
             recording: Recording,
             segmentation: Optional[SupervisionSegment] = None,
             compressed: bool = True,
-            lilcom_tick_power: int = -8,
+            lilcom_tick_power: int = -5,
     ) -> List[Features]:
         results = []
         for channel in recording.channel_ids:

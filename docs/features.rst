@@ -18,6 +18,7 @@ Storing features
 
 Features in Lhotse are stored as numpy matrices with shape ``(num_frames, num_features)``.
 By default, we use `lilcom`_ for lossy compression and reduce the size on the disk approximately by half.
+The lilcom compression method uses a fixed precision that doesn't depend on the magnitude of the thing being compressed, so it's better suited to log-energy features than energy features.
 For now, we extract the features for the whole recordings, and store them in separate files.
 We retrieve them by loading the whole feature matrix and selecting the relevant region (e.g. specified by a cut).
 Eventually we will look into optimizing the storage to further reduce the I/O.
