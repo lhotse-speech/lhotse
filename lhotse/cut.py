@@ -766,10 +766,19 @@ def make_cuts_from_recordings(recording_set: RecordingSet) -> CutSet:
             id=str(uuid4()),
             start=0,
             duration=recording.duration_seconds,
-            recording=recording,
+            recording=Recording(
+                id=recording.id,
+                sources=[source],
+                sampling_rate=recording.sampling_rate,
+                num_samples=recording.num_samples,
+                duration_seconds=recording.duration_seconds
+            ),
             supervisions=[],
         )
         for recording in recording_set
+        # A single cut always represents a single channel. When a recording has multiple channels,
+        # we create a new cut for each channel separately.
+        for source in recording.sources
     )
 
 
@@ -805,10 +814,19 @@ def make_cuts_from_supervisions_recordings(supervision_set: SupervisionSet, reco
             id=str(uuid4()),
             start=supervision.start,
             duration=supervision.duration,
-            recording=recording_set[supervision.recording_id],
+            recording=Recording(
+                id=recording_set[supervision.recording_id].id,
+                sources=[source],
+                sampling_rate=recording_set[supervision.recording_id].sampling_rate,
+                num_samples=recording_set[supervision.recording_id].num_samples,
+                duration_seconds=recording_set[supervision.recording_id].duration_seconds
+            ),
             supervisions=[supervision]
         )
         for supervision in supervision_set
+        # A single cut always represents a single channel. When a recording has multiple channels,
+        # we create a new cut for each channel separately.
+        for source in recording_set[supervision.recording_id].sources
     )
 
 

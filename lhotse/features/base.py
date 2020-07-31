@@ -18,6 +18,14 @@ from lhotse.utils import Seconds, Pathlike, load_yaml, save_to_yaml
 
 
 class FeatureExtractor(metaclass=ABCMeta):
+    """
+    The base class for all feature extractors in Lhotse.
+    It is initialized with a config object, specific to a particular feature extraction method.
+    The config is expected to be a dataclass so that it can be easily serialized.
+
+    Any feature extractor must implement at least the ``extract`` method and the ``frame_shift`` property.
+    Feature extractors that support feature-domain mixing should additionaly specify ``compute_energy`` and ``mix``.
+    """
     name = None
     config_type = None
 
