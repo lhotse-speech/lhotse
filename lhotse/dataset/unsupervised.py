@@ -3,6 +3,7 @@ from typing import Optional
 import torch
 from torch.utils.data import Dataset
 
+from lhotse.augmentation import WavAugmenter
 from lhotse.cut import CutSet
 from lhotse.features import FeatureExtractor
 from lhotse.utils import Pathlike
@@ -53,20 +54,29 @@ class UnsupervisedWaveformDataset(UnsupervisedDataset):
 class DynamicUnsupervisedDataset(UnsupervisedDataset):
     """
     An example dataset that shows how to use on-the-fly feature extraction in Lhotse.
-    It accepts an additional input - a FeatureExtractor.
+    It accepts two additional inputs - a FeatureExtractor and an optional WavAugmenter for time-domain data augmentation..
     The output is approximately the same as that of the ``UnsupervisedDataset`` -
     there might be slight differences for ``MixedCut``s, because this dataset mixes them in the time domain,
     and ``UnsupervisedDataset`` does that in the feature domain.
     Cuts that are not mixed will yield identical results in both dataset classes.
     """
 
-    def __init__(self, feature_extractor: FeatureExtractor, cuts: CutSet, root_dir: Optional[Pathlike] = None):
+    def __init__(
+            self,
+            feature_extractor: FeatureExtractor,
+            cuts: CutSet,
+            augmenter: Optional[WavAugmenter] = None,
+            root_dir: Optional[Pathlike] = None
+    ):
         super().__init__(cuts, root_dir)
         self.feature_extractor = feature_extractor
+        self.augmenter = augmenter
 
     def __getitem__(self, item: int) -> torch.Tensor:
         cut = self.cuts[self.cut_ids[item]]
         audio = cut.load_audio(root_dir=self.root_dir)
+        if self.augmenter is not None:
+            audio = self.augmenter.apply(audio)
         features = self.feature_extractor.extract(audio, cut.sampling_rate)
         return torch.from_numpy(features)
 
