@@ -29,9 +29,9 @@ class WavAugmenter:
 
     @staticmethod
     def create_predefined(name: str, sampling_rate: int) -> 'WavAugmenter':
-        f"""
+        """
         Create a WavAugmenter class with one of the predefined augmentation setups available in Lhotse.
-        By default, the following are available: {available_wav_augmentations()}
+        Some examples are: "pitch", "reverb", "pitch_reverb_tdrop".
 
         :param name: the name of the augmentation setup.
         :param sampling_rate: expected sampling rate of the input audio.
@@ -46,7 +46,6 @@ class WavAugmenter:
         Apply the effect chain on the ``audio`` tensor.
 
         :param audio: a (num_channels, num_samples) shaped tensor placed on the CPU.
-        :param sampling_rate: sampling rate for the ``audio`` tensor.
         """
         if isinstance(audio, np.ndarray):
             audio = torch.from_numpy(audio)
@@ -98,8 +97,7 @@ def pitch(sampling_rate: int):
     """
     Returns a pitch modification effect for wav augmentation.
 
-    :param sampling_rate: a sampling rate value for which the effect will be created
-    (it's necessary to resample after pitch modification)
+    :param sampling_rate: a sampling rate value for which the effect will be created (resampling is needed for pitch).
     """
 
     import augment
@@ -131,8 +129,7 @@ def pitch_reverb_tdrop(sampling_rate: int):
     https://github.com/facebookresearch/WavAugment/blob/master/examples/python/librispeech_selfsupervised.py#L152
     https://arxiv.org/abs/2007.00991
 
-    :param sampling_rate: a sampling rate value for which the effect will be created
-    (it's necessary to resample after pitch modification)
+    :param sampling_rate: a sampling rate value for which the effect will be created (resampling is needed for pitch).
     """
 
     import augment

@@ -14,6 +14,7 @@ Welcome to lhotse's documentation!
    corpus.rst
    cuts.rst
    features.rst
+   augmentation.rst
    datasets.rst
    kaldi.rst
    cli.rst

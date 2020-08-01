@@ -41,6 +41,12 @@ Data structures and tools used for feature extraction and description.
 .. automodule:: lhotse.features
   :members:
 
+Augmentation
+------------
+
+.. automodule:: lhotse.augmentation
+  :members:
+
 Cuts
 ----
 
