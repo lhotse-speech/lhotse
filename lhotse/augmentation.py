@@ -5,6 +5,32 @@ import numpy as np
 import torch
 
 
+def default_effect_chain(sampling_rate):
+    """
+    Returns an effect chain composed of pitch modification, reverberation and time dropout proposed in:
+    https://github.com/facebookresearch/WavAugment/blob/master/examples/python/librispeech_selfsupervised.py#L152
+    https://arxiv.org/abs/2007.00991
+    """
+
+    def random_pitch_shift():
+        return np.random.randint(-300, 300)
+
+    def random_room_size():
+        return np.random.randint(0, 100)
+
+    import augment
+    effect_chain = augment.EffectChain()
+    # The pitch effect changes the sampling ratio; we have to compensate for that.
+    # Here, we specify 'quick' options on both pitch and rate effects, to speed up things
+    effect_chain.pitch("-q", random_pitch_shift).rate("-q", sampling_rate)
+    # Next effect we add is `reverb`; it adds makes the signal to have two channels,
+    # which we combine into 1 by running `channels` w/o parameters
+    effect_chain.reverb(50, 50, random_room_size).channels()
+    # Futher, we add an effect that randomly drops one 50ms subsequence
+    effect_chain.time_dropout(max_seconds=50 / 1000)
+    return effect_chain
+
+
 class WavAugmenter:
     """
     A wrapper class for WavAugment's effect chain.
