@@ -8,6 +8,7 @@ import torchaudio
 from pytest import mark, raises
 
 from lhotse.audio import RecordingSet
+from lhotse.augmentation import is_wav_augment_available, WavAugmenter
 from lhotse.features import (
     FeatureSet,
     Features,
@@ -120,10 +121,26 @@ def test_load_features_with_default_arguments():
     assert features.shape == (50, 23)
 
 
-def test_feature_set_builder():
+@pytest.mark.parametrize(
+    'augmentation', [
+        # Test feature set builder with no augmentation
+        None,
+        # Test feature set builder with WavAugment if available
+        pytest.param(
+            'pitch_reverb_tdrop',
+            marks=pytest.mark.skipif(not is_wav_augment_available(), reason='WavAugment required')
+        )
+    ]
+)
+def test_feature_set_builder(augmentation):
     audio_set = RecordingSet.from_yaml('test/fixtures/audio.yml')
+    augmenter = WavAugmenter.create_predefined(augmentation, sampling_rate=8000) if augmentation is not None else None
     with TemporaryDirectory() as output_dir:
-        builder = FeatureSetBuilder(feature_extractor=Fbank(), output_dir=output_dir)
+        builder = FeatureSetBuilder(
+            feature_extractor=Fbank(),
+            output_dir=output_dir,
+            augmenter=augmenter
+        )
         feature_set = builder.process_and_store_recordings(recordings=audio_set)
 
     assert len(feature_set) == 4
