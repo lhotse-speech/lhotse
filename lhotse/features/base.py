@@ -6,7 +6,6 @@ from itertools import chain
 from math import isclose
 from pathlib import Path
 from typing import Optional, Any, List, Iterable, Type
-from uuid import uuid4
 
 import lilcom
 import numpy as np
@@ -14,7 +13,7 @@ import torch
 
 from lhotse.audio import Recording
 from lhotse.supervision import SupervisionSegment
-from lhotse.utils import Seconds, Pathlike, load_yaml, save_to_yaml
+from lhotse.utils import Seconds, Pathlike, load_yaml, save_to_yaml, uuid4
 
 
 class FeatureExtractor(metaclass=ABCMeta):

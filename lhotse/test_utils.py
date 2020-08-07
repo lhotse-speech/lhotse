@@ -57,6 +57,7 @@ def dummy_cut(id: str = 'irrelevant', start: float = 0.0, duration: float = 1.0,
         id=id,
         start=start,
         duration=duration,
+        channel=0,
         features=dummy_features(0),
         supervisions=supervisions if supervisions is not None else [],
     )

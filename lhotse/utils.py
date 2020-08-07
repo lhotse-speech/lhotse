@@ -1,9 +1,10 @@
 import gzip
 import random
+import uuid
 from dataclasses import asdict, dataclass
 from math import ceil, isclose
 from pathlib import Path
-from typing import Any, Dict, Union
+from typing import Any, Dict, Union, Optional, Callable
 
 import numpy as np
 import torch
@@ -17,11 +18,24 @@ Decibels = float
 INT16MAX = 32768
 EPSILON = 1e-8
 
+_lhotse_uuid: Optional[Callable] = None
+
 
 def fix_random_seed(random_seed: int):
+    global _lhotse_uuid
     random.seed(random_seed)
     np.random.seed(random_seed)
     torch.random.manual_seed(random_seed)
+    # Ensure deterministic ID creation
+    rd = random.Random()
+    rd.seed(random_seed)
+    _lhotse_uuid = lambda: uuid.UUID(int=rd.getrandbits(128))
+
+
+def uuid4():
+    if _lhotse_uuid is not None:
+        return _lhotse_uuid()
+    return uuid.uuid4()
 
 
 def load_yaml(path: Pathlike) -> dict:

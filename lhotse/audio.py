@@ -76,7 +76,7 @@ class AudioSource:
             available_duration = num_samples / sampling_rate
             if available_duration < duration_seconds - 1e-5:
                 raise ValueError(
-                    f'Requested more audio ({duration_seconds:.2f}s) than available ({available_duration:.2f}s)'
+                    f'Requested more audio ({duration_seconds}s) than available ({available_duration}s)'
                 )
 
         return samples
@@ -210,8 +210,11 @@ class RecordingSet:
     def duration_seconds(self, recording_id: str) -> float:
         return self.recordings[recording_id].duration_seconds
 
-    def __getitem__(self, item: str) -> Recording:
-        return self.recordings[item]
+    def __getitem__(self, recording_id_or_index: Union[int, str]) -> Recording:
+        if isinstance(recording_id_or_index, str):
+            return self.recordings[recording_id_or_index]
+        # ~100x faster than list(dict.values())[index] for 100k elements
+        return next(val for idx, val in enumerate(self.recordings.values()) if idx == recording_id_or_index)
 
     def __iter__(self) -> Iterable[Recording]:
         return iter(self.recordings.values())

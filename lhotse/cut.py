@@ -1,10 +1,9 @@
 import random
 import warnings
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from functools import reduce
-from math import ceil, floor, log
+from math import ceil, floor, log, isclose
 from typing import Callable, Dict, Iterable, List, Optional, Union
-from uuid import uuid4
 
 import numpy as np
 
@@ -22,6 +21,7 @@ from lhotse.utils import (
     overlaps,
     overspans,
     save_to_yaml,
+    uuid4
 )
 
 # One of the design principles for Cuts is a maximally "lazy" implementation, e.g. when overlaying/mixing Cuts,
@@ -45,10 +45,11 @@ class Cut:
     # Begin and duration are needed to specify which chunk of features/recording to load.
     start: Seconds
     duration: Seconds
+    channel: int
 
     # Supervisions that will be used as targets for model training later on. They don't have to cover the whole
     # cut duration. They also might overlap.
-    supervisions: List[SupervisionSegment]
+    supervisions: List[SupervisionSegment] = field(default_factory=list)
 
     # The features can span longer than the actual cut - the Features object "knows" its start and end time
     # within the underlying recording. We can expect the interval [begin, begin + duration] to be a subset of the
@@ -57,11 +58,6 @@ class Cut:
 
     # For the cases that the model was trained by raw audio instead of features
     recording: Optional[Recording] = None
-
-    @property
-    def channel(self) -> int:
-        # Return the first channel's id
-        return self.features.channel_id if self.has_features else self.recording.channel_ids[0]
 
     @property
     def recording_id(self) -> str:
@@ -153,6 +149,11 @@ class Cut:
         new_start = self.start + offset
         until = offset + (duration if duration is not None else self.duration)
         new_duration = self.duration - new_start if duration is None else until - offset
+        if duration is not None and isclose(new_duration, duration):
+            # Because duration is a float, the subtraction is imprecise and can result in durations
+            # such as 0.3999999996 instead of 0.4, which could lead to RecordingSet loading 1 audio sample too less,
+            # causing trouble for users expecting matching audio tensor shapes for cuts truncated to a single duration.
+            new_duration = duration
         assert new_duration > 0.0
         assert new_start + new_duration <= self.start + self.duration + 1e-5
         new_time_span = TimeSpan(start=new_start, end=new_start + new_duration)
@@ -161,6 +162,7 @@ class Cut:
             id=self.id if preserve_id else str(uuid4()),
             start=new_start,
             duration=new_duration,
+            channel=self.channel,
             supervisions=[
                 segment for segment in self.supervisions if criterion(new_time_span, segment)
             ],
@@ -587,6 +589,72 @@ class CutSet:
         return CutSet({cut.id: cut for cut in cuts})
 
     @staticmethod
+    def from_manifests(
+            feature_set: Optional[FeatureSet] = None,
+            recording_set: Optional[RecordingSet] = None,
+            supervision_set: Optional[SupervisionSet] = None,
+    ) -> 'CutSet':
+        """
+        Create a CutSet from any combination of supervision, feature and recording manifests.
+        At least one of ``recording_set`` or ``feature_set`` is required.
+        When ``supervision_set`` is provided, the cuts boundaries will correspond to that of the supervision segments.
+        Otherwise, the boundaries correspond to those found in the ``feature_set``, when available.
+        When only ``recording_set`` is provided, the recordings determine the boundaries.
+        """
+        assert feature_set is not None or recording_set is not None, \
+            "At least one of feature_set and recording_set has to be provided."
+        sup_ok, feat_ok, rec_ok = supervision_set is not None, feature_set is not None, recording_set is not None
+        if sup_ok:
+            # Case I: Supervisions are provided.
+            # Use them to determine the cut boundaries and attach recordings and features as available.
+            return CutSet.from_cuts(
+                Cut(
+                    id=str(uuid4()),
+                    start=supervision.start,
+                    duration=supervision.duration,
+                    channel=supervision.channel_id,
+                    recording=recording_set[supervision.recording_id] if rec_ok else None,
+                    features=feature_set.find(
+                        recording_id=supervision.recording_id,
+                        channel_id=supervision.channel_id,
+                        start=supervision.start,
+                        duration=supervision.duration,
+                    ) if feat_ok else None,
+                    supervisions=[supervision]
+                )
+                for supervision in supervision_set
+            )
+        if feat_ok:
+            # Case II: No supervisions, but features are provided.
+            # Use features to determine the cut boundaries and attach recordings as available.
+            return CutSet.from_cuts(
+                Cut(
+                    id=str(uuid4()),
+                    start=features.start,
+                    duration=features.duration,
+                    channel=features.channel_id,
+                    features=features,
+                    recording=recording_set[features.recording_id] if rec_ok else None
+                )
+                for features in feature_set
+            )
+        # Case II: Only recordings are provided.
+        # Use recordings to determine the cut boundaries.
+        return CutSet.from_cuts(
+            Cut(
+                id=str(uuid4()),
+                start=0,
+                duration=recording.duration_seconds,
+                channel=channel,
+                recording=recording,
+            )
+            for recording in recording_set
+            # A single cut always represents a single channel. When a recording has multiple channels,
+            # we create a new cut for each channel separately.
+            for channel in recording.channel_ids
+        )
+
+    @staticmethod
     def from_yaml(path: Pathlike) -> 'CutSet':
         raw_cuts = load_yaml(path)
 
@@ -696,22 +764,6 @@ class CutSet:
         return CutSet(cuts={**self.cuts, **other.cuts})
 
 
-def make_cuts_from_features(feature_set: FeatureSet) -> CutSet:
-    """
-    Utility that converts a FeatureSet to a CutSet without any adjustment of the segment boundaries.
-    """
-    return CutSet.from_cuts(
-        Cut(
-            id=str(uuid4()),
-            start=features.start,
-            duration=features.duration,
-            features=features,
-            supervisions=[]
-        )
-        for features in feature_set
-    )
-
-
 def make_windowed_cuts_from_features(
         feature_set: FeatureSet,
         cut_duration: Seconds,
@@ -750,84 +802,12 @@ def make_windowed_cuts_from_features(
                     id=str(uuid4()),
                     start=offset,
                     duration=duration,
+                    channel=features.channel_id,
                     features=features,
                     supervisions=[]
                 )
             )
     return CutSet.from_cuts(cuts)
-
-
-def make_cuts_from_recordings(recording_set: RecordingSet) -> CutSet:
-    """
-    Utility that converts a RecordingSet to a CutSet without any adjustment of the segment boundaries.
-    """
-    return CutSet.from_cuts(
-        Cut(
-            id=str(uuid4()),
-            start=0,
-            duration=recording.duration_seconds,
-            recording=Recording(
-                id=recording.id,
-                sources=[source],
-                sampling_rate=recording.sampling_rate,
-                num_samples=recording.num_samples,
-                duration_seconds=recording.duration_seconds
-            ),
-            supervisions=[],
-        )
-        for recording in recording_set
-        # A single cut always represents a single channel. When a recording has multiple channels,
-        # we create a new cut for each channel separately.
-        for source in recording.sources
-    )
-
-
-def make_cuts_from_supervisions_features(supervision_set: SupervisionSet, feature_set: FeatureSet) -> CutSet:
-    """
-    Utility that converts a SupervisionSet to a CutSet without any adjustment of the segment boundaries.
-    It attaches the relevant features from the corresponding FeatureSet.
-    """
-    return CutSet.from_cuts(
-        Cut(
-            id=str(uuid4()),
-            start=supervision.start,
-            duration=supervision.duration,
-            features=feature_set.find(
-                recording_id=supervision.recording_id,
-                channel_id=supervision.channel_id,
-                start=supervision.start,
-                duration=supervision.duration,
-            ),
-            supervisions=[supervision]
-        )
-        for idx, supervision in enumerate(supervision_set)
-    )
-
-
-def make_cuts_from_supervisions_recordings(supervision_set: SupervisionSet, recording_set: RecordingSet) -> CutSet:
-    """
-    Utility that converts a SupervisionSet to a CutSet without any adjustment of the segment boundaries.
-    It attaches the relevant recording from the corresponding RecordingSet.
-    """
-    return CutSet.from_cuts(
-        Cut(
-            id=str(uuid4()),
-            start=supervision.start,
-            duration=supervision.duration,
-            recording=Recording(
-                id=recording_set[supervision.recording_id].id,
-                sources=[source],
-                sampling_rate=recording_set[supervision.recording_id].sampling_rate,
-                num_samples=recording_set[supervision.recording_id].num_samples,
-                duration_seconds=recording_set[supervision.recording_id].duration_seconds
-            ),
-            supervisions=[supervision]
-        )
-        for supervision in supervision_set
-        # A single cut always represents a single channel. When a recording has multiple channels,
-        # we create a new cut for each channel separately.
-        for source in recording_set[supervision.recording_id].sources
-    )
 
 
 def mix(

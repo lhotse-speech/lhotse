@@ -3,7 +3,7 @@ import pytest
 
 from lhotse.cut import CutSet
 from lhotse.dataset import UnsupervisedDataset, UnsupervisedWaveformDataset
-from lhotse.dataset.unsupervised import OnTheFlyFeatureExtractionUnsupervisedDataset
+from lhotse.dataset.unsupervised import DynamicUnsupervisedDataset
 from lhotse.features import Fbank
 
 
@@ -28,7 +28,7 @@ def test_unsupervised_waveform_dataset(libri_cut_set):
 
 def test_on_the_fly_feature_extraction_unsupervised_dataset(libri_cut_set):
     ref_dataset = UnsupervisedDataset(libri_cut_set)
-    tested_dataset = OnTheFlyFeatureExtractionUnsupervisedDataset(
+    tested_dataset = DynamicUnsupervisedDataset(
         feature_extractor=Fbank(),
         cuts=libri_cut_set
     )

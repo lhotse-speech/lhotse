@@ -22,7 +22,7 @@ class FbankConfig:
     frame_shift: Seconds = 0.01
     remove_dc_offset: bool = True
     round_to_power_of_two: bool = True
-    energy_floor: float = 1e-8
+    energy_floor: float = 1e-10
     min_duration: float = 0.0
     preemphasis_coefficient: float = 0.97
     raw_energy: bool = True

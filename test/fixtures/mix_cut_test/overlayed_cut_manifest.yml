@@ -1,6 +1,7 @@
 - id: mixed-cut-id
   tracks:
     - cut:
+        channel: 0
         duration: 7.78
         features:
           channel_id: 0
@@ -28,6 +29,7 @@
               OUT OF IT AND SHINING IN THE SUNLIGHT
       offset: 0.0
     - cut:
+        channel: 0
         duration: 9.705
         features:
           channel_id: 0

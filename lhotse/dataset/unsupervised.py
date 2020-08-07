@@ -50,11 +50,14 @@ class UnsupervisedWaveformDataset(UnsupervisedDataset):
         assert all(cut.has_recording for cut in self.cuts)
 
 
-class OnTheFlyFeatureExtractionUnsupervisedDataset(UnsupervisedDataset):
+class DynamicUnsupervisedDataset(UnsupervisedDataset):
     """
     An example dataset that shows how to use on-the-fly feature extraction in Lhotse.
     It accepts an additional input - a FeatureExtractor.
-    The output is exactly the same as that of the UnsupervisedDataset.
+    The output is approximately the same as that of the ``UnsupervisedDataset`` -
+    there might be slight differences for ``MixedCut``s, because this dataset mixes them in the time domain,
+    and ``UnsupervisedDataset`` does that in the feature domain.
+    Cuts that are not mixed will yield identical results in both dataset classes.
     """
 
     def __init__(self, feature_extractor: FeatureExtractor, cuts: CutSet, root_dir: Optional[Pathlike] = None):

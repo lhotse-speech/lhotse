@@ -3,12 +3,7 @@ from math import isclose
 import pytest
 
 from lhotse.audio import RecordingSet
-from lhotse.cut import (
-    CutSet,
-    make_cuts_from_recordings,
-    make_cuts_from_supervisions_features,
-    make_cuts_from_supervisions_recordings
-)
+from lhotse.cut import CutSet
 from lhotse.features import FeatureSet
 from lhotse.supervision import SupervisionSet
 
@@ -25,7 +20,7 @@ def libri_cut_set():
 
 @pytest.fixture
 def libri_features_set():
-    return FeatureSet.from_yaml('test/fixtures/libri/feature_manifest.yml')
+    return FeatureSet.from_yaml('test/fixtures/libri/feature_manifest.yml.gz')
 
 
 @pytest.fixture
@@ -35,7 +30,7 @@ def supervision_set():
 
 @pytest.fixture
 def libri_cut(libri_cut_set):
-    return libri_cut_set['849e13d8-61a2-4d09-a542-dac1aee1b544']
+    return libri_cut_set['e3e70682-c209-4cac-629f-6fbed82c07cd']
 
 
 def test_load_none_feats_cut_set():
@@ -86,16 +81,16 @@ def test_load_none_features(libri_cut):
 
 def test_make_cuts_from_recordings(libri_recording_set):
     expected_duration = 16.04
-    cutset = make_cuts_from_recordings(libri_recording_set)
+    cutset = CutSet.from_manifests(recording_set=libri_recording_set)
     duration = list(cutset.cuts.values())[0].duration
     assert isclose(duration, expected_duration)
 
 
 def test_make_cuts_from_supervisions_features(supervision_set, libri_features_set):
-    cutset = make_cuts_from_supervisions_features(supervision_set, libri_features_set)
+    cutset = CutSet.from_manifests(supervision_set=supervision_set, feature_set=libri_features_set)
     assert len(cutset) == 2
 
 
 def test_make_cuts_from_supervisions_recordings(supervision_set, libri_recording_set):
-    cutset = make_cuts_from_supervisions_recordings(supervision_set, libri_recording_set)
+    cutset = CutSet.from_manifests(supervision_set=supervision_set, recording_set=libri_recording_set)
     assert len(cutset) == 2

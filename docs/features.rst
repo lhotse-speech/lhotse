@@ -33,7 +33,7 @@ The feature extractor manifest is mapped to a Python configuration dataclass. An
 .. code-block:: yaml
 
     dither: 0.0
-    energy_floor: 0.1
+    energy_floor: 1e-10
     frame_length: 0.025
     frame_shift: 0.01
     min_duration: 0.0
@@ -135,10 +135,10 @@ For example:
 
     # Read a RecordingSet from disk
     recording_set = RecordingSet.from_yaml('audio.yml')
-    # Create a feature extractor with default settings
-    feature_extractor = FeatureExtractor()
+    # Create a log Mel energy filter bank feature extractor with default settings
+    feature_extractor = Fbank()
     # Create a feature set builder that uses this extractor and stores the results in a directory called 'features'
-    builder = FeatureSetBuilder(feature_extractor=FeatureExtractor(), output_dir='features/')
+    builder = FeatureSetBuilder(feature_extractor=feature_extractor, output_dir='features/')
     # Extract the features using 8 parallel processes, compress, and store them on in 'features/storage/' directory.
     # Then, return the feature manifest object, which is also compressed and
     # stored in 'features/feature_manifest.yml.gz'

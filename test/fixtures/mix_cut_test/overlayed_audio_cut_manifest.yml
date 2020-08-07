@@ -1,6 +1,7 @@
 - id: mixed-cut-id
   tracks:
     - cut:
+        channel: 0
         id: ab34ea6b-9d68-4113-8386-b4c585e596f5
         duration: 11.66
         recording:
@@ -26,6 +27,7 @@
               THE CIRCUMSTANCES WHICH LED ME TO LEAVE MY NATIVE COUNTRY THE NARRATIVE WOULD
               BE TEDIOUS TO HIM AND PAINFUL TO MYSELF'
     - cut:
+        channel: 0
         id: 07d009a9-e7a1-4611-aa21-32ff9b43dff0
         duration: 10.51
         recording:

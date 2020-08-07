@@ -8,15 +8,13 @@ from lhotse.bin.modes.cli_base import cli
 from lhotse.cut import (
     CutSet,
     append_cuts,
-    make_cuts_from_features,
-    make_cuts_from_supervisions_features,
     make_windowed_cuts_from_features,
-    mix_cuts,
+    mix_cuts
 )
 from lhotse.features import FeatureSet
-from lhotse.manipulation import combine, split
+from lhotse.manipulation import combine, split, load_manifest
 from lhotse.supervision import SupervisionSet
-from lhotse.utils import Pathlike, fix_random_seed
+from lhotse.utils import Pathlike
 
 
 @cli.group()
@@ -26,26 +24,35 @@ def cut():
 
 
 @cut.command()
-@click.argument('feature_manifest', type=click.Path(exists=True, dir_okay=False))
 @click.argument('output_cut_manifest', type=click.Path())
+@click.option('-r', '--recording-manifest', type=click.Path(exists=True, dir_okay=False),
+              help='Optional recording manifest - will be used to attach the recordings to the cuts.')
+@click.option('-f', '--feature-manifest', type=click.Path(exists=True, dir_okay=False),
+              help='Optional feature manifest - will be used to attach the features to the cuts.')
 @click.option('-s', '--supervision_manifest', type=click.Path(exists=True, dir_okay=False),
               help='Optional supervision manifest - will be used to attach the supervisions to the cuts.')
 def simple(
-        feature_manifest: Pathlike,
         output_cut_manifest: Pathlike,
+        recording_manifest: Optional[Pathlike],
+        feature_manifest: Optional[Pathlike],
         supervision_manifest: Optional[Pathlike],
 ):
     """
-    Create a CutSet stored in OUTPUT_CUT_MANIFEST that contains the regions and features supplied by FEATURE_MANIFEST.
-    Optionally it can use a SUPERVISION_MANIFEST to select the regions and attach the corresponding supervisions to
-    the cuts. This is the simplest way to create Cuts.
+    Create a CutSet stored in OUTPUT_CUT_MANIFEST. Depending on the provided options, it may contain any combination
+    of recording, feature and supervision manifests.
+    Either RECORDING_MANIFEST or FEATURE_MANIFEST has to be provided.
+    When SUPERVISION_MANIFEST is provided, the cuts time span will correspond to that of the supervision segments.
+    Otherwise, that time span corresponds to the one found in features, if available, otherwise recordings.
     """
-    feature_set = FeatureSet.from_yaml(feature_manifest)
-    if supervision_manifest is None:
-        cut_set = make_cuts_from_features(feature_set)
-    else:
-        supervision_set = SupervisionSet.from_yaml(supervision_manifest)
-        cut_set = make_cuts_from_supervisions_features(feature_set=feature_set, supervision_set=supervision_set)
+    supervision_set, feature_set, recording_set = [
+        load_manifest(p) if p is not None else None
+        for p in (supervision_manifest, feature_manifest, recording_manifest)
+    ]
+    cut_set = CutSet.from_manifests(
+        feature_set=feature_set,
+        recording_set=recording_set,
+        supervision_set=supervision_set
+    )
     cut_set.to_yaml(output_cut_manifest)
 
 
@@ -83,7 +90,6 @@ def windowed(
 @click.argument('supervision_manifest', type=click.Path(exists=True, dir_okay=False))
 @click.argument('feature_manifest', type=click.Path(exists=True, dir_okay=False))
 @click.argument('output_cut_manifest', type=click.Path())
-@click.option('-r', '--random-seed', default=42, type=int, help='Random seed value.')
 @click.option('-s', '--snr-range', type=(float, float), default=(20, 20),
               help='Range of SNR values (in dB) that will be uniformly sampled in order to overlay the signals.')
 @click.option('-o', '--offset-range', type=(float, float), default=(0.5, 0.5),
@@ -93,7 +99,6 @@ def random_overlayed(
         supervision_manifest: Pathlike,
         feature_manifest: Pathlike,
         output_cut_manifest: Pathlike,
-        random_seed: int,
         snr_range: Tuple[float, float],
         offset_range: Tuple[float, float]
 ):
@@ -103,12 +108,10 @@ def random_overlayed(
     parts and overlays their features to create a mix.
     The parameters of the mix are controlled via SNR_RANGE and OFFSET_RANGE.
     """
-    fix_random_seed(random_seed)
-
     supervision_set = SupervisionSet.from_yaml(supervision_manifest)
     feature_set = FeatureSet.from_yaml(feature_manifest)
 
-    source_cut_set = make_cuts_from_supervisions_features(supervision_set=supervision_set, feature_set=feature_set)
+    source_cut_set = CutSet.from_manifests(supervision_set=supervision_set, feature_set=feature_set)
     left_cuts, right_cuts = split(source_cut_set, num_splits=2, randomize=True)
 
     snrs = np.random.uniform(*snr_range, size=len(left_cuts)).tolist()
@@ -173,7 +176,6 @@ def mix_by_recording_id(
                    '"random" - randomly choose somewhere between "start" and "end" options.')
 @click.option('--keep-overflowing-supervisions/--discard-overflowing-supervisions', type=bool, default=False,
               help='When a cut is truncated in the middle of a supervision segment, should the supervision be kept.')
-@click.option('-r', '--random-seed', default=42, type=int, help='Random seed value.')
 def truncate(
         cut_manifest: Pathlike,
         output_cut_manifest: Pathlike,
@@ -181,13 +183,11 @@ def truncate(
         max_duration: float,
         offset_type: str,
         keep_overflowing_supervisions: bool,
-        random_seed: int
 ):
     """
     Truncate the cuts in the CUT_MANIFEST and write them to OUTPUT_CUT_MANIFEST.
     Cuts shorter than MAX_DURATION will not be modified.
     """
-    fix_random_seed(random_seed)
     cut_set = CutSet.from_yaml(cut_manifest)
     truncated_cut_set = cut_set.truncate(
         max_duration=max_duration,
