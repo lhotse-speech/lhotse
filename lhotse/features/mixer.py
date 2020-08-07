@@ -35,6 +35,8 @@ class FeatureMixer:
         # it is required to compute gain ratios that satisfy SNR during the mix.
         self.frame_shift = frame_shift
         self.reference_energy = feature_extractor.compute_energy(base_feats)
+        assert self.reference_energy > 0.0, \
+            f"To perform mix, energy must be non-zero and non-negative (got {self.reference_energy})"
         self.log_energy_floor = log_energy_floor
 
     @property
@@ -83,8 +85,8 @@ class FeatureMixer:
 
         # When the features we're mixing in are shorter that the anticipated mix length,
         # we need to pad after their end.
-        # Note: we're doing that non-efficiently, as it we potentially re-allocate numpy arrays twice,
-        # during this padding and the  offset padding before. If that's a bottleneck, we'll optimize.
+        # Note: we're doing that inefficiently, as we potentially re-allocate numpy arrays twice,
+        # during this padding and the offset padding before. If that's a bottleneck, we'll optimize.
         if incoming_num_frames < mix_num_frames:
             feats_to_add = np.vstack([
                 feats_to_add,
@@ -96,6 +98,8 @@ class FeatureMixer:
         if snr is not None:
             # Compute the added signal energy before it was padded
             added_feats_energy = self.feature_extractor.compute_energy(feats)
+            assert added_feats_energy > 0.0, \
+                f"To perform mix, energy must be non-zero and non-negative (got {self.reference_energy})"
             target_energy = self.reference_energy * (10.0 ** (-snr / 10))
             gain = target_energy / added_feats_energy
 

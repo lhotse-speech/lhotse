@@ -31,6 +31,8 @@ class FeatureExtractor(metaclass=ABCMeta):
     Feature extractors that support feature-domain mixing should additionally specify two static methods:
     - ``compute_energy``, and
     - ``mix``.
+
+    It is expected that when implemented, ``compute_energy`` will never return zero.
     """
     name = None
     config_type = None

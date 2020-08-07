@@ -74,7 +74,7 @@ Creating custom feature extractor
 
 There are two components needed to implement a custom feature extractor: a configuration and the extractor itself.
 We expect the configuration class to be a dataclass, so that it can be automatically mapped to dict and serialized.
-The feature extractor should inherit from :ref:`lhotse.features.FeatureExtractor`,
+The feature extractor should inherit from ``FeatureExtractor``,
 and implement a small number of methods/properties.
 The base class takes care of initialization (you need to pass a config object), serialization to YAML, etc.
 A minimal, complete example of adding a new feature extractor:
@@ -119,7 +119,16 @@ Additionally, there are two extra methods than when overridden, allow to perform
 They are:
 
 - ``mix()`` which specifies how to mix two feature matrices to obtain a new feature matrix representing the sum of signals;
-- ``compute_energy()`` which specifies how to obtain a total energy of the feature matrix, which is needed to mix two signals with a specified SNR.
+- ``compute_energy()`` which specifies how to obtain a total energy of the feature matrix, which is needed to mix two signals with a specified SNR. E.g. for a power spectrogram, this could be the sum of every time-frequency bin. It is expected to never return a zero.
+
+During the feature-domain mix with a specified signal-to-noise ratio (SNR), we assume that one of the signals is a reference signal - it is used to initialize the ``FeatureMixer`` class. We compute the energy of both signals and scale the non-reference signal, so that its energy satisfies the requested SNR. The scaling factor (gain) is computed using the following formula:
+
+.. literalinclude:: ../lhotse/features/mixer.py
+    :lines: 96-104
+    :linenos:
+    :emphasize-lines: 8
+
+Note that we interpret the energy and the SNR in a `power quantity`_ context (as opposed to root-power/field quantities).
 
 Python usage
 ************
@@ -153,7 +162,7 @@ CLI usage
 
 An equivalent example using the terminal:
 
-.. code-block:: bash
+.. code-block:: console
 
     lhotse write-default-feature-config feat-config.yml
     lhotse make-feats -j 8 --compressed -f feat-config.yml audio.yml features/
@@ -170,6 +179,6 @@ It results in Kaldi energies being significantly greater than in Lhotse.
 By default, we turn off dithering for deterministic feature extraction.
 
 
-.. _Torchaudio: link: https://pytorch.org/audio/
-.. _lilcom: link: https://github.com/danpovey/lilcom
-
+.. _Torchaudio: https://pytorch.org/audio/
+.. _lilcom: https://github.com/danpovey/lilcom
+.. _power quantity: https://en.wikipedia.org/wiki/Power,_root-power,_and_field_quantities
