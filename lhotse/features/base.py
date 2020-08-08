@@ -31,8 +31,6 @@ class FeatureExtractor(metaclass=ABCMeta):
     Feature extractors that support feature-domain mixing should additionally specify two static methods:
     - ``compute_energy``, and
     - ``mix``.
-
-    It is expected that when implemented, ``compute_energy`` will never return zero.
     """
     name = None
     config_type = None
@@ -51,11 +49,33 @@ class FeatureExtractor(metaclass=ABCMeta):
     def frame_shift(self) -> Seconds: ...
 
     @staticmethod
-    def mix(features_a: np.ndarray, features_b: np.ndarray, gain_b: float) -> np.ndarray:
+    def mix(features_a: np.ndarray, features_b: np.ndarray, energy_scaling_factor_b: float) -> np.ndarray:
+        """
+        Perform feature-domain mix of two singals, ``a`` and ``b``, and return the mixed signal.
+
+        :param features_a: Left-hand side (reference) signal.
+        :param features_b: Right-hand side (mixed-in) signal.
+        :param energy_scaling_factor_b: A scaling factor for ``features_b`` energy.
+            It is used to achieve a specific SNR.
+            E.g. to mix with an SNR of 10dB when both ``features_a`` and ``features_b`` energies are 100,
+            the ``features_b`` signal energy needs to be scaled by 0.1.
+            Since different features (e.g. spectrogram, fbank, MFCC) require different combination of
+            transformations (e.g. exp, log, sqrt, pow) to allow mixing of two signals, the exact place
+            where to apply ``energy_scaling_factor_b`` to the signal is determined by the implementer.
+        :return: A mixed feature matrix.
+        """
         raise ValueError(f'The feature extractor\'s "mix" operation is undefined.')
 
     @staticmethod
     def compute_energy(features: np.ndarray) -> float:
+        """
+        Compute the total energy of a feature matrix. How the energy is computed depends on a
+        particular type of features.
+        It is expected that when implemented, ``compute_energy`` will never return zero.
+
+        :param features: A feature matrix.
+        :return: A positive float value of the signal energy.
+        """
         raise ValueError(f'The feature extractor\'s "compute_energy" is undefined.')
 
     @classmethod
@@ -187,6 +207,9 @@ class Features:
         # In case the caller requested only a subset of features, trim them
 
         # Left trim
+        if start < self.start - 1e-5:
+            raise ValueError(f"Cannot load features for recording {self.recording_id} starting from {start}s. "
+                             f"The available range is ({self.start}, {self.end}) seconds.")
         if not isclose(start, self.start):
             frames_to_trim = round((start - self.start) / self.frame_shift)
             features = features[frames_to_trim:, :]

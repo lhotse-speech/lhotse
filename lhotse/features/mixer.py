@@ -106,5 +106,5 @@ class FeatureMixer:
         self.mixed_feats = self.feature_extractor.mix(
             features_a=existing_feats,
             features_b=feats_to_add,
-            gain_b=gain
+            energy_scaling_factor_b=gain
         )

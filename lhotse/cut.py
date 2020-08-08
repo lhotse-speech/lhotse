@@ -151,7 +151,7 @@ class Cut:
         new_duration = self.duration - new_start if duration is None else until - offset
         if duration is not None and isclose(new_duration, duration):
             # Because duration is a float, the subtraction is imprecise and can result in durations
-            # such as 0.3999999996 instead of 0.4, which could lead to RecordingSet loading 1 audio sample too less,
+            # such as 0.3999999996 instead of 0.4, which could lead to RecordingSet loading 1 audio sample too little,
             # causing trouble for users expecting matching audio tensor shapes for cuts truncated to a single duration.
             new_duration = duration
         assert new_duration > 0.0

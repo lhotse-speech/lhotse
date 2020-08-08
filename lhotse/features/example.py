@@ -24,6 +24,9 @@ class ExampleFeatureExtractor(FeatureExtractor):
 
     def extract(self, samples: np.ndarray, sampling_rate: int) -> np.ndarray:
         f, t, Zxx = stft(samples, sampling_rate, noverlap=round(self.frame_shift * sampling_rate))
+        # Note: returning a magnitude of the STFT might interact badly with lilcom compression,
+        # as it performs quantization of the float values and works best with log-scale quantities.
+        # It's advised to turn lilcom compression off, or use log-scale, in such cases.
         return np.abs(Zxx)
 
     @property

@@ -37,9 +37,9 @@ class Spectrogram(TorchaudioFeatureExtractor):
     feature_fn = staticmethod(torchaudio.compliance.kaldi.spectrogram)
 
     @staticmethod
-    def mix(features_a: np.ndarray, features_b: np.ndarray, gain_b: float) -> np.ndarray:
+    def mix(features_a: np.ndarray, features_b: np.ndarray, energy_scaling_factor_b: float) -> np.ndarray:
         # Torchaudio returns log-power spectrum, hence the need for logsumexp
-        return np.log(np.exp(features_a) + gain_b * np.exp(features_b))
+        return np.log(np.exp(features_a) + energy_scaling_factor_b * np.exp(features_b))
 
     @staticmethod
     def compute_energy(features: np.ndarray) -> float:

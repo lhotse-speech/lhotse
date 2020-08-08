@@ -2,6 +2,7 @@ import os
 import warnings
 from dataclasses import asdict, dataclass
 from io import BytesIO
+from math import sqrt
 from pathlib import Path
 from subprocess import PIPE, run
 from typing import Callable, Dict, Iterable, List, Optional, Union
@@ -300,7 +301,10 @@ class AudioMixer:
         if snr is not None:
             added_audio_energy = audio_energy(audio)
             target_energy = self.reference_energy * (10.0 ** (-snr / 10))
-            gain = target_energy / added_audio_energy
+            # When mixing time-domain singals, we are working with root-power (field) quantities,
+            # whereas the energy ratio applies to power quantities. To compute the gain correctly,
+            # we need to take a square root of the energy ratio.
+            gain = sqrt(target_energy / added_audio_energy)
 
         self.mixed_audio = existing_audio + gain * audio_to_add
 
