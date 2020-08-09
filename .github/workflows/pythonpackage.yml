@@ -25,8 +25,9 @@ jobs:
         python-version: ${{ matrix.python-version }}
     - name: Install libnsdfile and libsox
       run: |
+        sudo apt update
         sudo apt install libsndfile1-dev libsndfile1
-        sudo apt install sox libsox-dev libsox-fmt-all
+        sudo apt install --fix-missing sox libsox-dev libsox-fmt-all
     - name: Install Python dependencies
       run: |
         python -m pip install --upgrade pip
