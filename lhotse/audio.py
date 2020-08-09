@@ -2,6 +2,7 @@ import os
 import warnings
 from dataclasses import asdict, dataclass
 from io import BytesIO
+from math import sqrt
 from pathlib import Path
 from subprocess import PIPE, run
 from typing import Callable, Dict, Iterable, List, Optional, Union
@@ -76,7 +77,7 @@ class AudioSource:
             available_duration = num_samples / sampling_rate
             if available_duration < duration_seconds - 1e-5:
                 raise ValueError(
-                    f'Requested more audio ({duration_seconds:.2f}s) than available ({available_duration:.2f}s)'
+                    f'Requested more audio ({duration_seconds}s) than available ({available_duration}s)'
                 )
 
         return samples
@@ -210,8 +211,11 @@ class RecordingSet:
     def duration_seconds(self, recording_id: str) -> float:
         return self.recordings[recording_id].duration_seconds
 
-    def __getitem__(self, item: str) -> Recording:
-        return self.recordings[item]
+    def __getitem__(self, recording_id_or_index: Union[int, str]) -> Recording:
+        if isinstance(recording_id_or_index, str):
+            return self.recordings[recording_id_or_index]
+        # ~100x faster than list(dict.values())[index] for 100k elements
+        return next(val for idx, val in enumerate(self.recordings.values()) if idx == recording_id_or_index)
 
     def __iter__(self) -> Iterable[Recording]:
         return iter(self.recordings.values())
@@ -297,7 +301,10 @@ class AudioMixer:
         if snr is not None:
             added_audio_energy = audio_energy(audio)
             target_energy = self.reference_energy * (10.0 ** (-snr / 10))
-            gain = target_energy / added_audio_energy
+            # When mixing time-domain singals, we are working with root-power (field) quantities,
+            # whereas the energy ratio applies to power quantities. To compute the gain correctly,
+            # we need to take a square root of the energy ratio.
+            gain = sqrt(target_energy / added_audio_energy)
 
         self.mixed_audio = existing_audio + gain * audio_to_add
 

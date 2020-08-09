@@ -39,13 +39,7 @@ def split(manifest: Manifest, num_splits: int, randomize: bool = False) -> List[
 
     if isinstance(manifest, FeatureSet):
         contents = maybe_randomize(manifest.features)
-        return [
-            FeatureSet(
-                features=contents[begin: end],
-                feature_extractor=manifest.feature_extractor
-            )
-            for begin, end in split_indices
-        ]
+        return [FeatureSet(features=contents[begin: end]) for begin, end in split_indices]
 
     if isinstance(manifest, CutSet):
         contents = maybe_randomize(manifest.cuts.items())

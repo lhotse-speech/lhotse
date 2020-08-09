@@ -5,21 +5,27 @@ import click
 
 from lhotse.audio import RecordingSet
 from lhotse.bin.modes.cli_base import cli
-from lhotse.features import FeatureExtractor, FeatureSetBuilder
+from lhotse.features import FeatureExtractor, FeatureSetBuilder, create_default_feature_extractor, Fbank
 from lhotse.supervision import SupervisionSet
 from lhotse.utils import Pathlike
 
-__all__ = ['write_default_feature_config', 'make_feats']
+
+@cli.group()
+def feat():
+    """Group of commands used to create CutSets."""
+    pass
 
 
-@cli.command()
+@feat.command(context_settings=dict(show_default=True))
 @click.argument('output_config', type=click.Path())
-def write_default_feature_config(output_config):
+@click.option('-f', '--feature-type', type=click.Choice(['fbank', 'mfcc', 'spectrogram']), default='fbank',
+              help='Which feature extractor type to use.')
+def write_default_config(output_config: Pathlike, feature_type: str):
     """Save a default feature extraction config to OUTPUT_CONFIG."""
-    FeatureExtractor().to_yaml(output_config, include_defaults=True)
+    create_default_feature_extractor(feature_type).to_yaml(output_config)
 
 
-@cli.command()
+@feat.command(context_settings=dict(show_default=True))
 @click.argument('audio_manifest', type=click.Path(exists=True, dir_okay=False))
 @click.argument('output_dir', type=click.Path())
 @click.option('-s', '--segmentation-manifest', type=click.Path(exists=True, dir_okay=False),
@@ -31,13 +37,13 @@ def write_default_feature_config(output_config):
 @click.option('-f', '--feature-manifest', type=click.Path(exists=True, dir_okay=False),
               help='Optional manifest specifying feature extractor configuration.')
 @click.option('--compressed/--not-compressed', default=True, help='Enable/disable lilcom for features compression.')
-@click.option('-t', '--lilcom-tick-power', type=int, default=-8,
+@click.option('-t', '--lilcom-tick-power', type=int, default=-5,
               help='Determines the compression accuracy; '
                    'the input will be compressed to integer multiples of 2^tick_power')
 @click.option('-r', '--root-dir', type=click.Path(exists=True, file_okay=False), default=None,
               help='Root directory - all paths in the manifest will use this as prefix.')
 @click.option('-j', '--num-jobs', type=int, default=1, help='Number of parallel processes.')
-def make_feats(
+def extract(
         audio_manifest: Pathlike,
         output_dir: Pathlike,
         segmentation_manifest: Optional[Pathlike],
@@ -59,7 +65,7 @@ def make_feats(
     audio_set = RecordingSet.from_yaml(audio_manifest)
 
     feature_extractor = (FeatureExtractor.from_yaml(feature_manifest)
-                         if feature_manifest is not None else FeatureExtractor())
+                         if feature_manifest is not None else Fbank())
 
     # TODO: to be used (actually, only the segmentation info will be used, and all supervision info will be ignored)
     supervision_set = (SupervisionSet.from_yaml(segmentation_manifest)

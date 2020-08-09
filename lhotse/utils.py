@@ -1,9 +1,10 @@
 import gzip
 import random
+import uuid
 from dataclasses import asdict, dataclass
 from math import ceil, isclose
 from pathlib import Path
-from typing import Any, Dict, Union
+from typing import Any, Dict, Union, Optional, Callable
 
 import numpy as np
 import torch
@@ -17,11 +18,36 @@ Decibels = float
 INT16MAX = 32768
 EPSILON = 1e-8
 
+# This is a utility that generates uuid4's and is set when the user calls
+# the ``fix_random_seed`` function.
+# Python's uuid module is not affected by the ``random.seed(value)`` call,
+# so we work around it to provide deterministic ID generation when requested.
+_lhotse_uuid: Optional[Callable] = None
+
 
 def fix_random_seed(random_seed: int):
+    """
+    Set the same random seed for the libraries and modules that Lhotse interacts with.
+    Includes the ``random`` module, numpy, torch, and ``uuid4()`` function defined in this file.
+    """
+    global _lhotse_uuid
     random.seed(random_seed)
     np.random.seed(random_seed)
     torch.random.manual_seed(random_seed)
+    # Ensure deterministic ID creation
+    rd = random.Random()
+    rd.seed(random_seed)
+    _lhotse_uuid = lambda: uuid.UUID(int=rd.getrandbits(128))
+
+
+def uuid4():
+    """
+    Generates uuid4's exactly like Python's uuid.uuid4() function.
+    When ``fix_random_seed()`` is called, it will instead generate deterministic IDs.
+    """
+    if _lhotse_uuid is not None:
+        return _lhotse_uuid()
+    return uuid.uuid4()
 
 
 def load_yaml(path: Pathlike) -> dict:

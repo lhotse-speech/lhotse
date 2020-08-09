@@ -15,10 +15,7 @@ def DummyManifest(type_: Type, *, begin_id: int, end_id: int) -> Manifest:
         return SupervisionSet.from_segments(dummy_supervision(idx) for idx in range(begin_id, end_id))
     if type_ == FeatureSet:
         # noinspection PyTypeChecker
-        return FeatureSet(
-            features=[dummy_features(idx) for idx in range(begin_id, end_id)],
-            feature_extractor='irrelevant'
-        )
+        return FeatureSet.from_features(dummy_features(idx) for idx in range(begin_id, end_id))
 
 
 def dummy_recording(unique_id: int) -> Recording:
@@ -60,6 +57,7 @@ def dummy_cut(id: str = 'irrelevant', start: float = 0.0, duration: float = 1.0,
         id=id,
         start=start,
         duration=duration,
+        channel=0,
         features=dummy_features(0),
         supervisions=supervisions if supervisions is not None else [],
     )

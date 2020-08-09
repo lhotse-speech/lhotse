@@ -7,6 +7,6 @@ BASE=$(git rev-parse --show-toplevel)
 ALLFILES=$(git ls-tree --full-tree --name-only -r HEAD | grep -e ".*\.py\$")
 for FILE in ${ALLFILES}; do
   flake8 --ignore ${IGNORE_LIST} \
-         --max-line-length ${MAX_LINE_LENGTH} \
-         ${BASE}/${FILE}
+    --max-line-length ${MAX_LINE_LENGTH} \
+    ${BASE}/${FILE}
 done

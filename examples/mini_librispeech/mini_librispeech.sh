@@ -18,7 +18,7 @@ lhotse prepare mini-librispeech ${CORPUS_PATH} ${OUTPUT_PATH}
 
 for part in ${data_parts}; do
   # Extract features
-  lhotse make-feats -j ${nj} \
+  lhotse feat extract -j ${nj} \
     -r ${MINI_LIBRISPEECH_ROOT} \
     ${OUTPUT_PATH}/audio_${part}.yml \
     ${OUTPUT_PATH}/feats_${part}

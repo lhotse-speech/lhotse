@@ -3,9 +3,9 @@ from tempfile import NamedTemporaryFile
 import numpy as np
 import pytest
 
+from lhotse.audio import AudioSource, Recording
 from lhotse.cut import Cut, CutSet, PaddingCut
 from lhotse.features import Features
-from lhotse.audio import AudioSource, Recording
 
 PADDING_ENERGY = 1e-8
 PADDING_LOG_ENERGY = -18.420680743952367  # log(1e-8)
@@ -19,6 +19,7 @@ def padding_cut():
         num_frames=1000,
         num_features=23,
         sampling_rate=16000,
+        num_samples=160000,
         use_log_energy=True
     )
 
@@ -77,6 +78,7 @@ def test_truncate(padding_cut, offset, duration, expected_duration, expected_num
 @pytest.fixture
 def libri_cut():
     return Cut(
+        channel=0,
         duration=16.04,
         features=Features(
             channel_id=0,
@@ -86,7 +88,7 @@ def libri_cut():
             recording_id='recording-1',
             sampling_rate=16000,
             start=0.0,
-            storage_path='test/fixtures/libri/storage/dc2e0952-f2f8-423c-9b8c-f5481652ee1d.llc',
+            storage_path='test/fixtures/libri/storage/68f03dd2-96ec-45b0-b1be-a4f9dd5e7dcf.llc',
             storage_type='lilcom',
             type='fbank',
         ),
@@ -95,7 +97,7 @@ def libri_cut():
             sources=[
                 AudioSource(
                     type='file',
-                    channel_ids=[1],
+                    channel_ids=[0],
                     source='test/fixtures/libri/libri-1088-134315-0000.wav',
                 )],
             sampling_rate=16000,

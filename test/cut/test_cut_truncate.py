@@ -14,6 +14,7 @@ def overlapping_supervisions_cut():
         id='cut-1',
         start=0.0,
         duration=0.5,
+        channel=0,
         features=Features(
             recording_id='recording-1',
             channel_id=0,
@@ -78,6 +79,7 @@ def test_truncate_cut(
     )
     remaining_supervision_ids = [s.id for s in truncated_cut.supervisions]
     assert remaining_supervision_ids == expected_supervision_ids
+    assert truncated_cut.duration == duration or duration is None
     assert isclose(truncated_cut.end, expected_end)
 
 

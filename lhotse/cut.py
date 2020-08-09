@@ -1,15 +1,14 @@
 import random
 import warnings
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from functools import reduce
-from math import ceil, floor, log
+from math import ceil, floor, log, isclose
 from typing import Callable, Dict, Iterable, List, Optional, Union
-from uuid import uuid4
 
 import numpy as np
 
 from lhotse.audio import AudioMixer, Recording, RecordingSet
-from lhotse.features import FbankMixer, Features, FeatureSet
+from lhotse.features import Features, FeatureSet, FeatureMixer, create_default_feature_extractor
 from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import (
     EPSILON,
@@ -22,6 +21,7 @@ from lhotse.utils import (
     overlaps,
     overspans,
     save_to_yaml,
+    uuid4
 )
 
 # One of the design principles for Cuts is a maximally "lazy" implementation, e.g. when overlaying/mixing Cuts,
@@ -45,10 +45,11 @@ class Cut:
     # Begin and duration are needed to specify which chunk of features/recording to load.
     start: Seconds
     duration: Seconds
+    channel: int
 
     # Supervisions that will be used as targets for model training later on. They don't have to cover the whole
     # cut duration. They also might overlap.
-    supervisions: List[SupervisionSegment]
+    supervisions: List[SupervisionSegment] = field(default_factory=list)
 
     # The features can span longer than the actual cut - the Features object "knows" its start and end time
     # within the underlying recording. We can expect the interval [begin, begin + duration] to be a subset of the
@@ -59,37 +60,40 @@ class Cut:
     recording: Optional[Recording] = None
 
     @property
-    def channel(self) -> int:
-        # Return the first channel's id
-        return self.features.channel_id if self.features is not None else self.recording.channel_ids[0]
-
-    @property
     def recording_id(self) -> str:
-        return self.features.recording_id if self.features is not None else self.recording.id
+        return self.features.recording_id if self.has_features else self.recording.id
 
     @property
     def end(self) -> Seconds:
         return self.start + self.duration
 
     @property
+    def has_features(self) -> bool:
+        return self.features is not None
+
+    @property
+    def has_recording(self) -> bool:
+        return self.recording is not None
+
+    @property
     def frame_shift(self) -> Optional[Seconds]:
-        return self.features.frame_shift if self.features is not None else None
+        return self.features.frame_shift if self.has_features else None
 
     @property
     def num_frames(self) -> Optional[int]:
-        return round(self.duration / self.frame_shift) if self.features is not None else None
+        return round(self.duration / self.frame_shift) if self.has_features else None
 
     @property
     def num_samples(self) -> Optional[int]:
-        return self.recording.num_samples if self.recording is not None else None
+        return self.recording.num_samples if self.has_recording else None
 
     @property
     def num_features(self) -> Optional[int]:
-        return self.features.num_features if self.features is not None else None
+        return self.features.num_features if self.has_features else None
 
     @property
     def sampling_rate(self) -> int:
-        return self.features.sampling_rate if self.features is not None else self.recording.sampling_rate
+        return self.features.sampling_rate if self.has_features else self.recording.sampling_rate
 
     def load_features(self, root_dir: Optional[Pathlike] = None) -> Optional[np.ndarray]:
         """
@@ -97,10 +101,9 @@ class Cut:
         [begin, duration] region of the current Cut.
         Optionally specify a `root_dir` prefix to prefix the features path with.
         """
-        if self.features is not None:
+        if self.has_features:
             return self.features.load(root_dir=root_dir, start=self.start, duration=self.duration)
-        else:
-            return None
+        return None
 
     def load_audio(self, root_dir: Optional[Pathlike] = None) -> Optional[np.ndarray]:
         """
@@ -111,15 +114,14 @@ class Cut:
         :param root_dir: optional Path prefix to find the recording in the filesystem.
         :return: a numpy ndarray with audio samples, with shape (1 <channel>, N <samples>)
         """
-        if self.recording is not None:
+        if self.has_recording:
             return self.recording.load_audio(
                 channels=self.channel,
                 offset_seconds=self.start,
                 duration_seconds=self.duration,
                 root_dir=root_dir
             )
-        else:
-            return None
+        return None
 
     def truncate(
             self,
@@ -147,6 +149,11 @@ class Cut:
         new_start = self.start + offset
         until = offset + (duration if duration is not None else self.duration)
         new_duration = self.duration - new_start if duration is None else until - offset
+        if duration is not None and isclose(new_duration, duration):
+            # Because duration is a float, the subtraction is imprecise and can result in durations
+            # such as 0.3999999996 instead of 0.4, which could lead to RecordingSet loading 1 audio sample too little,
+            # causing trouble for users expecting matching audio tensor shapes for cuts truncated to a single duration.
+            new_duration = duration
         assert new_duration > 0.0
         assert new_start + new_duration <= self.start + self.duration + 1e-5
         new_time_span = TimeSpan(start=new_start, end=new_start + new_duration)
@@ -155,10 +162,12 @@ class Cut:
             id=self.id if preserve_id else str(uuid4()),
             start=new_start,
             duration=new_duration,
+            channel=self.channel,
             supervisions=[
                 segment for segment in self.supervisions if criterion(new_time_span, segment)
             ],
-            features=self.features
+            features=self.features,
+            recording=self.recording
         )
 
     def overlay(self, other: AnyCut, offset_other_by: Seconds = 0.0, snr: Optional[Decibels] = None) -> 'MixedCut':
@@ -235,19 +244,29 @@ class PaddingCut:
         return []
 
     @property
+    def has_features(self) -> bool:
+        return self.num_frames is not None
+
+    @property
+    def has_recording(self) -> bool:
+        return self.num_samples is not None
+
+    @property
     def frame_shift(self):
-        return round(self.duration / self.num_frames, ndigits=3) if self.num_frames is not None else None
+        return round(self.duration / self.num_frames, ndigits=3) if self.has_features else None
 
     # noinspection PyUnusedLocal
     def load_features(self, *args, **kwargs) -> Optional[np.ndarray]:
-        if self.num_frames is None:
-            return None
-        value = np.log(EPSILON) if self.use_log_energy else EPSILON
-        return np.ones((self.num_frames, self.num_features)) * value
+        if self.has_features:
+            value = np.log(EPSILON) if self.use_log_energy else EPSILON
+            return np.ones((self.num_frames, self.num_features)) * value
+        return None
 
     # noinspection PyUnusedLocal
-    def load_audio(self, *args, **kwargs) -> np.ndarray:
-        return np.zeros((1, round(self.duration * self.sampling_rate)))
+    def load_audio(self, *args, **kwargs) -> Optional[np.ndarray]:
+        if self.has_recording:
+            return np.zeros((1, round(self.duration * self.sampling_rate)))
+        return None
 
     # noinspection PyUnusedLocal
     def truncate(
@@ -356,20 +375,36 @@ class MixedCut:
         return max(track_durations)
 
     @property
+    def has_features(self) -> bool:
+        return self._first_non_padding_cut.has_features
+
+    @property
+    def has_recording(self) -> bool:
+        return self._first_non_padding_cut.has_recording
+
+    @property
     def num_frames(self) -> Optional[int]:
-        return None if self.tracks[0].cut.frame_shift is None else round(self.duration / self.tracks[0].cut.frame_shift)
+        if self.has_features:
+            return round(self.duration / self._first_non_padding_cut.frame_shift)
+        return None
+
+    @property
+    def sampling_rate(self) -> Optional[int]:
+        return self._first_non_padding_cut.sampling_rate
 
     @property
     def num_samples(self) -> Optional[int]:
-        return None if self.tracks[0].cut.num_samples is None else round(self.duration * self.tracks[0].cut.sampling_rate)
+        if self.has_recording:
+            return round(self.duration * self.sampling_rate)
+        return None
 
     @property
-    def num_features(self) -> int:
-        return self.tracks[0].cut.num_features
+    def num_features(self) -> Optional[int]:
+        return self._first_non_padding_cut.num_features
 
     @property
     def features_type(self) -> Optional[str]:
-        return self.tracks[0].cut.features.type if self.tracks[0].cut.features is not None else None
+        return self._first_non_padding_cut.features.type
 
     def overlay(
             self,
@@ -485,36 +520,38 @@ class MixedCut:
             use_log_energy=self.features_type in ('fbank', 'mfcc')
         ))
 
-    def load_features(self, root_dir: Optional[Pathlike] = None) -> np.ndarray:
+    def load_features(self, root_dir: Optional[Pathlike] = None) -> Optional[np.ndarray]:
         """Loads the features of the source cuts and overlays them on-the-fly."""
-        cuts = [track.cut for track in self.tracks]
-        frame_shift = cuts[0].frame_shift
-        # TODO: check if the 'pad_shorter' call is still necessary, it shouldn't be
-        # feats = pad_shorter(*feats)
-        mixer = FbankMixer(
-            base_feats=cuts[0].load_features(root_dir=root_dir),
-            frame_shift=frame_shift,
+        if not self.has_features:
+            return None
+        first_cut = self.tracks[0].cut
+        mixer = FeatureMixer(
+            feature_extractor=create_default_feature_extractor(self._first_non_padding_cut.features.type),
+            base_feats=first_cut.load_features(root_dir=root_dir),
+            frame_shift=first_cut.frame_shift,
         )
-        for cut, track in zip(cuts[1:], self.tracks[1:]):
+        for track in self.tracks[1:]:
             mixer.add_to_mix(
-                feats=cut.load_features(root_dir=root_dir),
+                feats=track.cut.load_features(root_dir=root_dir),
                 snr=track.snr,
                 offset=track.offset
             )
         return mixer.mixed_feats
 
-    def load_audio(self, root_dir: Optional[Pathlike] = None) -> np.ndarray:
+    def load_audio(self, root_dir: Optional[Pathlike] = None) -> Optional[np.ndarray]:
         """
         Loads the audios of the source cuts and mix them on-the-fly.
 
         :return: the mixed audio samples in an ndarray, with the shape (1, sample_num)
         """
-        cuts = [track.cut for track in self.tracks]
-        unmixed_audio = [cut.load_audio(root_dir) for cut in cuts]
-        mixer = AudioMixer(unmixed_audio[0])
-        for audio, track in zip(unmixed_audio[1:], self.tracks[1:]):
+        if not self.has_recording:
+            return None
+        # cuts = [track.cut for track in self.tracks]
+        # unmixed_audio = [cut.load_audio(root_dir) for cut in cuts]
+        mixer = AudioMixer(self.tracks[0].cut.load_audio(root_dir=root_dir))
+        for track in self.tracks[1:]:
             mixer.add_to_mix(
-                audio=audio,
+                audio=track.cut.load_audio(root_dir=root_dir),
                 snr=track.snr,
                 offset=track.offset,
                 sampling_rate=track.cut.sampling_rate
@@ -524,6 +561,10 @@ class MixedCut:
     @staticmethod
     def from_dict(data: dict) -> 'MixedCut':
         return MixedCut(id=data['id'], tracks=[MixTrack.from_dict(track) for track in data['tracks']])
+
+    @property
+    def _first_non_padding_cut(self) -> Cut:
+        return [t.cut for t in self.tracks if not isinstance(t.cut, PaddingCut)][0]
 
 
 @dataclass
@@ -546,6 +587,72 @@ class CutSet:
     @staticmethod
     def from_cuts(cuts: Iterable[AnyCut]) -> 'CutSet':
         return CutSet({cut.id: cut for cut in cuts})
+
+    @staticmethod
+    def from_manifests(
+            feature_set: Optional[FeatureSet] = None,
+            recording_set: Optional[RecordingSet] = None,
+            supervision_set: Optional[SupervisionSet] = None,
+    ) -> 'CutSet':
+        """
+        Create a CutSet from any combination of supervision, feature and recording manifests.
+        At least one of ``recording_set`` or ``feature_set`` is required.
+        When ``supervision_set`` is provided, the cuts boundaries will correspond to that of the supervision segments.
+        Otherwise, the boundaries correspond to those found in the ``feature_set``, when available.
+        When only ``recording_set`` is provided, the recordings determine the boundaries.
+        """
+        assert feature_set is not None or recording_set is not None, \
+            "At least one of feature_set and recording_set has to be provided."
+        sup_ok, feat_ok, rec_ok = supervision_set is not None, feature_set is not None, recording_set is not None
+        if sup_ok:
+            # Case I: Supervisions are provided.
+            # Use them to determine the cut boundaries and attach recordings and features as available.
+            return CutSet.from_cuts(
+                Cut(
+                    id=str(uuid4()),
+                    start=supervision.start,
+                    duration=supervision.duration,
+                    channel=supervision.channel_id,
+                    recording=recording_set[supervision.recording_id] if rec_ok else None,
+                    features=feature_set.find(
+                        recording_id=supervision.recording_id,
+                        channel_id=supervision.channel_id,
+                        start=supervision.start,
+                        duration=supervision.duration,
+                    ) if feat_ok else None,
+                    supervisions=[supervision]
+                )
+                for supervision in supervision_set
+            )
+        if feat_ok:
+            # Case II: No supervisions, but features are provided.
+            # Use features to determine the cut boundaries and attach recordings as available.
+            return CutSet.from_cuts(
+                Cut(
+                    id=str(uuid4()),
+                    start=features.start,
+                    duration=features.duration,
+                    channel=features.channel_id,
+                    features=features,
+                    recording=recording_set[features.recording_id] if rec_ok else None
+                )
+                for features in feature_set
+            )
+        # Case II: Only recordings are provided.
+        # Use recordings to determine the cut boundaries.
+        return CutSet.from_cuts(
+            Cut(
+                id=str(uuid4()),
+                start=0,
+                duration=recording.duration_seconds,
+                channel=channel,
+                recording=recording,
+            )
+            for recording in recording_set
+            # A single cut always represents a single channel. When a recording has multiple channels,
+            # we create a new cut for each channel separately.
+            for channel in recording.channel_ids
+        )
 
     @staticmethod
     def from_yaml(path: Pathlike) -> 'CutSet':
@@ -640,8 +747,11 @@ class CutSet:
         else:
             return item.id in self.cuts
 
-    def __getitem__(self, item: str) -> 'AnyCut':
-        return self.cuts[item]
+    def __getitem__(self, cut_id_or_index: Union[int, str]) -> 'AnyCut':
+        if isinstance(cut_id_or_index, str):
+            return self.cuts[cut_id_or_index]
+        # ~100x faster than list(dict.values())[index] for 100k elements
+        return next(val for idx, val in enumerate(self.cuts.values()) if idx == cut_id_or_index)
 
     def __len__(self) -> int:
         return len(self.cuts)
@@ -652,22 +762,6 @@ class CutSet:
     def __add__(self, other: 'CutSet') -> 'CutSet':
         assert not set(self.cuts.keys()).intersection(other.cuts.keys()), "Conflicting IDs when concatenating CutSets!"
         return CutSet(cuts={**self.cuts, **other.cuts})
-
-
-def make_cuts_from_features(feature_set: FeatureSet) -> CutSet:
-    """
-    Utility that converts a FeatureSet to a CutSet without any adjustment of the segment boundaries.
-    """
-    return CutSet.from_cuts(
-        Cut(
-            id=str(uuid4()),
-            start=features.start,
-            duration=features.duration,
-            features=features,
-            supervisions=[]
-        )
-        for features in feature_set
-    )
 
 
 def make_windowed_cuts_from_features(
@@ -708,66 +802,12 @@ def make_windowed_cuts_from_features(
                     id=str(uuid4()),
                     start=offset,
                     duration=duration,
+                    channel=features.channel_id,
                     features=features,
                     supervisions=[]
                 )
             )
     return CutSet.from_cuts(cuts)
-
-
-def make_cuts_from_recordings(recording_set: RecordingSet) -> CutSet:
-    """
-    Utility that converts a RecordingSet to a CutSet without any adjustment of the segment boundaries.
-    """
-    return CutSet.from_cuts(
-        Cut(
-            id=str(uuid4()),
-            start=0,
-            duration=recording.duration_seconds,
-            recording=recording,
-            supervisions=[],
-        )
-        for recording in recording_set
-    )
-
-
-def make_cuts_from_supervisions_features(supervision_set: SupervisionSet, feature_set: FeatureSet) -> CutSet:
-    """
-    Utility that converts a SupervisionSet to a CutSet without any adjustment of the segment boundaries.
-    It attaches the relevant features from the corresponding FeatureSet.
-    """
-    return CutSet.from_cuts(
-        Cut(
-            id=str(uuid4()),
-            start=supervision.start,
-            duration=supervision.duration,
-            features=feature_set.find(
-                recording_id=supervision.recording_id,
-                channel_id=supervision.channel_id,
-                start=supervision.start,
-                duration=supervision.duration,
-            ),
-            supervisions=[supervision]
-        )
-        for idx, supervision in enumerate(supervision_set)
-    )
-
-
-def make_cuts_from_supervisions_recordings(supervision_set: SupervisionSet, recording_set: RecordingSet) -> CutSet:
-    """
-    Utility that converts a SupervisionSet to a CutSet without any adjustment of the segment boundaries.
-    It attaches the relevant recording from the corresponding RecordingSet.
-    """
-    return CutSet.from_cuts(
-        Cut(
-            id=str(uuid4()),
-            start=supervision.start,
-            duration=supervision.duration,
-            recording=recording_set[supervision.recording_id],
-            supervisions=[supervision]
-        )
-        for supervision in supervision_set
-    )
 
 
 def mix(
