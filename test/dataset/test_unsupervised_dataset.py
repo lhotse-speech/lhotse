@@ -52,7 +52,7 @@ def test_on_the_fly_feature_extraction_unsupervised_dataset(libri_cut_set):
 
 @pytest.mark.skipif(not is_wav_augment_available(), reason='Requires WavAugment')
 def test_on_the_fly_feature_extraction_unsupervised_dataset_with_augmentation(libri_cut_set):
-    tested_dataset = OnTheFlyFeatureExtractionUnsupervisedDataset(
+    tested_dataset = DynamicUnsupervisedDataset(
         feature_extractor=Fbank(),
         cuts=libri_cut_set,
         augmenter=WavAugmenter.create_predefined('reverb', sampling_rate=16000)
