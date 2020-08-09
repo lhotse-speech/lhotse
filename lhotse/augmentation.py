@@ -99,7 +99,6 @@ def pitch(sampling_rate: int):
 
     :param sampling_rate: a sampling rate value for which the effect will be created (resampling is needed for pitch).
     """
-
     import augment
     effect_chain = augment.EffectChain()
     # The pitch effect changes the sampling ratio; we have to compensate for that.
@@ -113,7 +112,6 @@ def reverb(*args, **kwargs):
     """
     Returns a reverb effect for wav augmentation.
     """
-
     import augment
     effect_chain = augment.EffectChain()
     # Reverb it makes the signal to have two channels,
@@ -131,7 +129,6 @@ def pitch_reverb_tdrop(sampling_rate: int):
 
     :param sampling_rate: a sampling rate value for which the effect will be created (resampling is needed for pitch).
     """
-
     import augment
     effect_chain = augment.EffectChain()
     # The pitch effect changes the sampling ratio; we have to compensate for that.
@@ -146,8 +143,10 @@ def pitch_reverb_tdrop(sampling_rate: int):
 
 
 def _random_pitch_shift() -> int:
+    """The returned values are 1/100ths of a semitone, meaning the default is up to a minor third shift up or down."""
     return np.random.randint(-300, 300)
 
 
 def _random_room_size() -> int:
+    """The returned values correspond to the 'room scale' parameter of SoX."""
     return np.random.randint(0, 100)
