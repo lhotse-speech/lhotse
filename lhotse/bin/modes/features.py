@@ -4,6 +4,7 @@ from typing import Optional
 import click
 
 from lhotse.audio import RecordingSet
+from lhotse.augmentation import available_wav_augmentations, WavAugmenter
 from lhotse.bin.modes.cli_base import cli
 from lhotse.features import FeatureExtractor, FeatureSetBuilder, create_default_feature_extractor, Fbank
 from lhotse.supervision import SupervisionSet
@@ -32,8 +33,8 @@ def write_default_config(output_config: Pathlike, feature_type: str):
               help='Optional manifest specifying the regions, for which features are to be extracted. '
                    'When not specified, features will be extracted for the entire recording. '
                    'Supervision manifest can be used here.')
-@click.option('-a', '--augmentation-manifest', type=click.Path(exists=True, dir_okay=False),
-              help='Optional manifest specifying augmentation transforms that can be applied to recordings.')
+@click.option('-a', '--augmentation', type=click.Choice(available_wav_augmentations()),
+              default=None, help='Optional time-domain data augmentation effect chain to apply.')
 @click.option('-f', '--feature-manifest', type=click.Path(exists=True, dir_okay=False),
               help='Optional manifest specifying feature extractor configuration.')
 @click.option('--compressed/--not-compressed', default=True, help='Enable/disable lilcom for features compression.')
@@ -47,11 +48,7 @@ def extract(
         audio_manifest: Pathlike,
         output_dir: Pathlike,
         segmentation_manifest: Optional[Pathlike],
-        # TODO: augmentation manifest should specify a number of transforms and probability of their application
-        # e.g.:
-        # "add_noise", "prob": 0.5, "noise_recordings": ["path1.wav", "path2.wav"]
-        # "reverberate", "prob": 0.2, "rirs": ["rir1.wav", "rir2.wav"] (or however the RIRs are stored like... can be params for simulation)
-        augmentation_manifest: Optional[Pathlike],
+        augmentation: str,
         feature_manifest: Optional[Pathlike],
         compressed: bool,
         lilcom_tick_power: int,
@@ -74,11 +71,18 @@ def extract(
     output_dir = Path(output_dir)
     output_dir.mkdir(exist_ok=True, parents=True)
 
+    augmenter = None
+    if augmentation is not None:
+        sampling_rate = next(iter(audio_set)).sampling_rate
+        assert all(rec.sampling_rate == sampling_rate for rec in audio_set), \
+            "Wav augmentation effect chains expect all the recordings to have the same sampling rate at this time."
+        augmenter = WavAugmenter.create_predefined(name=augmentation, sampling_rate=sampling_rate)
+
     feature_set_builder = FeatureSetBuilder(
         feature_extractor=feature_extractor,
         output_dir=output_dir,
         root_dir=root_dir,
-        augmentation_manifest=augmentation_manifest
+        augmenter=augmenter
     )
     feature_set_builder.process_and_store_recordings(
         recordings=audio_set,

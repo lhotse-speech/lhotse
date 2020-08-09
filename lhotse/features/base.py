@@ -12,6 +12,7 @@ import numpy as np
 import torch
 
 from lhotse.audio import Recording
+from lhotse.augmentation import WavAugmenter
 from lhotse.supervision import SupervisionSegment
 from lhotse.utils import Seconds, Pathlike, load_yaml, save_to_yaml, uuid4
 
@@ -358,12 +359,12 @@ class FeatureSetBuilder:
             feature_extractor: FeatureExtractor,
             output_dir: Pathlike,
             root_dir: Optional[Pathlike] = None,
-            augmentation_manifest=None
+            augmenter: Optional[WavAugmenter] = None
     ):
         self.root_dir = root_dir
         self.feature_extractor = feature_extractor
         self.output_dir = Path(output_dir)
-        self.augmentation_manifest = augmentation_manifest  # TODO: implement and use
+        self.augmenter = augmenter
 
     def process_and_store_recordings(
             self,
@@ -405,7 +406,9 @@ class FeatureSetBuilder:
 
             samples = recording.load_audio(channels=channel, root_dir=self.root_dir)
 
-            # TODO: use augmentation manifest here
+            if self.augmenter is not None:
+                samples = self.augmenter.apply(samples)
+
             feats = self.feature_extractor.extract(samples=samples, sampling_rate=recording.sampling_rate)
 
             if compressed:
