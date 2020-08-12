@@ -8,9 +8,6 @@ from torch.utils.data import Dataset
 from lhotse.cut import CutSet
 from lhotse.utils import Pathlike
 
-# TODO: make them optional
-import simplefst
-from pychain import ChainGraph, ChainGraphBatch
 EPS = 1e-8
 
 
@@ -38,16 +35,6 @@ class SpeechRecognitionDataset(Dataset):
         self.cuts = cuts.cuts
         self.root_dir = Path(root_dir) if root_dir else None
         self.cut_ids = list(self.cuts.keys())
-        if cuts[0].supervisions[0].graph_archive is not None:
-            self.train = True
-        else:
-            self.train = False
-
-    def parse_rxfile(file):
-        # separate offset from filename
-        if re.search(':[0-9]+$', file):
-            (file, offset) = file.rsplit(':', 1)
-        return file, int(offset)
 
     def __getitem__(self, idx: int) -> Dict[str, torch.Tensor]:
         cut_id = self.cut_ids[idx]
@@ -58,17 +45,14 @@ class SpeechRecognitionDataset(Dataset):
         if len(cut.supervisions) > 1:
             logging.warning(
                 "More than one supervision in ASR task! Selected the first one and ignored others.")
-
-        if self.train:
-            graph_archive = cut.supervisions[0]
-            filename, offset = parse_rxfile(graph_archive)
-            fst = simplefst.StdVectorFst.read_ark(filename, offset)
-            graph = ChainGraph(fst)
+        supervision = cut.supervisions[0]
+        if supervision.pychain_graph is not None:
+            pychain_graph = supervision.pychain_graph.load()
 
         return {
             'features': features,
-            'text': cut.supervisions[0].text
-            'graph': graph if self.train else None
+            'text': supervision.text
+            'pychain_graph': pychain_graph if supervision.pychain_graph is not None
         }
 
     def __len__(self) -> int:

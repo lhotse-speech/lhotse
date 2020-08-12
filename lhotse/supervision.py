@@ -15,8 +15,7 @@ class SupervisionSegment:
     language: Optional[str] = None
     speaker: Optional[str] = None
     gender: Optional[str] = None
-    # exmaple: "data/graph/train_si284/num.1.ark:9"
-    graph_archive: Optional[str] = None
+    pychain_graph: Optional[PyChainGraph] = None
 
     @property
     def end(self) -> Seconds:
@@ -30,6 +29,24 @@ class SupervisionSegment:
     @staticmethod
     def from_dict(data: dict) -> 'SupervisionSegment':
         return SupervisionSegment(**data)
+
+
+@dataclass
+class PyChainGraph:
+    archive_path: Pathlike
+    archive_offset: int
+
+    @staticmethod
+    def from_dict(data: dict) -> 'PyChainGraph':
+        return PyChainGraph(**data)
+
+    def load():
+        import simplefst
+        from pychain import ChainGraph
+        fst = simplefst.StdVectorFst.read_ark(
+            self.archive_path, self.archive_offset)
+        pychain_graph = ChainGraph(fst)
+        return pychain_graph
 
 
 @dataclass
