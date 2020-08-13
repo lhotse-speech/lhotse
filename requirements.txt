@@ -1,10 +1,14 @@
-pyyaml>=5.3.1
-numpy>=1.18.1
-numba==0.48.0  # Fix to librosa not respecting something deprecated
-librosa==0.7.2
 click>=7.1.1
+cytoolz>=0.10.1
+lhotse~=0.1
+librosa==0.7.2
 lilcom>=1.1.0
+matplotlib~=3.2.2
+numba==0.48.0  # Fix to librosa not respecting something deprecated
+numpy>=1.18.1
+pandas>=1.0.3
+pytest~=5.4.3
+pyyaml>=5.3.1
+setuptools~=47.3.1
 torch>=1.5.1
 torchaudio>=0.5.1
-pandas>=1.0.3
-cytoolz>=0.10.1
