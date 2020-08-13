@@ -135,35 +135,72 @@ class AmiMetaData(NamedTuple):
     duration_seconds: float
 
 
-def make_metadata(data_dir: Pathlike) -> Dict[str, AmiMetaData]:
+def make_metadata(data_dir: Pathlike, asr_task: bool) -> Dict[str, AmiMetaData]:
     metadata = {}
     anotation_lists = parse_ami_annotations(data_dir / 'annotations.gzip')
     wav_dir = data_dir / 'wav_db'
     for audio_path in wav_dir.rglob('*.wav'):
         audio_idx = audio_path.name
+        audio_name = re.sub(r'\..*$', '', audio_idx)
         if audio_idx not in anotation_lists:
             logging.warning(f'No annotation found for {audio_idx}')
             continue
         audio_info = torchaudio.info(str(audio_path))[0]
-        for seg_idx, seg_info in enumerate(anotation_lists[audio_idx]):
-            for subseg_idx, subseg_info in enumerate(seg_info):
-                duration = subseg_info.end_time-subseg_info.begin_time
-                if duration > 0:
-                    metadata[f'{audio_idx}-{seg_idx}-{subseg_idx}'] = AmiMetaData(
+
+        # Split the raw data into segments
+        anotation = anotation_lists[audio_idx]
+        if asr_task:
+            # For ASR task, we split the audio not only by silences, but also by punctuations
+            for seg_idx, seg_info in enumerate(anotation):
+                for subseg_idx, subseg_info in enumerate(seg_info):
+                    duration = subseg_info.end_time-subseg_info.begin_time
+                    if duration > 0:
+                        metadata[f'{audio_idx}-{seg_idx}-{subseg_idx}'] = AmiMetaData(
+                            audio_path=audio_path,
+                            audio_name=audio_name,
+                            audio_info=audio_info,
+                            text=subseg_info.text,
+                            offset_seconds=subseg_info.begin_time,
+                            duration_seconds=duration
+                        )
+        else:
+            # For VAD task, we simply split the audio by silences
+            current_time = 0.0
+            seg_idx = 0
+            for seg_info in anotation:
+                begin_time = seg_info[0].begin_time
+                end_time = seg_info[-1].end_time
+                if current_time < begin_time:
+                    # Insert a unvoiced segment
+                    metadata[f'{audio_idx}-{seg_idx}u'] = AmiMetaData(
                         audio_path=audio_path,
-                        audio_name=re.sub(r'\..*$', '', audio_idx),
+                        audio_name=audio_name,
                         audio_info=audio_info,
-                        text=subseg_info.text,
-                        offset_seconds=subseg_info.begin_time,
-                        duration_seconds=duration
+                        text='',
+                        offset_seconds=current_time,
+                        duration_seconds=(begin_time-current_time)
                     )
+                    seg_idx += 1
+                # Then the current segment
+                metadata[f'{audio_idx}-{seg_idx}v'] = AmiMetaData(
+                    audio_path=audio_path,
+                    audio_name=audio_name,
+                    audio_info=audio_info,
+                    text='[voice]',
+                    offset_seconds=begin_time,
+                    duration_seconds=(end_time - begin_time)
+                )
+                seg_idx += 1
+                current_time = end_time
+
     return metadata
 
 
 def prepare_ami(
         data_dir: Pathlike,
         output_dir: Pathlike,
-        save_to_file: Optional[bool] = False,
+        asr_task: Optional[bool] = True,
+        write_yaml: Optional[bool] = False,
 ) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet]]]:
     manifests = defaultdict(dict)
 
@@ -171,7 +208,7 @@ def prepare_ami(
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    metadata = make_metadata(data_dir)
+    metadata = make_metadata(data_dir, asr_task)
     for part in dataset_parts:
         # Audio
         audio = RecordingSet.from_recordings(
@@ -191,7 +228,7 @@ def prepare_ami(
             )
             for idx in metadata if metadata[idx].audio_name in dataset_parts[part]
         )
-        if save_to_file:
+        if write_yaml:
             audio.to_yaml(output_dir / 'audio_{}.yml'.format(part))
 
         # Supervision
@@ -208,7 +245,7 @@ def prepare_ami(
             )
             for idx in audio.recordings
         )
-        if save_to_file:
+        if write_yaml:
             supervision.to_yaml(output_dir / 'supervisions_{}.yml'.format(part))
 
         manifests[part] = {
