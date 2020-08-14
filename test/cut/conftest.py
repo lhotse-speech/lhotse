@@ -32,8 +32,3 @@ def cut2(dummy_features):
 @pytest.fixture
 def cut_set(cut1, cut2):
     return CutSet.from_cuts([cut1, cut2])
-
-
-@pytest.fixture
-def cut_set_with_mixed_cut(cut1, cut2, mixed_cut):
-    return CutSet.from_cuts([cut1, cut2, mixed_cut])

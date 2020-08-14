@@ -18,11 +18,13 @@ class SupervisionSegment:
 
     @property
     def end(self) -> Seconds:
-        return self.start + self.duration
+        # Precision up to 1ms to avoid float numeric artifacts
+        return round(self.start + self.duration, ndigits=3)
 
     def with_offset(self, offset: Seconds) -> 'SupervisionSegment':
         kwargs = asdict(self)
-        kwargs['start'] += offset
+        # Precision up to 1ms to avoid float numeric artifacts
+        kwargs['start'] = round(kwargs['start'] + offset, ndigits=3)
         return SupervisionSegment(**kwargs)
 
     @staticmethod

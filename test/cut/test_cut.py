@@ -1,11 +1,9 @@
-from math import isclose
-
 import pytest
 
-from lhotse.audio import RecordingSet
+from lhotse.audio import RecordingSet, Recording, AudioSource
 from lhotse.cut import CutSet
-from lhotse.features import FeatureSet
-from lhotse.supervision import SupervisionSet
+from lhotse.features import FeatureSet, Features
+from lhotse.supervision import SupervisionSet, SupervisionSegment
 
 
 @pytest.fixture()
@@ -79,18 +77,305 @@ def test_load_none_features(libri_cut):
     assert feats is None
 
 
-def test_make_cuts_from_recordings(libri_recording_set):
-    expected_duration = 16.04
-    cutset = CutSet.from_manifests(recording_set=libri_recording_set)
-    duration = list(cutset.cuts.values())[0].duration
-    assert isclose(duration, expected_duration)
+@pytest.fixture
+def dummy_recording_set():
+    return RecordingSet.from_recordings([
+        Recording(
+            id='rec1', sampling_rate=16000, num_samples=160000, duration_seconds=10, sources=[
+                AudioSource(type='file', channel_ids=[0], source='dummy.wav')
+            ]
+        )
+    ])
 
 
-def test_make_cuts_from_supervisions_features(supervision_set, libri_features_set):
-    cutset = CutSet.from_manifests(supervision_set=supervision_set, feature_set=libri_features_set)
-    assert len(cutset) == 2
+@pytest.fixture
+def dummy_supervision_set():
+    return SupervisionSet.from_segments([
+        SupervisionSegment(
+            id='sup1', recording_id='rec1', start=3, duration=4, channel_id=0, text='dummy text'
+        )
+    ])
 
 
-def test_make_cuts_from_supervisions_recordings(supervision_set, libri_recording_set):
-    cutset = CutSet.from_manifests(supervision_set=supervision_set, recording_set=libri_recording_set)
-    assert len(cutset) == 2
+@pytest.fixture
+def dummy_feature_set():
+    return FeatureSet.from_features([
+        Features(
+            recording_id='rec1', channel_id=0, start=0, duration=10, type='fbank', num_frames=1000,
+            num_features=23, sampling_rate=16000, storage_type='lilcom', storage_path='dummy.llc'
+        )
+    ])
+
+
+def test_make_cuts_from_recordings(dummy_recording_set):
+    cut_set = CutSet.from_manifests(recording_set=dummy_recording_set)
+    cut1 = cut_set[0]
+    assert cut1.start == 0
+    assert cut1.duration == 10.0
+    assert cut1.end == 10.0
+    assert cut1.channel == 0
+
+    assert len(cut1.supervisions) == 0
+
+    assert cut1.has_recording
+    assert cut1.recording == dummy_recording_set.recordings['rec1']
+    assert cut1.sampling_rate == 16000
+    assert cut1.recording_id == 'rec1'
+    assert cut1.num_samples == 160000
+
+    assert not cut1.has_features
+    assert cut1.features is None
+    assert cut1.frame_shift is None
+    assert cut1.num_frames is None
+    assert cut1.num_features is None
+    assert cut1.features_type is None
+
+
+def test_make_cuts_from_features(dummy_feature_set):
+    cut_set = CutSet.from_manifests(feature_set=dummy_feature_set)
+    cut1 = cut_set[0]
+    assert cut1.start == 0
+    assert cut1.duration == 10.0
+    assert cut1.end == 10.0
+    assert cut1.channel == 0
+
+    assert len(cut1.supervisions) == 0
+
+    assert not cut1.has_recording
+    assert cut1.recording is None
+    assert cut1.sampling_rate == 16000
+    assert cut1.recording_id == 'rec1'
+    assert cut1.num_samples is None
+
+    assert cut1.has_features
+    assert cut1.features == dummy_feature_set.features[0]
+    assert cut1.frame_shift == 0.01
+    assert cut1.num_frames == 1000
+    assert cut1.num_features == 23
+    assert cut1.features_type == 'fbank'
+
+
+def test_make_cuts_from_features_recordings(dummy_recording_set, dummy_feature_set):
+    cut_set = CutSet.from_manifests(recording_set=dummy_recording_set, feature_set=dummy_feature_set)
+    cut1 = cut_set[0]
+    assert cut1.start == 0
+    assert cut1.duration == 10.0
+    assert cut1.end == 10.0
+    assert cut1.channel == 0
+
+    assert len(cut1.supervisions) == 0
+
+    assert cut1.has_recording
+    assert cut1.recording == dummy_recording_set.recordings['rec1']
+    assert cut1.sampling_rate == 16000
+    assert cut1.recording_id == 'rec1'
+    assert cut1.num_samples == 160000
+
+    assert cut1.has_features
+    assert cut1.features == dummy_feature_set.features[0]
+    assert cut1.frame_shift == 0.01
+    assert cut1.num_frames == 1000
+    assert cut1.num_features == 23
+    assert cut1.features_type == 'fbank'
+
+
+class TestCutOnSupervisions:
+    def test_make_cuts_from_recordings_supervisions(self, dummy_recording_set, dummy_supervision_set):
+        cut_set = CutSet.from_manifests(recording_set=dummy_recording_set, supervision_set=dummy_supervision_set)
+        cut1 = cut_set[0]
+        assert cut1.start == 3.0
+        assert cut1.duration == 4.0
+        assert cut1.end == 7.0
+        assert cut1.channel == 0
+
+        assert len(cut1.supervisions) == 1
+        assert cut1.supervisions[0].id == 'sup1'
+        assert cut1.supervisions[0].recording_id == 'rec1'
+        assert cut1.supervisions[0].start == 0.0
+        assert cut1.supervisions[0].duration == 4.0
+        assert cut1.supervisions[0].end == 4.0
+        assert cut1.supervisions[0].channel_id == 0
+        assert cut1.supervisions[0].text == 'dummy text'
+
+        assert cut1.has_recording
+        assert cut1.recording == dummy_recording_set.recordings['rec1']
+        assert cut1.sampling_rate == 16000
+        assert cut1.recording_id == 'rec1'
+        assert cut1.num_samples == 16000 * 4
+
+        assert not cut1.has_features
+        assert cut1.features is None
+        assert cut1.frame_shift is None
+        assert cut1.num_frames is None
+        assert cut1.num_features is None
+        assert cut1.features_type is None
+
+    def test_make_cuts_from_features_supervisions(self, dummy_feature_set, dummy_supervision_set):
+        cut_set = CutSet.from_manifests(feature_set=dummy_feature_set, supervision_set=dummy_supervision_set)
+        cut1 = cut_set[0]
+        assert cut1.start == 3.0
+        assert cut1.duration == 4.0
+        assert cut1.end == 7.0
+        assert cut1.channel == 0
+
+        assert len(cut1.supervisions) == 1
+        assert cut1.supervisions[0].id == 'sup1'
+        assert cut1.supervisions[0].recording_id == 'rec1'
+        assert cut1.supervisions[0].start == 0.0
+        assert cut1.supervisions[0].duration == 4.0
+        assert cut1.supervisions[0].end == 4.0
+        assert cut1.supervisions[0].channel_id == 0
+        assert cut1.supervisions[0].text == 'dummy text'
+
+        assert not cut1.has_recording
+        assert cut1.recording is None
+        assert cut1.sampling_rate == 16000
+        assert cut1.recording_id == 'rec1'
+        assert cut1.num_samples is None
+
+        assert cut1.has_features
+        assert cut1.features == dummy_feature_set.features[0]
+        assert cut1.frame_shift == 0.01
+        assert cut1.num_frames == 400
+        assert cut1.num_features == 23
+        assert cut1.features_type == 'fbank'
+
+    def test_make_cuts_from_recordings_features_supervisions(
+            self,
+            dummy_recording_set,
+            dummy_feature_set,
+            dummy_supervision_set
+    ):
+        cut_set = CutSet.from_manifests(
+            recording_set=dummy_recording_set,
+            feature_set=dummy_feature_set,
+            supervision_set=dummy_supervision_set
+        )
+        cut1 = cut_set[0]
+        assert cut1.start == 3.0
+        assert cut1.duration == 4.0
+        assert cut1.end == 7.0
+        assert cut1.channel == 0
+
+        assert len(cut1.supervisions) == 1
+        assert cut1.supervisions[0].id == 'sup1'
+        assert cut1.supervisions[0].recording_id == 'rec1'
+        assert cut1.supervisions[0].start == 0.0
+        assert cut1.supervisions[0].duration == 4.0
+        assert cut1.supervisions[0].end == 4.0
+        assert cut1.supervisions[0].channel_id == 0
+        assert cut1.supervisions[0].text == 'dummy text'
+
+        assert cut1.has_recording
+        assert cut1.recording == dummy_recording_set.recordings['rec1']
+        assert cut1.sampling_rate == 16000
+        assert cut1.recording_id == 'rec1'
+        assert cut1.num_samples == 16000 * 4
+
+        assert cut1.has_features
+        assert cut1.features == dummy_feature_set.features[0]
+        assert cut1.frame_shift == 0.01
+        assert cut1.num_frames == 400
+        assert cut1.num_features == 23
+        assert cut1.features_type == 'fbank'
+
+
+class TestNoCutOnSupervisions:
+    @pytest.mark.xfail
+    def test_make_cuts_from_recordings_supervisions(self, dummy_recording_set, dummy_supervision_set):
+        cut_set = CutSet.from_manifests(recording_set=dummy_recording_set, supervision_set=dummy_supervision_set)
+        cut1 = cut_set[0]
+        assert cut1.start == 0
+        assert cut1.duration == 10.0
+        assert cut1.end == 10.0
+        assert cut1.channel == 0
+
+        assert len(cut1.supervisions) == 1
+        assert cut1.supervisions[0].id == 'sup1'
+        assert cut1.supervisions[0].recording_id == 'rec1'
+        assert cut1.supervisions[0].start == 3.0
+        assert cut1.supervisions[0].start == 7.0
+        assert cut1.supervisions[0].channel_id == 0
+        assert cut1.supervisions[0].text == 'dummy text'
+
+        assert cut1.has_recording
+        assert cut1.recording == dummy_recording_set.recordings['rec1']
+        assert cut1.sampling_rate == 16000
+        assert cut1.recording_id == 'rec1'
+        assert cut1.num_samples == 160000
+
+        assert not cut1.has_features
+        assert cut1.features is None
+        assert cut1.frame_shift is None
+        assert cut1.num_frames is None
+        assert cut1.num_features is None
+        assert cut1.features_type is None
+
+    @pytest.mark.xfail
+    def test_make_cuts_from_features_supervisions(self, dummy_recording_set, dummy_supervision_set):
+        cut_set = CutSet.from_manifests(feature_set=dummy_feature_set, supervision_set=dummy_supervision_set)
+        cut1 = cut_set[0]
+        assert cut1.start == 0
+        assert cut1.duration == 10.0
+        assert cut1.end == 10.0
+        assert cut1.channel == 0
+
+        assert len(cut1.supervisions) == 1
+        assert cut1.supervisions[0].id == 'sup1'
+        assert cut1.supervisions[0].recording_id == 'rec1'
+        assert cut1.supervisions[0].start == 3.0
+        assert cut1.supervisions[0].start == 7.0
+        assert cut1.supervisions[0].channel_id == 0
+        assert cut1.supervisions[0].text == 'dummy text'
+
+        assert cut1.has_recording
+        assert cut1.recording == dummy_recording_set.recordings['rec1']
+        assert cut1.sampling_rate == 16000
+        assert cut1.recording_id == 'rec1'
+        assert cut1.num_samples == 160000
+
+        assert cut1.has_features
+        assert cut1.features == dummy_feature_set.features[0]
+        assert cut1.frame_shift == 0.01
+        assert cut1.num_frames == 1000
+        assert cut1.num_features == 23
+        assert cut1.features_type == 'fbank'
+
+    @pytest.mark.xfail
+    def test_make_cuts_from_recordings_features_supervisions(
+            self,
+            dummy_recording_set,
+            dummy_feature_set,
+            dummy_supervision_set
+    ):
+        cut_set = CutSet.from_manifests(
+            recording_set=dummy_recording_set,
+            feature_set=dummy_feature_set,
+            supervision_set=dummy_supervision_set
+        )
+        cut1 = cut_set[0]
+        assert cut1.start == 0
+        assert cut1.duration == 10.0
+        assert cut1.end == 10.0
+        assert cut1.channel == 0
+
+        assert len(cut1.supervisions) == 1
+        assert cut1.supervisions[0].id == 'sup1'
+        assert cut1.supervisions[0].recording_id == 'rec1'
+        assert cut1.supervisions[0].start == 3.0
+        assert cut1.supervisions[0].start == 7.0
+        assert cut1.supervisions[0].channel_id == 0
+        assert cut1.supervisions[0].text == 'dummy text'
+
+        assert cut1.has_recording
+        assert cut1.recording == dummy_recording_set.recordings['rec1']
+        assert cut1.sampling_rate == 16000
+        assert cut1.recording_id == 'rec1'
+        assert cut1.num_samples == 160000
+
+        assert cut1.has_features
+        assert cut1.features == dummy_feature_set.features[0]
+        assert cut1.frame_shift == 0.01
+        assert cut1.num_frames == 1000
+        assert cut1.num_features == 23
+        assert cut1.features_type == 'fbank'

@@ -39,6 +39,16 @@ class Cut:
     """
     A Cut is a single "segment" that we'll train on. It contains the features corresponding to
     a piece of a recording, with zero or more SupervisionSegments.
+
+    The SupervisionSegments indicate which time spans of the Cut contain some kind of supervision information:
+    e.g. transcript, speaker, language, etc. The regions without a corresponding SupervisionSegment may
+    contain anything - usually we assume it's either silence or some kind of noise.
+
+    Note: The SupervisionSegment time boundaries are relative to the beginning of the cut.
+    E.g. if the underlying Recording starts at 0s (always true), the Cut starts at 100s,
+    and the SupervisionSegment starts at 3s, it means in the Recording, the supervision actually started at 103s.
+    In some cases, the supervision might have a negative start, or a duration exceeding the duration of the Cut.
+    It means that the supervision in the recording extends beyond the Cut.
     """
     id: str
 
@@ -85,11 +95,15 @@ class Cut:
 
     @property
     def num_samples(self) -> Optional[int]:
-        return self.recording.num_samples if self.has_recording else None
+        return round(self.duration * self.sampling_rate) if self.has_recording else None
 
     @property
     def num_features(self) -> Optional[int]:
         return self.features.num_features if self.has_features else None
+
+    @property
+    def features_type(self) -> Optional[int]:
+        return self.features.type if self.has_features else None
 
     @property
     def sampling_rate(self) -> int:
@@ -156,15 +170,16 @@ class Cut:
             new_duration = duration
         assert new_duration > 0.0
         assert new_start + new_duration <= self.start + self.duration + 1e-5
-        new_time_span = TimeSpan(start=new_start, end=new_start + new_duration)
+        new_time_span = TimeSpan(start=0, end=new_duration)
         criterion = overlaps if keep_excessive_supervisions else overspans
+        new_supervisions = (segment.with_offset(-offset) for segment in self.supervisions)
         return Cut(
             id=self.id if preserve_id else str(uuid4()),
             start=new_start,
             duration=new_duration,
             channel=self.channel,
             supervisions=[
-                segment for segment in self.supervisions if criterion(new_time_span, segment)
+                segment for segment in new_supervisions if criterion(new_time_span, segment)
             ],
             features=self.features,
             recording=self.recording
@@ -394,9 +409,7 @@ class MixedCut:
 
     @property
     def num_samples(self) -> Optional[int]:
-        if self.has_recording:
-            return round(self.duration * self.sampling_rate)
-        return None
+        return round(self.duration * self.sampling_rate)
 
     @property
     def num_features(self) -> Optional[int]:
@@ -620,7 +633,8 @@ class CutSet:
                         start=supervision.start,
                         duration=supervision.duration,
                     ) if feat_ok else None,
-                    supervisions=[supervision]
+                    # Supervision time boundaries are always relative to the start of the Cut.
+                    supervisions=[supervision.with_offset(-supervision.start)]
                 )
                 for supervision in supervision_set
             )
@@ -740,6 +754,30 @@ class CutSet:
                 preserve_id=preserve_id
             ))
         return CutSet.from_cuts(truncated_cuts)
+
+    def windows(self, duration: Seconds, keep_excessive_supervisions: bool = True) -> 'CutSet':
+        """
+        Return a new ``CutSet``, made by traversing each ``Cut`` in windows of ``duration`` seconds and
+        creating new ``Cut`` out of them.
+
+        The last window might have a shorter duration if there was not enough audio, so you might want to
+        use either ``.filter()`` or ``.pad()`` afterwards to obtain a uniform duration ``CutSet``.
+
+        :param duration: Desired duration of the new cuts in seconds.
+        :param keep_excessive_supervisions: bool. When a cut is truncated in the middle of a supervision segment,
+        should the supervision be kept.
+        :return: a new CutSet with cuts made from shorter duration windows.
+        """
+        new_cuts = []
+        for cut in self:
+            n_windows = ceil(cut.duration / duration)
+            for i in range(n_windows):
+                new_cuts.append(cut.truncate(
+                    offset=duration * i,
+                    duration=duration,
+                    keep_excessive_supervisions=keep_excessive_supervisions
+                ))
+        return CutSet.from_cuts(new_cuts)
 
     def __contains__(self, item: Union[str, Cut, MixedCut]) -> bool:
         if isinstance(item, str):

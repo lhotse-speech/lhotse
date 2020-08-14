@@ -213,3 +213,29 @@ def test_truncate_cut_set_offset_random(cut_set):
     # Check that start and end is not the same in every cut
     assert len(set(cut.start for cut in truncated_cut_set)) > 1
     assert len(set(cut.end for cut in truncated_cut_set)) > 1
+
+
+def test_cut_set_windows_even_split_keep_supervisions(cut_set):
+    windows_cut_set = cut_set.windows(duration=5.0)
+    assert len(windows_cut_set) == 4
+    assert all(cut.duration == 5.0 for cut in windows_cut_set)
+
+    cut1, cut2, cut3, cut4 = windows_cut_set
+
+    assert len(cut1.supervisions) == 1
+    assert cut1.supervisions[0].start == 0.5
+    assert cut1.supervisions[0].duration == 6.0
+
+    assert len(cut2.supervisions) == 2
+    assert cut2.supervisions[0].start == -4.5
+    assert cut2.supervisions[0].duration == 6.0
+    assert cut2.supervisions[1].start == 2.0
+    assert cut2.supervisions[1].duration == 2.0
+
+    assert len(cut3.supervisions) == 1
+    assert cut3.supervisions[0].start == 3.0
+    assert cut3.supervisions[0].duration == 2.5
+
+    assert len(cut4.supervisions) == 1
+    assert cut4.supervisions[0].start == -2.0
+    assert cut4.supervisions[0].duration == 2.5
