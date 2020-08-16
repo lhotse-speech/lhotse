@@ -181,7 +181,10 @@ def test_make_cuts_from_features_recordings(dummy_recording_set, dummy_feature_s
 
 class TestCutOnSupervisions:
     def test_make_cuts_from_recordings_supervisions(self, dummy_recording_set, dummy_supervision_set):
-        cut_set = CutSet.from_manifests(recording_set=dummy_recording_set, supervision_set=dummy_supervision_set)
+        cut_set = CutSet.from_manifests(
+            recording_set=dummy_recording_set,
+            supervision_set=dummy_supervision_set
+        ).trim_to_supervisions()
         cut1 = cut_set[0]
         assert cut1.start == 3.0
         assert cut1.duration == 4.0
@@ -211,7 +214,10 @@ class TestCutOnSupervisions:
         assert cut1.features_type is None
 
     def test_make_cuts_from_features_supervisions(self, dummy_feature_set, dummy_supervision_set):
-        cut_set = CutSet.from_manifests(feature_set=dummy_feature_set, supervision_set=dummy_supervision_set)
+        cut_set = CutSet.from_manifests(
+            feature_set=dummy_feature_set,
+            supervision_set=dummy_supervision_set
+        ).trim_to_supervisions()
         cut1 = cut_set[0]
         assert cut1.start == 3.0
         assert cut1.duration == 4.0
@@ -250,7 +256,7 @@ class TestCutOnSupervisions:
             recording_set=dummy_recording_set,
             feature_set=dummy_feature_set,
             supervision_set=dummy_supervision_set
-        )
+        ).trim_to_supervisions()
         cut1 = cut_set[0]
         assert cut1.start == 3.0
         assert cut1.duration == 4.0
@@ -281,7 +287,6 @@ class TestCutOnSupervisions:
 
 
 class TestNoCutOnSupervisions:
-    @pytest.mark.xfail
     def test_make_cuts_from_recordings_supervisions(self, dummy_recording_set, dummy_supervision_set):
         cut_set = CutSet.from_manifests(recording_set=dummy_recording_set, supervision_set=dummy_supervision_set)
         cut1 = cut_set[0]
@@ -294,7 +299,7 @@ class TestNoCutOnSupervisions:
         assert cut1.supervisions[0].id == 'sup1'
         assert cut1.supervisions[0].recording_id == 'rec1'
         assert cut1.supervisions[0].start == 3.0
-        assert cut1.supervisions[0].start == 7.0
+        assert cut1.supervisions[0].end == 7.0
         assert cut1.supervisions[0].channel_id == 0
         assert cut1.supervisions[0].text == 'dummy text'
 
@@ -311,8 +316,7 @@ class TestNoCutOnSupervisions:
         assert cut1.num_features is None
         assert cut1.features_type is None
 
-    @pytest.mark.xfail
-    def test_make_cuts_from_features_supervisions(self, dummy_recording_set, dummy_supervision_set):
+    def test_make_cuts_from_features_supervisions(self, dummy_feature_set, dummy_supervision_set):
         cut_set = CutSet.from_manifests(feature_set=dummy_feature_set, supervision_set=dummy_supervision_set)
         cut1 = cut_set[0]
         assert cut1.start == 0
@@ -324,15 +328,15 @@ class TestNoCutOnSupervisions:
         assert cut1.supervisions[0].id == 'sup1'
         assert cut1.supervisions[0].recording_id == 'rec1'
         assert cut1.supervisions[0].start == 3.0
-        assert cut1.supervisions[0].start == 7.0
+        assert cut1.supervisions[0].end == 7.0
         assert cut1.supervisions[0].channel_id == 0
         assert cut1.supervisions[0].text == 'dummy text'
 
-        assert cut1.has_recording
-        assert cut1.recording == dummy_recording_set.recordings['rec1']
+        assert not cut1.has_recording
+        assert cut1.recording is None
         assert cut1.sampling_rate == 16000
         assert cut1.recording_id == 'rec1'
-        assert cut1.num_samples == 160000
+        assert cut1.num_samples is None
 
         assert cut1.has_features
         assert cut1.features == dummy_feature_set.features[0]
@@ -341,7 +345,6 @@ class TestNoCutOnSupervisions:
         assert cut1.num_features == 23
         assert cut1.features_type == 'fbank'
 
-    @pytest.mark.xfail
     def test_make_cuts_from_recordings_features_supervisions(
             self,
             dummy_recording_set,
@@ -363,7 +366,7 @@ class TestNoCutOnSupervisions:
         assert cut1.supervisions[0].id == 'sup1'
         assert cut1.supervisions[0].recording_id == 'rec1'
         assert cut1.supervisions[0].start == 3.0
-        assert cut1.supervisions[0].start == 7.0
+        assert cut1.supervisions[0].end == 7.0
         assert cut1.supervisions[0].channel_id == 0
         assert cut1.supervisions[0].text == 'dummy text'
 

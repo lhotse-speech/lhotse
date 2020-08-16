@@ -66,6 +66,34 @@ class SupervisionSet:
         """
         return SupervisionSet.from_segments(seg for seg in self if predicate(seg))
 
+    def find(
+            self,
+            recording_id: str,
+            channel: int,
+            start_after: Seconds = 0,
+            end_before: Optional[Seconds] = None,
+            adjust_offset: bool = False
+    ) -> Iterable[SupervisionSegment]:
+        """
+        Return an iterable of segments that match the provided ``recording_id``.
+
+        :param recording_id: Desired recording ID.
+        :param channel: Return supervisions in the specified channel.
+        :param start_after: When specified, return segments that start after the given value.
+        :param end_before: When specified, return segments that end before the given value.
+        :param adjust_offset: When true, return segments as if the recordings had started at ``start_after``.
+            In other words, :math:`segment.start = segment.start - start_after`.
+        :return: An iterator over supervision segments satisfying all criteria.
+        """
+        return (
+            segment.with_offset(-start_after) if adjust_offset else segment
+            for segment in self
+            if segment.recording_id == recording_id
+               and segment.channel_id == channel
+               and segment.start >= start_after
+               and (end_before is None or segment.end <= end_before)
+        )
+
     def __getitem__(self, item: str) -> SupervisionSegment:
         return self.segments[item]
 

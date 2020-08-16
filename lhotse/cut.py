@@ -46,9 +46,9 @@ class Cut:
 
     Note: The SupervisionSegment time boundaries are relative to the beginning of the cut.
     E.g. if the underlying Recording starts at 0s (always true), the Cut starts at 100s,
-    and the SupervisionSegment starts at 3s, it means in the Recording, the supervision actually started at 103s.
-    In some cases, the supervision might have a negative start, or a duration exceeding the duration of the Cut.
-    It means that the supervision in the recording extends beyond the Cut.
+    and the SupervisionSegment starts at 3s, it means that in the Recording the supervision actually started at 103s.
+    In some cases, the supervision might have a negative start, or a duration exceeding the duration of the Cut;
+    this means that the supervision in the recording extends beyond the Cut.
     """
     id: str
 
@@ -75,7 +75,7 @@ class Cut:
 
     @property
     def end(self) -> Seconds:
-        return self.start + self.duration
+        return round(self.start + self.duration, ndigits=3)
 
     @property
     def has_features(self) -> bool:
@@ -610,37 +610,17 @@ class CutSet:
         """
         Create a CutSet from any combination of supervision, feature and recording manifests.
         At least one of ``recording_set`` or ``feature_set`` is required.
-        When ``supervision_set`` is provided, the cuts boundaries will correspond to that of the supervision segments.
-        Otherwise, the boundaries correspond to those found in the ``feature_set``, when available.
-        When only ``recording_set`` is provided, the recordings determine the boundaries.
+        The Cut boundaries correspond to those found in the ``feature_set``, when available,
+        otherwise to those found in the ``recording_set``
+        When a ``supervision_set`` is provided, we'll attach to the Cut all supervisions that
+        have a matching recording ID and are fully contained in the Cut's boundaries.
         """
         assert feature_set is not None or recording_set is not None, \
             "At least one of feature_set and recording_set has to be provided."
         sup_ok, feat_ok, rec_ok = supervision_set is not None, feature_set is not None, recording_set is not None
-        if sup_ok:
-            # Case I: Supervisions are provided.
-            # Use them to determine the cut boundaries and attach recordings and features as available.
-            return CutSet.from_cuts(
-                Cut(
-                    id=str(uuid4()),
-                    start=supervision.start,
-                    duration=supervision.duration,
-                    channel=supervision.channel_id,
-                    recording=recording_set[supervision.recording_id] if rec_ok else None,
-                    features=feature_set.find(
-                        recording_id=supervision.recording_id,
-                        channel_id=supervision.channel_id,
-                        start=supervision.start,
-                        duration=supervision.duration,
-                    ) if feat_ok else None,
-                    # Supervision time boundaries are always relative to the start of the Cut.
-                    supervisions=[supervision.with_offset(-supervision.start)]
-                )
-                for supervision in supervision_set
-            )
         if feat_ok:
-            # Case II: No supervisions, but features are provided.
-            # Use features to determine the cut boundaries and attach recordings as available.
+            # Case I: Features are provided.
+            # Use features to determine the cut boundaries and attach recordings and supervisions as available.
             return CutSet.from_cuts(
                 Cut(
                     id=str(uuid4()),
@@ -648,11 +628,19 @@ class CutSet:
                     duration=features.duration,
                     channel=features.channel_id,
                     features=features,
-                    recording=recording_set[features.recording_id] if rec_ok else None
+                    recording=recording_set[features.recording_id] if rec_ok else None,
+                    # The supervisions' start times are adjusted if the features object starts at time other than 0s.
+                    supervisions=list(supervision_set.find(
+                        recording_id=features.recording_id,
+                        channel=features.channel_id,
+                        start_after=features.start,
+                        end_before=features.end,
+                        adjust_offset=True
+                    )) if sup_ok else []
                 )
                 for features in feature_set
             )
-        # Case II: Only recordings are provided.
+        # Case II: Recordings are provided (and features are not).
         # Use recordings to determine the cut boundaries.
         return CutSet.from_cuts(
             Cut(
@@ -661,6 +649,10 @@ class CutSet:
                 duration=recording.duration_seconds,
                 channel=channel,
                 recording=recording,
+                supervisions=list(supervision_set.find(
+                    recording_id=recording.id,
+                    channel=channel
+                )) if sup_ok else []
             )
             for recording in recording_set
             # A single cut always represents a single channel. When a recording has multiple channels,
@@ -694,6 +686,18 @@ class CutSet:
         :return: a filtered CutSet.
         """
         return CutSet.from_cuts(cut for cut in self if predicate(cut))
+
+    def trim_to_supervisions(self) -> 'CutSet':
+        """
+        Return a new CutSet with Cuts that have identical spans as their supervisions.
+
+        :return: a ``CutSet``.
+        """
+        return CutSet.from_cuts(
+            cut.truncate(offset=segment.start, duration=segment.duration)
+            for cut in self
+            for segment in cut.supervisions
+        )
 
     def pad(
             self,
