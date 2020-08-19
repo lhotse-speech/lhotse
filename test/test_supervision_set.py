@@ -1,18 +1,18 @@
-from functools import lru_cache
 from tempfile import NamedTemporaryFile
+
+import pytest
 
 from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.test_utils import DummyManifest
 
 
-@lru_cache(1)
-def load_supervision_set():
+@pytest.fixture
+def external_supervision_set():
     return SupervisionSet.from_yaml('test/fixtures/supervision.yml')
 
 
-def test_supervision_segment_with_full_metadata():
-    supervision_set = load_supervision_set()
-    segment = supervision_set['segment-1']
+def test_supervision_segment_with_full_metadata(external_supervision_set):
+    segment = external_supervision_set['segment-1']
     assert 'segment-1' == segment.id
     assert 'recording-1' == segment.recording_id
     assert 0 == segment.channel_id
@@ -24,9 +24,8 @@ def test_supervision_segment_with_full_metadata():
     assert 'Norman Dyhrentfurth' == segment.speaker
 
 
-def test_supervision_segment_with_no_metadata():
-    supervision_set = load_supervision_set()
-    segment = supervision_set['segment-2']
+def test_supervision_segment_with_no_metadata(external_supervision_set):
+    segment = external_supervision_set['segment-2']
     assert 'segment-2' == segment.id
     assert 'recording-1' == segment.recording_id
     assert 0 == segment.channel_id  # implicitly filled default value
@@ -93,3 +92,76 @@ def test_add_supervision_sets():
     supervision_set_2 = DummyManifest(SupervisionSet, begin_id=5, end_id=10)
     combined = supervision_set_1 + supervision_set_2
     assert combined == expected
+
+
+@pytest.fixture
+def search_supervision_set():
+    return SupervisionSet.from_segments([
+        SupervisionSegment(id='s1', recording_id='r1', start=0, duration=5.0, channel_id=0),
+        SupervisionSegment(id='s2', recording_id='r1', start=4.5, duration=2.0, channel_id=1),
+        SupervisionSegment(id='s3', recording_id='r1', start=8.0, duration=3.0, channel_id=0),
+        SupervisionSegment(id='s4', recording_id='r2', start=1, duration=5.0, channel_id=0),
+    ])
+
+
+@pytest.mark.parametrize('adjust_offset', [False, True])
+def test_supervision_set_find_recording_id(search_supervision_set, adjust_offset):
+    segments = list(search_supervision_set.find(recording_id='r1', adjust_offset=adjust_offset))
+    assert len(segments) == 3
+    assert segments[0].id == 's1'
+    assert segments[0].start == 0
+    assert segments[1].id == 's2'
+    assert segments[1].start == 4.5
+    assert segments[2].id == 's3'
+    assert segments[2].start == 8.0
+
+
+@pytest.mark.parametrize('adjust_offset', [False, True])
+def test_supervision_set_find_channel(search_supervision_set, adjust_offset):
+    segments = list(search_supervision_set.find(
+        recording_id='r1',
+        channel=0,
+        adjust_offset=adjust_offset
+    ))
+    assert len(segments) == 2
+    assert segments[0].id == 's1'
+    assert segments[0].start == 0
+    assert segments[1].id == 's3'
+    assert segments[1].start == 8.0
+
+
+@pytest.mark.parametrize(
+    ['adjust_offset', 'expected_start0', 'expected_start1'],
+    [
+        (False, 4.5, 8.0),
+        (True, 4.0, 7.5)
+    ])
+def test_supervision_set_find_start_after(search_supervision_set, adjust_offset, expected_start0, expected_start1):
+    segments = list(search_supervision_set.find(
+        recording_id='r1',
+        start_after=0.5,
+        adjust_offset=adjust_offset
+    ))
+    assert len(segments) == 2
+    assert segments[0].id == 's2'
+    assert segments[0].start == expected_start0
+    assert segments[1].id == 's3'
+    assert segments[1].start == expected_start1
+
+
+@pytest.mark.parametrize(
+    ['adjust_offset', 'expected_start'],
+    [
+        (False, 4.5),
+        (True, 4.0)
+    ])
+def test_supervision_set_find_start_after_end_before(search_supervision_set, adjust_offset, expected_start):
+    segments = list(search_supervision_set.find(
+        recording_id='r1',
+        start_after=0.5,
+        end_before=10.0,
+        adjust_offset=adjust_offset
+    ))
+    assert len(segments) == 1
+    assert segments[0].id == 's2'
+    assert segments[0].start == expected_start

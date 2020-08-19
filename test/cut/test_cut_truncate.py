@@ -216,7 +216,7 @@ def test_truncate_cut_set_offset_random(cut_set):
 
 
 def test_cut_set_windows_even_split_keep_supervisions(cut_set):
-    windows_cut_set = cut_set.windows(duration=5.0)
+    windows_cut_set = cut_set.cut_into_windows(duration=5.0)
     assert len(windows_cut_set) == 4
     assert all(cut.duration == 5.0 for cut in windows_cut_set)
 

@@ -69,7 +69,7 @@ class SupervisionSet:
     def find(
             self,
             recording_id: str,
-            channel: int,
+            channel: Optional[int] = None,
             start_after: Seconds = 0,
             end_before: Optional[Seconds] = None,
             adjust_offset: bool = False
@@ -78,18 +78,22 @@ class SupervisionSet:
         Return an iterable of segments that match the provided ``recording_id``.
 
         :param recording_id: Desired recording ID.
-        :param channel: Return supervisions in the specified channel.
+        :param channel: When specified, return supervisions in that channel - otherwise, in all channels.
         :param start_after: When specified, return segments that start after the given value.
         :param end_before: When specified, return segments that end before the given value.
         :param adjust_offset: When true, return segments as if the recordings had started at ``start_after``.
-            In other words, :math:`segment.start = segment.start - start_after`.
+            This is useful for creating Cuts. Fom a user perspective, when dealing with a Cut, it is no
+            longer helpful to know when the supervisions starts in a recording - instead, it's useful to
+            know when the supervision starts relative to the start of the Cut.
         :return: An iterator over supervision segments satisfying all criteria.
         """
         return (
+            # We only modify the offset - the duration remains the same, as we're only shifting the segment
+            # relative to the Cut's start, and not truncating anything.
             segment.with_offset(-start_after) if adjust_offset else segment
             for segment in self
             if segment.recording_id == recording_id
-               and segment.channel_id == channel
+               and (channel is None or segment.channel_id == channel)
                and segment.start >= start_after
                and (end_before is None or segment.end <= end_before)
         )

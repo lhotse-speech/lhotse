@@ -102,7 +102,7 @@ class Cut:
         return self.features.num_features if self.has_features else None
 
     @property
-    def features_type(self) -> Optional[int]:
+    def features_type(self) -> Optional[str]:
         return self.features.type if self.has_features else None
 
     @property
@@ -759,7 +759,7 @@ class CutSet:
             ))
         return CutSet.from_cuts(truncated_cuts)
 
-    def windows(self, duration: Seconds, keep_excessive_supervisions: bool = True) -> 'CutSet':
+    def cut_into_windows(self, duration: Seconds, keep_excessive_supervisions: bool = True) -> 'CutSet':
         """
         Return a new ``CutSet``, made by traversing each ``Cut`` in windows of ``duration`` seconds and
         creating new ``Cut`` out of them.
