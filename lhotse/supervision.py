@@ -18,11 +18,13 @@ class SupervisionSegment:
 
     @property
     def end(self) -> Seconds:
-        return self.start + self.duration
+        # Precision up to 1ms to avoid float numeric artifacts
+        return round(self.start + self.duration, ndigits=3)
 
     def with_offset(self, offset: Seconds) -> 'SupervisionSegment':
         kwargs = asdict(self)
-        kwargs['start'] += offset
+        # Precision up to 1ms to avoid float numeric artifacts
+        kwargs['start'] = round(kwargs['start'] + offset, ndigits=3)
         return SupervisionSegment(**kwargs)
 
     @staticmethod
@@ -63,6 +65,41 @@ class SupervisionSet:
         :return: a filtered SupervisionSet.
         """
         return SupervisionSet.from_segments(seg for seg in self if predicate(seg))
+
+    def find(
+            self,
+            recording_id: str,
+            channel: Optional[int] = None,
+            start_after: Seconds = 0,
+            end_before: Optional[Seconds] = None,
+            adjust_offset: bool = False
+    ) -> Iterable[SupervisionSegment]:
+        """
+        Return an iterable of segments that match the provided ``recording_id``.
+
+        :param recording_id: Desired recording ID.
+        :param channel: When specified, return supervisions in that channel - otherwise, in all channels.
+        :param start_after: When specified, return segments that start after the given value.
+        :param end_before: When specified, return segments that end before the given value.
+        :param adjust_offset: When true, return segments as if the recordings had started at ``start_after``.
+            This is useful for creating Cuts. Fom a user perspective, when dealing with a Cut, it is no
+            longer helpful to know when the supervisions starts in a recording - instead, it's useful to
+            know when the supervision starts relative to the start of the Cut.
+            In the anticipated use-case, ``start_after`` and ``end_before`` would be
+            the beginning and end of a cut;
+            this option converts the times to be relative to the start of the cut.
+        :return: An iterator over supervision segments satisfying all criteria.
+        """
+        return (
+            # We only modify the offset - the duration remains the same, as we're only shifting the segment
+            # relative to the Cut's start, and not truncating anything.
+            segment.with_offset(-start_after) if adjust_offset else segment
+            for segment in self
+            if segment.recording_id == recording_id
+               and (channel is None or segment.channel_id == channel)
+               and segment.start >= start_after
+               and (end_before is None or segment.end <= end_before)
+        )
 
     def __getitem__(self, item: str) -> SupervisionSegment:
         return self.segments[item]
