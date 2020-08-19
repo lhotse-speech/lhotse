@@ -85,6 +85,9 @@ class SupervisionSet:
             This is useful for creating Cuts. Fom a user perspective, when dealing with a Cut, it is no
             longer helpful to know when the supervisions starts in a recording - instead, it's useful to
             know when the supervision starts relative to the start of the Cut.
+            In the anticipated use-case, ``start_after`` and ``end_before`` would be
+            the beginning and end of a cut;
+            this option converts the times to be relative to the start of the cut.
         :return: An iterator over supervision segments satisfying all criteria.
         """
         return (
