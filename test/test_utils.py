@@ -16,6 +16,9 @@ from lhotse.utils import TimeSpan, load_yaml, overlaps, overspans, save_to_yaml
         (TimeSpan(2, 3), TimeSpan(0, 1), False),
         (TimeSpan(1, 1), TimeSpan(0, 1), False),
         (TimeSpan(0, 0), TimeSpan(0, 1), False),
+        (TimeSpan(-1, 1), TimeSpan(0, 1), True),
+        (TimeSpan(0, 1), TimeSpan(-1, 1), True),
+        (TimeSpan(-2, -1), TimeSpan(1, 2), False),
     ]
 )
 def test_overlaps(lhs, rhs, expected):
@@ -40,6 +43,9 @@ def test_overlaps(lhs, rhs, expected):
         (TimeSpan(0, 1), TimeSpan(1, 1), True),
         (TimeSpan(0, 0), TimeSpan(0, 1), False),
         (TimeSpan(0, 1), TimeSpan(0, 0), True),
+        (TimeSpan(-1, 1), TimeSpan(0, 1), True),
+        (TimeSpan(0, 1), TimeSpan(-1, 1), False),
+        (TimeSpan(-2, -1), TimeSpan(1, 2), False),
     ]
 )
 def test_overspans(lhs, rhs, expected):
