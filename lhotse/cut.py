@@ -169,7 +169,8 @@ class Cut:
             # causing trouble for users expecting matching audio tensor shapes for cuts truncated to a single duration.
             new_duration = duration
         assert new_duration > 0.0
-        assert new_start + new_duration <= self.start + self.duration + 1e-5
+        if new_start + new_duration > self.start + self.duration:
+            new_duration = self.start + self.duration - new_start
         new_time_span = TimeSpan(start=0, end=new_duration)
         criterion = overlaps if keep_excessive_supervisions else overspans
         new_supervisions = (segment.with_offset(-offset) for segment in self.supervisions)

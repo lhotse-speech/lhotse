@@ -32,7 +32,7 @@ class SpeechRecognitionDataset(Dataset):
             root_dir: Optional[Pathlike] = None
     ):
         super().__init__()
-        self.cuts = cuts.cuts
+        self.cuts = cuts.trim_to_supervisions().cuts
         self.root_dir = Path(root_dir) if root_dir else None
         self.cut_ids = list(self.cuts.keys())
 
@@ -42,9 +42,8 @@ class SpeechRecognitionDataset(Dataset):
 
         features = torch.from_numpy(cut.load_features(root_dir=self.root_dir))
 
-        # We assume there is only one supervision for each cut in ASR tasks (for now)
-        if len(cut.supervisions) > 1:
-            logging.warning("More than one supervision in ASR task! Selected the first one and ignored others.")
+        # There must be only one supervision because we have had trim_to_supervisions() processed
+        assert len(cut.supervisions) == 1
 
         return {
             'features': features,

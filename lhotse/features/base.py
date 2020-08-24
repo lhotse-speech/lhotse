@@ -422,7 +422,8 @@ class FeatureSetBuilder:
             results.append(Features(
                 recording_id=recording.id,
                 channel_id=channel,
-                start=recording.offset_seconds,
+                # TODO: revise start and duration with segmentation manifest info
+                start=0.0,
                 # We simplify the relationship between num_frames and duration - we guarantee that
                 #  the duration is always num_frames * frame_shift
                 duration=feats.shape[0] * self.feature_extractor.frame_shift,

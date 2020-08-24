@@ -1,6 +1,5 @@
 click>=7.1.1
 cytoolz>=0.10.1
-lhotse~=0.1
 librosa==0.7.2
 lilcom>=1.1.0
 matplotlib~=3.2.2

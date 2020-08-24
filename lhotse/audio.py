@@ -51,6 +51,12 @@ class AudioSource:
         assert self.type in ('file', 'command')
 
         if self.type == 'command':
+            if offset_seconds != 0.0 or duration_seconds is not None:
+                # TODO(pzelasko): How should we support chunking for commands?
+                #                 We risk being very inefficient when reading many chunks from the same file
+                #                 without some caching scheme, because we'll be re-running commands.
+                raise ValueError("Reading audio chunks from command AudioSource type is currently not supported.")
+            # TODO: consider adding support for "root_dir" in "command" audio source type
             if root_dir is not None:
                 warnings.warn('"root_dir" argument is currently not supported in "command" AudioSource type')
             source = BytesIO(run(self.source, shell=True, stdout=PIPE).stdout)
@@ -69,7 +75,7 @@ class AudioSource:
         if duration_seconds is not None:
             num_samples = samples.shape[0] if len(samples.shape) == 1 else samples.shape[1]
             available_duration = num_samples / sampling_rate
-            if available_duration < duration_seconds - offset_seconds - 1e-5:
+            if available_duration < duration_seconds - 1e-5:
                 raise ValueError(
                     f'Requested more audio ({duration_seconds}s) than available ({available_duration}s)'
                 )
@@ -91,7 +97,6 @@ class Recording:
     sampling_rate: int
     num_samples: int
     duration_seconds: Seconds
-    offset_seconds: Optional[Seconds] = 0
 
     @property
     def num_channels(self):
@@ -104,8 +109,8 @@ class Recording:
     def load_audio(
             self,
             channels: Optional[Channels] = None,
-            offset_seconds: Optional[Seconds] = None,
-            duration_seconds: Optional[Seconds] = None,
+            offset_seconds: float = 0.0,
+            duration_seconds: Optional[float] = None,
             root_dir: Optional[Pathlike] = None,
     ) -> np.ndarray:
         if channels is None:
@@ -114,11 +119,6 @@ class Recording:
             channels = frozenset([channels])
         else:
             channels = frozenset(channels)
-
-        if offset_seconds is None:
-            offset_seconds = self.offset_seconds
-        if duration_seconds is None:
-            duration_seconds = self.duration_seconds
 
         samples_per_source = []
         for source in self.sources:
