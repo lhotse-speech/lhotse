@@ -127,9 +127,15 @@ def parse_ami_annotations(gzip_file: Pathlike) -> Dict[str, List[AmiSegmentAnnot
 
 def prepare_ami(
         data_dir: Pathlike,
-        output_dir: Pathlike,
-        write_yaml: Optional[bool] = False,
-) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet]]]:
+        output_dir: Pathlike
+) -> Dict[str, Union[RecordingSet, SupervisionSet]]:
+    """
+    Returns the manifests which consist of the Recordings and Supervisions
+
+    :param data_dir: Pathlike, the path of the data dir.
+    :param output_dir: Pathlike, the path where to write the yamls.
+    :return: a Dict with the keys 'audio' and 'supervisions'.
+    """
     data_dir = Path(data_dir)
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -160,6 +166,7 @@ def prepare_ami(
             duration_seconds=int(audio_info.length / audio_info.rate),
         ))
     audio = RecordingSet.from_recordings(recordings)
+    audio.to_yaml(output_dir / 'audio.yml')
 
     # Supervisions
     segments_by_pause = []
@@ -170,7 +177,7 @@ def prepare_ami(
                 duration = subseg_info.end_time - subseg_info.begin_time
                 if duration > 0:
                     segments_by_pause.append(SupervisionSegment(
-                        id=f'{audio_idx}-{seg_idx}-{subseg_idx}',
+                        id=f'{idx}-{seg_idx}-{subseg_idx}',
                         recording_id=idx,
                         start=subseg_info.begin_time,
                         duration=duration,
@@ -180,6 +187,7 @@ def prepare_ami(
                         text=subseg_info.text
                     ))
     supervision = SupervisionSet.from_segments(segments_by_pause)
+    supervision.to_yaml(output_dir / 'supervisions.yml')
 
     manifests = {
         'audio': audio,

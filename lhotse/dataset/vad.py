@@ -34,9 +34,9 @@ class VadDataset(Dataset):
             root_dir: Optional[Pathlike] = None
     ):
         super().__init__()
-        self.cuts = cuts.cut_into_windows(duration, keep_excessive_supervisions=True).cuts
+        self.cuts = cuts.cut_into_windows(duration, keep_excessive_supervisions=True)
         self.root_dir = Path(root_dir) if root_dir else None
-        self.cut_ids = list(self.cuts.keys())
+        self.cut_ids = list(self.cuts.cuts.keys())
 
     def __getitem__(self, idx: int) -> Dict[str, torch.Tensor]:
         cut_id = self.cut_ids[idx]
@@ -46,15 +46,15 @@ class VadDataset(Dataset):
         assert features.shape[0] == cut.num_frames
         assert isclose(cut.num_frames * cut.frame_shift, cut.duration)
 
-        is_voice = np.zeros(cut.num_frames)
-        for subversion in cut.supervisions:
-            st = round(subversion.start / cut.frame_shift) if subversion.start > 0 else 0
-            et = round(subversion.end / cut.frame_shift) if subversion.end < cut.duration else cut.num_frames
+        is_voice = torch.zeros(cut.num_frames)
+        for supervision in cut.supervisions:
+            st = round(supervision.start / cut.frame_shift) if supervision.start > 0 else 0
+            et = round(supervision.end / cut.frame_shift) if supervision.end < cut.duration else cut.num_frames
             is_voice[st:et] = 1
 
         return {
             'features': features,
-            'is_voice': torch.from_numpy(is_voice)
+            'is_voice': is_voice
         }
 
     def __len__(self) -> int:

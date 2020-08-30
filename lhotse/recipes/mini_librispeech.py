@@ -53,6 +53,13 @@ def prepare_mini_librispeech(
         corpus_dir: Pathlike,
         output_dir: Pathlike
 ) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet]]]:
+    """
+    Returns the manifests which consist of the Recordings and Supervisions
+
+    :param corpus_dir: Pathlike, the path of the data dir.
+    :param output_dir: Pathlike, the path where to write the yamls.
+    :return: a Dict whose key is the dataset part, and the value is Dicts with the keys 'audio' and 'supervisions'.
+    """
     corpus_dir = Path(corpus_dir)
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
