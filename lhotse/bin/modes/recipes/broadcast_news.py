@@ -15,7 +15,7 @@ def broadcast_news(
         output_dir: Pathlike
 ):
     """
-    Recipe to prepare the manifests for English Broadcast News 1997 corpus.
+    English Broadcast News 1997 data preparation.
     It will output three manifests: for recordings, topic sections, and speech segments.
     It supports the following LDC distributions:
     * 1997 English Broadcast News Train (HUB4)
