@@ -2,7 +2,6 @@ from pathlib import Path
 from math import isclose
 from typing import Dict, Optional
 
-import numpy as np
 import torch
 from torch.utils.data import Dataset
 
