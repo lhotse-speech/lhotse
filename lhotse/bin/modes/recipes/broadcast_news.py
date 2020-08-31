@@ -18,6 +18,8 @@ def broadcast_news(
     English Broadcast News 1997 data preparation.
     It will output three manifests: for recordings, topic sections, and speech segments.
     It supports the following LDC distributions:
+
+    \b
     * 1997 English Broadcast News Train (HUB4)
         Speech       LDC98S71
         Transcripts  LDC98T28
