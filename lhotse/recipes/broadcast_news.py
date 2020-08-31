@@ -19,7 +19,7 @@ from sphfile import SPHFile
 
 from lhotse.audio import AudioSource, Recording, RecordingSet
 from lhotse.supervision import SupervisionSegment, SupervisionSet
-from lhotse.utils import Pathlike
+from lhotse.utils import Pathlike, recursion_limit
 
 # Since BroadcastNews SGML does not include </time> tags, BeautifulSoup hallucinates them
 # in incorrect positions - it nests the <time> segments in each other, making parsing more difficult...
@@ -50,7 +50,10 @@ def prepare_broadcast_news(
 
     recordings = RecordingSet.from_recordings(make_recording(p) for p in audio_paths)
 
-    supervisions_list = [make_supervisions(p, r) for p, r in zip(sgml_paths, recordings)]
+    # BeautifulSoup has quite inefficient tag-to-string rendering that uses a recursive implementation;
+    # on some systems the recursion limit needs to be raised for this to work.
+    with recursion_limit(5000):
+        supervisions_list = [make_supervisions(p, r) for p, r in zip(sgml_paths, recordings)]
     section_supervisions = SupervisionSet.from_segments(
         chain.from_iterable(sups['sections'] for sups in supervisions_list)
     )
