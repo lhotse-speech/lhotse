@@ -93,24 +93,6 @@ def make_recording(sph_path: Path) -> Recording:
     )
 
 
-def try_parse(sgml_path: Path):
-    """
-    Return a BeautifulSoup object created from an SGML file.
-    If it runs into Unicode decoding errors, it will try to determine the file's encoding
-    and use iconv to automatically convert it to UTF-8.
-    """
-    try:
-        return BeautifulSoup(sgml_path.read_text())
-    except UnicodeDecodeError:
-        import subprocess
-        from tempfile import NamedTemporaryFile
-        encoding = subprocess.check_output(f'file -bi {sgml_path}', shell=True, text=True).split(';')[-1].replace(
-            'charset=', '').strip()
-        with NamedTemporaryFile() as f:
-            subprocess.run(f'iconv -f {encoding} -t utf-8 -o {f.name} {sgml_path}', shell=True, check=True, text=True)
-            return BeautifulSoup(f.read())
-
-
 def make_supervisions(sgml_path: Pathlike, recording: Recording) -> Dict[str, List[SupervisionSegment]]:
     """Create supervisions for sections and segments for a given HUB4 recording."""
     doc = try_parse(sgml_path)
@@ -183,6 +165,24 @@ def make_supervisions(sgml_path: Pathlike, recording: Recording) -> Dict[str, Li
         'sections': section_supervisions,
         'segments': text_supervisions
     }
+
+
+def try_parse(sgml_path: Path):
+    """
+    Return a BeautifulSoup object created from an SGML file.
+    If it runs into Unicode decoding errors, it will try to determine the file's encoding
+    and use iconv to automatically convert it to UTF-8.
+    """
+    try:
+        return BeautifulSoup(sgml_path.read_text(), 'html.parser')
+    except UnicodeDecodeError:
+        import subprocess
+        from tempfile import NamedTemporaryFile
+        encoding = subprocess.check_output(f'file -bi {sgml_path}', shell=True, text=True).split(';')[-1].replace(
+            'charset=', '').strip()
+        with NamedTemporaryFile() as f:
+            subprocess.run(f'iconv -f {encoding} -t utf-8 -o {f.name} {sgml_path}', shell=True, check=True, text=True)
+            return BeautifulSoup(f.read(), 'html.parser')
 
 
 def group_lines_in_time_marker(sgml_lines):
