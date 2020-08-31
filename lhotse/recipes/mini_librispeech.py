@@ -100,7 +100,7 @@ def prepare_mini_librispeech(
             )
             for idx in metadata
         )
-        audio.to_yaml(output_dir / 'audio_{}.yml'.format(part))
+        audio.to_yaml(output_dir / f'audio_{part}.yml')
 
         # Supervision
         supervision = SupervisionSet.from_segments(
@@ -116,7 +116,7 @@ def prepare_mini_librispeech(
             )
             for idx in audio.recordings
         )
-        supervision.to_yaml(output_dir / 'supervisions_{}.yml'.format(part))
+        supervision.to_yaml(output_dir / f'supervisions_{part}.yml')
 
         manifests[part] = {
             'audio': audio,

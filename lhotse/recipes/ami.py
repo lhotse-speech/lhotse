@@ -2,6 +2,7 @@ import logging
 import os
 import re
 import urllib.request
+from collections import defaultdict
 from gzip import GzipFile
 from pathlib import Path
 from typing import Dict, List, NamedTuple, Optional, Union
@@ -128,13 +129,13 @@ def parse_ami_annotations(gzip_file: Pathlike) -> Dict[str, List[AmiSegmentAnnot
 def prepare_ami(
         data_dir: Pathlike,
         output_dir: Pathlike
-) -> Dict[str, Union[RecordingSet, SupervisionSet]]:
+) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet]]]:
     """
     Returns the manifests which consist of the Recordings and Supervisions
 
     :param data_dir: Pathlike, the path of the data dir.
     :param output_dir: Pathlike, the path where to write the yamls.
-    :return: a Dict with the keys 'audio' and 'supervisions'.
+    :return: a Dict whose key is ('train', 'dev', 'eval'), and the value is Dicts with keys 'audio' and 'supervisions'.
     """
     data_dir = Path(data_dir)
     output_dir = Path(output_dir)
@@ -142,56 +143,64 @@ def prepare_ami(
 
     anotation_lists = parse_ami_annotations(data_dir / 'annotations.gzip')
     wav_dir = data_dir / 'wav_db'
+    audio_paths = list(wav_dir.rglob('*.wav'))
 
-    # Audio
-    recordings = []
-    for audio_path in wav_dir.rglob('*.wav'):
-        audio_idx = audio_path.name
-        if audio_idx not in anotation_lists:
-            logging.warning(f'No annotation found for {audio_idx}')
+    manifests = defaultdict(dict)
+
+    for part in dataset_parts:
+        # Audio
+        recordings = []
+        for audio_path in audio_paths:
+            audio_idx = audio_path.name
+            if re.sub(r'\..*', '', audio_idx) not in dataset_parts[part]:
+                continue
+            if audio_idx not in anotation_lists:
+                logging.warning(f'No annotation found for {audio_idx}')
+                continue
+            audio_info = torchaudio.info(str(audio_path))[0]
+
+            recordings.append(Recording(
+                id=audio_idx,
+                sources=[
+                    AudioSource(
+                        type='file',
+                        channel_ids=[0],
+                        source=str(audio_path)
+                    )
+                ],
+                sampling_rate=int(audio_info.rate),
+                num_samples=audio_info.length,
+                duration_seconds=int(audio_info.length / audio_info.rate),
+            ))
+        if len(recordings) == 0:
             continue
-        audio_info = torchaudio.info(str(audio_path))[0]
+        audio = RecordingSet.from_recordings(recordings)
+        audio.to_yaml(output_dir / f'audio_{part}.yml')
 
-        recordings.append(Recording(
-            id=audio_idx,
-            sources=[
-                AudioSource(
-                    type='file',
-                    channel_ids=[0],
-                    source=str(audio_path)
-                )
-            ],
-            sampling_rate=int(audio_info.rate),
-            num_samples=audio_info.length,
-            duration_seconds=int(audio_info.length / audio_info.rate),
-        ))
-    audio = RecordingSet.from_recordings(recordings)
-    audio.to_yaml(output_dir / 'audio.yml')
+        # Supervisions
+        segments_by_pause = []
+        for idx in audio.recordings:
+            anotation = anotation_lists[idx]
+            for seg_idx, seg_info in enumerate(anotation):
+                for subseg_idx, subseg_info in enumerate(seg_info):
+                    duration = subseg_info.end_time - subseg_info.begin_time
+                    if duration > 0:
+                        segments_by_pause.append(SupervisionSegment(
+                            id=f'{idx}-{seg_idx}-{subseg_idx}',
+                            recording_id=idx,
+                            start=subseg_info.begin_time,
+                            duration=duration,
+                            channel_id=0,
+                            language='English',
+                            speaker=re.sub(r'-.*', r'', idx),
+                            text=subseg_info.text
+                        ))
+        supervision = SupervisionSet.from_segments(segments_by_pause)
+        supervision.to_yaml(output_dir / f'supervisions_{part}.yml')
 
-    # Supervisions
-    segments_by_pause = []
-    for idx in audio.recordings:
-        anotation = anotation_lists[idx]
-        for seg_idx, seg_info in enumerate(anotation):
-            for subseg_idx, subseg_info in enumerate(seg_info):
-                duration = subseg_info.end_time - subseg_info.begin_time
-                if duration > 0:
-                    segments_by_pause.append(SupervisionSegment(
-                        id=f'{idx}-{seg_idx}-{subseg_idx}',
-                        recording_id=idx,
-                        start=subseg_info.begin_time,
-                        duration=duration,
-                        channel_id=0,
-                        language='English',
-                        speaker=re.sub(r'-.*', r'', idx),
-                        text=subseg_info.text
-                    ))
-    supervision = SupervisionSet.from_segments(segments_by_pause)
-    supervision.to_yaml(output_dir / 'supervisions.yml')
-
-    manifests = {
-        'audio': audio,
-        'supervisions': supervision
-    }
+        manifests[part] = {
+            'audio': audio,
+            'supervisions': supervision
+        }
 
     return manifests
