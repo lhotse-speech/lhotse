@@ -101,6 +101,9 @@ def make_supervisions(sgml_path: Pathlike, recording: Recording) -> Dict[str, Li
     text_supervisions = []
     text_idx = 0
     for sec_idx, section in enumerate(doc.find('episode').find_all('section')):
+        # Create a "section" supervision segment that informs what's the program and
+        # type/topic of a given section.
+        # It spans multiple regular segments with spoken content.
         sec_start = float(section.attrs['starttime'])
         section_supervisions.append(SupervisionSegment(
             id=f'{recording.id}_section{sec_idx:03d}',
@@ -135,19 +138,11 @@ def make_supervisions(sgml_path: Pathlike, recording: Recording) -> Dict[str, Li
                 texts = []
                 for time_marker, text in group_lines_in_time_marker(lines):
                     match = re.search(r'sec="?(\d+\.?\d*)"?', time_marker)
-                    try:
-                        times.append(float(match.group(1)))
-                        texts.append(text)
-                    except:
-                        from pprint import pprint
-                        print(time_marker)
-                        print(text)
-                        print(match)
-                        print('===')
-                        pprint(lines)
-                        raise
+                    times.append(float(match.group(1)))
+                    texts.append(text)
                 times.append(float(turn.attrs['endtime']))
-
+                # Having parsed the current section into start/end times and text
+                # for individual speech segments, create a SupervisionSegment for each one.
                 for (start, end), text in zip(sliding_window(2, times), texts):
                     text_supervisions.append(SupervisionSegment(
                         id=f'{recording.id}_segment{text_idx:04d}',
