@@ -144,7 +144,7 @@ class Cut:
             duration: Optional[Seconds] = None,
             keep_excessive_supervisions: bool = True,
             preserve_id: bool = False
-    ) -> 'Cut':
+    ) -> Optional['Cut']:
         """
         Returns a new Cut that is a sub-region of the current Cut.
 
@@ -158,7 +158,7 @@ class Cut:
         :param keep_excessive_supervisions: bool. Since trimming may happen inside a SupervisionSegment,
             the caller has an option to either keep or discard such supervisions.
         :param preserve_id: bool. Should the truncated cut keep the same ID or get a new, random one.
-        :return: a new Cut instance.
+        :return: a new Cut instance. If the current Cut is shorter than the duration, return None.
         """
         new_start = self.start + offset
         until = offset + (duration if duration is not None else self.duration)
@@ -169,7 +169,8 @@ class Cut:
             # causing trouble for users expecting matching audio tensor shapes for cuts truncated to a single duration.
             new_duration = duration
         assert new_duration > 0.0
-        assert new_start + new_duration <= self.start + self.duration + 1e-5
+        if new_start + new_duration > self.start + self.duration:
+            return None
         new_time_span = TimeSpan(start=0, end=new_duration)
         criterion = overlaps if keep_excessive_supervisions else overspans
         new_supervisions = (segment.with_offset(-offset) for segment in self.supervisions)
@@ -776,11 +777,13 @@ class CutSet:
         for cut in self:
             n_windows = ceil(cut.duration / duration)
             for i in range(n_windows):
-                new_cuts.append(cut.truncate(
+                new_cut = cut.truncate(
                     offset=duration * i,
                     duration=duration,
                     keep_excessive_supervisions=keep_excessive_supervisions
-                ))
+                )
+                if new_cut is not None:
+                    new_cuts.append(new_cut)
         return CutSet.from_cuts(new_cuts)
 
     def __contains__(self, item: Union[str, Cut, MixedCut]) -> bool:

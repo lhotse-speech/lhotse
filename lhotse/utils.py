@@ -109,7 +109,8 @@ class TimeSpan:
 # TODO: Ugh, Protocols are only in Python 3.8+...
 def overlaps(lhs: Any, rhs: Any) -> bool:
     """Indicates whether two time-spans/segments are overlapping or not."""
-    return lhs.start < rhs.end and rhs.start < lhs.end
+    return lhs.start < rhs.end and rhs.start < lhs.end \
+        and not isclose(lhs.start, rhs.end) and not isclose(rhs.start, lhs.end)
 
 
 def overspans(spanning: Any, spanned: Any) -> bool:

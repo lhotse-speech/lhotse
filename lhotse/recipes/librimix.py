@@ -1,6 +1,6 @@
 import shutil
 import urllib.request
-import zipfile
+from zipfile import ZipFile
 from collections import defaultdict
 from pathlib import Path
 from typing import Dict, Optional, Union
@@ -26,7 +26,7 @@ def download_and_unzip(
     completed_detector = unzipped_dir / '.completed'
     if not completed_detector.is_file():
         shutil.rmtree(unzipped_dir, ignore_errors=True)
-        with zipfile.ZipFile(zip_path) as zf:
+        with ZipFile(zip_path) as zf:
             zf.extractall(path=target_dir)
             completed_detector.touch()
 
