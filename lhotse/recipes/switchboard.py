@@ -35,6 +35,7 @@ def prepare_switchboard(
     :param audio_dir: Path to ``LDC97S62`` package.
     :param transcripts_dir: Path to the transcripts directory (typically named "swb_ms98_transcriptions").
     :param output_dir: Directory where the manifests should be written. Can be omitted to avoid writing.
+    :param omit_silence: Whether supervision segments with ``[silence]`` token should be removed or kept.
     :return: A dict with manifests. The keys are: ``{'recordings', 'supervisions'}``.
     """
     if transcripts_dir is None:
