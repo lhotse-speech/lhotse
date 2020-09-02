@@ -98,6 +98,37 @@ class Recording:
     num_samples: int
     duration_seconds: Seconds
 
+    @staticmethod
+    def from_sphere(sph_path: Pathlike, relative_path_depth: Optional[int] = None) -> 'Recording':
+        """
+        Read a SPHERE file's header and create the corresponding ``Recording``.
+
+        :param sph_path: Path to the sphere (.sph) file.
+        :param relative_path_depth: optional int specifying how many last parts of the file path
+            should be retained in the ``AudioSource``. By default writes the path as is.
+        :return: a new ``Recording`` instance pointing to the sphere file.
+        """
+        from sphfile import SPHFile
+        sph_path = Path(sph_path)
+        sphf = SPHFile(sph_path)
+        return Recording(
+            id=sph_path.stem,
+            sampling_rate=sphf.format['sample_rate'],
+            num_samples=sphf.format['sample_count'],
+            duration_seconds=sphf.format['sample_count'] / sphf.format['sample_rate'],
+            sources=[
+                AudioSource(
+                    type='file',
+                    channel_ids=list(range(sphf.format['channel_count'])),
+                    source=(
+                        '/'.join(sph_path.parts[-relative_path_depth:])
+                        if relative_path_depth is not None and relative_path_depth > 0
+                        else str(sph_path)
+                    )
+                )
+            ]
+        )
+
     @property
     def num_channels(self):
         return sum(len(source.channel_ids) for source in self.sources)
