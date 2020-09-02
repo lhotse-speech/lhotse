@@ -79,7 +79,7 @@ class AudioSource:
         if duration_seconds is not None:
             num_samples = samples.shape[0] if len(samples.shape) == 1 else samples.shape[1]
             available_duration = num_samples / sampling_rate
-            if available_duration < duration_seconds - 1e-5:
+            if available_duration < duration_seconds - 1e-3:  # set the allowance as 1ms to avoid float error
                 raise ValueError(
                     f'Requested more audio ({duration_seconds}s) than available ({available_duration}s)'
                 )
