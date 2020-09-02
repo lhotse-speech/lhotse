@@ -63,17 +63,13 @@ class AudioSource:
         else:
             source = self.source if root_dir is None else Path(root_dir) / self.source
 
-        if self.type == 'file' and self.source.endswith('.sph'):
-            # The source is a SPHERE file, which is not handled by librosa.
-            samples = load_sphere(source, offset=offset_seconds, duration=duration_seconds)
-        else:
-            samples, sampling_rate = librosa.load(
-                source,
-                sr=None,  # 'None' uses the native sampling rate
-                mono=False,  # Retain multi-channel if it's there
-                offset=offset_seconds,
-                duration=duration_seconds
-            )
+        samples, sampling_rate = librosa.load(
+            source,
+            sr=None,  # 'None' uses the native sampling rate
+            mono=False,  # Retain multi-channel if it's there
+            offset=offset_seconds,
+            duration=duration_seconds
+        )
 
         # explicit sanity check for duration as librosa does not complain here
         if duration_seconds is not None:
@@ -315,29 +311,3 @@ class AudioMixer:
 
 def audio_energy(audio: np.ndarray) -> float:
     return float(np.average(audio ** 2))
-
-
-def load_sphere(
-        source: Path,
-        offset: Seconds = 0,
-        duration: Optional[Seconds] = None,
-        normalize: bool = True
-):
-    """
-    Read a sphere (.sph) file and return its samples for a given time span. All channels are returned.
-
-    :param source: Path to the sphere file.
-    :param offset: Time mark in seconds at which to being reading the file.
-    :param duration: Optional duration in seconds which should be read (by default, read until the end)
-    :param normalize: A boolean indicating whether the samples should be normalized to [-1, 1) range.
-        The normalization is done with respect to the maximum absolute integer value for a given numpy dtype,
-        (e.g. abs(INT16MIN)), and NOT the maximum value in a given array (i.e. abs(array.max()))
-    :return: The audio samples for the specified time range, with the shape (num_channels, num_samples).
-    """
-    from sphfile import SPHFile
-    samples = SPHFile(source).time_range(start=offset, stop=offset + duration)
-    if normalize:
-        # Obtain the max possible value for the samples ndarray dtype (abs(min) is typically abs(max) + 1)
-        max_val = abs(np.iinfo(samples.dtype).min)
-        samples /= max_val
-    return samples
