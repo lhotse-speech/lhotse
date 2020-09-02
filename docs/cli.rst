@@ -17,12 +17,8 @@ Command-line interface
    :prog: lhotse yaml
    :show-nested:
 
-.. click:: lhotse.bin:make_feats
-   :prog: lhotse make-feats
-   :show-nested:
-
-.. click:: lhotse.bin:write_default_feature_config
-   :prog: lhotse write-default-feature-config
+.. click:: lhotse.bin.modes.features:feat
+   :prog: lhotse feat
    :show-nested:
 
 .. click:: lhotse.bin:convert_kaldi
