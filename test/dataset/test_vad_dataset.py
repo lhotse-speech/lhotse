@@ -13,12 +13,12 @@ def cut_set():
     return CutSet.from_yaml('test/fixtures/ami/cuts.yml')
 
 
-def test_unsupervised_dataset(cut_set):
+def test_vad_dataset(cut_set):
     duration = 5.0
     feature_threhold = -8.0
 
-    cuts = list(cut_set.cuts.values())
-    assert duration < cuts[0].duration < 2 * duration
+    cuts = list(cut_set)
+    assert isclose(cuts[0].duration, 6.0)
     assert len(cuts[0].supervisions) == 2
 
     v1_start = time_diff_to_num_frames(cuts[0].supervisions[0].start, frame_length=0, frame_shift=0.01)

@@ -22,8 +22,6 @@ class VadDataset(Dataset):
             'features': (T x F) tensor
             'is_voice': (T x 1) tensor
         }
-
-    In the future, will be extended by graph supervisions.
     """
 
     def __init__(

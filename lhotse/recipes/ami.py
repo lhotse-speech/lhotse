@@ -1,3 +1,20 @@
+"""The data prepare recipe for the AMI Meeting Corpus.
+
+The AMI Meeting Corpus consists of 100 hours of meeting recordings. The recordings use a range of signals
+synchronized to a common timeline. These include close-talking and far-field microphones, individual and room-view
+video cameras, and output from a slide projector and an electronic whiteboard. During the meetings, the participants
+also have unsynchronized pens available to them that record what is written. The meetings were recorded in English
+using three different rooms with different acoustic properties, and include mostly non-native speakers." See
+http://groups.inf.ed.ac.uk/ami/corpus/overview.shtml for more details.
+
+There are several microphone settings in AMI corpus:
+-- IHM: Individual Headset Microphones
+-- SDM: Single Distant Microphone
+-- MDM: Multiple Distant Microphones
+
+In this recipe, only the IHM setting is supported.
+"""
+
 import logging
 import os
 import re
@@ -16,7 +33,7 @@ from lhotse.audio import AudioSource, Recording, RecordingSet
 from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import Pathlike, Seconds
 
-# TODO: support other microphone settings like "sdm1" or "mdm8"
+# TODO: support the "sdm" and "mdm" microphone settings
 mic = 'ihm'
 
 # The splits are same with Kaldi's AMI recipe

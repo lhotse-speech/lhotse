@@ -26,3 +26,6 @@ Currently, we provide the following:
   :members:
   :noindex:
 
+.. automodule:: lhotse.dataset.vad
+  :members:
+  :noindex:
