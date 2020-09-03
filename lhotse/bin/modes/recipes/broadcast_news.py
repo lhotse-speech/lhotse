@@ -23,5 +23,7 @@ def broadcast_news(
     * 1997 English Broadcast News Train (HUB4)
         Speech       LDC98S71
         Transcripts  LDC98T28
+
+    This data is not available for free - your institution needs to have an LDC subscription.
     """
     prepare_broadcast_news(audio_dir=audio_dir, transcripts_dir=transcript_dir, output_dir=output_dir)
