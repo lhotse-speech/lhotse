@@ -1,3 +1,4 @@
+from copy import deepcopy
 from dataclasses import asdict, dataclass, field
 from typing import Callable, Dict, Iterable, Optional, Any, List
 
@@ -23,10 +24,10 @@ class SupervisionSegment:
         return round(self.start + self.duration, ndigits=3)
 
     def with_offset(self, offset: Seconds) -> 'SupervisionSegment':
-        kwargs = asdict(self)
-        # Precision up to 1ms to avoid float numeric artifacts
-        kwargs['start'] = round(kwargs['start'] + offset, ndigits=3)
-        return SupervisionSegment(**kwargs)
+        """Return an identical ``SupervisionSegment``, but with the ``offset`` added to the ``start`` field."""
+        # Note: The line below is a 10-20x performance optimization compared to using asdict() or deepcopy()
+        #       to create a segment copy.
+        return SupervisionSegment(**{**self.__dict__, 'start': round(self.start + offset, ndigits=3)})
 
     @staticmethod
     def from_dict(data: dict) -> 'SupervisionSegment':
