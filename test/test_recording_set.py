@@ -150,3 +150,30 @@ def test_add_recording_sets():
     recording_set_2 = DummyManifest(RecordingSet, begin_id=5, end_id=10)
     combined = recording_set_1 + recording_set_2
     assert combined == expected
+
+
+@pytest.mark.parametrize(
+    ['relative_path_depth', 'expected_source_path'],
+    [
+        (None, 'test/fixtures/stereo.sph'),
+        (1, 'stereo.sph'),
+        (2, 'fixtures/stereo.sph'),
+        (3, 'test/fixtures/stereo.sph'),
+        (4, 'test/fixtures/stereo.sph')
+    ]
+)
+def test_recording_from_sphere(relative_path_depth, expected_source_path):
+    rec = Recording.from_sphere('test/fixtures/stereo.sph', relative_path_depth=relative_path_depth)
+    assert rec == Recording(
+        id='stereo',
+        sampling_rate=8000,
+        num_samples=8000,
+        duration_seconds=1.0,
+        sources=[
+            AudioSource(
+                type='file',
+                channel_ids=[0, 1],
+                source=expected_source_path
+            )
+        ]
+    )

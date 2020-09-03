@@ -15,11 +15,9 @@ from itertools import chain
 from pathlib import Path
 from typing import Dict, Union, Optional, List
 
-from bs4 import BeautifulSoup
 from cytoolz import sliding_window
-from sphfile import SPHFile
 
-from lhotse.audio import AudioSource, Recording, RecordingSet
+from lhotse.audio import Recording, RecordingSet
 from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import Pathlike, recursion_limit
 
@@ -44,13 +42,12 @@ def prepare_broadcast_news(
     :param output_dir: Directory where the manifests should be written. Can be omitted to avoid writing.
     :return: A dict with manifests. The keys are: ``{'recordings', 'sections', 'segments'}``.
     """
-    audio_dir = Path(audio_dir)
-    transcripts_dir = Path(transcripts_dir)
+    audio_paths = sorted(Path(audio_dir).rglob('*.sph'))
+    sgml_paths = sorted(Path(transcripts_dir).rglob('*.sgml'))
 
-    audio_paths = sorted(audio_dir.rglob('*.sph'))
-    sgml_paths = sorted(transcripts_dir.rglob('*.sgml'))
-
-    recordings = RecordingSet.from_recordings(make_recording(p) for p in audio_paths)
+    recordings = RecordingSet.from_recordings(
+        Recording.from_sphere(p, relative_path_depth=3) for p in audio_paths
+    )
 
     # BeautifulSoup has quite inefficient tag-to-string rendering that uses a recursive implementation;
     # on some systems the recursion limit needs to be raised for this to work.
@@ -75,24 +72,6 @@ def prepare_broadcast_news(
         'sections': section_supervisions,
         'segments': segment_supervisions
     }
-
-
-def make_recording(sph_path: Path) -> Recording:
-    """Read a SPHERE file's header and create the corresponding ``Recording``."""
-    sphf = SPHFile(sph_path)
-    return Recording(
-        id=sph_path.stem,
-        sampling_rate=sphf.format['sample_rate'],
-        num_samples=sphf.format['sample_count'],
-        duration_seconds=sphf.format['sample_count'] / sphf.format['sample_rate'],
-        sources=[
-            AudioSource(
-                type='file',
-                channel_ids=[0],
-                source='/'.join(sph_path.parts[-2:])
-            )
-        ]
-    )
 
 
 def make_supervisions(sgml_path: Pathlike, recording: Recording) -> Dict[str, List[SupervisionSegment]]:
@@ -170,6 +149,7 @@ def try_parse(sgml_path: Path):
     If it runs into Unicode decoding errors, it will try to determine the file's encoding
     and use iconv to automatically convert it to UTF-8.
     """
+    from bs4 import BeautifulSoup
     try:
         return BeautifulSoup(sgml_path.read_text(), 'html.parser')
     except UnicodeDecodeError:

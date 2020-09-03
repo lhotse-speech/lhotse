@@ -144,7 +144,7 @@ class Cut:
             duration: Optional[Seconds] = None,
             keep_excessive_supervisions: bool = True,
             preserve_id: bool = False
-    ) -> Optional['Cut']:
+    ) -> 'Cut':
         """
         Returns a new Cut that is a sub-region of the current Cut.
 
@@ -163,14 +163,14 @@ class Cut:
         new_start = self.start + offset
         until = offset + (duration if duration is not None else self.duration)
         new_duration = self.duration - new_start if duration is None else until - offset
-        if duration is not None and isclose(new_duration, duration):
-            # Because duration is a float, the subtraction is imprecise and can result in durations
-            # such as 0.3999999996 instead of 0.4, which could lead to RecordingSet loading 1 audio sample too little,
-            # causing trouble for users expecting matching audio tensor shapes for cuts truncated to a single duration.
-            new_duration = duration
         assert new_duration > 0.0
-        if new_start + new_duration > self.start + self.duration:
-            return None
+        duration_past_end = (new_start + new_duration) - (self.start + self.duration)
+        if duration_past_end > 0:
+            # When the end of the Cut has been exceeded, trim the new duration to not exceed the old Cut's end.
+            new_duration -= duration_past_end
+        # Round the duration to 1ms to avoid the possible loss of a single audio sample due to floating point
+        # additions and subtractions.
+        new_duration = round(new_duration, ndigits=3)
         new_time_span = TimeSpan(start=0, end=new_duration)
         criterion = overlaps if keep_excessive_supervisions else overspans
         new_supervisions = (segment.with_offset(-offset) for segment in self.supervisions)
@@ -777,13 +777,11 @@ class CutSet:
         for cut in self:
             n_windows = ceil(cut.duration / duration)
             for i in range(n_windows):
-                new_cut = cut.truncate(
+                new_cuts.append(cut.truncate(
                     offset=duration * i,
                     duration=duration,
                     keep_excessive_supervisions=keep_excessive_supervisions
-                )
-                if new_cut is not None:
-                    new_cuts.append(new_cut)
+                ))
         return CutSet.from_cuts(new_cuts)
 
     def __contains__(self, item: Union[str, Cut, MixedCut]) -> bool:

@@ -83,6 +83,11 @@ def test_truncate_cut(
     assert isclose(truncated_cut.end, expected_end)
 
 
+def test_truncate_above_duration_has_no_effect(overlapping_supervisions_cut):
+    truncated_cut = overlapping_supervisions_cut.truncate(duration=1.0, preserve_id=True)
+    assert truncated_cut == overlapping_supervisions_cut
+
+
 @pytest.fixture
 def simple_mixed_cut():
     return MixedCut(
