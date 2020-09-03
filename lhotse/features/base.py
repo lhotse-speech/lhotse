@@ -5,7 +5,7 @@ from functools import partial
 from itertools import chain
 from math import isclose
 from pathlib import Path
-from typing import Optional, Any, List, Iterable, Type, Union
+from typing import Optional, Any, List, Iterable, Type, Union, Dict
 
 import lilcom
 import numpy as np
@@ -352,8 +352,6 @@ class FeatureSet:
     It also keeps information about the feature extractor parameters used to obtain this set.
     When a given recording/time-range/channel is unavailable, raises a KeyError.
     """
-    # TODO(pzelasko): we might need some efficient indexing structure,
-    #                 e.g. Dict[<recording-id>, Dict[<channel-id>, IntervalTree]] (pip install intervaltree)
     features: List[Features] = field(default_factory=lambda: list())
 
     def __post_init__(self):
@@ -401,10 +399,10 @@ class FeatureSet:
         if duration is not None:
             end = start + duration
         # TODO: naive linear search; will likely require optimization
+        candidates = self._index_by_recording_id_and_cache()[recording_id]
         candidates = (
-            f for f in self.features
-            if f.recording_id == recording_id
-               and f.channels == channel_id
+            f for f in candidates
+            if f.channels == channel_id
                and f.start - leeway <= start < f.end + leeway
             # filter edge case: start 1.5, features available till 1.0, duration is None
         )
@@ -426,6 +424,15 @@ class FeatureSet:
             feature_info = min(candidates, key=lambda f: (start - f.start) ** 2)
 
         return feature_info
+
+    # This is a cache that significantly speeds up repeated ``find()`` queries.
+    _features_by_recording_id: Optional[Dict[str, List[Features]]] = None
+
+    def _index_by_recording_id_and_cache(self):
+        if self._features_by_recording_id is None:
+            from cytoolz import groupby
+            self._features_by_recording_id = groupby(lambda feat: feat.recording_id, self)
+        return self._features_by_recording_id
 
     def load(
             self,
