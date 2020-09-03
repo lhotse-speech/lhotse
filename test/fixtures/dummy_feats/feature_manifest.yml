@@ -1,4 +1,4 @@
-- channel_id: 0
+- channels: 0
   duration: 0.5
   num_features: 23
   num_frames: 50
@@ -8,7 +8,7 @@
   storage_path: test/fixtures/dummy_feats/storage/89739de9-308c-4487-9fa5-1c690d44e718.llc
   storage_type: lilcom
   type: fbank
-- channel_id: 1
+- channels: 1
   duration: 0.5
   num_features: 23
   num_frames: 50
@@ -18,7 +18,7 @@
   storage_path: test/fixtures/dummy_feats/storage/25959652-8816-4810-a88a-0b022d6b9b6d.llc
   storage_type: lilcom
   type: fbank
-- channel_id: 0
+- channels: 0
   duration: 1.0
   num_features: 23
   num_frames: 100
@@ -28,7 +28,7 @@
   storage_path: test/fixtures/dummy_feats/storage/dbf9a0ec-f79d-4eb8-ae83-143a6d5de64d.llc
   storage_type: lilcom
   type: fbank
-- channel_id: 1
+- channels: 1
   duration: 1.0
   num_features: 23
   num_frames: 100

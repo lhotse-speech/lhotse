@@ -6,7 +6,7 @@ from lhotse.features import FeatureSet, Features
 
 def features(rec_id, start, duration):
     """Helper method for fixture readability (specify only relevant attributes)."""
-    return Features(rec_id, channel_id=0, start=start, duration=duration, sampling_rate=16000,
+    return Features(rec_id, channels=0, start=start, duration=duration, sampling_rate=16000,
                     type='irrelevant', num_frames=round(duration / 0.01), num_features=23,
                     storage_type='irrelevant', storage_path='irrelevant')
 

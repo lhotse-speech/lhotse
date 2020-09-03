@@ -81,7 +81,7 @@ def libri_cut():
         channel=0,
         duration=16.04,
         features=Features(
-            channel_id=0,
+            channels=0,
             duration=16.04,
             num_features=23,
             num_frames=1604,

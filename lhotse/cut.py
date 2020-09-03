@@ -2,13 +2,13 @@ import random
 import warnings
 from dataclasses import dataclass, field
 from functools import reduce
-from math import ceil, floor, log, isclose
+from math import ceil, floor, log
 from typing import Callable, Dict, Iterable, List, Optional, Union
 
 import numpy as np
 
 from lhotse.audio import AudioMixer, Recording, RecordingSet
-from lhotse.features import Features, FeatureSet, FeatureMixer, create_default_feature_extractor
+from lhotse.features import Features, FeatureExtractor, FeatureSet, FeatureMixer, create_default_feature_extractor
 from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import (
     EPSILON,
@@ -627,13 +627,13 @@ class CutSet:
                     id=str(uuid4()),
                     start=features.start,
                     duration=features.duration,
-                    channel=features.channel_id,
+                    channel=features.channels,
                     features=features,
                     recording=recording_set[features.recording_id] if rec_ok else None,
                     # The supervisions' start times are adjusted if the features object starts at time other than 0s.
                     supervisions=list(supervision_set.find(
                         recording_id=features.recording_id,
-                        channel=features.channel_id,
+                        channel=features.channels,
                         start_after=features.start,
                         end_before=features.end,
                         adjust_offset=True
@@ -787,6 +787,20 @@ class CutSet:
                 ))
         return CutSet.from_cuts(new_cuts)
 
+    def with_extracted_features(
+            self,
+            extractor: FeatureExtractor,
+            feature_dir: Pathlike
+    ) -> 'CutSet':
+        """
+        Return a new ``CutSet`` with features extracted using the provided feature extractor.
+
+        :param extractor: A ``FeatureExtractor`` instance (either Lhotse's built-in or a custom implementation).
+        :param feature_dir: Where to store the features.
+        :return: a new CutSet instance with the same ``Cut``s, but with attached ``Features`` objects
+        """
+        return CutSet.from_cuts(cut.with_extracted_features(extractor, feature_dir=feature_dir) for cut in self)
+
     def __contains__(self, item: Union[str, Cut, MixedCut]) -> bool:
         if isinstance(item, str):
             return item in self.cuts
@@ -848,7 +862,7 @@ def make_windowed_cuts_from_features(
                     id=str(uuid4()),
                     start=offset,
                     duration=duration,
-                    channel=features.channel_id,
+                    channel=features.channels,
                     features=features,
                     supervisions=[]
                 )

@@ -1,5 +1,5 @@
-from dataclasses import asdict, dataclass
-from typing import Callable, Dict, Iterable, Optional, Any
+from dataclasses import asdict, dataclass, field
+from typing import Callable, Dict, Iterable, Optional, Any, List
 
 from lhotse.utils import Pathlike, Seconds, asdict_nonull, load_yaml, save_to_yaml
 
@@ -95,16 +95,25 @@ class SupervisionSet:
             this option converts the times to be relative to the start of the cut.
         :return: An iterator over supervision segments satisfying all criteria.
         """
+        segment_by_recording_id = self._index_by_recording_id_and_cache()
         return (
             # We only modify the offset - the duration remains the same, as we're only shifting the segment
             # relative to the Cut's start, and not truncating anything.
             segment.with_offset(-start_after) if adjust_offset else segment
-            for segment in self
-            if segment.recording_id == recording_id
-               and (channel is None or segment.channel_id == channel)
+            for segment in segment_by_recording_id[recording_id]
+            if (channel is None or segment.channel_id == channel)
                and segment.start >= start_after
                and (end_before is None or segment.end <= end_before)
         )
+
+    # This is a cache that significantly speeds up repeated ``find()`` queries.
+    _segments_by_recording_id: Optional[Dict[str, List[SupervisionSegment]]] = None
+
+    def _index_by_recording_id_and_cache(self):
+        if self._segments_by_recording_id is None:
+            from cytoolz import groupby
+            self._segments_by_recording_id = groupby(lambda seg: seg.recording_id, self)
+        return self._segments_by_recording_id
 
     def __getitem__(self, item: str) -> SupervisionSegment:
         return self.segments[item]
