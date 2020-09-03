@@ -1,4 +1,3 @@
-import os
 import warnings
 from dataclasses import asdict, dataclass
 from io import BytesIO
@@ -7,12 +6,6 @@ from pathlib import Path
 from subprocess import PIPE, run
 from typing import Callable, Dict, Iterable, List, Optional, Union
 
-# Workaround for SoundFile (librosa dep) raising exception when a native library, libsndfile1, is not installed.
-# Read-the-docs does not allow to modify the Docker containers used to build documentation...
-if not os.environ.get('READTHEDOCS', False):
-    with warnings.catch_warnings():
-        warnings.simplefilter('ignore')
-        import librosa
 import numpy as np
 
 from lhotse.utils import Decibels, Pathlike, Seconds, SetContainingAnything, load_yaml, save_to_yaml
@@ -48,6 +41,7 @@ class AudioSource:
         Returns numpy array with shapes: (n_samples) for single-channel,
         (n_channels, n_samples) for multi-channel.
         """
+        import librosa
         assert self.type in ('file', 'command')
 
         if self.type == 'command':

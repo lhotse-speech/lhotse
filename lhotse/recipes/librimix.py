@@ -5,8 +5,6 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Dict, Optional, Union
 
-import pandas as pd
-
 from lhotse.audio import AudioSource, Recording, RecordingSet
 from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import Pathlike, Seconds
@@ -38,6 +36,7 @@ def prepare_librimix(
         sampling_rate: int = 16000,
         min_segment_seconds: Seconds = 3.0
 ) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet]]]:
+    import pandas as pd
     df = pd.read_csv(librimix_csv)
 
     output_dir = Path(output_dir)

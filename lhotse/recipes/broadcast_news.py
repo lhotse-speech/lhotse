@@ -13,11 +13,9 @@ from itertools import chain
 from pathlib import Path
 from typing import Dict, Union, Optional, List
 
-from bs4 import BeautifulSoup
 from cytoolz import sliding_window
-from sphfile import SPHFile
 
-from lhotse.audio import AudioSource, Recording, RecordingSet
+from lhotse.audio import Recording, RecordingSet
 from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import Pathlike, recursion_limit
 
@@ -149,6 +147,7 @@ def try_parse(sgml_path: Path):
     If it runs into Unicode decoding errors, it will try to determine the file's encoding
     and use iconv to automatically convert it to UTF-8.
     """
+    from bs4 import BeautifulSoup
     try:
         return BeautifulSoup(sgml_path.read_text(), 'html.parser')
     except UnicodeDecodeError:
