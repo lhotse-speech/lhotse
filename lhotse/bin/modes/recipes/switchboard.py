@@ -6,10 +6,10 @@ from lhotse.utils import Pathlike
 
 
 @prepare.command(context_settings=dict(show_default=True))
-@click.argument('audio_dir', type=click.Path(exists=True, file_okay=False))
-@click.argument('transcript_dir', type=click.Path(exists=True, file_okay=False))
-@click.argument('output_dir', type=click.Path())
-@click.option('sentiment_dir', type=click.Path(exists=True, file_okay=False),
+@click.argument('audio-dir', type=click.Path(exists=True, file_okay=False))
+@click.argument('transcript-dir', type=click.Path(exists=True, file_okay=False))
+@click.argument('output-dir', type=click.Path())
+@click.option('--sentiment-dir', type=click.Path(exists=True, file_okay=False),
               help='Optional path to LDC2020T14 package with sentiment annotations for SWBD.')
 @click.option('--omit-silence/--retain-silence', default=True,
               help='Should the [silence] segments be kept.')
