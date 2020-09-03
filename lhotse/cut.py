@@ -7,6 +7,7 @@ from typing import Callable, Dict, Iterable, List, Optional, Union
 
 import numpy as np
 
+from lhotse import WavAugmenter
 from lhotse.audio import AudioMixer, Recording, RecordingSet
 from lhotse.features import Features, FeatureExtractor, FeatureSet, FeatureMixer, create_default_feature_extractor
 from lhotse.supervision import SupervisionSegment, SupervisionSet
@@ -34,8 +35,90 @@ from lhotse.utils import (
 AnyCut = Union['Cut', 'MixedCut', 'PaddingCut']
 
 
+class CutCommonsMixin:
+    def compute_features(
+            self,
+            extractor: FeatureExtractor,
+            augmenter: Optional[WavAugmenter] = None,
+            root_dir: Optional[Pathlike] = None
+    ) -> np.ndarray:
+        """
+        Compute the features from this cut. This cut has to be able to load audio.
+
+        :param extractor: a ``FeatureExtractor`` instance used to compute the features.
+        :param augmenter: optional ``WavAugmenter`` instance for audio augmentation.
+        :param root_dir: optional prefix to the source audio file path.
+        :return: a numpy ndarray with the computed features.
+        """
+        samples = self.load_audio(root_dir=root_dir)
+        if augmenter is not None:
+            samples = augmenter.apply(samples)
+        return extractor.extract(samples, self.sampling_rate)
+
+    def compute_and_store_features(
+            self,
+            extractor: FeatureExtractor,
+            output_dir: Pathlike,
+            augmenter: Optional[WavAugmenter] = None,
+            root_dir: Optional[Pathlike] = None
+    ) -> AnyCut:
+        """
+        Compute the features from this cut, store them on disk, and attach a feature manifest to this cut.
+        This cut has to be able to load audio.
+
+        :param extractor: a ``FeatureExtractor`` instance used to compute the features.
+        :param output_dir: directory where the computed features will be stored.
+        :param augmenter: optional ``WavAugmenter`` instance for audio augmentation.
+        :param root_dir: optional prefix to the source audio file path.
+        :return: a numpy ndarray with the computed features.
+        """
+        # TODO: extract it from samples instead
+        features_info = extractor.extract_from_recording_and_store(
+            recording=self.recording,
+            output_dir=output_dir,
+            offset=self.start,
+            duration=self.duration,
+            channels=self.channel,
+            augmenter=augmenter,
+            root_dir=root_dir
+        )
+        self.features = features_info
+        return self
+
+    def plot_audio(self, root_dir: Optional[Pathlike] = None):
+        """
+        Display a plot of the waveform. Requires matplotlib to be installed.
+
+        :param root_dir: optional prefix to the source audio file path.
+        """
+        import matplotlib.pyplot as plt
+        samples = self.load_audio(root_dir=root_dir).squeeze()
+        return plt.plot(samples)
+
+    def play_audio(self, root_dir: Optional[Pathlike] = None):
+        """
+        Display a Jupyter widget that allows to listen to the waveform.
+        Works only in Jupyter notebook/lab or similar (e.g. Colab).
+
+        :param root_dir: optional prefix to the source audio file path.
+        """
+        from IPython.display import Audio
+        samples = self.load_audio(root_dir=root_dir).squeeze()
+        return Audio(samples, rate=self.sampling_rate)
+
+    def plot_features(self, root_dir: Optional[Pathlike] = None):
+        """
+        Display the feature matrix as an image. Requires matplotlib to be installed.
+
+        :param root_dir: optional prefix to the source features file path.
+        """
+        import matplotlib.pyplot as plt
+        features = np.flip(self.load_features(root_dir=root_dir).transpose(1, 0), 0)
+        return plt.matshow(features)
+
+
 @dataclass
-class Cut:
+class Cut(CutCommonsMixin):
     """
     A Cut is a single "segment" that we'll train on. It contains the features corresponding to
     a piece of a recording, with zero or more SupervisionSegments.

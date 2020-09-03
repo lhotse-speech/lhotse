@@ -74,10 +74,11 @@ class DynamicUnsupervisedDataset(UnsupervisedDataset):
 
     def __getitem__(self, item: int) -> torch.Tensor:
         cut = self.cuts[self.cut_ids[item]]
-        audio = cut.load_audio(root_dir=self.root_dir)
-        if self.augmenter is not None:
-            audio = self.augmenter.apply(audio)
-        features = self.feature_extractor.extract(audio, cut.sampling_rate)
+        features = cut.compute_features(
+            extractor=self.feature_extractor,
+            augmenter=self.augmenter,
+            root_dir=self.root_dir
+        )
         return torch.from_numpy(features)
 
     def _validate(self):

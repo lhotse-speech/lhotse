@@ -124,9 +124,9 @@ class FeatureExtractor(metaclass=ABCMeta):
             samples = augmenter.apply(samples)
         feats = self.extract(samples=samples, sampling_rate=recording.sampling_rate)
 
-        output_features_path = (
-                Path(output_dir) / 'storage' / str(uuid4())
-        ).with_suffix('.llc' if compress else '.npy')
+        output_dir = Path(output_dir)
+        (output_dir / 'storage').mkdir(parents=True, exist_ok=True)
+        output_features_path = (output_dir / 'storage' / str(uuid4())).with_suffix('.llc' if compress else '.npy')
         if compress:
             serialized_feats = lilcom.compress(feats, tick_power=lilcom_tick_power)
             with open(output_features_path, 'wb') as f:
