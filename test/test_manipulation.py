@@ -54,7 +54,7 @@ def test_combine(manifest_type):
         ('test/fixtures/supervision.yml', does_not_raise()),
         ('test/fixtures/dummy_feats/feature_manifest.yml', does_not_raise()),
         ('test/fixtures/feature_config.yml', raises(ValueError)),
-        ('no/such/path.xd', raises(ValueError)),
+        ('no/such/path.xd', raises(FileNotFoundError)),
     ]
 )
 def test_load_any_lhotse_manifest(path, exception_expectation):
