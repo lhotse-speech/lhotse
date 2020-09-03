@@ -27,6 +27,8 @@ def switchboard(
     to what we have.  We also use the Mississippi State transcriptions, which
     we download separately from
     http://www.isip.piconepress.com/projects/switchboard/releases/switchboard_word_alignments.tar.gz
+
+    This data is not available for free - your institution needs to have an LDC subscription.
     """
     prepare_switchboard(
         audio_dir=audio_dir,
