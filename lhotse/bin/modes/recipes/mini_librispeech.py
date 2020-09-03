@@ -14,7 +14,7 @@ def mini_librispeech(
         corpus_dir: Pathlike,
         output_dir: Pathlike
 ):
-    """Recipe to prepare the manifests for MiniLibriSpeech task."""
+    """Mini Librispeech ASR data preparation."""
     prepare_mini_librispeech(corpus_dir, output_dir)
 
 
@@ -23,5 +23,5 @@ def mini_librispeech(
 def mini_librispeech(
         target_dir: Pathlike
 ):
-    """Obtain MiniLibriSpeech dataset."""
+    """Mini Librispeech download."""
     download_and_untar(target_dir)
