@@ -194,7 +194,11 @@ class RecordingSet:
     @staticmethod
     def from_yaml(path: Pathlike) -> 'RecordingSet':
         raw_recordings = load_yaml(path)
-        return RecordingSet.from_recordings(Recording.from_dict(raw_rec) for raw_rec in raw_recordings)
+        return RecordingSet.from_dicts(raw_recordings)
+
+    @staticmethod
+    def from_dicts(data: Iterable[dict]) -> 'RecordingSet':
+        return RecordingSet.from_recordings(Recording.from_dict(raw_rec) for raw_rec in data)
 
     def to_yaml(self, path: Pathlike):
         data = [asdict(r) for r in self]

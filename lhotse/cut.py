@@ -664,7 +664,10 @@ class CutSet:
     @staticmethod
     def from_yaml(path: Pathlike) -> 'CutSet':
         raw_cuts = load_yaml(path)
+        return CutSet.from_dicts(raw_cuts)
 
+    @staticmethod
+    def from_dicts(data: Iterable[dict]) -> 'CutSet':
         def deserialize_one(raw_cut: dict) -> AnyCut:
             cut_type = raw_cut.pop('type')
             if cut_type == 'Cut':
@@ -673,7 +676,7 @@ class CutSet:
                 return MixedCut.from_dict(raw_cut)
             raise ValueError(f"Unexpected cut type during deserialization: '{cut_type}'")
 
-        return CutSet.from_cuts(deserialize_one(cut) for cut in raw_cuts)
+        return CutSet.from_cuts(deserialize_one(cut) for cut in data)
 
     def to_yaml(self, path: Pathlike):
         data = [{**asdict_nonull(cut), 'type': type(cut).__name__} for cut in self]

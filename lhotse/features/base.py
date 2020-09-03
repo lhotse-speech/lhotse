@@ -251,15 +251,16 @@ class FeatureSet:
         return FeatureSet(list(features))  # just for consistency with other *Sets
 
     @staticmethod
-    def from_dict(data: dict) -> 'FeatureSet':
-        return FeatureSet(features=[Features.from_dict(feature_data) for feature_data in data['features']])
+    def from_dicts(data: Iterable[dict]) -> 'FeatureSet':
+        return FeatureSet(features=[Features.from_dict(feature_data) for feature_data in data])
 
     @staticmethod
     def from_yaml(path: Pathlike) -> 'FeatureSet':
-        return FeatureSet.from_dict(load_yaml(path))
+        return FeatureSet.from_dicts(load_yaml(path))
 
     def to_yaml(self, path: Pathlike):
-        save_to_yaml(asdict(self), path)
+        data = [asdict(f) for f in self]
+        save_to_yaml(data, path)
 
     def find(
             self,

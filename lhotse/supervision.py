@@ -52,7 +52,11 @@ class SupervisionSet:
     @staticmethod
     def from_yaml(path: Pathlike) -> 'SupervisionSet':
         raw_segments = load_yaml(path)
-        return SupervisionSet.from_segments(SupervisionSegment.from_dict(s) for s in raw_segments)
+        return SupervisionSet.from_dicts(raw_segments)
+
+    @staticmethod
+    def from_dicts(data: Iterable[Dict]) -> 'SupervisionSet':
+        return SupervisionSet.from_segments(SupervisionSegment.from_dict(s) for s in data)
 
     def to_yaml(self, path: Pathlike):
         data = [asdict_nonull(s) for s in self]
