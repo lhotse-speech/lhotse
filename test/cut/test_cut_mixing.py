@@ -35,7 +35,7 @@ def test_append_cut_duration_and_supervisions(cut1, cut2):
 )
 def test_overlay_cut_duration_and_supervisions(offset, expected_duration, exception_expectation, cut1, cut2):
     with exception_expectation:
-        mixed_cut = cut1.overlay(cut2, offset_other_by=offset)
+        mixed_cut = cut1.mix(cut2, offset_other_by=offset)
 
         assert isinstance(mixed_cut, MixedCut)
         assert mixed_cut.duration == expected_duration

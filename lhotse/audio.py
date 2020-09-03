@@ -57,13 +57,15 @@ class AudioSource:
         else:
             source = self.source if root_dir is None else Path(root_dir) / self.source
 
-        samples, sampling_rate = librosa.load(
-            source,
-            sr=None,  # 'None' uses the native sampling rate
-            mono=False,  # Retain multi-channel if it's there
-            offset=offset_seconds,
-            duration=duration_seconds
-        )
+        with warnings.catch_warnings():
+            warnings.simplefilter('ignore')
+            samples, sampling_rate = librosa.load(
+                source,
+                sr=None,  # 'None' uses the native sampling rate
+                mono=False,  # Retain multi-channel if it's there
+                offset=offset_seconds,
+                duration=duration_seconds
+            )
 
         # explicit sanity check for duration as librosa does not complain here
         if duration_seconds is not None:

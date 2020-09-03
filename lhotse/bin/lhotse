@@ -16,7 +16,7 @@ $ lhotse recipe mini-librispeech-dataprep corpus_dir/ output_manifests_dir/
 $ lhotse recipe mini-librispeech-obtain target_dir/
 $ lhotse cut --help
 $ lhotse cut simple supervisions.yml features.yml simple_cuts.yml
-$ lhotse cut stereo-overlayed supervisions.yml features.yml mixed_cuts.yml
+$ lhotse cut stereo-mixed supervisions.yml features.yml mixed_cuts.yml
 """
 from lhotse.bin.modes import *
 

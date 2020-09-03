@@ -32,6 +32,12 @@ class FeatureExtractor(metaclass=ABCMeta):
     Feature extractors that support feature-domain mixing should additionally specify two static methods:
     - ``compute_energy``, and
     - ``mix``.
+
+    By itself, the ``FeatureExtractor`` offers the following high-level methods
+    that are not intended for overriding:
+    - ``extract_from_samples_and_store``
+    - ``extract_from_recording_and_store``
+    These methods run a larger feature extraction pipeline that involves data augmentation and disk storage.
     """
     name = None
     config_type = None
@@ -47,29 +53,41 @@ class FeatureExtractor(metaclass=ABCMeta):
             samples: np.ndarray,
             sampling_rate: int,
             output_dir: Pathlike,
+            offset: Seconds = 0,
             augmenter: Optional[WavAugmenter] = None,
             compress: bool = True,
             lilcom_tick_power: int = -5,
     ):
-        raise NotImplementedError()
+        """
+        Extract the features from an array of audio samples in a full pipeline:
+        - optional audio augmentation;
+        - extract the features;
+        - save them to disk in a specified directory;
+        - return a ``Features`` object with a description of the extracted features.
+
+        Note, unlike in ``extract_from_recording_and_store``, the returned ``Features`` object
+        might not be suitable to store in a ``FeatureSet``, as it does not reference any particular
+        ``Recording``. Instead, this method is useful when extracting features from cuts - especially
+        ``MixedCut``s, which may be created from multiple recordings and channels.
+
+        :param samples: a numpy ndarray with the audio samples.
+        :param sampling_rate: integer sampling rate of ``samples``.
+        :param output_dir: a path to the directory where the features will be stored.
+            by default, all channels will be used.
+        :param offset: an offset in seconds for where to start reading the recording - when used for
+            ``Cut`` feature extraction, must be equal to ``Cut.start``.
+        :param augmenter: an optional ``WavAugmenter`` instance to modify the waveform before feature extraction.
+        :param compress: a bool, whether the saved features should be compressed with ``lilcom``.
+        :param lilcom_tick_power: precision of ``lilcom`` compression - greater negative values (e.g. -8).
+            might be appropriate for non-log space features.
+        :return: a ``Features`` manifest item for the extracted feature matrix (it is not written to disk).
+        """
         if augmenter is not None:
             samples = augmenter.apply(samples)
         feats = self.extract(samples=samples, sampling_rate=sampling_rate)
-
-        output_features_path = (
-                Path(output_dir) / 'storage' / str(uuid4())
-        ).with_suffix('.llc' if compress else '.npy')
-        if compress:
-            serialized_feats = lilcom.compress(feats, tick_power=lilcom_tick_power)
-            with open(output_features_path, 'wb') as f:
-                f.write(serialized_feats)
-        else:
-            np.save(output_features_path, feats, allow_pickle=False)
-
+        output_features_path = store_feature_array(feats, output_dir, compress, lilcom_tick_power)
         return Features(
-            recording_id=recording.id,
-            channels=channels if channels is not None else recording.channel_ids,
-            start=0,
+            start=offset,
             # We simplify the relationship between num_frames and duration - we guarantee that
             #  the duration is always num_frames * frame_shift
             duration=feats.shape[0] * self.frame_shift,
@@ -95,11 +113,11 @@ class FeatureExtractor(metaclass=ABCMeta):
     ):
         """
         Extract the features from a ``Recording`` in a full pipeline:
-        - loads audio from disk;
-        - optionally, performs audio augmentation;
-        - extracts the features;
-        - saves them to disk in a specified directory;
-        - returns a ``Features`` object with a description of the extracted features and the source data used.
+        - load audio from disk;
+        - optionally, perform audio augmentation;
+        - extract the features;
+        - save them to disk in a specified directory;
+        - return a ``Features`` object with a description of the extracted features and the source data used.
 
         :param recording: a ``Recording`` that specifies what's the input audio.
         :param output_dir: a path to the directory where the features will be stored.
@@ -112,7 +130,7 @@ class FeatureExtractor(metaclass=ABCMeta):
         :param lilcom_tick_power: precision of ``lilcom`` compression - greater negative values (e.g. -8).
             might be appropriate for non-log space features.
         :param root_dir: an optional path prefix for the audio source file in Recording.
-        :return: a ``Features`` manifest item for the extracted feature matrix (it is not written to disk).
+        :return: a ``Features`` manifest item for the extracted feature matrix.
         """
         samples = recording.load_audio(
             offset_seconds=offset,
@@ -123,21 +141,12 @@ class FeatureExtractor(metaclass=ABCMeta):
         if augmenter is not None:
             samples = augmenter.apply(samples)
         feats = self.extract(samples=samples, sampling_rate=recording.sampling_rate)
-
-        output_dir = Path(output_dir)
-        (output_dir / 'storage').mkdir(parents=True, exist_ok=True)
-        output_features_path = (output_dir / 'storage' / str(uuid4())).with_suffix('.llc' if compress else '.npy')
-        if compress:
-            serialized_feats = lilcom.compress(feats, tick_power=lilcom_tick_power)
-            with open(output_features_path, 'wb') as f:
-                f.write(serialized_feats)
-        else:
-            np.save(output_features_path, feats, allow_pickle=False)
-
+        output_features_path = store_feature_array(feats, output_dir, compress, lilcom_tick_power)
         return Features(
             recording_id=recording.id,
             channels=channels if channels is not None else recording.channel_ids,
-            start=0,
+            # The start is relative to the beginning of the recording.
+            start=offset,
             # We simplify the relationship between num_frames and duration - we guarantee that
             #  the duration is always num_frames * frame_shift
             duration=feats.shape[0] * self.frame_shift,
@@ -278,11 +287,6 @@ class Features:
     it supports numpy arrays serialized with np.save, as well as arrays compressed with lilcom;
     storage_path is the path to the file on the local filesystem.
     """
-    recording_id: str
-    channels: Union[int, List[int]]
-    start: Seconds
-    duration: Seconds
-
     # Useful information about the features - their type (fbank, mfcc) and shape
     type: str
     num_frames: int
@@ -292,6 +296,16 @@ class Features:
     # Parameters related to storage - they define how to load the feature matrix.
     storage_type: str  # e.g. 'lilcom', 'numpy'
     storage_path: str
+
+    # Information about the time range of the features and which recording and channels were used to
+    # extract them. When ``recording_id`` and ``channels`` are ``None``, it means that the
+    # features were extracted from a cut (e.g. a ``MixedCut``), which might have consisted
+    # of multiple recordings.
+    start: Seconds
+    duration: Seconds
+    recording_id: Optional[str] = None
+    channels: Optional[Union[int, List[int]]] = None
+
 
     @property
     def end(self) -> Seconds:
@@ -531,3 +545,32 @@ class FeatureSetBuilder:
                 root_dir=self.root_dir
             ))
         return results
+
+
+def store_feature_array(
+        feats: np.ndarray,
+        output_dir: Pathlike,
+        compress: bool = True,
+        lilcom_tick_power: int = -5
+) -> Path:
+    """
+    Store ``feats`` array on disk, using ``lilcom`` compression by default.
+
+    :param feats: a numpy ndarray containing features.
+    :param output_dir: a path to the directory where the features will be stored.
+    :param compress: a bool, whether the saved features should be compressed with ``lilcom``.
+    :param lilcom_tick_power: precision of ``lilcom`` compression - greater negative values (e.g. -8).
+        might be appropriate for non-log space features.
+    :return: a path to the file containing the stored array.
+    """
+    output_dir = Path(output_dir)
+    (output_dir / 'storage').mkdir(parents=True, exist_ok=True)
+    output_features_path = (output_dir / 'storage' / str(uuid4())).with_suffix('.llc' if compress else '.npy')
+    if compress:
+        serialized_feats = lilcom.compress(feats, tick_power=lilcom_tick_power)
+        with open(output_features_path, 'wb') as f:
+            f.write(serialized_feats)
+    else:
+        np.save(output_features_path, feats, allow_pickle=False)
+    return output_features_path
+

@@ -32,7 +32,7 @@ class SpeechRecognitionDataset(Dataset):
             root_dir: Optional[Pathlike] = None
     ):
         super().__init__()
-        self.cuts = cuts.trim_to_supervisions()
+        self.cuts = cuts
         self.root_dir = Path(root_dir) if root_dir else None
         self.cut_ids = list(self.cuts.cuts.keys())
 
@@ -42,8 +42,13 @@ class SpeechRecognitionDataset(Dataset):
 
         features = torch.from_numpy(cut.load_features(root_dir=self.root_dir))
 
-        # There should be only one supervision because we have had trim_to_supervisions() processed
-        assert len(cut.supervisions) == 1, "SpeechRecognitionDataset does not support overlapping supervisions yet."
+        # There should be only one supervision because we expect that trim_to_supervisions() was called,
+        # or the dataset was created from pre-segment recordings
+        assert len(cut.supervisions) == 1, "SpeechRecognitionDataset does not support multiple supervisions yet. " \
+                                           "Use CutSet.trim_to_supervisions() to cut long recordings into short " \
+                                           "supervisions segment, and follow up with either .pad(), " \
+                                           ".truncate(), and possibly .filter() to make sure that all cuts " \
+                                           "have a uniform duration."
 
         return {
             'features': features,

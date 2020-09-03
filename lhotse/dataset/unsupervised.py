@@ -19,7 +19,7 @@ class UnsupervisedDataset(Dataset):
     def __init__(self, cuts: CutSet, root_dir: Optional[Pathlike] = None):
         super().__init__()
         self.cuts = cuts
-        self.cut_ids = list(self.cuts.cuts.keys())
+        self.cut_ids = list(cuts.ids)
         self.root_dir = root_dir
         self._validate()
 
