@@ -6,6 +6,8 @@ We currently support the following LDC packages:
 1997 English Broadcast News Train (HUB4)
   Speech       LDC98S71
   Transcripts  LDC98T28
+
+This data is not available for free - your institution needs to have an LDC subscription.
 """
 
 import re
