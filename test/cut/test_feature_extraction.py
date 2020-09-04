@@ -32,7 +32,7 @@ def test_extract_features(cut):
     extractor = Fbank()
     arr = cut.compute_features(extractor=extractor)
     assert arr.shape[0] == 100
-    assert arr.shape[1] == extractor.config.num_mel_bins
+    assert arr.shape[1] == extractor.feature_dim(cut.sampling_rate)
 
 
 def test_extract_and_store_features(cut):
@@ -41,4 +41,4 @@ def test_extract_and_store_features(cut):
         cut.compute_and_store_features(extractor=extractor, output_dir=tmpdir)
         arr = cut.load_features()
     assert arr.shape[0] == 100
-    assert arr.shape[1] == extractor.config.num_mel_bins
+    assert arr.shape[1] == extractor.feature_dim(cut.sampling_rate)

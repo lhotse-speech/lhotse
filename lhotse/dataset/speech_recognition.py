@@ -14,7 +14,7 @@ EPS = 1e-8
 class SpeechRecognitionDataset(Dataset):
     """
     The PyTorch Dataset for the speech recognition task.
-    Returns a dict of:
+    Each item in this dataset is a dict of:
 
     .. code-block::
 

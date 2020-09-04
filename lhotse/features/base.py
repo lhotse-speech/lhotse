@@ -48,6 +48,51 @@ class FeatureExtractor(metaclass=ABCMeta):
         assert is_dataclass(config), "The feature configuration object must be a dataclass."
         self.config = config
 
+    @abstractmethod
+    def extract(self, samples: np.ndarray, sampling_rate: int) -> np.ndarray:
+        """
+        Defines how to extract features using a numpy ndarray of audio samples and the sampling rate.
+        :return: a numpy ndarray representing the feature matrix.
+        """
+        pass
+
+    @property
+    @abstractmethod
+    def frame_shift(self) -> Seconds: ...
+
+    @abstractmethod
+    def feature_dim(self, sampling_rate: int) -> int: ...
+
+    @staticmethod
+    def mix(features_a: np.ndarray, features_b: np.ndarray, energy_scaling_factor_b: float) -> np.ndarray:
+        """
+        Perform feature-domain mix of two singals, ``a`` and ``b``, and return the mixed signal.
+
+        :param features_a: Left-hand side (reference) signal.
+        :param features_b: Right-hand side (mixed-in) signal.
+        :param energy_scaling_factor_b: A scaling factor for ``features_b`` energy.
+            It is used to achieve a specific SNR.
+            E.g. to mix with an SNR of 10dB when both ``features_a`` and ``features_b`` energies are 100,
+            the ``features_b`` signal energy needs to be scaled by 0.1.
+            Since different features (e.g. spectrogram, fbank, MFCC) require different combination of
+            transformations (e.g. exp, log, sqrt, pow) to allow mixing of two signals, the exact place
+            where to apply ``energy_scaling_factor_b`` to the signal is determined by the implementer.
+        :return: A mixed feature matrix.
+        """
+        raise ValueError('The feature extractor\'s "mix" operation is undefined.')
+
+    @staticmethod
+    def compute_energy(features: np.ndarray) -> float:
+        """
+        Compute the total energy of a feature matrix. How the energy is computed depends on a
+        particular type of features.
+        It is expected that when implemented, ``compute_energy`` will never return zero.
+
+        :param features: A feature matrix.
+        :return: A positive float value of the signal energy.
+        """
+        raise ValueError('The feature extractor\'s "compute_energy" is undefined.')
+
     def extract_from_samples_and_store(
             self,
             samples: np.ndarray,
@@ -157,48 +202,6 @@ class FeatureExtractor(metaclass=ABCMeta):
             storage_type='lilcom' if compress else 'numpy',
             storage_path=str(output_features_path)
         )
-
-    @abstractmethod
-    def extract(self, samples: np.ndarray, sampling_rate: int) -> np.ndarray:
-        """
-        Defines how to extract features using a numpy ndarray of audio samples and the sampling rate.
-        :return: a numpy ndarray representing the feature matrix.
-        """
-        pass
-
-    @property
-    @abstractmethod
-    def frame_shift(self) -> Seconds: ...
-
-    @staticmethod
-    def mix(features_a: np.ndarray, features_b: np.ndarray, energy_scaling_factor_b: float) -> np.ndarray:
-        """
-        Perform feature-domain mix of two singals, ``a`` and ``b``, and return the mixed signal.
-
-        :param features_a: Left-hand side (reference) signal.
-        :param features_b: Right-hand side (mixed-in) signal.
-        :param energy_scaling_factor_b: A scaling factor for ``features_b`` energy.
-            It is used to achieve a specific SNR.
-            E.g. to mix with an SNR of 10dB when both ``features_a`` and ``features_b`` energies are 100,
-            the ``features_b`` signal energy needs to be scaled by 0.1.
-            Since different features (e.g. spectrogram, fbank, MFCC) require different combination of
-            transformations (e.g. exp, log, sqrt, pow) to allow mixing of two signals, the exact place
-            where to apply ``energy_scaling_factor_b`` to the signal is determined by the implementer.
-        :return: A mixed feature matrix.
-        """
-        raise ValueError('The feature extractor\'s "mix" operation is undefined.')
-
-    @staticmethod
-    def compute_energy(features: np.ndarray) -> float:
-        """
-        Compute the total energy of a feature matrix. How the energy is computed depends on a
-        particular type of features.
-        It is expected that when implemented, ``compute_energy`` will never return zero.
-
-        :param features: A feature matrix.
-        :return: A positive float value of the signal energy.
-        """
-        raise ValueError('The feature extractor\'s "compute_energy" is undefined.')
 
     @classmethod
     def from_dict(cls, data: dict) -> 'FeatureExtractor':

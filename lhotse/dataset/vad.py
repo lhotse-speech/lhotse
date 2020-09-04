@@ -14,7 +14,7 @@ EPS = 1e-8
 class VadDataset(Dataset):
     """
     The PyTorch Dataset for the voice activity detection task.
-    Returns a dict of:
+    Each item in this dataset is a dict of:
 
     .. code-block::
 

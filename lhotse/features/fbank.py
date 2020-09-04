@@ -44,6 +44,9 @@ class Fbank(TorchaudioFeatureExtractor):
     config_type = FbankConfig
     feature_fn = staticmethod(torchaudio.compliance.kaldi.fbank)
 
+    def feature_dim(self, sampling_rate: int) -> int:
+        return self.config.num_mel_bins
+
     @staticmethod
     def mix(features_a: np.ndarray, features_b: np.ndarray, energy_scaling_factor_b: float) -> np.ndarray:
         return np.log(np.exp(features_a) + energy_scaling_factor_b * np.exp(features_b))

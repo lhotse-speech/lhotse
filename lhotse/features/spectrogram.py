@@ -5,6 +5,7 @@ import numpy as np
 
 # Workaround for SoundFile (torchaudio dep) raising exception when a native library, libsndfile1, is not installed.
 # Read-the-docs does not allow to modify the Docker containers used to build documentation...
+
 if not os.environ.get('READTHEDOCS', False):
     import torchaudio
 
@@ -35,6 +36,11 @@ class Spectrogram(TorchaudioFeatureExtractor):
     name = 'spectrogram'
     config_type = SpectrogramConfig
     feature_fn = staticmethod(torchaudio.compliance.kaldi.spectrogram)
+
+    def feature_dim(self, sampling_rate: int) -> int:
+        from torchaudio.compliance.kaldi import _next_power_of_2
+        window_size = int(self.config.frame_length * sampling_rate)
+        return _next_power_of_2(window_size) if self.config.round_to_power_of_two else window_size
 
     @staticmethod
     def mix(features_a: np.ndarray, features_b: np.ndarray, energy_scaling_factor_b: float) -> np.ndarray:
