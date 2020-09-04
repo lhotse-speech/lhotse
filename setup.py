@@ -1,4 +1,5 @@
 # coding=utf-8
+import os
 from pathlib import Path
 
 from setuptools import find_packages, setup
@@ -9,6 +10,12 @@ install_requires = (project_root / 'requirements.txt').read_text().splitlines()
 docs_require = (project_root / 'docs' / 'requirements.txt').read_text().splitlines()
 tests_require = ['pytest==5.4.3', 'flake8==3.8.3', 'coverage==5.1']
 dev_requires = docs_require + tests_require + ['jupyterlab', 'matplotlib', 'isort']
+
+if os.environ.get('READTHEDOCS', False):
+    # When building documentation, omit torchaudio installation and mock it instead.
+    # This works around the inability to install libsoundfile1 in read-the-docs env,
+    # which caused the documentation builds to silently crash.
+    install_requires = [req for req in install_requires if not req.startswith('torchaudio')]
 
 setup(
     name='lhotse',
