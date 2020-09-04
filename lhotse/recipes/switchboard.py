@@ -27,15 +27,20 @@ SWBD_TEXT_URL = 'http://www.isip.piconepress.com/projects/switchboard/releases/s
 def prepare_switchboard(
         audio_dir: Pathlike,
         transcripts_dir: Optional[Pathlike] = None,
+        sentiment_dir: Optional[Pathlike] = None,
         output_dir: Optional[Pathlike] = None,
         omit_silence: bool = True
 ) -> Dict[str, Union[RecordingSet, SupervisionSet]]:
     """
     Prepare manifests for the Switchboard corpus.
     We create two manifests: one with recordings, and the other one with text supervisions.
+    When ``sentiment_dir`` is provided, we create another supervision manifest with sentiment annotations.
 
     :param audio_dir: Path to ``LDC97S62`` package.
     :param transcripts_dir: Path to the transcripts directory (typically named "swb_ms98_transcriptions").
+        If not provided, the transcripts will be downloaded.
+    :param sentiment_dir: Optional path to ``LDC2020T14`` package which contains sentiment annotations
+        for SWBD segments.
     :param output_dir: Directory where the manifests should be written. Can be omitted to avoid writing.
     :param omit_silence: Whether supervision segments with ``[silence]`` token should be removed or kept.
     :return: A dict with manifests. The keys are: ``{'recordings', 'supervisions'}``.
@@ -64,6 +69,10 @@ def prepare_switchboard(
         for group, recording in zip(groups, recordings)
         for channel in [0, 1]
     ))
+
+    if sentiment_dir is not None:
+        parse_and_add_sentiment_labels(sentiment_dir, supervisions)
+
     if output_dir is not None:
         output_dir = Path(output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
@@ -110,3 +119,34 @@ def download_and_untar(
     with tarfile.open(tar_path) as tar:
         tar.extractall(path=target_dir)
     return transcript_dir
+
+
+def parse_and_add_sentiment_labels(sentiment_dir: Pathlike, supervisions: SupervisionSet):
+    """Read 'LDC2020T14' sentiment annotations and add then to the supervision segments."""
+    import pandas as pd
+    # Read the TSV as a dataframe
+    df = pd.read_csv(
+        Path(sentiment_dir) / 'data' / 'sentiment_labels.tsv',
+        delimiter='\t',
+        names=['id', 'start', 'end', 'sentiment']
+    )
+    # We are going to match the segments in LDC2020T14 with the ones we already
+    # parsed from ISIP transcripts. We simply look which of the existing segments
+    # fall into a sentiment-annotated time span. When doing it this way, we use
+    # 51773 out of 52293 available sentiment annotations, which should be okay.
+    for _, row in df.iterrows():
+        call_id = row['id'].split('_')[0]
+        matches = list(supervisions.find(
+            recording_id=call_id,
+            start_after=row['start'] - 1e-2,
+            end_before=row['end'] + 1e-2,
+        ))
+        if not matches:
+            continue
+        labels = row['sentiment'].split('#')
+        # SupervisionSegments returned from .find() are references to the ones in the
+        # SupervisionSet, so we can just modify them. We use the "custom" field
+        # to add the sentiment label. Since there were multiple annotators,
+        # we add all available labels and leave it up to the user to disambiguate them.
+        for segment in matches:
+            segment.custom = {f'sentiment{i}': label for i, label in enumerate(labels)}
