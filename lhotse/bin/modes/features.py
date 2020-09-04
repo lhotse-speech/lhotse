@@ -13,7 +13,7 @@ from lhotse.utils import Pathlike
 
 @cli.group()
 def feat():
-    """Group of commands used to create CutSets."""
+    """Feature extraction related commands."""
     pass
 
 
