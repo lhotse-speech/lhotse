@@ -1,13 +1,7 @@
-import os
 from dataclasses import dataclass
 
 import numpy as np
-
-# Workaround for SoundFile (torchaudio dep) raising exception when a native library, libsndfile1, is not installed.
-# Read-the-docs does not allow to modify the Docker containers used to build documentation...
-
-if not os.environ.get('READTHEDOCS', False):
-    import torchaudio
+import torchaudio
 
 from lhotse.features.base import register_extractor, TorchaudioFeatureExtractor
 from lhotse.utils import Seconds
