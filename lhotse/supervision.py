@@ -1,5 +1,5 @@
 from dataclasses import asdict, dataclass
-from typing import Callable, Dict, Iterable, Optional
+from typing import Callable, Dict, Iterable, Optional, Any
 
 from lhotse.utils import Pathlike, Seconds, asdict_nonull, load_yaml, save_to_yaml
 
@@ -15,6 +15,7 @@ class SupervisionSegment:
     language: Optional[str] = None
     speaker: Optional[str] = None
     gender: Optional[str] = None
+    custom: Optional[Dict[str, Any]] = None
 
     @property
     def end(self) -> Seconds:

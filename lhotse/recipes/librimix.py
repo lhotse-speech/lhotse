@@ -1,11 +1,9 @@
 import shutil
 import urllib.request
-import zipfile
+from zipfile import ZipFile
 from collections import defaultdict
 from pathlib import Path
 from typing import Dict, Optional, Union
-
-import pandas as pd
 
 from lhotse.audio import AudioSource, Recording, RecordingSet
 from lhotse.supervision import SupervisionSegment, SupervisionSet
@@ -26,7 +24,7 @@ def download_and_unzip(
     completed_detector = unzipped_dir / '.completed'
     if not completed_detector.is_file():
         shutil.rmtree(unzipped_dir, ignore_errors=True)
-        with zipfile.ZipFile(zip_path) as zf:
+        with ZipFile(zip_path) as zf:
             zf.extractall(path=target_dir)
             completed_detector.touch()
 
@@ -38,6 +36,7 @@ def prepare_librimix(
         sampling_rate: int = 16000,
         min_segment_seconds: Seconds = 3.0
 ) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet]]]:
+    import pandas as pd
     df = pd.read_csv(librimix_csv)
 
     output_dir = Path(output_dir)

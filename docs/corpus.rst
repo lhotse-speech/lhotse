@@ -145,5 +145,8 @@ a CLI tool that create the manifests given a corpus directory.
 
 Currently supported corpora:
 
-- Mini LibriMix :func:`lhotse.recipes.librimix.prepare_librimix`
-- Mini LibriSpeech :func:`lhotse.recipes.mini_librispeech.prepare_mini_librispeech`
+- AMI :func:`lhotse.recipes.prepare_ami`
+- English Broadcast News 1997 :func:`lhotse.recipes.prepare_broadcast_news`
+- Mini LibriMix :func:`lhotse.recipes.prepare_librimix`
+- Mini LibriSpeech :func:`lhotse.recipes.prepare_mini_librispeech`
+- Switchboard :func:`lhotse.recipes.prepare_switchboard`

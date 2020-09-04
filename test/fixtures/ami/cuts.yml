@@ -1,0 +1,43 @@
+- channel: 0
+  duration: 6.0
+  features:
+    channel_id: 0
+    duration: 6.0
+    num_features: 23
+    num_frames: 600
+    recording_id: ES2011a.Headset-0-40s-46s.wav
+    sampling_rate: 16000
+    start: 0.0
+    storage_path: test/fixtures/ami/350b3ee0-a6fd-47ab-b921-fd298b1d53c0.llc
+    storage_type: lilcom
+    type: fbank
+  id: a7889ee6-1703-4d0d-98b3-91f1d45a790d
+  recording:
+    duration_seconds: 6
+    id: ES2011a.Headset-0-40s-46s.wav
+    num_samples: 96000
+    sampling_rate: 16000
+    sources:
+    - channel_ids:
+      - 0
+      source: test/fixtures/ami/ES2011a.Headset-0-40s-46s.wav
+      type: file
+  start: 0.0
+  supervisions:
+  - channel_id: 0
+    duration: 1.36
+    id: ES2011a.Headset-0-40s-46s-0-3
+    language: English
+    recording_id: ES2011a.Headset-0-40s-46s.wav
+    speaker: ES2011a.Headset
+    start: 1.46
+    text: I'M ABIGAIL CLAFLIN
+  - channel_id: 0
+    duration: 1.00
+    id: ES2011a.Headset-0-40s-46s-0-4
+    language: English
+    recording_id: ES2011a.Headset-0-40s-46s.wav
+    speaker: ES2011a.Headset
+    start: 3.36
+    text: YOU CAN CALL ME ABBIE
+  type: Cut

@@ -10,7 +10,6 @@
     - type: command
       channel_ids: [1]
       source: 'cat test/fixtures/mono_c1.wav | cat'  # test whether pipes work
-
 - id: 'recording-2'
   sampling_rate: 8000
   num_samples: 8000
@@ -19,3 +18,11 @@
     - type: file
       channel_ids: [0, 1]
       source: 'test/fixtures/stereo.wav'
+- id: 'recording-3'
+  sampling_rate: 8000
+  num_samples: 8000
+  duration_seconds: 1.0
+  sources:
+    - type: file
+      channel_ids: [0, 1]
+      source: 'test/fixtures/stereo.sph'

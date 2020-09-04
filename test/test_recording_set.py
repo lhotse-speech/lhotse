@@ -3,6 +3,7 @@ from functools import lru_cache
 from tempfile import NamedTemporaryFile
 
 import numpy as np
+import pytest
 from pytest import mark, raises
 
 from lhotse.audio import AudioSource, Recording, RecordingSet
@@ -10,8 +11,8 @@ from lhotse.test_utils import DummyManifest
 from lhotse.utils import INT16MAX
 
 
-@lru_cache(1)
-def get_audio_set() -> RecordingSet:
+@pytest.fixture
+def recording_set() -> RecordingSet:
     return RecordingSet.from_yaml('test/fixtures/audio.yml')
 
 
@@ -45,16 +46,15 @@ def expected_stereo_single_source() -> np.ndarray:
     ]) / INT16MAX
 
 
-def test_get_metadata():
-    audio_set = get_audio_set()
-    assert 2 == audio_set.num_channels('recording-1')
-    assert 8000 == audio_set.sampling_rate('recording-1')
-    assert 4000 == audio_set.num_samples('recording-1')
-    assert 0.5 == audio_set.duration_seconds('recording-1')
+def test_get_metadata(recording_set):
+    assert 2 == recording_set.num_channels('recording-1')
+    assert 8000 == recording_set.sampling_rate('recording-1')
+    assert 4000 == recording_set.num_samples('recording-1')
+    assert 0.5 == recording_set.duration_seconds('recording-1')
 
 
 def test_serialization():
-    audio_set = RecordingSet.from_recordings([
+    recording_set = RecordingSet.from_recordings([
         Recording(
             id='x',
             sources=[
@@ -75,25 +75,27 @@ def test_serialization():
         )
     ])
     with NamedTemporaryFile() as f:
-        audio_set.to_yaml(f.name)
+        recording_set.to_yaml(f.name)
         deserialized = RecordingSet.from_yaml(f.name)
-    assert deserialized == audio_set
+    assert deserialized == recording_set
 
 
-def test_iteration():
-    audio_set = get_audio_set()
-    assert all(isinstance(item, Recording) for item in audio_set)
+def test_iteration(recording_set):
+    assert all(isinstance(item, Recording) for item in recording_set)
 
 
-def test_get_audio_from_multiple_files():
-    audio_set = get_audio_set()
-    samples = audio_set.load_audio('recording-1')
+def test_get_audio_from_multiple_files(recording_set):
+    samples = recording_set.load_audio('recording-1')
     np.testing.assert_almost_equal(samples, expected_stereo_two_sources())
 
 
-def test_get_stereo_audio_from_single_file():
-    audio_set = get_audio_set()
-    samples = audio_set.load_audio('recording-2')
+def test_get_stereo_audio_from_single_file(recording_set):
+    samples = recording_set.load_audio('recording-2')
+    np.testing.assert_almost_equal(samples, expected_stereo_single_source())
+
+
+def test_load_audio_from_sphere_file(recording_set):
+    samples = recording_set.load_audio('recording-2')
     np.testing.assert_almost_equal(samples, expected_stereo_single_source())
 
 
@@ -107,10 +109,9 @@ def test_get_stereo_audio_from_single_file():
         (1000, 'irrelevant', raises(ValueError))
     ]
 )
-def test_get_audio_multichannel(channels, expected_audio, exception_expectation):
-    audio_set = get_audio_set()
+def test_get_audio_multichannel(recording_set, channels, expected_audio, exception_expectation):
     with exception_expectation:
-        loaded_audio = audio_set.load_audio('recording-1', channels=channels)
+        loaded_audio = recording_set.load_audio('recording-1', channels=channels)
         np.testing.assert_almost_equal(loaded_audio, expected_audio)
 
 
@@ -124,10 +125,16 @@ def test_get_audio_multichannel(channels, expected_audio, exception_expectation)
         (0.3, 10.0, 'irrelevant', 'irrelevant', raises(ValueError))  # requested more audio than available
     ]
 )
-def test_get_audio_chunks(begin_at, duration, expected_start_sample, expected_end_sample, exception_expectation):
-    audio_set = get_audio_set()
+def test_get_audio_chunks(
+        recording_set,
+        begin_at,
+        duration,
+        expected_start_sample,
+        expected_end_sample,
+        exception_expectation
+):
     with exception_expectation:
-        actual_audio = audio_set.load_audio(
+        actual_audio = recording_set.load_audio(
             recording_id='recording-1',
             channels=0,
             offset_seconds=begin_at,
@@ -137,9 +144,36 @@ def test_get_audio_chunks(begin_at, duration, expected_start_sample, expected_en
         np.testing.assert_almost_equal(actual_audio, expected_audio)
 
 
-def test_add_audio_sets():
+def test_add_recording_sets():
     expected = DummyManifest(RecordingSet, begin_id=0, end_id=10)
-    audio_set_1 = DummyManifest(RecordingSet, begin_id=0, end_id=5)
-    audio_set_2 = DummyManifest(RecordingSet, begin_id=5, end_id=10)
-    combined = audio_set_1 + audio_set_2
+    recording_set_1 = DummyManifest(RecordingSet, begin_id=0, end_id=5)
+    recording_set_2 = DummyManifest(RecordingSet, begin_id=5, end_id=10)
+    combined = recording_set_1 + recording_set_2
     assert combined == expected
+
+
+@pytest.mark.parametrize(
+    ['relative_path_depth', 'expected_source_path'],
+    [
+        (None, 'test/fixtures/stereo.sph'),
+        (1, 'stereo.sph'),
+        (2, 'fixtures/stereo.sph'),
+        (3, 'test/fixtures/stereo.sph'),
+        (4, 'test/fixtures/stereo.sph')
+    ]
+)
+def test_recording_from_sphere(relative_path_depth, expected_source_path):
+    rec = Recording.from_sphere('test/fixtures/stereo.sph', relative_path_depth=relative_path_depth)
+    assert rec == Recording(
+        id='stereo',
+        sampling_rate=8000,
+        num_samples=8000,
+        duration_seconds=1.0,
+        sources=[
+            AudioSource(
+                type='file',
+                channel_ids=[0, 1],
+                source=expected_source_path
+            )
+        ]
+    )

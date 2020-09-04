@@ -143,7 +143,7 @@ def test_feature_set_builder(augmentation):
         )
         feature_set = builder.process_and_store_recordings(recordings=audio_set)
 
-    assert len(feature_set) == 4
+    assert len(feature_set) == 6
 
     feature_infos = list(feature_set)
 

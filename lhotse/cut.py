@@ -158,18 +158,19 @@ class Cut:
         :param keep_excessive_supervisions: bool. Since trimming may happen inside a SupervisionSegment,
             the caller has an option to either keep or discard such supervisions.
         :param preserve_id: bool. Should the truncated cut keep the same ID or get a new, random one.
-        :return: a new Cut instance.
+        :return: a new Cut instance. If the current Cut is shorter than the duration, return None.
         """
         new_start = self.start + offset
         until = offset + (duration if duration is not None else self.duration)
         new_duration = self.duration - new_start if duration is None else until - offset
-        if duration is not None and isclose(new_duration, duration):
-            # Because duration is a float, the subtraction is imprecise and can result in durations
-            # such as 0.3999999996 instead of 0.4, which could lead to RecordingSet loading 1 audio sample too little,
-            # causing trouble for users expecting matching audio tensor shapes for cuts truncated to a single duration.
-            new_duration = duration
         assert new_duration > 0.0
-        assert new_start + new_duration <= self.start + self.duration + 1e-5
+        duration_past_end = (new_start + new_duration) - (self.start + self.duration)
+        if duration_past_end > 0:
+            # When the end of the Cut has been exceeded, trim the new duration to not exceed the old Cut's end.
+            new_duration -= duration_past_end
+        # Round the duration to 1ms to avoid the possible loss of a single audio sample due to floating point
+        # additions and subtractions.
+        new_duration = round(new_duration, ndigits=3)
         new_time_span = TimeSpan(start=0, end=new_duration)
         criterion = overlaps if keep_excessive_supervisions else overspans
         new_supervisions = (segment.with_offset(-offset) for segment in self.supervisions)

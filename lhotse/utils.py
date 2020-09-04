@@ -1,6 +1,7 @@
 import gzip
 import random
 import uuid
+from contextlib import contextmanager
 from dataclasses import asdict, dataclass
 from math import ceil, isclose
 from pathlib import Path
@@ -109,7 +110,8 @@ class TimeSpan:
 # TODO: Ugh, Protocols are only in Python 3.8+...
 def overlaps(lhs: Any, rhs: Any) -> bool:
     """Indicates whether two time-spans/segments are overlapping or not."""
-    return lhs.start < rhs.end and rhs.start < lhs.end
+    return lhs.start < rhs.end and rhs.start < lhs.end \
+        and not isclose(lhs.start, rhs.end) and not isclose(rhs.start, lhs.end)
 
 
 def overspans(spanning: Any, spanned: Any) -> bool:
@@ -122,3 +124,22 @@ def time_diff_to_num_frames(time_diff: Seconds, frame_length: Seconds, frame_shi
     if isclose(time_diff, 0.0):
         return 0
     return int(ceil((time_diff - frame_length) / frame_shift))
+
+
+@contextmanager
+def recursion_limit(stack_size: int):
+    """
+    Code executed in this context will be able to recurse up to the specified recursion limit
+    (or will hit a StackOverflow error if that number is too high).
+
+    Usage:
+        >>> with recursion_limit(1000):
+        >>>     pass
+    """
+    import sys
+    old_size = sys.getrecursionlimit()
+    sys.setrecursionlimit(stack_size)
+    try:
+        yield
+    finally:
+        sys.setrecursionlimit(old_size)

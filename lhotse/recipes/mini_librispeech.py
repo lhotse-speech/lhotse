@@ -47,6 +47,13 @@ def prepare_mini_librispeech(
         corpus_dir: Pathlike,
         output_dir: Pathlike
 ) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet]]]:
+    """
+    Returns the manifests which consist of the Recordings and Supervisions
+
+    :param corpus_dir: Pathlike, the path of the data dir.
+    :param output_dir: Pathlike, the path where to write the yamls.
+    :return: a Dict whose key is the dataset part, and the value is Dicts with the keys 'audio' and 'supervisions'.
+    """
     corpus_dir = Path(corpus_dir)
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -63,12 +70,12 @@ def prepare_mini_librispeech(
                     idx, text = line.split(maxsplit=1)
                     audio_path = part_path / Path(idx.replace('-', '/')).parent / f'{idx}.flac'
                     if audio_path.is_file():
-                        info = torchaudio.info(str(audio_path))
                         # info[0]: info of the raw audio (e.g. channel number, sample rate, duration ... )
                         # info[1]: info about the encoding (e.g. FLAC/ALAW/ULAW ...)
+                        info = torchaudio.info(str(audio_path))
                         metadata[idx] = LibriSpeechMetaData(audio_path=audio_path, audio_info=info[0], text=text)
                     else:
-                        logging.warning('No such file: {}'.format(audio_path))
+                        logging.warning(f'No such file: {audio_path}')
 
         # Audio
         audio = RecordingSet.from_recordings(
@@ -87,7 +94,7 @@ def prepare_mini_librispeech(
             )
             for idx in metadata
         )
-        audio.to_yaml(output_dir / 'audio_{}.yml'.format(part))
+        audio.to_yaml(output_dir / f'audio_{part}.yml')
 
         # Supervision
         supervision = SupervisionSet.from_segments(
@@ -103,7 +110,7 @@ def prepare_mini_librispeech(
             )
             for idx in audio.recordings
         )
-        supervision.to_yaml(output_dir / 'supervisions_{}.yml'.format(part))
+        supervision.to_yaml(output_dir / f'supervisions_{part}.yml')
 
         manifests[part] = {
             'audio': audio,

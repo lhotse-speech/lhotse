@@ -26,7 +26,7 @@ def librimix(
         min_segment_seconds: float,
         with_precomputed_mixtures: bool
 ):
-    """Recipe to prepare the manifests for LibrMix source separation task."""
+    """LibrMix source separation data preparation."""
     prepare_librimix(
         librimix_csv=librimix_csv,
         output_dir=output_dir,
@@ -41,5 +41,5 @@ def librimix(
 def librimix(
         target_dir: Pathlike
 ):
-    """Obtain LibrMix dataset."""
+    """Mini LibriMix download."""
     download_and_unzip(target_dir)

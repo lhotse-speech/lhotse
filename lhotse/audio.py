@@ -1,4 +1,3 @@
-import os
 import warnings
 from dataclasses import asdict, dataclass
 from io import BytesIO
@@ -7,12 +6,6 @@ from pathlib import Path
 from subprocess import PIPE, run
 from typing import Callable, Dict, Iterable, List, Optional, Union
 
-# Workaround for SoundFile (librosa dep) raising exception when a native library, libsndfile1, is not installed.
-# Read-the-docs does not allow to modify the Docker containers used to build documentation...
-if not os.environ.get('READTHEDOCS', False):
-    with warnings.catch_warnings():
-        warnings.simplefilter('ignore')
-        import librosa
 import numpy as np
 
 from lhotse.utils import Decibels, Pathlike, Seconds, SetContainingAnything, load_yaml, save_to_yaml
@@ -48,6 +41,7 @@ class AudioSource:
         Returns numpy array with shapes: (n_samples) for single-channel,
         (n_channels, n_samples) for multi-channel.
         """
+        import librosa
         assert self.type in ('file', 'command')
 
         if self.type == 'command':
@@ -75,7 +69,7 @@ class AudioSource:
         if duration_seconds is not None:
             num_samples = samples.shape[0] if len(samples.shape) == 1 else samples.shape[1]
             available_duration = num_samples / sampling_rate
-            if available_duration < duration_seconds - 1e-5:
+            if available_duration < duration_seconds - 1e-3:  # set the allowance as 1ms to avoid float error
                 raise ValueError(
                     f'Requested more audio ({duration_seconds}s) than available ({available_duration}s)'
                 )
@@ -97,6 +91,37 @@ class Recording:
     sampling_rate: int
     num_samples: int
     duration_seconds: Seconds
+
+    @staticmethod
+    def from_sphere(sph_path: Pathlike, relative_path_depth: Optional[int] = None) -> 'Recording':
+        """
+        Read a SPHERE file's header and create the corresponding ``Recording``.
+
+        :param sph_path: Path to the sphere (.sph) file.
+        :param relative_path_depth: optional int specifying how many last parts of the file path
+            should be retained in the ``AudioSource``. By default writes the path as is.
+        :return: a new ``Recording`` instance pointing to the sphere file.
+        """
+        from sphfile import SPHFile
+        sph_path = Path(sph_path)
+        sphf = SPHFile(sph_path)
+        return Recording(
+            id=sph_path.stem,
+            sampling_rate=sphf.format['sample_rate'],
+            num_samples=sphf.format['sample_count'],
+            duration_seconds=sphf.format['sample_count'] / sphf.format['sample_rate'],
+            sources=[
+                AudioSource(
+                    type='file',
+                    channel_ids=list(range(sphf.format['channel_count'])),
+                    source=(
+                        '/'.join(sph_path.parts[-relative_path_depth:])
+                        if relative_path_depth is not None and relative_path_depth > 0
+                        else str(sph_path)
+                    )
+                )
+            ]
+        )
 
     @property
     def num_channels(self):
