@@ -97,12 +97,12 @@ def libri_cut():
             sources=[
                 AudioSource(
                     type='file',
-                    channel_ids=[0],
+                    channels=[0],
                     source='test/fixtures/libri/libri-1088-134315-0000.wav',
                 )],
             sampling_rate=16000,
             num_samples=256640,
-            duration_seconds=1604,
+            duration=1604,
         ),
         id='849e13d8-61a2-4d09-a542-dac1aee1b544',
         start=0.0,

@@ -81,8 +81,8 @@ def test_load_none_features(libri_cut):
 def dummy_recording_set():
     return RecordingSet.from_recordings([
         Recording(
-            id='rec1', sampling_rate=16000, num_samples=160000, duration_seconds=10, sources=[
-                AudioSource(type='file', channel_ids=[0], source='dummy.wav')
+            id='rec1', sampling_rate=16000, num_samples=160000, duration=10, sources=[
+                AudioSource(type='file', channels=[0], source='dummy.wav')
             ]
         )
     ])
@@ -92,7 +92,7 @@ def dummy_recording_set():
 def dummy_supervision_set():
     return SupervisionSet.from_segments([
         SupervisionSegment(
-            id='sup1', recording_id='rec1', start=3, duration=4, channel_id=0, text='dummy text'
+            id='sup1', recording_id='rec1', start=3, duration=4, channel=0, text='dummy text'
         )
     ])
 
@@ -197,7 +197,7 @@ class TestCutOnSupervisions:
         assert cut1.supervisions[0].start == 0.0
         assert cut1.supervisions[0].duration == 4.0
         assert cut1.supervisions[0].end == 4.0
-        assert cut1.supervisions[0].channel_id == 0
+        assert cut1.supervisions[0].channel == 0
         assert cut1.supervisions[0].text == 'dummy text'
 
         assert cut1.has_recording
@@ -230,7 +230,7 @@ class TestCutOnSupervisions:
         assert cut1.supervisions[0].start == 0.0
         assert cut1.supervisions[0].duration == 4.0
         assert cut1.supervisions[0].end == 4.0
-        assert cut1.supervisions[0].channel_id == 0
+        assert cut1.supervisions[0].channel == 0
         assert cut1.supervisions[0].text == 'dummy text'
 
         assert not cut1.has_recording
@@ -269,7 +269,7 @@ class TestCutOnSupervisions:
         assert cut1.supervisions[0].start == 0.0
         assert cut1.supervisions[0].duration == 4.0
         assert cut1.supervisions[0].end == 4.0
-        assert cut1.supervisions[0].channel_id == 0
+        assert cut1.supervisions[0].channel == 0
         assert cut1.supervisions[0].text == 'dummy text'
 
         assert cut1.has_recording
@@ -300,7 +300,7 @@ class TestNoCutOnSupervisions:
         assert cut1.supervisions[0].recording_id == 'rec1'
         assert cut1.supervisions[0].start == 3.0
         assert cut1.supervisions[0].end == 7.0
-        assert cut1.supervisions[0].channel_id == 0
+        assert cut1.supervisions[0].channel == 0
         assert cut1.supervisions[0].text == 'dummy text'
 
         assert cut1.has_recording
@@ -329,7 +329,7 @@ class TestNoCutOnSupervisions:
         assert cut1.supervisions[0].recording_id == 'rec1'
         assert cut1.supervisions[0].start == 3.0
         assert cut1.supervisions[0].end == 7.0
-        assert cut1.supervisions[0].channel_id == 0
+        assert cut1.supervisions[0].channel == 0
         assert cut1.supervisions[0].text == 'dummy text'
 
         assert not cut1.has_recording
@@ -367,7 +367,7 @@ class TestNoCutOnSupervisions:
         assert cut1.supervisions[0].recording_id == 'rec1'
         assert cut1.supervisions[0].start == 3.0
         assert cut1.supervisions[0].end == 7.0
-        assert cut1.supervisions[0].channel_id == 0
+        assert cut1.supervisions[0].channel == 0
         assert cut1.supervisions[0].text == 'dummy text'
 
         assert cut1.has_recording

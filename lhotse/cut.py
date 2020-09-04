@@ -709,7 +709,7 @@ class CutSet:
             Cut(
                 id=str(uuid4()),
                 start=0,
-                duration=recording.duration_seconds,
+                duration=recording.duration,
                 channel=channel,
                 recording=recording,
                 supervisions=list(supervision_set.find(

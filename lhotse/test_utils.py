@@ -24,7 +24,7 @@ def dummy_recording(unique_id: int) -> Recording:
         sources=[],
         sampling_rate=16000,
         num_samples=16000,
-        duration_seconds=1.0
+        duration=1.0
     )
 
 

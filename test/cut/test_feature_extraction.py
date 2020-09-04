@@ -12,14 +12,14 @@ def audio_source():
     # Return a mocked "AudioSource" object that loads a 1s long 1000Hz sine wave
     source = Mock()
     source.load_audio = Mock(return_value=np.sin(2 * np.pi * 1000 * np.arange(0, 8000, dtype=np.float32)))
-    source.channel_ids = [0]
+    source.channels = [0]
     return source
 
 
 @pytest.fixture
 def recording(audio_source):
     return Recording(
-        id='rec', sources=[audio_source], sampling_rate=8000, num_samples=8000, duration_seconds=1.0
+        id='rec', sources=[audio_source], sampling_rate=8000, num_samples=8000, duration=1.0
     )
 
 

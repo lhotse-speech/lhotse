@@ -102,7 +102,7 @@ def prepare_mini_librispeech(
                 id=idx,
                 recording_id=idx,
                 start=0.0,
-                duration=audio.recordings[idx].duration_seconds,
+                duration=audio.recordings[idx].duration,
                 channel_id=0,
                 language='English',
                 speaker=re.sub(r'-.*', r'', idx),

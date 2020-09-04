@@ -91,7 +91,7 @@ def make_supervisions(sgml_path: Pathlike, recording: Recording) -> Dict[str, Li
             recording_id=recording.id,
             start=sec_start,
             duration=round(float(section.attrs['endtime']) - sec_start, ndigits=3),
-            channel_id=0,
+            channel=0,
             language=episode.attrs['language'],
             custom={
                 'section': section.attrs['type'],
@@ -130,7 +130,7 @@ def make_supervisions(sgml_path: Pathlike, recording: Recording) -> Dict[str, Li
                         recording_id=recording.id,
                         start=start,
                         duration=round(end - start, ndigits=3),
-                        channel_id=0,
+                        channel=0,
                         language=episode.attrs['language'],
                         text=text.strip(),
                         speaker=turn.attrs['speaker'],

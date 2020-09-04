@@ -15,7 +15,7 @@ def test_supervision_segment_with_full_metadata(external_supervision_set):
     segment = external_supervision_set['segment-1']
     assert 'segment-1' == segment.id
     assert 'recording-1' == segment.recording_id
-    assert 0 == segment.channel_id
+    assert 0 == segment.channel
     assert 0.1 == segment.start
     assert 0.3 == segment.duration
     assert 0.4 == segment.end
@@ -28,7 +28,7 @@ def test_supervision_segment_with_no_metadata(external_supervision_set):
     segment = external_supervision_set['segment-2']
     assert 'segment-2' == segment.id
     assert 'recording-1' == segment.recording_id
-    assert 0 == segment.channel_id  # implicitly filled default value
+    assert 0 == segment.channel  # implicitly filled default value
     assert 0.5 == segment.start
     assert 0.4 == segment.duration
     assert 0.9 == segment.end
@@ -47,7 +47,7 @@ def test_create_supervision_segment_with_all_metadata():
         recording_id='X',
         start=0.0,
         duration=0.1,
-        channel_id=0,
+        channel=0,
         text='wysokie szczyty',
         language='polish',
         speaker='Janusz',
@@ -58,8 +58,8 @@ def test_create_supervision_segment_with_all_metadata():
 def test_supervision_set_iteration():
     supervision_set = SupervisionSet(
         segments={
-            'X': SupervisionSegment(id='X', recording_id='X', channel_id=0, start=2.0, duration=2.5),
-            'Y': SupervisionSegment(id='Y', recording_id='X', channel_id=0, start=5.0, duration=5.0),
+            'X': SupervisionSegment(id='X', recording_id='X', channel=0, start=2.0, duration=2.5),
+            'Y': SupervisionSegment(id='Y', recording_id='X', channel=0, start=5.0, duration=5.0),
         }
     )
     assert 2 == len(supervision_set)
@@ -71,7 +71,7 @@ def test_supervision_set_serialization():
         SupervisionSegment(
             id='segment-1',
             recording_id='recording-1',
-            channel_id=0,
+            channel=0,
             start=0.1,
             duration=0.3,
             text='transcript of the first segment',
@@ -97,10 +97,10 @@ def test_add_supervision_sets():
 @pytest.fixture
 def search_supervision_set():
     return SupervisionSet.from_segments([
-        SupervisionSegment(id='s1', recording_id='r1', start=0, duration=5.0, channel_id=0),
-        SupervisionSegment(id='s2', recording_id='r1', start=4.5, duration=2.0, channel_id=1),
-        SupervisionSegment(id='s3', recording_id='r1', start=8.0, duration=3.0, channel_id=0),
-        SupervisionSegment(id='s4', recording_id='r2', start=1, duration=5.0, channel_id=0),
+        SupervisionSegment(id='s1', recording_id='r1', start=0, duration=5.0, channel=0),
+        SupervisionSegment(id='s2', recording_id='r1', start=4.5, duration=2.0, channel=1),
+        SupervisionSegment(id='s3', recording_id='r1', start=8.0, duration=3.0, channel=0),
+        SupervisionSegment(id='s4', recording_id='r2', start=1, duration=5.0, channel=0),
     ])
 
 

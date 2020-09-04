@@ -5,18 +5,18 @@
         id: ab34ea6b-9d68-4113-8386-b4c585e596f5
         duration: 11.66
         recording:
-          duration_seconds: 11.66
+          duration: 11.66
           id: 2412-153948-0000
           num_samples: 186560
           sampling_rate: 16000
           sources:
-            - channel_ids:
+            - channels:
                 - 0
               source: test/fixtures/mix_cut_test/audio/storage/2412-153948-0000.flac
               type: file
         start: 0
         supervisions:
-          - channel_id: 0
+          - channel: 0
             duration: 11.66
             id: 2412-153948-0000
             language: English
@@ -31,18 +31,18 @@
         id: 07d009a9-e7a1-4611-aa21-32ff9b43dff0
         duration: 10.51
         recording:
-          duration_seconds: 10.51
+          duration: 10.51
           id: 2412-153948-0001
           num_samples: 168160
           sampling_rate: 16000
           sources:
-            - channel_ids:
+            - channels:
                 - 0
               source: test/fixtures/mix_cut_test/audio/storage/2412-153948-0001.flac
               type: file
         start: 0
         supervisions:
-          - channel_id: 0
+          - channel: 0
             duration: 4.65
             id: 174-168635-0001
             language: English

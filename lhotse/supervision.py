@@ -11,7 +11,7 @@ class SupervisionSegment:
     recording_id: str
     start: Seconds
     duration: Seconds
-    channel_id: int = 0
+    channel: int = 0
     text: Optional[str] = None
     language: Optional[str] = None
     speaker: Optional[str] = None
@@ -102,7 +102,7 @@ class SupervisionSet:
             # relative to the Cut's start, and not truncating anything.
             segment.with_offset(-start_after) if adjust_offset else segment
             for segment in segment_by_recording_id[recording_id]
-            if (channel is None or segment.channel_id == channel)
+            if (channel is None or segment.channel == channel)
                and segment.start >= start_after
                and (end_before is None or segment.end <= end_before)
         )
