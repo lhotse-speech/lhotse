@@ -1,5 +1,6 @@
 import random
 import warnings
+from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from functools import reduce
 from math import ceil, floor, log
@@ -35,7 +36,29 @@ from lhotse.utils import (
 AnyCut = Union['Cut', 'MixedCut', 'PaddingCut']
 
 
-class CutCommonsMixin:
+# noinspection PyTypeChecker,PyUnresolvedReferences
+class CutUtilsMixin:
+    """
+    A mixin class for cuts which contains all the methods that share common implementations.
+
+    Note: Ideally, this would've been an abstract base class specifying the common interface,
+    but ABC's do not mix well with dataclasses in Python. It is possible we'll ditch the dataclass
+    for cuts in the future and make this an ABC instead.
+    """
+    def mix(self, other: AnyCut, offset_other_by: Seconds = 0.0, snr: Optional[Decibels] = None) -> 'MixedCut':
+        """Refer to mix() documentation."""
+        return mix(self, other, offset=offset_other_by, snr=snr)
+
+    def append(self, other: AnyCut, snr: Optional[Decibels] = None) -> 'MixedCut':
+        """
+        Append the ``other`` Cut after the current Cut. Conceptually the same as ``mix`` but with an offset
+        matching the current cuts length. Optionally scale down (positive SNR) or scale up (negative SNR)
+        the ``other`` cut.
+        Returns a MixedCut, which only keeps the information about the mix; actual mixing is performed
+        during the call to ``load_features``.
+        """
+        return mix(self, other, offset=self.duration, snr=snr)
+
     def compute_features(
             self,
             extractor: FeatureExtractor,
@@ -88,7 +111,7 @@ class CutCommonsMixin:
 
 
 @dataclass
-class Cut(CutCommonsMixin):
+class Cut(CutUtilsMixin):
     """
     A Cut is a single "segment" that we'll train on. It contains the features corresponding to
     a piece of a recording, with zero or more SupervisionSegments.
@@ -266,20 +289,6 @@ class Cut(CutCommonsMixin):
             recording=self.recording
         )
 
-    def mix(self, other: AnyCut, offset_other_by: Seconds = 0.0, snr: Optional[Decibels] = None) -> 'MixedCut':
-        """Refer to mix() documentation."""
-        return mix(self, other, offset=offset_other_by, snr=snr)
-
-    def append(self, other: AnyCut, snr: Optional[Decibels] = None) -> 'MixedCut':
-        """
-        Append the ``other`` Cut after the current Cut. Conceptually the same as ``mix`` but with an offset
-        matching the current cuts length. Optionally scale down (positive SNR) or scale up (negative SNR)
-        the ``other`` cut.
-        Returns a MixedCut, which only keeps the information about the mix; actual mixing is performed
-        during the call to ``load_features``.
-        """
-        return self.mix(other=other, offset_other_by=self.duration, snr=snr)
-
     def pad(self, desired_duration: Seconds) -> AnyCut:
         f"""
         Return a new MixedCut, padded to `desired_seconds` duration with low-energy values in each bin.
@@ -315,7 +324,7 @@ class Cut(CutCommonsMixin):
 
 
 @dataclass
-class PaddingCut(CutCommonsMixin):
+class PaddingCut(CutUtilsMixin):
     f"""
     This represents a cut filled with zeroes in the time domain, or low energy/log-energy values in the
     frequency domain. It's used to make training samples evenly sized (same duration/number of frames).
@@ -385,18 +394,6 @@ class PaddingCut(CutCommonsMixin):
             sampling_rate=self.sampling_rate
         )
 
-    def mix(
-            self,
-            other: AnyCut,
-            offset_other_by: Seconds = 0.0,
-            snr: Optional[Decibels] = None
-    ) -> 'MixedCut':
-        """Refer to mix() documentation."""
-        return mix(self, other, offset=offset_other_by, snr=snr)
-
-    def append(self, other: AnyCut, snr: Optional[Decibels] = None) -> 'MixedCut':
-        return self.mix(other=other, snr=snr)
-
     def pad(self, desired_duration: Seconds) -> 'PaddingCut':
         """
         Create a new PaddingCut with `desired_duration` when its longer than this Cuts duration.
@@ -442,7 +439,7 @@ class MixTrack:
 
 
 @dataclass
-class MixedCut(CutCommonsMixin):
+class MixedCut(CutUtilsMixin):
     """
     Represents a Cut that's created from other Cuts via mix or append operations.
     The actual mixing operations are performed upon loading the features into memory.
@@ -499,25 +496,6 @@ class MixedCut(CutCommonsMixin):
     @property
     def features_type(self) -> Optional[str]:
         return self._first_non_padding_cut.features.type
-
-    def mix(
-            self,
-            other: AnyCut,
-            offset_other_by: Seconds = 0.0,
-            snr: Optional[Decibels] = None
-    ) -> 'MixedCut':
-        """Refer to mix() documentation."""
-        return mix(self, other, offset=offset_other_by, snr=snr)
-
-    def append(self, other: AnyCut, snr: Optional[Decibels] = None) -> 'MixedCut':
-        """
-        Append the ``other`` Cut after the current Cut. Conceptually the same as ``mix`` but with an offset
-        matching the current cuts length. Optionally scale down (positive SNR) or scale up (negative SNR)
-        the ``other`` cut.
-        Returns a MixedCut, which only keeps the information about the mix; actual mixing is performed
-        during the call to ``load_features``.
-        """
-        return self.mix(other=other, offset_other_by=self.duration, snr=snr)
 
     def truncate(
             self,
