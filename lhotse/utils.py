@@ -52,16 +52,6 @@ def uuid4():
     return uuid.uuid4()
 
 
-class JsonMixin:
-    def to_json(self, path: Pathlike):
-        save_to_json(self.to_dicts(), path)
-
-    @classmethod
-    def from_json(cls, path: Pathlike):
-        data = load_json(path)
-        return cls.from_dicts(data)
-
-
 def save_to_yaml(data: Any, path: Pathlike):
     compressed = str(path).endswith('.gz')
     opener = gzip.open if compressed else open
@@ -108,6 +98,16 @@ def load_json(path: Pathlike) -> Union[dict, list]:
     opener = gzip.open if str(path).endswith('.gz') else open
     with opener(path) as f:
         return json.load(f)
+
+
+class JsonMixin:
+    def to_json(self, path: Pathlike):
+        save_to_json(self.to_dicts(), path)
+
+    @classmethod
+    def from_json(cls, path: Pathlike):
+        data = load_json(path)
+        return cls.from_dicts(data)
 
 
 def asdict_nonull(dclass) -> Dict[str, Any]:
