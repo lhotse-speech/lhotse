@@ -2,7 +2,8 @@ from copy import deepcopy
 from dataclasses import asdict, dataclass, field
 from typing import Callable, Dict, Iterable, Optional, Any, List
 
-from lhotse.utils import Pathlike, Seconds, asdict_nonull, load_yaml, save_to_yaml
+from lhotse.utils import Pathlike, Seconds, asdict_nonull, load_yaml, save_to_yaml, save_to_json, load_json, YamlMixin, \
+    JsonMixin
 
 
 @dataclass
@@ -35,7 +36,7 @@ class SupervisionSegment:
 
 
 @dataclass
-class SupervisionSet:
+class SupervisionSet(JsonMixin, YamlMixin):
     """
     SupervisionSet represents a collection of segments containing some supervision information.
     The only required fields are the ID of the segment, ID of the corresponding recording,
@@ -51,17 +52,11 @@ class SupervisionSet:
         return SupervisionSet(segments={s.id: s for s in segments})
 
     @staticmethod
-    def from_yaml(path: Pathlike) -> 'SupervisionSet':
-        raw_segments = load_yaml(path)
-        return SupervisionSet.from_dicts(raw_segments)
-
-    @staticmethod
     def from_dicts(data: Iterable[Dict]) -> 'SupervisionSet':
         return SupervisionSet.from_segments(SupervisionSegment.from_dict(s) for s in data)
 
-    def to_yaml(self, path: Pathlike):
-        data = [asdict_nonull(s) for s in self]
-        save_to_yaml(data, path)
+    def to_dicts(self) -> List[dict]:
+        return [asdict_nonull(s) for s in self]
 
     def filter(self, predicate: Callable[[SupervisionSegment], bool]) -> 'SupervisionSet':
         """

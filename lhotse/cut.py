@@ -23,7 +23,7 @@ from lhotse.utils import (
     overlaps,
     overspans,
     save_to_yaml,
-    uuid4
+    uuid4, load_json, save_to_json, JsonMixin, YamlMixin
 )
 
 # One of the design principles for Cuts is a maximally "lazy" implementation, e.g. when mixing Cuts,
@@ -640,7 +640,7 @@ class MixedCut(CutUtilsMixin):
 
 
 @dataclass
-class CutSet:
+class CutSet(JsonMixin, YamlMixin):
     """
     CutSet combines features with their corresponding supervisions.
     It may have wider span than the actual supervisions, provided the features for the whole span exist.
@@ -724,11 +724,6 @@ class CutSet:
         )
 
     @staticmethod
-    def from_yaml(path: Pathlike) -> 'CutSet':
-        raw_cuts = load_yaml(path)
-        return CutSet.from_dicts(raw_cuts)
-
-    @staticmethod
     def from_dicts(data: Iterable[dict]) -> 'CutSet':
         def deserialize_one(raw_cut: dict) -> AnyCut:
             cut_type = raw_cut.pop('type')
@@ -740,9 +735,8 @@ class CutSet:
 
         return CutSet.from_cuts(deserialize_one(cut) for cut in data)
 
-    def to_yaml(self, path: Pathlike):
-        data = [{**asdict_nonull(cut), 'type': type(cut).__name__} for cut in self]
-        save_to_yaml(data, path)
+    def to_dicts(self) -> List[dict]:
+        return [{**asdict_nonull(cut), 'type': type(cut).__name__} for cut in self]
 
     def filter(self, predicate: Callable[[AnyCut], bool]) -> 'CutSet':
         """

@@ -14,7 +14,8 @@ import torch
 from lhotse.audio import Recording
 from lhotse.augmentation import WavAugmenter
 from lhotse.supervision import SupervisionSegment
-from lhotse.utils import Seconds, Pathlike, load_yaml, save_to_yaml, uuid4
+from lhotse.utils import Seconds, Pathlike, load_yaml, save_to_yaml, uuid4, load_json, save_to_json, JsonMixin, \
+    YamlMixin
 
 
 class FeatureExtractor(metaclass=ABCMeta):
@@ -362,7 +363,7 @@ class Features:
 
 
 @dataclass
-class FeatureSet:
+class FeatureSet(JsonMixin, YamlMixin):
     """
     Represents a feature manifest, and allows to read features for given recordings
     within particular channels and time ranges.
@@ -382,13 +383,8 @@ class FeatureSet:
     def from_dicts(data: Iterable[dict]) -> 'FeatureSet':
         return FeatureSet(features=[Features.from_dict(feature_data) for feature_data in data])
 
-    @staticmethod
-    def from_yaml(path: Pathlike) -> 'FeatureSet':
-        return FeatureSet.from_dicts(load_yaml(path))
-
-    def to_yaml(self, path: Pathlike):
-        data = [asdict(f) for f in self]
-        save_to_yaml(data, path)
+    def to_dicts(self) -> List[dict]:
+        return [asdict(f) for f in self]
 
     def find(
             self,

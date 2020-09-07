@@ -8,7 +8,8 @@ from typing import Callable, Dict, Iterable, List, Optional, Union
 
 import numpy as np
 
-from lhotse.utils import Decibels, Pathlike, Seconds, SetContainingAnything, load_yaml, save_to_yaml
+from lhotse.utils import Decibels, Pathlike, Seconds, SetContainingAnything, load_yaml, save_to_yaml, load_json, \
+    save_to_json, JsonMixin, YamlMixin
 
 Channels = Union[int, List[int]]
 
@@ -178,7 +179,7 @@ class Recording:
 
 
 @dataclass
-class RecordingSet:
+class RecordingSet(JsonMixin, YamlMixin):
     """
     RecordingSet represents a dataset of recordings. It does not contain any annotation -
     just the information needed to retrieve a recording (possibly multi-channel, from files
@@ -194,17 +195,11 @@ class RecordingSet:
         return RecordingSet(recordings={r.id: r for r in recordings})
 
     @staticmethod
-    def from_yaml(path: Pathlike) -> 'RecordingSet':
-        raw_recordings = load_yaml(path)
-        return RecordingSet.from_dicts(raw_recordings)
-
-    @staticmethod
     def from_dicts(data: Iterable[dict]) -> 'RecordingSet':
         return RecordingSet.from_recordings(Recording.from_dict(raw_rec) for raw_rec in data)
 
-    def to_yaml(self, path: Pathlike):
-        data = [asdict(r) for r in self]
-        save_to_yaml(data, path)
+    def to_dicts(self) -> List[dict]:
+        return [asdict(r) for r in self]
 
     def filter(self, predicate: Callable[[Recording], bool]) -> 'RecordingSet':
         """

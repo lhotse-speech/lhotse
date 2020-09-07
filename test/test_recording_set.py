@@ -53,7 +53,16 @@ def test_get_metadata(recording_set):
     assert 0.5 == recording_set.duration('recording-1')
 
 
-def test_serialization():
+@pytest.mark.parametrize(
+    ['format', 'compressed'],
+    [
+        ('yaml', False),
+        ('yaml', True),
+        ('json', False),
+        ('json', True),
+    ]
+)
+def test_serialization(format, compressed):
     recording_set = RecordingSet.from_recordings([
         Recording(
             id='x',
@@ -74,9 +83,13 @@ def test_serialization():
             duration=0.5
         )
     ])
-    with NamedTemporaryFile() as f:
-        recording_set.to_yaml(f.name)
-        deserialized = RecordingSet.from_yaml(f.name)
+    with NamedTemporaryFile(suffix='.gz' if compressed else '') as f:
+        if format == 'yaml':
+            recording_set.to_yaml(f.name)
+            deserialized = RecordingSet.from_yaml(f.name)
+        if format == 'json':
+            recording_set.to_json(f.name)
+            deserialized = RecordingSet.from_json(f.name)
     assert deserialized == recording_set
 
 
