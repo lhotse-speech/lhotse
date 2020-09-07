@@ -14,7 +14,7 @@ EPS = 1e-8
 class VadDataset(Dataset):
     """
     The PyTorch Dataset for the voice activity detection task.
-    Returns a dict of:
+    Each item in this dataset is a dict of:
 
     .. code-block::
 
@@ -27,13 +27,12 @@ class VadDataset(Dataset):
     def __init__(
             self,
             cuts: CutSet,
-            duration: Optional[Seconds] = 5.0,
             root_dir: Optional[Pathlike] = None
     ):
         super().__init__()
-        self.cuts = cuts.cut_into_windows(duration, keep_excessive_supervisions=True)
+        self.cuts = cuts
         self.root_dir = Path(root_dir) if root_dir else None
-        self.cut_ids = list(self.cuts.cuts.keys())
+        self.cut_ids = list(cuts.ids)
 
     def __getitem__(self, idx: int) -> Dict[str, torch.Tensor]:
         cut_id = self.cut_ids[idx]

@@ -81,7 +81,7 @@ def libri_cut():
         channel=0,
         duration=16.04,
         features=Features(
-            channel_id=0,
+            channels=0,
             duration=16.04,
             num_features=23,
             num_frames=1604,
@@ -97,12 +97,12 @@ def libri_cut():
             sources=[
                 AudioSource(
                     type='file',
-                    channel_ids=[0],
+                    channels=[0],
                     source='test/fixtures/libri/libri-1088-134315-0000.wav',
                 )],
             sampling_rate=16000,
             num_samples=256640,
-            duration_seconds=1604,
+            duration=1604,
         ),
         id='849e13d8-61a2-4d09-a542-dac1aee1b544',
         start=0.0,
@@ -111,7 +111,7 @@ def libri_cut():
 
 
 def test_overlay_in_the_middle(libri_cut, padding_cut):
-    mixed = libri_cut.overlay(padding_cut)
+    mixed = libri_cut.mix(padding_cut)
 
     # Invariants
     assert mixed.duration == 16.04
@@ -126,7 +126,7 @@ def test_overlay_in_the_middle(libri_cut, padding_cut):
 
 
 def test_overlay_pad_right(libri_cut, padding_cut):
-    mixed = libri_cut.overlay(padding_cut, offset_other_by=10.0)
+    mixed = libri_cut.mix(padding_cut, offset_other_by=10.0)
 
     assert mixed.duration == 20.0
     assert mixed.num_frames == 2000
@@ -141,7 +141,7 @@ def test_overlay_pad_right(libri_cut, padding_cut):
 
 
 def test_overlay_pad_left(libri_cut, padding_cut):
-    mixed = padding_cut.overlay(libri_cut, offset_other_by=3.96)
+    mixed = padding_cut.mix(libri_cut, offset_other_by=3.96)
 
     assert mixed.duration == 20.0
     assert mixed.num_frames == 2000
@@ -157,11 +157,11 @@ def test_overlay_pad_left(libri_cut, padding_cut):
 
 @pytest.fixture
 def mixed_libri_cut(libri_cut):
-    return libri_cut.overlay(libri_cut)
+    return libri_cut.mix(libri_cut)
 
 
 def test_mixed_overlay_in_the_middle(mixed_libri_cut, padding_cut):
-    mixed = mixed_libri_cut.overlay(padding_cut)
+    mixed = mixed_libri_cut.mix(padding_cut)
 
     # Invariants
     assert mixed.duration == 16.04
@@ -176,7 +176,7 @@ def test_mixed_overlay_in_the_middle(mixed_libri_cut, padding_cut):
 
 
 def test_mixed_overlay_pad_right(mixed_libri_cut, padding_cut):
-    mixed = mixed_libri_cut.overlay(padding_cut, offset_other_by=10.0)
+    mixed = mixed_libri_cut.mix(padding_cut, offset_other_by=10.0)
 
     assert mixed.duration == 20.0
     assert mixed.num_frames == 2000
@@ -191,7 +191,7 @@ def test_mixed_overlay_pad_right(mixed_libri_cut, padding_cut):
 
 
 def test_mixed_overlay_pad_left(mixed_libri_cut, padding_cut):
-    mixed = padding_cut.overlay(mixed_libri_cut, offset_other_by=3.96)
+    mixed = padding_cut.mix(mixed_libri_cut, offset_other_by=3.96)
 
     assert mixed.duration == 20.0
     assert mixed.num_frames == 2000

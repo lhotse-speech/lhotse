@@ -52,18 +52,18 @@ def prepare_librimix(
             sources=[
                 AudioSource(
                     type='file',
-                    channel_ids=[0],
+                    channels=[0],
                     source=row['source_1_path']
                 ),
                 AudioSource(
                     type='file',
-                    channel_ids=[1],
+                    channels=[1],
                     source=row['source_2_path']
                 )
             ],
             sampling_rate=sampling_rate,
             num_samples=int(row['length']),
-            duration_seconds=row['length'] / sampling_rate
+            duration=row['length'] / sampling_rate
         )
         for idx, row in df.iterrows()
         if row['length'] / sampling_rate > min_segment_seconds
@@ -87,13 +87,13 @@ def prepare_librimix(
                 sources=[
                     AudioSource(
                         type='file',
-                        channel_ids=[0],
+                        channels=[0],
                         source=row['mixture_path']
                     ),
                 ],
                 sampling_rate=sampling_rate,
                 num_samples=int(row['length']),
-                duration_seconds=row['length'] / sampling_rate
+                duration=row['length'] / sampling_rate
             )
             for idx, row in df.iterrows()
             if row['length'] / sampling_rate > min_segment_seconds
@@ -115,13 +115,13 @@ def prepare_librimix(
                 sources=[
                     AudioSource(
                         type='file',
-                        channel_ids=[0],
+                        channels=[0],
                         source=row['noise_path']
                     ),
                 ],
                 sampling_rate=sampling_rate,
                 num_samples=int(row['length']),
-                duration_seconds=row['length'] / sampling_rate
+                duration=row['length'] / sampling_rate
             )
             for idx, row in df.iterrows()
             if row['length'] / sampling_rate > min_segment_seconds
@@ -145,11 +145,11 @@ def make_corresponding_supervisions(audio: RecordingSet) -> SupervisionSet:
     """
     return SupervisionSet.from_segments(
         SupervisionSegment(
-            id=f'{recording.id}-c{source.channel_ids[0]}',
+            id=f'{recording.id}-c{source.channels[0]}',
             recording_id=recording.id,
             start=0.0,
-            duration=recording.duration_seconds,
-            channel_id=source.channel_ids[0],
+            duration=recording.duration,
+            channel=source.channels[0],
         )
         for recording in audio
         for source in recording.sources

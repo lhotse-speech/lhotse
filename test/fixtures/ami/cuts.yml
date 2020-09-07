@@ -1,7 +1,7 @@
 - channel: 0
   duration: 6.0
   features:
-    channel_id: 0
+    channels: 0
     duration: 6.0
     num_features: 23
     num_frames: 600
@@ -13,18 +13,18 @@
     type: fbank
   id: a7889ee6-1703-4d0d-98b3-91f1d45a790d
   recording:
-    duration_seconds: 6
+    duration: 6
     id: ES2011a.Headset-0-40s-46s.wav
     num_samples: 96000
     sampling_rate: 16000
     sources:
-    - channel_ids:
+    - channels:
       - 0
       source: test/fixtures/ami/ES2011a.Headset-0-40s-46s.wav
       type: file
   start: 0.0
   supervisions:
-  - channel_id: 0
+  - channel: 0
     duration: 1.36
     id: ES2011a.Headset-0-40s-46s-0-3
     language: English
@@ -32,7 +32,7 @@
     speaker: ES2011a.Headset
     start: 1.46
     text: I'M ABIGAIL CLAFLIN
-  - channel_id: 0
+  - channel: 0
     duration: 1.00
     id: ES2011a.Headset-0-40s-46s-0-4
     language: English

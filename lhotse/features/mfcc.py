@@ -39,3 +39,6 @@ class Mfcc(TorchaudioFeatureExtractor):
     name = 'mfcc'
     config_type = MfccConfig
     feature_fn = staticmethod(torchaudio.compliance.kaldi.mfcc)
+
+    def feature_dim(self, sampling_rate: int) -> int:
+        return self.config.num_ceps

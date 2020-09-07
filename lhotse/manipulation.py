@@ -9,7 +9,7 @@ from lhotse.audio import Recording, RecordingSet
 from lhotse.cut import Cut, CutSet, MixedCut
 from lhotse.features import Features, FeatureSet
 from lhotse.supervision import SupervisionSegment, SupervisionSet
-from lhotse.utils import Pathlike
+from lhotse.utils import Pathlike, load_yaml
 
 ManifestItem = TypeVar('ManifestItem', Recording, SupervisionSegment, Features, Cut, MixedCut)
 Manifest = TypeVar('Manifest', RecordingSet, SupervisionSet, FeatureSet, CutSet)
@@ -80,10 +80,11 @@ def to_manifest(items: Iterable[ManifestItem]) -> Optional[Manifest]:
 
 def load_manifest(path: Pathlike) -> Manifest:
     """Generic utility for reading an arbitrary manifest."""
+    raw_data = load_yaml(path)
     data_set = None
     for manifest_type in [RecordingSet, SupervisionSet, FeatureSet, CutSet]:
         try:
-            data_set = manifest_type.from_yaml(path)
+            data_set = manifest_type.from_dicts(raw_data)
         except Exception:
             pass
     if data_set is None:

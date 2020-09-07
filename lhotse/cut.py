@@ -1,14 +1,16 @@
 import random
 import warnings
+from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from functools import reduce
-from math import ceil, floor, log, isclose
-from typing import Callable, Dict, Iterable, List, Optional, Union
+from math import ceil, floor, log
+from typing import Callable, Dict, Iterable, List, Optional, Union, Any
 
 import numpy as np
 
+from lhotse import WavAugmenter
 from lhotse.audio import AudioMixer, Recording, RecordingSet
-from lhotse.features import Features, FeatureSet, FeatureMixer, create_default_feature_extractor
+from lhotse.features import Features, FeatureExtractor, FeatureSet, FeatureMixer, create_default_feature_extractor
 from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import (
     EPSILON,
@@ -24,7 +26,7 @@ from lhotse.utils import (
     uuid4
 )
 
-# One of the design principles for Cuts is a maximally "lazy" implementation, e.g. when overlaying/mixing Cuts,
+# One of the design principles for Cuts is a maximally "lazy" implementation, e.g. when mixing Cuts,
 # we'd rather sum the feature matrices only after somebody actually calls "load_features". It helps to avoid
 # an excessive storage size for data augmented in various ways.
 
@@ -34,8 +36,82 @@ from lhotse.utils import (
 AnyCut = Union['Cut', 'MixedCut', 'PaddingCut']
 
 
+# noinspection PyTypeChecker,PyUnresolvedReferences
+class CutUtilsMixin:
+    """
+    A mixin class for cuts which contains all the methods that share common implementations.
+
+    Note: Ideally, this would've been an abstract base class specifying the common interface,
+    but ABC's do not mix well with dataclasses in Python. It is possible we'll ditch the dataclass
+    for cuts in the future and make this an ABC instead.
+    """
+    def mix(self, other: AnyCut, offset_other_by: Seconds = 0.0, snr: Optional[Decibels] = None) -> 'MixedCut':
+        """Refer to mix() documentation."""
+        return mix(self, other, offset=offset_other_by, snr=snr)
+
+    def append(self, other: AnyCut, snr: Optional[Decibels] = None) -> 'MixedCut':
+        """
+        Append the ``other`` Cut after the current Cut. Conceptually the same as ``mix`` but with an offset
+        matching the current cuts length. Optionally scale down (positive SNR) or scale up (negative SNR)
+        the ``other`` cut.
+        Returns a MixedCut, which only keeps the information about the mix; actual mixing is performed
+        during the call to ``load_features``.
+        """
+        return mix(self, other, offset=self.duration, snr=snr)
+
+    def compute_features(
+            self,
+            extractor: FeatureExtractor,
+            augmenter: Optional[WavAugmenter] = None,
+            root_dir: Optional[Pathlike] = None
+    ) -> np.ndarray:
+        """
+        Compute the features from this cut. This cut has to be able to load audio.
+
+        :param extractor: a ``FeatureExtractor`` instance used to compute the features.
+        :param augmenter: optional ``WavAugmenter`` instance for audio augmentation.
+        :param root_dir: optional prefix to the source audio file path.
+        :return: a numpy ndarray with the computed features.
+        """
+        samples = self.load_audio(root_dir=root_dir)
+        if augmenter is not None:
+            samples = augmenter.apply(samples)
+        return extractor.extract(samples, self.sampling_rate)
+
+    def plot_audio(self, root_dir: Optional[Pathlike] = None):
+        """
+        Display a plot of the waveform. Requires matplotlib to be installed.
+
+        :param root_dir: optional prefix to the source audio file path.
+        """
+        import matplotlib.pyplot as plt
+        samples = self.load_audio(root_dir=root_dir).squeeze()
+        return plt.plot(samples)
+
+    def play_audio(self, root_dir: Optional[Pathlike] = None):
+        """
+        Display a Jupyter widget that allows to listen to the waveform.
+        Works only in Jupyter notebook/lab or similar (e.g. Colab).
+
+        :param root_dir: optional prefix to the source audio file path.
+        """
+        from IPython.display import Audio
+        samples = self.load_audio(root_dir=root_dir).squeeze()
+        return Audio(samples, rate=self.sampling_rate)
+
+    def plot_features(self, root_dir: Optional[Pathlike] = None):
+        """
+        Display the feature matrix as an image. Requires matplotlib to be installed.
+
+        :param root_dir: optional prefix to the source features file path.
+        """
+        import matplotlib.pyplot as plt
+        features = np.flip(self.load_features(root_dir=root_dir).transpose(1, 0), 0)
+        return plt.matshow(features)
+
+
 @dataclass
-class Cut:
+class Cut(CutUtilsMixin):
     """
     A Cut is a single "segment" that we'll train on. It contains the features corresponding to
     a piece of a recording, with zero or more SupervisionSegments.
@@ -137,6 +213,33 @@ class Cut:
             )
         return None
 
+    def compute_and_store_features(
+            self,
+            extractor: FeatureExtractor,
+            output_dir: Pathlike,
+            augmenter: Optional[WavAugmenter] = None,
+            root_dir: Optional[Pathlike] = None
+    ) -> AnyCut:
+        """
+        Compute the features from this cut, store them on disk, and attach a feature manifest to this cut.
+        This cut has to be able to load audio.
+
+        :param extractor: a ``FeatureExtractor`` instance used to compute the features.
+        :param output_dir: directory where the computed features will be stored.
+        :param augmenter: optional ``WavAugmenter`` instance for audio augmentation.
+        :param root_dir: optional prefix to the source audio file path.
+        :return: a numpy ndarray with the computed features.
+        """
+        features_info = extractor.extract_from_samples_and_store(
+            samples=self.load_audio(root_dir=root_dir),
+            sampling_rate=self.sampling_rate,
+            output_dir=output_dir,
+            offset=self.start,
+            augmenter=augmenter,
+        )
+        self.features = features_info
+        return self
+
     def truncate(
             self,
             *,
@@ -186,20 +289,6 @@ class Cut:
             recording=self.recording
         )
 
-    def overlay(self, other: AnyCut, offset_other_by: Seconds = 0.0, snr: Optional[Decibels] = None) -> 'MixedCut':
-        """Refer to mix() documentation."""
-        return mix(self, other, offset=offset_other_by, snr=snr)
-
-    def append(self, other: AnyCut, snr: Optional[Decibels] = None) -> 'MixedCut':
-        """
-        Append the `other` Cut after the current Cut. Conceptually the same as `overlay` but with an offset
-        matching the current cuts length. Optionally scale down (positive SNR) or scale up (negative SNR)
-        the `other` cut.
-        Returns a MixedCut, which only keeps the information about the mix; actual mixing is performed
-        during the call to `load_features`.
-        """
-        return self.overlay(other=other, offset_other_by=self.duration, snr=snr)
-
     def pad(self, desired_duration: Seconds) -> AnyCut:
         f"""
         Return a new MixedCut, padded to `desired_seconds` duration with low-energy values in each bin.
@@ -235,7 +324,7 @@ class Cut:
 
 
 @dataclass
-class PaddingCut:
+class PaddingCut(CutUtilsMixin):
     f"""
     This represents a cut filled with zeroes in the time domain, or low energy/log-energy values in the
     frequency domain. It's used to make training samples evenly sized (same duration/number of frames).
@@ -305,18 +394,6 @@ class PaddingCut:
             sampling_rate=self.sampling_rate
         )
 
-    def overlay(
-            self,
-            other: AnyCut,
-            offset_other_by: Seconds = 0.0,
-            snr: Optional[Decibels] = None
-    ) -> 'MixedCut':
-        """Refer to mix() documentation."""
-        return mix(self, other, offset=offset_other_by, snr=snr)
-
-    def append(self, other: AnyCut, snr: Optional[Decibels] = None) -> 'MixedCut':
-        return self.overlay(other=other, snr=snr)
-
     def pad(self, desired_duration: Seconds) -> 'PaddingCut':
         """
         Create a new PaddingCut with `desired_duration` when its longer than this Cuts duration.
@@ -362,9 +439,9 @@ class MixTrack:
 
 
 @dataclass
-class MixedCut:
+class MixedCut(CutUtilsMixin):
     """
-    Represents a Cut that's created from other Cuts via overlay or append operations.
+    Represents a Cut that's created from other Cuts via mix or append operations.
     The actual mixing operations are performed upon loading the features into memory.
     In order to load the features, it needs to access the CutSet object that holds the "ingredient" cuts,
     as it only holds their IDs ("pointers").
@@ -419,25 +496,6 @@ class MixedCut:
     @property
     def features_type(self) -> Optional[str]:
         return self._first_non_padding_cut.features.type
-
-    def overlay(
-            self,
-            other: AnyCut,
-            offset_other_by: Seconds = 0.0,
-            snr: Optional[Decibels] = None
-    ) -> 'MixedCut':
-        """Refer to mix() documentation."""
-        return mix(self, other, offset=offset_other_by, snr=snr)
-
-    def append(self, other: AnyCut, snr: Optional[Decibels] = None) -> 'MixedCut':
-        """
-        Append the `other` Cut after the current Cut. Conceptually the same as `overlay` but with an offset
-        matching the current cuts length. Optionally scale down (positive SNR) or scale up (negative SNR)
-        the `other` cut.
-        Returns a MixedCut, which only keeps the information about the mix; actual mixing is performed
-        during the call to `load_features`.
-        """
-        return self.overlay(other=other, offset_other_by=self.duration, snr=snr)
 
     def truncate(
             self,
@@ -535,7 +593,7 @@ class MixedCut:
         ))
 
     def load_features(self, root_dir: Optional[Pathlike] = None) -> Optional[np.ndarray]:
-        """Loads the features of the source cuts and overlays them on-the-fly."""
+        """Loads the features of the source cuts and mixes them on-the-fly."""
         if not self.has_features:
             return None
         first_cut = self.tracks[0].cut
@@ -598,6 +656,10 @@ class CutSet:
     def simple_cuts(self) -> Dict[str, Cut]:
         return {id_: cut for id_, cut in self.cuts.items() if isinstance(cut, Cut)}
 
+    @property
+    def ids(self) -> Iterable[str]:
+        return self.cuts.keys()
+
     @staticmethod
     def from_cuts(cuts: Iterable[AnyCut]) -> 'CutSet':
         return CutSet({cut.id: cut for cut in cuts})
@@ -627,13 +689,13 @@ class CutSet:
                     id=str(uuid4()),
                     start=features.start,
                     duration=features.duration,
-                    channel=features.channel_id,
+                    channel=features.channels,
                     features=features,
                     recording=recording_set[features.recording_id] if rec_ok else None,
                     # The supervisions' start times are adjusted if the features object starts at time other than 0s.
                     supervisions=list(supervision_set.find(
                         recording_id=features.recording_id,
-                        channel=features.channel_id,
+                        channel=features.channels,
                         start_after=features.start,
                         end_before=features.end,
                         adjust_offset=True
@@ -647,7 +709,7 @@ class CutSet:
             Cut(
                 id=str(uuid4()),
                 start=0,
-                duration=recording.duration_seconds,
+                duration=recording.duration,
                 channel=channel,
                 recording=recording,
                 supervisions=list(supervision_set.find(
@@ -664,7 +726,10 @@ class CutSet:
     @staticmethod
     def from_yaml(path: Pathlike) -> 'CutSet':
         raw_cuts = load_yaml(path)
+        return CutSet.from_dicts(raw_cuts)
 
+    @staticmethod
+    def from_dicts(data: Iterable[dict]) -> 'CutSet':
         def deserialize_one(raw_cut: dict) -> AnyCut:
             cut_type = raw_cut.pop('type')
             if cut_type == 'Cut':
@@ -673,7 +738,7 @@ class CutSet:
                 return MixedCut.from_dict(raw_cut)
             raise ValueError(f"Unexpected cut type during deserialization: '{cut_type}'")
 
-        return CutSet.from_cuts(deserialize_one(cut) for cut in raw_cuts)
+        return CutSet.from_cuts(deserialize_one(cut) for cut in data)
 
     def to_yaml(self, path: Pathlike):
         data = [{**asdict_nonull(cut), 'type': type(cut).__name__} for cut in self]
@@ -784,6 +849,44 @@ class CutSet:
                 ))
         return CutSet.from_cuts(new_cuts)
 
+    def compute_and_store_features(
+            self,
+            extractor: FeatureExtractor,
+            output_dir: Pathlike,
+            augmenter: Optional[WavAugmenter] = None,
+            root_dir: Optional[Pathlike] = None,
+            executor: Optional[Any] = None
+    ) -> 'CutSet':
+        """
+        Modify the current ``CutSet`` with by extracting features and attaching the feature manifests
+        to the cuts.
+
+        :param extractor: A ``FeatureExtractor`` instance (either Lhotse's built-in or a custom implementation).
+        :param output_dir: Where to store the features.
+        :param augmenter: optional ``WavAugmenter`` instance for audio augmentation.
+        :param root_dir: optional prefix to the source audio file path.
+        :param executor: when provided, will be used to parallelize the feature extraction process.
+            Any executor satisfying the standard concurrent.futures interface will be suitable;
+            e.g. ProcessPoolExecutor, ThreadPoolExecutor, or dask.Client for distributed task
+            execution (see: https://docs.dask.org/en/latest/futures.html?highlight=Client#start-dask-client)
+        :return: a new CutSet instance with the same ``Cut``s, but with attached ``Features`` objects
+        """
+        if executor is None:
+            for cut in self:
+                cut.compute_and_store_features(
+                    extractor=extractor,
+                    output_dir=output_dir,
+                    augmenter=augmenter,
+                    root_dir=root_dir
+                )
+            return self
+        futures = []
+        for cut in self:
+            futures.append(
+                executor.submit(Cut.compute_and_store_features, cut, extractor, output_dir, augmenter, root_dir)
+            )
+        return CutSet.from_cuts(f.result() for f in futures)
+
     def __contains__(self, item: Union[str, Cut, MixedCut]) -> bool:
         if isinstance(item, str):
             return item in self.cuts
@@ -845,7 +948,7 @@ def make_windowed_cuts_from_features(
                     id=str(uuid4()),
                     start=offset,
                     duration=duration,
-                    channel=features.channel_id,
+                    channel=features.channels,
                     features=features,
                     supervisions=[]
                 )
@@ -878,9 +981,9 @@ def mix(
         snr = None
 
     if reference_cut.num_features is not None:
-        assert reference_cut.num_features == mixed_in_cut.num_features, "Cannot overlay cuts with different feature " \
+        assert reference_cut.num_features == mixed_in_cut.num_features, "Cannot mix cuts with different feature " \
                                                                         "dimensions. "
-    assert offset <= reference_cut.duration, f"Cannot overlay cut '{mixed_in_cut.id}' with offset {offset}," \
+    assert offset <= reference_cut.duration, f"Cannot mix cut '{mixed_in_cut.id}' with offset {offset}," \
                                              f" which is greater than cuts {reference_cut.id} duration" \
                                              f" of {reference_cut.duration}"
     # When the left_cut is a MixedCut, take its existing tracks, otherwise create a new track.
@@ -928,9 +1031,9 @@ def append(
 
 
 def mix_cuts(cuts: Iterable[AnyCut]) -> MixedCut:
-    """Return a MixedCut that consists of the input Cuts overlayed on each other as-is."""
-    # The following is a fold (accumulate/aggregate) operation; it starts with cuts[0], and overlays it with cuts[1];
-    #  then takes their mix and overlays it with cuts[2]; and so on.
+    """Return a MixedCut that consists of the input Cuts mixed with each other as-is."""
+    # The following is a fold (accumulate/aggregate) operation; it starts with cuts[0], and mixes it with cuts[1];
+    #  then takes their mix and mixes it with cuts[2]; and so on.
     return reduce(mix, cuts)
 
 

@@ -181,13 +181,13 @@ def prepare_ami(
                 sources=[
                     AudioSource(
                         type='file',
-                        channel_ids=[0],
+                        channels=[0],
                         source=str(audio_path)
                     )
                 ],
                 sampling_rate=int(audio_info.rate),
                 num_samples=audio_info.length,
-                duration_seconds=int(audio_info.length / audio_info.rate),
+                duration=int(audio_info.length / audio_info.rate),
             ))
         if len(recordings) == 0:
             continue
@@ -207,7 +207,7 @@ def prepare_ami(
                             recording_id=idx,
                             start=subseg_info.begin_time,
                             duration=duration,
-                            channel_id=0,
+                            channel=0,
                             language='English',
                             speaker=re.sub(r'-.*', r'', idx),
                             text=subseg_info.text

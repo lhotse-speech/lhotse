@@ -13,7 +13,7 @@ Task-specific datasets can leverage this information to generate masks for such 
 Currently, cuts are created after the feature extraction step (we might still change that).
 It means that every cut also represents the extracted features for the part of recording it represents.
 
-Cuts can be modified using three basic operations: truncation, overlaying (mixing) and appending.
+Cuts can be modified using three basic operations: truncation, mixing and appending.
 These operations are not immediately performed on the audio or features.
 Instead, we create new :class:`Cut` objects, possibly of different types, that represent a cut after modification.
 We only modify the actual audio and feature matrices once the user calls :meth:`load_features` or :meth:`load_audio`.
@@ -34,11 +34,9 @@ The common attributes for all cut objects are the following:
 - num_features
 - load_features()
 - truncate()
-- overlay()
+- mix()
 - append()
 - from_dict()
-
-:meth:`load_audio` is not yet supported for overlayed cuts, but will be eventually.
 
 Types of cuts
 *************

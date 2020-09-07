@@ -17,7 +17,7 @@ def overlapping_supervisions_cut():
         channel=0,
         features=Features(
             recording_id='recording-1',
-            channel_id=0,
+            channels=0,
             start=0,
             duration=0.5,
             type='fbank',

@@ -4,7 +4,7 @@
         channel: 0
         duration: 7.78
         features:
-          channel_id: 0
+          channels: 0
           duration: 7.78
           type: fbank
           num_frames: 778
@@ -17,7 +17,7 @@
         id: 0c5fdf79-efe7-4d45-b612-3d90d9af8c4e
         start: 0.0
         supervisions:
-          - channel_id: 0
+          - channel: 0
             duration: 7.78
             gender: f
             id: 7850-286674-0014
@@ -32,7 +32,7 @@
         channel: 0
         duration: 9.705
         features:
-          channel_id: 0
+          channels: 0
           duration: 9.705
           type: fbank
           num_frames: 970
@@ -45,7 +45,7 @@
         id: 78bef88d-e62e-4cfa-9946-a1311442c6f7
         start: 0.0
         supervisions:
-          - channel_id: 0
+          - channel: 0
             duration: 9.705
             gender: f
             id: 2412-153948-0014

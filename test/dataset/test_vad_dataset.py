@@ -27,7 +27,8 @@ def test_vad_dataset(cut_set):
     v2_end = time_diff_to_num_frames(cuts[0].supervisions[1].end, frame_length=0, frame_shift=0.01)
     end = time_diff_to_num_frames(duration, frame_length=0, frame_shift=0.01)
 
-    example = VadDataset(cut_set, duration=duration)[0]
+    dataset = VadDataset(cut_set.cut_into_windows(duration=duration))
+    example = dataset[0]
     assert isclose(float(torch.mean(example['is_voice'][0:v1_start])), 0)
     assert isclose(float(torch.mean(example['is_voice'][v1_start:v1_end])), 1)
     assert isclose(float(torch.mean(example['is_voice'][v1_end:v2_start])), 0)

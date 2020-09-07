@@ -91,11 +91,11 @@ def windowed(
 @click.argument('feature_manifest', type=click.Path(exists=True, dir_okay=False))
 @click.argument('output_cut_manifest', type=click.Path())
 @click.option('-s', '--snr-range', type=(float, float), default=(20, 20),
-              help='Range of SNR values (in dB) that will be uniformly sampled in order to overlay the signals.')
+              help='Range of SNR values (in dB) that will be uniformly sampled in order to mix the signals.')
 @click.option('-o', '--offset-range', type=(float, float), default=(0.5, 0.5),
               help='Range of relative offset values (0 - 1), which will offset the "right" signal by this many times '
-                   'the duration of the "left" signal. It is uniformly sampled for each overlay operation.')
-def random_overlayed(
+                   'the duration of the "left" signal. It is uniformly sampled for each mix operation.')
+def random_mixed(
         supervision_manifest: Pathlike,
         feature_manifest: Pathlike,
         output_cut_manifest: Pathlike,
@@ -105,7 +105,7 @@ def random_overlayed(
     """
     Create a CutSet stored in OUTPUT_CUT_MANIFEST that contains supervision regions from SUPERVISION_MANIFEST
     and features supplied by FEATURE_MANIFEST. It first creates a trivial CutSet, splits it into two equal, randomized
-    parts and overlays their features to create a mix.
+    parts and mixes their features.
     The parameters of the mix are controlled via SNR_RANGE and OFFSET_RANGE.
     """
     supervision_set = SupervisionSet.from_yaml(supervision_manifest)
@@ -117,15 +117,15 @@ def random_overlayed(
     snrs = np.random.uniform(*snr_range, size=len(left_cuts)).tolist()
     relative_offsets = np.random.uniform(*offset_range, size=len(left_cuts)).tolist()
 
-    overlayed_cut_set = CutSet.from_cuts(
-        left_cut.overlay(
+    mixed_cut_set = CutSet.from_cuts(
+        left_cut.mix(
             right_cut,
             offset_other_by=left_cut.duration * relative_offset,
             snr=snr
         )
         for left_cut, right_cut, snr, relative_offset in zip(left_cuts, right_cuts, snrs, relative_offsets)
     )
-    overlayed_cut_set.to_yaml(output_cut_manifest)
+    mixed_cut_set.to_yaml(output_cut_manifest)
 
 
 @cut.command()

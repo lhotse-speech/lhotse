@@ -65,7 +65,7 @@ def test_feature_set_serialization():
         features=[
             Features(
                 recording_id='irrelevant',
-                channel_id=0,
+                channels=0,
                 start=0.0,
                 duration=20.0,
                 type='fbank',

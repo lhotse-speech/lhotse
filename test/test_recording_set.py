@@ -50,7 +50,7 @@ def test_get_metadata(recording_set):
     assert 2 == recording_set.num_channels('recording-1')
     assert 8000 == recording_set.sampling_rate('recording-1')
     assert 4000 == recording_set.num_samples('recording-1')
-    assert 0.5 == recording_set.duration_seconds('recording-1')
+    assert 0.5 == recording_set.duration('recording-1')
 
 
 def test_serialization():
@@ -60,18 +60,18 @@ def test_serialization():
             sources=[
                 AudioSource(
                     type='file',
-                    channel_ids=[0],
+                    channels=[0],
                     source='text/fixtures/mono_c0.wav'
                 ),
                 AudioSource(
                     type='command',
-                    channel_ids=[1],
+                    channels=[1],
                     source='cat text/fixtures/mono_c1.wav'
                 )
             ],
             sampling_rate=8000,
             num_samples=4000,
-            duration_seconds=0.5
+            duration=0.5
         )
     ])
     with NamedTemporaryFile() as f:
@@ -168,11 +168,11 @@ def test_recording_from_sphere(relative_path_depth, expected_source_path):
         id='stereo',
         sampling_rate=8000,
         num_samples=8000,
-        duration_seconds=1.0,
+        duration=1.0,
         sources=[
             AudioSource(
                 type='file',
-                channel_ids=[0, 1],
+                channels=[0, 1],
                 source=expected_source_path
             )
         ]

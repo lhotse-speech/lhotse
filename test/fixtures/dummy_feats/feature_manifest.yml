@@ -1,68 +1,40 @@
-feature_extractor:
-  fbank_config:
-    use_log_fbank: true
-  mfcc_config:
-    cepstral_lifter: 22.0
-    num_ceps: 13
-  mfcc_fbank_common_config:
-    high_freq: 0.0
-    low_freq: 20.0
-    num_mel_bins: 23
-    use_energy: false
-    vtln_high: -500.0
-    vtln_low: 100.0
-    vtln_warp: 1.0
-  spectrogram_config:
-    dither: 0.0
-    energy_floor: 0.0
-    # Note that frame_length and frame_shift will be converted to milliseconds before torchaudio/Kaldi sees them
-    frame_length: 0.025
-    frame_shift: 0.01
-    min_duration: 0.0
-    preemphasis_coefficient: 0.97
-    raw_energy: true
-    remove_dc_offset: true
-    round_to_power_of_two: true
-    window_type: povey
+- channels: 0
+  duration: 0.5
+  num_features: 23
+  num_frames: 50
+  recording_id: recording-1
+  sampling_rate: 16000
+  start: 0.0
+  storage_path: test/fixtures/dummy_feats/storage/89739de9-308c-4487-9fa5-1c690d44e718.llc
+  storage_type: lilcom
   type: fbank
-features:
-  - channel_id: 0
-    duration: 0.5
-    num_features: 23
-    num_frames: 50
-    recording_id: recording-1
-    sampling_rate: 16000
-    start: 0.0
-    storage_path: test/fixtures/dummy_feats/storage/89739de9-308c-4487-9fa5-1c690d44e718.llc
-    storage_type: lilcom
-    type: fbank
-  - channel_id: 1
-    duration: 0.5
-    num_features: 23
-    num_frames: 50
-    recording_id: recording-1
-    sampling_rate: 16000
-    start: 0.0
-    storage_path: test/fixtures/dummy_feats/storage/25959652-8816-4810-a88a-0b022d6b9b6d.llc
-    storage_type: lilcom
-    type: fbank
-  - channel_id: 0
-    duration: 1.0
-    num_features: 23
-    num_frames: 100
-    recording_id: recording-2
-    sampling_rate: 16000
-    start: 0.0
-    storage_path: test/fixtures/dummy_feats/storage/dbf9a0ec-f79d-4eb8-ae83-143a6d5de64d.llc
-    storage_type: lilcom
-    type: fbank
-  - channel_id: 1
-    duration: 1.0
-    num_features: 23
-    num_frames: 100
-    recording_id: recording-2
-    sampling_rate: 16000
-    start: 0.0
-    storage_path: test/fixtures/dummy_feats/storage/d3466ce9-d604-48c3-8c1f-26480aaf07d1.llc
-    storage_type: lilcom
-    type: fbank
+- channels: 1
+  duration: 0.5
+  num_features: 23
+  num_frames: 50
+  recording_id: recording-1
+  sampling_rate: 16000
+  start: 0.0
+  storage_path: test/fixtures/dummy_feats/storage/25959652-8816-4810-a88a-0b022d6b9b6d.llc
+  storage_type: lilcom
+  type: fbank
+- channels: 0
+  duration: 1.0
+  num_features: 23
+  num_frames: 100
+  recording_id: recording-2
+  sampling_rate: 16000
+  start: 0.0
+  storage_path: test/fixtures/dummy_feats/storage/dbf9a0ec-f79d-4eb8-ae83-143a6d5de64d.llc
+  storage_type: lilcom
+  type: fbank
+- channels: 1
+  duration: 1.0
+  num_features: 23
+  num_frames: 100
+  recording_id: recording-2
+  sampling_rate: 16000
+  start: 0.0
+  storage_path: test/fixtures/dummy_feats/storage/d3466ce9-d604-48c3-8c1f-26480aaf07d1.llc
+  storage_type: lilcom
+  type: fbank

@@ -24,7 +24,7 @@ def dummy_recording(unique_id: int) -> Recording:
         sources=[],
         sampling_rate=16000,
         num_samples=16000,
-        duration_seconds=1.0
+        duration=1.0
     )
 
 
@@ -40,7 +40,7 @@ def dummy_supervision(unique_id: int, start: float = 0.0, duration: float = 1.0)
 def dummy_features(unique_id: int) -> Features:
     return Features(
         recording_id=f'dummy-recording-{unique_id:04d}',
-        channel_id=0,
+        channels=0,
         start=0.0,
         duration=1.0,
         type='fbank',

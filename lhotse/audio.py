@@ -26,7 +26,7 @@ class AudioSource:
     - 'command' [unix pipe] (must be WAVE, possibly multi-channel)
     """
     type: str
-    channel_ids: List[int]
+    channels: List[int]
     source: str
 
     def load_audio(
@@ -57,13 +57,15 @@ class AudioSource:
         else:
             source = self.source if root_dir is None else Path(root_dir) / self.source
 
-        samples, sampling_rate = librosa.load(
-            source,
-            sr=None,  # 'None' uses the native sampling rate
-            mono=False,  # Retain multi-channel if it's there
-            offset=offset_seconds,
-            duration=duration_seconds
-        )
+        with warnings.catch_warnings():
+            warnings.simplefilter('ignore')
+            samples, sampling_rate = librosa.load(
+                source,
+                sr=None,  # 'None' uses the native sampling rate
+                mono=False,  # Retain multi-channel if it's there
+                offset=offset_seconds,
+                duration=duration_seconds
+            )
 
         # explicit sanity check for duration as librosa does not complain here
         if duration_seconds is not None:
@@ -90,7 +92,7 @@ class Recording:
     sources: List[AudioSource]
     sampling_rate: int
     num_samples: int
-    duration_seconds: Seconds
+    duration: Seconds
 
     @staticmethod
     def from_sphere(sph_path: Pathlike, relative_path_depth: Optional[int] = None) -> 'Recording':
@@ -109,11 +111,11 @@ class Recording:
             id=sph_path.stem,
             sampling_rate=sphf.format['sample_rate'],
             num_samples=sphf.format['sample_count'],
-            duration_seconds=sphf.format['sample_count'] / sphf.format['sample_rate'],
+            duration=sphf.format['sample_count'] / sphf.format['sample_rate'],
             sources=[
                 AudioSource(
                     type='file',
-                    channel_ids=list(range(sphf.format['channel_count'])),
+                    channels=list(range(sphf.format['channel_count'])),
                     source=(
                         '/'.join(sph_path.parts[-relative_path_depth:])
                         if relative_path_depth is not None and relative_path_depth > 0
@@ -125,11 +127,11 @@ class Recording:
 
     @property
     def num_channels(self):
-        return sum(len(source.channel_ids) for source in self.sources)
+        return sum(len(source.channels) for source in self.sources)
 
     @property
     def channel_ids(self):
-        return sorted(cid for source in self.sources for cid in source.channel_ids)
+        return sorted(cid for source in self.sources for cid in source.channels)
 
     def load_audio(
             self,
@@ -148,7 +150,7 @@ class Recording:
         samples_per_source = []
         for source in self.sources:
             # Case: source not requested
-            if not channels.intersection(source.channel_ids):
+            if not channels.intersection(source.channels):
                 continue
             samples = source.load_audio(
                 offset_seconds=offset_seconds,
@@ -159,7 +161,7 @@ class Recording:
             # Case: two-channel audio file but only one channel requested
             #       it might not be optimal to load all channels, but IDK if there's anything we can do about it
             channels_to_remove = [
-                idx for idx, cid in enumerate(source.channel_ids)
+                idx for idx, cid in enumerate(source.channels)
                 if cid not in channels
             ]
             if channels_to_remove:
@@ -194,7 +196,11 @@ class RecordingSet:
     @staticmethod
     def from_yaml(path: Pathlike) -> 'RecordingSet':
         raw_recordings = load_yaml(path)
-        return RecordingSet.from_recordings(Recording.from_dict(raw_rec) for raw_rec in raw_recordings)
+        return RecordingSet.from_dicts(raw_recordings)
+
+    @staticmethod
+    def from_dicts(data: Iterable[dict]) -> 'RecordingSet':
+        return RecordingSet.from_recordings(Recording.from_dict(raw_rec) for raw_rec in data)
 
     def to_yaml(self, path: Pathlike):
         data = [asdict(r) for r in self]
@@ -233,8 +239,8 @@ class RecordingSet:
     def num_samples(self, recording_id: str) -> int:
         return self.recordings[recording_id].num_samples
 
-    def duration_seconds(self, recording_id: str) -> float:
-        return self.recordings[recording_id].duration_seconds
+    def duration(self, recording_id: str) -> Seconds:
+        return self.recordings[recording_id].duration
 
     def __getitem__(self, recording_id_or_index: Union[int, str]) -> Recording:
         if isinstance(recording_id_or_index, str):

@@ -92,7 +92,7 @@ def make_segments(transcript_path: Path, recording: Recording, channel: int, omi
             recording_id=recording.id,
             start=float(start),
             duration=round(float(end) - float(start), ndigits=3),
-            channel_id=channel,
+            channel=channel,
             text=' '.join(words),
             language='English',
             speaker=f'{recording.id}A'
