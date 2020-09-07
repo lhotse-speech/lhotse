@@ -13,7 +13,7 @@ from lhotse.utils import INT16MAX
 
 @pytest.fixture
 def recording_set() -> RecordingSet:
-    return RecordingSet.from_yaml('test/fixtures/audio.yml')
+    return RecordingSet.from_json('test/fixtures/audio.json')
 
 
 @lru_cache(1)
@@ -56,8 +56,6 @@ def test_get_metadata(recording_set):
 @pytest.mark.parametrize(
     ['format', 'compressed'],
     [
-        ('yaml', False),
-        ('yaml', True),
         ('json', False),
         ('json', True),
     ]

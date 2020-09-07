@@ -8,7 +8,7 @@ from lhotse.test_utils import DummyManifest
 
 @pytest.fixture
 def external_supervision_set():
-    return SupervisionSet.from_yaml('test/fixtures/supervision.yml')
+    return SupervisionSet.from_json('test/fixtures/supervision.json')
 
 
 def test_supervision_segment_with_full_metadata(external_supervision_set):
@@ -69,8 +69,6 @@ def test_supervision_set_iteration():
 @pytest.mark.parametrize(
     ['format', 'compressed'],
     [
-        ('yaml', False),
-        ('yaml', True),
         ('json', False),
         ('json', True),
     ]

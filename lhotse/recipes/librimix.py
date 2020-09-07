@@ -68,9 +68,9 @@ def prepare_librimix(
         for idx, row in df.iterrows()
         if row['length'] / sampling_rate > min_segment_seconds
     )
-    audio_sources.to_yaml(output_dir / 'audio_sources.yml')
+    audio_sources.to_json(output_dir / 'audio_sources.json')
     supervision_sources = make_corresponding_supervisions(audio_sources)
-    supervision_sources.to_yaml(output_dir / 'supervisions_sources.yml')
+    supervision_sources.to_json(output_dir / 'supervisions_sources.json')
 
     manifests['sources'] = {
         'audio': audio_sources,
@@ -98,9 +98,9 @@ def prepare_librimix(
             for idx, row in df.iterrows()
             if row['length'] / sampling_rate > min_segment_seconds
         )
-        audio_mix.to_yaml(output_dir / 'audio_mix.yml')
+        audio_mix.to_json(output_dir / 'audio_mix.json')
         supervision_mix = make_corresponding_supervisions(audio_mix)
-        supervision_mix.to_yaml(output_dir / 'supervisions_mix.yml')
+        supervision_mix.to_json(output_dir / 'supervisions_mix.json')
         manifests['premixed'] = {
             'audio': audio_mix,
             'supervisions': supervision_mix
@@ -126,9 +126,9 @@ def prepare_librimix(
             for idx, row in df.iterrows()
             if row['length'] / sampling_rate > min_segment_seconds
         )
-        audio_noise.to_yaml(output_dir / 'audio_noise.yml')
+        audio_noise.to_json(output_dir / 'audio_noise.json')
         supervision_noise = make_corresponding_supervisions(audio_noise)
-        supervision_noise.to_yaml(output_dir / 'supervisions_noise.yml')
+        supervision_noise.to_json(output_dir / 'supervisions_noise.json')
         manifests['noise'] = {
             'audio': audio_noise,
             'supervisions': supervision_noise

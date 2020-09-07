@@ -53,7 +53,7 @@ def simple(
         recording_set=recording_set,
         supervision_set=supervision_set
     )
-    cut_set.to_yaml(output_cut_manifest)
+    cut_set.to_json(output_cut_manifest)
 
 
 @cut.command()
@@ -76,14 +76,14 @@ def windowed(
     Create a CutSet stored in OUTPUT_CUT_MANIFEST from feature regions in FEATURE_MANIFEST.
     The feature matrices are traversed in windows with CUT_SHIFT increments, creating cuts of constant CUT_DURATION.
     """
-    feature_set = FeatureSet.from_yaml(feature_manifest)
+    feature_set = FeatureSet.from_json(feature_manifest)
     cut_set = make_windowed_cuts_from_features(
         feature_set=feature_set,
         cut_duration=cut_duration,
         cut_shift=cut_shift,
         keep_shorter_windows=keep_shorter_windows
     )
-    cut_set.to_yaml(output_cut_manifest)
+    cut_set.to_json(output_cut_manifest)
 
 
 @cut.command()
@@ -108,8 +108,8 @@ def random_mixed(
     parts and mixes their features.
     The parameters of the mix are controlled via SNR_RANGE and OFFSET_RANGE.
     """
-    supervision_set = SupervisionSet.from_yaml(supervision_manifest)
-    feature_set = FeatureSet.from_yaml(feature_manifest)
+    supervision_set = SupervisionSet.from_json(supervision_manifest)
+    feature_set = FeatureSet.from_json(feature_manifest)
 
     source_cut_set = CutSet.from_manifests(supervision_set=supervision_set, feature_set=feature_set)
     left_cuts, right_cuts = split(source_cut_set, num_splits=2, randomize=True)
@@ -125,7 +125,7 @@ def random_mixed(
         )
         for left_cut, right_cut, snr, relative_offset in zip(left_cuts, right_cuts, snrs, relative_offsets)
     )
-    mixed_cut_set.to_yaml(output_cut_manifest)
+    mixed_cut_set.to_json(output_cut_manifest)
 
 
 @cut.command()
@@ -141,9 +141,9 @@ def mix_sequential(
     The mix is performed by summing the features from all Cuts.
     If the CUT_MANIFESTS have different number of Cuts, the mixing ends when the shorter manifest is depleted.
     """
-    cut_manifests = [CutSet.from_yaml(path) for path in cut_manifests]
+    cut_manifests = [CutSet.from_json(path) for path in cut_manifests]
     mixed_cut_set = CutSet.from_cuts(mix_cuts(cuts) for cuts in zip(*cut_manifests))
-    mixed_cut_set.to_yaml(output_cut_manifest)
+    mixed_cut_set.to_json(output_cut_manifest)
 
 
 @cut.command()
@@ -157,10 +157,10 @@ def mix_by_recording_id(
     Create a CutSet stored in OUTPUT_CUT_MANIFEST by matching the Cuts from CUT_MANIFESTS by their recording IDs
     and mixing them together.
     """
-    all_cuts = combine(*[CutSet.from_yaml(path) for path in cut_manifests])
+    all_cuts = combine(*[CutSet.from_json(path) for path in cut_manifests])
     recording_id_to_cuts = groupby(lambda cut: cut.recording_id, all_cuts)
     mixed_cut_set = CutSet.from_cuts(mix_cuts(cuts) for recording_id, cuts in recording_id_to_cuts.items())
-    mixed_cut_set.to_yaml(output_cut_manifest)
+    mixed_cut_set.to_json(output_cut_manifest)
 
 
 @cut.command(context_settings=dict(show_default=True))
@@ -188,14 +188,14 @@ def truncate(
     Truncate the cuts in the CUT_MANIFEST and write them to OUTPUT_CUT_MANIFEST.
     Cuts shorter than MAX_DURATION will not be modified.
     """
-    cut_set = CutSet.from_yaml(cut_manifest)
+    cut_set = CutSet.from_json(cut_manifest)
     truncated_cut_set = cut_set.truncate(
         max_duration=max_duration,
         offset_type=offset_type,
         keep_excessive_supervisions=keep_overflowing_supervisions,
         preserve_id=preserve_id
     )
-    truncated_cut_set.to_yaml(output_cut_manifest)
+    truncated_cut_set.to_json(output_cut_manifest)
 
 
 @cut.command()
@@ -212,9 +212,9 @@ def append(
     input argument list.
     If CUT_MANIFESTS have different lengths, the script stops once the shortest CutSet is depleted.
     """
-    cut_sets = [CutSet.from_yaml(path) for path in cut_manifests]
+    cut_sets = [CutSet.from_json(path) for path in cut_manifests]
     appended_cut_set = CutSet.from_cuts(append_cuts(cuts) for cuts in zip(*cut_sets))
-    appended_cut_set.to_yaml(output_cut_manifest)
+    appended_cut_set.to_json(output_cut_manifest)
 
 
 @cut.command()
@@ -233,6 +233,6 @@ def pad(
     Create a new CutSet by padding the cuts in CUT_MANIFEST. The cuts will be right-padded, i.e. the padding
     is placed after the signal ends.
     """
-    cut_set = CutSet.from_yaml(cut_manifest)
+    cut_set = CutSet.from_json(cut_manifest)
     padded_cut_set = cut_set.pad(desired_duration=duration)
-    padded_cut_set.to_yaml(output_cut_manifest)
+    padded_cut_set.to_json(output_cut_manifest)

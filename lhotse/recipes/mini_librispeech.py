@@ -51,7 +51,7 @@ def prepare_mini_librispeech(
     Returns the manifests which consist of the Recordings and Supervisions
 
     :param corpus_dir: Pathlike, the path of the data dir.
-    :param output_dir: Pathlike, the path where to write the yamls.
+    :param output_dir: Pathlike, the path where to write the manifests.
     :return: a Dict whose key is the dataset part, and the value is Dicts with the keys 'audio' and 'supervisions'.
     """
     corpus_dir = Path(corpus_dir)
@@ -84,17 +84,17 @@ def prepare_mini_librispeech(
                 sources=[
                     AudioSource(
                         type='file',
-                        channel_ids=[0],
+                        channels=[0],
                         source=str(metadata[idx].audio_path)
                     )
                 ],
                 sampling_rate=int(metadata[idx].audio_info.rate),
                 num_samples=metadata[idx].audio_info.length,
-                duration_seconds=(metadata[idx].audio_info.length / metadata[idx].audio_info.rate)
+                duration=(metadata[idx].audio_info.length / metadata[idx].audio_info.rate)
             )
             for idx in metadata
         )
-        audio.to_yaml(output_dir / f'audio_{part}.yml')
+        audio.to_json(output_dir / f'audio_{part}.json')
 
         # Supervision
         supervision = SupervisionSet.from_segments(
@@ -103,14 +103,14 @@ def prepare_mini_librispeech(
                 recording_id=idx,
                 start=0.0,
                 duration=audio.recordings[idx].duration,
-                channel_id=0,
+                channel=0,
                 language='English',
                 speaker=re.sub(r'-.*', r'', idx),
                 text=metadata[idx].text.strip()
             )
             for idx in audio.recordings
         )
-        supervision.to_yaml(output_dir / f'supervisions_{part}.yml')
+        supervision.to_json(output_dir / f'supervisions_{part}.json')
 
         manifests[part] = {
             'audio': audio,

@@ -50,9 +50,9 @@ def test_combine(manifest_type):
 @mark.parametrize(
     ['path', 'exception_expectation'],
     [
-        ('test/fixtures/audio.yml', does_not_raise()),
-        ('test/fixtures/supervision.yml', does_not_raise()),
-        ('test/fixtures/dummy_feats/feature_manifest.yml', does_not_raise()),
+        ('test/fixtures/audio.json', does_not_raise()),
+        ('test/fixtures/supervision.json', does_not_raise()),
+        ('test/fixtures/dummy_feats/feature_manifest.json', does_not_raise()),
         ('test/fixtures/feature_config.yml', raises(ValueError)),
         ('no/such/path.xd', raises(FileNotFoundError)),
     ]

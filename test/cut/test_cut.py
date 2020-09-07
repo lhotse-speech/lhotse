@@ -8,22 +8,22 @@ from lhotse.supervision import SupervisionSet, SupervisionSegment
 
 @pytest.fixture()
 def libri_recording_set():
-    return RecordingSet.from_yaml('test/fixtures/libri/audio.yml')
+    return RecordingSet.from_json('test/fixtures/libri/audio.json')
 
 
 @pytest.fixture
 def libri_cut_set():
-    return CutSet.from_yaml('test/fixtures/libri/cuts.yml')
+    return CutSet.from_json('test/fixtures/libri/cuts.json')
 
 
 @pytest.fixture
 def libri_features_set():
-    return FeatureSet.from_yaml('test/fixtures/libri/feature_manifest.yml.gz')
+    return FeatureSet.from_json('test/fixtures/libri/feature_manifest.json.gz')
 
 
 @pytest.fixture
 def supervision_set():
-    return SupervisionSet.from_yaml('test/fixtures/supervision.yml')
+    return SupervisionSet.from_json('test/fixtures/supervision.yml')
 
 
 @pytest.fixture
@@ -32,14 +32,14 @@ def libri_cut(libri_cut_set):
 
 
 def test_load_none_feats_cut_set():
-    cutset = CutSet.from_yaml('test/fixtures/libri/cuts_no_feats.yml')
+    cutset = CutSet.from_json('test/fixtures/libri/cuts_no_feats.json')
     cut = list(cutset.cuts.values())[0]
     assert cut.features is None
     assert cut.recording is not None
 
 
 def test_load_none_recording_cut_set():
-    cutset = CutSet.from_yaml('test/fixtures/libri/cuts_no_recording.yml')
+    cutset = CutSet.from_json('test/fixtures/libri/cuts_no_recording.json')
     cut = list(cutset.cuts.values())[0]
     assert cut.recording is None
     assert cut.features is not None

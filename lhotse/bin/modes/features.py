@@ -59,13 +59,13 @@ def extract(
     Extract features for recordings in a given AUDIO_MANIFEST. The features are stored in OUTPUT_DIR,
     with one file per recording (or segment).
     """
-    audio_set = RecordingSet.from_yaml(audio_manifest)
+    audio_set = RecordingSet.from_json(audio_manifest)
 
     feature_extractor = (FeatureExtractor.from_yaml(feature_manifest)
                          if feature_manifest is not None else Fbank())
 
     # TODO: to be used (actually, only the segmentation info will be used, and all supervision info will be ignored)
-    supervision_set = (SupervisionSet.from_yaml(segmentation_manifest)
+    supervision_set = (SupervisionSet.from_json(segmentation_manifest)
                        if segmentation_manifest is not None else None)
 
     output_dir = Path(output_dir)

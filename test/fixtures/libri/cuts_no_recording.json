@@ -1,0 +1,22 @@
+[
+  {
+    "channel": 0,
+    "duration": 10.0,
+    "features": {
+      "channels": 0,
+      "duration": 16.04,
+      "num_features": 23,
+      "num_frames": 1604,
+      "recording_id": "recording-1",
+      "sampling_rate": 16000,
+      "start": 0.0,
+      "storage_path": "test/fixtures/libri/storage/68f03dd2-96ec-45b0-b1be-a4f9dd5e7dcf.llc",
+      "storage_type": "lilcom",
+      "type": "fbank"
+    },
+    "id": "e3e70682-c209-4cac-629f-6fbed82c07cd",
+    "start": 0.0,
+    "supervisions": [],
+    "type": "Cut"
+  }
+]

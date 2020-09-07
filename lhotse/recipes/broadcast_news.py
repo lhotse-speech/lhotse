@@ -63,9 +63,9 @@ def prepare_broadcast_news(
     if output_dir is not None:
         output_dir = Path(output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
-        recordings.to_yaml(output_dir / 'recordings.yml')
-        section_supervisions.to_yaml(output_dir / 'sections.yml')
-        segment_supervisions.to_yaml(output_dir / 'segments.yml')
+        recordings.to_json(output_dir / 'recordings.json')
+        section_supervisions.to_json(output_dir / 'sections.json')
+        segment_supervisions.to_json(output_dir / 'segments.json')
 
     return {
         'recordings': recordings,

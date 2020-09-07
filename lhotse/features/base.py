@@ -14,8 +14,7 @@ import torch
 from lhotse.audio import Recording
 from lhotse.augmentation import WavAugmenter
 from lhotse.supervision import SupervisionSegment
-from lhotse.utils import Seconds, Pathlike, load_yaml, save_to_yaml, uuid4, JsonMixin, \
-    YamlMixin
+from lhotse.utils import Seconds, Pathlike, load_yaml, save_to_yaml, uuid4, JsonMixin
 
 
 class FeatureExtractor(metaclass=ABCMeta):
@@ -363,7 +362,7 @@ class Features:
 
 
 @dataclass
-class FeatureSet(JsonMixin, YamlMixin):
+class FeatureSet(JsonMixin):
     """
     Represents a feature manifest, and allows to read features for given recordings
     within particular channels and time ranges.
@@ -522,7 +521,7 @@ class FeatureSetBuilder:
             with ProcessPoolExecutor(num_jobs) as ex:
                 feature_infos = list(chain.from_iterable(ex.map(do_work, recordings)))
         feature_set = FeatureSet.from_features(feature_infos)
-        feature_set.to_yaml(self.output_dir / 'feature_manifest.yml.gz')
+        feature_set.to_json(self.output_dir / 'feature_manifest.json.gz')
         return feature_set
 
     def _process_and_store_recording(

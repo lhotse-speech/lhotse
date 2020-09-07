@@ -22,7 +22,6 @@ from lhotse.utils import (
     overspans,
     uuid4,
     JsonMixin,
-    YamlMixin
 )
 
 # One of the design principles for Cuts is a maximally "lazy" implementation, e.g. when mixing Cuts,
@@ -639,7 +638,7 @@ class MixedCut(CutUtilsMixin):
 
 
 @dataclass
-class CutSet(JsonMixin, YamlMixin):
+class CutSet(JsonMixin):
     """
     CutSet combines features with their corresponding supervisions.
     It may have wider span than the actual supervisions, provided the features for the whole span exist.
