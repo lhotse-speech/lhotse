@@ -14,7 +14,7 @@ import torch
 from lhotse.audio import Recording
 from lhotse.augmentation import WavAugmenter
 from lhotse.supervision import SupervisionSegment
-from lhotse.utils import Seconds, Pathlike, load_yaml, save_to_yaml, uuid4, load_json, save_to_json, JsonMixin, \
+from lhotse.utils import Seconds, Pathlike, load_yaml, save_to_yaml, uuid4, JsonMixin, \
     YamlMixin
 
 

@@ -1,6 +1,5 @@
 import random
 import warnings
-from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from functools import reduce
 from math import ceil, floor, log
@@ -19,11 +18,11 @@ from lhotse.utils import (
     Seconds,
     TimeSpan,
     asdict_nonull,
-    load_yaml,
     overlaps,
     overspans,
-    save_to_yaml,
-    uuid4, load_json, save_to_json, JsonMixin, YamlMixin
+    uuid4,
+    JsonMixin,
+    YamlMixin
 )
 
 # One of the design principles for Cuts is a maximally "lazy" implementation, e.g. when mixing Cuts,

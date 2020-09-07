@@ -1,8 +1,7 @@
-from copy import deepcopy
-from dataclasses import asdict, dataclass, field
+from dataclasses import dataclass
 from typing import Callable, Dict, Iterable, Optional, Any, List
 
-from lhotse.utils import Pathlike, Seconds, asdict_nonull, load_yaml, save_to_yaml, save_to_json, load_json, YamlMixin, \
+from lhotse.utils import Seconds, asdict_nonull, YamlMixin, \
     JsonMixin
 
 
