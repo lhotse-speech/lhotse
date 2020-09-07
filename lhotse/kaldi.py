@@ -36,13 +36,13 @@ def load_kaldi_data_dir(path: Pathlike, sampling_rate: int) -> Tuple[RecordingSe
             sources=[
                 AudioSource(
                     type='command' if path_or_cmd.endswith('|') else 'file',
-                    channel_ids=[0],
+                    channels=[0],
                     source=path_or_cmd[:-1] if path_or_cmd.endswith('|') else path_or_cmd
                 )
             ],
             sampling_rate=sampling_rate,
             num_samples=int(durations[recording_id] * sampling_rate),
-            duration_seconds=durations[recording_id]
+            duration=durations[recording_id]
         )
         for recording_id, path_or_cmd in recordings.items()
     )
@@ -66,7 +66,7 @@ def load_kaldi_data_dir(path: Pathlike, sampling_rate: int) -> Tuple[RecordingSe
             recording_id=recording_id,
             start=float(start),
             duration=float(duration) - float(start),
-            channel_id=0,
+            channel=0,
             text=texts[segment_id],
             language=languages[segment_id],
             speaker=speakers[segment_id],
