@@ -14,7 +14,7 @@ import torch
 from lhotse.audio import Recording
 from lhotse.augmentation import WavAugmenter
 from lhotse.supervision import SupervisionSegment
-from lhotse.utils import Seconds, Pathlike, load_yaml, save_to_yaml, uuid4, JsonMixin
+from lhotse.utils import Seconds, Pathlike, load_yaml, save_to_yaml, uuid4, JsonMixin, YamlMixin
 
 
 class FeatureExtractor(metaclass=ABCMeta):
@@ -362,7 +362,7 @@ class Features:
 
 
 @dataclass
-class FeatureSet(JsonMixin):
+class FeatureSet(JsonMixin, YamlMixin):
     """
     Represents a feature manifest, and allows to read features for given recordings
     within particular channels and time ranges.

@@ -8,7 +8,7 @@ from typing import Callable, Dict, Iterable, List, Optional, Union
 
 import numpy as np
 
-from lhotse.utils import Decibels, Pathlike, Seconds, SetContainingAnything, JsonMixin
+from lhotse.utils import Decibels, Pathlike, Seconds, SetContainingAnything, JsonMixin, YamlMixin
 
 Channels = Union[int, List[int]]
 
@@ -178,7 +178,7 @@ class Recording:
 
 
 @dataclass
-class RecordingSet(JsonMixin):
+class RecordingSet(JsonMixin, YamlMixin):
     """
     RecordingSet represents a dataset of recordings. It does not contain any annotation -
     just the information needed to retrieve a recording (possibly multi-channel, from files

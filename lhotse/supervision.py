@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from typing import Callable, Dict, Iterable, Optional, Any, List
 
-from lhotse.utils import Seconds, asdict_nonull, JsonMixin
+from lhotse.utils import Seconds, asdict_nonull, JsonMixin, YamlMixin
 
 
 @dataclass
@@ -34,7 +34,7 @@ class SupervisionSegment:
 
 
 @dataclass
-class SupervisionSet(JsonMixin):
+class SupervisionSet(JsonMixin, YamlMixin):
     """
     SupervisionSet represents a collection of segments containing some supervision information.
     The only required fields are the ID of the segment, ID of the corresponding recording,

@@ -69,6 +69,8 @@ def test_supervision_set_iteration():
 @pytest.mark.parametrize(
     ['format', 'compressed'],
     [
+        ('yaml', False),
+        ('yaml', True),
         ('json', False),
         ('json', True),
     ]

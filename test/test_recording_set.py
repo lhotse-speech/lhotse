@@ -56,6 +56,8 @@ def test_get_metadata(recording_set):
 @pytest.mark.parametrize(
     ['format', 'compressed'],
     [
+        ('yaml', False),
+        ('yaml', True),
         ('json', False),
         ('json', True),
     ]

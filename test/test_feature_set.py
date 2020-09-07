@@ -63,6 +63,8 @@ def test_feature_extractor_generic_deserialization():
 @pytest.mark.parametrize(
     ['format', 'compressed'],
     [
+        ('yaml', False),
+        ('yaml', True),
         ('json', False),
         ('json', True),
     ]
