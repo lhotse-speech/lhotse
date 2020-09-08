@@ -76,7 +76,7 @@ class AudioSource:
                     f'Requested more audio ({duration_seconds}s) than available ({available_duration}s)'
                 )
 
-        return samples
+        return samples.astype(np.float32)
 
     @staticmethod
     def from_dict(data) -> 'AudioSource':
@@ -287,6 +287,7 @@ class AudioMixer:
         assert audio.shape[0] == 1  # TODO: support multi-channels
         assert offset >= 0.0, "Negative offset in mixing is not supported."
 
+        dtype = self.mixed_audio.dtype
         num_samples_offset = round(offset * sampling_rate)
         current_num_samples = self.mixed_audio.shape[1]
 
@@ -296,7 +297,7 @@ class AudioMixer:
         # When there is an offset, we need to pad before the start of the audio we're adding.
         if offset > 0:
             audio_to_add = np.hstack([
-                np.zeros((1, num_samples_offset)),
+                np.zeros((1, num_samples_offset), dtype),
                 audio_to_add
             ])
 
@@ -308,7 +309,7 @@ class AudioMixer:
         if current_num_samples < mix_num_samples:
             existing_audio = np.hstack([
                 self.mixed_audio,
-                np.zeros((1, mix_num_samples - current_num_samples))
+                np.zeros((1, mix_num_samples - current_num_samples), dtype)
             ])
 
         # When the audio we're mixing in are shorter that the anticipated mix length,
@@ -318,7 +319,7 @@ class AudioMixer:
         if incoming_num_samples < mix_num_samples:
             audio_to_add = np.hstack([
                 audio_to_add,
-                np.zeros((1, mix_num_samples - incoming_num_samples))
+                np.zeros((1, mix_num_samples - incoming_num_samples), dtype)
             ])
 
         # When SNR is requested, find what gain is needed to satisfy the SNR

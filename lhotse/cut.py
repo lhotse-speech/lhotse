@@ -362,13 +362,13 @@ class PaddingCut(CutUtilsMixin):
     def load_features(self, *args, **kwargs) -> Optional[np.ndarray]:
         if self.has_features:
             value = np.log(EPSILON) if self.use_log_energy else EPSILON
-            return np.ones((self.num_frames, self.num_features)) * value
+            return np.ones((self.num_frames, self.num_features), np.float32) * value
         return None
 
     # noinspection PyUnusedLocal
     def load_audio(self, *args, **kwargs) -> Optional[np.ndarray]:
         if self.has_recording:
-            return np.zeros((1, round(self.duration * self.sampling_rate)))
+            return np.zeros((1, round(self.duration * self.sampling_rate)), np.float32)
         return None
 
     # noinspection PyUnusedLocal
