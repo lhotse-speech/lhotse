@@ -45,7 +45,7 @@ class LibriSpeechMetaData(NamedTuple):
 
 def prepare_mini_librispeech(
         corpus_dir: Pathlike,
-        output_dir: Pathlike
+        output_dir: Optional[Pathlike] = None
 ) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet]]]:
     """
     Returns the manifests which consist of the Recordings and Supervisions
@@ -55,11 +55,10 @@ def prepare_mini_librispeech(
     :return: a Dict whose key is the dataset part, and the value is Dicts with the keys 'audio' and 'supervisions'.
     """
     corpus_dir = Path(corpus_dir)
-    output_dir = Path(output_dir)
-    output_dir.mkdir(parents=True, exist_ok=True)
-
+    if output_dir is not None:
+        output_dir = Path(output_dir)
+        output_dir.mkdir(parents=True, exist_ok=True)
     manifests = defaultdict(dict)
-
     for part in dataset_parts:
         # Generate a mapping: utt_id -> (audio_path, audio_info, text)
         metadata = {}
@@ -94,7 +93,6 @@ def prepare_mini_librispeech(
             )
             for idx in metadata
         )
-        audio.to_json(output_dir / f'audio_{part}.json')
 
         # Supervision
         supervision = SupervisionSet.from_segments(
@@ -110,7 +108,10 @@ def prepare_mini_librispeech(
             )
             for idx in audio.recordings
         )
-        supervision.to_json(output_dir / f'supervisions_{part}.json')
+
+        if output_dir is not None:
+            supervision.to_json(output_dir / f'supervisions_{part}.json')
+            audio.to_json(output_dir / f'audio_{part}.json')
 
         manifests[part] = {
             'audio': audio,
