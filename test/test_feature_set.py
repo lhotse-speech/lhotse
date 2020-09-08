@@ -60,7 +60,16 @@ def test_feature_extractor_generic_deserialization():
     assert fe_deserialized.config == fe.config
 
 
-def test_feature_set_serialization():
+@pytest.mark.parametrize(
+    ['format', 'compressed'],
+    [
+        ('yaml', False),
+        ('yaml', True),
+        ('json', False),
+        ('json', True),
+    ]
+)
+def test_feature_set_serialization(format, compressed):
     feature_set = FeatureSet(
         features=[
             Features(
@@ -77,9 +86,13 @@ def test_feature_set_serialization():
             )
         ]
     )
-    with NamedTemporaryFile() as f:
-        feature_set.to_yaml(f.name)
-        feature_set_deserialized = FeatureSet.from_yaml(f.name)
+    with NamedTemporaryFile(suffix='.gz' if compressed else '') as f:
+        if format == 'json':
+            feature_set.to_json(f.name)
+            feature_set_deserialized = FeatureSet.from_json(f.name)
+        if format == 'yaml':
+            feature_set.to_yaml(f.name)
+            feature_set_deserialized = FeatureSet.from_yaml(f.name)
     assert feature_set_deserialized == feature_set
 
 
@@ -106,7 +119,7 @@ def test_load_features(
         expected_num_frames: Optional[float]
 ):
     # just test that it loads
-    feature_set = FeatureSet.from_yaml('test/fixtures/dummy_feats/feature_manifest.yml')
+    feature_set = FeatureSet.from_json('test/fixtures/dummy_feats/feature_manifest.json')
     with exception_expectation:
         features = feature_set.load(recording_id, channel_id=channel, start=start, duration=duration)
         # expect a matrix
@@ -116,7 +129,7 @@ def test_load_features(
 
 
 def test_load_features_with_default_arguments():
-    feature_set = FeatureSet.from_yaml('test/fixtures/dummy_feats/feature_manifest.yml')
+    feature_set = FeatureSet.from_json('test/fixtures/dummy_feats/feature_manifest.json')
     features = feature_set.load('recording-1')
     assert features.shape == (50, 23)
 
@@ -133,7 +146,7 @@ def test_load_features_with_default_arguments():
     ]
 )
 def test_feature_set_builder(augmentation):
-    audio_set = RecordingSet.from_yaml('test/fixtures/audio.yml')
+    audio_set = RecordingSet.from_json('test/fixtures/audio.json')
     augmenter = WavAugmenter.create_predefined(augmentation, sampling_rate=8000) if augmentation is not None else None
     with TemporaryDirectory() as output_dir:
         builder = FeatureSetBuilder(

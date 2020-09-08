@@ -8,7 +8,7 @@ from lhotse.test_utils import DummyManifest
 
 @pytest.fixture
 def external_supervision_set():
-    return SupervisionSet.from_yaml('test/fixtures/supervision.yml')
+    return SupervisionSet.from_json('test/fixtures/supervision.json')
 
 
 def test_supervision_segment_with_full_metadata(external_supervision_set):
@@ -66,7 +66,16 @@ def test_supervision_set_iteration():
     assert 2 == len(list(supervision_set))
 
 
-def test_supervision_set_serialization():
+@pytest.mark.parametrize(
+    ['format', 'compressed'],
+    [
+        ('yaml', False),
+        ('yaml', True),
+        ('json', False),
+        ('json', True),
+    ]
+)
+def test_supervision_set_serialization(format, compressed):
     supervision_set = SupervisionSet.from_segments([
         SupervisionSegment(
             id='segment-1',
@@ -80,9 +89,13 @@ def test_supervision_set_serialization():
             gender='male'
         )
     ])
-    with NamedTemporaryFile() as f:
-        supervision_set.to_yaml(f.name)
-        restored = supervision_set.from_yaml(f.name)
+    with NamedTemporaryFile(suffix='.gz' if compressed else '') as f:
+        if format == 'yaml':
+            supervision_set.to_yaml(f.name)
+            restored = supervision_set.from_yaml(f.name)
+        if format == 'json':
+            supervision_set.to_json(f.name)
+            restored = supervision_set.from_json(f.name)
     assert supervision_set == restored
 
 

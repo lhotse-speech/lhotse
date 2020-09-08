@@ -10,7 +10,7 @@ from lhotse.dataset.vad import VadDataset
 
 @pytest.fixture
 def cut_set():
-    return CutSet.from_yaml('test/fixtures/ami/cuts.yml')
+    return CutSet.from_json('test/fixtures/ami/cuts.json')
 
 
 def test_vad_dataset(cut_set):

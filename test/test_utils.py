@@ -3,7 +3,7 @@ from tempfile import NamedTemporaryFile
 
 import pytest
 
-from lhotse.utils import TimeSpan, load_yaml, overlaps, overspans, save_to_yaml
+from lhotse.utils import TimeSpan, load_yaml, overlaps, overspans, save_to_yaml, save_to_json, load_json
 
 
 @pytest.mark.parametrize(
@@ -60,4 +60,15 @@ def test_yaml_save_load_roundtrip(extension):
         save_to_yaml(data, path)
         f.flush()
         data_deserialized = load_yaml(path)
+    assert data == data_deserialized
+
+
+@pytest.mark.parametrize('extension', ['.json', '.json.gz'])
+def test_json_save_load_roundtrip(extension):
+    data = {'some': ['data']}
+    with NamedTemporaryFile() as f:
+        path = Path(f.name).with_suffix(extension)
+        save_to_json(data, path)
+        f.flush()
+        data_deserialized = load_json(path)
     assert data == data_deserialized

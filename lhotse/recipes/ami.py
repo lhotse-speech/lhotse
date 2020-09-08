@@ -151,7 +151,7 @@ def prepare_ami(
     Returns the manifests which consist of the Recordings and Supervisions
 
     :param data_dir: Pathlike, the path of the data dir.
-    :param output_dir: Pathlike, the path where to write the yamls.
+    :param output_dir: Pathlike, the path where to write the manifests.
     :return: a Dict whose key is ('train', 'dev', 'eval'), and the value is Dicts with keys 'audio' and 'supervisions'.
     """
     data_dir = Path(data_dir)
@@ -192,7 +192,7 @@ def prepare_ami(
         if len(recordings) == 0:
             continue
         audio = RecordingSet.from_recordings(recordings)
-        audio.to_yaml(output_dir / f'audio_{part}.yml')
+        audio.to_json(output_dir / f'audio_{part}.json')
 
         # Supervisions
         segments_by_pause = []
@@ -213,7 +213,7 @@ def prepare_ami(
                             text=subseg_info.text
                         ))
         supervision = SupervisionSet.from_segments(segments_by_pause)
-        supervision.to_yaml(output_dir / f'supervisions_{part}.yml')
+        supervision.to_json(output_dir / f'supervisions_{part}.json')
 
         manifests[part] = {
             'audio': audio,

@@ -19,12 +19,12 @@ __all__ = ['split', 'combine']
 
 
 @cli.group()
-def yaml():
+def manifest():
     """Generic commands working with all or most manifest types."""
     pass
 
 
-@yaml.command()
+@manifest.command()
 @click.argument('num_splits', type=int)
 @click.argument('manifest', type=click.Path(exists=True, dir_okay=False))
 @click.argument('output_dir', type=click.Path())
@@ -36,19 +36,19 @@ def split(num_splits: int, manifest: Pathlike, output_dir: Pathlike):
     parts = split_manifest(manifest=data_set, num_splits=num_splits)
     output_dir.mkdir(parents=True, exist_ok=True)
     for idx, part in enumerate(parts):
-        part.to_yaml(output_dir / f'{manifest.stem}.{idx + 1}.yml')
+        part.to_json(output_dir / f'{manifest.stem}.{idx + 1}.json')
 
 
-@yaml.command()
+@manifest.command()
 @click.argument('manifests', nargs=-1, type=click.Path(exists=True, dir_okay=False))
 @click.argument('output_manifest', type=click.Path())
 def combine(manifests: Pathlike, output_manifest: Pathlike):
     """Load MANIFESTS, combine them into a single one, and write it to OUTPUT_MANIFEST."""
     data_set = combine_manifests(*[load_manifest(m) for m in manifests])
-    data_set.to_yaml(output_manifest)
+    data_set.to_json(output_manifest)
 
 
-@yaml.command()
+@manifest.command()
 @click.argument('predicate')
 @click.argument('manifest', type=click.Path(exists=True, dir_okay=False))
 @click.argument('output_manifest', type=click.Path())
@@ -59,10 +59,10 @@ def filter(predicate: str, manifest: Pathlike, output_manifest: Pathlike):
 
     \b
     The PREDICATE specifies which attribute is used for item selection. Some examples:
-    lhotse yaml filter 'duration>4.5' supervision.yml output.yml
-    lhotse yaml filter 'num_frames<600' cuts.yml output.yml
-    lhotse yaml filter 'start=0' cuts.yml output.yml
-    lhotse yaml filter 'channel!=0' audio.yml output.yml
+    lhotse manifest filter 'duration>4.5' supervision.json output.json
+    lhotse manifest filter 'num_frames<600' cuts.json output.json
+    lhotse manifest filter 'start=0' cuts.json output.json
+    lhotse manifest filter 'channel!=0' audio.json output.json
 
     It currently only supports comparison of numerical manifest item attributes, such as:
     start, duration, end, channel, num_frames, num_features, etc.
@@ -104,4 +104,4 @@ def filter(predicate: str, manifest: Pathlike, output_manifest: Pathlike):
     if filtered_data_set is None:
         click.echo('No items satisfying the predicate.', err=True)
         exit(0)
-    filtered_data_set.to_yaml(output_manifest)
+    filtered_data_set.to_json(output_manifest)

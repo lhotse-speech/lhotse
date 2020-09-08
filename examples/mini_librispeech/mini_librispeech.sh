@@ -20,13 +20,13 @@ for part in ${data_parts}; do
   # Extract features
   lhotse feat extract -j ${nj} \
     -r ${MINI_LIBRISPEECH_ROOT} \
-    ${OUTPUT_PATH}/audio_${part}.yml \
+    ${OUTPUT_PATH}/audio_${part}.json \
     ${OUTPUT_PATH}/feats_${part}
   # Create cuts out of features
   lhotse cut simple \
-    -s ${OUTPUT_PATH}/supervisions_${part}.yml \
-    ${OUTPUT_PATH}/feats_${part}/feature_manifest.yml.gz \
-    ${OUTPUT_PATH}/cuts_${part}.yml.gz
+    -s ${OUTPUT_PATH}/supervisions_${part}.json \
+    ${OUTPUT_PATH}/feats_${part}/feature_manifest.json.gz \
+    ${OUTPUT_PATH}/cuts_${part}.json.gz
 done
 
 # Processing complete - the resulting YAML manifests can be loaded in Python to create a PyTorch dataset.

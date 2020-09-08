@@ -48,7 +48,7 @@ def test_overlay_cut_duration_and_supervisions(offset, expected_duration, except
 
 def test_mixed_cut_load_features():
     expected_frame_count = 1360
-    cut_set = CutSet.from_yaml('test/fixtures/mix_cut_test/overlayed_cut_manifest.yml')
+    cut_set = CutSet.from_json('test/fixtures/mix_cut_test/overlayed_cut_manifest.json')
     mixed_cut = cut_set['mixed-cut-id']
     assert mixed_cut.num_frames == expected_frame_count
     assert isclose(mixed_cut.duration, 13.595)
@@ -59,7 +59,7 @@ def test_mixed_cut_load_features():
 
 @pytest.fixture
 def mixed_audio_cut():
-    cut_set = CutSet.from_yaml('test/fixtures/mix_cut_test/overlayed_audio_cut_manifest.yml')
+    cut_set = CutSet.from_json('test/fixtures/mix_cut_test/overlayed_audio_cut_manifest.json')
     mixed_cut = cut_set['mixed-cut-id']
     assert isclose(mixed_cut.duration, 14.4)
     return mixed_cut

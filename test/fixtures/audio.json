@@ -1,0 +1,56 @@
+[
+  {
+    "id": "recording-1",
+    "sampling_rate": 8000,
+    "num_samples": 4000,
+    "duration": 0.5,
+    "sources": [
+      {
+        "type": "file",
+        "channels": [
+          0
+        ],
+        "source": "test/fixtures/mono_c0.wav"
+      },
+      {
+        "type": "command",
+        "channels": [
+          1
+        ],
+        "source": "cat test/fixtures/mono_c1.wav | cat"
+      }
+    ]
+  },
+  {
+    "id": "recording-2",
+    "sampling_rate": 8000,
+    "num_samples": 8000,
+    "duration": 1.0,
+    "sources": [
+      {
+        "type": "file",
+        "channels": [
+          0,
+          1
+        ],
+        "source": "test/fixtures/stereo.wav"
+      }
+    ]
+  },
+  {
+    "id": "recording-3",
+    "sampling_rate": 8000,
+    "num_samples": 8000,
+    "duration": 1.0,
+    "sources": [
+      {
+        "type": "file",
+        "channels": [
+          0,
+          1
+        ],
+        "source": "test/fixtures/stereo.sph"
+      }
+    ]
+  }
+]

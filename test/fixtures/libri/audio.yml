@@ -1,9 +1,0 @@
----
-- id: 'recording-1'
-  sampling_rate: 16000
-  num_samples: 256640
-  duration: 16.04
-  sources:
-    - type: file
-      channels: [0]
-      source: 'test/fixtures/libri/libri-1088-134315-0000.wav'

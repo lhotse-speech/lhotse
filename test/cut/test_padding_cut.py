@@ -274,6 +274,6 @@ def test_serialize_padded_cut_set(cut_set):
     # cut_set fixture is defined in test/cut/conftest.py
     padded_cut_set = cut_set.pad(60.1)
     with NamedTemporaryFile() as f:
-        padded_cut_set.to_yaml(f.name)
-        restored = CutSet.from_yaml(f.name)
+        padded_cut_set.to_json(f.name)
+        restored = CutSet.from_json(f.name)
     assert padded_cut_set == restored

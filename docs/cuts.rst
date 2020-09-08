@@ -59,7 +59,7 @@ All cut types can be stored in the YAML manifests. An example manifest with simp
 
     - duration: 10.0
       features:
-        channel_id: 0
+        channels: 0
         duration: 16.04
         num_features: 23
         num_frames: 1604
@@ -85,7 +85,7 @@ Mixed cuts look differently in the manifest:
         - cut:
             duration: 7.78
             features:
-              channel_id: 0
+              channels: 0
               duration: 7.78
               type: fbank
               num_frames: 778
@@ -97,7 +97,7 @@ Mixed cuts look differently in the manifest:
             id: 0c5fdf79-efe7-4d45-b612-3d90d9af8c4e
             start: 0.0
             supervisions:
-              - channel_id: 0
+              - channel: 0
                 duration: 7.78
                 gender: f
                 id: 7850-286674-0014
@@ -111,7 +111,7 @@ Mixed cuts look differently in the manifest:
         - cut:
             duration: 9.705
             features:
-              channel_id: 0
+              channels: 0
               duration: 9.705
               type: fbank
               num_frames: 970
@@ -123,7 +123,7 @@ Mixed cuts look differently in the manifest:
             id: 78bef88d-e62e-4cfa-9946-a1311442c6f7
             start: 0.0
             supervisions:
-              - channel_id: 0
+              - channel: 0
                 duration: 9.705
                 gender: f
                 id: 2412-153948-0014
@@ -156,9 +156,9 @@ Some examples of how cuts can be manipulated to create a desired dataset for mod
 .. code-block:: python
 
     cuts = CutSet.from_yaml('cuts.yml')
-    # Reject short segments
+    # Reject too short segments
     cuts = cuts.filter(lambda cut: cut.duration >= 3.0)
-    # Pad short segments to 5 seconds.
+    # Pad short segments with silence to 5 seconds.
     cuts = cuts.pad(desired_duration=5.0)
     # Truncate longer segments to 5 seconds.
     cuts = cuts.truncate(max_duration=5.0, offset_type='random')

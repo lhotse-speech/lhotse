@@ -29,17 +29,43 @@ def test_cut_set_holds_both_simple_and_mixed_cuts(cut_set_with_mixed_cut):
     assert len(mixed_cuts) == 1
 
 
-def test_simple_cut_set_serialization(cut_set):
-    with NamedTemporaryFile() as f:
-        cut_set.to_yaml(f.name)
-        restored = CutSet.from_yaml(f.name)
+@pytest.mark.parametrize(
+    ['format', 'compressed'],
+    [
+        ('yaml', False),
+        ('yaml', True),
+        ('json', False),
+        ('json', True),
+    ]
+)
+def test_simple_cut_set_serialization(cut_set, format, compressed):
+    with NamedTemporaryFile(suffix='.gz' if compressed else '') as f:
+        if format == 'yaml':
+            cut_set.to_yaml(f.name)
+            restored = CutSet.from_yaml(f.name)
+        if format == 'json':
+            cut_set.to_json(f.name)
+            restored = CutSet.from_json(f.name)
     assert cut_set == restored
 
 
-def test_mixed_cut_set_serialization(cut_set_with_mixed_cut):
-    with NamedTemporaryFile() as f:
-        cut_set_with_mixed_cut.to_yaml(f.name)
-        restored = CutSet.from_yaml(f.name)
+@pytest.mark.parametrize(
+    ['format', 'compressed'],
+    [
+        ('yaml', False),
+        ('yaml', True),
+        ('json', False),
+        ('json', True),
+    ]
+)
+def test_mixed_cut_set_serialization(cut_set_with_mixed_cut, format, compressed):
+    with NamedTemporaryFile(suffix='.gz' if compressed else '') as f:
+        if format == 'yaml':
+            cut_set_with_mixed_cut.to_yaml(f.name)
+            restored = CutSet.from_yaml(f.name)
+        if format == 'json':
+            cut_set_with_mixed_cut.to_json(f.name)
+            restored = CutSet.from_json(f.name)
     assert cut_set_with_mixed_cut == restored
 
 

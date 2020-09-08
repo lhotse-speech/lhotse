@@ -1,9 +1,12 @@
 Representing a corpus
 =====================
 
-In Lhotse, we represent the data using YAML manifests.
+In Lhotse, we represent the data using YAML (more readable) or JSON (faster) manifests.
 For most audio corpora, we will need two types of manifests to fully describe them:
 a recording manifest and a supervision manifest.
+
+.. caution::
+    We show all the examples in YAML format for improved readability. However, when processing medium/large datasets, we recommend to use JSON, which is much quicker to load and save.
 
 Recording manifest
 ------------------
@@ -24,21 +27,21 @@ This is a YAML manifest for a corpus with two recordings:
     - id: 'recording-1'
       sampling_rate: 8000
       num_samples: 4000
-      duration_seconds: 0.5
+      duration: 0.5
       sources:
         - type: file
-          channel_ids: [0]
+          channels: [0]
           source: 'test/fixtures/mono_c0.wav'
         - type: file
-          channel_ids: [1]
+          channels: [1]
           source: 'test/fixtures/mono_c1.wav'
     - id: 'recording-2'
       sampling_rate: 8000
       num_samples: 8000
-      duration_seconds: 1.0
+      duration: 1.0
       sources:
         - type: file
-          channel_ids: [0, 1]
+          channels: [0, 1]
           source: 'test/fixtures/stereo.wav'
 
 Each recording is described by:
@@ -67,11 +70,12 @@ Example usage:
 
     recordings = RecordingSet.from_yaml('audio.yml')
     for recording in recordings:
-        if recording.duration >= 1.0:
+        # Note: all time units in Lhotse are seconds
+        if recording.duration >= 7.5:
             samples = recording.load_audio(
                 channels=0,
-                offset_seconds=0.3,
-                duration_seconds=0.5
+                offset=2.5,
+                duration=5.0
             )
             # Further sample processing
 
@@ -93,7 +97,7 @@ This is a YAML supervision manifest:
     ---
     - id: 'segment-1'
       recording_id: 'recording-2'
-      channel_id: 0
+      channel: 0
       start: 0.1
       duration: 0.3
       text: 'transcript of the first segment'
