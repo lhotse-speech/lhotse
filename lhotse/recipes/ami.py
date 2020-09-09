@@ -145,7 +145,7 @@ def parse_ami_annotations(gzip_file: Pathlike) -> Dict[str, List[AmiSegmentAnnot
 
 def prepare_ami(
         data_dir: Pathlike,
-        output_dir: Pathlike
+        output_dir: Optional[Pathlike] = None,
 ) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet]]]:
     """
     Returns the manifests which consist of the Recordings and Supervisions
@@ -155,8 +155,9 @@ def prepare_ami(
     :return: a Dict whose key is ('train', 'dev', 'eval'), and the value is Dicts with keys 'audio' and 'supervisions'.
     """
     data_dir = Path(data_dir)
-    output_dir = Path(output_dir)
-    output_dir.mkdir(parents=True, exist_ok=True)
+    if output_dir is not None:
+        output_dir = Path(output_dir)
+        output_dir.mkdir(parents=True, exist_ok=True)
 
     anotation_lists = parse_ami_annotations(data_dir / 'annotations.gzip')
     wav_dir = data_dir / 'wav_db'
@@ -192,7 +193,6 @@ def prepare_ami(
         if len(recordings) == 0:
             continue
         audio = RecordingSet.from_recordings(recordings)
-        audio.to_json(output_dir / f'audio_{part}.json')
 
         # Supervisions
         segments_by_pause = []
@@ -213,7 +213,9 @@ def prepare_ami(
                             text=subseg_info.text
                         ))
         supervision = SupervisionSet.from_segments(segments_by_pause)
-        supervision.to_json(output_dir / f'supervisions_{part}.json')
+        if output_dir is not None:
+            audio.to_json(output_dir / f'audio_{part}.json')
+            supervision.to_json(output_dir / f'supervisions_{part}.json')
 
         manifests[part] = {
             'audio': audio,
