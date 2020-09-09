@@ -31,7 +31,7 @@ def download_and_unzip(
 
 def prepare_librimix(
         librimix_csv: Pathlike,
-        output_dir: Pathlike,
+        output_dir: Optional[Pathlike] = None,
         with_precomputed_mixtures: bool = False,
         sampling_rate: int = 16000,
         min_segment_seconds: Seconds = 3.0
@@ -39,8 +39,9 @@ def prepare_librimix(
     import pandas as pd
     df = pd.read_csv(librimix_csv)
 
-    output_dir = Path(output_dir)
-    output_dir.mkdir(parents=True, exist_ok=True)
+    if output_dir is not None:
+        output_dir = Path(output_dir)
+        output_dir.mkdir(parents=True, exist_ok=True)
 
     manifests = defaultdict(dict)
 
@@ -68,9 +69,10 @@ def prepare_librimix(
         for idx, row in df.iterrows()
         if row['length'] / sampling_rate > min_segment_seconds
     )
-    audio_sources.to_json(output_dir / 'audio_sources.json')
     supervision_sources = make_corresponding_supervisions(audio_sources)
-    supervision_sources.to_json(output_dir / 'supervisions_sources.json')
+    if output_dir is not None:
+        audio_sources.to_json(output_dir / 'audio_sources.json')
+        supervision_sources.to_json(output_dir / 'supervisions_sources.json')
 
     manifests['sources'] = {
         'audio': audio_sources,
@@ -98,9 +100,10 @@ def prepare_librimix(
             for idx, row in df.iterrows()
             if row['length'] / sampling_rate > min_segment_seconds
         )
-        audio_mix.to_json(output_dir / 'audio_mix.json')
         supervision_mix = make_corresponding_supervisions(audio_mix)
-        supervision_mix.to_json(output_dir / 'supervisions_mix.json')
+        if output_dir is not None:
+            audio_mix.to_json(output_dir / 'audio_mix.json')
+            supervision_mix.to_json(output_dir / 'supervisions_mix.json')
         manifests['premixed'] = {
             'audio': audio_mix,
             'supervisions': supervision_mix
@@ -126,9 +129,10 @@ def prepare_librimix(
             for idx, row in df.iterrows()
             if row['length'] / sampling_rate > min_segment_seconds
         )
-        audio_noise.to_json(output_dir / 'audio_noise.json')
         supervision_noise = make_corresponding_supervisions(audio_noise)
-        supervision_noise.to_json(output_dir / 'supervisions_noise.json')
+        if output_dir is not None:
+            audio_noise.to_json(output_dir / 'audio_noise.json')
+            supervision_noise.to_json(output_dir / 'supervisions_noise.json')
         manifests['noise'] = {
             'audio': audio_noise,
             'supervisions': supervision_noise

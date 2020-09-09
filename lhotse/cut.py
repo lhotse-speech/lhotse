@@ -6,6 +6,7 @@ from math import ceil, floor, log
 from typing import Callable, Dict, Iterable, List, Optional, Union, Any
 
 import numpy as np
+from cytoolz import sliding_window
 
 from lhotse import WavAugmenter
 from lhotse.audio import AudioMixer, Recording, RecordingSet
@@ -84,7 +85,11 @@ class CutUtilsMixin:
         """
         import matplotlib.pyplot as plt
         samples = self.load_audio(root_dir=root_dir).squeeze()
-        return plt.plot(samples)
+        fig, ax = plt.subplots()
+        ax.plot(np.linspace(0, self.duration, len(samples)), samples)
+        for supervision in self.supervisions:
+            ax.axvspan(supervision.start, supervision.end, color='green', alpha=0.1)
+        return ax
 
     def play_audio(self, root_dir: Optional[Pathlike] = None):
         """
@@ -628,6 +633,24 @@ class MixedCut(CutUtilsMixin):
             )
         return mixer.mixed_audio
 
+    def plot_tracks_audio(self, root_dir: Optional[Pathlike] = None):
+        """
+        Display plots of the individual tracks' waveforms. Requires matplotlib to be installed.
+
+        :param root_dir: optional prefix to the source audio file path.
+        """
+        import matplotlib.pyplot as plt
+        fig, axes = plt.subplots(len(self.tracks), sharex=True)
+        for track, ax in zip(self.tracks, axes):
+            samples = np.hstack([
+                np.zeros(round(self.sampling_rate * track.offset)),
+                track.cut.load_audio(root_dir=root_dir).squeeze()
+            ])
+            ax.plot(np.linspace(0, track.offset + track.cut.duration, len(samples)), samples)
+            for supervision in track.cut.supervisions:
+                ax.axvspan(track.offset + supervision.start, track.offset + supervision.end, color='green', alpha=0.1)
+        return axes
+
     @staticmethod
     def from_dict(data: dict) -> 'MixedCut':
         return MixedCut(id=data['id'], tracks=[MixTrack.from_dict(track) for track in data['tracks']])
@@ -756,6 +779,35 @@ class CutSet(JsonMixin, YamlMixin):
             for cut in self
             for segment in cut.supervisions
         )
+
+    def trim_to_unsupervised_segments(self) -> 'CutSet':
+        """
+        Return a new CutSet with Cuts created from segments that have no supervisions (likely
+        silence or noise).
+
+        :return: a ``CutSet``.
+        """
+        cuts = []
+        for cut in self:
+            segments = []
+            supervisions = sorted(cut.supervisions, key=lambda s: s.start)
+            # Check if there is an unsupervised segment at the start of the cut,
+            # before the first supervision.
+            if supervisions[0].start > 0:
+                segments.append((0, supervisions[0].start))
+            # Check if there are unsupervised segments between the supervisions.
+            for left, right in sliding_window(2, supervisions):
+                if overlaps(left, right) or left.end == right.start:
+                    continue
+                segments.append((left.end, right.start))
+            # Check if there is an unsupervised segment after the last supervision,
+            # before the cut ends.
+            if supervisions[-1].end < cut.duration:
+                segments.append((supervisions[-1].end, cut.duration))
+            # Create cuts from all found unsupervised segments.
+            for start, end in segments:
+                cuts.append(cut.truncate(offset=start, duration=end - start))
+        return CutSet.from_cuts(cuts)
 
     def pad(
             self,
