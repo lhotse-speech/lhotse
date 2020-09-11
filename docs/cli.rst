@@ -13,8 +13,8 @@ Command-line interface
    :prog: lhotse cut
    :show-nested:
 
-.. click:: lhotse.bin.modes.manipulation:yaml
-   :prog: lhotse yaml
+.. click:: lhotse.bin.modes.manipulation:manifest
+   :prog: lhotse manifest
    :show-nested:
 
 .. click:: lhotse.bin.modes.features:feat
