@@ -1,7 +1,7 @@
 Getting started
 ===============
 
-Lhotse is a next-generation Python library aiming to make speech and audio data preparation flexible and accessible to a wider community. Alongside `k2`_, it is a part of the next generation `Kaldi`_ speech processing library.
+Lhotse is a Python library aiming to make speech and audio data preparation flexible and accessible to a wider community. Alongside `k2`_, it is a part of the next generation `Kaldi`_ speech processing library.
 
 
 About
