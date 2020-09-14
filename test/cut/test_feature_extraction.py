@@ -5,24 +5,20 @@ from tempfile import TemporaryDirectory
 from unittest.mock import Mock
 
 import pytest
-import numpy as np
 
 from lhotse import Recording, Cut, Fbank, CutSet
+from lhotse.audio import AudioSource
+from lhotse.cut import MixedCut
 
 
 @pytest.fixture
-def audio_source():
-    # Return a mocked "AudioSource" object that loads a 1s long 1000Hz sine wave
-    source = Mock()
-    source.load_audio = Mock(return_value=np.sin(2 * np.pi * 1000 * np.arange(0, 8000, dtype=np.float32)))
-    source.channels = [0]
-    return source
-
-
-@pytest.fixture
-def recording(audio_source):
+def recording():
     return Recording(
-        id='rec', sources=[audio_source], sampling_rate=8000, num_samples=8000, duration=1.0
+        id='rec',
+        sources=[AudioSource(type='file', channels=[0, 1], source='test/fixtures/stereo.wav')],
+        sampling_rate=8000,
+        num_samples=8000,
+        duration=1.0
     )
 
 
@@ -93,22 +89,35 @@ def is_dask_availabe():
 )
 @pytest.mark.parametrize(
     'executor', [
-        no_executor(),
-        ThreadPoolExecutor(2),
-        ProcessPoolExecutor(2),
-        pytest.param(distributed.Client(), marks=pytest.mark.skipif(not is_dask_availabe(), reason='Requires Dask'))
+        None,
+        ThreadPoolExecutor,
+        ProcessPoolExecutor,
+        pytest.param(distributed.Client, marks=pytest.mark.skipif(not is_dask_availabe(), reason='Requires Dask'))
     ]
 )
 def test_extract_and_store_features_from_cut_set(cut_set, executor, mix_eagerly):
     extractor = Fbank()
-    with executor, TemporaryDirectory() as tmpdir:
-        cut_set_with_feats = cut_set.compute_and_store_features(
-            extractor=extractor,
-            output_dir=tmpdir,
-            mix_eagerly=mix_eagerly
-        )
+    with TemporaryDirectory() as tmpdir:
+        with executor() if executor is not None else no_executor() as ex:
+            cut_set_with_feats = cut_set.compute_and_store_features(
+                extractor=extractor,
+                output_dir=tmpdir,
+                mix_eagerly=mix_eagerly,
+                executor=ex
+            )
 
+        # The same number of cuts
         assert len(cut_set_with_feats) == 2
+
+        for orig_cut, feat_cut in zip(cut_set, cut_set_with_feats):
+            # The ID is retained
+            assert orig_cut.id == feat_cut.id
+            # Features were attached
+            assert feat_cut.has_features
+            # Recording is retained unless mixing a MixedCut eagerly
+            should_have_recording = not (mix_eagerly and isinstance(orig_cut, MixedCut))
+            assert feat_cut.has_recording == should_have_recording
+
         cuts = list(cut_set_with_feats)
 
         arr = cuts[0].load_features()
@@ -119,12 +128,3 @@ def test_extract_and_store_features_from_cut_set(cut_set, executor, mix_eagerly)
         assert arr.shape[0] == 300
         assert arr.shape[1] == extractor.feature_dim(cuts[0].sampling_rate)
 
-    # Check that if we drop the features, the cuts are not otherwise modified after the extraction
-    # This would not be true in "mix_eagerly" mode, where MixedCut is replaced by a Cut that loads
-    # an eagerly mixed feature matrix.
-    if not mix_eagerly:
-        original_cuts = list(cut_set)
-        cuts[0].features = None
-        assert cuts[0] == original_cuts[0]
-        cuts[1].features = None
-        assert cuts[1] == original_cuts[1]

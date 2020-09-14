@@ -1005,13 +1005,10 @@ class CutSet(JsonMixin, YamlMixin):
                 for cut in self
             )
 
-        def task(cut: AnyCut, *args, **kwargs) -> AnyCut:
-            return cut.compute_and_store_features(*args, **kwargs)
-
         futures = []
         for cut in self:
             futures.append(
-                executor.submit(task, cut,
+                executor.submit(_extract_and_store_features_helper_fn, cut,
                                 extractor=extractor,
                                 output_dir=output_dir,
                                 augmenter=augmenter,
@@ -1019,7 +1016,8 @@ class CutSet(JsonMixin, YamlMixin):
                                 mix_eagerly=mix_eagerly
                                 )
             )
-        return CutSet.from_cuts(f.result() for f in futures)
+        cut_set = CutSet.from_cuts(f.result() for f in futures)
+        return cut_set
 
     def __contains__(self, item: Union[str, Cut, MixedCut]) -> bool:
         if isinstance(item, str):
@@ -1176,3 +1174,8 @@ def append_cuts(cuts: Iterable[AnyCut]) -> AnyCut:
     # The following is a fold (accumulate/aggregate) operation; it starts with cuts[0], and appends cuts[1] to it;
     #  then takes their it concatenation and appends cuts[2] to it; and so on.
     return reduce(append, cuts)
+
+
+def _extract_and_store_features_helper_fn(cut: AnyCut, *args, **kwargs) -> AnyCut:
+    return cut.compute_and_store_features(*args, **kwargs)
+
