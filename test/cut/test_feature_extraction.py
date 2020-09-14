@@ -64,7 +64,8 @@ def test_extract_and_store_features_from_mixed_cut(cut, mix_eagerly):
 
 @pytest.fixture
 def cut_set(cut):
-    return CutSet.from_cuts([cut, cut.append(cut)])
+    # The padding tests if feature extraction works correctly with a PaddingCut
+    return CutSet.from_cuts([cut, cut.append(cut).pad(3.0)])
 
 
 # The lines below try to import Dask (a distributed computing library for Python)
@@ -115,7 +116,7 @@ def test_extract_and_store_features_from_cut_set(cut_set, executor, mix_eagerly)
         assert arr.shape[1] == extractor.feature_dim(cuts[0].sampling_rate)
 
         arr = cuts[1].load_features()
-        assert arr.shape[0] == 200
+        assert arr.shape[0] == 300
         assert arr.shape[1] == extractor.feature_dim(cuts[0].sampling_rate)
 
     # Check that if we drop the features, the cuts are not otherwise modified after the extraction

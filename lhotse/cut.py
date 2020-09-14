@@ -233,7 +233,7 @@ class Cut(CutUtilsMixin):
         :param output_dir: directory where the computed features will be stored.
         :param augmenter: optional ``WavAugmenter`` instance for audio augmentation.
         :param root_dir: optional prefix to the source audio file path.
-        :return: a numpy ndarray with the computed features.
+        :return: a new ``Cut`` instance with a ``Features`` manifest attached to it.
         """
         features_info = extractor.extract_from_samples_and_store(
             samples=self.load_audio(root_dir=root_dir),
@@ -418,6 +418,17 @@ class PaddingCut(CutUtilsMixin):
             use_log_energy=self.use_log_energy
         )
 
+    def compute_and_store_features(self, extractor: FeatureExtractor, *args, **kwargs) -> AnyCut:
+        """
+        Returns a new PaddingCut with updates information about the feature dimension and number of
+        feature frames, depending on the ``extractor`` properties.
+        """
+        return PaddingCut(**{
+            **self.__dict__,
+            'num_features': extractor.feature_dim(self.sampling_rate),
+            'num_frames': int(round(self.duration / extractor.frame_shift, ndigits=3))
+        })
+
     @staticmethod
     def from_dict(data: dict) -> 'PaddingCut':
         return PaddingCut(**data)
@@ -500,7 +511,7 @@ class MixedCut(CutUtilsMixin):
 
     @property
     def features_type(self) -> Optional[str]:
-        return self._first_non_padding_cut.features.type
+        return self._first_non_padding_cut.features.type if self.has_features else None
 
     def truncate(
             self,
@@ -592,7 +603,16 @@ class MixedCut(CutUtilsMixin):
             # The num_frames and sampling_rate fields are tricky, because it is possible to create a MixedCut
             # from Cuts that have different sampling rates and frame shifts. In that case, we are assuming
             # that we should use the values from the reference cut, i.e. the first one in the mix.
-            num_frames=round(padding_duration / self.tracks[0].cut.frame_shift),
+            num_frames=(
+                round(padding_duration / self.tracks[0].cut.frame_shift)
+                if self.tracks[0].cut.has_features
+                else None
+            ),
+            num_samples=(
+                round(padding_duration * self.sampling_rate)
+                if self.tracks[0].cut.has_recording
+                else None
+            ),
             sampling_rate=self.tracks[0].cut.sampling_rate,
             use_log_energy=self.features_type in ('fbank', 'mfcc')
         ))
@@ -673,7 +693,8 @@ class MixedCut(CutUtilsMixin):
             and mix them dynamically when loading the features.
             When True, mix the audio first and store the mixed features, returning a new ``Cut`` instance
             with the same ID. The returned ``Cut`` will not have a ``Recording`` attached.
-        :return: a numpy ndarray with the computed features.
+        :return: a new ``Cut`` instance if ``mix_eagerly`` is True, or returns ``self``
+            with each of the tracks containing the ``Features`` manifests.
         """
         if mix_eagerly:
             features_info = extractor.extract_from_samples_and_store(
