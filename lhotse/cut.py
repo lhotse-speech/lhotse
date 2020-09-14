@@ -44,6 +44,7 @@ class CutUtilsMixin:
     but ABC's do not mix well with dataclasses in Python. It is possible we'll ditch the dataclass
     for cuts in the future and make this an ABC instead.
     """
+
     def mix(self, other: AnyCut, offset_other_by: Seconds = 0.0, snr: Optional[Decibels] = None) -> 'MixedCut':
         """Refer to mix() documentation."""
         return mix(self, other, offset=offset_other_by, snr=snr)
@@ -221,7 +222,8 @@ class Cut(CutUtilsMixin):
             extractor: FeatureExtractor,
             output_dir: Pathlike,
             augmenter: Optional[WavAugmenter] = None,
-            root_dir: Optional[Pathlike] = None
+            root_dir: Optional[Pathlike] = None,
+            **kwargs
     ) -> AnyCut:
         """
         Compute the features from this cut, store them on disk, and attach a feature manifest to this cut.
@@ -240,8 +242,8 @@ class Cut(CutUtilsMixin):
             offset=self.start,
             augmenter=augmenter,
         )
-        self.features = features_info
-        return self
+        # The fastest way to instantiate a copy of the cut with a Features object attached
+        return Cut(**{**self.__dict__, 'features': features_info})
 
     def truncate(
             self,
@@ -651,6 +653,55 @@ class MixedCut(CutUtilsMixin):
                 ax.axvspan(track.offset + supervision.start, track.offset + supervision.end, color='green', alpha=0.1)
         return axes
 
+    def compute_and_store_features(
+            self,
+            extractor: FeatureExtractor,
+            output_dir: Pathlike,
+            augmenter: Optional[WavAugmenter] = None,
+            root_dir: Optional[Pathlike] = None,
+            mix_eagerly: bool = True
+    ) -> AnyCut:
+        """
+        Compute the features from this cut, store them on disk, and create a new `Cut` object with the
+        feature manifest attached. This cut has to be able to load audio.
+
+        :param extractor: a ``FeatureExtractor`` instance used to compute the features.
+        :param output_dir: directory where the computed features will be stored.
+        :param augmenter: optional ``WavAugmenter`` instance for audio augmentation.
+        :param root_dir: optional prefix to the source audio file path.
+        :param mix_eagerly: when False, extract and store the features for each track separately,
+            and mix them dynamically when loading the features.
+            When True, mix the audio first and store the mixed features, returning a new ``Cut`` instance
+            with the same ID. The returned ``Cut`` will not have a ``Recording`` attached.
+        :return: a numpy ndarray with the computed features.
+        """
+        if mix_eagerly:
+            features_info = extractor.extract_from_samples_and_store(
+                samples=self.load_audio(root_dir=root_dir),
+                sampling_rate=self.sampling_rate,
+                output_dir=output_dir,
+                offset=0,
+                augmenter=augmenter,
+            )
+            return Cut(
+                id=self.id,
+                start=0,
+                duration=self.duration,
+                channel=0,
+                supervisions=self.supervisions,
+                features=features_info,
+                recording=None
+            )
+        else:  # mix lazily
+            for track in self.tracks:
+                track.cut = track.cut.compute_and_store_features(
+                    extractor=extractor,
+                    output_dir=output_dir,
+                    augmenter=augmenter,
+                    root_dir=root_dir
+                )
+            return self
+
     @staticmethod
     def from_dict(data: dict) -> 'MixedCut':
         return MixedCut(id=data['id'], tracks=[MixTrack.from_dict(track) for track in data['tracks']])
@@ -899,7 +950,8 @@ class CutSet(JsonMixin, YamlMixin):
             output_dir: Pathlike,
             augmenter: Optional[WavAugmenter] = None,
             root_dir: Optional[Pathlike] = None,
-            executor: Optional[Any] = None
+            executor: Optional[Any] = None,
+            mix_eagerly: bool = True
     ) -> 'CutSet':
         """
         Modify the current ``CutSet`` with by extracting features and attaching the feature manifests
@@ -913,21 +965,38 @@ class CutSet(JsonMixin, YamlMixin):
             Any executor satisfying the standard concurrent.futures interface will be suitable;
             e.g. ProcessPoolExecutor, ThreadPoolExecutor, or dask.Client for distributed task
             execution (see: https://docs.dask.org/en/latest/futures.html?highlight=Client#start-dask-client)
+        :param mix_eagerly: Related to how the features are extracted for ``MixedCut``s, if any are present.
+            When False, extract and store the features for each track separately,
+            and mix them dynamically when loading the features.
+            When True, mix the audio first and store the mixed features, returning a new ``Cut`` instance
+            with the same ID. The returned ``Cut`` will not have a ``Recording`` attached.
         :return: a new CutSet instance with the same ``Cut``s, but with attached ``Features`` objects
         """
         if executor is None:
-            for cut in self:
+            return CutSet.from_cuts(
                 cut.compute_and_store_features(
                     extractor=extractor,
                     output_dir=output_dir,
                     augmenter=augmenter,
-                    root_dir=root_dir
+                    root_dir=root_dir,
+                    mix_eagerly=mix_eagerly
                 )
-            return self
+                for cut in self
+            )
+
+        def task(cut: AnyCut, *args, **kwargs) -> AnyCut:
+            return cut.compute_and_store_features(*args, **kwargs)
+
         futures = []
         for cut in self:
             futures.append(
-                executor.submit(Cut.compute_and_store_features, cut, extractor, output_dir, augmenter, root_dir)
+                executor.submit(task, cut,
+                                extractor=extractor,
+                                output_dir=output_dir,
+                                augmenter=augmenter,
+                                root_dir=root_dir,
+                                mix_eagerly=mix_eagerly
+                                )
             )
         return CutSet.from_cuts(f.result() for f in futures)
 
