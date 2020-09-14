@@ -4,7 +4,7 @@ from io import BytesIO
 from math import sqrt
 from pathlib import Path
 from subprocess import PIPE, run
-from typing import Callable, Dict, Iterable, List, Optional, Union
+from typing import Callable, Dict, Iterable, List, Optional, Union, Tuple
 
 import numpy as np
 
@@ -41,7 +41,6 @@ class AudioSource:
         Returns numpy array with shapes: (n_samples) for single-channel,
         (n_channels, n_samples) for multi-channel.
         """
-        import librosa
         assert self.type in ('file', 'command')
 
         if self.type == 'command':
@@ -59,13 +58,7 @@ class AudioSource:
 
         with warnings.catch_warnings():
             warnings.simplefilter('ignore')
-            samples, sampling_rate = librosa.load(
-                source,
-                sr=None,  # 'None' uses the native sampling rate
-                mono=False,  # Retain multi-channel if it's there
-                offset=offset_seconds,
-                duration=duration_seconds
-            )
+            samples, sampling_rate = read_audio(source, offset=offset_seconds, duration=duration_seconds)
 
         # explicit sanity check for duration as librosa does not complain here
         if duration_seconds is not None:
@@ -81,6 +74,21 @@ class AudioSource:
     @staticmethod
     def from_dict(data) -> 'AudioSource':
         return AudioSource(**data)
+
+
+def read_audio(path: Pathlike, offset: Seconds, duration: Seconds) -> Tuple[np.ndarray, int]:
+    import soundfile as sf
+    with sf.SoundFile(path) as sf_desc:
+        sampling_rate = sf_desc.samplerate
+        if offset:
+            # Seek to the start of the target read
+            sf_desc.seek(int(offset * sampling_rate))
+        if duration is not None:
+            frame_duration = int(duration * sampling_rate)
+        else:
+            frame_duration = -1
+        # Load the target number of frames, and transpose to match librosa form
+        return sf_desc.read(frames=frame_duration, dtype=np.float32, always_2d=False).T, sampling_rate
 
 
 @dataclass

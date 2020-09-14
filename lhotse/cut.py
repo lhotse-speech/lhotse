@@ -223,6 +223,7 @@ class Cut(CutUtilsMixin):
             output_dir: Pathlike,
             augmenter: Optional[WavAugmenter] = None,
             root_dir: Optional[Pathlike] = None,
+            *args,
             **kwargs
     ) -> AnyCut:
         """
@@ -714,14 +715,20 @@ class MixedCut(CutUtilsMixin):
                 recording=None
             )
         else:  # mix lazily
-            for track in self.tracks:
-                track.cut = track.cut.compute_and_store_features(
-                    extractor=extractor,
-                    output_dir=output_dir,
-                    augmenter=augmenter,
-                    root_dir=root_dir
+            new_tracks = [
+                MixTrack(
+                    cut=track.cut.compute_and_store_features(
+                        extractor=extractor,
+                        output_dir=output_dir,
+                        augmenter=augmenter,
+                        root_dir=root_dir
+                    ),
+                    offset=track.offset,
+                    snr=track.snr
                 )
-            return self
+                for track in self.tracks
+            ]
+            return MixedCut(id=self.id, tracks=new_tracks)
 
     @staticmethod
     def from_dict(data: dict) -> 'MixedCut':
@@ -1008,13 +1015,15 @@ class CutSet(JsonMixin, YamlMixin):
         futures = []
         for cut in self:
             futures.append(
-                executor.submit(_extract_and_store_features_helper_fn, cut,
-                                extractor=extractor,
-                                output_dir=output_dir,
-                                augmenter=augmenter,
-                                root_dir=root_dir,
-                                mix_eagerly=mix_eagerly
-                                )
+                executor.submit(
+                    _extract_and_store_features_helper_fn,
+                    cut,
+                    extractor=extractor,
+                    output_dir=output_dir,
+                    augmenter=augmenter,
+                    root_dir=root_dir,
+                    mix_eagerly=mix_eagerly
+                )
             )
         cut_set = CutSet.from_cuts(f.result() for f in futures)
         return cut_set
@@ -1178,4 +1187,3 @@ def append_cuts(cuts: Iterable[AnyCut]) -> AnyCut:
 
 def _extract_and_store_features_helper_fn(cut: AnyCut, *args, **kwargs) -> AnyCut:
     return cut.compute_and_store_features(*args, **kwargs)
-
