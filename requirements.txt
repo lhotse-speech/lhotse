@@ -7,4 +7,5 @@ torchaudio>=0.5.1
 pandas>=1.0.3
 cytoolz>=0.10.1
 sphfile>=1.0.3
+SoundFile>=0.10
 beautifulsoup4
