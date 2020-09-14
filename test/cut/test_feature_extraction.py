@@ -1,6 +1,6 @@
 from concurrent.futures.process import ProcessPoolExecutor
 from concurrent.futures.thread import ThreadPoolExecutor
-from contextlib import nullcontext
+from contextlib import nullcontext as no_executor
 from tempfile import TemporaryDirectory
 from unittest.mock import Mock
 
@@ -92,7 +92,7 @@ def is_dask_availabe():
 )
 @pytest.mark.parametrize(
     'executor', [
-        nullcontext(),
+        no_executor(),
         ThreadPoolExecutor(2),
         ProcessPoolExecutor(2),
         pytest.param(distributed.Client(), marks=pytest.mark.skipif(not is_dask_availabe(), reason='Requires Dask'))
@@ -106,11 +106,24 @@ def test_extract_and_store_features_from_cut_set(cut_set, executor, mix_eagerly)
             output_dir=tmpdir,
             mix_eagerly=mix_eagerly
         )
+
         assert len(cut_set_with_feats) == 2
         cuts = list(cut_set_with_feats)
+
         arr = cuts[0].load_features()
         assert arr.shape[0] == 100
         assert arr.shape[1] == extractor.feature_dim(cuts[0].sampling_rate)
+
         arr = cuts[1].load_features()
         assert arr.shape[0] == 200
         assert arr.shape[1] == extractor.feature_dim(cuts[0].sampling_rate)
+
+    # Check that if we drop the features, the cuts are not otherwise modified after the extraction
+    # This would not be true in "mix_eagerly" mode, where MixedCut is replaced by a Cut that loads
+    # an eagerly mixed feature matrix.
+    if not mix_eagerly:
+        original_cuts = list(cut_set)
+        cuts[0].features = None
+        assert cuts[0] == original_cuts[0]
+        cuts[1].features = None
+        assert cuts[1] == original_cuts[1]
