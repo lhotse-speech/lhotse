@@ -20,6 +20,7 @@ if os.environ.get('READTHEDOCS', False):
 setup(
     name='lhotse',
     version='0.1',
+    python_requires='>=3.7.0',
     description='Data preparation for speech processing models training.',
     author='The Lhotse Development Team',
     author_email="pzelasko@jhu.edu",
