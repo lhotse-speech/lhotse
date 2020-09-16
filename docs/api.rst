@@ -17,6 +17,9 @@ PyTorch Dataset wrappers for common tasks.
 .. automodule:: lhotse.dataset.unsupervised
   :members:
 
+.. automodule:: lhotse.dataset.vad
+  :members:
+
 Recording manifests
 -------------------
 
@@ -38,7 +41,25 @@ Feature extraction and manifests
 
 Data structures and tools used for feature extraction and description.
 
-.. automodule:: lhotse.features
+Torchaudio feature extractors
+*****************************
+
+.. automodule:: lhotse.features.fbank
+  :members:
+
+.. automodule:: lhotse.features.mfcc
+  :members:
+
+.. automodule:: lhotse.features.spectrogram
+  :members:
+
+Other feature extraction related classes
+****************************************
+
+.. automodule:: lhotse.features.base
+  :members:
+
+.. automodule:: lhotse.features.mixer
   :members:
 
 Augmentation

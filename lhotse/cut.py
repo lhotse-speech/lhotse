@@ -113,6 +113,38 @@ class CutUtilsMixin:
         features = np.flip(self.load_features(root_dir=root_dir).transpose(1, 0), 0)
         return plt.matshow(features)
 
+    def supervisions_feature_mask(self) -> np.ndarray:
+        """
+        Return a 1D numpy array with value 1 for frames covered by at least one supervision,
+        and 0 for frames not covered by any supervision.
+        """
+        assert self.has_features, f"No features available. " \
+                                  f"Can't compute supervisions feature mask for cut with ID: {self.id}."
+        mask = np.zeros(self.num_frames)
+        for supervision in self.supervisions:
+            st = round(supervision.start / self.frame_shift) if supervision.start > 0 else 0
+            et = round(supervision.end / self.frame_shift) if supervision.end < self.duration else self.num_frames
+            mask[st:et] = 1
+        return mask
+
+    def supervisions_audio_mask(self) -> np.ndarray:
+        """
+        Return a 1D numpy array with value 1 for samples covered by at least one supervision,
+        and 0 for frames not covered by any supervision.
+        """
+        assert self.has_recording, f"No recording available. " \
+                                   f"Can't compute supervisions audio mask for cut with ID: {self.id}."
+        mask = np.zeros(self.num_samples)
+        for supervision in self.supervisions:
+            st = round(supervision.start * self.sampling_rate) if supervision.start > 0 else 0
+            et = (
+                round(supervision.end * self.sampling_rate)
+                if supervision.end < self.duration
+                else self.duration * self.sampling_rate
+            )
+            mask[st:et] = 1
+        return mask
+
 
 @dataclass
 class Cut(CutUtilsMixin):
@@ -497,6 +529,10 @@ class MixedCut(CutUtilsMixin):
         if self.has_features:
             return round(self.duration / self._first_non_padding_cut.frame_shift)
         return None
+
+    @property
+    def frame_shift(self) -> Optional[Seconds]:
+        return self._first_non_padding_cut.frame_shift
 
     @property
     def sampling_rate(self) -> Optional[int]:
@@ -958,7 +994,7 @@ class CutSet(JsonMixin, YamlMixin):
 
         :param duration: Desired duration of the new cuts in seconds.
         :param keep_excessive_supervisions: bool. When a cut is truncated in the middle of a supervision segment,
-        should the supervision be kept.
+            should the supervision be kept.
         :return: a new CutSet with cuts made from shorter duration windows.
         """
         new_cuts = []
@@ -993,7 +1029,7 @@ class CutSet(JsonMixin, YamlMixin):
             Any executor satisfying the standard concurrent.futures interface will be suitable;
             e.g. ProcessPoolExecutor, ThreadPoolExecutor, or dask.Client for distributed task
             execution (see: https://docs.dask.org/en/latest/futures.html?highlight=Client#start-dask-client)
-        :param mix_eagerly: Related to how the features are extracted for ``MixedCut``s, if any are present.
+        :param mix_eagerly: Related to how the features are extracted for ``MixedCut`` instances, if any are present.
             When False, extract and store the features for each track separately,
             and mix them dynamically when loading the features.
             When True, mix the audio first and store the mixed features, returning a new ``Cut`` instance

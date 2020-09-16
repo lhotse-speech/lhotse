@@ -1,15 +1,7 @@
-import os
 from dataclasses import dataclass
 
 import numpy as np
-
-if os.environ.get('READTHEDOCS', False):
-    # This is a hacky work-around to make read-the-docs render the feature extraction
-    # documentation correctly.
-    def fbank():
-        ...
-else:
-    from torchaudio.compliance.kaldi import fbank
+import torchaudio
 
 from lhotse.features.base import TorchaudioFeatureExtractor, register_extractor
 from lhotse.utils import Seconds
@@ -45,7 +37,7 @@ class Fbank(TorchaudioFeatureExtractor):
     """Log Mel energy filter bank feature extractor based on ``torchaudio.compliance.kaldi.fbank`` function."""
     name = 'fbank'
     config_type = FbankConfig
-    feature_fn = staticmethod(fbank)
+    feature_fn = staticmethod(torchaudio.compliance.kaldi.fbank)
 
     def feature_dim(self, sampling_rate: int) -> int:
         return self.config.num_mel_bins
