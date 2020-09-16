@@ -48,7 +48,7 @@ def prepare_switchboard(
     if transcripts_dir is None:
         transcripts_dir = download_and_untar()
     audio_paths = check_and_rglob(audio_dir, '*.sph')
-    text_paths = check_and_rglob(transcripts_dir, '*.trans.text')
+    text_paths = check_and_rglob(transcripts_dir, '*trans.text')
 
     groups = []
     name_to_text = {p.stem.split('-')[0]: p for p in text_paths}
