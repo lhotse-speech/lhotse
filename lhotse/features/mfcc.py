@@ -1,6 +1,13 @@
+import os
 from dataclasses import dataclass
 
-import torchaudio
+if os.environ.get('READTHEDOCS', False):
+    # This is a hacky work-around to make read-the-docs render the feature extraction
+    # documentation correctly.
+    def mfcc():
+        ...
+else:
+    from torchaudio.compliance.kaldi import mfcc
 
 from lhotse.features.base import TorchaudioFeatureExtractor, register_extractor
 from lhotse.utils import Seconds
@@ -38,7 +45,7 @@ class Mfcc(TorchaudioFeatureExtractor):
     """MFCC feature extractor based on ``torchaudio.compliance.kaldi.mfcc`` function."""
     name = 'mfcc'
     config_type = MfccConfig
-    feature_fn = staticmethod(torchaudio.compliance.kaldi.mfcc)
+    feature_fn = staticmethod(mfcc)
 
     def feature_dim(self, sampling_rate: int) -> int:
         return self.config.num_ceps

@@ -295,17 +295,17 @@ class Cut(CutUtilsMixin):
             recording=self.recording
         )
 
-    def pad(self, desired_duration: Seconds) -> AnyCut:
-        f"""
-        Return a new MixedCut, padded to `desired_seconds` duration with low-energy values in each bin.
-        We use {EPSILON} for energies, or {log(EPSILON)} for log-energies.
-
-        :param desired_duration: The cut's minimal duration after padding.
-        :return: a padded MixedCut if desired_duration is greater than this cut's duration, otherwise self.
+    def pad(self, duration: Seconds) -> AnyCut:
         """
-        if desired_duration <= self.duration:
+        Return a new MixedCut, padded to ``duration`` seconds with zeros in the recording,
+        and low-energy values in each feature bin.
+
+        :param duration: The cut's minimal duration after padding.
+        :return: a padded MixedCut if ``duration`` is greater than this cut's duration, otherwise ``self``.
+        """
+        if duration <= self.duration:
             return self
-        padding_duration = desired_duration - self.duration
+        padding_duration = duration - self.duration
         return self.append(PaddingCut(
             id=str(uuid4()),
             duration=padding_duration,
@@ -400,21 +400,21 @@ class PaddingCut(CutUtilsMixin):
             sampling_rate=self.sampling_rate
         )
 
-    def pad(self, desired_duration: Seconds) -> 'PaddingCut':
+    def pad(self, duration: Seconds) -> 'PaddingCut':
         """
-        Create a new PaddingCut with `desired_duration` when its longer than this Cuts duration.
+        Create a new PaddingCut with ``duration`` when its longer than this Cuts duration.
         Helper function used in batch cut padding.
 
-        :param desired_duration: The cuts minimal duration after padding.
-        :return: self or a new PaddingCut, depending on `desired_duration`.
+        :param duration: The cuts minimal duration after padding.
+        :return: ``self`` or a new PaddingCut, depending on ``duration``.
         """
-        if desired_duration <= self.duration:
+        if duration <= self.duration:
             return self
         return PaddingCut(
             id=str(uuid4()),
-            duration=desired_duration,
+            duration=duration,
             num_features=self.num_features,
-            num_frames=round(desired_duration / self.frame_shift),
+            num_frames=round(duration / self.frame_shift),
             sampling_rate=self.sampling_rate,
             use_log_energy=self.use_log_energy
         )
@@ -586,17 +586,17 @@ class MixedCut(CutUtilsMixin):
             )
         return MixedCut(id=str(uuid4()), tracks=new_tracks)
 
-    def pad(self, desired_duration: Seconds) -> AnyCut:
-        f"""
-        Return a new MixedCut, padded to `desired_seconds` duration with low-energy values in each bin.
-        We use {EPSILON} for energies, or {log(EPSILON)} for log-energies.
-
-        :param desired_duration: The cut's minimal duration after padding.
-        :return: a padded MixedCut if desired_duration is greater than this cut's duration, otherwise self.
+    def pad(self, duration: Seconds) -> AnyCut:
         """
-        if desired_duration <= self.duration:
+        Return a new MixedCut, padded to ``duration`` seconds with zeros in the recording,
+        and low-energy values in each feature bin.
+
+        :param duration: The cut's minimal duration after padding.
+        :return: a padded MixedCut if duration is greater than this cut's duration, otherwise ``self``.
+        """
+        if duration <= self.duration:
             return self
-        padding_duration = desired_duration - self.duration
+        padding_duration = duration - self.duration
         return self.append(PaddingCut(
             id=str(uuid4()),
             duration=padding_duration,
@@ -890,19 +890,19 @@ class CutSet(JsonMixin, YamlMixin):
 
     def pad(
             self,
-            desired_duration: Seconds = None,
+            duration: Seconds = None,
     ) -> 'CutSet':
         """
-        Return a new CutSet with Cuts padded to `desired_duration` in seconds.
-        Cuts longer than `desired_duration` will not be affected.
+        Return a new CutSet with Cuts padded to ``duration`` in seconds.
+        Cuts longer than ``duration`` will not be affected.
         Cuts will be padded to the right (i.e. after the signal).
-        :param desired_duration: The cuts minimal duration after padding.
+        :param duration: The cuts minimal duration after padding.
         When not specified, we'll choose the duration of the longest cut in the CutSet.
         :return: A padded CutSet.
         """
-        if desired_duration is None:
-            desired_duration = max(cut.duration for cut in self)
-        return CutSet.from_cuts(cut.pad(desired_duration=desired_duration) for cut in self)
+        if duration is None:
+            duration = max(cut.duration for cut in self)
+        return CutSet.from_cuts(cut.pad(duration=duration) for cut in self)
 
     def truncate(
             self,

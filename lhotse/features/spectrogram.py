@@ -1,7 +1,15 @@
+import os
 from dataclasses import dataclass
 
 import numpy as np
-import torchaudio
+
+if os.environ.get('READTHEDOCS', False):
+    # This is a hacky work-around to make read-the-docs render the feature extraction
+    # documentation correctly.
+    def spectrogram():
+        ...
+else:
+    from torchaudio.compliance.kaldi import spectrogram
 
 from lhotse.features.base import register_extractor, TorchaudioFeatureExtractor
 from lhotse.utils import Seconds
@@ -29,7 +37,7 @@ class Spectrogram(TorchaudioFeatureExtractor):
     """Log spectrogram feature extractor based on ``torchaudio.compliance.kaldi.spectrogram`` function."""
     name = 'spectrogram'
     config_type = SpectrogramConfig
-    feature_fn = staticmethod(torchaudio.compliance.kaldi.spectrogram)
+    feature_fn = staticmethod(spectrogram)
 
     def feature_dim(self, sampling_rate: int) -> int:
         from torchaudio.compliance.kaldi import _next_power_of_2
