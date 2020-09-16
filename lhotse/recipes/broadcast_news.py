@@ -19,7 +19,7 @@ from cytoolz import sliding_window
 
 from lhotse.audio import Recording, RecordingSet
 from lhotse.supervision import SupervisionSegment, SupervisionSet
-from lhotse.utils import Pathlike, recursion_limit
+from lhotse.utils import Pathlike, recursion_limit, check_and_rglob
 
 # Since BroadcastNews SGML does not include </time> tags, BeautifulSoup hallucinates them
 # in incorrect positions - it nests the <time> segments in each other, making parsing more difficult...
@@ -30,7 +30,8 @@ EXCLUDE_BEGINNINGS = ['</time', '<overlap', '</overlap']
 def prepare_broadcast_news(
         audio_dir: Pathlike,
         transcripts_dir: Pathlike,
-        output_dir: Optional[Pathlike] = None
+        output_dir: Optional[Pathlike] = None,
+        absolute_paths: bool = False
 ) -> Dict[str, Union[RecordingSet, SupervisionSet]]:
     """
     Prepare manifests for 1997 English Broadcast News corpus.
@@ -42,11 +43,12 @@ def prepare_broadcast_news(
     :param output_dir: Directory where the manifests should be written. Can be omitted to avoid writing.
     :return: A dict with manifests. The keys are: ``{'recordings', 'sections', 'segments'}``.
     """
-    audio_paths = sorted(Path(audio_dir).rglob('*.sph'))
-    sgml_paths = sorted(Path(transcripts_dir).rglob('*.sgml'))
+    audio_paths = check_and_rglob(audio_dir, '*.sph')
+    sgml_paths = check_and_rglob(transcripts_dir, '*.sgml')
 
     recordings = RecordingSet.from_recordings(
-        Recording.from_sphere(p, relative_path_depth=3) for p in audio_paths
+        Recording.from_sphere(p, relative_path_depth=None if absolute_paths else 3)
+        for p in audio_paths
     )
 
     # BeautifulSoup has quite inefficient tag-to-string rendering that uses a recursive implementation;
