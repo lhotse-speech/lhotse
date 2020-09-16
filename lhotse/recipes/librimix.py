@@ -1,9 +1,9 @@
 import shutil
 import urllib.request
-from zipfile import ZipFile
 from collections import defaultdict
 from pathlib import Path
 from typing import Dict, Optional, Union
+from zipfile import ZipFile
 
 from lhotse.audio import AudioSource, Recording, RecordingSet
 from lhotse.supervision import SupervisionSegment, SupervisionSet
@@ -37,6 +37,7 @@ def prepare_librimix(
         min_segment_seconds: Seconds = 3.0
 ) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet]]]:
     import pandas as pd
+    assert Path(librimix_csv).is_file(), f'No such file: {librimix_csv}'
     df = pd.read_csv(librimix_csv)
 
     if output_dir is not None:

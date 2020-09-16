@@ -18,8 +18,7 @@ from typing import Dict, Union, Optional
 
 from lhotse.audio import RecordingSet, Recording
 from lhotse.supervision import SupervisionSet, SupervisionSegment
-from lhotse.utils import Pathlike
-
+from lhotse.utils import Pathlike, check_and_rglob
 
 SWBD_TEXT_URL = 'http://www.isip.piconepress.com/projects/switchboard/releases/switchboard_word_alignments.tar.gz'
 
@@ -29,7 +28,8 @@ def prepare_switchboard(
         transcripts_dir: Optional[Pathlike] = None,
         sentiment_dir: Optional[Pathlike] = None,
         output_dir: Optional[Pathlike] = None,
-        omit_silence: bool = True
+        omit_silence: bool = True,
+        absolute_paths: bool = False
 ) -> Dict[str, Union[RecordingSet, SupervisionSet]]:
     """
     Prepare manifests for the Switchboard corpus.
@@ -47,8 +47,8 @@ def prepare_switchboard(
     """
     if transcripts_dir is None:
         transcripts_dir = download_and_untar()
-    audio_paths = sorted(Path(audio_dir).rglob('*.sph'))
-    text_paths = sorted(Path(transcripts_dir).rglob('*trans.text'))
+    audio_paths = check_and_rglob(audio_dir, '*.sph')
+    text_paths = check_and_rglob(transcripts_dir, '*.trans.text')
 
     groups = []
     name_to_text = {p.stem.split('-')[0]: p for p in text_paths}
@@ -57,7 +57,8 @@ def prepare_switchboard(
         groups.append({'audio': ap, 'text-0': name_to_text[f'{name}A'], 'text-1': name_to_text[f'{name}B']})
 
     recordings = RecordingSet.from_recordings(
-        Recording.from_sphere(group['audio'], relative_path_depth=3) for group in groups
+        Recording.from_sphere(group['audio'], relative_path_depth=None if absolute_paths else 3)
+        for group in groups
     )
     supervisions = SupervisionSet.from_segments(chain.from_iterable(
         make_segments(
@@ -124,12 +125,12 @@ def download_and_untar(
 def parse_and_add_sentiment_labels(sentiment_dir: Pathlike, supervisions: SupervisionSet):
     """Read 'LDC2020T14' sentiment annotations and add then to the supervision segments."""
     import pandas as pd
+    # Sanity checks
+    sentiment_dir = Path(sentiment_dir)
+    labels = sentiment_dir / 'data' / 'sentiment_labels.tsv'
+    assert sentiment_dir.is_dir() and labels.is_file()
     # Read the TSV as a dataframe
-    df = pd.read_csv(
-        Path(sentiment_dir) / 'data' / 'sentiment_labels.tsv',
-        delimiter='\t',
-        names=['id', 'start', 'end', 'sentiment']
-    )
+    df = pd.read_csv(labels, delimiter='\t', names=['id', 'start', 'end', 'sentiment'])
     # We are going to match the segments in LDC2020T14 with the ones we already
     # parsed from ISIP transcripts. We simply look which of the existing segments
     # fall into a sentiment-annotated time span. When doing it this way, we use
