@@ -6,7 +6,7 @@ from contextlib import contextmanager
 from dataclasses import asdict, dataclass
 from math import ceil, isclose
 from pathlib import Path
-from typing import Any, Dict, Union, Optional, Callable
+from typing import Any, Dict, Union, Optional, Callable, List
 
 import numpy as np
 import torch
@@ -161,6 +161,19 @@ def time_diff_to_num_frames(time_diff: Seconds, frame_length: Seconds, frame_shi
     if isclose(time_diff, 0.0):
         return 0
     return int(ceil((time_diff - frame_length) / frame_shift))
+
+
+def check_and_rglob(path: Pathlike, pattern: str) -> List[Path]:
+    """
+    Asserts that ``path`` exists, is a directory and contains at least one file satisfying the ``pattern``.
+
+    :returns: a list of paths to files matching the ``pattern``.
+    """
+    path = Path(path)
+    assert path.is_dir(), f'No such directory: {path}'
+    matches = sorted(path.rglob(pattern))
+    assert len(matches) > 0, f'No files matching pattern "{pattern}" in directory: {path}'
+    return matches
 
 
 @contextmanager

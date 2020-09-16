@@ -155,6 +155,7 @@ def prepare_ami(
     :return: a Dict whose key is ('train', 'dev', 'eval'), and the value is Dicts with keys 'audio' and 'supervisions'.
     """
     data_dir = Path(data_dir)
+    assert data_dir.is_dir(), f'No such directory: {data_dir}'
     if output_dir is not None:
         output_dir = Path(output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
