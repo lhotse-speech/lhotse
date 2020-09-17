@@ -55,6 +55,7 @@ def prepare_mini_librispeech(
     :return: a Dict whose key is the dataset part, and the value is Dicts with the keys 'audio' and 'supervisions'.
     """
     corpus_dir = Path(corpus_dir)
+    assert corpus_dir.is_dir(), f'No such directory: {corpus_dir}'
     if output_dir is not None:
         output_dir = Path(output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
