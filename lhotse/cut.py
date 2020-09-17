@@ -115,8 +115,8 @@ class CutUtilsMixin:
 
     def supervisions_feature_mask(self) -> np.ndarray:
         """
-        Return a 1D numpy array with value 1 for frames covered by at least one supervision,
-        and 0 for frames not covered by any supervision.
+        Return a 1D numpy array with value 1 for **frames** covered by at least one supervision,
+        and 0 for **frames** not covered by any supervision.
         """
         assert self.has_features, f"No features available. " \
                                   f"Can't compute supervisions feature mask for cut with ID: {self.id}."
@@ -129,8 +129,8 @@ class CutUtilsMixin:
 
     def supervisions_audio_mask(self) -> np.ndarray:
         """
-        Return a 1D numpy array with value 1 for samples covered by at least one supervision,
-        and 0 for frames not covered by any supervision.
+        Return a 1D numpy array with value 1 for **samples** covered by at least one supervision,
+        and 0 for **samples** not covered by any supervision.
         """
         assert self.has_recording, f"No recording available. " \
                                    f"Can't compute supervisions audio mask for cut with ID: {self.id}."
