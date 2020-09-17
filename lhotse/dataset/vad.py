@@ -1,12 +1,12 @@
-from pathlib import Path
 from math import isclose
+from pathlib import Path
 from typing import Dict, Optional
 
 import torch
 from torch.utils.data import Dataset
 
 from lhotse.cut import CutSet
-from lhotse.utils import Pathlike, Seconds
+from lhotse.utils import Pathlike
 
 EPS = 1e-8
 
@@ -42,11 +42,7 @@ class VadDataset(Dataset):
         assert features.shape[0] == cut.num_frames
         assert isclose(cut.num_frames * cut.frame_shift, cut.duration)
 
-        is_voice = torch.zeros(cut.num_frames)
-        for supervision in cut.supervisions:
-            st = round(supervision.start / cut.frame_shift) if supervision.start > 0 else 0
-            et = round(supervision.end / cut.frame_shift) if supervision.end < cut.duration else cut.num_frames
-            is_voice[st:et] = 1
+        is_voice = torch.from_numpy(cut.supervisions_feature_mask())
 
         return {
             'features': features,

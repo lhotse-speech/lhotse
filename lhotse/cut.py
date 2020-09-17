@@ -113,6 +113,38 @@ class CutUtilsMixin:
         features = np.flip(self.load_features(root_dir=root_dir).transpose(1, 0), 0)
         return plt.matshow(features)
 
+    def supervisions_feature_mask(self) -> np.ndarray:
+        """
+        Return a 1D numpy array with value 1 for **frames** covered by at least one supervision,
+        and 0 for **frames** not covered by any supervision.
+        """
+        assert self.has_features, f"No features available. " \
+                                  f"Can't compute supervisions feature mask for cut with ID: {self.id}."
+        mask = np.zeros(self.num_frames)
+        for supervision in self.supervisions:
+            st = round(supervision.start / self.frame_shift) if supervision.start > 0 else 0
+            et = round(supervision.end / self.frame_shift) if supervision.end < self.duration else self.num_frames
+            mask[st:et] = 1
+        return mask
+
+    def supervisions_audio_mask(self) -> np.ndarray:
+        """
+        Return a 1D numpy array with value 1 for **samples** covered by at least one supervision,
+        and 0 for **samples** not covered by any supervision.
+        """
+        assert self.has_recording, f"No recording available. " \
+                                   f"Can't compute supervisions audio mask for cut with ID: {self.id}."
+        mask = np.zeros(self.num_samples)
+        for supervision in self.supervisions:
+            st = round(supervision.start * self.sampling_rate) if supervision.start > 0 else 0
+            et = (
+                round(supervision.end * self.sampling_rate)
+                if supervision.end < self.duration
+                else self.duration * self.sampling_rate
+            )
+            mask[st:et] = 1
+        return mask
+
 
 @dataclass
 class Cut(CutUtilsMixin):
@@ -295,17 +327,17 @@ class Cut(CutUtilsMixin):
             recording=self.recording
         )
 
-    def pad(self, desired_duration: Seconds) -> AnyCut:
-        f"""
-        Return a new MixedCut, padded to `desired_seconds` duration with low-energy values in each bin.
-        We use {EPSILON} for energies, or {log(EPSILON)} for log-energies.
-
-        :param desired_duration: The cut's minimal duration after padding.
-        :return: a padded MixedCut if desired_duration is greater than this cut's duration, otherwise self.
+    def pad(self, duration: Seconds) -> AnyCut:
         """
-        if desired_duration <= self.duration:
+        Return a new MixedCut, padded to ``duration`` seconds with zeros in the recording,
+        and low-energy values in each feature bin.
+
+        :param duration: The cut's minimal duration after padding.
+        :return: a padded MixedCut if ``duration`` is greater than this cut's duration, otherwise ``self``.
+        """
+        if duration <= self.duration:
             return self
-        padding_duration = desired_duration - self.duration
+        padding_duration = duration - self.duration
         return self.append(PaddingCut(
             id=str(uuid4()),
             duration=padding_duration,
@@ -400,21 +432,21 @@ class PaddingCut(CutUtilsMixin):
             sampling_rate=self.sampling_rate
         )
 
-    def pad(self, desired_duration: Seconds) -> 'PaddingCut':
+    def pad(self, duration: Seconds) -> 'PaddingCut':
         """
-        Create a new PaddingCut with `desired_duration` when its longer than this Cuts duration.
+        Create a new PaddingCut with ``duration`` when its longer than this Cuts duration.
         Helper function used in batch cut padding.
 
-        :param desired_duration: The cuts minimal duration after padding.
-        :return: self or a new PaddingCut, depending on `desired_duration`.
+        :param duration: The cuts minimal duration after padding.
+        :return: ``self`` or a new PaddingCut, depending on ``duration``.
         """
-        if desired_duration <= self.duration:
+        if duration <= self.duration:
             return self
         return PaddingCut(
             id=str(uuid4()),
-            duration=desired_duration,
+            duration=duration,
             num_features=self.num_features,
-            num_frames=round(desired_duration / self.frame_shift),
+            num_frames=round(duration / self.frame_shift),
             sampling_rate=self.sampling_rate,
             use_log_energy=self.use_log_energy
         )
@@ -497,6 +529,10 @@ class MixedCut(CutUtilsMixin):
         if self.has_features:
             return round(self.duration / self._first_non_padding_cut.frame_shift)
         return None
+
+    @property
+    def frame_shift(self) -> Optional[Seconds]:
+        return self._first_non_padding_cut.frame_shift
 
     @property
     def sampling_rate(self) -> Optional[int]:
@@ -586,17 +622,17 @@ class MixedCut(CutUtilsMixin):
             )
         return MixedCut(id=str(uuid4()), tracks=new_tracks)
 
-    def pad(self, desired_duration: Seconds) -> AnyCut:
-        f"""
-        Return a new MixedCut, padded to `desired_seconds` duration with low-energy values in each bin.
-        We use {EPSILON} for energies, or {log(EPSILON)} for log-energies.
-
-        :param desired_duration: The cut's minimal duration after padding.
-        :return: a padded MixedCut if desired_duration is greater than this cut's duration, otherwise self.
+    def pad(self, duration: Seconds) -> AnyCut:
         """
-        if desired_duration <= self.duration:
+        Return a new MixedCut, padded to ``duration`` seconds with zeros in the recording,
+        and low-energy values in each feature bin.
+
+        :param duration: The cut's minimal duration after padding.
+        :return: a padded MixedCut if duration is greater than this cut's duration, otherwise ``self``.
+        """
+        if duration <= self.duration:
             return self
-        padding_duration = desired_duration - self.duration
+        padding_duration = duration - self.duration
         return self.append(PaddingCut(
             id=str(uuid4()),
             duration=padding_duration,
@@ -890,19 +926,19 @@ class CutSet(JsonMixin, YamlMixin):
 
     def pad(
             self,
-            desired_duration: Seconds = None,
+            duration: Seconds = None,
     ) -> 'CutSet':
         """
-        Return a new CutSet with Cuts padded to `desired_duration` in seconds.
-        Cuts longer than `desired_duration` will not be affected.
+        Return a new CutSet with Cuts padded to ``duration`` in seconds.
+        Cuts longer than ``duration`` will not be affected.
         Cuts will be padded to the right (i.e. after the signal).
-        :param desired_duration: The cuts minimal duration after padding.
+        :param duration: The cuts minimal duration after padding.
         When not specified, we'll choose the duration of the longest cut in the CutSet.
         :return: A padded CutSet.
         """
-        if desired_duration is None:
-            desired_duration = max(cut.duration for cut in self)
-        return CutSet.from_cuts(cut.pad(desired_duration=desired_duration) for cut in self)
+        if duration is None:
+            duration = max(cut.duration for cut in self)
+        return CutSet.from_cuts(cut.pad(duration=duration) for cut in self)
 
     def truncate(
             self,
@@ -958,7 +994,7 @@ class CutSet(JsonMixin, YamlMixin):
 
         :param duration: Desired duration of the new cuts in seconds.
         :param keep_excessive_supervisions: bool. When a cut is truncated in the middle of a supervision segment,
-        should the supervision be kept.
+            should the supervision be kept.
         :return: a new CutSet with cuts made from shorter duration windows.
         """
         new_cuts = []
@@ -993,7 +1029,7 @@ class CutSet(JsonMixin, YamlMixin):
             Any executor satisfying the standard concurrent.futures interface will be suitable;
             e.g. ProcessPoolExecutor, ThreadPoolExecutor, or dask.Client for distributed task
             execution (see: https://docs.dask.org/en/latest/futures.html?highlight=Client#start-dask-client)
-        :param mix_eagerly: Related to how the features are extracted for ``MixedCut``s, if any are present.
+        :param mix_eagerly: Related to how the features are extracted for ``MixedCut`` instances, if any are present.
             When False, extract and store the features for each track separately,
             and mix them dynamically when loading the features.
             When True, mix the audio first and store the mixed features, returning a new ``Cut`` instance

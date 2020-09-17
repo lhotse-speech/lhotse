@@ -7,7 +7,6 @@ from lhotse.audio import AudioSource, Recording
 from lhotse.cut import Cut, CutSet, PaddingCut
 from lhotse.features import Features
 
-
 PADDING_ENERGY = 1e-8
 PADDING_LOG_ENERGY = -18.420680743952367  # log(1e-8)
 
@@ -222,7 +221,7 @@ def test_append(libri_cut, padding_cut):
 
 
 def test_pad_simple_cut(libri_cut):
-    padded = libri_cut.pad(desired_duration=20.0)
+    padded = libri_cut.pad(duration=20.0)
 
     assert padded.duration == 20.0
     assert padded.num_frames == 2000
@@ -238,7 +237,7 @@ def test_pad_simple_cut(libri_cut):
 
 def test_pad_simple_cut_audio_only(libri_cut):
     libri_cut.features = None
-    padded = libri_cut.pad(desired_duration=20.0)
+    padded = libri_cut.pad(duration=20.0)
 
     assert padded.duration == 20.0
     assert padded.num_samples == 20 * 16000
@@ -251,7 +250,7 @@ def test_pad_simple_cut_audio_only(libri_cut):
 
 
 def test_pad_mixed_cut(mixed_libri_cut):
-    padded = mixed_libri_cut.pad(desired_duration=20.0)
+    padded = mixed_libri_cut.pad(duration=20.0)
 
     assert padded.duration == 20.0
     assert padded.num_frames == 2000

@@ -124,8 +124,9 @@ def reverb(*args, **kwargs):
 def pitch_reverb_tdrop(sampling_rate: int):
     """
     Returns an effect chain composed of pitch modification, reverberation and time dropout proposed in:
-    https://github.com/facebookresearch/WavAugment/blob/master/examples/python/librispeech_selfsupervised.py#L152
-    https://arxiv.org/abs/2007.00991
+
+    * https://github.com/facebookresearch/WavAugment/blob/master/examples/python/librispeech_selfsupervised.py#L152
+    * https://arxiv.org/abs/2007.00991
 
     :param sampling_rate: a sampling rate value for which the effect will be created (resampling is needed for pitch).
     """

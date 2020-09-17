@@ -79,6 +79,7 @@ def load_kaldi_data_dir(path: Pathlike, sampling_rate: int) -> Tuple[RecordingSe
 
 
 def load_kaldi_text_mapping(path: Path, must_exist: bool = False) -> Dict[str, Optional[str]]:
+    """Load Kaldi files such as utt2spk, spk2gender, text, etc. as a dict."""
     mapping = defaultdict(lambda: None)
     if path.is_file():
         with path.open() as f:

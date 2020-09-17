@@ -24,19 +24,23 @@ class FeatureExtractor(metaclass=ABCMeta):
     The config is expected to be a dataclass so that it can be easily serialized.
 
     All derived feature extractors must implement at least the following:
-    - a ``name`` class attribute (how are these features called, e.g. 'mfcc')
-    - a ``config_type`` class attribute that points to the configuration dataclass type
-    - the ``extract`` method,
-    - the ``frame_shift`` property.
+
+    * a ``name`` class attribute (how are these features called, e.g. 'mfcc')
+    * a ``config_type`` class attribute that points to the configuration dataclass type
+    * the ``extract`` method,
+    * the ``frame_shift`` property.
 
     Feature extractors that support feature-domain mixing should additionally specify two static methods:
-    - ``compute_energy``, and
-    - ``mix``.
+
+    * ``compute_energy``, and
+    * ``mix``.
 
     By itself, the ``FeatureExtractor`` offers the following high-level methods
     that are not intended for overriding:
-    - ``extract_from_samples_and_store``
-    - ``extract_from_recording_and_store``
+
+    * ``extract_from_samples_and_store``
+    * ``extract_from_recording_and_store``
+
     These methods run a larger feature extraction pipeline that involves data augmentation and disk storage.
     """
     name = None
@@ -52,6 +56,7 @@ class FeatureExtractor(metaclass=ABCMeta):
     def extract(self, samples: np.ndarray, sampling_rate: int) -> np.ndarray:
         """
         Defines how to extract features using a numpy ndarray of audio samples and the sampling rate.
+
         :return: a numpy ndarray representing the feature matrix.
         """
         pass
@@ -105,15 +110,16 @@ class FeatureExtractor(metaclass=ABCMeta):
     ):
         """
         Extract the features from an array of audio samples in a full pipeline:
-        - optional audio augmentation;
-        - extract the features;
-        - save them to disk in a specified directory;
-        - return a ``Features`` object with a description of the extracted features.
+
+        * optional audio augmentation;
+        * extract the features;
+        * save them to disk in a specified directory;
+        * return a ``Features`` object with a description of the extracted features.
 
         Note, unlike in ``extract_from_recording_and_store``, the returned ``Features`` object
         might not be suitable to store in a ``FeatureSet``, as it does not reference any particular
         ``Recording``. Instead, this method is useful when extracting features from cuts - especially
-        ``MixedCut``s, which may be created from multiple recordings and channels.
+        ``MixedCut`` instances, which may be created from multiple recordings and channels.
 
         :param samples: a numpy ndarray with the audio samples.
         :param sampling_rate: integer sampling rate of ``samples``.
@@ -158,11 +164,12 @@ class FeatureExtractor(metaclass=ABCMeta):
     ):
         """
         Extract the features from a ``Recording`` in a full pipeline:
-        - load audio from disk;
-        - optionally, perform audio augmentation;
-        - extract the features;
-        - save them to disk in a specified directory;
-        - return a ``Features`` object with a description of the extracted features and the source data used.
+
+        * load audio from disk;
+        * optionally, perform audio augmentation;
+        * extract the features;
+        * save them to disk in a specified directory;
+        * return a ``Features`` object with a description of the extracted features and the source data used.
 
         :param recording: a ``Recording`` that specifies what's the input audio.
         :param output_dir: a path to the directory where the features will be stored.
@@ -227,6 +234,7 @@ FEATURE_EXTRACTORS = {}
 def get_extractor_type(name: str) -> Type:
     """
     Return the feature extractor type corresponding to the given name.
+
     :param name: specifies which feature extractor should be used.
     :return: A feature extractors type.
     """
@@ -236,6 +244,7 @@ def get_extractor_type(name: str) -> Type:
 def create_default_feature_extractor(name: str) -> 'Optional[FeatureExtractor]':
     """
     Create a feature extractor object with a default configuration.
+
     :param name: specifies which feature extractor should be used.
     :return: A new feature extractor instance.
     """
@@ -250,8 +259,7 @@ def register_extractor(cls):
     An example of usage:
 
     @register_extractor
-    class MyFeatureExtractor:
-        ...
+    class MyFeatureExtractor: ...
 
     :param cls: A type (class) that is being registered.
     :return: Registered type.
