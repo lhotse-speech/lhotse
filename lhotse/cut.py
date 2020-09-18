@@ -3,7 +3,7 @@ import warnings
 from dataclasses import dataclass, field
 from functools import reduce
 from math import ceil, floor, log
-from typing import Callable, Dict, Iterable, List, Optional, Union, Any
+from typing import Callable, Dict, Iterable, List, Optional, Union, Any, FrozenSet
 
 import numpy as np
 from cytoolz import sliding_window
@@ -112,6 +112,74 @@ class CutUtilsMixin:
         import matplotlib.pyplot as plt
         features = np.flip(self.load_features(root_dir=root_dir).transpose(1, 0), 0)
         return plt.matshow(features)
+
+    def speakers_feature_mask(
+            self,
+            min_speaker_dim: Optional[int] = None,
+            speaker_to_idx_map: Optional[Dict[str, int]] = None
+    ) -> np.ndarray:
+        """
+        Return a matrix of per-speaker activity in a cut. The matrix shape is (num_speakers, num_frames),
+        and its values are 0 for nonspeech **frames** and 1 for speech samples for each respective speaker.
+
+        This is somewhat inspired by the TS-VAD setup: https://arxiv.org/abs/2005.07272
+
+        :param min_speaker_dim: optional int, when specified it will enforce that the matrix shape is at least
+            that value (useful for datasets like CHiME 6 where the number of speakers is always 4, but some cuts
+            might have less speakers than that).
+        :param speaker_to_idx_map: optional dict mapping speaker names (strings) to their global indices (ints).
+            Useful when you want to preserve the order of the speakers (e.g. speaker XYZ is always mapped to index 2)
+        """
+        assert self.has_features, f"No features available. " \
+                                  f"Can't compute supervisions feature mask for cut with ID: {self.id}."
+        if speaker_to_idx_map is None:
+            speaker_to_idx_map = {spk: idx for idx, spk in enumerate(sorted(set(s.speaker for s in self.supervisions)))}
+        num_speakers = len(speaker_to_idx_map)
+        if min_speaker_dim is not None:
+            num_speakers = min(min_speaker_dim, num_speakers)
+        mask = np.zeros((num_speakers, self.num_frames))
+        for supervision in self.supervisions:
+            speaker_idx = speaker_to_idx_map[supervision.speaker]
+            st = round(supervision.start / self.frame_shift) if supervision.start > 0 else 0
+            et = round(supervision.end / self.frame_shift) if supervision.end < self.duration else self.num_frames
+            mask[speaker_idx, st:et] = 1
+        return mask
+
+    def speakers_audio_mask(
+            self,
+            min_speaker_dim: Optional[int] = None,
+            speaker_to_idx_map: Optional[Dict[str, int]] = None
+    ) -> np.ndarray:
+        """
+        Return a matrix of per-speaker activity in a cut. The matrix shape is (num_speakers, num_samples),
+        and its values are 0 for nonspeech **samples** and 1 for speech samples for each respective speaker.
+
+        This is somewhat inspired by the TS-VAD setup: https://arxiv.org/abs/2005.07272
+
+        :param min_speaker_dim: optional int, when specified it will enforce that the matrix shape is at least
+            that value (useful for datasets like CHiME 6 where the number of speakers is always 4, but some cuts
+            might have less speakers than that).
+        :param speaker_to_idx_map: optional dict mapping speaker names (strings) to their global indices (ints).
+            Useful when you want to preserve the order of the speakers (e.g. speaker XYZ is always mapped to index 2)
+        """
+        assert self.has_recording, f"No recording available. " \
+                                   f"Can't compute supervisions audio mask for cut with ID: {self.id}."
+        if speaker_to_idx_map is None:
+            speaker_to_idx_map = {spk: idx for idx, spk in enumerate(sorted(set(s.speaker for s in self.supervisions)))}
+        num_speakers = len(speaker_to_idx_map)
+        if min_speaker_dim is not None:
+            num_speakers = min(min_speaker_dim, num_speakers)
+        mask = np.zeros((num_speakers, self.num_samples))
+        for supervision in self.supervisions:
+            speaker_idx = speaker_to_idx_map[supervision.speaker]
+            st = round(supervision.start * self.sampling_rate) if supervision.start > 0 else 0
+            et = (
+                round(supervision.end * self.sampling_rate)
+                if supervision.end < self.duration
+                else self.duration * self.sampling_rate
+            )
+            mask[speaker_idx, st:et] = 1
+        return mask
 
     def supervisions_feature_mask(self) -> np.ndarray:
         """
@@ -795,6 +863,10 @@ class CutSet(JsonMixin, YamlMixin):
     @property
     def ids(self) -> Iterable[str]:
         return self.cuts.keys()
+
+    @property
+    def speakers(self) -> FrozenSet[str]:
+        return frozenset(supervision.speaker for cut in self for supervision in cut.supervisions)
 
     @staticmethod
     def from_cuts(cuts: Iterable[AnyCut]) -> 'CutSet':
