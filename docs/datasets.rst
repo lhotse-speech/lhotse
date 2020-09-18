@@ -10,6 +10,10 @@ Each dataset accepts an optional ``root_dir`` argument which is used as a prefix
 
 Currently, we provide the following:
 
+.. automodule:: lhotse.dataset.diarization
+  :members:
+  :noindex:
+
 .. automodule:: lhotse.dataset.unsupervised
   :members:
   :noindex:

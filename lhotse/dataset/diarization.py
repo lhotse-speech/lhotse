@@ -11,6 +11,16 @@ from lhotse.utils import Pathlike
 class DiarizationDataset(Dataset):
     """
     A PyTorch Dataset for the speaker diarization task.
+    Our assumptions about speaker diarization are the following:
+
+    * we assume a single channel input (for now), which could be either a true mono signal
+        or a beamforming result from a microphone array.
+    * we assume that the supervision used for model training is a speech activity matrix, with one
+        row dedicated to each speaker (either in the current cut or the whole dataset,
+        depending on the settings). The columns correspond to feature frames. Each row is effectively
+        a Voice Activity Detection supervision for a single speaker. This setup is somewhat inspired by
+        the TS-VAD paper: https://arxiv.org/abs/2005.07272
+
     Each item in this dataset is a dict of:
 
     .. code-block::
@@ -19,6 +29,8 @@ class DiarizationDataset(Dataset):
             'features': (T x F) tensor
             'speaker_activity': (num_speaker x T) tensor
         }
+
+    Constructor arguments:
 
     :param cuts: a ``CutSet`` used to create the dataset object.
     :param min_speaker_dim: optional int, when specified it will enforce that the matrix shape is at least

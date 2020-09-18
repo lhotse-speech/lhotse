@@ -8,6 +8,9 @@ Datasets
 
 PyTorch Dataset wrappers for common tasks.
 
+.. automodule:: lhotse.dataset.diarization
+  :members:
+
 .. automodule:: lhotse.dataset.speech_recognition
   :members:
 
