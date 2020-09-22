@@ -120,7 +120,7 @@ class CutUtilsMixin:
     ) -> np.ndarray:
         """
         Return a matrix of per-speaker activity in a cut. The matrix shape is (num_speakers, num_frames),
-        and its values are 0 for nonspeech **frames** and 1 for speech samples for each respective speaker.
+        and its values are 0 for nonspeech **frames** and 1 for speech **frames** for each respective speaker.
 
         This is somewhat inspired by the TS-VAD setup: https://arxiv.org/abs/2005.07272
 
@@ -152,7 +152,7 @@ class CutUtilsMixin:
     ) -> np.ndarray:
         """
         Return a matrix of per-speaker activity in a cut. The matrix shape is (num_speakers, num_samples),
-        and its values are 0 for nonspeech **samples** and 1 for speech samples for each respective speaker.
+        and its values are 0 for nonspeech **samples** and 1 for speech **samples** for each respective speaker.
 
         This is somewhat inspired by the TS-VAD setup: https://arxiv.org/abs/2005.07272
 
