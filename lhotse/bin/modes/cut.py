@@ -48,11 +48,7 @@ def simple(
         load_manifest(p) if p is not None else None
         for p in (supervision_manifest, feature_manifest, recording_manifest)
     ]
-    cut_set = CutSet.from_manifests(
-        feature_set=feature_set,
-        recording_set=recording_set,
-        supervision_set=supervision_set
-    )
+    cut_set = CutSet.from_manifests(recordings=recording_set, supervisions=supervision_set, features=feature_set)
     cut_set.to_json(output_cut_manifest)
 
 
@@ -111,7 +107,7 @@ def random_mixed(
     supervision_set = SupervisionSet.from_json(supervision_manifest)
     feature_set = FeatureSet.from_json(feature_manifest)
 
-    source_cut_set = CutSet.from_manifests(supervision_set=supervision_set, feature_set=feature_set)
+    source_cut_set = CutSet.from_manifests(supervisions=supervision_set, features=feature_set)
     left_cuts, right_cuts = split(source_cut_set, num_splits=2, randomize=True)
 
     snrs = np.random.uniform(*snr_range, size=len(left_cuts)).tolist()

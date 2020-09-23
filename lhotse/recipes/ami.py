@@ -215,11 +215,11 @@ def prepare_ami(
                         ))
         supervision = SupervisionSet.from_segments(segments_by_pause)
         if output_dir is not None:
-            audio.to_json(output_dir / f'audio_{part}.json')
+            audio.to_json(output_dir / f'recordings_{part}.json')
             supervision.to_json(output_dir / f'supervisions_{part}.json')
 
         manifests[part] = {
-            'audio': audio,
+            'recordings': audio,
             'supervisions': supervision
         }
 

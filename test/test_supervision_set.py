@@ -178,3 +178,29 @@ def test_supervision_set_find_start_after_end_before(search_supervision_set, adj
     assert len(segments) == 1
     assert segments[0].id == 's2'
     assert segments[0].start == expected_start
+
+
+@pytest.fixture
+def supervision():
+    return SupervisionSegment('sup', 'rec', start=-5, duration=18)
+
+
+@pytest.mark.parametrize(
+    ['trim_end', 'expected_end'],
+    [
+        (10, 10),
+        (18, 13),
+        (20, 13),
+    ]
+)
+def test_supervision_trim(supervision, trim_end, expected_end):
+    trimmed = supervision.trim(trim_end)
+    assert trimmed.start == 0
+    assert trimmed.duration == expected_end
+
+
+@pytest.mark.parametrize('start', [0, 5])
+def test_supervision_trim_does_not_affect_nonnegative_start(supervision, start):
+    supervision.start = start
+    trimmed = supervision.trim(50)
+    assert trimmed.start == start
