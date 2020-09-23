@@ -105,3 +105,7 @@ def test_trim_to_unsupervised_segments():
     assert unsupervised_cuts[2].start == 28
     assert unsupervised_cuts[2].duration == 2
     assert unsupervised_cuts[2].supervisions == []
+
+
+def test_cut_set_describe_runs(cut_set):
+    cut_set.describe()
