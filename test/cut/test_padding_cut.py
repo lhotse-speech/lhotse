@@ -17,7 +17,7 @@ def padding_cut():
         id='padding-1',
         duration=10.0,
         num_frames=1000,
-        num_features=23,
+        num_features=40,
         sampling_rate=16000,
         num_samples=160000,
         use_log_energy=True
@@ -35,7 +35,7 @@ def test_load_features_log(padding_cut, use_log_energy, expected_value):
     padding_cut.use_log_energy = use_log_energy
     feats = padding_cut.load_features()
     assert feats.shape[0] == 1000
-    assert feats.shape[1] == 23
+    assert feats.shape[1] == 40
     np.testing.assert_almost_equal(feats, expected_value)
 
 
@@ -71,7 +71,7 @@ def test_truncate(padding_cut, offset, duration, expected_duration, expected_num
     # Variants
     assert cut.duration == expected_duration
     assert cut.num_frames == expected_num_frames
-    assert cut.load_features().shape == (expected_num_frames, 23)
+    assert cut.load_features().shape == (expected_num_frames, 40)
     assert cut.load_audio().shape == (1, expected_num_samples)
 
 
@@ -83,12 +83,12 @@ def libri_cut():
         features=Features(
             channels=0,
             duration=16.04,
-            num_features=23,
+            num_features=40,
             num_frames=1604,
             recording_id='recording-1',
             sampling_rate=16000,
             start=0.0,
-            storage_path='test/fixtures/libri/storage/68f03dd2-96ec-45b0-b1be-a4f9dd5e7dcf.llc',
+            storage_path='test/fixtures/libri/storage/fc37eb69-43a8-4e6f-a302-646a76606b38.llc',
             storage_type='lilcom',
             type='fbank',
         ),
@@ -115,7 +115,7 @@ def test_mix_in_the_middle(libri_cut, padding_cut):
 
     # Invariants
     assert mixed.duration == 16.04
-    assert mixed.num_features == 23
+    assert mixed.num_features == 40
     assert mixed.num_frames == 1604
 
     # Check that the actual feature shapes and values did not change
@@ -132,7 +132,7 @@ def test_mix_pad_right(libri_cut, padding_cut):
     assert mixed.num_frames == 2000
 
     mixed_feats = mixed.load_features()
-    assert mixed_feats.shape == (2000, 23)
+    assert mixed_feats.shape == (2000, 40)
     np.testing.assert_almost_equal(mixed_feats[1604:, :], PADDING_LOG_ENERGY, decimal=5)  # Only padding after 16.04s
     np.testing.assert_array_less(PADDING_LOG_ENERGY, mixed_feats[1603, :])  # Padding didn't start before 16.04s
 
@@ -147,7 +147,7 @@ def test_mix_pad_left(libri_cut, padding_cut):
     assert mixed.num_frames == 2000
 
     mixed_feats = mixed.load_features()
-    assert mixed_feats.shape == (2000, 23)
+    assert mixed_feats.shape == (2000, 40)
     np.testing.assert_almost_equal(mixed_feats[:396, :], PADDING_LOG_ENERGY, decimal=5)  # Only padding before 3.96s
     np.testing.assert_array_less(PADDING_LOG_ENERGY, mixed_feats[396, :])  # No padding after 3.96s
 
@@ -165,7 +165,7 @@ def test_mix_mixed_cut_with_padding_in_the_middle(mixed_libri_cut, padding_cut):
 
     # Invariants
     assert mixed.duration == 16.04
-    assert mixed.num_features == 23
+    assert mixed.num_features == 40
     assert mixed.num_frames == 1604
 
     # Check that the actual feature shapes and values did not change
@@ -182,7 +182,7 @@ def test_mix_mixed_cut_with_padding_on_the_right(mixed_libri_cut, padding_cut):
     assert mixed.num_frames == 2000
 
     mixed_feats = mixed.load_features()
-    assert mixed_feats.shape == (2000, 23)
+    assert mixed_feats.shape == (2000, 40)
     np.testing.assert_almost_equal(mixed_feats[1604:, :], PADDING_LOG_ENERGY, decimal=5)  # Only padding after 16.04s
     np.testing.assert_array_less(PADDING_LOG_ENERGY, mixed_feats[1603, :])  # Padding didn't start before 16.04s
 
@@ -197,12 +197,12 @@ def test_mix_mixed_cut_with_padding_on_the_left(mixed_libri_cut, padding_cut):
     assert mixed.num_frames == 2000
 
     mixed_feats = mixed.load_features()
-    assert mixed_feats.shape == (2000, 23)
+    assert mixed_feats.shape == (2000, 40)
     np.testing.assert_almost_equal(mixed_feats[:396, :], PADDING_LOG_ENERGY, decimal=5)  # Only padding before 3.96s
     np.testing.assert_array_less(PADDING_LOG_ENERGY, mixed_feats[396, :])  # No padding after 3.96s
 
     pre_mixed_feats = mixed_libri_cut.load_features()
-    np.testing.assert_allclose(pre_mixed_feats, mixed_feats[396:, :], rtol=1e-2)
+    np.testing.assert_allclose(pre_mixed_feats, mixed_feats[396:, :], rtol=1e-1)
 
 
 def test_append(libri_cut, padding_cut):
@@ -212,7 +212,7 @@ def test_append(libri_cut, padding_cut):
     assert appended.num_frames == 2604
 
     appended_feats = appended.load_features()
-    assert appended_feats.shape == (2604, 23)
+    assert appended_feats.shape == (2604, 40)
     np.testing.assert_almost_equal(appended_feats[1604:, :], PADDING_LOG_ENERGY, decimal=5)  # Only padding after 16.04s
     np.testing.assert_array_less(PADDING_LOG_ENERGY, appended_feats[1603, :])  # Padding didn't start before 16.04s
 
@@ -227,7 +227,7 @@ def test_pad_simple_cut(libri_cut):
     assert padded.num_frames == 2000
 
     mixed_feats = padded.load_features()
-    assert mixed_feats.shape == (2000, 23)
+    assert mixed_feats.shape == (2000, 40)
     np.testing.assert_almost_equal(mixed_feats[1604:, :], PADDING_LOG_ENERGY, decimal=5)  # Only padding after 16.04s
     np.testing.assert_array_less(PADDING_LOG_ENERGY, mixed_feats[1603, :])  # Padding didn't start before 16.04s
 
@@ -256,7 +256,7 @@ def test_pad_mixed_cut(mixed_libri_cut):
     assert padded.num_frames == 2000
 
     mixed_feats = padded.load_features()
-    assert mixed_feats.shape == (2000, 23)
+    assert mixed_feats.shape == (2000, 40)
     np.testing.assert_almost_equal(mixed_feats[1604:, :], PADDING_LOG_ENERGY, decimal=5)  # Only padding after 16.04s
     np.testing.assert_array_less(PADDING_LOG_ENERGY, mixed_feats[1603, :])  # Padding didn't start before 16.04s
 

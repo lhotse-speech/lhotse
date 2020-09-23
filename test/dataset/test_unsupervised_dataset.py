@@ -17,7 +17,7 @@ def test_unsupervised_dataset(libri_cut_set):
     dataset = UnsupervisedDataset(libri_cut_set)
     assert len(dataset) == 1
     feats = dataset[0]
-    assert feats.shape == (1000, 23)
+    assert feats.shape == (1000, 40)
 
 
 def test_unsupervised_waveform_dataset(libri_cut_set):
