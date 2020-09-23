@@ -89,6 +89,7 @@ class CutUtilsMixin:
         fig, ax = plt.subplots()
         ax.plot(np.linspace(0, self.duration, len(samples)), samples)
         for supervision in self.supervisions:
+            supervision = supervision.trim(self.duration)
             ax.axvspan(supervision.start, supervision.end, color='green', alpha=0.1)
         return ax
 
@@ -707,6 +708,7 @@ class MixedCut(CutUtilsMixin):
             ])
             ax.plot(np.linspace(0, track.offset + track.cut.duration, len(samples)), samples)
             for supervision in track.cut.supervisions:
+                supervision = supervision.trim(track.cut.duration)
                 ax.axvspan(track.offset + supervision.start, track.offset + supervision.end, color='green', alpha=0.1)
         return axes
 
