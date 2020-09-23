@@ -27,7 +27,7 @@ def write_default_config(output_config: Pathlike, feature_type: str):
 
 
 @feat.command(context_settings=dict(show_default=True))
-@click.argument('audio_manifest', type=click.Path(exists=True, dir_okay=False))
+@click.argument('recording_manifest', type=click.Path(exists=True, dir_okay=False))
 @click.argument('output_dir', type=click.Path())
 @click.option('-s', '--segmentation-manifest', type=click.Path(exists=True, dir_okay=False),
               help='Optional manifest specifying the regions, for which features are to be extracted. '
@@ -45,7 +45,7 @@ def write_default_config(output_config: Pathlike, feature_type: str):
               help='Root directory - all paths in the manifest will use this as prefix.')
 @click.option('-j', '--num-jobs', type=int, default=1, help='Number of parallel processes.')
 def extract(
-        audio_manifest: Pathlike,
+        recording_manifest: Pathlike,
         output_dir: Pathlike,
         segmentation_manifest: Optional[Pathlike],
         augmentation: str,
@@ -59,7 +59,7 @@ def extract(
     Extract features for recordings in a given AUDIO_MANIFEST. The features are stored in OUTPUT_DIR,
     with one file per recording (or segment).
     """
-    audio_set = RecordingSet.from_json(audio_manifest)
+    recordings = RecordingSet.from_json(recording_manifest)
 
     feature_extractor = (FeatureExtractor.from_yaml(feature_manifest)
                          if feature_manifest is not None else Fbank())
@@ -73,8 +73,8 @@ def extract(
 
     augmenter = None
     if augmentation is not None:
-        sampling_rate = next(iter(audio_set)).sampling_rate
-        assert all(rec.sampling_rate == sampling_rate for rec in audio_set), \
+        sampling_rate = next(iter(recordings)).sampling_rate
+        assert all(rec.sampling_rate == sampling_rate for rec in recordings), \
             "Wav augmentation effect chains expect all the recordings to have the same sampling rate at this time."
         augmenter = WavAugmenter.create_predefined(name=augmentation, sampling_rate=sampling_rate)
 
@@ -85,7 +85,7 @@ def extract(
         augmenter=augmenter
     )
     feature_set_builder.process_and_store_recordings(
-        recordings=audio_set,
+        recordings=recordings,
         segmentation=None,  # TODO: implement and use
         compressed=compressed,
         lilcom_tick_power=lilcom_tick_power,
