@@ -72,11 +72,11 @@ def prepare_librimix(
     )
     supervision_sources = make_corresponding_supervisions(audio_sources)
     if output_dir is not None:
-        audio_sources.to_json(output_dir / 'audio_sources.json')
+        audio_sources.to_json(output_dir / 'recordings_sources.json')
         supervision_sources.to_json(output_dir / 'supervisions_sources.json')
 
     manifests['sources'] = {
-        'audio': audio_sources,
+        'recordings': audio_sources,
         'supervisions': supervision_sources
     }
 
@@ -103,10 +103,10 @@ def prepare_librimix(
         )
         supervision_mix = make_corresponding_supervisions(audio_mix)
         if output_dir is not None:
-            audio_mix.to_json(output_dir / 'audio_mix.json')
+            audio_mix.to_json(output_dir / 'recordings_mix.json')
             supervision_mix.to_json(output_dir / 'supervisions_mix.json')
         manifests['premixed'] = {
-            'audio': audio_mix,
+            'recordings': audio_mix,
             'supervisions': supervision_mix
         }
 
@@ -132,10 +132,10 @@ def prepare_librimix(
         )
         supervision_noise = make_corresponding_supervisions(audio_noise)
         if output_dir is not None:
-            audio_noise.to_json(output_dir / 'audio_noise.json')
+            audio_noise.to_json(output_dir / 'recordings_noise.json')
             supervision_noise.to_json(output_dir / 'supervisions_noise.json')
         manifests['noise'] = {
-            'audio': audio_noise,
+            'recordings': audio_noise,
             'supervisions': supervision_noise
         }
 

@@ -28,6 +28,19 @@ class SupervisionSegment:
         #       to create a segment copy.
         return SupervisionSegment(**{**self.__dict__, 'start': round(self.start + offset, ndigits=3)})
 
+    def trim(self, end: Seconds) -> 'SupervisionSegment':
+        """
+        Return an identical ``SupervisionSegment``, but ensure that ``self.start`` is not negative (in which case
+        it's set to 0) and ``self.end`` does not exceed the ``end`` parameter.
+
+        This method is useful for ensuring that the supervision does not exceed a cut's bounds,
+        in which case pass ``cut.duration`` as the ``end`` argument, since supervision times are relative to the cut.
+        """
+        start_exceeds_by = abs(min(0, self.start))
+        end_exceeds_by = max(0, self.end - end)
+        return SupervisionSegment(**{**self.__dict__, 'start': max(0, self.start),
+                                     'duration': self.duration - end_exceeds_by - start_exceeds_by})
+
     @staticmethod
     def from_dict(data: dict) -> 'SupervisionSegment':
         return SupervisionSegment(**data)

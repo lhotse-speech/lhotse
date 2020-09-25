@@ -89,6 +89,7 @@ class CutUtilsMixin:
         fig, ax = plt.subplots()
         ax.plot(np.linspace(0, self.duration, len(samples)), samples)
         for supervision in self.supervisions:
+            supervision = supervision.trim(self.duration)
             ax.axvspan(supervision.start, supervision.end, color='green', alpha=0.1)
         return ax
 
@@ -707,6 +708,7 @@ class MixedCut(CutUtilsMixin):
             ])
             ax.plot(np.linspace(0, track.offset + track.cut.duration, len(samples)), samples)
             for supervision in track.cut.supervisions:
+                supervision = supervision.trim(track.cut.duration)
                 ax.axvspan(track.offset + supervision.start, track.offset + supervision.end, color='green', alpha=0.1)
         return axes
 
@@ -802,9 +804,9 @@ class CutSet(JsonMixin, YamlMixin):
 
     @staticmethod
     def from_manifests(
-            feature_set: Optional[FeatureSet] = None,
-            recording_set: Optional[RecordingSet] = None,
-            supervision_set: Optional[SupervisionSet] = None,
+            recordings: Optional[RecordingSet] = None,
+            supervisions: Optional[SupervisionSet] = None,
+            features: Optional[FeatureSet] = None
     ) -> 'CutSet':
         """
         Create a CutSet from any combination of supervision, feature and recording manifests.
@@ -814,9 +816,9 @@ class CutSet(JsonMixin, YamlMixin):
         When a ``supervision_set`` is provided, we'll attach to the Cut all supervisions that
         have a matching recording ID and are fully contained in the Cut's boundaries.
         """
-        assert feature_set is not None or recording_set is not None, \
+        assert features is not None or recordings is not None, \
             "At least one of feature_set and recording_set has to be provided."
-        sup_ok, feat_ok, rec_ok = supervision_set is not None, feature_set is not None, recording_set is not None
+        sup_ok, feat_ok, rec_ok = supervisions is not None, features is not None, recordings is not None
         if feat_ok:
             # Case I: Features are provided.
             # Use features to determine the cut boundaries and attach recordings and supervisions as available.
@@ -827,9 +829,9 @@ class CutSet(JsonMixin, YamlMixin):
                     duration=features.duration,
                     channel=features.channels,
                     features=features,
-                    recording=recording_set[features.recording_id] if rec_ok else None,
+                    recording=recordings[features.recording_id] if rec_ok else None,
                     # The supervisions' start times are adjusted if the features object starts at time other than 0s.
-                    supervisions=list(supervision_set.find(
+                    supervisions=list(supervisions.find(
                         recording_id=features.recording_id,
                         channel=features.channels,
                         start_after=features.start,
@@ -837,7 +839,7 @@ class CutSet(JsonMixin, YamlMixin):
                         adjust_offset=True
                     )) if sup_ok else []
                 )
-                for features in feature_set
+                for features in features
             )
         # Case II: Recordings are provided (and features are not).
         # Use recordings to determine the cut boundaries.
@@ -848,12 +850,12 @@ class CutSet(JsonMixin, YamlMixin):
                 duration=recording.duration,
                 channel=channel,
                 recording=recording,
-                supervisions=list(supervision_set.find(
+                supervisions=list(supervisions.find(
                     recording_id=recording.id,
                     channel=channel
                 )) if sup_ok else []
             )
-            for recording in recording_set
+            for recording in recordings
             # A single cut always represents a single channel. When a recording has multiple channels,
             # we create a new cut for each channel separately.
             for channel in recording.channel_ids
@@ -873,6 +875,39 @@ class CutSet(JsonMixin, YamlMixin):
 
     def to_dicts(self) -> List[dict]:
         return [{**asdict_nonull(cut), 'type': type(cut).__name__} for cut in self]
+
+    def describe(self) -> None:
+        """
+        Print a message describing details about the ``CutSet`` - the number of cuts and the
+        duration statistics, including the total duration and the percentage of speech segments.
+
+        Example output:
+            Cuts count: 547
+            Total duration (hours): 326.4
+            Speech duration (hours): 79.6 (24.4%)
+            ***
+            Duration statistics (seconds):
+            mean    2148.0
+            std      870.9
+            min      477.0
+            25%     1523.0
+            50%     2157.0
+            75%     2423.0
+            max     5415.0
+            dtype: float64
+        """
+        import pandas as pd
+        durations = pd.Series([c.duration for c in self])
+        speech_durations = pd.Series([s.trim(c.duration).duration for c in self for s in c.supervisions])
+        total_sum = durations.sum()
+        speech_sum = speech_durations.sum()
+        print('Cuts count:', len(self))
+        print(f'Total duration (hours): {total_sum / 3600:.1f}')
+        print(f'Speech duration (hours): {speech_sum / 3600:.1f} ({speech_sum / total_sum:.1%})')
+        print('***')
+        print('Duration statistics (seconds):')
+        with pd.option_context('precision', 1):
+            print(durations.describe().drop('count'))
 
     def filter(self, predicate: Callable[[AnyCut], bool]) -> 'CutSet':
         """
