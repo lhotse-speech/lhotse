@@ -103,10 +103,12 @@ def parse_ami_annotations(gzip_file: Pathlike) -> Dict[str, List[AmiSegmentAnnot
     anotations = {}
     with GzipFile(gzip_file) as f:
         for line in f:
-            line = re.sub(r'\s+$', '', line.decode())
+            line = line.decode()
+            line = re.sub(r'\s+$', '', line)
+            line = re.sub(r'\.\.+', '', line)
             if re.match(r'^Found', line) or re.match(r'^[Oo]bs', line):
                 continue
-            meet_id, _, _, channel, _, _, aut_btime, aut_etime, trans, puncts_times = line.split('\t')
+            meet_id, _, _, channel, tran_btime, tran_etime, aut_btime, aut_etime, trans, puncts_times = line.split('\t')
 
             # Split transcript by punctuations
             trans = re.split(r' *[.,?!:] *', re.sub(r'[.,?!:\s]+$', '', trans.upper()))
@@ -117,6 +119,12 @@ def parse_ami_annotations(gzip_file: Pathlike) -> Dict[str, List[AmiSegmentAnnot
             try:
                 aut_btime = float(aut_btime)
                 aut_etime = float(aut_etime)
+                tran_btime = float(tran_btime)
+                tran_etime = float(tran_etime)
+                if aut_etime < tran_etime:
+                    aut_etime = tran_etime
+                if aut_btime > tran_btime:
+                    aut_btime = tran_btime
                 puncts_times = [float(t) for t in puncts_times.split()]
                 seg_num = len(trans)
                 assert seg_num > 0
@@ -126,7 +134,7 @@ def parse_ami_annotations(gzip_file: Pathlike) -> Dict[str, List[AmiSegmentAnnot
                 if len(puncts_times) == seg_num + 1:
                     puncts_times.pop()
                     assert(puncts_times[-1] <= aut_etime)
-                assert len(puncts_times) == seg_num and aut_btime <= puncts_times[0]
+                assert len(puncts_times) == seg_num and aut_btime <= puncts_times[0] <= aut_etime
             except (ValueError, AssertionError):
                 continue
 
