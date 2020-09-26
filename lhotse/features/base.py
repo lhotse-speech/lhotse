@@ -14,7 +14,7 @@ import torch
 from lhotse.audio import Recording
 from lhotse.augmentation import WavAugmenter
 from lhotse.supervision import SupervisionSegment
-from lhotse.utils import Seconds, Pathlike, load_yaml, save_to_yaml, uuid4, JsonMixin, YamlMixin
+from lhotse.utils import Seconds, Pathlike, load_yaml, save_to_yaml, uuid4, JsonMixin, YamlMixin, fastcopy
 
 
 class FeatureExtractor(metaclass=ABCMeta):
@@ -160,7 +160,6 @@ class FeatureExtractor(metaclass=ABCMeta):
             augmenter: Optional[WavAugmenter] = None,
             compress: bool = True,
             lilcom_tick_power: int = -5,
-            root_dir: Optional[Pathlike] = None
     ):
         """
         Extract the features from a ``Recording`` in a full pipeline:
@@ -181,14 +180,12 @@ class FeatureExtractor(metaclass=ABCMeta):
         :param compress: a bool, whether the saved features should be compressed with ``lilcom``.
         :param lilcom_tick_power: precision of ``lilcom`` compression - greater negative values (e.g. -8).
             might be appropriate for non-log space features.
-        :param root_dir: an optional path prefix for the audio source file in Recording.
         :return: a ``Features`` manifest item for the extracted feature matrix.
         """
         samples = recording.load_audio(
             offset_seconds=offset,
             duration_seconds=duration,
             channels=channels,
-            root_dir=root_dir
         )
         if augmenter is not None:
             samples = augmenter.apply(samples)
@@ -317,7 +314,6 @@ class Features:
     recording_id: Optional[str] = None
     channels: Optional[Union[int, List[int]]] = None
 
-
     @property
     def end(self) -> Seconds:
         return self.start + self.duration
@@ -328,17 +324,15 @@ class Features:
 
     def load(
             self,
-            root_dir: Optional[Pathlike] = None,
             start: Optional[Seconds] = None,
             duration: Optional[Seconds] = None,
     ) -> np.ndarray:
         # Load the features from the storage
-        storage_path = self.storage_path if root_dir is None else Path(root_dir) / self.storage_path
         if self.storage_type == 'lilcom':
-            with open(storage_path, 'rb') as f:
+            with open(self.storage_path, 'rb') as f:
                 features = lilcom.decompress(f.read())
         elif self.storage_type == 'numpy':
-            features = np.load(storage_path, allow_pickle=False)
+            features = np.load(self.storage_path, allow_pickle=False)
         else:
             raise ValueError(f"Unknown storage_type: {self.storage_type}")
 
@@ -363,6 +357,9 @@ class Features:
                 features = features[:-frames_to_trim, :]
 
         return features
+
+    def with_path_prefix(self, path: Pathlike) -> 'Features':
+        return fastcopy(self, storage_path=str(Path(path) / self.storage_path))
 
     @staticmethod
     def from_dict(data: dict) -> 'Features':
@@ -392,6 +389,9 @@ class FeatureSet(JsonMixin, YamlMixin):
 
     def to_dicts(self) -> List[dict]:
         return [asdict(f) for f in self]
+
+    def with_path_prefix(self, path: Pathlike) -> 'FeatureSet':
+        return FeatureSet.from_features(f.with_path_prefix(path) for f in self)
 
     def find(
             self,
@@ -460,7 +460,6 @@ class FeatureSet(JsonMixin, YamlMixin):
             channel_id: int = 0,
             start: Seconds = 0.0,
             duration: Optional[Seconds] = None,
-            root_dir: Optional[Pathlike] = None
     ) -> np.ndarray:
         """
         Find a Features object that best satisfies the search criteria and load the features as a numpy ndarray.
@@ -472,7 +471,7 @@ class FeatureSet(JsonMixin, YamlMixin):
             start=start,
             duration=duration
         )
-        features = feature_info.load(root_dir=root_dir, start=start, duration=duration)
+        features = feature_info.load(start=start, duration=duration)
         return features
 
     def __iter__(self) -> Iterable[Features]:
@@ -499,10 +498,8 @@ class FeatureSetBuilder:
             self,
             feature_extractor: FeatureExtractor,
             output_dir: Pathlike,
-            root_dir: Optional[Pathlike] = None,
             augmenter: Optional[WavAugmenter] = None
     ):
-        self.root_dir = root_dir
         self.feature_extractor = feature_extractor
         self.output_dir = Path(output_dir)
         self.augmenter = augmenter
@@ -548,7 +545,6 @@ class FeatureSetBuilder:
                 augmenter=self.augmenter,
                 compress=compressed,
                 lilcom_tick_power=lilcom_tick_power,
-                root_dir=self.root_dir
             ))
         return results
 

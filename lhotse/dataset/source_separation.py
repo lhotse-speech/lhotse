@@ -1,11 +1,10 @@
-from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 import torch
 from torch.utils.data import Dataset
 
 from lhotse.cut import AnyCut, Cut, CutSet
-from lhotse.utils import EPSILON, Pathlike
+from lhotse.utils import EPSILON
 
 
 class SourceSeparationDataset(Dataset):
@@ -28,14 +27,11 @@ class SourceSeparationDataset(Dataset):
             self,
             sources_set: CutSet,
             mixtures_set: CutSet,
-            root_dir: Optional[Pathlike] = None
     ):
         super().__init__()
         self.sources_set = sources_set
         self.mixtures_set = mixtures_set
-        self.root_dir = Path(root_dir) if root_dir else None
-
-        self.cut_ids = list(self.mixtures_set.cuts.keys())
+        self.cut_ids = list(self.mixtures_set.ids)
 
     def _obtain_mixture(self, cut_id: str) -> Tuple[AnyCut, List[Cut]]:
         raise NotImplementedError("You are using SpeechSeparationDataset, which is an abstract base class; instead, "
@@ -52,9 +48,9 @@ class SourceSeparationDataset(Dataset):
         cut_id = self.cut_ids[idx]
         mixture_cut, source_cuts = self._obtain_mixture(cut_id=cut_id)
 
-        mixture = torch.from_numpy(mixture_cut.load_features(root_dir=self.root_dir))
+        mixture = torch.from_numpy(mixture_cut.load_features())
         sources = torch.stack(
-            [torch.from_numpy(source_cut.load_features(root_dir=self.root_dir)) for source_cut in source_cuts],
+            [torch.from_numpy(source_cut.load_features()) for source_cut in source_cuts],
             dim=0
         )
 
@@ -105,9 +101,8 @@ class DynamicallyMixedSourceSeparationDataset(SourceSeparationDataset):
             sources_set: CutSet,
             mixtures_set: CutSet,
             nonsources_set: Optional[CutSet] = None,
-            root_dir: Optional[Pathlike] = None
     ):
-        super().__init__(sources_set=sources_set, mixtures_set=mixtures_set, root_dir=root_dir)
+        super().__init__(sources_set=sources_set, mixtures_set=mixtures_set)
         self.nonsources_set = nonsources_set
 
     def _obtain_mixture(self, cut_id: str) -> Tuple[AnyCut, List[Cut]]:
@@ -143,7 +138,6 @@ class PreMixedSourceSeparationDataset(SourceSeparationDataset):
             self,
             sources_set: CutSet,
             mixtures_set: CutSet,
-            root_dir: Optional[Pathlike] = None
     ):
         # The following code assumes that the speech separation dataset is created from
         # cuts that span the whole recordings (i.e. one recording == one utterance), so it is safe to assume that
@@ -155,7 +149,7 @@ class PreMixedSourceSeparationDataset(SourceSeparationDataset):
             cut.id: [c.id for c in sources_set if c.recording_id == cut.recording_id]
             for cut in mixtures_set
         }
-        super().__init__(sources_set=sources_set, mixtures_set=mixtures_set, root_dir=root_dir)
+        super().__init__(sources_set=sources_set, mixtures_set=mixtures_set)
 
     def _obtain_mixture(self, cut_id: str) -> Tuple[AnyCut, List[Cut]]:
         mixture_cut = self.mixtures_set.cuts[cut_id]

@@ -190,3 +190,42 @@ def test_recording_from_sphere(relative_path_depth, expected_source_path):
             )
         ]
     )
+
+
+@pytest.fixture
+def file_source():
+    return AudioSource(type='file', channels=[0], source='test/fixtures/mono_c0.wav')
+
+
+@pytest.fixture
+def nonfile_source():
+    return AudioSource(type='command', channels=[0], source='cat test/fixtures/mono_c0.wav')
+
+
+@pytest.fixture
+def recording(file_source):
+    return Recording(id='rec', sources=[file_source] * 2, sampling_rate=8000, num_samples=4000, duration=0.5)
+
+
+@pytest.fixture
+def recording_set2(recording):
+    return RecordingSet.from_recordings([recording] * 5)
+
+
+def test_audio_source_path_prefix(file_source):
+    assert str(file_source.with_path_prefix('/data').source) == '/data/test/fixtures/mono_c0.wav'
+
+
+def test_audio_source_nonfile_path_prefix(nonfile_source):
+    assert str(nonfile_source.with_path_prefix('/data').source) == 'cat test/fixtures/mono_c0.wav'
+
+
+def test_recording_path_prefix(recording):
+    for source in recording.with_path_prefix('/data').sources:
+        assert str(source.source) == '/data/test/fixtures/mono_c0.wav'
+
+
+def test_recording_set_prefix(recording_set2):
+    for recording in recording_set2.with_path_prefix('/data'):
+        for source in recording.sources:
+            assert str(source.source) == '/data/test/fixtures/mono_c0.wav'

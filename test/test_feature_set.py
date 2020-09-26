@@ -237,3 +237,20 @@ def test_mixer(feature_extractor, decimal, exception_expectation):
         fmix_time = feature_extractor.extract(x1 + x2, 8000)
 
         np.testing.assert_almost_equal(fmix_feat, fmix_time, decimal=decimal)
+
+
+def test_feature_set_prefix_path():
+    features = FeatureSet.from_features([
+        Features(
+            type='fbank',
+            num_frames=1000,
+            num_features=40,
+            sampling_rate=16000,
+            storage_type='lilcom',
+            storage_path='feats/12345.llc',
+            start=0,
+            duration=10
+        )
+    ])
+    for feat in features.with_path_prefix('/data'):
+        assert feat.storage_path == '/data/feats/12345.llc'
