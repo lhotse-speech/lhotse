@@ -6,7 +6,7 @@ from contextlib import contextmanager
 from dataclasses import asdict, dataclass
 from math import ceil, isclose
 from pathlib import Path
-from typing import Any, Dict, Union, Optional, Callable, List
+from typing import Any, Dict, Union, Optional, Callable, List, TypeVar
 
 import numpy as np
 import torch
@@ -193,3 +193,20 @@ def recursion_limit(stack_size: int):
         yield
     finally:
         sys.setrecursionlimit(old_size)
+
+
+T = TypeVar('T')
+
+
+def fastcopy(dataclass_obj: T, **kwargs) -> T:
+    """
+    Returns a new object with the same member values.
+    Selected members can be overwritten with kwargs.
+    It's supposed to work only with dataclasses.
+    It's 10X faster than the other methods I've tried...
+
+    Example:
+        >>> ts1 = TimeSpan(start=5, end=10)
+        >>> ts2 = fastcopy(ts1, end=12)
+    """
+    return type(dataclass_obj)(**{**dataclass_obj.__dict__, **kwargs})

@@ -22,7 +22,7 @@ from lhotse.utils import (
     overlaps,
     overspans,
     uuid4,
-    JsonMixin, YamlMixin,
+    JsonMixin, YamlMixin, fastcopy,
 )
 
 # One of the design principles for Cuts is a maximally "lazy" implementation, e.g. when mixing Cuts,
@@ -63,29 +63,25 @@ class CutUtilsMixin:
             self,
             extractor: FeatureExtractor,
             augmenter: Optional[WavAugmenter] = None,
-            root_dir: Optional[Pathlike] = None
     ) -> np.ndarray:
         """
         Compute the features from this cut. This cut has to be able to load audio.
 
         :param extractor: a ``FeatureExtractor`` instance used to compute the features.
         :param augmenter: optional ``WavAugmenter`` instance for audio augmentation.
-        :param root_dir: optional prefix to the source audio file path.
         :return: a numpy ndarray with the computed features.
         """
-        samples = self.load_audio(root_dir=root_dir)
+        samples = self.load_audio()
         if augmenter is not None:
             samples = augmenter.apply(samples)
         return extractor.extract(samples, self.sampling_rate)
 
-    def plot_audio(self, root_dir: Optional[Pathlike] = None):
+    def plot_audio(self):
         """
         Display a plot of the waveform. Requires matplotlib to be installed.
-
-        :param root_dir: optional prefix to the source audio file path.
         """
         import matplotlib.pyplot as plt
-        samples = self.load_audio(root_dir=root_dir).squeeze()
+        samples = self.load_audio().squeeze()
         fig, ax = plt.subplots()
         ax.plot(np.linspace(0, self.duration, len(samples)), samples)
         for supervision in self.supervisions:
@@ -93,25 +89,21 @@ class CutUtilsMixin:
             ax.axvspan(supervision.start, supervision.end, color='green', alpha=0.1)
         return ax
 
-    def play_audio(self, root_dir: Optional[Pathlike] = None):
+    def play_audio(self):
         """
         Display a Jupyter widget that allows to listen to the waveform.
         Works only in Jupyter notebook/lab or similar (e.g. Colab).
-
-        :param root_dir: optional prefix to the source audio file path.
         """
         from IPython.display import Audio
-        samples = self.load_audio(root_dir=root_dir).squeeze()
+        samples = self.load_audio().squeeze()
         return Audio(samples, rate=self.sampling_rate)
 
-    def plot_features(self, root_dir: Optional[Pathlike] = None):
+    def plot_features(self):
         """
         Display the feature matrix as an image. Requires matplotlib to be installed.
-
-        :param root_dir: optional prefix to the source features file path.
         """
         import matplotlib.pyplot as plt
-        features = np.flip(self.load_features(root_dir=root_dir).transpose(1, 0), 0)
+        features = np.flip(self.load_features().transpose(1, 0), 0)
         return plt.matshow(features)
 
     def supervisions_feature_mask(self) -> np.ndarray:
@@ -222,23 +214,20 @@ class Cut(CutUtilsMixin):
     def sampling_rate(self) -> int:
         return self.features.sampling_rate if self.has_features else self.recording.sampling_rate
 
-    def load_features(self, root_dir: Optional[Pathlike] = None) -> Optional[np.ndarray]:
+    def load_features(self) -> Optional[np.ndarray]:
         """
         Load the features from the underlying storage and cut them to the relevant
         [begin, duration] region of the current Cut.
-        Optionally specify a `root_dir` prefix to prefix the features path with.
         """
         if self.has_features:
-            return self.features.load(root_dir=root_dir, start=self.start, duration=self.duration)
+            return self.features.load(start=self.start, duration=self.duration)
         return None
 
-    def load_audio(self, root_dir: Optional[Pathlike] = None) -> Optional[np.ndarray]:
+    def load_audio(self) -> Optional[np.ndarray]:
         """
         Load the audio by locating the appropriate recording in the supplied RecordingSet.
         The audio is trimmed to the [begin, end] range specified by the Cut.
-        Optionally specify a `root_dir` prefix to prefix the features path with.
 
-        :param root_dir: optional Path prefix to find the recording in the filesystem.
         :return: a numpy ndarray with audio samples, with shape (1 <channel>, N <samples>)
         """
         if self.has_recording:
@@ -246,7 +235,6 @@ class Cut(CutUtilsMixin):
                 channels=self.channel,
                 offset_seconds=self.start,
                 duration_seconds=self.duration,
-                root_dir=root_dir
             )
         return None
 
@@ -255,7 +243,6 @@ class Cut(CutUtilsMixin):
             extractor: FeatureExtractor,
             output_dir: Pathlike,
             augmenter: Optional[WavAugmenter] = None,
-            root_dir: Optional[Pathlike] = None,
             *args,
             **kwargs
     ) -> AnyCut:
@@ -266,18 +253,17 @@ class Cut(CutUtilsMixin):
         :param extractor: a ``FeatureExtractor`` instance used to compute the features.
         :param output_dir: directory where the computed features will be stored.
         :param augmenter: optional ``WavAugmenter`` instance for audio augmentation.
-        :param root_dir: optional prefix to the source audio file path.
         :return: a new ``Cut`` instance with a ``Features`` manifest attached to it.
         """
         features_info = extractor.extract_from_samples_and_store(
-            samples=self.load_audio(root_dir=root_dir),
+            samples=self.load_audio(),
             sampling_rate=self.sampling_rate,
             output_dir=output_dir,
             offset=self.start,
             augmenter=augmenter,
         )
         # The fastest way to instantiate a copy of the cut with a Features object attached
-        return Cut(**{**self.__dict__, 'features': features_info})
+        return fastcopy(self, features=features_info)
 
     def truncate(
             self,
@@ -360,6 +346,16 @@ class Cut(CutUtilsMixin):
             recording=recording,
             supervisions=[SupervisionSegment.from_dict(s) for s in supervision_infos]
         )
+
+    def with_features_path_prefix(self, path: Pathlike) -> 'Cut':
+        if not self.has_features:
+            return self
+        return fastcopy(self, features=self.features.with_path_prefix(path))
+
+    def with_recording_path_prefix(self, path: Pathlike) -> 'Cut':
+        if not self.has_recording:
+            return self
+        return fastcopy(self, recording=self.recording.with_path_prefix(path))
 
 
 @dataclass
@@ -457,15 +453,21 @@ class PaddingCut(CutUtilsMixin):
         Returns a new PaddingCut with updates information about the feature dimension and number of
         feature frames, depending on the ``extractor`` properties.
         """
-        return PaddingCut(**{
-            **self.__dict__,
-            'num_features': extractor.feature_dim(self.sampling_rate),
-            'num_frames': int(round(self.duration / extractor.frame_shift, ndigits=3))
-        })
+        return fastcopy(
+            self,
+            num_features=extractor.feature_dim(self.sampling_rate),
+            num_frames=int(round(self.duration / extractor.frame_shift, ndigits=3))
+        )
 
     @staticmethod
     def from_dict(data: dict) -> 'PaddingCut':
         return PaddingCut(**data)
+
+    def with_features_path_prefix(self, path: Pathlike) -> 'PaddingCut':
+        return self
+
+    def with_recording_path_prefix(self, path: Pathlike) -> 'PaddingCut':
+        return self
 
 
 @dataclass
@@ -655,25 +657,25 @@ class MixedCut(CutUtilsMixin):
             use_log_energy=self.features_type in ('fbank', 'mfcc')
         ))
 
-    def load_features(self, root_dir: Optional[Pathlike] = None) -> Optional[np.ndarray]:
+    def load_features(self) -> Optional[np.ndarray]:
         """Loads the features of the source cuts and mixes them on-the-fly."""
         if not self.has_features:
             return None
         first_cut = self.tracks[0].cut
         mixer = FeatureMixer(
             feature_extractor=create_default_feature_extractor(self._first_non_padding_cut.features.type),
-            base_feats=first_cut.load_features(root_dir=root_dir),
+            base_feats=first_cut.load_features(),
             frame_shift=first_cut.frame_shift,
         )
         for track in self.tracks[1:]:
             mixer.add_to_mix(
-                feats=track.cut.load_features(root_dir=root_dir),
+                feats=track.cut.load_features(),
                 snr=track.snr,
                 offset=track.offset
             )
         return mixer.mixed_feats
 
-    def load_audio(self, root_dir: Optional[Pathlike] = None) -> Optional[np.ndarray]:
+    def load_audio(self) -> Optional[np.ndarray]:
         """
         Loads the audios of the source cuts and mix them on-the-fly.
 
@@ -681,30 +683,26 @@ class MixedCut(CutUtilsMixin):
         """
         if not self.has_recording:
             return None
-        # cuts = [track.cut for track in self.tracks]
-        # unmixed_audio = [cut.load_audio(root_dir) for cut in cuts]
-        mixer = AudioMixer(self.tracks[0].cut.load_audio(root_dir=root_dir))
+        mixer = AudioMixer(self.tracks[0].cut.load_audio())
         for track in self.tracks[1:]:
             mixer.add_to_mix(
-                audio=track.cut.load_audio(root_dir=root_dir),
+                audio=track.cut.load_audio(),
                 snr=track.snr,
                 offset=track.offset,
                 sampling_rate=track.cut.sampling_rate
             )
         return mixer.mixed_audio
 
-    def plot_tracks_audio(self, root_dir: Optional[Pathlike] = None):
+    def plot_tracks_audio(self):
         """
         Display plots of the individual tracks' waveforms. Requires matplotlib to be installed.
-
-        :param root_dir: optional prefix to the source audio file path.
         """
         import matplotlib.pyplot as plt
         fig, axes = plt.subplots(len(self.tracks), sharex=True)
         for track, ax in zip(self.tracks, axes):
             samples = np.hstack([
                 np.zeros(round(self.sampling_rate * track.offset)),
-                track.cut.load_audio(root_dir=root_dir).squeeze()
+                track.cut.load_audio().squeeze()
             ])
             ax.plot(np.linspace(0, track.offset + track.cut.duration, len(samples)), samples)
             for supervision in track.cut.supervisions:
@@ -717,7 +715,6 @@ class MixedCut(CutUtilsMixin):
             extractor: FeatureExtractor,
             output_dir: Pathlike,
             augmenter: Optional[WavAugmenter] = None,
-            root_dir: Optional[Pathlike] = None,
             mix_eagerly: bool = True
     ) -> AnyCut:
         """
@@ -727,7 +724,6 @@ class MixedCut(CutUtilsMixin):
         :param extractor: a ``FeatureExtractor`` instance used to compute the features.
         :param output_dir: directory where the computed features will be stored.
         :param augmenter: optional ``WavAugmenter`` instance for audio augmentation.
-        :param root_dir: optional prefix to the source audio file path.
         :param mix_eagerly: when False, extract and store the features for each track separately,
             and mix them dynamically when loading the features.
             When True, mix the audio first and store the mixed features, returning a new ``Cut`` instance
@@ -737,7 +733,7 @@ class MixedCut(CutUtilsMixin):
         """
         if mix_eagerly:
             features_info = extractor.extract_from_samples_and_store(
-                samples=self.load_audio(root_dir=root_dir),
+                samples=self.load_audio(),
                 sampling_rate=self.sampling_rate,
                 output_dir=output_dir,
                 offset=0,
@@ -759,7 +755,6 @@ class MixedCut(CutUtilsMixin):
                         extractor=extractor,
                         output_dir=output_dir,
                         augmenter=augmenter,
-                        root_dir=root_dir
                     ),
                     offset=track.offset,
                     snr=track.snr
@@ -771,6 +766,22 @@ class MixedCut(CutUtilsMixin):
     @staticmethod
     def from_dict(data: dict) -> 'MixedCut':
         return MixedCut(id=data['id'], tracks=[MixTrack.from_dict(track) for track in data['tracks']])
+
+    def with_features_path_prefix(self, path: Pathlike) -> 'MixedCut':
+        if not self.has_features:
+            return self
+        return MixedCut(
+            id=self.id,
+            tracks=[fastcopy(t, cut=t.cut.with_features_path_prefix(path)) for t in self.tracks]
+        )
+
+    def with_recording_path_prefix(self, path: Pathlike) -> 'MixedCut':
+        if not self.has_recording:
+            return self
+        return MixedCut(
+            id=self.id,
+            tracks=[fastcopy(t, cut=t.cut.with_recording_path_prefix(path)) for t in self.tracks]
+        )
 
     @property
     def _first_non_padding_cut(self) -> Cut:
@@ -1048,7 +1059,6 @@ class CutSet(JsonMixin, YamlMixin):
             extractor: FeatureExtractor,
             output_dir: Pathlike,
             augmenter: Optional[WavAugmenter] = None,
-            root_dir: Optional[Pathlike] = None,
             executor: Optional[Any] = None,
             mix_eagerly: bool = True
     ) -> 'CutSet':
@@ -1059,7 +1069,6 @@ class CutSet(JsonMixin, YamlMixin):
         :param extractor: A ``FeatureExtractor`` instance (either Lhotse's built-in or a custom implementation).
         :param output_dir: Where to store the features.
         :param augmenter: optional ``WavAugmenter`` instance for audio augmentation.
-        :param root_dir: optional prefix to the source audio file path.
         :param executor: when provided, will be used to parallelize the feature extraction process.
             Any executor satisfying the standard concurrent.futures interface will be suitable;
             e.g. ProcessPoolExecutor, ThreadPoolExecutor, or dask.Client for distributed task
@@ -1077,7 +1086,6 @@ class CutSet(JsonMixin, YamlMixin):
                     extractor=extractor,
                     output_dir=output_dir,
                     augmenter=augmenter,
-                    root_dir=root_dir,
                     mix_eagerly=mix_eagerly
                 )
                 for cut in self
@@ -1092,12 +1100,17 @@ class CutSet(JsonMixin, YamlMixin):
                     extractor=extractor,
                     output_dir=output_dir,
                     augmenter=augmenter,
-                    root_dir=root_dir,
                     mix_eagerly=mix_eagerly
                 )
             )
         cut_set = CutSet.from_cuts(f.result() for f in futures)
         return cut_set
+
+    def with_features_path_prefix(self, path: Pathlike) -> 'CutSet':
+        return CutSet.from_cuts(c.with_features_path_prefix(path) for c in self)
+
+    def with_recording_path_prefix(self, path: Pathlike) -> 'CutSet':
+        return CutSet.from_cuts(c.with_recording_path_prefix(path) for c in self)
 
     def __contains__(self, item: Union[str, Cut, MixedCut]) -> bool:
         if isinstance(item, str):

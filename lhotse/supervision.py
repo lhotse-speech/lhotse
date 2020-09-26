@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from typing import Callable, Dict, Iterable, Optional, Any, List
 
-from lhotse.utils import Seconds, asdict_nonull, JsonMixin, YamlMixin
+from lhotse.utils import Seconds, asdict_nonull, JsonMixin, YamlMixin, fastcopy
 
 
 @dataclass
@@ -24,9 +24,7 @@ class SupervisionSegment:
 
     def with_offset(self, offset: Seconds) -> 'SupervisionSegment':
         """Return an identical ``SupervisionSegment``, but with the ``offset`` added to the ``start`` field."""
-        # Note: The line below is a 10-20x performance optimization compared to using asdict() or deepcopy()
-        #       to create a segment copy.
-        return SupervisionSegment(**{**self.__dict__, 'start': round(self.start + offset, ndigits=3)})
+        return fastcopy(self, start=round(self.start + offset, ndigits=3))
 
     def trim(self, end: Seconds) -> 'SupervisionSegment':
         """
@@ -38,8 +36,7 @@ class SupervisionSegment:
         """
         start_exceeds_by = abs(min(0, self.start))
         end_exceeds_by = max(0, self.end - end)
-        return SupervisionSegment(**{**self.__dict__, 'start': max(0, self.start),
-                                     'duration': self.duration - end_exceeds_by - start_exceeds_by})
+        return fastcopy(self, start=max(0, self.start), duration=self.duration - end_exceeds_by - start_exceeds_by)
 
     @staticmethod
     def from_dict(data: dict) -> 'SupervisionSegment':

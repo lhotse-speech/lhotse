@@ -2,7 +2,8 @@ from tempfile import NamedTemporaryFile
 
 import pytest
 
-from lhotse import SupervisionSegment
+from lhotse import SupervisionSegment, Features, Recording
+from lhotse.audio import AudioSource
 from lhotse.cut import Cut, CutSet, MixedCut, MixTrack
 
 
@@ -109,3 +110,29 @@ def test_trim_to_unsupervised_segments():
 
 def test_cut_set_describe_runs(cut_set):
     cut_set.describe()
+
+
+@pytest.fixture
+def cut_with_relative_paths():
+    return Cut('cut', 0, 10, 0,
+               features=Features('fbank', 1000, 40, 8000, 'lilcom', 'feats.llc', 0, 10),
+               recording=Recording('rec', [AudioSource('file', [0], 'audio.wav')], 8000, 80000, 10.0)
+               )
+
+
+def test_cut_set_prefix(cut_with_relative_paths):
+    cut_set = CutSet.from_cuts([cut_with_relative_paths])
+    for c in cut_set.with_recording_path_prefix('/data'):
+        assert c.recording.sources[0].source == '/data/audio.wav'
+    for c in cut_set.with_features_path_prefix('/data'):
+        assert c.features.storage_path == '/data/feats.llc'
+
+
+def test_mixed_cut_set_prefix(cut_with_relative_paths):
+    cut_set = CutSet.from_cuts([cut_with_relative_paths.mix(cut_with_relative_paths)])
+    for c in cut_set.with_recording_path_prefix('/data'):
+        for t in c.tracks:
+            assert t.cut.recording.sources[0].source == '/data/audio.wav'
+    for c in cut_set.with_features_path_prefix('/data'):
+        for t in c.tracks:
+            assert t.cut.features.storage_path == '/data/feats.llc'

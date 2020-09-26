@@ -6,7 +6,6 @@ from torch.utils.data import Dataset
 from lhotse.augmentation import WavAugmenter
 from lhotse.cut import CutSet
 from lhotse.features import FeatureExtractor
-from lhotse.utils import Pathlike
 
 
 class UnsupervisedDataset(Dataset):
@@ -16,16 +15,15 @@ class UnsupervisedDataset(Dataset):
     and F is the feature dimension.
     """
 
-    def __init__(self, cuts: CutSet, root_dir: Optional[Pathlike] = None):
+    def __init__(self, cuts: CutSet):
         super().__init__()
         self.cuts = cuts
         self.cut_ids = list(cuts.ids)
-        self.root_dir = root_dir
         self._validate()
 
     def __getitem__(self, item: int) -> torch.Tensor:
         cut = self.cuts[self.cut_ids[item]]
-        feats = cut.load_features(root_dir=self.root_dir)
+        feats = cut.load_features()
         return torch.from_numpy(feats)
 
     def __len__(self):
@@ -44,7 +42,7 @@ class UnsupervisedWaveformDataset(UnsupervisedDataset):
 
     def __getitem__(self, item: int) -> torch.Tensor:
         cut = self.cuts[self.cut_ids[item]]
-        audio = cut.load_audio(root_dir=self.root_dir)
+        audio = cut.load_audio()
         return torch.from_numpy(audio)
 
     def _validate(self):
@@ -66,9 +64,8 @@ class DynamicUnsupervisedDataset(UnsupervisedDataset):
             feature_extractor: FeatureExtractor,
             cuts: CutSet,
             augmenter: Optional[WavAugmenter] = None,
-            root_dir: Optional[Pathlike] = None
     ):
-        super().__init__(cuts, root_dir)
+        super().__init__(cuts)
         self.feature_extractor = feature_extractor
         self.augmenter = augmenter
 
@@ -77,7 +74,6 @@ class DynamicUnsupervisedDataset(UnsupervisedDataset):
         features = cut.compute_features(
             extractor=self.feature_extractor,
             augmenter=self.augmenter,
-            root_dir=self.root_dir
         )
         return torch.from_numpy(features)
 

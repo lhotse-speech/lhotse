@@ -1,12 +1,10 @@
 from math import isclose
-from pathlib import Path
-from typing import Dict, Optional
+from typing import Dict
 
 import torch
 from torch.utils.data import Dataset
 
 from lhotse.cut import CutSet
-from lhotse.utils import Pathlike
 
 EPS = 1e-8
 
@@ -27,18 +25,16 @@ class VadDataset(Dataset):
     def __init__(
             self,
             cuts: CutSet,
-            root_dir: Optional[Pathlike] = None
     ):
         super().__init__()
         self.cuts = cuts
-        self.root_dir = Path(root_dir) if root_dir else None
         self.cut_ids = list(cuts.ids)
 
     def __getitem__(self, idx: int) -> Dict[str, torch.Tensor]:
         cut_id = self.cut_ids[idx]
         cut = self.cuts[cut_id]
 
-        features = torch.from_numpy(cut.load_features(root_dir=self.root_dir))
+        features = torch.from_numpy(cut.load_features())
         assert features.shape[0] == cut.num_frames
         assert isclose(cut.num_frames * cut.frame_shift, cut.duration)
 

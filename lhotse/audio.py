@@ -8,7 +8,7 @@ from typing import Callable, Dict, Iterable, List, Optional, Union, Tuple
 
 import numpy as np
 
-from lhotse.utils import Decibels, Pathlike, Seconds, SetContainingAnything, JsonMixin, YamlMixin
+from lhotse.utils import Decibels, Pathlike, Seconds, SetContainingAnything, JsonMixin, YamlMixin, fastcopy
 
 Channels = Union[int, List[int]]
 
@@ -33,7 +33,6 @@ class AudioSource:
             self,
             offset_seconds: float = 0.0,
             duration_seconds: Optional[float] = None,
-            root_dir: Optional[Pathlike] = None,
     ) -> np.ndarray:
         """
         Load the AudioSource (both files and commands) with librosa,
@@ -43,18 +42,14 @@ class AudioSource:
         """
         assert self.type in ('file', 'command')
 
+        source = self.source
         if self.type == 'command':
             if offset_seconds != 0.0 or duration_seconds is not None:
                 # TODO(pzelasko): How should we support chunking for commands?
                 #                 We risk being very inefficient when reading many chunks from the same file
                 #                 without some caching scheme, because we'll be re-running commands.
                 raise ValueError("Reading audio chunks from command AudioSource type is currently not supported.")
-            # TODO: consider adding support for "root_dir" in "command" audio source type
-            if root_dir is not None:
-                warnings.warn('"root_dir" argument is currently not supported in "command" AudioSource type')
             source = BytesIO(run(self.source, shell=True, stdout=PIPE).stdout)
-        else:
-            source = self.source if root_dir is None else Path(root_dir) / self.source
 
         with warnings.catch_warnings():
             warnings.simplefilter('ignore')
@@ -70,6 +65,11 @@ class AudioSource:
                 )
 
         return samples.astype(np.float32)
+
+    def with_path_prefix(self, path: Pathlike) -> 'AudioSource':
+        if self.type != 'file':
+            return self
+        return fastcopy(self, source=str(Path(path) / self.source))
 
     @staticmethod
     def from_dict(data) -> 'AudioSource':
@@ -146,7 +146,6 @@ class Recording:
             channels: Optional[Channels] = None,
             offset_seconds: float = 0.0,
             duration_seconds: Optional[float] = None,
-            root_dir: Optional[Pathlike] = None,
     ) -> np.ndarray:
         if channels is None:
             channels = SetContainingAnything()
@@ -163,7 +162,6 @@ class Recording:
             samples = source.load_audio(
                 offset_seconds=offset_seconds,
                 duration_seconds=duration_seconds,
-                root_dir=root_dir
             )
 
             # Case: two-channel audio file but only one channel requested
@@ -178,6 +176,9 @@ class Recording:
 
         # shape: (n_channels, n_samples)
         return np.vstack(samples_per_source)
+
+    def with_path_prefix(self, path: Pathlike) -> 'Recording':
+        return fastcopy(self, sources=[s.with_path_prefix(path) for s in self.sources])
 
     @staticmethod
     def from_dict(data: dict) -> 'Recording':
@@ -223,14 +224,15 @@ class RecordingSet(JsonMixin, YamlMixin):
             channels: Optional[Channels] = None,
             offset_seconds: float = 0.0,
             duration_seconds: Optional[float] = None,
-            root_dir: Optional[Pathlike] = None,
     ) -> np.ndarray:
         return self.recordings[recording_id].load_audio(
             channels=channels,
             offset_seconds=offset_seconds,
-            duration_seconds=duration_seconds,
-            root_dir=root_dir
+            duration_seconds=duration_seconds
         )
+
+    def with_path_prefix(self, path: Pathlike) -> 'RecordingSet':
+        return RecordingSet.from_recordings(r.with_path_prefix(path) for r in self)
 
     def num_channels(self, recording_id: str) -> int:
         return self.recordings[recording_id].num_channels
