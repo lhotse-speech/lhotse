@@ -1,4 +1,4 @@
-from .audio import RecordingSet, Recording
+from .audio import RecordingSet, Recording, AudioSource
 from .augmentation import WavAugmenter
 from .cut import CutSet, Cut
 from .features import *
