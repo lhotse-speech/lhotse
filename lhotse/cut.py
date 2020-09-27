@@ -7,6 +7,7 @@ from typing import Callable, Dict, Iterable, List, Optional, Union, Any
 
 import numpy as np
 from cytoolz import sliding_window
+from cytoolz.itertoolz import groupby
 
 from lhotse import WavAugmenter
 from lhotse.audio import AudioMixer, Recording, RecordingSet
@@ -969,6 +970,29 @@ class CutSet(JsonMixin, YamlMixin):
             for start, end in segments:
                 cuts.append(cut.truncate(offset=start, duration=end - start))
         return CutSet.from_cuts(cuts)
+
+    def mix_same_recording_channels(self) -> 'CutSet':
+        """
+        Find cuts that come from the same recording and have matching start and end times, but
+        represent different channels. Then, mix them together (in matching groupbs) and return
+        a new ``CutSet`` that contains their mixes. This is useful for processing microphone array
+        recordings.
+
+        It is inteded to be used as the first operation after creating a new ``CutSet`` (but
+        might also work in other circumstances, e.g. if it was cut to windows first).
+
+        Example:
+            >>> ami = prepare_ami('path/to/ami')
+            >>> cut_set = CutSet.from_manifests(recordings=ami['train']['recordings'])
+            >>> multi_channel_cut_set = cut_set.mix_same_recording_channels()
+
+        In AMI example the ``multi_channel_cut_set`` will yield MixedCuts that hold all single-channel
+        Cuts together.
+        """
+        if self.mixed_cuts:
+            raise ValueError("This operation is not applicable to CutSet's containing MixedCut's.")
+        groups = groupby(lambda cut: (cut.recording.id, cut.start, cut.end), self)
+        return CutSet.from_cuts(mix_cuts(cuts) for cuts in groups.values())
 
     def pad(
             self,
