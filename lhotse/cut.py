@@ -2,7 +2,7 @@ import random
 import warnings
 from dataclasses import dataclass, field
 from functools import reduce
-from math import ceil, floor, log
+from math import ceil, floor
 from typing import Callable, Dict, Iterable, List, Optional, Union, Any
 
 import numpy as np
@@ -361,11 +361,9 @@ class Cut(CutUtilsMixin):
 
 @dataclass
 class PaddingCut(CutUtilsMixin):
-    f"""
+    """
     This represents a cut filled with zeroes in the time domain, or low energy/log-energy values in the
     frequency domain. It's used to make training samples evenly sized (same duration/number of frames).
-
-    We use {EPSILON} for energies and {log(EPSILON)} for log-energies.
     """
     id: str
     duration: Seconds
@@ -669,9 +667,6 @@ class MixedCut(CutUtilsMixin):
         """
         if not self.has_features:
             return None
-        if not mixed:
-            # TODO: add zero padding + offsets
-            return np.stack([track.cut.load_features() for track in self.tracks])
         first_cut = self.tracks[0].cut
         mixer = FeatureMixer(
             feature_extractor=create_default_feature_extractor(self._first_non_padding_cut.features.type),
@@ -684,7 +679,7 @@ class MixedCut(CutUtilsMixin):
                 snr=track.snr,
                 offset=track.offset
             )
-        return mixer.mixed_feats
+        return mixer.mixed_feats if mixed else mixer.unmixed_feats
 
     def load_audio(self, mixed: bool = True) -> Optional[np.ndarray]:
         """
@@ -696,9 +691,6 @@ class MixedCut(CutUtilsMixin):
         """
         if not self.has_recording:
             return None
-        if not mixed:
-            # TODO: add zero padding + offsets
-            return np.vstack([track.cut.load_audio() for track in self.tracks])
         mixer = AudioMixer(self.tracks[0].cut.load_audio(), sampling_rate=self.tracks[0].cut.sampling_rate)
         for track in self.tracks[1:]:
             mixer.add_to_mix(
@@ -706,7 +698,7 @@ class MixedCut(CutUtilsMixin):
                 snr=track.snr,
                 offset=track.offset,
             )
-        return mixer.mixed_audio
+        return mixer.mixed_audio if mixed else mixer.unmixed_audio
 
     def plot_tracks_audio(self):
         """
