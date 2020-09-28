@@ -700,17 +700,27 @@ class MixedCut(CutUtilsMixin):
             )
         return mixer.mixed_audio if mixed else mixer.unmixed_audio
 
+    def plot_tracks_features(self):
+        """
+        Display the feature matrix as an image. Requires matplotlib to be installed.
+        """
+        import matplotlib.pyplot as plt
+        fig, axes = plt.subplots(len(self.tracks))
+        features = self.load_features(mixed=False)
+        fmin, fmax = features.min(), features.max()
+        for idx, ax in enumerate(axes):
+            ax.imshow(np.flip(features[idx].transpose(1, 0), 0), vmin=fmin, vmax=fmax)
+        return axes
+
     def plot_tracks_audio(self):
         """
         Display plots of the individual tracks' waveforms. Requires matplotlib to be installed.
         """
         import matplotlib.pyplot as plt
-        fig, axes = plt.subplots(len(self.tracks), sharex=True)
-        for track, ax in zip(self.tracks, axes):
-            samples = np.hstack([
-                np.zeros(round(self.sampling_rate * track.offset)),
-                track.cut.load_audio().squeeze()
-            ])
+        audio = self.load_audio(mixed=False)
+        fig, axes = plt.subplots(len(self.tracks), sharex=True, sharey=True)
+        for idx, (track, ax) in enumerate(zip(self.tracks, axes)):
+            samples = audio[idx, :]
             ax.plot(np.linspace(0, track.offset + track.cut.duration, len(samples)), samples)
             for supervision in track.cut.supervisions:
                 supervision = supervision.trim(track.cut.duration)
