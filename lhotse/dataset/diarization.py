@@ -46,20 +46,18 @@ class DiarizationDataset(Dataset):
             cuts: CutSet,
             min_speaker_dim: Optional[int] = None,
             global_speaker_ids: bool = False,
-            root_dir: Optional[Pathlike] = None
     ):
         super().__init__()
         self.cuts = cuts
-        self.root_dir = Path(root_dir) if root_dir else None
         self.cut_ids = list(cuts.ids)
-        self.speakers = {spk: idx for idx, spk in self.cuts.speakers} if global_speaker_ids else None
+        self.speakers = {spk: idx for idx, spk in enumerate(self.cuts.speakers)} if global_speaker_ids else None
         self.min_speaker_dim = min_speaker_dim
 
     def __getitem__(self, idx: int) -> Dict[str, torch.Tensor]:
         cut_id = self.cut_ids[idx]
         cut = self.cuts[cut_id]
 
-        features = torch.from_numpy(cut.load_features(root_dir=self.root_dir))
+        features = torch.from_numpy(cut.load_features())
         speaker_activity_matrix = torch.from_numpy(cut.speakers_feature_mask(
             min_speaker_dim=self.min_speaker_dim,
             speaker_to_idx_map=self.speakers

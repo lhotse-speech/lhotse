@@ -112,10 +112,10 @@ def prepare_mini_librispeech(
 
         if output_dir is not None:
             supervision.to_json(output_dir / f'supervisions_{part}.json')
-            audio.to_json(output_dir / f'audio_{part}.json')
+            audio.to_json(output_dir / f'recordings_{part}.json')
 
         manifests[part] = {
-            'audio': audio,
+            'recordings': audio,
             'supervisions': supervision
         }
 

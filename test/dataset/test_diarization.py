@@ -20,7 +20,7 @@ def cut_set():
                 "recording_id": "recording-1",
                 "sampling_rate": 16000,
                 "start": 0.0,
-                "storage_path": "test/fixtures/libri/storage/68f03dd2-96ec-45b0-b1be-a4f9dd5e7dcf.llc",
+                "storage_path": "test/fixtures/libri/storage/fc37eb69-43a8-4e6f-a302-646a76606b38.llc",
                 "storage_type": "lilcom",
                 "type": "fbank"
             },

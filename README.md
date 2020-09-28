@@ -73,8 +73,8 @@ swbd = prepare_switchboard('/export/corpora3/LDC/LDC97S62')
 # We create 5-second cuts by traversing SWBD recordings in windows.
 # No audio data is actually loaded into memory or stored to disk at this point.  
 cuts = CutSet.from_manifests(
-    recording_set=swbd['recordings'],
-    supervision_set=swbd['supervisions']
+    recordings=swbd['recordings'],
+    supervisions=swbd['supervisions']
 ).cut_into_windows(duration=5)
 
 # We compute the log-Mel filter energies and store them on disk;
