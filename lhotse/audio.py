@@ -268,21 +268,37 @@ class AudioMixer:
     It pads the signals with zero samples for differing lengths and offsets.
     """
 
-    def __init__(self, base_audio: np.ndarray):
+    def __init__(self, base_audio: np.ndarray, sampling_rate: int):
         """
         :param base_audio: The raw audio used to initialize the AudioMixer are a point of reference
             in terms of offset for all audios mixed into them.
+        :param sampling_rate: Sampling rate of the audio.
         """
-        # The mixing output will be available in self.mixed_audio
-        self.mixed_audio = base_audio
+        self.tracks = [base_audio]
+        self.sampling_rate = sampling_rate
         self.reference_energy = audio_energy(base_audio)
+
+    @property
+    def unmixed_audio(self) -> np.ndarray:
+        """
+        Return a numpy ndarray with the shape (num_tracks, num_samples), where each track is
+        zero padded and scaled adequately to the offsets and SNR used in ``add_to_mix`` call.
+        """
+        return np.vstack(self.tracks)
+
+    @property
+    def mixed_audio(self) -> np.ndarray:
+        """
+        Return a numpy ndarray with the shape (1, num_samples) - a mono mix of the tracks
+        supplied with ``add_to_mix`` calls.
+        """
+        return np.sum(self.unmixed_audio, axis=0, keepdims=True)
 
     def add_to_mix(
             self,
             audio: np.ndarray,
             snr: Optional[Decibels] = None,
             offset: Seconds = 0.0,
-            sampling_rate: int = 16000,
     ):
         """
         Add audio (only support mono-channel) of a new track into the mix.
@@ -291,17 +307,16 @@ class AudioMixer:
         negative SNR - higher `audio` energy)
         :param offset: How many seconds to shift `audio` in time. For mixing, the signal will be padded before
         the start with low energy values.
-        :param sampling_rate: Sampling rate of the audio.
         :return:
         """
         assert audio.shape[0] == 1  # TODO: support multi-channels
         assert offset >= 0.0, "Negative offset in mixing is not supported."
 
-        dtype = self.mixed_audio.dtype
-        num_samples_offset = round(offset * sampling_rate)
-        current_num_samples = self.mixed_audio.shape[1]
+        reference_audio = self.tracks[0]
+        dtype = reference_audio.dtype
+        num_samples_offset = round(offset * self.sampling_rate)
+        current_num_samples = reference_audio.shape[1]
 
-        existing_audio = self.mixed_audio
         audio_to_add = audio
 
         # When there is an offset, we need to pad before the start of the audio we're adding.
@@ -316,11 +331,15 @@ class AudioMixer:
 
         # When the existing samples are less than what we anticipate after the mix,
         # we need to pad after the end of the existing audio mixed so far.
+        # Since we're keeping every track as a separate entry in the ``self.tracks`` list,
+        # we need to pad each of them so that their shape matches when performing the final mix.
         if current_num_samples < mix_num_samples:
-            existing_audio = np.hstack([
-                self.mixed_audio,
-                np.zeros((1, mix_num_samples - current_num_samples), dtype)
-            ])
+            for idx in range(len(self.tracks)):
+                padded_audio = np.hstack([
+                    self.tracks[idx],
+                    np.zeros((1, mix_num_samples - current_num_samples), dtype)
+                ])
+                self.tracks[idx] = padded_audio
 
         # When the audio we're mixing in are shorter that the anticipated mix length,
         # we need to pad after their end.
@@ -342,7 +361,8 @@ class AudioMixer:
             # we need to take a square root of the energy ratio.
             gain = sqrt(target_energy / added_audio_energy)
 
-        self.mixed_audio = existing_audio + gain * audio_to_add
+        # self.mixed_audio = reference_audio + gain * audio_to_add
+        self.tracks.append(gain * audio_to_add)
 
 
 def audio_energy(audio: np.ndarray) -> float:

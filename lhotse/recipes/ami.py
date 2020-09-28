@@ -212,7 +212,7 @@ def prepare_ami(
         for recording in audio:
             for source in recording.sources:
                 # In AMI "source.channels" will always be a one-element list
-                channel = source.channels[0]
+                channel, = source.channels
                 anotation = annotation_by_id_and_channel.get((recording.id, channel))
                 if anotation is None:
                     logging.warning(f'No annotation found for recording "{recording.id}" channel {channel} '

@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 from pytest import mark, raises
 
-from lhotse.audio import AudioSource, Recording, RecordingSet
+from lhotse.audio import AudioSource, Recording, RecordingSet, AudioMixer
 from lhotse.test_utils import DummyManifest
 from lhotse.utils import INT16MAX
 
@@ -229,3 +229,22 @@ def test_recording_set_prefix(recording_set2):
     for recording in recording_set2.with_path_prefix('/data'):
         for source in recording.sources:
             assert str(source.source) == '/data/test/fixtures/mono_c0.wav'
+
+
+def test_audio_mixed():
+    sr = 8000
+    audio1 = np.ones(8000, dtype=np.float32).reshape(1, -1)
+    audio2 = np.ones(8000, dtype=np.float32).reshape(1, -1) * 2
+
+    mixer = AudioMixer(base_audio=audio1, sampling_rate=sr)
+    mixer.add_to_mix(audio2, snr=None, offset=0)
+
+    unmixed = mixer.unmixed_audio
+    assert unmixed.shape == (2, 8000)
+    assert (unmixed == np.vstack([audio1, audio2])).all()
+    assert unmixed.dtype == np.float32
+
+    mixed = mixer.mixed_audio
+    assert mixed.shape == (1, 8000)
+    assert (mixed == 3).all()
+    assert mixed.dtype == np.float32
