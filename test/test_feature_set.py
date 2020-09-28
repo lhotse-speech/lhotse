@@ -238,6 +238,8 @@ def test_mixer(feature_extractor, decimal, exception_expectation):
 
         np.testing.assert_almost_equal(fmix_feat, fmix_time, decimal=decimal)
 
+        assert mixer.unmixed_feats.shape == (2, 100, feature_extractor.feature_dim(sampling_rate=8000))
+
 
 def test_feature_set_prefix_path():
     features = FeatureSet.from_features([

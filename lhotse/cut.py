@@ -2,11 +2,12 @@ import random
 import warnings
 from dataclasses import dataclass, field
 from functools import reduce
-from math import ceil, floor, log
+from math import ceil, floor
 from typing import Callable, Dict, Iterable, List, Optional, Union, Any
 
 import numpy as np
 from cytoolz import sliding_window
+from cytoolz.itertoolz import groupby
 
 from lhotse import WavAugmenter
 from lhotse.audio import AudioMixer, Recording, RecordingSet
@@ -360,11 +361,9 @@ class Cut(CutUtilsMixin):
 
 @dataclass
 class PaddingCut(CutUtilsMixin):
-    f"""
+    """
     This represents a cut filled with zeroes in the time domain, or low energy/log-energy values in the
     frequency domain. It's used to make training samples evenly sized (same duration/number of frames).
-
-    We use {EPSILON} for energies and {log(EPSILON)} for log-energies.
     """
     id: str
     duration: Seconds
@@ -657,8 +656,15 @@ class MixedCut(CutUtilsMixin):
             use_log_energy=self.features_type in ('fbank', 'mfcc')
         ))
 
-    def load_features(self) -> Optional[np.ndarray]:
-        """Loads the features of the source cuts and mixes them on-the-fly."""
+    def load_features(self, mixed: bool = True) -> Optional[np.ndarray]:
+        """
+        Loads the features of the source cuts and mixes them on-the-fly.
+
+        :param mixed: when True (default), returns a 2D array of features mixed in the feature domain.
+            Otherwise returns a 3D array with the first dimension equal to the number of tracks.
+        :return: A numpy ndarray with features and with shape ``(num_frames, num_features)``,
+            or ``(num_tracks, num_frames, num_features)``
+        """
         if not self.has_features:
             return None
         first_cut = self.tracks[0].cut
@@ -673,37 +679,48 @@ class MixedCut(CutUtilsMixin):
                 snr=track.snr,
                 offset=track.offset
             )
-        return mixer.mixed_feats
+        return mixer.mixed_feats if mixed else mixer.unmixed_feats
 
-    def load_audio(self) -> Optional[np.ndarray]:
+    def load_audio(self, mixed: bool = True) -> Optional[np.ndarray]:
         """
         Loads the audios of the source cuts and mix them on-the-fly.
 
-        :return: the mixed audio samples in an ndarray, with the shape (1, sample_num)
+        :param mixed: When True (default), returns a mono mix of the underlying tracks.
+            Otherwise returns a numpy array with the number of channels equal to the number of tracks.
+        :return: A numpy ndarray with audio samples and with shape ``(num_channels, num_samples)``
         """
         if not self.has_recording:
             return None
-        mixer = AudioMixer(self.tracks[0].cut.load_audio())
+        mixer = AudioMixer(self.tracks[0].cut.load_audio(), sampling_rate=self.tracks[0].cut.sampling_rate)
         for track in self.tracks[1:]:
             mixer.add_to_mix(
                 audio=track.cut.load_audio(),
                 snr=track.snr,
                 offset=track.offset,
-                sampling_rate=track.cut.sampling_rate
             )
-        return mixer.mixed_audio
+        return mixer.mixed_audio if mixed else mixer.unmixed_audio
+
+    def plot_tracks_features(self):
+        """
+        Display the feature matrix as an image. Requires matplotlib to be installed.
+        """
+        import matplotlib.pyplot as plt
+        fig, axes = plt.subplots(len(self.tracks))
+        features = self.load_features(mixed=False)
+        fmin, fmax = features.min(), features.max()
+        for idx, ax in enumerate(axes):
+            ax.imshow(np.flip(features[idx].transpose(1, 0), 0), vmin=fmin, vmax=fmax)
+        return axes
 
     def plot_tracks_audio(self):
         """
         Display plots of the individual tracks' waveforms. Requires matplotlib to be installed.
         """
         import matplotlib.pyplot as plt
-        fig, axes = plt.subplots(len(self.tracks), sharex=True)
-        for track, ax in zip(self.tracks, axes):
-            samples = np.hstack([
-                np.zeros(round(self.sampling_rate * track.offset)),
-                track.cut.load_audio().squeeze()
-            ])
+        audio = self.load_audio(mixed=False)
+        fig, axes = plt.subplots(len(self.tracks), sharex=True, sharey=True)
+        for idx, (track, ax) in enumerate(zip(self.tracks, axes)):
+            samples = audio[idx, :]
             ax.plot(np.linspace(0, track.offset + track.cut.duration, len(samples)), samples)
             for supervision in track.cut.supervisions:
                 supervision = supervision.trim(track.cut.duration)
@@ -969,6 +986,29 @@ class CutSet(JsonMixin, YamlMixin):
             for start, end in segments:
                 cuts.append(cut.truncate(offset=start, duration=end - start))
         return CutSet.from_cuts(cuts)
+
+    def mix_same_recording_channels(self) -> 'CutSet':
+        """
+        Find cuts that come from the same recording and have matching start and end times, but
+        represent different channels. Then, mix them together (in matching groups) and return
+        a new ``CutSet`` that contains their mixes. This is useful for processing microphone array
+        recordings.
+
+        It is intended to be used as the first operation after creating a new ``CutSet`` (but
+        might also work in other circumstances, e.g. if it was cut to windows first).
+
+        Example:
+            >>> ami = prepare_ami('path/to/ami')
+            >>> cut_set = CutSet.from_manifests(recordings=ami['train']['recordings'])
+            >>> multi_channel_cut_set = cut_set.mix_same_recording_channels()
+
+        In the AMI example, the ``multi_channel_cut_set`` will yield MixedCuts that hold all single-channel
+        Cuts together.
+        """
+        if self.mixed_cuts:
+            raise ValueError("This operation is not applicable to CutSet's containing MixedCut's.")
+        groups = groupby(lambda cut: (cut.recording.id, cut.start, cut.end), self)
+        return CutSet.from_cuts(mix_cuts(cuts) for cuts in groups.values())
 
     def pad(
             self,

@@ -1,5 +1,6 @@
 import gzip
 import json
+import math
 import random
 import uuid
 from contextlib import contextmanager
@@ -18,7 +19,8 @@ Seconds = float
 Decibels = float
 
 INT16MAX = 32768
-EPSILON = 1e-8
+LOG_EPSILON = -100.0
+EPSILON = math.exp(LOG_EPSILON)
 
 # This is a utility that generates uuid4's and is set when the user calls
 # the ``fix_random_seed`` function.

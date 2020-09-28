@@ -6,9 +6,10 @@ import pytest
 from lhotse.audio import AudioSource, Recording
 from lhotse.cut import Cut, CutSet, PaddingCut
 from lhotse.features import Features
+from lhotse.utils import EPSILON, LOG_EPSILON
 
-PADDING_ENERGY = 1e-8
-PADDING_LOG_ENERGY = -18.420680743952367  # log(1e-8)
+PADDING_ENERGY = EPSILON
+PADDING_LOG_ENERGY = LOG_EPSILON
 
 
 @pytest.fixture
@@ -187,7 +188,7 @@ def test_mix_mixed_cut_with_padding_on_the_right(mixed_libri_cut, padding_cut):
     np.testing.assert_array_less(PADDING_LOG_ENERGY, mixed_feats[1603, :])  # Padding didn't start before 16.04s
 
     pre_mixed_feats = mixed_libri_cut.load_features()
-    np.testing.assert_allclose(pre_mixed_feats, mixed_feats[:1604, :], rtol=1e-2)
+    np.testing.assert_allclose(pre_mixed_feats, mixed_feats[:1604, :], rtol=1e-1)
 
 
 def test_mix_mixed_cut_with_padding_on_the_left(mixed_libri_cut, padding_cut):
@@ -261,7 +262,7 @@ def test_pad_mixed_cut(mixed_libri_cut):
     np.testing.assert_array_less(PADDING_LOG_ENERGY, mixed_feats[1603, :])  # Padding didn't start before 16.04s
 
     pre_mixed_feats = mixed_libri_cut.load_features()
-    np.testing.assert_almost_equal(pre_mixed_feats, mixed_feats[:1604, :])
+    np.testing.assert_almost_equal(pre_mixed_feats, mixed_feats[:1604, :], decimal=2)
 
 
 def test_pad_cut_set(cut_set):

@@ -136,3 +136,23 @@ def test_mixed_cut_set_prefix(cut_with_relative_paths):
     for c in cut_set.with_features_path_prefix('/data'):
         for t in c.tracks:
             assert t.cut.features.storage_path == '/data/feats.llc'
+
+
+def test_mix_same_recording_channels():
+    recording = Recording('rec', sampling_rate=8000, num_samples=30 * 8000, duration=30, sources=[
+        AudioSource('file', channels=[0], source='irrelevant1.wav'),
+        AudioSource('file', channels=[1], source='irrelevant2.wav')
+    ])
+    cut_set = CutSet.from_cuts([
+        Cut('cut1', start=0, duration=30, channel=0, recording=recording),
+        Cut('cut2', start=0, duration=30, channel=1, recording=recording)
+    ])
+
+    mixed = cut_set.mix_same_recording_channels()
+    assert len(mixed) == 1
+
+    cut = mixed[0]
+    assert isinstance(cut, MixedCut)
+    assert len(cut.tracks) == 2
+    assert cut.tracks[0].cut == cut_set[0]
+    assert cut.tracks[1].cut == cut_set[1]

@@ -95,6 +95,8 @@ def download(
 
 class AmiSegmentAnnotation(NamedTuple):
     text: str
+    speaker: str
+    gender: str
     begin_time: Seconds
     end_time: Seconds
 
@@ -106,7 +108,7 @@ def parse_ami_annotations(gzip_file: Pathlike) -> Dict[str, List[AmiSegmentAnnot
             line = re.sub(r'\s+$', '', line.decode())
             if re.match(r'^Found', line) or re.match(r'^[Oo]bs', line):
                 continue
-            meet_id, _, _, channel, _, _, aut_btime, aut_etime, trans, puncts_times = line.split('\t')
+            meet_id, _, speaker, channel, _, _, aut_btime, aut_etime, trans, puncts_times = line.split('\t')
 
             # Split transcript by punctuations
             trans = re.split(r' *[.,?!:] *', re.sub(r'[.,?!:\s]+$', '', trans.upper()))
@@ -125,7 +127,7 @@ def parse_ami_annotations(gzip_file: Pathlike) -> Dict[str, List[AmiSegmentAnnot
                     puncts_times.append(aut_etime)
                 if len(puncts_times) == seg_num + 1:
                     puncts_times.pop()
-                    assert(puncts_times[-1] <= aut_etime)
+                    assert (puncts_times[-1] <= aut_etime)
                 assert len(puncts_times) == seg_num and aut_btime <= puncts_times[0]
             except (ValueError, AssertionError):
                 continue
@@ -133,7 +135,13 @@ def parse_ami_annotations(gzip_file: Pathlike) -> Dict[str, List[AmiSegmentAnnot
             # Make the begin/end points list
             seg_btimes = [aut_btime] + puncts_times
             seg_btimes.pop()
-            seg_times = [AmiSegmentAnnotation(t, b, e) for t, b, e in zip(trans, seg_btimes, puncts_times)]
+            seg_times = [AmiSegmentAnnotation(
+                text=t,
+                speaker=speaker,
+                gender=speaker[0],
+                begin_time=b,
+                end_time=e
+            ) for t, b, e in zip(trans, seg_btimes, puncts_times)]
 
             wav_name = f'{meet_id}.Headset-{int(channel)}.wav'
             if wav_name not in anotations:
@@ -161,58 +169,70 @@ def prepare_ami(
         output_dir.mkdir(parents=True, exist_ok=True)
 
     anotation_lists = parse_ami_annotations(data_dir / 'annotations.gzip')
+    # Create a mapping from a tuple of (session_id, channel) to the list of annotations.
+    # This way we can map the supervisions to the right channels in a multi-channel recording.
+    annotation_by_id_and_channel = {
+        (filename.split('.')[0], int(filename[-5])): annotations
+        for filename, annotations in anotation_lists.items()
+    }
     wav_dir = data_dir / 'wav_db'
-    audio_paths = list(wav_dir.rglob('*.wav'))
+    audio_paths = wav_dir.rglob('*.wav')
+    # Group together multiple channels from the same session.
+    # We will use that to create a Recording with multiple sources (channels).
+    from cytoolz import groupby
+    channel_wavs = groupby(lambda p: p.parts[-3], audio_paths)
 
     manifests = defaultdict(dict)
 
     for part in dataset_parts:
         # Audio
         recordings = []
-        for audio_path in audio_paths:
-            audio_idx = audio_path.name
-            if re.sub(r'\..*', '', audio_idx) not in dataset_parts[part]:
+        for session_name, channel_paths in channel_wavs.items():
+            if session_name not in dataset_parts[part]:
                 continue
-            if audio_idx not in anotation_lists:
-                logging.warning(f'No annotation found for {audio_idx}')
-                continue
-            audio_info = torchaudio.info(str(audio_path))[0]
-
+            audio_info = torchaudio.info(str(channel_paths[0]))[0]
             recordings.append(Recording(
-                id=audio_idx,
+                id=session_name,
                 sources=[
                     AudioSource(
                         type='file',
-                        channels=[0],
+                        channels=[idx],
                         source=str(audio_path)
                     )
+                    for idx, audio_path in enumerate(sorted(channel_paths))
                 ],
                 sampling_rate=int(audio_info.rate),
                 num_samples=audio_info.length,
-                duration=int(audio_info.length / audio_info.rate),
+                duration=audio_info.length / audio_info.rate,
             ))
-        if len(recordings) == 0:
-            continue
         audio = RecordingSet.from_recordings(recordings)
 
         # Supervisions
         segments_by_pause = []
-        for idx in audio.recordings:
-            anotation = anotation_lists[idx]
-            for seg_idx, seg_info in enumerate(anotation):
-                for subseg_idx, subseg_info in enumerate(seg_info):
-                    duration = subseg_info.end_time - subseg_info.begin_time
-                    if duration > 0:
-                        segments_by_pause.append(SupervisionSegment(
-                            id=f'{idx}-{seg_idx}-{subseg_idx}',
-                            recording_id=idx,
-                            start=subseg_info.begin_time,
-                            duration=duration,
-                            channel=0,
-                            language='English',
-                            speaker=re.sub(r'-.*', r'', idx),
-                            text=subseg_info.text
-                        ))
+        for recording in audio:
+            for source in recording.sources:
+                # In AMI "source.channels" will always be a one-element list
+                channel, = source.channels
+                anotation = annotation_by_id_and_channel.get((recording.id, channel))
+                if anotation is None:
+                    logging.warning(f'No annotation found for recording "{recording.id}" channel {channel} '
+                                    f'(file {source.source})')
+                    continue
+                for seg_idx, seg_info in enumerate(anotation):
+                    for subseg_idx, subseg_info in enumerate(seg_info):
+                        duration = subseg_info.end_time - subseg_info.begin_time
+                        if duration > 0:
+                            segments_by_pause.append(SupervisionSegment(
+                                id=f'{recording.id}-{seg_idx}-{subseg_idx}',
+                                recording_id=recording.id,
+                                start=subseg_info.begin_time,
+                                duration=duration,
+                                channel=channel,
+                                language='English',
+                                speaker=subseg_info.speaker,
+                                gender=subseg_info.gender,
+                                text=subseg_info.text
+                            ))
         supervision = SupervisionSet.from_segments(segments_by_pause)
         if output_dir is not None:
             audio.to_json(output_dir / f'recordings_{part}.json')
