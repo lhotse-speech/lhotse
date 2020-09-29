@@ -1,12 +1,9 @@
-import logging
-from pathlib import Path
-from typing import Dict, Optional
+from typing import Dict
 
 import torch
 from torch.utils.data import Dataset
 
 from lhotse.cut import CutSet
-from lhotse.utils import Pathlike
 
 EPS = 1e-8
 
@@ -26,21 +23,16 @@ class SpeechRecognitionDataset(Dataset):
     In the future, will be extended by graph supervisions.
     """
 
-    def __init__(
-            self,
-            cuts: CutSet,
-            root_dir: Optional[Pathlike] = None
-    ):
+    def __init__(self, cuts: CutSet):
         super().__init__()
         self.cuts = cuts
-        self.root_dir = Path(root_dir) if root_dir else None
-        self.cut_ids = list(self.cuts.cuts.keys())
+        self.cut_ids = list(self.cuts.ids)
 
     def __getitem__(self, idx: int) -> Dict[str, torch.Tensor]:
         cut_id = self.cut_ids[idx]
         cut = self.cuts[cut_id]
 
-        features = torch.from_numpy(cut.load_features(root_dir=self.root_dir))
+        features = torch.from_numpy(cut.load_features())
 
         # There should be only one supervision because we expect that trim_to_supervisions() was called,
         # or the dataset was created from pre-segment recordings

@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 from pytest import mark, raises
 
-from lhotse.audio import AudioSource, Recording, RecordingSet
+from lhotse.audio import AudioSource, Recording, RecordingSet, AudioMixer
 from lhotse.test_utils import DummyManifest
 from lhotse.utils import INT16MAX
 
@@ -190,3 +190,117 @@ def test_recording_from_sphere(relative_path_depth, expected_source_path):
             )
         ]
     )
+
+
+@pytest.fixture
+def file_source():
+    return AudioSource(type='file', channels=[0], source='test/fixtures/mono_c0.wav')
+
+
+@pytest.fixture
+def nonfile_source():
+    return AudioSource(type='command', channels=[0], source='cat test/fixtures/mono_c0.wav')
+
+
+@pytest.fixture
+def recording(file_source):
+    return Recording(id='rec', sources=[file_source] * 2, sampling_rate=8000, num_samples=4000, duration=0.5)
+
+
+@pytest.fixture
+def recording_set2(recording):
+    return RecordingSet.from_recordings([recording] * 5)
+
+
+def test_audio_source_path_prefix(file_source):
+    assert str(file_source.with_path_prefix('/data').source) == '/data/test/fixtures/mono_c0.wav'
+
+
+def test_audio_source_nonfile_path_prefix(nonfile_source):
+    assert str(nonfile_source.with_path_prefix('/data').source) == 'cat test/fixtures/mono_c0.wav'
+
+
+def test_recording_path_prefix(recording):
+    for source in recording.with_path_prefix('/data').sources:
+        assert str(source.source) == '/data/test/fixtures/mono_c0.wav'
+
+
+def test_recording_set_prefix(recording_set2):
+    for recording in recording_set2.with_path_prefix('/data'):
+        for source in recording.sources:
+            assert str(source.source) == '/data/test/fixtures/mono_c0.wav'
+
+
+class TestAudioMixer:
+    @classmethod
+    def setup_class(cls):
+        cls.audio1 = np.ones(8000, dtype=np.float32).reshape(1, -1)
+        cls.audio2 = np.ones(8000, dtype=np.float32).reshape(1, -1) * 2
+
+    def test_simple_mix(self):
+        mixer = AudioMixer(base_audio=self.audio1, sampling_rate=8000)
+        mixer.add_to_mix(self.audio2, snr=None, offset=0)
+
+        unmixed = mixer.unmixed_audio
+        assert unmixed.shape == (2, 8000)
+        assert (unmixed[0, :] == 1).all()
+        assert (unmixed[1, :] == 2).all()
+        assert unmixed.dtype == np.float32
+
+        mixed = mixer.mixed_audio
+        assert mixed.shape == (1, 8000)
+        assert (mixed == 3).all()
+        assert mixed.dtype == np.float32
+
+    def test_audio_mixed_with_offset(self):
+        mixer = AudioMixer(base_audio=self.audio1, sampling_rate=8000)
+        mixer.add_to_mix(self.audio2, snr=None, offset=0.5)
+
+        unmixed = mixer.unmixed_audio
+        assert unmixed.shape == (2, 12000)  # offset 0.5s == 4000 samples
+        assert (unmixed[0, :8000] == 1).all()
+        assert (unmixed[0, 8000:] == 0).all()
+        assert (unmixed[1, :4000] == 0).all()
+        assert (unmixed[1, 4000:] == 2).all()
+        assert unmixed.dtype == np.float32
+
+        mixed = mixer.mixed_audio
+        assert mixed.shape == (1, 12000)
+        assert (mixed[0, :4000] == 1).all()
+        assert (mixed[0, 4000:8000] == 3).all()
+        assert (mixed[0, 8000:] == 2).all()
+        assert mixed.dtype == np.float32
+
+    def test_audio_mixed_with_snr(self):
+        mixer = AudioMixer(base_audio=self.audio1, sampling_rate=8000)
+        mixer.add_to_mix(self.audio2, snr=10, offset=0)
+
+        unmixed = mixer.unmixed_audio
+        assert unmixed.shape == (2, 8000)
+        assert (unmixed[0, :] == 1).all()
+        np.testing.assert_almost_equal(unmixed[1, :], 0.31622776)
+        assert unmixed.dtype == np.float32
+
+        mixed = mixer.mixed_audio
+        assert mixed.shape == (1, 8000)
+        np.testing.assert_almost_equal(mixed[0, :], 1.31622776)
+        assert mixed.dtype == np.float32
+
+    def test_audio_mixed_with_offset_and_snr(self):
+        mixer = AudioMixer(base_audio=self.audio1, sampling_rate=8000)
+        mixer.add_to_mix(self.audio2, snr=10, offset=0.5)
+
+        unmixed = mixer.unmixed_audio
+        assert unmixed.shape == (2, 12000)  # offset 0.5s == 4000 samples
+        assert (unmixed[0, :8000] == 1).all()
+        assert (unmixed[0, 8000:] == 0).all()
+        assert (unmixed[1, :4000] == 0).all()
+        np.testing.assert_almost_equal(unmixed[1, 4000:], 0.31622776)
+        assert unmixed.dtype == np.float32
+
+        mixed = mixer.mixed_audio
+        assert mixed.shape == (1, 12000)
+        assert (mixed[0, :4000] == 1).all()
+        np.testing.assert_almost_equal(mixed[0, 4000:8000], 1.31622776)
+        np.testing.assert_almost_equal(mixed[0, 8000:], 0.31622776)
+        assert mixed.dtype == np.float32

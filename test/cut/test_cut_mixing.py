@@ -46,25 +46,39 @@ def test_overlay_cut_duration_and_supervisions(offset, expected_duration, except
         ]
 
 
-def test_mixed_cut_load_features():
-    expected_frame_count = 1360
+@pytest.fixture
+def mixed_feature_cut() -> MixedCut:
     cut_set = CutSet.from_json('test/fixtures/mix_cut_test/overlayed_cut_manifest.json')
     mixed_cut = cut_set['mixed-cut-id']
-    assert mixed_cut.num_frames == expected_frame_count
+    assert mixed_cut.num_frames == 1360
     assert isclose(mixed_cut.duration, 13.595)
+    return mixed_cut
 
-    feats = mixed_cut.load_features()
-    assert feats.shape[0] == expected_frame_count
+
+def test_mixed_cut_load_features_mixed(mixed_feature_cut):
+    feats = mixed_feature_cut.load_features()
+    assert feats.shape[0] == 1360
+
+
+def test_mixed_cut_load_features_unmixed(mixed_feature_cut):
+    feats = mixed_feature_cut.load_features(mixed=False)
+    assert feats.shape[0] == 2
+    assert feats.shape[1] == 1360
 
 
 @pytest.fixture
-def mixed_audio_cut():
+def mixed_audio_cut() -> MixedCut:
     cut_set = CutSet.from_json('test/fixtures/mix_cut_test/overlayed_audio_cut_manifest.json')
     mixed_cut = cut_set['mixed-cut-id']
     assert isclose(mixed_cut.duration, 14.4)
     return mixed_cut
 
 
-def test_mixed_cut_load_audio(mixed_audio_cut):
+def test_mixed_cut_load_audio_mixed(mixed_audio_cut):
     audio = mixed_audio_cut.load_audio()
     assert audio.shape == (1, 230400)
+
+
+def test_mixed_cut_load_audio_unmixed(mixed_audio_cut):
+    audio = mixed_audio_cut.load_audio(mixed=False)
+    assert audio.shape == (2, 230400)

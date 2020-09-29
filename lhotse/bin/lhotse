@@ -4,7 +4,7 @@ Use this script like:
 
 $ lhotse --help
 $ lhotse make-feats --help
-$ lhotse make-feats --compressed audio_manifest.yml mfcc_dir/
+$ lhotse make-feats --compressed recording_manifest.yml mfcc_dir/
 $ lhotse write-default-feature-config feat-conf.yml
 $ lhotse convert-kaldi data/train/ 16000 train_manifests/
 $ lhotse split 3 audio.yml split_manifests/

@@ -34,7 +34,7 @@ class Spectrogram(TorchaudioFeatureExtractor):
     def feature_dim(self, sampling_rate: int) -> int:
         from torchaudio.compliance.kaldi import _next_power_of_2
         window_size = int(self.config.frame_length * sampling_rate)
-        return _next_power_of_2(window_size) if self.config.round_to_power_of_two else window_size
+        return _next_power_of_2(window_size) // 2 + 1 if self.config.round_to_power_of_two else window_size
 
     @staticmethod
     def mix(features_a: np.ndarray, features_b: np.ndarray, energy_scaling_factor_b: float) -> np.ndarray:
