@@ -12,6 +12,7 @@ from cytoolz.itertoolz import groupby
 from lhotse import WavAugmenter
 from lhotse.audio import AudioMixer, Recording, RecordingSet
 from lhotse.features import Features, FeatureExtractor, FeatureSet, FeatureMixer, create_default_feature_extractor
+from lhotse.features.io import FeaturesWriter
 from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import (
     EPSILON,
@@ -242,7 +243,7 @@ class Cut(CutUtilsMixin):
     def compute_and_store_features(
             self,
             extractor: FeatureExtractor,
-            output_dir: Pathlike,
+            storage: FeaturesWriter,
             augmenter: Optional[WavAugmenter] = None,
             *args,
             **kwargs
@@ -258,8 +259,8 @@ class Cut(CutUtilsMixin):
         """
         features_info = extractor.extract_from_samples_and_store(
             samples=self.load_audio(),
+            storage=storage,
             sampling_rate=self.sampling_rate,
-            output_dir=output_dir,
             offset=self.start,
             augmenter=augmenter,
         )
@@ -730,7 +731,7 @@ class MixedCut(CutUtilsMixin):
     def compute_and_store_features(
             self,
             extractor: FeatureExtractor,
-            output_dir: Pathlike,
+            storage: FeaturesWriter,
             augmenter: Optional[WavAugmenter] = None,
             mix_eagerly: bool = True
     ) -> AnyCut:
@@ -751,8 +752,8 @@ class MixedCut(CutUtilsMixin):
         if mix_eagerly:
             features_info = extractor.extract_from_samples_and_store(
                 samples=self.load_audio(),
+                storage=storage,
                 sampling_rate=self.sampling_rate,
-                output_dir=output_dir,
                 offset=0,
                 augmenter=augmenter,
             )
@@ -770,7 +771,7 @@ class MixedCut(CutUtilsMixin):
                 MixTrack(
                     cut=track.cut.compute_and_store_features(
                         extractor=extractor,
-                        output_dir=output_dir,
+                        storage=storage,
                         augmenter=augmenter,
                     ),
                     offset=track.offset,
@@ -1097,7 +1098,7 @@ class CutSet(JsonMixin, YamlMixin):
     def compute_and_store_features(
             self,
             extractor: FeatureExtractor,
-            output_dir: Pathlike,
+            storage: FeaturesWriter,
             augmenter: Optional[WavAugmenter] = None,
             executor: Optional[Any] = None,
             mix_eagerly: bool = True
@@ -1124,7 +1125,7 @@ class CutSet(JsonMixin, YamlMixin):
             return CutSet.from_cuts(
                 cut.compute_and_store_features(
                     extractor=extractor,
-                    output_dir=output_dir,
+                    storage=storage,
                     augmenter=augmenter,
                     mix_eagerly=mix_eagerly
                 )
@@ -1138,7 +1139,7 @@ class CutSet(JsonMixin, YamlMixin):
                     _extract_and_store_features_helper_fn,
                     cut,
                     extractor=extractor,
-                    output_dir=output_dir,
+                    storage=storage,
                     augmenter=augmenter,
                     mix_eagerly=mix_eagerly
                 )

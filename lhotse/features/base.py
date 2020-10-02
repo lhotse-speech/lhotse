@@ -7,12 +7,12 @@ from math import isclose
 from pathlib import Path
 from typing import Optional, Any, List, Iterable, Type, Union, Dict
 
-import lilcom
 import numpy as np
 import torch
 
 from lhotse.audio import Recording
 from lhotse.augmentation import WavAugmenter
+from lhotse.features.io import FeaturesWriter, get_reader
 from lhotse.supervision import SupervisionSegment
 from lhotse.utils import Seconds, Pathlike, load_yaml, save_to_yaml, uuid4, JsonMixin, YamlMixin, fastcopy
 
@@ -101,12 +101,10 @@ class FeatureExtractor(metaclass=ABCMeta):
     def extract_from_samples_and_store(
             self,
             samples: np.ndarray,
+            storage: FeaturesWriter,
             sampling_rate: int,
-            output_dir: Pathlike,
             offset: Seconds = 0,
             augmenter: Optional[WavAugmenter] = None,
-            compress: bool = True,
-            lilcom_tick_power: int = -5,
     ):
         """
         Extract the features from an array of audio samples in a full pipeline:
@@ -136,7 +134,7 @@ class FeatureExtractor(metaclass=ABCMeta):
         if augmenter is not None:
             samples = augmenter.apply(samples)
         feats = self.extract(samples=samples, sampling_rate=sampling_rate)
-        output_features_path = store_feature_array(feats, output_dir, compress, lilcom_tick_power)
+        storage_key = store_feature_array(feats, storage=storage)
         return Features(
             start=offset,
             # We simplify the relationship between num_frames and duration - we guarantee that
@@ -146,20 +144,19 @@ class FeatureExtractor(metaclass=ABCMeta):
             num_frames=feats.shape[0],
             num_features=feats.shape[1],
             sampling_rate=sampling_rate,
-            storage_type='lilcom' if compress else 'numpy',
-            storage_path=str(output_features_path)
+            storage_type=storage.name,
+            storage_path=storage.storage_path,
+            storage_key=storage_key
         )
 
     def extract_from_recording_and_store(
             self,
             recording: Recording,
-            output_dir: Pathlike,
+            storage: FeaturesWriter,
             offset: Seconds = 0,
             duration: Optional[Seconds] = None,
             channels: Union[int, List[int]] = None,
             augmenter: Optional[WavAugmenter] = None,
-            compress: bool = True,
-            lilcom_tick_power: int = -5,
     ):
         """
         Extract the features from a ``Recording`` in a full pipeline:
@@ -190,7 +187,7 @@ class FeatureExtractor(metaclass=ABCMeta):
         if augmenter is not None:
             samples = augmenter.apply(samples)
         feats = self.extract(samples=samples, sampling_rate=recording.sampling_rate)
-        output_features_path = store_feature_array(feats, output_dir, compress, lilcom_tick_power)
+        storage_key = store_feature_array(feats, storage=storage)
         return Features(
             recording_id=recording.id,
             channels=channels if channels is not None else recording.channel_ids,
@@ -203,8 +200,9 @@ class FeatureExtractor(metaclass=ABCMeta):
             num_frames=feats.shape[0],
             num_features=feats.shape[1],
             sampling_rate=recording.sampling_rate,
-            storage_type='lilcom' if compress else 'numpy',
-            storage_path=str(output_features_path)
+            storage_type=storage.name,
+            storage_path=storage.storage_path,
+            storage_key=storage_key
         )
 
     @classmethod
@@ -301,16 +299,27 @@ class Features:
     num_features: int
     sampling_rate: int
 
-    # Parameters related to storage - they define how to load the feature matrix.
-    storage_type: str  # e.g. 'lilcom', 'numpy'
-    storage_path: str
-
-    # Information about the time range of the features and which recording and channels were used to
-    # extract them. When ``recording_id`` and ``channels`` are ``None``, it means that the
-    # features were extracted from a cut (e.g. a ``MixedCut``), which might have consisted
-    # of multiple recordings.
+    # Information about the time range of the features.
     start: Seconds
     duration: Seconds
+
+    # Parameters related to storage - they define how to load the feature matrix.
+
+    # Storage type defines which features reader type should be instantiated
+    # e.g. 'lilcom_files', 'numpy_files', 'lilcom_hdf5'
+    storage_type: str
+
+    # Storage path is either the path to some kind of archive (like HDF5 file) or an individual feature file.
+    storage_path: str
+
+    # Storage key is optional: for array-per-file storage, it is not needed.
+    # For multiple-arrays-per-archive storage, it pinpoints the feature matrix location inside the archive.
+    storage_key: Optional[str] = None
+
+    # Information which recording and channels were used to extract the features.
+    # When ``recording_id`` and ``channels`` are ``None``, it means that the
+    # features were extracted from a cut (e.g. a ``MixedCut``), which might have consisted
+    # of multiple recordings.
     recording_id: Optional[str] = None
     channels: Optional[Union[int, List[int]]] = None
 
@@ -328,13 +337,9 @@ class Features:
             duration: Optional[Seconds] = None,
     ) -> np.ndarray:
         # Load the features from the storage
-        if self.storage_type == 'lilcom':
-            with open(self.storage_path, 'rb') as f:
-                features = lilcom.decompress(f.read())
-        elif self.storage_type == 'numpy':
-            features = np.load(self.storage_path, allow_pickle=False)
-        else:
-            raise ValueError(f"Unknown storage_type: {self.storage_type}")
+        # noinspection PyArgumentList
+        storage = get_reader(self.storage_type)(self.storage_path)
+        features = storage.read(self.storage_key)
 
         if start is None:
             start = self.start
@@ -497,22 +502,22 @@ class FeatureSetBuilder:
     def __init__(
             self,
             feature_extractor: FeatureExtractor,
-            output_dir: Pathlike,
+            storage: FeaturesWriter,
             augmenter: Optional[WavAugmenter] = None
     ):
         self.feature_extractor = feature_extractor
-        self.output_dir = Path(output_dir)
+        self.storage = storage
         self.augmenter = augmenter
 
     def process_and_store_recordings(
             self,
             recordings: Iterable[Recording],
+            output_manifest: Pathlike,
             segmentation: Optional[SupervisionSegment] = None,
             compressed: bool = True,
             lilcom_tick_power: int = -5,
             num_jobs: int = 1
     ) -> FeatureSet:
-        (self.output_dir / 'storage').mkdir(parents=True, exist_ok=True)
         do_work = partial(
             self._process_and_store_recording,
             segmentation=segmentation,
@@ -526,35 +531,29 @@ class FeatureSetBuilder:
             with ProcessPoolExecutor(num_jobs) as ex:
                 feature_infos = list(chain.from_iterable(ex.map(do_work, recordings)))
         feature_set = FeatureSet.from_features(feature_infos)
-        feature_set.to_json(self.output_dir / 'feature_manifest.json.gz')
+        feature_set.to_json(Path(output_manifest) / 'feature_manifest.json.gz')
         return feature_set
 
     def _process_and_store_recording(
             self,
             recording: Recording,
             segmentation: Optional[SupervisionSegment] = None,
-            compressed: bool = True,
-            lilcom_tick_power: int = -5,
     ) -> List[Features]:
         results = []
         for channel in recording.channel_ids:
             results.append(self.feature_extractor.extract_from_recording_and_store(
                 recording=recording,
-                output_dir=self.output_dir,
+                storage=self.storage,
                 channels=channel,
                 augmenter=self.augmenter,
-                compress=compressed,
-                lilcom_tick_power=lilcom_tick_power,
             ))
         return results
 
 
 def store_feature_array(
         feats: np.ndarray,
-        output_dir: Pathlike,
-        compress: bool = True,
-        lilcom_tick_power: int = -5
-) -> Path:
+        storage: FeaturesWriter,
+) -> str:
     """
     Store ``feats`` array on disk, using ``lilcom`` compression by default.
 
@@ -565,14 +564,6 @@ def store_feature_array(
         might be appropriate for non-log space features.
     :return: a path to the file containing the stored array.
     """
-    output_dir = Path(output_dir)
-    (output_dir / 'storage').mkdir(parents=True, exist_ok=True)
-    output_features_path = (output_dir / 'storage' / str(uuid4())).with_suffix('.llc' if compress else '.npy')
-    if compress:
-        serialized_feats = lilcom.compress(feats, tick_power=lilcom_tick_power)
-        with open(output_features_path, 'wb') as f:
-            f.write(serialized_feats)
-    else:
-        np.save(output_features_path, feats, allow_pickle=False)
-    return output_features_path
-
+    feats_id = str(uuid4())
+    storage_key = storage.write(feats_id, feats)
+    return storage_key
