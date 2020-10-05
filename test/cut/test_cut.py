@@ -108,7 +108,7 @@ def dummy_feature_set():
 
 
 def test_make_cuts_from_recordings(dummy_recording_set):
-    cut_set = CutSet.from_manifests(recording_set=dummy_recording_set)
+    cut_set = CutSet.from_manifests(recordings=dummy_recording_set)
     cut1 = cut_set[0]
     assert cut1.start == 0
     assert cut1.duration == 10.0
@@ -132,7 +132,7 @@ def test_make_cuts_from_recordings(dummy_recording_set):
 
 
 def test_make_cuts_from_features(dummy_feature_set):
-    cut_set = CutSet.from_manifests(feature_set=dummy_feature_set)
+    cut_set = CutSet.from_manifests(features=dummy_feature_set)
     cut1 = cut_set[0]
     assert cut1.start == 0
     assert cut1.duration == 10.0
@@ -156,7 +156,7 @@ def test_make_cuts_from_features(dummy_feature_set):
 
 
 def test_make_cuts_from_features_recordings(dummy_recording_set, dummy_feature_set):
-    cut_set = CutSet.from_manifests(recording_set=dummy_recording_set, feature_set=dummy_feature_set)
+    cut_set = CutSet.from_manifests(recordings=dummy_recording_set, features=dummy_feature_set)
     cut1 = cut_set[0]
     assert cut1.start == 0
     assert cut1.duration == 10.0
@@ -181,10 +181,8 @@ def test_make_cuts_from_features_recordings(dummy_recording_set, dummy_feature_s
 
 class TestCutOnSupervisions:
     def test_make_cuts_from_recordings_supervisions(self, dummy_recording_set, dummy_supervision_set):
-        cut_set = CutSet.from_manifests(
-            recording_set=dummy_recording_set,
-            supervision_set=dummy_supervision_set
-        ).trim_to_supervisions()
+        cut_set = CutSet.from_manifests(recordings=dummy_recording_set,
+                                        supervisions=dummy_supervision_set).trim_to_supervisions()
         cut1 = cut_set[0]
         assert cut1.start == 3.0
         assert cut1.duration == 4.0
@@ -214,10 +212,8 @@ class TestCutOnSupervisions:
         assert cut1.features_type is None
 
     def test_make_cuts_from_features_supervisions(self, dummy_feature_set, dummy_supervision_set):
-        cut_set = CutSet.from_manifests(
-            feature_set=dummy_feature_set,
-            supervision_set=dummy_supervision_set
-        ).trim_to_supervisions()
+        cut_set = CutSet.from_manifests(supervisions=dummy_supervision_set,
+                                        features=dummy_feature_set).trim_to_supervisions()
         cut1 = cut_set[0]
         assert cut1.start == 3.0
         assert cut1.duration == 4.0
@@ -252,11 +248,8 @@ class TestCutOnSupervisions:
             dummy_feature_set,
             dummy_supervision_set
     ):
-        cut_set = CutSet.from_manifests(
-            recording_set=dummy_recording_set,
-            feature_set=dummy_feature_set,
-            supervision_set=dummy_supervision_set
-        ).trim_to_supervisions()
+        cut_set = CutSet.from_manifests(recordings=dummy_recording_set, supervisions=dummy_supervision_set,
+                                        features=dummy_feature_set).trim_to_supervisions()
         cut1 = cut_set[0]
         assert cut1.start == 3.0
         assert cut1.duration == 4.0
@@ -288,7 +281,7 @@ class TestCutOnSupervisions:
 
 class TestNoCutOnSupervisions:
     def test_make_cuts_from_recordings_supervisions(self, dummy_recording_set, dummy_supervision_set):
-        cut_set = CutSet.from_manifests(recording_set=dummy_recording_set, supervision_set=dummy_supervision_set)
+        cut_set = CutSet.from_manifests(recordings=dummy_recording_set, supervisions=dummy_supervision_set)
         cut1 = cut_set[0]
         assert cut1.start == 0
         assert cut1.duration == 10.0
@@ -317,7 +310,7 @@ class TestNoCutOnSupervisions:
         assert cut1.features_type is None
 
     def test_make_cuts_from_features_supervisions(self, dummy_feature_set, dummy_supervision_set):
-        cut_set = CutSet.from_manifests(feature_set=dummy_feature_set, supervision_set=dummy_supervision_set)
+        cut_set = CutSet.from_manifests(supervisions=dummy_supervision_set, features=dummy_feature_set)
         cut1 = cut_set[0]
         assert cut1.start == 0
         assert cut1.duration == 10.0
@@ -351,11 +344,8 @@ class TestNoCutOnSupervisions:
             dummy_feature_set,
             dummy_supervision_set
     ):
-        cut_set = CutSet.from_manifests(
-            recording_set=dummy_recording_set,
-            feature_set=dummy_feature_set,
-            supervision_set=dummy_supervision_set
-        )
+        cut_set = CutSet.from_manifests(recordings=dummy_recording_set, supervisions=dummy_supervision_set,
+                                        features=dummy_feature_set)
         cut1 = cut_set[0]
         assert cut1.start == 0
         assert cut1.duration == 10.0

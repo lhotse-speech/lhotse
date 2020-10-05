@@ -8,7 +8,7 @@ from typing import Callable, Dict, Iterable, List, Optional, Union, Tuple
 
 import numpy as np
 
-from lhotse.utils import Decibels, Pathlike, Seconds, SetContainingAnything, JsonMixin, YamlMixin
+from lhotse.utils import Decibels, Pathlike, Seconds, SetContainingAnything, JsonMixin, YamlMixin, fastcopy
 
 Channels = Union[int, List[int]]
 
@@ -33,7 +33,6 @@ class AudioSource:
             self,
             offset_seconds: float = 0.0,
             duration_seconds: Optional[float] = None,
-            root_dir: Optional[Pathlike] = None,
     ) -> np.ndarray:
         """
         Load the AudioSource (both files and commands) with librosa,
@@ -43,18 +42,14 @@ class AudioSource:
         """
         assert self.type in ('file', 'command')
 
+        source = self.source
         if self.type == 'command':
             if offset_seconds != 0.0 or duration_seconds is not None:
                 # TODO(pzelasko): How should we support chunking for commands?
                 #                 We risk being very inefficient when reading many chunks from the same file
                 #                 without some caching scheme, because we'll be re-running commands.
                 raise ValueError("Reading audio chunks from command AudioSource type is currently not supported.")
-            # TODO: consider adding support for "root_dir" in "command" audio source type
-            if root_dir is not None:
-                warnings.warn('"root_dir" argument is currently not supported in "command" AudioSource type')
             source = BytesIO(run(self.source, shell=True, stdout=PIPE).stdout)
-        else:
-            source = self.source if root_dir is None else Path(root_dir) / self.source
 
         with warnings.catch_warnings():
             warnings.simplefilter('ignore')
@@ -70,6 +65,11 @@ class AudioSource:
                 )
 
         return samples.astype(np.float32)
+
+    def with_path_prefix(self, path: Pathlike) -> 'AudioSource':
+        if self.type != 'file':
+            return self
+        return fastcopy(self, source=str(Path(path) / self.source))
 
     @staticmethod
     def from_dict(data) -> 'AudioSource':
@@ -146,7 +146,6 @@ class Recording:
             channels: Optional[Channels] = None,
             offset_seconds: float = 0.0,
             duration_seconds: Optional[float] = None,
-            root_dir: Optional[Pathlike] = None,
     ) -> np.ndarray:
         if channels is None:
             channels = SetContainingAnything()
@@ -163,7 +162,6 @@ class Recording:
             samples = source.load_audio(
                 offset_seconds=offset_seconds,
                 duration_seconds=duration_seconds,
-                root_dir=root_dir
             )
 
             # Case: two-channel audio file but only one channel requested
@@ -178,6 +176,9 @@ class Recording:
 
         # shape: (n_channels, n_samples)
         return np.vstack(samples_per_source)
+
+    def with_path_prefix(self, path: Pathlike) -> 'Recording':
+        return fastcopy(self, sources=[s.with_path_prefix(path) for s in self.sources])
 
     @staticmethod
     def from_dict(data: dict) -> 'Recording':
@@ -223,14 +224,15 @@ class RecordingSet(JsonMixin, YamlMixin):
             channels: Optional[Channels] = None,
             offset_seconds: float = 0.0,
             duration_seconds: Optional[float] = None,
-            root_dir: Optional[Pathlike] = None,
     ) -> np.ndarray:
         return self.recordings[recording_id].load_audio(
             channels=channels,
             offset_seconds=offset_seconds,
-            duration_seconds=duration_seconds,
-            root_dir=root_dir
+            duration_seconds=duration_seconds
         )
+
+    def with_path_prefix(self, path: Pathlike) -> 'RecordingSet':
+        return RecordingSet.from_recordings(r.with_path_prefix(path) for r in self)
 
     def num_channels(self, recording_id: str) -> int:
         return self.recordings[recording_id].num_channels
@@ -266,21 +268,37 @@ class AudioMixer:
     It pads the signals with zero samples for differing lengths and offsets.
     """
 
-    def __init__(self, base_audio: np.ndarray):
+    def __init__(self, base_audio: np.ndarray, sampling_rate: int):
         """
         :param base_audio: The raw audio used to initialize the AudioMixer are a point of reference
             in terms of offset for all audios mixed into them.
+        :param sampling_rate: Sampling rate of the audio.
         """
-        # The mixing output will be available in self.mixed_audio
-        self.mixed_audio = base_audio
+        self.tracks = [base_audio]
+        self.sampling_rate = sampling_rate
         self.reference_energy = audio_energy(base_audio)
+
+    @property
+    def unmixed_audio(self) -> np.ndarray:
+        """
+        Return a numpy ndarray with the shape (num_tracks, num_samples), where each track is
+        zero padded and scaled adequately to the offsets and SNR used in ``add_to_mix`` call.
+        """
+        return np.vstack(self.tracks)
+
+    @property
+    def mixed_audio(self) -> np.ndarray:
+        """
+        Return a numpy ndarray with the shape (1, num_samples) - a mono mix of the tracks
+        supplied with ``add_to_mix`` calls.
+        """
+        return np.sum(self.unmixed_audio, axis=0, keepdims=True)
 
     def add_to_mix(
             self,
             audio: np.ndarray,
             snr: Optional[Decibels] = None,
             offset: Seconds = 0.0,
-            sampling_rate: int = 16000,
     ):
         """
         Add audio (only support mono-channel) of a new track into the mix.
@@ -289,17 +307,16 @@ class AudioMixer:
         negative SNR - higher `audio` energy)
         :param offset: How many seconds to shift `audio` in time. For mixing, the signal will be padded before
         the start with low energy values.
-        :param sampling_rate: Sampling rate of the audio.
         :return:
         """
         assert audio.shape[0] == 1  # TODO: support multi-channels
         assert offset >= 0.0, "Negative offset in mixing is not supported."
 
-        dtype = self.mixed_audio.dtype
-        num_samples_offset = round(offset * sampling_rate)
-        current_num_samples = self.mixed_audio.shape[1]
+        reference_audio = self.tracks[0]
+        dtype = reference_audio.dtype
+        num_samples_offset = round(offset * self.sampling_rate)
+        current_num_samples = reference_audio.shape[1]
 
-        existing_audio = self.mixed_audio
         audio_to_add = audio
 
         # When there is an offset, we need to pad before the start of the audio we're adding.
@@ -314,11 +331,15 @@ class AudioMixer:
 
         # When the existing samples are less than what we anticipate after the mix,
         # we need to pad after the end of the existing audio mixed so far.
+        # Since we're keeping every track as a separate entry in the ``self.tracks`` list,
+        # we need to pad each of them so that their shape matches when performing the final mix.
         if current_num_samples < mix_num_samples:
-            existing_audio = np.hstack([
-                self.mixed_audio,
-                np.zeros((1, mix_num_samples - current_num_samples), dtype)
-            ])
+            for idx in range(len(self.tracks)):
+                padded_audio = np.hstack([
+                    self.tracks[idx],
+                    np.zeros((1, mix_num_samples - current_num_samples), dtype)
+                ])
+                self.tracks[idx] = padded_audio
 
         # When the audio we're mixing in are shorter that the anticipated mix length,
         # we need to pad after their end.
@@ -340,7 +361,8 @@ class AudioMixer:
             # we need to take a square root of the energy ratio.
             gain = sqrt(target_energy / added_audio_energy)
 
-        self.mixed_audio = existing_audio + gain * audio_to_add
+        # self.mixed_audio = reference_audio + gain * audio_to_add
+        self.tracks.append(gain * audio_to_add)
 
 
 def audio_energy(audio: np.ndarray) -> float:
