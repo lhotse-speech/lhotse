@@ -18,6 +18,10 @@ Currently, we provide the following:
   :members:
   :noindex:
 
+.. autoclass:: lhotse.dataset.speech_synthesis
+  :members:
+  :noindex:
+
 .. autoclass:: lhotse.dataset.source_separation.DynamicallyMixedSourceSeparationDataset
   :members:
   :noindex:
