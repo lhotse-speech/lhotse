@@ -55,8 +55,8 @@ class SpeechSynthesisDataset(Dataset):
         cut_id = self.cut_ids[idx]
         cut = self.cuts[cut_id]
 
-        features = torch.from_numpy(cut.load_features(root_dir=self.root_dir))
-        audio = torch.from_numpy(cut.load_audio(root_dir=self.root_dir))
+        features = torch.from_numpy(cut.load_features())
+        audio = torch.from_numpy(cut.load_audio())
         assert len(cut.supervisions) == 1, "SpeechSynthesisDataset does not support multiple supervisions yet."
         assert cut.id in self.id_to_tokens
         return {
