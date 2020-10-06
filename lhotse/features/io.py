@@ -222,13 +222,22 @@ Non-compressed numpy arrays, stored in HDF5 file.
 """
 
 
-@lru_cache(maxsize=10)
+@lru_cache(maxsize=None)
 def lookup_cache_or_open(storage_path: str):
+    """
+    Helper internal function used in HDF5 readers.
+    It opens the HDF files and keeps their handles open in a global program cache
+    to avoid excessive amount of syscalls when the *Reader class is instantiated
+    and destroyed in a loop repeatedly (frequent use-case).
+
+    The file handles can be freed at any time by calling ``close_cached_file_handles()``.
+    """
     import h5py
     return h5py.File(storage_path, 'r')
 
 
-def close_cached_hdf_files() -> None:
+def close_cached_file_handles() -> None:
+    """Closes the cached file handles in ``lookup_cache_or_open`` (see its docs for more details)."""
     lookup_cache_or_open.cache_clear()
 
 
