@@ -10,6 +10,26 @@ from lhotse.utils import Pathlike
 
 
 class FeaturesWriter(metaclass=ABCMeta):
+    """
+    ``FeaturesWriter`` defines the interface of how to store numpy arrays in a particular storage backend.
+    This backend could either be:
+    - separate files on a local filesystem;
+    - a single file with multiple arrays;
+    - cloud storage;
+    - etc.
+
+    Each class inheriting from ``FeaturesWriter`` must define:
+    - the ``write()`` method, which defines the storing operation
+        (accepts a ``key`` used to place the ``value`` array in the storage);
+    - the ``storage_path()`` property, which is either a common directory for the files,
+        the name of the file storing multiple arrays, name of the cloud bucket, etc.
+    - the ``name()`` property that is unique to this particular storage mechanism -
+        it is stored in the features manifests (metadata) and used to automatically deduce
+        the backend when loading the features.
+
+    The features loading must be defined separately in a class inheriting from ``FeaturesReader``.
+    """
+
     @property
     @abstractmethod
     def name(self) -> str: ...
@@ -23,6 +43,24 @@ class FeaturesWriter(metaclass=ABCMeta):
 
 
 class FeaturesReader(metaclass=ABCMeta):
+    """
+    ``FeaturesReader`` defines the interface of how to load numpy arrays from a particular storage backend.
+    This backend could either be:
+    - separate files on a local filesystem;
+    - a single file with multiple arrays;
+    - cloud storage;
+    - etc.
+
+    Each class inheriting from ``FeaturesReader`` must define:
+    - the ``read()`` method, which defines the loading operation
+        (accepts the ``key`` to locate the array in the storage and return it);
+    - the ``name()`` property that is unique to this particular storage mechanism -
+        it is stored in the features manifests (metadata) and used to automatically deduce
+        the backend when loading the features.
+
+    The features writing must be defined separately in a class inheriting from ``FeaturesWriter``.
+    """
+
     @property
     @abstractmethod
     def name(self) -> str: ...
@@ -36,25 +74,65 @@ WRITER_BACKENDS = {}
 
 
 def register_reader(cls):
+    """
+    Decorator used to add a new ``FeaturesReader`` to Lhotse's registry.
+
+    Example:
+        @register_reader
+        class MyFeatureReader(FeatureReader):
+            ...
+    """
     READER_BACKENDS[cls.name] = cls
     return cls
 
 
 def register_writer(cls):
+    """
+    Decorator used to add a new ``FeaturesWriter`` to Lhotse's registry.
+
+    Example:
+        @register_writer
+        class MyFeatureWriter(FeatureWriter):
+            ...
+    """
     WRITER_BACKENDS[cls.name] = cls
     return cls
 
 
 def get_reader(name: str) -> Type[FeaturesReader]:
+    """
+    Find a ``FeaturesReader`` sub-class that corresponds to the provided ``name`` and return its type.
+
+    Example:
+        reader_type = get_reader("lilcom_files")
+        reader = reader_type("/storage/features/")
+    """
     return READER_BACKENDS.get(name)
 
 
 def get_writer(name: str) -> Type[FeaturesWriter]:
+    """
+    Find a ``FeaturesWriter`` sub-class that corresponds to the provided ``name`` and return its type.
+
+    Example:
+        writer_type = get_writer("lilcom_files")
+        writer = writer_type("/storage/features/")
+    """
     return WRITER_BACKENDS.get(name)
+
+
+"""
+Lilcom-compressed numpy arrays, stored in separate files on the filesystem.
+"""
 
 
 @register_reader
 class LilcomFilesReader(FeaturesReader):
+    """
+    Reads Lilcom-compressed files from a directory on the local filesystem.
+    ``storage_path`` corresponds to the directory path;
+    ``storage_key`` for each utterance is the name of the file in that directory.
+    """
     name = 'lilcom_files'
 
     def __init__(self, storage_path: Pathlike, *args, **kwargs):
@@ -62,17 +140,20 @@ class LilcomFilesReader(FeaturesReader):
         self.storage_path = Path(storage_path)
 
     def read(self, key: str) -> np.ndarray:
-        """Expects key to be a valid filesystem path."""
         with open(self.storage_path / key, 'rb') as f:
             return lilcom.decompress(f.read())
 
 
 @register_writer
 class LilcomFilesWriter(FeaturesWriter):
+    """
+    Writes Lilcom-compressed files to a directory on the local filesystem.
+    ``storage_path`` corresponds to the directory path;
+    ``storage_key`` for each utterance is the name of the file in that directory.
+    """
     name = 'lilcom_files'
 
     def __init__(self, storage_path: Pathlike, tick_power: int = -5, *args, **kwargs):
-        """storage_path will point to a directory"""
         super().__init__()
         self.storage_path_ = Path(storage_path)
         self.storage_path_.mkdir(parents=True, exist_ok=True)
@@ -83,7 +164,6 @@ class LilcomFilesWriter(FeaturesWriter):
         return self.storage_path_
 
     def write(self, key: str, value: np.ndarray) -> str:
-        """Expects key to be the ID of the features object."""
         output_features_path = (self.storage_path_ / key).with_suffix('.llc')
         serialized_feats = lilcom.compress(value, tick_power=self.tick_power)
         with open(output_features_path, 'wb') as f:
@@ -91,8 +171,18 @@ class LilcomFilesWriter(FeaturesWriter):
         return output_features_path.name
 
 
+"""
+Non-compressed numpy arrays, stored in separate files on the filesystem.
+"""
+
+
 @register_reader
 class NumpyFilesReader(FeaturesReader):
+    """
+    Reads non-compressed numpy arrays from files in a directory on the local filesystem.
+    ``storage_path`` corresponds to the directory path;
+    ``storage_key`` for each utterance is the name of the file in that directory.
+    """
     name = 'numpy_files'
 
     def __init__(self, storage_path: Pathlike, *args, **kwargs):
@@ -100,16 +190,19 @@ class NumpyFilesReader(FeaturesReader):
         self.storage_path = Path(storage_path)
 
     def read(self, key: str) -> np.ndarray:
-        """Expects key to be a valid filesystem path."""
         return np.load(self.storage_path / key, allow_pickle=False)
 
 
 @register_writer
 class NumpyFilesWriter(FeaturesWriter):
+    """
+    Writes non-compressed numpy arrays to files in a directory on the local filesystem.
+    ``storage_path`` corresponds to the directory path;
+    ``storage_key`` for each utterance is the name of the file in that directory.
+    """
     name = 'numpy_files'
 
     def __init__(self, storage_path: Pathlike, *args, **kwargs):
-        """storage_path will point to a directory"""
         super().__init__()
         self.storage_path_ = Path(storage_path)
         self.storage_path_.mkdir(parents=True, exist_ok=True)
@@ -119,10 +212,14 @@ class NumpyFilesWriter(FeaturesWriter):
         return self.storage_path_
 
     def write(self, key: str, value: np.ndarray) -> str:
-        """Expects key to be the ID of the features object."""
         output_features_path = (self.storage_path_ / key).with_suffix('.npy')
         np.save(output_features_path, value, allow_pickle=False)
         return output_features_path.name
+
+
+"""
+Non-compressed numpy arrays, stored in HDF5 file.
+"""
 
 
 @lru_cache(maxsize=10)
@@ -136,7 +233,70 @@ def close_cached_hdf_files() -> None:
 
 
 @register_reader
+class NumpyHdf5Reader(FeaturesReader):
+    """
+    Reads non-compressed numpy arrays from a HDF5 file with a "flat" layout.
+    Each array is stored as a separate HDF ``Dataset`` because their shapes (numbers of frames) may vary.
+    ``storage_path`` corresponds to the HDF5 file path;
+    ``storage_key`` for each utterance is the key corresponding to the array (i.e. HDF5 "Group" name).
+    """
+    name = 'numpy_hdf5'
+
+    def __init__(self, storage_path: Pathlike, *args, **kwargs):
+        super().__init__()
+        self.hdf = lookup_cache_or_open(storage_path)
+
+    def read(self, key: str) -> np.ndarray:
+        return self.hdf[key]
+
+
+@register_writer
+class NumpyHdf5Writer(FeaturesWriter):
+    """
+    Writes non-compressed numpy arrays to a HDF5 file with a "flat" layout.
+    Each array is stored as a separate HDF ``Dataset`` because their shapes (numbers of frames) may vary.
+    ``storage_path`` corresponds to the HDF5 file path;
+    ``storage_key`` for each utterance is the key corresponding to the array (i.e. HDF5 "Group" name).
+    """
+    name = 'numpy_hdf5'
+
+    def __init__(self, storage_path: Pathlike, *args, **kwargs):
+        super().__init__()
+        import h5py
+        self.storage_path_ = storage_path
+        self.hdf = h5py.File(storage_path, 'w')
+
+    @property
+    def storage_path(self) -> str:
+        return self.storage_path_
+
+    def write(self, key: str, value: np.ndarray) -> str:
+        self.hdf.create_dataset(key, data=value)
+        return key
+
+    def close(self) -> None:
+        return self.hdf.close()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.close()
+
+
+"""
+Lilcom-compressed numpy arrays, stored in HDF5 file.
+"""
+
+
+@register_reader
 class LilcomHdf5Reader(FeaturesReader):
+    """
+    Reads lilcom-compressed numpy arrays from a HDF5 file with a "flat" layout.
+    Each array is stored as a separate HDF ``Dataset`` because their shapes (numbers of frames) may vary.
+    ``storage_path`` corresponds to the HDF5 file path;
+    ``storage_key`` for each utterance is the key corresponding to the array (i.e. HDF5 "Group" name).
+    """
     name = 'lilcom_hdf5'
 
     def __init__(self, storage_path: Pathlike, *args, **kwargs):
@@ -149,6 +309,12 @@ class LilcomHdf5Reader(FeaturesReader):
 
 @register_writer
 class LilcomHdf5Writer(FeaturesWriter):
+    """
+    Writes lilcom-compressed numpy arrays to a HDF5 file with a "flat" layout.
+    Each array is stored as a separate HDF ``Dataset`` because their shapes (numbers of frames) may vary.
+    ``storage_path`` corresponds to the HDF5 file path;
+    ``storage_key`` for each utterance is the key corresponding to the array (i.e. HDF5 "Group" name).
+    """
     name = 'lilcom_hdf5'
 
     def __init__(self, storage_path: Pathlike, tick_power: int = -5, *args, **kwargs):
