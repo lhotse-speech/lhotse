@@ -10,16 +10,18 @@ See https://keithito.com/LJ-Speech-Dataset for more details.
 """
 
 import logging
+import re
 import shutil
 import tarfile
 import urllib.request
 from pathlib import Path
-from typing import Dict, NamedTuple, Optional, Union
+from typing import Dict, List, NamedTuple, Optional, Union
 
 import torchaudio
 
 from lhotse.audio import AudioSource, Recording, RecordingSet
 from lhotse.supervision import SupervisionSegment, SupervisionSet
+from lhotse.features.base import TorchaudioFeatureExtractor
 from lhotse.features import Fbank
 from lhotse.utils import Pathlike
 
@@ -122,8 +124,19 @@ def prepare_ljspeech(
     return {'audio': audio, 'supervisions': supervision}
 
 
-def ljspeech_feature_extractor():
+def feature_extractor() -> TorchaudioFeatureExtractor:
+    """
+    Set up the feature extractor for TTS task.
+    :return: A feature extractor with custom parameters.
+    """
     feature_extractor = Fbank()
     feature_extractor.config.num_mel_bins = 80
 
     return feature_extractor
+
+
+def text_normalizer(segment: SupervisionSegment) -> None:
+    segment.text = re.sub(r'[^\w !?]', '', segment.text)
+    segment.text = re.sub(r'^\s+', '', segment.text)
+    segment.text = re.sub(r'\s+$', '', segment.text)
+    segment.text = re.sub(r'\s+', ' ', segment.text)

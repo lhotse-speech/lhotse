@@ -11,6 +11,19 @@ def external_supervision_set():
     return SupervisionSet.from_json('test/fixtures/supervision.json')
 
 
+def test_supervision_transform(external_supervision_set):
+    def remove_spaces(segment: SupervisionSegment):
+        if segment.text is None:
+            return
+        segment.text = segment.text.replace(' ', '')
+
+    external_supervision_set.modify(remove_spaces)
+
+    for s in external_supervision_set:
+        if s.text is not None:
+            assert ' ' not in s.text
+
+
 def test_supervision_segment_with_full_metadata(external_supervision_set):
     segment = external_supervision_set['segment-1']
     assert 'segment-1' == segment.id

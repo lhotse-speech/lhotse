@@ -12,14 +12,6 @@ from lhotse.utils import Pathlike
 EPS = 1e-8
 
 
-def text_to_tokens(text: str) -> List[str]:
-    text = re.sub(r'[^\w !?]', '', text)
-    text = re.sub(r'^\s+', '', text)
-    text = re.sub(r'\s+$', '', text)
-    text = re.sub(r'\s+', ' ', text)
-    return list(text.upper())
-
-
 class SpeechSynthesisDataset(Dataset):
     """
     The PyTorch Dataset for the speech synthesis task.
@@ -51,7 +43,7 @@ class SpeechSynthesisDataset(Dataset):
             if len(cut.supervisions) > 1:
                 logging.warning(f'Cut with multiple supervisions is not supported for TTS: {cut.recording_id}.')
                 continue
-            tokens = text_to_tokens(cut.supervisions[0].text)
+            tokens = list(cut.supervisions[0].text)
             self.token_set.update(set(tokens))
             self.id_to_tokens[cut.id] = tokens
 

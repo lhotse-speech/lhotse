@@ -75,6 +75,15 @@ class SupervisionSet(JsonMixin, YamlMixin):
         """
         return SupervisionSet.from_segments(seg for seg in self if predicate(seg))
 
+    def modify(self, process: Callable[[SupervisionSegment], None]) -> None:
+        """
+        Modify the SupervisionSegments by `process`.
+
+        :param process: a function that modifies a supervision as an argument.
+        """
+        for segment in self:
+            process(segment)
+
     def find(
             self,
             recording_id: str,

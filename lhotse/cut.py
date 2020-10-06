@@ -1152,6 +1152,16 @@ class CutSet(JsonMixin, YamlMixin):
     def with_recording_path_prefix(self, path: Pathlike) -> 'CutSet':
         return CutSet.from_cuts(c.with_recording_path_prefix(path) for c in self)
 
+    def apply_supervision_modifications(self, process_supervision: Callable[[SupervisionSegment], None]) -> None:
+        """
+        Modify the SupervisionSegments by `process_supervision` in this CutSet.
+
+        :param process_supervision: a function that modifies a supervision as an argument.
+        """
+        for cut in self:
+            for segment in cut.supervisions:
+                process_supervision(segment)
+
     def __contains__(self, item: Union[str, Cut, MixedCut]) -> bool:
         if isinstance(item, str):
             return item in self.cuts
