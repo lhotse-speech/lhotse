@@ -1,3 +1,4 @@
+import logging
 import re
 from pathlib import Path
 from typing import Dict, List, Optional
@@ -15,7 +16,7 @@ def text_to_tokens(text: str) -> List[str]:
     text = re.sub(r'[^\w !?]', '', text)
     text = re.sub(r'^\s+', '', text)
     text = re.sub(r'\s+$', '', text)
-    text = re.sub(' +', ' ', text)
+    text = re.sub(r'\s+', ' ', text)
     return list(text.upper())
 
 
@@ -41,12 +42,15 @@ class SpeechSynthesisDataset(Dataset):
         super().__init__()
         self.cuts = cuts
         self.root_dir = Path(root_dir) if root_dir else None
-        self.cut_ids = list(self.cuts.cuts.keys())
+        self.cut_ids = list(self.cuts.ids)
 
         # generate tokens from text
         self.id_to_tokens = {}
         self.token_set = set()
         for cut in cuts:
+            if len(cut.supervisions) > 1:
+                logging.warning(f'Cut with multiple supervisions is not supported for TTS: {cut.recording_id}.')
+                continue
             tokens = text_to_tokens(cut.supervisions[0].text)
             self.token_set.update(set(tokens))
             self.id_to_tokens[cut.id] = tokens
@@ -57,7 +61,6 @@ class SpeechSynthesisDataset(Dataset):
 
         features = torch.from_numpy(cut.load_features())
         audio = torch.from_numpy(cut.load_audio())
-        assert len(cut.supervisions) == 1, "SpeechSynthesisDataset does not support multiple supervisions yet."
         assert cut.id in self.id_to_tokens
         return {
             'audio': audio,
@@ -69,5 +72,5 @@ class SpeechSynthesisDataset(Dataset):
         return len(self.cut_ids)
 
     @property
-    def targets(self) -> List[str]:
+    def vocabulary(self) -> List[str]:
         return sorted(list(self.token_set))
