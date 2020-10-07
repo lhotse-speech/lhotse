@@ -575,4 +575,3 @@ def store_feature_array(
     else:
         np.save(output_features_path, feats, allow_pickle=False)
     return output_features_path
-

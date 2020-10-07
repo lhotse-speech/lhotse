@@ -1,4 +1,3 @@
-import logging
 from pathlib import Path
 from typing import Dict, List, Optional
 
@@ -39,9 +38,7 @@ class SpeechSynthesisDataset(Dataset):
         self.id_to_voc = {}
         self.voc = set()
         for cut in cuts:
-            if len(cut.supervisions) > 1:
-                logging.warning(f'Cut with multiple supervisions is not supported for TTS: {cut.recording_id}.')
-                continue
+            assert len(cut.supervisions) == 1, 'Only the Cuts with single supervision are supported.'
             vocabularies = list(cut.supervisions[0].text)
             self.voc.update(set(vocabularies))
             self.id_to_voc[cut.id] = vocabularies
