@@ -1,7 +1,6 @@
 from abc import ABCMeta, abstractmethod
 from concurrent.futures.process import ProcessPoolExecutor
 from dataclasses import is_dataclass, asdict, dataclass, field
-from functools import partial
 from itertools import chain
 from math import isclose
 from pathlib import Path
@@ -13,7 +12,6 @@ import torch
 from lhotse.audio import Recording
 from lhotse.augmentation import WavAugmenter
 from lhotse.features.io import FeaturesWriter, get_reader
-from lhotse.supervision import SupervisionSegment
 from lhotse.utils import Seconds, Pathlike, load_yaml, save_to_yaml, uuid4, JsonMixin, YamlMixin, fastcopy
 
 
@@ -121,14 +119,10 @@ class FeatureExtractor(metaclass=ABCMeta):
 
         :param samples: a numpy ndarray with the audio samples.
         :param sampling_rate: integer sampling rate of ``samples``.
-        :param output_dir: a path to the directory where the features will be stored.
-            by default, all channels will be used.
+        :param storage: a ``FeaturesWriter`` object that will handle storing the feature matrices.
         :param offset: an offset in seconds for where to start reading the recording - when used for
             ``Cut`` feature extraction, must be equal to ``Cut.start``.
         :param augmenter: an optional ``WavAugmenter`` instance to modify the waveform before feature extraction.
-        :param compress: a bool, whether the saved features should be compressed with ``lilcom``.
-        :param lilcom_tick_power: precision of ``lilcom`` compression - greater negative values (e.g. -8).
-            might be appropriate for non-log space features.
         :return: a ``Features`` manifest item for the extracted feature matrix (it is not written to disk).
         """
         if augmenter is not None:
@@ -145,7 +139,7 @@ class FeatureExtractor(metaclass=ABCMeta):
             num_features=feats.shape[1],
             sampling_rate=sampling_rate,
             storage_type=storage.name,
-            storage_path=storage.storage_path,
+            storage_path=str(storage.storage_path),
             storage_key=storage_key
         )
 
@@ -168,15 +162,12 @@ class FeatureExtractor(metaclass=ABCMeta):
         * return a ``Features`` object with a description of the extracted features and the source data used.
 
         :param recording: a ``Recording`` that specifies what's the input audio.
-        :param output_dir: a path to the directory where the features will be stored.
+        :param storage: a ``FeaturesWriter`` object that will handle storing the feature matrices.
         :param offset: an optional offset in seconds for where to start reading the recording.
         :param duration: an optional duration specifying how much audio to load from the recording.
         :param channels: an optional int or list of ints, specifying the channels;
             by default, all channels will be used.
         :param augmenter: an optional ``WavAugmenter`` instance to modify the waveform before feature extraction.
-        :param compress: a bool, whether the saved features should be compressed with ``lilcom``.
-        :param lilcom_tick_power: precision of ``lilcom`` compression - greater negative values (e.g. -8).
-            might be appropriate for non-log space features.
         :return: a ``Features`` manifest item for the extracted feature matrix.
         """
         samples = recording.load_audio(
@@ -201,7 +192,7 @@ class FeatureExtractor(metaclass=ABCMeta):
             num_features=feats.shape[1],
             sampling_rate=recording.sampling_rate,
             storage_type=storage.name,
-            storage_path=storage.storage_path,
+            storage_path=str(storage.storage_path),
             storage_key=storage_key
         )
 
@@ -336,10 +327,9 @@ class Features:
             start: Optional[Seconds] = None,
             duration: Optional[Seconds] = None,
     ) -> np.ndarray:
-        # Load the features from the storage
         # noinspection PyArgumentList
         storage = get_reader(self.storage_type)(self.storage_path)
-        features = storage.read(self.storage_key)
+        left_offset_frames, right_offset_frames = 0, None
 
         if start is None:
             start = self.start
@@ -349,19 +339,24 @@ class Features:
             raise ValueError(f"Cannot load features for recording {self.recording_id} starting from {start}s. "
                              f"The available range is ({self.start}, {self.end}) seconds.")
         if not isclose(start, self.start):
-            frames_to_trim = round((start - self.start) / self.frame_shift)
-            features = features[frames_to_trim:, :]
+            left_offset_frames = round((start - self.start) / self.frame_shift)
 
         # Right trim
         end = start + duration if duration is not None else None
         if duration is not None and not isclose(end, self.end):
-            frames_to_trim = round((self.end - end) / self.frame_shift)
-            # When duration is specified and very close to the original duration, frames_to_trim can be zero;
+            # Note the "minus" sign below before round - we're slicing a numpy array, e.g. a[20:-100]
+            right_offset_frames = -round((self.end - end) / self.frame_shift)
+            # When duration is specified and very close to the original duration, right_offset_frames can be zero;
             # the conditional below is a safe-guard against these cases.
-            if frames_to_trim:
-                features = features[:-frames_to_trim, :]
+            if right_offset_frames == 0:
+                right_offset_frames = None
 
-        return features
+        # Load and return the features (subset) from the storage
+        return storage.read(
+            self.storage_key,
+            left_offset_frames=left_offset_frames,
+            right_offset_frames=right_offset_frames
+        )
 
     def with_path_prefix(self, path: Pathlike) -> 'Features':
         return fastcopy(self, storage_path=str(Path(path) / self.storage_path))
@@ -512,32 +507,23 @@ class FeatureSetBuilder:
     def process_and_store_recordings(
             self,
             recordings: Iterable[Recording],
-            output_manifest: Pathlike,
-            segmentation: Optional[SupervisionSegment] = None,
-            compressed: bool = True,
-            lilcom_tick_power: int = -5,
+            output_manifest: Optional[Pathlike] = None,
             num_jobs: int = 1
     ) -> FeatureSet:
-        do_work = partial(
-            self._process_and_store_recording,
-            segmentation=segmentation,
-            compressed=compressed,
-            lilcom_tick_power=lilcom_tick_power
-        )
         if num_jobs == 1:
             # Avoid spawning subprocesses for single threaded processing
-            feature_infos = list(chain.from_iterable(map(do_work, recordings)))
+            feature_infos = list(chain.from_iterable(map(self._process_and_store_recording, recordings)))
         else:
             with ProcessPoolExecutor(num_jobs) as ex:
-                feature_infos = list(chain.from_iterable(ex.map(do_work, recordings)))
+                feature_infos = list(chain.from_iterable(ex.map(self._process_and_store_recording, recordings)))
         feature_set = FeatureSet.from_features(feature_infos)
-        feature_set.to_json(Path(output_manifest) / 'feature_manifest.json.gz')
+        if output_manifest is not None:
+            feature_set.to_json(output_manifest)
         return feature_set
 
     def _process_and_store_recording(
             self,
             recording: Recording,
-            segmentation: Optional[SupervisionSegment] = None,
     ) -> List[Features]:
         results = []
         for channel in recording.channel_ids:
@@ -558,10 +544,7 @@ def store_feature_array(
     Store ``feats`` array on disk, using ``lilcom`` compression by default.
 
     :param feats: a numpy ndarray containing features.
-    :param output_dir: a path to the directory where the features will be stored.
-    :param compress: a bool, whether the saved features should be compressed with ``lilcom``.
-    :param lilcom_tick_power: precision of ``lilcom`` compression - greater negative values (e.g. -8).
-        might be appropriate for non-log space features.
+    :param storage: a ``FeaturesWriter`` object to use for array storage.
     :return: a path to the file containing the stored array.
     """
     feats_id = str(uuid4())

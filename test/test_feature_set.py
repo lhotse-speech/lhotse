@@ -19,6 +19,7 @@ from lhotse.features import (
     Mfcc,
     Spectrogram, FeatureExtractor
 )
+from lhotse.features.io import LilcomFilesWriter, LilcomHdf5Writer, NumpyFilesWriter, NumpyHdf5Writer
 from lhotse.test_utils import DummyManifest
 from lhotse.utils import Seconds, time_diff_to_num_frames
 
@@ -37,7 +38,6 @@ some_augmentation = None
 )
 def test_feature_extractor(feature_type, exception_expectation):
     # For now, just test that it runs
-    # TODO: test that the output is similar to Kaldi
     with exception_expectation:
         fe = create_default_feature_extractor(feature_type)
         samples, sr = torchaudio.load('test/fixtures/libri/libri-1088-134315-0000.wav')
@@ -135,6 +135,14 @@ def test_load_features_with_default_arguments():
 
 
 @pytest.mark.parametrize(
+    'storage', [
+        LilcomFilesWriter(TemporaryDirectory().name),
+        LilcomHdf5Writer(NamedTemporaryFile().name),
+        NumpyFilesWriter(TemporaryDirectory().name),
+        NumpyHdf5Writer(NamedTemporaryFile().name)
+    ]
+)
+@pytest.mark.parametrize(
     'augmentation', [
         # Test feature set builder with no augmentation
         None,
@@ -145,16 +153,17 @@ def test_load_features_with_default_arguments():
         )
     ]
 )
-def test_feature_set_builder(augmentation):
-    audio_set = RecordingSet.from_json('test/fixtures/audio.json')
+def test_feature_set_builder(storage, augmentation):
+    recordings: RecordingSet = RecordingSet.from_json('test/fixtures/audio.json')
     augmenter = WavAugmenter.create_predefined(augmentation, sampling_rate=8000) if augmentation is not None else None
-    with TemporaryDirectory() as output_dir:
+    extractor = Fbank()
+    with storage:
         builder = FeatureSetBuilder(
-            feature_extractor=Fbank(),
-            output_dir=output_dir,
+            feature_extractor=extractor,
+            storage=storage,
             augmenter=augmenter
         )
-        feature_set = builder.process_and_store_recordings(recordings=audio_set)
+        feature_set = builder.process_and_store_recordings(recordings=recordings)
 
     assert len(feature_set) == 6
 
@@ -168,8 +177,19 @@ def test_feature_set_builder(augmentation):
         assert features.num_frames == round(features.duration / features.frame_shift)
         # assert that num_features is preserved
         assert features.num_features == builder.feature_extractor.config.num_mel_bins
-        # assert that lilcom is the default storate type
-        assert features.storage_type == 'lilcom'
+        # assert that the storage type metadata matches
+        assert features.storage_type == storage.name
+        # assert that the metadata is consistent with the data shapes
+        arr = features.load()
+        assert arr.shape[0] == features.num_frames
+        assert arr.shape[1] == features.num_features
+        # assert that the stored features are the same as the "freshly extracted" features
+        recording = recordings[features.recording_id]
+        expected = extractor.extract(
+            samples=recording.load_audio(channels=features.channels),
+            sampling_rate=recording.sampling_rate
+        )
+        np.testing.assert_almost_equal(arr, expected, decimal=2)
 
     # Assert the properties for recordings of duration 0.5 seconds
     for features in feature_infos[:2]:

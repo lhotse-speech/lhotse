@@ -1,7 +1,7 @@
 from abc import ABCMeta, abstractmethod
 from functools import lru_cache
 from pathlib import Path
-from typing import Type
+from typing import Type, Optional, List
 
 import lilcom
 import numpy as np
@@ -27,6 +27,14 @@ class FeaturesWriter(metaclass=ABCMeta):
         it is stored in the features manifests (metadata) and used to automatically deduce
         the backend when loading the features.
 
+    Each ``FeaturesWriter`` can also be used as a context manager, as some implementations
+    might need to free a resource after the writing is finalized. By default nothing happens
+    in the context manager functions, and this can be modified by the inheriting subclasses.
+
+    Example:
+        with MyWriter('some/path') as storage:
+            extractor.extract_from_recording_and_store(recording, storage)
+
     The features loading must be defined separately in a class inheriting from ``FeaturesReader``.
     """
 
@@ -41,6 +49,10 @@ class FeaturesWriter(metaclass=ABCMeta):
     @abstractmethod
     def write(self, key: str, value: np.ndarray) -> str: ...
 
+    def __enter__(self): return self
+
+    def __exit__(self, *args, **kwargs): ...
+
 
 class FeaturesReader(metaclass=ABCMeta):
     """
@@ -53,7 +65,11 @@ class FeaturesReader(metaclass=ABCMeta):
 
     Each class inheriting from ``FeaturesReader`` must define:
     - the ``read()`` method, which defines the loading operation
-        (accepts the ``key`` to locate the array in the storage and return it);
+        (accepts the ``key`` to locate the array in the storage and return it).
+        The read method should support selecting only a subset of the feature matrix,
+        with the bounds expressed as arguments ``left_offset_frames`` and ``right_offset_frames``.
+        It's up to the Reader implementation to load only the required part or trim it to that
+        range only after loading. It is assumed that the time dimension is always the first one.
     - the ``name()`` property that is unique to this particular storage mechanism -
         it is stored in the features manifests (metadata) and used to automatically deduce
         the backend when loading the features.
@@ -66,11 +82,20 @@ class FeaturesReader(metaclass=ABCMeta):
     def name(self) -> str: ...
 
     @abstractmethod
-    def read(self, key: str) -> np.ndarray: ...
+    def read(
+            self,
+            key: str,
+            left_offset_frames: int = 0,
+            right_offset_frames: Optional[int] = None
+    ) -> np.ndarray: ...
 
 
 READER_BACKENDS = {}
 WRITER_BACKENDS = {}
+
+
+def available_storage_backends() -> List[str]:
+    return sorted(set(READER_BACKENDS).intersection(WRITER_BACKENDS))
 
 
 def register_reader(cls):
@@ -139,9 +164,15 @@ class LilcomFilesReader(FeaturesReader):
         super().__init__()
         self.storage_path = Path(storage_path)
 
-    def read(self, key: str) -> np.ndarray:
+    def read(
+            self,
+            key: str,
+            left_offset_frames: int = 0,
+            right_offset_frames: Optional[int] = None
+    ) -> np.ndarray:
         with open(self.storage_path / key, 'rb') as f:
-            return lilcom.decompress(f.read())
+            arr = lilcom.decompress(f.read())
+        return arr[left_offset_frames: right_offset_frames]
 
 
 @register_writer
@@ -189,8 +220,14 @@ class NumpyFilesReader(FeaturesReader):
         super().__init__()
         self.storage_path = Path(storage_path)
 
-    def read(self, key: str) -> np.ndarray:
-        return np.load(self.storage_path / key, allow_pickle=False)
+    def read(
+            self,
+            key: str,
+            left_offset_frames: int = 0,
+            right_offset_frames: Optional[int] = None
+    ) -> np.ndarray:
+        arr = np.load(self.storage_path / key, allow_pickle=False)
+        return arr[left_offset_frames: right_offset_frames]
 
 
 @register_writer
@@ -255,8 +292,15 @@ class NumpyHdf5Reader(FeaturesReader):
         super().__init__()
         self.hdf = lookup_cache_or_open(storage_path)
 
-    def read(self, key: str) -> np.ndarray:
-        return self.hdf[key]
+    def read(
+            self,
+            key: str,
+            left_offset_frames: int = 0,
+            right_offset_frames: Optional[int] = None
+    ) -> np.ndarray:
+        # (pzelasko): If I understand HDF5/h5py correctly, this implementation reads only
+        # the requested slice of the array into memory - but don't take my word for it.
+        return self.hdf[key][left_offset_frames: right_offset_frames]
 
 
 @register_writer
@@ -312,8 +356,14 @@ class LilcomHdf5Reader(FeaturesReader):
         super().__init__()
         self.hdf = lookup_cache_or_open(storage_path)
 
-    def read(self, key: str) -> np.ndarray:
-        return lilcom.decompress(self.hdf[key].value.tobytes())
+    def read(
+            self,
+            key: str,
+            left_offset_frames: int = 0,
+            right_offset_frames: Optional[int] = None
+    ) -> np.ndarray:
+        arr = lilcom.decompress(self.hdf[key].value.tobytes())
+        return arr[left_offset_frames: right_offset_frames]
 
 
 @register_writer
