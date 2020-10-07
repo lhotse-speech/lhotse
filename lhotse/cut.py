@@ -139,6 +139,17 @@ class CutUtilsMixin:
             mask[st:et] = 1
         return mask
 
+    def map_supervisions(self, transform_fn: Callable[[SupervisionSegment], SupervisionSegment]) -> 'CutUtilsMixin':
+        """
+        Modify the SupervisionSegments by `transform_fn` of this Cut.
+
+        :param transform_fn: a function that modifies a supervision as an argument.
+        :return: a modified Cut.
+        """
+        new_cut = fastcopy(self)
+        new_cut.supervisions = [s.map(transform_fn) for s in new_cut.supervisions]
+        return new_cut
+
 
 @dataclass
 class Cut(CutUtilsMixin):
@@ -1152,15 +1163,14 @@ class CutSet(JsonMixin, YamlMixin):
     def with_recording_path_prefix(self, path: Pathlike) -> 'CutSet':
         return CutSet.from_cuts(c.with_recording_path_prefix(path) for c in self)
 
-    def apply_supervision_modifications(self, process_supervision: Callable[[SupervisionSegment], None]) -> None:
+    def map_supervisions(self, transform_fn: Callable[[SupervisionSegment], SupervisionSegment]) -> 'CutSet':
         """
-        Modify the SupervisionSegments by `process_supervision` in this CutSet.
+        Modify the SupervisionSegments by `transform_fn` in this CutSet.
 
-        :param process_supervision: a function that modifies a supervision as an argument.
+        :param transform_fn: a function that modifies a supervision as an argument.
+        :return: a modified CutSet.
         """
-        for cut in self:
-            for segment in cut.supervisions:
-                process_supervision(segment)
+        return CutSet.from_cuts(cut.map_supervisions(transform_fn) for cut in self)
 
     def __contains__(self, item: Union[str, Cut, MixedCut]) -> bool:
         if isinstance(item, str):

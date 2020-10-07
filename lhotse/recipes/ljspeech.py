@@ -118,8 +118,8 @@ def prepare_ljspeech(
     )
 
     if output_dir is not None:
-        supervision.to_json(output_dir / f'supervisions.json')
-        audio.to_json(output_dir / f'audio.json')
+        supervision.to_json(output_dir / 'supervisions.json')
+        audio.to_json(output_dir / 'audio.json')
 
     return {'audio': audio, 'supervisions': supervision}
 
@@ -136,7 +136,7 @@ def feature_extractor() -> TorchaudioFeatureExtractor:
 
 
 def text_normalizer(segment: SupervisionSegment) -> None:
-    segment.text = re.sub(r'[^\w !?]', '', segment.text)
+    segment.text = re.sub(r'[^\w !?]', '', segment.text.upper())
     segment.text = re.sub(r'^\s+', '', segment.text)
     segment.text = re.sub(r'\s+$', '', segment.text)
     segment.text = re.sub(r'\s+', ' ', segment.text)

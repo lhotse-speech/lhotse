@@ -13,13 +13,11 @@ def external_supervision_set():
 
 def test_supervision_transform(external_supervision_set):
     def remove_spaces(segment: SupervisionSegment):
-        if segment.text is None:
-            return
-        segment.text = segment.text.replace(' ', '')
+        if segment.text is not None:
+            segment.text = segment.text.replace(' ', '')
+        return segment
 
-    external_supervision_set.modify(remove_spaces)
-
-    for s in external_supervision_set:
+    for s in external_supervision_set.map(remove_spaces):
         if s.text is not None:
             assert ' ' not in s.text
 

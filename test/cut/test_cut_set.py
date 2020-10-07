@@ -112,15 +112,13 @@ def test_cut_set_describe_runs(cut_set):
     cut_set.describe()
 
 
-def test_cut_apply_supervision_modifications(cut_set):
+def test_cut_supervision_transform(cut_set):
     def remove_spaces(segment: SupervisionSegment):
-        if segment.text is None:
-            return
-        segment.text = segment.text.replace(' ', '')
+        if segment.text is not None:
+            segment.text = segment.text.replace(' ', '')
+        return segment
 
-    cut_set.apply_supervision_modifications(remove_spaces)
-
-    for cut in cut_set:
+    for cut in cut_set.map_supervisions(remove_spaces):
         for s in cut.supervisions:
             if s.text is not None:
                 assert ' ' not in s.text
