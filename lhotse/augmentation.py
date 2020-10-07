@@ -41,7 +41,7 @@ class WavAugmenter:
             sampling_rate=sampling_rate
         )
 
-    def apply(self, audio: Union[torch.Tensor, np.ndarray]) -> torch.Tensor:
+    def apply(self, audio: Union[torch.Tensor, np.ndarray]) -> np.ndarray:
         """
         Apply the effect chain on the ``audio`` tensor.
 
@@ -70,8 +70,8 @@ class WavAugmenter:
         # and the effect chain includes eg `pitch`
         if torch.isnan(augmented).any() or torch.isinf(augmented).any():
             warnings.warn('NaN/Inf encountered in augmented sox output - returning non-augmented audio.')
-            return audio.clone()
-        return augmented
+            return audio.numpy()
+        return augmented.numpy()
 
 
 _DEFAULT_AUGMENTATIONS = {}
