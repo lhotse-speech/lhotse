@@ -34,15 +34,15 @@ class SpeechSynthesisDataset(Dataset):
         self.root_dir = Path(root_dir) if root_dir else None
         self.cut_ids = list(self.cuts.ids)
 
-        # generate vocabularies from text
-        self.id_to_voc = {}
-        self.voc = set()
+        # generate tokens from text
+        self.id_to_token = {}
+        self.token_set = set()
         for cut in cuts:
             assert len(cut.supervisions) == 1, 'Only the Cuts with single supervision are supported.'
-            vocabularies = list(cut.supervisions[0].text)
-            self.voc.update(set(vocabularies))
-            self.id_to_voc[cut.id] = vocabularies
-        self.voc = sorted(list(self.vocabulary))
+            characters = list(cut.supervisions[0].text)
+            self.token_set.update(set(characters))
+            self.id_to_token[cut.id] = characters
+        self.token_set = sorted(list(self.tokens))
 
     def __getitem__(self, idx: int) -> Dict[str, torch.Tensor]:
         cut_id = self.cut_ids[idx]
@@ -50,16 +50,16 @@ class SpeechSynthesisDataset(Dataset):
 
         features = torch.from_numpy(cut.load_features())
         audio = torch.from_numpy(cut.load_audio())
-        assert cut.id in self.id_to_voc
+        assert cut.id in self.id_to_token
         return {
             'audio': audio,
             'features': features,
-            'tokens': self.id_to_voc[cut.id]
+            'tokens': self.id_to_token[cut.id]
         }
 
     def __len__(self) -> int:
         return len(self.cut_ids)
 
     @property
-    def vocabulary(self) -> List[str]:
-        return self.voc
+    def tokens(self) -> List[str]:
+        return self.token_set
