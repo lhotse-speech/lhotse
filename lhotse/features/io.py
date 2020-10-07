@@ -13,12 +13,14 @@ class FeaturesWriter(metaclass=ABCMeta):
     """
     ``FeaturesWriter`` defines the interface of how to store numpy arrays in a particular storage backend.
     This backend could either be:
+
     - separate files on a local filesystem;
     - a single file with multiple arrays;
     - cloud storage;
     - etc.
 
     Each class inheriting from ``FeaturesWriter`` must define:
+
     - the ``write()`` method, which defines the storing operation
         (accepts a ``key`` used to place the ``value`` array in the storage);
     - the ``storage_path()`` property, which is either a common directory for the files,
@@ -58,12 +60,14 @@ class FeaturesReader(metaclass=ABCMeta):
     """
     ``FeaturesReader`` defines the interface of how to load numpy arrays from a particular storage backend.
     This backend could either be:
+
     - separate files on a local filesystem;
     - a single file with multiple arrays;
     - cloud storage;
     - etc.
 
     Each class inheriting from ``FeaturesReader`` must define:
+
     - the ``read()`` method, which defines the loading operation
         (accepts the ``key`` to locate the array in the storage and return it).
         The read method should support selecting only a subset of the feature matrix,
@@ -103,6 +107,7 @@ def register_reader(cls):
     Decorator used to add a new ``FeaturesReader`` to Lhotse's registry.
 
     Example:
+
         @register_reader
         class MyFeatureReader(FeatureReader):
             ...
@@ -116,6 +121,7 @@ def register_writer(cls):
     Decorator used to add a new ``FeaturesWriter`` to Lhotse's registry.
 
     Example:
+
         @register_writer
         class MyFeatureWriter(FeatureWriter):
             ...
@@ -129,6 +135,7 @@ def get_reader(name: str) -> Type[FeaturesReader]:
     Find a ``FeaturesReader`` sub-class that corresponds to the provided ``name`` and return its type.
 
     Example:
+
         reader_type = get_reader("lilcom_files")
         reader = reader_type("/storage/features/")
     """
@@ -140,6 +147,7 @@ def get_writer(name: str) -> Type[FeaturesWriter]:
     Find a ``FeaturesWriter`` sub-class that corresponds to the provided ``name`` and return its type.
 
     Example:
+
         writer_type = get_writer("lilcom_files")
         writer = writer_type("/storage/features/")
     """

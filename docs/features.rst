@@ -17,11 +17,14 @@ Storing features
 ****************
 
 Features in Lhotse are stored as numpy matrices with shape ``(num_frames, num_features)``.
-By default, we use `lilcom`_ for lossy compression and reduce the size on the disk approximately by half.
+By default, we use `lilcom`_ for lossy compression and reduce the size on the disk by about 3x.
 The lilcom compression method uses a fixed precision that doesn't depend on the magnitude of the thing being compressed, so it's better suited to log-energy features than energy features.
-For now, we extract the features for the whole recordings, and store them in separate files.
-We retrieve them by loading the whole feature matrix and selecting the relevant region (e.g. specified by a cut).
-Eventually we will look into optimizing the storage to further reduce the I/O.
+We currently support two kinds of storage:
+
+- HDF5 files with multiple feature matrices (recommended)
+- directory with feature matrix per file (not recommended, costly I/O)
+
+We retrieve the arrays by loading the whole feature matrix from disk and selecting the relevant region (e.g. specified by a cut). Therefore it makes sense to cut the recordings first, and then extract the features for them to avoid loading unnecessary data from disk (especially for very long recordings).
 
 There are two types of manifests:
 
@@ -48,6 +51,7 @@ And the corresponding configuration class:
 
 .. autoclass:: lhotse.features.SpectrogramConfig
   :members:
+  :noindex:
 
 The feature matrices manifest is a list of documents.
 These documents contain the information necessary to tie the features to a particular recording: ``start``, ``duration``,
@@ -149,6 +153,26 @@ During the feature-domain mix with a specified signal-to-noise ratio (SNR), we a
 
 Note that we interpret the energy and the SNR in a `power quantity`_ context (as opposed to root-power/field quantities).
 
+Storage backend details
+***********************
+
+Lhotse can be extended with additional storage backends via two abstractions: ``FeaturesWriter`` and ``FeaturesReader``. We currently implement the following writers (and their corresponding readers):
+
+- ``lhotse.features.io.LilcomFilesWriter``
+- ``lhotse.features.io.NumpyFilesWriter``
+- ``lhotse.features.io.LilcomHdf5Writer``
+- ``lhotse.features.io.NumpyHdf5Writer``
+
+The ``FeaturesWriter`` and ``FeaturesReader`` API is as follows:
+
+.. autoclass:: lhotse.features.io.FeaturesWriter
+  :members:
+  :noindex:
+
+.. autoclass:: lhotse.features.io.FeaturesReader
+  :members:
+  :noindex:
+
 Python usage
 ************
 
@@ -161,20 +185,22 @@ For example:
 
 .. code-block:: python
 
+    from lhotse import RecordingSet, Fbank, LilcomFilesWriter
+
     # Read a RecordingSet from disk
     recording_set = RecordingSet.from_yaml('audio.yml')
     # Create a log Mel energy filter bank feature extractor with default settings
     feature_extractor = Fbank()
     # Create a feature set builder that uses this extractor and stores the results in a directory called 'features'
-    builder = FeatureSetBuilder(feature_extractor=feature_extractor, output_dir='features/')
-    # Extract the features using 8 parallel processes, compress, and store them on in 'features/storage/' directory.
-    # Then, return the feature manifest object, which is also compressed and
-    # stored in 'features/feature_manifest.yml.gz'
-    feature_set = builder.process_and_store_recordings(
-        recordings=recording_set,
-        compressed=True,
-        num_jobs=8
-    )
+    with LilcomFilesWriter('features') as storage:
+        builder = FeatureSetBuilder(feature_extractor=feature_extractor, storage=storage)
+        # Extract the features using 8 parallel processes, compress, and store them on in 'features/storage/' directory.
+        # Then, return the feature manifest object, which is also compressed and
+        # stored in 'features/feature_manifest.json.gz'
+        feature_set = builder.process_and_store_recordings(
+            recordings=recording_set,
+            num_jobs=8
+        )
 
 CLI usage
 *********
@@ -184,7 +210,7 @@ An equivalent example using the terminal:
 .. code-block:: console
 
     lhotse write-default-feature-config feat-config.yml
-    lhotse make-feats -j 8 --compressed -f feat-config.yml audio.yml features/
+    lhotse make-feats -j 8 --storage-type lilcom_files -f feat-config.yml audio.yml features/
 
 
 Kaldi compatibility caveats
