@@ -21,8 +21,8 @@ By default, we use `lilcom`_ for lossy compression and reduce the size on the di
 The lilcom compression method uses a fixed precision that doesn't depend on the magnitude of the thing being compressed, so it's better suited to log-energy features than energy features.
 We currently support two kinds of storage:
 
-- HDF5 files with multiple feature matrices (recommended)
-- directory with feature matrix per file (not recommended, costly I/O)
+- HDF5 files with multiple feature matrices
+- directory with feature matrix per file
 
 We retrieve the arrays by loading the whole feature matrix from disk and selecting the relevant region (e.g. specified by a cut). Therefore it makes sense to cut the recordings first, and then extract the features for them to avoid loading unnecessary data from disk (especially for very long recordings).
 
