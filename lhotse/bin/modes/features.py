@@ -81,7 +81,6 @@ def extract(
     feature_set_builder = FeatureSetBuilder(
         feature_extractor=feature_extractor,
         output_dir=output_dir,
-        root_dir=root_dir,
         augmenter=augmenter
     )
     feature_set_builder.process_and_store_recordings(
