@@ -82,7 +82,8 @@ def test_feature_set_serialization(format, compressed):
                 num_features=20,
                 sampling_rate=16000,
                 storage_type='lilcom',
-                storage_path='/irrelevant/path.llc'
+                storage_path='/irrelevant/',
+                storage_key='path.llc'
             )
         ]
     )
@@ -299,10 +300,11 @@ def test_feature_set_prefix_path():
             num_features=40,
             sampling_rate=16000,
             storage_type='lilcom',
-            storage_path='feats/12345.llc',
+            storage_path='feats/',
+            storage_key='12345.llc',
             start=0,
             duration=10
         )
     ])
     for feat in features.with_path_prefix('/data'):
-        assert feat.storage_path == '/data/feats/12345.llc'
+        assert feat.storage_path == '/data/feats'

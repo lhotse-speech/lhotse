@@ -300,12 +300,13 @@ class Features:
     # e.g. 'lilcom_files', 'numpy_files', 'lilcom_hdf5'
     storage_type: str
 
-    # Storage path is either the path to some kind of archive (like HDF5 file) or an individual feature file.
+    # Storage path is either the path to some kind of archive (like HDF5 file) or a path
+    # to a directory holding files with feature matrices (exact semantics depend on storage_type).
     storage_path: str
 
-    # Storage key is optional: for array-per-file storage, it is not needed.
-    # For multiple-arrays-per-archive storage, it pinpoints the feature matrix location inside the archive.
-    storage_key: Optional[str] = None
+    # Storage key is either the key used to retrieve a feautre matrix from an archive like HDF5,
+    # or the name of the file in a directory (exact semantics depend on the storage_type).
+    storage_key: str
 
     # Information which recording and channels were used to extract the features.
     # When ``recording_id`` and ``channels`` are ``None``, it means that the

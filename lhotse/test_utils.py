@@ -48,8 +48,9 @@ def dummy_features(unique_id: int) -> Features:
         num_frames=100,
         num_features=20,
         sampling_rate=16000,
-        storage_type='lilcom',
-        storage_path='irrelevant'
+        storage_type='irrelevant',
+        storage_path='irrelevant',
+        storage_key='irrelevant'
     )
 
 
