@@ -3,8 +3,7 @@ from tempfile import NamedTemporaryFile
 import pytest
 
 from lhotse.supervision import SupervisionSegment, SupervisionSet
-from lhotse.utils import fastcopy
-from lhotse.test_utils import DummyManifest
+from lhotse.test_utils import DummyManifest, remove_spaces_from_segment_text
 
 
 @pytest.fixture
@@ -13,12 +12,7 @@ def external_supervision_set():
 
 
 def test_supervision_transform(external_supervision_set):
-    def remove_spaces(segment):
-        if segment.text is None:
-            return segment
-        return fastcopy(segment, text=segment.text.replace(' ', ''))
-
-    for s in external_supervision_set.map(remove_spaces):
+    for s in external_supervision_set.map(remove_spaces_from_segment_text):
         if s.text is not None:
             assert ' ' not in s.text
 

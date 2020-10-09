@@ -5,7 +5,7 @@ import pytest
 from lhotse import SupervisionSegment, Features, Recording
 from lhotse.audio import AudioSource
 from lhotse.cut import Cut, CutSet, MixedCut, MixTrack
-from lhotse.utils import fastcopy
+from lhotse.test_utils import remove_spaces_from_segment_text
 
 
 @pytest.fixture
@@ -114,12 +114,7 @@ def test_cut_set_describe_runs(cut_set):
 
 
 def test_cut_supervision_transform(cut_set):
-    def remove_spaces(segment):
-        if segment.text is None:
-            return segment
-        return fastcopy(segment, text=segment.text.replace(' ', ''))
-
-    for cut in cut_set.map_supervisions(remove_spaces):
+    for cut in cut_set.map_supervisions(remove_spaces_from_segment_text):
         for s in cut.supervisions:
             if s.text is not None:
                 assert ' ' not in s.text
