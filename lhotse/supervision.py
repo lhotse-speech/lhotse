@@ -84,7 +84,7 @@ class SupervisionSet(JsonMixin, YamlMixin):
         """
         return SupervisionSet.from_segments(seg for seg in self if predicate(seg))
 
-    def map(self, transform_fn: Callable[[SupervisionSegment], None]) -> 'SupervisionSet':
+    def map(self, transform_fn: Callable[[SupervisionSegment], SupervisionSegment]) -> 'SupervisionSet':
         """
         Modify the SupervisionSegments by `transform_fn`.
 
