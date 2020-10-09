@@ -32,4 +32,4 @@ You can create a dataset with both clean and augmented features by combining dif
     lhotse feat extract -a reverb audio.yml reverb_feats/
     lhotse yaml combine {clean,pitch,reverb}_feats/feature_manifest.yml.gz combined_feats.yml
 
-.. _WavAugment: link: https://github.com/facebookresearch/WavAugment
+.. _WavAugment: https://github.com/facebookresearch/WavAugment
