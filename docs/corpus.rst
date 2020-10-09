@@ -151,6 +151,7 @@ Currently supported corpora:
 
 - AMI :func:`lhotse.recipes.prepare_ami`
 - English Broadcast News 1997 :func:`lhotse.recipes.prepare_broadcast_news`
+- Full or Mini LibriSpeech :func:`lhotse.recipes.prepare_librispeech`
+- LJ Speech :func:`lhotse.recipes.ljspeech`
 - Mini LibriMix :func:`lhotse.recipes.prepare_librimix`
-- Mini LibriSpeech :func:`lhotse.recipes.prepare_mini_librispeech`
 - Switchboard :func:`lhotse.recipes.prepare_switchboard`

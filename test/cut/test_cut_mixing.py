@@ -5,6 +5,7 @@ import pytest
 
 from lhotse.cut import CutSet, MixedCut
 from lhotse.supervision import SupervisionSegment
+from lhotse.test_utils import remove_spaces_from_segment_text
 
 
 # Note:
@@ -64,6 +65,12 @@ def test_mixed_cut_load_features_unmixed(mixed_feature_cut):
     feats = mixed_feature_cut.load_features(mixed=False)
     assert feats.shape[0] == 2
     assert feats.shape[1] == 1360
+
+
+def test_mixed_cut_map_supervisions(mixed_feature_cut):
+    for s in mixed_feature_cut.map_supervisions(remove_spaces_from_segment_text).supervisions:
+        if s.text is not None:
+            assert ' ' not in s.text
 
 
 @pytest.fixture

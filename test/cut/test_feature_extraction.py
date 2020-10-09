@@ -128,4 +128,3 @@ def test_extract_and_store_features_from_cut_set(cut_set, executor, mix_eagerly)
         arr = cuts[1].load_features()
         assert arr.shape[0] == 300
         assert arr.shape[1] == extractor.feature_dim(cuts[0].sampling_rate)
-

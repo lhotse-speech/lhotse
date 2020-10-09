@@ -1,4 +1,5 @@
-"""The data prepare recipe for the AMI Meeting Corpus.
+"""
+The data prepare recipe for the AMI Meeting Corpus.
 
 The AMI Meeting Corpus consists of 100 hours of meeting recordings. The recordings use a range of signals
 synchronized to a common timeline. These include close-talking and far-field microphones, individual and room-view
