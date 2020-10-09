@@ -38,6 +38,15 @@ class SupervisionSegment:
         end_exceeds_by = max(0, self.end - end)
         return fastcopy(self, start=max(0, self.start), duration=self.duration - end_exceeds_by - start_exceeds_by)
 
+    def map(self, transform_fn: Callable[['SupervisionSegment'], 'SupervisionSegment']) -> 'SupervisionSegment':
+        """
+        Modify this SupervisionSegment by `transform_fn`.
+
+        :param transform_fn: a function that modifies a supervision as an argument.
+        :return: a modified SupervisionSegment.
+        """
+        return transform_fn(self)
+
     @staticmethod
     def from_dict(data: dict) -> 'SupervisionSegment':
         return SupervisionSegment(**data)
@@ -74,6 +83,15 @@ class SupervisionSet(JsonMixin, YamlMixin):
         :return: a filtered SupervisionSet.
         """
         return SupervisionSet.from_segments(seg for seg in self if predicate(seg))
+
+    def map(self, transform_fn: Callable[[SupervisionSegment], SupervisionSegment]) -> 'SupervisionSet':
+        """
+        Modify the SupervisionSegments by `transform_fn`.
+
+        :param transform_fn: a function that modifies a supervision as an argument.
+        :return: a modified SupervisionSet.
+        """
+        return SupervisionSet.from_segments(s.map(transform_fn) for s in self)
 
     def find(
             self,

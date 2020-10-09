@@ -336,6 +336,16 @@ class Cut(CutUtilsMixin):
             use_log_energy=self.features.type in ('fbank', 'mfcc') if self.features is not None else False
         ))
 
+    def map_supervisions(self, transform_fn: Callable[[SupervisionSegment], SupervisionSegment]) -> AnyCut:
+        """
+        Modify the SupervisionSegments by `transform_fn` of this Cut.
+
+        :param transform_fn: a function that modifies a supervision as an argument.
+        :return: a modified Cut.
+        """
+        new_cut = fastcopy(self, supervisions=[s.map(transform_fn) for s in self.supervisions])
+        return new_cut
+
     @staticmethod
     def from_dict(data: dict) -> 'Cut':
         features = Features.from_dict(data.pop('features')) if 'features' in data else None
@@ -457,6 +467,15 @@ class PaddingCut(CutUtilsMixin):
             num_features=extractor.feature_dim(self.sampling_rate),
             num_frames=int(round(self.duration / extractor.frame_shift, ndigits=3))
         )
+
+    def map_supervisions(self, transform_fn: Callable[[Any], Any]) -> AnyCut:
+        """
+        Just for consistency with `Cut` and `MixedCut`.
+
+        :param transform_fn: a dummy function that would be never called actually.
+        :return: the PaddingCut itself.
+        """
+        return self
 
     @staticmethod
     def from_dict(data: dict) -> 'PaddingCut':
@@ -779,6 +798,18 @@ class MixedCut(CutUtilsMixin):
                 for track in self.tracks
             ]
             return MixedCut(id=self.id, tracks=new_tracks)
+
+    def map_supervisions(self, transform_fn: Callable[[SupervisionSegment], SupervisionSegment]) -> AnyCut:
+        """
+        Modify the SupervisionSegments by `transform_fn` of this MixedCut.
+
+        :param transform_fn: a function that modifies a supervision as an argument.
+        :return: a modified MixedCut.
+        """
+        new_mixed_cut = fastcopy(self)
+        for track in new_mixed_cut.tracks:
+            track.cut.supervisions = [segment.map(transform_fn) for segment in track.cut.supervisions]
+        return new_mixed_cut
 
     @staticmethod
     def from_dict(data: dict) -> 'MixedCut':
@@ -1151,6 +1182,15 @@ class CutSet(JsonMixin, YamlMixin):
 
     def with_recording_path_prefix(self, path: Pathlike) -> 'CutSet':
         return CutSet.from_cuts(c.with_recording_path_prefix(path) for c in self)
+
+    def map_supervisions(self, transform_fn: Callable[[SupervisionSegment], SupervisionSegment]) -> 'CutSet':
+        """
+        Modify the SupervisionSegments by `transform_fn` in this CutSet.
+
+        :param transform_fn: a function that modifies a supervision as an argument.
+        :return: a modified CutSet.
+        """
+        return CutSet.from_cuts(cut.map_supervisions(transform_fn) for cut in self)
 
     def __contains__(self, item: Union[str, Cut, MixedCut]) -> bool:
         if isinstance(item, str):
