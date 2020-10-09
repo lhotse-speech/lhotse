@@ -15,7 +15,7 @@ import shutil
 import tarfile
 import urllib.request
 from pathlib import Path
-from typing import Dict, List, NamedTuple, Optional, Union
+from typing import Dict, NamedTuple, Optional, Union
 
 import torchaudio
 
@@ -23,7 +23,7 @@ from lhotse.audio import AudioSource, Recording, RecordingSet
 from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.features.base import TorchaudioFeatureExtractor
 from lhotse.features import Fbank
-from lhotse.utils import Pathlike
+from lhotse.utils import Pathlike, fastcopy
 
 
 def download_and_untar(
@@ -135,8 +135,10 @@ def feature_extractor() -> TorchaudioFeatureExtractor:
     return feature_extractor
 
 
-def text_normalizer(segment: SupervisionSegment) -> None:
-    segment.text = re.sub(r'[^\w !?]', '', segment.text.upper())
-    segment.text = re.sub(r'^\s+', '', segment.text)
-    segment.text = re.sub(r'\s+$', '', segment.text)
-    segment.text = re.sub(r'\s+', ' ', segment.text)
+def text_normalizer(segment: SupervisionSegment) -> SupervisionSegment:
+    text = segment.text.upper()
+    text = re.sub(r'[^\w !?]', '', text)
+    text = re.sub(r'^\s+', '', text)
+    text = re.sub(r'\s+$', '', text)
+    text = re.sub(r'\s+', ' ', text)
+    return fastcopy(segment, text=text)

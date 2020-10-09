@@ -38,16 +38,14 @@ class SupervisionSegment:
         end_exceeds_by = max(0, self.end - end)
         return fastcopy(self, start=max(0, self.start), duration=self.duration - end_exceeds_by - start_exceeds_by)
 
-    def map(self, transform_fn: Callable[['SupervisionSegment'], None]) -> 'SupervisionSegment':
+    def map(self, transform_fn: Callable[['SupervisionSegment'], 'SupervisionSegment']) -> 'SupervisionSegment':
         """
         Modify this SupervisionSegment by `transform_fn`.
 
         :param transform_fn: a function that modifies a supervision as an argument.
         :return: a modified SupervisionSegment.
         """
-        new_segment = fastcopy(self)
-        transform_fn(new_segment)
-        return new_segment
+        return transform_fn(self)
 
     @staticmethod
     def from_dict(data: dict) -> 'SupervisionSegment':

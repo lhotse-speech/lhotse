@@ -146,8 +146,7 @@ class CutUtilsMixin:
         :param transform_fn: a function that modifies a supervision as an argument.
         :return: a modified Cut.
         """
-        new_cut = fastcopy(self)
-        new_cut.supervisions = [s.map(transform_fn) for s in new_cut.supervisions]
+        new_cut = fastcopy(self, supervisions=[s.map(transform_fn) for s in self.supervisions])
         return new_cut
 
 
