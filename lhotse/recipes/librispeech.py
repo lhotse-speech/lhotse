@@ -5,7 +5,7 @@ import tarfile
 import urllib.request
 from collections import defaultdict
 from pathlib import Path
-from typing import Dict, NamedTuple, Optional, Union
+from typing import Dict, NamedTuple, Optional, Tuple, Union
 
 import torchaudio
 
@@ -13,17 +13,36 @@ from lhotse.audio import AudioSource, Recording, RecordingSet
 from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import Pathlike
 
-dataset_parts = ('dev-clean-2', 'train-clean-5')
+dataset_parts_full = ('dev-clean', 'dev-other', 'test-clean', 'test-other',
+                      'train-clean-100', 'train-clean-360', 'train-other-500')
+dataset_parts_mini = ('dev-clean-2', 'train-clean-5')
 
 
 def download_and_untar(
         target_dir: Pathlike = '.',
+        dataset_parts: Optional[Tuple[str]] = dataset_parts_mini,
         force_download: Optional[bool] = False,
-        url: Optional[str] = 'http://www.openslr.org/resources/31'
+        base_url: Optional[str] = 'http://www.openslr.org/resources'
 ) -> None:
+    """
+    Downdload and untar the dataset, supporting both LibriSpeech and MiniLibrispeech
+
+    :param target_dir: Pathlike, the path of the dir to storage the dataset.
+    :param dataset_parts: dataset part name, e.g. 'train-clean-100', 'train-clean-5', 'dev-clean'
+    :param force_download: Bool, if True, download the tars no matter if the tars exist.
+    :param base_url: str, the url of the OpenSLR resources.
+    """
+
     target_dir = Path(target_dir)
     target_dir.mkdir(parents=True, exist_ok=True)
     for part in dataset_parts:
+        if part in dataset_parts_full:
+            url = f'{base_url}/12'
+        elif part in dataset_parts_mini:
+            url = f'{base_url}/31'
+        else:
+            logging.warning(f'Invalid dataset part name: {part}')
+            continue
         tar_name = f'{part}.tar.gz'
         tar_path = target_dir / tar_name
         if force_download or not tar_path.is_file():
@@ -43,14 +62,16 @@ class LibriSpeechMetaData(NamedTuple):
     text: str
 
 
-def prepare_mini_librispeech(
+def prepare_librispeech(
         corpus_dir: Pathlike,
+        dataset_parts: Optional[Tuple[str]] = dataset_parts_mini,
         output_dir: Optional[Pathlike] = None
 ) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet]]]:
     """
     Returns the manifests which consist of the Recordings and Supervisions
 
     :param corpus_dir: Pathlike, the path of the data dir.
+    :param dataset_parts: dataset part name, e.g. 'train-clean-100', 'train-clean-5', 'dev-clean'
     :param output_dir: Pathlike, the path where to write the manifests.
     :return: a Dict whose key is the dataset part, and the value is Dicts with the keys 'audio' and 'supervisions'.
     """
