@@ -152,6 +152,20 @@ Currently supported corpora:
 - AMI :func:`lhotse.recipes.prepare_ami`
 - English Broadcast News 1997 :func:`lhotse.recipes.prepare_broadcast_news`
 - Full or Mini LibriSpeech :func:`lhotse.recipes.prepare_librispeech`
-- LJ Speech :func:`lhotse.recipes.ljspeech`
+- LJ Speech :func:`lhotse.recipes.prepare_ljspeech`
 - Mini LibriMix :func:`lhotse.recipes.prepare_librimix`
 - Switchboard :func:`lhotse.recipes.prepare_switchboard`
+
+
+Adding new corpora
+------------------
+
+General pointers:
+
+* Each corpus has a dedicated Python file in ``lhotse/recipes``.
+* For publicly available corpora that can be freely downloaded, we usually define a function called ``download``, ``download_and_untar``, etc.
+* Each data preparation recipe should expose a single function called ``prepare_X``, with X being the name of the corpus, that produces dicts like: ``{'recordings': <RecordingSet>, 'supervisions': <SupervisionSet>}`` for the data in that corpus.
+* When a corpus defines standard split (e.g. train/dev/test), we return a dict with the following structure: ``{'train': {'recordings': <RecordingSet>, 'supervisions': <SupervisionSet>}, 'dev': ...}``
+* Some corpora (like LibriSpeech) come with pre-segmented recordings. In these cases, the :class:`SupervisionSegment` will exactly match the :class:`Recording` duration (and there will likely be exactly one segment corresponding to any recording).
+* Corpora with longer recordings (e.g. conversational, like Switchboard) should have exactly one :class:`Recording` object corresponding to a single conversation/session, that spans its whole duration. Each speech segment in that recording should be represented as a :class:`SupervisionSegment` with the same ``recording_id`` value.
+* Corpora with multiple channels for each session (e.g. AMI) should have a single :class:`Recording` with multiple :class:`AudioSource` objects - each corresponding to a separate channel.

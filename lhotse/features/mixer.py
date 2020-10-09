@@ -40,6 +40,7 @@ class FeatureMixer:
         assert self.reference_energy > 0.0, \
             f"To perform mix, energy must be non-zero and non-negative (got {self.reference_energy})"
         self.padding_value = padding_value
+        self.dtype = self.tracks[0].dtype
 
     @property
     def num_features(self):
@@ -98,14 +99,20 @@ class FeatureMixer:
             for idx in range(len(self.tracks)):
                 padded_track = np.vstack([
                     self.tracks[idx],
-                    self.padding_value * np.ones((mix_num_frames - current_num_frames, self.num_features))
+                    self.padding_value * np.ones(
+                        (mix_num_frames - current_num_frames, self.num_features),
+                        dtype=self.dtype
+                    )
                 ])
                 self.tracks[idx] = padded_track
 
         # When there is an offset, we need to pad before the start of the features we're adding.
         if offset > 0:
             feats_to_add = np.vstack([
-                self.padding_value * np.ones((num_frames_offset, self.num_features)),
+                self.padding_value * np.ones(
+                    (num_frames_offset, self.num_features),
+                    dtype=self.dtype
+                ),
                 feats_to_add
             ])
 
@@ -116,7 +123,10 @@ class FeatureMixer:
         if incoming_num_frames < mix_num_frames:
             feats_to_add = np.vstack([
                 feats_to_add,
-                self.padding_value * np.ones((mix_num_frames - incoming_num_frames, self.num_features))
+                self.padding_value * np.ones(
+                    (mix_num_frames - incoming_num_frames, self.num_features),
+                    dtype=self.dtype
+                )
             ])
 
         # When SNR is requested, find what gain is needed to satisfy the SNR

@@ -268,7 +268,7 @@ class TorchaudioFeatureExtractor(FeatureExtractor):
         params['frame_length'] *= 1000.0
         if not isinstance(samples, torch.Tensor):
             samples = torch.from_numpy(samples)
-        features = self.feature_fn(samples, **params)
+        features = self.feature_fn(samples, **params).to(torch.float32)
         return features.numpy()
 
     @property
@@ -474,6 +474,9 @@ class FeatureSet(JsonMixin, YamlMixin):
         )
         features = feature_info.load(start=start, duration=duration)
         return features
+
+    def __repr__(self) -> str:
+        return f'FeatureSet(len={len(self)})'
 
     def __iter__(self) -> Iterable[Features]:
         return iter(self.features)
