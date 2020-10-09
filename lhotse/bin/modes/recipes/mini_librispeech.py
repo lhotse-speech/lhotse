@@ -1,7 +1,7 @@
 import click
 
 from lhotse.bin.modes import obtain, prepare
-from lhotse.recipes.mini_librispeech import download_and_untar, prepare_mini_librispeech
+from lhotse.recipes.librispeech import download_and_untar, prepare_librispeech
 from lhotse.utils import Pathlike
 
 __all__ = ['mini_librispeech']
@@ -15,7 +15,7 @@ def mini_librispeech(
         output_dir: Pathlike
 ):
     """Mini Librispeech ASR data preparation."""
-    prepare_mini_librispeech(corpus_dir, output_dir)
+    prepare_librispeech(corpus_dir, output_dir=output_dir)
 
 
 @obtain.command(context_settings=dict(show_default=True))
