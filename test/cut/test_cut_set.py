@@ -5,6 +5,7 @@ import pytest
 from lhotse import SupervisionSegment, Features, Recording
 from lhotse.audio import AudioSource
 from lhotse.cut import Cut, CutSet, MixedCut, MixTrack
+from lhotse.test_utils import remove_spaces_from_segment_text
 
 
 @pytest.fixture
@@ -110,6 +111,13 @@ def test_trim_to_unsupervised_segments():
 
 def test_cut_set_describe_runs(cut_set):
     cut_set.describe()
+
+
+def test_cut_supervision_transform(cut_set):
+    for cut in cut_set.map_supervisions(remove_spaces_from_segment_text):
+        for s in cut.supervisions:
+            if s.text is not None:
+                assert ' ' not in s.text
 
 
 @pytest.fixture
