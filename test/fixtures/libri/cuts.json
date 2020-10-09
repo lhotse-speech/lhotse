@@ -10,10 +10,11 @@
       "num_frames": 1604,
       "num_features": 40,
       "sampling_rate": 16000,
-      "storage_type": "lilcom",
-      "storage_path": "test/fixtures/libri/storage/fc37eb69-43a8-4e6f-a302-646a76606b38.llc",
       "start": 0,
       "duration": 16.04,
+      "storage_type": "lilcom_files",
+      "storage_path": "test/fixtures/libri/storage",
+      "storage_key": "30c2440c-93cb-4e83-b382-f2a59b3859b4.llc",
       "recording_id": "recording-1",
       "channels": 0
     },

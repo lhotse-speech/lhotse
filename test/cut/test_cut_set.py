@@ -123,7 +123,10 @@ def test_cut_supervision_transform(cut_set):
 @pytest.fixture
 def cut_with_relative_paths():
     return Cut('cut', 0, 10, 0,
-               features=Features('fbank', 1000, 40, 8000, 'lilcom', 'feats.llc', 0, 10),
+               features=Features(type='fbank', num_frames=1000, num_features=40, sampling_rate=8000,
+                                 storage_type='lilcom_files', storage_path='storage_dir', storage_key='feats.llc',
+                                 start=0,
+                                 duration=10),
                recording=Recording('rec', [AudioSource('file', [0], 'audio.wav')], 8000, 80000, 10.0)
                )
 
@@ -133,7 +136,7 @@ def test_cut_set_prefix(cut_with_relative_paths):
     for c in cut_set.with_recording_path_prefix('/data'):
         assert c.recording.sources[0].source == '/data/audio.wav'
     for c in cut_set.with_features_path_prefix('/data'):
-        assert c.features.storage_path == '/data/feats.llc'
+        assert c.features.storage_path == '/data/storage_dir'
 
 
 def test_mixed_cut_set_prefix(cut_with_relative_paths):
@@ -143,7 +146,7 @@ def test_mixed_cut_set_prefix(cut_with_relative_paths):
             assert t.cut.recording.sources[0].source == '/data/audio.wav'
     for c in cut_set.with_features_path_prefix('/data'):
         for t in c.tracks:
-            assert t.cut.features.storage_path == '/data/feats.llc'
+            assert t.cut.features.storage_path == '/data/storage_dir'
 
 
 def test_mix_same_recording_channels():
