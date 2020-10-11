@@ -9,7 +9,16 @@ from lhotse.utils import Seconds, Decibels
 class FeatureMixer:
     """
     Utility class to mix multiple feature matrices into a single one.
-    It pads the signals with low energy values to account for differing lengths and offsets.
+    It should be instantiated separately for each mixing session (i.e. each ``MixedCut``
+    will create a separate ``FeatureMixer`` to mix its tracks).
+    It is initialized with a numpy array of features (typically float32)
+    that represents the "reference" signal for the mix.
+    Other signals can be mixed to it with different time offsets and SNRs using the
+    ``add_to_mix`` method.
+    The time offset is relative to the start of the reference signal
+    (only positive values are supported).
+    The SNR is relative to the energy of the signal used to initialize the ``FeatureMixer``.
+
     It relies on the ``FeatureExtractor`` to have defined ``mix`` and ``compute_energy`` methods,
     so that the ``FeatureMixer`` knows how to scale and add two feature matrices together.
     """
@@ -40,6 +49,7 @@ class FeatureMixer:
         assert self.reference_energy > 0.0, \
             f"To perform mix, energy must be non-zero and non-negative (got {self.reference_energy})"
         self.padding_value = padding_value
+        self.dtype = self.tracks[0].dtype
 
     @property
     def num_features(self):
@@ -98,14 +108,20 @@ class FeatureMixer:
             for idx in range(len(self.tracks)):
                 padded_track = np.vstack([
                     self.tracks[idx],
-                    self.padding_value * np.ones((mix_num_frames - current_num_frames, self.num_features))
+                    self.padding_value * np.ones(
+                        (mix_num_frames - current_num_frames, self.num_features),
+                        dtype=self.dtype
+                    )
                 ])
                 self.tracks[idx] = padded_track
 
         # When there is an offset, we need to pad before the start of the features we're adding.
         if offset > 0:
             feats_to_add = np.vstack([
-                self.padding_value * np.ones((num_frames_offset, self.num_features)),
+                self.padding_value * np.ones(
+                    (num_frames_offset, self.num_features),
+                    dtype=self.dtype
+                ),
                 feats_to_add
             ])
 
@@ -116,7 +132,10 @@ class FeatureMixer:
         if incoming_num_frames < mix_num_frames:
             feats_to_add = np.vstack([
                 feats_to_add,
-                self.padding_value * np.ones((mix_num_frames - incoming_num_frames, self.num_features))
+                self.padding_value * np.ones(
+                    (mix_num_frames - incoming_num_frames, self.num_features),
+                    dtype=self.dtype
+                )
             ])
 
         # When SNR is requested, find what gain is needed to satisfy the SNR

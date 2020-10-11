@@ -246,6 +246,9 @@ class RecordingSet(JsonMixin, YamlMixin):
     def duration(self, recording_id: str) -> Seconds:
         return self.recordings[recording_id].duration
 
+    def __repr__(self) -> str:
+        return f'RecordingSet(len={len(self)})'
+
     def __getitem__(self, recording_id_or_index: Union[int, str]) -> Recording:
         if isinstance(recording_id_or_index, str):
             return self.recordings[recording_id_or_index]
@@ -264,19 +267,28 @@ class RecordingSet(JsonMixin, YamlMixin):
 
 class AudioMixer:
     """
-    Utility class to mix multiple raw audio into a single one.
-    It pads the signals with zero samples for differing lengths and offsets.
+    Utility class to mix multiple waveforms into a single one.
+    It should be instantiated separately for each mixing session (i.e. each ``MixedCut``
+    will create a separate ``AudioMixer`` to mix its tracks).
+    It is initialized with a numpy array of audio samples (typically float32 in [-1, 1] range)
+    that represents the "reference" signal for the mix.
+    Other signals can be mixed to it with different time offsets and SNRs using the
+    ``add_to_mix`` method.
+    The time offset is relative to the start of the reference signal
+    (only positive values are supported).
+    The SNR is relative to the energy of the signal used to initialize the ``AudioMixer``.
     """
 
     def __init__(self, base_audio: np.ndarray, sampling_rate: int):
         """
-        :param base_audio: The raw audio used to initialize the AudioMixer are a point of reference
-            in terms of offset for all audios mixed into them.
+        :param base_audio: A numpy array with the audio samples for the base signal
+            (all the other signals will be mixed to it).
         :param sampling_rate: Sampling rate of the audio.
         """
         self.tracks = [base_audio]
         self.sampling_rate = sampling_rate
         self.reference_energy = audio_energy(base_audio)
+        self.dtype = self.tracks[0].dtype
 
     @property
     def unmixed_audio(self) -> np.ndarray:
@@ -313,7 +325,6 @@ class AudioMixer:
         assert offset >= 0.0, "Negative offset in mixing is not supported."
 
         reference_audio = self.tracks[0]
-        dtype = reference_audio.dtype
         num_samples_offset = round(offset * self.sampling_rate)
         current_num_samples = reference_audio.shape[1]
 
@@ -322,7 +333,7 @@ class AudioMixer:
         # When there is an offset, we need to pad before the start of the audio we're adding.
         if offset > 0:
             audio_to_add = np.hstack([
-                np.zeros((1, num_samples_offset), dtype),
+                np.zeros((1, num_samples_offset), self.dtype),
                 audio_to_add
             ])
 
@@ -337,7 +348,7 @@ class AudioMixer:
             for idx in range(len(self.tracks)):
                 padded_audio = np.hstack([
                     self.tracks[idx],
-                    np.zeros((1, mix_num_samples - current_num_samples), dtype)
+                    np.zeros((1, mix_num_samples - current_num_samples), self.dtype)
                 ])
                 self.tracks[idx] = padded_audio
 
@@ -348,7 +359,7 @@ class AudioMixer:
         if incoming_num_samples < mix_num_samples:
             audio_to_add = np.hstack([
                 audio_to_add,
-                np.zeros((1, mix_num_samples - incoming_num_samples), dtype)
+                np.zeros((1, mix_num_samples - incoming_num_samples), self.dtype)
             ])
 
         # When SNR is requested, find what gain is needed to satisfy the SNR

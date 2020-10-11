@@ -115,11 +115,11 @@ class CutUtilsMixin:
         """
         assert self.has_features, f"No features available. " \
                                   f"Can't compute supervisions feature mask for cut with ID: {self.id}."
-        mask = np.zeros(self.num_frames)
+        mask = np.zeros(self.num_frames, dtype=np.float32)
         for supervision in self.supervisions:
             st = round(supervision.start / self.frame_shift) if supervision.start > 0 else 0
             et = round(supervision.end / self.frame_shift) if supervision.end < self.duration else self.num_frames
-            mask[st:et] = 1
+            mask[st:et] = 1.0
         return mask
 
     def supervisions_audio_mask(self) -> np.ndarray:
@@ -129,7 +129,7 @@ class CutUtilsMixin:
         """
         assert self.has_recording, f"No recording available. " \
                                    f"Can't compute supervisions audio mask for cut with ID: {self.id}."
-        mask = np.zeros(self.num_samples)
+        mask = np.zeros(self.num_samples, dtype=np.float32)
         for supervision in self.supervisions:
             st = round(supervision.start * self.sampling_rate) if supervision.start > 0 else 0
             et = (
@@ -137,7 +137,7 @@ class CutUtilsMixin:
                 if supervision.end < self.duration
                 else self.duration * self.sampling_rate
             )
-            mask[st:et] = 1
+            mask[st:et] = 1.0
         return mask
 
 
@@ -326,13 +326,15 @@ class Cut(CutUtilsMixin):
         """
         if duration <= self.duration:
             return self
-        padding_duration = duration - self.duration
+        total_num_frames = round(duration / self.frame_shift) if self.has_features else None
+        total_num_samples = round(duration * self.sampling_rate) if self.has_recording else None
+        padding_duration = round(duration - self.duration, ndigits=3)
         return self.append(PaddingCut(
             id=str(uuid4()),
             duration=padding_duration,
             num_features=self.num_features if self.features is not None else None,
-            num_frames=round(padding_duration / self.frame_shift) if self.features is not None else None,
-            num_samples=round(padding_duration * self.sampling_rate) if self.recording is not None else None,
+            num_frames=total_num_frames - self.num_frames if self.features is not None else None,
+            num_samples=total_num_samples - self.num_samples if self.recording is not None else None,
             sampling_rate=self.features.sampling_rate if self.features is not None else self.recording.sampling_rate,
             use_log_energy=self.features.type in ('fbank', 'mfcc') if self.features is not None else False
         ))
@@ -466,7 +468,7 @@ class PaddingCut(CutUtilsMixin):
         return fastcopy(
             self,
             num_features=extractor.feature_dim(self.sampling_rate),
-            num_frames=int(round(self.duration / extractor.frame_shift, ndigits=3))
+            num_frames=round(self.duration / extractor.frame_shift)
         )
 
     def map_supervisions(self, transform_fn: Callable[[Any], Any]) -> AnyCut:
@@ -536,7 +538,7 @@ class MixedCut(CutUtilsMixin):
     @property
     def duration(self) -> Seconds:
         track_durations = (track.offset + track.cut.duration for track in self.tracks)
-        return max(track_durations)
+        return round(max(track_durations), ndigits=3)
 
     @property
     def has_features(self) -> bool:
@@ -654,7 +656,9 @@ class MixedCut(CutUtilsMixin):
         """
         if duration <= self.duration:
             return self
-        padding_duration = duration - self.duration
+        total_num_frames = round(duration / self.frame_shift) if self.has_features else None
+        total_num_samples = round(duration * self.sampling_rate) if self.has_recording else None
+        padding_duration = round(duration - self.duration, ndigits=3)
         return self.append(PaddingCut(
             id=str(uuid4()),
             duration=padding_duration,
@@ -663,13 +667,13 @@ class MixedCut(CutUtilsMixin):
             # from Cuts that have different sampling rates and frame shifts. In that case, we are assuming
             # that we should use the values from the reference cut, i.e. the first one in the mix.
             num_frames=(
-                round(padding_duration / self.tracks[0].cut.frame_shift)
-                if self.tracks[0].cut.has_features
+                total_num_frames - self.num_frames
+                if self.has_features
                 else None
             ),
             num_samples=(
-                round(padding_duration * self.sampling_rate)
-                if self.tracks[0].cut.has_recording
+                total_num_samples - self.num_samples
+                if self.has_recording
                 else None
             ),
             sampling_rate=self.tracks[0].cut.sampling_rate,
@@ -1189,9 +1193,22 @@ class CutSet(JsonMixin, YamlMixin):
         Modify the SupervisionSegments by `transform_fn` in this CutSet.
 
         :param transform_fn: a function that modifies a supervision as an argument.
-        :return: a modified CutSet.
+        :return: a new, modified CutSet.
         """
         return CutSet.from_cuts(cut.map_supervisions(transform_fn) for cut in self)
+
+    def transform_text(self, transform_fn: Callable[[str], str]) -> 'CutSet':
+        """
+        Return a copy of this ``CutSet`` with all ``SupervisionSegments`` text transformed with ``transform_fn``.
+        Useful for text normalization, phonetic transcription, etc.
+
+        :param transform_fn: a function that accepts a string and returns a string.
+        :return: a new, modified CutSet.
+        """
+        return self.map_supervisions(lambda s: s.transform_text(transform_fn))
+
+    def __repr__(self) -> str:
+        return f'CutSet(len={len(self)})'
 
     def __contains__(self, item: Union[str, Cut, MixedCut]) -> bool:
         if isinstance(item, str):

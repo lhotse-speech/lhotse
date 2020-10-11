@@ -113,11 +113,18 @@ def test_cut_set_describe_runs(cut_set):
     cut_set.describe()
 
 
-def test_cut_supervision_transform(cut_set):
+def test_cut_map_supervisions(cut_set):
     for cut in cut_set.map_supervisions(remove_spaces_from_segment_text):
         for s in cut.supervisions:
             if s.text is not None:
                 assert ' ' not in s.text
+
+
+def test_supervision_transform_text(cut_set):
+    for cut in cut_set.transform_text(lambda text: 'dummy'):
+        for s in cut.supervisions:
+            if s.text is not None:
+                assert s.text == 'dummy'
 
 
 @pytest.fixture

@@ -40,12 +40,24 @@ class SupervisionSegment:
 
     def map(self, transform_fn: Callable[['SupervisionSegment'], 'SupervisionSegment']) -> 'SupervisionSegment':
         """
-        Modify this SupervisionSegment by `transform_fn`.
+        Return a copy of the current segment, transformed with ``transform_fn``.
 
-        :param transform_fn: a function that modifies a supervision as an argument.
-        :return: a modified SupervisionSegment.
+        :param transform_fn: a function that takes a segment as input, transforms it and returns a new segment.
+        :return: a modified ``SupervisionSegment``.
         """
         return transform_fn(self)
+
+    def transform_text(self, transform_fn: Callable[[str], str]) -> 'SupervisionSegment':
+        """
+        Return a copy of the current segment with transformed ``text`` field.
+        Useful for text normalization, phonetic transcription, etc.
+
+        :param transform_fn: a function that accepts a string and returns a string.
+        :return: a ``SupervisionSegment`` with adjusted text.
+        """
+        if self.text is None:
+            return self
+        return fastcopy(self, text=transform_fn(self.text))
 
     @staticmethod
     def from_dict(data: dict) -> 'SupervisionSegment':
@@ -86,12 +98,22 @@ class SupervisionSet(JsonMixin, YamlMixin):
 
     def map(self, transform_fn: Callable[[SupervisionSegment], SupervisionSegment]) -> 'SupervisionSet':
         """
-        Modify the SupervisionSegments by `transform_fn`.
+        Map a ``transform_fn`` to the SupervisionSegments and return a new ``SupervisionSet``.
 
         :param transform_fn: a function that modifies a supervision as an argument.
-        :return: a modified SupervisionSet.
+        :return: a new ``SupervisionSet`` with modified segments.
         """
         return SupervisionSet.from_segments(s.map(transform_fn) for s in self)
+
+    def transform_text(self, transform_fn: Callable[[str], str]) -> 'SupervisionSet':
+        """
+        Return a copy of the current ``SupervisionSet`` with the segments having a transformed ``text`` field.
+        Useful for text normalization, phonetic transcription, etc.
+
+        :param transform_fn: a function that accepts a string and returns a string.
+        :return: a ``SupervisionSet`` with adjusted text.
+        """
+        return SupervisionSet.from_segments(s.transform_text(transform_fn) for s in self)
 
     def find(
             self,
@@ -136,6 +158,9 @@ class SupervisionSet(JsonMixin, YamlMixin):
             from cytoolz import groupby
             self._segments_by_recording_id = groupby(lambda seg: seg.recording_id, self)
         return self._segments_by_recording_id
+
+    def __repr__(self) -> str:
+        return f'SupervisionSet(len={len(self)})'
 
     def __getitem__(self, item: str) -> SupervisionSegment:
         return self.segments[item]
