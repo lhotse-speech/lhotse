@@ -267,14 +267,22 @@ class RecordingSet(JsonMixin, YamlMixin):
 
 class AudioMixer:
     """
-    Utility class to mix multiple raw audio into a single one.
-    It pads the signals with zero samples for differing lengths and offsets.
+    Utility class to mix multiple waveforms into a single one.
+    It should be instantiated separately for each mixing session (i.e. each ``MixedCut``
+    will create a separate ``AudioMixer`` to mix its tracks).
+    It is initialized with a numpy array of audio samples (typically float32 in [-1, 1] range)
+    that represents the "reference" signal for the mix.
+    Other signals can be mixed to it with different time offsets and SNRs using the
+    ``add_to_mix`` method.
+    The time offset is relative to the start of the reference signal
+    (only positive values are supported).
+    The SNR is relative to the energy of the signal used to initialize the ``AudioMixer``.
     """
 
     def __init__(self, base_audio: np.ndarray, sampling_rate: int):
         """
-        :param base_audio: The raw audio used to initialize the AudioMixer are a point of reference
-            in terms of offset for all audios mixed into them.
+        :param base_audio: A numpy array with the audio samples for the base signal
+            (all the other signals will be mixed to it).
         :param sampling_rate: Sampling rate of the audio.
         """
         self.tracks = [base_audio]
