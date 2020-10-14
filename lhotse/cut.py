@@ -3,7 +3,7 @@ import warnings
 from dataclasses import dataclass, field
 from functools import reduce
 from math import ceil, floor
-from typing import Callable, Dict, Iterable, List, Optional, Union, Any
+from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence, Union
 
 import numpy as np
 from cytoolz import sliding_window
@@ -11,21 +11,11 @@ from cytoolz.itertoolz import groupby
 
 from lhotse import WavAugmenter
 from lhotse.audio import AudioMixer, Recording, RecordingSet
-from lhotse.features import Features, FeatureExtractor, FeatureSet, FeatureMixer, create_default_feature_extractor
+from lhotse.features import FeatureExtractor, FeatureMixer, FeatureSet, Features, create_default_feature_extractor
 from lhotse.features.io import FeaturesWriter
 from lhotse.supervision import SupervisionSegment, SupervisionSet
-from lhotse.utils import (
-    EPSILON,
-    Decibels,
-    Pathlike,
-    Seconds,
-    TimeSpan,
-    asdict_nonull,
-    overlaps,
-    overspans,
-    uuid4,
-    JsonMixin, YamlMixin, fastcopy,
-)
+from lhotse.utils import (Decibels, EPSILON, JsonMixin, Pathlike, Seconds, TimeSpan, YamlMixin, asdict_nonull, fastcopy,
+                          overlaps, overspans, split_sequence, uuid4)
 
 # One of the design principles for Cuts is a maximally "lazy" implementation, e.g. when mixing Cuts,
 # we'd rather sum the feature matrices only after somebody actually calls "load_features". It helps to avoid
@@ -842,7 +832,7 @@ class MixedCut(CutUtilsMixin):
 
 
 @dataclass
-class CutSet(JsonMixin, YamlMixin):
+class CutSet(JsonMixin, YamlMixin, Sequence[AnyCut]):
     """
     CutSet combines features with their corresponding supervisions.
     It may have wider span than the actual supervisions, provided the features for the whole span exist.
@@ -972,6 +962,19 @@ class CutSet(JsonMixin, YamlMixin):
         print('Duration statistics (seconds):')
         with pd.option_context('precision', 1):
             print(durations.describe().drop('count'))
+
+    def split(self, num_splits: int, randomize: bool = False) -> List['CutSet']:
+        """
+        Split the ``CutSet`` into ``num_splits`` pieces of equal size.
+
+        :param num_splits: Requested number of splits.
+        :param randomize: Optionally randomize the cuts order first.
+        :return: A list of ``CutSet`` pieces.
+        """
+        return [
+            CutSet.from_cuts(subset) for subset in
+            split_sequence(self, num_splits=num_splits, randomize=randomize)
+        ]
 
     def filter(self, predicate: Callable[[AnyCut], bool]) -> 'CutSet':
         """

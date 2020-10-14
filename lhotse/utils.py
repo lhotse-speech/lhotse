@@ -7,7 +7,7 @@ from contextlib import contextmanager
 from dataclasses import asdict, dataclass
 from math import ceil, isclose
 from pathlib import Path
-from typing import Any, Dict, Union, Optional, Callable, List, TypeVar
+from typing import Any, Callable, Dict, List, Optional, Sequence, TypeVar, Union
 
 import numpy as np
 import torch
@@ -150,7 +150,7 @@ class TimeSpan:
 def overlaps(lhs: Any, rhs: Any) -> bool:
     """Indicates whether two time-spans/segments are overlapping or not."""
     return lhs.start < rhs.end and rhs.start < lhs.end \
-        and not isclose(lhs.start, rhs.end) and not isclose(rhs.start, lhs.end)
+           and not isclose(lhs.start, rhs.end) and not isclose(rhs.start, lhs.end)
 
 
 def overspans(spanning: Any, spanned: Any) -> bool:
@@ -212,3 +212,24 @@ def fastcopy(dataclass_obj: T, **kwargs) -> T:
         >>> ts2 = fastcopy(ts1, end=12)
     """
     return type(dataclass_obj)(**{**dataclass_obj.__dict__, **kwargs})
+
+
+def split_sequence(seq: Sequence[Any], num_splits: int, randomize: bool = False) -> List[List[Any]]:
+    """
+    Split a sequence into ``num_splits`` equal parts. The element order can be randomized.
+    Raises a ``ValueError`` if ``num_splits`` is larger than ``len(seq)``.
+
+    :param seq: an input iterable (can be a Lhotse manifest).
+    :param num_splits: how many output splits should be created.
+    :param randomize: optionally randomize the sequence before splitting.
+    :return: a list of length ``num_splits`` containing smaller lists (the splits).
+    """
+    seq = list(seq)
+    num_items = len(seq)
+    if num_splits > num_items:
+        raise ValueError(f"Cannot split iterable into more chunks ({num_splits}) than its number of items {num_items}")
+    if randomize:
+        random.shuffle(seq)
+    chunk_size = int(ceil(num_items / num_splits))
+    split_indices = [(i * chunk_size, min(num_items, (i + 1) * chunk_size)) for i in range(num_splits)]
+    return [seq[begin: end] for begin, end in split_indices]

@@ -1,51 +1,16 @@
-import random
 from functools import reduce
 from itertools import chain
-from math import ceil
 from operator import add
-from typing import Any, Iterable, List, Optional, TypeVar
+from typing import Iterable, Optional, TypeVar
 
 from lhotse.audio import Recording, RecordingSet
 from lhotse.cut import Cut, CutSet, MixedCut
-from lhotse.features import Features, FeatureSet
+from lhotse.features import FeatureSet, Features
 from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import Pathlike, load_yaml
 
 ManifestItem = TypeVar('ManifestItem', Recording, SupervisionSegment, Features, Cut, MixedCut)
 Manifest = TypeVar('Manifest', RecordingSet, SupervisionSet, FeatureSet, CutSet)
-
-
-def split(manifest: Manifest, num_splits: int, randomize: bool = False) -> List[Manifest]:
-    """Split a manifest into `num_splits` equal parts. The element order can be randomized."""
-    num_items = len(manifest)
-    if num_splits > num_items:
-        raise ValueError(f"Cannot split manifest into more chunks ({num_splits}) than its number of items {num_items}")
-    chunk_size = int(ceil(num_items / num_splits))
-    split_indices = [(i * chunk_size, min(num_items, (i + 1) * chunk_size)) for i in range(num_splits)]
-
-    def maybe_randomize(items: Iterable[Any]) -> List[Any]:
-        items = list(items)
-        if randomize:
-            random.shuffle(items)
-        return items
-
-    if isinstance(manifest, RecordingSet):
-        contents = maybe_randomize(manifest.recordings.items())
-        return [RecordingSet(recordings=dict(contents[begin: end])) for begin, end in split_indices]
-
-    if isinstance(manifest, SupervisionSet):
-        contents = maybe_randomize(manifest.segments.items())
-        return [SupervisionSet(segments=dict(contents[begin: end])) for begin, end in split_indices]
-
-    if isinstance(manifest, FeatureSet):
-        contents = maybe_randomize(manifest.features)
-        return [FeatureSet(features=contents[begin: end]) for begin, end in split_indices]
-
-    if isinstance(manifest, CutSet):
-        contents = maybe_randomize(manifest.cuts.items())
-        return [CutSet(cuts=dict(contents[begin: end])) for begin, end in split_indices]
-
-    raise ValueError(f"Unknown type of manifest: {type(manifest)}")
 
 
 def combine(*manifests: Manifest) -> Manifest:
