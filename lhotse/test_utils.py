@@ -1,8 +1,8 @@
 from typing import Type
 
 from lhotse.audio import Recording, RecordingSet
-from lhotse.cut import Cut
-from lhotse.features import Features, FeatureSet
+from lhotse.cut import Cut, CutSet
+from lhotse.features import FeatureSet, Features
 from lhotse.manipulation import Manifest
 from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import fastcopy
@@ -17,6 +17,9 @@ def DummyManifest(type_: Type, *, begin_id: int, end_id: int) -> Manifest:
     if type_ == FeatureSet:
         # noinspection PyTypeChecker
         return FeatureSet.from_features(dummy_features(idx) for idx in range(begin_id, end_id))
+    if type_ == CutSet:
+        # noinspection PyTypeChecker
+        return CutSet.from_cuts(dummy_cut(idx) for idx in range(begin_id, end_id))
 
 
 def dummy_recording(unique_id: int) -> Recording:

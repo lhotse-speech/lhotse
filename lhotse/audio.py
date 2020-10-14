@@ -4,11 +4,12 @@ from io import BytesIO
 from math import sqrt
 from pathlib import Path
 from subprocess import PIPE, run
-from typing import Callable, Dict, Iterable, List, Optional, Union, Tuple
+from typing import Callable, Dict, Iterable, List, Optional, Sequence, Tuple, Union
 
 import numpy as np
 
-from lhotse.utils import Decibels, Pathlike, Seconds, SetContainingAnything, JsonMixin, YamlMixin, fastcopy
+from lhotse.utils import (Decibels, JsonMixin, Pathlike, Seconds, SetContainingAnything, YamlMixin, fastcopy,
+                          split_sequence)
 
 Channels = Union[int, List[int]]
 
@@ -187,7 +188,7 @@ class Recording:
 
 
 @dataclass
-class RecordingSet(JsonMixin, YamlMixin):
+class RecordingSet(JsonMixin, YamlMixin, Sequence[Recording]):
     """
     RecordingSet represents a dataset of recordings. It does not contain any annotation -
     just the information needed to retrieve a recording (possibly multi-channel, from files
@@ -217,6 +218,19 @@ class RecordingSet(JsonMixin, YamlMixin):
         :return: a filtered RecordingSet.
         """
         return RecordingSet.from_recordings(rec for rec in self if predicate(rec))
+
+    def split(self, num_splits: int, randomize: bool = False) -> List['RecordingSet']:
+        """
+        Split the ``RecordingSet`` into ``num_splits`` pieces of equal size.
+
+        :param num_splits: Requested number of splits.
+        :param randomize: Optionally randomize the recordings order first.
+        :return: A list of ``RecordingSet`` pieces.
+        """
+        return [
+            RecordingSet.from_recordings(subset) for subset in
+            split_sequence(self, num_splits=num_splits, randomize=randomize)
+        ]
 
     def load_audio(
             self,

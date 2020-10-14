@@ -1,10 +1,10 @@
 from abc import ABCMeta, abstractmethod
 from concurrent.futures.process import ProcessPoolExecutor
-from dataclasses import is_dataclass, asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, is_dataclass
 from itertools import chain
 from math import isclose
 from pathlib import Path
-from typing import Optional, Any, List, Iterable, Type, Union, Dict
+from typing import Any, Dict, Iterable, List, Optional, Sequence, Type, Union
 
 import numpy as np
 import torch
@@ -12,7 +12,8 @@ import torch
 from lhotse.audio import Recording
 from lhotse.augmentation import WavAugmenter
 from lhotse.features.io import FeaturesWriter, get_reader
-from lhotse.utils import Seconds, Pathlike, load_yaml, save_to_yaml, uuid4, JsonMixin, YamlMixin, fastcopy
+from lhotse.utils import (JsonMixin, Pathlike, Seconds, YamlMixin, fastcopy, load_yaml, save_to_yaml, split_sequence,
+                          uuid4)
 
 
 class FeatureExtractor(metaclass=ABCMeta):
@@ -61,10 +62,12 @@ class FeatureExtractor(metaclass=ABCMeta):
 
     @property
     @abstractmethod
-    def frame_shift(self) -> Seconds: ...
+    def frame_shift(self) -> Seconds:
+        ...
 
     @abstractmethod
-    def feature_dim(self, sampling_rate: int) -> int: ...
+    def feature_dim(self, sampling_rate: int) -> int:
+        ...
 
     @staticmethod
     def mix(features_a: np.ndarray, features_b: np.ndarray, energy_scaling_factor_b: float) -> np.ndarray:
@@ -368,7 +371,7 @@ class Features:
 
 
 @dataclass
-class FeatureSet(JsonMixin, YamlMixin):
+class FeatureSet(JsonMixin, YamlMixin, Sequence[Features]):
     """
     Represents a feature manifest, and allows to read features for given recordings
     within particular channels and time ranges.
@@ -393,6 +396,19 @@ class FeatureSet(JsonMixin, YamlMixin):
 
     def with_path_prefix(self, path: Pathlike) -> 'FeatureSet':
         return FeatureSet.from_features(f.with_path_prefix(path) for f in self)
+
+    def split(self, num_splits: int, randomize: bool = False) -> List['FeatureSet']:
+        """
+        Split the ``FeatureSet`` into ``num_splits`` pieces of equal size.
+
+        :param num_splits: Requested number of splits.
+        :param randomize: Optionally randomize the features order first.
+        :return: A list of ``FeatureSet`` pieces.
+        """
+        return [
+            FeatureSet.from_features(subset) for subset in
+            split_sequence(self, num_splits=num_splits, randomize=randomize)
+        ]
 
     def find(
             self,
@@ -480,6 +496,9 @@ class FeatureSet(JsonMixin, YamlMixin):
 
     def __iter__(self) -> Iterable[Features]:
         return iter(self.features)
+
+    def __getitem__(self, i: int) -> Features:
+        return self.features[i]
 
     def __len__(self) -> int:
         return len(self.features)
