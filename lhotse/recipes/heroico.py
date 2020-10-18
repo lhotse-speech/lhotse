@@ -13,9 +13,12 @@ from lhotse.audio import AudioSource, Recording, RecordingSet
 from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import Pathlike
 
+# files containing transcripts 
 heroico_dataset_answers = ('heroico-answers.txt')
 heroico_dataset_recordings = ('heroico-recordings.txt')
 usma_dataset = ('usma-prompts.txt')
+
+folds = ('train', 'devtest', 'test')
 
 
 def download_and_untar(
@@ -41,8 +44,16 @@ class HeroicoMetaData(NamedTuple):
     audio_info: torchaudio.sox_signalinfo_t
     text: str
 
+class UttInfo(NamedTuple):
+    fold: str
+    speaker: str
+    prompt_id: str
+    subcorpus: str
+    utterance_id:  str
+    transcript: str
 
-def prepare_heroico_answers(
+
+def prepare_heroico(
         speech_dir: Pathlike,
         transcript_dir: Pathlike,
         output_dir: Optional[Pathlike] = None
@@ -53,7 +64,7 @@ def prepare_heroico_answers(
     :param speech_dir: Pathlike, the path of the speech data dir.
 param transcripts_dir: Pathlike, the path of the transcript data dir.
     :param output_dir: Pathlike, the path where to write the manifests.
-    :return: a Dict whose key is the dataset part, and the value is Dicts with the keys 'audio' and 'supervisions'.
+    :return: a Dict whose key is the fold, and the value is Dicts with the keys 'audio' and 'supervisions'.
     """
     speech_dir = Path(speech_dir)
     transcript_dir = Path(transcript_dir)
@@ -63,256 +74,140 @@ param transcripts_dir: Pathlike, the path of the transcript data dir.
         output_dir = Path(output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
     manifests = defaultdict(dict)
-    line_pattern = re.compile("\d+/\d+\t.+")
+
+    # set some patterns to match fields in transcript files and filenames 
+    answers_line_pattern = re.compile("\d+/\d+\t.+")
+    answers_path_pattern = re.compile('Answers_Spanish')
+    heroico_recitations_line_pattern = re.compile("\d+\t.+")
+    heroico_recitations_devtest_path_pattern = re.compile('Recordings_Spanish')
+    heroico_recitations_train_path_pattern = re.compile('Recordings_Spanish')
+    usma_line_pattern = re.compile("s\d+\t.+")
+    usma_native_demo_pattern = re.compile("usma/native\-[fm]\-\w+\-\S+\-\S+\-\S+\-\S+\-\w+\d+")
+    usma_native_path_pattern = re.compile('usma/native')
+    usma_native_prompt_id_pattern = re.compile('s\d+')
+    usma_nonnative_demo_pattern = re.compile("nonnative\-[fm]\-[a-zA-Z]+\d*\-[a-zA-Z]+\-[a-zA-Z]+\-[a-zA-Z]+\-[a-zA-Z]+\-[a-zA-Z]+\d+")
+    usma_nonnative_path_pattern = re.compile('nonnative.+\.wav')
+
     # Generate a mapping: utt_id -> (audio_path, audio_info, text)
-    metadata = {}
-    trans_path = transcript_dir / 'heroico-answers.txt'
-    with open(trans_path, encoding='iso-8859-1') as f:
-        for line in f:
-            # some recordings do not have a transcript, skip them here
-            if not line_pattern.match(line):
-                continue
-            line = line.rstrip()
-            spk_utt, text = line.split(maxsplit=1)
-            audio_path = speech_dir / f'{spk_utt}.wav'
-            if audio_path.is_file():
-                # info[0]: info of the raw audio (e.g. channel number, sample rate, duration ... )
-                # info[1]: info about the encoding (e.g. FLAC/ALAW/ULAW ...)
-                info = torchaudio.info(str(audio_path))
-                path_components = PurePath(str(audio_path))
-                prompt_id = audio_path.stem
-                path_parts = path_components.parts
-                speaker = path_parts[10]
-                utt_id = '-'.join([path_parts[8], path_parts[9], speaker, prompt_id])
-                metadata[utt_id] = HeroicoMetaData(audio_path=audio_path, audio_info=info[0], text=text)
-            else:
-                logging.warning(f'No such file: {audio_path}')
 
-        # Audio
-        audio = RecordingSet.from_recordings(
-            Recording(
-                id=utt_id,
-                sources=[
-                    AudioSource(
-                        type='file',
-                        channels=[0],
-                        source=str(metadata[utt_id].audio_path)
-                    )
-                ],
-                sampling_rate=int(metadata[utt_id].audio_info.rate),
-                num_samples=metadata[utt_id].audio_info.length,
-                duration=(metadata[utt_id].audio_info.length / metadata[utt_id].audio_info.rate)
-            )
-            for utt_id in metadata
-        )
-
-        # Supervision
-        supervision = SupervisionSet.from_segments(
-            SupervisionSegment(
-                id=utt_id,
-                recording_id=utt_id,
-                start=0.0,
-                duration=audio.recordings[utt_id].duration,
-                channel=0,
-                language='Spanish',
-                speaker=utt_id.split('-')[-2],
-                text=metadata[utt_id].text.strip()
-            )
-            for utt_id in audio.recordings
-        )
-
-        if output_dir is not None:
-            supervision.to_json(output_dir / f'supervisions-heroico-answers.json')
-            audio.to_json(output_dir / f'recordings-heroico-answers.json')
-
-        manifests['answers'] = {
-            'recordings': audio,
-            'supervisions': supervision
-        }
-
-    return manifests
-
-def prepare_heroico_recitations(
-        speech_dir: Pathlike,
-        transcript_dir: Pathlike,
-        output_dir: Optional[Pathlike] = None
-) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet]]]:
-    """
-    Returns the manifests which consist of the Recordings and Supervisions
-
-    :param speech_dir: Pathlike, the path of the speech data dir.
-param transcripts_dir: Pathlike, the path of the transcript data directory.
-    :param output_dir: Pathlike, the path where to write the manifests.
-    :return: a Dict whose key is the dataset part, and the value is Dicts with the keys 'audio' and 'supervisions'.
-    """
-    speech_dir = Path(speech_dir)
-    transcript_dir = Path(transcript_dir)
-    assert speech_dir.is_dir(), f'No such directory: {speech_dir}'
-    assert transcript_dir.is_dir(), f'No such directory: {transcript_dir}'
-    if output_dir is not None:
-        output_dir = Path(output_dir)
-        output_dir.mkdir(parents=True, exist_ok=True)
-    manifests = defaultdict(dict)
     transcripts = defaultdict(dict)
-    # Generate a mapping: utt_id -> (audio_path, audio_info, text)
-    metadata = {}
-    line_pattern = re.compile("\d+\t.+")
-    audio_paths = speech_dir.rglob('*.wav')
-    trans_path = Path(transcript_dir, 'heroico-recordings.txt')
-    with open(trans_path, encoding='iso-8859-1') as f:
+    # store answers trnscripts
+    answers_trans_path = Path(transcript_dir, heroico_dataset_answers)
+    with open(answers_trans_path, encoding='iso-8859-1') as f:
         for line in f:
             line = line.rstrip()
-            if not line_pattern.match(line):
+            # some recordings do not have a transcript, skip them here
+            if not answers_line_pattern.match(line):
+                continue
+            # IDs have the form speaker/prompt_id
+            spk_utt, text = line.split(maxsplit=1)
+            spk_id, prompt_id = spk_utt.split('/')
+            utt_id = '-'.join(['answers', spk_id, prompt_id])
+            transcripts[utt_id] = text
+
+    # store heroico recitations transcripts
+    heroico_recitations_trans_path = Path(transcript_dir, heroico_dataset_recordings)
+    with open(heroico_recitations_trans_path, encoding='iso-8859-1') as f:
+        for line in f:
+            line = line.rstrip()
+            if not heroico_recitations_line_pattern.match(line):
                 continue
             idx, text = line.split(maxsplit=1)
-            transcripts[idx] = (text)
+            utt_id = '-'.join(['heroico-recitations', idx])
+            transcripts[utt_id] = text
+
+    # store usma transcripts
+    usma_trans_path = Path(transcript_dir, usma_dataset)
+    with open(usma_trans_path, encoding='iso-8859-1') as f:
+        for line in f:
+            line = line.rstrip()
+            if not usma_line_pattern.match(line):
+                continue
+            idx, text = line.split(maxsplit=1)
+            utt_id = '-'.join(['usma', idx])
+            transcripts[utt_id] = text
+
+    # store utterance info
+    audio_paths = speech_dir.rglob('*.wav')
+    uttdata = {}
     for wav_file in audio_paths:
-        path_components = PurePath(wav_file)
-        speaker = path_components.parts[-2]
-        prompt_id = path_components.stem
-        utt_id = '-'.join(['heroico-recitations', speaker, prompt_id])
-        if wav_file.is_file():
+        wav_path = Path(wav_file)
+        path_components = wav_path.parts
+        pid = wav_path.stem
+        if re.findall(answers_path_pattern, str(wav_file)):
+            # store utternce info for Heroico Answers
+            spk = wav_path.parts[-2]
+            utt_id = '-'.join(['answers', spk, pid])
+            if utt_id not in transcripts:
+                uttdata[str(wav_file)] = None
+                continue
+            uttdata[str(wav_file)] = UttInfo(fold='train', speaker=spk, prompt_id=pid, subcorpus='answers', utterance_id=utt_id, transcript=transcripts[utt_id])
+        elif re.findall(usma_native_path_pattern, str(wav_file)):
+            # store utterance info for usma native data
+            spk = wav_path.parts[-2]
+            utt_id = '-'.join(['usma', spk, pid])
+            trans_id = '-'.join(['usma', pid])
+            if not usma_native_demo_pattern.match(spk):
+                uttdata[str(wav_file)] = None
+            if not usma_native_prompt_id_pattern.match(pid):
+                uttdata[str(wav_file)] = None
+                continue
+            uttdata[str(wav_file)] = UttInfo(fold='test', speaker=spk, prompt_id=pid, subcorpus='usma', utterance_id=utt_id, transcript=transcripts[trans_id])
+        elif re.findall(usma_nonnative_path_pattern, str(wav_file)):
+            # store utterance data for usma nonnative data
+            spk = wav_path.parts[-2]
+            utt_id = '-'.join(['usma', spk, pid])
+            trans_id = '-'.join(['usma', pid])
+            if not usma_nonnative_demo_pattern.match(spk):
+                uttdata[str(wav_file)] = None
+                continue
+            uttdata[str(wav_file)] = UttInfo(fold='test', speaker=spk, prompt_id=pid, subcorpus='usma', utterance_id=utt_id, transcript=transcripts[trans_id])
+        elif int(pid) <= 354 or int(pid) >= 562:
+            # store utterance info for heroico recitations for train dataset
+            spk = wav_path.parts[-2]
+            utt_id = '-'.join(['heroico-recitations', spk, pid])
+            trans_id = '-'.join(['heroico-recitations', pid])
+            uttdata[str(wav_file)] = UttInfo(fold='train', speaker=spk, prompt_id=pid, subcorpus='heroico-recitations', utterance_id=utt_id, transcript=transcripts[trans_id])
+        elif int(pid) > 354 and int(pid) < 562:
+            spk = wav_path.parts[-2]
+            utt_id = '-'.join(['heroico-recitations-repeats', spk, pid])
+            trans_id = '-'.join(['heroico-recitations-repeats', pid])
+            uttdata[str(wav_file)] = UttInfo(fold='devtest', speaker=spk, prompt_id=pid, subcorpus='heroico-recitations-repeats', utterance_id=utt_id, transcript=transcripts[trans_id])
+        else:
+            logging.warning(f'No such file: {wav_file}')
+
+    audio_paths = speech_dir.rglob('*.wav')
+    audio_files = [ w for w in audio_paths]
+
+    for fld in folds:
+        metadata = {}
+        for wav_file in audio_files:
+            wav_path = Path(wav_file)
+            # skip files with no record
+            if             not uttdata[str(wav_file)]:
+                continue
+            # only process the current fold
+            if uttdata[str(wav_file)].fold != fld:
+                continue
+            path_components = wav_path.parts
+            prompt_id = wav_path.stem
             # info[0]: info of the raw audio (e.g. channel number, sample rate, duration ... )
             # info[1]: info about the encoding (e.g. FLAC/ALAW/ULAW ...)
             info = torchaudio.info(str(wav_file))
-            metadata[utt_id] = HeroicoMetaData(audio_path=wav_file, audio_info=info[0], text=transcripts[idx])
-        else:
-            logging.warning(f'No such file: {audio_path, idx}')
-            exit()
+            spk = wav_path.parts[-2]
+            utt_id = '-'.join([uttdata[str(wav_file)].subcorpus, spk, prompt_id])
+            metadata[utt_id] = HeroicoMetaData(audio_path=wav_file, audio_info=info[0], text=uttdata[str(wav_file)].transcript)
 
         # Audio
-        audio = RecordingSet.from_recordings(
-            Recording(
-                id=idx,
-                sources=[
-                    AudioSource(
-                        type='file',
-                        channels=[0],
-                        source=str(metadata[idx].audio_path)
-                    )
-                ],
-                sampling_rate=int(metadata[idx].audio_info.rate),
-                num_samples=metadata[idx].audio_info.length,
-                duration=(metadata[idx].audio_info.length / metadata[idx].audio_info.rate)
-            )
-            for idx in metadata
-        )
+        audio = RecordingSet.from_recordings(Recording(id=idx, sources=[AudioSource(type='file', channels=[0], source=str(metadata[idx].audio_path))], sampling_rate=int(metadata[idx].audio_info.rate), num_samples=metadata[idx].audio_info.length, duration=(metadata[idx].audio_info.length / metadata[idx].audio_info.rate)) for idx in metadata)
 
         # Supervision
-        supervision = SupervisionSet.from_segments(
-            SupervisionSegment(
-                id=idx,
-                recording_id=idx,
-                start=0.0,
-                duration=audio.recordings[idx].duration,
-                channel=0,
-                language='Spanish',
-                speaker=re.sub(r'-.*', r'', idx),
-                text=metadata[idx].text.strip()
-            )
-            for idx in audio.recordings
-        )
+        supervision = SupervisionSet.from_segments(SupervisionSegment( id=idx, recording_id=idx, start=0.0, duration=audio.recordings[idx].duration, channel=0, language='Spanish', speaker=idx.split('-')[-2], text=metadata[idx].text) for idx in audio.recordings)
 
-    if output_dir is not None:
-        supervision.to_json(output_dir / f'supervisions-heroico-recitations.json')
-        audio.to_json(output_dir / f'recordings-heroico-recitations.json')
+        if output_dir is not None:
+            supervision.to_json(output_dir / f'supervisions_{fld}.json')
+            audio.to_json(output_dir / f'recordings_{fld}.json')
 
-
-    manifests['recitations'] = {
-        'recordings': audio,
-        'supervisions': supervision
-    }
-
-    return manifests
-
-def prepare_usma(
-        speech_dir: Pathlike,
-        transcript_dir: Pathlike,
-        output_dir: Optional[Pathlike] = None
-) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet]]]:
-    """
-    Returns the manifests which consist of the Recordings and Supervisions
-
-    :param speech_dir: Pathlike, the path of the speech data dir.
-param transcripts_dir: Pathlike, the path of the transcript data directory.
-    :param output_dir: Pathlike, the path where to write the manifests.
-    :return: a Dict whose key is the dataset part, and the value is Dicts with the keys 'audio' and 'supervisions'.
-    """
-    speech_dir = Path(speech_dir)
-    transcript_dir = Path(transcript_dir)
-    assert speech_dir.is_dir(), f'No such directory: {speech_dir}'
-    assert transcript_dir.is_dir(), f'No such directory: {transcript_dir}'
-    if output_dir is not None:
-        output_dir = Path(output_dir)
-        output_dir.mkdir(parents=True, exist_ok=True)
-    manifests = defaultdict(dict)
-    transcripts = defaultdict(dict)
-    # Generate a mapping: utt_id -> (audio_path, audio_info, text)
-    metadata = {}
-    line_pattern = re.compile("s\d+\t.+")
-    audio_paths = speech_dir.rglob('*.wav')
-    trans_path = Path(transcript_dir, usma_dataset)
-    with open(trans_path, encoding='iso-8859-1') as f:
-        for line in f:
-            line = line.rstrip()
-            if not line_pattern.match(line):
-                continue
-            idx, text = line.split(maxsplit=1)
-            transcripts[idx] = (text)
-            for wav_file in audio_paths:
-                path_components = PurePath(wav_file)
-                speaker = path_components.parts[-2]
-                prompt_id = path_components.stem
-                utt_id = '-'.join(['usma', 'recitations', speaker, prompt_id])
-                if wav_file.is_file():
-                    # info[0]: info of the raw audio (e.g. channel number, sample rate, duration ... )
-                    # info[1]: info about the encoding (e.g. FLAC/ALAW/ULAW ...)
-                    info = torchaudio.info(str(wav_file))
-                    metadata[utt_id] = HeroicoMetaData(audio_path=wav_file, audio_info=info[0], text=transcripts[idx])
-                else:
-                    logging.warning(f'No such file: {audio_path, idx}')
-
-        # Audio
-        audio = RecordingSet.from_recordings(
-            Recording(
-                id=idx,
-                sources=[
-                    AudioSource(
-                        type='file',
-                        channels=[0],
-                        source=str(metadata[idx].audio_path)
-                    )
-                ],
-                sampling_rate=int(metadata[idx].audio_info.rate),
-                num_samples=metadata[idx].audio_info.length,
-                duration=(metadata[idx].audio_info.length / metadata[idx].audio_info.rate)
-            )
-            for idx in metadata
-        )
-
-        # Supervision
-        supervision = SupervisionSet.from_segments(
-            SupervisionSegment(
-                id=idx,
-                recording_id=idx,
-                start=0.0,
-                duration=audio.recordings[idx].duration,
-                channel=0,
-                language='English',
-                speaker=re.sub(r'-.*', r'', idx),
-                text=metadata[idx].text.strip()
-            )
-            for idx in audio.recordings
-        )
-
-    if output_dir is not None:
-        supervision.to_json(output_dir / f'supervisions-usma-recitations.json')
-        audio.to_json(output_dir / f'recordings-usma-recitations.json')
-
-    exit()
-    manifests[usma_dataset] = {
-        'recordings': audio,
-        'supervisions': supervision
-    }
+        manifests[fld] = {'recordings': audio, 'supervisions': supervision}
 
     return manifests
