@@ -12,7 +12,7 @@ from lhotse.cut import (
     mix_cuts
 )
 from lhotse.features import FeatureSet
-from lhotse.manipulation import combine, split, load_manifest
+from lhotse.manipulation import combine, load_manifest
 from lhotse.supervision import SupervisionSet
 from lhotse.utils import Pathlike
 
