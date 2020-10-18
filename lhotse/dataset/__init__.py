@@ -4,6 +4,7 @@ from .source_separation import (
     DynamicallyMixedSourceSeparationDataset
 )
 from .speech_recognition import SpeechRecognitionDataset
+from .speech_synthesis import SpeechSynthesisDataset
 from .unsupervised import (
     UnsupervisedDataset,
     UnsupervisedWaveformDataset,

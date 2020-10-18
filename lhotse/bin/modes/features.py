@@ -7,7 +7,7 @@ from lhotse.audio import RecordingSet
 from lhotse.augmentation import available_wav_augmentations, WavAugmenter
 from lhotse.bin.modes.cli_base import cli
 from lhotse.features import FeatureExtractor, FeatureSetBuilder, create_default_feature_extractor, Fbank
-from lhotse.supervision import SupervisionSet
+from lhotse.features.io import available_storage_backends, get_writer
 from lhotse.utils import Pathlike
 
 
@@ -29,15 +29,13 @@ def write_default_config(output_config: Pathlike, feature_type: str):
 @feat.command(context_settings=dict(show_default=True))
 @click.argument('recording_manifest', type=click.Path(exists=True, dir_okay=False))
 @click.argument('output_dir', type=click.Path())
-@click.option('-s', '--segmentation-manifest', type=click.Path(exists=True, dir_okay=False),
-              help='Optional manifest specifying the regions, for which features are to be extracted. '
-                   'When not specified, features will be extracted for the entire recording. '
-                   'Supervision manifest can be used here.')
 @click.option('-a', '--augmentation', type=click.Choice(available_wav_augmentations()),
               default=None, help='Optional time-domain data augmentation effect chain to apply.')
 @click.option('-f', '--feature-manifest', type=click.Path(exists=True, dir_okay=False),
               help='Optional manifest specifying feature extractor configuration.')
-@click.option('--compressed/--not-compressed', default=True, help='Enable/disable lilcom for features compression.')
+@click.option('--storage-type', type=click.Choice(available_storage_backends()),
+              default='lilcom_files',
+              help='Select a storage backend for the feature matrices.')
 @click.option('-t', '--lilcom-tick-power', type=int, default=-5,
               help='Determines the compression accuracy; '
                    'the input will be compressed to integer multiples of 2^tick_power')
@@ -47,10 +45,9 @@ def write_default_config(output_config: Pathlike, feature_type: str):
 def extract(
         recording_manifest: Pathlike,
         output_dir: Pathlike,
-        segmentation_manifest: Optional[Pathlike],
         augmentation: str,
         feature_manifest: Optional[Pathlike],
-        compressed: bool,
+        storage_type: str,
         lilcom_tick_power: int,
         root_dir: Optional[Pathlike],
         num_jobs: int
@@ -59,17 +56,16 @@ def extract(
     Extract features for recordings in a given AUDIO_MANIFEST. The features are stored in OUTPUT_DIR,
     with one file per recording (or segment).
     """
-    recordings = RecordingSet.from_json(recording_manifest)
+    recordings: RecordingSet = RecordingSet.from_json(recording_manifest)
+    if root_dir is not None:
+        recordings = recordings.with_path_prefix(root_dir)
 
     feature_extractor = (FeatureExtractor.from_yaml(feature_manifest)
                          if feature_manifest is not None else Fbank())
 
-    # TODO: to be used (actually, only the segmentation info will be used, and all supervision info will be ignored)
-    supervision_set = (SupervisionSet.from_json(segmentation_manifest)
-                       if segmentation_manifest is not None else None)
-
     output_dir = Path(output_dir)
     output_dir.mkdir(exist_ok=True, parents=True)
+    storage_path = output_dir / 'feats.h5' if 'hdf5' in storage_type else output_dir / 'storage'
 
     augmenter = None
     if augmentation is not None:
@@ -78,15 +74,14 @@ def extract(
             "Wav augmentation effect chains expect all the recordings to have the same sampling rate at this time."
         augmenter = WavAugmenter.create_predefined(name=augmentation, sampling_rate=sampling_rate)
 
-    feature_set_builder = FeatureSetBuilder(
-        feature_extractor=feature_extractor,
-        output_dir=output_dir,
-        augmenter=augmenter
-    )
-    feature_set_builder.process_and_store_recordings(
-        recordings=recordings,
-        segmentation=None,  # TODO: implement and use
-        compressed=compressed,
-        lilcom_tick_power=lilcom_tick_power,
-        num_jobs=num_jobs
-    )
+    with get_writer(storage_type)(storage_path, tick_power=lilcom_tick_power) as storage:
+        feature_set_builder = FeatureSetBuilder(
+            feature_extractor=feature_extractor,
+            storage=storage,
+            augmenter=augmenter
+        )
+        feature_set_builder.process_and_store_recordings(
+            recordings=recordings,
+            output_manifest=output_dir / 'feature_manifest.json.gz',
+            num_jobs=num_jobs
+        )

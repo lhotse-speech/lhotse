@@ -1,7 +1,7 @@
 from dataclasses import dataclass
-from typing import Callable, Dict, Iterable, Optional, Any, List
+from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence
 
-from lhotse.utils import Seconds, asdict_nonull, JsonMixin, YamlMixin, fastcopy
+from lhotse.utils import JsonMixin, Seconds, YamlMixin, asdict_nonull, fastcopy, split_sequence
 
 
 @dataclass
@@ -38,13 +38,34 @@ class SupervisionSegment:
         end_exceeds_by = max(0, self.end - end)
         return fastcopy(self, start=max(0, self.start), duration=self.duration - end_exceeds_by - start_exceeds_by)
 
+    def map(self, transform_fn: Callable[['SupervisionSegment'], 'SupervisionSegment']) -> 'SupervisionSegment':
+        """
+        Return a copy of the current segment, transformed with ``transform_fn``.
+
+        :param transform_fn: a function that takes a segment as input, transforms it and returns a new segment.
+        :return: a modified ``SupervisionSegment``.
+        """
+        return transform_fn(self)
+
+    def transform_text(self, transform_fn: Callable[[str], str]) -> 'SupervisionSegment':
+        """
+        Return a copy of the current segment with transformed ``text`` field.
+        Useful for text normalization, phonetic transcription, etc.
+
+        :param transform_fn: a function that accepts a string and returns a string.
+        :return: a ``SupervisionSegment`` with adjusted text.
+        """
+        if self.text is None:
+            return self
+        return fastcopy(self, text=transform_fn(self.text))
+
     @staticmethod
     def from_dict(data: dict) -> 'SupervisionSegment':
         return SupervisionSegment(**data)
 
 
 @dataclass
-class SupervisionSet(JsonMixin, YamlMixin):
+class SupervisionSet(JsonMixin, YamlMixin, Sequence[SupervisionSegment]):
     """
     SupervisionSet represents a collection of segments containing some supervision information.
     The only required fields are the ID of the segment, ID of the corresponding recording,
@@ -66,6 +87,19 @@ class SupervisionSet(JsonMixin, YamlMixin):
     def to_dicts(self) -> List[dict]:
         return [asdict_nonull(s) for s in self]
 
+    def split(self, num_splits: int, randomize: bool = False) -> List['SupervisionSet']:
+        """
+        Split the ``SupervisionSet`` into ``num_splits`` pieces of equal size.
+
+        :param num_splits: Requested number of splits.
+        :param randomize: Optionally randomize the supervisions order first.
+        :return: A list of ``SupervisionSet`` pieces.
+        """
+        return [
+            SupervisionSet.from_segments(subset) for subset in
+            split_sequence(self, num_splits=num_splits, randomize=randomize)
+        ]
+
     def filter(self, predicate: Callable[[SupervisionSegment], bool]) -> 'SupervisionSet':
         """
         Return a new SupervisionSet with the SupervisionSegments that satisfy the `predicate`.
@@ -74,6 +108,25 @@ class SupervisionSet(JsonMixin, YamlMixin):
         :return: a filtered SupervisionSet.
         """
         return SupervisionSet.from_segments(seg for seg in self if predicate(seg))
+
+    def map(self, transform_fn: Callable[[SupervisionSegment], SupervisionSegment]) -> 'SupervisionSet':
+        """
+        Map a ``transform_fn`` to the SupervisionSegments and return a new ``SupervisionSet``.
+
+        :param transform_fn: a function that modifies a supervision as an argument.
+        :return: a new ``SupervisionSet`` with modified segments.
+        """
+        return SupervisionSet.from_segments(s.map(transform_fn) for s in self)
+
+    def transform_text(self, transform_fn: Callable[[str], str]) -> 'SupervisionSet':
+        """
+        Return a copy of the current ``SupervisionSet`` with the segments having a transformed ``text`` field.
+        Useful for text normalization, phonetic transcription, etc.
+
+        :param transform_fn: a function that accepts a string and returns a string.
+        :return: a ``SupervisionSet`` with adjusted text.
+        """
+        return SupervisionSet.from_segments(s.transform_text(transform_fn) for s in self)
 
     def find(
             self,
@@ -118,6 +171,9 @@ class SupervisionSet(JsonMixin, YamlMixin):
             from cytoolz import groupby
             self._segments_by_recording_id = groupby(lambda seg: seg.recording_id, self)
         return self._segments_by_recording_id
+
+    def __repr__(self) -> str:
+        return f'SupervisionSet(len={len(self)})'
 
     def __getitem__(self, item: str) -> SupervisionSegment:
         return self.segments[item]

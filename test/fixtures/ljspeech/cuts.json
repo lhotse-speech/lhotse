@@ -1,0 +1,96 @@
+[
+  {
+    "id": "33ef3990-f39f-4aee-8dd4-f1cbd89c3041",
+    "start": 0,
+    "duration": 1.54,
+    "channel": 0,
+    "supervisions": [
+      {
+        "id": "LJ002-0020",
+        "recording_id": "LJ002-0020",
+        "start": 0.0,
+        "duration": 1.5396371882086168,
+        "channel": 0,
+        "text": "IN EIGHTEEN THIRTEEN",
+        "language": "English",
+        "gender": "female"
+      }
+    ],
+    "features": {
+      "type": "fbank",
+      "num_frames": 154,
+      "num_features": 80,
+      "sampling_rate": 22050,
+      "storage_type": "lilcom_files",
+      "storage_path": "test/fixtures/ljspeech/storage",
+      "storage_key": "ebc3b975-d9f7-485c-9a33-136f984f032e.llc",
+      "start": 0,
+      "duration": 1.54,
+      "recording_id": "LJ002-0020",
+      "channels": 0
+    },
+    "recording": {
+      "id": "LJ002-0020",
+      "sources": [
+        {
+          "type": "file",
+          "channels": [
+            0
+          ],
+          "source": "test/fixtures/ljspeech/storage/LJ002-0020.wav"
+        }
+      ],
+      "sampling_rate": 22050,
+      "num_samples": 33949,
+      "duration": 1.5396371882086168
+    },
+    "type": "Cut"
+  },
+  {
+    "id": "d9145a74-749e-489a-b3d5-653e047bd274",
+    "start": 0,
+    "duration": 1.6,
+    "channel": 0,
+    "supervisions": [
+      {
+        "id": "LJ002-0035",
+        "recording_id": "LJ002-0035",
+        "start": 0.0,
+        "duration": 1.5976870748299319,
+        "channel": 0,
+        "text": "EIGHT THE PRESS YARD",
+        "language": "English",
+        "gender": "female"
+      }
+    ],
+    "features": {
+      "type": "fbank",
+      "num_frames": 160,
+      "num_features": 80,
+      "sampling_rate": 22050,
+      "storage_type": "lilcom_files",
+      "storage_path": "test/fixtures/ljspeech/storage",
+      "storage_key": "c384489b-5efb-4a3d-b94f-74e3691c442f.llc",
+      "start": 0,
+      "duration": 1.6,
+      "recording_id": "LJ002-0035",
+      "channels": 0
+    },
+    "recording": {
+      "id": "LJ002-0035",
+      "sources": [
+        {
+          "type": "file",
+          "channels": [
+            0
+          ],
+          "source": "test/fixtures/ljspeech/storage/LJ002-0035.wav"
+        }
+      ],
+      "sampling_rate": 22050,
+      "num_samples": 35229,
+      "duration": 1.5976870748299319
+    },
+    "type": "Cut"
+  }
+]

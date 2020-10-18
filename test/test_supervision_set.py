@@ -3,12 +3,24 @@ from tempfile import NamedTemporaryFile
 import pytest
 
 from lhotse.supervision import SupervisionSegment, SupervisionSet
-from lhotse.test_utils import DummyManifest
+from lhotse.test_utils import DummyManifest, remove_spaces_from_segment_text
 
 
 @pytest.fixture
-def external_supervision_set():
+def external_supervision_set() -> SupervisionSet:
     return SupervisionSet.from_json('test/fixtures/supervision.json')
+
+
+def test_supervision_map(external_supervision_set):
+    for s in external_supervision_set.map(remove_spaces_from_segment_text):
+        if s.text is not None:
+            assert ' ' not in s.text
+
+
+def test_supervision_transform_text(external_supervision_set):
+    for s in external_supervision_set.transform_text(lambda text: 'dummy'):
+        if s.text is not None:
+            assert s.text == 'dummy'
 
 
 def test_supervision_segment_with_full_metadata(external_supervision_set):

@@ -102,7 +102,8 @@ def dummy_feature_set():
     return FeatureSet.from_features([
         Features(
             recording_id='rec1', channels=0, start=0, duration=10, type='fbank', num_frames=1000,
-            num_features=23, sampling_rate=16000, storage_type='lilcom', storage_path='dummy.llc'
+            num_features=23, sampling_rate=16000, storage_type='lilcom_files', storage_path='feats',
+            storage_key='dummy.llc'
         )
     ])
 
