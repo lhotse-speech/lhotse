@@ -199,15 +199,45 @@ param transcripts_dir: Pathlike, the path of the transcript data dir.
             metadata[utt_id] = HeroicoMetaData(audio_path=wav_file, audio_info=info[0], text=uttdata[str(wav_file)].transcript)
 
         # Audio
-        audio = RecordingSet.from_recordings(Recording(id=idx, sources=[AudioSource(type='file', channels=[0], source=str(metadata[idx].audio_path))], sampling_rate=int(metadata[idx].audio_info.rate), num_samples=metadata[idx].audio_info.length, duration=(metadata[idx].audio_info.length / metadata[idx].audio_info.rate)) for idx in metadata)
+        audio = RecordingSet.from_recordings(
+            Recording(
+                id=idx,
+                sources=[
+                    AudioSource(
+                        type='file',
+                        channels=[0],
+                        source=str(metadata[idx].audio_path)
+                    )
+                ],
+                sampling_rate=int(metadata[idx].audio_info.rate),
+                num_samples=metadata[idx].audio_info.length,
+                duration=(metadata[idx].audio_info.length / metadata[idx].audio_info.rate)
+            )
+            for idx in metadata
+        )
 
         # Supervision
-        supervision = SupervisionSet.from_segments(SupervisionSegment( id=idx, recording_id=idx, start=0.0, duration=audio.recordings[idx].duration, channel=0, language='Spanish', speaker=idx.split('-')[-2], text=metadata[idx].text) for idx in audio.recordings)
+        supervision = SupervisionSet.from_segments(
+            SupervisionSegment(
+                id=idx,
+                recording_id=idx,
+                start=0.0,
+                duration=audio.recordings[idx].duration,
+                channel=0,
+                language='Spanish',
+                speaker=idx.split('-')[-2],
+                text=metadata[idx].text
+            )
+            for idx in audio.recordings
+        )
 
         if output_dir is not None:
             supervision.to_json(output_dir / f'supervisions_{fld}.json')
             audio.to_json(output_dir / f'recordings_{fld}.json')
 
-        manifests[fld] = {'recordings': audio, 'supervisions': supervision}
+        manifests[fld] = {
+            'recordings': audio,
+            'supervisions': supervision
+        }
 
     return manifests
