@@ -108,7 +108,7 @@ def random_mixed(
     feature_set = FeatureSet.from_json(feature_manifest)
 
     source_cut_set = CutSet.from_manifests(supervisions=supervision_set, features=feature_set)
-    left_cuts, right_cuts = split(source_cut_set, num_splits=2, randomize=True)
+    left_cuts, right_cuts = source_cut_set.split(num_splits=2, randomize=True)
 
     snrs = np.random.uniform(*snr_range, size=len(left_cuts)).tolist()
     relative_offsets = np.random.uniform(*offset_range, size=len(left_cuts)).tolist()
