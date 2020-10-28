@@ -1,14 +1,15 @@
 from contextlib import nullcontext as does_not_raise
 from functools import lru_cache
-from tempfile import NamedTemporaryFile
+from pathlib import Path
+from tempfile import NamedTemporaryFile, TemporaryDirectory
 
 import numpy as np
 import pytest
 from pytest import mark, raises
 
-from lhotse.audio import AudioSource, Recording, RecordingSet, AudioMixer
+from lhotse.audio import AudioMixer, AudioSource, Recording, RecordingSet
 from lhotse.test_utils import DummyManifest
-from lhotse.utils import INT16MAX
+from lhotse.utils import INT16MAX, fastcopy
 
 
 @pytest.fixture
@@ -209,7 +210,7 @@ def recording(file_source):
 
 @pytest.fixture
 def recording_set2(recording):
-    return RecordingSet.from_recordings([recording] * 5)
+    return RecordingSet.from_recordings([fastcopy(recording, id=f'r{i}') for i in range(5)])
 
 
 def test_audio_source_path_prefix(file_source):
@@ -229,6 +230,49 @@ def test_recording_set_prefix(recording_set2):
     for recording in recording_set2.with_path_prefix('/data'):
         for source in recording.sources:
             assert str(source.source) == '/data/test/fixtures/mono_c0.wav'
+
+
+def test_audio_source_copy(file_source):
+    with TemporaryDirectory() as dest:
+        copied_source = file_source.copy(dest)
+        assert copied_source.source != file_source.source
+        np.testing.assert_equal(copied_source.load_audio(), file_source.load_audio())
+
+
+def test_recording_copy(recording):
+    with TemporaryDirectory() as dest:
+        copied_rec = recording.copy(dest)
+        assert copied_rec != recording
+        np.testing.assert_equal(copied_rec.load_audio(), recording.load_audio())
+
+
+@pytest.mark.parametrize('include_source_dir', [True, False])
+def test_recording_set_shard(recording_set2, include_source_dir):
+    with TemporaryDirectory() as dest1, TemporaryDirectory() as dest2:
+        sharded = recording_set2.shard(
+            locations=[dest1, dest2],
+            include_source_dir=include_source_dir
+        )
+        recs = list(sharded)
+        if include_source_dir:
+            assert str(Path(recs[0].sources[0].source).parent) == dest1
+            assert str(Path(recs[1].sources[0].source).parent) == dest1
+            assert str(Path(recs[2].sources[0].source).parent) == dest2
+            assert str(Path(recs[3].sources[0].source).parent) == dest2
+            assert str(Path(recs[4].sources[0].source).parent) == 'test/fixtures'
+        else:
+            assert str(Path(recs[0].sources[0].source).parent) == dest1
+            assert str(Path(recs[1].sources[0].source).parent) == dest1
+            assert str(Path(recs[2].sources[0].source).parent) == dest1
+            assert str(Path(recs[3].sources[0].source).parent) == dest2
+            assert str(Path(recs[4].sources[0].source).parent) == dest2
+
+
+def test_recording_set_shuffle(recording_set2):
+    shuffled = recording_set2.shuffle()
+    orig_ids = [r.id for r in recording_set2]
+    shuf_ids = [r.id for r in shuffled]
+    assert orig_ids != shuf_ids
 
 
 class TestAudioMixer:

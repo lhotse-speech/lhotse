@@ -1,3 +1,5 @@
+import math
+import random
 import warnings
 from dataclasses import asdict, dataclass
 from io import BytesIO
@@ -9,7 +11,7 @@ from typing import Callable, Dict, Iterable, List, Optional, Sequence, Tuple, Un
 import numpy as np
 
 from lhotse.utils import (Decibels, JsonMixin, Pathlike, Seconds, SetContainingAnything, YamlMixin, fastcopy,
-                          split_sequence)
+                          split_sequence, uuid4)
 
 Channels = Union[int, List[int]]
 
@@ -71,6 +73,31 @@ class AudioSource:
         if self.type != 'file':
             return self
         return fastcopy(self, source=str(Path(path) / self.source))
+
+    def copy(self, location: Pathlike) -> 'AudioSource':
+        """
+        Create a copy of the recording file in directory ``location`` on the filesystem,
+        and return a new ``AudioSource`` object that points to the new location.
+
+        :param location: A path to a directory in the filesystem (will be created if doesn't exist).
+        :return: a new ``AudioSource`` object with updated ``source`` attribute.
+        """
+        if self.type != 'file':
+            raise ValueError(f"AudioSource.copy() supports only sources of type 'file' "
+                             f"(was invoked on source type '{self.type}').")
+        from shutil import copy
+        location = Path(location)
+        assert (location.is_dir() or not location.exists()), \
+            "Must pass a directory (not file) path to AudioSource.copy()"
+        location.mkdir(exist_ok=True, parents=True)
+        filename = Path(self.source).name
+        dest = location / filename
+        if dest.is_file():
+            # In case a different file with the same name exists,
+            # add a random identifier to this file.
+            dest = location / (str(uuid4()) + filename)
+        copy(self.source, dest)
+        return fastcopy(self, source=str(dest))
 
     @staticmethod
     def from_dict(data) -> 'AudioSource':
@@ -181,6 +208,17 @@ class Recording:
     def with_path_prefix(self, path: Pathlike) -> 'Recording':
         return fastcopy(self, sources=[s.with_path_prefix(path) for s in self.sources])
 
+    def copy(self, location: Pathlike) -> 'Recording':
+        """
+        Create copies of all files contained by this ``Recording`` in directory
+        ``location`` on the filesystem, and return a new ``Recording`` object
+        that points to the file copies.
+
+        :param location: A path to a directory in the filesystem (will be created if doesn't exist).
+        :return: a new ``Recording`` object with updated ``AudioSource`` objects in ``self.sources``.
+        """
+        return fastcopy(self, sources=[s.copy(location) for s in self.sources])
+
     @staticmethod
     def from_dict(data: dict) -> 'Recording':
         raw_sources = data.pop('sources')
@@ -231,6 +269,45 @@ class RecordingSet(JsonMixin, YamlMixin, Sequence[Recording]):
             RecordingSet.from_recordings(subset) for subset in
             split_sequence(self, num_splits=num_splits, randomize=randomize)
         ]
+
+    def shard(self, locations: Sequence[Pathlike], include_source_dir: bool = True) -> 'RecordingSet':
+        """
+        Copy the recording files covered by the ``RecordingSet`` to one of the directories in
+        ``locations`` and return a new ``RecordingSet`` that points to the locations of the copies.
+
+        To determine where each file is copied, the ``RecordingSet`` is first split into
+        ``len(locations)`` parts (no randomization is performed).
+
+        :param locations: A list of path to directories in the filesystem (will be created if don't exist).
+        :param include_source_dir: Bool, should the existing location of the files be
+            included in the result of ``shard()``.
+        :return: a new ``RecordingSet`` object with updated ``Recording`` and ``AudioSource`` objects.
+        """
+        assert len(locations) > 0
+        n_parts = len(locations) + int(include_source_dir)
+        part_size = math.ceil(len(self) / n_parts)
+        # If we're including source dir, the last chunk will not be copied;
+        # we'll just return the existing recordings instead.
+        # Note that len(locations) might be different than n_parts,
+        # depending on the value of include_source_dir.
+        last_index_to_copy = len(locations) * part_size
+        sharded = [
+            rec.copy(locations[idx // part_size])
+            if idx < last_index_to_copy
+            else rec
+            for idx, rec in enumerate(self)
+        ]
+        return RecordingSet.from_recordings(sharded)
+
+    def shuffle(self) -> 'RecordingSet':
+        """
+        Shuffle the order of the elements.
+
+        :return: a new ``RecordingSet`` with elements in a different order.
+        """
+        recordings = list(self)
+        random.shuffle(recordings)
+        return RecordingSet.from_recordings(recordings)
 
     def load_audio(
             self,
