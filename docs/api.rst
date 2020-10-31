@@ -32,6 +32,12 @@ Voice Activity Detection
 .. automodule:: lhotse.dataset.vad
   :members:
 
+Diarization (experimental)
+**************************
+
+.. automodule:: lhotse.dataset.diarization
+  :members:
+
 Recording manifests
 -------------------
 

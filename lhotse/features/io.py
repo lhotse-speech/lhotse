@@ -1,7 +1,7 @@
 from abc import ABCMeta, abstractmethod
 from functools import lru_cache
 from pathlib import Path
-from typing import Type, Optional, List
+from typing import List, Optional, Type
 
 import lilcom
 import numpy as np
@@ -370,7 +370,11 @@ class LilcomHdf5Reader(FeaturesReader):
             left_offset_frames: int = 0,
             right_offset_frames: Optional[int] = None
     ) -> np.ndarray:
-        arr = lilcom.decompress(self.hdf[key].value.tobytes())
+        # This weird indexing with [()] is a replacement for ".value" attribute,
+        # that got deprecated with the following warning:
+        # H5pyDeprecationWarning: dataset.value has been deprecated. Use dataset[()] instead.
+        #     arr = lilcom.decompress(self.hdf[key].value.tobytes())
+        arr = lilcom.decompress(self.hdf[key][()].tobytes())
         return arr[left_offset_frames: right_offset_frames]
 
 
