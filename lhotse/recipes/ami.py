@@ -1,4 +1,5 @@
-"""The data prepare recipe for the AMI Meeting Corpus.
+"""
+The data prepare recipe for the AMI Meeting Corpus.
 
 The AMI Meeting Corpus consists of 100 hours of meeting recordings. The recordings use a range of signals
 synchronized to a common timeline. These include close-talking and far-field microphones, individual and room-view
@@ -105,35 +106,64 @@ def parse_ami_annotations(gzip_file: Pathlike) -> Dict[str, List[AmiSegmentAnnot
     anotations = {}
     with GzipFile(gzip_file) as f:
         for line in f:
-            line = re.sub(r'\s+$', '', line.decode())
+            line = line.decode()
+            line = re.sub(r'\s+$', '', line)
+            line = re.sub(r'\.\.+', '', line)
             if re.match(r'^Found', line) or re.match(r'^[Oo]bs', line):
                 continue
-            meet_id, _, speaker, channel, _, _, aut_btime, aut_etime, trans, puncts_times = line.split('\t')
+            meet_id, _, speaker, channel, transcriber_start, transcriber_end, starttime, endtime, trans, puncts_times \
+                = line.split('\t')
 
-            # Split transcript by punctuations
-            trans = re.split(r' *[.,?!:] *', re.sub(r'[.,?!:\s]+$', '', trans.upper()))
+            # Cleanup the transcript and split by punctuations
+            trans = trans.upper()
+            trans = re.sub(r' *[.,?!:]+ *', ',', trans.upper())
+            trans = re.sub(r',+', ',', trans)
+            trans = re.sub(r',$', '', trans)
+            trans = re.split(r',', trans)
 
-            # Process time points
-            if puncts_times == '-':
-                puncts_times = aut_etime
+            # Time points of punctuation marks
+            puncts_times = re.sub(r'-', ' ', puncts_times)
+            puncts_times = re.sub(r'NaN', ' ', puncts_times)
+            puncts_times = re.sub(r' +', ' ', puncts_times)
+
+            # Unique the puncts_times and convert its items to float
+            puncts_times_seen = set()
+            puncts_times = [x for x in puncts_times.split() if not (x in puncts_times_seen or puncts_times_seen.add(x))]
+            puncts_times = [float(t) for t in puncts_times]
+
             try:
-                aut_btime = float(aut_btime)
-                aut_etime = float(aut_etime)
-                puncts_times = [float(t) for t in puncts_times.split()]
+                starttime = float(starttime)
+                endtime = float(endtime)
+                transcriber_start = float(transcriber_start)
+                transcriber_end = float(transcriber_end)
+
+                # Haven't found out why there are both 'transcriber_start' and 'starttime' columns in the
+                # ami_manual_annotations_v1.6.1_export.txt and what are the differences between them. Just choose the
+                # time points for the longer segments here.
+                if endtime < transcriber_end:
+                    endtime = transcriber_end
+                if starttime > transcriber_start:
+                    starttime = transcriber_start
+
+                # Add a full stop mark if there is no punctuations
                 seg_num = len(trans)
                 assert seg_num > 0
-                if len(puncts_times) == seg_num - 1:
-                    assert(puncts_times[-1] <= aut_etime)
-                    puncts_times.append(aut_etime)
-                if len(puncts_times) == seg_num + 1:
+                if len(puncts_times) == seg_num:
+                    # In this case, the punctuation should be at the end of the sentence, so we just pop it.
                     puncts_times.pop()
-                    assert (puncts_times[-1] <= aut_etime)
-                assert len(puncts_times) == seg_num and aut_btime <= puncts_times[0]
+
+                # Catches the unmatched punctuations and those time points
+                assert len(puncts_times) + 1 == seg_num
+
+                # If a punctuation mark's time point be outside of the segment, the annotation line must be invalid.
+                if len(puncts_times) > 0:
+                    assert starttime <= puncts_times[0] and puncts_times[-1] <= endtime
+
             except (ValueError, AssertionError):
                 continue
 
             # Make the begin/end points list
-            seg_btimes = [aut_btime] + puncts_times
+            seg_btimes = [starttime] + puncts_times
             seg_btimes.pop()
             seg_times = [AmiSegmentAnnotation(
                 text=t,

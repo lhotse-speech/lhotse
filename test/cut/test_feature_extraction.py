@@ -9,6 +9,7 @@ import pytest
 from lhotse import Recording, Cut, Fbank, CutSet
 from lhotse.audio import AudioSource
 from lhotse.cut import MixedCut
+from lhotse.features.io import LilcomFilesWriter
 
 
 @pytest.fixture
@@ -36,8 +37,8 @@ def test_extract_features(cut):
 
 def test_extract_and_store_features(cut):
     extractor = Fbank()
-    with TemporaryDirectory() as tmpdir:
-        cut_with_feats = cut.compute_and_store_features(extractor=extractor, output_dir=tmpdir)
+    with TemporaryDirectory() as tmpdir, LilcomFilesWriter(tmpdir) as storage:
+        cut_with_feats = cut.compute_and_store_features(extractor=extractor, storage=storage)
         arr = cut_with_feats.load_features()
     assert arr.shape[0] == 100
     assert arr.shape[1] == extractor.feature_dim(cut.sampling_rate)
@@ -47,10 +48,10 @@ def test_extract_and_store_features(cut):
 def test_extract_and_store_features_from_mixed_cut(cut, mix_eagerly):
     mixed_cut = cut.append(cut)
     extractor = Fbank()
-    with TemporaryDirectory() as tmpdir:
+    with TemporaryDirectory() as tmpdir, LilcomFilesWriter(tmpdir) as storage:
         cut_with_feats = mixed_cut.compute_and_store_features(
             extractor=extractor,
-            output_dir=tmpdir,
+            storage=storage,
             mix_eagerly=mix_eagerly
         )
         arr = cut_with_feats.load_features()
@@ -97,11 +98,11 @@ def is_dask_availabe():
 )
 def test_extract_and_store_features_from_cut_set(cut_set, executor, mix_eagerly):
     extractor = Fbank()
-    with TemporaryDirectory() as tmpdir:
+    with TemporaryDirectory() as tmpdir, LilcomFilesWriter(tmpdir) as storage:
         with executor() if executor is not None else no_executor() as ex:
             cut_set_with_feats = cut_set.compute_and_store_features(
                 extractor=extractor,
-                output_dir=tmpdir,
+                storage=storage,
                 mix_eagerly=mix_eagerly,
                 executor=ex
             )
@@ -127,4 +128,3 @@ def test_extract_and_store_features_from_cut_set(cut_set, executor, mix_eagerly)
         arr = cuts[1].load_features()
         assert arr.shape[0] == 300
         assert arr.shape[1] == extractor.feature_dim(cuts[0].sampling_rate)
-

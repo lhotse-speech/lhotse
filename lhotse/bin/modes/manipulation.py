@@ -10,8 +10,7 @@ from lhotse.bin.modes.cli_base import cli
 from lhotse.manipulation import (
     combine as combine_manifests,
     load_manifest,
-    split as split_manifest,
-    to_manifest,
+    to_manifest
 )
 from lhotse.utils import Pathlike
 
@@ -28,12 +27,13 @@ def manifest():
 @click.argument('num_splits', type=int)
 @click.argument('manifest', type=click.Path(exists=True, dir_okay=False))
 @click.argument('output_dir', type=click.Path())
-def split(num_splits: int, manifest: Pathlike, output_dir: Pathlike):
+@click.option('r', '--randomize', is_flag=True, help='Optionally randomize the sequence before splitting.')
+def split(num_splits: int, manifest: Pathlike, output_dir: Pathlike, randomize: bool):
     """Load MANIFEST, split it into NUM_SPLITS equal parts and save as separate manifests in OUTPUT_DIR. """
     output_dir = Path(output_dir)
     manifest = Path(manifest)
-    data_set = load_manifest(manifest)
-    parts = split_manifest(manifest=data_set, num_splits=num_splits)
+    any_set = load_manifest(manifest)
+    parts = any_set.split(num_splits=num_splits, randomize=randomize)
     output_dir.mkdir(parents=True, exist_ok=True)
     for idx, part in enumerate(parts):
         part.to_json(output_dir / f'{manifest.stem}.{idx + 1}.json')

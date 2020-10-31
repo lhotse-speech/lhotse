@@ -25,7 +25,8 @@ def overlapping_supervisions_cut():
             num_features=80,
             sampling_rate=16000,
             storage_type='lilcom',
-            storage_path='test/fixtures/dummy_feats/storage/e66b6386-aee5-4a5a-8369-fdde1d2b97c7.llc'
+            storage_path='test/fixtures/dummy_feats/storage/',
+            storage_key='e66b6386-aee5-4a5a-8369-fdde1d2b97c7.llc'
         ),
         supervisions=[
             SupervisionSegment(id='s1', recording_id='recording-1', start=0.0, duration=0.2),

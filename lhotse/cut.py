@@ -3,7 +3,7 @@ import warnings
 from dataclasses import dataclass, field
 from functools import reduce
 from math import ceil, floor
-from typing import Callable, Dict, Iterable, List, Optional, Union, Any, FrozenSet
+from typing import Any, Callable, Dict, FrozenSet, Iterable, List, Optional, Sequence, Union
 
 import numpy as np
 from cytoolz import sliding_window
@@ -11,20 +11,11 @@ from cytoolz.itertoolz import groupby
 
 from lhotse import WavAugmenter
 from lhotse.audio import AudioMixer, Recording, RecordingSet
-from lhotse.features import Features, FeatureExtractor, FeatureSet, FeatureMixer, create_default_feature_extractor
+from lhotse.features import FeatureExtractor, FeatureMixer, FeatureSet, Features, create_default_feature_extractor
+from lhotse.features.io import FeaturesWriter
 from lhotse.supervision import SupervisionSegment, SupervisionSet
-from lhotse.utils import (
-    EPSILON,
-    Decibels,
-    Pathlike,
-    Seconds,
-    TimeSpan,
-    asdict_nonull,
-    overlaps,
-    overspans,
-    uuid4,
-    JsonMixin, YamlMixin, fastcopy,
-)
+from lhotse.utils import (Decibels, EPSILON, JsonMixin, Pathlike, Seconds, TimeSpan, YamlMixin, asdict_nonull, fastcopy,
+                          overlaps, overspans, split_sequence, uuid4)
 
 # One of the design principles for Cuts is a maximally "lazy" implementation, e.g. when mixing Cuts,
 # we'd rather sum the feature matrices only after somebody actually calls "load_features". It helps to avoid
@@ -182,11 +173,11 @@ class CutUtilsMixin:
         """
         assert self.has_features, f"No features available. " \
                                   f"Can't compute supervisions feature mask for cut with ID: {self.id}."
-        mask = np.zeros(self.num_frames)
+        mask = np.zeros(self.num_frames, dtype=np.float32)
         for supervision in self.supervisions:
             st = round(supervision.start / self.frame_shift) if supervision.start > 0 else 0
             et = round(supervision.end / self.frame_shift) if supervision.end < self.duration else self.num_frames
-            mask[st:et] = 1
+            mask[st:et] = 1.0
         return mask
 
     def supervisions_audio_mask(self) -> np.ndarray:
@@ -196,7 +187,7 @@ class CutUtilsMixin:
         """
         assert self.has_recording, f"No recording available. " \
                                    f"Can't compute supervisions audio mask for cut with ID: {self.id}."
-        mask = np.zeros(self.num_samples)
+        mask = np.zeros(self.num_samples, dtype=np.float32)
         for supervision in self.supervisions:
             st = round(supervision.start * self.sampling_rate) if supervision.start > 0 else 0
             et = (
@@ -204,7 +195,7 @@ class CutUtilsMixin:
                 if supervision.end < self.duration
                 else self.duration * self.sampling_rate
             )
-            mask[st:et] = 1
+            mask[st:et] = 1.0
         return mask
 
 
@@ -310,7 +301,7 @@ class Cut(CutUtilsMixin):
     def compute_and_store_features(
             self,
             extractor: FeatureExtractor,
-            output_dir: Pathlike,
+            storage: FeaturesWriter,
             augmenter: Optional[WavAugmenter] = None,
             *args,
             **kwargs
@@ -326,8 +317,8 @@ class Cut(CutUtilsMixin):
         """
         features_info = extractor.extract_from_samples_and_store(
             samples=self.load_audio(),
+            storage=storage,
             sampling_rate=self.sampling_rate,
-            output_dir=output_dir,
             offset=self.start,
             augmenter=augmenter,
         )
@@ -393,16 +384,28 @@ class Cut(CutUtilsMixin):
         """
         if duration <= self.duration:
             return self
-        padding_duration = duration - self.duration
+        total_num_frames = round(duration / self.frame_shift) if self.has_features else None
+        total_num_samples = round(duration * self.sampling_rate) if self.has_recording else None
+        padding_duration = round(duration - self.duration, ndigits=3)
         return self.append(PaddingCut(
             id=str(uuid4()),
             duration=padding_duration,
             num_features=self.num_features if self.features is not None else None,
-            num_frames=round(padding_duration / self.frame_shift) if self.features is not None else None,
-            num_samples=round(padding_duration * self.sampling_rate) if self.recording is not None else None,
+            num_frames=total_num_frames - self.num_frames if self.features is not None else None,
+            num_samples=total_num_samples - self.num_samples if self.recording is not None else None,
             sampling_rate=self.features.sampling_rate if self.features is not None else self.recording.sampling_rate,
             use_log_energy=self.features.type in ('fbank', 'mfcc') if self.features is not None else False
         ))
+
+    def map_supervisions(self, transform_fn: Callable[[SupervisionSegment], SupervisionSegment]) -> AnyCut:
+        """
+        Modify the SupervisionSegments by `transform_fn` of this Cut.
+
+        :param transform_fn: a function that modifies a supervision as an argument.
+        :return: a modified Cut.
+        """
+        new_cut = fastcopy(self, supervisions=[s.map(transform_fn) for s in self.supervisions])
+        return new_cut
 
     @staticmethod
     def from_dict(data: dict) -> 'Cut':
@@ -523,8 +526,17 @@ class PaddingCut(CutUtilsMixin):
         return fastcopy(
             self,
             num_features=extractor.feature_dim(self.sampling_rate),
-            num_frames=int(round(self.duration / extractor.frame_shift, ndigits=3))
+            num_frames=round(self.duration / extractor.frame_shift)
         )
+
+    def map_supervisions(self, transform_fn: Callable[[Any], Any]) -> AnyCut:
+        """
+        Just for consistency with `Cut` and `MixedCut`.
+
+        :param transform_fn: a dummy function that would be never called actually.
+        :return: the PaddingCut itself.
+        """
+        return self
 
     @staticmethod
     def from_dict(data: dict) -> 'PaddingCut':
@@ -584,7 +596,7 @@ class MixedCut(CutUtilsMixin):
     @property
     def duration(self) -> Seconds:
         track_durations = (track.offset + track.cut.duration for track in self.tracks)
-        return max(track_durations)
+        return round(max(track_durations), ndigits=3)
 
     @property
     def has_features(self) -> bool:
@@ -702,7 +714,9 @@ class MixedCut(CutUtilsMixin):
         """
         if duration <= self.duration:
             return self
-        padding_duration = duration - self.duration
+        total_num_frames = round(duration / self.frame_shift) if self.has_features else None
+        total_num_samples = round(duration * self.sampling_rate) if self.has_recording else None
+        padding_duration = round(duration - self.duration, ndigits=3)
         return self.append(PaddingCut(
             id=str(uuid4()),
             duration=padding_duration,
@@ -711,13 +725,13 @@ class MixedCut(CutUtilsMixin):
             # from Cuts that have different sampling rates and frame shifts. In that case, we are assuming
             # that we should use the values from the reference cut, i.e. the first one in the mix.
             num_frames=(
-                round(padding_duration / self.tracks[0].cut.frame_shift)
-                if self.tracks[0].cut.has_features
+                total_num_frames - self.num_frames
+                if self.has_features
                 else None
             ),
             num_samples=(
-                round(padding_duration * self.sampling_rate)
-                if self.tracks[0].cut.has_recording
+                total_num_samples - self.num_samples
+                if self.has_recording
                 else None
             ),
             sampling_rate=self.tracks[0].cut.sampling_rate,
@@ -798,7 +812,7 @@ class MixedCut(CutUtilsMixin):
     def compute_and_store_features(
             self,
             extractor: FeatureExtractor,
-            output_dir: Pathlike,
+            storage: FeaturesWriter,
             augmenter: Optional[WavAugmenter] = None,
             mix_eagerly: bool = True
     ) -> AnyCut:
@@ -819,8 +833,8 @@ class MixedCut(CutUtilsMixin):
         if mix_eagerly:
             features_info = extractor.extract_from_samples_and_store(
                 samples=self.load_audio(),
+                storage=storage,
                 sampling_rate=self.sampling_rate,
-                output_dir=output_dir,
                 offset=0,
                 augmenter=augmenter,
             )
@@ -838,7 +852,7 @@ class MixedCut(CutUtilsMixin):
                 MixTrack(
                     cut=track.cut.compute_and_store_features(
                         extractor=extractor,
-                        output_dir=output_dir,
+                        storage=storage,
                         augmenter=augmenter,
                     ),
                     offset=track.offset,
@@ -847,6 +861,18 @@ class MixedCut(CutUtilsMixin):
                 for track in self.tracks
             ]
             return MixedCut(id=self.id, tracks=new_tracks)
+
+    def map_supervisions(self, transform_fn: Callable[[SupervisionSegment], SupervisionSegment]) -> AnyCut:
+        """
+        Modify the SupervisionSegments by `transform_fn` of this MixedCut.
+
+        :param transform_fn: a function that modifies a supervision as an argument.
+        :return: a modified MixedCut.
+        """
+        new_mixed_cut = fastcopy(self)
+        for track in new_mixed_cut.tracks:
+            track.cut.supervisions = [segment.map(transform_fn) for segment in track.cut.supervisions]
+        return new_mixed_cut
 
     @staticmethod
     def from_dict(data: dict) -> 'MixedCut':
@@ -874,7 +900,7 @@ class MixedCut(CutUtilsMixin):
 
 
 @dataclass
-class CutSet(JsonMixin, YamlMixin):
+class CutSet(JsonMixin, YamlMixin, Sequence[AnyCut]):
     """
     CutSet combines features with their corresponding supervisions.
     It may have wider span than the actual supervisions, provided the features for the whole span exist.
@@ -1008,6 +1034,19 @@ class CutSet(JsonMixin, YamlMixin):
         print('Duration statistics (seconds):')
         with pd.option_context('precision', 1):
             print(durations.describe().drop('count'))
+
+    def split(self, num_splits: int, randomize: bool = False) -> List['CutSet']:
+        """
+        Split the ``CutSet`` into ``num_splits`` pieces of equal size.
+
+        :param num_splits: Requested number of splits.
+        :param randomize: Optionally randomize the cuts order first.
+        :return: A list of ``CutSet`` pieces.
+        """
+        return [
+            CutSet.from_cuts(subset) for subset in
+            split_sequence(self, num_splits=num_splits, randomize=randomize)
+        ]
 
     def filter(self, predicate: Callable[[AnyCut], bool]) -> 'CutSet':
         """
@@ -1169,7 +1208,7 @@ class CutSet(JsonMixin, YamlMixin):
     def compute_and_store_features(
             self,
             extractor: FeatureExtractor,
-            output_dir: Pathlike,
+            storage: FeaturesWriter,
             augmenter: Optional[WavAugmenter] = None,
             executor: Optional[Any] = None,
             mix_eagerly: bool = True
@@ -1196,7 +1235,7 @@ class CutSet(JsonMixin, YamlMixin):
             return CutSet.from_cuts(
                 cut.compute_and_store_features(
                     extractor=extractor,
-                    output_dir=output_dir,
+                    storage=storage,
                     augmenter=augmenter,
                     mix_eagerly=mix_eagerly
                 )
@@ -1210,7 +1249,7 @@ class CutSet(JsonMixin, YamlMixin):
                     _extract_and_store_features_helper_fn,
                     cut,
                     extractor=extractor,
-                    output_dir=output_dir,
+                    storage=storage,
                     augmenter=augmenter,
                     mix_eagerly=mix_eagerly
                 )
@@ -1223,6 +1262,28 @@ class CutSet(JsonMixin, YamlMixin):
 
     def with_recording_path_prefix(self, path: Pathlike) -> 'CutSet':
         return CutSet.from_cuts(c.with_recording_path_prefix(path) for c in self)
+
+    def map_supervisions(self, transform_fn: Callable[[SupervisionSegment], SupervisionSegment]) -> 'CutSet':
+        """
+        Modify the SupervisionSegments by `transform_fn` in this CutSet.
+
+        :param transform_fn: a function that modifies a supervision as an argument.
+        :return: a new, modified CutSet.
+        """
+        return CutSet.from_cuts(cut.map_supervisions(transform_fn) for cut in self)
+
+    def transform_text(self, transform_fn: Callable[[str], str]) -> 'CutSet':
+        """
+        Return a copy of this ``CutSet`` with all ``SupervisionSegments`` text transformed with ``transform_fn``.
+        Useful for text normalization, phonetic transcription, etc.
+
+        :param transform_fn: a function that accepts a string and returns a string.
+        :return: a new, modified CutSet.
+        """
+        return self.map_supervisions(lambda s: s.transform_text(transform_fn))
+
+    def __repr__(self) -> str:
+        return f'CutSet(len={len(self)})'
 
     def __contains__(self, item: Union[str, Cut, MixedCut]) -> bool:
         if isinstance(item, str):

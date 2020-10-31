@@ -10,7 +10,7 @@ from lhotse.augmentation import WavAugmenter
 
 @pytest.fixture
 def audio():
-    return torch.sin(2 * math.pi * torch.linspace(0, 1, 16000)).unsqueeze(0)
+    return torch.sin(2 * math.pi * torch.linspace(0, 1, 16000)).unsqueeze(0).numpy()
 
 
 @pytest.mark.parametrize('name', ['reverb', 'pitch', 'pitch_reverb_tdrop'])

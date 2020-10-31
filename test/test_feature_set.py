@@ -19,6 +19,7 @@ from lhotse.features import (
     Mfcc,
     Spectrogram, FeatureExtractor
 )
+from lhotse.features.io import LilcomFilesWriter, LilcomHdf5Writer, NumpyFilesWriter, NumpyHdf5Writer
 from lhotse.test_utils import DummyManifest
 from lhotse.utils import Seconds, time_diff_to_num_frames
 
@@ -37,7 +38,6 @@ some_augmentation = None
 )
 def test_feature_extractor(feature_type, exception_expectation):
     # For now, just test that it runs
-    # TODO: test that the output is similar to Kaldi
     with exception_expectation:
         fe = create_default_feature_extractor(feature_type)
         samples, sr = torchaudio.load('test/fixtures/libri/libri-1088-134315-0000.wav')
@@ -82,7 +82,8 @@ def test_feature_set_serialization(format, compressed):
                 num_features=20,
                 sampling_rate=16000,
                 storage_type='lilcom',
-                storage_path='/irrelevant/path.llc'
+                storage_path='/irrelevant/',
+                storage_key='path.llc'
             )
         ]
     )
@@ -135,26 +136,22 @@ def test_load_features_with_default_arguments():
 
 
 @pytest.mark.parametrize(
-    'augmentation', [
-        # Test feature set builder with no augmentation
-        None,
-        # Test feature set builder with WavAugment if available
-        pytest.param(
-            'pitch_reverb_tdrop',
-            marks=pytest.mark.skipif(not is_wav_augment_available(), reason='WavAugment required')
-        )
+    'storage', [
+        LilcomFilesWriter(TemporaryDirectory().name),
+        LilcomHdf5Writer(NamedTemporaryFile().name),
+        NumpyFilesWriter(TemporaryDirectory().name),
+        NumpyHdf5Writer(NamedTemporaryFile().name)
     ]
 )
-def test_feature_set_builder(augmentation):
-    audio_set = RecordingSet.from_json('test/fixtures/audio.json')
-    augmenter = WavAugmenter.create_predefined(augmentation, sampling_rate=8000) if augmentation is not None else None
-    with TemporaryDirectory() as output_dir:
+def test_feature_set_builder(storage):
+    recordings: RecordingSet = RecordingSet.from_json('test/fixtures/audio.json')
+    extractor = Fbank()
+    with storage:
         builder = FeatureSetBuilder(
-            feature_extractor=Fbank(),
-            output_dir=output_dir,
-            augmenter=augmenter
+            feature_extractor=extractor,
+            storage=storage,
         )
-        feature_set = builder.process_and_store_recordings(recordings=audio_set)
+        feature_set = builder.process_and_store_recordings(recordings=recordings)
 
     assert len(feature_set) == 6
 
@@ -168,8 +165,19 @@ def test_feature_set_builder(augmentation):
         assert features.num_frames == round(features.duration / features.frame_shift)
         # assert that num_features is preserved
         assert features.num_features == builder.feature_extractor.config.num_mel_bins
-        # assert that lilcom is the default storate type
-        assert features.storage_type == 'lilcom'
+        # assert that the storage type metadata matches
+        assert features.storage_type == storage.name
+        # assert that the metadata is consistent with the data shapes
+        arr = features.load()
+        assert arr.shape[0] == features.num_frames
+        assert arr.shape[1] == features.num_features
+        # assert that the stored features are the same as the "freshly extracted" features
+        recording = recordings[features.recording_id]
+        expected = extractor.extract(
+            samples=recording.load_audio(channels=features.channels),
+            sampling_rate=recording.sampling_rate
+        )
+        np.testing.assert_almost_equal(arr, expected, decimal=2)
 
     # Assert the properties for recordings of duration 0.5 seconds
     for features in feature_infos[:2]:
@@ -180,6 +188,49 @@ def test_feature_set_builder(augmentation):
     for features in feature_infos[2:]:
         assert features.num_frames == 100
         assert features.duration == 1.0
+
+
+@pytest.mark.skipif(not is_wav_augment_available(), reason='WavAugment required')
+def test_feature_set_builder_with_augmentation():
+    recordings: RecordingSet = RecordingSet.from_json('test/fixtures/audio.json')
+    augmenter = WavAugmenter.create_predefined('pitch_reverb_tdrop', sampling_rate=8000)
+    extractor = Fbank()
+    with TemporaryDirectory() as d, LilcomFilesWriter(d) as storage:
+        builder = FeatureSetBuilder(
+            feature_extractor=extractor,
+            storage=storage,
+            augmenter=augmenter
+        )
+        feature_set = builder.process_and_store_recordings(recordings=recordings)
+
+        assert len(feature_set) == 6
+
+        feature_infos = list(feature_set)
+
+        # Assert the properties shared by all features
+        for features in feature_infos:
+            # assert that fbank is the default feature type
+            assert features.type == 'fbank'
+            # assert that duration is always a multiple of frame_shift
+            assert features.num_frames == round(features.duration / features.frame_shift)
+            # assert that num_features is preserved
+            assert features.num_features == builder.feature_extractor.config.num_mel_bins
+            # assert that the storage type metadata matches
+            assert features.storage_type == storage.name
+            # assert that the metadata is consistent with the data shapes
+            arr = features.load()
+            assert arr.shape[0] == features.num_frames
+            assert arr.shape[1] == features.num_features
+
+        # Assert the properties for recordings of duration 0.5 seconds
+        for features in feature_infos[:2]:
+            assert features.num_frames == 50
+            assert features.duration == 0.5
+
+        # Assert the properties for recordings of duration 1.0 seconds
+        for features in feature_infos[2:]:
+            assert features.num_frames == 100
+            assert features.duration == 1.0
 
 
 @mark.parametrize(
@@ -249,10 +300,11 @@ def test_feature_set_prefix_path():
             num_features=40,
             sampling_rate=16000,
             storage_type='lilcom',
-            storage_path='feats/12345.llc',
+            storage_path='feats/',
+            storage_key='12345.llc',
             start=0,
             duration=10
         )
     ])
     for feat in features.with_path_prefix('/data'):
-        assert feat.storage_path == '/data/feats/12345.llc'
+        assert feat.storage_path == '/data/feats'

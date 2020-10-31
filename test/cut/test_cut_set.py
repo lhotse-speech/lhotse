@@ -5,6 +5,7 @@ import pytest
 from lhotse import SupervisionSegment, Features, Recording
 from lhotse.audio import AudioSource
 from lhotse.cut import Cut, CutSet, MixedCut, MixTrack
+from lhotse.test_utils import remove_spaces_from_segment_text
 
 
 @pytest.fixture
@@ -112,10 +113,27 @@ def test_cut_set_describe_runs(cut_set):
     cut_set.describe()
 
 
+def test_cut_map_supervisions(cut_set):
+    for cut in cut_set.map_supervisions(remove_spaces_from_segment_text):
+        for s in cut.supervisions:
+            if s.text is not None:
+                assert ' ' not in s.text
+
+
+def test_supervision_transform_text(cut_set):
+    for cut in cut_set.transform_text(lambda text: 'dummy'):
+        for s in cut.supervisions:
+            if s.text is not None:
+                assert s.text == 'dummy'
+
+
 @pytest.fixture
 def cut_with_relative_paths():
     return Cut('cut', 0, 10, 0,
-               features=Features('fbank', 1000, 40, 8000, 'lilcom', 'feats.llc', 0, 10),
+               features=Features(type='fbank', num_frames=1000, num_features=40, sampling_rate=8000,
+                                 storage_type='lilcom_files', storage_path='storage_dir', storage_key='feats.llc',
+                                 start=0,
+                                 duration=10),
                recording=Recording('rec', [AudioSource('file', [0], 'audio.wav')], 8000, 80000, 10.0)
                )
 
@@ -125,7 +143,7 @@ def test_cut_set_prefix(cut_with_relative_paths):
     for c in cut_set.with_recording_path_prefix('/data'):
         assert c.recording.sources[0].source == '/data/audio.wav'
     for c in cut_set.with_features_path_prefix('/data'):
-        assert c.features.storage_path == '/data/feats.llc'
+        assert c.features.storage_path == '/data/storage_dir'
 
 
 def test_mixed_cut_set_prefix(cut_with_relative_paths):
@@ -135,7 +153,7 @@ def test_mixed_cut_set_prefix(cut_with_relative_paths):
             assert t.cut.recording.sources[0].source == '/data/audio.wav'
     for c in cut_set.with_features_path_prefix('/data'):
         for t in c.tracks:
-            assert t.cut.features.storage_path == '/data/feats.llc'
+            assert t.cut.features.storage_path == '/data/storage_dir'
 
 
 def test_mix_same_recording_channels():

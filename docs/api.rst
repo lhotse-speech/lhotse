@@ -8,19 +8,34 @@ Datasets
 
 PyTorch Dataset wrappers for common tasks.
 
-.. automodule:: lhotse.dataset.diarization
-  :members:
+Speech Recognition
+******************
 
 .. automodule:: lhotse.dataset.speech_recognition
   :members:
 
+Source Separation
+*****************
+
 .. automodule:: lhotse.dataset.source_separation
   :members:
+
+Unsupervised
+************
 
 .. automodule:: lhotse.dataset.unsupervised
   :members:
 
+Voice Activity Detection
+************************
+
 .. automodule:: lhotse.dataset.vad
+  :members:
+
+Diarization (experimental)
+**************************
+
+.. automodule:: lhotse.dataset.diarization
   :members:
 
 Recording manifests
@@ -44,6 +59,12 @@ Feature extraction and manifests
 
 Data structures and tools used for feature extraction and description.
 
+Features API - extractor and manifests
+**************************************
+
+.. automodule:: lhotse.features.base
+  :members:
+
 Torchaudio feature extractors
 *****************************
 
@@ -56,11 +77,14 @@ Torchaudio feature extractors
 .. automodule:: lhotse.features.spectrogram
   :members:
 
-Other feature extraction related classes
-****************************************
+Feature storage
+***************
 
-.. automodule:: lhotse.features.base
+.. automodule:: lhotse.features.io
   :members:
+
+Feature-domain mixing
+*********************
 
 .. automodule:: lhotse.features.mixer
   :members:
