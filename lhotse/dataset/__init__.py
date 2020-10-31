@@ -1,3 +1,4 @@
+from .diarization import DiarizationDataset
 from .source_separation import (
     SourceSeparationDataset,
     PreMixedSourceSeparationDataset,
