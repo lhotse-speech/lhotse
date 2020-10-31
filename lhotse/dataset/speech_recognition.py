@@ -121,11 +121,16 @@ class K2DataLoader(DataLoader):
 
     The 'features' tensor is collated in a standard way to return a tensor of shape (B, T, F).
 
-    The 'supervisions' dict contains each supervision as a separate entry
-    (its len() might be more than B dim in 'features').
-    The 'example_idx' field which originally points to index of the example in the Dataset
-    is remapped to the index of the corresponding features matrix in the collated 'features'.
+    The 'supervisions' dict contains the same fields as in ``K2SpeechRecognitionDataset``,
+    except that each sub-field (like 'start_frame') is a 1D PyTorch tensor with shape (B,).
+    The 'text' sub-field is an exception - it's a list of strings with length equal to batch size.
+
+    The 'example_idx' sub-field in 'supervisions', which originally points to index of the example
+    in the Dataset, is remapped to the index of the corresponding features matrix in the
+    collated 'features'.
     Multiple supervisions coming from the same cut will share the same 'example_idx'.
+
+    For example, see ``test/dataset/test_speech_recognition_dataset.py::test_k2_dataloader()``.
     """
 
     def __init__(self, *args, **kwargs):
