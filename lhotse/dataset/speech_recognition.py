@@ -71,15 +71,15 @@ class K2SpeechRecognitionDataset(Dataset):
             'features': (T x F) tensor,
             'supervisions': List[Dict] -> [
                 {
-                    'example_idx': int
+                    'sequence_idx': int
                     'text': string,
                     'start_frame': int,
-                    'end_frame': int
+                    'num_frames': int
                 } (multiplied N times, for each of the N supervisions present in the Cut)
             ]
         }
 
-    The 'example_idx' field is the index of the Cut used to create the example in the Dataset.
+    The 'sequence_idx' field is the index of the Cut used to create the example in the Dataset.
     It is mapped to the batch index later in the DataLoader.
     """
 
@@ -98,10 +98,10 @@ class K2SpeechRecognitionDataset(Dataset):
             'features': features,
             'supervisions': [
                 {
-                    'example_idx': idx,
+                    'sequence_idx': idx,
                     'text': sup.text,
                     'start_frame': round(sup.start / cut.frame_shift),
-                    'end_frame': round(sup.end / cut.frame_shift),
+                    'num_frames': round(sup.duration / cut.frame_shift),
                 }
                 # CutSet's supervisions can exceed the cut, when the cut starts/ends in the middle
                 # of a supervision (they would have relative times e.g. -2 seconds start, meaning
@@ -125,12 +125,12 @@ class K2DataLoader(DataLoader):
     except that each sub-field (like 'start_frame') is a 1D PyTorch tensor with shape (B,).
     The 'text' sub-field is an exception - it's a list of strings with length equal to batch size.
 
-    The 'example_idx' sub-field in 'supervisions', which originally points to index of the example
+    The 'sequence_idx' sub-field in 'supervisions', which originally points to index of the example
     in the Dataset, is remapped to the index of the corresponding features matrix in the
     collated 'features'.
-    Multiple supervisions coming from the same cut will share the same 'example_idx'.
+    Multiple supervisions coming from the same cut will share the same 'sequence_idx'.
 
-    For example, see ``test/dataset/test_speech_recognition_dataset.py::test_k2_dataloader()``.
+    For an example, see ``test/dataset/test_speech_recognition_dataset.py::test_k2_dataloader()``.
     """
 
     def __init__(self, *args, **kwargs):
@@ -140,11 +140,35 @@ class K2DataLoader(DataLoader):
 
 
 def multi_supervision_collate_fn(batch: Sequence[Dict]) -> Dict:
-    """Custom collate_fn for K2SpeechRecognitionDataset. See its docs for details."""
+    """
+    Custom collate_fn for K2SpeechRecognitionDataset.
+
+    It merges the items provided by K2SpeechRecognitionDataset into the following structure:
+
+    .. code-block::
+
+        {
+            'features': float tensor of shape (B, T, F)
+            'supervisions': [
+                {
+                    'sequence_idx': Tensor[int] of shape (S,)
+                    'text': List[str] of len S
+                    'start_frame': Tensor[int] of shape (S,)
+                    'num_frames': Tensor[int] of shape (S,)
+                }
+            ]
+        }
+
+    Dimension symbols legend:
+    * ``B`` - batch size (number of Cuts),
+    * ``S`` - number of supervision segments (greater or equal to B, as each Cut may have multiple supervisions),
+    * ``T`` - number of frames of the longest Cut
+    * ``F`` - number of features
+    """
     from torch.utils.data._utils.collate import default_collate
 
     dataset_idx_to_batch_idx = {
-        example['supervisions'][0]['example_idx']: batch_idx
+        example['supervisions'][0]['sequence_idx']: batch_idx
         for batch_idx, example in enumerate(batch)
     }
 
@@ -154,7 +178,7 @@ def multi_supervision_collate_fn(batch: Sequence[Dict]) -> Dict:
         return d
 
     supervisions = default_collate([
-        update(sup, example_idx=dataset_idx_to_batch_idx[sup['example_idx']])
+        update(sup, sequence_idx=dataset_idx_to_batch_idx[sup['sequence_idx']])
         for example in batch
         for sup in example['supervisions']
     ])
