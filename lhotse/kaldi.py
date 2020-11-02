@@ -65,14 +65,14 @@ def load_kaldi_data_dir(path: Pathlike, sampling_rate: int) -> Tuple[RecordingSe
             id=segment_id,
             recording_id=recording_id,
             start=float(start),
-            duration=float(duration) - float(start),
+            duration=float(end) - float(start),
             channel=0,
             text=texts[segment_id],
             language=languages[segment_id],
             speaker=speakers[segment_id],
             gender=genders[speakers[segment_id]]
         )
-        for segment_id, recording_id, start, duration in supervision_segments
+        for segment_id, recording_id, start, end in supervision_segments
     )
 
     return audio_set, supervision_set
