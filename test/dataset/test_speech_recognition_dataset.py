@@ -38,20 +38,20 @@ def test_k2_speech_recognition_dataset(k2_cut_set):
         assert example['features'].shape == (308, 80)
         assert len(example['supervisions']) == 1
         assert example['supervisions'][0]['text'] == 'IN EIGHTEEN THIRTEEN'
-        assert example['supervisions'][0]['example_idx'] == i
+        assert example['supervisions'][0]['sequence_idx'] == i
         assert example['supervisions'][0]['start_frame'] == 0
-        assert example['supervisions'][0]['end_frame'] == 154
+        assert example['supervisions'][0]['num_frames'] == 154
     example = dataset[3]
     assert example['features'].shape == (308, 80)
     assert len(example['supervisions']) == 2
     assert example['supervisions'][0]['text'] == 'IN EIGHTEEN THIRTEEN'
-    assert example['supervisions'][0]['example_idx'] == 3
+    assert example['supervisions'][0]['sequence_idx'] == 3
     assert example['supervisions'][0]['start_frame'] == 0
-    assert example['supervisions'][0]['end_frame'] == 154
+    assert example['supervisions'][0]['num_frames'] == 154
     assert example['supervisions'][1]['text'] == 'IN EIGHTEEN THIRTEEN'
-    assert example['supervisions'][1]['example_idx'] == 3
+    assert example['supervisions'][1]['sequence_idx'] == 3
     assert example['supervisions'][1]['start_frame'] == 154
-    assert example['supervisions'][1]['end_frame'] == 308
+    assert example['supervisions'][1]['num_frames'] == 154
 
 
 def test_k2_dataloader(k2_cut_set):
@@ -62,7 +62,7 @@ def test_k2_dataloader(k2_cut_set):
     assert batch['features'].shape == (4, 308, 80)
     # Each list has 5 items, to account for:
     # one cut with two supervisions + 3 three cuts with one supervision
-    assert (batch['supervisions']['example_idx'] == tensor([0, 1, 2, 3, 3])).all()
+    assert (batch['supervisions']['sequence_idx'] == tensor([0, 1, 2, 3, 3])).all()
     assert batch['supervisions']['text'] == ['IN EIGHTEEN THIRTEEN'] * 5  # a list, not tensor
     assert (batch['supervisions']['start_frame'] == tensor([0] * 4 + [154])).all()
-    assert (batch['supervisions']['end_frame'] == tensor([154] * 4 + [308])).all()
+    assert (batch['supervisions']['num_frames'] == tensor([154] * 5)).all()
