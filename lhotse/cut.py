@@ -198,6 +198,10 @@ class CutUtilsMixin:
             mask[st:et] = 1.0
         return mask
 
+    def with_id(self, id_: str) -> AnyCut:
+        """Return a copy of the Cut with a new ID."""
+        return fastcopy(self, id=id_)
+
 
 @dataclass
 class Cut(CutUtilsMixin):
@@ -761,7 +765,17 @@ class MixedCut(CutUtilsMixin):
                 snr=track.snr,
                 offset=track.offset
             )
-        return mixer.mixed_feats if mixed else mixer.unmixed_feats
+        if mixed:
+            feats = mixer.mixed_feats
+            if self.num_frames - feats.shape[0] == 1:
+                # Edge case: both offset and cut duration in a given track ended with .5 (e.g. 10.5 and 1.5)
+                # and both of them were rounded down, resulting in an off-by-one error.
+                # We'll fix the padding here by repeating the last frame.
+                # (it's not elegant but I don't have another idea right now...)
+                feats = np.vstack([feats, feats[-1, :]])
+            return feats
+        else:
+            return mixer.unmixed_feats
 
     def load_audio(self, mixed: bool = True) -> Optional[np.ndarray]:
         """
@@ -1396,7 +1410,7 @@ def mix(
         [
             MixTrack(
                 cut=track.cut,
-                offset=track.offset + offset,
+                offset=round(track.offset + offset, ndigits=3),
                 snr=(
                     # When no new SNR is specified, retain whatever was there in the first place.
                     track.snr if snr is None
