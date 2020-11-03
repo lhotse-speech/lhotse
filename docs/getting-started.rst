@@ -1,6 +1,8 @@
 Getting started
 ===============
 
+.. image:: logo.png
+
 Lhotse is a Python library aiming to make speech and audio data preparation flexible and accessible to a wider community. Alongside `k2`_, it is a part of the next generation `Kaldi`_ speech processing library.
 
 
@@ -32,14 +34,16 @@ Lhotse supports Python version 3.7 and later.
 Pip
 ***
 
-Once it's more stable, we will upload Lhotse to pip.
+Lhotse is available on PyPI::
+
+    pip install lhotse
 
 Development installation
 ************************
 
 For development installation, you can fork/clone the GitHub repo and install with pip::
 
-    git clone https://github.com/pzelasko/lhotse
+    git clone https://github.com/lhotse-speech/lhotse
     cd lhotse
     pip install -e '.[dev]'
 

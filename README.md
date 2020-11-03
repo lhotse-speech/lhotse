@@ -1,12 +1,20 @@
+<div align="center">
+<img src="docs/logo.png" width=376>
+
+[![PyPI Status](https://badge.fury.io/py/lhotse.svg)](https://badge.fury.io/py/lhotse)
+[![Python Versions](https://img.shields.io/pypi/pyversions/lhotse.svg)](https://pypi.org/project/lhotse/)
+[![PyPI Status](https://pepy.tech/badge/lhotse)](https://pepy.tech/project/lhotse)
 [![Build Status](https://img.shields.io/endpoint.svg?url=https%3A%2F%2Factions-badge.atrox.dev%2Fpzelasko%2Flhotse%2Fbadge%3Fref%3Dmaster&style=flat)](https://actions-badge.atrox.dev/pzelasko/lhotse/goto?ref=master)
 [![Documentation Status](https://readthedocs.org/projects/lhotse/badge/?version=latest)](https://lhotse.readthedocs.io/en/latest/?badge=latest)
-[![codecov](https://codecov.io/gh/pzelasko/lhotse/branch/master/graph/badge.svg)](https://codecov.io/gh/pzelasko/lhotse)
+[![codecov](https://codecov.io/gh/lhotse-speech/lhotse/branch/master/graph/badge.svg)](https://codecov.io/gh/lhotse-speech/lhotse)
+
+</div>
 
 # Lhotse
 
 Lhotse is a Python library aiming to make speech and audio data preparation flexible and accessible to a wider community. Alongside [k2](https://github.com/danpovey/k2), it is a part of the next generation [Kaldi](https://github.com/kaldi-asr/kaldi) speech processing library. 
 
-⚠️ **Lhotse is not stable yet - while many features are already implemented, the APIs are still subject to change!** ⚠️
+⚠️ **Lhotse is not fully stable yet - while many features are already implemented, the APIs are still subject to change!** ⚠️
 
 ## About
 
@@ -31,13 +39,15 @@ Lhotse supports Python version 3.7 and later.
 
 ### Pip
 
-Once it's more stable, we will upload Lhotse to pip.
+Lhotse is available on PyPI:
 
+    pip install lhotse
+    
 ### Development installation
 
 For development installation, you can fork/clone the GitHub repo and install with pip:
 
-    git clone https://github.com/pzelasko/lhotse
+    git clone https://github.com/lhotse-speech/lhotse
     cd lhotse
     pip install -e '.[dev]'
 
