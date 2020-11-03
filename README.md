@@ -1,5 +1,5 @@
 <div align="center">
-<img src="docs/logo.png" width=376>
+<img src="https://raw.githubusercontent.com/lhotse-speech/lhotse/master/docs/logo.png" width=376>
 
 [![PyPI Status](https://badge.fury.io/py/lhotse.svg)](https://badge.fury.io/py/lhotse)
 [![Python Versions](https://img.shields.io/pypi/pyversions/lhotse.svg)](https://pypi.org/project/lhotse/)
@@ -104,4 +104,4 @@ dataset[0]
 The `VadDataset` will yield a pair of input and supervision tensors such as the following - 
 the speech starts roughly at the first second (100 frames): 
 
-![image](docs/vad_sample.png)
+![image](https://raw.githubusercontent.com/lhotse-speech/lhotse/master/docs/vad_sample.png)
