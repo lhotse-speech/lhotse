@@ -49,7 +49,7 @@ class CutUtilsMixin:
         Returns a MixedCut, which only keeps the information about the mix; actual mixing is performed
         during the call to ``load_features``.
         """
-        return mix(self, other, offset=self.duration, snr=snr)
+        return append(self, other, snr=snr)
 
     def compute_features(
             self,
