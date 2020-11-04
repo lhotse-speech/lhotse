@@ -965,21 +965,21 @@ class CutSet(JsonMixin, YamlMixin, Sequence[AnyCut]):
             return CutSet.from_cuts(
                 Cut(
                     id=str(uuid4()),
-                    start=features.start,
-                    duration=features.duration,
-                    channel=features.channels,
-                    features=features,
-                    recording=recordings[features.recording_id] if rec_ok else None,
+                    start=feats.start,
+                    duration=feats.duration,
+                    channel=feats.channels,
+                    features=feats,
+                    recording=recordings[feats.recording_id] if rec_ok else None,
                     # The supervisions' start times are adjusted if the features object starts at time other than 0s.
                     supervisions=list(supervisions.find(
-                        recording_id=features.recording_id,
-                        channel=features.channels,
-                        start_after=features.start,
-                        end_before=features.end,
+                        recording_id=feats.recording_id,
+                        channel=feats.channels,
+                        start_after=feats.start,
+                        end_before=feats.end,
                         adjust_offset=True
                     )) if sup_ok else []
                 )
-                for features in features
+                for feats in features
             )
         # Case II: Recordings are provided (and features are not).
         # Use recordings to determine the cut boundaries.
