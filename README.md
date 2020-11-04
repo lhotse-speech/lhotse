@@ -1,4 +1,5 @@
 <div align="center">
+<img src="https://raw.githubusercontent.com/lhotse-speech/lhotse/master/docs/logo.png" width=376>
 
 [![PyPI Status](https://badge.fury.io/py/lhotse.svg)](https://badge.fury.io/py/lhotse)
 [![Python Versions](https://img.shields.io/pypi/pyversions/lhotse.svg)](https://pypi.org/project/lhotse/)
