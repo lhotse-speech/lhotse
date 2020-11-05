@@ -222,7 +222,9 @@ def _collate_features(cuts: CutSet) -> torch.Tensor:
     first_cut = next(iter(cuts))
     features = torch.empty(len(cuts), first_cut.num_frames, first_cut.num_features)
     for idx, cut in enumerate(cuts):
-        features[idx] = torch.from_numpy(cut.load_features())
+        # TODO(pzelasko): The last index part is a hack, because we failed to guarantee
+        #  that cut.num_frames always provides a correct value. This will require a deeper fix.
+        features[idx] = torch.from_numpy(cut.load_features())[:first_cut.num_frames, :]
     return features
 
 

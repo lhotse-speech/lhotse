@@ -273,7 +273,7 @@ class Cut(CutUtilsMixin):
 
     @property
     def num_frames(self) -> Optional[int]:
-        return round(self.duration / self.frame_shift) if self.has_features else None
+        return self.features.num_frames if self.has_features else None
 
     @property
     def num_samples(self) -> Optional[int]:
