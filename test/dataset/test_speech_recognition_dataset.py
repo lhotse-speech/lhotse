@@ -1,8 +1,10 @@
 import pytest
+from torch.utils.data import DataLoader
 
 from lhotse.cut import CutSet
 from lhotse.dataset import SpeechRecognitionDataset
-from lhotse.dataset.speech_recognition import K2DataLoader, K2SpeechRecognitionDataset
+from lhotse.dataset.speech_recognition import K2DataLoader, K2SpeechRecognitionDataset, \
+    K2SpeechRecognitionIterableDataset
 
 
 @pytest.fixture
@@ -58,6 +60,22 @@ def test_k2_dataloader(k2_cut_set):
     from torch import tensor
     dataset = K2SpeechRecognitionDataset(k2_cut_set)
     dloader = K2DataLoader(dataset, batch_size=4)
+    batch = next(iter(dloader))
+    assert batch['features'].shape == (4, 308, 80)
+    # Each list has 5 items, to account for:
+    # one cut with two supervisions + 3 three cuts with one supervision
+    assert (batch['supervisions']['sequence_idx'] == tensor([0, 1, 2, 3, 3])).all()
+    assert batch['supervisions']['text'] == ['IN EIGHTEEN THIRTEEN'] * 5  # a list, not tensor
+    assert (batch['supervisions']['start_frame'] == tensor([0] * 4 + [154])).all()
+    assert (batch['supervisions']['num_frames'] == tensor([154] * 5)).all()
+
+
+@pytest.mark.parametrize('num_workers', [0, 1, 2, 3, 4])
+def test_k2_speech_recognition_iterable_dataset(k2_cut_set, num_workers):
+    from torch import tensor
+    dataset = K2SpeechRecognitionIterableDataset(k2_cut_set, shuffle=False)
+    # Note: "batch_size=None" disables the automatic batching mechanism.
+    dloader = DataLoader(dataset, batch_size=None, num_workers=num_workers)
     batch = next(iter(dloader))
     assert batch['features'].shape == (4, 308, 80)
     # Each list has 5 items, to account for:

@@ -37,6 +37,19 @@ class CutUtilsMixin:
     for cuts in the future and make this an ABC instead.
     """
 
+    @property
+    def trimmed_supervisions(self) -> List[SupervisionSegment]:
+        """
+        Return the supervisions in this Cut that have modified time boundaries so as not to exceed
+        the Cut's start or end.
+
+        Note that when ``cut.supervisions`` is called, the supervisions may have negative ``start``
+        values that indicate the supervision actually begins before the cut, or ``end`` values
+        that exceed the Cut's duration (it means the supervision continued in the original recording
+        after the Cut's ending).
+        """
+        return [s.trim(self.duration) for s in self.supervisions]
+
     def mix(self, other: AnyCut, offset_other_by: Seconds = 0.0, snr: Optional[Decibels] = None) -> 'MixedCut':
         """Refer to mix() documentation."""
         return mix(self, other, offset=offset_other_by, snr=snr)
@@ -1134,6 +1147,10 @@ class CutSet(JsonMixin, YamlMixin, Sequence[AnyCut]):
             raise ValueError("This operation is not applicable to CutSet's containing MixedCut's.")
         groups = groupby(lambda cut: (cut.recording.id, cut.start, cut.end), self)
         return CutSet.from_cuts(mix_cuts(cuts) for cuts in groups.values())
+
+    def sort_by_duration(self, ascending: bool = False) -> 'CutSet':
+        """Sort the CutSet according to cuts duration. Descending by default."""
+        return CutSet.from_cuts(sorted(self, key=(lambda cut: cut.duration), reverse=not ascending))
 
     def pad(
             self,

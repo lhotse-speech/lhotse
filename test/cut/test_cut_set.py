@@ -2,9 +2,9 @@ from tempfile import NamedTemporaryFile
 
 import pytest
 
-from lhotse import SupervisionSegment, Features, Recording
+from lhotse import Features, Recording, SupervisionSegment
 from lhotse.audio import AudioSource
-from lhotse.cut import Cut, CutSet, MixedCut, MixTrack
+from lhotse.cut import Cut, CutSet, MixTrack, MixedCut
 from lhotse.test_utils import remove_spaces_from_segment_text
 
 
@@ -15,6 +15,18 @@ def cut_set_with_mixed_cut(cut1, cut2):
         MixTrack(cut=cut2, offset=1.0, snr=10)
     ])
     return CutSet({cut.id: cut for cut in [cut1, cut2, mixed_cut]})
+
+
+@pytest.mark.parametrize(
+    ['ascending', 'expected'],
+    [
+        (False, [11.0, 10.0, 10.0]),
+        (True, [10.0, 10.0, 11.0]),
+    ]
+)
+def test_cut_set_sort_by_duration(cut_set_with_mixed_cut, ascending, expected):
+    cs = cut_set_with_mixed_cut.sort_by_duration(ascending=ascending)
+    assert [c.duration for c in cs] == expected
 
 
 def test_cut_set_iteration(cut_set_with_mixed_cut):

@@ -1,7 +1,9 @@
-from typing import Dict, Sequence
+import math
+import random
+from typing import Dict, List, Optional, Sequence, Union
 
 import torch
-from torch.utils.data import Dataset
+from torch.utils.data import Dataset, IterableDataset
 from torch.utils.data.dataloader import DataLoader
 
 from lhotse.cut import CutSet
@@ -58,6 +60,161 @@ class SpeechRecognitionDataset(Dataset):
 
     def __len__(self) -> int:
         return len(self.cut_ids)
+
+
+class K2SpeechRecognitionIterableDataset(IterableDataset):
+    """
+    The PyTorch Dataset for the speech recognition task using K2 library.
+    Each item in this dataset is a dict of:
+
+    .. code-block::
+
+        {
+            'features': (T x F) tensor,
+            'supervisions': List[Dict] -> [
+                {
+                    'sequence_idx': int
+                    'text': string,
+                    'start_frame': int,
+                    'num_frames': int
+                } (multiplied N times, for each of the N supervisions present in the Cut)
+            ]
+        }
+
+    The 'sequence_idx' field is the index of the Cut used to create the example in the Dataset.
+    It is mapped to the batch index later in the DataLoader.
+    """
+
+    def __init__(
+            self,
+            cuts: CutSet,
+            max_frames: int = 26000,
+            max_cuts: Optional[int] = None,
+            shuffle: bool = False
+    ):
+        super().__init__()
+        # Initialize the fields
+        self.cuts = cuts
+        self.shuffle = shuffle
+        self.max_frames = max_frames
+        self.max_cuts = max_cuts
+        # Set-up the mutable state for new epoch initialization in __iter__
+        self.cut_ids = list(self.cuts.ids)
+        self.current_idx = None
+        # Set-up the pseudo-immutable state for multiprocessing DataLoader compatibility
+        self.partition_start = 0
+        self.partition_end = len(self.cut_ids)
+
+    def __iter__(self):
+        """
+        Prepare the dataset for iterating over a new epoch. Will shuffle the data if requested.
+
+        This method takes care of partitioning for multiprocess data loading, so that the
+        dataset won't return data duplicates within a single epoch (for more details, see:
+        https://pytorch.org/docs/stable/data.html at "Multi-process data loading").
+        """
+
+        # noinspection PyUnresolvedReferences
+        worker_info = torch.utils.data.get_worker_info()
+        if worker_info is None:
+            # No multiprocessing involved - iterate full the CutSet.
+            self.partition_start = 0
+            self.partition_end = len(self.cut_ids)
+        else:
+            # We are in a worker process - need to select a partition to process.
+            start, end = 0, len(self.cut_ids)
+            per_worker = int(math.ceil((end - start) / float(worker_info.num_workers)))
+            worker_id = worker_info.id
+            self.partition_start = start + worker_id * per_worker
+            self.partition_end = min(self.partition_start + per_worker, end)
+
+        # Re-set the mutable state.
+        # Iterating over this dataset is equivalent to starting a new epoch.
+        if self.shuffle:
+            # If we're in multiprocessing mode, we should shuffle only the within the partition
+            # given to this worker, otherwise we might use data samples that are not intended
+            # for this worker.
+            partition_cut_ids = self.cut_ids[self.partition_start: self.partition_end]
+            random.shuffle(partition_cut_ids)
+            self.cut_ids[self.partition_start: self.partition_end] = partition_cut_ids
+        self.current_idx = self.partition_start
+        return self
+
+    def __next__(self) -> Dict[str, Union[torch.Tensor, List[str]]]:
+        """
+        Return a new batch, with the batch size automatically determined using the contraints
+        of max_frames and max_cuts.
+        """
+        from torch.utils.data._utils.collate import default_collate
+
+        # Collect the cuts that will form a batch, satisfying the criteria of max_cuts and max_frames.
+        # The returned object is a CutSet that we can keep on modifying (e.g. padding, mixing, etc.)
+        cuts: CutSet = self._collect_batch()
+
+        # For now, we'll just pad it with low energy values to match the longest Cut's
+        # duration in the batch. We might want to do something more interesting here
+        # later on - padding/mixing with noises, etc.
+        cuts = cuts.sort_by_duration().pad()
+
+        # Get a tensor with batched feature matrices, shape (B, T, F)
+        features = _collate_features(cuts)
+
+        return {
+            'features': features,
+            'supervisions': default_collate([
+                {
+                    'sequence_idx': sequence_idx,
+                    'text': supervision.text,
+                    'start_frame': round(supervision.start / cut.frame_shift),
+                    'num_frames': round(supervision.duration / cut.frame_shift),
+                }
+                for sequence_idx, cut in enumerate(cuts)
+                for supervision in cut.trimmed_supervisions
+            ])
+        }
+
+    def _collect_batch(self) -> CutSet:
+        """
+        Return a sub-CutSet that represents a full batch.
+        This is quick, as it does not perform any I/O in the process.
+        """
+        # Keep iterating the underlying CutSet as long as we hit the exceed the constraints
+        # provided by user (the max number of frames and max number of cuts).
+        # Note: no actual data is loaded into memory yet because the manifests contain all the metadata
+        # required to do this operation.
+        num_frames = 0
+        cuts = []
+        while True:
+            try:
+                next_cut_id = self.cut_ids[self.current_idx]
+            except IndexError:
+                if cuts:
+                    # We saturated the dataset and have a partial batch - return it.
+                    return CutSet.from_cuts(cuts)
+                else:
+                    # We saturated the dataset and there is nothing more to return - signal the iteration code to stop.
+                    raise StopIteration()
+            next_cut = self.cuts[next_cut_id]
+            next_num_frames = num_frames + next_cut.num_frames
+            next_num_cuts = len(cuts) + 1
+            if next_num_frames < self.max_frames and (self.max_cuts is None or next_num_cuts < self.max_cuts):
+                num_frames = next_num_frames
+                cuts.append(next_cut)
+                self.current_idx += 1
+            else:
+                # Note: in a more elaborate collection scheme, we would try to find some small cut
+                # to "squeeze in" to satisfy the constraints as best as we can; we do no such thing
+                # in this initial implementation.
+                break
+        return CutSet.from_cuts(cuts)
+
+
+def _collate_features(cuts: CutSet) -> torch.Tensor:
+    first_cut = next(iter(cuts))
+    features = torch.empty(len(cuts), first_cut.num_frames, first_cut.num_features)
+    for idx, cut in enumerate(cuts):
+        features[idx] = torch.from_numpy(cut.load_features())
+    return features
 
 
 class K2SpeechRecognitionDataset(Dataset):
