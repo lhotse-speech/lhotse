@@ -70,19 +70,25 @@ class K2SpeechRecognitionIterableDataset(IterableDataset):
     .. code-block::
 
         {
-            'features': (T x F) tensor,
-            'supervisions': List[Dict] -> [
+            'features': float tensor of shape (B, T, F)
+            'supervisions': [
                 {
-                    'sequence_idx': int
-                    'text': string,
-                    'start_frame': int,
-                    'num_frames': int
-                } (multiplied N times, for each of the N supervisions present in the Cut)
+                    'cut_id': List[str] of len S
+                    'sequence_idx': Tensor[int] of shape (S,)
+                    'text': List[str] of len S
+                    'start_frame': Tensor[int] of shape (S,)
+                    'num_frames': Tensor[int] of shape (S,)
+                }
             ]
         }
 
+    Dimension symbols legend:
+    * ``B`` - batch size (number of Cuts),
+    * ``S`` - number of supervision segments (greater or equal to B, as each Cut may have multiple supervisions),
+    * ``T`` - number of frames of the longest Cut
+    * ``F`` - number of features
+
     The 'sequence_idx' field is the index of the Cut used to create the example in the Dataset.
-    It is mapped to the batch index later in the DataLoader.
     """
 
     def __init__(
@@ -163,6 +169,7 @@ class K2SpeechRecognitionIterableDataset(IterableDataset):
             'features': features,
             'supervisions': default_collate([
                 {
+                    'cut_id': cut.id,
                     'sequence_idx': sequence_idx,
                     'text': supervision.text,
                     'start_frame': round(supervision.start / cut.frame_shift),
@@ -185,19 +192,21 @@ class K2SpeechRecognitionIterableDataset(IterableDataset):
         num_frames = 0
         cuts = []
         while True:
-            try:
+            # Check that we have not reached the end of the dataset.
+            if self.current_idx < self.partition_end:
+                # We didn't - grab the next cut
                 next_cut_id = self.cut_ids[self.current_idx]
-            except IndexError:
+            else:
                 if cuts:
-                    # We saturated the dataset and have a partial batch - return it.
+                    # We did and we have a partial batch - return it.
                     return CutSet.from_cuts(cuts)
                 else:
-                    # We saturated the dataset and there is nothing more to return - signal the iteration code to stop.
+                    # We did and there is nothing more to return - signal the iteration code to stop.
                     raise StopIteration()
             next_cut = self.cuts[next_cut_id]
             next_num_frames = num_frames + next_cut.num_frames
             next_num_cuts = len(cuts) + 1
-            if next_num_frames < self.max_frames and (self.max_cuts is None or next_num_cuts < self.max_cuts):
+            if next_num_frames <= self.max_frames and (self.max_cuts is None or next_num_cuts <= self.max_cuts):
                 num_frames = next_num_frames
                 cuts.append(next_cut)
                 self.current_idx += 1

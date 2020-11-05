@@ -5,6 +5,7 @@ from lhotse.cut import CutSet
 from lhotse.dataset import SpeechRecognitionDataset
 from lhotse.dataset.speech_recognition import K2DataLoader, K2SpeechRecognitionDataset, \
     K2SpeechRecognitionIterableDataset
+from lhotse.test_utils import DummyManifest
 
 
 @pytest.fixture
@@ -84,3 +85,30 @@ def test_k2_speech_recognition_iterable_dataset(k2_cut_set, num_workers):
     assert batch['supervisions']['text'] == ['IN EIGHTEEN THIRTEEN'] * 5  # a list, not tensor
     assert (batch['supervisions']['start_frame'] == tensor([0] * 4 + [154])).all()
     assert (batch['supervisions']['num_frames'] == tensor([154] * 5)).all()
+
+
+def test_k2_speech_recognition_iterable_dataset_shuffling():
+    # The dummy cuts have a duration of 1 second each
+    cut_set = DummyManifest(CutSet, begin_id=0, end_id=100)
+
+    dataset = K2SpeechRecognitionIterableDataset(
+        cuts=cut_set,
+        shuffle=True,
+        # Set an effective batch size of 10 cuts, as all have 1s duration == 100 frames
+        # This way we're testing that it works okay when returning multiple batches in
+        # a full epoch.
+        max_frames=1000
+    )
+    dloader = DataLoader(dataset, batch_size=None, num_workers=2)
+    dloader_cut_ids = []
+    batches = []
+    for batch in dloader:
+        batches.append(batch)
+        dloader_cut_ids.extend(list(batch['supervisions']['cut_id']))
+
+    # Invariant 1: we receive the same amount of items in a dataloader epoch as there we in the CutSet
+    assert len(dloader_cut_ids) == len(cut_set)
+    # Invariant 2: the items are not duplicated
+    assert len(set(dloader_cut_ids)) == len(dloader_cut_ids)
+    # Invariant 3: the items are shuffled, i.e. the order is different than that in the CutSet
+    assert dloader_cut_ids != [c.id for c in cut_set]
