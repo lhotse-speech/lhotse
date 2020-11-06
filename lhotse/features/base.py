@@ -132,10 +132,6 @@ class FeatureExtractor(metaclass=ABCMeta):
             samples = augmenter.apply(samples)
         duration = round(samples.shape[1] / sampling_rate, ndigits=3)
         feats = self.extract(samples=samples, sampling_rate=sampling_rate)
-        feats = self._trim_features_when_inconsistent(
-            feats=feats,
-            expected_duration=duration,
-        )
         storage_key = store_feature_array(feats, storage=storage)
         return Features(
             start=offset,
@@ -148,28 +144,6 @@ class FeatureExtractor(metaclass=ABCMeta):
             storage_path=str(storage.storage_path),
             storage_key=storage_key
         )
-
-    def _trim_features_when_inconsistent(self, feats: np.ndarray, expected_duration: Seconds) -> np.ndarray:
-        # This will take some context to explain, so bear with me.
-        # Python 3 rounding behaviour is called "banker's rounding", and will go either
-        # towards or away from zero depending which is closer. When the value is exactly in the middle, e.g. 0.5,
-        # it will round towards zero: round(0.5) == 0.
-        # What's the problem?
-        # - When we compute "num_frames" for composite (mixed) cuts, we have to compute their total duration,
-        # and divide that by the "frame_shift." In case of 16.405 seconds, that results in 16.405 / 0.01 = 1640.5
-        # frames. When we round(1640.5) we get 1640, but some feature extractors tend to return 1641 frames.
-        # So we might end up with incosistent data and metadata.
-        # What's the solution?
-        # - Remove the last frame if that's the case.
-        # ...
-        # ... (1h later) ...
-        # ...
-        # Update: actually round(1648.5) == 1648, but round(1649.5) == 1650 🤯
-        # I will have to fix this another time and work around for now...
-        expected_num_frames = round(expected_duration / self.frame_shift)
-        if feats.shape[0] - expected_num_frames == 1:
-            feats = feats[:-1, :]
-        return feats
 
     def extract_from_recording_and_store(
             self,
@@ -206,10 +180,6 @@ class FeatureExtractor(metaclass=ABCMeta):
         if augmenter is not None:
             samples = augmenter.apply(samples)
         feats = self.extract(samples=samples, sampling_rate=recording.sampling_rate)
-        feats = self._trim_features_when_inconsistent(
-            feats=feats,
-            expected_duration=recording.duration
-        )
         storage_key = store_feature_array(feats, storage=storage)
         return Features(
             recording_id=recording.id,

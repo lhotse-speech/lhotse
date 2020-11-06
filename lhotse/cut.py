@@ -8,13 +8,15 @@ from typing import Any, Callable, Dict, FrozenSet, Iterable, List, Optional, Seq
 import numpy as np
 from cytoolz import sliding_window
 from cytoolz.itertoolz import groupby
+from tqdm import tqdm
 
 from lhotse import WavAugmenter
 from lhotse.audio import AudioMixer, Recording, RecordingSet
 from lhotse.features import FeatureExtractor, FeatureMixer, FeatureSet, Features, create_default_feature_extractor
 from lhotse.features.io import FeaturesWriter
 from lhotse.supervision import SupervisionSegment, SupervisionSet
-from lhotse.utils import (Decibels, EPSILON, JsonMixin, Pathlike, Seconds, TimeSpan, YamlMixin, asdict_nonull, fastcopy,
+from lhotse.utils import (Decibels, EPSILON, JsonMixin, Pathlike, Seconds, TimeSpan, YamlMixin, asdict_nonull,
+                          compute_num_frames, fastcopy,
                           overlaps, overspans, split_sequence, uuid4)
 
 # One of the design principles for Cuts is a maximally "lazy" implementation, e.g. when mixing Cuts,
@@ -273,7 +275,7 @@ class Cut(CutUtilsMixin):
 
     @property
     def num_frames(self) -> Optional[int]:
-        return self.features.num_frames if self.has_features else None
+        return compute_num_frames(duration=self.duration, frame_shift=self.frame_shift) if self.has_features else None
 
     @property
     def num_samples(self) -> Optional[int]:
@@ -401,9 +403,10 @@ class Cut(CutUtilsMixin):
         """
         if duration <= self.duration:
             return self
-        total_num_frames = round(duration / self.frame_shift) if self.has_features else None
+        total_num_frames = compute_num_frames(duration=duration, frame_shift=self.frame_shift) \
+            if self.has_features else None
         total_num_samples = round(duration * self.sampling_rate) if self.has_recording else None
-        padding_duration = round(duration - self.duration, ndigits=3)
+        padding_duration = round(duration - self.duration, ndigits=7)
         return self.append(PaddingCut(
             id=str(uuid4()),
             duration=padding_duration,
@@ -626,7 +629,7 @@ class MixedCut(CutUtilsMixin):
     @property
     def num_frames(self) -> Optional[int]:
         if self.has_features:
-            return round(self.duration / self._first_non_padding_cut.frame_shift)
+            return compute_num_frames(duration=self.duration, frame_shift=self._first_non_padding_cut.frame_shift)
         return None
 
     @property

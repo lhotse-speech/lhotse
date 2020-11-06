@@ -3,7 +3,7 @@ from typing import Optional
 import numpy as np
 
 from lhotse.features.base import FeatureExtractor
-from lhotse.utils import Seconds, Decibels
+from lhotse.utils import Decibels, Seconds, compute_num_frames
 
 
 class FeatureMixer:
@@ -95,7 +95,7 @@ class FeatureMixer:
         assert offset >= 0.0, "Negative offset in mixing is not supported."
 
         reference_feats = self.tracks[0]
-        num_frames_offset = round(offset / self.frame_shift)
+        num_frames_offset = compute_num_frames(duration=offset, frame_shift=self.frame_shift)
         current_num_frames = reference_feats.shape[0]
         incoming_num_frames = feats.shape[0] + num_frames_offset
         mix_num_frames = max(current_num_frames, incoming_num_frames)
