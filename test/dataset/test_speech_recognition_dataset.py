@@ -1,4 +1,5 @@
 import pytest
+import torch
 from torch.utils.data import DataLoader
 
 from lhotse.cut import CutSet
@@ -71,11 +72,12 @@ def test_k2_dataloader(k2_cut_set):
     assert (batch['supervisions']['num_frames'] == tensor([154] * 5)).all()
 
 
-@pytest.mark.parametrize('num_workers', [0, 1, 2, 3, 4])
+@pytest.mark.parametrize('num_workers', [0, 1])
 def test_k2_speech_recognition_iterable_dataset(k2_cut_set, num_workers):
     from torch import tensor
     dataset = K2SpeechRecognitionIterableDataset(k2_cut_set, shuffle=False)
-    # Note: "batch_size=None" disables the automatic batching mechanism.
+    # Note: "batch_size=None" disables the automatic batching mechanism,
+    #       which is required when Dataset takes care of the collation itself.
     dloader = DataLoader(dataset, batch_size=None, num_workers=num_workers)
     batch = next(iter(dloader))
     assert batch['features'].shape == (4, 308, 80)
@@ -85,6 +87,26 @@ def test_k2_speech_recognition_iterable_dataset(k2_cut_set, num_workers):
     assert batch['supervisions']['text'] == ['IN EIGHTEEN THIRTEEN'] * 5  # a list, not tensor
     assert (batch['supervisions']['start_frame'] == tensor([0] * 4 + [154])).all()
     assert (batch['supervisions']['num_frames'] == tensor([154] * 5)).all()
+
+
+@pytest.mark.parametrize('num_workers', [2, 3, 4])
+def test_k2_speech_recognition_iterable_dataset_multiple_workers(k2_cut_set, num_workers):
+    from torch import tensor
+    dataset = K2SpeechRecognitionIterableDataset(k2_cut_set, shuffle=False)
+    dloader = DataLoader(dataset, batch_size=None, num_workers=num_workers)
+
+    # We expect a variable number of batches for each parametrized num_workers value,
+    # because the dataset is small with 4 cuts that are partitioned across the workers.
+    batches = list(dloader)
+
+    features = torch.cat([b['features'] for b in batches])
+    assert features.shape == (4, 308, 80)
+    text = [t for b in batches for t in b['supervisions']['text']]
+    assert text == ['IN EIGHTEEN THIRTEEN'] * 5  # a list, not tensor
+    start_frame = torch.cat([b['supervisions']['start_frame'] for b in batches])
+    assert (start_frame == tensor([0] * 4 + [154])).all()
+    num_frames = torch.cat([b['supervisions']['num_frames'] for b in batches])
+    assert (num_frames == tensor([154] * 5)).all()
 
 
 def test_k2_speech_recognition_iterable_dataset_shuffling():
