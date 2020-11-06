@@ -13,13 +13,13 @@ This data is not available for free - your institution needs to have an LDC subs
 import re
 from itertools import chain
 from pathlib import Path
-from typing import Dict, Union, Optional, List
+from typing import Dict, List, Optional, Union
 
 from cytoolz import sliding_window
 
 from lhotse.audio import Recording, RecordingSet
 from lhotse.supervision import SupervisionSegment, SupervisionSet
-from lhotse.utils import Pathlike, recursion_limit, check_and_rglob
+from lhotse.utils import Pathlike, check_and_rglob, recursion_limit
 
 # Since BroadcastNews SGML does not include </time> tags, BeautifulSoup hallucinates them
 # in incorrect positions - it nests the <time> segments in each other, making parsing more difficult...
@@ -131,7 +131,7 @@ def make_supervisions(sgml_path: Pathlike, recording: Recording) -> Dict[str, Li
                         id=f'{recording.id}_segment{text_idx:04d}',
                         recording_id=recording.id,
                         start=start,
-                        duration=round(end - start, ndigits=3),
+                        duration=round(end - start, ndigits=8),
                         channel=0,
                         language=episode.attrs['language'],
                         text=text.strip(),

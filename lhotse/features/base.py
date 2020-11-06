@@ -130,7 +130,7 @@ class FeatureExtractor(metaclass=ABCMeta):
         """
         if augmenter is not None:
             samples = augmenter.apply(samples)
-        duration = round(samples.shape[1] / sampling_rate, ndigits=3)
+        duration = round(samples.shape[1] / sampling_rate, ndigits=8)
         feats = self.extract(samples=samples, sampling_rate=sampling_rate)
         storage_key = store_feature_array(feats, storage=storage)
         return Features(

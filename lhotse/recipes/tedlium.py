@@ -108,7 +108,7 @@ def prepare_tedlium(
                             id=f'{rec_id}-{idx}',
                             recording_id=rec_id,
                             start=start,
-                            duration=round(end - start, ndigits=3),
+                            duration=round(end - start, ndigits=8),
                             channel=0,
                             text=text,
                             language='English',

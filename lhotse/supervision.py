@@ -19,12 +19,11 @@ class SupervisionSegment:
 
     @property
     def end(self) -> Seconds:
-        # Precision up to 1ms to avoid float numeric artifacts
-        return round(self.start + self.duration, ndigits=3)
+        return round(self.start + self.duration, ndigits=8)
 
     def with_offset(self, offset: Seconds) -> 'SupervisionSegment':
         """Return an identical ``SupervisionSegment``, but with the ``offset`` added to the ``start`` field."""
-        return fastcopy(self, start=round(self.start + offset, ndigits=3))
+        return fastcopy(self, start=round(self.start + offset, ndigits=8))
 
     def trim(self, end: Seconds) -> 'SupervisionSegment':
         """

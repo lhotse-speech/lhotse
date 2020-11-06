@@ -251,13 +251,16 @@ def compute_num_frames(duration: Seconds, frame_shift: Seconds) -> int:
       1616
     >>> Decimal(num_frames).quantize(0, rounding=ROUND_HALF_UP)
       1616
-    >>> round(num_frames, ndigits=1)
+    >>> round(num_frames, ndigits=8)
       1616.5
-    >>> Decimal(round(num_frames, ndigits=1)).quantize(0, rounding=ROUND_HALF_UP)
+    >>> Decimal(round(num_frames, ndigits=8)).quantize(0, rounding=ROUND_HALF_UP)
       1617
     """
     return int(
         Decimal(
-            round(duration / frame_shift, ndigits=1)
+            # 8 is a good number because cases like 14.49175 still work correctly,
+            # while problematic cases like 14.49999999998 are typically breaking much later than 8th decimal
+            # with double-precision floats.
+            round(duration / frame_shift, ndigits=8)
         ).quantize(0, rounding=ROUND_HALF_UP)
     )

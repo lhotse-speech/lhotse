@@ -259,7 +259,7 @@ class Cut(CutUtilsMixin):
 
     @property
     def end(self) -> Seconds:
-        return round(self.start + self.duration, ndigits=3)
+        return round(self.start + self.duration, ndigits=8)
 
     @property
     def has_features(self) -> bool:
@@ -375,9 +375,9 @@ class Cut(CutUtilsMixin):
         if duration_past_end > 0:
             # When the end of the Cut has been exceeded, trim the new duration to not exceed the old Cut's end.
             new_duration -= duration_past_end
-        # Round the duration to 1ms to avoid the possible loss of a single audio sample due to floating point
+        # Round the duration to avoid the possible loss of a single audio sample due to floating point
         # additions and subtractions.
-        new_duration = round(new_duration, ndigits=3)
+        new_duration = round(new_duration, ndigits=8)
         new_time_span = TimeSpan(start=0, end=new_duration)
         criterion = overlaps if keep_excessive_supervisions else overspans
         new_supervisions = (segment.with_offset(-offset) for segment in self.supervisions)
@@ -616,7 +616,7 @@ class MixedCut(CutUtilsMixin):
     @property
     def duration(self) -> Seconds:
         track_durations = (track.offset + track.cut.duration for track in self.tracks)
-        return round(max(track_durations), ndigits=3)
+        return round(max(track_durations), ndigits=8)
 
     @property
     def has_features(self) -> bool:
@@ -736,7 +736,7 @@ class MixedCut(CutUtilsMixin):
             return self
         total_num_frames = round(duration / self.frame_shift) if self.has_features else None
         total_num_samples = round(duration * self.sampling_rate) if self.has_recording else None
-        padding_duration = round(duration - self.duration, ndigits=3)
+        padding_duration = round(duration - self.duration, ndigits=8)
         return self.append(PaddingCut(
             id=str(uuid4()),
             duration=padding_duration,
@@ -1288,7 +1288,7 @@ class CutSet(JsonMixin, YamlMixin, Sequence[AnyCut]):
                     mix_eagerly=mix_eagerly
                 )
             )
-        cut_set = CutSet.from_cuts(f.result() for f in futures)
+        cut_set = CutSet.from_cuts(tqdm(f.result() for f in futures))
         return cut_set
 
     def with_features_path_prefix(self, path: Pathlike) -> 'CutSet':

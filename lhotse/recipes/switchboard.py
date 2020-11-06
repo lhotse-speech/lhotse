@@ -14,10 +14,10 @@ import tarfile
 import urllib
 from itertools import chain
 from pathlib import Path
-from typing import Dict, Union, Optional
+from typing import Dict, Optional, Union
 
-from lhotse.audio import RecordingSet, Recording
-from lhotse.supervision import SupervisionSet, SupervisionSegment
+from lhotse.audio import Recording, RecordingSet
+from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import Pathlike, check_and_rglob
 
 SWBD_TEXT_URL = 'http://www.isip.piconepress.com/projects/switchboard/releases/switchboard_word_alignments.tar.gz'
@@ -92,7 +92,7 @@ def make_segments(transcript_path: Path, recording: Recording, channel: int, omi
             id=segment_id,
             recording_id=recording.id,
             start=float(start),
-            duration=round(float(end) - float(start), ndigits=3),
+            duration=round(float(end) - float(start), ndigits=8),
             channel=channel,
             text=' '.join(words),
             language='English',
