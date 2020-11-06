@@ -8,7 +8,6 @@ from typing import Any, Callable, Dict, FrozenSet, Iterable, List, Optional, Seq
 import numpy as np
 from cytoolz import sliding_window
 from cytoolz.itertoolz import groupby
-from tqdm import tqdm
 
 from lhotse import WavAugmenter
 from lhotse.audio import AudioMixer, Recording, RecordingSet
@@ -1288,7 +1287,7 @@ class CutSet(JsonMixin, YamlMixin, Sequence[AnyCut]):
                     mix_eagerly=mix_eagerly
                 )
             )
-        cut_set = CutSet.from_cuts(tqdm(f.result() for f in futures))
+        cut_set = CutSet.from_cuts(f.result() for f in futures)
         return cut_set
 
     def with_features_path_prefix(self, path: Pathlike) -> 'CutSet':
