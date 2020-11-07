@@ -469,6 +469,14 @@ class PaddingCut(CutUtilsMixin):
     num_samples: Optional[int] = None
 
     @property
+    def start(self) -> Seconds:
+        return 0
+
+    @property
+    def end(self) -> Seconds:
+        return self.duration
+
+    @property
     def supervisions(self):
         return []
 
@@ -611,6 +619,14 @@ class MixedCut(CutUtilsMixin):
             for track in self.tracks
             for segment in track.cut.supervisions
         ]
+
+    @property
+    def start(self) -> Seconds:
+        return 0
+
+    @property
+    def end(self) -> Seconds:
+        return self.duration
 
     @property
     def duration(self) -> Seconds:

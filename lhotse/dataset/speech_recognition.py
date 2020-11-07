@@ -3,7 +3,6 @@ import random
 from typing import Dict, List, Optional, Sequence, Union
 
 import torch
-from torch.utils.data import Dataset, IterableDataset
 from torch.utils.data.dataloader import DataLoader
 
 from lhotse.cut import CutSet
@@ -11,7 +10,7 @@ from lhotse.cut import CutSet
 EPS = 1e-8
 
 
-class SpeechRecognitionDataset(Dataset):
+class SpeechRecognitionDataset(torch.utils.data.Dataset):
     """
     The PyTorch Dataset for the speech recognition task.
     Each item in this dataset is a dict of:
@@ -62,9 +61,15 @@ class SpeechRecognitionDataset(Dataset):
         return len(self.cut_ids)
 
 
-class K2SpeechRecognitionIterableDataset(IterableDataset):
+class K2SpeechRecognitionIterableDataset(torch.utils.data.IterableDataset):
     """
     The PyTorch Dataset for the speech recognition task using K2 library.
+    This dataset internally batches and collates the Cuts and should be used with
+    PyTorch DataLoader with argument batch_size=None to work properly.
+    The batch size is determined automatically to satisfy the constraints of ``max_frames``
+    and ``max_cuts``.
+    This dataset will automatically partition itself when used with a multiprocessing DataLoader.
+
     Each item in this dataset is a dict of:
 
     .. code-block::
@@ -83,8 +88,8 @@ class K2SpeechRecognitionIterableDataset(IterableDataset):
         }
 
     Dimension symbols legend:
-    * ``B`` - batch size (number of Cuts),
-    * ``S`` - number of supervision segments (greater or equal to B, as each Cut may have multiple supervisions),
+    * ``B`` - batch size (number of Cuts)
+    * ``S`` - number of supervision segments (greater or equal to B, as each Cut may have multiple supervisions)
     * ``T`` - number of frames of the longest Cut
     * ``F`` - number of features
 
@@ -98,6 +103,19 @@ class K2SpeechRecognitionIterableDataset(IterableDataset):
             max_cuts: Optional[int] = None,
             shuffle: bool = False
     ):
+        """
+        K2 ASR IterableDataset constructor.
+
+        :param cuts: the ``CutSet`` to sample data from.
+        :param max_frames: The maximum number of feature frames that we're going to put in a single batch.
+            This number includes the padding frames.
+        :param max_cuts: The maximum number of cuts sampled to form a mini-batch.
+            By default, this constraint is off.
+        :param shuffle: When ``True``, the cuts will be shuffled at the start of iteration.
+            Convenient when mini-batch loop is inside an outer epoch-level loop, e.g.:
+            `for epoch in range(10): for batch in dataset: ...` as every epoch will see a
+            different cuts order.
+        """
         super().__init__()
         # Initialize the fields
         self.cuts = cuts
@@ -110,6 +128,7 @@ class K2SpeechRecognitionIterableDataset(IterableDataset):
         # Set-up the pseudo-immutable state for multiprocessing DataLoader compatibility
         self.partition_start = 0
         self.partition_end = len(self.cut_ids)
+        self._validate()
 
     def __iter__(self):
         """
@@ -119,7 +138,6 @@ class K2SpeechRecognitionIterableDataset(IterableDataset):
         dataset won't return data duplicates within a single epoch (for more details, see:
         https://pytorch.org/docs/stable/data.html at "Multi-process data loading").
         """
-
         # noinspection PyUnresolvedReferences
         worker_info = torch.utils.data.get_worker_info()
         if worker_info is None:
@@ -176,7 +194,7 @@ class K2SpeechRecognitionIterableDataset(IterableDataset):
                     'num_frames': round(supervision.duration / cut.frame_shift),
                 }
                 for sequence_idx, cut in enumerate(cuts)
-                for supervision in cut.trimmed_supervisions
+                for supervision in cut.supervisions
             ])
         }
 
@@ -185,8 +203,8 @@ class K2SpeechRecognitionIterableDataset(IterableDataset):
         Return a sub-CutSet that represents a full batch.
         This is quick, as it does not perform any I/O in the process.
         """
-        # Keep iterating the underlying CutSet as long as we hit the exceed the constraints
-        # provided by user (the max number of frames and max number of cuts).
+        # Keep iterating the underlying CutSet as long as we hit or exceed the constraints
+        # provided by user (the max number of frames or max number of cuts).
         # Note: no actual data is loaded into memory yet because the manifests contain all the metadata
         # required to do this operation.
         num_frames = 0
@@ -217,6 +235,15 @@ class K2SpeechRecognitionIterableDataset(IterableDataset):
                 break
         return CutSet.from_cuts(cuts)
 
+    def _validate(self) -> None:
+        for cut in self.cuts:
+            for supervision in cut.supervisions:
+                assert cut.start <= supervision.start <= supervision.end <= cut.end, \
+                    f"Cutting in the middle of a supervision is currently not supported for the ASR task. " \
+                    f"Cut ID violating the pre-condition: '{cut.id}'"
+        assert self.max_frames > 0
+        assert self.max_cuts is None or self.max_cuts > 0
+
 
 def _collate_features(cuts: CutSet) -> torch.Tensor:
     first_cut = next(iter(cuts))
@@ -226,7 +253,7 @@ def _collate_features(cuts: CutSet) -> torch.Tensor:
     return features
 
 
-class K2SpeechRecognitionDataset(Dataset):
+class K2SpeechRecognitionDataset(torch.utils.data.Dataset):
     """
     The PyTorch Dataset for the speech recognition task using K2 library.
     Each item in this dataset is a dict of:
