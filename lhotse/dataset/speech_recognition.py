@@ -5,7 +5,9 @@ from typing import Dict, List, Optional, Sequence, Union
 import torch
 from torch.utils.data.dataloader import DataLoader
 
-from lhotse.cut import CutSet
+from lhotse.cut import AnyCut, CutSet
+from lhotse.utils import Seconds
+from test.cut.test_padding_cut import PADDING_LOG_ENERGY
 
 EPS = 1e-8
 
@@ -64,11 +66,17 @@ class SpeechRecognitionDataset(torch.utils.data.Dataset):
 class K2SpeechRecognitionIterableDataset(torch.utils.data.IterableDataset):
     """
     The PyTorch Dataset for the speech recognition task using K2 library.
+
     This dataset internally batches and collates the Cuts and should be used with
     PyTorch DataLoader with argument batch_size=None to work properly.
     The batch size is determined automatically to satisfy the constraints of ``max_frames``
     and ``max_cuts``.
-    This dataset will automatically partition itself when used with a multiprocessing DataLoader.
+
+    This dataset will automatically partition itself when used with a multiprocessing DataLoader
+    (i.e. the same cut will not appear twice in the same epoch).
+
+    By default, we "pack" the batches to minimize the amount of padding - we achieve that by
+    concatenating the cuts' feature matrices with a small amount of silence (padding) in between.
 
     Each item in this dataset is a dict of:
 
@@ -101,20 +109,32 @@ class K2SpeechRecognitionIterableDataset(torch.utils.data.IterableDataset):
             cuts: CutSet,
             max_frames: int = 26000,
             max_cuts: Optional[int] = None,
-            shuffle: bool = False
+            shuffle: bool = False,
+            concat_cuts: bool = True,
+            concat_cuts_gap: Seconds = 1.0,
+            concat_cuts_duration_factor: float = 2
     ):
         """
         K2 ASR IterableDataset constructor.
 
         :param cuts: the ``CutSet`` to sample data from.
         :param max_frames: The maximum number of feature frames that we're going to put in a single batch.
-            This number includes the padding frames.
+            The padding frames do not contribute to that limit, since we pack the batch by default to minimze
+            the amount of padding.
         :param max_cuts: The maximum number of cuts sampled to form a mini-batch.
             By default, this constraint is off.
         :param shuffle: When ``True``, the cuts will be shuffled at the start of iteration.
             Convenient when mini-batch loop is inside an outer epoch-level loop, e.g.:
             `for epoch in range(10): for batch in dataset: ...` as every epoch will see a
             different cuts order.
+        :param concat_cuts: When ``True``, we will concatenate the cuts to minimize the total amount of padding;
+            e.g. instead of creating a batch with 40 examples, we will merge some of the examples together
+            adding some silence between them to avoid a large number of padding frames that waste the computation.
+            Enabled by default.
+        :param concat_cuts_gap: The duration of silence in seconds that is inserted between the cuts;
+            it's goal is to let the model "know" that there are separate utterances in a single example.
+        :param concat_cuts_duration_factor: Determines the maximum duration of the concatenated cuts;
+            by default it's twice the duration of the longest cut in the batch.
         """
         super().__init__()
         # Initialize the fields
@@ -122,6 +142,9 @@ class K2SpeechRecognitionIterableDataset(torch.utils.data.IterableDataset):
         self.shuffle = shuffle
         self.max_frames = max_frames
         self.max_cuts = max_cuts
+        self.concat_cuts = concat_cuts
+        self.concat_cuts_gap = concat_cuts_gap
+        self.concat_cuts_duration_factor = concat_cuts_duration_factor
         # Set-up the mutable state for new epoch initialization in __iter__
         self.cut_ids = list(self.cuts.ids)
         self.current_idx = None
@@ -233,6 +256,12 @@ class K2SpeechRecognitionIterableDataset(torch.utils.data.IterableDataset):
                 # to "squeeze in" to satisfy the constraints as best as we can; we do no such thing
                 # in this initial implementation.
                 break
+        if self.concat_cuts:
+            cuts = concat_cuts(
+                cuts,
+                gap=self.concat_cuts_gap,
+                max_duration=self.concat_cuts_duration_factor * cuts[0].duration
+            )
         return CutSet.from_cuts(cuts)
 
     def _validate(self) -> None:
@@ -246,11 +275,54 @@ class K2SpeechRecognitionIterableDataset(torch.utils.data.IterableDataset):
 
 
 def _collate_features(cuts: CutSet) -> torch.Tensor:
+    # TODO(pzelasko): because MixedCut's currently suffer from some off-by-one errors in number of
+    #  frames calculation, we have to do extra slicing in this function to safe-guard against it.
     first_cut = next(iter(cuts))
-    features = torch.empty(len(cuts), first_cut.num_frames, first_cut.num_features)
+    features = torch.ones(len(cuts), first_cut.num_frames, first_cut.num_features) * PADDING_LOG_ENERGY
     for idx, cut in enumerate(cuts):
-        features[idx] = torch.from_numpy(cut.load_features())
+        feats_arr = torch.from_numpy(cut.load_features())[:first_cut.num_frames, :]
+        features[idx, :feats_arr.shape[0], :] = feats_arr
     return features
+
+
+def concat_cuts(
+        cuts: List[AnyCut],
+        gap: Seconds = 1.0,
+        max_duration: Optional[Seconds] = None
+) -> List[AnyCut]:
+    """
+    We're going to concatenate the cuts to minimize the amount of total padding frames used.
+    This is actually solving a knapsack problem.
+    In this initial implementation we're using a greedy approach:
+    going from the back (i.e. the shortest cuts) we'll try to concat them to the longest cut
+    that still has some "space" at the end.
+
+    This function expects that the input is sorted descendingly by duration.
+
+    :param cuts: a list of cuts to pack.
+    :param gap: the duration of silence inserted between concatenated cuts.
+    :param max_duration: the maximum duration for the concatenated cuts
+        (by default set to the duration of the first cut).
+    :return a list of packed cuts.
+    """
+    if len(cuts) <= 1:
+        return cuts
+    max_duration = cuts[0].duration if max_duration is None else max_duration
+    current_idx = 1
+    while True:
+        can_fit = False
+        shortest = cuts[-1]
+        for idx in range(current_idx, len(cuts) - 1):
+            cut = cuts[current_idx]
+            can_fit = cut.duration + gap + shortest.duration <= max_duration
+            if can_fit:
+                cuts[current_idx] = cut.pad(cut.duration + gap).append(shortest)
+                cuts = cuts[:-1]
+                break
+            current_idx += 1
+        if not can_fit:
+            break
+    return cuts
 
 
 class K2SpeechRecognitionDataset(torch.utils.data.Dataset):

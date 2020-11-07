@@ -5,8 +5,8 @@ from torch.utils.data import DataLoader
 from lhotse.cut import CutSet
 from lhotse.dataset import SpeechRecognitionDataset
 from lhotse.dataset.speech_recognition import K2DataLoader, K2SpeechRecognitionDataset, \
-    K2SpeechRecognitionIterableDataset
-from lhotse.test_utils import DummyManifest
+    K2SpeechRecognitionIterableDataset, concat_cuts
+from lhotse.test_utils import DummyManifest, dummy_cut
 
 
 @pytest.fixture
@@ -134,3 +134,21 @@ def test_k2_speech_recognition_iterable_dataset_shuffling():
     assert len(set(dloader_cut_ids)) == len(dloader_cut_ids)
     # Invariant 3: the items are shuffled, i.e. the order is different than that in the CutSet
     assert dloader_cut_ids != [c.id for c in cut_set]
+
+
+def test_concat_cuts():
+    cuts = [
+        dummy_cut(duration=30.0),
+        dummy_cut(duration=20.0),
+        dummy_cut(duration=10.0),
+        dummy_cut(duration=5.0),
+        dummy_cut(duration=4.0),
+        dummy_cut(duration=3.0),
+        dummy_cut(duration=2.0),
+    ]
+    concat = concat_cuts(cuts, gap=1.0)
+    assert [c.duration for c in concat] == [
+        30.0,
+        20.0 + 1.0 + 2.0 + 1.0 + 3.0,  # == 27.0
+        10.0 + 1.0 + 4.0 + 1.0 + 5.0,  # == 21.0
+    ]

@@ -405,8 +405,8 @@ class Cut(CutUtilsMixin):
         total_num_frames = compute_num_frames(duration=duration, frame_shift=self.frame_shift) \
             if self.has_features else None
         total_num_samples = round(duration * self.sampling_rate) if self.has_recording else None
-        padding_duration = round(duration - self.duration, ndigits=7)
-        return self.append(PaddingCut(
+        padding_duration = round(duration - self.duration, ndigits=8)
+        padded = self.append(PaddingCut(
             id=str(uuid4()),
             duration=padding_duration,
             num_features=self.num_features if self.features is not None else None,
@@ -415,6 +415,7 @@ class Cut(CutUtilsMixin):
             sampling_rate=self.features.sampling_rate if self.features is not None else self.recording.sampling_rate,
             use_log_energy=self.features.type in ('fbank', 'mfcc') if self.features is not None else False
         ))
+        return padded
 
     def map_supervisions(self, transform_fn: Callable[[SupervisionSegment], SupervisionSegment]) -> AnyCut:
         """
@@ -798,12 +799,14 @@ class MixedCut(CutUtilsMixin):
             )
         if mixed:
             feats = mixer.mixed_feats
-            if self.num_frames - feats.shape[0] == 1:
-                # Edge case: both offset and cut duration in a given track ended with .5 (e.g. 10.5 and 1.5)
-                # and both of them were rounded down, resulting in an off-by-one error.
-                # We'll fix the padding here by repeating the last frame.
-                # (it's not elegant but I don't have another idea right now...)
-                feats = np.vstack([feats, feats[-1, :]])
+            # Note: The slicing below is a work-around for an edge-case
+            #  when two cuts have durations that ended with 0.005 (e.g. 10.125 and 5.715)
+            #  - then, the feature extractor "squeezed in" a last extra frame and the simple
+            #  relationship between num_frames and duration we strived for is not true;
+            #  i.e. the duration is 10.125 + 5.715 = 15.84, but the number of frames is
+            #  1013 + 572 = 1585. If the frame_shift is 0.01, we have gained an extra 0.01s...
+            if feats.shape[0] - self.num_frames == 1:
+                feats = feats[:self.num_frames, :]
             return feats
         else:
             return mixer.unmixed_feats
