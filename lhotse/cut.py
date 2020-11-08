@@ -750,8 +750,10 @@ class MixedCut(CutUtilsMixin):
         """
         if duration <= self.duration:
             return self
-        total_num_frames = round(duration / self.frame_shift) if self.has_features else None
-        total_num_samples = round(duration * self.sampling_rate) if self.has_recording else None
+        if self.has_features:
+            total_num_frames = compute_num_frames(duration=duration, frame_shift=self.frame_shift)
+        if self.has_recording:
+            total_num_samples = round(duration * self.sampling_rate)
         padding_duration = round(duration - self.duration, ndigits=8)
         return self.append(PaddingCut(
             id=str(uuid4()),

@@ -7,7 +7,6 @@ from torch.utils.data.dataloader import DataLoader
 
 from lhotse.cut import AnyCut, CutSet
 from lhotse.utils import Seconds
-from test.cut.test_padding_cut import PADDING_LOG_ENERGY
 
 EPS = 1e-8
 
@@ -275,13 +274,10 @@ class K2SpeechRecognitionIterableDataset(torch.utils.data.IterableDataset):
 
 
 def _collate_features(cuts: CutSet) -> torch.Tensor:
-    # TODO(pzelasko): because MixedCut's currently suffer from some off-by-one errors in number of
-    #  frames calculation, we have to do extra slicing in this function to safe-guard against it.
     first_cut = next(iter(cuts))
-    features = torch.ones(len(cuts), first_cut.num_frames, first_cut.num_features) * PADDING_LOG_ENERGY
+    features = torch.empty(len(cuts), first_cut.num_frames, first_cut.num_features)
     for idx, cut in enumerate(cuts):
-        feats_arr = torch.from_numpy(cut.load_features())[:first_cut.num_frames, :]
-        features[idx, :feats_arr.shape[0], :] = feats_arr
+        features[idx] = torch.from_numpy(cut.load_features())
     return features
 
 
