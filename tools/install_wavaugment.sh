@@ -14,11 +14,11 @@ fi
 
 # Build libsox from source
 if [ ! -f sox-code/src/.libs/libsox.${ext} ]; then
-  git clone --depth 1 git://git.code.sf.net/p/sox/code sox-code
+  git clone --depth 300 git://git.code.sf.net/p/sox/code sox-code
+  pushd sox-code
   # Note(pzelasko): This seems to be the last version of libsox that builds on my MacOS
   # and CLSP grid without any issues...
   git checkout f0574854aff841d3be65f82bf74eb46272cd8588
-  pushd sox-code
   autoreconf -i
   ./configure
   make
