@@ -28,7 +28,7 @@ class WavAugmenter:
         self.sampling_rate = sampling_rate
 
     @staticmethod
-    def create_predefined(name: str, sampling_rate: int) -> 'WavAugmenter':
+    def create_predefined(name: str, sampling_rate: int, **kwargs) -> 'WavAugmenter':
         """
         Create a WavAugmenter class with one of the predefined augmentation setups available in Lhotse.
         Some examples are: "pitch", "reverb", "pitch_reverb_tdrop".
@@ -37,7 +37,7 @@ class WavAugmenter:
         :param sampling_rate: expected sampling rate of the input audio.
         """
         return WavAugmenter(
-            effect_chain=_DEFAULT_AUGMENTATIONS[name](sampling_rate=sampling_rate),
+            effect_chain=_DEFAULT_AUGMENTATIONS[name](sampling_rate=sampling_rate, **kwargs),
             sampling_rate=sampling_rate
         )
 
