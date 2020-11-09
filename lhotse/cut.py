@@ -809,6 +809,11 @@ class MixedCut(CutUtilsMixin):
             #  1013 + 572 = 1585. If the frame_shift is 0.01, we have gained an extra 0.01s...
             if feats.shape[0] - self.num_frames == 1:
                 feats = feats[:self.num_frames, :]
+            # TODO(pzelasko): This can sometimes happen in a MixedCut with >= 5 different Cuts,
+            #   with a regular Cut at the end, when the mix offsets are floats with a lot of decimals.
+            #   For now we're duplicating the last frame to match the declared "num_frames" of this cut.
+            if feats.shape[0] - self.num_frames == -1:
+                feats = np.concatenate((feats, feats[-1:, :]), axis=0)
             return feats
         else:
             return mixer.unmixed_feats
