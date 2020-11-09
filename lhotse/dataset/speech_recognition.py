@@ -293,8 +293,6 @@ def concat_cuts(
     going from the back (i.e. the shortest cuts) we'll try to concat them to the longest cut
     that still has some "space" at the end.
 
-    This function expects that the input is sorted descendingly by duration.
-
     :param cuts: a list of cuts to pack.
     :param gap: the duration of silence inserted between concatenated cuts.
     :param max_duration: the maximum duration for the concatenated cuts
@@ -303,6 +301,7 @@ def concat_cuts(
     """
     if len(cuts) <= 1:
         return cuts
+    cuts = sorted(cuts, key=lambda c: c.duration, reverse=True)
     max_duration = cuts[0].duration if max_duration is None else max_duration
     current_idx = 1
     while True:
