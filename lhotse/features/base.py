@@ -85,7 +85,9 @@ class FeatureExtractor(metaclass=ABCMeta):
             where to apply ``energy_scaling_factor_b`` to the signal is determined by the implementer.
         :return: A mixed feature matrix.
         """
-        raise ValueError('The feature extractor\'s "mix" operation is undefined.')
+        raise ValueError('The feature extractor\'s "mix" operation is undefined. '
+                         'It does not support feature-domain mix, consider computing the features '
+                         'after, rather than before mixing the cuts.')
 
     @staticmethod
     def compute_energy(features: np.ndarray) -> float:
@@ -97,7 +99,9 @@ class FeatureExtractor(metaclass=ABCMeta):
         :param features: A feature matrix.
         :return: A positive float value of the signal energy.
         """
-        raise ValueError('The feature extractor\'s "compute_energy" is undefined.')
+        raise ValueError('The feature extractor\'s "compute_energy" operation is undefined. '
+                         'It does not support feature-domain mix, consider computing the features '
+                         'after, rather than before mixing the cuts.')
 
     def extract_from_samples_and_store(
             self,

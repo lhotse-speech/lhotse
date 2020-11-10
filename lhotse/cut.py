@@ -814,6 +814,10 @@ class MixedCut(CutUtilsMixin):
             #   For now we're duplicating the last frame to match the declared "num_frames" of this cut.
             if feats.shape[0] - self.num_frames == -1:
                 feats = np.concatenate((feats, feats[-1:, :]), axis=0)
+            assert feats.shape[0] == self.num_frames, "Inconsistent number of frames in a MixedCut: please report " \
+                                                      "this issue at https://github.com/lhotse-speech/lhotse/issues " \
+                                                      "showing the output of print(cut) or str(cut) on which" \
+                                                      "load_features() was called."
             return feats
         else:
             return mixer.unmixed_feats
