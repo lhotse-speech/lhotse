@@ -6,6 +6,8 @@ import pytest
 from lhotse import CutSet, Fbank, LilcomFilesWriter, WavAugmenter
 from test.known_issues.utils import make_cut
 
+augment = pytest.importorskip('augment')
+
 
 @pytest.mark.parametrize('exec_type', [ProcessPoolExecutor, ThreadPoolExecutor])
 def test_wav_augment_with_executor(exec_type):
