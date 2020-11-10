@@ -14,7 +14,8 @@ from lhotse.audio import AudioMixer, Recording, RecordingSet
 from lhotse.features import FeatureExtractor, FeatureMixer, FeatureSet, Features, create_default_feature_extractor
 from lhotse.features.io import FeaturesWriter
 from lhotse.supervision import SupervisionSegment, SupervisionSet
-from lhotse.utils import (Decibels, EPSILON, JsonMixin, Pathlike, Seconds, TimeSpan, YamlMixin, asdict_nonull, fastcopy,
+from lhotse.utils import (Decibels, EPSILON, JsonMixin, Pathlike, Seconds, TimeSpan, YamlMixin, asdict_nonull,
+                          compute_num_frames, fastcopy,
                           overlaps, overspans, split_sequence, uuid4)
 
 # One of the design principles for Cuts is a maximally "lazy" implementation, e.g. when mixing Cuts,
@@ -36,6 +37,19 @@ class CutUtilsMixin:
     but ABC's do not mix well with dataclasses in Python. It is possible we'll ditch the dataclass
     for cuts in the future and make this an ABC instead.
     """
+
+    @property
+    def trimmed_supervisions(self) -> List[SupervisionSegment]:
+        """
+        Return the supervisions in this Cut that have modified time boundaries so as not to exceed
+        the Cut's start or end.
+
+        Note that when ``cut.supervisions`` is called, the supervisions may have negative ``start``
+        values that indicate the supervision actually begins before the cut, or ``end`` values
+        that exceed the Cut's duration (it means the supervision continued in the original recording
+        after the Cut's ending).
+        """
+        return [s.trim(self.duration) for s in self.supervisions]
 
     def mix(self, other: AnyCut, offset_other_by: Seconds = 0.0, snr: Optional[Decibels] = None) -> 'MixedCut':
         """Refer to mix() documentation."""
@@ -244,7 +258,7 @@ class Cut(CutUtilsMixin):
 
     @property
     def end(self) -> Seconds:
-        return round(self.start + self.duration, ndigits=3)
+        return round(self.start + self.duration, ndigits=8)
 
     @property
     def has_features(self) -> bool:
@@ -260,7 +274,7 @@ class Cut(CutUtilsMixin):
 
     @property
     def num_frames(self) -> Optional[int]:
-        return round(self.duration / self.frame_shift) if self.has_features else None
+        return compute_num_frames(duration=self.duration, frame_shift=self.frame_shift) if self.has_features else None
 
     @property
     def num_samples(self) -> Optional[int]:
@@ -360,9 +374,9 @@ class Cut(CutUtilsMixin):
         if duration_past_end > 0:
             # When the end of the Cut has been exceeded, trim the new duration to not exceed the old Cut's end.
             new_duration -= duration_past_end
-        # Round the duration to 1ms to avoid the possible loss of a single audio sample due to floating point
+        # Round the duration to avoid the possible loss of a single audio sample due to floating point
         # additions and subtractions.
-        new_duration = round(new_duration, ndigits=3)
+        new_duration = round(new_duration, ndigits=8)
         new_time_span = TimeSpan(start=0, end=new_duration)
         criterion = overlaps if keep_excessive_supervisions else overspans
         new_supervisions = (segment.with_offset(-offset) for segment in self.supervisions)
@@ -388,10 +402,11 @@ class Cut(CutUtilsMixin):
         """
         if duration <= self.duration:
             return self
-        total_num_frames = round(duration / self.frame_shift) if self.has_features else None
+        total_num_frames = compute_num_frames(duration=duration, frame_shift=self.frame_shift) \
+            if self.has_features else None
         total_num_samples = round(duration * self.sampling_rate) if self.has_recording else None
-        padding_duration = round(duration - self.duration, ndigits=3)
-        return self.append(PaddingCut(
+        padding_duration = round(duration - self.duration, ndigits=8)
+        padded = self.append(PaddingCut(
             id=str(uuid4()),
             duration=padding_duration,
             num_features=self.num_features if self.features is not None else None,
@@ -400,6 +415,7 @@ class Cut(CutUtilsMixin):
             sampling_rate=self.features.sampling_rate if self.features is not None else self.recording.sampling_rate,
             use_log_energy=self.features.type in ('fbank', 'mfcc') if self.features is not None else False
         ))
+        return padded
 
     def map_supervisions(self, transform_fn: Callable[[SupervisionSegment], SupervisionSegment]) -> AnyCut:
         """
@@ -452,6 +468,14 @@ class PaddingCut(CutUtilsMixin):
 
     # For time domain
     num_samples: Optional[int] = None
+
+    @property
+    def start(self) -> Seconds:
+        return 0
+
+    @property
+    def end(self) -> Seconds:
+        return self.duration
 
     @property
     def supervisions(self):
@@ -598,9 +622,17 @@ class MixedCut(CutUtilsMixin):
         ]
 
     @property
+    def start(self) -> Seconds:
+        return 0
+
+    @property
+    def end(self) -> Seconds:
+        return self.duration
+
+    @property
     def duration(self) -> Seconds:
         track_durations = (track.offset + track.cut.duration for track in self.tracks)
-        return round(max(track_durations), ndigits=3)
+        return round(max(track_durations), ndigits=8)
 
     @property
     def has_features(self) -> bool:
@@ -613,7 +645,7 @@ class MixedCut(CutUtilsMixin):
     @property
     def num_frames(self) -> Optional[int]:
         if self.has_features:
-            return round(self.duration / self._first_non_padding_cut.frame_shift)
+            return compute_num_frames(duration=self.duration, frame_shift=self._first_non_padding_cut.frame_shift)
         return None
 
     @property
@@ -718,9 +750,11 @@ class MixedCut(CutUtilsMixin):
         """
         if duration <= self.duration:
             return self
-        total_num_frames = round(duration / self.frame_shift) if self.has_features else None
-        total_num_samples = round(duration * self.sampling_rate) if self.has_recording else None
-        padding_duration = round(duration - self.duration, ndigits=3)
+        if self.has_features:
+            total_num_frames = compute_num_frames(duration=duration, frame_shift=self.frame_shift)
+        if self.has_recording:
+            total_num_samples = round(duration * self.sampling_rate)
+        padding_duration = round(duration - self.duration, ndigits=8)
         return self.append(PaddingCut(
             id=str(uuid4()),
             duration=padding_duration,
@@ -767,12 +801,23 @@ class MixedCut(CutUtilsMixin):
             )
         if mixed:
             feats = mixer.mixed_feats
-            if self.num_frames - feats.shape[0] == 1:
-                # Edge case: both offset and cut duration in a given track ended with .5 (e.g. 10.5 and 1.5)
-                # and both of them were rounded down, resulting in an off-by-one error.
-                # We'll fix the padding here by repeating the last frame.
-                # (it's not elegant but I don't have another idea right now...)
-                feats = np.vstack([feats, feats[-1, :]])
+            # Note: The slicing below is a work-around for an edge-case
+            #  when two cuts have durations that ended with 0.005 (e.g. 10.125 and 5.715)
+            #  - then, the feature extractor "squeezed in" a last extra frame and the simple
+            #  relationship between num_frames and duration we strived for is not true;
+            #  i.e. the duration is 10.125 + 5.715 = 15.84, but the number of frames is
+            #  1013 + 572 = 1585. If the frame_shift is 0.01, we have gained an extra 0.01s...
+            if feats.shape[0] - self.num_frames == 1:
+                feats = feats[:self.num_frames, :]
+            # TODO(pzelasko): This can sometimes happen in a MixedCut with >= 5 different Cuts,
+            #   with a regular Cut at the end, when the mix offsets are floats with a lot of decimals.
+            #   For now we're duplicating the last frame to match the declared "num_frames" of this cut.
+            if feats.shape[0] - self.num_frames == -1:
+                feats = np.concatenate((feats, feats[-1:, :]), axis=0)
+            assert feats.shape[0] == self.num_frames, "Inconsistent number of frames in a MixedCut: please report " \
+                                                      "this issue at https://github.com/lhotse-speech/lhotse/issues " \
+                                                      "showing the output of print(cut) or str(cut) on which" \
+                                                      "load_features() was called."
             return feats
         else:
             return mixer.unmixed_feats
@@ -1134,6 +1179,10 @@ class CutSet(JsonMixin, YamlMixin, Sequence[AnyCut]):
             raise ValueError("This operation is not applicable to CutSet's containing MixedCut's.")
         groups = groupby(lambda cut: (cut.recording.id, cut.start, cut.end), self)
         return CutSet.from_cuts(mix_cuts(cuts) for cuts in groups.values())
+
+    def sort_by_duration(self, ascending: bool = False) -> 'CutSet':
+        """Sort the CutSet according to cuts duration. Descending by default."""
+        return CutSet.from_cuts(sorted(self, key=(lambda cut: cut.duration), reverse=not ascending))
 
     def pad(
             self,

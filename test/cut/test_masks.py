@@ -13,7 +13,8 @@ class TestMasksWithoutSupervisions:
         assert mask.sum() == 0
 
     def test_cut_features_mask(self):
-        cut = Cut('cut', start=0, duration=2, channel=0, features=Mock(sampling_rate=16000, frame_shift=0.01))
+        cut = Cut('cut', start=0, duration=2, channel=0,
+                  features=Mock(sampling_rate=16000, frame_shift=0.01, num_frames=2000))
         mask = cut.supervisions_feature_mask()
         assert mask.sum() == 0
 
@@ -54,7 +55,8 @@ class TestMasksWithSupervisions:
         assert (mask[8000:] == 0).all()
 
     def test_cut_features_mask(self, supervisions):
-        cut = Cut('cut', start=0, duration=2, channel=0, features=Mock(sampling_rate=16000, frame_shift=0.01),
+        cut = Cut('cut', start=0, duration=2, channel=0,
+                  features=Mock(sampling_rate=16000, frame_shift=0.01, num_frames=2000),
                   supervisions=supervisions)
         mask = cut.supervisions_feature_mask()
         assert (mask[:50] == 1).all()

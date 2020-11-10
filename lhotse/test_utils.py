@@ -19,7 +19,9 @@ def DummyManifest(type_: Type, *, begin_id: int, end_id: int) -> Manifest:
         return FeatureSet.from_features(dummy_features(idx) for idx in range(begin_id, end_id))
     if type_ == CutSet:
         # noinspection PyTypeChecker
-        return CutSet.from_cuts(dummy_cut(idx) for idx in range(begin_id, end_id))
+        return CutSet.from_cuts(
+            dummy_cut(idx, supervisions=[dummy_supervision(idx)]) for idx in range(begin_id, end_id)
+        )
 
 
 def dummy_recording(unique_id: int) -> Recording:
@@ -37,7 +39,8 @@ def dummy_supervision(unique_id: int, start: float = 0.0, duration: float = 1.0)
         id=f'dummy-segment-{unique_id:04d}',
         recording_id='dummy-recording',
         start=start,
-        duration=duration
+        duration=duration,
+        text='irrelevant'
     )
 
 
@@ -49,11 +52,11 @@ def dummy_features(unique_id: int) -> Features:
         duration=1.0,
         type='fbank',
         num_frames=100,
-        num_features=20,
+        num_features=23,
         sampling_rate=16000,
-        storage_type='irrelevant',
-        storage_path='irrelevant',
-        storage_key='irrelevant'
+        storage_type='lilcom_files',
+        storage_path='test/fixtures/dummy_feats/storage',
+        storage_key='dbf9a0ec-f79d-4eb8-ae83-143a6d5de64d.llc'
     )
 
 

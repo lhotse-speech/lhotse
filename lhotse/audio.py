@@ -83,9 +83,9 @@ def read_audio(path: Pathlike, offset: Seconds, duration: Seconds) -> Tuple[np.n
         sampling_rate = sf_desc.samplerate
         if offset:
             # Seek to the start of the target read
-            sf_desc.seek(int(offset * sampling_rate))
+            sf_desc.seek(round(offset * sampling_rate))
         if duration is not None:
-            frame_duration = int(duration * sampling_rate)
+            frame_duration = round(duration * sampling_rate)
         else:
             frame_duration = -1
         # Load the target number of frames, and transpose to match librosa form

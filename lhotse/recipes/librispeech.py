@@ -111,7 +111,7 @@ def prepare_librispeech(
                 ],
                 sampling_rate=int(metadata[idx].audio_info.rate),
                 num_samples=metadata[idx].audio_info.length,
-                duration=(metadata[idx].audio_info.length / metadata[idx].audio_info.rate)
+                duration=metadata[idx].audio_info.length / metadata[idx].audio_info.rate
             )
             for idx in metadata
         )

@@ -85,7 +85,9 @@ class FeatureExtractor(metaclass=ABCMeta):
             where to apply ``energy_scaling_factor_b`` to the signal is determined by the implementer.
         :return: A mixed feature matrix.
         """
-        raise ValueError('The feature extractor\'s "mix" operation is undefined.')
+        raise ValueError('The feature extractor\'s "mix" operation is undefined. '
+                         'It does not support feature-domain mix, consider computing the features '
+                         'after, rather than before mixing the cuts.')
 
     @staticmethod
     def compute_energy(features: np.ndarray) -> float:
@@ -97,7 +99,9 @@ class FeatureExtractor(metaclass=ABCMeta):
         :param features: A feature matrix.
         :return: A positive float value of the signal energy.
         """
-        raise ValueError('The feature extractor\'s "compute_energy" is undefined.')
+        raise ValueError('The feature extractor\'s "compute_energy" operation is undefined. '
+                         'It does not support feature-domain mix, consider computing the features '
+                         'after, rather than before mixing the cuts.')
 
     def extract_from_samples_and_store(
             self,
@@ -130,13 +134,12 @@ class FeatureExtractor(metaclass=ABCMeta):
         """
         if augmenter is not None:
             samples = augmenter.apply(samples)
+        duration = round(samples.shape[1] / sampling_rate, ndigits=8)
         feats = self.extract(samples=samples, sampling_rate=sampling_rate)
         storage_key = store_feature_array(feats, storage=storage)
         return Features(
             start=offset,
-            # We simplify the relationship between num_frames and duration - we guarantee that
-            #  the duration is always num_frames * frame_shift
-            duration=feats.shape[0] * self.frame_shift,
+            duration=duration,
             type=self.name,
             num_frames=feats.shape[0],
             num_features=feats.shape[1],
@@ -187,9 +190,7 @@ class FeatureExtractor(metaclass=ABCMeta):
             channels=channels if channels is not None else recording.channel_ids,
             # The start is relative to the beginning of the recording.
             start=offset,
-            # We simplify the relationship between num_frames and duration - we guarantee that
-            #  the duration is always num_frames * frame_shift
-            duration=feats.shape[0] * self.frame_shift,
+            duration=recording.duration,
             type=self.name,
             num_frames=feats.shape[0],
             num_features=feats.shape[1],

@@ -5,6 +5,7 @@ import random
 import uuid
 from contextlib import contextmanager
 from dataclasses import asdict, dataclass
+from decimal import Decimal, ROUND_HALF_UP
 from math import ceil, isclose
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Sequence, TypeVar, Union
@@ -233,3 +234,33 @@ def split_sequence(seq: Sequence[Any], num_splits: int, randomize: bool = False)
     chunk_size = int(ceil(num_items / num_splits))
     split_indices = [(i * chunk_size, min(num_items, (i + 1) * chunk_size)) for i in range(num_splits)]
     return [seq[begin: end] for begin, end in split_indices]
+
+
+def compute_num_frames(duration: Seconds, frame_shift: Seconds) -> int:
+    """
+    Compute the number of frames from duration and frame_shift in a safe way.
+
+    The need for this function is best illustrated with an example edge case:
+
+    >>> duration = 16.165
+    >>> frame_shift = 0.01
+    >>> num_frames = duration / frame_shift  # we expect it to finally be 1617
+    >>> num_frames
+      1616.4999999999998
+    >>> round(num_frames)
+      1616
+    >>> Decimal(num_frames).quantize(0, rounding=ROUND_HALF_UP)
+      1616
+    >>> round(num_frames, ndigits=8)
+      1616.5
+    >>> Decimal(round(num_frames, ndigits=8)).quantize(0, rounding=ROUND_HALF_UP)
+      1617
+    """
+    return int(
+        Decimal(
+            # 8 is a good number because cases like 14.49175 still work correctly,
+            # while problematic cases like 14.49999999998 are typically breaking much later than 8th decimal
+            # with double-precision floats.
+            round(duration / frame_shift, ndigits=8)
+        ).quantize(0, rounding=ROUND_HALF_UP)
+    )
