@@ -52,10 +52,22 @@ class SoxEffectTransform:
             tensor = torch.from_numpy(tensor)
         effects = self.sample_effects()
         augmented, new_sampling_rate = torchaudio.sox_effects.apply_effects_tensor(tensor, sampling_rate, effects)
+        assert augmented.shape[0] == tensor.shape[0], "Lhotse does not support modifying the number " \
+                                                      "of channels during data augmentation."
         assert sampling_rate == new_sampling_rate, \
             f"Lhotse does not support changing the sampling rate during data augmentation. " \
             f"The original SR was '{sampling_rate}', after augmentation it's '{new_sampling_rate}'."
-        return augmented
+        # Matching shapes after augmentation -> early return.
+        if augmented.shape[1] == tensor.shape[1]:
+            return augmented
+        # We will truncate/zero-pad the signal if the number of samples has changed to mimic
+        # the WavAugment behavior that we relied upon so far.
+        resized = torch.zeros_like(tensor)
+        if augmented.shape[1] > tensor.shape[1]:
+            resized = augmented[:, :tensor.shape[1]]
+        else:
+            resized[:, :augmented.shape[1]] = augmented
+        return resized
 
     def sample_effects(self) -> List[List[str]]:
         """
