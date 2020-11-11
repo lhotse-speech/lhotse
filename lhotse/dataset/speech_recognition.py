@@ -1,5 +1,6 @@
 import math
 import random
+import warnings
 from typing import Dict, List, Optional, Sequence, Union
 
 import torch
@@ -246,15 +247,24 @@ class K2SpeechRecognitionIterableDataset(torch.utils.data.IterableDataset):
             next_cut = self.cuts[next_cut_id]
             next_num_frames = num_frames + next_cut.num_frames
             next_num_cuts = len(cuts) + 1
+            # Did we exceed the max_frames and max_cuts constraints?
             if next_num_frames <= self.max_frames and (self.max_cuts is None or next_num_cuts <= self.max_cuts):
+                # No - add the next cut to the batch, and keep trying.
                 num_frames = next_num_frames
                 cuts.append(next_cut)
                 self.current_idx += 1
             else:
-                # Note: in a more elaborate collection scheme, we would try to find some small cut
-                # to "squeeze in" to satisfy the constraints as best as we can; we do no such thing
-                # in this initial implementation.
-                break
+                # Yes. Do we have at least one cut in the batch?
+                if cuts:
+                    # Yes. Return it.
+                    break
+                else:
+                    # No. We'll warn the user that the constrains might be too tight,
+                    # and return the cut anyway.
+                    warnings.warn("The first cut drawn in batch collection violates the max_frames or max_cuts "
+                                  "constraints - we'll return it anyway. Consider increasing max_frames/max_cuts.")
+                    cuts.append(next_cut)
+                    self.current_idx += 1
         if self.concat_cuts:
             cuts = concat_cuts(
                 cuts,

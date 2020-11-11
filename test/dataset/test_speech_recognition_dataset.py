@@ -152,3 +152,12 @@ def test_concat_cuts():
         20.0 + 1.0 + 2.0 + 1.0 + 3.0,  # == 27.0
         10.0 + 1.0 + 4.0 + 1.0 + 5.0,  # == 21.0
     ]
+
+
+def test_k2_speech_recognition_iterable_dataset_low_max_frames(k2_cut_set):
+    dataset = K2SpeechRecognitionIterableDataset(k2_cut_set, shuffle=False, max_frames=2)
+    dloader = DataLoader(dataset, batch_size=None)
+    # Check that it does not crash
+    for batch in dloader:
+        # There will be only a single item in each batch as we're exceeding the limit each time.
+        assert batch['features'].shape[0] == 1
