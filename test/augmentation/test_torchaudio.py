@@ -29,7 +29,7 @@ def test_speed_does_not_change_num_samples(audio):
     # will yield either slower (more samples) or faster (less samples) signal.
     # The truncation/padding is performed inside of SoxEffectTransform so the user should not
     # see these changes.
-    for _ in range(100):
+    for _ in range(10):
         augmented_audio = augment_fn(audio, sampling_rate=SAMPLING_RATE)
         assert augmented_audio.shape == audio.shape
         assert augmented_audio != audio
