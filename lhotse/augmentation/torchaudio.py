@@ -1,10 +1,15 @@
 import random
+import warnings
 from dataclasses import dataclass
 from typing import List, Union
 
 import numpy as np
 import torch
 import torchaudio
+
+if str(torchaudio.__version__) < '0.7.0':
+    warnings.warn('Torchaudio SoX effects chains are only introduced in version 0.7 - '
+                  'please upgrade your PyTorch to 1.7+ and torchaudio to 0.7+ to use them.')
 
 
 @dataclass
@@ -33,7 +38,7 @@ class SoxEffectTransform:
     Example:
         >>> audio = np.random.rand(16000)
         >>> augment_fn = SoxEffectTransform(effects=[
-        >>>    ['reverb', 50, 50, RandomValue(0, 100)],  #
+        >>>    ['reverb', 50, 50, RandomValue(0, 100)],
         >>>    ['speed', RandomValue(0.9, 1.1)],
         >>>    ['rate', 16000],
         >>> ])
