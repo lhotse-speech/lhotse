@@ -9,8 +9,8 @@ import numpy as np
 from cytoolz import sliding_window
 from cytoolz.itertoolz import groupby
 
-from lhotse import WavAugmenter
 from lhotse.audio import AudioMixer, Recording, RecordingSet
+from lhotse.augmentation import AugmentFn
 from lhotse.features import FeatureExtractor, FeatureMixer, FeatureSet, Features, create_default_feature_extractor
 from lhotse.features.io import FeaturesWriter
 from lhotse.supervision import SupervisionSegment, SupervisionSet
@@ -68,18 +68,18 @@ class CutUtilsMixin:
     def compute_features(
             self,
             extractor: FeatureExtractor,
-            augmenter: Optional[WavAugmenter] = None,
+            augment_fn: Optional[AugmentFn] = None,
     ) -> np.ndarray:
         """
         Compute the features from this cut. This cut has to be able to load audio.
 
         :param extractor: a ``FeatureExtractor`` instance used to compute the features.
-        :param augmenter: optional ``WavAugmenter`` instance for audio augmentation.
+        :param augment_fn: optional ``WavAugmenter`` instance for audio augmentation.
         :return: a numpy ndarray with the computed features.
         """
         samples = self.load_audio()
-        if augmenter is not None:
-            samples = augmenter.apply(samples)
+        if augment_fn is not None:
+            samples = augment_fn(samples, self.sampling_rate)
         return extractor.extract(samples, self.sampling_rate)
 
     def plot_audio(self):
@@ -320,7 +320,7 @@ class Cut(CutUtilsMixin):
             self,
             extractor: FeatureExtractor,
             storage: FeaturesWriter,
-            augmenter: Optional[WavAugmenter] = None,
+            augment_fn: Optional[AugmentFn] = None,
             *args,
             **kwargs
     ) -> AnyCut:
@@ -329,8 +329,8 @@ class Cut(CutUtilsMixin):
         This cut has to be able to load audio.
 
         :param extractor: a ``FeatureExtractor`` instance used to compute the features.
-        :param output_dir: directory where the computed features will be stored.
-        :param augmenter: optional ``WavAugmenter`` instance for audio augmentation.
+        :param output_dir: the directory where the computed features will be stored.
+        :param augment_fn: an optional callable used for audio augmentation.
         :return: a new ``Cut`` instance with a ``Features`` manifest attached to it.
         """
         features_info = extractor.extract_from_samples_and_store(
@@ -338,7 +338,7 @@ class Cut(CutUtilsMixin):
             storage=storage,
             sampling_rate=self.sampling_rate,
             offset=self.start,
-            augmenter=augmenter,
+            augment_fn=augment_fn,
         )
         # The fastest way to instantiate a copy of the cut with a Features object attached
         return fastcopy(self, features=features_info)
@@ -872,7 +872,7 @@ class MixedCut(CutUtilsMixin):
             self,
             extractor: FeatureExtractor,
             storage: FeaturesWriter,
-            augmenter: Optional[WavAugmenter] = None,
+            augment_fn: Optional[AugmentFn] = None,
             mix_eagerly: bool = True
     ) -> AnyCut:
         """
@@ -880,8 +880,8 @@ class MixedCut(CutUtilsMixin):
         feature manifest attached. This cut has to be able to load audio.
 
         :param extractor: a ``FeatureExtractor`` instance used to compute the features.
-        :param output_dir: directory where the computed features will be stored.
-        :param augmenter: optional ``WavAugmenter`` instance for audio augmentation.
+        :param storage: a ``FeaturesWriter`` instance used to store the features.
+        :param augment_fn: an optional callable used for audio augmentation.
         :param mix_eagerly: when False, extract and store the features for each track separately,
             and mix them dynamically when loading the features.
             When True, mix the audio first and store the mixed features, returning a new ``Cut`` instance
@@ -895,7 +895,7 @@ class MixedCut(CutUtilsMixin):
                 storage=storage,
                 sampling_rate=self.sampling_rate,
                 offset=0,
-                augmenter=augmenter,
+                augment_fn=augment_fn,
             )
             return Cut(
                 id=self.id,
@@ -912,7 +912,7 @@ class MixedCut(CutUtilsMixin):
                     cut=track.cut.compute_and_store_features(
                         extractor=extractor,
                         storage=storage,
-                        augmenter=augmenter,
+                        augment_fn=augment_fn,
                     ),
                     offset=track.offset,
                     snr=track.snr
@@ -1272,7 +1272,7 @@ class CutSet(JsonMixin, YamlMixin, Sequence[AnyCut]):
             self,
             extractor: FeatureExtractor,
             storage: FeaturesWriter,
-            augmenter: Optional[WavAugmenter] = None,
+            augment_fn: Optional[AugmentFn] = None,
             executor: Optional[Any] = None,
             mix_eagerly: bool = True
     ) -> 'CutSet':
@@ -1281,8 +1281,8 @@ class CutSet(JsonMixin, YamlMixin, Sequence[AnyCut]):
         to the cuts.
 
         :param extractor: A ``FeatureExtractor`` instance (either Lhotse's built-in or a custom implementation).
-        :param output_dir: Where to store the features.
-        :param augmenter: optional ``WavAugmenter`` instance for audio augmentation.
+        :param storage: A ``FeaturesWriter`` instance used to store the features.
+        :param augment_fn: an optional callable used for audio augmentation.
         :param executor: when provided, will be used to parallelize the feature extraction process.
             Any executor satisfying the standard concurrent.futures interface will be suitable;
             e.g. ProcessPoolExecutor, ThreadPoolExecutor, or dask.Client for distributed task
@@ -1299,7 +1299,7 @@ class CutSet(JsonMixin, YamlMixin, Sequence[AnyCut]):
                 cut.compute_and_store_features(
                     extractor=extractor,
                     storage=storage,
-                    augmenter=augmenter,
+                    augment_fn=augment_fn,
                     mix_eagerly=mix_eagerly
                 )
                 for cut in self
@@ -1313,7 +1313,7 @@ class CutSet(JsonMixin, YamlMixin, Sequence[AnyCut]):
                     cut,
                     extractor=extractor,
                     storage=storage,
-                    augmenter=augmenter,
+                    augment_fn=augment_fn,
                     mix_eagerly=mix_eagerly
                 )
             )

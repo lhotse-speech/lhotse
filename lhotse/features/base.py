@@ -10,7 +10,7 @@ import numpy as np
 import torch
 
 from lhotse.audio import Recording
-from lhotse.augmentation import WavAugmenter
+from lhotse.augmentation import AugmentFn, WavAugmenter
 from lhotse.features.io import FeaturesWriter, get_reader
 from lhotse.utils import (JsonMixin, Pathlike, Seconds, YamlMixin, fastcopy, load_yaml, save_to_yaml, split_sequence,
                           uuid4)
@@ -109,7 +109,7 @@ class FeatureExtractor(metaclass=ABCMeta):
             storage: FeaturesWriter,
             sampling_rate: int,
             offset: Seconds = 0,
-            augmenter: Optional[WavAugmenter] = None,
+            augment_fn: Optional[AugmentFn] = None,
     ):
         """
         Extract the features from an array of audio samples in a full pipeline:
@@ -129,11 +129,11 @@ class FeatureExtractor(metaclass=ABCMeta):
         :param storage: a ``FeaturesWriter`` object that will handle storing the feature matrices.
         :param offset: an offset in seconds for where to start reading the recording - when used for
             ``Cut`` feature extraction, must be equal to ``Cut.start``.
-        :param augmenter: an optional ``WavAugmenter`` instance to modify the waveform before feature extraction.
+        :param augment_fn: an optional ``WavAugmenter`` instance to modify the waveform before feature extraction.
         :return: a ``Features`` manifest item for the extracted feature matrix (it is not written to disk).
         """
-        if augmenter is not None:
-            samples = augmenter.apply(samples)
+        if augment_fn is not None:
+            samples = augment_fn(samples, sampling_rate)
         duration = round(samples.shape[1] / sampling_rate, ndigits=8)
         feats = self.extract(samples=samples, sampling_rate=sampling_rate)
         storage_key = store_feature_array(feats, storage=storage)
@@ -156,7 +156,7 @@ class FeatureExtractor(metaclass=ABCMeta):
             offset: Seconds = 0,
             duration: Optional[Seconds] = None,
             channels: Union[int, List[int]] = None,
-            augmenter: Optional[WavAugmenter] = None,
+            augment_fn: Optional[AugmentFn] = None,
     ):
         """
         Extract the features from a ``Recording`` in a full pipeline:
@@ -173,7 +173,7 @@ class FeatureExtractor(metaclass=ABCMeta):
         :param duration: an optional duration specifying how much audio to load from the recording.
         :param channels: an optional int or list of ints, specifying the channels;
             by default, all channels will be used.
-        :param augmenter: an optional ``WavAugmenter`` instance to modify the waveform before feature extraction.
+        :param augment_fn: an optional ``WavAugmenter`` instance to modify the waveform before feature extraction.
         :return: a ``Features`` manifest item for the extracted feature matrix.
         """
         samples = recording.load_audio(
@@ -181,8 +181,8 @@ class FeatureExtractor(metaclass=ABCMeta):
             duration_seconds=duration,
             channels=channels,
         )
-        if augmenter is not None:
-            samples = augmenter.apply(samples)
+        if augment_fn is not None:
+            samples = augment_fn(samples, recording.sampling_rate)
         feats = self.extract(samples=samples, sampling_rate=recording.sampling_rate)
         storage_key = store_feature_array(feats, storage=storage)
         return Features(
@@ -555,7 +555,7 @@ class FeatureSetBuilder:
                 recording=recording,
                 storage=self.storage,
                 channels=channel,
-                augmenter=self.augmenter,
+                augment_fn=self.augmenter,
             ))
         return results
 

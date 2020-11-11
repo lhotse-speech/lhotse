@@ -1,8 +1,11 @@
 import warnings
-from typing import Union, List
+from typing import Callable, List, Optional, Union
 
 import numpy as np
 import torch
+
+# def augment_fn(audio: np.ndarray, sampling_rate: int) -> np.ndarray
+AugmentFn = Callable[[np.ndarray, int], np.ndarray]
 
 
 def is_wav_augment_available() -> bool:
@@ -18,6 +21,10 @@ class WavAugmenter:
     """
     A wrapper class for WavAugment's effect chain.
     You should construct the ``augment.EffectChain`` beforehand and pass it on to this class.
+
+    This class is only available when WavAugment is installed, as it is an optional dependency for Lhotse.
+    It can be installed using the script in "<main-repo-directory>/tools/install_wavaugment.sh"
+
     For more details on how to augment, see https://github.com/facebookresearch/WavAugment
     """
 
@@ -41,11 +48,20 @@ class WavAugmenter:
             sampling_rate=sampling_rate
         )
 
-    def apply(self, audio: Union[torch.Tensor, np.ndarray]) -> np.ndarray:
+    def __call__(
+            self,
+            audio: Union[torch.Tensor, np.ndarray],
+            sampling_rate: Optional[int] = None
+    ) -> np.ndarray:
         """
         Apply the effect chain on the ``audio`` tensor.
 
         :param audio: a (num_channels, num_samples) shaped tensor placed on the CPU.
+        :param sampling_rate: optional int, used only to validate that the sampling rate for the input
+            is compatible with the sampling rate used to instantiate the effect chain.
+        :return a numpy ndarray with the augmented audio signal.
+            In case SoX returned Nan or Inf for some sample, fall back to returning the non-augmented
+            signal instead.
         """
         if isinstance(audio, np.ndarray):
             audio = torch.from_numpy(audio)

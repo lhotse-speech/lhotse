@@ -55,7 +55,7 @@ def test_on_the_fly_feature_extraction_unsupervised_dataset_with_augmentation(li
     tested_dataset = DynamicUnsupervisedDataset(
         feature_extractor=Fbank(),
         cuts=libri_cut_set,
-        augmenter=WavAugmenter.create_predefined('reverb', sampling_rate=16000)
+        augment_fn=WavAugmenter.create_predefined('reverb', sampling_rate=16000)
     )
     # Just test that it runs
     tested_feats = tested_dataset[0]

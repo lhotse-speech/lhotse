@@ -16,6 +16,6 @@ def audio():
 @pytest.mark.parametrize('name', ['reverb', 'pitch', 'pitch_reverb_tdrop'])
 def test_predefined_augmentation_setups(audio, name):
     augmenter = WavAugmenter.create_predefined(name=name, sampling_rate=16000)
-    augmented_audio = augmenter.apply(audio)
+    augmented_audio = augmenter(audio)
     assert augmented_audio.shape == audio.shape
     assert (augmented_audio != audio).any()
