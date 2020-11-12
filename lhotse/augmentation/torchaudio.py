@@ -1,4 +1,3 @@
-import random
 import warnings
 from dataclasses import dataclass
 from typing import List, Union
@@ -21,7 +20,7 @@ class RandomValue:
     end: Union[int, float]
 
     def sample(self):
-        return random.uniform(self.start, self.end)
+        return np.random.uniform(self.start, self.end)
 
 
 # Input to the SoxEffectTransform class - the values are either effect names,

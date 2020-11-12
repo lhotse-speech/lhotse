@@ -29,6 +29,10 @@ class WavAugmenter:
     """
 
     def __init__(self, effect_chain):
+        warnings.warn('WavAugment support is deprecated and it will eventually be removed from Lhotse. '
+                      'For similar functionality, please use torchaudio based augmentation in '
+                      '"lhotse.augmentation.torchaudio". It requires PyTorch 1.7+ and torchaudio 0.7+.',
+                      category=DeprecationWarning)
         # A local import so that ``augment`` can be optional.
         import augment
         self.chain: augment.EffectChain = effect_chain
