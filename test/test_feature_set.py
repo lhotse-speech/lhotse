@@ -8,17 +8,9 @@ import torchaudio
 from pytest import mark, raises
 
 from lhotse.audio import RecordingSet
-from lhotse.augmentation import is_wav_augment_available, WavAugmenter
-from lhotse.features import (
-    FeatureSet,
-    Features,
-    FeatureMixer,
-    FeatureSetBuilder,
-    create_default_feature_extractor,
-    Fbank,
-    Mfcc,
-    Spectrogram, FeatureExtractor
-)
+from lhotse.augmentation import WavAugmenter, is_wav_augment_available
+from lhotse.features import (Fbank, FeatureExtractor, FeatureMixer, FeatureSet, FeatureSetBuilder, Features, Mfcc,
+                             Spectrogram, create_default_feature_extractor)
 from lhotse.features.io import LilcomFilesWriter, LilcomHdf5Writer, NumpyFilesWriter, NumpyHdf5Writer
 from lhotse.test_utils import DummyManifest
 from lhotse.utils import Seconds, time_diff_to_num_frames
@@ -193,13 +185,13 @@ def test_feature_set_builder(storage):
 @pytest.mark.skipif(not is_wav_augment_available(), reason='WavAugment required')
 def test_feature_set_builder_with_augmentation():
     recordings: RecordingSet = RecordingSet.from_json('test/fixtures/audio.json')
-    augmenter = WavAugmenter.create_predefined('pitch_reverb_tdrop', sampling_rate=8000)
+    augment_fn = WavAugmenter.create_predefined('pitch_reverb_tdrop', sampling_rate=8000)
     extractor = Fbank()
     with TemporaryDirectory() as d, LilcomFilesWriter(d) as storage:
         builder = FeatureSetBuilder(
             feature_extractor=extractor,
             storage=storage,
-            augmenter=augmenter
+            augment_fn=augment_fn
         )
         feature_set = builder.process_and_store_recordings(recordings=recordings)
 

@@ -4,9 +4,9 @@ from typing import Optional
 import click
 
 from lhotse.audio import RecordingSet
-from lhotse.augmentation import available_wav_augmentations, WavAugmenter
+from lhotse.augmentation import WavAugmenter, available_wav_augmentations
 from lhotse.bin.modes.cli_base import cli
-from lhotse.features import FeatureExtractor, FeatureSetBuilder, create_default_feature_extractor, Fbank
+from lhotse.features import Fbank, FeatureExtractor, FeatureSetBuilder, create_default_feature_extractor
 from lhotse.features.io import available_storage_backends, get_writer
 from lhotse.utils import Pathlike
 
@@ -67,18 +67,18 @@ def extract(
     output_dir.mkdir(exist_ok=True, parents=True)
     storage_path = output_dir / 'feats.h5' if 'hdf5' in storage_type else output_dir / 'storage'
 
-    augmenter = None
+    augment_fn = None
     if augmentation is not None:
         sampling_rate = next(iter(recordings)).sampling_rate
         assert all(rec.sampling_rate == sampling_rate for rec in recordings), \
             "Wav augmentation effect chains expect all the recordings to have the same sampling rate at this time."
-        augmenter = WavAugmenter.create_predefined(name=augmentation, sampling_rate=sampling_rate)
+        augment_fn = WavAugmenter.create_predefined(name=augmentation, sampling_rate=sampling_rate)
 
     with get_writer(storage_type)(storage_path, tick_power=lilcom_tick_power) as storage:
         feature_set_builder = FeatureSetBuilder(
             feature_extractor=feature_extractor,
             storage=storage,
-            augmenter=augmenter
+            augment_fn=augment_fn
         )
         feature_set_builder.process_and_store_recordings(
             recordings=recordings,

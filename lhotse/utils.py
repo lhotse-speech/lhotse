@@ -264,3 +264,8 @@ def compute_num_frames(duration: Seconds, frame_shift: Seconds) -> int:
             round(duration / frame_shift, ndigits=8)
         ).quantize(0, rounding=ROUND_HALF_UP)
     )
+
+
+def during_docs_build() -> bool:
+    import os
+    return bool(os.environ.get('READTHEDOCS'))

@@ -3,7 +3,7 @@ from typing import Optional
 import torch
 from torch.utils.data import Dataset
 
-from lhotse.augmentation import WavAugmenter
+from lhotse.augmentation import AugmentFn
 from lhotse.cut import CutSet
 from lhotse.features import FeatureExtractor
 
@@ -63,17 +63,17 @@ class DynamicUnsupervisedDataset(UnsupervisedDataset):
             self,
             feature_extractor: FeatureExtractor,
             cuts: CutSet,
-            augmenter: Optional[WavAugmenter] = None,
+            augment_fn: Optional[AugmentFn] = None,
     ):
         super().__init__(cuts)
         self.feature_extractor = feature_extractor
-        self.augmenter = augmenter
+        self.augment_fn = augment_fn
 
     def __getitem__(self, item: int) -> torch.Tensor:
         cut = self.cuts[self.cut_ids[item]]
         features = cut.compute_features(
             extractor=self.feature_extractor,
-            augmenter=self.augmenter,
+            augment_fn=self.augment_fn,
         )
         return torch.from_numpy(features)
 

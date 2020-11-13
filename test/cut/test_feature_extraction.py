@@ -1,12 +1,14 @@
+import multiprocessing
 from concurrent.futures.process import ProcessPoolExecutor
 from concurrent.futures.thread import ThreadPoolExecutor
 from contextlib import nullcontext as no_executor
+from functools import partial
 from tempfile import TemporaryDirectory
 from unittest.mock import Mock
 
 import pytest
 
-from lhotse import Recording, Cut, Fbank, CutSet
+from lhotse import Cut, CutSet, Fbank, Recording
 from lhotse.audio import AudioSource
 from lhotse.cut import MixedCut
 from lhotse.features.io import LilcomFilesWriter
@@ -92,7 +94,7 @@ def is_dask_availabe():
     'executor', [
         None,
         ThreadPoolExecutor,
-        pytest.param(ProcessPoolExecutor, marks=pytest.mark.skip(reason='Hangs CI but otherwise seems to work...')),
+        partial(ProcessPoolExecutor, mp_context=multiprocessing.get_context("spawn")),
         pytest.param(distributed.Client, marks=pytest.mark.skipif(not is_dask_availabe(), reason='Requires Dask'))
     ]
 )

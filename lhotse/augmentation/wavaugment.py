@@ -1,8 +1,11 @@
 import warnings
-from typing import Union, List
+from typing import List, Union
 
 import numpy as np
 import torch
+
+__all__ = ['is_wav_augment_available', 'WavAugmenter', 'available_wav_augmentations', 'register_wav_augmentation',
+           'pitch', 'reverb', 'pitch_reverb_tdrop']
 
 
 def is_wav_augment_available() -> bool:
@@ -18,14 +21,21 @@ class WavAugmenter:
     """
     A wrapper class for WavAugment's effect chain.
     You should construct the ``augment.EffectChain`` beforehand and pass it on to this class.
+
+    This class is only available when WavAugment is installed, as it is an optional dependency for Lhotse.
+    It can be installed using the script in "<main-repo-directory>/tools/install_wavaugment.sh"
+
     For more details on how to augment, see https://github.com/facebookresearch/WavAugment
     """
 
-    def __init__(self, effect_chain, sampling_rate: int):
+    def __init__(self, effect_chain):
+        warnings.warn('WavAugment support is deprecated and it will eventually be removed from Lhotse. '
+                      'For similar functionality, please use torchaudio based augmentation in '
+                      '"lhotse.augmentation.torchaudio". It requires PyTorch 1.7+ and torchaudio 0.7+.',
+                      category=DeprecationWarning)
         # A local import so that ``augment`` can be optional.
         import augment
         self.chain: augment.EffectChain = effect_chain
-        self.sampling_rate = sampling_rate
 
     @staticmethod
     def create_predefined(name: str, sampling_rate: int, **kwargs) -> 'WavAugmenter':
@@ -38,14 +48,21 @@ class WavAugmenter:
         """
         return WavAugmenter(
             effect_chain=_DEFAULT_AUGMENTATIONS[name](sampling_rate=sampling_rate, **kwargs),
-            sampling_rate=sampling_rate
         )
 
-    def apply(self, audio: Union[torch.Tensor, np.ndarray]) -> np.ndarray:
+    def __call__(
+            self,
+            audio: Union[torch.Tensor, np.ndarray],
+            sampling_rate: int
+    ) -> np.ndarray:
         """
         Apply the effect chain on the ``audio`` tensor.
 
         :param audio: a (num_channels, num_samples) shaped tensor placed on the CPU.
+        :param sampling_rate: The input and output sampling rate (has to be the same).
+        :return a numpy ndarray with the augmented audio signal.
+            In case SoX returned Nan or Inf for some sample, fall back to returning the non-augmented
+            signal instead.
         """
         if isinstance(audio, np.ndarray):
             audio = torch.from_numpy(audio)
@@ -57,12 +74,12 @@ class WavAugmenter:
             src_info={
                 'channels': audio.shape[0],
                 'length': audio.shape[1],
-                'rate': self.sampling_rate,
+                'rate': sampling_rate,
             },
             target_info={
                 'channels': 1,
                 'length': audio.shape[1],
-                'rate': self.sampling_rate,
+                'rate': sampling_rate,
             }
         )
 
@@ -108,6 +125,21 @@ def pitch(sampling_rate: int):
 
 
 @register_wav_augmentation
+def speed(sampling_rate: int):
+    """
+    Returns a pitch modification effect for wav augmentation.
+
+    :param sampling_rate: a sampling rate value for which the effect will be created (resampling is needed for pitch).
+    """
+    import augment
+    effect_chain = augment.EffectChain()
+    # The pitch effect changes the sampling ratio; we have to compensate for that.
+    # Here, we specify 'quick' options on both pitch and rate effects, to speed up things
+    effect_chain.speed(_random_speed_perturb).rate("-q", sampling_rate)
+    return effect_chain
+
+
+@register_wav_augmentation
 def reverb(*args, **kwargs):
     """
     Returns a reverb effect for wav augmentation.
@@ -141,6 +173,11 @@ def pitch_reverb_tdrop(sampling_rate: int):
     # Futher, we add an effect that randomly drops one 50ms subsequence
     effect_chain.time_dropout(max_seconds=50 / 1000)
     return effect_chain
+
+
+def _random_speed_perturb() -> int:
+    """The returned values are speed perturbation factors (0.9x - 1.1x the original speed)."""
+    return np.random.uniform(0.9, 1.1)
 
 
 def _random_pitch_shift() -> int:
