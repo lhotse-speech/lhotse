@@ -5,8 +5,11 @@ from typing import List, Union
 import numpy as np
 import torch
 import torchaudio
+from packaging.version import parse as _version
 
-if str(torchaudio.__version__) < '0.7.0':
+from lhotse.utils import during_docs_build
+
+if not during_docs_build() and _version(torchaudio.__version__) < _version('0.7'):
     warnings.warn('Torchaudio SoX effects chains are only introduced in version 0.7 - '
                   'please upgrade your PyTorch to 1.7+ and torchaudio to 0.7+ to use them.')
 

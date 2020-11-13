@@ -1,5 +1,6 @@
 import random
 import warnings
+from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass, field
 from functools import reduce
 from math import ceil, floor
@@ -1304,6 +1305,13 @@ class CutSet(JsonMixin, YamlMixin, Sequence[AnyCut]):
                 )
                 for cut in self
             )
+
+        if isinstance(executor, ProcessPoolExecutor) and executor._mp_context._name == 'fork':
+            warnings.warn('ProcessPoolExecutor using a "fork" multiprocessing detected. '
+                          'In some circumstances this can crash or hang the program, e.g. when using '
+                          ' data augmentation libsox wrappers like WavAugment or torchaudio. '
+                          'We suggest passing an extra argument to initialize the executor: '
+                          'ProcessPoolExecutor(..., mp_context=multiprocessing.get_context("spawn"))')
 
         futures = []
         for cut in self:

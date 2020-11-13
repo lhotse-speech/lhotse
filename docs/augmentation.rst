@@ -2,7 +2,7 @@ Augmentation
 ============
 
 We support time-domain data augmentation via `WavAugment`_ and `torchaudio`_ libraries.
-The both leverage libsox to provide about 50 different audio effects like reverb, speed perturbation, pitch, etc.
+They both leverage libsox to provide about 50 different audio effects like reverb, speed perturbation, pitch, etc.
 
 Since ``WavAugment`` depends on libsox, it is an optional depedency for Lhotse, which can be installed using ``tools/install_wavaugment.sh`` (for convenience, the script will also compile libsox from source - note that the ``WavAugment`` authors warn their library is untested on Mac).
 
@@ -13,6 +13,9 @@ Using Lhotse's Python API, you can compose an arbitrary effect chain. On the oth
 
 Python usage
 ************
+
+.. warning::
+    When using WavAugment or torchaudio data augmentation together with a multiprocessing executor (i.e. ``ProcessPoolExecutor``), it is necessary to start it using the "spawn" context. Otherwise the process may hang (or terminate) on some systems due to libsox internals not handling forking well. Use: ``ProcessPoolExecutor(..., mp_context=multiprocessing.get_context("spawn"))``.
 
 Lhotse's ``FeatureExtractor`` and ``Cut`` offer convenience functions for feature extraction with data augmentation
 performed before that. These functions expose an optional parameter called ``augment_fn`` that has a signature like:

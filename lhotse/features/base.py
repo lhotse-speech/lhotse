@@ -1,3 +1,4 @@
+import multiprocessing
 from abc import ABCMeta, abstractmethod
 from concurrent.futures.process import ProcessPoolExecutor
 from dataclasses import asdict, dataclass, field, is_dataclass
@@ -10,7 +11,7 @@ import numpy as np
 import torch
 
 from lhotse.audio import Recording
-from lhotse.augmentation import AugmentFn, WavAugmenter
+from lhotse.augmentation import AugmentFn
 from lhotse.features.io import FeaturesWriter, get_reader
 from lhotse.utils import (JsonMixin, Pathlike, Seconds, YamlMixin, fastcopy, load_yaml, save_to_yaml, split_sequence,
                           uuid4)
@@ -522,11 +523,11 @@ class FeatureSetBuilder:
             self,
             feature_extractor: FeatureExtractor,
             storage: FeaturesWriter,
-            augmenter: Optional[WavAugmenter] = None
+            augment_fn: Optional[AugmentFn] = None
     ):
         self.feature_extractor = feature_extractor
         self.storage = storage
-        self.augmenter = augmenter
+        self.augment_fn = augment_fn
 
     def process_and_store_recordings(
             self,
@@ -538,7 +539,7 @@ class FeatureSetBuilder:
             # Avoid spawning subprocesses for single threaded processing
             feature_infos = list(chain.from_iterable(map(self._process_and_store_recording, recordings)))
         else:
-            with ProcessPoolExecutor(num_jobs) as ex:
+            with ProcessPoolExecutor(num_jobs, mp_context=multiprocessing.get_context('spawn')) as ex:
                 feature_infos = list(chain.from_iterable(ex.map(self._process_and_store_recording, recordings)))
         feature_set = FeatureSet.from_features(feature_infos)
         if output_manifest is not None:
@@ -555,7 +556,7 @@ class FeatureSetBuilder:
                 recording=recording,
                 storage=self.storage,
                 channels=channel,
-                augment_fn=self.augmenter,
+                augment_fn=self.augment_fn,
             ))
         return results
 
