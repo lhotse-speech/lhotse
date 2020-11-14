@@ -7,7 +7,7 @@ import torch
 from torch.utils.data.dataloader import DataLoader
 
 from lhotse.cut import AnyCut, CutSet
-from lhotse.utils import Seconds
+from lhotse.utils import Seconds, compute_num_frames
 
 EPS = 1e-8
 
@@ -206,6 +206,24 @@ class K2SpeechRecognitionIterableDataset(torch.utils.data.IterableDataset):
         # Get a tensor with batched feature matrices, shape (B, T, F)
         features = _collate_features(cuts)
 
+        def asserted_num_frames(start: Seconds, duration: Seconds, frame_shift: Seconds) -> int:
+            """
+            This closure with compute the num_frames, correct off-by-one errors in edge cases,
+            and assert that the supervision does not exceed the feature matrix temporal dimension.
+            """
+            offset = compute_num_frames(start, frame_shift=frame_shift)
+            num_frames = compute_num_frames(duration, frame_shift=frame_shift)
+            diff = features.shape[1] - (offset + num_frames)
+            # Note: we tolerate off-by-ones because some mixed cuts could have one frame more
+            # than their duration suggests (we will try to change this eventually).
+            if diff == -1:
+                num_frames -= 1
+            assert offset + num_frames <= features.shape[1], \
+                f"Unexpected num_frames ({offset + num_frames}) exceeding features time dimension for a supervision " \
+                f"({features.shape[1]}) when constructing a batch; please report this in Lhotse's GitHub issues, " \
+                "ideally providing the Cut data that triggered this."
+            return num_frames
+
         return {
             'features': features,
             'supervisions': default_collate([
@@ -213,8 +231,8 @@ class K2SpeechRecognitionIterableDataset(torch.utils.data.IterableDataset):
                     'cut_id': cut.id,
                     'sequence_idx': sequence_idx,
                     'text': supervision.text,
-                    'start_frame': round(supervision.start / cut.frame_shift),
-                    'num_frames': round(supervision.duration / cut.frame_shift),
+                    'start_frame': compute_num_frames(supervision.start, cut.frame_shift),
+                    'num_frames': asserted_num_frames(supervision.start, supervision.duration, cut.frame_shift),
                 }
                 for sequence_idx, cut in enumerate(cuts)
                 for supervision in cut.supervisions
