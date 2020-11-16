@@ -1,17 +1,15 @@
 import logging
 import re
-import shutil
 import tarfile
-import urllib.request
 from collections import defaultdict
-from pathlib import Path, PurePath
+from pathlib import Path
 from typing import Dict, NamedTuple, Optional, Union
 
 import torchaudio
 
 from lhotse.audio import AudioSource, Recording, RecordingSet
 from lhotse.supervision import SupervisionSegment, SupervisionSet
-from lhotse.utils import Pathlike
+from lhotse.utils import Pathlike, urlretrieve_progress
 
 # files containing transcripts 
 heroico_dataset_answers = ('heroico-answers.txt')
@@ -31,7 +29,7 @@ def download_and_untar(
     tar_name = f'LDC2006S37.tar.gz'
     tar_path = target_dir / tar_name
     if force_download or not tar_path.is_file():
-        urllib.request.urlretrieve(f'{url}/{tar_name}', filename=tar_path)
+        urlretrieve_progress(f'{url}/{tar_name}', filename=tar_path, desc='Downloading Heroico')
 
     completed_detector = target_dir / '.completed'
     with tarfile.open(tar_path) as tar:
@@ -44,12 +42,13 @@ class HeroicoMetaData(NamedTuple):
     audio_info: torchaudio.sox_signalinfo_t
     text: str
 
+
 class UttInfo(NamedTuple):
     fold: str
     speaker: str
     prompt_id: str
     subcorpus: str
-    utterance_id:  str
+    utterance_id: str
     transcript: str
 
 
@@ -85,7 +84,8 @@ param transcripts_dir: Pathlike, the path of the transcript data dir.
     usma_native_demo_pattern = re.compile("usma/native\-[fm]\-\w+\-\S+\-\S+\-\S+\-\S+\-\w+\d+")
     usma_native_path_pattern = re.compile('usma/native')
     usma_native_prompt_id_pattern = re.compile('s\d+')
-    usma_nonnative_demo_pattern = re.compile("nonnative\-[fm]\-[a-zA-Z]+\d*\-[a-zA-Z]+\-[a-zA-Z]+\-[a-zA-Z]+\-[a-zA-Z]+\-[a-zA-Z]+\d+")
+    usma_nonnative_demo_pattern = re.compile(
+        "nonnative\-[fm]\-[a-zA-Z]+\d*\-[a-zA-Z]+\-[a-zA-Z]+\-[a-zA-Z]+\-[a-zA-Z]+\-[a-zA-Z]+\d+")
     usma_nonnative_path_pattern = re.compile('nonnative.+\.wav')
 
     # Generate a mapping: utt_id -> (audio_path, audio_info, text)
@@ -141,7 +141,8 @@ param transcripts_dir: Pathlike, the path of the transcript data dir.
             if utt_id not in transcripts:
                 uttdata[str(wav_file)] = None
                 continue
-            uttdata[str(wav_file)] = UttInfo(fold='train', speaker=spk, prompt_id=pid, subcorpus='answers', utterance_id=utt_id, transcript=transcripts[utt_id])
+            uttdata[str(wav_file)] = UttInfo(fold='train', speaker=spk, prompt_id=pid, subcorpus='answers',
+                                             utterance_id=utt_id, transcript=transcripts[utt_id])
         elif re.findall(usma_native_path_pattern, str(wav_file)):
             # store utterance info for usma native data
             spk = wav_path.parts[-2]
@@ -152,7 +153,8 @@ param transcripts_dir: Pathlike, the path of the transcript data dir.
             if not usma_native_prompt_id_pattern.match(pid):
                 uttdata[str(wav_file)] = None
                 continue
-            uttdata[str(wav_file)] = UttInfo(fold='test', speaker=spk, prompt_id=pid, subcorpus='usma', utterance_id=utt_id, transcript=transcripts[trans_id])
+            uttdata[str(wav_file)] = UttInfo(fold='test', speaker=spk, prompt_id=pid, subcorpus='usma',
+                                             utterance_id=utt_id, transcript=transcripts[trans_id])
         elif re.findall(usma_nonnative_path_pattern, str(wav_file)):
             # store utterance data for usma nonnative data
             spk = wav_path.parts[-2]
@@ -161,30 +163,34 @@ param transcripts_dir: Pathlike, the path of the transcript data dir.
             if not usma_nonnative_demo_pattern.match(spk):
                 uttdata[str(wav_file)] = None
                 continue
-            uttdata[str(wav_file)] = UttInfo(fold='test', speaker=spk, prompt_id=pid, subcorpus='usma', utterance_id=utt_id, transcript=transcripts[trans_id])
+            uttdata[str(wav_file)] = UttInfo(fold='test', speaker=spk, prompt_id=pid, subcorpus='usma',
+                                             utterance_id=utt_id, transcript=transcripts[trans_id])
         elif int(pid) <= 354 or int(pid) >= 562:
             # store utterance info for heroico recitations for train dataset
             spk = wav_path.parts[-2]
             utt_id = '-'.join(['heroico-recitations', spk, pid])
             trans_id = '-'.join(['heroico-recitations', pid])
-            uttdata[str(wav_file)] = UttInfo(fold='train', speaker=spk, prompt_id=pid, subcorpus='heroico-recitations', utterance_id=utt_id, transcript=transcripts[trans_id])
+            uttdata[str(wav_file)] = UttInfo(fold='train', speaker=spk, prompt_id=pid, subcorpus='heroico-recitations',
+                                             utterance_id=utt_id, transcript=transcripts[trans_id])
         elif int(pid) > 354 and int(pid) < 562:
             spk = wav_path.parts[-2]
             utt_id = '-'.join(['heroico-recitations-repeats', spk, pid])
             trans_id = '-'.join(['heroico-recitations-repeats', pid])
-            uttdata[str(wav_file)] = UttInfo(fold='devtest', speaker=spk, prompt_id=pid, subcorpus='heroico-recitations-repeats', utterance_id=utt_id, transcript=transcripts[trans_id])
+            uttdata[str(wav_file)] = UttInfo(fold='devtest', speaker=spk, prompt_id=pid,
+                                             subcorpus='heroico-recitations-repeats', utterance_id=utt_id,
+                                             transcript=transcripts[trans_id])
         else:
             logging.warning(f'No such file: {wav_file}')
 
     audio_paths = speech_dir.rglob('*.wav')
-    audio_files = [ w for w in audio_paths]
+    audio_files = [w for w in audio_paths]
 
     for fld in folds:
         metadata = {}
         for wav_file in audio_files:
             wav_path = Path(wav_file)
             # skip files with no record
-            if             not uttdata[str(wav_file)]:
+            if not uttdata[str(wav_file)]:
                 continue
             # only process the current fold
             if uttdata[str(wav_file)].fold != fld:
@@ -196,7 +202,8 @@ param transcripts_dir: Pathlike, the path of the transcript data dir.
             info = torchaudio.info(str(wav_file))
             spk = wav_path.parts[-2]
             utt_id = '-'.join([uttdata[str(wav_file)].subcorpus, spk, prompt_id])
-            metadata[utt_id] = HeroicoMetaData(audio_path=wav_file, audio_info=info[0], text=uttdata[str(wav_file)].transcript)
+            metadata[utt_id] = HeroicoMetaData(audio_path=wav_file, audio_info=info[0],
+                                               text=uttdata[str(wav_file)].transcript)
 
         # Audio
         audio = RecordingSet.from_recordings(
