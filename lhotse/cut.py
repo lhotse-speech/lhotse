@@ -1306,7 +1306,7 @@ class CutSet(JsonMixin, YamlMixin, Sequence[AnyCut]):
                         mix_eagerly=mix_eagerly
                     ) for cut in self
                 ),
-                desc='Extracting and storing features (no parallelism)',
+                desc='Extracting and storing features',
                 total=len(self)
             ))
 
@@ -1331,7 +1331,7 @@ class CutSet(JsonMixin, YamlMixin, Sequence[AnyCut]):
             )
         cut_set = CutSet.from_cuts(tqdm(
             (f.result() for f in futures),
-            desc='Extracting and storing features',
+            desc='Extracting and storing features in parallel',
             total=len(futures)
         ))
         return cut_set

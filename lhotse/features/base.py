@@ -9,6 +9,7 @@ from typing import Any, Dict, Iterable, List, Optional, Sequence, Type, Union
 
 import numpy as np
 import torch
+from tqdm.auto import tqdm
 
 from lhotse.audio import Recording
 from lhotse.augmentation import AugmentFn
@@ -531,17 +532,32 @@ class FeatureSetBuilder:
 
     def process_and_store_recordings(
             self,
-            recordings: Iterable[Recording],
+            recordings: Sequence[Recording],
             output_manifest: Optional[Pathlike] = None,
             num_jobs: int = 1
     ) -> FeatureSet:
         if num_jobs == 1:
             # Avoid spawning subprocesses for single threaded processing
-            feature_infos = list(chain.from_iterable(map(self._process_and_store_recording, recordings)))
+            feature_set = FeatureSet.from_features(
+                tqdm(
+                    chain.from_iterable(
+                        map(self._process_and_store_recording, recordings)
+                    ),
+                    total=len(recordings),
+                    desc='Extracting and storing features'
+                )
+            )
         else:
             with ProcessPoolExecutor(num_jobs, mp_context=multiprocessing.get_context('spawn')) as ex:
-                feature_infos = list(chain.from_iterable(ex.map(self._process_and_store_recording, recordings)))
-        feature_set = FeatureSet.from_features(feature_infos)
+                feature_set = FeatureSet.from_features(
+                    tqdm(
+                        chain.from_iterable(
+                            ex.map(self._process_and_store_recording, recordings)
+                        ),
+                        total=len(recordings),
+                        desc='Extracting and storing features in parallel'
+                    )
+                )
         if output_manifest is not None:
             feature_set.to_json(output_manifest)
         return feature_set
