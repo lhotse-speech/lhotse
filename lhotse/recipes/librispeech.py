@@ -2,16 +2,16 @@ import logging
 import re
 import shutil
 import tarfile
-import urllib.request
 from collections import defaultdict
 from pathlib import Path
 from typing import Dict, NamedTuple, Optional, Tuple, Union
 
 import torchaudio
+from tqdm.auto import tqdm
 
 from lhotse.audio import AudioSource, Recording, RecordingSet
 from lhotse.supervision import SupervisionSegment, SupervisionSet
-from lhotse.utils import Pathlike
+from lhotse.utils import Pathlike, urlretrieve_progress
 
 dataset_parts_full = ('dev-clean', 'dev-other', 'test-clean', 'test-other',
                       'train-clean-100', 'train-clean-360', 'train-other-500')
@@ -35,7 +35,7 @@ def download_and_untar(
 
     target_dir = Path(target_dir)
     target_dir.mkdir(parents=True, exist_ok=True)
-    for part in dataset_parts:
+    for part in tqdm(dataset_parts, desc='Downloading LibriSpeech parts'):
         if part in dataset_parts_full:
             url = f'{base_url}/12'
         elif part in dataset_parts_mini:
@@ -46,7 +46,7 @@ def download_and_untar(
         tar_name = f'{part}.tar.gz'
         tar_path = target_dir / tar_name
         if force_download or not tar_path.is_file():
-            urllib.request.urlretrieve(f'{url}/{tar_name}', filename=tar_path)
+            urlretrieve_progress(f'{url}/{tar_name}', filename=tar_path, desc=f'Downloading {tar_name}')
         part_dir = target_dir / f'LibriSpeech/{part}'
         completed_detector = part_dir / '.completed'
         if not completed_detector.is_file():

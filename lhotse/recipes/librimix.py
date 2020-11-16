@@ -1,5 +1,4 @@
 import shutil
-import urllib.request
 from collections import defaultdict
 from pathlib import Path
 from typing import Dict, Optional, Union
@@ -7,7 +6,7 @@ from zipfile import ZipFile
 
 from lhotse.audio import AudioSource, Recording, RecordingSet
 from lhotse.supervision import SupervisionSegment, SupervisionSet
-from lhotse.utils import Pathlike, Seconds
+from lhotse.utils import Pathlike, Seconds, urlretrieve_progress
 
 
 def download_and_unzip(
@@ -19,7 +18,7 @@ def download_and_unzip(
     target_dir.mkdir(parents=True, exist_ok=True)
     zip_path = target_dir / 'MiniLibriMix.zip'
     if force_download or not zip_path.is_file():
-        urllib.request.urlretrieve(url, filename=zip_path)
+        urlretrieve_progress(url, filename=zip_path, desc='Downloading MiniLibriMix')
     unzipped_dir = target_dir / 'MiniLibriMix'
     completed_detector = unzipped_dir / '.completed'
     if not completed_detector.is_file():

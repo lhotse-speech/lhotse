@@ -16,7 +16,6 @@ import json
 import logging
 import shutil
 import tarfile
-import urllib.request
 from collections import defaultdict
 from pathlib import Path
 from typing import Dict, NamedTuple, Optional, Union
@@ -25,7 +24,7 @@ import torchaudio
 
 from lhotse.audio import AudioSource, Recording, RecordingSet
 from lhotse.supervision import SupervisionSegment, SupervisionSet
-from lhotse.utils import Pathlike
+from lhotse.utils import Pathlike, urlretrieve_progress
 
 
 def download_and_untar(
@@ -49,7 +48,7 @@ def download_and_untar(
     for tar_name in [dataset_tar_name, resources_tar_name]:
         tar_path = target_dir / tar_name
         if force_download or not tar_path.is_file():
-            urllib.request.urlretrieve(f'{url}/{tar_name}', filename=tar_path)
+            urlretrieve_progress(f'{url}/{tar_name}', filename=tar_path, desc=f'Downloading {tar_name}')
         corpus_dir = target_dir / 'MobvoiHotwords'
         extracted_dir = corpus_dir / tar_name[: -4]
         completed_detector = extracted_dir / '.completed'

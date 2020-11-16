@@ -13,17 +13,16 @@ import logging
 import re
 import shutil
 import tarfile
-import urllib.request
 from pathlib import Path
 from typing import Dict, NamedTuple, Optional, Union
 
 import torchaudio
 
 from lhotse.audio import AudioSource, Recording, RecordingSet
-from lhotse.supervision import SupervisionSegment, SupervisionSet
-from lhotse.features.base import TorchaudioFeatureExtractor
 from lhotse.features import Fbank
-from lhotse.utils import Pathlike, fastcopy
+from lhotse.features.base import TorchaudioFeatureExtractor
+from lhotse.supervision import SupervisionSegment, SupervisionSet
+from lhotse.utils import Pathlike, fastcopy, urlretrieve_progress
 
 
 def download_and_untar(
@@ -35,7 +34,11 @@ def download_and_untar(
     dataset_name = 'LJSpeech-1.1'
     tar_path = target_dir / f'{dataset_name}.tar.bz2'
     if force_download or not tar_path.is_file():
-        urllib.request.urlretrieve(f'http://data.keithito.com/data/speech/{dataset_name}.tar.bz2', filename=tar_path)
+        urlretrieve_progress(
+            f'http://data.keithito.com/data/speech/{dataset_name}.tar.bz2',
+            filename=tar_path,
+            desc='Downloading LJSpeech'
+        )
     corpus_dir = target_dir / dataset_name
     completed_detector = corpus_dir / '.completed'
     if not completed_detector.is_file():

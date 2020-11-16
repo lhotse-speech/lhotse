@@ -43,12 +43,11 @@ https://arxiv.org/abs/1805.04699
 """
 import shutil
 import tarfile
-import urllib
 from pathlib import Path
 from typing import Dict, Optional, Union
 
 from lhotse import Recording, RecordingSet, SupervisionSegment, SupervisionSet
-from lhotse.utils import Pathlike
+from lhotse.utils import Pathlike, urlretrieve_progress
 
 
 def download_and_untar(
@@ -59,7 +58,11 @@ def download_and_untar(
     target_dir.mkdir(parents=True, exist_ok=True)
     tar_path = target_dir / 'TEDLIUM_release-3.tgz'
     if force_download or not tar_path.is_file():
-        urllib.request.urlretrieve('http://www.openslr.org/resources/51/TEDLIUM_release-3.tgz', filename=tar_path)
+        urlretrieve_progress(
+            'http://www.openslr.org/resources/51/TEDLIUM_release-3.tgz',
+            filename=tar_path,
+            desc='Downloading TEDLIUM v3'
+        )
     corpus_dir = target_dir / 'TEDLIUM_release-3.tgz'
     completed_detector = corpus_dir / '.completed'
     if not completed_detector.is_file():

@@ -27,6 +27,8 @@ from typing import Dict, List, NamedTuple, Optional, Union
 
 # Workaround for SoundFile (torchaudio dep) raising exception when a native library, libsndfile1, is not installed.
 # Read-the-docs does not allow to modify the Docker containers used to build documentation...
+from tqdm.auto import tqdm
+
 if not os.environ.get('READTHEDOCS', False):
     import torchaudio
 
@@ -74,8 +76,8 @@ def download(
     target_dir = Path(target_dir)
 
     # Audios
-    for part in dataset_parts:
-        for item in dataset_parts[part]:
+    for part in tqdm(dataset_parts, desc='Downloading AMI splits'):
+        for item in tqdm(dataset_parts[part], desc='Downloading sessions'):
             headset_num = 5 if item in ('EN2001a', 'EN2001d', 'EN2001e') else 4
             for m in range(headset_num):
                 wav_name = f'{item}.Headset-{m}.wav'

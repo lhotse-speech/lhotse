@@ -9,6 +9,7 @@ from typing import Any, Callable, Dict, FrozenSet, Iterable, List, Optional, Seq
 import numpy as np
 from cytoolz import sliding_window
 from cytoolz.itertoolz import groupby
+from tqdm.auto import tqdm
 
 from lhotse.audio import AudioMixer, Recording, RecordingSet
 from lhotse.augmentation import AugmentFn
@@ -1296,15 +1297,18 @@ class CutSet(JsonMixin, YamlMixin, Sequence[AnyCut]):
         :return: a new CutSet instance with the same ``Cut``s, but with attached ``Features`` objects
         """
         if executor is None:
-            return CutSet.from_cuts(
-                cut.compute_and_store_features(
-                    extractor=extractor,
-                    storage=storage,
-                    augment_fn=augment_fn,
-                    mix_eagerly=mix_eagerly
-                )
-                for cut in self
-            )
+            return CutSet.from_cuts(tqdm(
+                (
+                    cut.compute_and_store_features(
+                        extractor=extractor,
+                        storage=storage,
+                        augment_fn=augment_fn,
+                        mix_eagerly=mix_eagerly
+                    ) for cut in self
+                ),
+                desc='Extracting and storing features (no parallelism)',
+                total=len(self)
+            ))
 
         if isinstance(executor, ProcessPoolExecutor) and executor._mp_context._name == 'fork':
             warnings.warn('ProcessPoolExecutor using a "fork" multiprocessing detected. '
@@ -1325,7 +1329,11 @@ class CutSet(JsonMixin, YamlMixin, Sequence[AnyCut]):
                     mix_eagerly=mix_eagerly
                 )
             )
-        cut_set = CutSet.from_cuts(f.result() for f in futures)
+        cut_set = CutSet.from_cuts(tqdm(
+            (f.result() for f in futures),
+            desc='Extracting and storing features',
+            total=len(futures)
+        ))
         return cut_set
 
     def with_features_path_prefix(self, path: Pathlike) -> 'CutSet':
