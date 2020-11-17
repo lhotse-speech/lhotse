@@ -9,6 +9,7 @@ from typing import Dict, NamedTuple, Optional, Tuple, Union
 import torchaudio
 from tqdm.auto import tqdm
 
+from lhotse import load_manifest
 from lhotse.audio import AudioSource, Recording, RecordingSet
 from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import Pathlike, urlretrieve_progress
@@ -68,7 +69,8 @@ def prepare_librispeech(
         output_dir: Optional[Pathlike] = None
 ) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet]]]:
     """
-    Returns the manifests which consist of the Recordings and Supervisions
+    Returns the manifests which consist of the Recordings and Supervisions.
+    When all the manifests are available in the ``output_dir``, it will simply read and return them.
 
     :param corpus_dir: Pathlike, the path of the data dir.
     :param dataset_parts: dataset part name, e.g. 'train-clean-100', 'train-clean-5', 'dev-clean'
@@ -80,6 +82,10 @@ def prepare_librispeech(
     if output_dir is not None:
         output_dir = Path(output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
+        # Maybe the manifests already exist: we can read them and save a bit of preparation time.
+        maybe_manifests = read_if_cached(dataset_parts=dataset_parts, output_dir=output_dir)
+        if maybe_manifests is not None:
+            return maybe_manifests
     manifests = defaultdict(dict)
     for part in dataset_parts:
         # Generate a mapping: utt_id -> (audio_path, audio_info, text)
@@ -141,3 +147,21 @@ def prepare_librispeech(
         }
 
     return manifests
+
+
+def read_if_cached(
+        dataset_parts: Optional[Tuple[str]],
+        output_dir: Optional[Pathlike]
+) -> Optional[Dict[str, Dict[str, Union[RecordingSet, SupervisionSet]]]]:
+    if output_dir is None:
+        return None
+    manifests = defaultdict(dict)
+    for part in dataset_parts:
+        for manifest in ('recordings', 'supervisions'):
+            path = output_dir / f'{manifest}_{part}.json'
+            if not path.is_file():
+                # If one of the manifests is not available, assume we need to read and prepare everything
+                # to simplify the rest of the code.
+                return None
+            manifests[part][manifest] = load_manifest(path)
+    return dict(manifests)
