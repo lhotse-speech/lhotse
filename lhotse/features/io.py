@@ -203,11 +203,17 @@ class LilcomFilesWriter(FeaturesWriter):
         return self.storage_path_
 
     def write(self, key: str, value: np.ndarray) -> str:
-        output_features_path = (self.storage_path_ / key).with_suffix('.llc')
+        # Introduce a sub-directory that starts with the first 3 characters of the key, that is typically
+        # an auto-generated hash. This allows to avoid filesystem performance problems related to storing
+        # too many files in a single directory.
+        subdir = self.storage_path_ / key[:3]
+        subdir.mkdir(exist_ok=True)
+        output_features_path = (subdir / key).with_suffix('.llc')
         serialized_feats = lilcom.compress(value, tick_power=self.tick_power)
         with open(output_features_path, 'wb') as f:
             f.write(serialized_feats)
-        return output_features_path.name
+        # Include sub-directory in the key, e.g. "abc/abcdef.llc"
+        return str(output_features_path.parent / output_features_path.name)
 
 
 """
@@ -257,9 +263,15 @@ class NumpyFilesWriter(FeaturesWriter):
         return self.storage_path_
 
     def write(self, key: str, value: np.ndarray) -> str:
-        output_features_path = (self.storage_path_ / key).with_suffix('.npy')
+        # Introduce a sub-directory that starts with the first 3 characters of the key, that is typically
+        # an auto-generated hash. This allows to avoid filesystem performance problems related to storing
+        # too many files in a single directory.
+        subdir = self.storage_path_ / key[:3]
+        subdir.mkdir(exist_ok=True)
+        output_features_path = (subdir / key).with_suffix('.npy')
         np.save(output_features_path, value, allow_pickle=False)
-        return output_features_path.name
+        # Include sub-directory in the key, e.g. "abc/abcdef.npy"
+        return str(output_features_path.parent / output_features_path.name)
 
 
 """
