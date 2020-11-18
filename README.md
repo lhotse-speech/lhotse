@@ -43,6 +43,10 @@ Lhotse is available on PyPI:
 
     pip install lhotse
     
+To install the latest, unreleased version, do:
+
+    pip install git+https://github.com/lhotse-speech/lhotse
+    
 ### Development installation
 
 For development installation, you can fork/clone the GitHub repo and install with pip:
