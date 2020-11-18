@@ -12,7 +12,7 @@ from lhotse.augmentation import WavAugmenter, is_wav_augment_available
 from lhotse.features import (Fbank, FeatureExtractor, FeatureMixer, FeatureSet, FeatureSetBuilder, Features, Mfcc,
                              Spectrogram, create_default_feature_extractor)
 from lhotse.features.io import LilcomFilesWriter, LilcomHdf5Writer, NumpyFilesWriter, NumpyHdf5Writer
-from lhotse.test_utils import DummyManifest
+from lhotse.testing.dummies import DummyManifest
 from lhotse.utils import Seconds, time_diff_to_num_frames
 
 other_params = {}

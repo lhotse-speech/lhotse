@@ -3,7 +3,7 @@ from tempfile import TemporaryDirectory
 import pytest
 
 from lhotse import Fbank, LilcomFilesWriter
-from test.known_issues.utils import make_cut
+from lhotse.testing.fixtures import make_cut
 
 
 @pytest.mark.parametrize(

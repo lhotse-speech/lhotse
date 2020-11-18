@@ -6,7 +6,7 @@ from lhotse.cut import CutSet
 from lhotse.dataset import SpeechRecognitionDataset
 from lhotse.dataset.speech_recognition import K2DataLoader, K2SpeechRecognitionDataset, \
     K2SpeechRecognitionIterableDataset, concat_cuts
-from lhotse.test_utils import DummyManifest, dummy_cut
+from lhotse.testing.dummies import DummyManifest, dummy_cut
 
 
 @pytest.fixture

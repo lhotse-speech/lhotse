@@ -6,7 +6,7 @@ from tempfile import TemporaryDirectory
 import pytest
 
 from lhotse import CutSet, Fbank, LilcomFilesWriter, SoxEffectTransform, speed
-from test.known_issues.utils import make_cut
+from lhotse.testing.fixtures import make_cut
 
 torchaudio = pytest.importorskip('torchaudio', minversion='0.6')
 

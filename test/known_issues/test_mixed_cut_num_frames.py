@@ -2,7 +2,7 @@ from tempfile import TemporaryDirectory
 
 from lhotse import Fbank, LilcomFilesWriter
 from lhotse.cut import MixedCut
-from test.known_issues.utils import make_cut
+from lhotse.testing.fixtures import make_cut
 
 
 def test_mixed_cut_num_frames_example_1():
