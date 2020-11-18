@@ -841,7 +841,21 @@ class MixedCut(CutUtilsMixin):
                 snr=track.snr,
                 offset=track.offset,
             )
-        return mixer.mixed_audio if mixed else mixer.unmixed_audio
+        if mixed:
+            # Off-by-one errors can happen during mixing due to imperfect float arithmetic and rounding;
+            # we will fix them on-the-fly so that the manifest does not lie about the num_samples.
+            audio = mixer.mixed_audio
+            if audio.shape[1] - self.num_samples == 1:
+                audio = audio[:, :self.num_samples]
+            if audio.shape[1] - self.num_samples == -1:
+                audio = np.concatenate((audio, audio[:, -1:]), axis=1)
+            assert audio.shape[1] == self.num_samples, "Inconsistent number of samples in a MixedCut: please report " \
+                                                       "this issue at https://github.com/lhotse-speech/lhotse/issues " \
+                                                       "showing the output of print(cut) or str(cut) on which" \
+                                                       "load_audio() was called."
+        else:
+            audio = mixer.unmixed_audio
+        return audio
 
     def plot_tracks_features(self):
         """

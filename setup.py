@@ -8,7 +8,7 @@ project_root = Path(__file__).parent
 
 install_requires = (project_root / 'requirements.txt').read_text().splitlines()
 docs_require = (project_root / 'docs' / 'requirements.txt').read_text().splitlines()
-tests_require = ['pytest==5.4.3', 'flake8==3.8.3', 'coverage==5.1']
+tests_require = ['pytest==5.4.3', 'flake8==3.8.3', 'coverage==5.1', 'hypothesis==5.41.2']
 dev_requires = docs_require + tests_require + ['jupyterlab', 'matplotlib', 'isort']
 
 if os.environ.get('READTHEDOCS', False):
