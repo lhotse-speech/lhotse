@@ -8,7 +8,7 @@ from lhotse.audio import RecordingSet
 from lhotse.features import FeatureSet
 from lhotse.manipulation import combine, load_manifest
 from lhotse.supervision import SupervisionSet
-from lhotse.test_utils import DummyManifest
+from lhotse.testing.dummies import DummyManifest
 
 
 @mark.parametrize('manifest_type', [RecordingSet, SupervisionSet, FeatureSet, CutSet])

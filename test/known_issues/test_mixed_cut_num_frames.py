@@ -1,22 +1,16 @@
-from tempfile import TemporaryDirectory
-
-from lhotse import Fbank, LilcomFilesWriter
 from lhotse.cut import MixedCut
-from test.known_issues.utils import make_cut
+from lhotse.testing.fixtures import RandomCutTestCase
 
 
-def test_mixed_cut_num_frames_example_1():
-    fbank = Fbank()
-    with make_cut(sampling_rate=16000, num_samples=237920) as cut1, \
-            make_cut(sampling_rate=16000, num_samples=219600) as cut2, \
-            TemporaryDirectory() as d, \
-            LilcomFilesWriter(d) as storage:
+class TestKnownProblematicCuts(RandomCutTestCase):
+    def test_mixed_cut_num_frames_example_1(self):
+        cut1 = self.with_cut(sampling_rate=16000, num_samples=237920)
+        cut2 = self.with_cut(sampling_rate=16000, num_samples=219600)
         # These are two cuts of similar duration, concatenated together with 1 second of silence
         # in between, and padded to duration of 31.445.
         mixed: MixedCut = (
-            cut1.compute_and_store_features(fbank, storage)
-                .pad(duration=cut1.duration + 1.0)
-                .append(cut2.compute_and_store_features(fbank, storage))
+            cut1.pad(duration=cut1.duration + 1.0)
+                .append(cut2)
                 .pad(duration=31.445)
         )
         assert mixed.duration == 31.445  # Padded correctly
@@ -26,25 +20,13 @@ def test_mixed_cut_num_frames_example_1():
         features = mixed.load_features()
         assert features.shape[0] == 3145  # Loaded features num frames matches the meta-data
 
-
-def test_mixed_cut_num_frames_example_2():
-    fbank = Fbank()
-    with make_cut(sampling_rate=16000, num_samples=252879) as cut1, \
-            make_cut(sampling_rate=16000, num_samples=185280) as cut2, \
-            make_cut(sampling_rate=16000, num_samples=204161) as cut3, \
-            TemporaryDirectory() as d, \
-            LilcomFilesWriter(d) as storage:
-        # These are two cuts of similar duration, concatenated together with 1 second of silence
-        # in between, and padded to duration of 31.445.
-        mixed: MixedCut = (
-            cut1.compute_and_store_features(fbank, storage)
-                .pad(duration=cut1.duration + 1.0)
-                .append(cut2.compute_and_store_features(fbank, storage))
-        )
-        mixed = (
-            mixed.pad(duration=mixed.duration + 1.0)
-                .append(cut3.compute_and_store_features(fbank, storage))
-        )
+    def test_mixed_cut_num_frames_example_2(self):
+        cut1 = self.with_cut(sampling_rate=16000, num_samples=252879)
+        cut2 = self.with_cut(sampling_rate=16000, num_samples=185280)
+        cut3 = self.with_cut(sampling_rate=16000, num_samples=204161)
+        # Three cuts padded with 1s of silence in between
+        mixed = cut1.pad(duration=cut1.duration + 1.0).append(cut2)
+        mixed = mixed.pad(duration=mixed.duration + 1.0).append(cut3)
         assert mixed.duration == 42.145  # Padded correctly
         assert mixed.num_frames == 4215  # Round last 5 up
         # TODO(pzelasko): This assertion would not pass for now, as we're adding an extra frame during load_features.

@@ -5,7 +5,7 @@ import pytest
 from lhotse import Features, Recording, SupervisionSegment
 from lhotse.audio import AudioSource
 from lhotse.cut import Cut, CutSet, MixTrack, MixedCut
-from lhotse.test_utils import remove_spaces_from_segment_text
+from lhotse.testing.dummies import remove_spaces_from_segment_text
 
 
 @pytest.fixture

@@ -3,7 +3,7 @@ from tempfile import NamedTemporaryFile
 import pytest
 
 from lhotse.supervision import SupervisionSegment, SupervisionSet
-from lhotse.test_utils import DummyManifest, remove_spaces_from_segment_text
+from lhotse.testing.dummies import DummyManifest, remove_spaces_from_segment_text
 
 
 @pytest.fixture

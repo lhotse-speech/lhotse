@@ -6,8 +6,8 @@ import numpy as np
 import pytest
 from pytest import mark, raises
 
-from lhotse.audio import AudioSource, Recording, RecordingSet, AudioMixer
-from lhotse.test_utils import DummyManifest
+from lhotse.audio import AudioMixer, AudioSource, Recording, RecordingSet
+from lhotse.testing.dummies import DummyManifest
 from lhotse.utils import INT16MAX
 
 

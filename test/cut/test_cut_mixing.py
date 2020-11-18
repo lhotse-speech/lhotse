@@ -5,7 +5,7 @@ import pytest
 
 from lhotse.cut import CutSet, MixedCut
 from lhotse.supervision import SupervisionSegment
-from lhotse.test_utils import remove_spaces_from_segment_text
+from lhotse.testing.dummies import remove_spaces_from_segment_text
 
 
 # Note:

@@ -2,10 +2,10 @@ from math import isclose
 
 import pytest
 
-from lhotse.cut import Cut, MixedCut, MixTrack
+from lhotse.cut import Cut, MixTrack, MixedCut
 from lhotse.features import Features
 from lhotse.supervision import SupervisionSegment
-from lhotse.test_utils import dummy_cut
+from lhotse.testing.dummies import dummy_cut
 
 
 @pytest.fixture
