@@ -95,7 +95,7 @@ def prepare_same_close_mic(part3_path):
                         speaker=recording_id,
                     )
                     for idx, segment in enumerate(tg[recording_id])
-                    if segment.text != '<S>'  # skip silences
+                    if segment.text not in ('<S>', '<Z>')  # skip silences
                 )
                 if s.duration > 0  # NSC has some bad segments
             ]
@@ -136,7 +136,7 @@ def prepare_separate_phone_mic(part3_path):
                         speaker=recording_id,
                     )
                     for idx, segment in enumerate(tg[recording_id])
-                    if segment.text != '<S>'  # skip silences
+                    if segment.text not in ('<S>', '<Z>')  # skip silences
                 )
                 if s.duration > 0  # NSC has some bad segments
             ]
