@@ -18,7 +18,7 @@ from lhotse.features.io import FeaturesWriter
 from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import (Decibels, EPSILON, JsonMixin, Pathlike, Seconds, TimeSpan, YamlMixin, asdict_nonull,
                           compute_num_frames, fastcopy,
-                          overlaps, split_sequence, uuid4)
+                          overlaps, overspans, split_sequence, uuid4)
 
 # One of the design principles for Cuts is a maximally "lazy" implementation, e.g. when mixing Cuts,
 # we'd rather sum the feature matrices only after somebody actually calls "load_features". It helps to avoid
@@ -380,26 +380,28 @@ class Cut(CutUtilsMixin):
         # Round the duration to avoid the possible loss of a single audio sample due to floating point
         # additions and subtractions.
         new_duration = round(new_duration, ndigits=8)
-        # criterion = overlaps if keep_excessive_supervisions else overspans
-        # new_time_span = TimeSpan(start=0, end=new_duration)
-        # new_supervisions = (segment.with_offset(-offset) for segment in self.supervisions)
-        new_time_span = TimeSpan(start=offset, end=offset + new_duration)
 
-        if keep_excessive_supervisions:  # overlaps
-            supervisions = [interval.data.with_offset(-offset) for interval in
-                            _supervisions_index.overlap(new_time_span.start, new_time_span.end)]
+        if _supervisions_index is None:
+            criterion = overlaps if keep_excessive_supervisions else overspans
+            new_time_span = TimeSpan(start=0, end=new_duration)
+            new_supervisions = (segment.with_offset(-offset) for segment in self.supervisions)
+            supervisions = [
+                segment for segment in new_supervisions if criterion(new_time_span, segment)
+            ]
         else:
-            supervisions = [interval.data.with_offset(-offset) for interval in
-                            _supervisions_index.envelop(new_time_span.start, new_time_span.end)]  # overspans
+            new_time_span = TimeSpan(start=offset, end=offset + new_duration)
+            if keep_excessive_supervisions:  # overlaps
+                supervisions = [interval.data.with_offset(-offset) for interval in
+                                _supervisions_index.overlap(new_time_span.start, new_time_span.end)]
+            else:
+                supervisions = [interval.data.with_offset(-offset) for interval in
+                                _supervisions_index.envelop(new_time_span.start, new_time_span.end)]  # overspans
 
         return Cut(
             id=self.id if preserve_id else str(uuid4()),
             start=new_start,
             duration=new_duration,
             channel=self.channel,
-            # supervisions=[
-            #     segment for segment in new_supervisions if criterion(new_time_span, segment)
-            # ],
             supervisions=sorted(supervisions, key=lambda s: s.start),
             features=self.features,
             recording=self.recording
