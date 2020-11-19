@@ -100,7 +100,7 @@ def export_to_kaldi(recordings: RecordingSet, supervisions: SupervisionSet, outp
                                                          "not supported."
 
     # Create a simple CutSet that ties together the recording <-> supervision information.
-    cuts = CutSet.from_manifests(recordings=recordings, supervisions=supervisions)
+    cuts = CutSet.from_manifests(recordings=recordings, supervisions=supervisions).trim_to_supervisions()
 
     # wav.scp
     save_kaldi_text_mapping(

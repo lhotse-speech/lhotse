@@ -74,7 +74,10 @@ def prepare_same_close_mic(part3_path):
     from textgrids import TextGrid
     recordings = []
     supervisions = []
-    for audio_path in tqdm((part3_path / 'AudioSameCloseMic').glob('*.wav')):
+    for audio_path in tqdm(
+            (part3_path / 'AudioSameCloseMic').glob('*.wav'),
+            desc='Creating manifests for SameCloseMic'
+    ):
         try:
             recording_id = audio_path.stem
             recording = Recording.from_wav(audio_path)
@@ -109,7 +112,10 @@ def prepare_separate_phone_mic(part3_path):
     from textgrids import TextGrid
     recordings = []
     supervisions = []
-    for audio_path in tqdm((part3_path / 'AudioSeparateIVR').rglob('**/*.wav')):
+    for audio_path in tqdm(
+            (part3_path / 'AudioSeparateIVR').rglob('**/*.wav'),
+            desc='Creating manifests for SeparateIVR'
+    ):
         try:
             recording_id = f'{audio_path.parent.name}_{audio_path.stem}'
             recording = Recording.from_wav(audio_path)
