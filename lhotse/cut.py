@@ -351,7 +351,8 @@ class Cut(CutUtilsMixin):
             offset: Seconds = 0.0,
             duration: Optional[Seconds] = None,
             keep_excessive_supervisions: bool = True,
-            preserve_id: bool = False
+            preserve_id: bool = False,
+            _supervisions_index: Optional = None
     ) -> 'Cut':
         """
         Returns a new Cut that is a sub-region of the current Cut.
@@ -382,16 +383,14 @@ class Cut(CutUtilsMixin):
         # criterion = overlaps if keep_excessive_supervisions else overspans
         # new_time_span = TimeSpan(start=0, end=new_duration)
         # new_supervisions = (segment.with_offset(-offset) for segment in self.supervisions)
-        from intervaltree import IntervalTree, Interval
-        new_supervisions = IntervalTree(Interval(s.start, s.end, s) for s in self.supervisions)
         new_time_span = TimeSpan(start=offset, end=offset + new_duration)
 
         if keep_excessive_supervisions:  # overlaps
             supervisions = [interval.data.with_offset(-offset) for interval in
-                            new_supervisions.overlap(new_time_span.start, new_time_span.end)]
+                            _supervisions_index.overlap(new_time_span.start, new_time_span.end)]
         else:
             supervisions = [interval.data.with_offset(-offset) for interval in
-                            new_supervisions.envelop(new_time_span.start, new_time_span.end)]  # overspans
+                            _supervisions_index.envelop(new_time_span.start, new_time_span.end)]  # overspans
 
         return Cut(
             id=self.id if preserve_id else str(uuid4()),
@@ -1150,8 +1149,14 @@ class CutSet(JsonMixin, YamlMixin, Sequence[AnyCut]):
 
         :return: a ``CutSet``.
         """
+        from intervaltree import IntervalTree, Interval
+        supervisions_index = {
+            cut.id: IntervalTree(Interval(s.start, s.end, s) for s in cut.supervisions)
+            for cut in self
+        }
         return CutSet.from_cuts(
-            cut.truncate(offset=segment.start, duration=segment.duration)
+            cut.truncate(offset=segment.start, duration=segment.duration,
+                         _supervisions_index=supervisions_index[cut.id])
             for cut in self
             for segment in cut.supervisions
         )
