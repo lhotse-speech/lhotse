@@ -78,7 +78,6 @@ def prepare_same_close_mic(part3_path):
         try:
             recording_id = audio_path.stem
             recording = Recording.from_wav(audio_path)
-            recordings.append(recording)
 
             tg = TextGrid(part3_path / f'ScriptsSame/{recording_id}.TextGrid', coding='utf-16')
             segments = [
