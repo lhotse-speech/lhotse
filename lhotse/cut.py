@@ -384,13 +384,13 @@ class Cut(CutUtilsMixin):
         # new_supervisions = (segment.with_offset(-offset) for segment in self.supervisions)
         from intervaltree import IntervalTree, Interval
         new_supervisions = IntervalTree(Interval(s.start, s.end, s) for s in self.supervisions)
-        new_time_span = TimeSpan(start=offset, end=new_duration)
+        new_time_span = TimeSpan(start=offset, end=offset + new_duration)
 
         if keep_excessive_supervisions:  # overlaps
-            supervisions = [interval.data for interval in
+            supervisions = [interval.data.with_offset(-offset) for interval in
                             new_supervisions.overlap(new_time_span.start, new_time_span.end)]
         else:
-            supervisions = [interval.data for interval in
+            supervisions = [interval.data.with_offset(-offset) for interval in
                             new_supervisions.envelop(new_time_span.start, new_time_span.end)]  # overspans
 
         return Cut(
@@ -401,7 +401,7 @@ class Cut(CutUtilsMixin):
             # supervisions=[
             #     segment for segment in new_supervisions if criterion(new_time_span, segment)
             # ],
-            supervisions=supervisions,
+            supervisions=sorted(supervisions, key=lambda s: s.start),
             features=self.features,
             recording=self.recording
         )
