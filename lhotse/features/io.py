@@ -213,7 +213,7 @@ class LilcomFilesWriter(FeaturesWriter):
         with open(output_features_path, 'wb') as f:
             f.write(serialized_feats)
         # Include sub-directory in the key, e.g. "abc/abcdef.llc"
-        return str(output_features_path.parent / output_features_path.name)
+        return '/'.join(output_features_path.parts[-2:])
 
 
 """
@@ -271,7 +271,7 @@ class NumpyFilesWriter(FeaturesWriter):
         output_features_path = (subdir / key).with_suffix('.npy')
         np.save(output_features_path, value, allow_pickle=False)
         # Include sub-directory in the key, e.g. "abc/abcdef.npy"
-        return str(output_features_path.parent / output_features_path.name)
+        return '/'.join(output_features_path.parts[-2:])
 
 
 """
