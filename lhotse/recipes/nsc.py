@@ -84,17 +84,20 @@ def prepare_same_close_mic(part3_path):
 
             tg = TextGrid(part3_path / f'ScriptsSame/{recording_id}.TextGrid', coding='utf-16')
             segments = [
-                SupervisionSegment(
-                    id=f'{recording_id}-{idx}',
-                    recording_id=recording_id,
-                    start=segment.xmin,
-                    duration=round(segment.xmax - segment.xmin, ndigits=8),
-                    text=segment.text,
-                    language='Singaporean English',
-                    speaker=recording_id,
+                s for s in (
+                    SupervisionSegment(
+                        id=f'{recording_id}-{idx}',
+                        recording_id=recording_id,
+                        start=segment.xmin,
+                        duration=round(segment.xmax - segment.xmin, ndigits=8),
+                        text=segment.text,
+                        language='Singaporean English',
+                        speaker=recording_id,
+                    )
+                    for idx, segment in enumerate(tg[recording_id])
+                    if segment.text != '<S>'  # skip silences
                 )
-                for idx, segment in enumerate(tg[recording_id])
-                if segment.text != '<S>'  # skip silences
+                if s.duration > 0  # NSC has some bad segments
             ]
 
             recordings.append(recording)
@@ -122,17 +125,20 @@ def prepare_separate_phone_mic(part3_path):
 
             tg = TextGrid(part3_path / f'ScriptsSeparate/{recording_id}.TextGrid', coding='utf-16')
             segments = [
-                SupervisionSegment(
-                    id=f'{recording_id}-{idx}',
-                    recording_id=recording_id,
-                    start=segment.xmin,
-                    duration=round(segment.xmax - segment.xmin, ndigits=8),
-                    text=segment.text,
-                    language='Singaporean English',
-                    speaker=recording_id,
+                s for s in (
+                    SupervisionSegment(
+                        id=f'{recording_id}-{idx}',
+                        recording_id=recording_id,
+                        start=segment.xmin,
+                        duration=round(segment.xmax - segment.xmin, ndigits=8),
+                        text=segment.text,
+                        language='Singaporean English',
+                        speaker=recording_id,
+                    )
+                    for idx, segment in enumerate(tg[recording_id])
+                    if segment.text != '<S>'  # skip silences
                 )
-                for idx, segment in enumerate(tg[recording_id])
-                if segment.text != '<S>'  # skip silences
+                if s.duration > 0  # NSC has some bad segments
             ]
 
             supervisions.extend(segments)
