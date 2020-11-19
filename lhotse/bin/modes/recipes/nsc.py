@@ -10,7 +10,7 @@ from lhotse.utils import Pathlike
 @click.argument('output_dir', type=click.Path())
 @click.option('-p', '--dataset-part', type=click.Choice(NSC_PARTS), default='PART3_SameCloseMic',
               help='Which part of NSC should be prepared')
-def mini_librispeech(
+def nsc(
         corpus_dir: Pathlike,
         output_dir: Pathlike,
         dataset_part: str
