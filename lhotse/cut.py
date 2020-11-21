@@ -3,6 +3,7 @@ import warnings
 from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass, field
 from functools import reduce
+from copy import deepcopy
 from math import ceil, floor
 from typing import Any, Callable, Dict, FrozenSet, Iterable, List, Optional, Sequence, Union
 
@@ -1161,13 +1162,25 @@ class CutSet(JsonMixin, YamlMixin, Sequence[AnyCut]):
         assert supervision_ids is not None, \
             "supervision ids can not be None."
 
-        filtered_cutset = fastcopy(self)
+        # TODO: use set for faster search
+        # Are we checking that all supervision ids are unique??
+        # supervision_ids = set(supervision_ids)
+
+        # fails test if fastcopy is used
+        filtered_cutset = deepcopy(self)
         for cut in filtered_cutset:
             cut.supervisions = [
                 supervision for supervision in cut.supervisions
                 if supervision.id in supervision_ids
             ]
+
+        # remove cuts without supervisions
+        filtered_cutset = CutSet.from_cuts(
+           cut for cut in filtered_cutset if cut.supervisions
+        )
+
         return filtered_cutset
+
 
     def filter(self, predicate: Callable[[AnyCut], bool]) -> 'CutSet':
         """
