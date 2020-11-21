@@ -1145,6 +1145,30 @@ class CutSet(JsonMixin, YamlMixin, Sequence[AnyCut]):
             split_sequence(self, num_splits=num_splits, randomize=randomize)
         ]
 
+    def subset(self, supervision_ids: Optional[Iterable[str]] = None) -> 'CutSet':
+        """
+        Return a new CutSet with Cuts containing only `supervision_ids`.
+
+        Example:
+            >>> cuts = CutSet.from_yaml('path/to/cuts')
+            >>> train_set = cuts.subset(supervision_ids=train_ids)
+            >>> test_set = cuts.subset(supervision_ids=test_ids)
+
+        :param supervision_ids: List of `supervision_ids` to keep
+        :return: a CutSet with filtered supervisions
+        """
+
+        assert supervision_ids is not None, \
+            "supervision ids can not be None."
+
+        filtered_cutset = fastcopy(self)
+        for cut in filtered_cutset:
+            cut.supervisions = [
+                supervision for supervision in cut.supervisions
+                if supervision.id in supervision_ids
+            ]
+        return filtered_cutset
+
     def filter(self, predicate: Callable[[AnyCut], bool]) -> 'CutSet':
         """
         Return a new CutSet with the Cuts that satisfy the `predicate`.
