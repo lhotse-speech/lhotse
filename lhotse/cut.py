@@ -1162,9 +1162,8 @@ class CutSet(JsonMixin, YamlMixin, Sequence[AnyCut]):
         assert supervision_ids is not None, \
             "supervision ids can not be None."
 
-        # TODO: use set for faster search
-        # Are we checking that all supervision ids are unique??
-        # supervision_ids = set(supervision_ids)
+        # use set for faster search
+        supervision_ids = set(supervision_ids)
 
         # fails test if fastcopy is used
         filtered_cutset = deepcopy(self)
