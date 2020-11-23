@@ -256,7 +256,7 @@ class Cut(CutUtilsMixin):
 
     @property
     def recording_id(self) -> str:
-        return self.features.recording_id if self.has_features else self.recording.id
+        return self.recording.id if self.has_recording else self.features.recording_id
 
     @property
     def end(self) -> Seconds:
