@@ -368,6 +368,8 @@ class Cut(CutUtilsMixin):
         :param keep_excessive_supervisions: bool. Since trimming may happen inside a SupervisionSegment,
             the caller has an option to either keep or discard such supervisions.
         :param preserve_id: bool. Should the truncated cut keep the same ID or get a new, random one.
+        :param _supervisions_index: when passed, allows to speed up processing of Cuts with a very
+            large number of supervisions. Intended as an internal parameter.
         :return: a new Cut instance. If the current Cut is shorter than the duration, return None.
         """
         new_start = self.start + offset
@@ -391,13 +393,15 @@ class Cut(CutUtilsMixin):
             ]
         else:
             tree = _supervisions_index[self.id]
-            new_time_span = TimeSpan(start=offset, end=offset + new_duration)
-            if keep_excessive_supervisions:  # overlaps
-                supervisions = [interval.data.with_offset(-offset) for interval in
-                                tree.overlap(new_time_span.start, new_time_span.end)]
-            else:
-                supervisions = [interval.data.with_offset(-offset) for interval in
-                                tree.envelop(new_time_span.start, new_time_span.end)]  # overspans
+            # Below we select which method should be called on the IntervalTree object.
+            # The result of calling that method with a range of (begin, end) is an iterable
+            # of Intervals that contain the SupervisionSegments matching our criterion.
+            # We call "interval.data" to obtain the underlying SupervisionSegment.
+            match_supervisions = tree.overlap if keep_excessive_supervisions else tree.envelop
+            supervisions = [
+                interval.data.with_offset(-offset)
+                for interval in match_supervisions(begin=offset, end=offset + new_duration)
+            ]
 
         return Cut(
             id=self.id if preserve_id else str(uuid4()),
