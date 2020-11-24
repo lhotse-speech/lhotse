@@ -112,7 +112,7 @@ class K2SpeechRecognitionIterableDataset(torch.utils.data.IterableDataset):
             shuffle: bool = False,
             concat_cuts: bool = True,
             concat_cuts_gap: Seconds = 1.0,
-            concat_cuts_duration_factor: float = 2
+            concat_cuts_duration_factor: float = 1
     ):
         """
         K2 ASR IterableDataset constructor.
@@ -134,7 +134,7 @@ class K2SpeechRecognitionIterableDataset(torch.utils.data.IterableDataset):
         :param concat_cuts_gap: The duration of silence in seconds that is inserted between the cuts;
             it's goal is to let the model "know" that there are separate utterances in a single example.
         :param concat_cuts_duration_factor: Determines the maximum duration of the concatenated cuts;
-            by default it's twice the duration of the longest cut in the batch.
+            by default it's 1, setting the limit at the duration of the longest cut in the batch.
         """
         super().__init__()
         # Initialize the fields
