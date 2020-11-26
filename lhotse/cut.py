@@ -3,7 +3,6 @@ import warnings
 from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass, field
 from functools import reduce
-from copy import deepcopy
 from math import ceil, floor
 from typing import Any, Callable, Dict, FrozenSet, Iterable, List, Optional, Sequence, Union
 
@@ -449,6 +448,16 @@ class Cut(CutUtilsMixin):
         new_cut = fastcopy(self, supervisions=[s.map(transform_fn) for s in self.supervisions])
         return new_cut
 
+    def filter_supervisions(self, supervision_ids: Iterable[str]) -> AnyCut:
+        """
+        Modify cut to store only supervisions contained in `supervision_ids`
+
+        :param supervision_ids: an iterable of supervision ids to keep
+        :return: a modified Cut
+        """
+        new_cut = fastcopy(self, supervisions=[s for s in self.supervisions if s.id in set(supervision_ids)])
+        return new_cut
+
     @staticmethod
     def from_dict(data: dict) -> 'Cut':
         features = Features.from_dict(data.pop('features')) if 'features' in data else None
@@ -581,6 +590,15 @@ class PaddingCut(CutUtilsMixin):
         )
 
     def map_supervisions(self, transform_fn: Callable[[Any], Any]) -> AnyCut:
+        """
+        Just for consistency with `Cut` and `MixedCut`.
+
+        :param transform_fn: a dummy function that would be never called actually.
+        :return: the PaddingCut itself.
+        """
+        return self
+
+    def filter_supervisions(self, supervision_ids: Iterable[str]) -> AnyCut:
         """
         Just for consistency with `Cut` and `MixedCut`.
 
@@ -972,6 +990,18 @@ class MixedCut(CutUtilsMixin):
             track.cut.supervisions = [segment.map(transform_fn) for segment in track.cut.supervisions]
         return new_mixed_cut
 
+    def filter_supervisions(self, supervision_ids: Iterable[str]) -> AnyCut:
+        """
+        Modify cut to store only supervisions contained in `supervision_ids`
+
+        :param supervision_ids: an iterable of supervision ids to keep
+        :return: a modified Cut
+        """
+        new_mixed_cut = fastcopy(self)
+        for track in new_mixed_cut.tracks:
+            track.cut.supervisions = [s for s in track.cut.supervisions if s.id in set(supervision_ids)]
+        return new_mixed_cut
+
     @staticmethod
     def from_dict(data: dict) -> 'MixedCut':
         return MixedCut(id=data['id'], tracks=[MixTrack.from_dict(track) for track in data['tracks']])
@@ -1158,28 +1188,15 @@ class CutSet(JsonMixin, YamlMixin, Sequence[AnyCut]):
         :param supervision_ids: List of `supervision_ids` to keep
         :return: a CutSet with filtered supervisions
         """
-
         assert supervision_ids is not None, \
             "supervision ids can not be None."
 
-        # use set for faster search
         supervision_ids = set(supervision_ids)
-
-        # fails test if fastcopy is used
-        filtered_cutset = deepcopy(self)
-        for cut in filtered_cutset:
-            cut.supervisions = [
-                supervision for supervision in cut.supervisions
-                if supervision.id in supervision_ids
-            ]
-
-        # remove cuts without supervisions
         filtered_cutset = CutSet.from_cuts(
-           cut for cut in filtered_cutset if cut.supervisions
+            cut.filter_supervisions(supervision_ids) for cut in self
+            if any(s.id in supervision_ids for s in cut.supervisions)
         )
-
         return filtered_cutset
-
 
     def filter(self, predicate: Callable[[AnyCut], bool]) -> 'CutSet':
         """
