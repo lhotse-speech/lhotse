@@ -1110,6 +1110,26 @@ class CutSet(JsonMixin, YamlMixin, Sequence[AnyCut]):
         with pd.option_context('precision', 1):
             print(durations.describe().drop('count'))
 
+    def add_supervision(
+            self,
+            supervisions: SupervisionSet,
+    ) -> 'CutSet':
+        """
+        Return a new CutSet by replacing the existing supervision with the new supervision
+        provided, or adding a supervision if none existed previously.
+        """
+        assert supervisions is not None, \
+            "A supervision_set has to be provided."
+        return CutSet.from_cuts(
+            fastcopy(
+                    cut,
+                    supervisions=list(supervisions.find(
+                        recording_id=cut.recording.id,
+                        channel=cut.channel
+                    )))
+            for cut in self
+        )
+
     def split(self, num_splits: int, randomize: bool = False) -> List['CutSet']:
         """
         Split the ``CutSet`` into ``num_splits`` pieces of equal size.
