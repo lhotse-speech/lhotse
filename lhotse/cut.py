@@ -448,14 +448,19 @@ class Cut(CutUtilsMixin):
         new_cut = fastcopy(self, supervisions=[s.map(transform_fn) for s in self.supervisions])
         return new_cut
 
-    def filter_supervisions(self, supervision_ids: Iterable[str]) -> AnyCut:
+    def filter_supervisions(self, predicate: Callable[[SupervisionSegment], bool]) -> AnyCut:
         """
-        Modify cut to store only supervisions contained in `supervision_ids`
+        Modify cut to store only supervisions accepted by `predicate`
 
-        :param supervision_ids: an iterable of supervision ids to keep
+        Example:
+            >>> cut = cut.filter_supervisions(lambda s: s.id in supervision_ids)
+            >>> cut = cut.filter_supervisions(lambda s: s.duration < 5.0)
+            >>> cut = cut.filter_supervisions(lambda s: s.text is not None)
+
+        :param predicate: A callable that accepts `SupervisionSegment` and returns bool
         :return: a modified Cut
         """
-        new_cut = fastcopy(self, supervisions=[s for s in self.supervisions if s.id in set(supervision_ids)])
+        new_cut = fastcopy(self, supervisions=[s for s in self.supervisions if predicate(s)])
         return new_cut
 
     @staticmethod
@@ -598,12 +603,12 @@ class PaddingCut(CutUtilsMixin):
         """
         return self
 
-    def filter_supervisions(self, supervision_ids: Iterable[str]) -> AnyCut:
+    def filter_supervisions(self, predicate: Callable[[SupervisionSegment], bool]) -> AnyCut:
         """
         Just for consistency with `Cut` and `MixedCut`.
 
-        :param transform_fn: a dummy function that would be never called actually.
-        :return: the PaddingCut itself.
+        :param predicate: A callable that accepts `SupervisionSegment` and returns bool
+        :return: a modified Cut
         """
         return self
 
@@ -990,16 +995,21 @@ class MixedCut(CutUtilsMixin):
             track.cut.supervisions = [segment.map(transform_fn) for segment in track.cut.supervisions]
         return new_mixed_cut
 
-    def filter_supervisions(self, supervision_ids: Iterable[str]) -> AnyCut:
+    def filter_supervisions(self, predicate: Callable[[SupervisionSegment], bool]) -> AnyCut:
         """
-        Modify cut to store only supervisions contained in `supervision_ids`
+        Modify cut to store only supervisions accepted by `predicate`
 
-        :param supervision_ids: an iterable of supervision ids to keep
+        Example:
+            >>> cut = cut.filter_supervisions(lambda s: s.id in supervision_ids)
+            >>> cut = cut.filter_supervisions(lambda s: s.duration < 5.0)
+            >>> cut = cut.filter_supervisions(lambda s: s.text is not None)
+
+        :param predicate: A callable that accepts `SupervisionSegment` and returns bool
         :return: a modified Cut
         """
         new_mixed_cut = fastcopy(self)
         for track in new_mixed_cut.tracks:
-            track.cut.supervisions = [s for s in track.cut.supervisions if s.id in set(supervision_ids)]
+            track.cut = track.cut.filter_supervisions(predicate)
         return new_mixed_cut
 
     @staticmethod
@@ -1192,9 +1202,13 @@ class CutSet(JsonMixin, YamlMixin, Sequence[AnyCut]):
             "supervision ids can not be None."
 
         supervision_ids = set(supervision_ids)
+        # remove cuts without supervisions
         filtered_cutset = CutSet.from_cuts(
-            cut.filter_supervisions(supervision_ids) for cut in self
-            if any(s.id in supervision_ids for s in cut.supervisions)
+            cut for cut in [
+                cut.filter_supervisions(lambda s: s.id in supervision_ids)
+                for cut in self
+            ]
+            if cut.supervisions
         )
         return filtered_cutset
 
