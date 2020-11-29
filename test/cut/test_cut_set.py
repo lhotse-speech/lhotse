@@ -253,7 +253,7 @@ def test_mix_same_recording_channels():
     assert cut.tracks[1].cut == cut_set[1]
 
 
-def test_cut_set_subset(cut_set):
+def test_cut_set_filter_supervisions(cut_set):
 
     def get_supervision_ids(cutset):
         ids = []
@@ -265,8 +265,9 @@ def test_cut_set_subset(cut_set):
     train_ids = all_ids[:-1]
     test_ids = all_ids[-1:]
 
-    train_set = cut_set.subset(supervision_ids=train_ids)
-    test_set = cut_set.subset(supervision_ids=test_ids)
+    # filter based on sueprvision ids
+    train_set = cut_set.filter_supervisions(lambda s: s.id in train_ids)
+    test_set = cut_set.filter_supervisions(lambda s: s.id in test_ids)
 
     assert get_supervision_ids(train_set) == train_ids
     assert get_supervision_ids(test_set) == test_ids
