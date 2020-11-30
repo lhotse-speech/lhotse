@@ -4,7 +4,7 @@ from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence
 from lhotse.utils import JsonMixin, Seconds, YamlMixin, asdict_nonull, fastcopy, split_sequence
 
 
-@dataclass
+@dataclass(frozen=True, unsafe_hash=True)
 class SupervisionSegment:
     id: str
     recording_id: str

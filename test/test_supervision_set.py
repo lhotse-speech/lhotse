@@ -4,6 +4,7 @@ import pytest
 
 from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.testing.dummies import DummyManifest, remove_spaces_from_segment_text
+from lhotse.utils import fastcopy
 
 
 @pytest.fixture
@@ -213,6 +214,11 @@ def test_supervision_trim(supervision, trim_end, expected_end):
 
 @pytest.mark.parametrize('start', [0, 5])
 def test_supervision_trim_does_not_affect_nonnegative_start(supervision, start):
-    supervision.start = start
+    supervision = fastcopy(supervision, start=start)
     trimmed = supervision.trim(50)
     assert trimmed.start == start
+
+
+def test_supervision_is_hashable(supervision):
+    # Check that we can create a dict with the supervision object as the key.
+    d = {supervision: supervision.duration}
