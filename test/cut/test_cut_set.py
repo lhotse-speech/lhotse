@@ -121,6 +121,71 @@ def test_trim_to_unsupervised_segments():
     assert unsupervised_cuts[2].supervisions == []
 
 
+def test_trim_to_supervisions_simple_cuts():
+    cut_set = CutSet.from_cuts([
+        Cut('cut1', start=0, duration=30, channel=0, supervisions=[
+            SupervisionSegment('sup1', 'rec1', start=1.5, duration=8.5),
+            SupervisionSegment('sup2', 'rec1', start=10, duration=5),
+            SupervisionSegment('sup3', 'rec1', start=20, duration=8),
+        ]),
+        Cut('cut2', start=0, duration=30, channel=0, supervisions=[
+            SupervisionSegment('sup4', 'rec1', start=0, duration=30),
+        ]),
+    ])
+    cuts = cut_set.trim_to_supervisions()
+    assert len(cuts) == 4
+    assert all(len(cut.supervisions) == 1 for cut in cuts)
+    assert all(cut.supervisions[0].start == 0 for cut in cuts)
+    cut = cuts[0]
+    assert cut.start == 1.5
+    assert cut.duration == 8.5
+    assert cut.supervisions[0].id == 'sup1'
+    cut = cuts[1]
+    assert cut.start == 10
+    assert cut.duration == 5
+    assert cut.supervisions[0].id == 'sup2'
+    cut = cuts[2]
+    assert cut.start == 20
+    assert cut.duration == 8
+    assert cut.supervisions[0].id == 'sup3'
+    cut = cuts[3]
+    assert cut.start == 0
+    assert cut.duration == 30
+    assert cut.supervisions[0].id == 'sup4'
+
+
+def test_trim_to_supervisions_mixed_cuts():
+    cut_set = CutSet.from_cuts([
+        Cut('cut1', start=0, duration=30, channel=0, supervisions=[
+            SupervisionSegment('sup1', 'rec1', start=1.5, duration=8.5),
+            SupervisionSegment('sup2', 'rec1', start=10, duration=5),
+            SupervisionSegment('sup3', 'rec1', start=20, duration=8),
+        ]).append(
+            Cut('cut2', start=0, duration=30, channel=0, supervisions=[
+                SupervisionSegment('sup4', 'rec1', start=0, duration=30),
+            ])
+        )
+    ])
+    cuts = cut_set.trim_to_supervisions()
+    assert len(cuts) == 4
+    assert all(isinstance(cut, MixedCut) for cut in cuts)
+    assert all(cut.start == 0 for cut in cuts)
+    assert all(len(cut.supervisions) == 1 for cut in cuts)
+    assert all(cut.supervisions[0].start == 0 for cut in cuts)
+    cut = cuts[0]
+    assert cut.duration == 8.5
+    assert cut.supervisions[0].id == 'sup1'
+    cut = cuts[1]
+    assert cut.duration == 5
+    assert cut.supervisions[0].id == 'sup2'
+    cut = cuts[2]
+    assert cut.duration == 8
+    assert cut.supervisions[0].id == 'sup3'
+    cut = cuts[3]
+    assert cut.duration == 30
+    assert cut.supervisions[0].id == 'sup4'
+
+
 def test_cut_set_describe_runs(cut_set):
     cut_set.describe()
 

@@ -104,11 +104,16 @@ class Recording:
     duration: Seconds
 
     @staticmethod
-    def from_sphere(sph_path: Pathlike, relative_path_depth: Optional[int] = None) -> 'Recording':
+    def from_sphere(
+            sph_path: Pathlike,
+            recording_id: Optional[str] = None,
+            relative_path_depth: Optional[int] = None
+    ) -> 'Recording':
         """
         Read a SPHERE file's header and create the corresponding ``Recording``.
 
         :param sph_path: Path to the sphere (.sph) file.
+        :param recording_id: recording id, when not specified ream the filename's stem ("x.wav" -> "x").
         :param relative_path_depth: optional int specifying how many last parts of the file path
             should be retained in the ``AudioSource``. By default writes the path as is.
         :return: a new ``Recording`` instance pointing to the sphere file.
@@ -117,7 +122,7 @@ class Recording:
         sph_path = Path(sph_path)
         sphf = SPHFile(sph_path)
         return Recording(
-            id=sph_path.stem,
+            id=recording_id if recording_id is not None else sph_path.stem,
             sampling_rate=sphf.format['sample_rate'],
             num_samples=sphf.format['sample_count'],
             duration=sphf.format['sample_count'] / sphf.format['sample_rate'],
@@ -133,6 +138,31 @@ class Recording:
                 )
             ]
         )
+
+    @staticmethod
+    def from_wav(path: Pathlike, recording_id: Optional[str] = None) -> 'Recording':
+        """
+        Read a WAVE file's header and create the corresponding ``Recording``.
+
+        :param path: Path to the WAVE (.wav) file.
+        :param recording_id: recording id, when not specified ream the filename's stem ("x.wav" -> "x").
+        :return: a new ``Recording`` instance pointing to the sphere file.
+        """
+        from soundfile import SoundFile
+        with SoundFile(path) as sf:
+            return Recording(
+                id=recording_id if recording_id is not None else Path(path).stem,
+                sampling_rate=sf.samplerate,
+                num_samples=sf.frames,
+                duration=sf.frames / sf.samplerate,
+                sources=[
+                    AudioSource(
+                        type='file',
+                        channels=list(range(sf.channels)),
+                        source=str(path)
+                    )
+                ]
+            )
 
     @property
     def num_channels(self):

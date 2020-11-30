@@ -9,6 +9,7 @@ from typing import Any, Callable, Dict, FrozenSet, Iterable, List, Optional, Seq
 import numpy as np
 from cytoolz import sliding_window
 from cytoolz.itertoolz import groupby
+from intervaltree import Interval, IntervalTree
 from tqdm.auto import tqdm
 
 from lhotse.audio import AudioMixer, Recording, RecordingSet
@@ -351,7 +352,8 @@ class Cut(CutUtilsMixin):
             offset: Seconds = 0.0,
             duration: Optional[Seconds] = None,
             keep_excessive_supervisions: bool = True,
-            preserve_id: bool = False
+            preserve_id: bool = False,
+            _supervisions_index: Optional[Dict[str, IntervalTree]] = None
     ) -> 'Cut':
         """
         Returns a new Cut that is a sub-region of the current Cut.
@@ -366,6 +368,8 @@ class Cut(CutUtilsMixin):
         :param keep_excessive_supervisions: bool. Since trimming may happen inside a SupervisionSegment,
             the caller has an option to either keep or discard such supervisions.
         :param preserve_id: bool. Should the truncated cut keep the same ID or get a new, random one.
+        :param _supervisions_index: when passed, allows to speed up processing of Cuts with a very
+            large number of supervisions. Intended as an internal parameter.
         :return: a new Cut instance. If the current Cut is shorter than the duration, return None.
         """
         new_start = self.start + offset
@@ -379,17 +383,32 @@ class Cut(CutUtilsMixin):
         # Round the duration to avoid the possible loss of a single audio sample due to floating point
         # additions and subtractions.
         new_duration = round(new_duration, ndigits=8)
-        new_time_span = TimeSpan(start=0, end=new_duration)
-        criterion = overlaps if keep_excessive_supervisions else overspans
-        new_supervisions = (segment.with_offset(-offset) for segment in self.supervisions)
+
+        if _supervisions_index is None:
+            criterion = overlaps if keep_excessive_supervisions else overspans
+            new_time_span = TimeSpan(start=0, end=new_duration)
+            new_supervisions = (segment.with_offset(-offset) for segment in self.supervisions)
+            supervisions = [
+                segment for segment in new_supervisions if criterion(new_time_span, segment)
+            ]
+        else:
+            tree = _supervisions_index[self.id]
+            # Below we select which method should be called on the IntervalTree object.
+            # The result of calling that method with a range of (begin, end) is an iterable
+            # of Intervals that contain the SupervisionSegments matching our criterion.
+            # We call "interval.data" to obtain the underlying SupervisionSegment.
+            match_supervisions = tree.overlap if keep_excessive_supervisions else tree.envelop
+            supervisions = [
+                interval.data.with_offset(-offset)
+                for interval in match_supervisions(begin=offset, end=offset + new_duration)
+            ]
+
         return Cut(
             id=self.id if preserve_id else str(uuid4()),
             start=new_start,
             duration=new_duration,
             channel=self.channel,
-            supervisions=[
-                segment for segment in new_supervisions if criterion(new_time_span, segment)
-            ],
+            supervisions=sorted(supervisions, key=lambda s: s.start),
             features=self.features,
             recording=self.recording
         )
@@ -516,6 +535,7 @@ class PaddingCut(CutUtilsMixin):
             duration: Optional[Seconds] = None,
             keep_excessive_supervisions: bool = True,
             preserve_id: bool = False,
+            **kwargs
     ) -> 'PaddingCut':
         new_duration = self.duration - offset if duration is None else duration
         assert new_duration > 0.0
@@ -677,6 +697,7 @@ class MixedCut(CutUtilsMixin):
             duration: Optional[Seconds] = None,
             keep_excessive_supervisions: bool = True,
             preserve_id: bool = False,
+            _supervisions_index: Optional[Dict[str, IntervalTree]] = None
     ) -> 'MixedCut':
         """
         Returns a new MixedCut that is a sub-region of the current MixedCut. This method truncates the underlying Cuts
@@ -734,7 +755,8 @@ class MixedCut(CutUtilsMixin):
                         offset=cut_offset,
                         duration=new_duration,
                         keep_excessive_supervisions=keep_excessive_supervisions,
-                        preserve_id=preserve_id
+                        preserve_id=preserve_id,
+                        _supervisions_index=_supervisions_index
                     ),
                     offset=track_offset,
                     snr=track.snr
@@ -1158,8 +1180,10 @@ class CutSet(JsonMixin, YamlMixin, Sequence[AnyCut]):
 
         :return: a ``CutSet``.
         """
+        supervisions_index = self.index_supervisions(index_mixed_tracks=True)
         return CutSet.from_cuts(
-            cut.truncate(offset=segment.start, duration=segment.duration)
+            cut.truncate(offset=segment.start, duration=segment.duration,
+                         _supervisions_index=supervisions_index)
             for cut in self
             for segment in cut.supervisions
         )
@@ -1219,6 +1243,30 @@ class CutSet(JsonMixin, YamlMixin, Sequence[AnyCut]):
     def sort_by_duration(self, ascending: bool = False) -> 'CutSet':
         """Sort the CutSet according to cuts duration. Descending by default."""
         return CutSet.from_cuts(sorted(self, key=(lambda cut: cut.duration), reverse=not ascending))
+
+    def index_supervisions(self, index_mixed_tracks: bool = False) -> Dict[str, IntervalTree]:
+        """
+        Create a two-level index of supervision segments. It is a mapping from a Cut's ID to an
+        interval tree that contains the supervisions of that Cut.
+
+        The interval tree can be efficiently queried for overlapping and/or enveloping segments.
+        It helps speed up some operations on Cuts of very long recordings (1h+) that contain many
+        supervisions.
+
+        :param index_mixed_tracks: Should the tracks of MixedCut's be indexed as additional, separate entries.
+        :return: a mapping from Cut ID to an interval tree of SupervisionSegments.
+        """
+        indexed = {
+            cut.id: IntervalTree(Interval(s.start, s.end, s) for s in cut.supervisions)
+            for cut in self
+        }
+        if index_mixed_tracks:
+            for cut in self:
+                if isinstance(cut, MixedCut):
+                    for track in cut.tracks:
+                        indexed[track.cut.id] = IntervalTree(
+                            Interval(s.start, s.end, s) for s in track.cut.supervisions)
+        return indexed
 
     def pad(
             self,
