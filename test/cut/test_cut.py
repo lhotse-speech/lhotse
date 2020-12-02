@@ -4,6 +4,7 @@ from lhotse.audio import RecordingSet, Recording, AudioSource
 from lhotse.cut import CutSet
 from lhotse.features import FeatureSet, Features
 from lhotse.supervision import SupervisionSet, SupervisionSegment
+from lhotse.testing.dummies import dummy_cut, dummy_supervision
 
 
 @pytest.fixture()
@@ -373,3 +374,32 @@ class TestNoCutOnSupervisions:
         assert cut1.num_frames == 1000
         assert cut1.num_features == 23
         assert cut1.features_type == 'fbank'
+
+
+@pytest.fixture()
+def dummy_cut_with_supervisions():
+    return dummy_cut(
+        supervisions=[
+            dummy_supervision(unique_id=i, duration=i) for i in range(1, 7)
+        ]
+    )
+
+
+def test_cut_filter_supervisions(dummy_cut_with_supervisions):
+    cut = dummy_cut_with_supervisions
+
+    # test id filtering
+    cut_first_three = cut.filter_supervisions(lambda s: s.id.endswith(("1", "2", "3")))
+    cut_last_three = cut.filter_supervisions(lambda s: s.id.endswith(("4", "5", "6")))
+
+    assert not set(s.id for s in cut_first_three.supervisions) & set(s.id for s in cut_last_three.supervisions)
+    assert (set(s.id for s in cut_first_three.supervisions) | set(s.id for s in cut_last_three.supervisions)) \
+           == set(s.id for s in cut.supervisions)
+
+    # test duration filtering
+    cut_first_three = cut.filter_supervisions(lambda s: s.duration <= 3)
+    cut_last_three = cut.filter_supervisions(lambda s: s.duration > 3)
+
+    assert not set(s.id for s in cut_first_three.supervisions) & set(s.id for s in cut_last_three.supervisions)
+    assert (set(s.id for s in cut_first_three.supervisions) | set(s.id for s in cut_last_three.supervisions)) \
+           == set(s.id for s in cut.supervisions)
