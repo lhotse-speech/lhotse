@@ -1,3 +1,4 @@
+import logging
 import re
 from collections import defaultdict
 from typing import Optional
@@ -47,7 +48,7 @@ def prepare_single_babel_language(corpus_dir: Pathlike, output_dir: Optional[Pat
         audio_dir = corpus_dir / f'conversational/{split}/audio'
         recordings = RecordingSet.from_recordings(Recording.from_sphere(p) for p in audio_dir.glob('*.sph'))
         if len(recordings) == 0:
-            raise ValueError(f"No SPHERE files found in {audio_dir}")
+            logging.warning(f"No SPHERE files found in {audio_dir}")
         manifests[split]['recordings'] = recordings
 
         supervisions = []
@@ -83,7 +84,7 @@ def prepare_single_babel_language(corpus_dir: Pathlike, output_dir: Optional[Pat
                     )
                 )
         if len(supervisions) == 0:
-            raise ValueError(f"No supervisions found in {text_dir}")
+            logging.warning(f"No supervisions found in {text_dir}")
         manifests[split]['supervisions'] = SupervisionSet.from_segments(supervisions)
 
         if output_dir is not None:
