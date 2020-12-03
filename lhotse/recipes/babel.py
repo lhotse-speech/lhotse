@@ -44,14 +44,14 @@ SIL_PATTERN = re.compile(r'<no-speech>')
 def prepare_single_babel_language(corpus_dir: Pathlike, output_dir: Optional[Pathlike] = None):
     manifests = defaultdict(dict)
     for split in ('dev', 'eval', 'training'):
-        audio_dir = corpus_dir / 'conversational/training/audio'
+        audio_dir = corpus_dir / f'conversational/{split}/audio'
         recordings = RecordingSet.from_recordings(Recording.from_sphere(p) for p in audio_dir.glob('*.sph'))
         if len(recordings) == 0:
             raise ValueError(f"No SPHERE files found in {audio_dir}")
         manifests[split]['recordings'] = recordings
 
         supervisions = []
-        text_dir = corpus_dir / 'conversational/training/transcription'
+        text_dir = corpus_dir / f'conversational/{split}/transcription'
         for p in text_dir.glob('*'):
             # p.stem -> BABEL_BP_101_10033_20111024_205740_inLine
             # parts:
@@ -88,6 +88,8 @@ def prepare_single_babel_language(corpus_dir: Pathlike, output_dir: Optional[Pat
 
         if output_dir is not None:
             language = BABELCODE2LANG[lang_code]
+            if split == 'training':
+                split = 'train'
             manifests[split]['recordings'].to_json(f'recordings_{language}_{split}.json')
             manifests[split]['supervisions'].to_json(f'supervisions_{language}_{split}.json')
 
