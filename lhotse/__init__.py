@@ -1,3 +1,4 @@
+from . import recipes
 from .audio import AudioSource, Recording, RecordingSet
 from .augmentation import *
 from .cut import Cut, CutSet
