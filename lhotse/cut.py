@@ -921,10 +921,10 @@ class MixedCut(CutUtilsMixin):
         """
         import matplotlib.pyplot as plt
         audio = self.load_audio(mixed=False)
-        fig, axes = plt.subplots(len(self.tracks), sharex=True, sharey=True)
+        fig, axes = plt.subplots(len(self.tracks), sharex=False, sharey=True)
         for idx, (track, ax) in enumerate(zip(self.tracks, axes)):
             samples = audio[idx, :]
-            ax.plot(np.linspace(0, track.offset + track.cut.duration, len(samples)), samples)
+            ax.plot(np.linspace(0, self.duration, len(samples)), samples)
             for supervision in track.cut.supervisions:
                 supervision = supervision.trim(track.cut.duration)
                 ax.axvspan(track.offset + supervision.start, track.offset + supervision.end, color='green', alpha=0.1)
