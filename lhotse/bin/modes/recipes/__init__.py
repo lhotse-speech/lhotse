@@ -1,3 +1,4 @@
+from .babel import *
 from .broadcast_news import *
 from .heroico import *
 from .librimix import *
