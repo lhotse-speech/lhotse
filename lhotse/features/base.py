@@ -1,4 +1,5 @@
 import multiprocessing
+import pickle
 from abc import ABCMeta, abstractmethod
 from concurrent.futures.process import ProcessPoolExecutor
 from dataclasses import asdict, dataclass, field, is_dataclass
@@ -14,7 +15,8 @@ from tqdm.auto import tqdm
 from lhotse.audio import Recording
 from lhotse.augmentation import AugmentFn
 from lhotse.features.io import FeaturesWriter, get_reader
-from lhotse.utils import (JsonMixin, Pathlike, Seconds, YamlMixin, fastcopy, load_yaml, save_to_yaml, split_sequence,
+from lhotse.utils import (JsonMixin, Pathlike, Seconds, YamlMixin, fastcopy, load_yaml, save_to_yaml,
+                          split_sequence,
                           uuid4)
 
 
@@ -494,6 +496,20 @@ class FeatureSet(JsonMixin, YamlMixin, Sequence[Features]):
         features = feature_info.load(start=start, duration=duration)
         return features
 
+    def compute_global_stats(self, storage_path: Optional[Pathlike] = None) -> Dict[str, np.ndarray]:
+        """
+        Compute the global means and standard deviations for each feature bin in the manifest.
+        It follows the implementation in scikit-learn:
+        https://github.com/scikit-learn/scikit-learn/blob/0fb307bf39bbdacd6ed713c00724f8f871d60370/sklearn/utils/extmath.py#L715
+        which follows the paper:
+        "Algorithms for computing the sample variance: analysis and recommendations", by Chan, Golub, and LeVeque.
+
+        :param storage_path: an optional path to a file where the stats will be stored with pickle.
+        :return a dict of ``{'norm_means': np.ndarray, 'norm_stds': np.ndarray}`` with the
+            shape of the arrays equal to the number of feature bins in this manifest.
+        """
+        return compute_global_stats(feature_manifests=self, storage_path=storage_path)
+
     def __repr__(self) -> str:
         return f'FeatureSet(len={len(self)})'
 
@@ -591,3 +607,59 @@ def store_feature_array(
     feats_id = str(uuid4())
     storage_key = storage.write(feats_id, feats)
     return storage_key
+
+
+def compute_global_stats(
+        feature_manifests: Iterable[Features],
+        storage_path: Optional[Pathlike] = None
+) -> Dict[str, np.ndarray]:
+    """
+    Compute the global means and standard deviations for each feature bin in the manifest.
+    It performs only a single pass over the data and iteratively updates the estimate of the
+    means and variances.
+
+    We follow the implementation in scikit-learn:
+    https://github.com/scikit-learn/scikit-learn/blob/0fb307bf39bbdacd6ed713c00724f8f871d60370/sklearn/utils/extmath.py#L715
+    which follows the paper:
+    "Algorithms for computing the sample variance: analysis and recommendations", by Chan, Golub, and LeVeque.
+
+    :param feature_manifests: an iterable of ``Features`` objects.
+    :param storage_path: an optional path to a file where the stats will be stored with pickle.
+    :return a dict of ``{'norm_means': np.ndarray, 'norm_stds': np.ndarray}`` with the
+        shape of the arrays equal to the number of feature bins in this manifest.
+    """
+    feature_manifests = iter(feature_manifests)
+    first = next(feature_manifests)
+    total_sum = np.zeros((first.num_features,), dtype=np.float64)
+    total_unnorm_var = np.zeros((first.num_features,), dtype=np.float64)
+    total_frames = 0
+    with np.errstate(divide='ignore', invalid='ignore'):
+        for features in chain([first], feature_manifests):
+            # Read the features
+            arr = features.load().astype(np.float64)
+            # Update the sum for the means
+            curr_sum = arr.sum(axis=0)
+            updated_total_sum = total_sum + curr_sum
+            # Update the number of frames
+            curr_frames = arr.shape[0]
+            updated_total_frames = total_frames + curr_frames
+            # Update the unnormalized variance
+            total_over_curr_frames = total_frames / curr_frames
+            curr_unnorm_var = np.var(arr, axis=0) * curr_frames
+            if total_frames > 0:
+                total_unnorm_var = (
+                        total_unnorm_var + curr_unnorm_var +
+                        total_over_curr_frames / updated_total_frames *
+                        (total_sum / total_over_curr_frames - curr_sum) ** 2)
+            else:
+                total_unnorm_var = curr_unnorm_var
+            total_sum = updated_total_sum
+            total_frames = updated_total_frames
+    stats = {
+        'norm_means': total_sum / total_frames,
+        'norm_stds': np.sqrt(total_unnorm_var / total_frames)
+    }
+    if storage_path is not None:
+        with open(storage_path, 'wb') as f:
+            pickle.dump(stats, f)
+    return stats

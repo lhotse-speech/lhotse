@@ -1,3 +1,4 @@
+import logging
 import random
 import warnings
 from concurrent.futures import ProcessPoolExecutor
@@ -15,6 +16,7 @@ from tqdm.auto import tqdm
 from lhotse.audio import AudioMixer, Recording, RecordingSet
 from lhotse.augmentation import AugmentFn
 from lhotse.features import FeatureExtractor, FeatureMixer, FeatureSet, Features, create_default_feature_extractor
+from lhotse.features.base import compute_global_stats
 from lhotse.features.io import FeaturesWriter
 from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import (Decibels, EPSILON, JsonMixin, Pathlike, Seconds, TimeSpan, YamlMixin, asdict_nonull,
@@ -1477,6 +1479,30 @@ class CutSet(JsonMixin, YamlMixin, Sequence[AnyCut]):
             total=len(futures)
         ))
         return cut_set
+
+    def compute_global_feature_stats(self, storage_path: Optional[Pathlike] = None) -> Dict[str, np.ndarray]:
+        """
+        Compute the global means and standard deviations for each feature bin in the manifest.
+        It follows the implementation in scikit-learn:
+        https://github.com/scikit-learn/scikit-learn/blob/0fb307bf39bbdacd6ed713c00724f8f871d60370/sklearn/utils/extmath.py#L715
+        which follows the paper:
+        "Algorithms for computing the sample variance: analysis and recommendations", by Chan, Golub, and LeVeque.
+
+        :param storage_path: an optional path to a file where the stats will be stored with pickle.
+        :return a dict of ``{'norm_means': np.ndarray, 'norm_stds': np.ndarray}`` with the
+            shape of the arrays equal to the number of feature bins in this manifest.
+        """
+        have_features = [cut.has_features for cut in self]
+        if not any(have_features):
+            raise ValueError("Could not find any features in this CutSet; did you forget to extract them?")
+        if not all(have_features):
+            logging.warning(
+                f'Computing global stats: only {sum(have_features)}/{len(have_features)} cuts have features.'
+            )
+        return compute_global_stats(
+            feature_manifests=(cut.features for cut in self if cut.has_features),
+            storage_path=storage_path
+        )
 
     def with_features_path_prefix(self, path: Pathlike) -> 'CutSet':
         return CutSet.from_cuts(c.with_features_path_prefix(path) for c in self)
