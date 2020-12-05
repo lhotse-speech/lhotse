@@ -153,6 +153,15 @@ During the feature-domain mix with a specified signal-to-noise ratio (SNR), we a
 
 Note that we interpret the energy and the SNR in a `power quantity`_ context (as opposed to root-power/field quantities).
 
+Feature normalization
+*********************
+
+We will briefly discuss how to perform mean and variance normalization (a.k.a. CMVN) in Lhotse effectively. We also compute and store unnormalized features, and it is up to the user to normalize them if they want to do so. There are three common ways to perform feature normalization:
+
+- **Global normalization**: we compute the means and variances using the whole data (``FeatureSet`` or ``CutSet``), and apply the same transform on every sample. The global statistics can be computed efficiently with ``FeatureSet.compute_global_stats()`` or ``CutSet.compute_global_feature_stats()``. They use an iterative algorithm that does not require loading the whole dataset into memory.
+- **Per-instance normalization**: we compute the means and variances separately for each data sample (i.e. a single feature matrix). Each feature matrix undergoes a different transform. This approach seems to be common in computer vision modelling.
+- **Sliding window ("online") normalization**: we compute the means and variances using a slice of the feature matrix with a specified duration, e.g. 3 seconds (a standard value in Kaldi). This is useful when we expect the model to work on incomplete inputs, e.g. streaming speech recognition. We currently recommend using `Torchaudio CMVN`_ for that.
+
 Storage backend details
 ***********************
 
@@ -227,3 +236,4 @@ By default, we turn off dithering for deterministic feature extraction.
 .. _Torchaudio: https://pytorch.org/audio/
 .. _lilcom: https://github.com/danpovey/lilcom
 .. _power quantity: https://en.wikipedia.org/wiki/Power,_root-power,_and_field_quantities
+.. _Torchaudio CMVN: https://pytorch.org/audio/stable/transforms.html#slidingwindowcmn

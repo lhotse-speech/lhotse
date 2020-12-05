@@ -134,8 +134,16 @@ def test_compute_global_stats():
         stats = feature_set.compute_global_stats(storage_path=f.name)
         f.flush()
         read_stats = pickle.load(f)
+    # Post-condition 1: feature dim is consistent
     assert stats['norm_means'].shape == (feature_set[0].num_features,)
     assert stats['norm_stds'].shape == (feature_set[0].num_features,)
+    # Post-condition 2: the iterative method yields very close results to
+    # the "standard" method.
+    true_means = np.mean(np.concatenate([f.load() for f in feature_set]), axis=0)
+    true_stds = np.std(np.concatenate([f.load() for f in feature_set]), axis=0)
+    np.testing.assert_almost_equal(stats['norm_means'], true_means, decimal=5)
+    np.testing.assert_almost_equal(stats['norm_stds'], true_stds, decimal=5)
+    # Post-condition 3: the serialization works correctly
     assert (stats['norm_means'] == read_stats['norm_means']).all()
     assert (stats['norm_stds'] == read_stats['norm_stds']).all()
 
