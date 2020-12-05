@@ -1,3 +1,10 @@
+"""
+BABEL is a collection of corpora created during the IARPA BABEL program:
+https://www.iarpa.gov/index.php/research-programs/babel
+
+It has about 25 languages with 40h - 160h of training recordings and ~20h
+of development set recordings.
+"""
 import logging
 import re
 from collections import defaultdict
@@ -36,10 +43,11 @@ BABELCODE2LANG = {
     "404": "Georgian",
 }
 
-OOV_PATTERN = re.compile(r'(\(\(\)\)|<foreign>|<prompt>|<overlap>)')
+OOV_PATTERN = re.compile(r'(\(\(\)\)|<foreign>|<prompt>|<overlap>|<hes>)')
 SPK_NOISE_PATTERN = re.compile(r'<(limspack|lipsmack|breath|cough)>')
-NOISE_PATTERN = re.compile(r'<(click|ring|dtmf|int)>')
+NOISE_PATTERN = re.compile(r'<(click|ring|dtmf|int|sta)>')
 SIL_PATTERN = re.compile(r'<no-speech>')
+REMOVE_PATTERN = re.compile(r'<(male-to-female|female-to-male)> ')
 
 
 def prepare_single_babel_language(corpus_dir: Pathlike, output_dir: Optional[Pathlike] = None):
@@ -102,4 +110,5 @@ def normalize_text(text: str) -> str:
     text = SPK_NOISE_PATTERN.sub('<v-noise>', text)
     text = NOISE_PATTERN.sub('<noise>', text)
     text = SIL_PATTERN.sub('<silence>', text)
+    text = REMOVE_PATTERN.sub('', text)
     return text

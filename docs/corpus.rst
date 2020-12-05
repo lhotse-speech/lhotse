@@ -150,11 +150,14 @@ a CLI tool that create the manifests given a corpus directory.
 Currently supported corpora:
 
 - AMI :func:`lhotse.recipes.prepare_ami`
+- BABEL :func:`lhotse.recipes.prepare_single_babel_language`
 - English Broadcast News 1997 :func:`lhotse.recipes.prepare_broadcast_news`
-- Full or Mini LibriSpeech :func:`lhotse.recipes.prepare_librispeech`
 - Heroico :func:`lhotse.recipes.prepare_heroico`
+- MiniLibriMix :func:`lhotse.recipes.prepare_librimix`
+- LibriSpeech (including "mini") :func:`lhotse.recipes.prepare_librispeech`
 - LJ Speech :func:`lhotse.recipes.prepare_ljspeech`
-- Mini LibriMix :func:`lhotse.recipes.prepare_librimix`
+- MobvoiHotWord :func:`lhotse.recipes.prepare_mobvoihotwords`
+- National Speech Corpus (Singaporean English) :func:`lhotse.recipes.prepare_nsc`
 - Switchboard :func:`lhotse.recipes.prepare_switchboard`
 - TED-LIUM v3 :func:`lhotse.recipes.prepare_tedlium`
 
