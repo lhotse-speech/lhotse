@@ -1,4 +1,4 @@
-from contextlib import nullcontext as does_not_raise
+from lhotse.utils import nullcontext as does_not_raise
 from functools import lru_cache
 from tempfile import NamedTemporaryFile
 

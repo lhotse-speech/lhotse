@@ -1,4 +1,5 @@
 import multiprocessing
+import sys
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
 from functools import partial
 from tempfile import TemporaryDirectory
@@ -18,7 +19,13 @@ class TestAugmentationWithExecutor(RandomCutTestCase):
             # Multithreading works
             ThreadPoolExecutor,
             # Multiprocessing works, but only when using the "spawn" context
-            partial(ProcessPoolExecutor, mp_context=multiprocessing.get_context("spawn")),
+            pytest.param(
+                partial(ProcessPoolExecutor, mp_context=multiprocessing.get_context("spawn")),
+                marks=pytest.mark.skipif(
+                    sys.version_info[0] == 3 and sys.version_info[1] < 7,
+                    reason="The mp_context argument is introduced in Python 3.7"
+                )
+            ),
         ]
     )
     def test_wav_augment_with_executor(self, exec_type):

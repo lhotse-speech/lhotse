@@ -1,7 +1,8 @@
 import multiprocessing
+import sys
 from concurrent.futures.process import ProcessPoolExecutor
 from concurrent.futures.thread import ThreadPoolExecutor
-from contextlib import nullcontext as no_executor
+from lhotse.utils import nullcontext as no_executor
 from functools import partial
 from tempfile import TemporaryDirectory
 from unittest.mock import Mock
@@ -94,8 +95,17 @@ def is_dask_availabe():
     'executor', [
         None,
         ThreadPoolExecutor,
-        partial(ProcessPoolExecutor, mp_context=multiprocessing.get_context("spawn")),
-        pytest.param(distributed.Client, marks=pytest.mark.skipif(not is_dask_availabe(), reason='Requires Dask'))
+        pytest.param(
+            partial(ProcessPoolExecutor, mp_context=multiprocessing.get_context("spawn")),
+            marks=pytest.mark.skipif(
+                sys.version_info[0] == 3 and sys.version_info[1] < 7,
+                reason="The mp_context argument is introduced in Python 3.7"
+            )
+        ),
+        pytest.param(
+            distributed.Client,
+            marks=pytest.mark.skipif(not is_dask_availabe(), reason='Requires Dask')
+        )
     ]
 )
 def test_extract_and_store_features_from_cut_set(cut_set, executor, mix_eagerly):

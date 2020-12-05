@@ -3,7 +3,7 @@ import json
 import math
 import random
 import uuid
-from contextlib import contextmanager
+from contextlib import AbstractContextManager, contextmanager
 from dataclasses import asdict, dataclass
 from decimal import Decimal, ROUND_HALF_UP
 from math import ceil, isclose
@@ -316,3 +316,26 @@ def urlretrieve_progress(url, filename=None, data=None, desc=None):
     with tqdm(unit='B', unit_scale=True, unit_divisor=1024, miniters=1, desc=desc) as t:
         reporthook = tqdm_urlretrieve_hook(t)
         return urlretrieve(url=url, filename=filename, reporthook=reporthook, data=data)
+
+
+class nullcontext(AbstractContextManager):
+    """Context manager that does no additional processing.
+
+    Used as a stand-in for a normal context manager, when a particular
+    block of code is only sometimes used with a normal context manager:
+
+    cm = optional_cm if condition else nullcontext()
+    with cm:
+        # Perform operation, using optional_cm if condition is True
+
+    Note(pzelasko): This is copied from Python 3.7 stdlib so that we can use it in 3.6.
+    """
+
+    def __init__(self, enter_result=None):
+        self.enter_result = enter_result
+
+    def __enter__(self):
+        return self.enter_result
+
+    def __exit__(self, *excinfo):
+        pass
