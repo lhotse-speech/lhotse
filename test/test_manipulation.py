@@ -58,6 +58,12 @@ def test_combine(manifest_type):
         DummyManifest(manifest_type, begin_id=136, end_id=200),
     )
     assert combined == expected
+    combined_iterable = combine([
+        DummyManifest(manifest_type, begin_id=0, end_id=68),
+        DummyManifest(manifest_type, begin_id=68, end_id=136),
+        DummyManifest(manifest_type, begin_id=136, end_id=200),
+    ])
+    assert combined_iterable == expected
 
 
 @mark.parametrize(

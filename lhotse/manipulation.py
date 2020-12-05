@@ -2,7 +2,7 @@ from functools import reduce
 from itertools import chain
 from json.decoder import JSONDecodeError
 from operator import add
-from typing import Iterable, Optional, TypeVar
+from typing import Iterable, Optional, Sequence, TypeVar, Union
 
 from lhotse.audio import Recording, RecordingSet
 from lhotse.cut import Cut, CutSet, MixedCut
@@ -14,8 +14,18 @@ ManifestItem = TypeVar('ManifestItem', Recording, SupervisionSegment, Features, 
 Manifest = TypeVar('Manifest', RecordingSet, SupervisionSet, FeatureSet, CutSet)
 
 
-def combine(*manifests: Manifest) -> Manifest:
-    """Combine multiple manifests of the same type into one."""
+def combine(*manifests: Union[Manifest, Sequence[Manifest]]) -> Manifest:
+    """
+    Combine multiple manifests of the same type into one.
+
+    Examples:
+        >>> # Pass several arguments
+        >>> combine(recording_set1, recording_set2, recording_set3)
+        >>> # Or pass a single list/tuple of manifests
+        >>> combine([supervision_set1, supervision_set2])
+    """
+    if len(manifests) == 1 and isinstance(manifests, (tuple, list)):
+        manifests = manifests[0]
     return reduce(add, manifests)
 
 
