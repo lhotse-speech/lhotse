@@ -156,7 +156,7 @@ Note that we interpret the energy and the SNR in a `power quantity`_ context (as
 Feature normalization
 *********************
 
-We will briefly discuss how to perform mean and variance normalization (a.k.a. CMVN) in Lhotse effectively. We also compute and store unnormalized features, and it is up to the user to normalize them if they want to do so. There are three common ways to perform feature normalization:
+We will briefly discuss how to perform mean and variance normalization (a.k.a. CMVN) in Lhotse effectively. We compute and store unnormalized features, and it is up to the user to normalize them if they want to do so. There are three common ways to perform feature normalization:
 
 - **Global normalization**: we compute the means and variances using the whole data (``FeatureSet`` or ``CutSet``), and apply the same transform on every sample. The global statistics can be computed efficiently with ``FeatureSet.compute_global_stats()`` or ``CutSet.compute_global_feature_stats()``. They use an iterative algorithm that does not require loading the whole dataset into memory.
 - **Per-instance normalization**: we compute the means and variances separately for each data sample (i.e. a single feature matrix). Each feature matrix undergoes a different transform. This approach seems to be common in computer vision modelling.
