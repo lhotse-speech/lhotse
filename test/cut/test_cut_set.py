@@ -1,3 +1,4 @@
+import pickle
 from tempfile import NamedTemporaryFile
 
 import pytest
@@ -271,3 +272,15 @@ def test_cut_set_filter_supervisions(cut_set):
 
     assert get_supervision_ids(train_set) == train_ids
     assert get_supervision_ids(test_set) == test_ids
+
+
+def test_compute_cmvn_stats():
+    cut_set = CutSet.from_json('test/fixtures/libri/cuts.json')
+    with NamedTemporaryFile() as f:
+        stats = cut_set.compute_global_feature_stats(storage_path=f.name)
+        f.flush()
+        read_stats = pickle.load(f)
+    assert stats['norm_means'].shape == (cut_set[0].num_features,)
+    assert stats['norm_stds'].shape == (cut_set[0].num_features,)
+    assert (stats['norm_means'] == read_stats['norm_means']).all()
+    assert (stats['norm_stds'] == read_stats['norm_stds']).all()
