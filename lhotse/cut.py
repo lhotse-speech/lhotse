@@ -1,17 +1,18 @@
-import logging
-import random
-import warnings
 from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass, field
-from functools import reduce
-from math import ceil, floor
-from typing import Any, Callable, Dict, FrozenSet, Iterable, List, Optional, Sequence, Union
 
+import logging
 import numpy as np
+import random
+import warnings
 from cytoolz import sliding_window
 from cytoolz.itertoolz import groupby
+from functools import reduce
 from intervaltree import Interval, IntervalTree
+from itertools import islice
+from math import ceil, floor
 from tqdm.auto import tqdm
+from typing import Any, Callable, Dict, FrozenSet, Iterable, List, Optional, Sequence, Union
 
 from lhotse.audio import AudioMixer, Recording, RecordingSet
 from lhotse.augmentation import AugmentFn
@@ -1480,7 +1481,11 @@ class CutSet(JsonMixin, YamlMixin, Sequence[AnyCut]):
         ))
         return cut_set
 
-    def compute_global_feature_stats(self, storage_path: Optional[Pathlike] = None) -> Dict[str, np.ndarray]:
+    def compute_global_feature_stats(
+            self,
+            storage_path: Optional[Pathlike] = None,
+            max_cuts: Optional[int] = None
+    ) -> Dict[str, np.ndarray]:
         """
         Compute the global means and standard deviations for each feature bin in the manifest.
         It follows the implementation in scikit-learn:
@@ -1489,6 +1494,8 @@ class CutSet(JsonMixin, YamlMixin, Sequence[AnyCut]):
         "Algorithms for computing the sample variance: analysis and recommendations", by Chan, Golub, and LeVeque.
 
         :param storage_path: an optional path to a file where the stats will be stored with pickle.
+        :param max_cuts: optionally, limit the number of cuts used for stats estimation. The cuts will be
+            selected randomly in that case.
         :return a dict of ``{'norm_means': np.ndarray, 'norm_stds': np.ndarray}`` with the
             shape of the arrays equal to the number of feature bins in this manifest.
         """
@@ -1500,7 +1507,11 @@ class CutSet(JsonMixin, YamlMixin, Sequence[AnyCut]):
                 f'Computing global stats: only {sum(have_features)}/{len(have_features)} cuts have features.'
             )
         return compute_global_stats(
-            feature_manifests=(cut.features for cut in self if cut.has_features),
+            # islice(X, 50) is like X[:50] except it works with lazy iterables
+            feature_manifests=islice(
+                (cut.features for cut in self if cut.has_features),
+                max_cuts if max_cuts is not None else len(self)
+            ),
             storage_path=storage_path
         )
 
