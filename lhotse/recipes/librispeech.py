@@ -109,7 +109,7 @@ def prepare_librispeech(
                 # We will create a separate Recording and SupervisionSegment for those.
 
                 with open(trans_path) as f:
-                    results = ex.map(parse_utterance, repeat(trans_path), f)
+                    results = ex.map(parse_utterance, repeat(part_path), f)
                     for recording, segment in results:
                         recordings.append(recording)
                         supervisions.append(segment)
