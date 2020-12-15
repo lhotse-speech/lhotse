@@ -1,27 +1,26 @@
+from collections import defaultdict
+
 import logging
 import re
 import shutil
 import tarfile
-from collections import defaultdict
 from pathlib import Path
-from typing import Dict, NamedTuple, Optional, Tuple, Union
-
-import torchaudio
 from tqdm.auto import tqdm
+from typing import Dict, Optional, Tuple, Union
 
 from lhotse import load_manifest
-from lhotse.audio import AudioSource, Recording, RecordingSet
+from lhotse.audio import Recording, RecordingSet
 from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import Pathlike, urlretrieve_progress
 
-dataset_parts_full = ('dev-clean', 'dev-other', 'test-clean', 'test-other',
-                      'train-clean-100', 'train-clean-360', 'train-other-500')
-dataset_parts_mini = ('dev-clean-2', 'train-clean-5')
+LIBRISPEECH = ('dev-clean', 'dev-other', 'test-clean', 'test-other',
+               'train-clean-100', 'train-clean-360', 'train-other-500')
+MINI_LIBRISPEECH = ('dev-clean-2', 'train-clean-5')
 
 
 def download_and_untar(
         target_dir: Pathlike = '.',
-        dataset_parts: Optional[Tuple[str]] = dataset_parts_mini,
+        dataset_parts: Optional[Tuple[str]] = MINI_LIBRISPEECH,
         force_download: Optional[bool] = False,
         base_url: Optional[str] = 'http://www.openslr.org/resources'
 ) -> None:
@@ -37,9 +36,9 @@ def download_and_untar(
     target_dir = Path(target_dir)
     target_dir.mkdir(parents=True, exist_ok=True)
     for part in tqdm(dataset_parts, desc='Downloading LibriSpeech parts'):
-        if part in dataset_parts_full:
+        if part in LIBRISPEECH:
             url = f'{base_url}/12'
-        elif part in dataset_parts_mini:
+        elif part in MINI_LIBRISPEECH:
             url = f'{base_url}/31'
         else:
             logging.warning(f'Invalid dataset part name: {part}')
@@ -57,15 +56,9 @@ def download_and_untar(
                 completed_detector.touch()
 
 
-class LibriSpeechMetaData(NamedTuple):
-    audio_path: Pathlike
-    audio_info: torchaudio.sox_signalinfo_t
-    text: str
-
-
 def prepare_librispeech(
         corpus_dir: Pathlike,
-        dataset_parts: Optional[Tuple[str]] = dataset_parts_mini,
+        dataset_parts: Union[str, Tuple[str]] = 'auto',
         output_dir: Optional[Pathlike] = None
 ) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet]]]:
     """
@@ -79,6 +72,16 @@ def prepare_librispeech(
     """
     corpus_dir = Path(corpus_dir)
     assert corpus_dir.is_dir(), f'No such directory: {corpus_dir}'
+
+    if dataset_parts == 'auto':
+        dataset_parts = (
+            set(LIBRISPEECH)
+                .union(MINI_LIBRISPEECH)
+                .intersection(path.name for path in corpus_dir.glob('*'))
+        )
+        if not dataset_parts:
+            raise ValueError(f"Could not find any of librispeech or mini_librispeech splits in: {corpus_dir}")
+
     if output_dir is not None:
         output_dir = Path(output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
@@ -86,65 +89,58 @@ def prepare_librispeech(
         maybe_manifests = read_if_cached(dataset_parts=dataset_parts, output_dir=output_dir)
         if maybe_manifests is not None:
             return maybe_manifests
+
     manifests = defaultdict(dict)
     for part in dataset_parts:
-        # Generate a mapping: utt_id -> (audio_path, audio_info, text)
-        metadata = {}
+
+        recordings = []
+        supervisions = []
         part_path = corpus_dir / part
         for trans_path in part_path.rglob('*.txt'):
+            # "trans_path" file contains lines like:
+            #
+            #   121-121726-0000 ALSO A POPULAR CONTRIVANCE
+            #   121-121726-0001 HARANGUE THE TIRESOME PRODUCT OF A TIRELESS TONGUE
+            #   121-121726-0002 ANGOR PAIN PAINFUL TO HEAR
+            #
+            # We will create a separate Recording and SupervisionSegment for those.
+
             with open(trans_path) as f:
                 for line in f:
-                    idx, text = line.split(maxsplit=1)
-                    audio_path = part_path / Path(idx.replace('-', '/')).parent / f'{idx}.flac'
-                    if audio_path.is_file():
-                        # info[0]: info of the raw audio (e.g. channel number, sample rate, duration ... )
-                        # info[1]: info about the encoding (e.g. FLAC/ALAW/ULAW ...)
-                        info = torchaudio.info(str(audio_path))
-                        metadata[idx] = LibriSpeechMetaData(audio_path=audio_path, audio_info=info[0], text=text)
-                    else:
+                    recording_id, text = line.split(maxsplit=1)
+
+                    # Create the Recording first
+                    audio_path = part_path / Path(recording_id.replace('-', '/')).parent / f'{recording_id}.flac'
+                    if not audio_path.is_file():
                         logging.warning(f'No such file: {audio_path}')
+                        continue
+                    recording = Recording.from_file(audio_path, recording_id=recording_id)
+                    recordings.append(recording)
 
-        # Audio
-        audio = RecordingSet.from_recordings(
-            Recording(
-                id=idx,
-                sources=[
-                    AudioSource(
-                        type='file',
-                        channels=[0],
-                        source=str(metadata[idx].audio_path)
+                    # Then, create the corresponding supervisions
+                    segment = SupervisionSegment(
+                        id=recording_id,
+                        recording_id=recording_id,
+                        start=0.0,
+                        duration=recording.duration,
+                        channel=0,
+                        language='English',
+                        speaker=re.sub(r'-.*', r'', recording.id),
+                        text=text.strip()
                     )
-                ],
-                sampling_rate=int(metadata[idx].audio_info.rate),
-                num_samples=metadata[idx].audio_info.length,
-                duration=metadata[idx].audio_info.length / metadata[idx].audio_info.rate
-            )
-            for idx in metadata
-        )
+                    supervisions.append(segment)
 
-        # Supervision
-        supervision = SupervisionSet.from_segments(
-            SupervisionSegment(
-                id=idx,
-                recording_id=idx,
-                start=0.0,
-                duration=audio.recordings[idx].duration,
-                channel=0,
-                language='English',
-                speaker=re.sub(r'-.*', r'', idx),
-                text=metadata[idx].text.strip()
-            )
-            for idx in audio.recordings
-        )
+            recording_set = RecordingSet.from_recordings(recordings)
+            supervision_set = SupervisionSet.from_segments(supervisions)
 
-        if output_dir is not None:
-            supervision.to_json(output_dir / f'supervisions_{part}.json')
-            audio.to_json(output_dir / f'recordings_{part}.json')
+            if output_dir is not None:
+                supervision_set.to_json(output_dir / f'supervisions_{part}.json')
+                recording_set.to_json(output_dir / f'recordings_{part}.json')
 
-        manifests[part] = {
-            'recordings': audio,
-            'supervisions': supervision
-        }
+            manifests[part] = {
+                'recordings': recording_set,
+                'supervisions': supervision_set
+            }
 
     return manifests
 
