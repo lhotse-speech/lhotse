@@ -99,7 +99,7 @@ def prepare_librispeech(
             supervisions = []
             part_path = corpus_dir / part
             futures = []
-            for trans_path in tqdm(part_path.rglob('*.txt'), desc='Utterances', leave=False):
+            for trans_path in part_path.rglob('*.txt'):
                 # "trans_path" file contains lines like:
                 #
                 #   121-121726-0000 ALSO A POPULAR CONTRIVANCE
@@ -111,7 +111,7 @@ def prepare_librispeech(
                     for line in f:
                         futures.append(ex.submit(parse_utterance, part_path, line))
 
-            for future in futures:
+            for future in tqdm(futures, desc='Utterances', leave=False):
                 result = future.result()
                 if result is None:
                     continue
