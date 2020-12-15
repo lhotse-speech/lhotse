@@ -1,7 +1,7 @@
 import click
 
 from lhotse.bin.modes import obtain, prepare
-from lhotse.recipes.librispeech import download_and_untar, prepare_librispeech
+from lhotse.recipes.librispeech import download_librispeech, prepare_librispeech
 from lhotse.utils import Pathlike
 
 __all__ = ['mini_librispeech']
@@ -24,4 +24,4 @@ def mini_librispeech(
         target_dir: Pathlike
 ):
     """Mini Librispeech download."""
-    download_and_untar(target_dir)
+    download_librispeech(target_dir)

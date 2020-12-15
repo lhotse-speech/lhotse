@@ -1,12 +1,12 @@
-import warnings
 from dataclasses import asdict, dataclass
+
+import numpy as np
+import warnings
 from io import BytesIO
 from math import sqrt
 from pathlib import Path
 from subprocess import PIPE, run
 from typing import Callable, Dict, Iterable, List, Optional, Sequence, Tuple, Union
-
-import numpy as np
 
 from lhotse.utils import (Decibels, JsonMixin, Pathlike, Seconds, SetContainingAnything, YamlMixin, fastcopy,
                           split_sequence)
@@ -146,23 +146,44 @@ class Recording:
 
         :param path: Path to the WAVE (.wav) file.
         :param recording_id: recording id, when not specified ream the filename's stem ("x.wav" -> "x").
-        :return: a new ``Recording`` instance pointing to the sphere file.
+        :return: a new ``Recording`` instance pointing to the audio file.
         """
-        from soundfile import SoundFile
-        with SoundFile(path) as sf:
-            return Recording(
-                id=recording_id if recording_id is not None else Path(path).stem,
-                sampling_rate=sf.samplerate,
-                num_samples=sf.frames,
-                duration=sf.frames / sf.samplerate,
-                sources=[
-                    AudioSource(
-                        type='file',
-                        channels=list(range(sf.channels)),
-                        source=str(path)
-                    )
-                ]
-            )
+        warnings.warn(
+            'Recording.from_wav() is deprecated and will be removed in Lhotse v0.5; '
+            'please use Recording.from_file() instead.',
+            category=DeprecationWarning
+        )
+        return Recording.from_file(path=path, recording_id=recording_id)
+
+    @staticmethod
+    def from_file(path: Pathlike, recording_id: Optional[str] = None):
+        """
+        Read an audio file's header and create the corresponding ``Recording``.
+        Suitable to use when each physical file represents a separate recording session.
+
+        If a recording session consists of multiple files (e.g. one per channel),
+        it is advisable to create the ``Recording`` object manually, with each
+        file represented as a separate ``AudioSource`` object.
+
+        :param path: Path to an audio file supported by libsoundfile (pysoundfile).
+        :param recording_id: recording id, when not specified ream the filename's stem ("x.wav" -> "x").
+        :return: a new ``Recording`` instance pointing to the audio file.
+        """
+        import soundfile
+        info = soundfile.info(path)
+        return Recording(
+            id=recording_id if recording_id is not None else Path(path).stem,
+            sampling_rate=info.samplerate,
+            num_samples=info.frames,
+            duration=info.frames / info.samplerate,
+            sources=[
+                AudioSource(
+                    type='file',
+                    channels=list(range(info.channels)),
+                    source=str(path)
+                )
+            ]
+        )
 
     @property
     def num_channels(self):
