@@ -5,7 +5,6 @@ import re
 import shutil
 import tarfile
 from concurrent.futures.thread import ThreadPoolExecutor
-from itertools import repeat
 from pathlib import Path
 from tqdm.auto import tqdm
 from typing import Dict, Optional, Tuple, Union
@@ -99,6 +98,7 @@ def prepare_librispeech(
             recordings = []
             supervisions = []
             part_path = corpus_dir / part
+            futures = []
             for trans_path in tqdm(part_path.rglob('*.txt'), desc='Utterances', leave=False):
                 # "trans_path" file contains lines like:
                 #
@@ -107,24 +107,29 @@ def prepare_librispeech(
                 #   121-121726-0002 ANGOR PAIN PAINFUL TO HEAR
                 #
                 # We will create a separate Recording and SupervisionSegment for those.
-
                 with open(trans_path) as f:
-                    results = ex.map(parse_utterance, repeat(part_path), f)
-                    for recording, segment in results:
-                        recordings.append(recording)
-                        supervisions.append(segment)
+                    for line in f:
+                        futures.append(ex.submit(parse_utterance, part_path, line))
 
-                recording_set = RecordingSet.from_recordings(recordings)
-                supervision_set = SupervisionSet.from_segments(supervisions)
+            for future in futures:
+                result = future.result()
+                if result is None:
+                    continue
+                recording, segment = result
+                recordings.append(recording)
+                supervisions.append(segment)
 
-                if output_dir is not None:
-                    supervision_set.to_json(output_dir / f'supervisions_{part}.json')
-                    recording_set.to_json(output_dir / f'recordings_{part}.json')
+            recording_set = RecordingSet.from_recordings(recordings)
+            supervision_set = SupervisionSet.from_segments(supervisions)
 
-                manifests[part] = {
-                    'recordings': recording_set,
-                    'supervisions': supervision_set
-                }
+            if output_dir is not None:
+                supervision_set.to_json(output_dir / f'supervisions_{part}.json')
+                recording_set.to_json(output_dir / f'recordings_{part}.json')
+
+            manifests[part] = {
+                'recordings': recording_set,
+                'supervisions': supervision_set
+            }
 
     return manifests
 
