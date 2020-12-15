@@ -91,12 +91,13 @@ def prepare_librispeech(
             return maybe_manifests
 
     manifests = defaultdict(dict)
-    for part in dataset_parts:
+    for part in tqdm(dataset_parts, desc='Dataset parts'):
 
         recordings = []
         supervisions = []
         part_path = corpus_dir / part
-        for trans_path in part_path.rglob('*.txt'):
+        transcript_files = list(part_path.rglob('*.txt'))
+        for trans_path in tqdm(transcript_files, desc='Utterances', leave=False):
             # "trans_path" file contains lines like:
             #
             #   121-121726-0000 ALSO A POPULAR CONTRIVANCE
