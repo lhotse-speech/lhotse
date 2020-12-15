@@ -133,7 +133,7 @@ def parse_utterance(
         dataset_split_path: Path,
         line: str,
 ) -> Optional[Tuple[Recording, SupervisionSegment]]:
-    recording_id, text = line.strip().split()
+    recording_id, text = line.strip().split(maxsplit=1)
     # Create the Recording first
     audio_path = dataset_split_path / Path(recording_id.replace('-', '/')).parent / f'{recording_id}.flac'
     if not audio_path.is_file():
