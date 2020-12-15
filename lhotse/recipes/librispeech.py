@@ -134,7 +134,7 @@ def prepare_librispeech(
                 'supervisions': supervision_set
             }
 
-    return manifests
+    return dict(manifests)  # Convert to normal dict
 
 
 def parse_utterance(
