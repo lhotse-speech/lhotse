@@ -4,6 +4,8 @@ import logging
 import re
 import shutil
 import tarfile
+from concurrent.futures.thread import ThreadPoolExecutor
+from itertools import repeat
 from pathlib import Path
 from tqdm.auto import tqdm
 from typing import Dict, Optional, Tuple, Union
@@ -59,7 +61,8 @@ def download_and_untar(
 def prepare_librispeech(
         corpus_dir: Pathlike,
         dataset_parts: Union[str, Tuple[str]] = 'auto',
-        output_dir: Optional[Pathlike] = None
+        output_dir: Optional[Pathlike] = None,
+        num_jobs: int = 1
 ) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet]]]:
     """
     Returns the manifests which consist of the Recordings and Supervisions.
@@ -91,58 +94,64 @@ def prepare_librispeech(
             return maybe_manifests
 
     manifests = defaultdict(dict)
-    for part in tqdm(dataset_parts, desc='Dataset parts'):
+    with ThreadPoolExecutor(num_jobs) as ex:
+        for part in tqdm(dataset_parts, desc='Dataset parts'):
+            recordings = []
+            supervisions = []
+            part_path = corpus_dir / part
+            for trans_path in tqdm(part_path.rglob('*.txt'), desc='Utterances', leave=False):
+                # "trans_path" file contains lines like:
+                #
+                #   121-121726-0000 ALSO A POPULAR CONTRIVANCE
+                #   121-121726-0001 HARANGUE THE TIRESOME PRODUCT OF A TIRELESS TONGUE
+                #   121-121726-0002 ANGOR PAIN PAINFUL TO HEAR
+                #
+                # We will create a separate Recording and SupervisionSegment for those.
 
-        recordings = []
-        supervisions = []
-        part_path = corpus_dir / part
-        for trans_path in tqdm(part_path.rglob('*.txt'), desc='Utterances', leave=False):
-            # "trans_path" file contains lines like:
-            #
-            #   121-121726-0000 ALSO A POPULAR CONTRIVANCE
-            #   121-121726-0001 HARANGUE THE TIRESOME PRODUCT OF A TIRELESS TONGUE
-            #   121-121726-0002 ANGOR PAIN PAINFUL TO HEAR
-            #
-            # We will create a separate Recording and SupervisionSegment for those.
+                with open(trans_path) as f:
+                    results = ex.map(parse_utterance, repeat(trans_path), f)
+                    for recording, segment in results:
+                        recordings.append(recording)
+                        supervisions.append(segment)
 
-            with open(trans_path) as f:
-                for line in f:
-                    recording_id, text = line.split(maxsplit=1)
+                recording_set = RecordingSet.from_recordings(recordings)
+                supervision_set = SupervisionSet.from_segments(supervisions)
 
-                    # Create the Recording first
-                    audio_path = part_path / Path(recording_id.replace('-', '/')).parent / f'{recording_id}.flac'
-                    if not audio_path.is_file():
-                        logging.warning(f'No such file: {audio_path}')
-                        continue
-                    recording = Recording.from_file(audio_path, recording_id=recording_id)
-                    recordings.append(recording)
+                if output_dir is not None:
+                    supervision_set.to_json(output_dir / f'supervisions_{part}.json')
+                    recording_set.to_json(output_dir / f'recordings_{part}.json')
 
-                    # Then, create the corresponding supervisions
-                    segment = SupervisionSegment(
-                        id=recording_id,
-                        recording_id=recording_id,
-                        start=0.0,
-                        duration=recording.duration,
-                        channel=0,
-                        language='English',
-                        speaker=re.sub(r'-.*', r'', recording.id),
-                        text=text.strip()
-                    )
-                    supervisions.append(segment)
-
-            recording_set = RecordingSet.from_recordings(recordings)
-            supervision_set = SupervisionSet.from_segments(supervisions)
-
-            if output_dir is not None:
-                supervision_set.to_json(output_dir / f'supervisions_{part}.json')
-                recording_set.to_json(output_dir / f'recordings_{part}.json')
-
-            manifests[part] = {
-                'recordings': recording_set,
-                'supervisions': supervision_set
-            }
+                manifests[part] = {
+                    'recordings': recording_set,
+                    'supervisions': supervision_set
+                }
 
     return manifests
+
+
+def parse_utterance(
+        dataset_split_path: Path,
+        line: str,
+) -> Optional[Tuple[Recording, SupervisionSegment]]:
+    recording_id, text = line.strip().split()
+    # Create the Recording first
+    audio_path = dataset_split_path / Path(recording_id.replace('-', '/')).parent / f'{recording_id}.flac'
+    if not audio_path.is_file():
+        logging.warning(f'No such file: {audio_path}')
+        return None
+    recording = Recording.from_file(audio_path, recording_id=recording_id)
+    # Then, create the corresponding supervisions
+    segment = SupervisionSegment(
+        id=recording_id,
+        recording_id=recording_id,
+        start=0.0,
+        duration=recording.duration,
+        channel=0,
+        language='English',
+        speaker=re.sub(r'-.*', r'', recording.id),
+        text=text.strip()
+    )
+    return recording, segment
 
 
 def read_if_cached(
