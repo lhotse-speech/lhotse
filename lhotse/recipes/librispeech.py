@@ -19,9 +19,9 @@ LIBRISPEECH = ('dev-clean', 'dev-other', 'test-clean', 'test-other',
 MINI_LIBRISPEECH = ('dev-clean-2', 'train-clean-5')
 
 
-def download_and_untar(
+def download_librispeech(
         target_dir: Pathlike = '.',
-        dataset_parts: Optional[Tuple[str]] = MINI_LIBRISPEECH,
+        dataset_parts: Optional[Union[str, Sequence[str]]] = "mini_librispeech",
         force_download: Optional[bool] = False,
         base_url: Optional[str] = 'http://www.openslr.org/resources'
 ) -> None:
@@ -29,13 +29,19 @@ def download_and_untar(
     Downdload and untar the dataset, supporting both LibriSpeech and MiniLibrispeech
 
     :param target_dir: Pathlike, the path of the dir to storage the dataset.
-    :param dataset_parts: dataset part name, e.g. 'train-clean-100', 'train-clean-5', 'dev-clean'
+    :param dataset_parts: "librispeech", "mini_librispeech",
+        or a list of splits (e.g. "dev-clean") to download.
     :param force_download: Bool, if True, download the tars no matter if the tars exist.
     :param base_url: str, the url of the OpenSLR resources.
     """
-
     target_dir = Path(target_dir)
     target_dir.mkdir(parents=True, exist_ok=True)
+
+    if dataset_parts == "librispeech":
+        dataset_parts = LIBRISPEECH
+    elif dataset_parts == "mini_librispeech":
+        dataset_parts = MINI_LIBRISPEECH
+
     for part in tqdm(dataset_parts, desc='Downloading LibriSpeech parts'):
         if part in LIBRISPEECH:
             url = f'{base_url}/12'
