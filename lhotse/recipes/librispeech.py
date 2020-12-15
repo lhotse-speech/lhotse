@@ -96,8 +96,7 @@ def prepare_librispeech(
         recordings = []
         supervisions = []
         part_path = corpus_dir / part
-        transcript_files = list(part_path.rglob('*.txt'))
-        for trans_path in tqdm(transcript_files, desc='Utterances', leave=False):
+        for trans_path in tqdm(part_path.rglob('*.txt'), desc='Utterances', leave=False):
             # "trans_path" file contains lines like:
             #
             #   121-121726-0000 ALSO A POPULAR CONTRIVANCE
