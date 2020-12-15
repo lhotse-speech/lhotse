@@ -7,7 +7,7 @@ import tarfile
 from concurrent.futures.thread import ThreadPoolExecutor
 from pathlib import Path
 from tqdm.auto import tqdm
-from typing import Dict, Optional, Tuple, Union
+from typing import Dict, Optional, Sequence, Tuple, Union
 
 from lhotse import load_manifest
 from lhotse.audio import Recording, RecordingSet
@@ -59,7 +59,7 @@ def download_and_untar(
 
 def prepare_librispeech(
         corpus_dir: Pathlike,
-        dataset_parts: Union[str, Tuple[str]] = 'auto',
+        dataset_parts: Union[str, Sequence[str]] = 'auto',
         output_dir: Optional[Pathlike] = None,
         num_jobs: int = 1
 ) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet]]]:
@@ -68,7 +68,8 @@ def prepare_librispeech(
     When all the manifests are available in the ``output_dir``, it will simply read and return them.
 
     :param corpus_dir: Pathlike, the path of the data dir.
-    :param dataset_parts: dataset part name, e.g. 'train-clean-100', 'train-clean-5', 'dev-clean'
+    :param dataset_parts: string or sequence of strings representing dataset part names, e.g. 'train-clean-100', 'train-clean-5', 'dev-clean'.
+        By default we will infer which parts are available in ``corpus_dir``.
     :param output_dir: Pathlike, the path where to write the manifests.
     :return: a Dict whose key is the dataset part, and the value is Dicts with the keys 'audio' and 'supervisions'.
     """
@@ -83,6 +84,8 @@ def prepare_librispeech(
         )
         if not dataset_parts:
             raise ValueError(f"Could not find any of librispeech or mini_librispeech splits in: {corpus_dir}")
+    elif isinstance(dataset_parts, str):
+        dataset_parts = [dataset_parts]
 
     if output_dir is not None:
         output_dir = Path(output_dir)
@@ -99,7 +102,7 @@ def prepare_librispeech(
             supervisions = []
             part_path = corpus_dir / part
             futures = []
-            for trans_path in part_path.rglob('*.txt'):
+            for trans_path in tqdm(part_path.rglob('*.txt'), desc='Preparing parallel processing', leave=False):
                 # "trans_path" file contains lines like:
                 #
                 #   121-121726-0000 ALSO A POPULAR CONTRIVANCE
@@ -160,7 +163,7 @@ def parse_utterance(
 
 
 def read_if_cached(
-        dataset_parts: Optional[Tuple[str]],
+        dataset_parts: Optional[Sequence[str]],
         output_dir: Optional[Pathlike]
 ) -> Optional[Dict[str, Dict[str, Union[RecordingSet, SupervisionSet]]]]:
     if output_dir is None:
