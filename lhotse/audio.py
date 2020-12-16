@@ -175,7 +175,7 @@ class Recording:
             id=recording_id if recording_id is not None else Path(path).stem,
             sampling_rate=info.samplerate,
             num_samples=info.frames,
-            duration=info.frames / info.samplerate,
+            duration=info.duration,
             sources=[
                 AudioSource(
                     type='file',

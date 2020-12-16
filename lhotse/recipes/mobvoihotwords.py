@@ -12,17 +12,16 @@ About the MobvoiHotwords corpus
     pressure levels are played in the background during the collection.
 """
 
+from collections import defaultdict
+
 import json
 import logging
 import shutil
 import tarfile
-from collections import defaultdict
 from pathlib import Path
-from typing import Dict, NamedTuple, Optional, Union
+from typing import Dict, Optional, Union
 
-import torchaudio
-
-from lhotse.audio import AudioSource, Recording, RecordingSet
+from lhotse.audio import Recording, RecordingSet
 from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import Pathlike, urlretrieve_progress
 
@@ -59,16 +58,9 @@ def download_and_untar(
                 completed_detector.touch()
 
 
-class MobvoiHotwordsMetaData(NamedTuple):
-    audio_path: Pathlike
-    audio_info: torchaudio.sox_signalinfo_t
-    speaker: str
-    text: str
-
-
 def prepare_mobvoihotwords(
-    corpus_dir: Pathlike,
-    output_dir: Optional[Pathlike] = None
+        corpus_dir: Pathlike,
+        output_dir: Optional[Pathlike] = None
 ) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet]]]:
     """
     Returns the manifests which consist of the Recordings and Supervisions
@@ -86,7 +78,8 @@ def prepare_mobvoihotwords(
     dataset_parts = ['train', 'dev', 'test']
     for part in dataset_parts:
         # Generate a mapping: utt_id -> (audio_path, audio_info, speaker, text)
-        metadata = {}
+        recordings = []
+        supervisions = []
         for prefix in ['p_', 'n_']:
             prefixed_part = prefix + part
             json_path = corpus_dir / 'mobvoi_hotword_dataset_resources' / f'{prefixed_part}.json'
@@ -103,56 +96,33 @@ def prepare_mobvoihotwords(
                         text = 'NihaoWenwen'
                     else:
                         assert entry['keyword_id'] == -1
-                    if audio_path.is_file():
-                        # info[0]: info of the raw audio (e.g. channel number, sample rate, duration ... )
-                        # info[1]: info about the encoding (e.g. FLAC/ALAW/ULAW ...)
-                        info = torchaudio.info(str(audio_path))
-                        metadata[idx] = MobvoiHotwordsMetaData(
-                            audio_path=audio_path, audio_info=info[0], speaker=speaker, text=text
-                        )
-                    else:
+                    if not audio_path.is_file():
                         logging.warning(f'No such file: {audio_path}')
-
-        # Audio
-        audio = RecordingSet.from_recordings(
-            Recording(
-                id=idx,
-                sources=[
-                    AudioSource(
-                        type='file',
-                        channels=[0],
-                        source=str(metadata[idx].audio_path)
+                        continue
+                    recording = Recording.from_file(audio_path)
+                    recordings.append(recording)
+                    segment = SupervisionSegment(
+                        id=idx,
+                        recording_id=idx,
+                        start=0.0,
+                        duration=recording.duration,
+                        channel=0,
+                        language='Chinese',
+                        speaker=speaker,
+                        text=text.strip()
                     )
-                ],
-                sampling_rate=int(metadata[idx].audio_info.rate),
-                num_samples=metadata[idx].audio_info.length,
-                duration=(metadata[idx].audio_info.length / metadata[idx].audio_info.rate)
-            )
-            for idx in metadata
-        )
+                    supervisions.append(segment)
 
-        # Supervision
-        supervision = SupervisionSet.from_segments(
-            SupervisionSegment(
-                id=idx,
-                recording_id=idx,
-                start=0.0,
-                duration=audio.recordings[idx].duration,
-                channel=0,
-                language='Chinese',
-                speaker=metadata[idx].speaker,
-                text=metadata[idx].text.strip()
-            )
-            for idx in audio.recordings
-        )
+        recording_set = RecordingSet.from_recordings(recordings)
+        supervision_set = SupervisionSet.from_segments(supervisions)
 
         if output_dir is not None:
-            supervision.to_json(output_dir / f'supervisions_{part}.json')
-            audio.to_json(output_dir / f'recordings_{part}.json')
+            supervision_set.to_json(output_dir / f'supervisions_{part}.json')
+            recording_set.to_json(output_dir / f'recordings_{part}.json')
 
         manifests[part] = {
-            'recordings': audio,
-            'supervisions': supervision
+            'recordings': recording_set,
+            'supervisions': supervision_set
         }
 
     return manifests

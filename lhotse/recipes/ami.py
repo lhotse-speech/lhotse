@@ -16,21 +16,18 @@ There are several microphone settings in AMI corpus:
 In this recipe, only the IHM setting is supported.
 """
 
-import logging
-import os
-import re
-import urllib.request
 from collections import defaultdict
 from gzip import GzipFile
-from pathlib import Path
-from typing import Dict, List, NamedTuple, Optional, Union
 
+import logging
+import re
+import soundfile
+import urllib.request
+from pathlib import Path
 # Workaround for SoundFile (torchaudio dep) raising exception when a native library, libsndfile1, is not installed.
 # Read-the-docs does not allow to modify the Docker containers used to build documentation...
 from tqdm.auto import tqdm
-
-if not os.environ.get('READTHEDOCS', False):
-    import torchaudio
+from typing import Dict, List, NamedTuple, Optional, Union
 
 from lhotse.audio import AudioSource, Recording, RecordingSet
 from lhotse.supervision import SupervisionSegment, SupervisionSet
@@ -222,7 +219,7 @@ def prepare_ami(
         for session_name, channel_paths in channel_wavs.items():
             if session_name not in dataset_parts[part]:
                 continue
-            audio_info = torchaudio.info(str(channel_paths[0]))[0]
+            audio_info = soundfile.info(str(channel_paths[0]))[0]
             recordings.append(Recording(
                 id=session_name,
                 sources=[
@@ -233,9 +230,9 @@ def prepare_ami(
                     )
                     for idx, audio_path in enumerate(sorted(channel_paths))
                 ],
-                sampling_rate=int(audio_info.rate),
-                num_samples=audio_info.length,
-                duration=audio_info.length / audio_info.rate,
+                sampling_rate=int(audio_info.samplerate),
+                num_samples=audio_info.frames,
+                duration=audio_info.duration,
             ))
         audio = RecordingSet.from_recordings(recordings)
 
