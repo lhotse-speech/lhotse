@@ -16,9 +16,8 @@ Part 3's recordings were split into 2 environments. In the Same Room environment
 We currently only support the part 3 recordings, in "same room close mic" and "separate rooms phone mic" environments.
 """
 from pathlib import Path
-from typing import Dict, Optional, Union
-
 from tqdm.auto import tqdm
+from typing import Dict, Optional, Union
 
 from lhotse import Recording, RecordingSet, SupervisionSegment, SupervisionSet
 from lhotse.utils import Pathlike
@@ -80,7 +79,7 @@ def prepare_same_close_mic(part3_path):
     ):
         try:
             recording_id = audio_path.stem
-            recording = Recording.from_wav(audio_path)
+            recording = Recording.from_file(audio_path)
 
             tg = TextGrid(part3_path / f'ScriptsSame/{recording_id}.TextGrid', coding='utf-16')
             segments = [
@@ -121,7 +120,7 @@ def prepare_separate_phone_mic(part3_path):
     ):
         try:
             recording_id = f'{audio_path.parent.name}_{audio_path.stem}'
-            recording = Recording.from_wav(audio_path)
+            recording = Recording.from_file(audio_path)
 
             tg = TextGrid(part3_path / f'ScriptsSeparate/{recording_id}.TextGrid', coding='utf-16')
             segments = [

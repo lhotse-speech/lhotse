@@ -14,11 +14,9 @@ import re
 import shutil
 import tarfile
 from pathlib import Path
-from typing import Dict, NamedTuple, Optional, Union
+from typing import Dict, Optional, Union
 
-import torchaudio
-
-from lhotse.audio import AudioSource, Recording, RecordingSet
+from lhotse.audio import Recording, RecordingSet
 from lhotse.features import Fbank
 from lhotse.features.base import TorchaudioFeatureExtractor
 from lhotse.supervision import SupervisionSegment, SupervisionSet
@@ -48,12 +46,6 @@ def download_and_untar(
             completed_detector.touch()
 
 
-class LJSpeechMetaData(NamedTuple):
-    audio_path: Pathlike
-    audio_info: torchaudio.sox_signalinfo_t
-    text: str
-
-
 def prepare_ljspeech(
         corpus_dir: Pathlike,
         output_dir: Optional[Pathlike] = None
@@ -74,57 +66,37 @@ def prepare_ljspeech(
     # Generate a mapping: utt_id -> (audio_path, audio_info, text)
     metadata_csv_path = corpus_dir / 'metadata.csv'
     assert metadata_csv_path.is_file(), f'No such file: {metadata_csv_path}'
-    metadata = {}
+    recordings = []
+    supervisions = []
     with open(metadata_csv_path) as f:
         for line in f:
-            idx, text, _ = line.split('|')
-            audio_path = corpus_dir / 'wavs' / f'{idx}.wav'
-            if audio_path.is_file():
-                # info[0]: info of the raw audio (e.g. channel number, sample rate, duration ... )
-                # info[1]: info about the encoding (e.g. FLAC/ALAW/ULAW ...)
-                info = torchaudio.info(str(audio_path))
-                metadata[idx] = LJSpeechMetaData(audio_path=audio_path, audio_info=info[0], text=text)
-            else:
+            recording_id, text, _ = line.split('|')
+            audio_path = corpus_dir / 'wavs' / f'{recording_id}.wav'
+            if not audio_path.is_file():
                 logging.warning(f'No such file: {audio_path}')
+                continue
+            recording = Recording.from_file(audio_path)
+            segment = SupervisionSegment(
+                id=recording_id,
+                recording_id=recording_id,
+                start=0.0,
+                duration=recording.duration,
+                channel=0,
+                language='English',
+                gender='female',
+                text=text
+            )
+            recordings.append(recording)
+            supervisions.append(segment)
 
-    # Audio
-    audio = RecordingSet.from_recordings(
-        Recording(
-            id=idx,
-            sources=[
-                AudioSource(
-                    type='file',
-                    channels=[0],
-                    source=str(metadata[idx].audio_path)
-                )
-            ],
-            sampling_rate=int(metadata[idx].audio_info.rate),
-            num_samples=metadata[idx].audio_info.length,
-            duration=(metadata[idx].audio_info.length / metadata[idx].audio_info.rate)
-        )
-        for idx in metadata
-    )
-
-    # Supervision
-    supervision = SupervisionSet.from_segments(
-        SupervisionSegment(
-            id=idx,
-            recording_id=idx,
-            start=0.0,
-            duration=audio.recordings[idx].duration,
-            channel=0,
-            language='English',
-            gender='female',
-            text=metadata[idx].text
-        )
-        for idx in audio.recordings
-    )
+    recording_set = RecordingSet.from_recordings(recordings)
+    supervision_set = SupervisionSet.from_segments(supervisions)
 
     if output_dir is not None:
-        supervision.to_json(output_dir / 'supervisions.json')
-        audio.to_json(output_dir / 'audio.json')
+        supervision_set.to_json(output_dir / 'supervisions.json')
+        recording_set.to_json(output_dir / 'recordings.json')
 
-    return {'audio': audio, 'supervisions': supervision}
+    return {'recordings': recording_set, 'supervisions': supervision_set}
 
 
 def feature_extractor() -> TorchaudioFeatureExtractor:
