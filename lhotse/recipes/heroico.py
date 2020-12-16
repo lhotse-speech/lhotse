@@ -4,7 +4,6 @@ import logging
 import re
 import soundfile
 import tarfile
-import torchaudio
 from pathlib import Path
 from typing import Dict, NamedTuple, Optional, Union
 
@@ -40,7 +39,7 @@ def download_and_untar(
 
 class HeroicoMetaData(NamedTuple):
     audio_path: Pathlike
-    audio_info: torchaudio.sox_signalinfo_t
+    audio_info: soundfile._SoundFileInfo
     text: str
 
 
