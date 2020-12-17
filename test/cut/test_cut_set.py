@@ -284,3 +284,19 @@ def test_compute_cmvn_stats():
     assert stats['norm_stds'].shape == (cut_set[0].num_features,)
     assert (stats['norm_means'] == read_stats['norm_means']).all()
     assert (stats['norm_stds'] == read_stats['norm_stds']).all()
+
+
+def test_modify_ids(cut_set_with_mixed_cut):
+    cut_set = cut_set_with_mixed_cut.modify_ids(lambda cut_id: f'{cut_id}_suffix')
+    for ref_cut, mod_cut in zip(cut_set_with_mixed_cut, cut_set):
+        assert mod_cut.id == f'{ref_cut.id}_suffix'
+
+
+def test_map_cut_set(cut_set_with_mixed_cut):
+    cut_set = cut_set_with_mixed_cut.map(lambda cut: cut.pad(duration=1000.0))
+    for cut in cut_set:
+        assert cut.duration == 1000.0
+
+def test_map_cut_set_rejects_noncut(cut_set_with_mixed_cut):
+    with pytest.raises(AssertionError):
+        cut_set = cut_set_with_mixed_cut.map(lambda cut: 'not-a-cut')
