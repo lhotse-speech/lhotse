@@ -1521,6 +1521,32 @@ class CutSet(JsonMixin, YamlMixin, Sequence[AnyCut]):
     def with_recording_path_prefix(self, path: Pathlike) -> 'CutSet':
         return CutSet.from_cuts(c.with_recording_path_prefix(path) for c in self)
 
+    def map(self, transform_fn: Callable[[AnyCut], AnyCut]) -> 'CutSet':
+        """
+        Modify the cuts in this ``CutSet`` and return a new ``CutSet``.
+
+        :param transform_fn: A callable (function) that accepts a single cut instance
+            and returns a single cut instance.
+        :return: a new ``CutSet`` with modified cuts.
+        """
+        def verified(mapped: Any) -> AnyCut:
+            assert isinstance(mapped, (Cut, MixedCut, PaddingCut)), \
+                "The callable passed to CutSet.map() must return a Cut class instance."
+            return mapped
+        return CutSet.from_cuts(verified(transform_fn(c)) for c in self)
+
+    def modify_ids(self, transform_fn: Callable[[str], str]) -> 'CutSet':
+        """
+        Modify the IDs of cuts in this ``CutSet``.
+        Useful when combining multiple ``CutSet``s that were created from a single source,
+        but contain features with different data augmentations techniques.
+
+        :param transform_fn: A callable (function) that accepts a string (cut ID) and returns
+        a new string (new cut ID).
+        :return: a new ``CutSet`` with cuts with modified IDs.
+        """
+        return CutSet.from_cuts(c.with_id(transform_fn(c.id)) for c in self)
+
     def map_supervisions(self, transform_fn: Callable[[SupervisionSegment], SupervisionSegment]) -> 'CutSet':
         """
         Modify the SupervisionSegments by `transform_fn` in this CutSet.
