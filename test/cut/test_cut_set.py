@@ -296,3 +296,7 @@ def test_map_cut_set(cut_set_with_mixed_cut):
     cut_set = cut_set_with_mixed_cut.map(lambda cut: cut.pad(duration=1000.0))
     for cut in cut_set:
         assert cut.duration == 1000.0
+
+def test_map_cut_set_rejects_noncut(cut_set_with_mixed_cut):
+    with pytest.raises(AssertionError):
+        cut_set = cut_set_with_mixed_cut.map(lambda cut: 'not-a-cut')
