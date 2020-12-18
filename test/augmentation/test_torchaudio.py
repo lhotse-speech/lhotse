@@ -37,8 +37,6 @@ def test_speed_does_not_change_num_samples(audio):
 
 
 def test_speed(audio):
-    # rec = Recording.from_file('test/fixtures/mono_c0.wav')
-    # speed = AudioTransform.from_dict({'name': 'Speed', 'kwargs': {'factor': 1.1}})
     speed = Speed(factor=1.1)
     perturbed = speed(audio, SAMPLING_RATE)
     assert perturbed.shape == (1, 14545)
