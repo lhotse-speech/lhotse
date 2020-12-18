@@ -1,7 +1,7 @@
 import pytest
 
 from lhotse.audio import RecordingSet, Recording, AudioSource
-from lhotse.cut import CutSet
+from lhotse.cut import Cut, CutSet
 from lhotse.features import FeatureSet, Features
 from lhotse.supervision import SupervisionSet, SupervisionSegment
 from lhotse.testing.dummies import dummy_cut, dummy_supervision
@@ -28,7 +28,7 @@ def supervision_set():
 
 
 @pytest.fixture
-def libri_cut(libri_cut_set):
+def libri_cut(libri_cut_set) -> Cut:
     return libri_cut_set['e3e70682-c209-4cac-629f-6fbed82c07cd']
 
 

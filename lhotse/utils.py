@@ -5,7 +5,7 @@ import random
 import uuid
 from contextlib import AbstractContextManager, contextmanager
 from dataclasses import asdict, dataclass
-from decimal import Decimal, ROUND_HALF_UP
+from decimal import Decimal, ROUND_HALF_DOWN, ROUND_HALF_UP
 from math import ceil, isclose
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Sequence, TypeVar, Union
@@ -339,3 +339,9 @@ class nullcontext(AbstractContextManager):
 
     def __exit__(self, *excinfo):
         pass
+
+
+def perturb_num_samples(num_samples: int, factor: float) -> int:
+    """Mimicks the behavior of the speed perturbation on the number of samples."""
+    rounding = ROUND_HALF_UP if factor >= 1.0 else ROUND_HALF_DOWN
+    return int(Decimal(round(num_samples / factor, ndigits=8)).quantize(0, rounding=rounding))

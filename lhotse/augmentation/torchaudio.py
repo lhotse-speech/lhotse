@@ -1,5 +1,5 @@
 import warnings
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from typing import List, Union
 
 import numpy as np
@@ -90,9 +90,66 @@ class SoxEffectTransform:
         ]
 
 
+class AudioTransform:
+    """
+    Base class for all audio transforms that are going to be lazily applied on
+    ``Recording`` during loading the audio into memory.
+
+    Any ``AudioTransform`` can be used like a Python function, that expects two arguments:
+    a numpy array of samples, and a sampling rate. E.g.:
+    >>> fn = AudioTransform.from_dict(...)
+    >>> new_audio = fn(audio, sampling_rate)
+
+    Furthermore, ``AudioTransform`` can be easily (de)serialized to/from dict
+    that contains its name and parameters.
+    This enables storing recording and cut manifests with the transform info
+    inside, avoiding the need to store the augmented recoreding version on disk.
+
+    All audio transforms derived from this class are "automagically" registered,
+    so that ``AudioTransform.from_dict()`` can "find" the right type given its name
+    to instantiate a specific transform object.
+    All child classes are expected to be decorated with a ``@dataclass`` decorator.
+    """
+    KNOWN_TRANSFORMS = {}
+
+    def __init_subclass__(cls, **kwargs):
+        if cls.__name__ not in AudioTransform.KNOWN_TRANSFORMS:
+            AudioTransform.KNOWN_TRANSFORMS[cls.__name__] = cls
+        super().__init_subclass__(**kwargs)
+
+    def to_dict(self) -> dict:
+        data = asdict(self)
+        return {'name': type(self).__name__, 'kwargs': data}
+
+    @staticmethod
+    def from_dict(data: dict) -> 'AudioTransform':
+        assert data['name'] in AudioTransform.KNOWN_TRANSFORMS, f"Unknown transform type: {data['name']}"
+        return AudioTransform.KNOWN_TRANSFORMS[data['name']](**data['kwargs'])
+
+    def __call__(self, samples: np.ndarray, sampling_rate: int) -> np.ndarray:
+        raise NotImplementedError
+
+
+@dataclass
+class Speed(AudioTransform):
+    """
+    Speed perturbation effect, the same one as invoked with `sox speed` in the command line.
+
+    It resamples the signal back to the input sampling rate, so the number of output samples will
+    be smaller or greater, depending on the speed factor.
+    """
+    factor: float
+
+    def __call__(self, samples: np.ndarray, sampling_rate: int) -> np.ndarray:
+        effect = [['speed', str(self.factor)], ['rate', str(sampling_rate)]]
+        if isinstance(samples, np.ndarray):
+            samples = torch.from_numpy(samples)
+        augmented, new_sampling_rate = torchaudio.sox_effects.apply_effects_tensor(samples, sampling_rate, effect)
+        return augmented.numpy()
+
+
 def speed(sampling_rate: int) -> List[List[str]]:
     return [
-        # Random speed perturbation factor between 0.9x and 1.1x the original speed
         ['speed', RandomValue(0.9, 1.1)],
         ['rate', sampling_rate],  # Resample back to the original sampling rate (speed changes it)
     ]
