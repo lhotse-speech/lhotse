@@ -239,7 +239,7 @@ class Recording:
 
         return audio
 
-    def _determine_sp_offset_and_duration(self, offset: Seconds, duration: Seconds) -> Tuple[Seconds, Seconds]:
+    def _determine_offset_and_duration(self, offset: Seconds, duration: Seconds) -> Tuple[Seconds, Seconds]:
         """
         This internal method helps estimate the original offset and duration for a recording
         before speed perturbation was applied.

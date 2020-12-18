@@ -449,9 +449,9 @@ class Cut(CutUtilsMixin):
         We are also updating the time markers of the underlying ``Recording`` and the supervisions.
 
         :param factor: The speed will be adjusted this many times (e.g. factor=1.1 means 1.1x faster).
-        :param affix_id: When true, we will modify the ``Recording.id`` field
+        :param affix_id: When true, we will modify the ``Cut.id`` field
             by affixing it with "_sp{factor}".
-        :return: a modified copy of the current ``Recording``.
+        :return: a modified copy of the current ``Cut``.
         """
         # Pre-conditions
         assert self.has_recording, 'Cannot perturb speed on a Cut without Recording.'
@@ -628,6 +628,34 @@ class PaddingCut(CutUtilsMixin):
             num_frames=round(duration / self.frame_shift),
             sampling_rate=self.sampling_rate,
             use_log_energy=self.use_log_energy
+        )
+
+    def perturb_speed(self, factor: float, affix_id: bool = True) -> 'PaddingCut':
+        """
+        Return a new ``PaddingCut`` that will "mimic" the effect of speed perturbation
+        on ``duration`` and ``num_samples``.
+
+        :param factor: The speed will be adjusted this many times (e.g. factor=1.1 means 1.1x faster).
+        :param affix_id: When true, we will modify the ``PaddingCut.id`` field
+            by affixing it with "_sp{factor}".
+        :return: a modified copy of the current ``PaddingCut``.
+        """
+        # Pre-conditions
+        if self.has_features:
+            logging.warning(
+                'Attempting to perturb speed on a Cut that references pre-computed features. '
+                'The feature manifest will be detached, as we do not support feature-domain '
+                'speed perturbation.'
+            )
+            self.num_frames = None
+            self.num_features = None
+        new_num_samples = perturb_num_samples(self.num_samples, factor)
+        new_duration = new_num_samples / self.sampling_rate
+        return fastcopy(
+            self,
+            id=f'{self.id}_sp{factor}' if affix_id else self.id,
+            num_samples=new_num_samples,
+            duration=new_duration
         )
 
     def compute_and_store_features(self, extractor: FeatureExtractor, *args, **kwargs) -> AnyCut:
@@ -870,6 +898,46 @@ class MixedCut(CutUtilsMixin):
             sampling_rate=self.tracks[0].cut.sampling_rate,
             use_log_energy=self.features_type in ('fbank', 'mfcc')
         ))
+
+    def perturb_speed(self, factor: float, affix_id: bool = True) -> 'MixedCut':
+        """
+        Return a new ``MixedCut`` that will lazily perturb the speed while loading audio.
+        The ``num_samples``, ``start`` and ``duration`` fields of the underlying Cuts
+        (and their Recordings and SupervisionSegments) are updated to reflect
+        the shrinking/extending effect of speed.
+        We are also updating the offsets of all underlying tracks.
+
+        :param factor: The speed will be adjusted this many times (e.g. factor=1.1 means 1.1x faster).
+        :param affix_id: When true, we will modify the ``MixedCut.id`` field
+            by affixing it with "_sp{factor}".
+        :return: a modified copy of the current ``MixedCut``.
+        """
+        # TODO(pzelasko): test most extensively for edge cases
+        # Pre-conditions
+        assert self.has_recording, 'Cannot perturb speed on a Cut without Recording.'
+        if self.has_features:
+            logging.warning(
+                'Attempting to perturb speed on a MixedCut that references pre-computed features. '
+                'The feature manifest(s) will be detached, as we do not support feature-domain '
+                'speed perturbation.'
+            )
+        return MixedCut(
+            id=f'{self.id}_sp{factor}' if affix_id else self.id,
+            tracks=[
+                MixTrack(
+                    cut=track.cut.perturb_speed(factor=factor, affix_id=affix_id),
+                    offset=round(
+                        perturb_num_samples(
+                            num_samples=round(track.offset * self.sampling_rate),
+                            factor=factor
+                        ) / self.sampling_rate,
+                        ndigits=8
+                    ),
+                    snr=track.snr
+                )
+                for track in self.tracks
+            ]
+        )
 
     def load_features(self, mixed: bool = True) -> Optional[np.ndarray]:
         """
@@ -1458,6 +1526,9 @@ class CutSet(JsonMixin, YamlMixin, Sequence[AnyCut]):
                     keep_excessive_supervisions=keep_excessive_supervisions
                 ))
         return CutSet.from_cuts(new_cuts)
+
+    def perturb_speed(self, factor: float, affix_id: bool = True) -> 'CutSet':
+        return self.map(lambda cut: cut.perturb_speed(factor=factor, affix_id=affix_id))
 
     def compute_and_store_features(
             self,
