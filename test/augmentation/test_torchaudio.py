@@ -6,7 +6,7 @@ import torch
 torchaudio = pytest.importorskip('torchaudio', minversion='0.6')
 
 from lhotse.augmentation import SoxEffectTransform, pitch, reverb, speed, Speed
-from lhotse import AudioTransform, Recording
+from lhotse import AudioTransform
 
 SAMPLING_RATE = 16000
 

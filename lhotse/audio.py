@@ -9,7 +9,7 @@ from subprocess import PIPE, run
 from typing import Callable, Dict, Iterable, List, Optional, Sequence, Tuple, Union
 
 from lhotse.utils import (Decibels, JsonMixin, Pathlike, Seconds, SetContainingAnything, YamlMixin, fastcopy,
-                          split_sequence)
+                          perturb_num_samples, split_sequence)
 from lhotse.augmentation import AudioTransform, Speed
 
 Channels = Union[int, List[int]]
@@ -213,9 +213,10 @@ class Recording:
             # Case: source not requested
             if not channels.intersection(source.channels):
                 continue
+            offset, duration = self._determine_offset_and_duration(offset_seconds, duration_seconds)
             samples = source.load_audio(
-                offset_seconds=offset_seconds,
-                duration_seconds=duration_seconds,
+                offset_seconds=offset,
+                duration_seconds=duration,
             )
 
             # Case: two-channel audio file but only one channel requested
@@ -238,24 +239,46 @@ class Recording:
 
         return audio
 
+    def _determine_sp_offset_and_duration(self, offset: Seconds, duration: Seconds) -> Tuple[Seconds, Seconds]:
+        """
+        This internal method helps estimate the original offset and duration for a recording
+        before speed perturbation was applied.
+        We need this estimate to know how much audio to actually load from disk during the
+        call to ``load_audio()``.
+        """
+        if self.transforms is None or all(t['name'] != 'Speed' for t in self.transforms):
+            return offset, duration
+        start_sample = offset * self.sampling_rate
+        num_samples = duration * self.sampling_rate if duration is not None else None
+        for tfr in reversed(self.transforms):
+            if tfr['name'] != 'Speed':
+                continue
+            factor = tfr['kwargs']['factor']
+            start_sample = perturb_num_samples(start_sample, 1 / factor)
+            num_samples = perturb_num_samples(num_samples, 1 / factor) if num_samples is not None else None
+        return start_sample / self.sampling_rate, num_samples / self.sampling_rate if num_samples is not None else None
+
     def with_path_prefix(self, path: Pathlike) -> 'Recording':
         return fastcopy(self, sources=[s.with_path_prefix(path) for s in self.sources])
 
-    def perturb_speed(self, factor: float) -> 'Recording':
+    def perturb_speed(self, factor: float, affix_id: bool = True) -> 'Recording':
         """
         Return a new ``Recording`` that will lazily perturb the speed while loading audio.
         The ``num_samples`` and ``duration`` fields are updated to reflect the
         shrinking/extending effect of speed.
 
         :param factor: The speed will be adjusted this many times (e.g. factor=1.1 means 1.1x faster).
+        :param affix_id: When true, we will modify the ``Recording.id`` field
+            by affixing it with "_sp{factor}".
         :return: a modified copy of the current ``Recording``.
         """
         transforms = self.transforms if self.transforms is not None else []
         transforms.append(Speed(factor=factor).to_dict())
-        new_num_samples = floor(self.num_samples / factor)
+        new_num_samples = perturb_num_samples(self.num_samples, factor)
         new_duration = new_num_samples / self.sampling_rate
         return fastcopy(
             self,
+            id=f'{self.id}_sp{factor}' if affix_id else self.id,
             num_samples=new_num_samples,
             duration=new_duration,
             transforms=transforms

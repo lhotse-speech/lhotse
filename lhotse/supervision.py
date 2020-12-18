@@ -1,7 +1,9 @@
 from dataclasses import dataclass
+from math import floor
+
 from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence
 
-from lhotse.utils import JsonMixin, Seconds, YamlMixin, asdict_nonull, fastcopy, split_sequence
+from lhotse.utils import JsonMixin, Seconds, YamlMixin, asdict_nonull, fastcopy, perturb_num_samples, split_sequence
 
 
 @dataclass(frozen=True, unsafe_hash=True)
@@ -24,6 +26,34 @@ class SupervisionSegment:
     def with_offset(self, offset: Seconds) -> 'SupervisionSegment':
         """Return an identical ``SupervisionSegment``, but with the ``offset`` added to the ``start`` field."""
         return fastcopy(self, start=round(self.start + offset, ndigits=8))
+
+    def perturb_speed(
+            self,
+            factor: float,
+            sampling_rate: int,
+            affix_id: bool = True
+    ) -> 'SupervisionSegment':
+        """
+        Return a ``SupervisionSegment`` that has time boundaries matching the
+        recording/cut perturbed with the same factor.
+
+        :param factor: The speed will be adjusted this many times (e.g. factor=1.1 means 1.1x faster).
+        :param sampling_rate: The sampling rate is necessary to accurately perturb the start
+            and duration (going through sample counts).
+        :param affix_id: When true, we will modify the ``Recording.id`` field
+        by affixing it with "_sp{factor}".
+        :return: a modified copy of the current ``Recording``.
+        """
+        start_sample = round(self.start * sampling_rate)
+        num_samples = round(self.duration * sampling_rate)
+        new_start = perturb_num_samples(start_sample, factor) / sampling_rate
+        new_duration = perturb_num_samples(num_samples, factor) / sampling_rate
+        return fastcopy(
+            self,
+            id=f'{self.id}_sp{factor}' if affix_id else self.id,
+            start=new_start,
+            duration=new_duration
+        )
 
     def trim(self, end: Seconds) -> 'SupervisionSegment':
         """

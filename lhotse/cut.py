@@ -22,7 +22,7 @@ from lhotse.features.io import FeaturesWriter
 from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import (Decibels, EPSILON, JsonMixin, Pathlike, Seconds, TimeSpan, YamlMixin, asdict_nonull,
                           compute_num_frames, fastcopy,
-                          overlaps, overspans, split_sequence, uuid4)
+                          overlaps, overspans, perturb_num_samples, split_sequence, uuid4)
 
 # One of the design principles for Cuts is a maximally "lazy" implementation, e.g. when mixing Cuts,
 # we'd rather sum the feature matrices only after somebody actually calls "load_features". It helps to avoid
@@ -440,6 +440,50 @@ class Cut(CutUtilsMixin):
             use_log_energy=self.features.type in ('fbank', 'mfcc') if self.features is not None else False
         ))
         return padded
+
+    def perturb_speed(self, factor: float, affix_id: bool = True) -> 'Cut':
+        """
+        Return a new ``Cut`` that will lazily perturb the speed while loading audio.
+        The ``num_samples``, ``start`` and ``duration`` fields are updated to reflect the
+        shrinking/extending effect of speed.
+        We are also updating the time markers of the underlying ``Recording`` and the supervisions.
+
+        :param factor: The speed will be adjusted this many times (e.g. factor=1.1 means 1.1x faster).
+        :param affix_id: When true, we will modify the ``Recording.id`` field
+            by affixing it with "_sp{factor}".
+        :return: a modified copy of the current ``Recording``.
+        """
+        # Pre-conditions
+        assert self.has_recording, 'Cannot perturb speed on a Cut without Recording.'
+        if self.has_features:
+            logging.warning(
+                'Attempting to perturb speed on a Cut that references pre-computed features. '
+                'The feature manifest will be detached, as we do not support feature-domain '
+                'speed perturbation.'
+            )
+            self.features = None
+        # Actual audio perturbation.
+        recording_sp = self.recording.perturb_speed(factor=factor, affix_id=affix_id)
+        # Match the supervision's start and duration to the perturbed audio.
+        # Since SupervisionSegment "start" is relative to the Cut's, it's okay (and necessary)
+        # to perturb it as well.
+        supervisions_sp = [
+            s.perturb_speed(factor=factor, sampling_rate=self.sampling_rate, affix_id=affix_id)
+            for s in self.supervisions
+        ]
+        # New start and duration have to be computed through num_samples to be accurate
+        start_samples = perturb_num_samples(round(self.start * self.sampling_rate), factor)
+        new_start = start_samples / self.sampling_rate
+        new_num_samples = perturb_num_samples(self.num_samples, factor)
+        new_duration = new_num_samples / self.sampling_rate
+        return fastcopy(
+            self,
+            id=f'{self.id}_sp{factor}' if affix_id else self.id,
+            recording=recording_sp,
+            supervisions=supervisions_sp,
+            duration=new_duration,
+            start=new_start
+        )
 
     def map_supervisions(self, transform_fn: Callable[[SupervisionSegment], SupervisionSegment]) -> AnyCut:
         """
