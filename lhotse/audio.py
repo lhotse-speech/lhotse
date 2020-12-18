@@ -1,15 +1,16 @@
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 
 import numpy as np
 import warnings
 from io import BytesIO
-from math import sqrt
+from math import floor, sqrt
 from pathlib import Path
 from subprocess import PIPE, run
 from typing import Callable, Dict, Iterable, List, Optional, Sequence, Tuple, Union
 
 from lhotse.utils import (Decibels, JsonMixin, Pathlike, Seconds, SetContainingAnything, YamlMixin, fastcopy,
                           split_sequence)
+from lhotse.augmentation import AudioTransform, Speed
 
 Channels = Union[int, List[int]]
 
@@ -102,6 +103,7 @@ class Recording:
     sampling_rate: int
     num_samples: int
     duration: Seconds
+    transforms: Optional[List[Dict]] = None
 
     @staticmethod
     def from_sphere(
@@ -227,10 +229,37 @@ class Recording:
             samples_per_source.append(samples)
 
         # shape: (n_channels, n_samples)
-        return np.vstack(samples_per_source)
+        audio = np.vstack(samples_per_source)
+
+        # We'll apply the transforms now (if any).
+        for params in self.transforms or []:
+            transform = AudioTransform.from_dict(params)
+            audio = transform(audio, self.sampling_rate)
+
+        return audio
 
     def with_path_prefix(self, path: Pathlike) -> 'Recording':
         return fastcopy(self, sources=[s.with_path_prefix(path) for s in self.sources])
+
+    def perturb_speed(self, factor: float) -> 'Recording':
+        """
+        Return a new ``Recording`` that will lazily perturb the speed while loading audio.
+        The ``num_samples`` and ``duration`` fields are updated to reflect the
+        shrinking/extending effect of speed.
+
+        :param factor: The speed will be adjusted this many times (e.g. factor=1.1 means 1.1x faster).
+        :return: a modified copy of the current ``Recording``.
+        """
+        transforms = self.transforms if self.transforms is not None else []
+        transforms.append(Speed(factor=factor).to_dict())
+        new_num_samples = floor(self.num_samples / factor)
+        new_duration = new_num_samples / self.sampling_rate
+        return fastcopy(
+            self,
+            num_samples=new_num_samples,
+            duration=new_duration,
+            transforms=transforms
+        )
 
     @staticmethod
     def from_dict(data: dict) -> 'Recording':

@@ -207,6 +207,13 @@ def recording(file_source):
     return Recording(id='rec', sources=[file_source] * 2, sampling_rate=8000, num_samples=4000, duration=0.5)
 
 
+def test_recording_perturb_speed(recording):
+    rec_sp = recording.perturb_speed(1.1)
+    samples = rec_sp.load_audio()
+    assert samples.shape[0] == rec_sp.num_channels
+    assert samples.shape[1] == rec_sp.num_samples
+
+
 @pytest.fixture
 def recording_set2(recording):
     return RecordingSet.from_recordings([recording] * 5)
