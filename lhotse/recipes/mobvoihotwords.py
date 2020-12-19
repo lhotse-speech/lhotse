@@ -22,8 +22,9 @@ from pathlib import Path
 from typing import Dict, Optional, Union
 
 from lhotse.audio import Recording, RecordingSet
+from lhotse.recipes.utils import read_manifests_if_cached
 from lhotse.supervision import SupervisionSegment, SupervisionSet
-from lhotse.utils import Pathlike, read_manifests_if_cached, urlretrieve_progress
+from lhotse.utils import Pathlike, urlretrieve_progress
 
 
 def download_mobvoihotwords(

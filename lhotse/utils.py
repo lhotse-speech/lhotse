@@ -3,7 +3,6 @@ import json
 import math
 import random
 import uuid
-from collections import defaultdict
 from contextlib import AbstractContextManager, contextmanager
 from dataclasses import asdict, dataclass
 from decimal import Decimal, ROUND_HALF_DOWN, ROUND_HALF_UP
@@ -15,10 +14,6 @@ import numpy as np
 import torch
 import yaml
 from tqdm.auto import tqdm
-
-from lhotse.audio import RecordingSet
-from lhotse.manipulation import load_manifest
-from lhotse.supervision import SupervisionSet
 
 Pathlike = Union[Path, str]
 
@@ -350,24 +345,3 @@ def perturb_num_samples(num_samples: int, factor: float) -> int:
     """Mimicks the behavior of the speed perturbation on the number of samples."""
     rounding = ROUND_HALF_UP if factor >= 1.0 else ROUND_HALF_DOWN
     return int(Decimal(round(num_samples / factor, ndigits=8)).quantize(0, rounding=rounding))
-
-
-def read_manifests_if_cached(
-        dataset_parts: Optional[Sequence[str]],
-        output_dir: Optional[Pathlike]
-) -> Optional[Dict[str, Dict[str, Union[RecordingSet, SupervisionSet]]]]:
-    """Loads manifests from the disk if all of them exist in the specified paths.
-    This function is intended to speedup data preparation if it is already done before.
-    """
-    if output_dir is None:
-        return None
-    manifests = defaultdict(dict)
-    for part in dataset_parts:
-        for manifest in ('recordings', 'supervisions'):
-            path = output_dir / f'{manifest}_{part}.json'
-            if not path.is_file():
-                # If one of the manifests is not available, assume we need to read and prepare everything
-                # to simplify the rest of the code.
-                return None
-            manifests[part][manifest] = load_manifest(path)
-    return dict(manifests)

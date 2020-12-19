@@ -10,8 +10,9 @@ from tqdm.auto import tqdm
 from typing import Dict, Optional, Sequence, Tuple, Union
 
 from lhotse.audio import Recording, RecordingSet
+from lhotse.recipes.utils import read_manifests_if_cached
 from lhotse.supervision import SupervisionSegment, SupervisionSet
-from lhotse.utils import Pathlike, read_manifests_if_cached, urlretrieve_progress
+from lhotse.utils import Pathlike, urlretrieve_progress
 
 LIBRISPEECH = ('dev-clean', 'dev-other', 'test-clean', 'test-other',
                'train-clean-100', 'train-clean-360', 'train-other-500')
