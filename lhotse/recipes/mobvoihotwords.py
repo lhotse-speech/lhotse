@@ -19,12 +19,11 @@ import logging
 import shutil
 import tarfile
 from pathlib import Path
-from typing import Dict, Optional, Sequence, Union
+from typing import Dict, Optional, Union
 
-from lhotse import load_manifest
 from lhotse.audio import Recording, RecordingSet
 from lhotse.supervision import SupervisionSegment, SupervisionSet
-from lhotse.utils import Pathlike, urlretrieve_progress
+from lhotse.utils import Pathlike, read_manifests_if_cached, urlretrieve_progress
 
 
 def download_mobvoihotwords(
@@ -78,7 +77,7 @@ def prepare_mobvoihotwords(
         output_dir = Path(output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
         # Maybe the manifests already exist: we can read them and save a bit of preparation time.
-        maybe_manifests = read_if_cached(dataset_parts=dataset_parts, output_dir=output_dir)
+        maybe_manifests = read_manifests_if_cached(dataset_parts=dataset_parts, output_dir=output_dir)
         if maybe_manifests is not None:
             return maybe_manifests
 
@@ -133,21 +132,3 @@ def prepare_mobvoihotwords(
         }
 
     return dict(manifests)  # Convert to normal dict
-
-
-def read_if_cached(
-        dataset_parts: Optional[Sequence[str]],
-        output_dir: Optional[Pathlike]
-) -> Optional[Dict[str, Dict[str, Union[RecordingSet, SupervisionSet]]]]:
-    if output_dir is None:
-        return None
-    manifests = defaultdict(dict)
-    for part in dataset_parts:
-        for manifest in ('recordings', 'supervisions'):
-            path = output_dir / f'{manifest}_{part}.json'
-            if not path.is_file():
-                # If one of the manifests is not available, assume we need to read and prepare everything
-                # to simplify the rest of the code.
-                return None
-            manifests[part][manifest] = load_manifest(path)
-    return dict(manifests)
