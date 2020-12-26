@@ -12,7 +12,7 @@ There are multiple ways we can parallelize execution of a Python method:
 
 The ``Executor`` API, introduced in Python's standard library in :mod:`concurrent.futures` module,
 allows us to use any of these methods, while writing the code independently of how it is going to be parallelized.
-This module defines two types of *executors*, i.e. :class:`concurrent.futures.ProcessPoolExecutor``
+This module defines two types of *executors*, i.e. :class:`concurrent.futures.ProcessPoolExecutor`
 and :class:`concurrent.futures.ThreadPoolExecutor`.
 We refer the reader to `the official documentation of concurrent.futures`_ for details.
 On a high level, these executors accepts tasks in the form of a Python function and an iterable of arguments,
