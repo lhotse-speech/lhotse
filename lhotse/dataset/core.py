@@ -12,30 +12,35 @@ from lhotse.dataset.fields import RequiresCustomCollation, SignalField, Supervis
 from lhotse.utils import Seconds
 
 
-class CutDebugger:
-    def __call__(self, supervision: SupervisionSegment, cut: AnyCut) -> Dict[str, Any]:
-        return {'cut': cut}
-
-    def collate(self, cuts: Sequence[AnyCut], key: str) -> Sequence[AnyCut]:
-        return cuts
-
-
 class SpeechDataset(torch.utils.data.IterableDataset):
     """
-    The PyTorch Dataset for the speech recognition task using K2 library.
+    The base PyTorch Dataset class for many speech processing tasks in Lhotse.
+    It performs auto-batching based on specified criteria such as the number of frames,
+    meaning that the batch size is dynamic.
+    When iterated over, it returns dicts of elements that we call *fields*.
 
-    This dataset internally batches and collates the Cuts and should be used with
-    PyTorch DataLoader with argument batch_size=None to work properly.
-    The batch size is determined automatically to satisfy the constraints of ``max_frames``
-    and ``max_cuts``.
+    Fields
+    ======
 
-    This dataset will automatically partition itself when used with a multiprocessing DataLoader
-    (i.e. the same cut will not appear twice in the same epoch).
+    Some examples of a *field* are: features, audio samples, transcription text, speaker ID,
+    voice activity vector, etc.
+    There are two types of fields: *signal fields* (i.e. audio samples or features)
+    and *supervision fields* (i.e. information contained in a ``SupervisionSegment``).
+    The *fields* are fully configurable via ``__init__`` parameters,
+    and can be custom created by the user.
 
-    By default, we "pack" the batches to minimize the amount of padding - we achieve that by
-    concatenating the cuts' feature matrices with a small amount of silence (padding) in between.
+    For example, a ``SpeechDataset`` initialized like this:
 
-    Each item in this dataset is a dict of:
+    .. code-block::
+
+        from lhotse.dataset import fields
+        dataset = SpeechDataset(
+            cuts=cut_set,
+            signal_fields=[fields.Feats()],
+            supervision_fields=[fields.FeatureSpan(), fields.Text()]
+        )
+
+    would yield dicts like the following when iterated over:
 
     .. code-block::
 
@@ -43,7 +48,6 @@ class SpeechDataset(torch.utils.data.IterableDataset):
             'features': float tensor of shape (B, T, F)
             'supervisions': [
                 {
-                    'cut_id': List[str] of len S
                     'sequence_idx': Tensor[int] of shape (S,)
                     'text': List[str] of len S
                     'start_frame': Tensor[int] of shape (S,)
@@ -59,6 +63,20 @@ class SpeechDataset(torch.utils.data.IterableDataset):
     * ``F`` - number of features
 
     The 'sequence_idx' field is the index of the Cut used to create the example in the Dataset.
+
+    Auto-batching
+    =============
+
+    This dataset internally batches and collates the Cuts and should be used with
+    PyTorch DataLoader with argument ``batch_size=None`` to work properly.
+    The batch size is determined automatically to satisfy the constraints of ``max_frames``
+    and ``max_cuts``.
+
+    This dataset will automatically partition itself when used with a multiprocessing DataLoader
+    (i.e. the same cut will not appear twice in the same epoch).
+
+    By default, we "pack" the batches to minimize the amount of padding - we achieve that by
+    concatenating the cuts' feature matrices with a small amount of silence (padding) in between.
     """
 
     def __init__(
@@ -100,6 +118,7 @@ class SpeechDataset(torch.utils.data.IterableDataset):
         # Initialize the fields
         self.cuts = cuts
         self.shuffle = shuffle
+        # TODO: add customizable constraints options (e.g. max_samples)
         self.max_frames = max_frames
         self.max_cuts = max_cuts
         self.concat_cuts = concat_cuts
@@ -155,7 +174,7 @@ class SpeechDataset(torch.utils.data.IterableDataset):
     def __next__(self) -> Dict[str, Union[torch.Tensor, List[str]]]:
         """
         Return a new batch, with the batch size automatically determined using the contraints
-        of max_frames and max_cuts.
+        of ``max_frames`` and ``max_cuts``.
         """
 
         # Collect the cuts that will form a batch, satisfying the criteria of max_cuts and max_frames.
@@ -316,3 +335,17 @@ def concat_cuts(
         if not can_fit:
             break
     return cuts
+
+
+class CutDebugger:
+    """
+    A special 'field' that's used in ``SpeechDataset`` when the option
+    ``return_cuts=True`` is specified.
+    It returns the cuts created internally to make debugging/data inspection easier.
+    """
+
+    def __call__(self, supervision: SupervisionSegment, cut: AnyCut) -> Dict[str, Any]:
+        return {'cut': cut}
+
+    def collate(self, cuts: Sequence[AnyCut], key: str) -> Sequence[AnyCut]:
+        return cuts
