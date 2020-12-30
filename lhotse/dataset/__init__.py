@@ -1,3 +1,5 @@
+from .core import SpeechDataset
+from . import fields
 from .diarization import DiarizationDataset
 from .source_separation import (
     DynamicallyMixedSourceSeparationDataset,

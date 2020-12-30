@@ -28,15 +28,17 @@ def test_vad_dataset(cut_set):
     end = time_diff_to_num_frames(duration, frame_length=0, frame_shift=0.01)
 
     dataset = VadDataset(cut_set.cut_into_windows(duration=duration))
-    example = dataset[0]
-    assert isclose(float(torch.mean(example['is_voice'][0:v1_start])), 0)
-    assert isclose(float(torch.mean(example['is_voice'][v1_start:v1_end])), 1)
-    assert isclose(float(torch.mean(example['is_voice'][v1_end:v2_start])), 0)
-    assert isclose(float(torch.mean(example['is_voice'][v2_start:v2_end])), 1)
-    assert isclose(float(torch.mean(example['is_voice'][v2_end:end])), 0)
+    example = next(iter(dataset))
+    is_voiced = example['supervisions']['frame_is_voiced'][0]
+    assert isclose(float(torch.mean(is_voiced[0:v1_start])), 0)
+    assert isclose(float(torch.mean(is_voiced[v1_start:v1_end])), 1)
+    assert isclose(float(torch.mean(is_voiced[v1_end:v2_start])), 0)
+    assert isclose(float(torch.mean(is_voiced[v2_start:v2_end])), 1)
+    assert isclose(float(torch.mean(is_voiced[v2_end:end])), 0)
 
-    assert float(torch.mean(example['features'][0:v1_start])) < feature_threhold
-    assert float(torch.mean(example['features'][v1_start:v1_end])) > feature_threhold
-    assert float(torch.mean(example['features'][v1_end:v2_start])) < feature_threhold
-    assert float(torch.mean(example['features'][v2_start:v2_end])) > feature_threhold
-    assert float(torch.mean(example['features'][v2_end:end])) < feature_threhold
+    feats = example['features'][0]
+    assert float(torch.mean(feats[0:v1_start])) < feature_threhold
+    assert float(torch.mean(feats[v1_start:v1_end])) > feature_threhold
+    assert float(torch.mean(feats[v1_end:v2_start])) < feature_threhold
+    assert float(torch.mean(feats[v2_start:v2_end])) > feature_threhold
+    assert float(torch.mean(feats[v2_end:end])) < feature_threhold

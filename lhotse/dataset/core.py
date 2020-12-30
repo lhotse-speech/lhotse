@@ -1,77 +1,22 @@
 from collections import defaultdict
 
 import math
-
 import random
-
-from typing import Any, Dict, Iterable, List, Optional, Sequence, Union
-
 import torch
-from typing_extensions import Protocol, runtime_checkable
+from torch.utils.data.dataloader import default_collate
+from typing import Any, Dict, List, Optional, Sequence, Union
 
 from lhotse import CutSet, SupervisionSegment, warnings
-from lhotse.cut import AnyCut, MixedCut
-from lhotse.utils import Seconds, compute_num_frames
+from lhotse.cut import AnyCut
+from lhotse.dataset.fields import RequiresCustomCollation, SignalField, SupervisionField
+from lhotse.utils import Seconds
 
 
-class SupervisionField(Protocol):
-    def __call__(self, supervision: SupervisionSegment, cut: AnyCut) -> Dict[str, Any]: ...
-
-
-@runtime_checkable
-class RequiresCustomCollation(Protocol):
-    def collate(self, items: Sequence) -> Any:
-        pass
-
-
-class Text:
+class CutDebugger:
     def __call__(self, supervision: SupervisionSegment, cut: AnyCut) -> Dict[str, Any]:
-        return {'text': supervision.text}
+        return {'cut': cut}
 
-
-class Characters:
-    def __init__(self, cuts):
-        self.pad = '<PAD>'
-        self.id2sym = sorted({char for cut in cuts for s in cut.supervisions for char in s.text}) + [self.pad]
-        self.sym2id = {v: k for k, v in enumerate(self.id2sym)}
-
-    def __call__(self, supervision, cut):
-        return {'chars': [self.sym2id[c] for c in supervision.text]}
-
-    def collate(self, items: List[int]):
-        items = sorted(items, key=len, reverse=True)
-        for idx in range(1, len(items)):
-            items[idx].extend([self.sym2id[self.pad]] * (len(items[0]) - len(items[idx])))
-        return torch.tensor(items, dtype=torch.int32)
-
-
-class Speaker:
-    def __init__(self, cuts: CutSet):
-        self.id2spk = sorted(cuts.speakers)
-        self.spk2id = {v: k for k, v in enumerate(self.id2spk)}
-
-    def __call__(self, supervision: SupervisionSegment, cut: AnyCut) -> Dict[str, Any]:
-        return {'speaker': self.spk2id[supervision.speaker]}
-
-
-class VoiceActivity:
-    def __init__(self, use_features: bool = True, use_audio: bool = False):
-        if not use_audio and not use_features:
-            raise ValueError("VoiceActivity requested but both use_audio and use_features set to False.")
-        self.use_features = use_features
-        self.use_audio = use_audio
-
-    def __call__(self, supervision: SupervisionSegment, cut: AnyCut) -> Dict[str, Any]:
-        output = {}
-        if self.use_audio:
-            output['audio_is_voiced'] = cut.supervisions_audio_mask()
-        if self.use_features:
-            output['frame_is_voiced'] = cut.supervisions_feature_mask()
-        return output
-
-
-class CutCollater:
-    def collate(self, cuts: Sequence[AnyCut]) -> Sequence[AnyCut]:
+    def collate(self, cuts: Sequence[AnyCut], key: str) -> Sequence[AnyCut]:
         return cuts
 
 
@@ -119,15 +64,13 @@ class SpeechDataset(torch.utils.data.IterableDataset):
     def __init__(
             self,
             cuts: CutSet,
-            fields: Optional[Sequence[SupervisionField]] = None,
-            use_features: bool = True,
-            use_audio: bool = False,
-            multi_channel: bool = False,
+            signal_fields: Optional[Sequence[SignalField]] = None,
+            supervision_fields: Optional[Sequence[SupervisionField]] = None,
             return_cuts: bool = False,
             max_frames: int = 26000,
             max_cuts: Optional[int] = None,
             shuffle: bool = False,
-            concat_cuts: bool = True,
+            concat_cuts: bool = False,
             concat_cuts_gap: Seconds = 1.0,
             concat_cuts_duration_factor: float = 1
     ):
@@ -162,12 +105,11 @@ class SpeechDataset(torch.utils.data.IterableDataset):
         self.concat_cuts = concat_cuts
         self.concat_cuts_gap = concat_cuts_gap
         self.concat_cuts_duration_factor = concat_cuts_duration_factor
-        # Representations / Supervisions configuration
-        self.fields = fields
-        self.use_features = use_features
-        self.use_audio = use_audio
-        self.multi_channel = multi_channel
-        self.return_cuts = return_cuts
+        # Signals / Supervisions configuration
+        self.signal_fields = list(signal_fields)
+        self.supervision_fields = list(supervision_fields)
+        if return_cuts:
+            self.supervision_fields.append(CutDebugger())
         # Set-up the mutable state for new epoch initialization in __iter__
         self.cut_ids = list(self.cuts.ids)
         self.current_idx = None
@@ -215,7 +157,6 @@ class SpeechDataset(torch.utils.data.IterableDataset):
         Return a new batch, with the batch size automatically determined using the contraints
         of max_frames and max_cuts.
         """
-        from torch.utils.data._utils.collate import default_collate
 
         # Collect the cuts that will form a batch, satisfying the criteria of max_cuts and max_frames.
         # The returned object is a CutSet that we can keep on modifying (e.g. padding, mixing, etc.)
@@ -227,58 +168,52 @@ class SpeechDataset(torch.utils.data.IterableDataset):
         # TODO: multiple ways to pad the cuts
         cuts = cuts.sort_by_duration().pad()
 
+        # We'll return a dict with multiple fields like features, text, supervision spans, etc.
         output = {}
 
-        if self.use_features:
-            if self.multi_channel:
-                output['features'] = _collate_multi_channel_features(cuts)
-            else:  # single channel
-                # Get a tensor with batched feature matrices, shape (B, T, F)
-                output['features'] = _collate_features(cuts)
+        for field in self.signal_fields:
+            # Collect the signal representations (e.g. audio samples, feature matrices, single/multi channel)
+            # that will be propagated to the output.
+            output.update(field(cuts))
 
-        if self.use_audio:
-            if self.multi_channel:
-                output['audio'] = _collate_multi_channel_audio(cuts)
-            else:  # single channel
-                output['audio'] = _collate_audio(cuts)
-
-        if self.fields:
+        if self.supervision_fields:
+            # Gather un-collated fields here. Some of them can use the default collate method;
+            # others will require special handling, so we store them separately.
+            # We are also keeping track of which fields have the special ".collate()" method,
+            # and which supervision fields require the custom collation.
             supervisions = []
             custom_collated = defaultdict(list)
             collaters: Dict[str, RequiresCustomCollation] = {}
+            # Go over every supervision in every cut
             for sequence_idx, cut in enumerate(cuts):
                 for supervision in cut.supervisions:
-                    info = {
-                        'cut_id': cut.id,
-                        'sequence_idx': sequence_idx
-                    }
-                    if self.return_cuts:
-                        custom_collated['cut'].append(cut)
-                        collaters['cut'] = CutCollater()
-                    if self.use_features:
-                        info['start_frame'] = compute_num_frames(supervision.start, cut.frame_shift),
-                        info['num_frames'] = _asserted_num_frames(
-                            output['features'].shape[2 if self.multi_channel else 1],
-                            supervision.start,
-                            supervision.duration,
-                            cut.frame_shift
-                        )
-                    if self.use_audio:
-                        info['start_sample'] = round(supervision.start * cut.sampling_rate)
-                        info['num_samples'] = round(supervision.duration * cut.sampling_rate)
-                    for supervision_type in self.fields:
-                        entry = supervision_type(supervision, cut)
+                    # Note the corresponding index in the audio/feature tensor's batch dimension
+                    # for the current supervision.
+                    info = {'sequence_idx': sequence_idx}
+                    # Go over each supervision field provided by the user.
+                    # These can be practically anything: text, speaker id, voice activity masks, etc.
+                    for supervision_type in self.supervision_fields:
+                        # Transform the supervision + cut pair into the requested field;
+                        # it will return a dict with one or more keys that we will propagate to the
+                        # output after collating the values.
+                        entry: Dict[str, Any] = supervision_type(supervision, cut)
                         if isinstance(supervision_type, RequiresCustomCollation):
+                            # Special handling for fields requiring custom collation (e.g. Python classes
+                            # like "Cut" being put into a list, or k2's "Fsa" objects converted to "FsaVec")
                             for key, value in entry.items():
                                 custom_collated[key].append(value)
                                 if key not in collaters:
                                     collaters[key] = supervision_type
                         else:
+                            # "Simple" supervision field that PyTorch knows how to collate
+                            # (e.g. dict/list of ints/floats/str)
                             info.update(entry)
                     supervisions.append(info)
+            # At this point we transformed all the supervisions into fields:
+            # we have to collate them now.
             output['supervisions'] = default_collate(supervisions)
             output['supervisions'].update(
-                {key: collaters[key].collate(values) for key, values in custom_collated.items()}
+                {key: collaters[key].collate(values, key=key) for key, values in custom_collated.items()}
             )
 
         return output
@@ -343,66 +278,6 @@ class SpeechDataset(torch.utils.data.IterableDataset):
                     f"Cut ID violating the pre-condition: '{cut.id}'"
         assert self.max_frames > 0
         assert self.max_cuts is None or self.max_cuts > 0
-
-
-def _collate_features(cuts: CutSet) -> torch.Tensor:
-    assert all(cut.has_features for cut in cuts)
-    first_cut = next(iter(cuts))
-    features = torch.empty(len(cuts), first_cut.num_frames, first_cut.num_features)
-    for idx, cut in enumerate(cuts):
-        features[idx] = torch.from_numpy(cut.load_features())
-    return features
-
-
-def _collate_audio(cuts: CutSet) -> torch.Tensor:
-    assert all(cut.has_recording for cut in cuts)
-    first_cut = next(iter(cuts))
-    audio = torch.empty(len(cuts), first_cut.num_samples)
-    for idx, cut in enumerate(cuts):
-        audio[idx] = torch.from_numpy(cut.load_audio()[0])
-    return audio
-
-
-def _collate_multi_channel_features(cuts: CutSet) -> torch.Tensor:
-    assert all(cut.has_features for cut in cuts)
-    assert all(isinstance(cut, MixedCut) for cut in cuts)
-    # Output tensor shape: (B, C, T, F) -> (batch_size, num_channels, num_frames, num_features)
-    first_cut = next(iter(cuts))
-    # TODO: make MixedCut more friendly to use with multi channel audio;
-    #  discount PaddingCuts in "tracks" when specifying the number of channels
-    features = torch.empty(len(cuts), len(first_cut.tracks), first_cut.num_frames, first_cut.num_features)
-    for idx, cut in enumerate(cuts):
-        features[idx] = torch.from_numpy(cut.load_features(mixed=False))
-    return features
-
-
-def _collate_multi_channel_audio(cuts: CutSet) -> torch.Tensor:
-    assert all(cut.has_recording for cut in cuts)
-    assert all(isinstance(cut, MixedCut) for cut in cuts)
-    first_cut = next(iter(cuts))
-    audio = torch.empty(len(cuts), len(first_cut.tracks), first_cut.num_samples)
-    for idx, cut in enumerate(cuts):
-        audio[idx] = torch.from_numpy(cut.load_audio())
-    return audio
-
-
-def _asserted_num_frames(total_num_frames: int, start: Seconds, duration: Seconds, frame_shift: Seconds) -> int:
-    """
-    This closure with compute the num_frames, correct off-by-one errors in edge cases,
-    and assert that the supervision does not exceed the feature matrix temporal dimension.
-    """
-    offset = compute_num_frames(start, frame_shift=frame_shift)
-    num_frames = compute_num_frames(duration, frame_shift=frame_shift)
-    diff = total_num_frames - (offset + num_frames)
-    # Note: we tolerate off-by-ones because some mixed cuts could have one frame more
-    # than their duration suggests (we will try to change this eventually).
-    if diff == -1:
-        num_frames -= 1
-    assert offset + num_frames <= total_num_frames, \
-        f"Unexpected num_frames ({offset + num_frames}) exceeding features time dimension for a supervision " \
-        f"({total_num_frames}) when constructing a batch; please report this in Lhotse's GitHub issues, " \
-        "ideally providing the Cut data that triggered this."
-    return num_frames
 
 
 def concat_cuts(

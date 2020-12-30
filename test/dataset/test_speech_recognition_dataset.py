@@ -3,7 +3,8 @@ import torch
 from torch.utils.data import DataLoader
 
 from lhotse.cut import CutSet
-from lhotse.dataset.speech_recognition import K2SpeechRecognitionIterableDataset, concat_cuts
+from lhotse.dataset.core import concat_cuts
+from lhotse.dataset.speech_recognition import K2SpeechRecognitionIterableDataset
 from lhotse.testing.dummies import DummyManifest, dummy_cut
 
 
