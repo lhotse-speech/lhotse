@@ -1,3 +1,5 @@
+from decimal import ROUND_FLOOR, ROUND_HALF_DOWN
+
 import torch
 from torch.utils.data.dataloader import default_collate
 from typing import Any, Dict, List, Sequence
@@ -5,7 +7,7 @@ from typing_extensions import Protocol, runtime_checkable
 
 from lhotse import CutSet, SupervisionSegment
 from lhotse.cut import AnyCut, MixedCut
-from lhotse.utils import Seconds, compute_num_frames
+from lhotse.utils import Seconds, compute_num_frames, compute_num_samples
 
 
 class SignalField(Protocol):
@@ -44,25 +46,33 @@ class RequiresCustomCollation(Protocol):
 class FeatureSpan:
     def __call__(self, supervision: SupervisionSegment, cut: AnyCut) -> Dict[str, Any]:
         return {
-            'start_frame': compute_num_frames(supervision.start, cut.frame_shift),
-            'num_frames': compute_num_frames(supervision.duration, frame_shift=cut.frame_shift)
-            # TODO: try this:
-            # 'num_frames': compute_num_frames(supervision.end, cut.frame_shift) - compute_num_frames(supervision.start, cut.frame_shift)
-            # Original version
-            # 'num_frames': _asserted_num_frames(
-            #     output['features'].shape[2 if self.multi_channel else 1],
-            #     supervision.start,
-            #     supervision.duration,
-            #     cut.frame_shift
-            # )
+            'start_frame': compute_num_frames(
+                supervision.start,
+                frame_shift=cut.frame_shift,
+                # Note: Rounding "floor" can sometimes result in one extra frame being included
+                # in the left context; but it guarantees that we will never go out-of-bounds when
+                # summing start_frame + num_frames.
+                rounding=ROUND_FLOOR
+            ),
+            'num_frames': compute_num_frames(
+                supervision.duration,
+                frame_shift=cut.frame_shift
+            )
         }
 
 
 class AudioSpan:
     def __call__(self, supervision: SupervisionSegment, cut: AnyCut) -> Dict[str, Any]:
         return {
-            'start_sample': round(supervision.start * cut.sampling_rate),
-            'num_samples': round(supervision.duration * cut.sampling_rate)
+            'start_sample': compute_num_samples(
+                supervision.start,
+                sampling_rate=cut.sampling_rate,
+                rounding=ROUND_FLOOR
+            ),
+            'num_samples': compute_num_samples(
+                supervision.duration,
+                sampling_rate=cut.sampling_rate
+            )
         }
 
 

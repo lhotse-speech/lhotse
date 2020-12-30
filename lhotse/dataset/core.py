@@ -210,11 +210,12 @@ class SpeechDataset(torch.utils.data.IterableDataset):
                             info.update(entry)
                     supervisions.append(info)
             # At this point we transformed all the supervisions into fields:
-            # we have to collate them now.
-            output['supervisions'] = default_collate(supervisions)
-            output['supervisions'].update(
-                {key: collaters[key].collate(values, key=key) for key, values in custom_collated.items()}
-            )
+            # we have to collate them now (assuming there are any).
+            if supervisions:
+                output['supervisions'] = default_collate(supervisions)
+                output['supervisions'].update(
+                    {key: collaters[key].collate(values, key=key) for key, values in custom_collated.items()}
+                )
 
         return output
 
@@ -273,7 +274,7 @@ class SpeechDataset(torch.utils.data.IterableDataset):
     def _validate(self) -> None:
         for cut in self.cuts:
             for supervision in cut.supervisions:
-                assert cut.start <= supervision.start <= supervision.end <= cut.end, \
+                assert (cut.start - 1e-5) <= supervision.start <= supervision.end <= (cut.end + 1e-5), \
                     f"Cutting in the middle of a supervision is currently not supported for the ASR task. " \
                     f"Cut ID violating the pre-condition: '{cut.id}'"
         assert self.max_frames > 0

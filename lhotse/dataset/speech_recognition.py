@@ -44,7 +44,7 @@ class K2SpeechRecognitionIterableDataset(SpeechDataset):
     """
 
     def __init__(
-            self, concat_cuts=True, *args, **kwargs
+            self, *args, concat_cuts=True, **kwargs
     ):
         """
         K2 ASR IterableDataset constructor.
