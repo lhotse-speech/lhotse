@@ -7,7 +7,7 @@ from typing_extensions import Protocol, runtime_checkable
 
 from lhotse import CutSet, SupervisionSegment
 from lhotse.cut import AnyCut, MixedCut
-from lhotse.utils import Seconds, compute_num_frames, compute_num_samples
+from lhotse.utils import compute_num_frames, compute_num_samples
 
 
 class SignalField(Protocol):
@@ -184,22 +184,3 @@ def _collate_multi_channel_audio(cuts: CutSet) -> torch.Tensor:
     for idx, cut in enumerate(cuts):
         audio[idx] = torch.from_numpy(cut.load_audio())
     return audio
-
-
-def _asserted_num_frames(total_num_frames: int, start: Seconds, duration: Seconds, frame_shift: Seconds) -> int:
-    """
-    This closure with compute the num_frames, correct off-by-one errors in edge cases,
-    and assert that the supervision does not exceed the feature matrix temporal dimension.
-    """
-    offset = compute_num_frames(start, frame_shift=frame_shift)
-    num_frames = compute_num_frames(duration, frame_shift=frame_shift)
-    diff = total_num_frames - (offset + num_frames)
-    # Note: we tolerate off-by-ones because some mixed cuts could have one frame more
-    # than their duration suggests (we will try to change this eventually).
-    if diff == -1:
-        num_frames -= 1
-    assert offset + num_frames <= total_num_frames, \
-        f"Unexpected num_frames ({offset + num_frames}) exceeding features time dimension for a supervision " \
-        f"({total_num_frames}) when constructing a batch; please report this in Lhotse's GitHub issues, " \
-        "ideally providing the Cut data that triggered this."
-    return num_frames

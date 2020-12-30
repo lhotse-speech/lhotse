@@ -43,9 +43,7 @@ class K2SpeechRecognitionIterableDataset(SpeechDataset):
     The 'sequence_idx' field is the index of the Cut used to create the example in the Dataset.
     """
 
-    def __init__(
-            self, *args, concat_cuts=True, **kwargs
-    ):
+    def __init__(self, *args, concat_cuts=True, **kwargs):
         """
         K2 ASR IterableDataset constructor.
 
@@ -77,3 +75,10 @@ class K2SpeechRecognitionIterableDataset(SpeechDataset):
             concat_cuts=concat_cuts,
             **kwargs
         )
+
+    def _validate_hook(self) -> None:
+        for cut in self.cuts:
+            for supervision in cut.supervisions:
+                assert (cut.start - 1e-5) <= supervision.start <= supervision.end <= (cut.end + 1e-5), \
+                    f"Cutting in the middle of a supervision is currently not supported for the ASR task. " \
+                    f"Cut ID violating the pre-condition: '{cut.id}'"

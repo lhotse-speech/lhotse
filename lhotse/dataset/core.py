@@ -116,7 +116,7 @@ class SpeechDataset(torch.utils.data.IterableDataset):
         # Set-up the pseudo-immutable state for multiprocessing DataLoader compatibility
         self.partition_start = 0
         self.partition_end = len(self.cut_ids)
-        self._validate()
+        self.validate()
 
     def __iter__(self):
         """
@@ -165,7 +165,6 @@ class SpeechDataset(torch.utils.data.IterableDataset):
         # For now, we'll just pad it with low energy values to match the longest Cut's
         # duration in the batch. We might want to do something more interesting here
         # later on - padding/mixing with noises, etc.
-        # TODO: multiple ways to pad the cuts
         cuts = cuts.sort_by_duration().pad()
 
         # We'll return a dict with multiple fields like features, text, supervision spans, etc.
@@ -271,14 +270,13 @@ class SpeechDataset(torch.utils.data.IterableDataset):
             )
         return CutSet.from_cuts(cuts)
 
-    def _validate(self) -> None:
-        for cut in self.cuts:
-            for supervision in cut.supervisions:
-                assert (cut.start - 1e-5) <= supervision.start <= supervision.end <= (cut.end + 1e-5), \
-                    f"Cutting in the middle of a supervision is currently not supported for the ASR task. " \
-                    f"Cut ID violating the pre-condition: '{cut.id}'"
+    def validate(self) -> None:
         assert self.max_frames > 0
         assert self.max_cuts is None or self.max_cuts > 0
+        self._validate_hook()
+
+    def _validate_hook(self) -> None:
+        pass
 
 
 def concat_cuts(
