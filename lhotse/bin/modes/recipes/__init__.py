@@ -1,3 +1,4 @@
+from .aishell import *
 from .babel import *
 from .broadcast_news import *
 from .heroico import *
