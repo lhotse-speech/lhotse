@@ -149,6 +149,7 @@ a CLI tool that create the manifests given a corpus directory.
 
 Currently supported corpora:
 
+- Aishell :func:`lhotse.recipes.prepare_aishell`
 - AMI :func:`lhotse.recipes.prepare_ami`
 - BABEL :func:`lhotse.recipes.prepare_single_babel_language`
 - English Broadcast News 1997 :func:`lhotse.recipes.prepare_broadcast_news`
