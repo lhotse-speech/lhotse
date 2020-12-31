@@ -2,7 +2,7 @@
   {
     "id": "33ef3990-f39f-4aee-8dd4-f1cbd89c3041",
     "start": 0,
-    "duration": 1.54,
+    "duration": 1.5396371882086168,
     "channel": 0,
     "supervisions": [
       {
@@ -25,7 +25,7 @@
       "storage_path": "test/fixtures/ljspeech/storage",
       "storage_key": "ebc3b975-d9f7-485c-9a33-136f984f032e.llc",
       "start": 0,
-      "duration": 1.54,
+      "duration": 1.5396371882086168,
       "recording_id": "LJ002-0020",
       "channels": 0
     },
@@ -49,7 +49,7 @@
   {
     "id": "d9145a74-749e-489a-b3d5-653e047bd274",
     "start": 0,
-    "duration": 1.6,
+    "duration": 1.5976870748299319,
     "channel": 0,
     "supervisions": [
       {
@@ -72,7 +72,7 @@
       "storage_path": "test/fixtures/ljspeech/storage",
       "storage_key": "c384489b-5efb-4a3d-b94f-74e3691c442f.llc",
       "start": 0,
-      "duration": 1.6,
+      "duration": 1.5976870748299319,
       "recording_id": "LJ002-0035",
       "channels": 0
     },

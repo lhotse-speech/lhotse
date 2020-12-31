@@ -237,7 +237,11 @@ def split_sequence(seq: Sequence[Any], num_splits: int, randomize: bool = False)
     return [seq[begin: end] for begin, end in split_indices]
 
 
-def compute_num_frames(duration: Seconds, frame_shift: Seconds) -> int:
+def compute_num_frames(
+        duration: Seconds,
+        frame_shift: Seconds,
+        rounding: str = ROUND_HALF_UP
+) -> int:
     """
     Compute the number of frames from duration and frame_shift in a safe way.
 
@@ -263,7 +267,7 @@ def compute_num_frames(duration: Seconds, frame_shift: Seconds) -> int:
             # while problematic cases like 14.49999999998 are typically breaking much later than 8th decimal
             # with double-precision floats.
             round(duration / frame_shift, ndigits=8)
-        ).quantize(0, rounding=ROUND_HALF_UP)
+        ).quantize(0, rounding=rounding)
     )
 
 
@@ -345,3 +349,16 @@ def perturb_num_samples(num_samples: int, factor: float) -> int:
     """Mimicks the behavior of the speed perturbation on the number of samples."""
     rounding = ROUND_HALF_UP if factor >= 1.0 else ROUND_HALF_DOWN
     return int(Decimal(round(num_samples / factor, ndigits=8)).quantize(0, rounding=rounding))
+
+
+def compute_num_samples(duration: Seconds, sampling_rate: int, rounding=ROUND_HALF_UP) -> int:
+    """
+    Convert a time quantity to the number of samples given a specific sampling rate.
+    Performs consistent rounding up or down for ``duration`` that is not a multiply of
+    the sampling interval (unlike Python's built-in ``round()`` that implements banker's rounding).
+    """
+    return int(
+        Decimal(
+            duration * sampling_rate
+        ).quantize(0, rounding=rounding)
+    )

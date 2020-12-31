@@ -15,7 +15,8 @@ from tqdm.auto import tqdm
 from lhotse.audio import Recording
 from lhotse.augmentation import AugmentFn
 from lhotse.features.io import FeaturesWriter, get_reader
-from lhotse.utils import (JsonMixin, Pathlike, Seconds, YamlMixin, fastcopy, load_yaml, save_to_yaml,
+from lhotse.utils import (JsonMixin, Pathlike, Seconds, YamlMixin, compute_num_frames, fastcopy, load_yaml,
+                          save_to_yaml,
                           split_sequence,
                           uuid4)
 
@@ -348,17 +349,11 @@ class Features:
             raise ValueError(f"Cannot load features for recording {self.recording_id} starting from {start}s. "
                              f"The available range is ({self.start}, {self.end}) seconds.")
         if not isclose(start, self.start):
-            left_offset_frames = round((start - self.start) / self.frame_shift)
-
+            left_offset_frames = compute_num_frames(start - self.start, frame_shift=self.frame_shift)
         # Right trim
         end = start + duration if duration is not None else None
         if duration is not None and not isclose(end, self.end):
-            # Note the "minus" sign below before round - we're slicing a numpy array, e.g. a[20:-100]
-            right_offset_frames = -round((self.end - end) / self.frame_shift)
-            # When duration is specified and very close to the original duration, right_offset_frames can be zero;
-            # the conditional below is a safe-guard against these cases.
-            if right_offset_frames == 0:
-                right_offset_frames = None
+            right_offset_frames = left_offset_frames + compute_num_frames(duration, frame_shift=self.frame_shift)
 
         # Load and return the features (subset) from the storage
         return storage.read(
