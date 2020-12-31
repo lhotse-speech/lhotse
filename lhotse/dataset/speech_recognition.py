@@ -1,66 +1,16 @@
+from decimal import ROUND_FLOOR
+
 import math
 import random
 import warnings
-from typing import Dict, List, Optional, Sequence, Union
+from typing import Dict, List, Optional, Union
 
 import torch
-from torch.utils.data.dataloader import DataLoader
+from torch.utils.data.dataloader import DataLoader, default_collate
 
 from lhotse.cut import AnyCut, CutSet
+from lhotse.dataset.collation import collate_features
 from lhotse.utils import Seconds, compute_num_frames
-
-EPS = 1e-8
-
-
-class SpeechRecognitionDataset(torch.utils.data.Dataset):
-    """
-    The PyTorch Dataset for the speech recognition task.
-    Each item in this dataset is a dict of:
-
-    .. code-block::
-
-        {
-            'features': (T x F) tensor,
-            'text': string,
-            'supervisions_mask': (T) tensor
-        }
-
-    The ``supervisions_mask`` field is a mask that specifies which frames are covered by a supervision
-    by assigning a value of 1 (in this case: segments with transcribed speech contents),
-    and which are not by asigning a value of 0 (in this case: padding, contextual noise,
-    or in general the acoustic context without transcription).
-
-    In the future, will be extended by graph supervisions.
-    """
-
-    def __init__(self, cuts: CutSet):
-        super().__init__()
-        self.cuts = cuts
-        self.cut_ids = list(self.cuts.ids)
-
-    def __getitem__(self, idx: int) -> Dict[str, torch.Tensor]:
-        cut_id = self.cut_ids[idx]
-        cut = self.cuts[cut_id]
-
-        features = torch.from_numpy(cut.load_features())
-        mask = torch.from_numpy(cut.supervisions_feature_mask())
-
-        # There should be only one supervision because we expect that trim_to_supervisions() was called,
-        # or the dataset was created from pre-segment recordings
-        assert len(cut.supervisions) == 1, "SpeechRecognitionDataset does not support multiple supervisions yet. " \
-                                           "Use CutSet.trim_to_supervisions() to cut long recordings into short " \
-                                           "supervisions segment, and follow up with either .pad(), " \
-                                           ".truncate(), and possibly .filter() to make sure that all cuts " \
-                                           "have a uniform duration."
-
-        return {
-            'features': features,
-            'text': cut.supervisions[0].text,
-            'supervisions_mask': mask
-        }
-
-    def __len__(self) -> int:
-        return len(self.cut_ids)
 
 
 class K2SpeechRecognitionIterableDataset(torch.utils.data.IterableDataset):
@@ -110,6 +60,7 @@ class K2SpeechRecognitionIterableDataset(torch.utils.data.IterableDataset):
             max_frames: int = 26000,
             max_cuts: Optional[int] = None,
             shuffle: bool = False,
+            return_cuts: bool = False,
             concat_cuts: bool = True,
             concat_cuts_gap: Seconds = 1.0,
             concat_cuts_duration_factor: float = 1
@@ -127,6 +78,8 @@ class K2SpeechRecognitionIterableDataset(torch.utils.data.IterableDataset):
             Convenient when mini-batch loop is inside an outer epoch-level loop, e.g.:
             `for epoch in range(10): for batch in dataset: ...` as every epoch will see a
             different cuts order.
+        :param return_cuts: When ``True``, will additionally return a "cut" field in each batch with the Cut
+            objects used to create that batch.
         :param concat_cuts: When ``True``, we will concatenate the cuts to minimize the total amount of padding;
             e.g. instead of creating a batch with 40 examples, we will merge some of the examples together
             adding some silence between them to avoid a large number of padding frames that waste the computation.
@@ -142,6 +95,7 @@ class K2SpeechRecognitionIterableDataset(torch.utils.data.IterableDataset):
         self.shuffle = shuffle
         self.max_frames = max_frames
         self.max_cuts = max_cuts
+        self.return_cuts = return_cuts
         self.concat_cuts = concat_cuts
         self.concat_cuts_gap = concat_cuts_gap
         self.concat_cuts_duration_factor = concat_cuts_duration_factor
@@ -192,8 +146,6 @@ class K2SpeechRecognitionIterableDataset(torch.utils.data.IterableDataset):
         Return a new batch, with the batch size automatically determined using the contraints
         of max_frames and max_cuts.
         """
-        from torch.utils.data._utils.collate import default_collate
-
         # Collect the cuts that will form a batch, satisfying the criteria of max_cuts and max_frames.
         # The returned object is a CutSet that we can keep on modifying (e.g. padding, mixing, etc.)
         cuts: CutSet = self._collect_batch()
@@ -204,40 +156,35 @@ class K2SpeechRecognitionIterableDataset(torch.utils.data.IterableDataset):
         cuts = cuts.sort_by_duration().pad()
 
         # Get a tensor with batched feature matrices, shape (B, T, F)
-        features = _collate_features(cuts)
+        features = collate_features(cuts)
 
-        def asserted_num_frames(start: Seconds, duration: Seconds, frame_shift: Seconds) -> int:
-            """
-            This closure with compute the num_frames, correct off-by-one errors in edge cases,
-            and assert that the supervision does not exceed the feature matrix temporal dimension.
-            """
-            offset = compute_num_frames(start, frame_shift=frame_shift)
-            num_frames = compute_num_frames(duration, frame_shift=frame_shift)
-            diff = features.shape[1] - (offset + num_frames)
-            # Note: we tolerate off-by-ones because some mixed cuts could have one frame more
-            # than their duration suggests (we will try to change this eventually).
-            if diff == -1:
-                num_frames -= 1
-            assert offset + num_frames <= features.shape[1], \
-                f"Unexpected num_frames ({offset + num_frames}) exceeding features time dimension for a supervision " \
-                f"({features.shape[1]}) when constructing a batch; please report this in Lhotse's GitHub issues, " \
-                "ideally providing the Cut data that triggered this."
-            return num_frames
-
-        return {
+        batch = {
             'features': features,
             'supervisions': default_collate([
                 {
-                    'cut_id': cut.id,
                     'sequence_idx': sequence_idx,
                     'text': supervision.text,
-                    'start_frame': compute_num_frames(supervision.start, cut.frame_shift),
-                    'num_frames': asserted_num_frames(supervision.start, supervision.duration, cut.frame_shift),
+                    'start_frame': compute_num_frames(
+                        supervision.start,
+                        frame_shift=cut.frame_shift,
+                        # Note: Rounding "floor" can sometimes result in one extra frame being included
+                        # in the left context; but it guarantees that we will never go out-of-bounds when
+                        # summing start_frame + num_frames.
+                        rounding=ROUND_FLOOR
+                    ),
+                    'num_frames': compute_num_frames(
+                        supervision.duration,
+                        frame_shift=cut.frame_shift
+                    )
                 }
                 for sequence_idx, cut in enumerate(cuts)
                 for supervision in cut.supervisions
             ])
         }
+        if self.return_cuts:
+            batch['supervisions']['cut'] = [cut for cut in cuts for sup in cut.supervisions]
+
+        return batch
 
     def _collect_batch(self) -> CutSet:
         """
@@ -294,19 +241,11 @@ class K2SpeechRecognitionIterableDataset(torch.utils.data.IterableDataset):
     def _validate(self) -> None:
         for cut in self.cuts:
             for supervision in cut.supervisions:
-                assert cut.start <= supervision.start <= supervision.end <= cut.end, \
+                assert (cut.start - 1e-5) <= supervision.start <= supervision.end <= (cut.end + 1e-5), \
                     f"Cutting in the middle of a supervision is currently not supported for the ASR task. " \
                     f"Cut ID violating the pre-condition: '{cut.id}'"
         assert self.max_frames > 0
         assert self.max_cuts is None or self.max_cuts > 0
-
-
-def _collate_features(cuts: CutSet) -> torch.Tensor:
-    first_cut = next(iter(cuts))
-    features = torch.empty(len(cuts), first_cut.num_frames, first_cut.num_features)
-    for idx, cut in enumerate(cuts):
-        features[idx] = torch.from_numpy(cut.load_features())
-    return features
 
 
 def concat_cuts(
@@ -346,132 +285,3 @@ def concat_cuts(
         if not can_fit:
             break
     return cuts
-
-
-class K2SpeechRecognitionDataset(torch.utils.data.Dataset):
-    """
-    The PyTorch Dataset for the speech recognition task using K2 library.
-    Each item in this dataset is a dict of:
-
-    .. code-block::
-
-        {
-            'features': (T x F) tensor,
-            'supervisions': List[Dict] -> [
-                {
-                    'sequence_idx': int
-                    'text': string,
-                    'start_frame': int,
-                    'num_frames': int
-                } (multiplied N times, for each of the N supervisions present in the Cut)
-            ]
-        }
-
-    The 'sequence_idx' field is the index of the Cut used to create the example in the Dataset.
-    It is mapped to the batch index later in the DataLoader.
-    """
-
-    def __init__(self, cuts: CutSet):
-        super().__init__()
-        self.cuts = cuts
-        self.cut_ids = list(self.cuts.ids)
-
-    def __getitem__(self, idx: int) -> Dict[str, torch.Tensor]:
-        cut_id = self.cut_ids[idx]
-        cut = self.cuts[cut_id]
-
-        features = torch.from_numpy(cut.load_features())
-
-        return {
-            'features': features,
-            'supervisions': [
-                {
-                    'sequence_idx': idx,
-                    'text': sup.text,
-                    'start_frame': round(sup.start / cut.frame_shift),
-                    'num_frames': round(sup.duration / cut.frame_shift),
-                }
-                # CutSet's supervisions can exceed the cut, when the cut starts/ends in the middle
-                # of a supervision (they would have relative times e.g. -2 seconds start, meaning
-                # it started 2 seconds before the Cut starts). We use s.trim() to get rid of that
-                # property, ensuring the supervision time span does not exceed that of the cut.
-                for sup in (s.trim(cut.duration) for s in cut.supervisions)
-            ]
-        }
-
-    def __len__(self) -> int:
-        return len(self.cut_ids)
-
-
-class K2DataLoader(DataLoader):
-    """
-    A PyTorch DataLoader that has a custom collate_fn that complements the K2SpeechRecognitionDataset.
-
-    The 'features' tensor is collated in a standard way to return a tensor of shape (B, T, F).
-
-    The 'supervisions' dict contains the same fields as in ``K2SpeechRecognitionDataset``,
-    except that each sub-field (like 'start_frame') is a 1D PyTorch tensor with shape (B,).
-    The 'text' sub-field is an exception - it's a list of strings with length equal to batch size.
-
-    The 'sequence_idx' sub-field in 'supervisions', which originally points to index of the example
-    in the Dataset, is remapped to the index of the corresponding features matrix in the
-    collated 'features'.
-    Multiple supervisions coming from the same cut will share the same 'sequence_idx'.
-
-    For an example, see ``test/dataset/test_speech_recognition_dataset.py::test_k2_dataloader()``.
-    """
-
-    def __init__(self, *args, **kwargs):
-        if 'collate_fn' in kwargs:
-            raise ValueError('Cannot override collate_fn in K2DataLoader.')
-        super().__init__(*args, collate_fn=multi_supervision_collate_fn, **kwargs)
-
-
-def multi_supervision_collate_fn(batch: Sequence[Dict]) -> Dict:
-    """
-    Custom collate_fn for K2SpeechRecognitionDataset.
-
-    It merges the items provided by K2SpeechRecognitionDataset into the following structure:
-
-    .. code-block::
-
-        {
-            'features': float tensor of shape (B, T, F)
-            'supervisions': [
-                {
-                    'sequence_idx': Tensor[int] of shape (S,)
-                    'text': List[str] of len S
-                    'start_frame': Tensor[int] of shape (S,)
-                    'num_frames': Tensor[int] of shape (S,)
-                }
-            ]
-        }
-
-    Dimension symbols legend:
-    * ``B`` - batch size (number of Cuts),
-    * ``S`` - number of supervision segments (greater or equal to B, as each Cut may have multiple supervisions),
-    * ``T`` - number of frames of the longest Cut
-    * ``F`` - number of features
-    """
-    from torch.utils.data._utils.collate import default_collate
-
-    dataset_idx_to_batch_idx = {
-        example['supervisions'][0]['sequence_idx']: batch_idx
-        for batch_idx, example in enumerate(batch)
-    }
-
-    def update(d: Dict, **kwargs) -> Dict:
-        for key, value in kwargs.items():
-            d[key] = value
-        return d
-
-    supervisions = default_collate([
-        update(sup, sequence_idx=dataset_idx_to_batch_idx[sup['sequence_idx']])
-        for example in batch
-        for sup in example['supervisions']
-    ])
-    feats = default_collate([example['features'] for example in batch])
-    return {
-        'features': feats,
-        'supervisions': supervisions
-    }

@@ -1,4 +1,5 @@
 from dataclasses import asdict, dataclass, field
+from decimal import ROUND_FLOOR
 
 import numpy as np
 import warnings
@@ -8,7 +9,8 @@ from pathlib import Path
 from subprocess import PIPE, run
 from typing import Callable, Dict, Iterable, List, Optional, Sequence, Tuple, Union
 
-from lhotse.utils import (Decibels, JsonMixin, Pathlike, Seconds, SetContainingAnything, YamlMixin, fastcopy,
+from lhotse.utils import (Decibels, JsonMixin, Pathlike, Seconds, SetContainingAnything, YamlMixin, compute_num_samples,
+                          fastcopy,
                           perturb_num_samples, split_sequence)
 from lhotse.augmentation import AudioTransform, Speed
 
@@ -84,9 +86,9 @@ def read_audio(path: Pathlike, offset: Seconds, duration: Seconds) -> Tuple[np.n
         sampling_rate = sf_desc.samplerate
         if offset:
             # Seek to the start of the target read
-            sf_desc.seek(round(offset * sampling_rate))
+            sf_desc.seek(compute_num_samples(offset, sampling_rate))
         if duration is not None:
-            frame_duration = round(duration * sampling_rate)
+            frame_duration = compute_num_samples(duration, sampling_rate)
         else:
             frame_duration = -1
         # Load the target number of frames, and transpose to match librosa form
