@@ -14,6 +14,8 @@ from typing_extensions import Protocol, runtime_checkable
 
 from lhotse import CutSet, SupervisionSegment
 from lhotse.cut import AnyCut, MixedCut
+from lhotse.dataset.collation import collate_audio, collate_features, collate_multi_channel_audio, \
+    collate_multi_channel_features
 from lhotse.utils import compute_num_frames, compute_num_samples
 
 
@@ -65,7 +67,7 @@ class Audio:
     """
 
     def __call__(self, cuts: CutSet) -> Dict[str, torch.Tensor]:
-        return {'audio': _collate_audio(cuts)}
+        return {'audio': collate_audio(cuts)}
 
 
 class MultiChannelAudio:
@@ -81,7 +83,7 @@ class MultiChannelAudio:
 
     def __call__(self, cuts: CutSet) -> Dict[str, torch.Tensor]:
         assert all(isinstance(cut, MixedCut) for cut in cuts)
-        return {'multi_channel_audio': _collate_multi_channel_audio(cuts)}
+        return {'multi_channel_audio': collate_multi_channel_audio(cuts)}
 
 
 class Feats:
@@ -96,7 +98,7 @@ class Feats:
     """
 
     def __call__(self, cuts: CutSet) -> Dict[str, torch.Tensor]:
-        return {'features': _collate_features(cuts)}
+        return {'features': collate_features(cuts)}
 
 
 class MultiChannelFeats:
@@ -112,7 +114,7 @@ class MultiChannelFeats:
 
     def __call__(self, cuts: CutSet) -> Dict[str, torch.Tensor]:
         assert all(isinstance(cut, MixedCut) for cut in cuts)
-        return {'multi_channel_features': _collate_multi_channel_features(cuts)}
+        return {'multi_channel_features': collate_multi_channel_features(cuts)}
 
 
 # Supervision field implementations
@@ -295,44 +297,3 @@ class VoiceActivity:
         if self.use_features:
             output['frame_is_voiced'] = cut.supervisions_feature_mask()
         return output
-
-
-def _collate_features(cuts: CutSet) -> torch.Tensor:
-    assert all(cut.has_features for cut in cuts)
-    first_cut = next(iter(cuts))
-    features = torch.empty(len(cuts), first_cut.num_frames, first_cut.num_features)
-    for idx, cut in enumerate(cuts):
-        features[idx] = torch.from_numpy(cut.load_features())
-    return features
-
-
-def _collate_audio(cuts: CutSet) -> torch.Tensor:
-    assert all(cut.has_recording for cut in cuts)
-    first_cut = next(iter(cuts))
-    audio = torch.empty(len(cuts), first_cut.num_samples)
-    for idx, cut in enumerate(cuts):
-        audio[idx] = torch.from_numpy(cut.load_audio()[0])
-    return audio
-
-
-def _collate_multi_channel_features(cuts: CutSet) -> torch.Tensor:
-    assert all(cut.has_features for cut in cuts)
-    assert all(isinstance(cut, MixedCut) for cut in cuts)
-    # Output tensor shape: (B, C, T, F) -> (batch_size, num_channels, num_frames, num_features)
-    first_cut = next(iter(cuts))
-    # TODO: make MixedCut more friendly to use with multi channel audio;
-    #  discount PaddingCuts in "tracks" when specifying the number of channels
-    features = torch.empty(len(cuts), len(first_cut.tracks), first_cut.num_frames, first_cut.num_features)
-    for idx, cut in enumerate(cuts):
-        features[idx] = torch.from_numpy(cut.load_features(mixed=False))
-    return features
-
-
-def _collate_multi_channel_audio(cuts: CutSet) -> torch.Tensor:
-    assert all(cut.has_recording for cut in cuts)
-    assert all(isinstance(cut, MixedCut) for cut in cuts)
-    first_cut = next(iter(cuts))
-    audio = torch.empty(len(cuts), len(first_cut.tracks), first_cut.num_samples)
-    for idx, cut in enumerate(cuts):
-        audio[idx] = torch.from_numpy(cut.load_audio())
-    return audio
