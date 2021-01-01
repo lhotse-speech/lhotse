@@ -12,7 +12,9 @@ def read_manifests_if_cached(
         output_dir: Optional[Pathlike]
 ) -> Optional[Dict[str, Dict[str, Union[RecordingSet, SupervisionSet]]]]:
     """Loads manifests from the disk if all of them exist in the specified paths.
-    This function is intended to speedup data preparation if it is already done before.
+    the manifests are searched for using the pattern `output_dir / f'{manifest}_{part}.json'`,
+    where `manifest` is one of `["recordings", "supervisions"]` and `part` is specified in `dataset_parts`.
+    This function is intended to speedup data preparation if it has already been done before.
     """
     if output_dir is None:
         return None
