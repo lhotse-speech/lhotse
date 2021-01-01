@@ -3,7 +3,7 @@ from tempfile import NamedTemporaryFile, TemporaryDirectory
 import numpy as np
 import soundfile
 
-from lhotse import AudioSource, Cut, Fbank, LilcomFilesWriter, Recording
+from lhotse import AudioSource, Cut, Fbank, LilcomFilesWriter, Recording, SupervisionSegment
 from lhotse.utils import uuid4
 
 
@@ -43,7 +43,13 @@ class RandomCutTestCase:
             duration=duration
         )
 
-    def with_cut(self, sampling_rate: int, num_samples: int, features: bool = True) -> Cut:
+    def with_cut(
+            self,
+            sampling_rate: int,
+            num_samples: int,
+            features: bool = True,
+            supervision: bool = False
+    ) -> Cut:
         duration = num_samples / sampling_rate
         cut = Cut(
             id=str(uuid4()),
@@ -54,6 +60,14 @@ class RandomCutTestCase:
         )
         if features:
             cut = self._with_features(cut)
+        if supervision:
+            cut.supervisions.append(SupervisionSegment(
+                id=f'sup-{cut.id}',
+                recording_id=cut.recording_id,
+                start=0,
+                duration=cut.duration,
+                text='irrelevant'
+            ))
         return cut
 
     def _with_features(self, cut: Cut) -> Cut:

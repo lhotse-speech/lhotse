@@ -1795,7 +1795,7 @@ def mix(
         [
             MixTrack(
                 cut=track.cut,
-                offset=round(track.offset + offset, ndigits=3),
+                offset=round(track.offset + offset, ndigits=8),
                 snr=(
                     # When no new SNR is specified, retain whatever was there in the first place.
                     track.snr if snr is None
