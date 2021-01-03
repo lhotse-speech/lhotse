@@ -82,7 +82,7 @@ def test_cut_perturb_speed09(cut_with_supervision):
 @pytest.fixture
 def cut_with_supervision_start01(recording):
     return Cut(
-        id='cut',
+        id='cut_start01',
         start=0.1,
         duration=0.4,
         channel=0,
