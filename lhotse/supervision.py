@@ -40,9 +40,9 @@ class SupervisionSegment:
 
         :param factor: The speed will be adjusted this many times (e.g. factor=1.1 means 1.1x faster).
         :param sampling_rate: The sampling rate is necessary to accurately perturb the start
-            and duration (going through sample counts).
-        :param affix_id: When true, we will modify the ``Recording.id`` field
-        by affixing it with "_sp{factor}".
+            and duration (going through the sample counts).
+        :param affix_id: When true, we will modify the ``id`` and ``recording_id`` fields
+            by affixing it with "_sp{factor}".
         :return: a modified copy of the current ``Recording``.
         """
         start_sample = round(self.start * sampling_rate)
@@ -52,6 +52,7 @@ class SupervisionSegment:
         return fastcopy(
             self,
             id=f'{self.id}_sp{factor}' if affix_id else self.id,
+            recording_id=f'{self.recording_id}_sp{factor}' if affix_id else self.id,
             start=new_start,
             duration=new_duration
         )
