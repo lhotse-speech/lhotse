@@ -15,7 +15,7 @@ The corpus can be cited as follows:
 """
 import tarfile
 from pathlib import Path
-from typing import Dict, Optional, Sequence, Union
+from typing import Dict, Iterable, List, Optional, Sequence, Union
 
 from lhotse import Recording, RecordingSet, SupervisionSegment, SupervisionSet
 from lhotse.utils import Pathlike, urlretrieve_progress
@@ -64,7 +64,7 @@ def prepare_musan(
 
     manifests = {}
     if 'music' in parts:
-        manifests['music'] = prepare_music(corpus_dir, use_vocals=use_vocals),
+        manifests['music'] = prepare_music(corpus_dir, use_vocals=use_vocals)
     if 'speech' in parts:
         manifests['speech'] = {'recordings': scan_recordings(corpus_dir / 'speech')}
     if 'noise' in parts:
@@ -74,7 +74,7 @@ def prepare_musan(
         output_dir = Path(output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
         for part in manifests:
-            for key, manifest in manifests[part]:
+            for key, manifest in manifests[part].items():
                 manifest.to_json(output_dir / f'{key}_{part}.json')
 
     return manifests
@@ -99,7 +99,7 @@ def prepare_music(
             }
         )
         for file in music_dir.rglob('ANNOTATIONS')
-        for utt, genres, vocals, musician in (l.rstrip().split() for l in file.open())
+        for utt, genres, vocals, musician in read_annotations(file, max_fields=4)
     )
     if not use_vocals:
         supervisions.filter(lambda s: s.custom['vocals'] is False)
@@ -111,3 +111,11 @@ def scan_recordings(corpus_dir: Path) -> RecordingSet:
         Recording.from_file(file)
         for file in corpus_dir.rglob('*.wav')
     )
+
+
+def read_annotations(path: Path, max_fields: Optional[int] = None) -> Iterable[List[str]]:
+    with open(path) as f:
+        for line in f:
+            line = line.strip().split()
+            if line:
+                yield line if max_fields is None else line[:max_fields]
