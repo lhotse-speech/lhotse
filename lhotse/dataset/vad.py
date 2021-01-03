@@ -28,7 +28,7 @@ class VadDataset(Dataset):
             cuts: CutSet,
     ):
         super().__init__()
-        validate(self.cuts)
+        validate(cuts)
         self.cuts = cuts
         self.cut_ids = list(cuts.ids)
 
