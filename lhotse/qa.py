@@ -1,3 +1,5 @@
+import logging
+
 from typing import Any, Callable, Dict
 
 from math import isclose
@@ -8,7 +10,7 @@ from lhotse.cut import AnyCut, MixedCut, PaddingCut
 _VALIDATORS: Dict[str, Callable] = {}
 
 
-def validate(obj: Any, read_data: bool = False):
+def validate(obj: Any, read_data: bool = False) -> None:
     """
     Validate a Lhotse manifest object.
     It checks for conditions such as positive duration, matching channels, ids, etc.
@@ -27,6 +29,43 @@ def validate(obj: Any, read_data: bool = False):
             f"Object of unknown type passed to validate() (T = {obj_type}, known types = {list(_VALIDATORS)}"
         )
     valid(obj, read_data=read_data)
+
+
+def validate_recordings_and_supervisions(
+        recordings: RecordingSet,
+        supervisions: SupervisionSet,
+        read_data: bool = False
+) -> None:
+    """
+    Validate the recording and supervision manifests separately,
+    and then check if they are consistent with each other.
+
+    This method will emit warnings, instead of errors, when some recordings or supervisions
+    are missing their counterparts.
+    These items will be discarded by default when creating a CutSet.
+    """
+    validate(recordings, read_data=read_data)
+    validate(supervisions)
+    # Errors
+    for s in supervisions:
+        r = recordings[s.recording_id]
+        assert 0 <= s.start <= s.end <= r.duration, \
+            f'Supervision {s.id}: exceeded the bounds of its corresponding recording ' \
+            f'(supervision spans [{s.start}, {s.end}]; recording spans [0, {r.duration}])'
+        assert s.channel in r.channel_ids, \
+            f'Supervision {s.id}: channel {s.channel} does not exist in its corresponding Recording ' \
+            f'(recording channels: {r.channel_ids})'
+    # Warnings
+    recording_ids = frozenset(r.id for r in recordings)
+    recording_ids_in_sups = frozenset(s.recording_id for s in supervisions)
+    only_in_recordings = recording_ids - recording_ids_in_sups
+    if only_in_recordings:
+        logging.warning(f'There are {len(only_in_recordings)} recordings that '
+                        f'do not have any corresponding supervisions in the SupervisionSet.')
+    only_in_supervisions = recording_ids_in_sups - recording_ids
+    if only_in_supervisions:
+        logging.warning(f'There are {len(only_in_supervisions)} supervisions that '
+                        f'are missing their corresponding recordings in the RecordingSet.')
 
 
 def register_validator(fn):
