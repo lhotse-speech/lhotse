@@ -8,6 +8,7 @@ from typing import Dict, List, Optional, Union
 import torch
 from torch.utils.data.dataloader import DataLoader, default_collate
 
+from lhotse import validate
 from lhotse.cut import AnyCut, CutSet
 from lhotse.dataset.collation import collate_features
 from lhotse.utils import Seconds, compute_num_frames
@@ -239,6 +240,7 @@ class K2SpeechRecognitionIterableDataset(torch.utils.data.IterableDataset):
         return CutSet.from_cuts(cuts)
 
     def _validate(self) -> None:
+        validate(self.cuts)
         for cut in self.cuts:
             for supervision in cut.supervisions:
                 assert (cut.start - 1e-5) <= supervision.start <= supervision.end <= (cut.end + 1e-5), \

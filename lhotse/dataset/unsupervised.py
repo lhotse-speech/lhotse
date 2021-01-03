@@ -3,6 +3,7 @@ from typing import Optional
 import torch
 from torch.utils.data import Dataset
 
+from lhotse import validate
 from lhotse.augmentation import AugmentFn
 from lhotse.cut import CutSet
 from lhotse.features import FeatureExtractor
@@ -30,6 +31,7 @@ class UnsupervisedDataset(Dataset):
         return len(self.cuts)
 
     def _validate(self):
+        validate(self.cuts)
         assert all(cut.has_features for cut in self.cuts)
 
 
@@ -46,6 +48,7 @@ class UnsupervisedWaveformDataset(UnsupervisedDataset):
         return torch.from_numpy(audio)
 
     def _validate(self):
+        validate(self.cuts)
         assert all(cut.has_recording for cut in self.cuts)
 
 
@@ -78,4 +81,5 @@ class DynamicUnsupervisedDataset(UnsupervisedDataset):
         return torch.from_numpy(features)
 
     def _validate(self):
+        validate(self.cuts)
         assert all(cut.has_recording for cut in self.cuts)
