@@ -3,7 +3,8 @@ from math import floor
 
 from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence
 
-from lhotse.utils import JsonMixin, Seconds, YamlMixin, asdict_nonull, fastcopy, perturb_num_samples, split_sequence
+from lhotse.utils import JsonMixin, Seconds, YamlMixin, asdict_nonull, fastcopy, index_by_id_and_check, \
+    perturb_num_samples, split_sequence
 
 
 @dataclass(frozen=True, unsafe_hash=True)
@@ -107,7 +108,7 @@ class SupervisionSet(JsonMixin, YamlMixin, Sequence[SupervisionSegment]):
 
     @staticmethod
     def from_segments(segments: Iterable[SupervisionSegment]) -> 'SupervisionSet':
-        return SupervisionSet(segments={s.id: s for s in segments})
+        return SupervisionSet(segments=index_by_id_and_check(segments))
 
     @staticmethod
     def from_dicts(data: Iterable[Dict]) -> 'SupervisionSet':

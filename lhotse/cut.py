@@ -22,7 +22,7 @@ from lhotse.features.io import FeaturesWriter
 from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import (Decibels, EPSILON, JsonMixin, Pathlike, Seconds, TimeSpan, YamlMixin, asdict_nonull,
                           compute_num_frames, fastcopy,
-                          overlaps, overspans, perturb_num_samples, split_sequence, uuid4)
+                          index_by_id_and_check, overlaps, overspans, perturb_num_samples, split_sequence, uuid4)
 
 # One of the design principles for Cuts is a maximally "lazy" implementation, e.g. when mixing Cuts,
 # we'd rather sum the feature matrices only after somebody actually calls "load_features". It helps to avoid
@@ -1179,7 +1179,7 @@ class CutSet(JsonMixin, YamlMixin, Sequence[AnyCut]):
 
     @staticmethod
     def from_cuts(cuts: Iterable[AnyCut]) -> 'CutSet':
-        return CutSet({cut.id: cut for cut in cuts})
+        return CutSet(cuts=index_by_id_and_check(cuts))
 
     @staticmethod
     def from_manifests(
