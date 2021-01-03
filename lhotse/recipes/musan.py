@@ -102,7 +102,7 @@ def prepare_music(
         for utt, genres, vocals, musician in read_annotations(file, max_fields=4)
     )
     if not use_vocals:
-        supervisions.filter(lambda s: s.custom['vocals'] is False)
+        supervisions = supervisions.filter(lambda s: s.custom['vocals'] is False)
     return {'recordings': recordings, 'supervisions': supervisions}
 
 
