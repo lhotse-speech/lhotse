@@ -8,12 +8,35 @@ from lhotse.cut import AnyCut, MixedCut, PaddingCut
 _VALIDATORS: Dict[str, Callable] = {}
 
 
+def validate(obj: Any, read_data: bool = False):
+    """
+    Validate a Lhotse manifest object.
+    It checks for conditions such as positive duration, matching channels, ids, etc.
+    It raises AssertionError when it finds some mismatch.
+
+    Optionally it can load the audio/feature data from disk and inspect whether the
+    num samples/frames/features declared in the manifests are matching the actual data.
+
+    This function determines the passed object's type and automatically calls
+    the proper validator for that object.
+    """
+    obj_type = type(obj)
+    valid = _VALIDATORS.get(obj_type)
+    if valid is None:
+        raise ValueError(
+            f"Object of unknown type passed to validate() (T = {obj_type}, known types = {list(_VALIDATORS)}"
+        )
+    valid(obj, read_data=read_data)
+
+
 def register_validator(fn):
     """
     Decorator registers the function to be invoked inside ``validate()``
     when the first argument's type is matching.
     """
-    first_arg_type = next(iter(fn.__annotations__))
+    # Check the first function argument's type
+    first_arg_type = next(iter(fn.__annotations__.values()))
+    # Register the function to be called when an object of that type is passed to validate()
     _VALIDATORS[first_arg_type] = fn
     return fn
 
@@ -139,24 +162,3 @@ def validate_feature_set(features: FeatureSet, read_data: bool = False) -> None:
 def validate_cut_set(cuts: CutSet, read_data: bool = False) -> None:
     for c in cuts:
         validate_cut(c, read_data=read_data)
-
-
-def validate(obj: Any, read_data: bool = False):
-    """
-    Validate a Lhotse manifest object.
-    It checks for conditions such as positive duration, matching channels, ids, etc.
-    It raises AssertionError when it finds some mismatch.
-
-    Optionally it can load the audio/feature data from disk and inspect whether the
-    num samples/frames/features declared in the manifests are matching the actual data.
-
-    This function determines the passed object's type and automatically calls
-    the proper validator for that object.
-    """
-    obj_type = type(obj)
-    valid = _VALIDATORS.get(obj_type)
-    if valid is None:
-        raise ValueError(
-            f"Object of unknown type passed to validate() (T = {obj_type}, known types = {list(_VALIDATORS)}"
-        )
-    valid(obj, read_data=read_data)

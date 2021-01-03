@@ -344,6 +344,7 @@ class Cut(CutUtilsMixin):
             storage=storage,
             sampling_rate=self.sampling_rate,
             offset=self.start,
+            channel=self.channel,
             augment_fn=augment_fn,
         )
         # The fastest way to instantiate a copy of the cut with a Features object attached
@@ -1072,6 +1073,7 @@ class MixedCut(CutUtilsMixin):
                 storage=storage,
                 sampling_rate=self.sampling_rate,
                 offset=0,
+                channel=0,
                 augment_fn=augment_fn,
             )
             return Cut(
