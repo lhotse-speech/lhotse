@@ -155,6 +155,7 @@ Currently supported corpora:
 - English Broadcast News 1997 :func:`lhotse.recipes.prepare_broadcast_news`
 - Heroico :func:`lhotse.recipes.prepare_heroico`
 - MiniLibriMix :func:`lhotse.recipes.prepare_librimix`
+- MUSAN :func:`lhotse.recipes.prepare_musan`
 - LibriSpeech (including "mini") :func:`lhotse.recipes.prepare_librispeech`
 - LJ Speech :func:`lhotse.recipes.prepare_ljspeech`
 - MobvoiHotWord :func:`lhotse.recipes.prepare_mobvoihotwords`

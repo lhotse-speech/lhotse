@@ -7,5 +7,6 @@ from .librimix import prepare_librimix
 from .librispeech import download_librispeech, prepare_librispeech
 from .ljspeech import prepare_ljspeech
 from .mobvoihotwords import prepare_mobvoihotwords
+from .musan import prepare_musan
 from .switchboard import prepare_switchboard
 from .tedlium import prepare_tedlium

@@ -1,18 +1,18 @@
-from dataclasses import asdict, dataclass, field
-from decimal import ROUND_FLOOR
-
-import numpy as np
 import warnings
+from dataclasses import dataclass
 from io import BytesIO
-from math import floor, sqrt
+from math import sqrt
 from pathlib import Path
 from subprocess import PIPE, run
 from typing import Callable, Dict, Iterable, List, Optional, Sequence, Tuple, Union
 
-from lhotse.utils import (Decibels, JsonMixin, Pathlike, Seconds, SetContainingAnything, YamlMixin, compute_num_samples,
+import numpy as np
+
+from lhotse.augmentation import AudioTransform, Speed
+from lhotse.utils import (Decibels, JsonMixin, Pathlike, Seconds, SetContainingAnything, YamlMixin, asdict_nonull,
+                          compute_num_samples,
                           fastcopy,
                           perturb_num_samples, split_sequence)
-from lhotse.augmentation import AudioTransform, Speed
 
 Channels = Union[int, List[int]]
 
@@ -313,7 +313,7 @@ class RecordingSet(JsonMixin, YamlMixin, Sequence[Recording]):
         return RecordingSet.from_recordings(Recording.from_dict(raw_rec) for raw_rec in data)
 
     def to_dicts(self) -> List[dict]:
-        return [asdict(r) for r in self]
+        return [asdict_nonull(r) for r in self]
 
     def filter(self, predicate: Callable[[Recording], bool]) -> 'RecordingSet':
         """
