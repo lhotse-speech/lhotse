@@ -17,7 +17,8 @@ import tarfile
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Sequence, Union
 
-from lhotse import Recording, RecordingSet, SupervisionSegment, SupervisionSet
+from lhotse import Recording, RecordingSet, SupervisionSegment, SupervisionSet, validate, \
+    validate_recordings_and_supervisions
 from lhotse.utils import Pathlike, urlretrieve_progress
 
 MUSAN_URL = 'https://www.openslr.org/resources/17/musan.tar.gz'
@@ -65,10 +66,13 @@ def prepare_musan(
     manifests = {}
     if 'music' in parts:
         manifests['music'] = prepare_music(corpus_dir, use_vocals=use_vocals)
+        validate_recordings_and_supervisions(**manifests['music'])
     if 'speech' in parts:
         manifests['speech'] = {'recordings': scan_recordings(corpus_dir / 'speech')}
+        validate(**manifests['speech'])
     if 'noise' in parts:
         manifests['noise'] = {'recordings': scan_recordings(corpus_dir / 'noise')}
+        validate(**manifests['noise'])
 
     if output_dir is not None:
         output_dir = Path(output_dir)

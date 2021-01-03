@@ -19,7 +19,7 @@ from pathlib import Path
 from tqdm.auto import tqdm
 from typing import Dict, Optional, Union
 
-from lhotse import Recording, RecordingSet, SupervisionSegment, SupervisionSet
+from lhotse import Recording, RecordingSet, SupervisionSegment, SupervisionSet, validate_recordings_and_supervisions
 from lhotse.utils import Pathlike
 
 NSC_PARTS = ['PART3_SameCloseMic', 'PART3_SeparateIVR']
@@ -58,6 +58,8 @@ def prepare_nsc(
         manifests = prepare_separate_phone_mic(corpus_dir / 'PART3')
     else:
         raise ValueError(f"Unknown dataset part: {dataset_part}")
+
+    validate_recordings_and_supervisions(**manifests)
 
     if output_dir is not None:
         output_dir = Path(output_dir)

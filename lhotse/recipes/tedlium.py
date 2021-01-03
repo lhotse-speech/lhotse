@@ -46,7 +46,7 @@ import tarfile
 from pathlib import Path
 from typing import Dict, Optional, Union
 
-from lhotse import Recording, RecordingSet, SupervisionSegment, SupervisionSet
+from lhotse import Recording, RecordingSet, SupervisionSegment, SupervisionSet, validate_recordings_and_supervisions
 from lhotse.utils import Pathlike, urlretrieve_progress
 
 
@@ -123,6 +123,8 @@ def prepare_tedlium(
             'recordings': recordings,
             'supervisions': supervisions
         }
+
+        validate_recordings_and_supervisions(**corpus[split])
 
         if output_dir is not None:
             recordings.to_json(output_dir / f'{split}_recordings.json')

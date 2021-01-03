@@ -7,6 +7,7 @@ import tarfile
 from pathlib import Path
 from typing import Dict, NamedTuple, Optional, Union
 
+from lhotse import validate_recordings_and_supervisions
 from lhotse.audio import AudioSource, Recording, RecordingSet
 from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import Pathlike, urlretrieve_progress
@@ -237,6 +238,8 @@ param transcripts_dir: Pathlike, the path of the transcript data dir.
             )
             for idx in audio.recordings
         )
+
+        validate_recordings_and_supervisions(audio, supervision)
 
         if output_dir is not None:
             supervision.to_json(output_dir / f'supervisions_{fld}.json')

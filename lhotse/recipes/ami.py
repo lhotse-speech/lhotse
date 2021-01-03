@@ -29,6 +29,7 @@ from pathlib import Path
 from tqdm.auto import tqdm
 from typing import Dict, List, NamedTuple, Optional, Union
 
+from lhotse import validate_recordings_and_supervisions
 from lhotse.audio import AudioSource, Recording, RecordingSet
 from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import Pathlike, Seconds
@@ -263,6 +264,9 @@ def prepare_ami(
                                 text=subseg_info.text
                             ))
         supervision = SupervisionSet.from_segments(segments_by_pause)
+
+        validate_recordings_and_supervisions(audio, supervision)
+
         if output_dir is not None:
             audio.to_json(output_dir / f'recordings_{part}.json')
             supervision.to_json(output_dir / f'supervisions_{part}.json')
