@@ -126,8 +126,12 @@ def validate_cut(c: AnyCut, read_data: bool = False) -> None:
     # Conditions related to supervisions
     for s in c.supervisions:
         validate_supervision(s)
-        assert s.recording_id == c.recording_id
-        assert s.channel == c.channel
+        assert s.recording_id == c.recording_id, \
+            f'Cut {c.id}: supervision {s.id} has a mismatched recording_id ' \
+            f'(expected {c.recording_id}, supervision has {s.recording_id})'
+        assert s.channel == c.channel, \
+            f'Cut {c.id}: supervision {s.id} has a mismatched channel ' \
+            f'(expected {c.channel}, supervision has {s.channel})'
 
 
 @register_validator
@@ -136,7 +140,8 @@ def validate_recording_set(recordings: RecordingSet, read_data: bool = False) ->
     sampling_rate = first.sampling_rate
     for r in recordings:
         validate_recording(r, read_data=read_data)
-        assert r.sampling_rate == sampling_rate
+        assert r.sampling_rate == sampling_rate, f'RecordingSet: Recording {r.id} has a mismatched sampling rate ' \
+                                                 f'(the first recording with ID {first.id} had {sampling_rate}; we got {r.sampling_rate} instead)'
 
 
 @register_validator
@@ -151,11 +156,17 @@ def validate_feature_set(features: FeatureSet, read_data: bool = False) -> None:
     sampling_rate = first.sampling_rate
     num_features = first.num_features
     features_type = first.features_type
-    for f in features:
+    for idx, f in enumerate(features):
         validate_features(f, read_data=read_data)
-        assert f.sampling_rate == sampling_rate
-        assert f.num_features == num_features
-        assert f.type == features_type
+        assert f.sampling_rate == sampling_rate, \
+            f'FeatureSet: mismatched sampling rate (the first Features manifest had {sampling_rate}, ' \
+            f'got {f.sampling_rate} in Features at index {idx})'
+        assert f.num_features == num_features, \
+            f'FeatureSet: mismatched num_features (the first Features manifest had {num_features}, ' \
+            f'got {f.num_features} in Features at index {idx})'
+        assert f.type == features_type, \
+            f'FeatureSet: mismatched feature_type (the first Features manifest had {features_type}, ' \
+            f'got {f.type} in Features at index {idx})'
 
 
 @register_validator
