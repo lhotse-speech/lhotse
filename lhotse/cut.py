@@ -1624,7 +1624,6 @@ class CutSet(JsonMixin, YamlMixin, Sequence[AnyCut]):
 
         # Non-parallel execution
         if executor is None and num_jobs == 1:
-            print(storage_type, storage_path)
             with storage_type(storage_path) as storage:
                 return CutSet.from_cuts(tqdm(
                     (
