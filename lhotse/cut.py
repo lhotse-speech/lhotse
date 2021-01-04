@@ -1638,6 +1638,11 @@ class CutSet(JsonMixin, YamlMixin, Sequence[AnyCut]):
                     total=len(self)
                 ))
 
+        # We are now sure that "storage_path" will be the root for
+        # multiple feature storages - we can create it as a directory
+        storage_path = Path(storage_path)
+        storage_path.mkdir(parents=True, exist_ok=True)
+
         # Parallel execution: prepare the CutSet splits
         cut_sets = self.split(num_jobs, shuffle=True)
 
@@ -1652,7 +1657,7 @@ class CutSet(JsonMixin, YamlMixin, Sequence[AnyCut]):
                 CutSet.compute_and_store_features,
                 cs,
                 extractor=extractor,
-                storage_path=Path(storage_path) / f'feats-{i}',
+                storage_path=storage_path / f'feats-{i}',
                 augment_fn=augment_fn,
                 storage_type=storage_type,
                 mix_eagerly=mix_eagerly
