@@ -324,17 +324,17 @@ class RecordingSet(JsonMixin, YamlMixin, Sequence[Recording]):
         """
         return RecordingSet.from_recordings(rec for rec in self if predicate(rec))
 
-    def split(self, num_splits: int, randomize: bool = False) -> List['RecordingSet']:
+    def split(self, num_splits: int, shuffle: bool = False) -> List['RecordingSet']:
         """
         Split the ``RecordingSet`` into ``num_splits`` pieces of equal size.
 
         :param num_splits: Requested number of splits.
-        :param randomize: Optionally randomize the recordings order first.
+        :param shuffle: Optionally shuffle the recordings order first.
         :return: A list of ``RecordingSet`` pieces.
         """
         return [
             RecordingSet.from_recordings(subset) for subset in
-            split_sequence(self, num_splits=num_splits, randomize=randomize)
+            split_sequence(self, num_splits=num_splits, shuffle=shuffle)
         ]
 
     def load_audio(

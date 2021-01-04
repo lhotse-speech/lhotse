@@ -1,5 +1,6 @@
-from concurrent.futures import ProcessPoolExecutor
+from concurrent.futures import ProcessPoolExecutor, Executor
 from dataclasses import dataclass, field
+from pathlib import Path
 
 import logging
 import numpy as np
@@ -18,7 +19,7 @@ from lhotse.audio import AudioMixer, Recording, RecordingSet
 from lhotse.augmentation import AugmentFn
 from lhotse.features import FeatureExtractor, FeatureMixer, FeatureSet, Features, create_default_feature_extractor
 from lhotse.features.base import compute_global_stats
-from lhotse.features.io import FeaturesWriter
+from lhotse.features.io import FeaturesWriter, LilcomHdf5Writer, LilcomFilesWriter
 from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import (Decibels, EPSILON, JsonMixin, Pathlike, Seconds, TimeSpan, YamlMixin, asdict_nonull,
                           compute_num_frames, fastcopy,
@@ -1288,17 +1289,17 @@ class CutSet(JsonMixin, YamlMixin, Sequence[AnyCut]):
         with pd.option_context('precision', 1):
             print(durations.describe().drop('count'))
 
-    def split(self, num_splits: int, randomize: bool = False) -> List['CutSet']:
+    def split(self, num_splits: int, shuffle: bool = False) -> List['CutSet']:
         """
         Split the ``CutSet`` into ``num_splits`` pieces of equal size.
 
         :param num_splits: Requested number of splits.
-        :param randomize: Optionally randomize the cuts order first.
+        :param shuffle: Optionally shuffle the cuts order first.
         :return: A list of ``CutSet`` pieces.
         """
         return [
             CutSet.from_cuts(subset) for subset in
-            split_sequence(self, num_splits=num_splits, randomize=randomize)
+            split_sequence(self, num_splits=num_splits, shuffle=shuffle)
         ]
 
     def subset(self, supervision_ids: Optional[Iterable[str]] = None) -> 'CutSet':
@@ -1530,7 +1531,7 @@ class CutSet(JsonMixin, YamlMixin, Sequence[AnyCut]):
     def perturb_speed(self, factor: float, affix_id: bool = True) -> 'CutSet':
         return self.map(lambda cut: cut.perturb_speed(factor=factor, affix_id=affix_id))
 
-    def compute_and_store_features(
+    def _compute_and_store_features(
             self,
             extractor: FeatureExtractor,
             storage: FeaturesWriter,
@@ -1539,8 +1540,7 @@ class CutSet(JsonMixin, YamlMixin, Sequence[AnyCut]):
             mix_eagerly: bool = True
     ) -> 'CutSet':
         """
-        Modify the current ``CutSet`` with by extracting features and attaching the feature manifests
-        to the cuts.
+        Extract features for all cuts and store them using the specified storage object.
 
         :param extractor: A ``FeatureExtractor`` instance (either Lhotse's built-in or a custom implementation).
         :param storage: A ``FeaturesWriter`` instance used to store the features.
@@ -1554,7 +1554,7 @@ class CutSet(JsonMixin, YamlMixin, Sequence[AnyCut]):
             and mix them dynamically when loading the features.
             When True, mix the audio first and store the mixed features, returning a new ``Cut`` instance
             with the same ID. The returned ``Cut`` will not have a ``Recording`` attached.
-        :return: a new CutSet instance with the same ``Cut``s, but with attached ``Features`` objects
+        :return: Returns a new ``CutSet`` with ``Features`` manifests attached to the cuts.
         """
         if executor is None:
             return CutSet.from_cuts(tqdm(
@@ -1595,6 +1595,121 @@ class CutSet(JsonMixin, YamlMixin, Sequence[AnyCut]):
             total=len(futures)
         ))
         return cut_set
+
+    def compute_and_store_features_in_files(
+            self,
+            extractor: FeatureExtractor,
+            output_dir: Pathlike,
+            executor: Optional[Executor] = None,
+            mix_eagerly: bool = True
+    ):
+        """
+        Extract features for all cuts and store them in a directory tree, with a separate file for each array.
+        This method uses ``LilcomFilesWriter``.
+        Each feature array will be compressed using lilcom.
+
+        :param extractor: A ``FeatureExtractor`` instance (either Lhotse's built-in or a custom implementation).
+        :param output_dir: A path to directory where the feature arrays are going to be stored.
+        :param executor: when provided, will be used to parallelize the feature extraction process.
+            Any executor satisfying the standard concurrent.futures interface will be suitable;
+            e.g. ProcessPoolExecutor, ThreadPoolExecutor, or dask.Client for distributed task
+            execution (see: https://docs.dask.org/en/latest/futures.html?highlight=Client#start-dask-client)
+        :param mix_eagerly: Related to how the features are extracted for ``MixedCut`` instances, if any are present.
+            When False, extract and store the features for each track separately,
+            and mix them dynamically when loading the features.
+            When True, mix the audio first and store the mixed features, returning a new ``Cut`` instance
+            with the same ID. The returned ``Cut`` will not have a ``Recording`` attached.
+        :return: Returns a new ``CutSet`` with ``Features`` manifests attached to the cuts.
+        """
+        with LilcomFilesWriter(output_dir) as st:
+            return self._compute_and_store_features(
+                extractor=extractor,
+                storage=st,
+                executor=executor,
+                mix_eagerly=mix_eagerly
+            )
+
+    def compute_and_store_features_in_hdf5(
+            self,
+            extractor: FeatureExtractor,
+            output_dir: Pathlike,
+            executor: Optional[Executor] = None,
+            num_splits: Optional[int] = None,
+            shuffle: bool = True,
+            mix_eagerly: bool = True
+    ):
+        """
+        Extract features for all cuts and store them in one or more HDF5 files.
+        This method uses ``LilcomHdf5Writer``.
+        Each feature array will be compressed using lilcom.
+
+        :param extractor: A ``FeatureExtractor`` instance (either Lhotse's built-in or a custom implementation).
+        :param output_dir: A path to directory where the feature arrays are going to be stored.
+        :param executor: when provided, will be used to parallelize the feature extraction process.
+            Any executor satisfying the standard concurrent.futures interface will be suitable;
+            e.g. ProcessPoolExecutor, ThreadPoolExecutor, or dask.Client for distributed task
+            execution (see: https://docs.dask.org/en/latest/futures.html?highlight=Client#start-dask-client)
+        :param num_splits: How many HDF5 should be created. Defaults to 1 for single-threaded execution;
+            when passing an ``executor`` it is best to set ``num_splits`` to the number of parallel workers.
+        :param shuffle: By default we'll shuffle the ``CutSet`` first so that the cuts using data augmentation
+            are evenly distributed over all workers. Setting this to ``False`` will preserve the original
+            cuts order, but might be a bit slower.
+        :param mix_eagerly: Related to how the features are extracted for ``MixedCut`` instances, if any are present.
+            When False, extract and store the features for each track separately,
+            and mix them dynamically when loading the features.
+            When True, mix the audio first and store the mixed features, returning a new ``Cut`` instance
+            with the same ID. The returned ``Cut`` will not have a ``Recording`` attached.
+        :return: Returns a new ``CutSet`` with ``Features`` manifests attached to the cuts.
+        """
+        from lhotse.manipulation import combine
+
+        # Check the pre-condition for single-threaded and parallel execution
+        if executor is not None and num_splits is None:
+            raise ValueError("When passing an executor for parallel feature extraction,"
+                             "the 'num_splits' argument has to be set."
+                             "We recommend the same value as the number of parallel workers.")
+
+        output_dir = Path(output_dir)
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+        # Single-threaded execution
+        if executor is None:
+            if num_splits is not None:
+                logging.warning('Feature extraction: no executor passed but num_splits set;'
+                                'the num_splits value will be ignored.')
+            with LilcomHdf5Writer(storage_path=output_dir / 'feats.h5') as st:
+                return self._compute_and_store_features(
+                    extractor=extractor,
+                    storage=st,
+                    mix_eagerly=mix_eagerly
+                )
+
+        # Multi-threaded execution
+        cut_sets = self.split(num_splits, shuffle=shuffle)
+
+        # We'll create a separate HDF5 file for each worker so that we don't need to
+        # involve any sort of single-file parallel writing (it's non-trivial).
+        # We can't use the 'with' clause due to a variable number of context managers
+        # (the storage files) so we write it out manually with try/finally.
+        storages = []
+        try:
+            for i in range(num_splits):
+                storages.append(LilcomHdf5Writer(output_dir / f'feats.{i}.h5'))
+            futures = [
+                executor.submit(
+                    CutSet._compute_and_store_features,
+                    cs,
+                    extractor=extractor,
+                    storage=st,
+                    mix_eagerly=mix_eagerly
+                )
+                for cs, st in zip(cut_sets, storages)
+            ]
+            cuts_with_feats = combine(f.result() for f in futures)
+        finally:
+            for st in storages:
+                st.close()
+        return cuts_with_feats
 
     def compute_global_feature_stats(
             self,

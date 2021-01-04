@@ -116,17 +116,17 @@ class SupervisionSet(JsonMixin, YamlMixin, Sequence[SupervisionSegment]):
     def to_dicts(self) -> List[dict]:
         return [asdict_nonull(s) for s in self]
 
-    def split(self, num_splits: int, randomize: bool = False) -> List['SupervisionSet']:
+    def split(self, num_splits: int, shuffle: bool = False) -> List['SupervisionSet']:
         """
         Split the ``SupervisionSet`` into ``num_splits`` pieces of equal size.
 
         :param num_splits: Requested number of splits.
-        :param randomize: Optionally randomize the supervisions order first.
+        :param shuffle: Optionally shuffle the supervisions order first.
         :return: A list of ``SupervisionSet`` pieces.
         """
         return [
             SupervisionSet.from_segments(subset) for subset in
-            split_sequence(self, num_splits=num_splits, randomize=randomize)
+            split_sequence(self, num_splits=num_splits, shuffle=shuffle)
         ]
 
     def filter(self, predicate: Callable[[SupervisionSegment], bool]) -> 'SupervisionSet':
