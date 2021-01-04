@@ -339,25 +339,19 @@ class NumpyHdf5Writer(FeaturesWriter):
     def __init__(self, storage_path: Pathlike, *args, **kwargs):
         super().__init__()
         import h5py
-        self.storage_path_ = storage_path
-        self.hdf = None
+        self.storage_path_ = Path(storage_path).with_suffix('.h5')
+        self.hdf = h5py.File(self.storage_path, 'w')
 
     @property
     def storage_path(self) -> str:
         return self.storage_path_
 
     def write(self, key: str, value: np.ndarray) -> str:
-        self._lazy_open_hdf()
         self.hdf.create_dataset(key, data=value)
         return key
 
     def close(self) -> None:
         return self.hdf.close()
-
-    def _lazy_open_hdf(self):
-        if self.hdf is None:
-            import h5py
-            self.hdf = h5py.File(self.storage_path, 'w')
 
     def __enter__(self):
         return self
@@ -406,16 +400,14 @@ class LilcomHdf5Writer(FeaturesWriter):
     Each array is stored as a separate HDF ``Dataset`` because their shapes (numbers of frames) may vary.
     ``storage_path`` corresponds to the HDF5 file path;
     ``storage_key`` for each utterance is the key corresponding to the array (i.e. HDF5 "Group" name).
-
-    Internally, this class opens the file lazily so that this object can be passed between processes
-    without issues. This simplifies the parallel feature extraction code.
     """
     name = 'lilcom_hdf5'
 
     def __init__(self, storage_path: Pathlike, tick_power: int = -5, *args, **kwargs):
         super().__init__()
-        self.storage_path_ = storage_path
-        self.hdf = None
+        import h5py
+        self.storage_path_ = Path(storage_path).with_suffix('.h5')
+        self.hdf = h5py.File(self.storage_path, 'w')
         self.tick_power = tick_power
 
     @property
@@ -424,18 +416,11 @@ class LilcomHdf5Writer(FeaturesWriter):
 
     def write(self, key: str, value: np.ndarray) -> str:
         serialized_feats = lilcom.compress(value, tick_power=self.tick_power)
-        self._lazy_open_hdf()
         self.hdf.create_dataset(key, data=np.void(serialized_feats))
         return key
 
     def close(self) -> None:
-        if self.hdf is not None:
-            return self.hdf.close()
-
-    def _lazy_open_hdf(self):
-        if self.hdf is None:
-            import h5py
-            self.hdf = h5py.File(self.storage_path, 'w')
+        return self.hdf.close()
 
     def __enter__(self):
         return self

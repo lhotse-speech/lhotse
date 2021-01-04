@@ -1,19 +1,18 @@
-from concurrent.futures import ProcessPoolExecutor, Executor
-from dataclasses import dataclass, field
-from pathlib import Path
-
 import logging
 import numpy as np
 import random
 import warnings
+from concurrent.futures import ProcessPoolExecutor, Executor
 from cytoolz import sliding_window
 from cytoolz.itertoolz import groupby
+from dataclasses import dataclass, field
 from functools import reduce
 from intervaltree import Interval, IntervalTree
 from itertools import islice
 from math import ceil, floor
+from pathlib import Path
 from tqdm.auto import tqdm
-from typing import Any, Callable, Dict, FrozenSet, Iterable, List, Optional, Sequence, Union
+from typing import Any, Callable, Dict, FrozenSet, Iterable, List, Optional, Sequence, Type, TypeVar, Union
 
 from lhotse.audio import AudioMixer, Recording, RecordingSet
 from lhotse.augmentation import AugmentFn
@@ -33,6 +32,8 @@ from lhotse.utils import (Decibels, EPSILON, JsonMixin, Pathlike, Seconds, TimeS
 # Helper "typedef" to artbitrary Cut type as they do not share a common base class.
 # The class names are strings here so that the Python interpreter resolves them after parsing the whole file.
 AnyCut = Union['Cut', 'MixedCut', 'PaddingCut']
+
+FW = TypeVar('FW', bound=FeaturesWriter)
 
 
 # noinspection PyTypeChecker,PyUnresolvedReferences
@@ -1531,184 +1532,135 @@ class CutSet(JsonMixin, YamlMixin, Sequence[AnyCut]):
     def perturb_speed(self, factor: float, affix_id: bool = True) -> 'CutSet':
         return self.map(lambda cut: cut.perturb_speed(factor=factor, affix_id=affix_id))
 
-    def _compute_and_store_features(
+    def compute_and_store_features(
             self,
             extractor: FeatureExtractor,
-            storage: FeaturesWriter,
+            storage_path: Pathlike,
+            num_jobs: Optional[int] = None,
             augment_fn: Optional[AugmentFn] = None,
-            executor: Optional[Any] = None,
+            storage_type: Type[FW] = LilcomFilesWriter,
+            executor: Optional[Executor] = None,
             mix_eagerly: bool = True
     ) -> 'CutSet':
         """
-        Extract features for all cuts and store them using the specified storage object.
+        Extract features for all cuts, possibly in parallel,
+        and store them using the specified storage object.
 
-        :param extractor: A ``FeatureExtractor`` instance (either Lhotse's built-in or a custom implementation).
-        :param storage: A ``FeaturesWriter`` instance used to store the features.
+        Examples:
+
+            Extract fbank features on one machine using 8 processes,
+            store each array in a separate file with lilcom compression:
+
+            >>> cuts = CutSet(...)
+            ... cuts.compute_and_store_features(
+            ...     extractor=Fbank(),
+            ...     storage_path='feats',
+            ...     num_jobs=8
+            ... )
+
+            Extract fbank features on one machine using 8 processes,
+            store arrays partitioned in 8 HDF5 files with lilcom compression:
+
+            >>> cuts = CutSet(...)
+            ... cuts.compute_and_store_features(
+            ...     extractor=Fbank(),
+            ...     storage_path='feats',
+            ...     num_jobs=8,
+            ...     storage_type=LilcomHdf5Writer
+            ... )
+
+            Extract fbank features on multiple machines using a Dask cluster
+            with 80 jobs,
+            store arrays partitioned in 80 HDF5 files with lilcom compression:
+
+            >>> from distributed import Client
+            ... cuts = CutSet(...)
+            ... cuts.compute_and_store_features(
+            ...     extractor=Fbank(),
+            ...     storage_path='feats',
+            ...     num_jobs=80,
+            ...     storage_type=LilcomHdf5Writer,
+            ...     executor=Client(...)
+            ... )
+
+        :param extractor: A ``FeatureExtractor`` instance
+            (either Lhotse's built-in or a custom implementation).
+        :param storage_path: The path to location where we will store the features.
+            The exact type and layout of stored files will be dictated by the
+            ``storage_type`` argument.
+        :param num_jobs: The number of parallel processes used to extract the features.
+            We will internally split the CutSet into this many chunks
+            and process each chunk in parallel.
         :param augment_fn: an optional callable used for audio augmentation.
+            Be careful with the types of augmentations used: if they modify
+            the start/end/duration times of the cut and its supervisions,
+            you will end up with incorrect supervision information when using this API.
+            E.g. for speed perturbation, use ``CutSet.perturb_speed()`` instead.
+        :param storage_type: a ``FeaturesWriter`` subclass type.
+            It determines how the featurs are stored to disk,
+            e.g. separate file per array, HDF5 files with multiple arrays, etc.
         :param executor: when provided, will be used to parallelize the feature extraction process.
-            Any executor satisfying the standard concurrent.futures interface will be suitable;
-            e.g. ProcessPoolExecutor, ThreadPoolExecutor, or dask.Client for distributed task
-            execution (see: https://docs.dask.org/en/latest/futures.html?highlight=Client#start-dask-client)
-        :param mix_eagerly: Related to how the features are extracted for ``MixedCut`` instances, if any are present.
+            By default, we will instantiate a ProcessPoolExecutor.
+            Learn more about the ``Executor`` API at
+            https://lhotse.readthedocs.io/en/latest/parallelism.html
+        :param mix_eagerly: Related to how the features are extracted for ``MixedCut``
+            instances, if any are present.
             When False, extract and store the features for each track separately,
             and mix them dynamically when loading the features.
-            When True, mix the audio first and store the mixed features, returning a new ``Cut`` instance
-            with the same ID. The returned ``Cut`` will not have a ``Recording`` attached.
-        :return: Returns a new ``CutSet`` with ``Features`` manifests attached to the cuts.
-        """
-        if executor is None:
-            return CutSet.from_cuts(tqdm(
-                (
-                    cut.compute_and_store_features(
-                        extractor=extractor,
-                        storage=storage,
-                        augment_fn=augment_fn,
-                        mix_eagerly=mix_eagerly
-                    ) for cut in self
-                ),
-                desc='Extracting and storing features',
-                total=len(self)
-            ))
-
-        if isinstance(executor, ProcessPoolExecutor) and executor._mp_context._name == 'fork':
-            warnings.warn('ProcessPoolExecutor using a "fork" multiprocessing detected. '
-                          'In some circumstances this can crash or hang the program, e.g. when using '
-                          ' data augmentation libsox wrappers like WavAugment or torchaudio. '
-                          'We suggest passing an extra argument to initialize the executor: '
-                          'ProcessPoolExecutor(..., mp_context=multiprocessing.get_context("spawn"))')
-
-        futures = []
-        for cut in self:
-            futures.append(
-                executor.submit(
-                    _extract_and_store_features_helper_fn,
-                    cut,
-                    extractor=extractor,
-                    storage=storage,
-                    augment_fn=augment_fn,
-                    mix_eagerly=mix_eagerly
-                )
-            )
-        cut_set = CutSet.from_cuts(tqdm(
-            (f.result() for f in futures),
-            desc='Extracting and storing features in parallel',
-            total=len(futures)
-        ))
-        return cut_set
-
-    def compute_and_store_features_in_files(
-            self,
-            extractor: FeatureExtractor,
-            output_dir: Pathlike,
-            executor: Optional[Executor] = None,
-            mix_eagerly: bool = True
-    ):
-        """
-        Extract features for all cuts and store them in a directory tree, with a separate file for each array.
-        This method uses ``LilcomFilesWriter``.
-        Each feature array will be compressed using lilcom.
-
-        :param extractor: A ``FeatureExtractor`` instance (either Lhotse's built-in or a custom implementation).
-        :param output_dir: A path to directory where the feature arrays are going to be stored.
-        :param executor: when provided, will be used to parallelize the feature extraction process.
-            Any executor satisfying the standard concurrent.futures interface will be suitable;
-            e.g. ProcessPoolExecutor, ThreadPoolExecutor, or dask.Client for distributed task
-            execution (see: https://docs.dask.org/en/latest/futures.html?highlight=Client#start-dask-client)
-        :param mix_eagerly: Related to how the features are extracted for ``MixedCut`` instances, if any are present.
-            When False, extract and store the features for each track separately,
-            and mix them dynamically when loading the features.
-            When True, mix the audio first and store the mixed features, returning a new ``Cut`` instance
-            with the same ID. The returned ``Cut`` will not have a ``Recording`` attached.
-        :return: Returns a new ``CutSet`` with ``Features`` manifests attached to the cuts.
-        """
-        with LilcomFilesWriter(output_dir) as st:
-            return self._compute_and_store_features(
-                extractor=extractor,
-                storage=st,
-                executor=executor,
-                mix_eagerly=mix_eagerly
-            )
-
-    def compute_and_store_features_in_hdf5(
-            self,
-            extractor: FeatureExtractor,
-            output_dir: Pathlike,
-            executor: Optional[Executor] = None,
-            num_splits: Optional[int] = None,
-            shuffle: bool = True,
-            mix_eagerly: bool = True
-    ):
-        """
-        Extract features for all cuts and store them in one or more HDF5 files.
-        This method uses ``LilcomHdf5Writer``.
-        Each feature array will be compressed using lilcom.
-
-        :param extractor: A ``FeatureExtractor`` instance (either Lhotse's built-in or a custom implementation).
-        :param output_dir: A path to directory where the feature arrays are going to be stored.
-        :param executor: when provided, will be used to parallelize the feature extraction process.
-            Any executor satisfying the standard concurrent.futures interface will be suitable;
-            e.g. ProcessPoolExecutor, ThreadPoolExecutor, or dask.Client for distributed task
-            execution (see: https://docs.dask.org/en/latest/futures.html?highlight=Client#start-dask-client)
-        :param num_splits: How many HDF5 should be created. Defaults to 1 for single-threaded execution;
-            when passing an ``executor`` it is best to set ``num_splits`` to the number of parallel workers.
-        :param shuffle: By default we'll shuffle the ``CutSet`` first so that the cuts using data augmentation
-            are evenly distributed over all workers. Setting this to ``False`` will preserve the original
-            cuts order, but might be a bit slower.
-        :param mix_eagerly: Related to how the features are extracted for ``MixedCut`` instances, if any are present.
-            When False, extract and store the features for each track separately,
-            and mix them dynamically when loading the features.
-            When True, mix the audio first and store the mixed features, returning a new ``Cut`` instance
-            with the same ID. The returned ``Cut`` will not have a ``Recording`` attached.
+            When True, mix the audio first and store the mixed features,
+            returning a new ``Cut`` instance with the same ID.
+            The returned ``Cut`` will not have a ``Recording`` attached.
         :return: Returns a new ``CutSet`` with ``Features`` manifests attached to the cuts.
         """
         from lhotse.manipulation import combine
 
-        # Check the pre-condition for single-threaded and parallel execution
-        if executor is not None and num_splits is None:
-            raise ValueError("When passing an executor for parallel feature extraction,"
-                             "the 'num_splits' argument has to be set."
-                             "We recommend the same value as the number of parallel workers.")
+        # Pre-conditions and args setup
+        if num_jobs is None:
+            num_jobs = 1
+        if num_jobs == 1 and executor is not None:
+            logging.warning('Executor argument was passed but num_jobs set to 1: '
+                            'we will ignore the executor and use non-parallel execution.')
+            executor = None
 
-        output_dir = Path(output_dir)
-        output_dir.mkdir(parents=True, exist_ok=True)
+        # Non-parallel execution
+        if executor is None and num_jobs == 1:
+            print(storage_type, storage_path)
+            with storage_type(storage_path) as storage:
+                return CutSet.from_cuts(tqdm(
+                    (
+                        cut.compute_and_store_features(
+                            extractor=extractor,
+                            storage=storage,
+                            augment_fn=augment_fn,
+                            mix_eagerly=mix_eagerly
+                        ) for cut in self
+                    ),
+                    desc='Extracting and storing features',
+                    total=len(self)
+                ))
 
-        # Single-threaded execution
+        # Parallel execution: prepare the CutSet splits
+        cut_sets = self.split(num_jobs, shuffle=True)
+
+        # Initialize the default executor if None was given
         if executor is None:
-            if num_splits is not None:
-                logging.warning('Feature extraction: no executor passed but num_splits set;'
-                                'the num_splits value will be ignored.')
-            with LilcomHdf5Writer(storage_path=output_dir / 'feats.h5') as st:
-                return self._compute_and_store_features(
-                    extractor=extractor,
-                    storage=st,
-                    mix_eagerly=mix_eagerly
-                )
+            executor = ProcessPoolExecutor(num_jobs)
 
-        # Multi-threaded execution
-        cut_sets = self.split(num_splits, shuffle=shuffle)
-
-        # We'll create a separate HDF5 file for each worker so that we don't need to
-        # involve any sort of single-file parallel writing (it's non-trivial).
-        # We can't use the 'with' clause due to a variable number of context managers
-        # (the storage files) so we write it out manually with try/finally.
-        storages = []
-        try:
-            for i in range(num_splits):
-                storages.append(LilcomHdf5Writer(output_dir / f'feats.{i}.h5'))
-            futures = [
-                executor.submit(
-                    CutSet._compute_and_store_features,
-                    cs,
-                    extractor=extractor,
-                    storage=st,
-                    mix_eagerly=mix_eagerly
-                )
-                for cs, st in zip(cut_sets, storages)
-            ]
-            cuts_with_feats = combine(f.result() for f in futures)
-        finally:
-            for st in storages:
-                st.close()
+        # Submit the chunked tasks to parallel workers.
+        # Each worker runs the non-parallel version of this function inside.
+        futures = [
+            executor.submit(
+                CutSet.compute_and_store_features,
+                cs,
+                extractor=extractor,
+                storage_path=Path(storage_path) / f'feats-{i}',
+                augment_fn=augment_fn,
+                storage_type=storage_type,
+                mix_eagerly=mix_eagerly
+            )
+            for i, cs in enumerate(cut_sets)
+        ]
+        cuts_with_feats = combine(f.result() for f in futures)
         return cuts_with_feats
 
     def compute_global_feature_stats(
@@ -1759,10 +1711,12 @@ class CutSet(JsonMixin, YamlMixin, Sequence[AnyCut]):
             and returns a single cut instance.
         :return: a new ``CutSet`` with modified cuts.
         """
+
         def verified(mapped: Any) -> AnyCut:
             assert isinstance(mapped, (Cut, MixedCut, PaddingCut)), \
                 "The callable passed to CutSet.map() must return a Cut class instance."
             return mapped
+
         return CutSet.from_cuts(verified(transform_fn(c)) for c in self)
 
     def modify_ids(self, transform_fn: Callable[[str], str]) -> 'CutSet':
@@ -1954,7 +1908,3 @@ def append_cuts(cuts: Iterable[AnyCut]) -> AnyCut:
     # The following is a fold (accumulate/aggregate) operation; it starts with cuts[0], and appends cuts[1] to it;
     #  then takes their it concatenation and appends cuts[2] to it; and so on.
     return reduce(append, cuts)
-
-
-def _extract_and_store_features_helper_fn(cut: AnyCut, *args, **kwargs) -> AnyCut:
-    return cut.compute_and_store_features(*args, **kwargs)
