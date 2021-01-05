@@ -69,7 +69,7 @@ A short snippet to show how Lhotse can make audio data prepartion quick and easy
 
 .. code-block::
 
-    from lhotse import CutSet, Fbank, LilcomFilesWriter
+    from lhotse import CutSet, Fbank
     from lhotse.dataset import VadDataset
     from lhotse.recipes import prepare_switchboard
 
@@ -92,11 +92,11 @@ A short snippet to show how Lhotse can make audio data prepartion quick and easy
     # Then, we pad the cuts to 5 seconds to ensure all cuts are of equal length,
     # as the last window in each recording might have a shorter duration.
     # The padding will be performed once the features are loaded into memory.
-    with LilcomFilesWriter('feats') as storage:
-        cuts = cuts.compute_and_store_features(
-            extractor=Fbank(),
-            storage=storage,
-        ).pad(duration=5.0)
+    cuts = cuts.compute_and_store_features(
+        extractor=Fbank(),
+        storage_path='feats',
+        num_jobs=8
+    ).pad(duration=5.0)
 
     # Construct a Pytorch Dataset class for Voice Activity Detection task:
     dataset = VadDataset(cuts)
