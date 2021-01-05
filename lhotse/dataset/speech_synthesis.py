@@ -4,6 +4,7 @@ from typing import Dict, List, Optional
 import torch
 from torch.utils.data import Dataset
 
+from lhotse import validate
 from lhotse.cut import CutSet
 from lhotse.utils import Pathlike
 
@@ -30,6 +31,7 @@ class SpeechSynthesisDataset(Dataset):
             root_dir: Optional[Pathlike] = None
     ):
         super().__init__()
+        validate(cuts)
         self.cuts = cuts
         self.root_dir = Path(root_dir) if root_dir else None
         self.cut_ids = list(self.cuts.ids)

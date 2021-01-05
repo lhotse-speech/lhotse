@@ -94,8 +94,8 @@ def simple_mixed_cut():
     return MixedCut(
         id='simple-mixed-cut',
         tracks=[
-            MixTrack(cut=dummy_cut('cut0', duration=10.0)),
-            MixTrack(cut=dummy_cut('cut1', duration=10.0), offset=5.0),
+            MixTrack(cut=dummy_cut(0, duration=10.0)),
+            MixTrack(cut=dummy_cut(1, duration=10.0), offset=5.0),
         ]
     )
 

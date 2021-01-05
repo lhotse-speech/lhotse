@@ -4,6 +4,7 @@ from typing import Dict
 import torch
 from torch.utils.data import Dataset
 
+from lhotse import validate
 from lhotse.cut import CutSet
 
 EPS = 1e-8
@@ -27,6 +28,7 @@ class VadDataset(Dataset):
             cuts: CutSet,
     ):
         super().__init__()
+        validate(cuts)
         self.cuts = cuts
         self.cut_ids = list(cuts.ids)
 
