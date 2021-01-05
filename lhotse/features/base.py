@@ -114,8 +114,9 @@ class FeatureExtractor(metaclass=ABCMeta):
             storage: FeaturesWriter,
             sampling_rate: int,
             offset: Seconds = 0,
+            channel: Optional[int] = None,
             augment_fn: Optional[AugmentFn] = None,
-    ):
+    ) -> 'Features':
         """
         Extract the features from an array of audio samples in a full pipeline:
 
@@ -134,6 +135,7 @@ class FeatureExtractor(metaclass=ABCMeta):
         :param storage: a ``FeaturesWriter`` object that will handle storing the feature matrices.
         :param offset: an offset in seconds for where to start reading the recording - when used for
             ``Cut`` feature extraction, must be equal to ``Cut.start``.
+        :param channel: an optional channel number to insert into ``Features`` manifest.
         :param augment_fn: an optional ``WavAugmenter`` instance to modify the waveform before feature extraction.
         :return: a ``Features`` manifest item for the extracted feature matrix (it is not written to disk).
         """
@@ -149,6 +151,7 @@ class FeatureExtractor(metaclass=ABCMeta):
             num_frames=feats.shape[0],
             num_features=feats.shape[1],
             sampling_rate=sampling_rate,
+            channels=channel,
             storage_type=storage.name,
             storage_path=str(storage.storage_path),
             storage_key=storage_key
@@ -162,7 +165,7 @@ class FeatureExtractor(metaclass=ABCMeta):
             duration: Optional[Seconds] = None,
             channels: Union[int, List[int]] = None,
             augment_fn: Optional[AugmentFn] = None,
-    ):
+    ) -> 'Features':
         """
         Extract the features from a ``Recording`` in a full pipeline:
 

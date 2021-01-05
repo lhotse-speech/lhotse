@@ -90,13 +90,13 @@ def test_k2_speech_recognition_iterable_dataset_shuffling():
 
 def test_concat_cuts():
     cuts = [
-        dummy_cut(duration=30.0),
-        dummy_cut(duration=20.0),
-        dummy_cut(duration=10.0),
-        dummy_cut(duration=5.0),
-        dummy_cut(duration=4.0),
-        dummy_cut(duration=3.0),
-        dummy_cut(duration=2.0),
+        dummy_cut(0, duration=30.0),
+        dummy_cut(1, duration=20.0),
+        dummy_cut(2, duration=10.0),
+        dummy_cut(3, duration=5.0),
+        dummy_cut(4, duration=4.0),
+        dummy_cut(5, duration=3.0),
+        dummy_cut(6, duration=2.0),
     ]
     concat = concat_cuts(cuts, gap=1.0)
     assert [c.duration for c in concat] == [

@@ -4,6 +4,7 @@ from typing import Dict, Optional
 import torch
 from torch.utils.data import Dataset
 
+from lhotse import validate
 from lhotse.cut import CutSet
 from lhotse.utils import Pathlike
 
@@ -48,6 +49,7 @@ class DiarizationDataset(Dataset):
             global_speaker_ids: bool = False,
     ):
         super().__init__()
+        validate(cuts)
         self.cuts = cuts
         self.cut_ids = list(cuts.ids)
         self.speakers = {spk: idx for idx, spk in enumerate(self.cuts.speakers)} if global_speaker_ids else None

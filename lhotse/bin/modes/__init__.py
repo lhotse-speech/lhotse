@@ -4,3 +4,4 @@ from .features import *
 from .kaldi import *
 from .manipulation import *
 from .recipes import *
+from .validate import *

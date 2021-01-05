@@ -3,6 +3,7 @@ from typing import Dict, List, Optional, Tuple
 import torch
 from torch.utils.data import Dataset
 
+from lhotse import validate
 from lhotse.cut import AnyCut, Cut, CutSet
 from lhotse.utils import EPSILON
 
@@ -39,6 +40,8 @@ class SourceSeparationDataset(Dataset):
                                   "done dynamically (on-the-fly).")
 
     def validate(self):
+        validate(self.sources_set)
+        validate(self.mixtures_set)
         # Make sure it's possible to iterate through the whole dataset and resolve the sources for each mixture
         for cut in self.mixtures_set.mixed_cuts.values():
             _, source_cuts = self._obtain_mixture(cut.id)
@@ -104,6 +107,10 @@ class DynamicallyMixedSourceSeparationDataset(SourceSeparationDataset):
     ):
         super().__init__(sources_set=sources_set, mixtures_set=mixtures_set)
         self.nonsources_set = nonsources_set
+
+    def validate(self):
+        super().validate()
+        validate(self.nonsources_set)
 
     def _obtain_mixture(self, cut_id: str) -> Tuple[AnyCut, List[Cut]]:
         mixture_cut = self.mixtures_set.mixed_cuts[cut_id]

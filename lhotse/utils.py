@@ -8,7 +8,7 @@ from dataclasses import asdict, dataclass
 from decimal import Decimal, ROUND_HALF_DOWN, ROUND_HALF_UP
 from math import ceil, isclose
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Sequence, TypeVar, Union
+from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence, TypeVar, Union
 
 import numpy as np
 import torch
@@ -16,6 +16,7 @@ import yaml
 from tqdm.auto import tqdm
 
 Pathlike = Union[Path, str]
+T = TypeVar('T')
 
 Seconds = float
 Decibels = float
@@ -199,9 +200,6 @@ def recursion_limit(stack_size: int):
         sys.setrecursionlimit(old_size)
 
 
-T = TypeVar('T')
-
-
 def fastcopy(dataclass_obj: T, **kwargs) -> T:
     """
     Returns a new object with the same member values.
@@ -362,3 +360,11 @@ def compute_num_samples(duration: Seconds, sampling_rate: int, rounding=ROUND_HA
             duration * sampling_rate
         ).quantize(0, rounding=rounding)
     )
+
+
+def index_by_id_and_check(manifests: Iterable[T]) -> Dict[str, T]:
+    id2man = {}
+    for m in manifests:
+        assert m.id not in id2man, f"Duplicated manifest ID: {m.id}"
+        id2man[m.id] = m
+    return id2man

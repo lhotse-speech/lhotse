@@ -379,6 +379,7 @@ class TestNoCutOnSupervisions:
 @pytest.fixture()
 def dummy_cut_with_supervisions():
     return dummy_cut(
+        unique_id=0,
         supervisions=[
             dummy_supervision(unique_id=i, duration=i) for i in range(1, 7)
         ]

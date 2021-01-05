@@ -37,7 +37,7 @@ def dummy_recording(unique_id: int) -> Recording:
 def dummy_supervision(unique_id: int, start: float = 0.0, duration: float = 1.0) -> SupervisionSegment:
     return SupervisionSegment(
         id=f'dummy-segment-{unique_id:04d}',
-        recording_id='dummy-recording',
+        recording_id=f'dummy-recording-{unique_id:04d}',
         start=start,
         duration=duration,
         text='irrelevant'
@@ -60,13 +60,13 @@ def dummy_features(unique_id: int) -> Features:
     )
 
 
-def dummy_cut(id: str = 'irrelevant', start: float = 0.0, duration: float = 1.0, supervisions=None):
+def dummy_cut(unique_id: int, start: float = 0.0, duration: float = 1.0, supervisions=None):
     return Cut(
-        id=id,
+        id=f'dummy-cut-{unique_id:04d}',
         start=start,
         duration=duration,
         channel=0,
-        features=dummy_features(0),
+        features=dummy_features(unique_id),
         supervisions=supervisions if supervisions is not None else [],
     )
 

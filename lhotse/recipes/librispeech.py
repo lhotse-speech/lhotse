@@ -9,6 +9,7 @@ from pathlib import Path
 from tqdm.auto import tqdm
 from typing import Dict, Optional, Sequence, Tuple, Union
 
+from lhotse import validate_recordings_and_supervisions
 from lhotse.audio import Recording, RecordingSet
 from lhotse.recipes.utils import read_manifests_if_cached
 from lhotse.supervision import SupervisionSegment, SupervisionSet
@@ -130,6 +131,8 @@ def prepare_librispeech(
 
             recording_set = RecordingSet.from_recordings(recordings)
             supervision_set = SupervisionSet.from_segments(supervisions)
+
+            validate_recordings_and_supervisions(recording_set, supervision_set)
 
             if output_dir is not None:
                 supervision_set.to_json(output_dir / f'supervisions_{part}.json')
