@@ -15,6 +15,7 @@ from itertools import chain
 from pathlib import Path
 from typing import Dict, Optional, Union
 
+from lhotse import validate_recordings_and_supervisions
 from lhotse.audio import Recording, RecordingSet
 from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import Pathlike, check_and_rglob, urlretrieve_progress
@@ -69,6 +70,8 @@ def prepare_switchboard(
         for group, recording in zip(groups, recordings)
         for channel in [0, 1]
     ))
+
+    validate_recordings_and_supervisions(recordings, supervisions)
 
     if sentiment_dir is not None:
         parse_and_add_sentiment_labels(sentiment_dir, supervisions)

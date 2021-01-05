@@ -12,7 +12,7 @@ from lhotse.augmentation import AudioTransform, Speed
 from lhotse.utils import (Decibels, JsonMixin, Pathlike, Seconds, SetContainingAnything, YamlMixin, asdict_nonull,
                           compute_num_samples,
                           fastcopy,
-                          perturb_num_samples, split_sequence)
+                          index_by_id_and_check, perturb_num_samples, split_sequence)
 
 Channels = Union[int, List[int]]
 
@@ -306,7 +306,7 @@ class RecordingSet(JsonMixin, YamlMixin, Sequence[Recording]):
 
     @staticmethod
     def from_recordings(recordings: Iterable[Recording]) -> 'RecordingSet':
-        return RecordingSet(recordings={r.id: r for r in recordings})
+        return RecordingSet(recordings=index_by_id_and_check(recordings))
 
     @staticmethod
     def from_dicts(data: Iterable[dict]) -> 'RecordingSet':
