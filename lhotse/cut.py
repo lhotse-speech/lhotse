@@ -6,7 +6,7 @@ from concurrent.futures import ProcessPoolExecutor, Executor
 from cytoolz import sliding_window
 from cytoolz.itertoolz import groupby
 from dataclasses import dataclass, field
-from functools import reduce
+from functools import partial, reduce
 from intervaltree import Interval, IntervalTree
 from itertools import islice
 from math import ceil, floor
@@ -1540,7 +1540,8 @@ class CutSet(JsonMixin, YamlMixin, Sequence[AnyCut]):
             augment_fn: Optional[AugmentFn] = None,
             storage_type: Type[FW] = LilcomFilesWriter,
             executor: Optional[Executor] = None,
-            mix_eagerly: bool = True
+            mix_eagerly: bool = True,
+            progress_bar: bool = True,
     ) -> 'CutSet':
         """
         Extract features for all cuts, possibly in parallel,
@@ -1610,11 +1611,15 @@ class CutSet(JsonMixin, YamlMixin, Sequence[AnyCut]):
             When True, mix the audio first and store the mixed features,
             returning a new ``Cut`` instance with the same ID.
             The returned ``Cut`` will not have a ``Recording`` attached.
+        :param progress_bar: Should a progress bar be displayed (automatically turned off
+            for parallel computation).
         :return: Returns a new ``CutSet`` with ``Features`` manifests attached to the cuts.
         """
         from lhotse.manipulation import combine
+        from cytoolz import identity
 
         # Pre-conditions and args setup
+        progress = identity  # does nothing, unless we overwrite it with an actual prog bar
         if num_jobs is None:
             num_jobs = 1
         if num_jobs == 1 and executor is not None:
@@ -1624,19 +1629,21 @@ class CutSet(JsonMixin, YamlMixin, Sequence[AnyCut]):
 
         # Non-parallel execution
         if executor is None and num_jobs == 1:
+            if progress_bar:
+                progress = partial(
+                    tqdm, desc='Extracting and storing features', total=len(self)
+                )
             with storage_type(storage_path) as storage:
-                return CutSet.from_cuts(tqdm(
-                    (
+                return CutSet.from_cuts(
+                    progress(
                         cut.compute_and_store_features(
                             extractor=extractor,
                             storage=storage,
                             augment_fn=augment_fn,
                             mix_eagerly=mix_eagerly
                         ) for cut in self
-                    ),
-                    desc='Extracting and storing features',
-                    total=len(self)
-                ))
+                    )
+                )
 
         # We are now sure that "storage_path" will be the root for
         # multiple feature storages - we can create it as a directory
@@ -1660,11 +1667,19 @@ class CutSet(JsonMixin, YamlMixin, Sequence[AnyCut]):
                 storage_path=storage_path / f'feats-{i}',
                 augment_fn=augment_fn,
                 storage_type=storage_type,
-                mix_eagerly=mix_eagerly
+                mix_eagerly=mix_eagerly,
+                # Disable individual workers progress bars for readability
+                progress_bar=False
             )
             for i, cs in enumerate(cut_sets)
         ]
-        cuts_with_feats = combine(f.result() for f in futures)
+
+        if progress_bar:
+            progress = partial(
+                tqdm, desc='Extracting and storing features (chunks progress)', total=len(futures)
+            )
+
+        cuts_with_feats = combine(progress(f.result() for f in futures))
         return cuts_with_feats
 
     def compute_global_feature_stats(
