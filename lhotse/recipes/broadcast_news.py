@@ -154,7 +154,10 @@ def try_parse(sgml_path: Path):
     If it runs into Unicode decoding errors, it will try to determine the file's encoding
     and use iconv to automatically convert it to UTF-8.
     """
-    from bs4 import BeautifulSoup
+    try:
+        from bs4 import BeautifulSoup
+    except:
+        raise ImportError('Before running BroadcastNews data preparation, you should "pip install beautifulsoup4"')
     try:
         return BeautifulSoup(sgml_path.read_text(), 'html.parser')
     except UnicodeDecodeError:

@@ -9,7 +9,7 @@ from unittest.mock import Mock
 
 import pytest
 
-from lhotse import Cut, CutSet, Fbank, Recording
+from lhotse import Cut, CutSet, Fbank, LilcomHdf5Writer, Recording
 from lhotse.audio import AudioSource
 from lhotse.cut import MixedCut
 from lhotse.features.io import LilcomFilesWriter
@@ -65,7 +65,7 @@ def test_extract_and_store_features_from_mixed_cut(cut, mix_eagerly):
 @pytest.fixture
 def cut_set(cut):
     # The padding tests if feature extraction works correctly with a PaddingCut
-    return CutSet.from_cuts([cut, cut.append(cut).pad(3.0)])
+    return CutSet.from_cuts([cut, cut.append(cut).pad(3.0)]).sort_by_duration()
 
 
 # The lines below try to import Dask (a distributed computing library for Python)
@@ -88,36 +88,37 @@ def is_dask_availabe():
         return False
 
 
+@pytest.mark.parametrize('mix_eagerly', [False, True])
+@pytest.mark.parametrize('storage_type', [LilcomFilesWriter, LilcomHdf5Writer])
 @pytest.mark.parametrize(
-    'mix_eagerly', [False, True]
-)
-@pytest.mark.parametrize(
-    'executor', [
-        None,
-        ThreadPoolExecutor,
+    ['executor', 'num_jobs'],
+    [
+        (None, 1),
+        # For some reason in tests, we need to use the "spawn" context otherwise it hangs
         pytest.param(
-            partial(ProcessPoolExecutor, mp_context=multiprocessing.get_context("spawn")),
+            partial(ProcessPoolExecutor, mp_context=multiprocessing.get_context("spawn")), 2,
             marks=pytest.mark.skipif(
                 sys.version_info[0] == 3 and sys.version_info[1] < 7,
                 reason="The mp_context argument is introduced in Python 3.7"
             )
         ),
         pytest.param(
-            distributed.Client,
+            distributed.Client, 2,
             marks=pytest.mark.skipif(not is_dask_availabe(), reason='Requires Dask')
         )
     ]
 )
-def test_extract_and_store_features_from_cut_set(cut_set, executor, mix_eagerly):
+def test_extract_and_store_features_from_cut_set(cut_set, executor, num_jobs, storage_type, mix_eagerly):
     extractor = Fbank()
-    with TemporaryDirectory() as tmpdir, LilcomFilesWriter(tmpdir) as storage:
-        with executor() if executor is not None else no_executor() as ex:
-            cut_set_with_feats = cut_set.compute_and_store_features(
-                extractor=extractor,
-                storage=storage,
-                mix_eagerly=mix_eagerly,
-                executor=ex
-            )
+    with TemporaryDirectory() as tmpdir:
+        cut_set_with_feats = cut_set.compute_and_store_features(
+            extractor=extractor,
+            storage_path=tmpdir,
+            num_jobs=num_jobs,
+            mix_eagerly=mix_eagerly,
+            executor=executor() if executor else None,
+            storage_type=storage_type
+        ).sort_by_duration()  # sort by duration to ensure the same order of cuts
 
         # The same number of cuts
         assert len(cut_set_with_feats) == 2
@@ -134,9 +135,9 @@ def test_extract_and_store_features_from_cut_set(cut_set, executor, mix_eagerly)
         cuts = list(cut_set_with_feats)
 
         arr = cuts[0].load_features()
-        assert arr.shape[0] == 100
+        assert arr.shape[0] == 300
         assert arr.shape[1] == extractor.feature_dim(cuts[0].sampling_rate)
 
         arr = cuts[1].load_features()
-        assert arr.shape[0] == 300
+        assert arr.shape[0] == 100
         assert arr.shape[1] == extractor.feature_dim(cuts[0].sampling_rate)

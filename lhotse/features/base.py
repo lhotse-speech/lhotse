@@ -400,17 +400,17 @@ class FeatureSet(JsonMixin, YamlMixin, Sequence[Features]):
     def with_path_prefix(self, path: Pathlike) -> 'FeatureSet':
         return FeatureSet.from_features(f.with_path_prefix(path) for f in self)
 
-    def split(self, num_splits: int, randomize: bool = False) -> List['FeatureSet']:
+    def split(self, num_splits: int, shuffle: bool = False) -> List['FeatureSet']:
         """
         Split the ``FeatureSet`` into ``num_splits`` pieces of equal size.
 
         :param num_splits: Requested number of splits.
-        :param randomize: Optionally randomize the features order first.
+        :param shuffle: Optionally shuffle the features order first.
         :return: A list of ``FeatureSet`` pieces.
         """
         return [
             FeatureSet.from_features(subset) for subset in
-            split_sequence(self, num_splits=num_splits, randomize=randomize)
+            split_sequence(self, num_splits=num_splits, shuffle=shuffle)
         ]
 
     def find(

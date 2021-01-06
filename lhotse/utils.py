@@ -214,21 +214,21 @@ def fastcopy(dataclass_obj: T, **kwargs) -> T:
     return type(dataclass_obj)(**{**dataclass_obj.__dict__, **kwargs})
 
 
-def split_sequence(seq: Sequence[Any], num_splits: int, randomize: bool = False) -> List[List[Any]]:
+def split_sequence(seq: Sequence[Any], num_splits: int, shuffle: bool = False) -> List[List[Any]]:
     """
     Split a sequence into ``num_splits`` equal parts. The element order can be randomized.
     Raises a ``ValueError`` if ``num_splits`` is larger than ``len(seq)``.
 
     :param seq: an input iterable (can be a Lhotse manifest).
     :param num_splits: how many output splits should be created.
-    :param randomize: optionally randomize the sequence before splitting.
+    :param shuffle: optionally shuffle the sequence before splitting.
     :return: a list of length ``num_splits`` containing smaller lists (the splits).
     """
     seq = list(seq)
     num_items = len(seq)
     if num_splits > num_items:
         raise ValueError(f"Cannot split iterable into more chunks ({num_splits}) than its number of items {num_items}")
-    if randomize:
+    if shuffle:
         random.shuffle(seq)
     chunk_size = int(ceil(num_items / num_splits))
     split_indices = [(i * chunk_size, min(num_items, (i + 1) * chunk_size)) for i in range(num_splits)]
