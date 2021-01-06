@@ -30,13 +30,23 @@ Lhotse is a Python library aiming to make speech and audio data preparation flex
 
 ### Main ideas
 
-Like Kaldi, Lhotse provides standard data preparation recipes, but extends that with a seamless PyTorch integration through task-specific Dataset classes. The data and meta-data are represented in human-readable text manifests and exposed to the user through convenient Python classes.
+Like Kaldi, Lhotse provides standard data preparation recipes, but extends that with a seamless PyTorch integration
+through task-specific Dataset classes. The data and meta-data are represented in human-readable text manifests and
+exposed to the user through convenient Python classes.
 
-Lhotse introduces the notion of audio cuts, designed to ease the training data construction with operations such as mixing, truncation and padding that are performed on-the-fly to minimize the amount of storage required. Data augmentation and feature extraction are supported both in pre-computed mode, with highly-compressed feature matrices stored on disk, and on-the-fly mode that computes the transformations upon request. Additionally, Lhotse introduces feature-space cut mixing to make the best of both worlds.
+![image](https://raw.githubusercontent.com/lhotse-speech/lhotse/master/docs/lhotse-concept-graph.png)
+
+Lhotse introduces the notion of audio cuts, designed to ease the training data construction with operations such as
+mixing, truncation and padding that are performed on-the-fly to minimize the amount of storage required. Data
+augmentation and feature extraction are supported both in pre-computed mode, with highly-compressed feature matrices
+stored on disk, and on-the-fly mode that computes the transformations upon request. Additionally, Lhotse introduces
+feature-space cut mixing to make the best of both worlds.
+
+![image](https://raw.githubusercontent.com/lhotse-speech/lhotse/master/docs/lhotse-cut-illustration.png)
 
 ## Installation
 
-Lhotse supports Python version 3.7 and later.
+Lhotse supports Python version 3.6 and later.
 
 ### Pip
 
