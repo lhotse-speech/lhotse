@@ -16,11 +16,10 @@ Part 3's recordings were split into 2 environments. In the Same Room environment
 We currently only support the part 3 recordings, in "same room close mic" and "separate rooms phone mic" environments.
 """
 from pathlib import Path
+from tqdm.auto import tqdm
 from typing import Dict, Optional, Union
 
-from tqdm.auto import tqdm
-
-from lhotse import Recording, RecordingSet, SupervisionSegment, SupervisionSet
+from lhotse import Recording, RecordingSet, SupervisionSegment, SupervisionSet, validate_recordings_and_supervisions
 from lhotse.utils import Pathlike
 
 NSC_PARTS = ['PART3_SameCloseMic', 'PART3_SeparateIVR']
@@ -60,6 +59,8 @@ def prepare_nsc(
     else:
         raise ValueError(f"Unknown dataset part: {dataset_part}")
 
+    validate_recordings_and_supervisions(**manifests)
+
     if output_dir is not None:
         output_dir = Path(output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
@@ -80,7 +81,7 @@ def prepare_same_close_mic(part3_path):
     ):
         try:
             recording_id = audio_path.stem
-            recording = Recording.from_wav(audio_path)
+            recording = Recording.from_file(audio_path)
 
             tg = TextGrid(part3_path / f'ScriptsSame/{recording_id}.TextGrid', coding='utf-16')
             segments = [
@@ -121,7 +122,7 @@ def prepare_separate_phone_mic(part3_path):
     ):
         try:
             recording_id = f'{audio_path.parent.name}_{audio_path.stem}'
-            recording = Recording.from_wav(audio_path)
+            recording = Recording.from_file(audio_path)
 
             tg = TextGrid(part3_path / f'ScriptsSeparate/{recording_id}.TextGrid', coding='utf-16')
             segments = [

@@ -1,4 +1,4 @@
-from contextlib import nullcontext as does_not_raise
+from lhotse.utils import fastcopy, nullcontext as does_not_raise
 from functools import lru_cache
 from tempfile import NamedTemporaryFile
 
@@ -207,9 +207,31 @@ def recording(file_source):
     return Recording(id='rec', sources=[file_source] * 2, sampling_rate=8000, num_samples=4000, duration=0.5)
 
 
+@pytest.mark.parametrize(
+    ['factor', 'affix_id'],
+    [
+        (1.0, True),
+        (1.0, False),
+        (0.9, True),
+        (1.1, True),
+    ]
+)
+def test_recording_perturb_speed(recording, factor, affix_id):
+    rec_sp = recording.perturb_speed(factor=factor, affix_id=affix_id)
+    if affix_id:
+        assert rec_sp.id == f'{recording.id}_sp{factor}'
+    else:
+        assert rec_sp.id == recording.id
+    samples = rec_sp.load_audio()
+    assert samples.shape[0] == rec_sp.num_channels
+    assert samples.shape[1] == rec_sp.num_samples
+
+
 @pytest.fixture
 def recording_set2(recording):
-    return RecordingSet.from_recordings([recording] * 5)
+    return RecordingSet.from_recordings([
+        fastcopy(recording, id=f'{recording.id}-{i}') for i in range(5)
+    ])
 
 
 def test_audio_source_path_prefix(file_source):

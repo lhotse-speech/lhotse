@@ -1,4 +1,5 @@
 import multiprocessing
+import pickle
 from abc import ABCMeta, abstractmethod
 from concurrent.futures.process import ProcessPoolExecutor
 from dataclasses import asdict, dataclass, field, is_dataclass
@@ -14,7 +15,9 @@ from tqdm.auto import tqdm
 from lhotse.audio import Recording
 from lhotse.augmentation import AugmentFn
 from lhotse.features.io import FeaturesWriter, get_reader
-from lhotse.utils import (JsonMixin, Pathlike, Seconds, YamlMixin, fastcopy, load_yaml, save_to_yaml, split_sequence,
+from lhotse.utils import (JsonMixin, Pathlike, Seconds, YamlMixin, compute_num_frames, fastcopy, load_yaml,
+                          save_to_yaml,
+                          split_sequence,
                           uuid4)
 
 
@@ -111,8 +114,9 @@ class FeatureExtractor(metaclass=ABCMeta):
             storage: FeaturesWriter,
             sampling_rate: int,
             offset: Seconds = 0,
+            channel: Optional[int] = None,
             augment_fn: Optional[AugmentFn] = None,
-    ):
+    ) -> 'Features':
         """
         Extract the features from an array of audio samples in a full pipeline:
 
@@ -131,6 +135,7 @@ class FeatureExtractor(metaclass=ABCMeta):
         :param storage: a ``FeaturesWriter`` object that will handle storing the feature matrices.
         :param offset: an offset in seconds for where to start reading the recording - when used for
             ``Cut`` feature extraction, must be equal to ``Cut.start``.
+        :param channel: an optional channel number to insert into ``Features`` manifest.
         :param augment_fn: an optional ``WavAugmenter`` instance to modify the waveform before feature extraction.
         :return: a ``Features`` manifest item for the extracted feature matrix (it is not written to disk).
         """
@@ -146,6 +151,7 @@ class FeatureExtractor(metaclass=ABCMeta):
             num_frames=feats.shape[0],
             num_features=feats.shape[1],
             sampling_rate=sampling_rate,
+            channels=channel,
             storage_type=storage.name,
             storage_path=str(storage.storage_path),
             storage_key=storage_key
@@ -159,7 +165,7 @@ class FeatureExtractor(metaclass=ABCMeta):
             duration: Optional[Seconds] = None,
             channels: Union[int, List[int]] = None,
             augment_fn: Optional[AugmentFn] = None,
-    ):
+    ) -> 'Features':
         """
         Extract the features from a ``Recording`` in a full pipeline:
 
@@ -346,17 +352,11 @@ class Features:
             raise ValueError(f"Cannot load features for recording {self.recording_id} starting from {start}s. "
                              f"The available range is ({self.start}, {self.end}) seconds.")
         if not isclose(start, self.start):
-            left_offset_frames = round((start - self.start) / self.frame_shift)
-
+            left_offset_frames = compute_num_frames(start - self.start, frame_shift=self.frame_shift)
         # Right trim
         end = start + duration if duration is not None else None
         if duration is not None and not isclose(end, self.end):
-            # Note the "minus" sign below before round - we're slicing a numpy array, e.g. a[20:-100]
-            right_offset_frames = -round((self.end - end) / self.frame_shift)
-            # When duration is specified and very close to the original duration, right_offset_frames can be zero;
-            # the conditional below is a safe-guard against these cases.
-            if right_offset_frames == 0:
-                right_offset_frames = None
+            right_offset_frames = left_offset_frames + compute_num_frames(duration, frame_shift=self.frame_shift)
 
         # Load and return the features (subset) from the storage
         return storage.read(
@@ -400,17 +400,17 @@ class FeatureSet(JsonMixin, YamlMixin, Sequence[Features]):
     def with_path_prefix(self, path: Pathlike) -> 'FeatureSet':
         return FeatureSet.from_features(f.with_path_prefix(path) for f in self)
 
-    def split(self, num_splits: int, randomize: bool = False) -> List['FeatureSet']:
+    def split(self, num_splits: int, shuffle: bool = False) -> List['FeatureSet']:
         """
         Split the ``FeatureSet`` into ``num_splits`` pieces of equal size.
 
         :param num_splits: Requested number of splits.
-        :param randomize: Optionally randomize the features order first.
+        :param shuffle: Optionally shuffle the features order first.
         :return: A list of ``FeatureSet`` pieces.
         """
         return [
             FeatureSet.from_features(subset) for subset in
-            split_sequence(self, num_splits=num_splits, randomize=randomize)
+            split_sequence(self, num_splits=num_splits, shuffle=shuffle)
         ]
 
     def find(
@@ -493,6 +493,20 @@ class FeatureSet(JsonMixin, YamlMixin, Sequence[Features]):
         )
         features = feature_info.load(start=start, duration=duration)
         return features
+
+    def compute_global_stats(self, storage_path: Optional[Pathlike] = None) -> Dict[str, np.ndarray]:
+        """
+        Compute the global means and standard deviations for each feature bin in the manifest.
+        It follows the implementation in scikit-learn:
+        https://github.com/scikit-learn/scikit-learn/blob/0fb307bf39bbdacd6ed713c00724f8f871d60370/sklearn/utils/extmath.py#L715
+        which follows the paper:
+        "Algorithms for computing the sample variance: analysis and recommendations", by Chan, Golub, and LeVeque.
+
+        :param storage_path: an optional path to a file where the stats will be stored with pickle.
+        :return a dict of ``{'norm_means': np.ndarray, 'norm_stds': np.ndarray}`` with the
+            shape of the arrays equal to the number of feature bins in this manifest.
+        """
+        return compute_global_stats(feature_manifests=self, storage_path=storage_path)
 
     def __repr__(self) -> str:
         return f'FeatureSet(len={len(self)})'
@@ -591,3 +605,59 @@ def store_feature_array(
     feats_id = str(uuid4())
     storage_key = storage.write(feats_id, feats)
     return storage_key
+
+
+def compute_global_stats(
+        feature_manifests: Iterable[Features],
+        storage_path: Optional[Pathlike] = None
+) -> Dict[str, np.ndarray]:
+    """
+    Compute the global means and standard deviations for each feature bin in the manifest.
+    It performs only a single pass over the data and iteratively updates the estimate of the
+    means and variances.
+
+    We follow the implementation in scikit-learn:
+    https://github.com/scikit-learn/scikit-learn/blob/0fb307bf39bbdacd6ed713c00724f8f871d60370/sklearn/utils/extmath.py#L715
+    which follows the paper:
+    "Algorithms for computing the sample variance: analysis and recommendations", by Chan, Golub, and LeVeque.
+
+    :param feature_manifests: an iterable of ``Features`` objects.
+    :param storage_path: an optional path to a file where the stats will be stored with pickle.
+    :return a dict of ``{'norm_means': np.ndarray, 'norm_stds': np.ndarray}`` with the
+        shape of the arrays equal to the number of feature bins in this manifest.
+    """
+    feature_manifests = iter(feature_manifests)
+    first = next(feature_manifests)
+    total_sum = np.zeros((first.num_features,), dtype=np.float64)
+    total_unnorm_var = np.zeros((first.num_features,), dtype=np.float64)
+    total_frames = 0
+    with np.errstate(divide='ignore', invalid='ignore'):
+        for features in chain([first], feature_manifests):
+            # Read the features
+            arr = features.load().astype(np.float64)
+            # Update the sum for the means
+            curr_sum = arr.sum(axis=0)
+            updated_total_sum = total_sum + curr_sum
+            # Update the number of frames
+            curr_frames = arr.shape[0]
+            updated_total_frames = total_frames + curr_frames
+            # Update the unnormalized variance
+            total_over_curr_frames = total_frames / curr_frames
+            curr_unnorm_var = np.var(arr, axis=0) * curr_frames
+            if total_frames > 0:
+                total_unnorm_var = (
+                        total_unnorm_var + curr_unnorm_var +
+                        total_over_curr_frames / updated_total_frames *
+                        (total_sum / total_over_curr_frames - curr_sum) ** 2)
+            else:
+                total_unnorm_var = curr_unnorm_var
+            total_sum = updated_total_sum
+            total_frames = updated_total_frames
+    stats = {
+        'norm_means': total_sum / total_frames,
+        'norm_stds': np.sqrt(total_unnorm_var / total_frames)
+    }
+    if storage_path is not None:
+        with open(storage_path, 'wb') as f:
+            pickle.dump(stats, f)
+    return stats

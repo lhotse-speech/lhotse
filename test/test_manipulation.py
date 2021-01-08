@@ -1,4 +1,4 @@
-from contextlib import nullcontext as does_not_raise
+from lhotse.utils import nullcontext as does_not_raise
 
 import pytest
 from pytest import mark, raises
@@ -23,7 +23,7 @@ def test_split_even(manifest_type):
 @mark.parametrize('manifest_type', [RecordingSet, SupervisionSet, FeatureSet, CutSet])
 def test_split_randomize(manifest_type):
     manifest = DummyManifest(manifest_type, begin_id=0, end_id=100)
-    manifest_subsets = manifest.split(num_splits=2, randomize=True)
+    manifest_subsets = manifest.split(num_splits=2, shuffle=True)
     assert len(manifest_subsets) == 2
     recombined_items = list(manifest_subsets[0]) + list(manifest_subsets[1])
     assert len(recombined_items) == len(manifest)
@@ -58,6 +58,12 @@ def test_combine(manifest_type):
         DummyManifest(manifest_type, begin_id=136, end_id=200),
     )
     assert combined == expected
+    combined_iterable = combine([
+        DummyManifest(manifest_type, begin_id=0, end_id=68),
+        DummyManifest(manifest_type, begin_id=68, end_id=136),
+        DummyManifest(manifest_type, begin_id=136, end_id=200),
+    ])
+    assert combined_iterable == expected
 
 
 @mark.parametrize(

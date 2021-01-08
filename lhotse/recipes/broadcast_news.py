@@ -17,6 +17,7 @@ from typing import Dict, List, Optional, Union
 
 from cytoolz import sliding_window
 
+from lhotse import validate_recordings_and_supervisions
 from lhotse.audio import Recording, RecordingSet
 from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import Pathlike, check_and_rglob, recursion_limit
@@ -61,6 +62,8 @@ def prepare_broadcast_news(
     segment_supervisions = SupervisionSet.from_segments(
         chain.from_iterable(sups['segments'] for sups in supervisions_list)
     )
+
+    validate_recordings_and_supervisions(recordings, segment_supervisions)
 
     if output_dir is not None:
         output_dir = Path(output_dir)
@@ -151,7 +154,10 @@ def try_parse(sgml_path: Path):
     If it runs into Unicode decoding errors, it will try to determine the file's encoding
     and use iconv to automatically convert it to UTF-8.
     """
-    from bs4 import BeautifulSoup
+    try:
+        from bs4 import BeautifulSoup
+    except:
+        raise ImportError('Before running BroadcastNews data preparation, you should "pip install beautifulsoup4"')
     try:
         return BeautifulSoup(sgml_path.read_text(), 'html.parser')
     except UnicodeDecodeError:

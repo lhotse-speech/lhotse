@@ -16,22 +16,20 @@ There are several microphone settings in AMI corpus:
 In this recipe, IHM, IHM-Mix, and SDM settings are supported.
 """
 
-import logging
-import os
-import re
-import urllib.request
-import zipfile
 from collections import defaultdict
-import xml.etree.ElementTree as ET
 from gzip import GzipFile
-from pathlib import Path
-from typing import Dict, List, NamedTuple, Optional, Union, Tuple
 
+import logging
+import re
+import soundfile
+import urllib.request
+from pathlib import Path
 # Workaround for SoundFile (torchaudio dep) raising exception when a native library, libsndfile1, is not installed.
 # Read-the-docs does not allow to modify the Docker containers used to build documentation...
 from tqdm.auto import tqdm
-import soundfile as sf
+from typing import Dict, List, NamedTuple, Optional, Union
 
+from lhotse import validate_recordings_and_supervisions
 from lhotse.audio import AudioSource, Recording, RecordingSet
 from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import Pathlike, Seconds
@@ -294,7 +292,7 @@ def prepare_audio_ihm(
 
             if session_name not in dataset_parts[part]:
                 continue
-            audio_sf = sf.SoundFile(str(channel_paths[0]))
+            audio_info = soundfile.info(str(channel_paths[0]))[0]
             recordings.append(Recording(
                 id=session_name,
                 sources=[
@@ -305,42 +303,9 @@ def prepare_audio_ihm(
                     )
                     for idx, audio_path in enumerate(sorted(channel_paths))
                 ],
-                sampling_rate=audio_sf.samplerate,
-                num_samples=audio_sf.frames,
-                duration=audio_sf.frames / audio_sf.samplerate,
-            ))
-        audio = RecordingSet.from_recordings(recordings)
-        recording_manifest[part] = audio
-    return recording_manifest
-
-
-def prepare_audio_other(
-        audio_paths: List[Pathlike],
-        annotations: Dict[str, List[AmiSegmentAnnotation]],
-        alignments: Optional[Dict[str, List[AmiSegmentAnnotation]]] = None
-) -> Dict[str, RecordingSet]:
-
-    recording_manifest = defaultdict(dict)
-
-    for part in dataset_parts:
-        recordings = []
-        for audio_path in audio_paths:
-            session_name = audio_path.parts[-3]
-            if session_name not in dataset_parts[part]:
-                continue
-            audio_sf = sf.SoundFile(str(audio_path))
-            recordings.append(Recording(
-                id=session_name,
-                sources=[
-                    AudioSource(
-                        type='file',
-                        channels=list(range(audio_sf.channels)),
-                        source=str(audio_path)
-                    )
-                ],
-                sampling_rate=audio_sf.samplerate,
-                num_samples=audio_sf.frames,
-                duration=audio_sf.frames / audio_sf.samplerate,
+                sampling_rate=int(audio_info.samplerate),
+                num_samples=audio_info.frames,
+                duration=audio_info.duration,
             ))
         audio = RecordingSet.from_recordings(recordings)
         recording_manifest[part] = audio
@@ -427,86 +392,3 @@ def prepare_supervision_other(
                     if duration > 0:
                         segments.append(SupervisionSegment(
                             id=f'{recording.id}-{seg_idx}-{subseg_idx}',
-                            recording_id=recording.id,
-                            start=subseg_info.begin_time,
-                            duration=duration,
-                            channel=0,
-                            language='English',
-                            speaker=subseg_info.speaker,
-                            gender=subseg_info.gender,
-                            text=subseg_info.text
-                        ))
-
-        supervision_manifest[part] = SupervisionSet.from_segments(segments)
-    return supervision_manifest
-
-def prepare_ami(
-        data_dir: Pathlike,
-        output_dir: Optional[Pathlike] = None,
-        mic: Optional[str] = 'ihm',
-        word_alignments: Optional[Pathlike] = None
-) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet, SupervisionSet]]]:
-    """
-    Returns the manifests which consist of the Recordings and Supervisions
-    If word alignment archive is provided, also returns a Supervision manifest
-    corresponding to alignments.
-
-    :param data_dir: Pathlike, the path of the data dir.
-    :param output_dir: Pathlike, the path where to write the manifests.
-    :param mic: str, type of mic to use.
-    :param word_alignments: Pathlike, the path to AMI corpus alignments archive
-    :return: a Dict whose key is ('train', 'dev', 'eval'), and the value is Dicts with keys 'audio' and 'supervisions'.
-    """
-    data_dir = Path(data_dir)
-    assert data_dir.is_dir(), f'No such directory: {data_dir}'
-    assert mic in mics, f'Mic {mic} not supported'
-
-    if output_dir is not None:
-        output_dir = Path(output_dir)
-        output_dir.mkdir(parents=True, exist_ok=True)
-
-    annotations, speaker_dict, channel_dict = parse_ami_annotations(data_dir / 'annotations.gzip', mic=mic)
-    alignments= parse_ami_alignments(word_alignments, speaker_dict, channel_dict, mic) \
-        if word_alignments else None
-
-    # Audio
-    wav_dir = data_dir / 'wav_db'
-    if mic == 'ihm':
-        audio_paths = wav_dir.rglob('*Headset-?.wav')
-        audio = prepare_audio_ihm(audio_paths, annotations, alignments)
-
-    elif mic == 'ihm-mix':
-        audio_paths = wav_dir.rglob('*Mix-Headset.wav')
-        audio = prepare_audio_other(audio_paths, annotations, alignments)
-    elif mic == 'sdm':
-        audio_paths = wav_dir.rglob('*Array1-01.wav')
-        audio = prepare_audio_other(audio_paths, annotations, alignments)
-
-    # Supervisions
-    if mic == 'ihm':
-        supervision = prepare_supervision_ihm(audio, annotations)
-        ali_supervision = prepare_supervision_ihm(audio, alignments) if word_alignments else None
-    else:
-        supervision = prepare_supervision_other(audio, annotations)
-        ali_supervision = prepare_supervision_other(audio, alignments) if word_alignments else None
-
-    manifests = defaultdict(dict)
-
-    for part in dataset_parts:
-
-        # Write to output directory if a path is provided
-        if output_dir is not None:
-            audio[part].to_json(output_dir / f'recordings_{part}.json')
-            supervision[part].to_json(output_dir / f'supervisions_{part}.json')
-            if word_alignments:
-                ali_supervision[part].to_json(output_dir / f'alignments_{part}.json')
-
-        # Combine all manifests into one dictionary
-        manifests[part] = {
-        'recordings': audio[part],
-        'supervisions': supervision[part]
-        }
-        if word_alignments:
-            manifests[part]['alignments'] = ali_supervision[part]
-
-    return manifests

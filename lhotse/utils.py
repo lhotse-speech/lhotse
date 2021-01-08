@@ -3,12 +3,12 @@ import json
 import math
 import random
 import uuid
-from contextlib import contextmanager
+from contextlib import AbstractContextManager, contextmanager
 from dataclasses import asdict, dataclass
-from decimal import Decimal, ROUND_HALF_UP
+from decimal import Decimal, ROUND_HALF_DOWN, ROUND_HALF_UP
 from math import ceil, isclose
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Sequence, TypeVar, Union
+from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence, TypeVar, Union
 
 import numpy as np
 import torch
@@ -16,6 +16,7 @@ import yaml
 from tqdm.auto import tqdm
 
 Pathlike = Union[Path, str]
+T = TypeVar('T')
 
 Seconds = float
 Decibels = float
@@ -199,9 +200,6 @@ def recursion_limit(stack_size: int):
         sys.setrecursionlimit(old_size)
 
 
-T = TypeVar('T')
-
-
 def fastcopy(dataclass_obj: T, **kwargs) -> T:
     """
     Returns a new object with the same member values.
@@ -216,28 +214,32 @@ def fastcopy(dataclass_obj: T, **kwargs) -> T:
     return type(dataclass_obj)(**{**dataclass_obj.__dict__, **kwargs})
 
 
-def split_sequence(seq: Sequence[Any], num_splits: int, randomize: bool = False) -> List[List[Any]]:
+def split_sequence(seq: Sequence[Any], num_splits: int, shuffle: bool = False) -> List[List[Any]]:
     """
     Split a sequence into ``num_splits`` equal parts. The element order can be randomized.
     Raises a ``ValueError`` if ``num_splits`` is larger than ``len(seq)``.
 
     :param seq: an input iterable (can be a Lhotse manifest).
     :param num_splits: how many output splits should be created.
-    :param randomize: optionally randomize the sequence before splitting.
+    :param shuffle: optionally shuffle the sequence before splitting.
     :return: a list of length ``num_splits`` containing smaller lists (the splits).
     """
     seq = list(seq)
     num_items = len(seq)
     if num_splits > num_items:
         raise ValueError(f"Cannot split iterable into more chunks ({num_splits}) than its number of items {num_items}")
-    if randomize:
+    if shuffle:
         random.shuffle(seq)
     chunk_size = int(ceil(num_items / num_splits))
     split_indices = [(i * chunk_size, min(num_items, (i + 1) * chunk_size)) for i in range(num_splits)]
     return [seq[begin: end] for begin, end in split_indices]
 
 
-def compute_num_frames(duration: Seconds, frame_shift: Seconds) -> int:
+def compute_num_frames(
+        duration: Seconds,
+        frame_shift: Seconds,
+        rounding: str = ROUND_HALF_UP
+) -> int:
     """
     Compute the number of frames from duration and frame_shift in a safe way.
 
@@ -263,7 +265,7 @@ def compute_num_frames(duration: Seconds, frame_shift: Seconds) -> int:
             # while problematic cases like 14.49999999998 are typically breaking much later than 8th decimal
             # with double-precision floats.
             round(duration / frame_shift, ndigits=8)
-        ).quantize(0, rounding=ROUND_HALF_UP)
+        ).quantize(0, rounding=rounding)
     )
 
 
@@ -316,3 +318,53 @@ def urlretrieve_progress(url, filename=None, data=None, desc=None):
     with tqdm(unit='B', unit_scale=True, unit_divisor=1024, miniters=1, desc=desc) as t:
         reporthook = tqdm_urlretrieve_hook(t)
         return urlretrieve(url=url, filename=filename, reporthook=reporthook, data=data)
+
+
+class nullcontext(AbstractContextManager):
+    """Context manager that does no additional processing.
+
+    Used as a stand-in for a normal context manager, when a particular
+    block of code is only sometimes used with a normal context manager:
+
+    cm = optional_cm if condition else nullcontext()
+    with cm:
+        # Perform operation, using optional_cm if condition is True
+
+    Note(pzelasko): This is copied from Python 3.7 stdlib so that we can use it in 3.6.
+    """
+
+    def __init__(self, enter_result=None):
+        self.enter_result = enter_result
+
+    def __enter__(self):
+        return self.enter_result
+
+    def __exit__(self, *excinfo):
+        pass
+
+
+def perturb_num_samples(num_samples: int, factor: float) -> int:
+    """Mimicks the behavior of the speed perturbation on the number of samples."""
+    rounding = ROUND_HALF_UP if factor >= 1.0 else ROUND_HALF_DOWN
+    return int(Decimal(round(num_samples / factor, ndigits=8)).quantize(0, rounding=rounding))
+
+
+def compute_num_samples(duration: Seconds, sampling_rate: int, rounding=ROUND_HALF_UP) -> int:
+    """
+    Convert a time quantity to the number of samples given a specific sampling rate.
+    Performs consistent rounding up or down for ``duration`` that is not a multiply of
+    the sampling interval (unlike Python's built-in ``round()`` that implements banker's rounding).
+    """
+    return int(
+        Decimal(
+            duration * sampling_rate
+        ).quantize(0, rounding=rounding)
+    )
+
+
+def index_by_id_and_check(manifests: Iterable[T]) -> Dict[str, T]:
+    id2man = {}
+    for m in manifests:
+        assert m.id not in id2man, f"Duplicated manifest ID: {m.id}"
+        id2man[m.id] = m
+    return id2man

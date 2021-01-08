@@ -1,12 +1,13 @@
+from collections import defaultdict
+
 import logging
 import re
+import soundfile
 import tarfile
-from collections import defaultdict
 from pathlib import Path
 from typing import Dict, NamedTuple, Optional, Union
 
-import torchaudio
-
+from lhotse import validate_recordings_and_supervisions
 from lhotse.audio import AudioSource, Recording, RecordingSet
 from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import Pathlike, urlretrieve_progress
@@ -39,7 +40,7 @@ def download_and_untar(
 
 class HeroicoMetaData(NamedTuple):
     audio_path: Pathlike
-    audio_info: torchaudio.sox_signalinfo_t
+    audio_info: soundfile._SoundFileInfo
     text: str
 
 
@@ -199,10 +200,10 @@ param transcripts_dir: Pathlike, the path of the transcript data dir.
             prompt_id = wav_path.stem
             # info[0]: info of the raw audio (e.g. channel number, sample rate, duration ... )
             # info[1]: info about the encoding (e.g. FLAC/ALAW/ULAW ...)
-            info = torchaudio.info(str(wav_file))
+            info = soundfile.info(str(wav_file))
             spk = wav_path.parts[-2]
             utt_id = '-'.join([uttdata[str(wav_file)].subcorpus, spk, prompt_id])
-            metadata[utt_id] = HeroicoMetaData(audio_path=wav_file, audio_info=info[0],
+            metadata[utt_id] = HeroicoMetaData(audio_path=wav_file, audio_info=info,
                                                text=uttdata[str(wav_file)].transcript)
 
         # Audio
@@ -216,9 +217,9 @@ param transcripts_dir: Pathlike, the path of the transcript data dir.
                         source=str(metadata[idx].audio_path)
                     )
                 ],
-                sampling_rate=int(metadata[idx].audio_info.rate),
-                num_samples=metadata[idx].audio_info.length,
-                duration=(metadata[idx].audio_info.length / metadata[idx].audio_info.rate)
+                sampling_rate=int(metadata[idx].audio_info.samplerate),
+                num_samples=metadata[idx].audio_info.frames,
+                duration=metadata[idx].audio_info.duration
             )
             for idx in metadata
         )
@@ -237,6 +238,8 @@ param transcripts_dir: Pathlike, the path of the transcript data dir.
             )
             for idx in audio.recordings
         )
+
+        validate_recordings_and_supervisions(audio, supervision)
 
         if output_dir is not None:
             supervision.to_json(output_dir / f'supervisions_{fld}.json')

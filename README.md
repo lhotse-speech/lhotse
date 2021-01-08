@@ -7,6 +7,7 @@
 [![Build Status](https://img.shields.io/endpoint.svg?url=https%3A%2F%2Factions-badge.atrox.dev%2Fpzelasko%2Flhotse%2Fbadge%3Fref%3Dmaster&style=flat)](https://actions-badge.atrox.dev/pzelasko/lhotse/goto?ref=master)
 [![Documentation Status](https://readthedocs.org/projects/lhotse/badge/?version=latest)](https://lhotse.readthedocs.io/en/latest/?badge=latest)
 [![codecov](https://codecov.io/gh/lhotse-speech/lhotse/branch/master/graph/badge.svg)](https://codecov.io/gh/lhotse-speech/lhotse)
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/lhotse-speech/lhotse-speech.github.io/blob/master/notebooks/lhotse-introduction.ipynb)
 
 </div>
 
@@ -29,13 +30,23 @@ Lhotse is a Python library aiming to make speech and audio data preparation flex
 
 ### Main ideas
 
-Like Kaldi, Lhotse provides standard data preparation recipes, but extends that with a seamless PyTorch integration through task-specific Dataset classes. The data and meta-data are represented in human-readable text manifests and exposed to the user through convenient Python classes.
+Like Kaldi, Lhotse provides standard data preparation recipes, but extends that with a seamless PyTorch integration
+through task-specific Dataset classes. The data and meta-data are represented in human-readable text manifests and
+exposed to the user through convenient Python classes.
 
-Lhotse introduces the notion of audio cuts, designed to ease the training data construction with operations such as mixing, truncation and padding that are performed on-the-fly to minimize the amount of storage required. Data augmentation and feature extraction are supported both in pre-computed mode, with highly-compressed feature matrices stored on disk, and on-the-fly mode that computes the transformations upon request. Additionally, Lhotse introduces feature-space cut mixing to make the best of both worlds.
+![image](https://raw.githubusercontent.com/lhotse-speech/lhotse/master/docs/lhotse-concept-graph.png)
+
+Lhotse introduces the notion of audio cuts, designed to ease the training data construction with operations such as
+mixing, truncation and padding that are performed on-the-fly to minimize the amount of storage required. Data
+augmentation and feature extraction are supported both in pre-computed mode, with highly-compressed feature matrices
+stored on disk, and on-the-fly mode that computes the transformations upon request. Additionally, Lhotse introduces
+feature-space cut mixing to make the best of both worlds.
+
+![image](https://raw.githubusercontent.com/lhotse-speech/lhotse/master/docs/lhotse-cut-illustration.png)
 
 ## Installation
 
-Lhotse supports Python version 3.7 and later.
+Lhotse supports Python version 3.6 and later.
 
 ### Pip
 
@@ -72,7 +83,7 @@ A short snippet to show how Lhotse can make audio data prepartion quick and easy
 
 ```python
 
-from lhotse import CutSet, Fbank, LilcomFilesWriter
+from lhotse import CutSet, Fbank
 from lhotse.dataset import VadDataset 
 from lhotse.recipes import prepare_switchboard
 
@@ -95,11 +106,11 @@ cuts = CutSet.from_manifests(
 # Then, we pad the cuts to 5 seconds to ensure all cuts are of equal length,
 # as the last window in each recording might have a shorter duration.
 # The padding will be performed once the features are loaded into memory.
-with LilcomFilesWriter('feats') as storage:
-    cuts = cuts.compute_and_store_features(
-        extractor=Fbank(),
-        storage=storage,
-    ).pad(duration=5.0)
+cuts = cuts.compute_and_store_features(
+    extractor=Fbank(),
+    storage_path='feats',
+    num_jobs=8
+).pad(duration=5.0)
 
 # Construct a Pytorch Dataset class for Voice Activity Detection task:
 dataset = VadDataset(cuts)

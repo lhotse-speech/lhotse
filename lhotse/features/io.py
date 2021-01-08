@@ -330,14 +330,17 @@ class NumpyHdf5Writer(FeaturesWriter):
     Each array is stored as a separate HDF ``Dataset`` because their shapes (numbers of frames) may vary.
     ``storage_path`` corresponds to the HDF5 file path;
     ``storage_key`` for each utterance is the key corresponding to the array (i.e. HDF5 "Group" name).
+
+    Internally, this class opens the file lazily so that this object can be passed between processes
+    without issues. This simplifies the parallel feature extraction code.
     """
     name = 'numpy_hdf5'
 
     def __init__(self, storage_path: Pathlike, *args, **kwargs):
         super().__init__()
         import h5py
-        self.storage_path_ = storage_path
-        self.hdf = h5py.File(storage_path, 'w')
+        self.storage_path_ = Path(storage_path).with_suffix('.h5')
+        self.hdf = h5py.File(self.storage_path, 'w')
 
     @property
     def storage_path(self) -> str:
@@ -403,8 +406,8 @@ class LilcomHdf5Writer(FeaturesWriter):
     def __init__(self, storage_path: Pathlike, tick_power: int = -5, *args, **kwargs):
         super().__init__()
         import h5py
-        self.storage_path_ = storage_path
-        self.hdf = h5py.File(storage_path, 'w')
+        self.storage_path_ = Path(storage_path).with_suffix('.h5')
+        self.hdf = h5py.File(self.storage_path, 'w')
         self.tick_power = tick_power
 
     @property

@@ -1,7 +1,7 @@
 SoundFile>=0.10
-beautifulsoup4
 click>=7.1.1
 cytoolz>=0.10.1
+dataclasses
 h5py>=2.10.0
 intervaltree>= 3.1.0
 lilcom>=1.1.0
@@ -10,6 +10,6 @@ packaging
 pandas>=1.0.3
 pyyaml>=5.3.1
 sphfile>=1.0.3
-torch>=1.5.1
-torchaudio>=0.5.1
+torch>=1.7.1
+torchaudio>=0.7.1
 tqdm

@@ -1,3 +1,4 @@
+import pickle
 from tempfile import NamedTemporaryFile
 
 import pytest
@@ -251,3 +252,51 @@ def test_mix_same_recording_channels():
     assert len(cut.tracks) == 2
     assert cut.tracks[0].cut == cut_set[0]
     assert cut.tracks[1].cut == cut_set[1]
+
+
+def test_cut_set_filter_supervisions(cut_set):
+
+    def get_supervision_ids(cutset):
+        ids = []
+        for cut in cutset:
+            ids.extend([supervision.id for supervision in cut.supervisions])
+        return ids
+
+    all_ids = get_supervision_ids(cut_set)
+    train_ids = all_ids[:-1]
+    test_ids = all_ids[-1:]
+
+    # filter based on sueprvision ids
+    train_set = cut_set.filter_supervisions(lambda s: s.id in train_ids)
+    test_set = cut_set.filter_supervisions(lambda s: s.id in test_ids)
+
+    assert get_supervision_ids(train_set) == train_ids
+    assert get_supervision_ids(test_set) == test_ids
+
+
+def test_compute_cmvn_stats():
+    cut_set = CutSet.from_json('test/fixtures/libri/cuts.json')
+    with NamedTemporaryFile() as f:
+        stats = cut_set.compute_global_feature_stats(storage_path=f.name)
+        f.flush()
+        read_stats = pickle.load(f)
+    assert stats['norm_means'].shape == (cut_set[0].num_features,)
+    assert stats['norm_stds'].shape == (cut_set[0].num_features,)
+    assert (stats['norm_means'] == read_stats['norm_means']).all()
+    assert (stats['norm_stds'] == read_stats['norm_stds']).all()
+
+
+def test_modify_ids(cut_set_with_mixed_cut):
+    cut_set = cut_set_with_mixed_cut.modify_ids(lambda cut_id: f'{cut_id}_suffix')
+    for ref_cut, mod_cut in zip(cut_set_with_mixed_cut, cut_set):
+        assert mod_cut.id == f'{ref_cut.id}_suffix'
+
+
+def test_map_cut_set(cut_set_with_mixed_cut):
+    cut_set = cut_set_with_mixed_cut.map(lambda cut: cut.pad(duration=1000.0))
+    for cut in cut_set:
+        assert cut.duration == 1000.0
+
+def test_map_cut_set_rejects_noncut(cut_set_with_mixed_cut):
+    with pytest.raises(AssertionError):
+        cut_set = cut_set_with_mixed_cut.map(lambda cut: 'not-a-cut')

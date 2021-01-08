@@ -1,25 +1,28 @@
+import logging
+import numpy as np
 import random
 import warnings
-from concurrent.futures import ProcessPoolExecutor
-from dataclasses import dataclass, field
-from functools import reduce
-from math import ceil, floor
-from typing import Any, Callable, Dict, FrozenSet, Iterable, List, Optional, Sequence, Union
-
-import numpy as np
+from concurrent.futures import ProcessPoolExecutor, Executor
 from cytoolz import sliding_window
 from cytoolz.itertoolz import groupby
+from dataclasses import dataclass, field
+from functools import partial, reduce
 from intervaltree import Interval, IntervalTree
+from itertools import islice
+from math import ceil, floor
+from pathlib import Path
 from tqdm.auto import tqdm
+from typing import Any, Callable, Dict, FrozenSet, Iterable, List, Optional, Sequence, Type, TypeVar, Union
 
 from lhotse.audio import AudioMixer, Recording, RecordingSet
 from lhotse.augmentation import AugmentFn
 from lhotse.features import FeatureExtractor, FeatureMixer, FeatureSet, Features, create_default_feature_extractor
-from lhotse.features.io import FeaturesWriter
+from lhotse.features.base import compute_global_stats
+from lhotse.features.io import FeaturesWriter, LilcomHdf5Writer, LilcomFilesWriter
 from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import (Decibels, EPSILON, JsonMixin, Pathlike, Seconds, TimeSpan, YamlMixin, asdict_nonull,
                           compute_num_frames, fastcopy,
-                          overlaps, overspans, split_sequence, uuid4)
+                          index_by_id_and_check, overlaps, overspans, perturb_num_samples, split_sequence, uuid4)
 
 # One of the design principles for Cuts is a maximally "lazy" implementation, e.g. when mixing Cuts,
 # we'd rather sum the feature matrices only after somebody actually calls "load_features". It helps to avoid
@@ -29,6 +32,8 @@ from lhotse.utils import (Decibels, EPSILON, JsonMixin, Pathlike, Seconds, TimeS
 # Helper "typedef" to artbitrary Cut type as they do not share a common base class.
 # The class names are strings here so that the Python interpreter resolves them after parsing the whole file.
 AnyCut = Union['Cut', 'MixedCut', 'PaddingCut']
+
+FW = TypeVar('FW', bound=FeaturesWriter)
 
 
 # noinspection PyTypeChecker,PyUnresolvedReferences
@@ -341,6 +346,7 @@ class Cut(CutUtilsMixin):
             storage=storage,
             sampling_rate=self.sampling_rate,
             offset=self.start,
+            channel=self.channel,
             augment_fn=augment_fn,
         )
         # The fastest way to instantiate a copy of the cut with a Features object attached
@@ -438,6 +444,50 @@ class Cut(CutUtilsMixin):
         ))
         return padded
 
+    def perturb_speed(self, factor: float, affix_id: bool = True) -> 'Cut':
+        """
+        Return a new ``Cut`` that will lazily perturb the speed while loading audio.
+        The ``num_samples``, ``start`` and ``duration`` fields are updated to reflect the
+        shrinking/extending effect of speed.
+        We are also updating the time markers of the underlying ``Recording`` and the supervisions.
+
+        :param factor: The speed will be adjusted this many times (e.g. factor=1.1 means 1.1x faster).
+        :param affix_id: When true, we will modify the ``Cut.id`` field
+            by affixing it with "_sp{factor}".
+        :return: a modified copy of the current ``Cut``.
+        """
+        # Pre-conditions
+        assert self.has_recording, 'Cannot perturb speed on a Cut without Recording.'
+        if self.has_features:
+            logging.warning(
+                'Attempting to perturb speed on a Cut that references pre-computed features. '
+                'The feature manifest will be detached, as we do not support feature-domain '
+                'speed perturbation.'
+            )
+            self.features = None
+        # Actual audio perturbation.
+        recording_sp = self.recording.perturb_speed(factor=factor, affix_id=affix_id)
+        # Match the supervision's start and duration to the perturbed audio.
+        # Since SupervisionSegment "start" is relative to the Cut's, it's okay (and necessary)
+        # to perturb it as well.
+        supervisions_sp = [
+            s.perturb_speed(factor=factor, sampling_rate=self.sampling_rate, affix_id=affix_id)
+            for s in self.supervisions
+        ]
+        # New start and duration have to be computed through num_samples to be accurate
+        start_samples = perturb_num_samples(round(self.start * self.sampling_rate), factor)
+        new_start = start_samples / self.sampling_rate
+        new_num_samples = perturb_num_samples(self.num_samples, factor)
+        new_duration = new_num_samples / self.sampling_rate
+        return fastcopy(
+            self,
+            id=f'{self.id}_sp{factor}' if affix_id else self.id,
+            recording=recording_sp,
+            supervisions=supervisions_sp,
+            duration=new_duration,
+            start=new_start
+        )
+
     def map_supervisions(self, transform_fn: Callable[[SupervisionSegment], SupervisionSegment]) -> AnyCut:
         """
         Modify the SupervisionSegments by `transform_fn` of this Cut.
@@ -446,6 +496,21 @@ class Cut(CutUtilsMixin):
         :return: a modified Cut.
         """
         new_cut = fastcopy(self, supervisions=[s.map(transform_fn) for s in self.supervisions])
+        return new_cut
+
+    def filter_supervisions(self, predicate: Callable[[SupervisionSegment], bool]) -> AnyCut:
+        """
+        Modify cut to store only supervisions accepted by `predicate`
+
+        Example:
+            >>> cut = cut.filter_supervisions(lambda s: s.id in supervision_ids)
+            >>> cut = cut.filter_supervisions(lambda s: s.duration < 5.0)
+            >>> cut = cut.filter_supervisions(lambda s: s.text is not None)
+
+        :param predicate: A callable that accepts `SupervisionSegment` and returns bool
+        :return: a modified Cut
+        """
+        new_cut = fastcopy(self, supervisions=[s for s in self.supervisions if predicate(s)])
         return new_cut
 
     @staticmethod
@@ -568,6 +633,34 @@ class PaddingCut(CutUtilsMixin):
             use_log_energy=self.use_log_energy
         )
 
+    def perturb_speed(self, factor: float, affix_id: bool = True) -> 'PaddingCut':
+        """
+        Return a new ``PaddingCut`` that will "mimic" the effect of speed perturbation
+        on ``duration`` and ``num_samples``.
+
+        :param factor: The speed will be adjusted this many times (e.g. factor=1.1 means 1.1x faster).
+        :param affix_id: When true, we will modify the ``PaddingCut.id`` field
+            by affixing it with "_sp{factor}".
+        :return: a modified copy of the current ``PaddingCut``.
+        """
+        # Pre-conditions
+        if self.has_features:
+            logging.warning(
+                'Attempting to perturb speed on a Cut that references pre-computed features. '
+                'The feature manifest will be detached, as we do not support feature-domain '
+                'speed perturbation.'
+            )
+            self.num_frames = None
+            self.num_features = None
+        new_num_samples = perturb_num_samples(self.num_samples, factor)
+        new_duration = new_num_samples / self.sampling_rate
+        return fastcopy(
+            self,
+            id=f'{self.id}_sp{factor}' if affix_id else self.id,
+            num_samples=new_num_samples,
+            duration=new_duration
+        )
+
     def compute_and_store_features(self, extractor: FeatureExtractor, *args, **kwargs) -> AnyCut:
         """
         Returns a new PaddingCut with updates information about the feature dimension and number of
@@ -585,6 +678,15 @@ class PaddingCut(CutUtilsMixin):
 
         :param transform_fn: a dummy function that would be never called actually.
         :return: the PaddingCut itself.
+        """
+        return self
+
+    def filter_supervisions(self, predicate: Callable[[SupervisionSegment], bool]) -> AnyCut:
+        """
+        Just for consistency with `Cut` and `MixedCut`.
+
+        :param predicate: A callable that accepts `SupervisionSegment` and returns bool
+        :return: a modified Cut
         """
         return self
 
@@ -800,6 +902,46 @@ class MixedCut(CutUtilsMixin):
             use_log_energy=self.features_type in ('fbank', 'mfcc')
         ))
 
+    def perturb_speed(self, factor: float, affix_id: bool = True) -> 'MixedCut':
+        """
+        Return a new ``MixedCut`` that will lazily perturb the speed while loading audio.
+        The ``num_samples``, ``start`` and ``duration`` fields of the underlying Cuts
+        (and their Recordings and SupervisionSegments) are updated to reflect
+        the shrinking/extending effect of speed.
+        We are also updating the offsets of all underlying tracks.
+
+        :param factor: The speed will be adjusted this many times (e.g. factor=1.1 means 1.1x faster).
+        :param affix_id: When true, we will modify the ``MixedCut.id`` field
+            by affixing it with "_sp{factor}".
+        :return: a modified copy of the current ``MixedCut``.
+        """
+        # TODO(pzelasko): test most extensively for edge cases
+        # Pre-conditions
+        assert self.has_recording, 'Cannot perturb speed on a Cut without Recording.'
+        if self.has_features:
+            logging.warning(
+                'Attempting to perturb speed on a MixedCut that references pre-computed features. '
+                'The feature manifest(s) will be detached, as we do not support feature-domain '
+                'speed perturbation.'
+            )
+        return MixedCut(
+            id=f'{self.id}_sp{factor}' if affix_id else self.id,
+            tracks=[
+                MixTrack(
+                    cut=track.cut.perturb_speed(factor=factor, affix_id=affix_id),
+                    offset=round(
+                        perturb_num_samples(
+                            num_samples=round(track.offset * self.sampling_rate),
+                            factor=factor
+                        ) / self.sampling_rate,
+                        ndigits=8
+                    ),
+                    snr=track.snr
+                )
+                for track in self.tracks
+            ]
+        )
+
     def load_features(self, mixed: bool = True) -> Optional[np.ndarray]:
         """
         Loads the features of the source cuts and mixes them on-the-fly.
@@ -897,10 +1039,10 @@ class MixedCut(CutUtilsMixin):
         """
         import matplotlib.pyplot as plt
         audio = self.load_audio(mixed=False)
-        fig, axes = plt.subplots(len(self.tracks), sharex=True, sharey=True)
+        fig, axes = plt.subplots(len(self.tracks), sharex=False, sharey=True)
         for idx, (track, ax) in enumerate(zip(self.tracks, axes)):
             samples = audio[idx, :]
-            ax.plot(np.linspace(0, track.offset + track.cut.duration, len(samples)), samples)
+            ax.plot(np.linspace(0, self.duration, len(samples)), samples)
             for supervision in track.cut.supervisions:
                 supervision = supervision.trim(track.cut.duration)
                 ax.axvspan(track.offset + supervision.start, track.offset + supervision.end, color='green', alpha=0.1)
@@ -933,6 +1075,7 @@ class MixedCut(CutUtilsMixin):
                 storage=storage,
                 sampling_rate=self.sampling_rate,
                 offset=0,
+                channel=0,
                 augment_fn=augment_fn,
             )
             return Cut(
@@ -969,6 +1112,23 @@ class MixedCut(CutUtilsMixin):
         new_mixed_cut = fastcopy(self)
         for track in new_mixed_cut.tracks:
             track.cut.supervisions = [segment.map(transform_fn) for segment in track.cut.supervisions]
+        return new_mixed_cut
+
+    def filter_supervisions(self, predicate: Callable[[SupervisionSegment], bool]) -> AnyCut:
+        """
+        Modify cut to store only supervisions accepted by `predicate`
+
+        Example:
+            >>> cut = cut.filter_supervisions(lambda s: s.id in supervision_ids)
+            >>> cut = cut.filter_supervisions(lambda s: s.duration < 5.0)
+            >>> cut = cut.filter_supervisions(lambda s: s.text is not None)
+
+        :param predicate: A callable that accepts `SupervisionSegment` and returns bool
+        :return: a modified Cut
+        """
+        new_mixed_cut = fastcopy(self)
+        for track in new_mixed_cut.tracks:
+            track.cut = track.cut.filter_supervisions(predicate)
         return new_mixed_cut
 
     @staticmethod
@@ -1023,7 +1183,7 @@ class CutSet(JsonMixin, YamlMixin, Sequence[AnyCut]):
 
     @staticmethod
     def from_cuts(cuts: Iterable[AnyCut]) -> 'CutSet':
-        return CutSet({cut.id: cut for cut in cuts})
+        return CutSet(cuts=index_by_id_and_check(cuts))
 
     @staticmethod
     def from_manifests(
@@ -1132,38 +1292,57 @@ class CutSet(JsonMixin, YamlMixin, Sequence[AnyCut]):
         with pd.option_context('precision', 1):
             print(durations.describe().drop('count'))
 
-    def add_supervision(
-            self,
-            supervisions: SupervisionSet,
-    ) -> 'CutSet':
-        """
-        Return a new CutSet by replacing the existing supervision with the new supervision
-        provided, or adding a supervision if none existed previously.
-        """
-        assert supervisions is not None, \
-            "A supervision_set has to be provided."
-        return CutSet.from_cuts(
-            fastcopy(
-                    cut,
-                    supervisions=list(supervisions.find(
-                        recording_id=cut.recording.id,
-                        channel=cut.channel
-                    )))
-            for cut in self
-        )
-
-    def split(self, num_splits: int, randomize: bool = False) -> List['CutSet']:
+    def split(self, num_splits: int, shuffle: bool = False) -> List['CutSet']:
         """
         Split the ``CutSet`` into ``num_splits`` pieces of equal size.
 
         :param num_splits: Requested number of splits.
-        :param randomize: Optionally randomize the cuts order first.
+        :param shuffle: Optionally shuffle the cuts order first.
         :return: A list of ``CutSet`` pieces.
         """
         return [
             CutSet.from_cuts(subset) for subset in
-            split_sequence(self, num_splits=num_splits, randomize=randomize)
+            split_sequence(self, num_splits=num_splits, shuffle=shuffle)
         ]
+
+    def subset(self, supervision_ids: Optional[Iterable[str]] = None) -> 'CutSet':
+        """
+        Return a new CutSet with Cuts containing only `supervision_ids`.
+
+        Cuts without supervisions are removed.
+
+        Example:
+            >>> cuts = CutSet.from_yaml('path/to/cuts')
+            >>> train_set = cuts.subset(supervision_ids=train_ids)
+            >>> test_set = cuts.subset(supervision_ids=test_ids)
+
+        :param supervision_ids: List of `supervision_ids` to keep
+        :return: a CutSet with filtered supervisions
+        """
+
+        # remove cuts without supervisions
+        supervision_ids = set(supervision_ids)
+        return CutSet.from_cuts(
+            cut.filter_supervisions(lambda s: s.id in supervision_ids) for cut in self
+            if any(s.id in supervision_ids for s in cut.supervisions)
+        )
+
+    def filter_supervisions(self, predicate: Callable[[SupervisionSegment], bool]) -> 'CutSet':
+        """
+        Return a new CutSet with Cuts containing only `SupervisionSegments` satisfying `predicate`
+
+        Cuts without supervisions are preserved
+
+        Example:
+            >>> cuts = CutSet.from_yaml('path/to/cuts')
+            >>> at_least_five_second_supervisions = cuts.filter_supervisions(lambda s: s.duration >= 5)
+
+        :param predicate: A callable that accepts `SupervisionSegment` and returns bool
+        :return: a CutSet with filtered supervisions
+        """
+        return CutSet.from_cuts(
+            cut.filter_supervisions(predicate) for cut in self
+        )
 
     def filter(self, predicate: Callable[[AnyCut], bool]) -> 'CutSet':
         """
@@ -1352,77 +1531,226 @@ class CutSet(JsonMixin, YamlMixin, Sequence[AnyCut]):
                 ))
         return CutSet.from_cuts(new_cuts)
 
+    def perturb_speed(self, factor: float, affix_id: bool = True) -> 'CutSet':
+        return self.map(lambda cut: cut.perturb_speed(factor=factor, affix_id=affix_id))
+
     def compute_and_store_features(
             self,
             extractor: FeatureExtractor,
-            storage: FeaturesWriter,
+            storage_path: Pathlike,
+            num_jobs: Optional[int] = None,
             augment_fn: Optional[AugmentFn] = None,
-            executor: Optional[Any] = None,
-            mix_eagerly: bool = True
+            storage_type: Type[FW] = LilcomFilesWriter,
+            executor: Optional[Executor] = None,
+            mix_eagerly: bool = True,
+            progress_bar: bool = True,
     ) -> 'CutSet':
         """
-        Modify the current ``CutSet`` with by extracting features and attaching the feature manifests
-        to the cuts.
+        Extract features for all cuts, possibly in parallel,
+        and store them using the specified storage object.
 
-        :param extractor: A ``FeatureExtractor`` instance (either Lhotse's built-in or a custom implementation).
-        :param storage: A ``FeaturesWriter`` instance used to store the features.
+        Examples:
+
+            Extract fbank features on one machine using 8 processes,
+            store each array in a separate file with lilcom compression:
+
+            >>> cuts = CutSet(...)
+            ... cuts.compute_and_store_features(
+            ...     extractor=Fbank(),
+            ...     storage_path='feats',
+            ...     num_jobs=8
+            ... )
+
+            Extract fbank features on one machine using 8 processes,
+            store arrays partitioned in 8 HDF5 files with lilcom compression:
+
+            >>> cuts = CutSet(...)
+            ... cuts.compute_and_store_features(
+            ...     extractor=Fbank(),
+            ...     storage_path='feats',
+            ...     num_jobs=8,
+            ...     storage_type=LilcomHdf5Writer
+            ... )
+
+            Extract fbank features on multiple machines using a Dask cluster
+            with 80 jobs,
+            store arrays partitioned in 80 HDF5 files with lilcom compression:
+
+            >>> from distributed import Client
+            ... cuts = CutSet(...)
+            ... cuts.compute_and_store_features(
+            ...     extractor=Fbank(),
+            ...     storage_path='feats',
+            ...     num_jobs=80,
+            ...     storage_type=LilcomHdf5Writer,
+            ...     executor=Client(...)
+            ... )
+
+        :param extractor: A ``FeatureExtractor`` instance
+            (either Lhotse's built-in or a custom implementation).
+        :param storage_path: The path to location where we will store the features.
+            The exact type and layout of stored files will be dictated by the
+            ``storage_type`` argument.
+        :param num_jobs: The number of parallel processes used to extract the features.
+            We will internally split the CutSet into this many chunks
+            and process each chunk in parallel.
         :param augment_fn: an optional callable used for audio augmentation.
+            Be careful with the types of augmentations used: if they modify
+            the start/end/duration times of the cut and its supervisions,
+            you will end up with incorrect supervision information when using this API.
+            E.g. for speed perturbation, use ``CutSet.perturb_speed()`` instead.
+        :param storage_type: a ``FeaturesWriter`` subclass type.
+            It determines how the featurs are stored to disk,
+            e.g. separate file per array, HDF5 files with multiple arrays, etc.
         :param executor: when provided, will be used to parallelize the feature extraction process.
-            Any executor satisfying the standard concurrent.futures interface will be suitable;
-            e.g. ProcessPoolExecutor, ThreadPoolExecutor, or dask.Client for distributed task
-            execution (see: https://docs.dask.org/en/latest/futures.html?highlight=Client#start-dask-client)
-        :param mix_eagerly: Related to how the features are extracted for ``MixedCut`` instances, if any are present.
+            By default, we will instantiate a ProcessPoolExecutor.
+            Learn more about the ``Executor`` API at
+            https://lhotse.readthedocs.io/en/latest/parallelism.html
+        :param mix_eagerly: Related to how the features are extracted for ``MixedCut``
+            instances, if any are present.
             When False, extract and store the features for each track separately,
             and mix them dynamically when loading the features.
-            When True, mix the audio first and store the mixed features, returning a new ``Cut`` instance
-            with the same ID. The returned ``Cut`` will not have a ``Recording`` attached.
-        :return: a new CutSet instance with the same ``Cut``s, but with attached ``Features`` objects
+            When True, mix the audio first and store the mixed features,
+            returning a new ``Cut`` instance with the same ID.
+            The returned ``Cut`` will not have a ``Recording`` attached.
+        :param progress_bar: Should a progress bar be displayed (automatically turned off
+            for parallel computation).
+        :return: Returns a new ``CutSet`` with ``Features`` manifests attached to the cuts.
         """
-        if executor is None:
-            return CutSet.from_cuts(tqdm(
-                (
-                    cut.compute_and_store_features(
-                        extractor=extractor,
-                        storage=storage,
-                        augment_fn=augment_fn,
-                        mix_eagerly=mix_eagerly
-                    ) for cut in self
-                ),
-                desc='Extracting and storing features',
-                total=len(self)
-            ))
+        from lhotse.manipulation import combine
+        from cytoolz import identity
 
-        if isinstance(executor, ProcessPoolExecutor) and executor._mp_context._name == 'fork':
-            warnings.warn('ProcessPoolExecutor using a "fork" multiprocessing detected. '
-                          'In some circumstances this can crash or hang the program, e.g. when using '
-                          ' data augmentation libsox wrappers like WavAugment or torchaudio. '
-                          'We suggest passing an extra argument to initialize the executor: '
-                          'ProcessPoolExecutor(..., mp_context=multiprocessing.get_context("spawn"))')
+        # Pre-conditions and args setup
+        progress = identity  # does nothing, unless we overwrite it with an actual prog bar
+        if num_jobs is None:
+            num_jobs = 1
+        if num_jobs == 1 and executor is not None:
+            logging.warning('Executor argument was passed but num_jobs set to 1: '
+                            'we will ignore the executor and use non-parallel execution.')
+            executor = None
 
-        futures = []
-        for cut in self:
-            futures.append(
-                executor.submit(
-                    _extract_and_store_features_helper_fn,
-                    cut,
-                    extractor=extractor,
-                    storage=storage,
-                    augment_fn=augment_fn,
-                    mix_eagerly=mix_eagerly
+        # Non-parallel execution
+        if executor is None and num_jobs == 1:
+            if progress_bar:
+                progress = partial(
+                    tqdm, desc='Extracting and storing features', total=len(self)
                 )
+            with storage_type(storage_path) as storage:
+                return CutSet.from_cuts(
+                    progress(
+                        cut.compute_and_store_features(
+                            extractor=extractor,
+                            storage=storage,
+                            augment_fn=augment_fn,
+                            mix_eagerly=mix_eagerly
+                        ) for cut in self
+                    )
+                )
+
+        # We are now sure that "storage_path" will be the root for
+        # multiple feature storages - we can create it as a directory
+        storage_path = Path(storage_path)
+        storage_path.mkdir(parents=True, exist_ok=True)
+
+        # Parallel execution: prepare the CutSet splits
+        cut_sets = self.split(num_jobs, shuffle=True)
+
+        # Initialize the default executor if None was given
+        if executor is None:
+            executor = ProcessPoolExecutor(num_jobs)
+
+        # Submit the chunked tasks to parallel workers.
+        # Each worker runs the non-parallel version of this function inside.
+        futures = [
+            executor.submit(
+                CutSet.compute_and_store_features,
+                cs,
+                extractor=extractor,
+                storage_path=storage_path / f'feats-{i}',
+                augment_fn=augment_fn,
+                storage_type=storage_type,
+                mix_eagerly=mix_eagerly,
+                # Disable individual workers progress bars for readability
+                progress_bar=False
             )
-        cut_set = CutSet.from_cuts(tqdm(
-            (f.result() for f in futures),
-            desc='Extracting and storing features in parallel',
-            total=len(futures)
-        ))
-        return cut_set
+            for i, cs in enumerate(cut_sets)
+        ]
+
+        if progress_bar:
+            progress = partial(
+                tqdm, desc='Extracting and storing features (chunks progress)', total=len(futures)
+            )
+
+        cuts_with_feats = combine(progress(f.result() for f in futures))
+        return cuts_with_feats
+
+    def compute_global_feature_stats(
+            self,
+            storage_path: Optional[Pathlike] = None,
+            max_cuts: Optional[int] = None
+    ) -> Dict[str, np.ndarray]:
+        """
+        Compute the global means and standard deviations for each feature bin in the manifest.
+        It follows the implementation in scikit-learn:
+        https://github.com/scikit-learn/scikit-learn/blob/0fb307bf39bbdacd6ed713c00724f8f871d60370/sklearn/utils/extmath.py#L715
+        which follows the paper:
+        "Algorithms for computing the sample variance: analysis and recommendations", by Chan, Golub, and LeVeque.
+
+        :param storage_path: an optional path to a file where the stats will be stored with pickle.
+        :param max_cuts: optionally, limit the number of cuts used for stats estimation. The cuts will be
+            selected randomly in that case.
+        :return a dict of ``{'norm_means': np.ndarray, 'norm_stds': np.ndarray}`` with the
+            shape of the arrays equal to the number of feature bins in this manifest.
+        """
+        have_features = [cut.has_features for cut in self]
+        if not any(have_features):
+            raise ValueError("Could not find any features in this CutSet; did you forget to extract them?")
+        if not all(have_features):
+            logging.warning(
+                f'Computing global stats: only {sum(have_features)}/{len(have_features)} cuts have features.'
+            )
+        return compute_global_stats(
+            # islice(X, 50) is like X[:50] except it works with lazy iterables
+            feature_manifests=islice(
+                (cut.features for cut in self if cut.has_features),
+                max_cuts if max_cuts is not None else len(self)
+            ),
+            storage_path=storage_path
+        )
 
     def with_features_path_prefix(self, path: Pathlike) -> 'CutSet':
         return CutSet.from_cuts(c.with_features_path_prefix(path) for c in self)
 
     def with_recording_path_prefix(self, path: Pathlike) -> 'CutSet':
         return CutSet.from_cuts(c.with_recording_path_prefix(path) for c in self)
+
+    def map(self, transform_fn: Callable[[AnyCut], AnyCut]) -> 'CutSet':
+        """
+        Modify the cuts in this ``CutSet`` and return a new ``CutSet``.
+
+        :param transform_fn: A callable (function) that accepts a single cut instance
+            and returns a single cut instance.
+        :return: a new ``CutSet`` with modified cuts.
+        """
+
+        def verified(mapped: Any) -> AnyCut:
+            assert isinstance(mapped, (Cut, MixedCut, PaddingCut)), \
+                "The callable passed to CutSet.map() must return a Cut class instance."
+            return mapped
+
+        return CutSet.from_cuts(verified(transform_fn(c)) for c in self)
+
+    def modify_ids(self, transform_fn: Callable[[str], str]) -> 'CutSet':
+        """
+        Modify the IDs of cuts in this ``CutSet``.
+        Useful when combining multiple ``CutSet``s that were created from a single source,
+        but contain features with different data augmentations techniques.
+
+        :param transform_fn: A callable (function) that accepts a string (cut ID) and returns
+        a new string (new cut ID).
+        :return: a new ``CutSet`` with cuts with modified IDs.
+        """
+        return CutSet.from_cuts(c.with_id(transform_fn(c.id)) for c in self)
 
     def map_supervisions(self, transform_fn: Callable[[SupervisionSegment], SupervisionSegment]) -> 'CutSet':
         """
@@ -1557,7 +1885,7 @@ def mix(
         [
             MixTrack(
                 cut=track.cut,
-                offset=round(track.offset + offset, ndigits=3),
+                offset=round(track.offset + offset, ndigits=8),
                 snr=(
                     # When no new SNR is specified, retain whatever was there in the first place.
                     track.snr if snr is None
@@ -1601,7 +1929,3 @@ def append_cuts(cuts: Iterable[AnyCut]) -> AnyCut:
     # The following is a fold (accumulate/aggregate) operation; it starts with cuts[0], and appends cuts[1] to it;
     #  then takes their it concatenation and appends cuts[2] to it; and so on.
     return reduce(append, cuts)
-
-
-def _extract_and_store_features_helper_fn(cut: AnyCut, *args, **kwargs) -> AnyCut:
-    return cut.compute_and_store_features(*args, **kwargs)

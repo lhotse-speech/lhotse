@@ -1,5 +1,5 @@
 import warnings
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from io import BytesIO
 from math import sqrt
 from pathlib import Path
@@ -8,8 +8,11 @@ from typing import Callable, Dict, Iterable, List, Optional, Sequence, Tuple, Un
 
 import numpy as np
 
-from lhotse.utils import (Decibels, JsonMixin, Pathlike, Seconds, SetContainingAnything, YamlMixin, fastcopy,
-                          split_sequence)
+from lhotse.augmentation import AudioTransform, Speed
+from lhotse.utils import (Decibels, JsonMixin, Pathlike, Seconds, SetContainingAnything, YamlMixin, asdict_nonull,
+                          compute_num_samples,
+                          fastcopy,
+                          index_by_id_and_check, perturb_num_samples, split_sequence)
 
 Channels = Union[int, List[int]]
 
@@ -83,9 +86,9 @@ def read_audio(path: Pathlike, offset: Seconds, duration: Seconds) -> Tuple[np.n
         sampling_rate = sf_desc.samplerate
         if offset:
             # Seek to the start of the target read
-            sf_desc.seek(round(offset * sampling_rate))
+            sf_desc.seek(compute_num_samples(offset, sampling_rate))
         if duration is not None:
-            frame_duration = round(duration * sampling_rate)
+            frame_duration = compute_num_samples(duration, sampling_rate)
         else:
             frame_duration = -1
         # Load the target number of frames, and transpose to match librosa form
@@ -102,6 +105,7 @@ class Recording:
     sampling_rate: int
     num_samples: int
     duration: Seconds
+    transforms: Optional[List[Dict]] = None
 
     @staticmethod
     def from_sphere(
@@ -146,23 +150,44 @@ class Recording:
 
         :param path: Path to the WAVE (.wav) file.
         :param recording_id: recording id, when not specified ream the filename's stem ("x.wav" -> "x").
-        :return: a new ``Recording`` instance pointing to the sphere file.
+        :return: a new ``Recording`` instance pointing to the audio file.
         """
-        from soundfile import SoundFile
-        with SoundFile(path) as sf:
-            return Recording(
-                id=recording_id if recording_id is not None else Path(path).stem,
-                sampling_rate=sf.samplerate,
-                num_samples=sf.frames,
-                duration=sf.frames / sf.samplerate,
-                sources=[
-                    AudioSource(
-                        type='file',
-                        channels=list(range(sf.channels)),
-                        source=str(path)
-                    )
-                ]
-            )
+        warnings.warn(
+            'Recording.from_wav() is deprecated and will be removed in Lhotse v0.5; '
+            'please use Recording.from_file() instead.',
+            category=DeprecationWarning
+        )
+        return Recording.from_file(path=path, recording_id=recording_id)
+
+    @staticmethod
+    def from_file(path: Pathlike, recording_id: Optional[str] = None):
+        """
+        Read an audio file's header and create the corresponding ``Recording``.
+        Suitable to use when each physical file represents a separate recording session.
+
+        If a recording session consists of multiple files (e.g. one per channel),
+        it is advisable to create the ``Recording`` object manually, with each
+        file represented as a separate ``AudioSource`` object.
+
+        :param path: Path to an audio file supported by libsoundfile (pysoundfile).
+        :param recording_id: recording id, when not specified ream the filename's stem ("x.wav" -> "x").
+        :return: a new ``Recording`` instance pointing to the audio file.
+        """
+        import soundfile
+        info = soundfile.info(path)
+        return Recording(
+            id=recording_id if recording_id is not None else Path(path).stem,
+            sampling_rate=info.samplerate,
+            num_samples=info.frames,
+            duration=info.duration,
+            sources=[
+                AudioSource(
+                    type='file',
+                    channels=list(range(info.channels)),
+                    source=str(path)
+                )
+            ]
+        )
 
     @property
     def num_channels(self):
@@ -190,9 +215,10 @@ class Recording:
             # Case: source not requested
             if not channels.intersection(source.channels):
                 continue
+            offset, duration = self._determine_offset_and_duration(offset_seconds, duration_seconds)
             samples = source.load_audio(
-                offset_seconds=offset_seconds,
-                duration_seconds=duration_seconds,
+                offset_seconds=offset,
+                duration_seconds=duration,
             )
 
             # Case: two-channel audio file but only one channel requested
@@ -206,10 +232,59 @@ class Recording:
             samples_per_source.append(samples)
 
         # shape: (n_channels, n_samples)
-        return np.vstack(samples_per_source)
+        audio = np.vstack(samples_per_source)
+
+        # We'll apply the transforms now (if any).
+        for params in self.transforms or []:
+            transform = AudioTransform.from_dict(params)
+            audio = transform(audio, self.sampling_rate)
+
+        return audio
+
+    def _determine_offset_and_duration(self, offset: Seconds, duration: Seconds) -> Tuple[Seconds, Seconds]:
+        """
+        This internal method helps estimate the original offset and duration for a recording
+        before speed perturbation was applied.
+        We need this estimate to know how much audio to actually load from disk during the
+        call to ``load_audio()``.
+        """
+        if self.transforms is None or all(t['name'] != 'Speed' for t in self.transforms):
+            return offset, duration
+        start_sample = offset * self.sampling_rate
+        num_samples = duration * self.sampling_rate if duration is not None else None
+        for tfr in reversed(self.transforms):
+            if tfr['name'] != 'Speed':
+                continue
+            factor = tfr['kwargs']['factor']
+            start_sample = perturb_num_samples(start_sample, 1 / factor)
+            num_samples = perturb_num_samples(num_samples, 1 / factor) if num_samples is not None else None
+        return start_sample / self.sampling_rate, num_samples / self.sampling_rate if num_samples is not None else None
 
     def with_path_prefix(self, path: Pathlike) -> 'Recording':
         return fastcopy(self, sources=[s.with_path_prefix(path) for s in self.sources])
+
+    def perturb_speed(self, factor: float, affix_id: bool = True) -> 'Recording':
+        """
+        Return a new ``Recording`` that will lazily perturb the speed while loading audio.
+        The ``num_samples`` and ``duration`` fields are updated to reflect the
+        shrinking/extending effect of speed.
+
+        :param factor: The speed will be adjusted this many times (e.g. factor=1.1 means 1.1x faster).
+        :param affix_id: When true, we will modify the ``Recording.id`` field
+            by affixing it with "_sp{factor}".
+        :return: a modified copy of the current ``Recording``.
+        """
+        transforms = self.transforms if self.transforms is not None else []
+        transforms.append(Speed(factor=factor).to_dict())
+        new_num_samples = perturb_num_samples(self.num_samples, factor)
+        new_duration = new_num_samples / self.sampling_rate
+        return fastcopy(
+            self,
+            id=f'{self.id}_sp{factor}' if affix_id else self.id,
+            num_samples=new_num_samples,
+            duration=new_duration,
+            transforms=transforms
+        )
 
     @staticmethod
     def from_dict(data: dict) -> 'Recording':
@@ -231,14 +306,14 @@ class RecordingSet(JsonMixin, YamlMixin, Sequence[Recording]):
 
     @staticmethod
     def from_recordings(recordings: Iterable[Recording]) -> 'RecordingSet':
-        return RecordingSet(recordings={r.id: r for r in recordings})
+        return RecordingSet(recordings=index_by_id_and_check(recordings))
 
     @staticmethod
     def from_dicts(data: Iterable[dict]) -> 'RecordingSet':
         return RecordingSet.from_recordings(Recording.from_dict(raw_rec) for raw_rec in data)
 
     def to_dicts(self) -> List[dict]:
-        return [asdict(r) for r in self]
+        return [asdict_nonull(r) for r in self]
 
     def filter(self, predicate: Callable[[Recording], bool]) -> 'RecordingSet':
         """
@@ -249,17 +324,17 @@ class RecordingSet(JsonMixin, YamlMixin, Sequence[Recording]):
         """
         return RecordingSet.from_recordings(rec for rec in self if predicate(rec))
 
-    def split(self, num_splits: int, randomize: bool = False) -> List['RecordingSet']:
+    def split(self, num_splits: int, shuffle: bool = False) -> List['RecordingSet']:
         """
         Split the ``RecordingSet`` into ``num_splits`` pieces of equal size.
 
         :param num_splits: Requested number of splits.
-        :param randomize: Optionally randomize the recordings order first.
+        :param shuffle: Optionally shuffle the recordings order first.
         :return: A list of ``RecordingSet`` pieces.
         """
         return [
             RecordingSet.from_recordings(subset) for subset in
-            split_sequence(self, num_splits=num_splits, randomize=randomize)
+            split_sequence(self, num_splits=num_splits, shuffle=shuffle)
         ]
 
     def load_audio(

@@ -5,7 +5,8 @@ import torch
 
 torchaudio = pytest.importorskip('torchaudio', minversion='0.6')
 
-from lhotse.augmentation import SoxEffectTransform, pitch, reverb, speed
+from lhotse.augmentation import SoxEffectTransform, pitch, reverb, speed, Speed
+from lhotse import AudioTransform
 
 SAMPLING_RATE = 16000
 
@@ -33,3 +34,23 @@ def test_speed_does_not_change_num_samples(audio):
         augmented_audio = augment_fn(audio, sampling_rate=SAMPLING_RATE)
         assert augmented_audio.shape == audio.shape
         assert augmented_audio != audio
+
+
+def test_speed(audio):
+    speed = Speed(factor=1.1)
+    perturbed = speed(audio, SAMPLING_RATE)
+    assert perturbed.shape == (1, 14545)
+
+
+def test_deserialize_transform(audio):
+    speed = AudioTransform.from_dict({'name': 'Speed', 'kwargs': {'factor': 1.1}})
+    perturbed = speed(audio, SAMPLING_RATE)
+    assert perturbed.shape == (1, 14545)
+
+
+def test_serialize_deserialize_transform(audio):
+    speed_orig = Speed(factor=1.1)
+    data = speed_orig.to_dict()
+    speed = AudioTransform.from_dict(data)
+    perturbed = speed(audio, SAMPLING_RATE)
+    assert perturbed.shape == (1, 14545)
