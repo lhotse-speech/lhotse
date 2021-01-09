@@ -1,19 +1,11 @@
 """
-The data prepare recipe for the AMI Meeting Corpus.
+The data prepare recipe for the AMI Meeting Corpus ASR task.
 
-The AMI Meeting Corpus consists of 100 hours of meeting recordings. The recordings use a range of signals
-synchronized to a common timeline. These include close-talking and far-field microphones, individual and room-view
-video cameras, and output from a slide projector and an electronic whiteboard. During the meetings, the participants
-also have unsynchronized pens available to them that record what is written. The meetings were recorded in English
-using three different rooms with different acoustic properties, and include mostly non-native speakers." See
-http://groups.inf.ed.ac.uk/ami/corpus/overview.shtml for more details.
+In this recipe, the IHM, IHM-Mix, and SDM settings are supported.
 
-There are several microphone settings in AMI corpus:
--- IHM: Individual Headset Microphones
--- SDM: Single Distant Microphone
--- MDM: Multiple Distant Microphones
-
-In this recipe, IHM, IHM-Mix, and SDM settings are supported.
+We use the Full Partition ASR corpus (used in Kaldi s5 and s5b recipes), and the references
+are obtained from ami_manual_annotations_v1.6.1. This is done for the data preparation
+to be compatible with the Kaldi recipe (but may have to be updated in future).
 """
 
 from collections import defaultdict
@@ -24,8 +16,6 @@ import re
 import soundfile
 import urllib.request
 from pathlib import Path
-# Workaround for SoundFile (torchaudio dep) raising exception when a native library, libsndfile1, is not installed.
-# Read-the-docs does not allow to modify the Docker containers used to build documentation...
 from tqdm.auto import tqdm
 from typing import Dict, List, NamedTuple, Optional, Union
 
@@ -34,7 +24,9 @@ from lhotse.audio import AudioSource, Recording, RecordingSet
 from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import Pathlike, Seconds
 
-# TODO: support the "mdm" microphone setting. For "sdm" we currently use Array1-01.
+from lhotse.recipes.ami.common import download_audio, get_wav_name, prepare_audio_ihm, prepare_audio_other
+
+# TODO: support the "mdm" microphone setting
 mics = ['ihm','ihm-mix','sdm']
 
 # The splits are same with Kaldi's AMI recipe
@@ -67,57 +59,22 @@ dataset_parts = {'train': split_train, 'dev': split_dev, 'eval': split_eval}
 
 def download(
         target_dir: Pathlike = '.',
-        mic: Optional[str] = 'ihm',
         force_download: Optional[bool] = False,
         url: Optional[str] = 'http://groups.inf.ed.ac.uk/ami',
-        alignments: Optional[bool] = False,
+        mic: Optional[str] = 'ihm'
 ) -> None:
-    assert mic in mics
-    target_dir = Path(target_dir)
-
-    # Audios
-    for part in tqdm(dataset_parts, desc='Downloading AMI splits'):
-        for item in tqdm(dataset_parts[part], desc='Downloading sessions'):
-            if mic == 'ihm':
-                headset_num = 5 if item in ('EN2001a', 'EN2001d', 'EN2001e') else 4
-                for m in range(headset_num):
-                    wav_name = f'{item}.Headset-{m}.wav'
-                    wav_url = f'{url}/AMICorpusMirror/amicorpus/{item}/audio/{wav_name}'
-                    wav_dir = target_dir / 'wav_db' / item / 'audio'
-                    wav_dir.mkdir(parents=True, exist_ok=True)
-                    wav_path = wav_dir / wav_name
-                    if force_download or not wav_path.is_file():
-                        urllib.request.urlretrieve(wav_url, filename=wav_path)
-            elif mic == 'ihm-mix':
-                wav_name = f'{item}.Mix-Headset.wav'
-                wav_url = f'{url}/AMICorpusMirror/amicorpus/{item}/audio/{wav_name}'
-                wav_dir = target_dir / 'wav_db' / item / 'audio'
-                wav_dir.mkdir(parents=True, exist_ok=True)
-                wav_path = wav_dir / wav_name
-                if force_download or not wav_path.is_file():
-                    urllib.request.urlretrieve(wav_url, filename=wav_path)
-            elif mic == 'sdm':
-                wav_name = f'{item}.Array1-01.wav'
-                wav_url = f'{url}/AMICorpusMirror/amicorpus/{item}/audio/{wav_name}'
-                wav_dir = target_dir / 'wav_db' / item / 'audio'
-                wav_dir.mkdir(parents=True, exist_ok=True)
-                wav_path = wav_dir / wav_name
-                if force_download or not wav_path.is_file():
-                    urllib.request.urlretrieve(wav_url, filename=wav_path)
-
+    
+    assert mic in mics, "Only {mics} mics are supported for now."
+    
+    # Audio
+    download_audio(target_dir, dataset_parts, force_download, url, mic)
+    
     # Annotations
     text_name = 'annotations.gzip'
     text_path = target_dir / text_name
     if force_download or not text_path.is_file():
         text_url = f'{url}/AMICorpusAnnotations/ami_manual_annotations_v1.6.1_export.gzip'
         urllib.request.urlretrieve(text_url, filename=text_path)
-
-    if alignments:
-        fa_name = 'word_annotations.zip'
-        fa_path = target_dir / fa_name
-        fa_url = f'{url}/AMICorpusAnnotations/ami_public_manual_1.6.1.zip'
-        if force_download or not fa_path.is_file():
-            urllib.request.urlretrieve(fa_url, filename=fa_path)
 
 
 class AmiSegmentAnnotation(NamedTuple):
@@ -128,29 +85,9 @@ class AmiSegmentAnnotation(NamedTuple):
     end_time: Seconds
 
 
-def get_wav_name(
-        mic: str,
-        meet_id: str,
-        channel: Optional[int] = None
-) -> str:
-    """
-    Helper function to get wav file name, given meeting id, mic, and channel
-    information.
-    """
-    if mic == 'ihm':
-        wav_name = f'{meet_id}.Headset-{channel}.wav'
-    elif mic == 'ihm-mix':
-        wav_name = f'{meet_id}.Mix-Headset.wav'
-    elif mic == 'sdm':
-        wav_name = f'{meet_id}.Array1-01.wav'
-    return wav_name
-
-
 def parse_ami_annotations(gzip_file: Pathlike, mic: Optional[str]='ihm'
     ) -> Dict[str, List[AmiSegmentAnnotation]]:
     annotations = {}
-    speaker_dict = {}
-    channel_dict = {}
 
     with GzipFile(gzip_file) as f:
         for line in f:
@@ -161,8 +98,6 @@ def parse_ami_annotations(gzip_file: Pathlike, mic: Optional[str]='ihm'
                 continue
             meet_id, x, speaker, channel, transcriber_start, transcriber_end, starttime, endtime, trans, puncts_times \
                 = line.split('\t')
-            speaker_dict[(meet_id,x)] = speaker
-            channel_dict[(meet_id,x)] = channel
             # Cleanup the transcript and split by punctuations
             trans = trans.upper()
             trans = re.sub(r' *[.,?!:]+ *', ',', trans.upper())
@@ -227,90 +162,7 @@ def parse_ami_annotations(gzip_file: Pathlike, mic: Optional[str]='ihm'
                  annotations[wav_name] = []
             annotations[wav_name].append(seg_times)
 
-    return annotations, speaker_dict, channel_dict
-
-def parse_ami_alignments(
-        alignments_zip: Pathlike,
-        speaker_dict: Dict[Tuple[str, str], str],
-        channel_dict: Dict[Tuple[str, str], str],
-        mic: Optional[str] = 'ihm'
-) -> Dict[str, List[AmiSegmentAnnotation]]:
-    alignments = {}
-    with zipfile.ZipFile(alignments_zip, 'r') as archive:
-        for file in archive.namelist():
-            if file.startswith('words/') and file[-1] != '/':
-                meet_id, x, _, _ = file.split('/')[1].split('.')
-                # Get speaker and channel from the XML file name. Some of them
-                # may not be present in the annotations (so we ignore those)
-                try:
-                    spk = speaker_dict[(meet_id,x)]
-                    channel = channel_dict[(meet_id, x)]
-                except:
-                    logging.warning(f'{meet_id}.{x} present in alignments but not in '
-                                    f'annotations. Removing from alignments.')
-                    continue
-                tree = ET.parse(archive.open(file))
-                seg_times = []
-                for child in tree.getroot():
-                    # If the alignment does not contain start or end time info,
-                    # ignore them. Also, only consider words or vocal sounds
-                    # in the alignment XML files.
-                    if 'starttime' not in child.attrib or 'endtime' not in child.attrib or \
-                        child.tag not in ['w','vocalsound']:
-                        continue
-                    text = child.text if child.tag == 'w' else child.attrib['type']
-                    seg_times.append(AmiSegmentAnnotation(
-                        text=text,
-                        speaker=spk,
-                        gender=spk[0],
-                        begin_time=float(child.attrib['starttime']),
-                        end_time=float(child.attrib['endtime'])))
-                
-                wav_name = get_wav_name(mic, meet_id, channel)
-                if wav_name not in alignments:
-                    alignments[wav_name] = []
-                alignments[wav_name].append(seg_times)
-    return alignments
-
-# Since IHM audio requires grouping multiple channels of AudioSource into
-# one Recording, we separate it from preparation of SDM and IHM-mix, since
-# they do not require such grouping.
-def prepare_audio_ihm(
-        audio_paths: List[Pathlike],
-        annotations: Dict[str, List[AmiSegmentAnnotation]],
-        alignments: Optional[Dict[str, List[AmiSegmentAnnotation]]] = None
-) -> Dict[str, RecordingSet]:
-    # Group together multiple channels from the same session.
-    # We will use that to create a Recording with multiple sources (channels).
-    from cytoolz import groupby
-    channel_wavs = groupby(lambda p: p.parts[-3], audio_paths)
-    recording_manifest = defaultdict(dict)
-
-    for part in dataset_parts:
-        recordings = []
-        for session_name, channel_paths in channel_wavs.items():
-
-            if session_name not in dataset_parts[part]:
-                continue
-            audio_info = soundfile.info(str(channel_paths[0]))[0]
-            recordings.append(Recording(
-                id=session_name,
-                sources=[
-                    AudioSource(
-                        type='file',
-                        channels=[idx],
-                        source=str(audio_path)
-                    )
-                    for idx, audio_path in enumerate(sorted(channel_paths))
-                ],
-                sampling_rate=int(audio_info.samplerate),
-                num_samples=audio_info.frames,
-                duration=audio_info.duration,
-            ))
-        audio = RecordingSet.from_recordings(recordings)
-        recording_manifest[part] = audio
-    return recording_manifest
-
+    return annotations
 
 # Similar to audio preparation, we also need to prepare the supervisions for
 # IHM differently from those for IHM-Mix and SDM mics.
@@ -392,3 +244,75 @@ def prepare_supervision_other(
                     if duration > 0:
                         segments.append(SupervisionSegment(
                             id=f'{recording.id}-{seg_idx}-{subseg_idx}',
+                            recording_id=recording.id,
+                            start=subseg_info.begin_time,
+                            duration=duration,
+                            channel=0,
+                            language='English',
+                            speaker=subseg_info.speaker,
+                            gender=subseg_info.gender,
+                            text=subseg_info.text
+                        ))
+
+        supervision_manifest[part] = SupervisionSet.from_segments(segments)
+    return supervision_manifest
+
+def prepare_ami(
+        data_dir: Pathlike,
+        output_dir: Optional[Pathlike] = None,
+        mic: Optional[str] = 'ihm'
+) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet]]]:
+    """
+    Returns the manifests which consist of the Recordings and Supervisions
+    If word alignment archive is provided, also returns a Supervision manifest
+    corresponding to alignments.
+    :param data_dir: Pathlike, the path of the data dir.
+    :param output_dir: Pathlike, the path where to write the manifests.
+    :param mic: str, type of mic to use.
+    :return: a Dict whose key is ('train', 'dev', 'eval'), and the value is Dicts with keys 'audio' and 'supervisions'.
+    """
+    data_dir = Path(data_dir)
+    assert data_dir.is_dir(), f'No such directory: {data_dir}'
+    assert mic in mics, f'Mic {mic} not supported'
+
+    if output_dir is not None:
+        output_dir = Path(output_dir)
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+    annotations = parse_ami_annotations(data_dir / 'annotations.gzip', mic=mic)
+
+    # Audio
+    wav_dir = data_dir / 'wav_db'
+    if mic == 'ihm':
+        audio_paths = wav_dir.rglob('*Headset-?.wav')
+        audio = prepare_audio_ihm(audio_paths)
+    elif mic == 'ihm-mix':
+        audio_paths = wav_dir.rglob('*Mix-Headset.wav')
+        audio = prepare_audio_other(audio_paths)
+    elif mic == 'sdm':
+        audio_paths = wav_dir.rglob('*Array1-01.wav')
+        audio = prepare_audio_other(audio_paths)
+
+    # Supervisions
+    if mic == 'ihm':
+        supervision = prepare_supervision_ihm(audio, annotations)
+    else:
+        supervision = prepare_supervision_other(audio, annotations)
+
+    manifests = defaultdict(dict)
+
+    for part in dataset_parts:
+
+        # Write to output directory if a path is provided
+        if output_dir is not None:
+            audio[part].to_json(output_dir / f'recordings_{part}.json')
+            supervision[part].to_json(output_dir / f'supervisions_{part}.json')
+
+        validate_recordings_and_supervisions(audio[part], supervision[part])
+        # Combine all manifests into one dictionary
+        manifests[part] = {
+        'recordings': audio[part],
+        'supervisions': supervision[part]
+        }
+
+    return manifests
