@@ -24,7 +24,8 @@ from lhotse.audio import AudioSource, Recording, RecordingSet
 from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import Pathlike, Seconds
 
-from lhotse.recipes.ami.common import download_audio, get_wav_name, prepare_audio_ihm, prepare_audio_other
+from lhotse.recipes.ami.common import download_audio, get_wav_name, prepare_audio_ihm, prepare_audio_other, \
+    remove_supervision_exceeding_audio_duration
 
 # TODO: support the "mdm" microphone setting
 mics = ['ihm','ihm-mix','sdm']
@@ -285,13 +286,13 @@ def prepare_ami(
     wav_dir = data_dir / 'wav_db'
     if mic == 'ihm':
         audio_paths = wav_dir.rglob('*Headset-?.wav')
-        audio = prepare_audio_ihm(audio_paths)
+        audio = prepare_audio_ihm(list(audio_paths), dataset_parts)
     elif mic == 'ihm-mix':
         audio_paths = wav_dir.rglob('*Mix-Headset.wav')
-        audio = prepare_audio_other(audio_paths)
+        audio = prepare_audio_other(list(audio_paths), dataset_parts)
     elif mic == 'sdm':
         audio_paths = wav_dir.rglob('*Array1-01.wav')
-        audio = prepare_audio_other(audio_paths)
+        audio = prepare_audio_other(list(audio_paths), dataset_parts)
 
     # Supervisions
     if mic == 'ihm':
@@ -307,7 +308,13 @@ def prepare_ami(
         if output_dir is not None:
             audio[part].to_json(output_dir / f'recordings_{part}.json')
             supervision[part].to_json(output_dir / f'supervisions_{part}.json')
-
+        
+        # NOTE: Some of the AMI annotations exceed the recording duration, so
+        # we remove such segments here
+        supervision[part] = remove_supervision_exceeding_audio_duration(
+            audio[part],
+            supervision[part],
+        )
         validate_recordings_and_supervisions(audio[part], supervision[part])
         # Combine all manifests into one dictionary
         manifests[part] = {

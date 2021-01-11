@@ -19,12 +19,12 @@ from pathlib import Path
 
 from typing import Dict, List, NamedTuple, Optional, Union
 
-from lhotse import validate_recordings_and_supervisions
+from lhotse.qa import validate_recordings_and_supervisions
 from lhotse.audio import AudioSource, Recording, RecordingSet
 from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import Pathlike, Seconds
 
-from lhotse.recipes.ami.common import download_audio, prepare_audio_other
+from lhotse.recipes.ami.common import download_audio, prepare_audio_other, remove_supervision_exceeding_audio_duration
 
 # TODO: support the "ihm" and "mdm" microphone settings
 mics = ['ihm-mix','sdm']
@@ -55,9 +55,9 @@ def download(
     # Annotations/References
     rttm_name = 'rttms'
     rttm_path = target_dir / rttm_name
-    rttm_path.mkdir(parents=True, exist_ok=True)
-    base_url = 'https://raw.githubusercontent.com/BUTSpeechFIT/AMI-diarization-setup/blob/main/only_words/rttms/{}/{}.rttm'
+    base_url = 'https://raw.githubusercontent.com/BUTSpeechFIT/AMI-diarization-setup/main/only_words/rttms/{}/{}.rttm'
     if force_download or not rttm_path.is_dir():
+        rttm_path.mkdir(parents=True, exist_ok=True)
         for split in dataset_parts:
             for session in dataset_parts[split]:
                 cur_rttm_path = rttm_path / f'{session}.rttm'
@@ -74,7 +74,7 @@ class AmiSegmentAnnotation(NamedTuple):
 def parse_ami_annotations(
     rttm_path: Pathlike,
 ) -> Dict[str, List[AmiSegmentAnnotation]]:
-    anotations = {}
+    annotations = {}
     for file in os.listdir(rttm_path):
         meet_id = file.split('.')[0]
         filepath = rttm_path / file
@@ -88,7 +88,7 @@ def parse_ami_annotations(
                     begin_time=float(start),
                     end_time=float(start)+float(dur)
                 ))
-    return anotations
+    return annotations
 
 def prepare_supervision(
     audio: Dict[str, RecordingSet],
@@ -101,10 +101,6 @@ def prepare_supervision(
         audio_part = audio[part]
         for recording in audio_part:
             annotation = annotations.get(recording.id)
-            if annotation is None:
-                logging.warning(f'No annotation found for recording {recording.id} '
-                                f'(file {source.source})')
-                continue
             # In IHM-Mix and SDM, there can only be 1 source per recording, but it
             # can sometimes have more than 1 channels. But we only care about
             # 1 channel so we only add supervision for that channel in the
@@ -113,6 +109,10 @@ def prepare_supervision(
             if (len(source.channels) > 1):
                 logging.warning(f'More than 1 channels in recording {recording.id}. '
                                 f'Creating supervision for channel 0 only.')
+            if annotation is None:
+                logging.warning(f'No annotation found for recording {recording.id} '
+                                f'(file {source.source})')
+                continue
 
             for seg_idx, seg_info in enumerate(annotation):
                 duration = seg_info.end_time - seg_info.begin_time
@@ -150,16 +150,16 @@ def prepare_ami(
     if output_dir is not None:
         output_dir = Path(output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
-        
+
     # Audio
     wav_dir = data_dir / 'wav_db'
     if mic == 'ihm-mix':
         audio_paths = wav_dir.rglob('*Mix-Headset.wav')
-        audio = prepare_audio_other(audio_paths)
+        audio = prepare_audio_other(list(audio_paths), dataset_parts)
     elif mic == 'sdm':
         audio_paths = wav_dir.rglob('*Array1-01.wav')
-        audio = prepare_audio_other(audio_paths)
-
+        audio = prepare_audio_other(list(audio_paths), dataset_parts)
+    
     annotations = parse_ami_annotations(data_dir / 'rttms')
     supervision = prepare_supervision(audio, annotations)
 
@@ -172,7 +172,14 @@ def prepare_ami(
             audio[part].to_json(output_dir / f'recordings_{part}.json')
             supervision[part].to_json(output_dir / f'supervisions_{part}.json')
 
+        # NOTE: Some of the AMI annotations exceed the recording duration, so
+        # we remove such segments here
+        supervision[part] = remove_supervision_exceeding_audio_duration(
+            audio[part],
+            supervision[part],
+        )
         validate_recordings_and_supervisions(audio[part], supervision[part])
+        
         # Combine all manifests into one dictionary
         manifests[part] = {
         'recordings': audio[part],

@@ -20,7 +20,10 @@ contain several alignment errors, and (ii) the Full Corpus ASR partition contain
 in the test sets as well. 
 """
 import urllib.request
+import logging
+import soundfile as sf
 
+from collections import defaultdict
 from pathlib import Path
 from typing import List, Dict, Optional
 
@@ -28,6 +31,7 @@ from tqdm.auto import tqdm
 
 from lhotse.utils import Pathlike
 from lhotse.audio import AudioSource, Recording, RecordingSet
+from lhotse.supervision import SupervisionSegment, SupervisionSet
 
 def download_audio(
     target_dir: Pathlike,
@@ -90,7 +94,8 @@ def get_wav_name(
 # one Recording, we separate it from preparation of SDM and IHM-mix, since
 # they do not require such grouping.
 def prepare_audio_ihm(
-        audio_paths: List[Pathlike]
+        audio_paths: List[Pathlike],
+        dataset_parts: Dict[str,List[str]],
 ) -> Dict[str, RecordingSet]:
     # Group together multiple channels from the same session.
     # We will use that to create a Recording with multiple sources (channels).
@@ -125,7 +130,8 @@ def prepare_audio_ihm(
 
 
 def prepare_audio_other(
-        audio_paths: List[Pathlike]
+        audio_paths: List[Pathlike],
+        dataset_parts: Dict[str,List[str]],
 ) -> Dict[str, RecordingSet]:
 
     recording_manifest = defaultdict(dict)
@@ -153,3 +159,11 @@ def prepare_audio_other(
         audio = RecordingSet.from_recordings(recordings)
         recording_manifest[part] = audio
     return recording_manifest
+
+def remove_supervision_exceeding_audio_duration(
+    recordings: RecordingSet,
+    supervision: SupervisionSet,
+) -> SupervisionSet:
+    return SupervisionSet.from_segments(
+        s for s in supervision if s.end <= recordings[s.recording_id].duration
+    )
