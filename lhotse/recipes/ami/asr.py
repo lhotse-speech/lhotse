@@ -226,15 +226,16 @@ def prepare_supervision_other(
         audio_part = audio[part]
         for recording in audio_part:
             annotation = annotation_by_id.get(recording.id)
-            if annotation is None:
-                logging.warning(f'No annotation found for recording {recording.id} '
-                                f'(file {source.source})')
-                continue
             # In IHM-Mix and SDM, there can only be 1 source per recording, but it
             # can sometimes have more than 1 channels. But we only care about
             # 1 channel so we only add supervision for that channel in the
             # supervision manifest.
             source, = recording.sources
+            if annotation is None:
+                logging.warning(f'No annotation found for recording {recording.id} '
+                                f'(file {source.source})')
+                continue
+            
             if (len(source.channels) > 1):
                 logging.warning(f'More than 1 channels in recording {recording.id}. '
                                 f'Creating supervision for channel 0 only.')

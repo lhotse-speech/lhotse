@@ -106,13 +106,14 @@ def prepare_supervision(
             # 1 channel so we only add supervision for that channel in the
             # supervision manifest.
             source, = recording.sources
-            if (len(source.channels) > 1):
-                logging.warning(f'More than 1 channels in recording {recording.id}. '
-                                f'Creating supervision for channel 0 only.')
             if annotation is None:
                 logging.warning(f'No annotation found for recording {recording.id} '
                                 f'(file {source.source})')
                 continue
+            
+            if (len(source.channels) > 1):
+                logging.warning(f'More than 1 channels in recording {recording.id}. '
+                                f'Creating supervision for channel 0 only.')
 
             for seg_idx, seg_info in enumerate(annotation):
                 duration = seg_info.end_time - seg_info.begin_time
