@@ -66,7 +66,7 @@ def download(
 ) -> None:
     
     assert mic in mics, "Only {mics} mics are supported for now."
-    
+    target_dir = Path(target_dir)
     # Audio
     download_audio(target_dir, dataset_parts, force_download, url, mic)
     

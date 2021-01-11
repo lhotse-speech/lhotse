@@ -34,15 +34,13 @@ from lhotse.audio import AudioSource, Recording, RecordingSet
 from lhotse.supervision import SupervisionSegment, SupervisionSet
 
 def download_audio(
-    target_dir: Pathlike,
+    target_dir: Path,
     dataset_parts: Dict[str,List[str]],
     force_download: Optional[bool] = False,
     url: Optional[str] = 'http://groups.inf.ed.ac.uk/ami',
     mic: Optional[str] = 'ihm'
 ) -> None:
     
-    target_dir = Path(target_dir)
-
     # Audios
     for part in tqdm(dataset_parts, desc='Downloading AMI splits'):
         for item in tqdm(dataset_parts[part], desc='Downloading sessions'):
