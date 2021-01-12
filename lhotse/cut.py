@@ -1543,7 +1543,7 @@ class CutSet(JsonMixin, YamlMixin, Sequence[AnyCut]):
         assert n_cuts > 0
         # TODO: We might want to make this more efficient in the future
         #  by holding a cached list of cut ids as a member of CutSet...
-        cut_indices = [random.randint(0, len(self)) for _ in range(n_cuts)]
+        cut_indices = [random.randint(0, len(self) - 1) for _ in range(n_cuts)]
         cuts = [self[idx] for idx in cut_indices]
         if n_cuts == 1:
             return cuts[0]
@@ -1556,7 +1556,7 @@ class CutSet(JsonMixin, YamlMixin, Sequence[AnyCut]):
             self,
             cuts: 'CutSet',
             duration: Optional[Seconds] = None,
-            snr: Optional[Union[Decibels, Tuple[Decibels, Decibels]]] = 20,
+            snr: Optional[Union[Decibels, Sequence[Decibels]]] = 20,
             mix_prob: float = 1.0
     ) -> 'CutSet':
         """
@@ -1582,6 +1582,10 @@ class CutSet(JsonMixin, YamlMixin, Sequence[AnyCut]):
         """
         assert 0.0 <= mix_prob <= 1.0
         assert duration is None or duration > 0
+        if isinstance(snr, (tuple, list)):
+            assert len(snr) == 2, f"SNR range must be a list or tuple with exactly two values (got: {snr})"
+        else:
+            assert isinstance(snr, (type(None), int, float))
         mixed_cuts = []
         for cut in self:
             # Check whether we're going to mix something into the current cut
@@ -1592,7 +1596,7 @@ class CutSet(JsonMixin, YamlMixin, Sequence[AnyCut]):
             # Randomly sample a new cut from "cuts" to mix in.
             to_mix = cuts.sample()
             # Determine the SNR - either it's specified or we need to sample one.
-            snr = snr if isinstance(snr, (float, type(None))) else random.uniform(*snr)
+            snr = random.uniform(*snr) if isinstance(snr, (list, tuple)) else snr
             # Actual mixing
             mixed = cut.mix(other=to_mix, snr=snr)
             # Did the user specify a duration?
@@ -1609,7 +1613,7 @@ class CutSet(JsonMixin, YamlMixin, Sequence[AnyCut]):
                     # some assertions for exceeding duration; do precautionary rounding here.
                     mixed_in_duration = round(mixed_in_duration + to_mix.duration, ndigits=8)
             # We truncate the mixed to either the original duration or the requested duration.
-            mixed = mixed.truncate(duration=cut.duration if duration is not None else duration)
+            mixed = mixed.truncate(duration=cut.duration if duration is None else duration)
             mixed_cuts.append(mixed)
         return CutSet.from_cuts(mixed_cuts)
 
