@@ -1943,6 +1943,7 @@ def mix(
     if reference_cut.num_features is not None:
         assert reference_cut.num_features == mixed_in_cut.num_features, "Cannot mix cuts with different feature " \
                                                                         "dimensions. "
+    offset = round(offset, ndigits=8)  # sanitize the input in case of float noise
     assert offset <= reference_cut.duration, f"Cannot mix cut '{mixed_in_cut.id}' with offset {offset}," \
                                              f" which is greater than cuts {reference_cut.id} duration" \
                                              f" of {reference_cut.duration}"
