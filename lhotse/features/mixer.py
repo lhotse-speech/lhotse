@@ -143,10 +143,16 @@ class FeatureMixer:
         if snr is not None:
             # Compute the added signal energy before it was padded
             added_feats_energy = self.feature_extractor.compute_energy(feats)
-            assert added_feats_energy > 0.0, \
-                f"To perform mix, energy must be non-zero and non-negative (got {self.reference_energy})"
+            if added_feats_energy <= 0.0:
+                raise NonPositiveEnergyError(
+                    f"To perform mix, energy must be non-zero and non-negative (got {added_feats_energy}). "
+                )
             target_energy = self.reference_energy * (10.0 ** (-snr / 10))
             gain = target_energy / added_feats_energy
 
         self.tracks.append(feats_to_add)
         self.gains.append(gain)
+
+
+class NonPositiveEnergyError(ValueError):
+    pass
