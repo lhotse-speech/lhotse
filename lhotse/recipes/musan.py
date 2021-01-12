@@ -69,10 +69,10 @@ def prepare_musan(
         validate_recordings_and_supervisions(**manifests['music'])
     if 'speech' in parts:
         manifests['speech'] = {'recordings': scan_recordings(corpus_dir / 'speech')}
-        validate(**manifests['speech'])
+        validate(manifests['speech']['recordings'])
     if 'noise' in parts:
         manifests['noise'] = {'recordings': scan_recordings(corpus_dir / 'noise')}
-        validate(**manifests['noise'])
+        validate(manifests['noise']['recordings'])
 
     if output_dir is not None:
         output_dir = Path(output_dir)
