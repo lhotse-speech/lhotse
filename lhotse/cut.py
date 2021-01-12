@@ -12,7 +12,7 @@ from itertools import islice
 from math import ceil, floor
 from pathlib import Path
 from tqdm.auto import tqdm
-from typing import Any, Callable, Dict, FrozenSet, Iterable, List, Optional, Sequence, Type, TypeVar, Union
+from typing import Any, Callable, Dict, FrozenSet, Iterable, List, Optional, Sequence, Tuple, Type, TypeVar, Union
 
 from lhotse.audio import AudioMixer, Recording, RecordingSet
 from lhotse.augmentation import AugmentFn
@@ -1531,8 +1531,79 @@ class CutSet(JsonMixin, YamlMixin, Sequence[AnyCut]):
                 ))
         return CutSet.from_cuts(new_cuts)
 
+    def sample(self, n_cuts: int = 1) -> Union[AnyCut, 'CutSet']:
+        """
+        Randomly sample this ``CutSet`` and return ``n_cuts`` cuts.
+        When ``n_cuts`` is 1, will return a single cut instance; otherwise will return a ``CutSet``.
+        """
+        assert n_cuts > 0
+        cut_ids = random.sample(self.cuts, k=n_cuts)
+        cuts = [self[cid] for cid in cut_ids]
+        if n_cuts == 1:
+            return cuts[0]
+        return CutSet.from_cuts(cuts)
+
     def perturb_speed(self, factor: float, affix_id: bool = True) -> 'CutSet':
         return self.map(lambda cut: cut.perturb_speed(factor=factor, affix_id=affix_id))
+
+    def mix(
+            self,
+            cuts: 'CutSet',
+            duration: Optional[Seconds] = None,
+            snr: Optional[Union[Decibels, Tuple[Decibels, Decibels]]] = 20,
+            mix_prob: float = 1.0
+    ) -> 'CutSet':
+        """
+        Mix cuts in this ``CutSet`` with randomly sampled cuts from another ``CutSet``.
+        A typical application would be data augmentation with noise, music, babble, etc.
+
+        :param cuts: a ``CutSet`` containing cuts to be mixed into this ``CutSet``.
+        :param duration: an optional float in seconds.
+            When ``None``, we will preserve the duration of the cuts in ``self``
+            (i.e. we'll truncate the mix if it exceeded the original duration).
+            Otherwise, we will keep sampling cuts to mix in until we reach the specified
+            ``duration`` (and truncate to that value, should it be exceeded).
+        :param snr: an optional float, or pair (range) of floats, in decibels.
+            When it's a single float, we will mix all cuts with this SNR level
+            (where cuts in ``self`` are treated as signals, and cuts in ``cuts`` are treated as noise).
+            When it's a pair of floats, we will uniformly sample SNR values from that range.
+            When ``None``, we will mix the cuts without any level adjustment
+            (could be too noisy for data augmentation).
+        :param mix_prob: an optional float in range [0, 1].
+            Specifies the probability of performing a mix.
+            Values lower than 1.0 mean that some cuts in the output will be unchanged.
+        :return: a new ``CutSet`` with mixed cuts.
+        """
+        assert 0.0 <= mix_prob <= 1.0
+        assert duration is None or duration > 0
+        mixed_cuts = []
+        for cut in self:
+            # Check whether we're going to mix something into the current cut
+            # or pass it through unchanged.
+            if random.uniform(0.0, 1.0) > mix_prob:
+                mixed_cuts.append(cut)
+                continue
+            # Randomly sample a new cut from "cuts" to mix in.
+            to_mix = cuts.sample()
+            # Determine the SNR - either it's specified or we need to sample one.
+            snr = snr if isinstance(snr, (float, type(None))) else random.uniform(*snr)
+            # Actual mixing
+            mixed = cut.mix(other=to_mix, snr=snr)
+            # Did the user specify a duration?
+            # If yes, we will ensure that shorter cuts have more noise mixed in
+            # to "pad" them with at the end.
+            if duration is not None:
+                mixed_in_duration = to_mix.duration
+                # Keep sampling until we mixed in a "duration" amount of noise.
+                while mixed.duration < duration:
+                    to_mix = cuts.sample()
+                    # Keep the SNR constant for each cut from "self".
+                    mixed = mixed.mix(other=to_mix, snr=snr, offset_other_by=mixed_in_duration)
+                    mixed_in_duration += to_mix.duration
+            # We truncate the mixed to either the original duration or the requested duration.
+            mixed = mixed.truncate(duration=cut.duration if duration is not None else duration)
+            mixed_cuts.append(mixed)
+        return CutSet.from_cuts(mixed_cuts)
 
     def compute_and_store_features(
             self,
