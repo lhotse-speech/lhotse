@@ -1537,8 +1537,10 @@ class CutSet(JsonMixin, YamlMixin, Sequence[AnyCut]):
         When ``n_cuts`` is 1, will return a single cut instance; otherwise will return a ``CutSet``.
         """
         assert n_cuts > 0
-        cut_ids = random.sample(self.cuts, k=n_cuts)
-        cuts = [self[cid] for cid in cut_ids]
+        # TODO: We might want to make this more efficient in the future
+        #  by holding a cached list of cut ids as a member of CutSet...
+        cut_indices = [random.randint(0, len(self)) for _ in range(n_cuts)]
+        cuts = [self[idx] for idx in cut_indices]
         if n_cuts == 1:
             return cuts[0]
         return CutSet.from_cuts(cuts)
