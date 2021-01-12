@@ -1601,7 +1601,9 @@ class CutSet(JsonMixin, YamlMixin, Sequence[AnyCut]):
                     to_mix = cuts.sample()
                     # Keep the SNR constant for each cut from "self".
                     mixed = mixed.mix(other=to_mix, snr=snr, offset_other_by=mixed_in_duration)
-                    mixed_in_duration += to_mix.duration
+                    # Since we're adding floats, we can be off by an epsilon and trigger
+                    # some assertions for exceeding duration; do precautionary rounding here.
+                    mixed_in_duration = round(mixed_in_duration + to_mix.duration, ndigits=8)
             # We truncate the mixed to either the original duration or the requested duration.
             mixed = mixed.truncate(duration=cut.duration if duration is not None else duration)
             mixed_cuts.append(mixed)
@@ -1943,7 +1945,6 @@ def mix(
     if reference_cut.num_features is not None:
         assert reference_cut.num_features == mixed_in_cut.num_features, "Cannot mix cuts with different feature " \
                                                                         "dimensions. "
-    offset = round(offset, ndigits=8)  # sanitize the input in case of float noise
     assert offset <= reference_cut.duration, f"Cannot mix cut '{mixed_in_cut.id}' with offset {offset}," \
                                              f" which is greater than cuts {reference_cut.id} duration" \
                                              f" of {reference_cut.duration}"
