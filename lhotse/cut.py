@@ -19,6 +19,7 @@ from lhotse.augmentation import AugmentFn
 from lhotse.features import FeatureExtractor, FeatureMixer, FeatureSet, Features, create_default_feature_extractor
 from lhotse.features.base import compute_global_stats
 from lhotse.features.io import FeaturesWriter, LilcomHdf5Writer, LilcomFilesWriter
+from lhotse.features.mixer import NonPositiveEnergyError
 from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import (Decibels, EPSILON, JsonMixin, Pathlike, Seconds, TimeSpan, YamlMixin, asdict_nonull,
                           compute_num_frames, fastcopy,
@@ -960,11 +961,14 @@ class MixedCut(CutUtilsMixin):
             frame_shift=first_cut.frame_shift,
         )
         for track in self.tracks[1:]:
-            mixer.add_to_mix(
-                feats=track.cut.load_features(),
-                snr=track.snr,
-                offset=track.offset
-            )
+            try:
+                mixer.add_to_mix(
+                    feats=track.cut.load_features(),
+                    snr=track.snr,
+                    offset=track.offset
+                )
+            except NonPositiveEnergyError as e:
+                logging.warning(str(e) + f' Cut with id "{track.cut.id}" will not be mixed in.')
         if mixed:
             feats = mixer.mixed_feats
             # Note: The slicing below is a work-around for an edge-case
