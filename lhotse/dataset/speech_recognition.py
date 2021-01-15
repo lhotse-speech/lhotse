@@ -3,7 +3,7 @@ from decimal import ROUND_FLOOR
 import math
 import random
 import warnings
-from typing import Dict, List, Optional, Union
+from typing import Dict, List, Optional, Tuple, Union
 
 import torch
 from torch.utils.data.dataloader import DataLoader, default_collate
@@ -11,7 +11,7 @@ from torch.utils.data.dataloader import DataLoader, default_collate
 from lhotse import validate
 from lhotse.cut import AnyCut, CutSet
 from lhotse.dataset.collation import collate_features
-from lhotse.utils import Seconds, compute_num_frames
+from lhotse.utils import Decibels, Seconds, compute_num_frames
 
 
 class K2SpeechRecognitionIterableDataset(torch.utils.data.IterableDataset):
@@ -64,7 +64,10 @@ class K2SpeechRecognitionIterableDataset(torch.utils.data.IterableDataset):
             return_cuts: bool = False,
             concat_cuts: bool = True,
             concat_cuts_gap: Seconds = 1.0,
-            concat_cuts_duration_factor: float = 1
+            concat_cuts_duration_factor: float = 1,
+            aug_cuts: Optional[CutSet] = None,
+            aug_snr: Optional[Union[Decibels, Tuple[Decibels, Decibels]]] = (10, 20),
+            aug_prob: float = 0.5
     ):
         """
         K2 ASR IterableDataset constructor.
@@ -89,6 +92,14 @@ class K2SpeechRecognitionIterableDataset(torch.utils.data.IterableDataset):
             it's goal is to let the model "know" that there are separate utterances in a single example.
         :param concat_cuts_duration_factor: Determines the maximum duration of the concatenated cuts;
             by default it's 1, setting the limit at the duration of the longest cut in the batch.
+        :param aug_cuts: an optional ``CutSet`` containing augmentation data, e.g. noise, music, babble.
+        :param aug_snr: either a float, a pair (range) of floats, or ``None``.
+            It determines the SNR of the speech signal vs the noise signal that's mixed into it.
+            When a range is specified, we will uniformly sample SNR in that range.
+            When it's ``None``, the noise will be mixed as-is -- i.e. without any level adjustment.
+            Note that it's different from ``aug_snr=0``, which will adjust the noise level so that the SNR is 0.
+        :param aug_prob: a float probability in range [0, 1].
+            Specifies the probability with which we will mix augment the cuts.
         """
         super().__init__()
         # Initialize the fields
@@ -100,6 +111,9 @@ class K2SpeechRecognitionIterableDataset(torch.utils.data.IterableDataset):
         self.concat_cuts = concat_cuts
         self.concat_cuts_gap = concat_cuts_gap
         self.concat_cuts_duration_factor = concat_cuts_duration_factor
+        self.aug_cuts = aug_cuts
+        self.aug_snr = aug_snr
+        self.aug_prob = aug_prob
         # Set-up the mutable state for new epoch initialization in __iter__
         self.cut_ids = list(self.cuts.ids)
         self.current_idx = None
@@ -151,10 +165,16 @@ class K2SpeechRecognitionIterableDataset(torch.utils.data.IterableDataset):
         # The returned object is a CutSet that we can keep on modifying (e.g. padding, mixing, etc.)
         cuts: CutSet = self._collect_batch()
 
-        # For now, we'll just pad it with low energy values to match the longest Cut's
-        # duration in the batch. We might want to do something more interesting here
-        # later on - padding/mixing with noises, etc.
-        cuts = cuts.sort_by_duration().pad()
+        # Sort the cuts by duration so that the first one determines the batch time dimensions.
+        cuts = cuts.sort_by_duration(ascending=False)
+
+        # Perform the padding (and possibly augmentation at the same time).
+        if self.aug_cuts is not None:
+            # Mix in the signal from the augmentation CutSet; use them as padding at the same time.
+            cuts = cuts.mix(self.aug_cuts, duration=cuts[0].duration, snr=self.aug_snr, mix_prob=self.aug_prob)
+        else:
+            # We'll just pad it with low energy values to match the longest Cut's duration in the batch.
+            cuts = cuts.pad()
 
         # Get a tensor with batched feature matrices, shape (B, T, F)
         features = collate_features(cuts)

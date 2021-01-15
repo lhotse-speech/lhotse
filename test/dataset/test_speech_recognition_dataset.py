@@ -20,7 +20,7 @@ def k2_cut_set(libri_cut_set):
         libri_cut_set[0].with_id('copy-1'),
         libri_cut_set[0].with_id('copy-2'),
         libri_cut_set[0].append(libri_cut_set[0])
-    ]).pad()
+    ])
 
 
 @pytest.mark.parametrize('num_workers', [0, 1])
@@ -34,16 +34,16 @@ def test_k2_speech_recognition_iterable_dataset(k2_cut_set, num_workers):
     assert batch['features'].shape == (4, 308, 80)
     # Each list has 5 items, to account for:
     # one cut with two supervisions + 3 three cuts with one supervision
-    assert (batch['supervisions']['sequence_idx'] == tensor([0, 1, 2, 3, 3])).all()
+    assert (batch['supervisions']['sequence_idx'] == tensor([0, 0, 1, 2, 3])).all()
     assert batch['supervisions']['text'] == ['IN EIGHTEEN THIRTEEN'] * 5  # a list, not tensor
-    assert (batch['supervisions']['start_frame'] == tensor([0] * 4 + [153])).all()
+    assert (batch['supervisions']['start_frame'] == tensor([0, 153, 0, 0, 0])).all()
     assert (batch['supervisions']['num_frames'] == tensor([154] * 5)).all()
 
 
 @pytest.mark.parametrize('num_workers', [2, 3, 4])
 def test_k2_speech_recognition_iterable_dataset_multiple_workers(k2_cut_set, num_workers):
     from torch import tensor
-    dataset = K2SpeechRecognitionIterableDataset(k2_cut_set, shuffle=False)
+    dataset = K2SpeechRecognitionIterableDataset(k2_cut_set.pad(), shuffle=False)
     dloader = DataLoader(dataset, batch_size=None, num_workers=num_workers)
 
     # We expect a variable number of batches for each parametrized num_workers value,
@@ -113,3 +113,20 @@ def test_k2_speech_recognition_iterable_dataset_low_max_frames(k2_cut_set):
     for batch in dloader:
         # There will be only a single item in each batch as we're exceeding the limit each time.
         assert batch['features'].shape[0] == 1
+
+
+@pytest.fixture
+def k2_noise_cut_set(libri_cut_set):
+    # Create a cut set with 4 cuts, one of them having two supervisions
+    return CutSet.from_cuts([
+        libri_cut_set[0].with_id('noise-1').truncate(duration=3.5),
+        libri_cut_set[0].with_id('noise-2').truncate(duration=7.3),
+    ])
+
+
+def test_k2_speech_recognition_augmentation(k2_cut_set, k2_noise_cut_set):
+    dataset = K2SpeechRecognitionIterableDataset(k2_cut_set, shuffle=False, aug_cuts=k2_noise_cut_set)
+    dloader = DataLoader(dataset, batch_size=None)
+    # Check that it does not crash by just running all dataloader iterations
+    batches = list(dloader)
+    assert len(batches) > 0

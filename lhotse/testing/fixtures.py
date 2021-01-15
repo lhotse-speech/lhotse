@@ -1,10 +1,22 @@
+import random
 from tempfile import NamedTemporaryFile, TemporaryDirectory
 
 import numpy as np
 import soundfile
 
-from lhotse import AudioSource, Cut, Fbank, LilcomFilesWriter, Recording, SupervisionSegment
+from lhotse import AudioSource, Cut, CutSet, Fbank, LilcomFilesWriter, Recording, SupervisionSegment
 from lhotse.utils import uuid4
+
+
+def random_cut_set(n_cuts=100) -> CutSet:
+    return CutSet.from_cuts(
+        Cut(
+            id=uuid4(),
+            start=round(random.uniform(0, 5), ndigits=8),
+            duration=round(random.uniform(3, 10), ndigits=8),
+            channel=0
+        ) for _ in range(n_cuts)
+    )
 
 
 class RandomCutTestCase:
