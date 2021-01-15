@@ -205,7 +205,7 @@ def download_audio(
                     if force_download or not wav_path.is_file():
                         urlretrieve_progress(wav_url, filename=wav_path, desc=f'Downloading {wav_name}')
 
-def download(
+def download_ami(
         target_dir: Pathlike = '.',
         force_download: Optional[bool] = False,
         url: Optional[str] = 'http://groups.inf.ed.ac.uk/ami',
@@ -459,6 +459,10 @@ def prepare_ami(
     :param max_pause: float (default = 0.0), max pause allowed between word segments to combine segments
     :return: a Dict whose key is ('train', 'dev', 'eval'), and the values are dicts of manifests under keys 
         'recordings' and 'supervisions'.
+    
+    The `partition` and `max_pause` must be chosen depending on the task. For example:
+    - Speaker diarization: set `partition="full-corpus"` and `max_pause=0`
+    - ASR: set `partition="full-corpus-asr"` and `max_pause=0.3` (or some value in the range 0.2-0.5)
     """
     data_dir = Path(data_dir)
     assert data_dir.is_dir(), f'No such directory: {data_dir}'

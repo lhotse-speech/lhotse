@@ -1,7 +1,7 @@
 import click
 
 from lhotse.bin.modes import obtain, prepare
-from lhotse.recipes.ami import download, prepare_ami
+from lhotse.recipes.ami import download_ami, prepare_ami
 from lhotse.utils import Pathlike
 
 __all__ = ['ami']
@@ -42,4 +42,4 @@ def ami(
         force_download: bool
 ):
     """AMI download."""
-    download(target_dir, mic=mic, url=url, force_download=force_download)
+    download_ami(target_dir, mic=mic, url=url, force_download=force_download)
