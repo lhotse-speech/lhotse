@@ -1,4 +1,5 @@
 from .aishell import *
+from .ami import *
 from .babel import *
 from .broadcast_news import *
 from .heroico import *

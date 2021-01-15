@@ -28,7 +28,6 @@ from collections import defaultdict
 from gzip import GzipFile
 
 import logging
-logging.basicConfig(level=logging.INFO)
 import re
 import itertools
 import soundfile as sf
@@ -40,7 +39,6 @@ from html.parser import HTMLParser
 from pathlib import Path
 from tqdm.auto import tqdm
 from typing import Dict, List, NamedTuple, Optional, Union
-from dataclasses import dataclass
 
 from lhotse import validate_recordings_and_supervisions
 from lhotse.audio import AudioSource, Recording, RecordingSet
@@ -465,6 +463,7 @@ def prepare_ami(
     data_dir = Path(data_dir)
     assert data_dir.is_dir(), f'No such directory: {data_dir}'
     assert mic in MICS, f'Mic {mic} not supported'
+    assert partition in PARTITIONS, f'Partition {partition} not supported'
 
     if output_dir is not None:
         output_dir = Path(output_dir)
