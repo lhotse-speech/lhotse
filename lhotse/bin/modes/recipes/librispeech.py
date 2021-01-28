@@ -15,9 +15,10 @@ __all__ = ['librispeech']
 def librispeech(
         corpus_dir: Pathlike,
         output_dir: Pathlike,
+        num_jobs: int
 ):
     """Mini Librispeech ASR data preparation."""
-    prepare_librispeech(corpus_dir, output_dir=output_dir)
+    prepare_librispeech(corpus_dir, output_dir=output_dir, num_jobs=num_jobs)
 
 
 @obtain.command(context_settings=dict(show_default=True))
