@@ -6,7 +6,7 @@ import torch
 torchaudio = pytest.importorskip('torchaudio', minversion='0.6')
 
 from lhotse.augmentation import SoxEffectTransform, pitch, reverb, speed, Speed
-from lhotse import AudioTransform
+from lhotse import AudioTransform, Resample
 
 SAMPLING_RATE = 16000
 
@@ -54,3 +54,10 @@ def test_serialize_deserialize_transform(audio):
     speed = AudioTransform.from_dict(data)
     perturbed = speed(audio, SAMPLING_RATE)
     assert perturbed.shape == (1, 14545)
+
+
+@pytest.mark.parametrize('sampling_rate', [8000, 16000, 22050, 32000, 44100, 48000])
+def test_resample(audio, sampling_rate):
+    speed = Resample(sampling_rate=sampling_rate)
+    perturbed = speed(audio, SAMPLING_RATE)
+    assert perturbed.shape == (1, sampling_rate)

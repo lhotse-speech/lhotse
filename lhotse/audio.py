@@ -1,5 +1,6 @@
 import warnings
 from dataclasses import dataclass
+from decimal import ROUND_HALF_UP
 from io import BytesIO
 from math import sqrt
 from pathlib import Path
@@ -8,7 +9,7 @@ from typing import Callable, Dict, Iterable, List, Optional, Sequence, Tuple, Un
 
 import numpy as np
 
-from lhotse.augmentation import AudioTransform, Speed
+from lhotse.augmentation import AudioTransform, Resample, Speed
 from lhotse.utils import (Decibels, JsonMixin, Pathlike, Seconds, SetContainingAnything, YamlMixin, asdict_nonull,
                           compute_num_samples,
                           fastcopy,
@@ -284,6 +285,20 @@ class Recording:
             num_samples=new_num_samples,
             duration=new_duration,
             transforms=transforms
+        )
+
+    def resample(self, sampling_rate: int) -> 'Recording':
+        """
+        Return a new ``Recording`` that will be lazily resampled while loading audio.
+        :param sampling_rate: The new sampling rate.
+        :return: A resampled ``Recording``.
+        """
+        resampling = [Resample(sampling_rate).to_dict()]
+        new_num_samples = compute_num_samples(self.duration, sampling_rate, rounding=ROUND_HALF_UP)
+        return fastcopy(
+            self,
+            num_samples=new_num_samples,
+            transforms=(self.transforms or []) + resampling
         )
 
     @staticmethod

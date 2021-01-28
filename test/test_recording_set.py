@@ -1,4 +1,3 @@
-from lhotse.utils import fastcopy, nullcontext as does_not_raise
 from functools import lru_cache
 from tempfile import NamedTemporaryFile
 
@@ -9,6 +8,7 @@ from pytest import mark, raises
 from lhotse.audio import AudioMixer, AudioSource, Recording, RecordingSet
 from lhotse.testing.dummies import DummyManifest
 from lhotse.utils import INT16MAX
+from lhotse.utils import fastcopy, nullcontext as does_not_raise
 
 
 @pytest.fixture
@@ -222,6 +222,16 @@ def test_recording_perturb_speed(recording, factor, affix_id):
         assert rec_sp.id == f'{recording.id}_sp{factor}'
     else:
         assert rec_sp.id == recording.id
+    samples = rec_sp.load_audio()
+    assert samples.shape[0] == rec_sp.num_channels
+    assert samples.shape[1] == rec_sp.num_samples
+
+
+@pytest.mark.parametrize('sampling_rate', [8000, 16000, 22050, 32000, 44100, 48000])
+def test_recording_perturb_speed(recording, sampling_rate):
+    rec_sp = recording.resample(sampling_rate)
+    assert rec_sp.id == recording.id
+    assert rec_sp.duration == recording.duration
     samples = rec_sp.load_audio()
     assert samples.shape[0] == rec_sp.num_channels
     assert samples.shape[1] == rec_sp.num_samples
