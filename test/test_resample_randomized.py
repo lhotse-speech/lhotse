@@ -26,3 +26,5 @@ class TestResample(RandomCutTestCase):
         samples = rec_rs.load_audio()
         assert samples.shape[0] == rec_rs.num_channels
         assert samples.shape[1] == rec_rs.num_samples
+        # Cleanup open file handles
+        self.cleanup()

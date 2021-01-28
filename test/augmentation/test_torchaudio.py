@@ -58,6 +58,6 @@ def test_serialize_deserialize_transform(audio):
 
 @pytest.mark.parametrize('sampling_rate', [8000, 16000, 22050, 32000, 44100, 48000])
 def test_resample(audio, sampling_rate):
-    speed = Resample(sampling_rate=sampling_rate)
+    speed = Resample(source_sampling_rate=16000, target_sampling_rate=sampling_rate)
     perturbed = speed(audio, SAMPLING_RATE)
     assert perturbed.shape == (1, sampling_rate)

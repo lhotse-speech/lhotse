@@ -293,11 +293,14 @@ class Recording:
         :param sampling_rate: The new sampling rate.
         :return: A resampled ``Recording``.
         """
-        resampling = [Resample(sampling_rate).to_dict()]
+        resampling = [
+            Resample(source_sampling_rate=self.sampling_rate, target_sampling_rate=sampling_rate).to_dict()
+        ]
         new_num_samples = compute_num_samples(self.duration, sampling_rate, rounding=ROUND_HALF_UP)
         return fastcopy(
             self,
             num_samples=new_num_samples,
+            sampling_rate=sampling_rate,
             transforms=(self.transforms or []) + resampling
         )
 
@@ -379,6 +382,27 @@ class RecordingSet(JsonMixin, YamlMixin, Sequence[Recording]):
 
     def duration(self, recording_id: str) -> Seconds:
         return self.recordings[recording_id].duration
+
+    def perturb_speed(self, factor: float, affix_id: bool = True) -> 'RecordingSet':
+        """
+        Return a new ``RecordingSet`` that will lazily perturb the speed while loading audio.
+        The ``num_samples`` and ``duration`` fields are updated to reflect the
+        shrinking/extending effect of speed.
+
+        :param factor: The speed will be adjusted this many times (e.g. factor=1.1 means 1.1x faster).
+        :param affix_id: When true, we will modify the ``Recording.id`` field
+            by affixing it with "_sp{factor}".
+        :return: a ``RecordingSet`` containing the perturbed ``Recording`` objects.
+        """
+        return RecordingSet.from_recordings(r.perturb_speed(factor=factor, affix_id=affix_id) for r in self)
+
+    def resample(self, sampling_rate: int) -> 'RecordingSet':
+        """
+        Apply resampling to all recordings in the ``RecordingSet`` and return a new ``RecordingSet``.
+        :param sampling_rate: The new sampling rate.
+        :return: a new ``RecordingSet`` with lazily resampled ``Recording`` objects.
+        """
+        return RecordingSet.from_recordings(r.resample(sampling_rate) for r in self)
 
     def __repr__(self) -> str:
         return f'RecordingSet(len={len(self)})'

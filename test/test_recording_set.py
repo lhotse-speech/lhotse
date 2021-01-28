@@ -204,7 +204,8 @@ def nonfile_source():
 
 @pytest.fixture
 def recording(file_source):
-    return Recording(id='rec', sources=[file_source] * 2, sampling_rate=8000, num_samples=4000, duration=0.5)
+    return Recording(id='rec', sources=[file_source, fastcopy(file_source, channels=[1])], sampling_rate=8000,
+                     num_samples=4000, duration=0.5)
 
 
 @pytest.mark.parametrize(
@@ -227,14 +228,29 @@ def test_recording_perturb_speed(recording, factor, affix_id):
     assert samples.shape[1] == rec_sp.num_samples
 
 
+def test_recording_set_perturb_speed(recording_set):
+    recs_sp = recording_set.perturb_speed(factor=1.1)
+    for r, r_sp in zip(recording_set, recs_sp):
+        assert r.duration > r_sp.duration  # Faster recording => shorter duration
+        assert r.sampling_rate == r_sp.sampling_rate
+
+
 @pytest.mark.parametrize('sampling_rate', [8000, 16000, 22050, 32000, 44100, 48000])
-def test_recording_perturb_speed(recording, sampling_rate):
+def test_recording_resample(recording, sampling_rate):
     rec_sp = recording.resample(sampling_rate)
     assert rec_sp.id == recording.id
     assert rec_sp.duration == recording.duration
     samples = rec_sp.load_audio()
     assert samples.shape[0] == rec_sp.num_channels
     assert samples.shape[1] == rec_sp.num_samples
+
+
+def test_recording_set_resample(recording_set):
+    recs_sp = recording_set.resample(sampling_rate=44100)
+    for r, r_sp in zip(recording_set, recs_sp):
+        assert r.duration == r_sp.duration
+        assert r_sp.sampling_rate == 44100
+        assert r_sp.num_samples > r.num_samples
 
 
 @pytest.fixture

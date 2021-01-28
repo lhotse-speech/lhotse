@@ -153,13 +153,14 @@ class Resample(AudioTransform):
     """
     Resampling effect, the same one as invoked with `sox rate` in the command line.
     """
-    sampling_rate: float
+    source_sampling_rate: int
+    target_sampling_rate: int
 
-    def __call__(self, samples: np.ndarray, sampling_rate: int) -> np.ndarray:
-        effect = [['rate', str(self.sampling_rate)]]
+    def __call__(self, samples: np.ndarray, *args, **kwargs) -> np.ndarray:
+        effect = [['rate', str(self.target_sampling_rate)]]
         if isinstance(samples, np.ndarray):
             samples = torch.from_numpy(samples)
-        augmented, new_sampling_rate = torchaudio.sox_effects.apply_effects_tensor(samples, sampling_rate, effect)
+        augmented, _ = torchaudio.sox_effects.apply_effects_tensor(samples, self.source_sampling_rate, effect)
         return augmented.numpy()
 
 
