@@ -274,3 +274,9 @@ def test_serialize_padded_cut_set(cut_set):
         padded_cut_set.to_json(f.name)
         restored = CutSet.from_json(f.name)
     assert padded_cut_set == restored
+
+
+def test_pad_without_mixing(libri_cut):
+    cut = libri_cut.pad(20)
+    cut.tracks[0].cut.features.type = 'undefined'  # make Lhotse think that a custom feat extractor is used
+    cut.load_features()  # does not throw

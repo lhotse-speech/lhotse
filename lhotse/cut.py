@@ -967,7 +967,7 @@ class MixedCut(CutUtilsMixin):
         # because we are not performing any actual mixing.
         # That makes life simpler for the users who have a custom feature extractor,
         # but don't actually care about feature-domain mixing; just want to pad.
-        if mixed and all(isinstance(t, PaddingCut) for t in self.tracks[1:]):
+        if mixed and all(isinstance(t.cut, PaddingCut) for t in self.tracks[1:]):
             padding_val = self.tracks[1].cut.feat_value
             feats = np.ones((self.num_frames, self.num_features)) * padding_val
             feats[:first_cut.num_frames, :] = first_cut.load_features()
