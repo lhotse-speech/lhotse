@@ -148,6 +148,22 @@ class Speed(AudioTransform):
         return augmented.numpy()
 
 
+@dataclass
+class Resample(AudioTransform):
+    """
+    Resampling effect, the same one as invoked with `sox rate` in the command line.
+    """
+    source_sampling_rate: int
+    target_sampling_rate: int
+
+    def __call__(self, samples: np.ndarray, *args, **kwargs) -> np.ndarray:
+        effect = [['rate', str(self.target_sampling_rate)]]
+        if isinstance(samples, np.ndarray):
+            samples = torch.from_numpy(samples)
+        augmented, _ = torchaudio.sox_effects.apply_effects_tensor(samples, self.source_sampling_rate, effect)
+        return augmented.numpy()
+
+
 def speed(sampling_rate: int) -> List[List[str]]:
     return [
         ['speed', RandomValue(0.9, 1.1)],

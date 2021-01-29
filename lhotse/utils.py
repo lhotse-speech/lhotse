@@ -357,7 +357,7 @@ def compute_num_samples(duration: Seconds, sampling_rate: int, rounding=ROUND_HA
     """
     return int(
         Decimal(
-            duration * sampling_rate
+            round(duration * sampling_rate, ndigits=8)
         ).quantize(0, rounding=rounding)
     )
 
