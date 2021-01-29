@@ -125,15 +125,10 @@ def test_truncate_mixed_cut_with_small_offset(simple_mixed_cut):
 
 def test_truncate_mixed_cut_with_offset_exceeding_first_track(simple_mixed_cut):
     truncated_cut = simple_mixed_cut.truncate(offset=11.0)
-
-    assert len(truncated_cut.tracks) == 1
-
-    assert truncated_cut.tracks[0].offset == 0.0
-    assert truncated_cut.tracks[0].cut.start == 6.0
-    assert truncated_cut.tracks[0].cut.duration == 4.0
-    assert truncated_cut.tracks[0].cut.end == 10.0
-
+    assert isinstance(truncated_cut, Cut)
+    assert truncated_cut.start == 6.0
     assert truncated_cut.duration == 4.0
+    assert truncated_cut.end == 10.0
 
 
 def test_truncate_mixed_cut_decreased_duration(simple_mixed_cut):
@@ -156,15 +151,10 @@ def test_truncate_mixed_cut_decreased_duration(simple_mixed_cut):
 
 def test_truncate_mixed_cut_decreased_duration_removing_last_cut(simple_mixed_cut):
     truncated_cut = simple_mixed_cut.truncate(duration=4.0)
-
-    assert len(truncated_cut.tracks) == 1
-
-    assert truncated_cut.tracks[0].offset == 0.0
-    assert truncated_cut.tracks[0].cut.start == 0.0
-    assert truncated_cut.tracks[0].cut.duration == 4.0
-    assert truncated_cut.tracks[0].cut.end == 4.0
-
+    assert isinstance(truncated_cut, Cut)
+    assert truncated_cut.start == 0.0
     assert truncated_cut.duration == 4.0
+    assert truncated_cut.end == 4.0
 
 
 def test_truncate_mixed_cut_with_small_offset_and_duration(simple_mixed_cut):

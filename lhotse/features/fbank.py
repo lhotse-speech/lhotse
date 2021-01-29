@@ -4,7 +4,7 @@ import numpy as np
 import torchaudio
 
 from lhotse.features.base import TorchaudioFeatureExtractor, register_extractor
-from lhotse.utils import Seconds, EPSILON
+from lhotse.utils import EPSILON, Seconds
 
 
 @dataclass
@@ -17,7 +17,7 @@ class FbankConfig:
     frame_shift: Seconds = 0.01
     remove_dc_offset: bool = True
     round_to_power_of_two: bool = True
-    energy_floor: float = 1e-10
+    energy_floor: float = EPSILON
     min_duration: float = 0.0
     preemphasis_coefficient: float = 0.97
     raw_energy: bool = True

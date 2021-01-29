@@ -168,7 +168,7 @@ def test_mixed_cut_start01_perturb(cut_with_supervision_start01):
 
 
 def test_padding_cut_perturb():
-    cut = PaddingCut(id='cut', duration=5.75, sampling_rate=16000, use_log_energy=True, num_samples=92000)
+    cut = PaddingCut(id='cut', duration=5.75, sampling_rate=16000, feat_value=1e-10, num_samples=92000)
     cut_sp = cut.perturb_speed(1.1)
     assert cut_sp.num_samples == 83636
     assert cut_sp.duration == 5.22725

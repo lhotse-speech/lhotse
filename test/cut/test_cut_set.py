@@ -167,22 +167,28 @@ def test_trim_to_supervisions_mixed_cuts():
             ])
         )
     ])
+    assert isinstance(cut_set[0], MixedCut)
     cuts = cut_set.trim_to_supervisions()
     assert len(cuts) == 4
-    assert all(isinstance(cut, MixedCut) for cut in cuts)
-    assert all(cut.start == 0 for cut in cuts)
+    # After "trimming", the MixedCut "decayed" into simple, unmixed cuts, as they did not overlap
+    assert all(isinstance(cut, Cut) for cut in cuts)
     assert all(len(cut.supervisions) == 1 for cut in cuts)
     assert all(cut.supervisions[0].start == 0 for cut in cuts)
     cut = cuts[0]
+    # Check that the cuts preserved their start/duration/supervisions after trimming
+    assert cut.start == 1.5
     assert cut.duration == 8.5
     assert cut.supervisions[0].id == 'sup1'
     cut = cuts[1]
+    assert cut.start == 10
     assert cut.duration == 5
     assert cut.supervisions[0].id == 'sup2'
     cut = cuts[2]
+    assert cut.start == 20
     assert cut.duration == 8
     assert cut.supervisions[0].id == 'sup3'
     cut = cuts[3]
+    assert cut.start == 0
     assert cut.duration == 30
     assert cut.supervisions[0].id == 'sup4'
 
