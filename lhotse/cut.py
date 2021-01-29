@@ -1,28 +1,29 @@
 import logging
-import numpy as np
 import random
 import warnings
-from concurrent.futures import ProcessPoolExecutor, Executor
-from cytoolz import sliding_window
-from cytoolz.itertoolz import groupby
+from concurrent.futures import Executor, ProcessPoolExecutor
 from dataclasses import dataclass, field
 from functools import partial, reduce
-from intervaltree import Interval, IntervalTree
 from itertools import islice
 from math import ceil, floor
 from pathlib import Path
+from typing import Any, Callable, Dict, FrozenSet, Iterable, List, Optional, Sequence, Type, TypeVar, Union
+
+import numpy as np
+from cytoolz import sliding_window
+from cytoolz.itertoolz import groupby
+from intervaltree import Interval, IntervalTree
 from tqdm.auto import tqdm
-from typing import Any, Callable, Dict, FrozenSet, Iterable, List, Optional, Sequence, Tuple, Type, TypeVar, Union
 
 from lhotse.audio import AudioMixer, Recording, RecordingSet
 from lhotse.augmentation import AugmentFn
 from lhotse.features import FeatureExtractor, FeatureMixer, FeatureSet, Features, create_default_feature_extractor
 from lhotse.features.base import compute_global_stats
-from lhotse.features.io import FeaturesWriter, LilcomHdf5Writer, LilcomFilesWriter
+from lhotse.features.io import FeaturesWriter, LilcomFilesWriter, LilcomHdf5Writer
 from lhotse.features.mixer import NonPositiveEnergyError
 from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import (Decibels, EPSILON, JsonMixin, Pathlike, Seconds, TimeSpan, YamlMixin, asdict_nonull,
-                          compute_num_frames, fastcopy,
+                          compute_num_frames, exactly_one_not_null, fastcopy,
                           index_by_id_and_check, overlaps, overspans, perturb_num_samples, split_sequence, uuid4)
 
 # One of the design principles for Cuts is a maximally "lazy" implementation, e.g. when mixing Cuts,
@@ -1309,27 +1310,50 @@ class CutSet(JsonMixin, YamlMixin, Sequence[AnyCut]):
             split_sequence(self, num_splits=num_splits, shuffle=shuffle)
         ]
 
-    def subset(self, supervision_ids: Optional[Iterable[str]] = None) -> 'CutSet':
+    def subset(
+            self,
+            supervision_ids: Optional[Iterable[str]] = None,
+            first: Optional[int] = None,
+            last: Optional[int] = None
+    ) -> 'CutSet':
         """
-        Return a new CutSet with Cuts containing only `supervision_ids`.
-
-        Cuts without supervisions are removed.
+        Return a new CutSet according to the selected subset criterion.
+        Only a single argument to ``subset`` is supported at this time.
 
         Example:
             >>> cuts = CutSet.from_yaml('path/to/cuts')
             >>> train_set = cuts.subset(supervision_ids=train_ids)
             >>> test_set = cuts.subset(supervision_ids=test_ids)
 
-        :param supervision_ids: List of `supervision_ids` to keep
-        :return: a CutSet with filtered supervisions
+        :param supervision_ids: List of `supervision_ids` to keep.
+        :param first: int, the number of first cuts to keep.
+        :param first: int, the number of last cuts to keep.
+        :return: a new ``CutSet`` with the subset results.
         """
+        assert exactly_one_not_null(supervision_ids, first, last), "CutSet.subset() can handle only one non-None arg."
 
-        # remove cuts without supervisions
-        supervision_ids = set(supervision_ids)
-        return CutSet.from_cuts(
-            cut.filter_supervisions(lambda s: s.id in supervision_ids) for cut in self
-            if any(s.id in supervision_ids for s in cut.supervisions)
-        )
+        if first is not None:
+            assert first > 0
+            if first > len(self):
+                logging.warning(f'CutSet has only {len(self)} cuts but first {first} required; not doing anything.')
+                return self
+            return CutSet.from_cuts(c for i, c in enumerate(self) if i < first)
+
+        if last is not None:
+            assert last > 0
+            if last > len(self):
+                logging.warning(f'CutSet has only {len(self)} cuts but last {last} required; not doing anything.')
+                return self
+            cut_ids = list(self.ids)[-last:]
+            return CutSet.from_cuts(self[cid] for cid in cut_ids)
+
+        if supervision_ids is not None:
+            # Remove cuts without supervisions
+            supervision_ids = set(supervision_ids)
+            return CutSet.from_cuts(
+                cut.filter_supervisions(lambda s: s.id in supervision_ids) for cut in self
+                if any(s.id in supervision_ids for s in cut.supervisions)
+            )
 
     def filter_supervisions(self, predicate: Callable[[SupervisionSegment], bool]) -> 'CutSet':
         """
