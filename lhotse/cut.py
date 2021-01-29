@@ -1469,21 +1469,23 @@ class CutSet(JsonMixin, YamlMixin, Sequence[AnyCut]):
                             Interval(s.start, s.end, s) for s in track.cut.supervisions)
         return indexed
 
-    def pad(
-            self,
-            duration: Seconds = None,
-    ) -> 'CutSet':
+    def pad(self, duration: Seconds = None, pad_feat_value: float = LOG_EPSILON) -> 'CutSet':
         """
         Return a new CutSet with Cuts padded to ``duration`` in seconds.
         Cuts longer than ``duration`` will not be affected.
         Cuts will be padded to the right (i.e. after the signal).
+
         :param duration: The cuts minimal duration after padding.
-        When not specified, we'll choose the duration of the longest cut in the CutSet.
+            When not specified, we'll choose the duration of the longest cut in the CutSet.
+        :param pad_feat_value: A float value that's used for padding the features.
+            By default we assume a log-energy floor of approx. -23 (1e-10 after exp).
         :return: A padded CutSet.
         """
         if duration is None:
             duration = max(cut.duration for cut in self)
-        return CutSet.from_cuts(cut.pad(duration=duration) for cut in self)
+        return CutSet.from_cuts(
+            cut.pad(duration=duration, pad_feat_value=pad_feat_value) for cut in self
+        )
 
     def truncate(
             self,
