@@ -1,5 +1,3 @@
-from lhotse.utils import nullcontext as does_not_raise
-
 import pytest
 from pytest import mark, raises
 
@@ -9,6 +7,7 @@ from lhotse.features import FeatureSet
 from lhotse.manipulation import combine, load_manifest
 from lhotse.supervision import SupervisionSet
 from lhotse.testing.dummies import DummyManifest
+from lhotse.utils import nullcontext as does_not_raise
 
 
 @mark.parametrize('manifest_type', [RecordingSet, SupervisionSet, FeatureSet, CutSet])
@@ -80,3 +79,27 @@ def test_combine(manifest_type):
 def test_load_any_lhotse_manifest(path, exception_expectation):
     with exception_expectation:
         load_manifest(path)
+
+
+@mark.parametrize('manifest_type', [RecordingSet, SupervisionSet, FeatureSet, CutSet])
+def test_subset_first(manifest_type):
+    any_set = DummyManifest(manifest_type, begin_id=0, end_id=200)
+    expected = DummyManifest(manifest_type, begin_id=0, end_id=10)
+    subset = any_set.subset(first=10)
+    assert subset == expected
+
+
+@mark.parametrize('manifest_type', [RecordingSet, SupervisionSet, FeatureSet, CutSet])
+def test_subset_last(manifest_type):
+    any_set = DummyManifest(manifest_type, begin_id=0, end_id=200)
+    expected = DummyManifest(manifest_type, begin_id=190, end_id=200)
+    subset = any_set.subset(last=10)
+    assert subset == expected
+
+
+@mark.parametrize('manifest_type', [RecordingSet, SupervisionSet, FeatureSet, CutSet])
+@mark.parametrize(['first', 'last'], [(None, None), (10, 10)])
+def test_subset_raises(manifest_type, first, last):
+    any_set = DummyManifest(manifest_type, begin_id=0, end_id=200)
+    with pytest.raises(AssertionError):
+        subset = any_set.subset(first=first, last=last)

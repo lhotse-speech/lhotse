@@ -2,6 +2,7 @@ import operator
 import re
 from math import isclose
 from pathlib import Path
+from typing import Optional
 
 import click
 from cytoolz.functoolz import complement
@@ -17,29 +18,40 @@ from lhotse.utils import Pathlike
 __all__ = ['split', 'combine']
 
 
-@cli.group()
-def manifest():
-    """Generic commands working with all or most manifest types."""
-    pass
-
-
-@manifest.command()
+@cli.command()
 @click.argument('num_splits', type=int)
 @click.argument('manifest', type=click.Path(exists=True, dir_okay=False))
 @click.argument('output_dir', type=click.Path())
 @click.option('-s', '--shuffle', is_flag=True, help='Optionally shuffle the sequence before splitting.')
 def split(num_splits: int, manifest: Pathlike, output_dir: Pathlike, shuffle: bool):
-    """Load MANIFEST, split it into NUM_SPLITS equal parts and save as separate manifests in OUTPUT_DIR. """
+    """
+    Load MANIFEST, split it into NUM_SPLITS equal parts and save as separate manifests in OUTPUT_DIR.
+    """
     output_dir = Path(output_dir)
     manifest = Path(manifest)
+    suffix = ''.join(manifest.suffixes)
     any_set = load_manifest(manifest)
     parts = any_set.split(num_splits=num_splits, shuffle=shuffle)
     output_dir.mkdir(parents=True, exist_ok=True)
     for idx, part in enumerate(parts):
-        part.to_json(output_dir / f'{manifest.stem}.{idx + 1}.json')
+        part.to_json((output_dir / manifest).with_suffix(f'.{idx + 1}.{suffix}'))
 
 
-@manifest.command()
+@cli.command()
+@click.argument('manifest', type=click.Path(exists=True, dir_okay=False))
+@click.argument('output_manifest', type=click.Path())
+@click.option('--first', type=int)
+@click.option('--last', type=int)
+def subset(manifest: Pathlike, output_manifest: Pathlike, first: Optional[int], last: Optional[int]):
+    """Load MANIFEST, select the FIRST or LAST number of items and store it in OUTPUT_MANIFEST."""
+    output_manifest = Path(output_manifest)
+    manifest = Path(manifest)
+    any_set = load_manifest(manifest)
+    a_subset = any_set.subset(first=first, last=last)
+    a_subset.to_json(output_manifest)
+
+
+@cli.command()
 @click.argument('manifests', nargs=-1, type=click.Path(exists=True, dir_okay=False))
 @click.argument('output_manifest', type=click.Path())
 def combine(manifests: Pathlike, output_manifest: Pathlike):
@@ -48,7 +60,7 @@ def combine(manifests: Pathlike, output_manifest: Pathlike):
     data_set.to_json(output_manifest)
 
 
-@manifest.command()
+@cli.command()
 @click.argument('predicate')
 @click.argument('manifest', type=click.Path(exists=True, dir_okay=False))
 @click.argument('output_manifest', type=click.Path())
@@ -59,10 +71,10 @@ def filter(predicate: str, manifest: Pathlike, output_manifest: Pathlike):
 
     \b
     The PREDICATE specifies which attribute is used for item selection. Some examples:
-    lhotse manifest filter 'duration>4.5' supervision.json output.json
-    lhotse manifest filter 'num_frames<600' cuts.json output.json
-    lhotse manifest filter 'start=0' cuts.json output.json
-    lhotse manifest filter 'channel!=0' audio.json output.json
+    lhotse filter 'duration>4.5' supervision.json output.json
+    lhotse filter 'num_frames<600' cuts.json output.json
+    lhotse filter 'start=0' cuts.json output.json
+    lhotse filter 'channel!=0' audio.json output.json
 
     It currently only supports comparison of numerical manifest item attributes, such as:
     start, duration, end, channel, num_frames, num_features, etc.

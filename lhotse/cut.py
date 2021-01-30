@@ -22,10 +22,9 @@ from lhotse.features.base import compute_global_stats
 from lhotse.features.io import FeaturesWriter, LilcomFilesWriter, LilcomHdf5Writer
 from lhotse.features.mixer import NonPositiveEnergyError
 from lhotse.supervision import SupervisionSegment, SupervisionSet
-from lhotse.utils import (Decibels, JsonMixin, LOG_EPSILON, Pathlike, Seconds, TimeSpan, YamlMixin,
-                          asdict_nonull,
-                          compute_num_frames, fastcopy,
-                          index_by_id_and_check, overlaps, overspans, perturb_num_samples, split_sequence, uuid4)
+from lhotse.utils import (Decibels, JsonMixin, LOG_EPSILON, Pathlike, Seconds, TimeSpan, YamlMixin, asdict_nonull,
+                          compute_num_frames, exactly_one_not_null, fastcopy, index_by_id_and_check, overlaps,
+                          overspans, perturb_num_samples, split_sequence, uuid4)
 
 # One of the design principles for Cuts is a maximally "lazy" implementation, e.g. when mixing Cuts,
 # we'd rather sum the feature matrices only after somebody actually calls "load_features". It helps to avoid
@@ -609,6 +608,7 @@ class PaddingCut(CutUtilsMixin):
             self,
             id=self.id if preserve_id else str(uuid4()),
             duration=new_duration,
+            feat_value=self.feat_value,
             num_frames=round(new_duration / self.frame_shift) if self.num_frames is not None else None,
             num_samples=round(new_duration * self.sampling_rate) if self.num_samples is not None else None,
         )
@@ -1207,7 +1207,8 @@ class CutSet(JsonMixin, YamlMixin, Sequence[AnyCut]):
     def from_manifests(
             recordings: Optional[RecordingSet] = None,
             supervisions: Optional[SupervisionSet] = None,
-            features: Optional[FeatureSet] = None
+            features: Optional[FeatureSet] = None,
+            random_ids: bool = False,
     ) -> 'CutSet':
         """
         Create a CutSet from any combination of supervision, feature and recording manifests.
@@ -1216,6 +1217,13 @@ class CutSet(JsonMixin, YamlMixin, Sequence[AnyCut]):
         otherwise to those found in the ``recording_set``
         When a ``supervision_set`` is provided, we'll attach to the Cut all supervisions that
         have a matching recording ID and are fully contained in the Cut's boundaries.
+
+        :param recordings: a ``RecordingSet`` manifest.
+        :param supervisions: a ``SupervisionSet`` manifest.
+        :param features: a ``FeatureSet`` manifest.
+        :param random_ids: boolean, should the cut IDs be randomized. By default, use the recording ID
+            with a loop index and a channel idx, i.e. "{recording_id}-{idx}-{channel}")
+        :return: a new ``CutSet`` instance.
         """
         assert features is not None or recordings is not None, \
             "At least one of feature_set and recording_set has to be provided."
@@ -1225,7 +1233,7 @@ class CutSet(JsonMixin, YamlMixin, Sequence[AnyCut]):
             # Use features to determine the cut boundaries and attach recordings and supervisions as available.
             return CutSet.from_cuts(
                 Cut(
-                    id=str(uuid4()),
+                    id=str(uuid4()) if random_ids else f'{feats.recording_id}-{idx}-{feats.channels}',
                     start=feats.start,
                     duration=feats.duration,
                     channel=feats.channels,
@@ -1240,13 +1248,13 @@ class CutSet(JsonMixin, YamlMixin, Sequence[AnyCut]):
                         adjust_offset=True
                     )) if sup_ok else []
                 )
-                for feats in features
+                for idx, feats in enumerate(features)
             )
         # Case II: Recordings are provided (and features are not).
         # Use recordings to determine the cut boundaries.
         return CutSet.from_cuts(
             Cut(
-                id=str(uuid4()),
+                id=str(uuid4()) if random_ids else f'{recording.id}-{ridx}-{cidx}',
                 start=0,
                 duration=recording.duration,
                 channel=channel,
@@ -1256,10 +1264,10 @@ class CutSet(JsonMixin, YamlMixin, Sequence[AnyCut]):
                     channel=channel
                 )) if sup_ok else []
             )
-            for recording in recordings
+            for ridx, recording in enumerate(recordings)
             # A single cut always represents a single channel. When a recording has multiple channels,
             # we create a new cut for each channel separately.
-            for channel in recording.channel_ids
+            for cidx, channel in enumerate(recording.channel_ids)
         )
 
     @staticmethod
@@ -1323,27 +1331,50 @@ class CutSet(JsonMixin, YamlMixin, Sequence[AnyCut]):
             split_sequence(self, num_splits=num_splits, shuffle=shuffle)
         ]
 
-    def subset(self, supervision_ids: Optional[Iterable[str]] = None) -> 'CutSet':
+    def subset(
+            self,
+            supervision_ids: Optional[Iterable[str]] = None,
+            first: Optional[int] = None,
+            last: Optional[int] = None
+    ) -> 'CutSet':
         """
-        Return a new CutSet with Cuts containing only `supervision_ids`.
-
-        Cuts without supervisions are removed.
+        Return a new ``CutSet`` according to the selected subset criterion.
+        Only a single argument to ``subset`` is supported at this time.
 
         Example:
             >>> cuts = CutSet.from_yaml('path/to/cuts')
             >>> train_set = cuts.subset(supervision_ids=train_ids)
             >>> test_set = cuts.subset(supervision_ids=test_ids)
 
-        :param supervision_ids: List of `supervision_ids` to keep
-        :return: a CutSet with filtered supervisions
+        :param supervision_ids: List of ``supervision_ids`` to keep.
+        :param first: int, the number of first cuts to keep.
+        :param last: int, the number of last cuts to keep.
+        :return: a new ``CutSet`` with the subset results.
         """
+        assert exactly_one_not_null(supervision_ids, first, last), "subset() can handle only one non-None arg."
 
-        # remove cuts without supervisions
-        supervision_ids = set(supervision_ids)
-        return CutSet.from_cuts(
-            cut.filter_supervisions(lambda s: s.id in supervision_ids) for cut in self
-            if any(s.id in supervision_ids for s in cut.supervisions)
-        )
+        if first is not None:
+            assert first > 0
+            if first > len(self):
+                logging.warning(f'CutSet has only {len(self)} items but first {first} required; not doing anything.')
+                return self
+            return CutSet.from_cuts(islice(self, first))
+
+        if last is not None:
+            assert last > 0
+            if last > len(self):
+                logging.warning(f'CutSet has only {len(self)} items but last {last} required; not doing anything.')
+                return self
+            cut_ids = list(self.ids)[-last:]
+            return CutSet.from_cuts(self[cid] for cid in cut_ids)
+
+        if supervision_ids is not None:
+            # Remove cuts without supervisions
+            supervision_ids = set(supervision_ids)
+            return CutSet.from_cuts(
+                cut.filter_supervisions(lambda s: s.id in supervision_ids) for cut in self
+                if any(s.id in supervision_ids for s in cut.supervisions)
+            )
 
     def filter_supervisions(self, predicate: Callable[[SupervisionSegment], bool]) -> 'CutSet':
         """

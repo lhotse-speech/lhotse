@@ -368,3 +368,8 @@ def index_by_id_and_check(manifests: Iterable[T]) -> Dict[str, T]:
         assert m.id not in id2man, f"Duplicated manifest ID: {m.id}"
         id2man[m.id] = m
     return id2man
+
+
+def exactly_one_not_null(*args) -> bool:
+    not_null = [arg is not None for arg in args]
+    return sum(not_null) == 1

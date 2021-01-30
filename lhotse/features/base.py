@@ -1,3 +1,4 @@
+import logging
 import multiprocessing
 import pickle
 from abc import ABCMeta, abstractmethod
@@ -15,7 +16,8 @@ from tqdm.auto import tqdm
 from lhotse.audio import Recording
 from lhotse.augmentation import AugmentFn
 from lhotse.features.io import FeaturesWriter, get_reader
-from lhotse.utils import (JsonMixin, Pathlike, Seconds, YamlMixin, compute_num_frames, fastcopy, load_yaml,
+from lhotse.utils import (JsonMixin, Pathlike, Seconds, YamlMixin, compute_num_frames, exactly_one_not_null, fastcopy,
+                          load_yaml,
                           save_to_yaml,
                           split_sequence,
                           uuid4)
@@ -411,6 +413,33 @@ class FeatureSet(JsonMixin, YamlMixin, Sequence[Features]):
             FeatureSet.from_features(subset) for subset in
             split_sequence(self, num_splits=num_splits, shuffle=shuffle)
         ]
+
+    def subset(self, first: Optional[int] = None, last: Optional[int] = None) -> 'FeatureSet':
+        """
+        Return a new ``FeatureSet`` according to the selected subset criterion.
+        Only a single argument to ``subset`` is supported at this time.
+
+        :param first: int, the number of first supervisions to keep.
+        :param last: int, the number of last supervisions to keep.
+        :return: a new ``FeatureSet`` with the subset results.
+        """
+        assert exactly_one_not_null(first, last), "subset() can handle only one non-None arg."
+
+        if first is not None:
+            assert first > 0
+            if first > len(self):
+                logging.warning(f'FeatureSet has only {len(self)} items but first {first} required; '
+                                f'not doing anything.')
+                return self
+            return FeatureSet.from_features(self.features[:first])
+
+        if last is not None:
+            assert last > 0
+            if last > len(self):
+                logging.warning(f'FeatureSet has only {len(self)} items but last {last} required; '
+                                f'not doing anything.')
+                return self
+            return FeatureSet.from_features(self.features[-last:])
 
     def find(
             self,
