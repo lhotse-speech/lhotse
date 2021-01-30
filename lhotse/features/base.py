@@ -1,6 +1,7 @@
 import logging
 import multiprocessing
 import pickle
+import warnings
 from abc import ABCMeta, abstractmethod
 from concurrent.futures.process import ProcessPoolExecutor
 from dataclasses import asdict, dataclass, field, is_dataclass
@@ -372,8 +373,9 @@ class Features:
     @staticmethod
     def from_dict(data: dict) -> 'Features':
         if 'frame_shift' not in data:
-            logging.warning('The "frame_shift" field was not found in a feature manifest; '
-                            'we\'ll try to infer it for now, but you should recreate the manifests.')
+            warnings.warn('The "frame_shift" field was not found in a feature manifest; '
+                          'we\'ll try to infer it for now, but you should recreate the manifests.',
+                          category=DeprecationWarning)
             data['frame_shift'] = round(data['duration'] / data['num_features'], ndigits=3)
         return Features(**data)
 
