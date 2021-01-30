@@ -22,9 +22,9 @@ from lhotse.features.base import compute_global_stats
 from lhotse.features.io import FeaturesWriter, LilcomFilesWriter, LilcomHdf5Writer
 from lhotse.features.mixer import NonPositiveEnergyError
 from lhotse.supervision import SupervisionSegment, SupervisionSet
-from lhotse.utils import (Decibels, EPSILON, JsonMixin, Pathlike, Seconds, TimeSpan, YamlMixin, asdict_nonull,
-                          compute_num_frames, exactly_one_not_null, fastcopy,
-                          index_by_id_and_check, overlaps, overspans, perturb_num_samples, split_sequence, uuid4)
+from lhotse.utils import (Decibels, JsonMixin, LOG_EPSILON, Pathlike, Seconds, TimeSpan, YamlMixin, asdict_nonull,
+                          compute_num_frames, exactly_one_not_null, fastcopy, index_by_id_and_check, overlaps,
+                          overspans, perturb_num_samples, split_sequence, uuid4)
 
 # One of the design principles for Cuts is a maximally "lazy" implementation, e.g. when mixing Cuts,
 # we'd rather sum the feature matrices only after somebody actually calls "load_features". It helps to avoid
@@ -421,12 +421,14 @@ class Cut(CutUtilsMixin):
             recording=self.recording
         )
 
-    def pad(self, duration: Seconds) -> AnyCut:
+    def pad(self, duration: Seconds, pad_feat_value: float = LOG_EPSILON) -> AnyCut:
         """
         Return a new MixedCut, padded to ``duration`` seconds with zeros in the recording,
         and low-energy values in each feature bin.
 
         :param duration: The cut's minimal duration after padding.
+        :param pad_feat_value: A float value that's used for padding the features.
+            By default we assume a log-energy floor of approx. -23 (1e-10 after exp).
         :return: a padded MixedCut if ``duration`` is greater than this cut's duration, otherwise ``self``.
         """
         if duration <= self.duration:
@@ -442,7 +444,7 @@ class Cut(CutUtilsMixin):
             num_frames=total_num_frames - self.num_frames if self.features is not None else None,
             num_samples=total_num_samples - self.num_samples if self.recording is not None else None,
             sampling_rate=self.features.sampling_rate if self.features is not None else self.recording.sampling_rate,
-            use_log_energy=self.features.type in ('fbank', 'mfcc') if self.features is not None else False
+            feat_value=pad_feat_value
         ))
         return padded
 
@@ -541,14 +543,13 @@ class Cut(CutUtilsMixin):
 @dataclass
 class PaddingCut(CutUtilsMixin):
     """
-    This represents a cut filled with zeroes in the time domain, or low energy/log-energy values in the
+    Represents a cut filled with zeroes in the time domain, or some specified value in the
     frequency domain. It's used to make training samples evenly sized (same duration/number of frames).
     """
     id: str
     duration: Seconds
-
     sampling_rate: int
-    use_log_energy: bool
+    feat_value: float
 
     # For frequency domain
     num_frames: Optional[int] = None
@@ -584,8 +585,7 @@ class PaddingCut(CutUtilsMixin):
     # noinspection PyUnusedLocal
     def load_features(self, *args, **kwargs) -> Optional[np.ndarray]:
         if self.has_features:
-            value = np.log(EPSILON) if self.use_log_energy else EPSILON
-            return np.ones((self.num_frames, self.num_features), np.float32) * value
+            return np.ones((self.num_frames, self.num_features), np.float32) * self.feat_value
         return None
 
     # noinspection PyUnusedLocal
@@ -609,10 +609,10 @@ class PaddingCut(CutUtilsMixin):
         return PaddingCut(
             id=self.id if preserve_id else str(uuid4()),
             duration=new_duration,
+            feat_value=self.feat_value,
             num_frames=round(new_duration / self.frame_shift) if self.num_frames is not None else None,
             num_features=self.num_features,
             num_samples=round(new_duration * self.sampling_rate) if self.num_samples is not None else None,
-            use_log_energy=self.use_log_energy,
             sampling_rate=self.sampling_rate
         )
 
@@ -629,10 +629,10 @@ class PaddingCut(CutUtilsMixin):
         return PaddingCut(
             id=str(uuid4()),
             duration=duration,
+            feat_value=self.feat_value,
             num_features=self.num_features,
             num_frames=round(duration / self.frame_shift),
             sampling_rate=self.sampling_rate,
-            use_log_energy=self.use_log_energy
         )
 
     def perturb_speed(self, factor: float, affix_id: bool = True) -> 'PaddingCut':
@@ -802,7 +802,7 @@ class MixedCut(CutUtilsMixin):
             keep_excessive_supervisions: bool = True,
             preserve_id: bool = False,
             _supervisions_index: Optional[Dict[str, IntervalTree]] = None
-    ) -> 'MixedCut':
+    ) -> AnyCut:
         """
         Returns a new MixedCut that is a sub-region of the current MixedCut. This method truncates the underlying Cuts
         and modifies their offsets in the mix, as needed. Tracks that do not fit in the truncated cut are removed.
@@ -866,14 +866,19 @@ class MixedCut(CutUtilsMixin):
                     snr=track.snr
                 )
             )
+        if len(new_tracks) == 1:
+            # The truncation resulted in just a single cut - simply return it.
+            return new_tracks[0].cut
         return MixedCut(id=str(uuid4()), tracks=new_tracks)
 
-    def pad(self, duration: Seconds) -> AnyCut:
+    def pad(self, duration: Seconds, pad_feat_value: float = LOG_EPSILON) -> AnyCut:
         """
         Return a new MixedCut, padded to ``duration`` seconds with zeros in the recording,
-        and low-energy values in each feature bin.
+        and ``pad_feat_value`` in each feature bin.
 
         :param duration: The cut's minimal duration after padding.
+        :param pad_feat_value: A float value that's used for padding the features.
+            By default we assume a log-energy floor of approx. -23 (1e-10 after exp).
         :return: a padded MixedCut if duration is greater than this cut's duration, otherwise ``self``.
         """
         if duration <= self.duration:
@@ -886,6 +891,7 @@ class MixedCut(CutUtilsMixin):
         return self.append(PaddingCut(
             id=str(uuid4()),
             duration=padding_duration,
+            feat_value=pad_feat_value,
             num_features=self.num_features,
             # The num_frames and sampling_rate fields are tricky, because it is possible to create a MixedCut
             # from Cuts that have different sampling rates and frame shifts. In that case, we are assuming
@@ -901,7 +907,6 @@ class MixedCut(CutUtilsMixin):
                 else None
             ),
             sampling_rate=self.tracks[0].cut.sampling_rate,
-            use_log_energy=self.features_type in ('fbank', 'mfcc')
         ))
 
     def perturb_speed(self, factor: float, affix_id: bool = True) -> 'MixedCut':
@@ -956,6 +961,17 @@ class MixedCut(CutUtilsMixin):
         if not self.has_features:
             return None
         first_cut = self.tracks[0].cut
+        # First, check for a simple scenario: just a single cut with padding.
+        # When that is the case, we don't have to instantiate a feature extractor,
+        # because we are not performing any actual mixing.
+        # That makes life simpler for the users who have a custom feature extractor,
+        # but don't actually care about feature-domain mixing; just want to pad.
+        if mixed and all(isinstance(t.cut, PaddingCut) for t in self.tracks[1:]):
+            padding_val = self.tracks[1].cut.feat_value
+            feats = np.ones((self.num_frames, self.num_features)) * padding_val
+            feats[:first_cut.num_frames, :] = first_cut.load_features()
+            return feats
+        # When there is more than one "regular" cut, we will perform an actual mix.
         mixer = FeatureMixer(
             feature_extractor=create_default_feature_extractor(self._first_non_padding_cut.features.type),
             base_feats=first_cut.load_features(),
@@ -1194,7 +1210,8 @@ class CutSet(JsonMixin, YamlMixin, Sequence[AnyCut]):
     def from_manifests(
             recordings: Optional[RecordingSet] = None,
             supervisions: Optional[SupervisionSet] = None,
-            features: Optional[FeatureSet] = None
+            features: Optional[FeatureSet] = None,
+            random_ids: bool = False,
     ) -> 'CutSet':
         """
         Create a CutSet from any combination of supervision, feature and recording manifests.
@@ -1203,6 +1220,13 @@ class CutSet(JsonMixin, YamlMixin, Sequence[AnyCut]):
         otherwise to those found in the ``recording_set``
         When a ``supervision_set`` is provided, we'll attach to the Cut all supervisions that
         have a matching recording ID and are fully contained in the Cut's boundaries.
+
+        :param recordings: a ``RecordingSet`` manifest.
+        :param supervisions: a ``SupervisionSet`` manifest.
+        :param features: a ``FeatureSet`` manifest.
+        :param random_ids: boolean, should the cut IDs be randomized. By default, use the recording ID
+            with a loop index and a channel idx, i.e. "{recording_id}-{idx}-{channel}")
+        :return: a new ``CutSet`` instance.
         """
         assert features is not None or recordings is not None, \
             "At least one of feature_set and recording_set has to be provided."
@@ -1212,7 +1236,7 @@ class CutSet(JsonMixin, YamlMixin, Sequence[AnyCut]):
             # Use features to determine the cut boundaries and attach recordings and supervisions as available.
             return CutSet.from_cuts(
                 Cut(
-                    id=str(uuid4()),
+                    id=str(uuid4()) if random_ids else f'{feats.recording_id}-{idx}-{feats.channels}',
                     start=feats.start,
                     duration=feats.duration,
                     channel=feats.channels,
@@ -1227,13 +1251,13 @@ class CutSet(JsonMixin, YamlMixin, Sequence[AnyCut]):
                         adjust_offset=True
                     )) if sup_ok else []
                 )
-                for feats in features
+                for idx, feats in enumerate(features)
             )
         # Case II: Recordings are provided (and features are not).
         # Use recordings to determine the cut boundaries.
         return CutSet.from_cuts(
             Cut(
-                id=str(uuid4()),
+                id=str(uuid4()) if random_ids else f'{recording.id}-{ridx}-{cidx}',
                 start=0,
                 duration=recording.duration,
                 channel=channel,
@@ -1243,10 +1267,10 @@ class CutSet(JsonMixin, YamlMixin, Sequence[AnyCut]):
                     channel=channel
                 )) if sup_ok else []
             )
-            for recording in recordings
+            for ridx, recording in enumerate(recordings)
             # A single cut always represents a single channel. When a recording has multiple channels,
             # we create a new cut for each channel separately.
-            for channel in recording.channel_ids
+            for cidx, channel in enumerate(recording.channel_ids)
         )
 
     @staticmethod
@@ -1475,21 +1499,23 @@ class CutSet(JsonMixin, YamlMixin, Sequence[AnyCut]):
                             Interval(s.start, s.end, s) for s in track.cut.supervisions)
         return indexed
 
-    def pad(
-            self,
-            duration: Seconds = None,
-    ) -> 'CutSet':
+    def pad(self, duration: Seconds = None, pad_feat_value: float = LOG_EPSILON) -> 'CutSet':
         """
         Return a new CutSet with Cuts padded to ``duration`` in seconds.
         Cuts longer than ``duration`` will not be affected.
         Cuts will be padded to the right (i.e. after the signal).
+
         :param duration: The cuts minimal duration after padding.
-        When not specified, we'll choose the duration of the longest cut in the CutSet.
+            When not specified, we'll choose the duration of the longest cut in the CutSet.
+        :param pad_feat_value: A float value that's used for padding the features.
+            By default we assume a log-energy floor of approx. -23 (1e-10 after exp).
         :return: A padded CutSet.
         """
         if duration is None:
             duration = max(cut.duration for cut in self)
-        return CutSet.from_cuts(cut.pad(duration=duration) for cut in self)
+        return CutSet.from_cuts(
+            cut.pad(duration=duration, pad_feat_value=pad_feat_value) for cut in self
+        )
 
     def truncate(
             self,

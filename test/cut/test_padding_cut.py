@@ -21,19 +21,13 @@ def padding_cut():
         num_features=40,
         sampling_rate=16000,
         num_samples=160000,
-        use_log_energy=True
+        feat_value=PADDING_LOG_ENERGY
     )
 
 
-@pytest.mark.parametrize(
-    ['use_log_energy', 'expected_value'],
-    [
-        (True, PADDING_LOG_ENERGY),
-        (False, PADDING_ENERGY)
-    ]
-)
-def test_load_features_log(padding_cut, use_log_energy, expected_value):
-    padding_cut.use_log_energy = use_log_energy
+@pytest.mark.parametrize('expected_value', [PADDING_LOG_ENERGY, PADDING_ENERGY])
+def test_load_features_log(padding_cut, expected_value):
+    padding_cut.feat_value = expected_value
     feats = padding_cut.load_features()
     assert feats.shape[0] == 1000
     assert feats.shape[1] == 40
@@ -67,7 +61,7 @@ def test_truncate(padding_cut, offset, duration, expected_duration, expected_num
     assert cut.frame_shift == padding_cut.frame_shift
     assert cut.num_features == padding_cut.num_features
     assert cut.sampling_rate == padding_cut.sampling_rate
-    assert cut.use_log_energy == padding_cut.use_log_energy
+    assert cut.feat_value == padding_cut.feat_value
     assert cut.id == padding_cut.id
     # Variants
     assert cut.duration == expected_duration
@@ -280,3 +274,9 @@ def test_serialize_padded_cut_set(cut_set):
         padded_cut_set.to_json(f.name)
         restored = CutSet.from_json(f.name)
     assert padded_cut_set == restored
+
+
+def test_pad_without_mixing(libri_cut):
+    cut = libri_cut.pad(20)
+    cut.tracks[0].cut.features.type = 'undefined'  # make Lhotse think that a custom feat extractor is used
+    cut.load_features()  # does not throw

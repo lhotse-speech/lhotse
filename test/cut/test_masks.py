@@ -4,6 +4,7 @@ import pytest
 
 from lhotse import Cut, SupervisionSegment
 from lhotse.cut import PaddingCut
+from lhotse.utils import LOG_EPSILON
 
 
 class TestMasksWithoutSupervisions:
@@ -19,12 +20,13 @@ class TestMasksWithoutSupervisions:
         assert mask.sum() == 0
 
     def test_padding_cut_audio_mask(self):
-        cut = PaddingCut('cut', duration=2, sampling_rate=16000, use_log_energy=True, num_samples=32000)
+        cut = PaddingCut('cut', duration=2, sampling_rate=16000, feat_value=LOG_EPSILON, num_samples=32000)
         mask = cut.supervisions_audio_mask()
         assert mask.sum() == 0
 
     def test_padding_cut_features_mask(self):
-        cut = PaddingCut('cut', duration=2, sampling_rate=16000, use_log_energy=True, num_frames=2000, num_features=13)
+        cut = PaddingCut('cut', duration=2, sampling_rate=16000, feat_value=LOG_EPSILON, num_frames=2000,
+                         num_features=13)
         mask = cut.supervisions_feature_mask()
         assert mask.sum() == 0
 
