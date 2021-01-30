@@ -1341,7 +1341,7 @@ class CutSet(JsonMixin, YamlMixin, Sequence[AnyCut]):
             last: Optional[int] = None
     ) -> 'CutSet':
         """
-        Return a new CutSet according to the selected subset criterion.
+        Return a new ``CutSet`` according to the selected subset criterion.
         Only a single argument to ``subset`` is supported at this time.
 
         Example:
@@ -1349,24 +1349,24 @@ class CutSet(JsonMixin, YamlMixin, Sequence[AnyCut]):
             >>> train_set = cuts.subset(supervision_ids=train_ids)
             >>> test_set = cuts.subset(supervision_ids=test_ids)
 
-        :param supervision_ids: List of `supervision_ids` to keep.
+        :param supervision_ids: List of ``supervision_ids`` to keep.
         :param first: int, the number of first cuts to keep.
-        :param first: int, the number of last cuts to keep.
+        :param last: int, the number of last cuts to keep.
         :return: a new ``CutSet`` with the subset results.
         """
-        assert exactly_one_not_null(supervision_ids, first, last), "CutSet.subset() can handle only one non-None arg."
+        assert exactly_one_not_null(supervision_ids, first, last), "subset() can handle only one non-None arg."
 
         if first is not None:
             assert first > 0
             if first > len(self):
-                logging.warning(f'CutSet has only {len(self)} cuts but first {first} required; not doing anything.')
+                logging.warning(f'CutSet has only {len(self)} items but first {first} required; not doing anything.')
                 return self
-            return CutSet.from_cuts(c for i, c in enumerate(self) if i < first)
+            return CutSet.from_cuts(islice(self, first))
 
         if last is not None:
             assert last > 0
             if last > len(self):
-                logging.warning(f'CutSet has only {len(self)} cuts but last {last} required; not doing anything.')
+                logging.warning(f'CutSet has only {len(self)} items but last {last} required; not doing anything.')
                 return self
             cut_ids = list(self.ids)[-last:]
             return CutSet.from_cuts(self[cid] for cid in cut_ids)

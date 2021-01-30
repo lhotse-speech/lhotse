@@ -1,9 +1,10 @@
+import logging
 from dataclasses import dataclass
-from math import floor
-
+from itertools import islice
 from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence
 
-from lhotse.utils import JsonMixin, Seconds, YamlMixin, asdict_nonull, fastcopy, index_by_id_and_check, \
+from lhotse.utils import JsonMixin, Seconds, YamlMixin, asdict_nonull, exactly_one_not_null, fastcopy, \
+    index_by_id_and_check, \
     perturb_num_samples, split_sequence
 
 
@@ -130,6 +131,33 @@ class SupervisionSet(JsonMixin, YamlMixin, Sequence[SupervisionSegment]):
             SupervisionSet.from_segments(subset) for subset in
             split_sequence(self, num_splits=num_splits, shuffle=shuffle)
         ]
+
+    def subset(self, first: Optional[int] = None, last: Optional[int] = None) -> 'SupervisionSet':
+        """
+        Return a new ``SupervisionSet`` according to the selected subset criterion.
+        Only a single argument to ``subset`` is supported at this time.
+
+        :param first: int, the number of first supervisions to keep.
+        :param last: int, the number of last supervisions to keep.
+        :return: a new ``SupervisionSet`` with the subset results.
+        """
+        assert exactly_one_not_null(first, last), "subset() can handle only one non-None arg."
+
+        if first is not None:
+            assert first > 0
+            if first > len(self):
+                logging.warning(f'SupervisionSet has only {len(self)} items but first {first} required; '
+                                f'not doing anything.')
+                return self
+            return SupervisionSet.from_segments(islice(self, first))
+
+        if last is not None:
+            assert last > 0
+            if last > len(self):
+                logging.warning(f'SupervisionSet has only {len(self)} items but last {last} required; '
+                                f'not doing anything.')
+                return self
+            return SupervisionSet.from_segments(islice(self, len(self) - last, len(self)))
 
     def filter(self, predicate: Callable[[SupervisionSegment], bool]) -> 'SupervisionSet':
         """

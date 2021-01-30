@@ -46,9 +46,9 @@ def subset(manifest: Pathlike, output_manifest: Pathlike, first: Optional[int], 
     """Load MANIFEST, select the FIRST or LAST number of items and store it in OUTPUT_MANIFEST."""
     output_manifest = Path(output_manifest)
     manifest = Path(manifest)
-    cut_set = load_manifest(manifest)
-    cut_subset = cut_set.subset(first=first, last=last)
-    cut_subset.to_json(output_manifest)
+    any_set = load_manifest(manifest)
+    a_subset = any_set.subset(first=first, last=last)
+    a_subset.to_json(output_manifest)
 
 
 @cli.command()
