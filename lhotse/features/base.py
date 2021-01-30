@@ -371,6 +371,10 @@ class Features:
 
     @staticmethod
     def from_dict(data: dict) -> 'Features':
+        if 'frame_shift' not in data:
+            logging.warning('The "frame_shift" field was not found in a feature manifest; '
+                            'we\'ll try to infer it for now, but you should recreate the manifests.')
+            data['frame_shift'] = round(data['duration'] / data['num_features'], ndigits=3)
         return Features(**data)
 
 
