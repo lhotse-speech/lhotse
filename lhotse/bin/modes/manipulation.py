@@ -2,6 +2,7 @@ import operator
 import re
 from math import isclose
 from pathlib import Path
+from typing import Optional
 
 import click
 from cytoolz.functoolz import complement
@@ -34,6 +35,20 @@ def split(num_splits: int, manifest: Pathlike, output_dir: Pathlike, shuffle: bo
     output_dir.mkdir(parents=True, exist_ok=True)
     for idx, part in enumerate(parts):
         part.to_json((output_dir / manifest).with_suffix(f'.{idx + 1}.{suffix}'))
+
+
+@cli.command()
+@click.argument('manifest', type=click.Path(exists=True, dir_okay=False))
+@click.argument('output_manifest', type=click.Path())
+@click.option('--first', type=int)
+@click.option('--last', type=int)
+def subset(manifest: Pathlike, output_manifest: Pathlike, first: Optional[int], last: Optional[int]):
+    """Load MANIFEST, select the FIRST or LAST number of items and store it in OUTPUT_MANIFEST."""
+    output_manifest = Path(output_manifest)
+    manifest = Path(manifest)
+    any_set = load_manifest(manifest)
+    a_subset = any_set.subset(first=first, last=last)
+    a_subset.to_json(output_manifest)
 
 
 @cli.command()
