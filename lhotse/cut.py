@@ -1,24 +1,25 @@
 import logging
-import numpy as np
 import random
 import warnings
-from concurrent.futures import ProcessPoolExecutor, Executor
-from cytoolz import sliding_window
-from cytoolz.itertoolz import groupby
+from concurrent.futures import Executor, ProcessPoolExecutor
 from dataclasses import dataclass, field
 from functools import partial, reduce
-from intervaltree import Interval, IntervalTree
 from itertools import islice
 from math import ceil, floor
 from pathlib import Path
+from typing import Any, Callable, Dict, FrozenSet, Iterable, List, Optional, Sequence, Type, TypeVar, Union
+
+import numpy as np
+from cytoolz import sliding_window
+from cytoolz.itertoolz import groupby
+from intervaltree import Interval, IntervalTree
 from tqdm.auto import tqdm
-from typing import Any, Callable, Dict, FrozenSet, Iterable, List, Optional, Sequence, Tuple, Type, TypeVar, Union
 
 from lhotse.audio import AudioMixer, Recording, RecordingSet
 from lhotse.augmentation import AugmentFn
 from lhotse.features import FeatureExtractor, FeatureMixer, FeatureSet, Features, create_default_feature_extractor
 from lhotse.features.base import compute_global_stats
-from lhotse.features.io import FeaturesWriter, LilcomHdf5Writer, LilcomFilesWriter
+from lhotse.features.io import FeaturesWriter, LilcomFilesWriter, LilcomHdf5Writer
 from lhotse.features.mixer import NonPositiveEnergyError
 from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import (Decibels, EPSILON, JsonMixin, Pathlike, Seconds, TimeSpan, YamlMixin, asdict_nonull,
@@ -1193,7 +1194,8 @@ class CutSet(JsonMixin, YamlMixin, Sequence[AnyCut]):
     def from_manifests(
             recordings: Optional[RecordingSet] = None,
             supervisions: Optional[SupervisionSet] = None,
-            features: Optional[FeatureSet] = None
+            features: Optional[FeatureSet] = None,
+            random_ids: bool = False,
     ) -> 'CutSet':
         """
         Create a CutSet from any combination of supervision, feature and recording manifests.
@@ -1202,6 +1204,13 @@ class CutSet(JsonMixin, YamlMixin, Sequence[AnyCut]):
         otherwise to those found in the ``recording_set``
         When a ``supervision_set`` is provided, we'll attach to the Cut all supervisions that
         have a matching recording ID and are fully contained in the Cut's boundaries.
+
+        :param recordings: a ``RecordingSet`` manifest.
+        :param supervisions: a ``SupervisionSet`` manifest.
+        :param features: a ``FeatureSet`` manifest.
+        :param random_ids: boolean, should the cut IDs be randomized. By default, use the recording ID
+            with a loop index and a channel idx, i.e. "{recording_id}-{idx}-{channel}")
+        :return: a new ``CutSet`` instance.
         """
         assert features is not None or recordings is not None, \
             "At least one of feature_set and recording_set has to be provided."
@@ -1211,7 +1220,7 @@ class CutSet(JsonMixin, YamlMixin, Sequence[AnyCut]):
             # Use features to determine the cut boundaries and attach recordings and supervisions as available.
             return CutSet.from_cuts(
                 Cut(
-                    id=str(uuid4()),
+                    id=str(uuid4()) if random_ids else f'{feats.recording_id}-{idx}-{feats.channels}',
                     start=feats.start,
                     duration=feats.duration,
                     channel=feats.channels,
@@ -1226,13 +1235,13 @@ class CutSet(JsonMixin, YamlMixin, Sequence[AnyCut]):
                         adjust_offset=True
                     )) if sup_ok else []
                 )
-                for feats in features
+                for idx, feats in enumerate(features)
             )
         # Case II: Recordings are provided (and features are not).
         # Use recordings to determine the cut boundaries.
         return CutSet.from_cuts(
             Cut(
-                id=str(uuid4()),
+                id=str(uuid4()) if random_ids else f'{recording.id}-{ridx}-{cidx}',
                 start=0,
                 duration=recording.duration,
                 channel=channel,
@@ -1242,10 +1251,10 @@ class CutSet(JsonMixin, YamlMixin, Sequence[AnyCut]):
                     channel=channel
                 )) if sup_ok else []
             )
-            for recording in recordings
+            for ridx, recording in enumerate(recordings)
             # A single cut always represents a single channel. When a recording has multiple channels,
             # we create a new cut for each channel separately.
-            for channel in recording.channel_ids
+            for cidx, channel in enumerate(recording.channel_ids)
         )
 
     @staticmethod
