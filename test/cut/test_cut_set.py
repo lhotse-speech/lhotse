@@ -217,7 +217,7 @@ def cut_with_relative_paths():
                features=Features(type='fbank', num_frames=1000, num_features=40, sampling_rate=8000,
                                  storage_type='lilcom_files', storage_path='storage_dir', storage_key='feats.llc',
                                  start=0,
-                                 duration=10),
+                                 duration=10, frame_shift=0.01),
                recording=Recording('rec', [AudioSource('file', [0], 'audio.wav')], 8000, 80000, 10.0)
                )
 
@@ -261,7 +261,6 @@ def test_mix_same_recording_channels():
 
 
 def test_cut_set_filter_supervisions(cut_set):
-
     def get_supervision_ids(cutset):
         ids = []
         for cut in cutset:
@@ -302,6 +301,7 @@ def test_map_cut_set(cut_set_with_mixed_cut):
     cut_set = cut_set_with_mixed_cut.map(lambda cut: cut.pad(duration=1000.0))
     for cut in cut_set:
         assert cut.duration == 1000.0
+
 
 def test_map_cut_set_rejects_noncut(cut_set_with_mixed_cut):
     with pytest.raises(AssertionError):

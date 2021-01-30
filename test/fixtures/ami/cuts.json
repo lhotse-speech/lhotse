@@ -5,6 +5,7 @@
     "features": {
       "channels": 0,
       "duration": 6.0,
+      "frame_shift": 0.01,
       "num_features": 23,
       "num_frames": 600,
       "recording_id": "ES2011a.Headset-0-40s-46s.wav",

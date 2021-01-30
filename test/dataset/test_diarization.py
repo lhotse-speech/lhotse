@@ -15,6 +15,7 @@ def cut_set():
             "features": {
                 "channels": 0,
                 "duration": 16.04,
+                "frame_shift": 0.01,
                 "num_features": 23,
                 "num_frames": 1604,
                 "recording_id": "recording-1",

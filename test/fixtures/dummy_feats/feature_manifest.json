@@ -2,6 +2,7 @@
   {
     "channels": 0,
     "duration": 0.5,
+    "frame_shift": 0.01,
     "num_features": 23,
     "num_frames": 50,
     "recording_id": "recording-1",
@@ -15,6 +16,7 @@
   {
     "channels": 1,
     "duration": 0.5,
+    "frame_shift": 0.01,
     "num_features": 23,
     "num_frames": 50,
     "recording_id": "recording-1",
@@ -28,6 +30,7 @@
   {
     "channels": 0,
     "duration": 1.0,
+    "frame_shift": 0.01,
     "num_features": 23,
     "num_frames": 100,
     "recording_id": "recording-2",
@@ -41,6 +44,7 @@
   {
     "channels": 1,
     "duration": 1.0,
+    "frame_shift": 0.01,
     "num_features": 23,
     "num_frames": 100,
     "recording_id": "recording-2",

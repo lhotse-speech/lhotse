@@ -9,6 +9,7 @@
       "type": "fbank",
       "num_frames": 1604,
       "num_features": 40,
+      "frame_shift": 0.01,
       "sampling_rate": 16000,
       "start": 0,
       "duration": 16.04,

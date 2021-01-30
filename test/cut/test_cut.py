@@ -1,9 +1,9 @@
 import pytest
 
-from lhotse.audio import RecordingSet, Recording, AudioSource
+from lhotse.audio import AudioSource, Recording, RecordingSet
 from lhotse.cut import Cut, CutSet
 from lhotse.features import FeatureSet, Features
-from lhotse.supervision import SupervisionSet, SupervisionSegment
+from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.testing.dummies import dummy_cut, dummy_supervision
 
 
@@ -104,7 +104,7 @@ def dummy_feature_set():
         Features(
             recording_id='rec1', channels=0, start=0, duration=10, type='fbank', num_frames=1000,
             num_features=23, sampling_rate=16000, storage_type='lilcom_files', storage_path='feats',
-            storage_key='dummy.llc'
+            storage_key='dummy.llc', frame_shift=0.01
         )
     ])
 

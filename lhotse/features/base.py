@@ -150,6 +150,7 @@ class FeatureExtractor(metaclass=ABCMeta):
             type=self.name,
             num_frames=feats.shape[0],
             num_features=feats.shape[1],
+            frame_shift=self.frame_shift,
             sampling_rate=sampling_rate,
             channels=channel,
             storage_type=storage.name,
@@ -202,6 +203,7 @@ class FeatureExtractor(metaclass=ABCMeta):
             type=self.name,
             num_frames=feats.shape[0],
             num_features=feats.shape[1],
+            frame_shift=self.frame_shift,
             sampling_rate=recording.sampling_rate,
             storage_type=storage.name,
             storage_path=str(storage.storage_path),
@@ -300,6 +302,7 @@ class Features:
     type: str
     num_frames: int
     num_features: int
+    frame_shift: Seconds
     sampling_rate: int
 
     # Information about the time range of the features.
@@ -330,10 +333,6 @@ class Features:
     @property
     def end(self) -> Seconds:
         return self.start + self.duration
-
-    @property
-    def frame_shift(self) -> Seconds:
-        return round(self.duration / self.num_frames, ndigits=3)
 
     def load(
             self,

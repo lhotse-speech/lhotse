@@ -18,6 +18,7 @@
     ],
     "features": {
       "type": "fbank",
+      "frame_shift": 0.01,
       "num_frames": 154,
       "num_features": 80,
       "sampling_rate": 22050,
@@ -65,6 +66,7 @@
     ],
     "features": {
       "type": "fbank",
+      "frame_shift": 0.01,
       "num_frames": 160,
       "num_features": 80,
       "sampling_rate": 22050,
