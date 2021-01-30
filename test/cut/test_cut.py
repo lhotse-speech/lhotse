@@ -1,9 +1,9 @@
 import pytest
 
-from lhotse.audio import RecordingSet, Recording, AudioSource
+from lhotse.audio import AudioSource, Recording, RecordingSet
 from lhotse.cut import Cut, CutSet
 from lhotse.features import FeatureSet, Features
-from lhotse.supervision import SupervisionSet, SupervisionSegment
+from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.testing.dummies import dummy_cut, dummy_supervision
 
 
@@ -179,6 +179,30 @@ def test_make_cuts_from_features_recordings(dummy_recording_set, dummy_feature_s
     assert cut1.num_frames == 1000
     assert cut1.num_features == 23
     assert cut1.features_type == 'fbank'
+
+
+def test_make_cuts_from_recordings_with_deterministic_ids(dummy_recording_set):
+    cut_set = CutSet.from_manifests(recordings=dummy_recording_set, random_ids=False)
+    for idx, cut in enumerate(cut_set):
+        assert cut.id == f'{cut.recording_id}-{idx}-{cut.channel}'
+
+
+def test_make_cuts_from_recordings_with_random_ids(dummy_recording_set):
+    cut_set = CutSet.from_manifests(recordings=dummy_recording_set, random_ids=True)
+    for idx, cut in enumerate(cut_set):
+        assert cut.id != f'{cut.recording_id}-{idx}-{cut.channel}'
+
+
+def test_make_cuts_from_features_with_deterministic_ids(dummy_feature_set):
+    cut_set = CutSet.from_manifests(features=dummy_feature_set, random_ids=False)
+    for idx, cut in enumerate(cut_set):
+        assert cut.id == f'{cut.recording_id}-{idx}-{cut.channel}'
+
+
+def test_make_cuts_from_features_with_random_ids(dummy_feature_set):
+    cut_set = CutSet.from_manifests(features=dummy_feature_set, random_ids=True)
+    for idx, cut in enumerate(cut_set):
+        assert cut.id != f'{cut.recording_id}-{idx}-{cut.channel}'
 
 
 class TestCutOnSupervisions:

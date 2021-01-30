@@ -1211,7 +1211,8 @@ class CutSet(JsonMixin, YamlMixin, Sequence[AnyCut]):
     def from_manifests(
             recordings: Optional[RecordingSet] = None,
             supervisions: Optional[SupervisionSet] = None,
-            features: Optional[FeatureSet] = None
+            features: Optional[FeatureSet] = None,
+            random_ids: bool = False,
     ) -> 'CutSet':
         """
         Create a CutSet from any combination of supervision, feature and recording manifests.
@@ -1220,6 +1221,13 @@ class CutSet(JsonMixin, YamlMixin, Sequence[AnyCut]):
         otherwise to those found in the ``recording_set``
         When a ``supervision_set`` is provided, we'll attach to the Cut all supervisions that
         have a matching recording ID and are fully contained in the Cut's boundaries.
+
+        :param recordings: a ``RecordingSet`` manifest.
+        :param supervisions: a ``SupervisionSet`` manifest.
+        :param features: a ``FeatureSet`` manifest.
+        :param random_ids: boolean, should the cut IDs be randomized. By default, use the recording ID
+            with a loop index and a channel idx, i.e. "{recording_id}-{idx}-{channel}")
+        :return: a new ``CutSet`` instance.
         """
         assert features is not None or recordings is not None, \
             "At least one of feature_set and recording_set has to be provided."
@@ -1229,7 +1237,7 @@ class CutSet(JsonMixin, YamlMixin, Sequence[AnyCut]):
             # Use features to determine the cut boundaries and attach recordings and supervisions as available.
             return CutSet.from_cuts(
                 Cut(
-                    id=str(uuid4()),
+                    id=str(uuid4()) if random_ids else f'{feats.recording_id}-{idx}-{feats.channels}',
                     start=feats.start,
                     duration=feats.duration,
                     channel=feats.channels,
@@ -1244,13 +1252,13 @@ class CutSet(JsonMixin, YamlMixin, Sequence[AnyCut]):
                         adjust_offset=True
                     )) if sup_ok else []
                 )
-                for feats in features
+                for idx, feats in enumerate(features)
             )
         # Case II: Recordings are provided (and features are not).
         # Use recordings to determine the cut boundaries.
         return CutSet.from_cuts(
             Cut(
-                id=str(uuid4()),
+                id=str(uuid4()) if random_ids else f'{recording.id}-{ridx}-{cidx}',
                 start=0,
                 duration=recording.duration,
                 channel=channel,
@@ -1260,10 +1268,10 @@ class CutSet(JsonMixin, YamlMixin, Sequence[AnyCut]):
                     channel=channel
                 )) if sup_ok else []
             )
-            for recording in recordings
+            for ridx, recording in enumerate(recordings)
             # A single cut always represents a single channel. When a recording has multiple channels,
             # we create a new cut for each channel separately.
-            for channel in recording.channel_ids
+            for cidx, channel in enumerate(recording.channel_ids)
         )
 
     @staticmethod
