@@ -4,7 +4,15 @@
     "start": 0.0,
     "duration": 10.0,
     "channel": 0,
-    "supervisions": [],
+    "supervisions": [
+      {
+        "id": "sup-1",
+        "recording_id": "recording-1",
+        "start": 0,
+        "duration": 10.0,
+        "text": "EXAMPLE OF TEXT"
+      }
+    ],
     "features": {
       "type": "fbank",
       "num_frames": 1604,

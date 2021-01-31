@@ -299,8 +299,13 @@ class Recording:
             Resample(source_sampling_rate=self.sampling_rate, target_sampling_rate=sampling_rate).to_dict()
         ]
         new_num_samples = compute_num_samples(self.duration, sampling_rate, rounding=ROUND_HALF_UP)
+        # Duration might need an adjustment when doing a non-trivial resampling
+        # (e.g. 16000 -> 22050), where the resulting number of samples cannot
+        # correspond to old duration exactly.
+        new_duration = new_num_samples / sampling_rate
         return fastcopy(
             self,
+            duration=new_duration,
             num_samples=new_num_samples,
             sampling_rate=sampling_rate,
             transforms=(self.transforms or []) + resampling

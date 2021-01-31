@@ -1,4 +1,4 @@
-from hypothesis import given, settings
+from hypothesis import given, reproduce_failure, settings
 from hypothesis import strategies as st
 
 from lhotse.testing.fixtures import RandomCutTestCase
@@ -12,13 +12,13 @@ class TestMixedCutNumFramesNumSamplesRandomized(RandomCutTestCase):
     @settings(deadline=EXAMPLE_TIMEOUT_MS, max_examples=MAX_EXAMPLES, print_blob=True)
     @given(
         st.one_of(st.just(8000), st.just(16000), st.just(22050), st.just(44100), st.just(48000)),
-        st.one_of(st.just(0.01), st.just(256 / 1024), st.just(0.012), st.just(0.0125)),
+        st.one_of(st.just(160), st.just(200), st.just(256)),
         st.data(),
     )
     def test_invariants_mix(
             self,
             sampling_rate: int,
-            frame_shift: Seconds,
+            window_hop: int,
             rand_gen
     ):
         # Generate 2 - 6 cut durations in numbers of samples
@@ -34,6 +34,7 @@ class TestMixedCutNumFramesNumSamplesRandomized(RandomCutTestCase):
             label='Cuts numbers of samples'
         )
         # Generate random cuts
+        frame_shift = window_hop / sampling_rate
         cuts = [
             self.with_cut(sampling_rate=sampling_rate, num_samples=num_samples, frame_shift=frame_shift)
             for num_samples in nums_samples
@@ -61,13 +62,13 @@ class TestMixedCutNumFramesNumSamplesRandomized(RandomCutTestCase):
     @settings(deadline=EXAMPLE_TIMEOUT_MS, max_examples=MAX_EXAMPLES, print_blob=True)
     @given(
         st.one_of(st.just(8000), st.just(16000), st.just(22050), st.just(44100), st.just(48000)),
-        st.one_of(st.just(0.01), st.just(256 / 1024), st.just(0.012), st.just(0.0125)),
+        st.one_of(st.just(160), st.just(200), st.just(256)),
         st.data(),
     )
     def test_invariants_append(
             self,
             sampling_rate: int,
-            frame_shift: Seconds,
+            window_hop: int,
             rand_gen
     ):
         # Generate 2 - 6 cut durations in numbers of samples
@@ -83,6 +84,7 @@ class TestMixedCutNumFramesNumSamplesRandomized(RandomCutTestCase):
             label='Cuts numbers of samples'
         )
         # Generate random cuts
+        frame_shift = window_hop / sampling_rate
         cuts = [
             self.with_cut(sampling_rate=sampling_rate, num_samples=num_samples, frame_shift=frame_shift)
             for num_samples in nums_samples

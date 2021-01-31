@@ -117,7 +117,13 @@ def validate_features(f: Features, read_data: bool = False, feats_data: Optional
         f'Features: sampling_rate has to be greater than 0 (is {f.sampling_rate})'
     assert f.frame_shift > 0, \
         f'Features: frame_shift has to be greater than 0 (is {f.frame_shift})'
-    expected_num_frames = compute_num_frames(duration=f.duration, frame_shift=f.frame_shift)
+    window_hop = f.frame_shift * f.sampling_rate
+    assert float(int(window_hop)) == window_hop, \
+        f'Features: frame_shift of {f.frame_shift} is incorrect because it is physically impossible; ' \
+        f'multiplying it by a sampling rate of {f.sampling_rate} results in a fractional window hop ' \
+        f'of {window_hop} samples.'
+    expected_num_frames = compute_num_frames(duration=f.duration, frame_shift=f.frame_shift,
+                                             sampling_rate=f.sampling_rate)
     assert expected_num_frames == f.num_frames, \
         f'Features: manifest is inconsistent: declared num_frames is {f.num_frames}, ' \
         f'but duration ({f.duration}s) / frame_shift ({f.frame_shift}s) results in {expected_num_frames} frames. ' \

@@ -360,11 +360,13 @@ class Features:
             raise ValueError(f"Cannot load features for recording {self.recording_id} starting from {start}s. "
                              f"The available range is ({self.start}, {self.end}) seconds.")
         if not isclose(start, self.start):
-            left_offset_frames = compute_num_frames(start - self.start, frame_shift=self.frame_shift)
+            left_offset_frames = compute_num_frames(start - self.start, frame_shift=self.frame_shift,
+                                                    sampling_rate=self.sampling_rate)
         # Right trim
         end = start + duration if duration is not None else None
         if duration is not None and not isclose(end, self.end):
-            right_offset_frames = left_offset_frames + compute_num_frames(duration, frame_shift=self.frame_shift)
+            right_offset_frames = left_offset_frames + compute_num_frames(duration, frame_shift=self.frame_shift,
+                                                                          sampling_rate=self.sampling_rate)
 
         # Load and return the features (subset) from the storage
         return storage.read(

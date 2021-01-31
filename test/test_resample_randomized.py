@@ -1,3 +1,5 @@
+from math import isclose
+
 import hypothesis.strategies as st
 from hypothesis import given, settings
 
@@ -22,7 +24,8 @@ class TestResample(RandomCutTestCase):
         # Actual test
         rec_rs = rec.resample(target_sampling_rate)
         assert rec_rs.id == rec.id
-        assert rec_rs.duration == rec.duration
+        # Tolerance of one sample in the resampled domain
+        assert isclose(rec_rs.duration, rec.duration, abs_tol=1 / target_sampling_rate)
         samples = rec_rs.load_audio()
         assert samples.shape[0] == rec_rs.num_channels
         assert samples.shape[1] == rec_rs.num_samples

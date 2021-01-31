@@ -284,26 +284,27 @@ def test_add_feature_sets():
 )
 def test_mixer(feature_extractor, decimal, exception_expectation):
     # Treat it more like a test of "it runs" rather than "it works"
+    sr = 8000
     t = np.linspace(0, 1, 8000, dtype=np.float32)
     x1 = np.sin(440.0 * t).reshape(1, -1)
     x2 = np.sin(55.0 * t).reshape(1, -1)
 
-    f1 = feature_extractor.extract(x1, 8000)
-    f2 = feature_extractor.extract(x2, 8000)
+    f1 = feature_extractor.extract(x1, sr)
+    f2 = feature_extractor.extract(x2, sr)
     with exception_expectation:
         mixer = FeatureMixer(
             feature_extractor=feature_extractor,
             base_feats=f1,
             frame_shift=feature_extractor.frame_shift,
         )
-        mixer.add_to_mix(f2)
+        mixer.add_to_mix(f2, sampling_rate=sr)
 
         fmix_feat = mixer.mixed_feats
-        fmix_time = feature_extractor.extract(x1 + x2, 8000)
+        fmix_time = feature_extractor.extract(x1 + x2, sr)
 
         np.testing.assert_almost_equal(fmix_feat, fmix_time, decimal=decimal)
 
-        assert mixer.unmixed_feats.shape == (2, 100, feature_extractor.feature_dim(sampling_rate=8000))
+        assert mixer.unmixed_feats.shape == (2, 100, feature_extractor.feature_dim(sampling_rate=sr))
 
 
 def test_feature_set_prefix_path():

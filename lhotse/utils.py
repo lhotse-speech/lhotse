@@ -238,7 +238,8 @@ def split_sequence(seq: Sequence[Any], num_splits: int, shuffle: bool = False) -
 def compute_num_frames(
         duration: Seconds,
         frame_shift: Seconds,
-        rounding: str = ROUND_HALF_UP
+        sampling_rate: int,
+        # rounding: str = ROUND_HALF_DOWN#ROUND_HALF_UP
 ) -> int:
     """
     Compute the number of frames from duration and frame_shift in a safe way.
@@ -259,14 +260,18 @@ def compute_num_frames(
     >>> Decimal(round(num_frames, ndigits=8)).quantize(0, rounding=ROUND_HALF_UP)
       1617
     """
-    return int(
-        Decimal(
-            # 8 is a good number because cases like 14.49175 still work correctly,
-            # while problematic cases like 14.49999999998 are typically breaking much later than 8th decimal
-            # with double-precision floats.
-            round(duration / frame_shift, ndigits=8)
-        ).quantize(0, rounding=rounding)
-    )
+    num_samples = round(duration * sampling_rate)
+    window_hop = round(frame_shift * sampling_rate)
+    num_frames = int((num_samples + window_hop // 2) // window_hop)
+    return num_frames
+    # return int(
+    #     Decimal(
+    #         # 8 is a good number because cases like 14.49175 still work correctly,
+    #         # while problematic cases like 14.49999999998 are typically breaking much later than 8th decimal
+    #         # with double-precision floats.
+    #         round((duration + frame_shift / 2) / frame_shift, ndigits=8)
+    #     ).quantize(0, rounding=rounding)
+    # )
 
 
 def during_docs_build() -> bool:

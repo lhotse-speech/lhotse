@@ -1,8 +1,7 @@
-from decimal import ROUND_FLOOR
-
 import math
 import random
 import warnings
+from decimal import ROUND_FLOOR
 from typing import Dict, List, Optional, Tuple, Union
 
 import torch
@@ -188,14 +187,12 @@ class K2SpeechRecognitionIterableDataset(torch.utils.data.IterableDataset):
                     'start_frame': compute_num_frames(
                         supervision.start,
                         frame_shift=cut.frame_shift,
-                        # Note: Rounding "floor" can sometimes result in one extra frame being included
-                        # in the left context; but it guarantees that we will never go out-of-bounds when
-                        # summing start_frame + num_frames.
-                        rounding=ROUND_FLOOR
+                        sampling_rate=cut.sampling_rate
                     ),
                     'num_frames': compute_num_frames(
                         supervision.duration,
-                        frame_shift=cut.frame_shift
+                        frame_shift=cut.frame_shift,
+                        sampling_rate=cut.sampling_rate
                     )
                 }
                 for sequence_idx, cut in enumerate(cuts)
