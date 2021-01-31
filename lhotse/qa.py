@@ -1,11 +1,14 @@
 import logging
-
-from typing import Any, Callable, Dict
-
 from math import isclose
+from typing import Any, Callable, Dict, Optional
 
-from lhotse import CutSet, FeatureSet, Features, Recording, RecordingSet, SupervisionSegment, SupervisionSet
-from lhotse.cut import AnyCut, MixedCut, PaddingCut
+import numpy as np
+
+from lhotse.audio import Recording, RecordingSet
+from lhotse.cut import AnyCut, CutSet, MixedCut, PaddingCut
+from lhotse.features import FeatureSet, Features
+from lhotse.supervision import SupervisionSegment, SupervisionSet
+from lhotse.utils import compute_num_frames
 
 _VALIDATORS: Dict[str, Callable] = {}
 
@@ -101,7 +104,7 @@ def validate_supervision(s: SupervisionSegment, **kwargs) -> None:
 
 
 @register_validator
-def validate_features(f: Features, read_data: bool = False) -> None:
+def validate_features(f: Features, read_data: bool = False, feats_data: Optional[np.ndarray] = None) -> None:
     assert f.start >= 0, \
         f'Features: start has to be greater than 0 (is {f.start})'
     assert f.duration > 0, \
@@ -112,9 +115,19 @@ def validate_features(f: Features, read_data: bool = False) -> None:
         f'Features: num_features has to be greater than 0 (is {f.num_features})'
     assert f.sampling_rate > 0, \
         f'Features: sampling_rate has to be greater than 0 (is {f.sampling_rate})'
-    if read_data:
-        feats = f.load()
-        n_fr, n_ft = feats.shape
+    assert f.frame_shift > 0, \
+        f'Features: frame_shift has to be greater than 0 (is {f.frame_shift})'
+    expected_num_frames = compute_num_frames(duration=f.duration, frame_shift=f.frame_shift)
+    assert expected_num_frames == f.num_frames, \
+        f'Features: manifest is inconsistent: declared num_frames is {f.num_frames}, ' \
+        f'but duration ({f.duration}s) / frame_shift ({f.frame_shift}s) results in {expected_num_frames} frames. ' \
+        f'If you\'re using a custom feature extractor, you might need to ensure that it preserves ' \
+        f'this relationship between duration, frame_shift and num_frames (use rounding up if needed - ' \
+        f'see lhotse.utils.compute_num_frames).'
+    if read_data or feats_data is not None:
+        if read_data:
+            feats_data = f.load()
+        n_fr, n_ft = feats_data.shape
         assert f.num_frames == n_fr, f'Features: expected num_frames: {f.num_frames}, actual: {n_fr}'
         assert f.num_features == n_ft, f'Features: expected num_features: {f.num_features}, actual: {n_ft}'
 

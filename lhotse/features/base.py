@@ -142,12 +142,13 @@ class FeatureExtractor(metaclass=ABCMeta):
         :param augment_fn: an optional ``WavAugmenter`` instance to modify the waveform before feature extraction.
         :return: a ``Features`` manifest item for the extracted feature matrix (it is not written to disk).
         """
+        from lhotse.qa import validate_features
         if augment_fn is not None:
             samples = augment_fn(samples, sampling_rate)
         duration = round(samples.shape[1] / sampling_rate, ndigits=8)
         feats = self.extract(samples=samples, sampling_rate=sampling_rate)
         storage_key = store_feature_array(feats, storage=storage)
-        return Features(
+        manifest = Features(
             start=offset,
             duration=duration,
             type=self.name,
@@ -160,6 +161,8 @@ class FeatureExtractor(metaclass=ABCMeta):
             storage_path=str(storage.storage_path),
             storage_key=storage_key
         )
+        validate_features(manifest, feats_data=feats)
+        return manifest
 
     def extract_from_recording_and_store(
             self,
@@ -188,6 +191,7 @@ class FeatureExtractor(metaclass=ABCMeta):
         :param augment_fn: an optional ``WavAugmenter`` instance to modify the waveform before feature extraction.
         :return: a ``Features`` manifest item for the extracted feature matrix.
         """
+        from lhotse.qa import validate_features
         samples = recording.load_audio(
             offset_seconds=offset,
             duration_seconds=duration,
@@ -197,7 +201,7 @@ class FeatureExtractor(metaclass=ABCMeta):
             samples = augment_fn(samples, recording.sampling_rate)
         feats = self.extract(samples=samples, sampling_rate=recording.sampling_rate)
         storage_key = store_feature_array(feats, storage=storage)
-        return Features(
+        manifest = Features(
             recording_id=recording.id,
             channels=channels if channels is not None else recording.channel_ids,
             # The start is relative to the beginning of the recording.
@@ -212,6 +216,8 @@ class FeatureExtractor(metaclass=ABCMeta):
             storage_path=str(storage.storage_path),
             storage_key=storage_key
         )
+        validate_features(manifest, feats_data=feats)
+        return manifest
 
     @classmethod
     def from_dict(cls, data: dict) -> 'FeatureExtractor':
@@ -372,7 +378,11 @@ class Features:
 
     @staticmethod
     def from_dict(data: dict) -> 'Features':
-        if 'frame_shift' not in data:
+        # The "storage_type" check is to ensure that the "data" dict actually contains
+        # the data for a "Features" object, and not something else.
+        # Some Lhotse utilities try to "guess" what is the right object type via trial-and-error,
+        # and would have created a false alarm here.
+        if 'frame_shift' not in data and 'storage_type' in data:
             warnings.warn('The "frame_shift" field was not found in a feature manifest; '
                           'we\'ll try to infer it for now, but you should recreate the manifests.')
             data['frame_shift'] = round(data['duration'] / data['num_features'], ndigits=3)
