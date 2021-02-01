@@ -1,1 +1,5 @@
 comment: false
+ignore:
+  - "lhotse/recipes/**/*"  # Recipes are practically impossible to test.
+  - "lhotse/testing/**/*"  # Testing utilities shouldn't count.
+  - "test/**/*"            # Unit tests code artificially increases the coverage.
