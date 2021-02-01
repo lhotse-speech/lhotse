@@ -117,7 +117,7 @@ def validate_features(f: Features, read_data: bool = False, feats_data: Optional
         f'Features: sampling_rate has to be greater than 0 (is {f.sampling_rate})'
     assert f.frame_shift > 0, \
         f'Features: frame_shift has to be greater than 0 (is {f.frame_shift})'
-    window_hop = f.frame_shift * f.sampling_rate
+    window_hop = round(f.frame_shift * f.sampling_rate, ndigits=12)
     assert float(int(window_hop)) == window_hop, \
         f'Features: frame_shift of {f.frame_shift} is incorrect because it is physically impossible; ' \
         f'multiplying it by a sampling rate of {f.sampling_rate} results in a fractional window hop ' \
