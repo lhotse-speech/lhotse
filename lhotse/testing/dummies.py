@@ -53,6 +53,7 @@ def dummy_features(unique_id: int) -> Features:
         type='fbank',
         num_frames=100,
         num_features=23,
+        frame_shift=0.01,
         sampling_rate=16000,
         storage_type='lilcom_files',
         storage_path='test/fixtures/dummy_feats/storage',

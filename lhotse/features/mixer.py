@@ -81,12 +81,14 @@ class FeatureMixer:
     def add_to_mix(
             self,
             feats: np.ndarray,
+            sampling_rate: int,
             snr: Optional[Decibels] = None,
-            offset: Seconds = 0.0
+            offset: Seconds = 0.0,
     ):
         """
         Add feature matrix of a new track into the mix.
         :param feats: A 2D feature matrix to be mixed in.
+        :param sampling_rate: The sampling rate of ``feats``
         :param snr: Signal-to-noise ratio, assuming ``feats`` represents noise (positive SNR - lower ``feats`` energy,
         negative SNR - higher ``feats`` energy)
         :param offset: How many seconds to shift ``feats`` in time. For mixing, the signal will be padded before
@@ -95,7 +97,8 @@ class FeatureMixer:
         assert offset >= 0.0, "Negative offset in mixing is not supported."
 
         reference_feats = self.tracks[0]
-        num_frames_offset = compute_num_frames(duration=offset, frame_shift=self.frame_shift)
+        num_frames_offset = compute_num_frames(duration=offset, frame_shift=self.frame_shift,
+                                               sampling_rate=sampling_rate)
         current_num_frames = reference_feats.shape[0]
         incoming_num_frames = feats.shape[0] + num_frames_offset
         mix_num_frames = max(current_num_frames, incoming_num_frames)

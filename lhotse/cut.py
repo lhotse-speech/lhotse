@@ -284,7 +284,8 @@ class Cut(CutUtilsMixin):
 
     @property
     def num_frames(self) -> Optional[int]:
-        return compute_num_frames(duration=self.duration, frame_shift=self.frame_shift) if self.has_features else None
+        return compute_num_frames(duration=self.duration, frame_shift=self.frame_shift,
+                                  sampling_rate=self.sampling_rate) if self.has_features else None
 
     @property
     def num_samples(self) -> Optional[int]:
@@ -433,17 +434,19 @@ class Cut(CutUtilsMixin):
         """
         if duration <= self.duration:
             return self
-        total_num_frames = compute_num_frames(duration=duration, frame_shift=self.frame_shift) \
+        total_num_frames = compute_num_frames(duration=duration, frame_shift=self.frame_shift,
+                                              sampling_rate=self.sampling_rate) \
             if self.has_features else None
         total_num_samples = round(duration * self.sampling_rate) if self.has_recording else None
         padding_duration = round(duration - self.duration, ndigits=8)
         padded = self.append(PaddingCut(
             id=str(uuid4()),
             duration=padding_duration,
-            num_features=self.num_features if self.features is not None else None,
-            num_frames=total_num_frames - self.num_frames if self.features is not None else None,
-            num_samples=total_num_samples - self.num_samples if self.recording is not None else None,
-            sampling_rate=self.features.sampling_rate if self.features is not None else self.recording.sampling_rate,
+            num_features=self.num_features if self.has_features else None,
+            num_frames=total_num_frames - self.num_frames if self.has_features else None,
+            num_samples=total_num_samples - self.num_samples if self.has_recording else None,
+            frame_shift=self.frame_shift,
+            sampling_rate=self.features.sampling_rate if self.has_features else self.recording.sampling_rate,
             feat_value=pad_feat_value
         ))
         return padded
@@ -554,6 +557,7 @@ class PaddingCut(CutUtilsMixin):
     # For frequency domain
     num_frames: Optional[int] = None
     num_features: Optional[int] = None
+    frame_shift: Optional[float] = None
 
     # For time domain
     num_samples: Optional[int] = None
@@ -577,10 +581,6 @@ class PaddingCut(CutUtilsMixin):
     @property
     def has_recording(self) -> bool:
         return self.num_samples is not None
-
-    @property
-    def frame_shift(self):
-        return round(self.duration / self.num_frames, ndigits=3) if self.has_features else None
 
     # noinspection PyUnusedLocal
     def load_features(self, *args, **kwargs) -> Optional[np.ndarray]:
@@ -606,14 +606,13 @@ class PaddingCut(CutUtilsMixin):
     ) -> 'PaddingCut':
         new_duration = self.duration - offset if duration is None else duration
         assert new_duration > 0.0
-        return PaddingCut(
+        return fastcopy(
+            self,
             id=self.id if preserve_id else str(uuid4()),
             duration=new_duration,
             feat_value=self.feat_value,
             num_frames=round(new_duration / self.frame_shift) if self.num_frames is not None else None,
-            num_features=self.num_features,
             num_samples=round(new_duration * self.sampling_rate) if self.num_samples is not None else None,
-            sampling_rate=self.sampling_rate
         )
 
     def pad(self, duration: Seconds) -> 'PaddingCut':
@@ -626,13 +625,11 @@ class PaddingCut(CutUtilsMixin):
         """
         if duration <= self.duration:
             return self
-        return PaddingCut(
+        return fastcopy(
+            self,
             id=str(uuid4()),
             duration=duration,
-            feat_value=self.feat_value,
-            num_features=self.num_features,
             num_frames=round(duration / self.frame_shift),
-            sampling_rate=self.sampling_rate,
         )
 
     def perturb_speed(self, factor: float, affix_id: bool = True) -> 'PaddingCut':
@@ -671,7 +668,8 @@ class PaddingCut(CutUtilsMixin):
         return fastcopy(
             self,
             num_features=extractor.feature_dim(self.sampling_rate),
-            num_frames=round(self.duration / extractor.frame_shift)
+            num_frames=round(self.duration / extractor.frame_shift),
+            frame_shift=extractor.frame_shift
         )
 
     def map_supervisions(self, transform_fn: Callable[[Any], Any]) -> AnyCut:
@@ -771,7 +769,8 @@ class MixedCut(CutUtilsMixin):
     @property
     def num_frames(self) -> Optional[int]:
         if self.has_features:
-            return compute_num_frames(duration=self.duration, frame_shift=self._first_non_padding_cut.frame_shift)
+            return compute_num_frames(duration=self.duration, frame_shift=self._first_non_padding_cut.frame_shift,
+                                      sampling_rate=self.sampling_rate)
         return None
 
     @property
@@ -884,7 +883,8 @@ class MixedCut(CutUtilsMixin):
         if duration <= self.duration:
             return self
         if self.has_features:
-            total_num_frames = compute_num_frames(duration=duration, frame_shift=self.frame_shift)
+            total_num_frames = compute_num_frames(duration=duration, frame_shift=self.frame_shift,
+                                                  sampling_rate=self.sampling_rate)
         if self.has_recording:
             total_num_samples = round(duration * self.sampling_rate)
         padding_duration = round(duration - self.duration, ndigits=8)
@@ -906,6 +906,7 @@ class MixedCut(CutUtilsMixin):
                 if self.has_recording
                 else None
             ),
+            frame_shift=self.frame_shift,
             sampling_rate=self.tracks[0].cut.sampling_rate,
         ))
 
@@ -982,7 +983,8 @@ class MixedCut(CutUtilsMixin):
                 mixer.add_to_mix(
                     feats=track.cut.load_features(),
                     snr=track.snr,
-                    offset=track.offset
+                    offset=track.offset,
+                    sampling_rate=track.cut.sampling_rate
                 )
             except NonPositiveEnergyError as e:
                 logging.warning(str(e) + f' Cut with id "{track.cut.id}" will not be mixed in.')

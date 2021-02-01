@@ -8,7 +8,7 @@ def features(rec_id, start, duration):
     """Helper method for fixture readability (specify only relevant attributes)."""
     return Features(recording_id=rec_id, channels=0, start=start, duration=duration, sampling_rate=16000,
                     type='irrelevant', num_frames=round(duration / 0.01), num_features=23,
-                    storage_type='irrelevant', storage_path='irrelevant', storage_key='irrelevant')
+                    storage_type='irrelevant', storage_path='irrelevant', storage_key='irrelevant', frame_shift=0.01)
 
 
 @pytest.fixture

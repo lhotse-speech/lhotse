@@ -9,7 +9,7 @@ from lhotse.testing.dummies import DummyManifest, dummy_cut
 
 @pytest.fixture
 def libri_cut_set():
-    return CutSet.from_json('test/fixtures/ljspeech/cuts.json')
+    return CutSet.from_json('test/fixtures/libri/cuts.json')
 
 
 @pytest.fixture
@@ -31,13 +31,13 @@ def test_k2_speech_recognition_iterable_dataset(k2_cut_set, num_workers):
     #       which is required when Dataset takes care of the collation itself.
     dloader = DataLoader(dataset, batch_size=None, num_workers=num_workers)
     batch = next(iter(dloader))
-    assert batch['features'].shape == (4, 308, 80)
+    assert batch['features'].shape == (4, 2000, 40)
     # Each list has 5 items, to account for:
     # one cut with two supervisions + 3 three cuts with one supervision
     assert (batch['supervisions']['sequence_idx'] == tensor([0, 0, 1, 2, 3])).all()
-    assert batch['supervisions']['text'] == ['IN EIGHTEEN THIRTEEN'] * 5  # a list, not tensor
-    assert (batch['supervisions']['start_frame'] == tensor([0, 153, 0, 0, 0])).all()
-    assert (batch['supervisions']['num_frames'] == tensor([154] * 5)).all()
+    assert batch['supervisions']['text'] == ['EXAMPLE OF TEXT'] * 5  # a list, not tensor
+    assert (batch['supervisions']['start_frame'] == tensor([0, 1000, 0, 0, 0])).all()
+    assert (batch['supervisions']['num_frames'] == tensor([1000] * 5)).all()
 
 
 @pytest.mark.parametrize('num_workers', [2, 3, 4])
@@ -51,13 +51,13 @@ def test_k2_speech_recognition_iterable_dataset_multiple_workers(k2_cut_set, num
     batches = list(dloader)
 
     features = torch.cat([b['features'] for b in batches])
-    assert features.shape == (4, 308, 80)
+    assert features.shape == (4, 2000, 40)
     text = [t for b in batches for t in b['supervisions']['text']]
-    assert text == ['IN EIGHTEEN THIRTEEN'] * 5  # a list, not tensor
+    assert text == ['EXAMPLE OF TEXT'] * 5  # a list, not tensor
     start_frame = torch.cat([b['supervisions']['start_frame'] for b in batches])
-    assert (start_frame == tensor([0] * 4 + [153])).all()
+    assert (start_frame == tensor([0] * 4 + [1000])).all()
     num_frames = torch.cat([b['supervisions']['num_frames'] for b in batches])
-    assert (num_frames == tensor([154] * 5)).all()
+    assert (num_frames == tensor([1000] * 5)).all()
 
 
 def test_k2_speech_recognition_iterable_dataset_shuffling():

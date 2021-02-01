@@ -8,7 +8,7 @@ from dataclasses import asdict, dataclass
 from decimal import Decimal, ROUND_HALF_DOWN, ROUND_HALF_UP
 from math import ceil, isclose
 from pathlib import Path
-from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence, TypeVar, Union
+from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence, Tuple, TypeVar, Union
 
 import numpy as np
 import torch
@@ -238,7 +238,8 @@ def split_sequence(seq: Sequence[Any], num_splits: int, shuffle: bool = False) -
 def compute_num_frames(
         duration: Seconds,
         frame_shift: Seconds,
-        rounding: str = ROUND_HALF_UP
+        sampling_rate: int,
+        # rounding: str = ROUND_HALF_DOWN#ROUND_HALF_UP
 ) -> int:
     """
     Compute the number of frames from duration and frame_shift in a safe way.
@@ -259,14 +260,18 @@ def compute_num_frames(
     >>> Decimal(round(num_frames, ndigits=8)).quantize(0, rounding=ROUND_HALF_UP)
       1617
     """
-    return int(
-        Decimal(
-            # 8 is a good number because cases like 14.49175 still work correctly,
-            # while problematic cases like 14.49999999998 are typically breaking much later than 8th decimal
-            # with double-precision floats.
-            round(duration / frame_shift, ndigits=8)
-        ).quantize(0, rounding=rounding)
-    )
+    num_samples = round(duration * sampling_rate)
+    window_hop = round(frame_shift * sampling_rate)
+    num_frames = int((num_samples + window_hop // 2) // window_hop)
+    return num_frames
+    # return int(
+    #     Decimal(
+    #         # 8 is a good number because cases like 14.49175 still work correctly,
+    #         # while problematic cases like 14.49999999998 are typically breaking much later than 8th decimal
+    #         # with double-precision floats.
+    #         round((duration + frame_shift / 2) / frame_shift, ndigits=8)
+    #     ).quantize(0, rounding=rounding)
+    # )
 
 
 def during_docs_build() -> bool:
@@ -373,3 +378,30 @@ def index_by_id_and_check(manifests: Iterable[T]) -> Dict[str, T]:
 def exactly_one_not_null(*args) -> bool:
     not_null = [arg is not None for arg in args]
     return sum(not_null) == 1
+
+
+def supervision_to_frames(
+        supervision,
+        frame_shift: Seconds,
+        sampling_rate: int,
+        max_frames: Optional[int] = None
+) -> Tuple[int, int]:
+    """
+    Utility to convert a supervision's time span into a tuple of ``(start_frame, num_frames)``.
+    When ``max_frames`` is specified, it will truncate the ``num_frames`` (if necessary).
+    """
+    start_frame = compute_num_frames(
+        supervision.start,
+        frame_shift=frame_shift,
+        sampling_rate=sampling_rate
+    )
+    num_frames = compute_num_frames(
+        supervision.duration,
+        frame_shift=frame_shift,
+        sampling_rate=sampling_rate
+    )
+    if max_frames:
+        diff = start_frame + num_frames - max_frames
+        if diff > 0:
+            num_frames -= diff
+    return start_frame, num_frames

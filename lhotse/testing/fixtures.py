@@ -4,8 +4,8 @@ from tempfile import NamedTemporaryFile, TemporaryDirectory
 import numpy as np
 import soundfile
 
-from lhotse import AudioSource, Cut, CutSet, Fbank, LilcomFilesWriter, Recording, SupervisionSegment
-from lhotse.utils import uuid4
+from lhotse import AudioSource, Cut, CutSet, Fbank, FbankConfig, LilcomFilesWriter, Recording, SupervisionSegment
+from lhotse.utils import Seconds, uuid4
 
 
 def random_cut_set(n_cuts=100) -> CutSet:
@@ -60,7 +60,8 @@ class RandomCutTestCase:
             sampling_rate: int,
             num_samples: int,
             features: bool = True,
-            supervision: bool = False
+            supervision: bool = False,
+            frame_shift: Seconds = 0.01
     ) -> Cut:
         duration = num_samples / sampling_rate
         cut = Cut(
@@ -71,7 +72,7 @@ class RandomCutTestCase:
             recording=self.with_recording(sampling_rate=sampling_rate, num_samples=num_samples)
         )
         if features:
-            cut = self._with_features(cut)
+            cut = self._with_features(cut, frame_shift=frame_shift)
         if supervision:
             cut.supervisions.append(SupervisionSegment(
                 id=f'sup-{cut.id}',
@@ -82,8 +83,9 @@ class RandomCutTestCase:
             ))
         return cut
 
-    def _with_features(self, cut: Cut) -> Cut:
+    def _with_features(self, cut: Cut, frame_shift: Seconds) -> Cut:
         d = TemporaryDirectory()
         self.dirs.append(d)
+        extractor = Fbank(config=FbankConfig(frame_shift=frame_shift))
         with LilcomFilesWriter(d.name) as storage:
-            return cut.compute_and_store_features(Fbank(), storage=storage)
+            return cut.compute_and_store_features(extractor, storage=storage)

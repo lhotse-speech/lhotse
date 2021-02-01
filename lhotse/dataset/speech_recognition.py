@@ -1,5 +1,3 @@
-from decimal import ROUND_FLOOR
-
 import math
 import random
 import warnings
@@ -11,7 +9,7 @@ from torch.utils.data.dataloader import DataLoader, default_collate
 from lhotse import validate
 from lhotse.cut import AnyCut, CutSet
 from lhotse.dataset.collation import collate_features
-from lhotse.utils import Decibels, Seconds, compute_num_frames
+from lhotse.utils import Decibels, Seconds, supervision_to_frames
 
 
 class K2SpeechRecognitionIterableDataset(torch.utils.data.IterableDataset):
@@ -185,21 +183,17 @@ class K2SpeechRecognitionIterableDataset(torch.utils.data.IterableDataset):
                 {
                     'sequence_idx': sequence_idx,
                     'text': supervision.text,
-                    'start_frame': compute_num_frames(
-                        supervision.start,
-                        frame_shift=cut.frame_shift,
-                        # Note: Rounding "floor" can sometimes result in one extra frame being included
-                        # in the left context; but it guarantees that we will never go out-of-bounds when
-                        # summing start_frame + num_frames.
-                        rounding=ROUND_FLOOR
-                    ),
-                    'num_frames': compute_num_frames(
-                        supervision.duration,
-                        frame_shift=cut.frame_shift
-                    )
+                    'start_frame': start_frame,
+                    'num_frames': num_frames
                 }
                 for sequence_idx, cut in enumerate(cuts)
-                for supervision in cut.supervisions
+                for supervision, (start_frame, num_frames) in zip(
+                    cut.supervisions,
+                    (
+                        supervision_to_frames(s, cut.frame_shift, cut.sampling_rate, max_frames=cut.num_frames)
+                        for s in cut.supervisions
+                    )
+                )
             ])
         }
         if self.return_cuts:

@@ -9,6 +9,7 @@
           "features": {
             "channels": 0,
             "duration": 7.78,
+            "frame_shift": 0.01,
             "type": "fbank",
             "num_frames": 778,
             "num_features": 23,
@@ -44,6 +45,7 @@
           "features": {
             "channels": 0,
             "duration": 9.705,
+            "frame_shift": 0.01,
             "type": "fbank",
             "num_frames": 970,
             "num_features": 23,

@@ -19,6 +19,7 @@ def padding_cut():
         duration=10.0,
         num_frames=1000,
         num_features=40,
+        frame_shift=0.01,
         sampling_rate=16000,
         num_samples=160000,
         feat_value=PADDING_LOG_ENERGY
@@ -80,6 +81,7 @@ def libri_cut():
             duration=16.04,
             num_features=40,
             num_frames=1604,
+            frame_shift=0.01,
             recording_id='recording-1',
             sampling_rate=16000,
             start=0.0,

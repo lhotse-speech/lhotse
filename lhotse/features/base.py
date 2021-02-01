@@ -1,6 +1,7 @@
 import logging
 import multiprocessing
 import pickle
+import warnings
 from abc import ABCMeta, abstractmethod
 from concurrent.futures.process import ProcessPoolExecutor
 from dataclasses import asdict, dataclass, field, is_dataclass
@@ -141,23 +142,27 @@ class FeatureExtractor(metaclass=ABCMeta):
         :param augment_fn: an optional ``WavAugmenter`` instance to modify the waveform before feature extraction.
         :return: a ``Features`` manifest item for the extracted feature matrix (it is not written to disk).
         """
+        from lhotse.qa import validate_features
         if augment_fn is not None:
             samples = augment_fn(samples, sampling_rate)
         duration = round(samples.shape[1] / sampling_rate, ndigits=8)
         feats = self.extract(samples=samples, sampling_rate=sampling_rate)
         storage_key = store_feature_array(feats, storage=storage)
-        return Features(
+        manifest = Features(
             start=offset,
             duration=duration,
             type=self.name,
             num_frames=feats.shape[0],
             num_features=feats.shape[1],
+            frame_shift=self.frame_shift,
             sampling_rate=sampling_rate,
             channels=channel,
             storage_type=storage.name,
             storage_path=str(storage.storage_path),
             storage_key=storage_key
         )
+        validate_features(manifest, feats_data=feats)
+        return manifest
 
     def extract_from_recording_and_store(
             self,
@@ -186,6 +191,7 @@ class FeatureExtractor(metaclass=ABCMeta):
         :param augment_fn: an optional ``WavAugmenter`` instance to modify the waveform before feature extraction.
         :return: a ``Features`` manifest item for the extracted feature matrix.
         """
+        from lhotse.qa import validate_features
         samples = recording.load_audio(
             offset_seconds=offset,
             duration_seconds=duration,
@@ -195,7 +201,7 @@ class FeatureExtractor(metaclass=ABCMeta):
             samples = augment_fn(samples, recording.sampling_rate)
         feats = self.extract(samples=samples, sampling_rate=recording.sampling_rate)
         storage_key = store_feature_array(feats, storage=storage)
-        return Features(
+        manifest = Features(
             recording_id=recording.id,
             channels=channels if channels is not None else recording.channel_ids,
             # The start is relative to the beginning of the recording.
@@ -204,11 +210,14 @@ class FeatureExtractor(metaclass=ABCMeta):
             type=self.name,
             num_frames=feats.shape[0],
             num_features=feats.shape[1],
+            frame_shift=self.frame_shift,
             sampling_rate=recording.sampling_rate,
             storage_type=storage.name,
             storage_path=str(storage.storage_path),
             storage_key=storage_key
         )
+        validate_features(manifest, feats_data=feats)
+        return manifest
 
     @classmethod
     def from_dict(cls, data: dict) -> 'FeatureExtractor':
@@ -302,6 +311,7 @@ class Features:
     type: str
     num_frames: int
     num_features: int
+    frame_shift: Seconds
     sampling_rate: int
 
     # Information about the time range of the features.
@@ -333,10 +343,6 @@ class Features:
     def end(self) -> Seconds:
         return self.start + self.duration
 
-    @property
-    def frame_shift(self) -> Seconds:
-        return round(self.duration / self.num_frames, ndigits=3)
-
     def load(
             self,
             start: Optional[Seconds] = None,
@@ -354,11 +360,13 @@ class Features:
             raise ValueError(f"Cannot load features for recording {self.recording_id} starting from {start}s. "
                              f"The available range is ({self.start}, {self.end}) seconds.")
         if not isclose(start, self.start):
-            left_offset_frames = compute_num_frames(start - self.start, frame_shift=self.frame_shift)
+            left_offset_frames = compute_num_frames(start - self.start, frame_shift=self.frame_shift,
+                                                    sampling_rate=self.sampling_rate)
         # Right trim
         end = start + duration if duration is not None else None
         if duration is not None and not isclose(end, self.end):
-            right_offset_frames = left_offset_frames + compute_num_frames(duration, frame_shift=self.frame_shift)
+            right_offset_frames = left_offset_frames + compute_num_frames(duration, frame_shift=self.frame_shift,
+                                                                          sampling_rate=self.sampling_rate)
 
         # Load and return the features (subset) from the storage
         return storage.read(
@@ -372,6 +380,14 @@ class Features:
 
     @staticmethod
     def from_dict(data: dict) -> 'Features':
+        # The "storage_type" check is to ensure that the "data" dict actually contains
+        # the data for a "Features" object, and not something else.
+        # Some Lhotse utilities try to "guess" what is the right object type via trial-and-error,
+        # and would have created a false alarm here.
+        if 'frame_shift' not in data and 'storage_type' in data:
+            warnings.warn('The "frame_shift" field was not found in a feature manifest; '
+                          'we\'ll try to infer it for now, but you should recreate the manifests.')
+            data['frame_shift'] = round(data['duration'] / data['num_features'], ndigits=3)
         return Features(**data)
 
 
