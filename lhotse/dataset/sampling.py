@@ -2,7 +2,7 @@ import logging
 import random
 import warnings
 from math import ceil
-from typing import Iterable, List, Optional
+from typing import Iterable, List, Optional, Type
 
 import torch.distributed as dist
 from torch.utils.data import Sampler
@@ -196,6 +196,97 @@ class SingleCutSampler(CutSampler):
                     cut_ids.append(next_cut.id)
                     self.current_idx += 1
         return cut_ids
+
+
+class BucketingSampler(CutSampler):
+    """
+    Sorts the cuts in a :class:`CutSet` by their duration and puts them into similar duration buckets.
+    For each bucket, it instantiates a simpler sampler instance, e.g. :class:`SingleCutSampler`.
+
+    It behaves like an iterable that yields lists of strings (cut IDs).
+    During iteration, it randomly selects one of the buckets to yield the batch from,
+    until all the underlying samplers are depleted (which means it's the end of an epoch).
+
+    Examples:
+
+    Bucketing sampler with 20 buckets, sampling single cuts::
+
+        >>> sampler = BucketingSampler(
+        ...    cuts,
+        ...    # BucketingSampler specific args
+        ...    sampler_type=SingleCutSampler, num_buckets=20,
+        ...    # Args passed into SingleCutSampler
+        ...    max_frames=20000
+        ... )
+
+    Bucketing sampler with 20 buckets, sampling pairs of source-target cuts::
+
+        >>> sampler = BucketingSampler(
+        ...    cuts,
+        ...    # BucketingSampler specific args
+        ...    sampler_type=CutPairsSampler, num_buckets=20,
+        ...    # Args passed into CutPairsSampler
+        ...    target_cuts=target_cuts, max_source_frames=20000, max_target_frames=15000
+        ... )
+    """
+
+    def __init__(
+            self,
+            cuts: CutSet,
+            sampler_type: Type = SingleCutSampler,
+            num_buckets: int = 10,
+            **kwargs
+    ):
+        """
+        BucketingSampler's constructor.
+
+        :param cuts: the ``CutSet`` that will be used to determine the buckets.
+        :param sampler_type: a sampler type that will be created for each underlying bucket.
+        :param num_buckets: how many buckets to create.
+        :param kwargs: Arguments used to create the underlying sampler for each bucket.
+        """
+        # Do not use the distributed capacities of the CutSampler in the top-level sampler.
+        super().__init__(cuts.ids, world_size=1, rank=0)
+        self.num_buckets = num_buckets
+        self.sampler_type = sampler_type
+        self.sampler_kwargs = kwargs
+        self.cuts = cuts.sort_by_duration()
+        self.buckets = self.cuts.split(num_buckets)
+        self.bucket_samplers = [
+            sampler_type(b, **kwargs)
+            for b in self.buckets
+        ]
+        self.depleted = [False] * num_buckets
+
+    def set_epoch(self, epoch: int) -> None:
+        for s in self.bucket_samplers:
+            s.set_epoch(epoch)
+
+    def __iter__(self) -> 'BucketingSampler':
+        for b in self.bucket_samplers:
+            iter(b)
+        return self
+
+    def __next__(self) -> List[str]:
+        while not self.is_depleted:
+            idx, sampler = random.choice(self._nondepleted_samplers_with_idxs)
+            try:
+                return next(sampler)
+            except StopIteration:
+                self.depleted[idx] = True
+        raise StopIteration()
+
+    @property
+    def is_depleted(self) -> bool:
+        return all(self.depleted)
+
+    @property
+    def _nondepleted_samplers_with_idxs(self):
+        return [
+            (idx, bs) for idx, (bs, depleted) in
+            enumerate(zip(self.bucket_samplers, self.depleted))
+            if not depleted
+        ]
 
 
 class CutPairsSampler(CutSampler):
