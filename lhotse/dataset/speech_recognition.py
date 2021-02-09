@@ -13,13 +13,11 @@ class K2SpeechRecognitionDataset(torch.utils.data.Dataset):
     """
     The PyTorch Dataset for the speech recognition task using K2 library.
 
-    This dataset internally batches and collates the Cuts and should be used with
-    PyTorch DataLoader with argument batch_size=None to work properly.
-    The batch size is determined automatically to satisfy the constraints of ``max_frames``
-    and ``max_cuts``, specified by the sampler.
+    This dataset expects to be queried with lists of cut IDs,
+    for which it loads features and automatically collates/batches them.
 
-    This dataset will automatically partition itself when used with a multiprocessing DataLoader
-    (i.e. the same cut will not appear twice in the same epoch).
+    To use it with a PyTorch DataLoader, set ``batch_size=None``
+    and provide a :class:`SingleCutSampler` sampler.
 
     Each item in this dataset is a dict of:
 
