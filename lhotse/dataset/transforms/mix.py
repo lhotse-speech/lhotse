@@ -6,8 +6,8 @@ from lhotse.utils import Decibels
 
 class CutMix:
     """
-    A transform for batches of cuts (CutSet's) that stochastically performs n
-    oise augmentation with a constant or varying SNR.
+    A transform for batches of cuts (CutSet's) that stochastically performs
+    noise augmentation with a constant or varying SNR.
     """
 
     def __init__(
@@ -24,7 +24,7 @@ class CutMix:
             It determines the SNR of the speech signal vs the noise signal that's mixed into it.
             When a range is specified, we will uniformly sample SNR in that range.
             When it's ``None``, the noise will be mixed as-is -- i.e. without any level adjustment.
-            Note that it's different from ``aug_snr=0``, which will adjust the noise level so that the SNR is 0.
+            Note that it's different from ``snr=0``, which will adjust the noise level so that the SNR is 0.
         :param prob: a float probability in range [0, 1].
             Specifies the probability with which we will mix augment the cuts.
         """

@@ -5,7 +5,7 @@ from lhotse.cut import AnyCut
 from lhotse.utils import Seconds
 
 
-class CutCat:
+class CutConcatenate:
     """
     A transform on batch of cuts (``CutSet``) that concatenates the cuts to minimize the total amount of padding;
     e.g. instead of creating a batch with 40 examples, we will merge some of the examples together
@@ -18,7 +18,7 @@ class CutCat:
             duration_factor: float = 1.0
     ) -> None:
         """
-        CutCat's constructor.
+        CutConcatenate's constructor.
 
         :param gap: The duration of silence in seconds that is inserted between the cuts;
             it's goal is to let the model "know" that there are separate utterances in a single example.

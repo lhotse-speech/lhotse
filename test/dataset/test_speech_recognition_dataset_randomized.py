@@ -4,6 +4,7 @@ from hypothesis import strategies as st
 from lhotse import CutSet
 from lhotse.dataset import K2SpeechRecognitionIterableDataset
 from lhotse.dataset.sampling import SingleCutSampler
+from lhotse.dataset.transforms import CutCat
 from lhotse.testing.fixtures import RandomCutTestCase
 
 
@@ -55,9 +56,10 @@ class TestCollationRandomized(RandomCutTestCase):
             sampler=SingleCutSampler(
                 mixed_cuts,
                 shuffle=False,
-                concat_cuts=True,
-                concat_cuts_duration_factor=3.0
-            )
+            ),
+            cut_transforms=[
+                CutCat(duration_factor=3.0)
+            ],
         )
         ### End of test data preparation ###
         # Test the invariants

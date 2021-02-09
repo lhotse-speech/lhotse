@@ -3,7 +3,7 @@ import math
 import random
 import warnings
 from abc import ABC, abstractmethod
-from typing import Iterable, List, Optional, Tuple
+from typing import Any, Iterable, List, Optional, Tuple
 
 import torch
 
@@ -65,7 +65,8 @@ class CutSampler(ABC):
         return self
 
     @abstractmethod
-    def __next__(self): ...
+    def __next__(self) -> Any:
+        pass
 
 
 class SingleCutSampler(CutSampler):
@@ -147,6 +148,7 @@ class SingleCutSampler(CutSampler):
 class CutPairsSampler(CutSampler):
     """
     Samples pairs of cuts from a "source" and "target" CutSet.
+    It expects that both CutSet's strictly consist of Cuts with corresponding IDs.
     It will try to satisfy the criteria of max_source_frames, max_target_frames, and max_cuts.
     Use as an iterable that yields pairs of ``CutSet`` objects (individual batches).
     """
@@ -163,7 +165,8 @@ class CutPairsSampler(CutSampler):
         """
         CutPairsSampler's constructor.
 
-        :param cuts: the ``CutSet`` to sample data from.
+        :param source_cuts: the first ``CutSet`` to sample data from.
+        :param target_cuts: the second ``CutSet`` to sample data from.
         :param max_frames: The maximum number of feature frames that we're going to put in a single batch.
             The padding frames do not contribute to that limit, since we pack the batch by default to minimze
             the amount of padding.
