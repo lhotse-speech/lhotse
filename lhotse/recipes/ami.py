@@ -24,31 +24,26 @@ NOTE on mic settings: AMI comes with 4 different microphone settings:
 These can be specified using the `mic` argument.
 """
 
-from collections import defaultdict
-from gzip import GzipFile
-
-import logging
-import re
 import itertools
-import soundfile as sf
-import zipfile
+import logging
 import urllib.request
 import xml.etree.ElementTree as ET
+import zipfile
+from collections import defaultdict
 from html.parser import HTMLParser
-
 from pathlib import Path
-from tqdm.auto import tqdm
 from typing import Dict, List, NamedTuple, Optional, Union
+
+from tqdm.auto import tqdm
 
 from lhotse import validate_recordings_and_supervisions
 from lhotse.audio import AudioSource, Recording, RecordingSet
 from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import Pathlike, Seconds, urlretrieve_progress
 
-
 MEETINGS = {
-    'EN2001': ['EN2001a','EN2001b','EN2001d','EN2001e'],
-    'EN2002': ['EN2002a','EN2002b','EN2002c','EN2002d'],
+    'EN2001': ['EN2001a', 'EN2001b', 'EN2001d', 'EN2001e'],
+    'EN2002': ['EN2002a', 'EN2002b', 'EN2002c', 'EN2002d'],
     'EN2003': ['EN2003a'],
     'EN2004': ['EN2004a'],
     'EN2005': ['EN2005a'],
@@ -305,6 +300,7 @@ def parse_ami_annotations(
 def prepare_audio_grouped(
         audio_paths: List[Pathlike],
 ) -> RecordingSet:
+    import soundfile as sf
     # Group together multiple channels from the same session.
     # We will use that to create a Recording with multiple sources (channels).
     from cytoolz import groupby
@@ -334,6 +330,7 @@ def prepare_audio_grouped(
 def prepare_audio_single(
         audio_paths: List[Pathlike],
 ) -> RecordingSet:
+    import soundfile as sf
 
     recording_manifest = defaultdict(dict)
 

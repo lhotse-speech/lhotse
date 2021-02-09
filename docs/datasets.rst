@@ -6,7 +6,6 @@ PyTorch Datasets
 
 We supply subclasses of the :class:`torch.data.Dataset` for various audio/speech tasks.
 These datasets are created from :class:`CutSet` objects and load the features from disk into memory on-the-fly.
-Each dataset accepts an optional ``root_dir`` argument which is used as a prefix for the paths to features and audio.
 
 Currently, we provide the following:
 
