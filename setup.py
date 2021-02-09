@@ -15,7 +15,11 @@ if os.environ.get('READTHEDOCS', False):
     # When building documentation, omit torchaudio installation and mock it instead.
     # This works around the inability to install libsoundfile1 in read-the-docs env,
     # which caused the documentation builds to silently crash.
-    install_requires = [req for req in install_requires if not req.startswith('torchaudio')]
+    install_requires = [
+        req for req in install_requires
+        if not any(
+            req.startswith(dep) for dep in ['torchaudio', 'SoundFile']
+        )]
 
 setup(
     name='lhotse',

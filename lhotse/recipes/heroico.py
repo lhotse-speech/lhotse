@@ -1,11 +1,9 @@
-from collections import defaultdict
-
 import logging
 import re
-import soundfile
 import tarfile
+from collections import defaultdict
 from pathlib import Path
-from typing import Dict, NamedTuple, Optional, Union
+from typing import Any, Dict, NamedTuple, Optional, Union
 
 from lhotse import validate_recordings_and_supervisions
 from lhotse.audio import AudioSource, Recording, RecordingSet
@@ -40,7 +38,7 @@ def download_and_untar(
 
 class HeroicoMetaData(NamedTuple):
     audio_path: Pathlike
-    audio_info: soundfile._SoundFileInfo
+    audio_info: Any
     text: str
 
 
@@ -66,6 +64,8 @@ param transcripts_dir: Pathlike, the path of the transcript data dir.
     :param output_dir: Pathlike, the path where to write the manifests.
     :return: a Dict whose key is the fold, and the value is Dicts with the keys 'audio' and 'supervisions'.
     """
+    import soundfile
+
     speech_dir = Path(speech_dir)
     transcript_dir = Path(transcript_dir)
     assert speech_dir.is_dir(), f'No such directory: {speech_dir}'
