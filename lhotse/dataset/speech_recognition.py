@@ -1,4 +1,4 @@
-from typing import Callable, Dict, List, Optional, Union
+from typing import Callable, Dict, List, Union
 
 import torch
 from torch.utils.data.dataloader import DataLoader, default_collate
@@ -6,11 +6,10 @@ from torch.utils.data.dataloader import DataLoader, default_collate
 from lhotse import validate
 from lhotse.cut import CutSet
 from lhotse.dataset.collation import collate_features
-from lhotse.dataset.sampling import SingleCutSampler
 from lhotse.utils import supervision_to_frames
 
 
-class K2SpeechRecognitionIterableDataset(torch.utils.data.IterableDataset):
+class K2SpeechRecognitionDataset(torch.utils.data.Dataset):
     """
     The PyTorch Dataset for the speech recognition task using K2 library.
 
@@ -52,7 +51,6 @@ class K2SpeechRecognitionIterableDataset(torch.utils.data.IterableDataset):
     def __init__(
             self,
             cuts: CutSet,
-            sampler: Optional[SingleCutSampler] = None,
             return_cuts: bool = False,
             cut_transforms: List[Callable[[CutSet], CutSet]] = None
     ):
@@ -60,8 +58,6 @@ class K2SpeechRecognitionIterableDataset(torch.utils.data.IterableDataset):
         K2 ASR IterableDataset constructor.
 
         :param cuts: the ``CutSet`` to sample data from.
-        :param sampler: a ``SingleCutSampler`` objects that draws Cuts from the ``CutSet`` to form batches.
-            When not provided, we will create one with default settings.
         :param return_cuts: When ``True``, will additionally return a "cut" field in each batch with the Cut
             objects used to create that batch.
         :param cut_transforms: A list of transforms to be applied on each sampled batch
@@ -70,24 +66,21 @@ class K2SpeechRecognitionIterableDataset(torch.utils.data.IterableDataset):
         super().__init__()
         # Initialize the fields
         self.cuts = cuts
-        self.sampler = sampler if sampler is not None else SingleCutSampler(cuts)
         self.return_cuts = return_cuts
         self.cut_transforms = cut_transforms if cut_transforms is not None else ()
         self._validate()
 
-    def __iter__(self):
-        """Prepare the dataset for iterating over a new epoch."""
-        self.sampler = iter(self.sampler)
-        return self
+    def __len__(self) -> int:
+        return len(self.cuts)
 
-    def __next__(self) -> Dict[str, Union[torch.Tensor, List[str]]]:
+    def __getitem__(self, cut_ids: List[str]) -> Dict[str, Union[torch.Tensor, List[str]]]:
         """
         Return a new batch, with the batch size automatically determined using the contraints
         of max_frames and max_cuts.
         """
         # Collect the cuts that will form a batch, satisfying the criteria of max_cuts and max_frames.
         # The returned object is a CutSet that we can keep on modifying (e.g. padding, mixing, etc.)
-        cuts = next(self.sampler)
+        cuts = self.cuts.subset(cut_ids=cut_ids)
 
         # Sort the cuts by duration so that the first one determines the batch time dimensions.
         cuts = cuts.sort_by_duration(ascending=False)

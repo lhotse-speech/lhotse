@@ -1,7 +1,7 @@
 import pytest
 
 from lhotse import CutSet
-from lhotse.dataset.sampling import SingleCutSampler
+from lhotse.dataset.sampling import CutPairsSampler, SingleCutSampler
 from lhotse.dataset.transforms import concat_cuts
 from lhotse.testing.dummies import DummyManifest, dummy_cut
 
@@ -30,10 +30,8 @@ def test_single_cut_sampler_shuffling():
         max_frames=1000
     )
     sampler_cut_ids = []
-    batches = []
     for batch in sampler:
-        batches.append(batch)
-        sampler_cut_ids.extend(c.id for c in batch)
+        sampler_cut_ids.extend(batch)
 
     # Invariant 1: we receive the same amount of items in a dataloader epoch as there we in the CutSet
     assert len(sampler_cut_ids) == len(cut_set)
@@ -49,6 +47,32 @@ def test_single_cut_sampler_low_max_frames(libri_cut_set):
     for batch in sampler:
         # There will be only a single item in each batch as we're exceeding the limit each time.
         assert len(batch) == 1
+
+
+def test_cut_pairs_sampler():
+    # The dummy cuts have a duration of 1 second each
+    cut_set = DummyManifest(CutSet, begin_id=0, end_id=100)
+
+    sampler = CutPairsSampler(
+        source_cuts=cut_set,
+        target_cuts=cut_set,
+        shuffle=True,
+        # Set an effective batch size of 10 cuts, as all have 1s duration == 100 frames
+        # This way we're testing that it works okay when returning multiple batches in
+        # a full epoch.
+        max_source_frames=1000,
+        max_target_frames=500,
+    )
+    sampler_cut_ids = []
+    for batch in sampler:
+        sampler_cut_ids.extend(batch)
+
+    # Invariant 1: we receive the same amount of items in a dataloader epoch as there we in the CutSet
+    assert len(sampler_cut_ids) == len(cut_set)
+    # Invariant 2: the items are not duplicated
+    assert len(set(sampler_cut_ids)) == len(sampler_cut_ids)
+    # Invariant 3: the items are shuffled, i.e. the order is different than that in the CutSet
+    assert sampler_cut_ids != [c.id for c in cut_set]
 
 
 def test_concat_cuts():

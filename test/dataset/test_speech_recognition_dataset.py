@@ -4,7 +4,7 @@ from torch.utils.data import DataLoader
 
 from lhotse.cut import CutSet
 from lhotse.dataset.sampling import SingleCutSampler
-from lhotse.dataset.speech_recognition import K2SpeechRecognitionIterableDataset
+from lhotse.dataset.speech_recognition import K2SpeechRecognitionDataset
 from lhotse.dataset.transforms import CutConcatenate, CutMix
 from lhotse.testing.dummies import DummyManifest
 
@@ -28,14 +28,14 @@ def k2_cut_set(libri_cut_set):
 @pytest.mark.parametrize('num_workers', [0, 1])
 def test_k2_speech_recognition_iterable_dataset(k2_cut_set, num_workers):
     from torch import tensor
-    dataset = K2SpeechRecognitionIterableDataset(
+    dataset = K2SpeechRecognitionDataset(
         k2_cut_set,
-        sampler=SingleCutSampler(k2_cut_set, shuffle=False),
         cut_transforms=[CutConcatenate()]
     )
+    sampler = SingleCutSampler(k2_cut_set, shuffle=False)
     # Note: "batch_size=None" disables the automatic batching mechanism,
     #       which is required when Dataset takes care of the collation itself.
-    dloader = DataLoader(dataset, batch_size=None, num_workers=num_workers)
+    dloader = DataLoader(dataset, batch_size=None, sampler=sampler, num_workers=num_workers)
     batch = next(iter(dloader))
     assert batch['features'].shape == (4, 2000, 40)
     # Each list has 5 items, to account for:
@@ -48,14 +48,13 @@ def test_k2_speech_recognition_iterable_dataset(k2_cut_set, num_workers):
 
 @pytest.mark.parametrize('num_workers', [2, 3, 4])
 def test_k2_speech_recognition_iterable_dataset_multiple_workers(k2_cut_set, num_workers):
-    from torch import tensor
     k2_cut_set = k2_cut_set.pad()
-    dataset = K2SpeechRecognitionIterableDataset(
+    dataset = K2SpeechRecognitionDataset(
         k2_cut_set,
-        sampler=SingleCutSampler(k2_cut_set, shuffle=False),
         cut_transforms=[CutConcatenate()]
     )
-    dloader = DataLoader(dataset, batch_size=None, num_workers=num_workers)
+    sampler = SingleCutSampler(k2_cut_set, shuffle=False)
+    dloader = DataLoader(dataset, batch_size=None, sampler=sampler, num_workers=num_workers)
 
     # We expect a variable number of batches for each parametrized num_workers value,
     # because the dataset is small with 4 cuts that are partitioned across the workers.
@@ -65,32 +64,36 @@ def test_k2_speech_recognition_iterable_dataset_multiple_workers(k2_cut_set, num
     assert features.shape == (4, 2000, 40)
     text = [t for b in batches for t in b['supervisions']['text']]
     assert text == ['EXAMPLE OF TEXT'] * 5  # a list, not tensor
-    start_frame = torch.cat([b['supervisions']['start_frame'] for b in batches])
-    assert (start_frame == tensor([0] * 4 + [1000])).all()
-    num_frames = torch.cat([b['supervisions']['num_frames'] for b in batches])
-    assert (num_frames == tensor([1000] * 5)).all()
+    start_frame = torch.cat([b['supervisions']['start_frame'] for b in batches]).tolist()
+    # The multi-worker dataloader might not preserve order, because the workers
+    # might finish processing in different order. To compare ground truth
+    # start times with actual start times, we need to sort.
+    start_frame = sorted(start_frame)
+    assert start_frame == [0] * 4 + [1000]
+    num_frames = torch.cat([b['supervisions']['num_frames'] for b in batches]).tolist()
+    assert num_frames == [1000] * 5
 
 
 def test_k2_speech_recognition_iterable_dataset_shuffling():
     # The dummy cuts have a duration of 1 second each
     cut_set = DummyManifest(CutSet, begin_id=0, end_id=100)
 
-    dataset = K2SpeechRecognitionIterableDataset(
+    dataset = K2SpeechRecognitionDataset(
         cuts=cut_set,
         return_cuts=True,
-        sampler=SingleCutSampler(
-            cut_set,
-            shuffle=True,
-            # Set an effective batch size of 10 cuts, as all have 1s duration == 100 frames
-            # This way we're testing that it works okay when returning multiple batches in
-            # a full epoch.
-            max_frames=1000
-        ),
         cut_transforms=[
             CutConcatenate(),
         ]
     )
-    dloader = DataLoader(dataset, batch_size=None, num_workers=2)
+    sampler = SingleCutSampler(
+        cut_set,
+        shuffle=True,
+        # Set an effective batch size of 10 cuts, as all have 1s duration == 100 frames
+        # This way we're testing that it works okay when returning multiple batches in
+        # a full epoch.
+        max_frames=1000
+    )
+    dloader = DataLoader(dataset, batch_size=None, sampler=sampler, num_workers=2)
     dloader_cut_ids = []
     batches = []
     for batch in dloader:
@@ -106,11 +109,9 @@ def test_k2_speech_recognition_iterable_dataset_shuffling():
 
 
 def test_k2_speech_recognition_iterable_dataset_low_max_frames(k2_cut_set):
-    dataset = K2SpeechRecognitionIterableDataset(
-        k2_cut_set,
-        sampler=SingleCutSampler(k2_cut_set, shuffle=False, max_frames=2)
-    )
-    dloader = DataLoader(dataset, batch_size=None)
+    dataset = K2SpeechRecognitionDataset(k2_cut_set)
+    sampler = SingleCutSampler(k2_cut_set, shuffle=False, max_frames=2)
+    dloader = DataLoader(dataset, sampler=sampler, batch_size=None)
     # Check that it does not crash
     for batch in dloader:
         # There will be only a single item in each batch as we're exceeding the limit each time.
@@ -127,15 +128,15 @@ def k2_noise_cut_set(libri_cut_set):
 
 
 def test_k2_speech_recognition_augmentation(k2_cut_set, k2_noise_cut_set):
-    dataset = K2SpeechRecognitionIterableDataset(
+    dataset = K2SpeechRecognitionDataset(
         k2_cut_set,
-        sampler=SingleCutSampler(k2_cut_set, shuffle=False),
         cut_transforms=[
             CutConcatenate(),
             CutMix(k2_noise_cut_set)
         ]
     )
-    dloader = DataLoader(dataset, batch_size=None)
+    sampler = SingleCutSampler(k2_cut_set, shuffle=False)
+    dloader = DataLoader(dataset, sampler=sampler, batch_size=None)
     # Check that it does not crash by just running all dataloader iterations
     batches = list(dloader)
     assert len(batches) > 0
