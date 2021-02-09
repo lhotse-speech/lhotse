@@ -2,7 +2,6 @@ import random
 from tempfile import NamedTemporaryFile, TemporaryDirectory
 
 import numpy as np
-import soundfile
 
 from lhotse import AudioSource, Cut, CutSet, Fbank, FbankConfig, LilcomFilesWriter, Recording, SupervisionSegment
 from lhotse.utils import Seconds, uuid4
@@ -36,6 +35,7 @@ class RandomCutTestCase:
         self.dirs = []
 
     def with_recording(self, sampling_rate: int, num_samples: int) -> Recording:
+        import soundfile
         f = NamedTemporaryFile('wb', suffix='.wav')
         self.files.append(f)
         duration = num_samples / sampling_rate
