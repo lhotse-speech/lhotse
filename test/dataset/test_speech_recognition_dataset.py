@@ -5,7 +5,7 @@ from torch.utils.data import DataLoader
 from lhotse.cut import CutSet
 from lhotse.dataset.sampling import SingleCutSampler
 from lhotse.dataset.speech_recognition import K2SpeechRecognitionIterableDataset
-from lhotse.dataset.transforms import CutCat, CutMix
+from lhotse.dataset.transforms import CutConcatenate, CutMix
 from lhotse.testing.dummies import DummyManifest
 
 
@@ -31,7 +31,7 @@ def test_k2_speech_recognition_iterable_dataset(k2_cut_set, num_workers):
     dataset = K2SpeechRecognitionIterableDataset(
         k2_cut_set,
         sampler=SingleCutSampler(k2_cut_set, shuffle=False),
-        cut_transforms=[CutCat()]
+        cut_transforms=[CutConcatenate()]
     )
     # Note: "batch_size=None" disables the automatic batching mechanism,
     #       which is required when Dataset takes care of the collation itself.
@@ -53,7 +53,7 @@ def test_k2_speech_recognition_iterable_dataset_multiple_workers(k2_cut_set, num
     dataset = K2SpeechRecognitionIterableDataset(
         k2_cut_set,
         sampler=SingleCutSampler(k2_cut_set, shuffle=False),
-        cut_transforms=[CutCat()]
+        cut_transforms=[CutConcatenate()]
     )
     dloader = DataLoader(dataset, batch_size=None, num_workers=num_workers)
 
@@ -87,7 +87,7 @@ def test_k2_speech_recognition_iterable_dataset_shuffling():
             max_frames=1000
         ),
         cut_transforms=[
-            CutCat(),
+            CutConcatenate(),
         ]
     )
     dloader = DataLoader(dataset, batch_size=None, num_workers=2)
@@ -131,7 +131,7 @@ def test_k2_speech_recognition_augmentation(k2_cut_set, k2_noise_cut_set):
         k2_cut_set,
         sampler=SingleCutSampler(k2_cut_set, shuffle=False),
         cut_transforms=[
-            CutCat(),
+            CutConcatenate(),
             CutMix(k2_noise_cut_set)
         ]
     )

@@ -19,7 +19,22 @@ class CutSampler(ABC):
     Sampling in a CutSampler is intended to be very quick - it only uses the metadata in
     ``CutSet`` manifest to select the cuts, and is not intended to perform any I/O.
 
-    .. note:
+    CutSampler works similarly to PyTorch's DistributedSampler - when :attr:`shuffle=True`,
+    you should call ``sampler.set_epoch(epoch)`` at each new epoch to have a different
+    ordering of returned elements.
+
+    Example usage::
+
+        >>> dataset = K2SpeechRecognitionIterableDataset(
+        ...     cuts,
+        ...     sampler=SingleCutSampler(cuts, world_size=4, local_rank=0)
+        ... )
+        >>> loader = DataLoader(dataset, batch_size=None)
+        >>> for epoch in range(start_epoch, n_epochs):
+        ...     dataset.sampler.set_epoch(epoch)
+        ...     train(loader)
+
+    .. note::
 
         For implementers of new samplers:
         Subclasses of CutSampler are expected to implement ``__next__()`` to introduce specific
@@ -34,6 +49,8 @@ class CutSampler(ABC):
             shuffle: bool = False,
             world_size: int = 1,
             local_rank: int = 0,
+            seed: int = 0,
+            epoch: int = 0
     ) -> None:
         """
 
@@ -45,11 +62,24 @@ class CutSampler(ABC):
             different cuts order.
         :param world_size: Total number of distributed nodes. Set only when using ``DistributedDataParallel``.
         :param local_rank: Index of distributed node. Set only when using ``DistributedDataParallel``.
+        :param seed: Random seed used to consistently shuffle the dataset across different processes.
         """
         self.all_cut_ids = list(cut_ids)
         self.shuffle = shuffle
         self.world_size = world_size
         self.local_rank = local_rank
+        self.seed = seed
+        self.epoch = epoch
+
+    def set_epoch(self, epoch: int) -> None:
+        r"""
+        Sets the epoch for this sampler. When :attr:`shuffle=True`, this ensures all replicas
+        use a different random ordering for each epoch. Otherwise, the next iteration of this
+        sampler will yield the same ordering.
+
+        :param epoch: Epoch number.
+        """
+        self.epoch = epoch
 
     def __iter__(self) -> 'CutSampler':
         """
@@ -60,7 +90,8 @@ class CutSampler(ABC):
         # instantiating this class (typically before dataloader).
         self.cut_ids = partition_cut_ids(self.all_cut_ids, world_size=self.world_size, local_rank=self.local_rank)
         if self.shuffle:
-            random.shuffle(self.cut_ids)
+            r = random.Random(self.seed + self.epoch)
+            r.shuffle(self.cut_ids)
         self.current_idx = 0
         return self
 

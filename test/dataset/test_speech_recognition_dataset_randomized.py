@@ -4,7 +4,7 @@ from hypothesis import strategies as st
 from lhotse import CutSet
 from lhotse.dataset import K2SpeechRecognitionIterableDataset
 from lhotse.dataset.sampling import SingleCutSampler
-from lhotse.dataset.transforms import CutCat
+from lhotse.dataset.transforms import CutConcatenate
 from lhotse.testing.fixtures import RandomCutTestCase
 
 
@@ -58,7 +58,7 @@ class TestCollationRandomized(RandomCutTestCase):
                 shuffle=False,
             ),
             cut_transforms=[
-                CutCat(duration_factor=3.0)
+                CutConcatenate(duration_factor=3.0)
             ],
         )
         ### End of test data preparation ###
