@@ -1,7 +1,7 @@
 import pytest
 
 from lhotse import CutSet
-from lhotse.dataset.sampling import CutPairsSampler, SingleCutSampler
+from lhotse.dataset.sampling import BucketingSampler, CutPairsSampler, SingleCutSampler
 from lhotse.dataset.transforms import concat_cuts
 from lhotse.testing.dummies import DummyManifest, dummy_cut
 
@@ -91,3 +91,71 @@ def test_concat_cuts():
         20.0 + 1.0 + 2.0 + 1.0 + 3.0,  # == 27.0
         10.0 + 1.0 + 4.0 + 1.0 + 5.0,  # == 21.0
     ]
+
+
+def test_bucketing_sampler_single_cuts():
+    cut_set = DummyManifest(CutSet, begin_id=0, end_id=1000)
+    sampler = BucketingSampler(cut_set, sampler_type=SingleCutSampler)
+    cut_ids = []
+    for batch in sampler:
+        cut_ids.extend(batch)
+    assert set(cut_set.ids) == set(cut_ids)
+
+
+def test_bucketing_sampler_shuffle():
+    cut_set = DummyManifest(CutSet, begin_id=0, end_id=1000)
+    sampler = BucketingSampler(cut_set, sampler_type=SingleCutSampler, shuffle=True)
+
+    sampler.set_epoch(0)
+    cut_ids_ep0 = []
+    for batch in sampler:
+        cut_ids_ep0.extend(batch)
+    assert set(cut_set.ids) == set(cut_ids_ep0)
+
+    sampler.set_epoch(0)
+    cut_ids_ep1 = []
+    for batch in sampler:
+        cut_ids_ep1.extend(batch)
+    assert set(cut_set.ids) == set(cut_ids_ep1)
+
+    # Ordering is different in different epochs
+    assert cut_ids_ep0 != cut_ids_ep1
+
+
+def test_bucketing_sampler_cut_pairs():
+    cut_set1 = DummyManifest(CutSet, begin_id=0, end_id=1000)
+    cut_set2 = DummyManifest(CutSet, begin_id=0, end_id=1000)
+    sampler = BucketingSampler(cut_set1, cut_set2, sampler_type=CutPairsSampler)
+
+    cut_ids = []
+    for batch in sampler:
+        cut_ids.extend(batch)
+    assert set(cut_set1.ids) == set(cut_ids)
+    assert set(cut_set2.ids) == set(cut_ids)
+
+
+def test_bucketing_sampler_buckets_have_different_durations():
+    cut_set_1s = DummyManifest(CutSet, begin_id=0, end_id=10)
+    cut_set_2s = DummyManifest(CutSet, begin_id=10, end_id=20)
+    for c in cut_set_2s:
+        c.duration = 2.0
+    cut_set = cut_set_1s + cut_set_2s
+
+    # The bucketing sampler should return 5 batches with two 1s cuts, and 10 batches with one 2s cut.
+    sampler = BucketingSampler(
+        cut_set,
+        sampler_type=SingleCutSampler,
+        max_frames=200,
+        num_buckets=2
+    )
+    batches = list(sampler)
+    assert len(batches) == 15
+
+    # All cuts have the same durations (i.e. are from the same bucket in this case)
+    for batch in batches:
+        batch_durs = [cut_set[cid].duration for cid in batch]
+        assert all(d == batch_durs[0] for d in batch_durs)
+
+    batches = sorted(batches, key=len)
+    assert all(len(b) == 1 for b in batches[:10])
+    assert all(len(b) == 2 for b in batches[10:])
