@@ -1338,7 +1338,9 @@ class CutSet(JsonMixin, YamlMixin, Sequence[AnyCut]):
 
     def subset(
             self,
+            *,  # only keyword arguments allowed
             supervision_ids: Optional[Iterable[str]] = None,
+            cut_ids: Optional[Iterable[str]] = None,
             first: Optional[int] = None,
             last: Optional[int] = None
     ) -> 'CutSet':
@@ -1351,12 +1353,13 @@ class CutSet(JsonMixin, YamlMixin, Sequence[AnyCut]):
             >>> train_set = cuts.subset(supervision_ids=train_ids)
             >>> test_set = cuts.subset(supervision_ids=test_ids)
 
-        :param supervision_ids: List of ``supervision_ids`` to keep.
+        :param supervision_ids: List of supervision IDs to keep.
+        :param cut_ids: List of cut IDs to keep.
         :param first: int, the number of first cuts to keep.
         :param last: int, the number of last cuts to keep.
         :return: a new ``CutSet`` with the subset results.
         """
-        assert exactly_one_not_null(supervision_ids, first, last), "subset() can handle only one non-None arg."
+        assert exactly_one_not_null(supervision_ids, cut_ids, first, last), "subset() can handle only one non-None arg."
 
         if first is not None:
             assert first > 0
@@ -1380,6 +1383,10 @@ class CutSet(JsonMixin, YamlMixin, Sequence[AnyCut]):
                 cut.filter_supervisions(lambda s: s.id in supervision_ids) for cut in self
                 if any(s.id in supervision_ids for s in cut.supervisions)
             )
+
+        if cut_ids is not None:
+            cut_ids = set(cut_ids)
+            return CutSet.from_cuts(self[cid] for cid in cut_ids)
 
     def filter_supervisions(self, predicate: Callable[[SupervisionSegment], bool]) -> 'CutSet':
         """

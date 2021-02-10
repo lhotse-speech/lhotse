@@ -1,8 +1,11 @@
 from hypothesis import given, settings
 from hypothesis import strategies as st
+from torch.utils.data import DataLoader
 
 from lhotse import CutSet
-from lhotse.dataset import K2SpeechRecognitionIterableDataset
+from lhotse.dataset import K2SpeechRecognitionDataset
+from lhotse.dataset.sampling import SingleCutSampler
+from lhotse.dataset.transforms import CutConcatenate
 from lhotse.testing.fixtures import RandomCutTestCase
 
 
@@ -48,15 +51,21 @@ class TestCollationRandomized(RandomCutTestCase):
             ) for idx, (lhs, rhs) in enumerate(zip(cuts, cuts[1:]))
         )
         # Create an ASR dataset
-        dataset = K2SpeechRecognitionIterableDataset(
+        dataset = K2SpeechRecognitionDataset(
             mixed_cuts,
             return_cuts=True,
-            concat_cuts=True,
-            concat_cuts_duration_factor=3.0
+            cut_transforms=[
+                CutConcatenate(duration_factor=3.0)
+            ],
         )
+        sampler = SingleCutSampler(
+            mixed_cuts,
+            shuffle=False,
+        )
+        dloader = DataLoader(dataset, batch_size=None, sampler=sampler)
         ### End of test data preparation ###
         # Test the invariants
-        for batch in dataset:
+        for batch in dloader:
             sups = batch['supervisions']
             cuts = sups['cut']
             for idx, cut in enumerate(cuts):
