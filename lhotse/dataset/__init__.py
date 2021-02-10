@@ -1,5 +1,5 @@
 from .diarization import DiarizationDataset
-from .sampling import CutPairsSampler, SingleCutSampler
+from .sampling import (BucketingSampler, CutPairsSampler, SingleCutSampler)
 from .source_separation import (
     DynamicallyMixedSourceSeparationDataset,
     PreMixedSourceSeparationDataset,
