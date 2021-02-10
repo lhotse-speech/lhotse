@@ -349,7 +349,7 @@ class BucketingSampler(CutSampler):
         ]
         # zip(*buckets) does:
         # [(cs0_0, cs1_0, cs2_0), (cs0_1, cs1_1, cs2_1)] -> [(cs0_0, cs0_1), (cs1_0, cs1_1), (cs2_0, cs2_1)]
-        self.buckets = zip(*buckets)
+        self.buckets = list(zip(*buckets))
         self.bucket_samplers = [
             sampler_type(*bucket_cut_sets, **kwargs)
             for bucket_cut_sets in self.buckets
@@ -363,6 +363,7 @@ class BucketingSampler(CutSampler):
     def __iter__(self) -> 'BucketingSampler':
         for b in self.bucket_samplers:
             iter(b)
+        self.depleted = [False] * self.num_buckets
         return self
 
     def __next__(self) -> List[str]:
