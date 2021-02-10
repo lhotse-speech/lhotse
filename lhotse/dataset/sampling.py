@@ -405,8 +405,7 @@ def partition_cut_ids(
 
     # First, split depending on the world_size and rank.
     if world_size == 1:
-        partition_start = 0
-        partition_end = len(data_source)
+        return data_source
     else:
         # Distributed training is active - split full dataset into a subset.
         total = len(data_source)

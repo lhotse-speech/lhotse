@@ -103,23 +103,25 @@ def test_bucketing_sampler_single_cuts():
 
 
 def test_bucketing_sampler_shuffle():
-    cut_set = DummyManifest(CutSet, begin_id=0, end_id=1000)
-    sampler = BucketingSampler(cut_set, sampler_type=SingleCutSampler, shuffle=True)
+    cut_set = DummyManifest(CutSet, begin_id=0, end_id=10)
+    sampler = BucketingSampler(cut_set, sampler_type=SingleCutSampler, shuffle=True, num_buckets=2, max_frames=200)
 
     sampler.set_epoch(0)
-    cut_ids_ep0 = []
+    batches_ep0 = []
     for batch in sampler:
-        cut_ids_ep0.extend(batch)
-    assert set(cut_set.ids) == set(cut_ids_ep0)
+        # Convert List[str] to Tuple[str, ...] so that it's hashable
+        batches_ep0.append(tuple(batch))
+    assert set(cut_set.ids) == set(cid for batch in batches_ep0 for cid in batch)
 
-    sampler.set_epoch(0)
-    cut_ids_ep1 = []
+    sampler.set_epoch(1)
+    batches_ep1 = []
     for batch in sampler:
-        cut_ids_ep1.extend(batch)
-    assert set(cut_set.ids) == set(cut_ids_ep1)
+        batches_ep1.append(tuple(batch))
+    assert set(cut_set.ids) == set(cid for batch in batches_ep1 for cid in batch)
 
-    # Ordering is different in different epochs
-    assert cut_ids_ep0 != cut_ids_ep1
+    # BucketingSampler ordering may be different in different epochs (=> use set() to make it irrelevant)
+    # Internal sampler (SingleCutSampler) ordering should be different in different epochs
+    assert set(batches_ep0) != set(batches_ep1)
 
 
 def test_bucketing_sampler_cut_pairs():
