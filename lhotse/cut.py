@@ -1481,8 +1481,17 @@ class CutSet(JsonMixin, YamlMixin, Sequence[AnyCut]):
         return CutSet.from_cuts(mix_cuts(cuts) for cuts in groups.values())
 
     def sort_by_duration(self, ascending: bool = False) -> 'CutSet':
-        """Sort the CutSet according to cuts duration. Descending by default."""
+        """
+        Sort the CutSet according to cuts duration and return the result. Descending by default.
+        """
         return CutSet.from_cuts(sorted(self, key=(lambda cut: cut.duration), reverse=not ascending))
+
+    def sort_like(self, other: 'CutSet') -> 'CutSet':
+        """
+        Sort the CutSet according to the order of cut IDs in ``other`` and return the result.
+        """
+        assert set(self.ids) == set(other.ids), "sort_like() expects both CutSet's to have identical cut IDs."
+        return CutSet.from_cuts(self[cid] for cid in other.ids)
 
     def index_supervisions(self, index_mixed_tracks: bool = False) -> Dict[str, IntervalTree]:
         """

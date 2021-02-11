@@ -2,7 +2,7 @@ import logging
 import random
 import warnings
 from math import ceil
-from typing import Iterable, List, Optional
+from typing import Iterable, List, Optional, Type
 
 import torch.distributed as dist
 from torch.utils.data import Sampler
@@ -288,6 +288,106 @@ class CutPairsSampler(CutSampler):
         return cut_ids
 
 
+class BucketingSampler(CutSampler):
+    """
+    Sorts the cuts in a :class:`CutSet` by their duration and puts them into similar duration buckets.
+    For each bucket, it instantiates a simpler sampler instance, e.g. :class:`SingleCutSampler`.
+
+    It behaves like an iterable that yields lists of strings (cut IDs).
+    During iteration, it randomly selects one of the buckets to yield the batch from,
+    until all the underlying samplers are depleted (which means it's the end of an epoch).
+
+    Examples:
+
+    Bucketing sampler with 20 buckets, sampling single cuts::
+
+        >>> sampler = BucketingSampler(
+        ...    cuts,
+        ...    # BucketingSampler specific args
+        ...    sampler_type=SingleCutSampler, num_buckets=20,
+        ...    # Args passed into SingleCutSampler
+        ...    max_frames=20000
+        ... )
+
+    Bucketing sampler with 20 buckets, sampling pairs of source-target cuts::
+
+        >>> sampler = BucketingSampler(
+        ...    cuts, target_cuts,
+        ...    # BucketingSampler specific args
+        ...    sampler_type=CutPairsSampler, num_buckets=20,
+        ...    # Args passed into CutPairsSampler
+        ...    max_source_frames=20000, max_target_frames=15000
+        ... )
+    """
+
+    def __init__(
+            self,
+            *cuts: CutSet,
+            sampler_type: Type = SingleCutSampler,
+            num_buckets: int = 10,
+            **kwargs
+    ):
+        """
+        BucketingSampler's constructor.
+
+        :param cuts: one or more ``CutSet`` objects.
+            The first one will be used to determine the buckets for all of them.
+            Then, all of them will be used to instantiate the per-bucket samplers.
+        :param sampler_type: a sampler type that will be created for each underlying bucket.
+        :param num_buckets: how many buckets to create.
+        :param kwargs: Arguments used to create the underlying sampler for each bucket.
+        """
+        # Do not use the distributed capacities of the CutSampler in the top-level sampler.
+        super().__init__(cuts[0].ids, world_size=1, rank=0)
+        self.num_buckets = num_buckets
+        self.sampler_type = sampler_type
+        self.sampler_kwargs = kwargs
+        self.cut_sets = cuts
+        first_cut_set = cuts[0].sort_by_duration()
+        buckets = [
+            cs.sort_like(first_cut_set).split(num_buckets) for cs in self.cut_sets
+        ]
+        # zip(*buckets) does:
+        # [(cs0_0, cs1_0, cs2_0), (cs0_1, cs1_1, cs2_1)] -> [(cs0_0, cs0_1), (cs1_0, cs1_1), (cs2_0, cs2_1)]
+        self.buckets = list(zip(*buckets))
+        self.bucket_samplers = [
+            sampler_type(*bucket_cut_sets, **kwargs)
+            for bucket_cut_sets in self.buckets
+        ]
+        self.depleted = [False] * num_buckets
+
+    def set_epoch(self, epoch: int) -> None:
+        for s in self.bucket_samplers:
+            s.set_epoch(epoch)
+
+    def __iter__(self) -> 'BucketingSampler':
+        for b in self.bucket_samplers:
+            iter(b)
+        self.depleted = [False] * self.num_buckets
+        return self
+
+    def __next__(self) -> List[str]:
+        while not self.is_depleted:
+            idx, sampler = random.choice(self._nondepleted_samplers_with_idxs)
+            try:
+                return next(sampler)
+            except StopIteration:
+                self.depleted[idx] = True
+        raise StopIteration()
+
+    @property
+    def is_depleted(self) -> bool:
+        return all(self.depleted)
+
+    @property
+    def _nondepleted_samplers_with_idxs(self):
+        return [
+            (idx, bs) for idx, (bs, depleted) in
+            enumerate(zip(self.bucket_samplers, self.depleted))
+            if not depleted
+        ]
+
+
 def partition_cut_ids(
         data_source: List[str],
         world_size: int = 1,
@@ -305,8 +405,7 @@ def partition_cut_ids(
 
     # First, split depending on the world_size and rank.
     if world_size == 1:
-        partition_start = 0
-        partition_end = len(data_source)
+        return data_source
     else:
         # Distributed training is active - split full dataset into a subset.
         total = len(data_source)
