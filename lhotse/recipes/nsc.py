@@ -90,7 +90,9 @@ def prepare_same_close_mic(part3_path):
                         id=f'{recording_id}-{idx}',
                         recording_id=recording_id,
                         start=segment.xmin,
-                        duration=round(segment.xmax - segment.xmin, ndigits=8),
+                        # We're trimming the last segment's duration as it exceeds the actual duration of the recording.
+                        # This is safe because if we end up with a zero/negative duration, the validation will catch it.
+                        duration=min(round(segment.xmax - segment.xmin, ndigits=8), recording.duration - segment.xmin),
                         text=segment.text,
                         language='Singaporean English',
                         speaker=recording_id,
@@ -131,7 +133,9 @@ def prepare_separate_phone_mic(part3_path):
                         id=f'{recording_id}-{idx}',
                         recording_id=recording_id,
                         start=segment.xmin,
-                        duration=round(segment.xmax - segment.xmin, ndigits=8),
+                        # We're trimming the last segment's duration as it exceeds the actual duration of the recording.
+                        # This is safe because if we end up with a zero/negative duration, the validation will catch it.
+                        duration=min(round(segment.xmax - segment.xmin, ndigits=8), recording.duration - segment.xmin),
                         text=segment.text,
                         language='Singaporean English',
                         speaker=recording_id,
