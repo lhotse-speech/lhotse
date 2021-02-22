@@ -87,7 +87,8 @@ def collate_vectors(
     :param tensors: an iterable of 1-D tensors.
     :param padding_value: the padding value inserted to make all tensors have the same length.
     :param matching_shapes: when ``True``, will fail when input tensors have different shapes.
-    :return: a tensor with shape ``(B, L)`` where ``B`` is the number of input tensors and ``L`` is the number of items in the longest tensor.
+    :return: a tensor with shape ``(B, L)`` where ``B`` is the number of input tensors and
+        ``L`` is the number of items in the longest tensor.
     """
     tensors = [t if isinstance(t, torch.Tensor) else torch.from_numpy(t) for t in tensors]
     assert all(len(t.shape) == 1 for t in tensors), "Expected only 1-D input tensors."
