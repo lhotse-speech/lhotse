@@ -1,17 +1,13 @@
-from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, Iterable
 
 import torch
-from torch.utils.data import Dataset
 
 from lhotse import validate
 from lhotse.cut import CutSet
-from lhotse.utils import Pathlike
-
-EPS = 1e-8
+from lhotse.dataset.collation import collate_audio, collate_features
 
 
-class SpeechSynthesisDataset(Dataset):
+class SpeechSynthesisDataset(torch.utils.data.Dataset):
     """
     The PyTorch Dataset for the speech synthesis task.
     Each item in this dataset is a dict of:
@@ -19,49 +15,38 @@ class SpeechSynthesisDataset(Dataset):
     .. code-block::
 
         {
-            'audio': (1 x NumSamples) tensor
-            'features': (NumFrames x NumFeatures) tensor
-            'tokens': list of characters
+            'audio': (B x NumSamples) tensor
+            'features': (B x NumFrames x NumFeatures) tensor
+            'tokens': list of lists of characters (str)
         }
     """
 
-    def __init__(
-            self,
-            cuts: CutSet,
-            root_dir: Optional[Pathlike] = None
-    ):
+    def __init__(self, cuts: CutSet) -> None:
         super().__init__()
         validate(cuts)
         self.cuts = cuts
-        self.root_dir = Path(root_dir) if root_dir else None
-        self.cut_ids = list(self.cuts.ids)
 
         # generate tokens from text
-        self.id_to_token = {}
-        self.token_set = set()
+        self.cut_id_to_token = {}
+        self.tokens = set()
         for cut in cuts:
             assert len(cut.supervisions) == 1, 'Only the Cuts with single supervision are supported.'
             characters = list(cut.supervisions[0].text)
-            self.token_set.update(set(characters))
-            self.id_to_token[cut.id] = characters
-        self.token_set = sorted(list(self.tokens))
+            self.tokens.update(set(characters))
+            self.cut_id_to_token[cut.id] = characters
+        self.tokens = sorted(list(self.tokens))
 
-    def __getitem__(self, idx: int) -> Dict[str, torch.Tensor]:
-        cut_id = self.cut_ids[idx]
-        cut = self.cuts[cut_id]
+    def __getitem__(self, cut_ids: Iterable[str]) -> Dict[str, torch.Tensor]:
+        cuts = self.cuts.subset(cut_ids=cut_ids)
 
-        features = torch.from_numpy(cut.load_features())
-        audio = torch.from_numpy(cut.load_audio())
-        assert cut.id in self.id_to_token
+        features = collate_features(cuts)
+        audio = collate_audio(cuts)
         return {
             'audio': audio,
             'features': features,
-            'tokens': self.id_to_token[cut.id]
+            # TODO: consider extending the dataset to create a collated tensor of integer token IDs
+            'tokens': [self.cut_id_to_token[cut.id] for cut in cuts]
         }
 
     def __len__(self) -> int:
         return len(self.cut_ids)
-
-    @property
-    def tokens(self) -> List[str]:
-        return self.token_set
