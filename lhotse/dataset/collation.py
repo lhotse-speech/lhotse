@@ -1,4 +1,8 @@
+from typing import Iterable, Union
+
+import numpy as np
 import torch
+from torch.nn import CrossEntropyLoss
 
 from lhotse import CutSet
 from lhotse.cut import MixedCut
@@ -69,6 +73,27 @@ def collate_multi_channel_audio(cuts: CutSet) -> torch.Tensor:
     for idx, cut in enumerate(cuts):
         audio[idx] = torch.from_numpy(cut.load_audio())
     return audio
+
+
+def collate_vectors(
+        tensors: Iterable[Union[torch.Tensor, np.ndarray]],
+        padding_value: int = CrossEntropyLoss().ignore_index
+) -> torch.Tensor:
+    """
+    Convert an iterable of 1-D tensors (of possibly various lengths)
+    into a single stacked tensor.
+
+    :param tensors: an iterable of 1-D tensors.
+    :param padding_value: the padding value inserted to make all tensors have the same length.
+    :return: a tensor with shape ``(B, L)`` where ``B`` is the number of input tensors and ``L`` is the number of items in the longest tensor.
+    """
+    tensors = [t if isinstance(t, torch.Tensor) else torch.from_numpy(t) for t in tensors]
+    assert all(len(t.shape) == 1 for t in tensors), "Expected only 1-D input tensors."
+    longest = max(tensors, key=len)
+    result = longest.new_ones(len(tensors), longest.shape[0]) * padding_value
+    for i, t in enumerate(tensors):
+        result[i, :t.shape[0]] = t
+    return result
 
 
 def maybe_pad(cuts: CutSet) -> CutSet:

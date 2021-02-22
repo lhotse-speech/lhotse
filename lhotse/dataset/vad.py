@@ -1,16 +1,13 @@
-from math import isclose
-from typing import Dict
+from typing import Dict, Iterable
 
 import torch
-from torch.utils.data import Dataset
 
 from lhotse import validate
 from lhotse.cut import CutSet
+from lhotse.dataset.collation import collate_features, collate_vectors
 
-EPS = 1e-8
 
-
-class VadDataset(Dataset):
+class VadDataset(torch.utils.data.Dataset):
     """
     The PyTorch Dataset for the voice activity detection task.
     Each item in this dataset is a dict of:
@@ -20,32 +17,22 @@ class VadDataset(Dataset):
         {
             'features': (T x F) tensor
             'is_voice': (T x 1) tensor
+            'cut': List[Cut]
         }
     """
 
-    def __init__(
-            self,
-            cuts: CutSet,
-    ):
+    def __init__(self, cuts: CutSet) -> None:
         super().__init__()
         validate(cuts)
         self.cuts = cuts
-        self.cut_ids = list(cuts.ids)
 
-    def __getitem__(self, idx: int) -> Dict[str, torch.Tensor]:
-        cut_id = self.cut_ids[idx]
-        cut = self.cuts[cut_id]
-
-        features = torch.from_numpy(cut.load_features())
-        assert features.shape[0] == cut.num_frames
-        assert isclose(cut.num_frames * cut.frame_shift, cut.duration)
-
-        is_voice = torch.from_numpy(cut.supervisions_feature_mask())
-
+    def __getitem__(self, cut_ids: Iterable[str]) -> Dict[str, torch.Tensor]:
+        cuts = self.cuts.subset(cut_ids=cut_ids).sort_by_duration()
         return {
-            'features': features,
-            'is_voice': is_voice
+            'features': collate_features(cuts),
+            'is_voice': collate_vectors(c.supervisions_feature_mask() for c in cuts),
+            'cut': cuts
         }
 
     def __len__(self) -> int:
-        return len(self.cut_ids)
+        return len(self.cuts)

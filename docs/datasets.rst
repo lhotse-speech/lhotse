@@ -62,3 +62,9 @@ Sampler's list
 
 .. automodule:: lhotse.dataset.sampling
   :members:
+
+
+Collation utilities for building custom Datasets
+------------------------------------------------
+
+.. automodule:: lhotse.dataset.collation
