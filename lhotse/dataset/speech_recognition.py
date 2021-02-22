@@ -71,7 +71,7 @@ class K2SpeechRecognitionDataset(torch.utils.data.Dataset):
         self.cuts = cuts
         self.return_cuts = return_cuts
         self.cut_transforms = cut_transforms if cut_transforms is not None else ()
-        self.extra_supervision_fn = extra_supervision_fn if extra_supervision_fn is not None else ()
+        self.extra_supervision_fn = extra_supervision_fn
         self._validate()
 
     def __len__(self) -> int:
