@@ -73,8 +73,9 @@ A short snippet to show how Lhotse can make audio data prepartion quick and easy
 
 .. code-block::
 
+    from torch.utils.data import DataLoader
     from lhotse import CutSet, Fbank
-    from lhotse.dataset import VadDataset
+    from lhotse.dataset import VadDataset, SingleCutSampler
     from lhotse.recipes import prepare_switchboard
 
     # Prepare data manifests from a raw corpus distribution.
@@ -104,9 +105,11 @@ A short snippet to show how Lhotse can make audio data prepartion quick and easy
 
     # Construct a Pytorch Dataset class for Voice Activity Detection task:
     dataset = VadDataset(cuts)
-    dataset[0]
+    sampler = SingleCutSampler(cuts)
+    dataloader = DataLoader(dataset, sampler=sampler, batch_size=None)
+    batch = next(iter(dataloader))
 
-The ``VadDataset`` will yield a pair of input and supervision tensors such as the following -
+The ``VadDataset`` will yield a batch with pairs of feature and supervision tensors such as the following -
 the speech starts roughly at the first second (100 frames):
 
 .. image:: vad_sample.png

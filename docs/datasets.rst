@@ -33,6 +33,22 @@ Another strategy — used in :class:`~lhotse.dataset.sampling.BucketingSampler` 
 
 For tasks where both input and output of the model are speech utterances, we can use the :class:`~lhotse.dataset.sampling.CutPairsSampler`, which accepts two :class:`~lhotse.cut.CutSet`'s and will match the cuts in them by their IDs.
 
+A typical Lhotse's dataset API usage might look like this:
+
+.. code-block::
+
+    from torch.utils.data import DataLoader
+    from lhotse.dataset import SpeechRecognitionDataset, SingleCutSampler
+
+    cuts = CutSet(...)
+    dset = SpeechRecognitionDataset(cuts)
+    sampler = SingleCutSampler(cuts, max_frames=50000)
+    # Dataset performs batching by itself, so we have to indicate that
+    # to the DataLoader with batch_size=None
+    dloader = DataLoader(dset, sampler=sampler, batch_size=None, num_workers=1)
+    for batch in dloader:
+        ...  # process data
+
 Dataset's list
 --------------
 
