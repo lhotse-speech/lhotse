@@ -1,4 +1,4 @@
-from typing import Callable, Dict, List, Union
+from typing import Any, Callable, Dict, List, Optional, Union
 
 import torch
 from torch.utils.data.dataloader import DataLoader, default_collate
@@ -50,7 +50,8 @@ class K2SpeechRecognitionDataset(torch.utils.data.Dataset):
             self,
             cuts: CutSet,
             return_cuts: bool = False,
-            cut_transforms: List[Callable[[CutSet], CutSet]] = None
+            cut_transforms: List[Callable[[CutSet], CutSet]] = None,
+            extra_supervision_fn: Optional[Callable[[CutSet], Dict[str, Any]]] = None
     ):
         """
         K2 ASR IterableDataset constructor.
@@ -60,12 +61,17 @@ class K2SpeechRecognitionDataset(torch.utils.data.Dataset):
             objects used to create that batch.
         :param cut_transforms: A list of transforms to be applied on each sampled batch
             (e.g. cut concatenation, noise cuts mixing, etc.).
+        :param extra_supervision_fn: A transform that accepts the whole CutSet and
+            returns a dict that should be merged with the batch dict.
+            It is intended primarily as a hook for K2 to be able to create FSA objects
+            in the dataloader processes, without introducing a dependency on K2.
         """
         super().__init__()
         # Initialize the fields
         self.cuts = cuts
         self.return_cuts = return_cuts
         self.cut_transforms = cut_transforms if cut_transforms is not None else ()
+        self.extra_supervision_fn = extra_supervision_fn if extra_supervision_fn is not None else ()
         self._validate()
 
     def __len__(self) -> int:
@@ -112,7 +118,8 @@ class K2SpeechRecognitionDataset(torch.utils.data.Dataset):
         }
         if self.return_cuts:
             batch['supervisions']['cut'] = [cut for cut in cuts for sup in cut.supervisions]
-
+        if self.extra_supervision_fn is not None:
+            batch.update(self.extra_supervision_fn(cuts))
         return batch
 
     def _validate(self) -> None:
