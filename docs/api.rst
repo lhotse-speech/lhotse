@@ -3,41 +3,6 @@ API Reference
 
 This page contains a comprehensive list of all classes and functions within `lhotse`.
 
-Datasets
---------
-
-PyTorch Dataset wrappers for common tasks.
-
-Speech Recognition
-******************
-
-.. automodule:: lhotse.dataset.speech_recognition
-  :members:
-
-Source Separation
-*****************
-
-.. automodule:: lhotse.dataset.source_separation
-  :members:
-
-Unsupervised
-************
-
-.. automodule:: lhotse.dataset.unsupervised
-  :members:
-
-Voice Activity Detection
-************************
-
-.. automodule:: lhotse.dataset.vad
-  :members:
-
-Diarization (experimental)
-**************************
-
-.. automodule:: lhotse.dataset.diarization
-  :members:
-
 Recording manifests
 -------------------
 
