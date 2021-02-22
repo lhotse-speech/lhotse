@@ -216,6 +216,7 @@ For example:
 It is also possible to extract the features directly from :class:`CutSet` - see below:
 
 .. autofunction:: lhotse.cut.CutSet.compute_and_store_features
+  :noindex:
 
 CLI usage
 *********

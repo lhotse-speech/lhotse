@@ -16,7 +16,7 @@ def cut_set():
                 "channels": 0,
                 "duration": 16.04,
                 "frame_shift": 0.01,
-                "num_features": 23,
+                "num_features": 40,
                 "num_frames": 1604,
                 "recording_id": "recording-1",
                 "sampling_rate": 16000,
@@ -59,11 +59,13 @@ def cut_set():
 
 
 def test_diarization_dataset(cut_set):
+    ids = cut_set.ids
     dataset = DiarizationDataset(cut_set)
-    example = dataset[0]
-    assert 'features' in example
+    example = dataset[ids]
+    assert example['features'].shape == (1, 1000, 40)
 
-    sa = example['speaker_activity']
+    assert example['speaker_activity'].shape == (1, 4, 1000)
+    sa = example['speaker_activity'][0]
     # Supervision s1
     assert (sa[0, :300] == 1).all()
     assert (sa[0, 300:] == 0).all()

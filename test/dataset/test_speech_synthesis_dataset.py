@@ -10,8 +10,9 @@ def cut_set():
 
 
 def test_speech_synthesis_dataset(cut_set):
+    ids = cut_set.ids
     dataset = SpeechSynthesisDataset(cut_set)
-    example = dataset[0]
+    example = dataset[ids]
     assert example['audio'].shape[1] > 0
-    assert example['features'].shape[0] > 0
-    assert len(example['tokens']) > 0
+    assert example['features'].shape[1] > 0
+    assert len(example['tokens'][0]) > 0
