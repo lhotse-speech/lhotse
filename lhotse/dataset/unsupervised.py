@@ -1,36 +1,34 @@
-from typing import Optional
+from typing import Iterable, Optional
 
 import torch
-from torch.utils.data import Dataset
 
 from lhotse import validate
 from lhotse.augmentation import AugmentFn
 from lhotse.cut import CutSet
+from lhotse.dataset.collation import collate_audio, collate_features, collate_matrices
 from lhotse.features import FeatureExtractor
 
 
-class UnsupervisedDataset(Dataset):
+class UnsupervisedDataset(torch.utils.data.Dataset):
     """
     Dataset that contains no supervision - it only provides the features extracted from recordings.
     The returned features are a :class:`torch.Tensor` of shape ``(T x F)``, where T is the number of frames,
     and F is the feature dimension.
     """
 
-    def __init__(self, cuts: CutSet):
+    def __init__(self, cuts: CutSet) -> None:
         super().__init__()
         self.cuts = cuts
-        self.cut_ids = list(cuts.ids)
         self._validate()
 
-    def __getitem__(self, item: int) -> torch.Tensor:
-        cut = self.cuts[self.cut_ids[item]]
-        feats = cut.load_features()
-        return torch.from_numpy(feats)
+    def __getitem__(self, cut_ids: Iterable[str]) -> torch.Tensor:
+        cuts = self.cuts.subset(cut_ids=cut_ids)
+        return collate_features(cuts)
 
     def __len__(self):
         return len(self.cuts)
 
-    def _validate(self):
+    def _validate(self) -> None:
         validate(self.cuts)
         assert all(cut.has_features for cut in self.cuts)
 
@@ -42,12 +40,11 @@ class UnsupervisedWaveformDataset(UnsupervisedDataset):
     In this implemenation, there will always be a single channel.
     """
 
-    def __getitem__(self, item: int) -> torch.Tensor:
-        cut = self.cuts[self.cut_ids[item]]
-        audio = cut.load_audio()
-        return torch.from_numpy(audio)
+    def __getitem__(self, cut_ids: Iterable[str]) -> torch.Tensor:
+        cuts = self.cuts.subset(cut_ids=cut_ids)
+        return collate_audio(cuts)
 
-    def _validate(self):
+    def _validate(self) -> None:
         validate(self.cuts)
         assert all(cut.has_recording for cut in self.cuts)
 
@@ -72,13 +69,15 @@ class DynamicUnsupervisedDataset(UnsupervisedDataset):
         self.feature_extractor = feature_extractor
         self.augment_fn = augment_fn
 
-    def __getitem__(self, item: int) -> torch.Tensor:
-        cut = self.cuts[self.cut_ids[item]]
-        features = cut.compute_features(
-            extractor=self.feature_extractor,
-            augment_fn=self.augment_fn,
+    def __getitem__(self, cut_ids: Iterable[str]) -> torch.Tensor:
+        cuts = self.cuts.subset(cut_ids=cut_ids)
+        features = collate_matrices(
+            cut.compute_features(
+                extractor=self.feature_extractor,
+                augment_fn=self.augment_fn,
+            ) for cut in cuts
         )
-        return torch.from_numpy(features)
+        return features
 
     def _validate(self):
         validate(self.cuts)
