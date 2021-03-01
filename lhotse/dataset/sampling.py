@@ -10,6 +10,23 @@ from torch.utils.data import Sampler
 from lhotse import CutSet
 
 
+class DataSource:
+    def __init__(self, items):
+        self._items = items
+        self._permutation = list(range(len(self._items)))
+
+    def shuffle(self, seed):
+        r = random.Random(seed)
+        self._permutation = list(range(len(self._items)))
+        r.shuffle(self._permutation)
+
+    def __getitem__(self, idx):
+        return self._items[self._permutation[idx]]
+
+    def __len__(self):
+        return len(self._items)
+
+
 class CutSampler(Sampler[List[str]]):
     """
     CutSampler is responsible for collecting batches of cuts, given specified criteria.
@@ -67,8 +84,13 @@ class CutSampler(Sampler[List[str]]):
         self.shuffle = shuffle
         self.seed = seed
         self.epoch = 0
+
         self._maybe_init_distributed(world_size=world_size, rank=rank)
-        self.data_source = partition_cut_ids(self.full_data_source, world_size=self.world_size, rank=self.rank)
+        self.data_source = DataSource(
+            partition_cut_ids(self.full_data_source, world_size=self.world_size, rank=self.rank)
+        )
+
+        self.num_batches = None
 
     def _maybe_init_distributed(self, world_size: Optional[int], rank: Optional[int]):
         try:
@@ -105,19 +127,21 @@ class CutSampler(Sampler[List[str]]):
         :param epoch: Epoch number.
         """
         self.epoch = epoch
-
-    def __len__(self) -> int:
-        return len(self.data_source)
+        self.num_batches = None
 
     def __iter__(self) -> 'CutSampler':
         """
         Prepare the dataset for iterating over a new epoch. Will shuffle the data if requested.
         """
         if self.shuffle:
-            r = random.Random(self.seed + self.epoch)
-            r.shuffle(self.data_source)
+            self.data_source.shuffle(self.seed + self.epoch)
         self.current_idx = 0
         return self
+
+    def __len__(self) -> int:
+        if self.num_batches is None:
+            self.num_batches = sum(1 for item in self)
+        return self.num_batches
 
     def __next__(self) -> List[str]:
         raise NotImplemented
@@ -325,6 +349,7 @@ class BucketingSampler(CutSampler):
             *cuts: CutSet,
             sampler_type: Type = SingleCutSampler,
             num_buckets: int = 10,
+            seed: int = 0,
             **kwargs
     ):
         """
@@ -335,10 +360,11 @@ class BucketingSampler(CutSampler):
             Then, all of them will be used to instantiate the per-bucket samplers.
         :param sampler_type: a sampler type that will be created for each underlying bucket.
         :param num_buckets: how many buckets to create.
+        :param seed: random seed for bucket selection
         :param kwargs: Arguments used to create the underlying sampler for each bucket.
         """
         # Do not use the distributed capacities of the CutSampler in the top-level sampler.
-        super().__init__(cuts[0].ids, world_size=1, rank=0)
+        super().__init__(cuts[0].ids, world_size=1, rank=0, seed=seed)
         self.num_buckets = num_buckets
         self.sampler_type = sampler_type
         self.sampler_kwargs = kwargs
@@ -359,6 +385,7 @@ class BucketingSampler(CutSampler):
     def set_epoch(self, epoch: int) -> None:
         for s in self.bucket_samplers:
             s.set_epoch(epoch)
+        super().set_epoch(epoch)
 
     def __iter__(self) -> 'BucketingSampler':
         for b in self.bucket_samplers:
@@ -367,6 +394,7 @@ class BucketingSampler(CutSampler):
         return self
 
     def __next__(self) -> List[str]:
+        random.seed(self.seed + self.epoch)
         while not self.is_depleted:
             idx, sampler = random.choice(self._nondepleted_samplers_with_idxs)
             try:
@@ -374,6 +402,14 @@ class BucketingSampler(CutSampler):
             except StopIteration:
                 self.depleted[idx] = True
         raise StopIteration()
+
+    def __len__(self):
+        if self.num_batches is None:
+            self.num_batches = sum(
+                len(sampler)
+                for sampler in self.bucket_samplers
+            )
+        return self.num_batches
 
     @property
     def is_depleted(self) -> bool:
