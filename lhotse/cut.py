@@ -425,49 +425,36 @@ class Cut(CutUtilsMixin):
 
     def pad(
             self,
-            duration: Seconds,
+            duration: Seconds = None,
+            num_frames: int = None,
+            num_samples: int = None,
             pad_feat_value: float = LOG_EPSILON,
             direction: str = 'right'
     ) -> AnyCut:
         """
-        Return a new MixedCut, padded to ``duration`` seconds with zeros in the recording,
-        and low-energy values in each feature bin.
+        Return a new MixedCut, padded with zeros in the recording, and ``pad_feat_value`` in each feature bin.
 
+        The user can choose to pad either to a specific `duration`; a specific number of frames `max_frames`;
+        or a specific number of samples `num_samples`. The three arguments are mutually exclusive.
+
+        :param cut: Cut to be padded.
         :param duration: The cut's minimal duration after padding.
+        :param num_frames: The cut's total number of frames after padding.
+        :param num_samples: The cut's total number of samples after padding.
         :param pad_feat_value: A float value that's used for padding the features.
             By default we assume a log-energy floor of approx. -23 (1e-10 after exp).
         :param direction: string, 'left' or 'right'. Determines whether the padding is added before or after
             the cut.
-        :return: a padded MixedCut if ``duration`` is greater than this cut's duration, otherwise ``self``.
+        :return: a padded MixedCut if duration is greater than this cut's duration, otherwise ``self``.
         """
-        assert direction in ('left', 'right'), f"Unknown type of padding: {direction}"
-        if duration <= self.duration:
-            return self
-        total_num_frames = compute_num_frames(
+        return pad(
+            self,
             duration=duration,
-            frame_shift=self.frame_shift,
-            sampling_rate=self.sampling_rate
-        ) if self.has_features else None
-        total_num_samples = compute_num_samples(
-            duration=duration,
-            sampling_rate=self.sampling_rate
-        ) if self.has_recording else None
-        padding_duration = round(duration - self.duration, ndigits=8)
-        padding_cut = PaddingCut(
-            id=str(uuid4()),
-            duration=padding_duration,
-            num_features=self.num_features if self.has_features else None,
-            num_frames=total_num_frames - self.num_frames if self.has_features else None,
-            num_samples=total_num_samples - self.num_samples if self.has_recording else None,
-            frame_shift=self.frame_shift,
-            sampling_rate=self.features.sampling_rate if self.has_features else self.recording.sampling_rate,
-            feat_value=pad_feat_value
+            num_frames=num_frames,
+            num_samples=num_samples,
+            pad_feat_value=pad_feat_value,
+            direction=direction
         )
-        if direction == 'right':
-            padded = self.append(padding_cut)
-        else:
-            padded = padding_cut.append(self)
-        return padded
 
     def perturb_speed(self, factor: float, affix_id: bool = True) -> 'Cut':
         """
@@ -640,29 +627,36 @@ class PaddingCut(CutUtilsMixin):
             ) if self.num_samples is not None else None,
         )
 
-    # noinspection PyUnusedLocal
-    def pad(self, duration: Seconds, direction: str = 'right') -> 'PaddingCut':
-        """
-        Create a new PaddingCut with ``duration`` when its longer than this Cuts duration.
-        Helper function used in batch cut padding.
-
-        :param duration: The cuts minimal duration after padding.
-        :param direction: string, 'left' or 'right'. Determines whether the padding is added before or after
-            the cut. This argument is actually ignored in PaddingCut and is present for compatibility
-            with other cut classes.
-        :return: ``self`` or a new PaddingCut, depending on ``duration``.
-        """
-        if duration <= self.duration:
-            return self
-        return fastcopy(
+    def pad(
             self,
-            id=str(uuid4()),
+            duration: Seconds = None,
+            num_frames: int = None,
+            num_samples: int = None,
+            pad_feat_value: float = LOG_EPSILON,
+            direction: str = 'right'
+    ) -> AnyCut:
+        """
+        Return a new MixedCut, padded with zeros in the recording, and ``pad_feat_value`` in each feature bin.
+
+        The user can choose to pad either to a specific `duration`; a specific number of frames `max_frames`;
+        or a specific number of samples `num_samples`. The three arguments are mutually exclusive.
+
+        :param duration: The cut's minimal duration after padding.
+        :param num_frames: The cut's total number of frames after padding.
+        :param num_samples: The cut's total number of samples after padding.
+        :param pad_feat_value: A float value that's used for padding the features.
+            By default we assume a log-energy floor of approx. -23 (1e-10 after exp).
+        :param direction: string, 'left' or 'right'. Determines whether the padding is added before or after
+            the cut.
+        :return: a padded MixedCut if duration is greater than this cut's duration, otherwise ``self``.
+        """
+        return pad(
+            self,
             duration=duration,
-            num_frames=compute_num_frames(
-                duration=duration,
-                frame_shift=self.frame_shift,
-                sampling_rate=self.sampling_rate
-            ) if self.has_features else None,
+            num_frames=num_frames,
+            num_samples=num_samples,
+            pad_feat_value=pad_feat_value,
+            direction=direction
         )
 
     def perturb_speed(self, factor: float, affix_id: bool = True) -> 'PaddingCut':
@@ -909,60 +903,35 @@ class MixedCut(CutUtilsMixin):
 
     def pad(
             self,
-            duration: Seconds,
+            duration: Seconds = None,
+            num_frames: int = None,
+            num_samples: int = None,
             pad_feat_value: float = LOG_EPSILON,
             direction: str = 'right'
     ) -> AnyCut:
         """
-        Return a new MixedCut, padded to ``duration`` seconds with zeros in the recording,
-        and ``pad_feat_value`` in each feature bin.
+        Return a new MixedCut, padded with zeros in the recording, and ``pad_feat_value`` in each feature bin.
+
+        The user can choose to pad either to a specific `duration`; a specific number of frames `max_frames`;
+        or a specific number of samples `num_samples`. The three arguments are mutually exclusive.
 
         :param duration: The cut's minimal duration after padding.
+        :param num_frames: The cut's total number of frames after padding.
+        :param num_samples: The cut's total number of samples after padding.
         :param pad_feat_value: A float value that's used for padding the features.
             By default we assume a log-energy floor of approx. -23 (1e-10 after exp).
         :param direction: string, 'left' or 'right'. Determines whether the padding is added before or after
             the cut.
         :return: a padded MixedCut if duration is greater than this cut's duration, otherwise ``self``.
         """
-        assert direction in ('left', 'right'), f"Unknown type of padding: {direction}"
-        if duration <= self.duration:
-            return self
-        total_num_frames = compute_num_frames(
+        return pad(
+            self,
             duration=duration,
-            frame_shift=self.frame_shift,
-            sampling_rate=self.sampling_rate
-        ) if self.has_features else None
-        total_num_samples = compute_num_samples(
-            duration=duration,
-            sampling_rate=self.sampling_rate
-        ) if self.has_recording else None
-        padding_duration = round(duration - self.duration, ndigits=8)
-        padding_cut = PaddingCut(
-            id=str(uuid4()),
-            duration=padding_duration,
-            feat_value=pad_feat_value,
-            num_features=self.num_features,
-            # The num_frames and sampling_rate fields are tricky, because it is possible to create a MixedCut
-            # from Cuts that have different sampling rates and frame shifts. In that case, we are assuming
-            # that we should use the values from the reference cut, i.e. the first one in the mix.
-            num_frames=(
-                total_num_frames - self.num_frames
-                if self.has_features
-                else None
-            ),
-            num_samples=(
-                total_num_samples - self.num_samples
-                if self.has_recording
-                else None
-            ),
-            frame_shift=self.frame_shift,
-            sampling_rate=self.tracks[0].cut.sampling_rate,
+            num_frames=num_frames,
+            num_samples=num_samples,
+            pad_feat_value=pad_feat_value,
+            direction=direction
         )
-        if direction == 'right':
-            padded = self.append(padding_cut)
-        else:
-            padded = padding_cut.append(self)
-        return padded
 
     def perturb_speed(self, factor: float, affix_id: bool = True) -> 'MixedCut':
         """
@@ -1574,27 +1543,46 @@ class CutSet(JsonMixin, YamlMixin, Sequence[AnyCut]):
     def pad(
             self,
             duration: Seconds = None,
+            num_frames: int = None,
+            num_samples: int = None,
             pad_feat_value: float = LOG_EPSILON,
             direction: str = 'right'
     ) -> 'CutSet':
         """
-        Return a new CutSet with Cuts padded to ``duration`` in seconds.
-        Cuts longer than ``duration`` will not be affected.
-        Cuts will be padded to the right (i.e. after the signal).
+        Return a new CutSet with Cuts padded to ``duration``, ``num_frames`` or ``num_samples``.
+        Cuts longer than the specified argument will not be affected.
+        By default, cuts will be padded to the right (i.e. after the signal).
+
+        When none of ``duration``, ``num_frames``, or ``num_samples`` is specified,
+        we'll try to determine the best way to pad to the longest cut based on
+        whether features or recordings are available.
 
         :param duration: The cuts minimal duration after padding.
             When not specified, we'll choose the duration of the longest cut in the CutSet.
+        :param num_frames: The cut's total number of frames after padding.
+        :param num_samples: The cut's total number of samples after padding.
         :param pad_feat_value: A float value that's used for padding the features.
             By default we assume a log-energy floor of approx. -23 (1e-10 after exp).
         :param direction: string, 'left' or 'right'. Determines whether the padding is added before or after
             the cut.
         :return: A padded CutSet.
         """
-        if duration is None:
-            duration = max(cut.duration for cut in self)
+        # When the user does not specify explicit padding duration/num_frames/num_samples,
+        # we'll try to pad using frames if there are features,
+        # otherwise using samples if there are recordings,
+        # otherwise duration which is always there.
+        if all(arg is None for arg in (duration, num_frames, num_samples)):
+            if all(c.has_features for c in self):
+                num_frames = max(c.num_frames for c in self)
+            elif all(c.has_recording for c in self):
+                num_samples = max(c.num_samples for c in self)
+            else:
+                duration = max(cut.duration for cut in self)
         return CutSet.from_cuts(
             cut.pad(
                 duration=duration,
+                num_frames=num_frames,
+                num_samples=num_samples,
                 pad_feat_value=pad_feat_value,
                 direction=direction
             ) for cut in self
@@ -2122,6 +2110,99 @@ def mix(
         id=str(uuid4()),
         tracks=old_tracks + new_tracks
     )
+
+
+def pad(
+        cut: AnyCut,
+        duration: Seconds = None,
+        num_frames: int = None,
+        num_samples: int = None,
+        pad_feat_value: float = LOG_EPSILON,
+        direction: str = 'right'
+) -> AnyCut:
+    """
+    Return a new MixedCut, padded with zeros in the recording, and ``pad_feat_value`` in each feature bin.
+
+    The user can choose to pad either to a specific `duration`; a specific number of frames `max_frames`;
+    or a specific number of samples `num_samples`. The three arguments are mutually exclusive.
+
+    :param cut: Cut to be padded.
+    :param duration: The cut's minimal duration after padding.
+    :param num_frames: The cut's total number of frames after padding.
+    :param num_samples: The cut's total number of samples after padding.
+    :param pad_feat_value: A float value that's used for padding the features.
+        By default we assume a log-energy floor of approx. -23 (1e-10 after exp).
+    :param direction: string, 'left' or 'right'. Determines whether the padding is added before or after
+        the cut.
+    :return: a padded MixedCut if duration is greater than this cut's duration, otherwise ``self``.
+    """
+    assert exactly_one_not_null(duration, num_frames, num_samples), \
+        f"Expected only one of (duration, num_frames, num_samples) to be set: " \
+        f"got ({duration}, {num_frames}, {num_samples})"
+    assert direction in ('left', 'right'), f"Unknown type of padding: {direction}"
+
+    if duration is not None:
+        if duration <= cut.duration:
+            return cut
+        total_num_frames = compute_num_frames(
+            duration=duration,
+            frame_shift=cut.frame_shift,
+            sampling_rate=cut.sampling_rate
+        ) if cut.has_features else None
+        total_num_samples = compute_num_samples(
+            duration=duration,
+            sampling_rate=cut.sampling_rate
+        ) if cut.has_recording else None
+
+    if num_frames is not None:
+        assert cut.has_features, 'Cannot pad a cut using num_frames when it is missing pre-computed features ' \
+                                 '(did you run cut.compute_and_store_features(...)?).'
+        total_num_frames = num_frames
+        duration = total_num_frames * cut.frame_shift
+        total_num_samples = compute_num_samples(
+            duration=duration,
+            sampling_rate=cut.sampling_rate
+        ) if cut.has_recording else None
+
+    if num_samples is not None:
+        assert cut.has_recording, 'Cannot pad a cut using num_samples when it is missing a Recording object ' \
+                                  '(did you attach recording/recording set when creating the cut/cut set?)'
+        total_num_samples = num_samples
+        duration = total_num_samples / cut.sampling_rate
+        total_num_frames = compute_num_frames(
+            duration=duration,
+            frame_shift=cut.frame_shift,
+            sampling_rate=cut.sampling_rate
+        ) if cut.has_features else None
+
+    padding_cut = PaddingCut(
+        id=str(uuid4()),
+        duration=round(duration - cut.duration, ndigits=8),
+        feat_value=pad_feat_value,
+        num_features=cut.num_features,
+        # The num_frames and sampling_rate fields are tricky, because it is possible to create a MixedCut
+        # from Cuts that have different sampling rates and frame shifts. In that case, we are assuming
+        # that we should use the values from the reference cut, i.e. the first one in the mix.
+        num_frames=(
+            total_num_frames - cut.num_frames
+            if cut.has_features
+            else None
+        ),
+        num_samples=(
+            total_num_samples - cut.num_samples
+            if cut.has_recording
+            else None
+        ),
+        frame_shift=cut.frame_shift,
+        sampling_rate=cut.sampling_rate,
+    )
+
+    if direction == 'right':
+        padded = cut.append(padding_cut)
+    else:
+        padded = padding_cut.append(cut)
+
+    return padded
 
 
 def append(
