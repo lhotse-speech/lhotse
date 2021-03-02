@@ -219,6 +219,17 @@ def test_append(libri_cut, padding_cut):
     np.testing.assert_allclose(original_feats, appended_feats[:1604, :], rtol=1e-2)
 
 
+def test_pad_equal_length_does_not_change_cut(libri_cut):
+    padded = libri_cut.pad(duration=libri_cut.duration)
+    assert padded == libri_cut
+
+    padded = libri_cut.pad(num_frames=libri_cut.num_frames)
+    assert padded == libri_cut
+
+    padded = libri_cut.pad(num_samples=libri_cut.num_samples)
+    assert padded == libri_cut
+
+
 @pytest.mark.parametrize(
     ['duration', 'num_frames', 'num_samples', 'expected_duration', 'expected_num_frames', 'expected_num_samples'],
     [
@@ -405,7 +416,6 @@ def test_pad_left_regular_cut(libri_cut):
 
 def test_pad_left_padding_cut(padding_cut):
     cut = padding_cut.pad(30, direction='left')
-    assert isinstance(cut, PaddingCut)
     assert cut.duration == 30.0
 
 

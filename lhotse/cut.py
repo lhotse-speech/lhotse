@@ -2157,6 +2157,8 @@ def pad(
     if num_frames is not None:
         assert cut.has_features, 'Cannot pad a cut using num_frames when it is missing pre-computed features ' \
                                  '(did you run cut.compute_and_store_features(...)?).'
+        if num_frames <= cut.num_frames:
+            return cut
         total_num_frames = num_frames
         duration = total_num_frames * cut.frame_shift
         total_num_samples = compute_num_samples(
@@ -2167,6 +2169,8 @@ def pad(
     if num_samples is not None:
         assert cut.has_recording, 'Cannot pad a cut using num_samples when it is missing a Recording object ' \
                                   '(did you attach recording/recording set when creating the cut/cut set?)'
+        if num_samples <= cut.num_samples:
+            return cut
         total_num_samples = num_samples
         duration = total_num_samples / cut.sampling_rate
         total_num_frames = compute_num_frames(
