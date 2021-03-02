@@ -2157,14 +2157,21 @@ def pad(
     if num_frames is not None:
         assert cut.has_features, 'Cannot pad a cut using num_frames when it is missing pre-computed features ' \
                                  '(did you run cut.compute_and_store_features(...)?).'
-        if num_frames <= cut.num_frames:
-            return cut
         total_num_frames = num_frames
         duration = total_num_frames * cut.frame_shift
         total_num_samples = compute_num_samples(
             duration=duration,
             sampling_rate=cut.sampling_rate
         ) if cut.has_recording else None
+        # It is possible that two cuts have the same number of frames,
+        # but they differ in the number of samples.
+        # In that case, we need to pad them anyway so that they have truly equal durations.
+        if (
+                total_num_frames <= cut.num_frames
+                and duration <= cut.duration
+                and (total_num_samples is None or total_num_samples <= cut.num_samples)
+        ):
+            return cut
 
     if num_samples is not None:
         assert cut.has_recording, 'Cannot pad a cut using num_samples when it is missing a Recording object ' \
