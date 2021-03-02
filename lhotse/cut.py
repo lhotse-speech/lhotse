@@ -443,7 +443,7 @@ class Cut(CutUtilsMixin):
         :param num_samples: The cut's total number of samples after padding.
         :param pad_feat_value: A float value that's used for padding the features.
             By default we assume a log-energy floor of approx. -23 (1e-10 after exp).
-        :param direction: string, 'left' or 'right'. Determines whether the padding is added before or after
+        :param direction: string, 'left', 'right' or 'both'. Determines whether the padding is added before or after
             the cut.
         :return: a padded MixedCut if duration is greater than this cut's duration, otherwise ``self``.
         """
@@ -646,7 +646,7 @@ class PaddingCut(CutUtilsMixin):
         :param num_samples: The cut's total number of samples after padding.
         :param pad_feat_value: A float value that's used for padding the features.
             By default we assume a log-energy floor of approx. -23 (1e-10 after exp).
-        :param direction: string, 'left' or 'right'. Determines whether the padding is added before or after
+        :param direction: string, 'left', 'right' or 'both'. Determines whether the padding is added before or after
             the cut.
         :return: a padded MixedCut if duration is greater than this cut's duration, otherwise ``self``.
         """
@@ -800,17 +800,20 @@ class MixedCut(CutUtilsMixin):
     @property
     def num_frames(self) -> Optional[int]:
         if self.has_features:
-            return compute_num_frames(duration=self.duration, frame_shift=self._first_non_padding_cut.frame_shift,
-                                      sampling_rate=self.sampling_rate)
+            return compute_num_frames(
+                duration=self.duration,
+                frame_shift=self.frame_shift,
+                sampling_rate=self.sampling_rate
+            )
         return None
 
     @property
     def frame_shift(self) -> Optional[Seconds]:
-        return self._first_non_padding_cut.frame_shift
+        return self.tracks[0].cut.frame_shift
 
     @property
     def sampling_rate(self) -> Optional[int]:
-        return self._first_non_padding_cut.sampling_rate
+        return self.tracks[0].cut.sampling_rate
 
     @property
     def num_samples(self) -> Optional[int]:
@@ -818,7 +821,7 @@ class MixedCut(CutUtilsMixin):
 
     @property
     def num_features(self) -> Optional[int]:
-        return self._first_non_padding_cut.num_features
+        return self.tracks[0].cut.num_features
 
     @property
     def features_type(self) -> Optional[str]:
@@ -920,7 +923,7 @@ class MixedCut(CutUtilsMixin):
         :param num_samples: The cut's total number of samples after padding.
         :param pad_feat_value: A float value that's used for padding the features.
             By default we assume a log-energy floor of approx. -23 (1e-10 after exp).
-        :param direction: string, 'left' or 'right'. Determines whether the padding is added before or after
+        :param direction: string, 'left', 'right' or 'both'. Determines whether the padding is added before or after
             the cut.
         :return: a padded MixedCut if duration is greater than this cut's duration, otherwise ``self``.
         """
@@ -1563,8 +1566,8 @@ class CutSet(JsonMixin, YamlMixin, Sequence[AnyCut]):
         :param num_samples: The cut's total number of samples after padding.
         :param pad_feat_value: A float value that's used for padding the features.
             By default we assume a log-energy floor of approx. -23 (1e-10 after exp).
-        :param direction: string, 'left' or 'right'. Determines whether the padding is added before or after
-            the cut.
+        :param direction: string, 'left', 'right' or 'both'. Determines whether the padding is added
+            before or after the cut.
         :return: A padded CutSet.
         """
         # When the user does not specify explicit padding duration/num_frames/num_samples,
@@ -2132,14 +2135,13 @@ def pad(
     :param num_samples: The cut's total number of samples after padding.
     :param pad_feat_value: A float value that's used for padding the features.
         By default we assume a log-energy floor of approx. -23 (1e-10 after exp).
-    :param direction: string, 'left' or 'right'. Determines whether the padding is added before or after
+    :param direction: string, 'left', 'right' or 'both'. Determines whether the padding is added before or after
         the cut.
     :return: a padded MixedCut if duration is greater than this cut's duration, otherwise ``self``.
     """
     assert exactly_one_not_null(duration, num_frames, num_samples), \
         f"Expected only one of (duration, num_frames, num_samples) to be set: " \
         f"got ({duration}, {num_frames}, {num_samples})"
-    assert direction in ('left', 'right'), f"Unknown type of padding: {direction}"
 
     if duration is not None:
         if duration <= cut.duration:
@@ -2210,8 +2212,16 @@ def pad(
 
     if direction == 'right':
         padded = cut.append(padding_cut)
-    else:
+    elif direction == 'left':
         padded = padding_cut.append(cut)
+    elif direction == 'both':
+        padded = (
+            padding_cut.truncate(duration=padding_cut.duration / 2)
+                .append(cut)
+                .append(padding_cut.truncate(duration=padding_cut.duration / 2))
+        )
+    else:
+        raise ValueError(f"Unknown type of padding: {direction}")
 
     return padded
 

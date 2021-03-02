@@ -353,7 +353,7 @@ def test_pad_mixed_cut(
     np.testing.assert_almost_equal(pre_mixed_feats, mixed_feats[:1604, :], decimal=2)
 
 
-@pytest.mark.parametrize('direction', ['left', 'right'])
+@pytest.mark.parametrize('direction', ['left', 'right', 'both'])
 @pytest.mark.parametrize(
     ['duration', 'num_frames', 'num_samples', 'expected_duration', 'expected_num_frames', 'expected_num_samples'],
     [
@@ -435,3 +435,52 @@ def test_pad_left_mixed_cut(mixed_libri_cut, libri_cut):
     c = cut.tracks[2].cut
     assert c == libri_cut
     assert cut.tracks[2].offset == 13.96
+
+
+def test_pad_both_regular_cut(libri_cut):
+    cut = libri_cut.pad(30, direction='both')
+
+    assert len(cut.tracks) == 3
+
+    t = cut.tracks[0]
+    assert isinstance(t.cut, PaddingCut)
+    assert t.offset == 0
+    assert t.cut.duration == 6.98
+
+    t = cut.tracks[1]
+    assert t.cut == libri_cut
+    assert t.offset == 6.98
+
+    t = cut.tracks[2]
+    assert isinstance(t.cut, PaddingCut)
+    assert t.offset == 23.02
+    assert t.cut.duration == 6.98
+
+
+def test_pad_both_padding_cut(padding_cut):
+    cut = padding_cut.pad(30, direction='both')
+    assert cut.duration == 30.0
+    assert len(cut.tracks) == 3
+    assert all(isinstance(t.cut, PaddingCut) for t in cut.tracks)
+
+
+def test_pad_both_mixed_cut(mixed_libri_cut, libri_cut):
+    cut = mixed_libri_cut.pad(30, direction='both')
+
+    assert len(cut.tracks) == 4
+
+    c = cut.tracks[0].cut
+    assert isinstance(c, PaddingCut)
+    assert c.duration == 6.98
+
+    c = cut.tracks[1].cut
+    assert c == libri_cut
+    assert cut.tracks[1].offset == 6.98
+
+    c = cut.tracks[2].cut
+    assert c == libri_cut
+    assert cut.tracks[2].offset == 6.98
+
+    c = cut.tracks[3].cut
+    assert isinstance(c, PaddingCut)
+    assert c.duration == 6.98
