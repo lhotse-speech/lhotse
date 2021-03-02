@@ -28,6 +28,7 @@ class DiarizationDataset(Dataset):
 
         {
             'features': (B x T x F) tensor
+            'features_lens': (B, ) tensor
             'speaker_activity': (B x num_speaker x T) tensor
         }
 
@@ -60,8 +61,10 @@ class DiarizationDataset(Dataset):
 
     def __getitem__(self, cut_ids: Iterable[str]) -> Dict[str, torch.Tensor]:
         cuts = self.cuts.subset(cut_ids=cut_ids)
+        features, features_lens = collate_features(cuts)
         return {
-            'features': collate_features(cuts),
+            'features': features,
+            'features_lens': features_lens,
             'speaker_activity': collate_matrices(
                 (cut.speakers_feature_mask(
                     min_speaker_dim=self.min_speaker_dim,

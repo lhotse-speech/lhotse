@@ -89,7 +89,7 @@ class K2SpeechRecognitionDataset(torch.utils.data.Dataset):
 
         # Get a tensor with batched feature matrices, shape (B, T, F)
         # Collation performs auto-padding, if necessary.
-        features = collate_features(cuts)
+        features, _ = collate_features(cuts)
 
         batch = {
             'features': features,
