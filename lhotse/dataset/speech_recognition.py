@@ -50,7 +50,7 @@ class K2SpeechRecognitionDataset(torch.utils.data.Dataset):
             self,
             cuts: CutSet,
             return_cuts: bool = False,
-            cut_transforms: List[Callable[[CutSet], CutSet]] = None
+            cut_transforms: List[Callable[[CutSet], CutSet]] = None,
     ):
         """
         K2 ASR IterableDataset constructor.

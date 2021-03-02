@@ -6,6 +6,7 @@ from lhotse.cut import CutSet
 from lhotse.dataset.sampling import SingleCutSampler
 from lhotse.dataset.speech_recognition import K2SpeechRecognitionDataset
 from lhotse.dataset.transforms import CutConcatenate, CutMix
+from lhotse.dataset.transforms.extra_padding import ExtraPadding
 from lhotse.testing.dummies import DummyManifest
 
 
@@ -140,3 +141,15 @@ def test_k2_speech_recognition_augmentation(k2_cut_set, k2_noise_cut_set):
     # Check that it does not crash by just running all dataloader iterations
     batches = list(dloader)
     assert len(batches) > 0
+
+
+def test_extra_padding_transform(k2_cut_set):
+    transform = ExtraPadding(num_extra_frames=20)
+    padded_cuts = transform(k2_cut_set)
+    for cut, padded in zip(k2_cut_set, padded_cuts):
+        # first track is for padding
+        assert padded.tracks[0].cut.num_frames == 10
+        # second track is for padding
+        assert padded.tracks[-1].cut.num_frames == 10
+        # total num frames is OK
+        assert padded.num_frames == cut.num_frames + 20
