@@ -23,7 +23,8 @@ from lhotse.features.io import FeaturesWriter, LilcomFilesWriter, LilcomHdf5Writ
 from lhotse.features.mixer import NonPositiveEnergyError
 from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import (Decibels, JsonMixin, LOG_EPSILON, Pathlike, Seconds, TimeSpan, YamlMixin, asdict_nonull,
-                          compute_num_frames, exactly_one_not_null, fastcopy, index_by_id_and_check, overlaps,
+                          compute_num_frames, compute_num_samples, exactly_one_not_null, fastcopy,
+                          index_by_id_and_check, overlaps,
                           overspans, perturb_num_samples, split_sequence, uuid4)
 
 # One of the design principles for Cuts is a maximally "lazy" implementation, e.g. when mixing Cuts,
@@ -422,7 +423,12 @@ class Cut(CutUtilsMixin):
             recording=self.recording
         )
 
-    def pad(self, duration: Seconds, pad_feat_value: float = LOG_EPSILON) -> AnyCut:
+    def pad(
+            self,
+            duration: Seconds,
+            pad_feat_value: float = LOG_EPSILON,
+            direction: str = 'right'
+    ) -> AnyCut:
         """
         Return a new MixedCut, padded to ``duration`` seconds with zeros in the recording,
         and low-energy values in each feature bin.
@@ -430,16 +436,24 @@ class Cut(CutUtilsMixin):
         :param duration: The cut's minimal duration after padding.
         :param pad_feat_value: A float value that's used for padding the features.
             By default we assume a log-energy floor of approx. -23 (1e-10 after exp).
+        :param direction: string, 'left' or 'right'. Determines whether the padding is added before or after
+            the cut.
         :return: a padded MixedCut if ``duration`` is greater than this cut's duration, otherwise ``self``.
         """
+        assert direction in ('left', 'right'), f"Unknown type of padding: {direction}"
         if duration <= self.duration:
             return self
-        total_num_frames = compute_num_frames(duration=duration, frame_shift=self.frame_shift,
-                                              sampling_rate=self.sampling_rate) \
-            if self.has_features else None
-        total_num_samples = round(duration * self.sampling_rate) if self.has_recording else None
+        total_num_frames = compute_num_frames(
+            duration=duration,
+            frame_shift=self.frame_shift,
+            sampling_rate=self.sampling_rate
+        ) if self.has_features else None
+        total_num_samples = compute_num_samples(
+            duration=duration,
+            sampling_rate=self.sampling_rate
+        ) if self.has_recording else None
         padding_duration = round(duration - self.duration, ndigits=8)
-        padded = self.append(PaddingCut(
+        padding_cut = PaddingCut(
             id=str(uuid4()),
             duration=padding_duration,
             num_features=self.num_features if self.has_features else None,
@@ -448,7 +462,11 @@ class Cut(CutUtilsMixin):
             frame_shift=self.frame_shift,
             sampling_rate=self.features.sampling_rate if self.has_features else self.recording.sampling_rate,
             feat_value=pad_feat_value
-        ))
+        )
+        if direction == 'right':
+            padded = self.append(padding_cut)
+        else:
+            padded = padding_cut.append(self)
         return padded
 
     def perturb_speed(self, factor: float, affix_id: bool = True) -> 'Cut':
@@ -615,12 +633,16 @@ class PaddingCut(CutUtilsMixin):
             num_samples=round(new_duration * self.sampling_rate) if self.num_samples is not None else None,
         )
 
-    def pad(self, duration: Seconds) -> 'PaddingCut':
+    # noinspection PyUnusedLocal
+    def pad(self, duration: Seconds, direction: str = 'right') -> 'PaddingCut':
         """
         Create a new PaddingCut with ``duration`` when its longer than this Cuts duration.
         Helper function used in batch cut padding.
 
         :param duration: The cuts minimal duration after padding.
+        :param direction: string, 'left' or 'right'. Determines whether the padding is added before or after
+            the cut. This argument is actually ignored in PaddingCut and is present for compatibility
+            with other cut classes.
         :return: ``self`` or a new PaddingCut, depending on ``duration``.
         """
         if duration <= self.duration:
@@ -629,7 +651,7 @@ class PaddingCut(CutUtilsMixin):
             self,
             id=str(uuid4()),
             duration=duration,
-            num_frames=round(duration / self.frame_shift),
+            num_frames=round(duration / self.frame_shift) if self.has_features else None,
         )
 
     def perturb_speed(self, factor: float, affix_id: bool = True) -> 'PaddingCut':
@@ -870,7 +892,12 @@ class MixedCut(CutUtilsMixin):
             return new_tracks[0].cut
         return MixedCut(id=str(uuid4()), tracks=new_tracks)
 
-    def pad(self, duration: Seconds, pad_feat_value: float = LOG_EPSILON) -> AnyCut:
+    def pad(
+            self,
+            duration: Seconds,
+            pad_feat_value: float = LOG_EPSILON,
+            direction: str = 'right'
+    ) -> AnyCut:
         """
         Return a new MixedCut, padded to ``duration`` seconds with zeros in the recording,
         and ``pad_feat_value`` in each feature bin.
@@ -878,17 +905,24 @@ class MixedCut(CutUtilsMixin):
         :param duration: The cut's minimal duration after padding.
         :param pad_feat_value: A float value that's used for padding the features.
             By default we assume a log-energy floor of approx. -23 (1e-10 after exp).
+        :param direction: string, 'left' or 'right'. Determines whether the padding is added before or after
+            the cut.
         :return: a padded MixedCut if duration is greater than this cut's duration, otherwise ``self``.
         """
+        assert direction in ('left', 'right'), f"Unknown type of padding: {direction}"
         if duration <= self.duration:
             return self
-        if self.has_features:
-            total_num_frames = compute_num_frames(duration=duration, frame_shift=self.frame_shift,
-                                                  sampling_rate=self.sampling_rate)
-        if self.has_recording:
-            total_num_samples = round(duration * self.sampling_rate)
+        total_num_frames = compute_num_frames(
+            duration=duration,
+            frame_shift=self.frame_shift,
+            sampling_rate=self.sampling_rate
+        ) if self.has_features else None
+        total_num_samples = compute_num_samples(
+            duration=duration,
+            sampling_rate=self.sampling_rate
+        ) if self.has_recording else None
         padding_duration = round(duration - self.duration, ndigits=8)
-        return self.append(PaddingCut(
+        padding_cut = PaddingCut(
             id=str(uuid4()),
             duration=padding_duration,
             feat_value=pad_feat_value,
@@ -908,7 +942,12 @@ class MixedCut(CutUtilsMixin):
             ),
             frame_shift=self.frame_shift,
             sampling_rate=self.tracks[0].cut.sampling_rate,
-        ))
+        )
+        if direction == 'right':
+            padded = self.append(padding_cut)
+        else:
+            padded = padding_cut.append(self)
+        return padded
 
     def perturb_speed(self, factor: float, affix_id: bool = True) -> 'MixedCut':
         """
@@ -1517,7 +1556,12 @@ class CutSet(JsonMixin, YamlMixin, Sequence[AnyCut]):
                             Interval(s.start, s.end, s) for s in track.cut.supervisions)
         return indexed
 
-    def pad(self, duration: Seconds = None, pad_feat_value: float = LOG_EPSILON) -> 'CutSet':
+    def pad(
+            self,
+            duration: Seconds = None,
+            pad_feat_value: float = LOG_EPSILON,
+            direction: str = 'right'
+    ) -> 'CutSet':
         """
         Return a new CutSet with Cuts padded to ``duration`` in seconds.
         Cuts longer than ``duration`` will not be affected.
@@ -1527,12 +1571,18 @@ class CutSet(JsonMixin, YamlMixin, Sequence[AnyCut]):
             When not specified, we'll choose the duration of the longest cut in the CutSet.
         :param pad_feat_value: A float value that's used for padding the features.
             By default we assume a log-energy floor of approx. -23 (1e-10 after exp).
+        :param direction: string, 'left' or 'right'. Determines whether the padding is added before or after
+            the cut.
         :return: A padded CutSet.
         """
         if duration is None:
             duration = max(cut.duration for cut in self)
         return CutSet.from_cuts(
-            cut.pad(duration=duration, pad_feat_value=pad_feat_value) for cut in self
+            cut.pad(
+                duration=duration,
+                pad_feat_value=pad_feat_value,
+                direction=direction
+            ) for cut in self
         )
 
     def truncate(

@@ -263,9 +263,10 @@ def test_pad_mixed_cut(mixed_libri_cut):
     np.testing.assert_almost_equal(pre_mixed_feats, mixed_feats[:1604, :], decimal=2)
 
 
-def test_pad_cut_set(cut_set):
+@pytest.mark.parametrize('direction', ['left', 'right'])
+def test_pad_cut_set(cut_set, direction):
     # cut_set fixture is defined in test/cut/conftest.py
-    padded_cut_set = cut_set.pad(60.1)
+    padded_cut_set = cut_set.pad(60.1, direction=direction)
     assert all(cut.duration == 60.1 for cut in padded_cut_set)
 
 
@@ -282,3 +283,41 @@ def test_pad_without_mixing(libri_cut):
     cut = libri_cut.pad(20)
     cut.tracks[0].cut.features.type = 'undefined'  # make Lhotse think that a custom feat extractor is used
     cut.load_features()  # does not throw
+
+
+def test_pad_left_regular_cut(libri_cut):
+    cut = libri_cut.pad(30, direction='left')
+
+    assert len(cut.tracks) == 2
+
+    c = cut.tracks[0].cut
+    assert isinstance(c, PaddingCut)
+    assert c.duration == 13.96
+
+    c = cut.tracks[1].cut
+    assert c == libri_cut
+    assert cut.tracks[1].offset == 13.96
+
+
+def test_pad_left_padding_cut(padding_cut):
+    cut = padding_cut.pad(30, direction='left')
+    assert isinstance(cut, PaddingCut)
+    assert cut.duration == 30.0
+
+
+def test_pad_left_mixed_cut(mixed_libri_cut, libri_cut):
+    cut = mixed_libri_cut.pad(30, direction='left')
+
+    assert len(cut.tracks) == 3
+
+    c = cut.tracks[0].cut
+    assert isinstance(c, PaddingCut)
+    assert c.duration == 13.96
+
+    c = cut.tracks[1].cut
+    assert c == libri_cut
+    assert cut.tracks[1].offset == 13.96
+
+    c = cut.tracks[2].cut
+    assert c == libri_cut
+    assert cut.tracks[2].offset == 13.96
