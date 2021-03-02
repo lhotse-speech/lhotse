@@ -6,7 +6,7 @@ import pytest
 from lhotse.audio import AudioSource, Recording
 from lhotse.cut import Cut, CutSet, PaddingCut
 from lhotse.features import Features
-from lhotse.utils import EPSILON, LOG_EPSILON
+from lhotse.utils import EPSILON, LOG_EPSILON, nullcontext as does_not_raise
 
 PADDING_ENERGY = EPSILON
 PADDING_LOG_ENERGY = LOG_EPSILON
@@ -219,11 +219,28 @@ def test_append(libri_cut, padding_cut):
     np.testing.assert_allclose(original_feats, appended_feats[:1604, :], rtol=1e-2)
 
 
-def test_pad_simple_cut(libri_cut):
-    padded = libri_cut.pad(duration=20.0)
+@pytest.mark.parametrize(
+    ['duration', 'num_frames', 'num_samples', 'expected_duration', 'expected_num_frames', 'expected_num_samples'],
+    [
+        (20, None, None, 20, 2000, 320000),
+        (None, 2000, None, 20, 2000, 320000),
+        (None, None, 320000, 20, 2000, 320000),
+    ]
+)
+def test_pad_simple_cut(
+        libri_cut,
+        duration,
+        num_frames,
+        num_samples,
+        expected_duration,
+        expected_num_frames,
+        expected_num_samples
+):
+    padded = libri_cut.pad(duration=duration, num_frames=num_frames, num_samples=num_samples)
 
-    assert padded.duration == 20.0
-    assert padded.num_frames == 2000
+    assert padded.duration == expected_duration
+    assert padded.num_frames == expected_num_frames
+    assert padded.num_samples == expected_num_samples
 
     mixed_feats = padded.load_features()
     assert mixed_feats.shape == (2000, 40)
@@ -234,25 +251,87 @@ def test_pad_simple_cut(libri_cut):
     np.testing.assert_almost_equal(pre_mixed_feats, mixed_feats[:1604, :], decimal=5)
 
 
-def test_pad_simple_cut_audio_only(libri_cut):
+@pytest.mark.parametrize(
+    ['duration', 'num_frames', 'num_samples', 'expected_duration', 'expected_num_frames', 'expected_num_samples',
+     'exception_expectation'],
+    [
+        (20, None, None, 20, 2000, 320000, does_not_raise()),
+        (None, 2000, None, 20, 2000, 320000, pytest.raises(AssertionError)),
+        (None, None, 320000, 20, 2000, 320000, does_not_raise()),
+    ]
+)
+def test_pad_simple_cut_audio_only(
+        libri_cut,
+        duration,
+        num_frames,
+        num_samples,
+        expected_duration,
+        expected_num_frames,
+        expected_num_samples,
+        exception_expectation
+):
     libri_cut.features = None
-    padded = libri_cut.pad(duration=20.0)
+    with exception_expectation:
+        padded = libri_cut.pad(duration=duration, num_frames=num_frames, num_samples=num_samples)
 
-    assert padded.duration == 20.0
-    assert padded.num_samples == 20 * 16000
+        assert padded.duration == expected_duration
+        assert padded.num_samples == expected_num_samples
 
-    mixed_audio = padded.load_audio()
-    assert mixed_audio.shape == (1, padded.num_samples)
+        mixed_audio = padded.load_audio()
+        assert mixed_audio.shape == (1, padded.num_samples)
 
-    pre_mixed_audio = libri_cut.load_audio()
-    assert pre_mixed_audio.shape == (1, libri_cut.num_samples)
+        pre_mixed_audio = libri_cut.load_audio()
+        assert pre_mixed_audio.shape == (1, libri_cut.num_samples)
 
 
-def test_pad_mixed_cut(mixed_libri_cut):
-    padded = mixed_libri_cut.pad(duration=20.0)
+@pytest.mark.parametrize(
+    ['duration', 'num_frames', 'num_samples', 'expected_duration', 'expected_num_frames', 'expected_num_samples',
+     'exception_expectation'],
+    [
+        (20, None, None, 20, 2000, 320000, does_not_raise()),
+        (None, 2000, None, 20, 2000, 320000, does_not_raise()),
+        (None, None, 320000, 20, 2000, 320000, pytest.raises(AssertionError)),
+    ]
+)
+def test_pad_simple_cut_features_only(
+        libri_cut,
+        duration,
+        num_frames,
+        num_samples,
+        expected_duration,
+        expected_num_frames,
+        expected_num_samples,
+        exception_expectation
+):
+    libri_cut.recording = None
+    with exception_expectation:
+        padded = libri_cut.pad(duration=duration, num_frames=num_frames, num_samples=num_samples)
+        assert padded.duration == expected_duration
+        assert padded.num_frames == expected_num_frames
 
-    assert padded.duration == 20.0
-    assert padded.num_frames == 2000
+
+@pytest.mark.parametrize(
+    ['duration', 'num_frames', 'num_samples', 'expected_duration', 'expected_num_frames', 'expected_num_samples'],
+    [
+        (20, None, None, 20, 2000, 320000),
+        (None, 2000, None, 20, 2000, 320000),
+        (None, None, 320000, 20, 2000, 320000),
+    ]
+)
+def test_pad_mixed_cut(
+        mixed_libri_cut,
+        duration,
+        num_frames,
+        num_samples,
+        expected_duration,
+        expected_num_frames,
+        expected_num_samples
+):
+    padded = mixed_libri_cut.pad(duration=duration, num_frames=num_frames, num_samples=num_samples)
+
+    assert padded.duration == expected_duration
+    assert padded.num_frames == expected_num_frames
+    assert padded.num_samples == expected_num_samples
 
     mixed_feats = padded.load_features()
     assert mixed_feats.shape == (2000, 40)
@@ -264,10 +343,35 @@ def test_pad_mixed_cut(mixed_libri_cut):
 
 
 @pytest.mark.parametrize('direction', ['left', 'right'])
-def test_pad_cut_set(cut_set, direction):
+@pytest.mark.parametrize(
+    ['duration', 'num_frames', 'num_samples', 'expected_duration', 'expected_num_frames', 'expected_num_samples'],
+    [
+        (None, None, None, 10.0, 1000, 160000),
+        (60.1, None, None, 60.1, 6010, 961600),
+        (None, 6010, None, 60.1, 6010, 961600),
+        (None, None, 961600, 60.1, 6010, 961600),
+    ]
+)
+def test_pad_cut_set(
+        cut_set,
+        direction,
+        duration,
+        num_frames,
+        num_samples,
+        expected_duration,
+        expected_num_frames,
+        expected_num_samples
+):
     # cut_set fixture is defined in test/cut/conftest.py
-    padded_cut_set = cut_set.pad(60.1, direction=direction)
-    assert all(cut.duration == 60.1 for cut in padded_cut_set)
+    padded_cut_set = cut_set.pad(
+        duration=duration,
+        num_frames=num_frames,
+        num_samples=num_samples,
+        direction=direction
+    )
+    assert all(cut.duration == expected_duration for cut in padded_cut_set)
+    assert all(cut.num_frames == expected_num_frames for cut in padded_cut_set)
+    assert all(cut.num_samples == expected_num_samples for cut in padded_cut_set)
 
 
 def test_serialize_padded_cut_set(cut_set):
