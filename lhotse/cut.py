@@ -290,7 +290,7 @@ class Cut(CutUtilsMixin):
 
     @property
     def num_samples(self) -> Optional[int]:
-        return round(self.duration * self.sampling_rate) if self.has_recording else None
+        return compute_num_samples(self.duration, self.sampling_rate) if self.has_recording else None
 
     @property
     def num_features(self) -> Optional[int]:
@@ -500,7 +500,7 @@ class Cut(CutUtilsMixin):
             for s in self.supervisions
         ]
         # New start and duration have to be computed through num_samples to be accurate
-        start_samples = perturb_num_samples(round(self.start * self.sampling_rate), factor)
+        start_samples = perturb_num_samples(compute_num_samples(self.start, self.sampling_rate), factor)
         new_start = start_samples / self.sampling_rate
         new_num_samples = perturb_num_samples(self.num_samples, factor)
         new_duration = new_num_samples / self.sampling_rate
@@ -609,7 +609,7 @@ class PaddingCut(CutUtilsMixin):
     # noinspection PyUnusedLocal
     def load_audio(self, *args, **kwargs) -> Optional[np.ndarray]:
         if self.has_recording:
-            return np.zeros((1, round(self.duration * self.sampling_rate)), np.float32)
+            return np.zeros((1, compute_num_samples(self.duration, self.sampling_rate)), np.float32)
         return None
 
     # noinspection PyUnusedLocal
@@ -629,8 +629,15 @@ class PaddingCut(CutUtilsMixin):
             id=self.id if preserve_id else str(uuid4()),
             duration=new_duration,
             feat_value=self.feat_value,
-            num_frames=round(new_duration / self.frame_shift) if self.num_frames is not None else None,
-            num_samples=round(new_duration * self.sampling_rate) if self.num_samples is not None else None,
+            num_frames=compute_num_frames(
+                duration=new_duration,
+                frame_shift=self.frame_shift,
+                sampling_rate=self.sampling_rate
+            ) if self.num_frames is not None else None,
+            num_samples=compute_num_samples(
+                duration=new_duration,
+                sampling_rate=self.sampling_rate
+            ) if self.num_samples is not None else None,
         )
 
     # noinspection PyUnusedLocal
@@ -651,7 +658,11 @@ class PaddingCut(CutUtilsMixin):
             self,
             id=str(uuid4()),
             duration=duration,
-            num_frames=round(duration / self.frame_shift) if self.has_features else None,
+            num_frames=compute_num_frames(
+                duration=duration,
+                frame_shift=self.frame_shift,
+                sampling_rate=self.sampling_rate
+            ) if self.has_features else None,
         )
 
     def perturb_speed(self, factor: float, affix_id: bool = True) -> 'PaddingCut':
@@ -690,7 +701,11 @@ class PaddingCut(CutUtilsMixin):
         return fastcopy(
             self,
             num_features=extractor.feature_dim(self.sampling_rate),
-            num_frames=round(self.duration / extractor.frame_shift),
+            num_frames=compute_num_frames(
+                duration=self.duration,
+                frame_shift=extractor.frame_shift,
+                sampling_rate=self.sampling_rate
+            ),
             frame_shift=extractor.frame_shift
         )
 
@@ -805,7 +820,7 @@ class MixedCut(CutUtilsMixin):
 
     @property
     def num_samples(self) -> Optional[int]:
-        return round(self.duration * self.sampling_rate)
+        return compute_num_samples(self.duration, self.sampling_rate)
 
     @property
     def num_features(self) -> Optional[int]:
@@ -978,7 +993,7 @@ class MixedCut(CutUtilsMixin):
                     cut=track.cut.perturb_speed(factor=factor, affix_id=affix_id),
                     offset=round(
                         perturb_num_samples(
-                            num_samples=round(track.offset * self.sampling_rate),
+                            num_samples=compute_num_samples(track.offset, self.sampling_rate),
                             factor=factor
                         ) / self.sampling_rate,
                         ndigits=8
