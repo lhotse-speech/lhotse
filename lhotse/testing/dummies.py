@@ -34,13 +34,13 @@ def dummy_recording(unique_id: int) -> Recording:
     )
 
 
-def dummy_supervision(unique_id: int, start: float = 0.0, duration: float = 1.0) -> SupervisionSegment:
+def dummy_supervision(unique_id: int, start: float = 0.0, duration: float = 1.0, text: str = "irrelevant") -> SupervisionSegment:
     return SupervisionSegment(
         id=f'dummy-segment-{unique_id:04d}',
         recording_id=f'dummy-recording-{unique_id:04d}',
         start=start,
         duration=duration,
-        text='irrelevant'
+        text=text
     )
 
 

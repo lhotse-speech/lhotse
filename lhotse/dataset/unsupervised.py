@@ -12,8 +12,13 @@ from lhotse.features import FeatureExtractor
 class UnsupervisedDataset(torch.utils.data.Dataset):
     """
     Dataset that contains no supervision - it only provides the features extracted from recordings.
-    The returned features are a :class:`torch.Tensor` of shape ``(T x F)``, where T is the number of frames,
-    and F is the feature dimension.
+
+    .. code-block::
+
+        {
+            'features': (B x T x F) tensor
+            'features_lens': (B, ) tensor
+        }
     """
 
     def __init__(self, cuts: CutSet) -> None:
@@ -23,7 +28,11 @@ class UnsupervisedDataset(torch.utils.data.Dataset):
 
     def __getitem__(self, cut_ids: Iterable[str]) -> torch.Tensor:
         cuts = self.cuts.subset(cut_ids=cut_ids)
-        return collate_features(cuts)
+        features, features_lens = collate_features(cuts)
+        return {
+            'features': features,
+            'features_lens': features_lens,
+        }
 
     def __len__(self):
         return len(self.cuts)
@@ -38,11 +47,24 @@ class UnsupervisedWaveformDataset(UnsupervisedDataset):
     A variant of UnsupervisedDataset that provides waveform samples instead of features.
     The output is a tensor of shape (C, T), with C being the number of channels and T the number of audio samples.
     In this implemenation, there will always be a single channel.
+
+    Returns:
+
+    .. code-block::
+
+        {
+            'audio': (B x NumSamples) float tensor
+            'audio_lens': (B, ) int tensor
+        }
     """
 
     def __getitem__(self, cut_ids: Iterable[str]) -> torch.Tensor:
         cuts = self.cuts.subset(cut_ids=cut_ids)
-        return collate_audio(cuts)
+        audio, audio_lens = collate_audio(cuts)
+        return {
+            'audio': audio,
+            'audio_lens': audio_lens,
+        }
 
     def _validate(self) -> None:
         validate(self.cuts)

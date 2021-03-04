@@ -1,3 +1,4 @@
+import torch
 import numpy as np
 import pytest
 
@@ -17,16 +18,17 @@ def test_unsupervised_dataset(libri_cut_set):
     ids = list(libri_cut_set.ids)
     dataset = UnsupervisedDataset(libri_cut_set)
     assert len(dataset) == 1
-    feats = dataset[ids]
-    assert feats.shape == (1, 1000, 40)
+    out = dataset[ids]
+    assert out["features"].shape == (1, 1000, 40)
 
 
 def test_unsupervised_waveform_dataset(libri_cut_set):
     ids = list(libri_cut_set.ids)
     dataset = UnsupervisedWaveformDataset(libri_cut_set)
     assert len(dataset) == 1
-    audio = dataset[ids]
-    assert audio.shape == (1, 10 * 16000)
+    out = dataset[ids]
+    assert out["audio"].shape == (1, 10 * 16000)
+    assert isinstance(out["audio_lens"], torch.IntTensor)
 
 
 def test_on_the_fly_feature_extraction_unsupervised_dataset(libri_cut_set):
@@ -36,7 +38,8 @@ def test_on_the_fly_feature_extraction_unsupervised_dataset(libri_cut_set):
         feature_extractor=Fbank(),
         cuts=libri_cut_set
     )
-    ref_feats = ref_dataset[ids]
+    out = ref_dataset[ids]
+    ref_feats = out["features"]
     tested_feats = tested_dataset[ids]
     # Note: comparison to 1 decimal fails.
     #       I'm assuming this is due to lilcom's compression.
