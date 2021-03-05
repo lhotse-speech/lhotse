@@ -29,7 +29,7 @@ def test_token_collater(add_bos, add_eos):
     token_collater = TokenCollater(cuts, add_bos=add_bos, add_eos=add_eos)
     tokens_batch, tokens_lens = token_collater(cuts)
 
-    assert isinstance(tokens_batch, torch.IntTensor)
+    assert isinstance(tokens_batch, torch.LongTensor)
     assert isinstance(tokens_lens, torch.IntTensor)
 
     extend = int(add_bos) + int(add_eos)

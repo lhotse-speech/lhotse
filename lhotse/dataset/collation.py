@@ -78,7 +78,7 @@ class TokenCollater:
         tokens_batch = torch.from_numpy(np.array([
             [self.token2idx[token] for token in seq]
             for seq in seqs
-        ], dtype=np.int32))
+        ], dtype=np.int64))
 
         tokens_lens = torch.IntTensor([
             len(seq) + int(self.add_eos) + int(self.add_bos)
@@ -87,7 +87,7 @@ class TokenCollater:
 
         return tokens_batch, tokens_lens
 
-    def inverse(self, tokens_batch: torch.IntTensor, tokens_lens: torch.IntTensor) -> List[str]:
+    def inverse(self, tokens_batch: torch.LongTensor, tokens_lens: torch.IntTensor) -> List[str]:
         start = 1 if self.add_bos else 0
         sentences = [
             "".join([
