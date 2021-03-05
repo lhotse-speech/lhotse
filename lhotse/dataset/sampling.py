@@ -93,30 +93,16 @@ class CutSampler(Sampler[List[str]]):
         self.num_batches = None
 
     def _maybe_init_distributed(self, world_size: Optional[int], rank: Optional[int]):
-        try:
-            # We will ask PyTorch about distributed training metadata,
-            # and it might blow in our faces.
-            if world_size is None:
-                if not dist.is_available():
-                    raise RuntimeError("Requires distributed package to be available")
-                self.world_size = dist.get_world_size()
-            else:
-                self.world_size = world_size
-            if rank is None:
-                if not dist.is_available():
-                    raise RuntimeError("Requires distributed package to be available")
-                self.rank = dist.get_rank()
-            else:
-                self.rank = rank
-        except AssertionError as e:
-            if 'process group is not initialized' in str(e):
-                # Distributed training not active OR somebody forgot to initialize the process group
-                # (which will come up anyway at some point, so we can ignore it here).
-                self.world_size = 1
-                self.rank = 0
-            else:
-                # A different error - pass it on.
-                raise
+        if not dist.is_available() or not dist.is_initialized():
+            self.world_size = 1
+            self.rank = 0
+            return
+
+        if world_size is None:
+            self.world_size = dist.get_world_size()
+
+        if rank is None:
+            self.rank = dist.get_rank()
 
     def set_epoch(self, epoch: int) -> None:
         r"""
