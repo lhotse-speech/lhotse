@@ -2,7 +2,7 @@ import pytest
 
 import torch
 
-from lhotse.dataset.collation import TokenCollater
+from lhotse.dataset.collation import TokenCollater, collate_audio, collate_features
 from lhotse import CutSet
 from lhotse.testing.dummies import dummy_cut, dummy_supervision
 
@@ -40,3 +40,24 @@ def test_token_collater(add_bos, add_eos):
     reconstructed = token_collater.inverse(tokens_batch, tokens_lens)
     assert reconstructed == test_sentences
 
+
+def test_collate_audio_padding():
+    cuts = CutSet.from_json('test/fixtures/ljspeech/cuts.json')
+    assert len(set(cut.num_samples for cut in cuts)) > 1
+
+    correct_pad = max(cut.num_samples for cut in cuts)
+    audio, audio_lens = collate_audio(cuts)
+
+    assert audio.shape[-1] == correct_pad
+    assert max(audio_lens).item() == correct_pad
+
+
+def test_collate_feature_padding():
+    cuts = CutSet.from_json('test/fixtures/ljspeech/cuts.json')
+    assert len(set(cut.num_frames for cut in cuts)) > 1
+
+    correct_pad = max(cut.num_frames for cut in cuts)
+    features, features_lens = collate_features(cuts)
+
+    assert features.shape[1] == correct_pad
+    assert max(features_lens).item() == correct_pad

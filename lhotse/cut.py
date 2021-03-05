@@ -1581,6 +1581,7 @@ class CutSet(JsonMixin, YamlMixin, Sequence[AnyCut]):
                 num_samples = max(c.num_samples for c in self)
             else:
                 duration = max(cut.duration for cut in self)
+
         return CutSet.from_cuts(
             cut.pad(
                 duration=duration,

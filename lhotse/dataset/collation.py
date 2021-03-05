@@ -107,7 +107,7 @@ def collate_features(cuts: CutSet) -> Tuple[torch.Tensor, torch.IntTensor]:
     """
     assert all(cut.has_features for cut in cuts)
     features_lens = torch.tensor([cut.num_frames for cut in cuts], dtype=torch.int)
-    cuts = maybe_pad(cuts)
+    cuts = maybe_pad(cuts, num_frames=max(features_lens).item())
     first_cut = next(iter(cuts))
     features = torch.empty(len(cuts), first_cut.num_frames, first_cut.num_features)
     for idx, cut in enumerate(cuts):
@@ -122,8 +122,8 @@ def collate_audio(cuts: CutSet) -> Tuple[torch.Tensor, torch.IntTensor]:
     The cuts will be padded with silence if necessary.
     """
     assert all(cut.has_recording for cut in cuts)
-    audio_lens = torch.tensor([cut.num_samples for cut in cuts], dtype=torch.int)
-    cuts = maybe_pad(cuts)
+    audio_lens = torch.tensor([cut.num_samples for cut in cuts], dtype=torch.int32)
+    cuts = maybe_pad(cuts, num_samples=max(audio_lens).item())
     first_cut = next(iter(cuts))
     audio = torch.empty(len(cuts), first_cut.num_samples)
     for idx, cut in enumerate(cuts):
@@ -222,10 +222,10 @@ def collate_matrices(
     return result
 
 
-def maybe_pad(cuts: CutSet) -> CutSet:
+def maybe_pad(cuts: CutSet, duration: int = None, num_frames: int = None, num_samples: int = None) -> CutSet:
     """Check if all cuts' durations are equal and pad them to match the longest cut otherwise."""
     if len(set(c.duration for c in cuts)) == 1:
         # All cuts are of equal duration: nothing to do
         return cuts
     # Non-equal durations: silence padding
-    return cuts.pad()
+    return cuts.pad(duration=duration, num_frames=num_frames, num_samples=num_samples)
