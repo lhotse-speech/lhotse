@@ -59,7 +59,7 @@ def test_k2_speech_recognition_iterable_dataset_multiple_workers(k2_cut_set, num
 
     # We expect a variable number of batches for each parametrized num_workers value,
     # because the dataset is small with 4 cuts that are partitioned across the workers.
-    batches = list(dloader)
+    batches = [item for item in dloader]
 
     features = torch.cat([b['features'] for b in batches])
     assert features.shape == (4, 2000, 40)
@@ -139,7 +139,7 @@ def test_k2_speech_recognition_augmentation(k2_cut_set, k2_noise_cut_set):
     sampler = SingleCutSampler(k2_cut_set, shuffle=False)
     dloader = DataLoader(dataset, sampler=sampler, batch_size=None)
     # Check that it does not crash by just running all dataloader iterations
-    batches = list(dloader)
+    batches = [item for item in dloader]
     assert len(batches) > 0
 
 
