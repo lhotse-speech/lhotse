@@ -1,6 +1,8 @@
 import pytest
+import torch
 
 from lhotse.cut import CutSet
+from lhotse.dataset.feature_transforms import Standardize
 from lhotse.dataset.speech_synthesis import SpeechSynthesisDataset
 
 
@@ -9,9 +11,32 @@ def cut_set():
     return CutSet.from_json('test/fixtures/ljspeech/cuts.json')
 
 
-def test_speech_synthesis_dataset(cut_set):
-    dataset = SpeechSynthesisDataset(cut_set)
-    example = dataset[0]
+@pytest.mark.parametrize('transform', [None, Standardize, [Standardize]])
+def test_speech_synthesis_dataset(cut_set, transform):
+    ids = cut_set.ids
+
+    if isinstance(transform, list):
+        transform = [transform[0](cut_set)]
+    elif isinstance(transform, Standardize):
+        transform = transform(cut_set)
+    else:
+        transform = None
+
+    dataset = SpeechSynthesisDataset(cut_set, feature_transforms=transform)
+    example = dataset[ids]
     assert example['audio'].shape[1] > 0
-    assert example['features'].shape[0] > 0
-    assert len(example['tokens']) > 0
+    assert example['features'].shape[1] > 0
+    assert example['tokens'].shape[1] > 0
+
+    assert example['audio'].ndim == 2
+    assert example['features'].ndim == 3
+    assert example['tokens'].ndim == 2
+
+    assert isinstance(example['audio_lens'], torch.IntTensor)
+    assert isinstance(example['features_lens'], torch.IntTensor)
+    assert isinstance(example['tokens_lens'], torch.IntTensor)
+
+    assert example['audio_lens'].ndim == 1
+    assert example['features_lens'].ndim == 1
+    assert example['tokens_lens'].ndim == 1
+

@@ -1,12 +1,12 @@
-from pathlib import Path
-from typing import Dict, Optional
+from typing import Dict, Iterable, Optional
 
 import torch
+from torch.nn import CrossEntropyLoss
 from torch.utils.data import Dataset
 
 from lhotse import validate
 from lhotse.cut import CutSet
-from lhotse.utils import Pathlike
+from lhotse.dataset.collation import collate_features, collate_matrices
 
 
 class DiarizationDataset(Dataset):
@@ -27,9 +27,14 @@ class DiarizationDataset(Dataset):
     .. code-block::
 
         {
-            'features': (T x F) tensor
-            'speaker_activity': (num_speaker x T) tensor
+            'features': (B x T x F) tensor
+            'features_lens': (B, ) tensor
+            'speaker_activity': (B x num_speaker x T) tensor
         }
+
+    .. note: In cases when padding needs to be performed during collation,
+        the cuts are silence-padded, and the speaker activity tensor is padded
+        with CrossEntropyLoss().ignore_index.
 
     Constructor arguments:
 
@@ -47,28 +52,29 @@ class DiarizationDataset(Dataset):
             cuts: CutSet,
             min_speaker_dim: Optional[int] = None,
             global_speaker_ids: bool = False,
-    ):
+    ) -> None:
         super().__init__()
         validate(cuts)
         self.cuts = cuts
-        self.cut_ids = list(cuts.ids)
         self.speakers = {spk: idx for idx, spk in enumerate(self.cuts.speakers)} if global_speaker_ids else None
         self.min_speaker_dim = min_speaker_dim
 
-    def __getitem__(self, idx: int) -> Dict[str, torch.Tensor]:
-        cut_id = self.cut_ids[idx]
-        cut = self.cuts[cut_id]
-
-        features = torch.from_numpy(cut.load_features())
-        speaker_activity_matrix = torch.from_numpy(cut.speakers_feature_mask(
-            min_speaker_dim=self.min_speaker_dim,
-            speaker_to_idx_map=self.speakers
-        ))
-
+    def __getitem__(self, cut_ids: Iterable[str]) -> Dict[str, torch.Tensor]:
+        cuts = self.cuts.subset(cut_ids=cut_ids)
+        features, features_lens = collate_features(cuts)
         return {
             'features': features,
-            'speaker_activity': speaker_activity_matrix
+            'features_lens': features_lens,
+            'speaker_activity': collate_matrices(
+                (cut.speakers_feature_mask(
+                    min_speaker_dim=self.min_speaker_dim,
+                    speaker_to_idx_map=self.speakers,
+                ) for cut in cuts),
+                # In case padding is needed, we will add a special symbol
+                # that tells the cross entropy loss to ignore the frame during scoring.
+                padding_value=CrossEntropyLoss().ignore_index
+            )
         }
 
     def __len__(self) -> int:
-        return len(self.cut_ids)
+        return len(self.cuts)

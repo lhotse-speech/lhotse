@@ -33,8 +33,5 @@ class CutMix:
         self.prob = prob
 
     def __call__(self, cuts: CutSet) -> CutSet:
-        return (
-            cuts
-                .sort_by_duration(ascending=False)
-                .mix(self.cuts, duration=cuts[0].duration, snr=self.snr, mix_prob=self.prob)
-        )
+        cuts = cuts.sort_by_duration(ascending=False)
+        return cuts.mix(self.cuts, duration=cuts[0].duration, snr=self.snr, mix_prob=self.prob)

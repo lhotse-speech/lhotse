@@ -41,6 +41,60 @@ def test_single_cut_sampler_shuffling():
     assert sampler_cut_ids != [c.id for c in cut_set]
 
 
+def test_single_cut_sampler_order_is_deterministic_given_epoch():
+    cut_set = DummyManifest(CutSet, begin_id=0, end_id=100)
+
+    sampler = SingleCutSampler(
+        cut_set,
+        shuffle=True,
+        # Set an effective batch size of 10 cuts, as all have 1s duration == 100 frames
+        # This way we're testing that it works okay when returning multiple batches in
+        # a full epoch.
+        max_frames=1000
+    )
+    sampler.set_epoch(42)
+    # calling the sampler twice without epoch update gives identical ordering
+    assert [item for item in sampler] == [item for item in sampler]
+
+
+def test_single_cut_sampler_order_differs_between_epochs():
+    cut_set = DummyManifest(CutSet, begin_id=0, end_id=100)
+
+    sampler = SingleCutSampler(
+        cut_set,
+        shuffle=True,
+        # Set an effective batch size of 10 cuts, as all have 1s duration == 100 frames
+        # This way we're testing that it works okay when returning multiple batches in
+        # a full epoch.
+        max_frames=1000
+    )
+    last_order = [item for item in sampler]
+    for epoch in range(1, 6):
+        sampler.set_epoch(epoch)
+        new_order = [item for item in sampler]
+        assert new_order != last_order
+        last_order = new_order
+
+
+def test_single_cut_sampler_len():
+    # total duration is 55 seconds
+    # each second has 100 frames
+    cuts = CutSet.from_cuts(
+        dummy_cut(idx, duration=float(idx))
+        for idx in range(1, 11)
+    )
+    sampler = SingleCutSampler(
+        cuts,
+        shuffle=True,
+        max_frames=10 * 100,
+        max_cuts=6
+    )
+
+    for epoch in range(5):
+        assert len(sampler) == len([batch for batch in sampler])
+        sampler.set_epoch(epoch)
+
+
 def test_single_cut_sampler_low_max_frames(libri_cut_set):
     sampler = SingleCutSampler(libri_cut_set, shuffle=False, max_frames=2)
     # Check that it does not crash
@@ -73,6 +127,68 @@ def test_cut_pairs_sampler():
     assert len(set(sampler_cut_ids)) == len(sampler_cut_ids)
     # Invariant 3: the items are shuffled, i.e. the order is different than that in the CutSet
     assert sampler_cut_ids != [c.id for c in cut_set]
+
+
+def test_cut_pairs_sampler_order_is_deterministic_given_epoch():
+    # The dummy cuts have a duration of 1 second each
+    cut_set = DummyManifest(CutSet, begin_id=0, end_id=100)
+
+    sampler = CutPairsSampler(
+        source_cuts=cut_set,
+        target_cuts=cut_set,
+        shuffle=True,
+        # Set an effective batch size of 10 cuts, as all have 1s duration == 100 frames
+        # This way we're testing that it works okay when returning multiple batches in
+        # a full epoch.
+        max_source_frames=1000,
+        max_target_frames=500,
+    )
+    sampler.set_epoch(42)
+    # calling the sampler twice without epoch update gives identical ordering
+    assert [item for item in sampler] == [item for item in sampler]
+
+
+def test_cut_pairs_sampler_order_differs_between_epochs():
+    # The dummy cuts have a duration of 1 second each
+    cut_set = DummyManifest(CutSet, begin_id=0, end_id=100)
+
+    sampler = CutPairsSampler(
+        source_cuts=cut_set,
+        target_cuts=cut_set,
+        shuffle=True,
+        # Set an effective batch size of 10 cuts, as all have 1s duration == 100 frames
+        # This way we're testing that it works okay when returning multiple batches in
+        # a full epoch.
+        max_source_frames=1000,
+        max_target_frames=500,
+    )
+
+    last_order = [item for item in sampler]
+    for epoch in range(1, 6):
+        sampler.set_epoch(epoch)
+        new_order = [item for item in sampler]
+        assert new_order != last_order
+        last_order = new_order
+
+
+def test_cut_pairs_sampler_len():
+    # total duration is 55 seconds
+    # each second has 100 frames
+    cuts = CutSet.from_cuts(
+        dummy_cut(idx, duration=float(idx))
+        for idx in range(1, 11)
+    )
+    sampler = CutPairsSampler(
+        source_cuts=cuts,
+        target_cuts=cuts,
+        shuffle=True,
+        max_source_frames=10 * 100,
+        max_target_frames=10 * 100,
+    )
+
+    for epoch in range(5):
+        assert len(sampler) == len([batch for batch in sampler])
+        sampler.set_epoch(epoch)
 
 
 def test_concat_cuts():
@@ -136,6 +252,48 @@ def test_bucketing_sampler_cut_pairs():
     assert set(cut_set2.ids) == set(cut_ids)
 
 
+def test_bucketing_sampler_order_is_deterministic_given_epoch():
+    cut_set = DummyManifest(CutSet, begin_id=0, end_id=1000)
+    sampler = BucketingSampler(cut_set, sampler_type=SingleCutSampler)
+
+    sampler.set_epoch(42)
+    # calling the sampler twice without epoch update gives identical ordering
+    assert [item for item in sampler] == [item for item in sampler]
+
+
+def test_bucketing_sampler_order_differs_between_epochs():
+    cut_set = DummyManifest(CutSet, begin_id=0, end_id=1000)
+    sampler = BucketingSampler(cut_set, sampler_type=SingleCutSampler)
+
+    last_order = [item for item in sampler]
+    for epoch in range(1, 6):
+        sampler.set_epoch(epoch)
+        new_order = [item for item in sampler]
+        assert new_order != last_order
+        last_order = new_order
+
+
+def test_bucketing_sampler_len():
+    # total duration is 550 seconds
+    # each second has 100 frames
+    cuts = CutSet.from_cuts(
+        dummy_cut(idx, duration=float(duration))
+        for idx, duration in enumerate(list(range(1, 11)) * 10)
+    )
+
+    sampler = BucketingSampler(
+        cuts,
+        num_buckets=4,
+        shuffle=True,
+        max_frames=64 * 100,
+        max_cuts=6
+    )
+
+    for epoch in range(5):
+        assert len(sampler) == len([item for item in sampler])
+        sampler.set_epoch(epoch)
+
+
 def test_bucketing_sampler_buckets_have_different_durations():
     cut_set_1s = DummyManifest(CutSet, begin_id=0, end_id=10)
     cut_set_2s = DummyManifest(CutSet, begin_id=10, end_id=20)
@@ -150,7 +308,7 @@ def test_bucketing_sampler_buckets_have_different_durations():
         max_frames=200,
         num_buckets=2
     )
-    batches = list(sampler)
+    batches = [item for item in sampler]
     assert len(batches) == 15
 
     # All cuts have the same durations (i.e. are from the same bucket in this case)

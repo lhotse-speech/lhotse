@@ -15,4 +15,7 @@ from .manipulation import combine, load_manifest, to_manifest
 from .supervision import SupervisionSegment, SupervisionSet
 from .qa import validate, validate_recordings_and_supervisions
 
+from . import augmentation
+from . import dataset
+from . import features
 from . import recipes

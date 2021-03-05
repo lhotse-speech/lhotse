@@ -95,7 +95,7 @@ class K2SpeechRecognitionDataset(torch.utils.data.Dataset):
 
         # Get a tensor with batched feature matrices, shape (B, T, F)
         # Collation performs auto-padding, if necessary.
-        features = collate_features(cuts)
+        features, _ = collate_features(cuts)
 
         batch = {
             'features': features,
@@ -124,8 +124,11 @@ class K2SpeechRecognitionDataset(torch.utils.data.Dataset):
 
     def _validate(self) -> None:
         validate(self.cuts)
+        tol = 1e-3  # 1ms
         for cut in self.cuts:
             for supervision in cut.supervisions:
-                assert (cut.start - 1e-5) <= supervision.start <= supervision.end <= (cut.end + 1e-5), \
-                    f"Cutting in the middle of a supervision is currently not supported for the ASR task. " \
-                    f"Cut ID violating the pre-condition: '{cut.id}'"
+                assert supervision.start >= -tol, f"Supervisions starting before the cut are not supported for ASR" \
+                                                  f" (sup id: {supervision.id}, cut id: {cut.id})"
+                assert supervision.duration <= cut.duration + tol, f"Supervisions ending after the cut " \
+                                                                   f"are not supported for ASR" \
+                                                                   f" (sup id: {supervision.id}, cut id: {cut.id})"

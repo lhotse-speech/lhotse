@@ -52,7 +52,7 @@ def validate_recordings_and_supervisions(
     # Errors
     for s in supervisions:
         r = recordings[s.recording_id]
-        assert 0 <= s.start <= s.end <= r.duration, \
+        assert -1e-3 <= s.start <= s.end <= r.duration + 1e-3, \
             f'Supervision {s.id}: exceeded the bounds of its corresponding recording ' \
             f'(supervision spans [{s.start}, {s.end}]; recording spans [0, {r.duration}])'
         assert s.channel in r.channel_ids, \

@@ -1,3 +1,4 @@
+import torch
 import numpy as np
 import pytest
 
@@ -14,27 +15,32 @@ def libri_cut_set():
 
 
 def test_unsupervised_dataset(libri_cut_set):
+    ids = list(libri_cut_set.ids)
     dataset = UnsupervisedDataset(libri_cut_set)
     assert len(dataset) == 1
-    feats = dataset[0]
-    assert feats.shape == (1000, 40)
+    out = dataset[ids]
+    assert out["features"].shape == (1, 1000, 40)
 
 
 def test_unsupervised_waveform_dataset(libri_cut_set):
+    ids = list(libri_cut_set.ids)
     dataset = UnsupervisedWaveformDataset(libri_cut_set)
     assert len(dataset) == 1
-    audio = dataset[0]
-    assert audio.shape == (1, 10 * 16000)
+    out = dataset[ids]
+    assert out["audio"].shape == (1, 10 * 16000)
+    assert isinstance(out["audio_lens"], torch.IntTensor)
 
 
 def test_on_the_fly_feature_extraction_unsupervised_dataset(libri_cut_set):
+    ids = list(libri_cut_set.ids)
     ref_dataset = UnsupervisedDataset(libri_cut_set)
     tested_dataset = DynamicUnsupervisedDataset(
         feature_extractor=Fbank(),
         cuts=libri_cut_set
     )
-    ref_feats = ref_dataset[0]
-    tested_feats = tested_dataset[0]
+    out = ref_dataset[ids]
+    ref_feats = out["features"]
+    tested_feats = tested_dataset[ids]
     # Note: comparison to 1 decimal fails.
     #       I'm assuming this is due to lilcom's compression.
     #       Pytest outputs looks like the following:
@@ -52,10 +58,11 @@ def test_on_the_fly_feature_extraction_unsupervised_dataset(libri_cut_set):
 
 @pytest.mark.skipif(not is_wav_augment_available(), reason='Requires WavAugment')
 def test_on_the_fly_feature_extraction_unsupervised_dataset_with_augmentation(libri_cut_set):
+    ids = list(libri_cut_set.ids)
     tested_dataset = DynamicUnsupervisedDataset(
         feature_extractor=Fbank(),
         cuts=libri_cut_set,
         augment_fn=WavAugmenter.create_predefined('reverb', sampling_rate=16000)
     )
     # Just test that it runs
-    tested_feats = tested_dataset[0]
+    tested_feats = tested_dataset[ids]

@@ -1,3 +1,4 @@
+from . import transforms
 from .diarization import DiarizationDataset
 from .sampling import (BucketingSampler, CutPairsSampler, SingleCutSampler)
 from .source_separation import (

@@ -1,3 +1,4 @@
+import warnings
 from typing import Dict, List, Optional, Tuple
 
 import torch
@@ -10,6 +11,8 @@ from lhotse.utils import EPSILON
 
 class SourceSeparationDataset(Dataset):
     """
+    .. warning: Speech separation datasets are not yet updated to use the new Lhotse's sampling mechanism.
+
     An abstract base class, implementing PyTorch Dataset for the source separation task.
     It's created from two CutSets - one provides the audio cuts for the sources, and the other one the audio cuts for
     the signal mix. When queried for data samples, it returns a dict of:
@@ -30,6 +33,7 @@ class SourceSeparationDataset(Dataset):
             mixtures_set: CutSet,
     ):
         super().__init__()
+        warnings.warn("Speech separation datasets are not yet updated to use the new Lhotse's sampling mechanism.")
         self.sources_set = sources_set
         self.mixtures_set = mixtures_set
         self.cut_ids = list(self.mixtures_set.ids)

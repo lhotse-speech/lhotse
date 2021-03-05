@@ -1,10 +1,9 @@
-from hypothesis import given, reproduce_failure, settings
+from hypothesis import given, settings
 from hypothesis import strategies as st
 
 from lhotse.testing.fixtures import RandomCutTestCase
-from lhotse.utils import Seconds
 
-EXAMPLE_TIMEOUT_MS = 300
+EXAMPLE_TIMEOUT_MS = 1000
 MAX_EXAMPLES = 500
 
 
