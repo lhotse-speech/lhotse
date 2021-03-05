@@ -17,7 +17,7 @@ class SpeechSynthesisDataset(torch.utils.data.Dataset):
         {
             'audio': (B x NumSamples) float tensor
             'features': (B x NumFrames x NumFeatures) float tensor
-            'tokens': (B x NumTokens) int tensor
+            'tokens': (B x NumTokens) long tensor
             'audio_lens': (B, ) int tensor
             'features_lens': (B, ) int tensor
             'tokens_lens': (B, ) int tensor
