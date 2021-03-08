@@ -97,12 +97,8 @@ class CutSampler(Sampler[List[str]]):
             self.world_size = 1
             self.rank = 0
             return
-
-        if world_size is None:
-            self.world_size = dist.get_world_size()
-
-        if rank is None:
-            self.rank = dist.get_rank()
+        self.world_size = dist.get_world_size() if world_size is None else world_size
+        self.rank = dist.get_rank() if rank is None else rank
 
     def set_epoch(self, epoch: int) -> None:
         r"""
