@@ -362,6 +362,7 @@ class BucketingSampler(CutSampler):
             sampler_type(*bucket_cut_sets, **kwargs)
             for bucket_cut_sets in self.buckets
         ]
+        self.bucket_rng = random.Random(self.seed + self.epoch)
         self.depleted = [False] * num_buckets
 
     def set_epoch(self, epoch: int) -> None:
@@ -370,15 +371,15 @@ class BucketingSampler(CutSampler):
         super().set_epoch(epoch)
 
     def __iter__(self) -> 'BucketingSampler':
+        self.bucket_rng.seed(self.seed + self.epoch)
         for b in self.bucket_samplers:
             iter(b)
         self.depleted = [False] * self.num_buckets
         return self
 
     def __next__(self) -> List[str]:
-        random.seed(self.seed + self.epoch)
         while not self.is_depleted:
-            idx, sampler = random.choice(self._nondepleted_samplers_with_idxs)
+            idx, sampler = self.bucket_rng.choice(self._nondepleted_samplers_with_idxs)
             try:
                 return next(sampler)
             except StopIteration:
