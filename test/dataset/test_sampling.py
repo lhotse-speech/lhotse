@@ -1,3 +1,5 @@
+from itertools import groupby
+
 import pytest
 
 from lhotse import CutSet
@@ -319,3 +321,38 @@ def test_bucketing_sampler_buckets_have_different_durations():
     batches = sorted(batches, key=len)
     assert all(len(b) == 1 for b in batches[:10])
     assert all(len(b) == 2 for b in batches[10:])
+
+
+def test_bucketing_sampler_chooses_buckets_randomly():
+    # Construct a CutSet that has 1000 cuts with 100 unique durations.
+    # Makes it simple to track which bucket was selected.
+    cut_set = CutSet({})  # empty
+    for i in range(100):
+        new_cuts = DummyManifest(CutSet, begin_id=i * 10, end_id=(i + 1) * 10)
+        for c in new_cuts:
+            c.duration = i
+        cut_set = cut_set + new_cuts
+
+    # Sampler that always select one cut.
+    sampler = BucketingSampler(
+        cut_set,
+        sampler_type=SingleCutSampler,
+        max_cuts=1,
+        max_frames=1000000000,
+        num_buckets=100
+    )
+
+    # Batches of 1 guarantee that item is always a single-element list of cut IDs.
+    durations = [cut_set[item[0]].duration for item in sampler]
+
+    # This is the "trick" part - 'groupby' groups the cuts together by their duration.
+    # If there is a group that has a size of 10, that means the same bucket was chosen
+    # for 10 consecutive batches, which is not what BucketingSampler is supposed to do
+    # (the probability of that is extremely low).
+    # We're actually setting that threshold lower to 8 which should never be triggered
+    # anyway.
+    lens = []
+    for key, group in groupby(durations):
+        lens.append(len(list(group)))
+    assert all(l < 8 for l in lens)
+    print(lens)
