@@ -2,6 +2,7 @@ from .aishell import *
 from .ami import *
 from .babel import *
 from .broadcast_news import *
+from .cmu_arctic import *
 from .heroico import *
 from .librimix import *
 from .librispeech import *
