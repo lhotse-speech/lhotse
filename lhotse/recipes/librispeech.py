@@ -27,7 +27,7 @@ def download_librispeech(
         base_url: Optional[str] = 'http://www.openslr.org/resources'
 ) -> None:
     """
-    Downdload and untar the dataset, supporting both LibriSpeech and MiniLibrispeech
+    Download and untar the dataset, supporting both LibriSpeech and MiniLibrispeech
 
     :param target_dir: Pathlike, the path of the dir to storage the dataset.
     :param dataset_parts: "librispeech", "mini_librispeech",
