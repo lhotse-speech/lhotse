@@ -4,6 +4,7 @@ from .babel import prepare_single_babel_language
 from .broadcast_news import prepare_broadcast_news
 from .cmu_arctic import download_cmu_arctic, prepare_cmu_arctic
 from .heroico import prepare_heroico
+from .l2_arctic import prepare_l2_arctic
 from .librimix import prepare_librimix
 from .librispeech import download_librispeech, prepare_librispeech
 from .ljspeech import prepare_ljspeech

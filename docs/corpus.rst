@@ -157,6 +157,7 @@ Currently supported corpora:
 - Heroico :func:`lhotse.recipes.prepare_heroico`
 - MiniLibriMix :func:`lhotse.recipes.prepare_librimix`
 - MUSAN :func:`lhotse.recipes.prepare_musan`
+- L2 Arctic :func:`lhotse.recipes.prepare_l2_arctic`
 - LibriSpeech (including "mini") :func:`lhotse.recipes.prepare_librispeech`
 - LJ Speech :func:`lhotse.recipes.prepare_ljspeech`
 - MobvoiHotWord :func:`lhotse.recipes.prepare_mobvoihotwords`
