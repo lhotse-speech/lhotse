@@ -4,6 +4,7 @@ from .babel import *
 from .broadcast_news import *
 from .cmu_arctic import *
 from .heroico import *
+from .l2_arctic import *
 from .librimix import *
 from .librispeech import *
 from .musan import *

@@ -28,8 +28,7 @@ from typing import Dict, Optional, Sequence, Union
 
 from tqdm.auto import tqdm
 
-from lhotse import Recording, RecordingSet, SupervisionSegment, SupervisionSet, validate, \
-    validate_recordings_and_supervisions
+from lhotse import Recording, RecordingSet, SupervisionSegment, SupervisionSet, validate_recordings_and_supervisions
 from lhotse.qa import remove_missing_recordings_and_supervisions
 from lhotse.utils import Pathlike, urlretrieve_progress
 
@@ -100,7 +99,7 @@ def prepare_cmu_arctic(
 ) -> Dict[str, Union[RecordingSet, SupervisionSet]]:
     """
     Prepares and returns the CMU Arctic manifests,
-    which consist of the Recordings and Supervisions.
+    which consist of Recordings and Supervisions.
 
     :param corpus_dir: Pathlike, the path of the data dir.
     :param output_dir: Pathlike, the path where to write the manifests.
