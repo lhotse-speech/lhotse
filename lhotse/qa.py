@@ -1,6 +1,6 @@
 import logging
 from math import isclose
-from typing import Any, Callable, Dict, Optional
+from typing import Any, Callable, Dict, Optional, Tuple
 
 import numpy as np
 
@@ -69,6 +69,31 @@ def validate_recordings_and_supervisions(
     if only_in_supervisions:
         logging.warning(f'There are {len(only_in_supervisions)} supervisions that '
                         f'are missing their corresponding recordings in the RecordingSet.')
+
+
+def remove_missing_recordings_and_supervisions(
+        recordings: RecordingSet,
+        supervisions: SupervisionSet,
+) -> Tuple[RecordingSet, SupervisionSet]:
+    """
+    Fix the recording and supervision manifests by removing all entries that
+    miss their counterparts.
+
+    :param recordings: a :class:`RecordingSet` object.
+    :param supervisions: a :class:`RecordingSet` object.
+    :return: A pair of :class:`RecordingSet` and :class:`SupervisionSet` with removed entries.
+    """
+    recording_ids = frozenset(r.id for r in recordings)
+    recording_ids_in_sups = frozenset(s.recording_id for s in supervisions)
+    only_in_recordings = recording_ids - recording_ids_in_sups
+    if only_in_recordings:
+        recordings = recordings.filter(lambda r: r.id not in only_in_recordings)
+        logging.info(f'Removed {len(only_in_recordings)} recordings with no corresponding supervisions.')
+    only_in_supervisions = recording_ids_in_sups - recording_ids
+    if only_in_supervisions:
+        supervisions = supervisions.filter(lambda s: s.recording_id not in only_in_supervisions)
+        logging.info(f'Removed {len(only_in_supervisions)} supervisions with no corresponding recordings.')
+    return recordings, supervisions
 
 
 def register_validator(fn):
