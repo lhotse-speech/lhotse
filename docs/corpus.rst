@@ -155,6 +155,8 @@ Currently supported corpora:
 - CMU Arctic :func:`lhotse.recipes.prepare_cmu_arctic`
 - English Broadcast News 1997 :func:`lhotse.recipes.prepare_broadcast_news`
 - Heroico :func:`lhotse.recipes.prepare_heroico`
+- MiniLibriMix :func:`lhotse.recipes.prepare_librimix`
+- MUSAN :func:`lhotse.recipes.prepare_musan`
 - L2 Arctic :func:`lhotse.recipes.prepare_l2_arctic`
 - LibriSpeech (including "mini") :func:`lhotse.recipes.prepare_librispeech`
 - LJ Speech :func:`lhotse.recipes.prepare_ljspeech`
