@@ -155,15 +155,16 @@ Currently supported corpora:
 - CMU Arctic :func:`lhotse.recipes.prepare_cmu_arctic`
 - English Broadcast News 1997 :func:`lhotse.recipes.prepare_broadcast_news`
 - Heroico :func:`lhotse.recipes.prepare_heroico`
-- MiniLibriMix :func:`lhotse.recipes.prepare_librimix`
-- MUSAN :func:`lhotse.recipes.prepare_musan`
 - L2 Arctic :func:`lhotse.recipes.prepare_l2_arctic`
 - LibriSpeech (including "mini") :func:`lhotse.recipes.prepare_librispeech`
 - LJ Speech :func:`lhotse.recipes.prepare_ljspeech`
+- MiniLibriMix :func:`lhotse.recipes.prepare_librimix`
 - MobvoiHotWord :func:`lhotse.recipes.prepare_mobvoihotwords`
+- MUSAN :func:`lhotse.recipes.prepare_musan`
 - National Speech Corpus (Singaporean English) :func:`lhotse.recipes.prepare_nsc`
 - Switchboard :func:`lhotse.recipes.prepare_switchboard`
 - TED-LIUM v3 :func:`lhotse.recipes.prepare_tedlium`
+- VCTK :func:`lhotse.recipes.prepare_vctk`
 
 
 Adding new corpora

@@ -88,11 +88,11 @@ def remove_missing_recordings_and_supervisions(
     only_in_recordings = recording_ids - recording_ids_in_sups
     if only_in_recordings:
         recordings = recordings.filter(lambda r: r.id not in only_in_recordings)
-        logging.info(f'Removed {len(only_in_recordings)} recordings with no corresponding supervisions.')
+        logging.warning(f'Removed {len(only_in_recordings)} recordings with no corresponding supervisions.')
     only_in_supervisions = recording_ids_in_sups - recording_ids
     if only_in_supervisions:
         supervisions = supervisions.filter(lambda s: s.recording_id not in only_in_supervisions)
-        logging.info(f'Removed {len(only_in_supervisions)} supervisions with no corresponding recordings.')
+        logging.warning(f'Removed {len(only_in_supervisions)} supervisions with no corresponding recordings.')
     return recordings, supervisions
 
 
