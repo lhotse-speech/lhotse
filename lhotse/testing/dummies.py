@@ -67,6 +67,7 @@ def dummy_cut(unique_id: int, start: float = 0.0, duration: float = 1.0, supervi
         start=start,
         duration=duration,
         channel=0,
+        recording=dummy_recording(unique_id),
         features=dummy_features(unique_id),
         supervisions=supervisions if supervisions is not None else [],
     )
