@@ -40,7 +40,7 @@ def test_vad_dataset(cut_set):
     assert isclose(float(torch.mean(is_voice[v2_start:v2_end])), 1)
     assert isclose(float(torch.mean(is_voice[v2_end:end])), 0)
 
-    features = example['features'][0]
+    features = example['inputs'][0]
     assert float(torch.mean(features[0:v1_start])) < feature_threhold
     assert float(torch.mean(features[v1_start:v1_end])) > feature_threhold
     assert float(torch.mean(features[v1_end:v2_start])) < feature_threhold

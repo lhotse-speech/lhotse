@@ -196,14 +196,7 @@ class CutUtilsMixin:
         Return a 1D numpy array with value 1 for **frames** covered by at least one supervision,
         and 0 for **frames** not covered by any supervision.
         """
-        assert self.has_features, f"No features available. " \
-                                  f"Can't compute supervisions feature mask for cut with ID: {self.id}."
-        mask = np.zeros(self.num_frames, dtype=np.float32)
-        for supervision in self.supervisions:
-            st = round(supervision.start / self.frame_shift) if supervision.start > 0 else 0
-            et = round(supervision.end / self.frame_shift) if supervision.end < self.duration else self.num_frames
-            mask[st:et] = 1.0
-        return mask
+        return compute_supervisions_frame_mask(self)
 
     def supervisions_audio_mask(self) -> np.ndarray:
         """
@@ -2269,3 +2262,32 @@ def append_cuts(cuts: Iterable[AnyCut]) -> AnyCut:
     # The following is a fold (accumulate/aggregate) operation; it starts with cuts[0], and appends cuts[1] to it;
     #  then takes their it concatenation and appends cuts[2] to it; and so on.
     return reduce(append, cuts)
+
+
+def compute_supervisions_frame_mask(cut: AnyCut, frame_shift: Optional[Seconds] = None):
+    """
+    Compute a mask that indicates which frames in a cut are covered by supervisions.
+
+    :param cut: a cut object.
+    :param frame_shift: optional frame shift in seconds; required when the cut does not have
+        pre-computed features, otherwise ignored.
+    :returns a 1D numpy array with value 1 for **frames** covered by at least one supervision,
+    and 0 for **frames** not covered by any supervision.
+    """
+    assert cut.has_features or frame_shift is not None, f"No features available. " \
+                                                        f"Either pre-compute features or provide frame_shift."
+    if cut.has_features:
+        frame_shift = cut.frame_shift
+        num_frames = cut.num_frames
+    else:
+        num_frames = compute_num_frames(
+            duration=cut.duration,
+            frame_shift=frame_shift,
+            sampling_rate=cut.sampling_rate
+        )
+    mask = np.zeros(num_frames, dtype=np.float32)
+    for supervision in cut.supervisions:
+        st = round(supervision.start / frame_shift) if supervision.start > 0 else 0
+        et = round(supervision.end / frame_shift) if supervision.end < cut.duration else num_frames
+        mask[st:et] = 1.0
+    return mask

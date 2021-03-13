@@ -3,7 +3,8 @@ from typing import Dict, Tuple
 import torch
 
 from lhotse import CutSet, FeatureExtractor
-from lhotse.dataset.collation import collate_audio, collate_features
+from lhotse.cut import compute_supervisions_frame_mask
+from lhotse.dataset.collation import collate_audio, collate_features, collate_vectors
 from lhotse.utils import compute_num_frames, supervision_to_frames, supervision_to_samples
 
 
@@ -24,9 +25,38 @@ class InputStrategy:
         Returns a dict that specifies the start and end bounds for each supervision,
         as a 1-D int tensor.
 
-        The keys in the returned dict are strategy-specific, e.g. for features
-        they will express the bounds in terms of frames, and for audio they
-        will express the bounds in terms of samples.
+        Depending on the strategy, the dict should look like:
+
+        .. code-block:
+
+            {
+                "start_frame": tensor(shape=(S,)),
+                "num_frames": tensor(shape=(S,))
+            }
+
+        or
+
+        .. code-block:
+
+            {
+                "start_sample": tensor(shape=(S,)),
+                "num_samples": tensor(shape=(S,))
+            }
+
+        Where ``S`` is the total number of supervisions encountered in the :class:`CutSet`.
+        Note that ``S`` might be different than the number of cuts (``B``).
+        """
+        raise NotImplementedError()
+
+    def supervision_masks(self, cuts: CutSet) -> torch.Tensor:
+        """
+        Returns a collated batch of masks, marking the supervised regions in cuts.
+        They are zero-padded to the longest cut.
+
+        Depending on the strategy implementation, it is expected to be a
+        tensor of shape ``(B, NF)`` or ``(B, NS)``, where ``B`` denotes the number of cuts,
+        ``NF`` the number of frames and ``NS`` the total number of samples.
+        ``NF`` and ``NS`` are determined by the longest cut in a batch.
         """
         raise NotImplementedError()
 
@@ -57,6 +87,10 @@ class PrecomputedFeatures(InputStrategy):
             'num_frames': torch.tensor(nums_frames, dtype=torch.int32)
         }
 
+    def supervision_masks(self, cuts: CutSet) -> torch.Tensor:
+        """Returns the mask for supervised frames."""
+        return collate_vectors([cut.supervisions_feature_mask() for cut in cuts])
+
 
 class AudioSamples(InputStrategy):
     """
@@ -83,6 +117,10 @@ class AudioSamples(InputStrategy):
             'start_sample': torch.tensor(start_samples, dtype=torch.int32),
             'num_samples': torch.tensor(nums_samples, dtype=torch.int32)
         }
+
+    def supervision_masks(self, cuts: CutSet) -> torch.Tensor:
+        """Returns the mask for supervised samples."""
+        return collate_vectors([cut.supervisions_audio_mask() for cut in cuts])
 
 
 class OnTheFlyFeatures(InputStrategy):
@@ -136,3 +174,7 @@ class OnTheFlyFeatures(InputStrategy):
             'start_frame': torch.tensor(start_frames, dtype=torch.int32),
             'num_frames': torch.tensor(nums_frames, dtype=torch.int32)
         }
+
+    def supervision_masks(self, cuts: CutSet) -> torch.Tensor:
+        """Returns the mask for supervised samples."""
+        return collate_vectors([compute_supervisions_frame_mask(cut, self.extractor.frame_shift) for cut in cuts])
