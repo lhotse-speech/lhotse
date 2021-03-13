@@ -1,5 +1,6 @@
 from typing import Type
 
+from lhotse import AudioSource
 from lhotse.audio import Recording, RecordingSet
 from lhotse.cut import Cut, CutSet
 from lhotse.features import FeatureSet, Features
@@ -27,7 +28,7 @@ def DummyManifest(type_: Type, *, begin_id: int, end_id: int) -> Manifest:
 def dummy_recording(unique_id: int) -> Recording:
     return Recording(
         id=f'dummy-recording-{unique_id:04d}',
-        sources=[],
+        sources=[AudioSource(type='command', channels=[0], source='echo "dummy waveform"')],
         sampling_rate=16000,
         num_samples=16000,
         duration=1.0
