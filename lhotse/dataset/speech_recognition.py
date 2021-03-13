@@ -70,8 +70,14 @@ class K2SpeechRecognitionDataset(torch.utils.data.Dataset):
         :param cuts: the ``CutSet`` to sample data from.
         :param return_cuts: When ``True``, will additionally return a "cut" field in each batch with the Cut
             objects used to create that batch.
-        :param cut_transforms: A list of transforms to be applied on each sampled batch
-            (e.g. cut concatenation, noise cuts mixing, etc.).
+        :param cut_transforms: A list of transforms to be applied on each sampled batch,
+            before converting cuts to an input representation (audio/features).
+            Examples: cut concatenation, noise cuts mixing, etc.
+        :param input_transforms: A list of transforms to be applied on each sampled batch,
+            after the cuts are converted to audio/features.
+            Examples: normalization, SpecAugment, etc.
+        :param input_strategy: Converts cuts into a collated batch of audio/features.
+            By default, reads pre-computed features from disk.
         """
         super().__init__()
         # Initialize the fields
