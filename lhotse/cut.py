@@ -328,6 +328,11 @@ class Cut(CutUtilsMixin):
             )
         return None
 
+    def drop_features(self) -> 'Cut':
+        """Return a copy of the current :class:`Cut`, detached from ``features``."""
+        assert self.has_recording, f"Cannot detach features from a Cut with no Recording (cut ID = {self.id})."
+        return fastcopy(self, features=None)
+
     def compute_and_store_features(
             self,
             extractor: FeatureExtractor,
@@ -686,6 +691,11 @@ class PaddingCut(CutUtilsMixin):
             num_samples=new_num_samples,
             duration=new_duration
         )
+
+    def drop_features(self) -> 'PaddingCut':
+        """Return a copy of the current :class:`PaddingCut`, detached from ``features``."""
+        assert self.has_recording, f"Cannot detach features from a Cut with no Recording (cut ID = {self.id})."
+        return fastcopy(self, num_frames=None, num_features=None, frame_shift=None)
 
     def compute_and_store_features(self, extractor: FeatureExtractor, *args, **kwargs) -> AnyCut:
         """
@@ -1096,6 +1106,11 @@ class MixedCut(CutUtilsMixin):
                 supervision = supervision.trim(track.cut.duration)
                 ax.axvspan(track.offset + supervision.start, track.offset + supervision.end, color='green', alpha=0.1)
         return axes
+
+    def drop_features(self) -> 'MixedCut':
+        """Return a copy of the current :class:`MixedCut`, detached from ``features``."""
+        assert self.has_recording, f"Cannot detach features from a Cut with no Recording (cut ID = {self.id})."
+        return fastcopy(self, tracks=[fastcopy(t, cut=t.cut.drop_features()) for t in self.tracks])
 
     def compute_and_store_features(
             self,
@@ -1741,6 +1756,12 @@ class CutSet(JsonMixin, YamlMixin, Sequence[AnyCut]):
             mixed = mixed.truncate(duration=cut.duration if duration is None else duration)
             mixed_cuts.append(mixed)
         return CutSet.from_cuts(mixed_cuts)
+
+    def drop_features(self) -> 'CutSet':
+        """
+        Return a new :class:`CutSet`, where each Cut is copied and detached from its extracted features.
+        """
+        return CutSet.from_cuts(c.drop_features() for c in self)
 
     def compute_and_store_features(
             self,

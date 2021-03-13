@@ -4,6 +4,7 @@ from lhotse import CutSet
 
 
 class Standardize:
+    """TODO: rename to GlobalMVN, add description, decouple from CutSet and make it easy to serialize/deserialize"""
     def __init__(self, cuts: CutSet):
         stats = cuts.compute_global_feature_stats()
         self.norm_means = stats["norm_means"]

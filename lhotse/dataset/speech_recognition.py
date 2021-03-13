@@ -5,8 +5,7 @@ from torch.utils.data.dataloader import DataLoader, default_collate
 
 from lhotse import validate
 from lhotse.cut import CutSet
-from lhotse.dataset.collation import collate_features
-from lhotse.utils import supervision_to_frames
+from lhotse.dataset.input_strategies import InputStrategy, PrecomputedFeatures
 
 
 class K2SpeechRecognitionDataset(torch.utils.data.Dataset):
@@ -24,13 +23,24 @@ class K2SpeechRecognitionDataset(torch.utils.data.Dataset):
     .. code-block::
 
         {
-            'features': float tensor of shape (B, T, F)
+            'inputs': float tensor with shape determined by :attr:`input_strategy`:
+                      - single-channel:
+                        - features: (B, T, F)
+                        - audio: (B, T)
+                      - multi-channel: currently not supported
             'supervisions': [
                 {
                     'sequence_idx': Tensor[int] of shape (S,)
                     'text': List[str] of len S
+
+                    # For feature input strategies
                     'start_frame': Tensor[int] of shape (S,)
                     'num_frames': Tensor[int] of shape (S,)
+
+                    # For audio input strategies
+                    'start_sample': Tensor[int] of shape (S,)
+                    'num_samples': Tensor[int] of shape (S,)
+
                     # Optionally, when return_cuts=True
                     'cut': List[AnyCut] of len S
                 }
@@ -51,6 +61,8 @@ class K2SpeechRecognitionDataset(torch.utils.data.Dataset):
             cuts: CutSet,
             return_cuts: bool = False,
             cut_transforms: List[Callable[[CutSet], CutSet]] = None,
+            input_transforms: List[Callable[[torch.Tensor], torch.Tensor]] = None,
+            input_strategy: InputStrategy = PrecomputedFeatures()
     ):
         """
         K2 ASR IterableDataset constructor.
@@ -66,6 +78,8 @@ class K2SpeechRecognitionDataset(torch.utils.data.Dataset):
         self.cuts = cuts
         self.return_cuts = return_cuts
         self.cut_transforms = cut_transforms if cut_transforms is not None else ()
+        self.input_transforms = input_transforms if input_transforms is not None else ()
+        self.input_strategy = input_strategy
         self._validate()
 
     def __len__(self) -> int:
@@ -83,33 +97,33 @@ class K2SpeechRecognitionDataset(torch.utils.data.Dataset):
         # Sort the cuts by duration so that the first one determines the batch time dimensions.
         cuts = cuts.sort_by_duration(ascending=False)
 
-        # Optional transforms.
+        # Optional CutSet transforms - e.g. padding, or speed perturbation that adjusts
+        # the supervision boundaries.
         for tnfm in self.cut_transforms:
             cuts = tnfm(cuts)
 
         # Get a tensor with batched feature matrices, shape (B, T, F)
         # Collation performs auto-padding, if necessary.
-        features, _ = collate_features(cuts)
+        inputs, _ = self.input_strategy(cuts)
+
+        # Apply all available transforms on the inputs, i.e. either audio or features.
+        # This could be feature extraction, global MVN, SpecAugment, etc.
+        for tnfm in self.input_transforms:
+            inputs = tnfm(inputs)
 
         batch = {
-            'features': features,
+            'inputs': inputs,
             'supervisions': default_collate([
                 {
                     'sequence_idx': sequence_idx,
                     'text': supervision.text,
-                    'start_frame': start_frame,
-                    'num_frames': num_frames
                 }
                 for sequence_idx, cut in enumerate(cuts)
-                for supervision, (start_frame, num_frames) in zip(
-                    cut.supervisions,
-                    (
-                        supervision_to_frames(s, cut.frame_shift, cut.sampling_rate, max_frames=cut.num_frames)
-                        for s in cut.supervisions
-                    )
-                )
+                for supervision in cut.supervisions
             ])
         }
+        # Update the 'supervisions' field with start/num frames/samples
+        batch['supervisions'].update(self.input_strategy.supervision_intervals(cuts))
         if self.return_cuts:
             batch['supervisions']['cut'] = [cut for cut in cuts for sup in cut.supervisions]
 

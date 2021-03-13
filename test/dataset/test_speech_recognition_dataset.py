@@ -1,12 +1,15 @@
 import pytest
 import torch
+from torch import tensor
 from torch.utils.data import DataLoader
 
+from lhotse import Fbank
 from lhotse.cut import CutSet
+from lhotse.dataset.cut_transforms import CutConcatenate, CutMix
+from lhotse.dataset.cut_transforms.extra_padding import ExtraPadding
+from lhotse.dataset.input_strategies import AudioSamples, OnTheFlyFeatures
 from lhotse.dataset.sampling import SingleCutSampler
 from lhotse.dataset.speech_recognition import K2SpeechRecognitionDataset
-from lhotse.dataset.transforms import CutConcatenate, CutMix
-from lhotse.dataset.transforms.extra_padding import ExtraPadding
 from lhotse.testing.dummies import DummyManifest
 
 
@@ -28,7 +31,6 @@ def k2_cut_set(libri_cut_set):
 
 @pytest.mark.parametrize('num_workers', [0, 1])
 def test_k2_speech_recognition_iterable_dataset(k2_cut_set, num_workers):
-    from torch import tensor
     dataset = K2SpeechRecognitionDataset(
         k2_cut_set,
         cut_transforms=[CutConcatenate()]
@@ -38,7 +40,7 @@ def test_k2_speech_recognition_iterable_dataset(k2_cut_set, num_workers):
     #       which is required when Dataset takes care of the collation itself.
     dloader = DataLoader(dataset, batch_size=None, sampler=sampler, num_workers=num_workers)
     batch = next(iter(dloader))
-    assert batch['features'].shape == (4, 2000, 40)
+    assert batch['inputs'].shape == (4, 2000, 40)
     # Each list has 5 items, to account for:
     # one cut with two supervisions + 3 three cuts with one supervision
     assert (batch['supervisions']['sequence_idx'] == tensor([0, 0, 1, 2, 3])).all()
@@ -61,7 +63,7 @@ def test_k2_speech_recognition_iterable_dataset_multiple_workers(k2_cut_set, num
     # because the dataset is small with 4 cuts that are partitioned across the workers.
     batches = [item for item in dloader]
 
-    features = torch.cat([b['features'] for b in batches])
+    features = torch.cat([b['inputs'] for b in batches])
     assert features.shape == (4, 2000, 40)
     text = [t for b in batches for t in b['supervisions']['text']]
     assert text == ['EXAMPLE OF TEXT'] * 5  # a list, not tensor
@@ -116,7 +118,7 @@ def test_k2_speech_recognition_iterable_dataset_low_max_frames(k2_cut_set):
     # Check that it does not crash
     for batch in dloader:
         # There will be only a single item in each batch as we're exceeding the limit each time.
-        assert batch['features'].shape[0] == 1
+        assert batch['inputs'].shape[0] == 1
 
 
 @pytest.fixture
@@ -153,3 +155,44 @@ def test_extra_padding_transform(k2_cut_set):
         assert padded.tracks[-1].cut.num_frames == 10
         # total num frames is OK
         assert padded.num_frames == cut.num_frames + 20
+
+
+def test_k2_speech_recognition_on_the_fly_feature_extraction(k2_cut_set):
+    precomputed_dataset = K2SpeechRecognitionDataset(k2_cut_set)
+    on_the_fly_dataset = K2SpeechRecognitionDataset(
+        k2_cut_set,
+        input_strategy=OnTheFlyFeatures(Fbank())
+    )
+    sampler = SingleCutSampler(k2_cut_set, shuffle=False, max_cuts=1)
+    for cut_ids in sampler:
+        batch_pc = precomputed_dataset[cut_ids]
+        batch_otf = on_the_fly_dataset[cut_ids]
+
+        # Check that the features do not differ too much.
+        norm_pc = torch.linalg.norm(batch_pc['inputs'])
+        norm_diff = torch.linalg.norm(batch_pc['inputs'] - batch_otf['inputs'])
+        # The precomputed and on-the-fly features are different due to mixing in time/fbank domains
+        # and lilcom compression.
+        assert norm_diff < 0.01 * norm_pc
+
+        # Check that the supervision boundaries are the same.
+        assert (batch_pc['supervisions']['start_frame'] == batch_otf['supervisions']['start_frame']).all()
+        assert (batch_pc['supervisions']['num_frames'] == batch_otf['supervisions']['num_frames']).all()
+
+
+def test_k2_speech_recognition_audio_inputs(k2_cut_set):
+    on_the_fly_dataset = K2SpeechRecognitionDataset(
+        k2_cut_set,
+        input_strategy=AudioSamples(),
+    )
+    # all cuts in one batch
+    sampler = SingleCutSampler(k2_cut_set, shuffle=False, max_frames=10000000)
+    cut_ids = next(iter(sampler))
+    batch = on_the_fly_dataset[cut_ids]
+    assert batch['inputs'].shape == (4, 320000)
+    # Each list has 5 items, to account for:
+    # one cut with two supervisions + 3 three cuts with one supervision
+    assert (batch['supervisions']['sequence_idx'] == tensor([0, 0, 1, 2, 3])).all()
+    assert batch['supervisions']['text'] == ['EXAMPLE OF TEXT'] * 5  # a list, not tensor
+    assert (batch['supervisions']['start_sample'] == tensor([0, 160000, 0, 0, 0])).all()
+    assert (batch['supervisions']['num_samples'] == tensor([160000] * 5)).all()

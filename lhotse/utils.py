@@ -405,3 +405,31 @@ def supervision_to_frames(
         if diff > 0:
             num_frames -= diff
     return start_frame, num_frames
+
+
+def supervision_to_samples(
+        supervision,
+        sampling_rate: int,
+        max_samples: Optional[int] = None
+) -> Tuple[int, int]:
+    """
+    Utility to convert a supervision's time span into a tuple of ``(start_sample num_samples)``.
+    When ``max_samples`` is specified, it will truncate the ``num_samples`` (if necessary).
+    """
+    start_sample = compute_num_samples(
+        supervision.start,
+        sampling_rate=sampling_rate
+    )
+    num_samples = compute_num_samples(
+        supervision.duration,
+        sampling_rate=sampling_rate
+    )
+    if max_samples:
+        diff = start_sample + num_samples - max_samples
+        if diff > 0:
+            num_samples -= diff
+    return start_sample, num_samples
+
+
+def is_none_or_gt(value, threshold) -> bool:
+    return value is None or value > threshold

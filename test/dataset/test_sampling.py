@@ -3,8 +3,8 @@ from itertools import groupby
 import pytest
 
 from lhotse import CutSet
+from lhotse.dataset.cut_transforms import concat_cuts
 from lhotse.dataset.sampling import BucketingSampler, CutPairsSampler, SingleCutSampler
-from lhotse.dataset.transforms import concat_cuts
 from lhotse.testing.dummies import DummyManifest, dummy_cut
 
 

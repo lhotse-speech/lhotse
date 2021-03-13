@@ -2,7 +2,7 @@ import pytest
 import torch
 
 from lhotse.cut import CutSet
-from lhotse.dataset.feature_transforms import Standardize
+from lhotse.dataset.input_transforms import Standardize
 from lhotse.dataset.speech_synthesis import SpeechSynthesisDataset
 
 
