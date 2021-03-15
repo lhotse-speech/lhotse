@@ -195,8 +195,13 @@ class TimeConstraint:
 
 class SingleCutSampler(CutSampler):
     """
-    Samples cuts from a CutSet to satisfy the criteria of max_frames and max_cuts.
+    Samples cuts from a CutSet to satisfy the input constraints.
     It behaves like an iterable that yields lists of strings (cut IDs).
+
+    When one of :attr:`max_frames`, :attr:`max_samples`, or :attr:`max_duration` is specified,
+    the batch size is dynamic.
+    Exactly zero or one of those constraints can be specified.
+    Padding required to collate the batch does not contribute to max frames/samples/duration.
     """
 
     def __init__(
@@ -212,9 +217,9 @@ class SingleCutSampler(CutSampler):
         SingleCutSampler's constructor.
 
         :param cuts: the ``CutSet`` to sample data from.
-        :param max_frames: The maximum number of feature frames from ``cuts``
-            that we're going to put in a single batch.
-            The padding introduced during collation does not contribute to that limit.
+        :param max_frames: The maximum total number of feature frames from ``cuts``.
+        :param max_samples: The maximum total number of audio samples from ``cuts``.
+        :param max_duration: The maximum total recording duration from ``cuts``.
         :param max_cuts: The maximum number of cuts sampled to form a mini-batch.
             By default, this constraint is off.
         :param kwargs: Arguments to be passed into ``CutSampler``.
@@ -278,16 +283,24 @@ class CutPairsSampler(CutSampler):
     """
     Samples pairs of cuts from a "source" and "target" CutSet.
     It expects that both CutSet's strictly consist of Cuts with corresponding IDs.
-    It will try to satisfy the criteria of max_source_frames, max_target_frames, and max_cuts.
     It behaves like an iterable that yields lists of strings (cut IDs).
+
+    When one of :attr:`max_frames`, :attr:`max_samples`, or :attr:`max_duration` is specified,
+    the batch size is dynamic.
+    Exactly zero or one of those constraints can be specified.
+    Padding required to collate the batch does not contribute to max frames/samples/duration.
     """
 
     def __init__(
             self,
             source_cuts: CutSet,
             target_cuts: CutSet,
-            max_source_frames: int = 26000,
-            max_target_frames: int = 26000,
+            max_source_frames: int = None,
+            max_source_samples: int = None,
+            max_source_duration: Seconds = None,
+            max_target_frames: int = None,
+            max_target_samples: int = None,
+            max_target_duration: int = None,
             max_cuts: Optional[int] = None,
             **kwargs
     ):
@@ -296,12 +309,12 @@ class CutPairsSampler(CutSampler):
 
         :param source_cuts: the first ``CutSet`` to sample data from.
         :param target_cuts: the second ``CutSet`` to sample data from.
-        :param max_source_frames: The maximum number of feature frames from ``source_cuts``
-            that we're going to put in a single batch.
-            The padding introduced during collation does not contribute to that limit.
-        :param max_source_frames: The maximum number of feature frames from ``target_cuts``
-            that we're going to put in a single batch.
-            The padding introduced during collation does not contribute to that limit.
+        :param max_source_frames: The maximum total number of feature frames from ``source_cuts``.
+        :param max_source_samples: The maximum total number of audio samples from ``source_cuts``.
+        :param max_source_duration: The maximum total recording duration from ``source_cuts``.
+        :param max_target_frames: The maximum total number of feature frames from ``target_cuts``.
+        :param max_target_samples: The maximum total number of audio samples from ``target_cuts``.
+        :param max_target_duration: The maximum total recording duration from ``target_cuts``.
         :param max_cuts: The maximum number of cuts sampled to form a mini-batch.
             By default, this constraint is off.
         """
@@ -311,8 +324,16 @@ class CutPairsSampler(CutSampler):
         assert set(self.source_cuts.ids) == set(self.target_cuts.ids), \
             "Expected source and target cuts to have the same set of IDs."
         # Constraints
-        self.max_source_frames = max_source_frames
-        self.max_target_frames = max_target_frames
+        self.source_constraints = TimeConstraint(
+            max_duration=max_source_duration,
+            max_samples=max_source_samples,
+            max_frames=max_source_frames
+        )
+        self.target_constraints = TimeConstraint(
+            max_duration=max_target_duration,
+            max_samples=max_target_samples,
+            max_frames=max_target_frames
+        )
         self.max_cuts = max_cuts
 
     def __next__(self) -> List[str]:
@@ -320,8 +341,8 @@ class CutPairsSampler(CutSampler):
         # provided by user (the max number of source_feats or max number of cuts).
         # Note: no actual data is loaded into memory yet because the manifests contain all the metadata
         # required to do this operation.
-        num_source_frames = 0
-        num_target_frames = 0
+        self.source_constraints.reset()
+        self.target_constraints.reset()
         cut_ids = []
         while True:
             # Check that we have not reached the end of the dataset.
@@ -337,16 +358,14 @@ class CutPairsSampler(CutSampler):
                     raise StopIteration()
             next_source_cut = self.source_cuts[next_cut_id]
             next_target_cut = self.target_cuts[next_cut_id]
-            next_num_source_frames = num_source_frames + next_source_cut.num_frames
-            next_num_target_frames = num_target_frames + next_target_cut.num_frames
+            self.source_constraints.add(next_source_cut)
+            self.target_constraints.add(next_target_cut)
             next_num_cuts = len(cut_ids) + 1
             # Did we exceed the max_source_frames and max_cuts constraints?
-            if next_num_source_frames <= self.max_source_frames \
-                    and (next_num_target_frames <= self.max_target_frames) \
+            if not self.source_constraints.exceeded() \
+                    and self.target_constraints.exceeded() \
                     and (self.max_cuts is None or next_num_cuts <= self.max_cuts):
                 # No - add the next cut to the batch, and keep trying.
-                num_source_frames = next_num_source_frames
-                num_target_frames = next_num_target_frames
                 cut_ids.append(next_source_cut.id)
                 self.current_idx += 1
             else:
@@ -429,7 +448,7 @@ class BucketingSampler(CutSampler):
         # [(cs0_0, cs1_0, cs2_0), (cs0_1, cs1_1, cs2_1)] -> [(cs0_0, cs0_1), (cs1_0, cs1_1), (cs2_0, cs2_1)]
         self.buckets = list(zip(*buckets))
         self.bucket_samplers = [
-            sampler_type(*bucket_cut_sets, **kwargs)
+            self.sampler_type(*bucket_cut_sets, **kwargs)
             for bucket_cut_sets in self.buckets
         ]
         self.bucket_rng = random.Random(self.seed + self.epoch)

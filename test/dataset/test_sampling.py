@@ -172,6 +172,50 @@ def test_cut_pairs_sampler():
     assert sampler_cut_ids != [c.id for c in cut_set]
 
 
+@pytest.mark.parametrize(
+    ['max_duration', 'max_frames', 'max_samples', 'exception_expectation'],
+    [
+        (None, None, None, does_not_raise()),  # represents no criterion (unlimited batch size)
+        (10.0, None, None, does_not_raise()),
+        (None, 1000, None, does_not_raise()),
+        (None, None, 160000, does_not_raise()),
+        (None, 1000, 160000, pytest.raises(AssertionError)),
+        (5.0, 1000, 160000, pytest.raises(AssertionError)),
+    ]
+)
+def test_cut_pairs_sampler_time_constraints(max_duration, max_frames, max_samples, exception_expectation):
+    # The dummy cuts have a duration of 1 second each
+    cut_set = DummyManifest(CutSet, begin_id=0, end_id=100)
+    if max_frames is None:
+        cut_set = cut_set.drop_features()
+
+    with exception_expectation:
+        sampler = CutPairsSampler(
+            source_cuts=cut_set,
+            target_cuts=cut_set,
+            shuffle=True,
+            # Set an effective batch size of 10 cuts, as all have 1s duration == 100 frames
+            # This way we're testing that it works okay when returning multiple batches in
+            # a full epoch.
+            max_source_frames=max_frames,
+            max_target_frames=max_frames / 2 if max_frames is not None else None,
+            max_source_samples=max_samples,
+            max_target_samples=max_samples / 2 if max_samples is not None else None,
+            max_source_duration=max_duration,
+            max_target_duration=max_duration / 2 if max_duration is not None else None,
+        )
+        sampler_cut_ids = []
+        for batch in sampler:
+            sampler_cut_ids.extend(batch)
+
+        # Invariant 1: we receive the same amount of items in a dataloader epoch as there we in the CutSet
+        assert len(sampler_cut_ids) == len(cut_set)
+        # Invariant 2: the items are not duplicated
+        assert len(set(sampler_cut_ids)) == len(sampler_cut_ids)
+        # Invariant 3: the items are shuffled, i.e. the order is different than that in the CutSet
+        assert sampler_cut_ids != [c.id for c in cut_set]
+
+
 def test_cut_pairs_sampler_order_is_deterministic_given_epoch():
     # The dummy cuts have a duration of 1 second each
     cut_set = DummyManifest(CutSet, begin_id=0, end_id=100)
@@ -397,3 +441,20 @@ def test_bucketing_sampler_chooses_buckets_randomly():
         lens.append(len(list(group)))
     assert all(l < 8 for l in lens)
     print(lens)
+
+
+@pytest.mark.parametrize(
+    'constraint',
+    [
+        {'max_frames': 1000},
+        {'max_samples': 16000},
+        {'max_duration': 10.0}
+    ]
+)
+def test_bucketing_sampler_time_constraints(constraint):
+    cut_set = DummyManifest(CutSet, begin_id=0, end_id=1000)
+    sampler = BucketingSampler(cut_set, sampler_type=SingleCutSampler, **constraint)
+    cut_ids = []
+    for batch in sampler:
+        cut_ids.extend(batch)
+    assert set(cut_set.ids) == set(cut_ids)
