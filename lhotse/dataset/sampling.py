@@ -1,13 +1,16 @@
 import logging
 import random
 import warnings
+from dataclasses import dataclass
 from math import ceil
-from typing import Iterable, List, Optional, Type
+from typing import Iterable, List, Optional, Tuple, Type, Union
 
 import torch.distributed as dist
 from torch.utils.data import Sampler
 
 from lhotse import CutSet
+from lhotse.cut import AnyCut
+from lhotse.utils import Seconds, exactly_one_not_null, is_none_or_gt
 
 
 class DataSource:
@@ -129,6 +132,67 @@ class CutSampler(Sampler[List[str]]):
         raise NotImplemented
 
 
+@dataclass
+class TimeConstraint:
+    """
+    Represents a time-based constraint for sampler classes.
+    It can be defined either as maximum total batch duration (in seconds),
+    number of frames, or number of samples.
+    These options are mutually exclusive and this class checks for that.
+
+    :class:`TimeConstraint` can be used for tracking whether the criterion has been exceeded
+    via the `add(cut)`, `exceeded()` and `reset()` methods.
+    It will automatically track the right criterion (i.e. select frames/samples/duration from the cut).
+    It can also be a null constraint (never exceeded).
+    """
+    max_duration: Optional[Seconds] = None
+    max_samples: Optional[int] = None
+    max_frames: Optional[int] = None
+    current: Union[int, Seconds] = 0
+
+    def __post_init__(self) -> None:
+        assert exactly_one_not_null(*self._constraints) or all(x is None for x in self._constraints)
+        for c in self._constraints:
+            assert is_none_or_gt(c, 0)
+
+    @property
+    def _constraints(self) -> Tuple:
+        return self.max_duration, self.max_frames, self.max_samples
+
+    def is_active(self) -> bool:
+        """Is it an actual constraint, or a dummy one (i.e. never exceeded)."""
+        return any(x is not None for x in self._constraints)
+
+    def add(self, cut: AnyCut) -> None:
+        """
+        Increment the internal counter for the time constraint,
+        selecting the right property from the input ``cut`` object.
+        """
+        if self.max_frames is not None:
+            self.current += cut.num_frames
+        if self.max_samples is not None:
+            self.current += cut.num_samples
+        if self.max_duration is not None:
+            self.current += cut.duration
+
+    def exceeded(self) -> bool:
+        """Is the constraint exceeded or not."""
+        if self.max_frames is not None:
+            return self.current > self.max_frames
+        if self.max_samples is not None:
+            return self.current > self.max_samples
+        if self.max_duration is not None:
+            return self.current > self.max_duration
+        return False
+
+    def reset(self) -> None:
+        """
+        Reset the internal counter (to be used after a batch was created,
+        to start collecting a new one).
+        """
+        self.current = 0
+
+
 class SingleCutSampler(CutSampler):
     """
     Samples cuts from a CutSet to satisfy the criteria of max_frames and max_cuts.
@@ -138,7 +202,9 @@ class SingleCutSampler(CutSampler):
     def __init__(
             self,
             cuts: CutSet,
-            max_frames: int = 26000,
+            max_frames: int = None,
+            max_samples: int = None,
+            max_duration: Seconds = None,
             max_cuts: Optional[int] = None,
             **kwargs
     ):
@@ -155,18 +221,23 @@ class SingleCutSampler(CutSampler):
         """
         super().__init__(cuts.ids, **kwargs)
         self.cuts = cuts
-        # Constraints
-        self.max_frames = max_frames
+        self.time_constraint = TimeConstraint(
+            max_duration=max_duration,
+            max_frames=max_frames,
+            max_samples=max_samples
+        )
         self.max_cuts = max_cuts
-        assert self.max_frames > 0
-        assert self.max_cuts is None or self.max_cuts > 0
+        assert self.time_constraint.is_active() or \
+            not (self.time_constraint.is_active() and self.max_cuts is not None)
+        # Constraints
+        assert is_none_or_gt(self.max_cuts, 0)
 
     def __next__(self) -> List[str]:
         # Keep iterating the underlying CutSet as long as we hit or exceed the constraints
         # provided by user (the max number of frames or max number of cuts).
         # Note: no actual data is loaded into memory yet because the manifests contain all the metadata
         # required to do this operation.
-        num_frames = 0
+        self.time_constraint.reset()
         cut_ids = []
         while True:
             # Check that we have not reached the end of the dataset.
@@ -181,12 +252,11 @@ class SingleCutSampler(CutSampler):
                     # We did and there is nothing more to return - signal the iteration code to stop.
                     raise StopIteration()
             next_cut = self.cuts[next_cut_id]
-            next_num_frames = num_frames + next_cut.num_frames
+            self.time_constraint.add(next_cut)
             next_num_cuts = len(cut_ids) + 1
             # Did we exceed the max_frames and max_cuts constraints?
-            if next_num_frames <= self.max_frames and (self.max_cuts is None or next_num_cuts <= self.max_cuts):
+            if not self.time_constraint.exceeded() and (self.max_cuts is None or next_num_cuts <= self.max_cuts):
                 # No - add the next cut to the batch, and keep trying.
-                num_frames = next_num_frames
                 cut_ids.append(next_cut.id)
                 self.current_idx += 1
             else:
