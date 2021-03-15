@@ -1,3 +1,4 @@
+import logging
 from typing import Dict, Tuple
 
 import torch
@@ -141,12 +142,16 @@ class OnTheFlyFeatures(InputStrategy):
         self.extractor = extractor
 
     def __call__(self, cuts: CutSet) -> Tuple[torch.Tensor, torch.IntTensor]:
-        audio = collate_audio(cuts)
+        audio, _ = collate_audio(cuts)
 
         features_single = []
         for idx, cut in enumerate(cuts):
             samples = audio[idx].numpy()
-            features = self.extractor.extract(samples, cuts[idx].sampling_rate)
+            try:
+                features = self.extractor.extract(samples, cuts[idx].sampling_rate)
+            except:
+                logging.error(f"Error while extracting the features for cut with ID {cut.id} -- details:\n{cut}")
+                raise
             features_single.append(torch.from_numpy(features))
         features_batch = torch.stack(features_single)
 
