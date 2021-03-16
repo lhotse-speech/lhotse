@@ -2,7 +2,7 @@ import pytest
 import torch
 
 from lhotse.cut import CutSet
-from lhotse.dataset.feature_transforms import Standardize
+from lhotse.dataset.feature_transforms import GlobalMVN
 from lhotse.dataset.speech_synthesis import SpeechSynthesisDataset
 
 
@@ -11,13 +11,13 @@ def cut_set():
     return CutSet.from_json('test/fixtures/ljspeech/cuts.json')
 
 
-@pytest.mark.parametrize('transform', [None, Standardize, [Standardize]])
+@pytest.mark.parametrize('transform', [None, GlobalMVN, [GlobalMVN]])
 def test_speech_synthesis_dataset(cut_set, transform):
     ids = cut_set.ids
 
     if isinstance(transform, list):
-        transform = [transform[0](cut_set)]
-    elif isinstance(transform, Standardize):
+        transform = [transform[0].from_cuts(cut_set)]
+    elif isinstance(transform, GlobalMVN):
         transform = transform(cut_set)
     else:
         transform = None
