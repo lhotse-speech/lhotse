@@ -33,9 +33,6 @@ jobs:
         python -m pip install --upgrade pip
         pip install --no-cache-dir numpy
         pip install --no-cache-dir '.[tests]'
-    - name: Install optional dependency WavAugment
-      run: |
-        bash tools/install_wavaugment.sh
     - name: Lint with flake8
       run: |
         # stop the build if there are Python syntax errors or undefined names
