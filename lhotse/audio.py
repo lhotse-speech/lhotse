@@ -58,14 +58,15 @@ class AudioSource:
                 # TODO(pzelasko): How should we support chunking for commands?
                 #                 We risk being very inefficient when reading many chunks from the same file
                 #                 without some caching scheme, because we'll be re-running commands.
-                raise ValueError("Reading audio chunks from command AudioSource type is currently not supported.")
+                raise ValueError("Reading audio chunks from 'command' AudioSource type is currently not supported.")
             source = BytesIO(run(self.source, shell=True, stdout=PIPE).stdout)
             samples, sampling_rate = read_audio(source)
 
         elif self.type == 'url':
             if offset != 0.0 or duration is not None:
                 # We won't support chunking for URLs, as that could generate a lot of unwanted network traffic.
-                raise ValueError("Reading audio chunks from command AudioSource type is currently not supported.")
+                # We might consider some caching scheme both for this and the command scheme though.
+                raise ValueError("Reading audio chunks from 'url' AudioSource type is currently not supported.")
             try:
                 from smart_open import smart_open
             except ImportError:

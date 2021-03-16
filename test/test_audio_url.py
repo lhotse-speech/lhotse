@@ -1,17 +1,13 @@
 import pytest
 
 from lhotse.audio import AudioSource
+from lhotse.utils import is_module_available
 
 
-def is_smart_open_installed():
-    try:
-        import smart_open
-        return True
-    except:
-        return False
-
-
-@pytest.mark.skipif(not is_smart_open_installed(), reason='URL downloading requires smart_open to be installed.')
+@pytest.mark.skipif(
+    not is_module_available('smart_open'),
+    reason='URL downloading requires smart_open to be installed.'
+)
 def test_audio_url_downloading():
     audio_source = AudioSource(
         type='url',
