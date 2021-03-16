@@ -31,6 +31,7 @@ class AudioSource:
     Supported sources of audio are currently:
     - 'file' (formats supported by librosa, possibly multi-channel)
     - 'command' [unix pipe] (must be WAVE, possibly multi-channel)
+    - 'url' (any URL type that is supported by "smart_open" library, e.g. http/https/s3/gcp/azure/etc.)
     """
     type: str
     channels: List[int]
