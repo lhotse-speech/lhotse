@@ -16,9 +16,12 @@ class InputStrategy:
     They might also be single or multi channel.
 
     This is a base class that only defines the interface.
+
+    .. automethod:: __call__
     """
 
     def __call__(self, cuts: CutSet) -> Tuple[torch.Tensor, torch.IntTensor]:
+        """Returns a tensor with collated input signals, and a tensor of length of each signal before padding."""
         raise NotImplementedError()
 
     def supervision_intervals(self, cuts: CutSet) -> Dict[str, torch.Tensor]:
@@ -68,9 +71,16 @@ class PrecomputedFeatures(InputStrategy):
     are attached to cuts, from disk.
 
     It pads the feature matrices, if needed.
+
+    .. automethod:: __call__
     """
 
     def __call__(self, cuts: CutSet) -> Tuple[torch.Tensor, torch.IntTensor]:
+        """
+        Reads the pre-computed features from disk/other storage.
+        The returned shape is ``(B, T, F) => (batch_size, num_frames, num_features)``.
+
+        :return: a tensor with collated features, and a tensor of ``num_frames`` of each cut before padding."""
         return collate_features(cuts)
 
     def supervision_intervals(self, cuts: CutSet) -> Dict[str, torch.Tensor]:
@@ -99,9 +109,17 @@ class AudioSamples(InputStrategy):
     are attached to cuts, from disk (or other audio source).
 
     It pads the recordings, if needed.
+
+    .. automethod:: __call__
     """
 
     def __call__(self, cuts: CutSet) -> Tuple[torch.Tensor, torch.IntTensor]:
+        """
+        Reads the audio samples from recordings on disk/other storage.
+        The returned shape is ``(B, T) => (batch_size, num_samples)``.
+
+        :return: a tensor with collated audio samples, and a tensor of ``num_samples`` of each cut before padding.
+        """
         return collate_audio(cuts)
 
     def supervision_intervals(self, cuts: CutSet) -> Dict[str, torch.Tensor]:
@@ -136,12 +154,21 @@ class OnTheFlyFeatures(InputStrategy):
         The batch feature extraction performed here is not as efficient as it could be,
         but it allows to use arbitrary feature extraction method that may work on
         a single recording at a time.
+
+    .. automethod:: __call__
     """
 
     def __init__(self, extractor: FeatureExtractor):
         self.extractor = extractor
 
     def __call__(self, cuts: CutSet) -> Tuple[torch.Tensor, torch.IntTensor]:
+        """
+        Reads the audio samples from recordings on disk/other storage
+        and computes their features.
+        The returned shape is ``(B, T, F) => (batch_size, num_frames, num_features)``.
+
+        :return: a tensor with collated features, and a tensor of ``num_frames`` of each cut before padding.
+        """
         audio, _ = collate_audio(cuts)
 
         features_single = []

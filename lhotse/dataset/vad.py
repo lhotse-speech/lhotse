@@ -40,12 +40,12 @@ class VadDataset(torch.utils.data.Dataset):
         cuts = self.cuts.subset(cut_ids=cut_ids).sort_by_duration()
         for tfnm in self.cut_transforms:
             cuts = tfnm(cuts)
-        inputs, inputs_lens = self.input_strategy(cuts)
+        inputs, input_lens = self.input_strategy(cuts)
         for tfnm in self.input_transforms:
             inputs = tfnm(inputs)
         return {
             'inputs': inputs,
-            'input_lens': inputs_lens,
+            'input_lens': input_lens,
             'is_voice': self.input_strategy.supervision_masks(cuts),
             'cut': cuts
         }
