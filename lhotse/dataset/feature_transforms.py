@@ -1,6 +1,6 @@
 import torch
 
-from typing import Union
+from typing import Union, Optional
 
 from lhotse import CutSet
 from lhotse.utils import Pathlike
@@ -11,12 +11,13 @@ class GlobalMVN(torch.nn.Module):
 
     def __init__(self, feature_dim: int):
         super().__init__()
+        self.feature_dim = feature_dim
         self.register_buffer("norm_means", torch.zeros(feature_dim))
         self.register_buffer("norm_stds", torch.ones(feature_dim))
 
     @classmethod
-    def from_cuts(cls, cuts: CutSet) -> "GlobalMVN":
-        stats = cuts.compute_global_feature_stats()
+    def from_cuts(cls, cuts: CutSet, max_cuts: Optional[int] = None) -> "GlobalMVN":
+        stats = cuts.compute_global_feature_stats(max_cuts)
         stats = {name: torch.as_tensor(value) for name, value in stats.items()}
         feature_dim, = stats["norm_means"].shape
         global_mvn = cls(feature_dim)
