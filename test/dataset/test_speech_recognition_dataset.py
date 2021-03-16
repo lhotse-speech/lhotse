@@ -160,7 +160,7 @@ def test_extra_padding_transform(k2_cut_set):
 def test_k2_speech_recognition_on_the_fly_feature_extraction(k2_cut_set):
     precomputed_dataset = K2SpeechRecognitionDataset(k2_cut_set)
     on_the_fly_dataset = K2SpeechRecognitionDataset(
-        k2_cut_set,
+        k2_cut_set.drop_features(),
         input_strategy=OnTheFlyFeatures(Fbank())
     )
     sampler = SingleCutSampler(k2_cut_set, shuffle=False, max_cuts=1)
