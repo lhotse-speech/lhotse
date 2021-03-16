@@ -1,8 +1,7 @@
-import torch
 import numpy as np
 import pytest
+import torch
 
-from lhotse.augmentation import WavAugmenter, is_wav_augment_available
 from lhotse.cut import CutSet
 from lhotse.dataset import UnsupervisedDataset, UnsupervisedWaveformDataset
 from lhotse.dataset.unsupervised import DynamicUnsupervisedDataset
@@ -54,15 +53,3 @@ def test_on_the_fly_feature_extraction_unsupervised_dataset(libri_cut_set):
     # E              [-13.2, -11.2,  -9.6, ...,  -5.6,  -6.5,  -7.6],
     # E              [-12. , -10.1, -10.1, ...,  -5.8,  -7. ,  -7.8],...
     np.testing.assert_array_almost_equal(ref_feats, tested_feats, decimal=0)
-
-
-@pytest.mark.skipif(not is_wav_augment_available(), reason='Requires WavAugment')
-def test_on_the_fly_feature_extraction_unsupervised_dataset_with_augmentation(libri_cut_set):
-    ids = list(libri_cut_set.ids)
-    tested_dataset = DynamicUnsupervisedDataset(
-        feature_extractor=Fbank(),
-        cuts=libri_cut_set,
-        augment_fn=WavAugmenter.create_predefined('reverb', sampling_rate=16000)
-    )
-    # Just test that it runs
-    tested_feats = tested_dataset[ids]

@@ -9,6 +9,9 @@ from lhotse.dataset.transforms import CutConcatenate, CutMix
 from lhotse.dataset.transforms.extra_padding import ExtraPadding
 from lhotse.testing.dummies import DummyManifest
 
+torch.set_num_threads(1)
+torch.set_num_interop_threads(1)
+
 
 @pytest.fixture
 def libri_cut_set():
