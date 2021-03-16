@@ -193,6 +193,15 @@ def test_trim_to_supervisions_mixed_cuts():
     assert cut.supervisions[0].id == 'sup4'
 
 
+def is_pandas_installed():
+    try:
+        import pandas
+        return True
+    except:
+        return False
+
+
+@pytest.mark.skipif(not is_pandas_installed(), reason='Requires pandas to be installed.')
 def test_cut_set_describe_runs(cut_set):
     cut_set.describe()
 
