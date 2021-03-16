@@ -1,8 +1,8 @@
 from . import cut_transforms
 from .cut_transforms import *
 from .diarization import DiarizationDataset
-from .input_transforms import Standardize
 from .sampling import (BucketingSampler, CutPairsSampler, SingleCutSampler)
+from .signal_transforms import GlobalMVN
 from .source_separation import (
     DynamicallyMixedSourceSeparationDataset,
     PreMixedSourceSeparationDataset,
