@@ -193,8 +193,8 @@ class FeatureExtractor(metaclass=ABCMeta):
         """
         from lhotse.qa import validate_features
         samples = recording.load_audio(
-            offset_seconds=offset,
-            duration_seconds=duration,
+            offset=offset,
+            duration=duration,
             channels=channels,
         )
         if augment_fn is not None:

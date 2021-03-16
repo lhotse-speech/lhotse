@@ -323,8 +323,8 @@ class Cut(CutUtilsMixin):
         if self.has_recording:
             return self.recording.load_audio(
                 channels=self.channel,
-                offset_seconds=self.start,
-                duration_seconds=self.duration,
+                offset=self.start,
+                duration=self.duration,
             )
         return None
 
