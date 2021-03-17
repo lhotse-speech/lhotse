@@ -15,3 +15,4 @@ from .unsupervised import (
     UnsupervisedWaveformDataset
 )
 from .vad import VadDataset
+from .vis import plot_batch
