@@ -99,20 +99,10 @@ def prepare_single_babel_language(corpus_dir: Pathlike, output_dir: Optional[Pat
             # and ends the iretation (otherwise we'd lose the last segment).
             lines += [None]
             error_count = 0
-            if p.stem not in recordings:
-                logging.warning(f'Skipping segments preparation for file "{p}" due to missing corresponding recording.')
-                continue
-            recording = recordings[p.stem]
             for (timestamp, text), (next_timestamp, _) in sliding_window(2, zip(lines[::2], lines[1::2])):
                 try:
                     start = float(timestamp[1:-1])
                     end = float(next_timestamp[1:-1])
-                    # Sanity check for recording times:
-                    diff = end - recording.duration
-                    if diff < 0.2:  # allow and fix segments exceeding the recording by 200ms
-                        end = min(end, recording.duration)
-                    else:
-                        raise ValueError(f"Attempted to create a segment exceeding the recording duration by {diff}")
                     # Create supervision
                     supervisions.append(
                         SupervisionSegment(
