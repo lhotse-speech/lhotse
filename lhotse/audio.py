@@ -7,7 +7,7 @@ from itertools import islice
 from math import sqrt
 from pathlib import Path
 from subprocess import PIPE, run
-from typing import Callable, Dict, Iterable, List, Optional, Sequence, Tuple, Union
+from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence, Tuple, Union
 
 import numpy as np
 
@@ -31,6 +31,7 @@ class AudioSource:
     Supported sources of audio are currently:
     - 'file' (formats supported by librosa, possibly multi-channel)
     - 'command' [unix pipe] (must be WAVE, possibly multi-channel)
+    - 'url' (any URL type that is supported by "smart_open" library, e.g. http/https/s3/gcp/azure/etc.)
     """
     type: str
     channels: List[int]
@@ -38,8 +39,8 @@ class AudioSource:
 
     def load_audio(
             self,
-            offset_seconds: float = 0.0,
-            duration_seconds: Optional[float] = None,
+            offset: Seconds = 0.0,
+            duration: Optional[Seconds] = None,
     ) -> np.ndarray:
         """
         Load the AudioSource (both files and commands) with librosa,
@@ -47,28 +48,45 @@ class AudioSource:
         Returns numpy array with shapes: (n_samples) for single-channel,
         (n_channels, n_samples) for multi-channel.
         """
-        assert self.type in ('file', 'command')
+        assert self.type in ('file', 'command', 'url')
 
+        # TODO: refactor when another source type is added
         source = self.source
+
         if self.type == 'command':
-            if offset_seconds != 0.0 or duration_seconds is not None:
+            if offset != 0.0 or duration is not None:
                 # TODO(pzelasko): How should we support chunking for commands?
                 #                 We risk being very inefficient when reading many chunks from the same file
                 #                 without some caching scheme, because we'll be re-running commands.
-                raise ValueError("Reading audio chunks from command AudioSource type is currently not supported.")
+                raise ValueError("Reading audio chunks from 'command' AudioSource type is currently not supported.")
             source = BytesIO(run(self.source, shell=True, stdout=PIPE).stdout)
+            samples, sampling_rate = read_audio(source)
 
-        with warnings.catch_warnings():
-            warnings.simplefilter('ignore')
-            samples, sampling_rate = read_audio(source, offset=offset_seconds, duration=duration_seconds)
+        elif self.type == 'url':
+            if offset != 0.0 or duration is not None:
+                # We won't support chunking for URLs, as that could generate a lot of unwanted network traffic.
+                # We might consider some caching scheme both for this and the command scheme though.
+                raise ValueError("Reading audio chunks from 'url' AudioSource type is currently not supported.")
+            try:
+                from smart_open import smart_open
+            except ImportError:
+                raise ImportError("To use 'url' audio source type, please do 'pip install smart_open' - "
+                                  "if you are using S3/GCP/Azure/other cloud-specific URIs, do "
+                                  "'pip install smart_open[s3]' (or smart_open[gcp], etc.) instead.")
+            with smart_open(self.source) as f:
+                source = BytesIO(f.read())
+                samples, sampling_rate = read_audio(source)
 
-        # explicit sanity check for duration as librosa does not complain here
-        if duration_seconds is not None:
+        else:  # self.type == 'file'
+            samples, sampling_rate = read_audio(source, offset=offset, duration=duration)
+
+        # explicit sanity check for duration as soundfile does not complain here
+        if duration is not None:
             num_samples = samples.shape[0] if len(samples.shape) == 1 else samples.shape[1]
             available_duration = num_samples / sampling_rate
-            if available_duration < duration_seconds - 1e-3:  # set the allowance as 1ms to avoid float error
+            if available_duration < duration - 1e-3:  # set the allowance as 1ms to avoid float error
                 raise ValueError(
-                    f'Requested more audio ({duration_seconds}s) than available ({available_duration}s)'
+                    f'Requested more audio ({duration}s) than available ({available_duration}s)'
                 )
 
         return samples.astype(np.float32)
@@ -83,11 +101,18 @@ class AudioSource:
         return AudioSource(**data)
 
 
-def read_audio(path: Pathlike, offset: Seconds, duration: Seconds) -> Tuple[np.ndarray, int]:
+FileObject = Any  # Alias for file-like objects
+
+
+def read_audio(
+        path_or_fd: Union[Pathlike, FileObject],
+        offset: Seconds = 0.0,
+        duration: Optional[Seconds] = None
+) -> Tuple[np.ndarray, int]:
     import soundfile as sf
-    with sf.SoundFile(path) as sf_desc:
+    with sf.SoundFile(path_or_fd) as sf_desc:
         sampling_rate = sf_desc.samplerate
-        if offset:
+        if offset > 0:
             # Seek to the start of the target read
             sf_desc.seek(compute_num_samples(offset, sampling_rate))
         if duration is not None:
@@ -203,8 +228,8 @@ class Recording:
     def load_audio(
             self,
             channels: Optional[Channels] = None,
-            offset_seconds: float = 0.0,
-            duration_seconds: Optional[float] = None,
+            offset: Seconds = 0.0,
+            duration: Optional[Seconds] = None,
     ) -> np.ndarray:
         if channels is None:
             channels = SetContainingAnything()
@@ -218,10 +243,10 @@ class Recording:
             # Case: source not requested
             if not channels.intersection(source.channels):
                 continue
-            offset, duration = self._determine_offset_and_duration(offset_seconds, duration_seconds)
+            offset, duration = self._determine_offset_and_duration(offset, duration)
             samples = source.load_audio(
-                offset_seconds=offset,
-                duration_seconds=duration,
+                offset=offset,
+                duration=duration,
             )
 
             # Case: two-channel audio file but only one channel requested
@@ -398,8 +423,8 @@ class RecordingSet(JsonMixin, YamlMixin, Sequence[Recording]):
     ) -> np.ndarray:
         return self.recordings[recording_id].load_audio(
             channels=channels,
-            offset_seconds=offset_seconds,
-            duration_seconds=duration_seconds
+            offset=offset_seconds,
+            duration=duration_seconds
         )
 
     def with_path_prefix(self, path: Pathlike) -> 'RecordingSet':
