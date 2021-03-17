@@ -13,7 +13,7 @@ from typing import List, Optional
 from cytoolz import sliding_window
 
 from lhotse import Recording, RecordingSet, SupervisionSegment, SupervisionSet, validate_recordings_and_supervisions
-from lhotse.qa import remove_missing_recordings_and_supervisions
+from lhotse.qa import remove_missing_recordings_and_supervisions, trim_supervisions_exceedings_recordings
 from lhotse.utils import Pathlike
 
 BABELCODE2LANG = {
@@ -76,7 +76,6 @@ def prepare_single_babel_language(corpus_dir: Pathlike, output_dir: Optional[Pat
             if no_eval_ok:
                 continue
             logging.warning(f"No SPHERE files found in {audio_dir}")
-        manifests[split]['recordings'] = recordings
 
         supervisions = []
         text_dir = corpus_dir / f'conversational/{split}/transcription'
@@ -126,22 +125,29 @@ def prepare_single_babel_language(corpus_dir: Pathlike, output_dir: Optional[Pat
 
         if len(supervisions) == 0:
             logging.warning(f"No supervisions found in {text_dir}")
-        manifests[split]['supervisions'] = SupervisionSet.from_segments(supervisions)
+        supervisions = SupervisionSet.from_segments(supervisions)
 
+        # Fixing and validation of manifests
         if split == 'eval' and len(supervisions) == 0:
             # We won't remove missing recordings for the "eval" split in cases where
             # the user does not have its corresponding transcripts (very likely).
             pass
         else:
-            remove_missing_recordings_and_supervisions(**manifests[split])
-        validate_recordings_and_supervisions(**manifests[split])
+            recordings, supervisions = remove_missing_recordings_and_supervisions(recordings, supervisions)
+        recordings, supervisions = trim_supervisions_exceedings_recordings(recordings, supervisions)
+        validate_recordings_and_supervisions(recordings, supervisions)
+
+        manifests[split] = {
+            'recordings': recordings,
+            'supervisions': supervisions
+        }
 
         if output_dir is not None:
             output_dir.mkdir(parents=True, exist_ok=True)
             language = BABELCODE2LANG[lang_code]
             save_split = 'train' if split == 'training' else split
-            manifests[split]['recordings'].to_json(output_dir / f'recordings_{language}_{save_split}.json')
-            manifests[split]['supervisions'].to_json(output_dir / f'supervisions_{language}_{save_split}.json')
+            recordings.to_json(output_dir / f'recordings_{language}_{save_split}.json')
+            supervisions.to_json(output_dir / f'supervisions_{language}_{save_split}.json')
 
     return manifests
 

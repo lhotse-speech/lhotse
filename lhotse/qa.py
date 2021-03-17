@@ -8,7 +8,7 @@ from lhotse.audio import Recording, RecordingSet
 from lhotse.cut import AnyCut, CutSet, MixedCut, PaddingCut
 from lhotse.features import FeatureSet, Features
 from lhotse.supervision import SupervisionSegment, SupervisionSet
-from lhotse.utils import compute_num_frames
+from lhotse.utils import compute_num_frames, fastcopy
 
 _VALIDATORS: Dict[str, Callable] = {}
 
@@ -69,6 +69,43 @@ def validate_recordings_and_supervisions(
     if only_in_supervisions:
         logging.warning(f'There are {len(only_in_supervisions)} supervisions that '
                         f'are missing their corresponding recordings in the RecordingSet.')
+
+
+def trim_supervisions_exceedings_recordings(
+        recordings: RecordingSet,
+        supervisions: SupervisionSet
+) -> Tuple[RecordingSet, SupervisionSet]:
+    """
+    Fix the supervision manifests by truncating their bounds not to exceed their
+    corresponding recordings' durations.
+    Removes supervisions that have a start time exceeding the recording's duration.
+
+    :param recordings: a :class:`RecordingSet` object.
+    :param supervisions: a :class:`RecordingSet` object.
+    :return: A pair of :class:`RecordingSet` and :class:`SupervisionSet` with fixed or removed entries.
+    """
+    fixed_sups = []
+    fixed_count = 0
+    removed_count = 0
+    for recording in recordings:
+        for supervision in supervisions.find(recording_id=recording.id):
+            if supervision.start > recording.duration:
+                removed_count += 1
+                continue
+            diff = supervision.end - recording.duration
+            if diff > 0:
+                fixed_count += 1
+                supervision = fastcopy(supervision, duration=supervision.duration - diff)
+            fixed_sups.append(supervision)
+    if fixed_count:
+        logging.warning(
+            f'Fixed {fixed_count} supervisions that were exceeding their corresponding recordings.'
+        )
+    if removed_count:
+        logging.warning(
+            f'Removed {removed_count} supervisions that were starting after their corresponding recordings.'
+        )
+    return recordings, SupervisionSet.from_segments(fixed_sups)
 
 
 def remove_missing_recordings_and_supervisions(
