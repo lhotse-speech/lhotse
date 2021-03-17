@@ -51,7 +51,7 @@ SIL_PATTERN = re.compile(r'<no-speech>')
 REMOVE_PATTERN = re.compile(r'<(male-to-female|female-to-male)> ')
 
 
-def prepare_single_babel_language(corpus_dir: Pathlike, output_dir: Optional[Pathlike] = None, no_eval_ok: bool = False, segment_error_threshold: int = 100):
+def prepare_single_babel_language(corpus_dir: Pathlike, output_dir: Optional[Pathlike] = None, no_eval_ok: bool = False):
     """
     TODO: write docstring
     """
@@ -73,7 +73,7 @@ def prepare_single_babel_language(corpus_dir: Pathlike, output_dir: Optional[Pat
         audio_dir = corpus_dir / f'conversational/{split}/audio'
         recordings = RecordingSet.from_recordings(Recording.from_sphere(p) for p in audio_dir.glob('*.sph'))
         if len(recordings) == 0:
-            if no_eval_ok:
+            if split == 'eval' and no_eval_ok:
                 continue
             logging.warning(f"No SPHERE files found in {audio_dir}")
 
@@ -97,7 +97,6 @@ def prepare_single_babel_language(corpus_dir: Pathlike, output_dir: Optional[Pat
             # Add a None at the end so that the last timestamp is only used as "next_timestamp"
             # and ends the iretation (otherwise we'd lose the last segment).
             lines += [None]
-            error_count = 0
             for (timestamp, text), (next_timestamp, _) in sliding_window(2, zip(lines[::2], lines[1::2])):
                 try:
                     start = float(timestamp[1:-1])
@@ -117,10 +116,8 @@ def prepare_single_babel_language(corpus_dir: Pathlike, output_dir: Optional[Pat
                     )
                 except Exception as e:
                     logging.warning(f'Error while parsing segment. Message: {str(e)}')
-                    error_count += 1
-                    if error_count > segment_error_threshold:
-                        raise ValueError(f"Too many errors while parsing segments (file: '{p}'). "
-                                         f"Please check your data or increase the threshold.")
+                    raise ValueError(f"Too many errors while parsing segments (file: '{p}'). "
+                                     f"Please check your data or increase the threshold.")
         supervisions = deduplicate_supervisions(supervisions)
 
         if len(supervisions) == 0:
@@ -134,7 +131,7 @@ def prepare_single_babel_language(corpus_dir: Pathlike, output_dir: Optional[Pat
             pass
         else:
             recordings, supervisions = remove_missing_recordings_and_supervisions(recordings, supervisions)
-        recordings, supervisions = trim_supervisions_exceedings_recordings(recordings, supervisions)
+            recordings, supervisions = trim_supervisions_exceedings_recordings(recordings, supervisions)
         validate_recordings_and_supervisions(recordings, supervisions)
 
         manifests[split] = {
