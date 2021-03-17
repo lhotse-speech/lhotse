@@ -1762,7 +1762,7 @@ class CutSet(JsonMixin, YamlMixin, Sequence[AnyCut]):
             storage_path: Pathlike,
             num_jobs: Optional[int] = None,
             augment_fn: Optional[AugmentFn] = None,
-            storage_type: Type[FW] = LilcomFilesWriter,
+            storage_type: Type[FW] = LilcomHdf5Writer,
             executor: Optional[Executor] = None,
             mix_eagerly: bool = True,
             progress_bar: bool = True,
@@ -1774,16 +1774,6 @@ class CutSet(JsonMixin, YamlMixin, Sequence[AnyCut]):
         Examples:
 
             Extract fbank features on one machine using 8 processes,
-            store each array in a separate file with lilcom compression:
-
-            >>> cuts = CutSet(...)
-            ... cuts.compute_and_store_features(
-            ...     extractor=Fbank(),
-            ...     storage_path='feats',
-            ...     num_jobs=8
-            ... )
-
-            Extract fbank features on one machine using 8 processes,
             store arrays partitioned in 8 HDF5 files with lilcom compression:
 
             >>> cuts = CutSet(...)
@@ -1791,7 +1781,17 @@ class CutSet(JsonMixin, YamlMixin, Sequence[AnyCut]):
             ...     extractor=Fbank(),
             ...     storage_path='feats',
             ...     num_jobs=8,
-            ...     storage_type=LilcomHdf5Writer
+            ... )
+
+            Extract fbank features on one machine using 8 processes,
+            store each array in a separate file with lilcom compression:
+
+            >>> cuts = CutSet(...)
+            ... cuts.compute_and_store_features(
+            ...     extractor=Fbank(),
+            ...     storage_path='feats',
+            ...     num_jobs=8,
+            ...     storage_type=LilcomFilesWriter
             ... )
 
             Extract fbank features on multiple machines using a Dask cluster
@@ -1804,7 +1804,6 @@ class CutSet(JsonMixin, YamlMixin, Sequence[AnyCut]):
             ...     extractor=Fbank(),
             ...     storage_path='feats',
             ...     num_jobs=80,
-            ...     storage_type=LilcomHdf5Writer,
             ...     executor=Client(...)
             ... )
 
