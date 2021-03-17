@@ -4,8 +4,8 @@ from torch.utils.data import DataLoader
 
 from lhotse import CutSet
 from lhotse.dataset import K2SpeechRecognitionDataset
+from lhotse.dataset.cut_transforms import CutConcatenate
 from lhotse.dataset.sampling import SingleCutSampler
-from lhotse.dataset.transforms import CutConcatenate
 from lhotse.testing.fixtures import RandomCutTestCase
 
 

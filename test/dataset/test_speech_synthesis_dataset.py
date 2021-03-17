@@ -1,8 +1,8 @@
 import pytest
 import torch
 
-from lhotse.cut import CutSet
-from lhotse.dataset.feature_transforms import GlobalMVN
+from lhotse import CutSet
+from lhotse.dataset.signal_transforms import GlobalMVN
 from lhotse.dataset.speech_synthesis import SpeechSynthesisDataset
 
 

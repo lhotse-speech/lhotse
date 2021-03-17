@@ -196,14 +196,7 @@ class CutUtilsMixin:
         Return a 1D numpy array with value 1 for **frames** covered by at least one supervision,
         and 0 for **frames** not covered by any supervision.
         """
-        assert self.has_features, f"No features available. " \
-                                  f"Can't compute supervisions feature mask for cut with ID: {self.id}."
-        mask = np.zeros(self.num_frames, dtype=np.float32)
-        for supervision in self.supervisions:
-            st = round(supervision.start / self.frame_shift) if supervision.start > 0 else 0
-            et = round(supervision.end / self.frame_shift) if supervision.end < self.duration else self.num_frames
-            mask[st:et] = 1.0
-        return mask
+        return compute_supervisions_frame_mask(self)
 
     def supervisions_audio_mask(self) -> np.ndarray:
         """
@@ -327,6 +320,11 @@ class Cut(CutUtilsMixin):
                 duration=self.duration,
             )
         return None
+
+    def drop_features(self) -> 'Cut':
+        """Return a copy of the current :class:`Cut`, detached from ``features``."""
+        assert self.has_recording, f"Cannot detach features from a Cut with no Recording (cut ID = {self.id})."
+        return fastcopy(self, features=None)
 
     def compute_and_store_features(
             self,
@@ -686,6 +684,11 @@ class PaddingCut(CutUtilsMixin):
             num_samples=new_num_samples,
             duration=new_duration
         )
+
+    def drop_features(self) -> 'PaddingCut':
+        """Return a copy of the current :class:`PaddingCut`, detached from ``features``."""
+        assert self.has_recording, f"Cannot detach features from a Cut with no Recording (cut ID = {self.id})."
+        return fastcopy(self, num_frames=None, num_features=None, frame_shift=None)
 
     def compute_and_store_features(self, extractor: FeatureExtractor, *args, **kwargs) -> AnyCut:
         """
@@ -1096,6 +1099,11 @@ class MixedCut(CutUtilsMixin):
                 supervision = supervision.trim(track.cut.duration)
                 ax.axvspan(track.offset + supervision.start, track.offset + supervision.end, color='green', alpha=0.1)
         return axes
+
+    def drop_features(self) -> 'MixedCut':
+        """Return a copy of the current :class:`MixedCut`, detached from ``features``."""
+        assert self.has_recording, f"Cannot detach features from a Cut with no Recording (cut ID = {self.id})."
+        return fastcopy(self, tracks=[fastcopy(t, cut=t.cut.drop_features()) for t in self.tracks])
 
     def compute_and_store_features(
             self,
@@ -1742,6 +1750,12 @@ class CutSet(JsonMixin, YamlMixin, Sequence[AnyCut]):
             mixed_cuts.append(mixed)
         return CutSet.from_cuts(mixed_cuts)
 
+    def drop_features(self) -> 'CutSet':
+        """
+        Return a new :class:`CutSet`, where each Cut is copied and detached from its extracted features.
+        """
+        return CutSet.from_cuts(c.drop_features() for c in self)
+
     def compute_and_store_features(
             self,
             extractor: FeatureExtractor,
@@ -2248,3 +2262,32 @@ def append_cuts(cuts: Iterable[AnyCut]) -> AnyCut:
     # The following is a fold (accumulate/aggregate) operation; it starts with cuts[0], and appends cuts[1] to it;
     #  then takes their it concatenation and appends cuts[2] to it; and so on.
     return reduce(append, cuts)
+
+
+def compute_supervisions_frame_mask(cut: AnyCut, frame_shift: Optional[Seconds] = None):
+    """
+    Compute a mask that indicates which frames in a cut are covered by supervisions.
+
+    :param cut: a cut object.
+    :param frame_shift: optional frame shift in seconds; required when the cut does not have
+        pre-computed features, otherwise ignored.
+    :returns a 1D numpy array with value 1 for **frames** covered by at least one supervision,
+    and 0 for **frames** not covered by any supervision.
+    """
+    assert cut.has_features or frame_shift is not None, f"No features available. " \
+                                                        f"Either pre-compute features or provide frame_shift."
+    if cut.has_features:
+        frame_shift = cut.frame_shift
+        num_frames = cut.num_frames
+    else:
+        num_frames = compute_num_frames(
+            duration=cut.duration,
+            frame_shift=frame_shift,
+            sampling_rate=cut.sampling_rate
+        )
+    mask = np.zeros(num_frames, dtype=np.float32)
+    for supervision in cut.supervisions:
+        st = round(supervision.start / frame_shift) if supervision.start > 0 else 0
+        et = round(supervision.end / frame_shift) if supervision.end < cut.duration else num_frames
+        mask[st:et] = 1.0
+    return mask

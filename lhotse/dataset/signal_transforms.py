@@ -1,6 +1,6 @@
-import torch
+from typing import Optional
 
-from typing import Union, Optional
+import torch
 
 from lhotse import CutSet
 from lhotse.utils import Pathlike
