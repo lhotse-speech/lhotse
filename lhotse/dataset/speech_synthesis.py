@@ -1,10 +1,11 @@
-from typing import Dict, Iterable, Callable, Union, Sequence
+from typing import Callable, Dict, Iterable, List, Sequence, Union
 
 import torch
 
 from lhotse import validate
 from lhotse.cut import CutSet
-from lhotse.dataset.collation import TokenCollater, collate_features, collate_audio
+from lhotse.dataset.collation import TokenCollater, collate_audio
+from lhotse.dataset.input_strategies import InputStrategy, PrecomputedFeatures
 
 
 class SpeechSynthesisDataset(torch.utils.data.Dataset):
@@ -25,22 +26,26 @@ class SpeechSynthesisDataset(torch.utils.data.Dataset):
     """
 
     def __init__(
-        self,
-        cuts: CutSet,
-        feature_transforms: Union[Sequence[Callable], Callable] = None,
-        add_eos: bool = True,
-        add_bos: bool = True,
+            self,
+            cuts: CutSet,
+            cut_transforms: List[Callable[[CutSet], CutSet]] = None,
+            feature_input_strategy: InputStrategy = PrecomputedFeatures(),
+            feature_transforms: Union[Sequence[Callable], Callable] = None,
+            add_eos: bool = True,
+            add_bos: bool = True,
     ) -> None:
         super().__init__()
 
         validate(cuts)
         for cut in cuts:
             assert (
-                len(cut.supervisions) == 1
+                    len(cut.supervisions) == 1
             ), "Only the Cuts with single supervision are supported."
 
         self.cuts = cuts
         self.token_collater = TokenCollater(cuts, add_eos=add_eos, add_bos=add_bos)
+        self.cut_transforms = cut_transforms if cut_transforms is not None else ()
+        self.feature_input_strategy = feature_input_strategy
 
         if feature_transforms is None:
             feature_transforms = []
@@ -54,8 +59,11 @@ class SpeechSynthesisDataset(torch.utils.data.Dataset):
     def __getitem__(self, cut_ids: Iterable[str]) -> Dict[str, torch.Tensor]:
         cuts = self.cuts.subset(cut_ids=cut_ids)
 
+        for transform in self.cut_transforms:
+            cuts = transform(cuts)
+
         audio, audio_lens = collate_audio(cuts)
-        features, features_lens = collate_features(cuts)
+        features, features_lens = self.feature_input_strategy(cuts)
 
         for transform in self.feature_transforms:
             features = transform(features)

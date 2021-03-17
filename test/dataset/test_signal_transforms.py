@@ -1,9 +1,10 @@
 import tempfile
+
 import pytest
 import torch
 
 from lhotse import CutSet
-from lhotse.dataset.feature_transforms import GlobalMVN
+from lhotse.dataset.signal_transforms import GlobalMVN
 
 
 @pytest.fixture
@@ -13,7 +14,6 @@ def global_mvn():
 
 
 def test_global_mvn_initialization_and_stats_saving(global_mvn):
-
     with tempfile.NamedTemporaryFile() as tf:
         global_mvn.to_file(tf.name)
         global_mvn2 = GlobalMVN.from_file(tf.name)
@@ -39,4 +39,3 @@ def test_global_mvn_shapes(global_mvn, in_tensor):
 def test_global_mvn_inverse(global_mvn, in_tensor):
     out_tensor = global_mvn(in_tensor)
     assert torch.allclose(in_tensor, global_mvn.inverse(out_tensor))
-

@@ -281,7 +281,7 @@ class TorchaudioFeatureExtractor(FeatureExtractor):
     """Common abstract base class for all torchaudio based feature extractors."""
     feature_fn = None
 
-    def extract(self, samples: np.ndarray, sampling_rate: int) -> np.ndarray:
+    def extract(self, samples: Union[np.ndarray, torch.Tensor], sampling_rate: int) -> np.ndarray:
         params = asdict(self.config)
         params.update({
             "sample_frequency": sampling_rate,
@@ -291,6 +291,9 @@ class TorchaudioFeatureExtractor(FeatureExtractor):
         params['frame_length'] *= 1000.0
         if not isinstance(samples, torch.Tensor):
             samples = torch.from_numpy(samples)
+        # Torchaudio Kaldi feature extractors expect the channel dimension to be first.
+        if len(samples.shape) == 1:
+            samples = samples.unsqueeze(0)
         features = self.feature_fn(samples, **params).to(torch.float32)
         return features.numpy()
 

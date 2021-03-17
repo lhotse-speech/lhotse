@@ -49,6 +49,22 @@ A typical Lhotse's dataset API usage might look like this:
     for batch in dloader:
         ...  # process data
 
+Pre-computed vs. on-the-fly: input strategies
+---------------------------------------------
+
+Depending on the experimental setup and infrastructure, it might be more convenient to either pre-compute and store features like filter-bank energies for later use (as traditionally done in Kaldi/ESPnet/Espresso toolkits), or compute them dynamically during training ("on-the-fly").
+Lhotse supports both modes of computation by introducing a class called :class:`~lhotse.dataset.input_strategies.InputStrategy`.
+It is accepted as an argument in most dataset classes, and defaults to :class:`~lhotse.dataset.input_strategies.PrecomputedFeatures`.
+Other available choices are :class:`~lhotse.dataset.input_strategies.AudioSamples` for working with waveforms directly,
+and :class:`~lhotse.dataset.input_strategies.OnTheFlyFeatures`, which wraps a :class:`~lhotse.features.base.FeatureExtractor` and applies it to a batch of recordings. These strategies automatically pad and collate the inputs, and provide information about the original signal lengths: as a number of frames/samples, binary mask, or start-end frame/sample pairs.
+
+Which strategy to choose?
+*************************
+
+In general, pre-computed features can be greatly compressed (we achieve 70% size reduction with regard to un-compressed features), and so the I/O load on your computing infrastructure will be much smaller than if you read the recordings directly. This is especially valuable when working with network file systems (NFS) that are typically used in computational grids for storage. When your experiment is I/O bound, then it is best to use pre-computed features.
+
+When I/O is not the issue, it might be preferable to use on-the-fly computation as it shouldn't require any prior steps to perform the network training. It is also simpler to apply a vast range of data augmentation methods in a fully randomized way (e.g. reverberation), although Lhotse provides support for approximate feature-domain signal mixing (e.g. for additive noise augmentation) to alleviate that to some extent.
+
 Dataset's list
 --------------
 
@@ -77,6 +93,12 @@ Sampler's list
 --------------
 
 .. automodule:: lhotse.dataset.sampling
+  :members:
+
+Input strategies' list
+----------------------
+
+.. automodule:: lhotse.dataset.input_strategies
   :members:
 
 
