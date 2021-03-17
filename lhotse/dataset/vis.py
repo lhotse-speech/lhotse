@@ -1,7 +1,7 @@
 from typing import Any, Mapping
 
 
-def plot_batch(batch: Mapping[str, Any], supervisions: bool = True):
+def plot_batch(batch: Mapping[str, Any], supervisions: bool = True, text=True):
     import matplotlib.pyplot as plt
 
     batch_size = _get_one_of(batch, 'features', 'audio', 'inputs').shape[0]
@@ -12,7 +12,8 @@ def plot_batch(batch: Mapping[str, Any], supervisions: bool = True):
         feat_actors = []
         for idx in range(batch_size):
             feat_actors.append(axes[idx].imshow(feats[idx].numpy().transpose()))
-    fig.colorbar(feat_actors[-1], ax=axes)
+        fig.tight_layout(h_pad=2)
+        fig.colorbar(feat_actors[-1], ax=axes)
 
     if supervisions and 'supervisions' in batch:
         sups = batch['supervisions']
@@ -27,6 +28,8 @@ def plot_batch(batch: Mapping[str, Any], supervisions: bool = True):
                     "Cannot plot supervisions: missing 'start_frame/sample' and 'num_frames/samples' fields."
                 )
             axes[seq_idx].axvspan(start, end, fill=False, edgecolor='red', linestyle='--', linewidth=4)
+            if text and 'text' in sups:
+                axes[seq_idx].text(start, -3, sups['text'][idx])
 
 
 def _get_one_of(d, *keys):
