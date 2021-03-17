@@ -13,6 +13,7 @@ from typing import Optional
 from cytoolz import sliding_window
 
 from lhotse import Recording, RecordingSet, SupervisionSegment, SupervisionSet, validate_recordings_and_supervisions
+from lhotse.qa import remove_missing_recordings_and_supervisions
 from lhotse.utils import Pathlike
 
 BABELCODE2LANG = {
@@ -108,10 +109,13 @@ def prepare_single_babel_language(corpus_dir: Pathlike, output_dir: Optional[Pat
             logging.warning(f"No supervisions found in {text_dir}")
         manifests[split]['supervisions'] = SupervisionSet.from_segments(supervisions)
 
-        validate_recordings_and_supervisions(
-            manifests[split]['recordings'],
-            manifests[split]['supervisions']
-        )
+        if split == 'eval' and len(supervisions) == 0:
+            # We won't remove missing recordings for the "eval" split in cases where
+            # the user does not have its corresponding transcripts (very likely).
+            pass
+        else:
+            remove_missing_recordings_and_supervisions(**manifests[split])
+        validate_recordings_and_supervisions(**manifests[split])
 
         if output_dir is not None:
             language = BABELCODE2LANG[lang_code]
