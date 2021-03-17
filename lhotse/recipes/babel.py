@@ -52,6 +52,19 @@ REMOVE_PATTERN = re.compile(r'<(male-to-female|female-to-male)> ')
 
 def prepare_single_babel_language(corpus_dir: Pathlike, output_dir: Optional[Pathlike] = None):
     manifests = defaultdict(dict)
+
+    # Auto-detect the location of the "conversational" directory
+    orig_corpus_dir = corpus_dir
+    corpus_dir = [d for d in corpus_dir.rglob('conversational') if d.is_dir()]
+    if not corpus_dir:
+        raise ValueError(f"Could not find 'conversational' directory anywhere inside '{orig_corpus_dir}' - please check your path.")
+    if len(corpus_dir) > 1:
+        # People have very messy data distributions, the best we can do is warn them.
+        logging.warning(f"It seems there are multiple 'conversational' directories in '{orig_corpus_dir}' - "
+                        f"we are selecting the first one only ({corpus_dir[0]}). Please ensure that you provided "
+                        f"the path to a single language's dir, and the root dir for all BABEL languages.")
+    corpus_dir = corpus_dir[0].parent
+
     for split in ('dev', 'eval', 'training'):
         audio_dir = corpus_dir / f'conversational/{split}/audio'
         recordings = RecordingSet.from_recordings(Recording.from_sphere(p) for p in audio_dir.glob('*.sph'))
@@ -97,15 +110,14 @@ def prepare_single_babel_language(corpus_dir: Pathlike, output_dir: Optional[Pat
 
         validate_recordings_and_supervisions(
             manifests[split]['recordings'],
-            manifests[split]['superevisions']
+            manifests[split]['supervisions']
         )
 
         if output_dir is not None:
             language = BABELCODE2LANG[lang_code]
-            if split == 'training':
-                split = 'train'
-            manifests[split]['recordings'].to_json(f'recordings_{language}_{split}.json')
-            manifests[split]['supervisions'].to_json(f'supervisions_{language}_{split}.json')
+            save_split = 'train' if split == 'training' else split
+            manifests[split]['recordings'].to_json(f'recordings_{language}_{save_split}.json')
+            manifests[split]['supervisions'].to_json(f'supervisions_{language}_{save_split}.json')
 
     return manifests
 
