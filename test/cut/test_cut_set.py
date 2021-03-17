@@ -7,6 +7,7 @@ from lhotse import Features, Recording, SupervisionSegment
 from lhotse.audio import AudioSource
 from lhotse.cut import Cut, CutSet, MixTrack, MixedCut
 from lhotse.testing.dummies import remove_spaces_from_segment_text
+from lhotse.utils import is_module_available
 
 
 @pytest.fixture
@@ -193,6 +194,7 @@ def test_trim_to_supervisions_mixed_cuts():
     assert cut.supervisions[0].id == 'sup4'
 
 
+@pytest.mark.skipif(not is_module_available('pandas'), reason='Requires pandas to be installed.')
 def test_cut_set_describe_runs(cut_set):
     cut_set.describe()
 
