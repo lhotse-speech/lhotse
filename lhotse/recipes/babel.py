@@ -8,7 +8,7 @@ of development set recordings.
 import logging
 import re
 from collections import defaultdict
-from typing import Optional
+from typing import List, Optional
 
 from cytoolz import sliding_window
 
@@ -51,7 +51,10 @@ SIL_PATTERN = re.compile(r'<no-speech>')
 REMOVE_PATTERN = re.compile(r'<(male-to-female|female-to-male)> ')
 
 
-def prepare_single_babel_language(corpus_dir: Pathlike, output_dir: Optional[Pathlike] = None):
+def prepare_single_babel_language(corpus_dir: Pathlike, output_dir: Optional[Pathlike] = None, no_eval_ok: bool = False, segment_error_threshold: int = 100):
+    """
+    TODO: write docstring
+    """
     manifests = defaultdict(dict)
 
     # Auto-detect the location of the "conversational" directory
@@ -70,6 +73,8 @@ def prepare_single_babel_language(corpus_dir: Pathlike, output_dir: Optional[Pat
         audio_dir = corpus_dir / f'conversational/{split}/audio'
         recordings = RecordingSet.from_recordings(Recording.from_sphere(p) for p in audio_dir.glob('*.sph'))
         if len(recordings) == 0:
+            if no_eval_ok:
+                continue
             logging.warning(f"No SPHERE files found in {audio_dir}")
         manifests[split]['recordings'] = recordings
 
@@ -87,24 +92,48 @@ def prepare_single_babel_language(corpus_dir: Pathlike, output_dir: Optional[Pat
             #   6 -> channel (inLine) ; inLine <=> A ; outLine <=> B ; "scripted" <=> A
             p0, p1, lang_code, speaker, date, hour, channel, *_ = p.stem.split('_')
             channel = {'inLine': 'A', 'outLine': 'B'}.get(channel, 'A')
+            # Fix problematic segments that have two consecutive timestamp lines with no transcript in between
+            lines = p.read_text().splitlines() + ['']
+            lines = [prev_l for prev_l, l in sliding_window(2, lines) if not (prev_l.startswith('[') and l.startswith('['))]
             # Add a None at the end so that the last timestamp is only used as "next_timestamp"
             # and ends the iretation (otherwise we'd lose the last segment).
-            lines = p.read_text().splitlines() + [None]
+            lines += [None]
+            error_count = 0
+            if p.stem not in recordings:
+                logging.warning(f'Skipping segments preparation for file "{p}" due to missing corresponding recording.')
+                continue
+            recording = recordings[p.stem]
             for (timestamp, text), (next_timestamp, _) in sliding_window(2, zip(lines[::2], lines[1::2])):
-                start = float(timestamp[1:-1])
-                end = float(next_timestamp[1:-1])
-                supervisions.append(
-                    SupervisionSegment(
-                        id=f'{lang_code}_{speaker}_{channel}_{date}_{hour}_{int(100 * start):06}',
-                        recording_id=p.stem,
-                        start=start,
-                        duration=round(end - start, ndigits=8),
-                        channel=0,
-                        text=normalize_text(text),
-                        language=BABELCODE2LANG[lang_code],
-                        speaker=speaker,
+                try:
+                    start = float(timestamp[1:-1])
+                    end = float(next_timestamp[1:-1])
+                    # Sanity check for recording times:
+                    diff = end - recording.duration
+                    if diff < 0.2:  # allow and fix segments exceeding the recording by 200ms
+                        end = min(end, recording.duration)
+                    else:
+                        raise ValueError(f"Attempted to create a segment exceeding the recording duration by {diff}")
+                    # Create supervision
+                    supervisions.append(
+                        SupervisionSegment(
+                            id=f'{lang_code}_{speaker}_{channel}_{date}_{hour}_{int(100 * start):06}',
+                            recording_id=p.stem,
+                            start=start,
+                            duration=round(end - start, ndigits=8),
+                            channel=0,
+                            text=normalize_text(text),
+                            language=BABELCODE2LANG[lang_code],
+                            speaker=speaker,
+                        )
                     )
-                )
+                except Exception as e:
+                    logging.warning(f'Error while parsing segment. Message: {str(e)}')
+                    error_count += 1
+                    if error_count > segment_error_threshold:
+                        raise ValueError(f"Too many errors while parsing segments (file: '{p}'). "
+                                         f"Please check your data or increase the threshold.")
+        supervisions = deduplicate_supervisions(supervisions)
+
         if len(supervisions) == 0:
             logging.warning(f"No supervisions found in {text_dir}")
         manifests[split]['supervisions'] = SupervisionSet.from_segments(supervisions)
@@ -134,3 +163,15 @@ def normalize_text(text: str) -> str:
     text = SIL_PATTERN.sub('<silence>', text)
     text = REMOVE_PATTERN.sub('', text)
     return text
+
+
+def deduplicate_supervisions(supervisions: SupervisionSegment) -> List[SupervisionSegment]:
+    from cytoolz import groupby
+    duplicates = groupby((lambda s: s.id), sorted(supervisions, key=lambda s: s.id))
+    filtered = []
+    for k, v in duplicates.items():
+        if len(v) > 1:
+            logging.warning(f'Found {len(v)} supervisions with conflicting IDs ({v[0].id}) - keeping only the first one.')
+        filtered.append(v[0])
+    return filtered
+
