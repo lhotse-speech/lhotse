@@ -8,7 +8,6 @@ import torchaudio
 from pytest import mark, raises
 
 from lhotse.audio import RecordingSet
-from lhotse.augmentation import WavAugmenter, is_wav_augment_available
 from lhotse.features import (Fbank, FeatureExtractor, FeatureMixer, FeatureSet, FeatureSetBuilder, Features, Mfcc,
                              Spectrogram, create_default_feature_extractor)
 from lhotse.features.io import LilcomFilesWriter, LilcomHdf5Writer, NumpyFilesWriter, NumpyHdf5Writer
@@ -202,49 +201,6 @@ def test_feature_set_builder(storage):
     for features in feature_infos[2:]:
         assert features.num_frames == 100
         assert features.duration == 1.0
-
-
-@pytest.mark.skipif(not is_wav_augment_available(), reason='WavAugment required')
-def test_feature_set_builder_with_augmentation():
-    recordings: RecordingSet = RecordingSet.from_json('test/fixtures/audio.json')
-    augment_fn = WavAugmenter.create_predefined('pitch_reverb_tdrop', sampling_rate=8000)
-    extractor = Fbank()
-    with TemporaryDirectory() as d, LilcomFilesWriter(d) as storage:
-        builder = FeatureSetBuilder(
-            feature_extractor=extractor,
-            storage=storage,
-            augment_fn=augment_fn
-        )
-        feature_set = builder.process_and_store_recordings(recordings=recordings)
-
-        assert len(feature_set) == 6
-
-        feature_infos = list(feature_set)
-
-        # Assert the properties shared by all features
-        for features in feature_infos:
-            # assert that fbank is the default feature type
-            assert features.type == 'fbank'
-            # assert that duration is always a multiple of frame_shift
-            assert features.num_frames == round(features.duration / features.frame_shift)
-            # assert that num_features is preserved
-            assert features.num_features == builder.feature_extractor.config.num_mel_bins
-            # assert that the storage type metadata matches
-            assert features.storage_type == storage.name
-            # assert that the metadata is consistent with the data shapes
-            arr = features.load()
-            assert arr.shape[0] == features.num_frames
-            assert arr.shape[1] == features.num_features
-
-        # Assert the properties for recordings of duration 0.5 seconds
-        for features in feature_infos[:2]:
-            assert features.num_frames == 50
-            assert features.duration == 0.5
-
-        # Assert the properties for recordings of duration 1.0 seconds
-        for features in feature_infos[2:]:
-            assert features.num_frames == 100
-            assert features.duration == 1.0
 
 
 @mark.parametrize(

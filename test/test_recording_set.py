@@ -131,9 +131,9 @@ def test_get_audio_multichannel(recording_set, channels, expected_audio, excepti
 @mark.parametrize(
     ['begin_at', 'duration', 'expected_start_sample', 'expected_end_sample', 'exception_expectation'],
     [
-        (None, None, 0, 4000, does_not_raise()),
+        (0, None, 0, 4000, does_not_raise()),
         (0.1, None, 800, 4000, does_not_raise()),
-        (None, 0.3, 0, 2400, does_not_raise()),
+        (0, 0.3, 0, 2400, does_not_raise()),
         (0.1, 0.2, 800, 2400, does_not_raise()),
         (0.3, 10.0, 'irrelevant', 'irrelevant', raises(ValueError))  # requested more audio than available
     ]

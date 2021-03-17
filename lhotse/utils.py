@@ -433,3 +433,17 @@ def supervision_to_samples(
 
 def is_none_or_gt(value, threshold) -> bool:
     return value is None or value > threshold
+
+
+def is_module_available(*modules: str) -> bool:
+    r"""Returns if a top-level module with :attr:`name` exists *without**
+    importing it. This is generally safer than try-catch block around a
+    `import X`. It avoids third party libraries breaking assumptions of some of
+    our tests, e.g., setting multiprocessing start method when imported
+    (see librosa/#747, torchvision/#544).
+
+    Note: "borrowed" from torchaudio:
+    https://github.com/pytorch/audio/blob/6bad3a66a7a1c7cc05755e9ee5931b7391d2b94c/torchaudio/_internal/module_utils.py#L9
+    """
+    import importlib
+    return all(importlib.util.find_spec(m) is not None for m in modules)
