@@ -120,8 +120,8 @@ def prepare_single_babel_language(corpus_dir: Pathlike, output_dir: Optional[Pat
         if output_dir is not None:
             language = BABELCODE2LANG[lang_code]
             save_split = 'train' if split == 'training' else split
-            manifests[split]['recordings'].to_json(f'recordings_{language}_{save_split}.json')
-            manifests[split]['supervisions'].to_json(f'supervisions_{language}_{save_split}.json')
+            manifests[split]['recordings'].to_json(output_dir / f'recordings_{language}_{save_split}.json')
+            manifests[split]['supervisions'].to_json(output_dir / f'supervisions_{language}_{save_split}.json')
 
     return manifests
 
