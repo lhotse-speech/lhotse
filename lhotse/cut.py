@@ -1738,7 +1738,7 @@ class CutSet(JsonMixin, YamlMixin, Sequence[AnyCut]):
             if duration is not None:
                 mixed_in_duration = to_mix.duration
                 # Keep sampling until we mixed in a "duration" amount of noise.
-                while mixed.duration < duration:
+                while mixed_in_duration < duration:
                     to_mix = cuts.sample()
                     # Keep the SNR constant for each cut from "self".
                     mixed = mixed.mix(other=to_mix, snr=snr, offset_other_by=mixed_in_duration)

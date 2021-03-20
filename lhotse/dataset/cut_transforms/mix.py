@@ -12,7 +12,7 @@ class CutMix:
 
     def __init__(
             self,
-            cuts: Optional[CutSet] = None,
+            cuts: CutSet,
             snr: Optional[Union[Decibels, Tuple[Decibels, Decibels]]] = (10, 20),
             prob: float = 0.5,
             pad_to_longest: bool = True
@@ -37,10 +37,10 @@ class CutMix:
         self.pad_to_longest = pad_to_longest
 
     def __call__(self, cuts: CutSet) -> CutSet:
-        cuts = cuts.sort_by_duration(ascending=False)
+        maybe_max_duration = max(c.duration for c in cuts) if self.pad_to_longest else None
         return cuts.mix(
             cuts=self.cuts,
-            duration=cuts[0].duration if self.pad_to_longest else None,
+            duration=maybe_max_duration,
             snr=self.snr,
             mix_prob=self.prob
         )
