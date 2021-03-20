@@ -7,13 +7,26 @@ def plot_batch(batch: Mapping[str, Any], supervisions: bool = True, text=True):
     batch_size = _get_one_of(batch, 'features', 'audio', 'inputs').shape[0]
     fig, axes = plt.subplots(batch_size, figsize=(16, batch_size), sharex=True)
 
-    if 'features' in batch:
-        feats = batch['features']
+    def _plot_features(key):
+        feats = batch[key]
         feat_actors = []
         for idx in range(batch_size):
             feat_actors.append(axes[idx].imshow(feats[idx].numpy().transpose()))
         fig.tight_layout(h_pad=2)
         fig.colorbar(feat_actors[-1], ax=axes)
+
+    if 'features' in batch:
+        _plot_features(key='features')
+
+    if 'audio' in batch:
+        raise NotImplementedError("Plotting audio for batches is not supported yet.")
+
+    if 'inputs' in batch:
+        # For now, assume it is features and not multi-channel audio...
+        if len(batch['inputs'].shape) == 3:
+            _plot_features(key='inputs')
+        else:
+            raise NotImplementedError("We could not infer what does the key 'inputs' represent yet.")
 
     if supervisions and 'supervisions' in batch:
         sups = batch['supervisions']
