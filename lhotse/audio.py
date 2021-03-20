@@ -267,6 +267,23 @@ class Recording:
             transform = AudioTransform.from_dict(params)
             audio = transform(audio, self.sampling_rate)
 
+        # When resampling in high sampling rates (48k -> 44.1k)
+        # it is difficult to estimate how sox will perform rounding;
+        # we will just add/remove one sample to be consistent with
+        # what we have estimated.
+        diff = self.num_samples - audio.shape[1]
+        if diff == 1:
+            audio = np.append(audio, np.ones((audio.shape[0], 1), dtype=np.float32), axis=1)
+        elif diff == -1:
+            audio = audio[:, :-1]
+        elif diff == 0:
+            pass  # this is normal condition
+        else:
+            raise ValueError("The number of declared samples in the recording diverged from the one obtained "
+                             "when loading audio. This could be internal Lhotse's error or a faulty "
+                             "transform implementation. Please report this issue in Lhotse and show the "
+                             f"following: audio.shape={audio.shape}, recording={self}")
+
         return audio
 
     def _determine_offset_and_duration(self, offset: Seconds, duration: Seconds) -> Tuple[Seconds, Seconds]:
