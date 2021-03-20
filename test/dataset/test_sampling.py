@@ -296,6 +296,24 @@ def test_concat_cuts():
     ]
 
 
+def test_concat_cuts_with_duration_factor():
+    cuts = [
+        dummy_cut(0, duration=10.0),
+        dummy_cut(1, duration=8.0),
+        dummy_cut(2, duration=6.0),
+        dummy_cut(3, duration=5.0),
+        dummy_cut(4, duration=4.0),
+        dummy_cut(5, duration=3.0),
+        dummy_cut(6, duration=2.0),
+    ]
+    concat = concat_cuts(cuts, gap=1.0, max_duration=20.0)
+    assert [c.duration for c in concat] == [
+        10.0 + 1.0 + 2.0 + 1.0 + 3.0,  # == 17.0
+        8.0 + 1.0 + 4.0 + 1.0 + 5.0,  # == 19.0
+        6.0,  # == 6.0
+    ]
+
+
 def test_bucketing_sampler_single_cuts():
     cut_set = DummyManifest(CutSet, begin_id=0, end_id=1000)
     sampler = BucketingSampler(cut_set, sampler_type=SingleCutSampler)
