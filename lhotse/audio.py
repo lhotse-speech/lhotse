@@ -238,15 +238,16 @@ class Recording:
         else:
             channels = frozenset(channels)
 
+        offset_sp, duration_sp = self._adjust_for_speed_perturbation(offset, duration)
+
         samples_per_source = []
         for source in self.sources:
             # Case: source not requested
             if not channels.intersection(source.channels):
                 continue
-            offset, duration = self._determine_offset_and_duration(offset, duration)
             samples = source.load_audio(
-                offset=offset,
-                duration=duration,
+                offset=offset_sp,
+                duration=duration_sp,
             )
 
             # Case: two-channel audio file but only one channel requested
@@ -271,13 +272,14 @@ class Recording:
         # it is difficult to estimate how sox will perform rounding;
         # we will just add/remove one sample to be consistent with
         # what we have estimated.
-        diff = self.num_samples - audio.shape[1]
-        if diff == 1:
+        expected_num_samples = self._expected_num_samples(offset, duration)
+        diff = expected_num_samples - audio.shape[1]
+        if diff == 0:
+            pass  # this is normal condition
+        elif diff == 1:
             audio = np.append(audio, np.ones((audio.shape[0], 1), dtype=np.float32), axis=1)
         elif diff == -1:
             audio = audio[:, :-1]
-        elif diff == 0:
-            pass  # this is normal condition
         else:
             raise ValueError("The number of declared samples in the recording diverged from the one obtained "
                              "when loading audio. This could be internal Lhotse's error or a faulty "
@@ -286,7 +288,13 @@ class Recording:
 
         return audio
 
-    def _determine_offset_and_duration(self, offset: Seconds, duration: Seconds) -> Tuple[Seconds, Seconds]:
+    def _expected_num_samples(self, offset: Seconds, duration: Optional[Seconds]) -> int:
+        if offset == 0 and duration is None:
+            return self.num_samples
+        duration = duration if duration is not None else self.duration - offset
+        return compute_num_samples(duration, sampling_rate=self.sampling_rate)
+
+    def _adjust_for_speed_perturbation(self, offset: Seconds, duration: Seconds) -> Tuple[Seconds, Seconds]:
         """
         This internal method helps estimate the original offset and duration for a recording
         before speed perturbation was applied.
