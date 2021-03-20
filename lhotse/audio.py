@@ -284,7 +284,7 @@ class Recording:
             raise ValueError("The number of declared samples in the recording diverged from the one obtained "
                              "when loading audio. This could be internal Lhotse's error or a faulty "
                              "transform implementation. Please report this issue in Lhotse and show the "
-                             f"following: audio.shape={audio.shape}, recording={self}")
+                             f"following: diff={diff}, audio.shape={audio.shape}, recording={self}")
 
         return audio
 
