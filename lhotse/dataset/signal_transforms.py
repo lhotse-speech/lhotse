@@ -17,7 +17,7 @@ class GlobalMVN(torch.nn.Module):
 
     @classmethod
     def from_cuts(cls, cuts: CutSet, max_cuts: Optional[int] = None) -> "GlobalMVN":
-        stats = cuts.compute_global_feature_stats(max_cuts)
+        stats = cuts.compute_global_feature_stats(max_cuts=max_cuts)
         stats = {name: torch.as_tensor(value) for name, value in stats.items()}
         feature_dim, = stats["norm_means"].shape
         global_mvn = cls(feature_dim)
