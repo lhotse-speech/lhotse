@@ -7,6 +7,11 @@ import torch
 from lhotse import CutSet
 from lhotse.utils import Pathlike
 
+__all__ = [
+    'GlobalMVN',
+    'SpecAugment'
+]
+
 
 class GlobalMVN(torch.nn.Module):
     """Apply global mean and variance normalization"""
@@ -63,9 +68,25 @@ class SpecAugment(torch.nn.Module):
             features_mask_size: int = 13,
             num_frame_masks: int = 1,
             frames_mask_size: int = 70,
-            p=1.0,
+            p=0.5,
     ):
+        """
+        SpecAugment's contructor.
+
+        :param time_warp_factor: parameter for the time warping; larger values mean more warping.
+            Set to ``None``, or less than ``1``, to disable.
+        :param num_feature_masks: how many feature masks should be applied. Set to ``0`` to disable.
+        :param features_mask_size: the width of the feature mask (expressed in the number of masked feature bins).
+        :param num_frame_masks: how many frame (temporal) masks should be applied. Set to ``0`` to disable.
+        :param frames_mask_size: the width of the frame (temporal) masks (expressed in the number of masked frames).
+        :param p: the probability of applying this transform.
+        """
         super().__init__()
+        assert 0 <= p <= 1
+        assert num_feature_masks >= 0
+        assert num_frame_masks >= 0
+        assert features_mask_size > 0
+        assert frames_mask_size > 0
         self.time_warp_factor = time_warp_factor
         self.num_feature_masks = num_feature_masks
         self.features_mask_size = features_mask_size
@@ -80,6 +101,7 @@ class SpecAugment(torch.nn.Module):
         :param features: features tensor of shape (T, F), or a batch of them with shape (B, T, F).
         :return: a tensor of shape (T, F), or a batch of them with shape (B, T, F)
         """
+        features = features.clone()
         # A single sample rather than a batch.
         if len(features.shape) == 2:
             return self._forward_single(features)
@@ -124,11 +146,11 @@ def time_warp(features: torch.Tensor, factor: int) -> torch.Tensor:
     Implementation based on Espresso:
     https://github.com/freewym/espresso/blob/master/espresso/tools/specaug_interpolate.py#L51
 
-    :param features: input tensor of shape ``(B, T, F)``
+    :param features: input tensor of shape ``(T, F)``
     :param factor: time warping parameter.
-    :return: a warped tensor of shape ``(B, T, F)``
+    :return: a warped tensor of shape ``(T, F)``
     """
-    t = features.size(1)
+    t = features.size(0)
     if t - factor <= factor + 1:
         return features
     center = np.random.randint(factor + 1, t - factor)
