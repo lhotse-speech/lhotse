@@ -15,7 +15,6 @@ Welcome to lhotse's documentation!
    cuts.rst
    features.rst
    parallelism.rst
-   augmentation.rst
    datasets.rst
    kaldi.rst
    cli.rst

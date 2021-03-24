@@ -4,6 +4,8 @@ import pytest
 import torch
 
 from lhotse import CutSet
+from lhotse.dataset import SpecAugment
+from lhotse.dataset.collation import collate_features
 from lhotse.dataset.signal_transforms import GlobalMVN
 
 
@@ -48,3 +50,27 @@ def test_global_mvn_from_cuts():
     assert isinstance(stats1, GlobalMVN)
     assert isinstance(stats2, GlobalMVN)
 
+
+def test_specaugment_single():
+    cuts = CutSet.from_json('test/fixtures/ljspeech/cuts.json')
+    feats = torch.from_numpy(cuts[0].load_features())
+    tfnm = SpecAugment(p=1.0, time_warp_factor=10)
+    augmented = tfnm(feats)
+    assert (feats != augmented).any()
+
+
+@pytest.mark.parametrize('num_feature_masks', [0, 1, 2])
+@pytest.mark.parametrize('num_frame_masks', [0, 1, 2])
+def test_specaugment_batch(num_feature_masks, num_frame_masks):
+    cuts = CutSet.from_json('test/fixtures/ljspeech/cuts.json')
+    feats, feat_lens = collate_features(cuts)
+    tfnm = SpecAugment(
+        p=1.0,
+        time_warp_factor=10,
+        features_mask_size=5,
+        frames_mask_size=20,
+        num_feature_masks=num_feature_masks,
+        num_frame_masks=num_frame_masks
+    )
+    augmented = tfnm(feats)
+    assert (feats != augmented).any()
