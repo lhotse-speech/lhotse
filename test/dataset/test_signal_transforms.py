@@ -39,3 +39,12 @@ def test_global_mvn_shapes(global_mvn, in_tensor):
 def test_global_mvn_inverse(global_mvn, in_tensor):
     out_tensor = global_mvn(in_tensor)
     assert torch.allclose(in_tensor, global_mvn.inverse(out_tensor))
+
+
+def test_global_mvn_from_cuts():
+    cuts = CutSet.from_json('test/fixtures/ljspeech/cuts.json')
+    stats1 = GlobalMVN.from_cuts(cuts)
+    stats2 = GlobalMVN.from_cuts(cuts, max_cuts=1)
+    assert isinstance(stats1, GlobalMVN)
+    assert isinstance(stats2, GlobalMVN)
+
