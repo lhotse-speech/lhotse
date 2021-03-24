@@ -1065,10 +1065,9 @@ class MixedCut(CutUtilsMixin):
                 audio = audio[:, :self.num_samples]
             if audio.shape[1] - self.num_samples == -1:
                 audio = np.concatenate((audio, audio[:, -1:]), axis=1)
-            assert audio.shape[1] == self.num_samples, "Inconsistent number of samples in a MixedCut: please report " \
-                                                       "this issue at https://github.com/lhotse-speech/lhotse/issues " \
-                                                       "showing the output of print(cut) or str(cut) on which" \
-                                                       "load_audio() was called."
+            assert audio.shape[1] == self.num_samples, f"Inconsistent number of samples in a MixedCut: please report " \
+                                                       f"this issue at https://github.com/lhotse-speech/lhotse/issues " \
+                                                       f"showing the cut below. MixedCut:\n{self}"
         else:
             audio = mixer.unmixed_audio
         return audio
