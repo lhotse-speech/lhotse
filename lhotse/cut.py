@@ -411,9 +411,9 @@ class Cut(CutUtilsMixin):
             for interval in match_supervisions(begin=offset, end=offset + new_duration):
                 # We are going to measure the overlap ratio of the supervision with the "truncated" cut
                 # and reject segments that overlap less than 1%. This way we can avoid quirks and errors
-                # of limited floaat precision.
+                # of limited float precision.
                 olap_ratio = measure_overlap(interval.data, TimeSpan(new_start, new_start + new_duration))
-                if olap_ratio == 0 or olap_ratio > 0.01:
+                if olap_ratio > 0.01:
                     supervisions.append(interval.data.with_offset(-offset))
 
         return Cut(
