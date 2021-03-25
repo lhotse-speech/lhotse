@@ -407,11 +407,14 @@ class Cut(CutUtilsMixin):
             # We call "interval.data" to obtain the underlying SupervisionSegment.
             match_supervisions = tree.overlap if keep_excessive_supervisions else tree.envelop
             from lhotse.utils import TimeSpan, measure_overlap
-            supervisions = [
-                interval.data.with_offset(-offset)
-                for interval in match_supervisions(begin=offset, end=offset + new_duration)
-                if measure_overlap(interval.data, TimeSpan(new_start, new_start + new_duration)) > 0.01
-            ]
+            supervisions = []
+            for interval in match_supervisions(begin=offset, end=offset + new_duration):
+                # We are going to measure the overlap ratio of the supervision with the "truncated" cut
+                # and reject segments that overlap less than 1%. This way we can avoid quirks and errors
+                # of limited floaat precision.
+                olap_ratio = measure_overlap(interval.data, TimeSpan(new_start, new_start + new_duration))
+                if olap_ratio == 0 or olap_ratio > 0.01:
+                    supervisions.append(interval.data.with_offset(-offset))
 
         return Cut(
             id=self.id if preserve_id else str(uuid4()),
