@@ -406,9 +406,11 @@ class Cut(CutUtilsMixin):
             # of Intervals that contain the SupervisionSegments matching our criterion.
             # We call "interval.data" to obtain the underlying SupervisionSegment.
             match_supervisions = tree.overlap if keep_excessive_supervisions else tree.envelop
+            from lhotse.utils import TimeSpan, measure_overlap
             supervisions = [
                 interval.data.with_offset(-offset)
                 for interval in match_supervisions(begin=offset, end=offset + new_duration)
+                if measure_overlap(interval.data, TimeSpan(new_start, new_start + new_duration)) > 0.01
             ]
 
         return Cut(
