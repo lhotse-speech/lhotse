@@ -2093,6 +2093,11 @@ def mix(
     assert offset <= reference_cut.duration, f"Cannot mix cut '{mixed_in_cut.id}' with offset {offset}," \
                                              f" which is greater than cuts {reference_cut.id} duration" \
                                              f" of {reference_cut.duration}"
+    assert reference_cut.sampling_rate == mixed_in_cut.sampling_rate, \
+        f'Cannot mix cuts with different sampling rates ' \
+        f'({reference_cut.sampling_rate} vs. ' \
+        f'{mixed_in_cut.sampling_rate}). ' \
+        f'Please resample the recordings first.'
     # When the left_cut is a MixedCut, take its existing tracks, otherwise create a new track.
     old_tracks = (
         reference_cut.tracks

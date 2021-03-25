@@ -158,14 +158,24 @@ def test_trim_to_supervisions_simple_cuts():
 
 def test_trim_to_supervisions_mixed_cuts():
     cut_set = CutSet.from_cuts([
-        Cut('cut1', start=0, duration=30, channel=0, supervisions=[
-            SupervisionSegment('sup1', 'rec1', start=1.5, duration=8.5),
-            SupervisionSegment('sup2', 'rec1', start=10, duration=5),
-            SupervisionSegment('sup3', 'rec1', start=20, duration=8),
-        ]).append(
-            Cut('cut2', start=0, duration=30, channel=0, supervisions=[
-                SupervisionSegment('sup4', 'rec1', start=0, duration=30),
-            ])
+        Cut('cut1', start=0, duration=30, channel=0,
+            recording=Recording(
+                id='rec1', sources=[], sampling_rate=16000, num_samples=160000, duration=10.0
+            ),
+            supervisions=[
+                SupervisionSegment('sup1', 'rec1', start=1.5, duration=8.5),
+                SupervisionSegment('sup2', 'rec1', start=10, duration=5),
+                SupervisionSegment('sup3', 'rec1', start=20, duration=8),
+            ]
+            ).append(
+            Cut('cut2', start=0, duration=30, channel=0,
+                recording=Recording(
+                    id='rec1', sources=[], sampling_rate=16000, num_samples=160000, duration=10.0
+                ),
+                supervisions=[
+                    SupervisionSegment('sup4', 'rec1', start=0, duration=30),
+                ]
+                )
         )
     ])
     assert isinstance(cut_set[0], MixedCut)

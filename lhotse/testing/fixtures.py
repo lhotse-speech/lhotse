@@ -13,7 +13,11 @@ def random_cut_set(n_cuts=100) -> CutSet:
             id=uuid4(),
             start=round(random.uniform(0, 5), ndigits=8),
             duration=round(random.uniform(3, 10), ndigits=8),
-            channel=0
+            channel=0,
+            recording=Recording(
+                id=uuid4(), sources=[], sampling_rate=16000,
+                num_samples=1600000, duration=100.0
+            )
         ) for _ in range(n_cuts)
     )
 
