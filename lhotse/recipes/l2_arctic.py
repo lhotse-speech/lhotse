@@ -163,8 +163,8 @@ def prepare_l2_arctic(
 
     if output_dir is not None:
         for key, manifests in splits.items():
-            manifests['recordings'].to_json(f'recordings-{key}.json')
-            manifests['supervisions'].to_json(f'supervisions-{key}.json')
+            manifests['recordings'].to_json(output_dir / f'recordings-{key}.json')
+            manifests['supervisions'].to_json(output_dir / f'supervisions-{key}.json')
 
     return splits
 

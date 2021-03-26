@@ -176,8 +176,8 @@ def prepare_vctk(
 
     if output_dir is not None:
         output_dir.mkdir(parents=True, exist_ok=True)
-        recordings.to_json('recordings.json')
-        supervisions.to_json('supervisions.json')
+        recordings.to_json(output_dir / 'recordings.json')
+        supervisions.to_json(output_dir / 'supervisions.json')
 
     return {
         'recordings': recordings,
