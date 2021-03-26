@@ -24,7 +24,7 @@ from lhotse.features.mixer import NonPositiveEnergyError
 from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import (Decibels, JsonMixin, LOG_EPSILON, Pathlike, Seconds, TimeSpan, YamlMixin, asdict_nonull,
                           compute_num_frames, compute_num_samples, exactly_one_not_null, fastcopy,
-                          index_by_id_and_check, overlaps,
+                          index_by_id_and_check, measure_overlap, overlaps,
                           overspans, perturb_num_samples, split_sequence, uuid4)
 
 # One of the design principles for Cuts is a maximally "lazy" implementation, e.g. when mixing Cuts,
@@ -406,7 +406,6 @@ class Cut(CutUtilsMixin):
             # of Intervals that contain the SupervisionSegments matching our criterion.
             # We call "interval.data" to obtain the underlying SupervisionSegment.
             match_supervisions = tree.overlap if keep_excessive_supervisions else tree.envelop
-            from lhotse.utils import TimeSpan, measure_overlap
             supervisions = []
             for interval in match_supervisions(begin=offset, end=offset + new_duration):
                 # We are going to measure the overlap ratio of the supervision with the "truncated" cut
