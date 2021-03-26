@@ -172,6 +172,21 @@ def test_cut_pairs_sampler():
     assert sampler_cut_ids != [c.id for c in cut_set]
 
 
+def test_cut_pairs_sampler_2():
+    cut_set = CutSet.from_cuts([
+        dummy_cut(0, duration=10),
+        dummy_cut(1, duration=20),
+    ])
+    sampler = CutPairsSampler(
+        source_cuts=cut_set,
+        target_cuts=cut_set,
+        max_source_duration=50,
+        max_target_duration=50,
+    )
+    batch = next(iter(sampler))
+    assert len(batch) == 2
+
+
 @pytest.mark.parametrize(
     ['max_duration', 'max_frames', 'max_samples', 'exception_expectation'],
     [
