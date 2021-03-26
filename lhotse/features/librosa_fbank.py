@@ -2,7 +2,13 @@ from dataclasses import asdict, dataclass
 
 import numpy as np
 from lhotse.features.base import register_extractor, FeatureExtractor
-from lhotse.utils import Seconds, compute_num_frames, is_module_available, LOG_EPSILON
+from lhotse.utils import (
+    Seconds,
+    compute_num_frames,
+    is_module_available,
+    LOG_EPSILON,
+    EPSILON,
+)
 
 
 @dataclass
@@ -12,6 +18,7 @@ class LibrosaFbankConfig:
     This config is intended for use with popular TTS projects such as [ParallelWaveGAN](https://github.com/kan-bayashi/ParallelWaveGAN)
     Warning: You may need to normalize your features.
     """
+
     sampling_rate: int = 22050
     fft_size: int = 1024
     hop_size: int = 256
@@ -23,17 +30,22 @@ class LibrosaFbankConfig:
 
 
 def pad_or_truncate_features(
-        feats,
-        expected_num_frames: int,
-        abs_tol: int = 1,
-        pad_value: float = LOG_EPSILON
+    feats: np.ndarray,
+    expected_num_frames: int,
+    abs_tol: int = 1,
+    pad_value: float = LOG_EPSILON,
 ):
     frames_diff = feats.shape[0] - expected_num_frames
 
     if 0 < frames_diff <= abs_tol:
         feats = feats[:expected_num_frames]
     elif -abs_tol <= frames_diff < 0:
-        feats = np.pad(feats, ((0, -frames_diff), (0, 0)), mode="constant", constant_values=LOG_EPSILON)
+        feats = np.pad(
+            feats,
+            ((0, -frames_diff), (0, 0)),
+            mode="constant",
+            constant_values=LOG_EPSILON,
+        )
     elif abs(frames_diff) > abs_tol:
         raise ValueError(
             f"Expected {expected_num_frames} source_feats; feats.shape[0] = {feats.shape[0]}"
@@ -43,16 +55,16 @@ def pad_or_truncate_features(
 
 
 def logmelfilterbank(
-    audio,
-    sampling_rate,
-    fft_size=1024,
-    hop_size=256,
-    win_length=None,
-    window="hann",
-    num_mel_bins=80,
-    fmin=80,
-    fmax=7600,
-    eps=1e-10,
+    audio: np.ndarray,
+    sampling_rate: int,
+    fft_size: int = 1024,
+    hop_size: int = 256,
+    win_length: int = None,
+    window: str = "hann",
+    num_mel_bins: int = 80,
+    fmin: int = 80,
+    fmax: int = 7600,
+    eps: float = EPSILON,
 ):
     """Compute log-Mel filterbank feature.
 
@@ -77,12 +89,15 @@ def logmelfilterbank(
             "Librosa is not installed. Please install librosa before using LibrosaFbank extractor."
         )
 
-
     if len(audio.shape) == 2:
-        assert audio.shape[0] == 1, f"LibrosaFbank works only with single-channel recordings (shape: {audio.shape})"
+        assert (
+            audio.shape[0] == 1
+        ), f"LibrosaFbank works only with single-channel recordings (shape: {audio.shape})"
         audio = audio[0]
     else:
-        assert len(audio.shape) == 1, f"LibrosaFbank works only with single-channel recordings (shape: {audio.shape})"
+        assert (
+            len(audio.shape) == 1
+        ), f"LibrosaFbank works only with single-channel recordings (shape: {audio.shape})"
 
     x_stft = librosa.stft(
         audio,
@@ -126,12 +141,14 @@ class LibrosaFbank(FeatureExtractor):
         return logmelfilterbank(samples, **asdict(self.config))
 
     @staticmethod
-    def mix(features_a: np.ndarray, features_b: np.ndarray, energy_scaling_factor_b: float) -> np.ndarray:
+    def mix(
+        features_a: np.ndarray, features_b: np.ndarray, energy_scaling_factor_b: float
+    ) -> np.ndarray:
         return np.log(
             np.maximum(
                 # protection against log(0); max with EPSILON is adequate since these are energies (always >= 0)
                 EPSILON,
-                np.exp(features_a) + energy_scaling_factor_b * np.exp(features_b)
+                np.exp(features_a) + energy_scaling_factor_b * np.exp(features_b),
             )
         )
 
