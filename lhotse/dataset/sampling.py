@@ -363,7 +363,7 @@ class CutPairsSampler(CutSampler):
             next_num_cuts = len(cut_ids) + 1
             # Did we exceed the max_source_frames and max_cuts constraints?
             if not self.source_constraints.exceeded() \
-                    and self.target_constraints.exceeded() \
+                    and not self.target_constraints.exceeded() \
                     and (self.max_cuts is None or next_num_cuts <= self.max_cuts):
                 # No - add the next cut to the batch, and keep trying.
                 cut_ids.append(next_source_cut.id)
