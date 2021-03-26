@@ -11,3 +11,4 @@ from .musan import *
 from .nsc import *
 from .switchboard import *
 from .tedlium import *
+from .vctk import *
