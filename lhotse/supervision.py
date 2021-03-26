@@ -216,7 +216,7 @@ class SupervisionSet(JsonMixin, YamlMixin, Sequence[SupervisionSegment]):
             # We only modify the offset - the duration remains the same, as we're only shifting the segment
             # relative to the Cut's start, and not truncating anything.
             segment.with_offset(-start_after) if adjust_offset else segment
-            for segment in segment_by_recording_id[recording_id]
+            for segment in segment_by_recording_id.get(recording_id, [])
             if (channel is None or segment.channel == channel)
                and segment.start >= start_after
                and (end_before is None or segment.end <= end_before)

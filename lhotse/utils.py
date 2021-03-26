@@ -447,3 +447,17 @@ def is_module_available(*modules: str) -> bool:
     """
     import importlib
     return all(importlib.util.find_spec(m) is not None for m in modules)
+
+
+def measure_overlap(lhs: Any, rhs: Any) -> float:
+    """
+    Given two objects with "start" and "end" attributes, return the % of their overlapped time
+    with regard to the shorter of the two spans.
+    ."""
+    lhs, rhs = sorted([lhs, rhs], key=lambda item: item.start)
+    overlapped_area = lhs.end - rhs.start
+    if overlapped_area <= 0:
+        return 0.
+    dur = min(lhs.end - lhs.start, rhs.end - rhs.start)
+    return overlapped_area / dur
+
