@@ -150,20 +150,23 @@ def prepare_l2_arctic(
 
     validate_recordings_and_supervisions(recordings, supervisions)
 
-    if output_dir is not None:
-        recordings.to_json('recordings.json')
-        supervisions.to_json('supervisions.json')
-
-    return {
+    splits = {
         'read': {
             'recordings': recordings.filter(lambda r: 'suitcase_corpus' not in r.id),
             'supervisions': supervisions.filter(lambda s: 'suitcase_corpus' not in s.recording_id)
         },
-        'spontaneous': {
+        'suitcase': {
             'recordings': recordings.filter(lambda r: 'suitcase_corpus' in r.id),
             'supervisions': supervisions.filter(lambda s: 'suitcase_corpus' in s.recording_id)
         }
     }
+
+    if output_dir is not None:
+        for key, manifests in splits.items():
+            manifests['recordings'].to_json(f'recordings-{key}.json')
+            manifests['supervisions'].to_json(f'supervisions-{key}.json')
+
+    return splits
 
 
 def _parse_speaker_description():
