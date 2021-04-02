@@ -126,6 +126,11 @@ def logmelfilterbank(
 
 @register_extractor
 class LibrosaFbank(FeatureExtractor):
+    """Librosa fbank feature extractor
+
+    Differs from Fbank extractor in that it uses librosa backend for stft and mel scale calculations.
+    It can be easily configured to be compatible with existing speech-related projects that use librosa features.
+    """
     name = "librosa-fbank"
     config_type = LibrosaFbankConfig
 
