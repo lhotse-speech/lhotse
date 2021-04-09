@@ -118,11 +118,11 @@ def parse_utterance(
     speaker = audio_path.parts[-2]
     if idx not in transcript_dict:
         logging.warning(f'No transcript: {idx}')
-        return None, None
+        return None
     text = transcript_dict[idx]
     if not audio_path.is_file():
         logging.warning(f'No such file: {audio_path}')
-        return None, None
+        return None
     recording = Recording.from_file(audio_path)
     segment = SupervisionSegment(
         id=idx,
