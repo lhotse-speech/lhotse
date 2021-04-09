@@ -124,7 +124,6 @@ def parse_utterance(
         logging.warning(f'No such file: {audio_path}')
         return None, None
     recording = Recording.from_file(audio_path)
-    recordings.append(recording)
     segment = SupervisionSegment(
         id=idx,
         recording_id=idx,
@@ -135,5 +134,4 @@ def parse_utterance(
         speaker=speaker,
         text=text.strip()
     )
-    supervisions.append(segment)
     return recording, segment
