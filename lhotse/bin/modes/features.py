@@ -18,7 +18,7 @@ def feat():
 
 @feat.command(context_settings=dict(show_default=True))
 @click.argument('output_config', type=click.Path())
-@click.option('-f', '--feature-type', type=click.Choice(['fbank', 'mfcc', 'spectrogram']), default='fbank',
+@click.option('-f', '--feature-type', type=click.Choice(['fbank', 'mfcc', 'spectrogram', 'librosa-fbank']), default='fbank',
               help='Which feature extractor type to use.')
 def write_default_config(output_config: Pathlike, feature_type: str):
     """Save a default feature extraction config to OUTPUT_CONFIG."""
