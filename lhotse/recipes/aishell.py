@@ -70,7 +70,7 @@ def prepare_aishell(
         output_dir = Path(output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
     transcript_path = corpus_dir / 'data_aishell/transcript/aishell_transcript_v0.8.txt'
-    transcript_dict = {}
+    transcript_dict = defaultdict(dict)
     with open(transcript_path, 'r', encoding='utf-8') as f:
         for line in f.readlines():
             idx_transcript = line.split()
@@ -83,28 +83,16 @@ def prepare_aishell(
             recordings = []
             supervisions = []
             wav_path = corpus_dir / 'data_aishell' / 'wav' / f'{part}'
+            futures = []
             for audio_path in tqdm(wav_path.rglob('**/*.wav'), desc='Distributing tasks', leave=False):
-                idx = audio_path.stem
-                speaker = audio_path.parts[-2]
-                if idx not in transcript_dict:
-                    logging.warning(f'No transcript: {idx}')
+                futures.append(ex.submit(parse_utterance, audio_path, transcript_dict))
+                
+            for future in tqdm(futures, desc='Processing', leave=False):
+                result = future.result()
+                if result is None:
                     continue
-                text = transcript_dict[idx]
-                if not audio_path.is_file():
-                    logging.warning(f'No such file: {audio_path}')
-                    continue
-                recording = Recording.from_file(audio_path)
+                recording, segment = result
                 recordings.append(recording)
-                segment = SupervisionSegment(
-                    id=idx,
-                    recording_id=idx,
-                    start=0.0,
-                    duration=recording.duration,
-                    channel=0,
-                    language='Chinese',
-                    speaker=speaker,
-                    text=text.strip()
-                )
                 supervisions.append(segment)
 
             recording_set = RecordingSet.from_recordings(recordings)
@@ -121,3 +109,31 @@ def prepare_aishell(
             }
 
     return manifests
+
+def parse_utterance(
+        audio_path: Path,
+        transcript_dict: dict,
+) -> Optional[Tuple[Recording, SupervisionSegment]]:
+    idx = audio_path.stem
+    speaker = audio_path.parts[-2]
+    if idx not in transcript_dict:
+        logging.warning(f'No transcript: {idx}')
+        continue
+    text = transcript_dict[idx]
+    if not audio_path.is_file():
+        logging.warning(f'No such file: {audio_path}')
+        continue
+    recording = Recording.from_file(audio_path)
+    recordings.append(recording)
+    segment = SupervisionSegment(
+        id=idx,
+        recording_id=idx,
+        start=0.0,
+        duration=recording.duration,
+        channel=0,
+        language='Chinese',
+        speaker=speaker,
+        text=text.strip()
+    )
+    supervisions.append(segment)
+    return recording, segment
