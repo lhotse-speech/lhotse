@@ -11,7 +11,7 @@ import json
 import logging
 import shutil
 import tarfile
-from concurrent.futures.thread import ThreadPoolExecutor
+import concurrent.futures
 from pathlib import Path
 from tqdm.auto import tqdm
 from typing import Dict, Optional, Tuple, Union
@@ -77,17 +77,16 @@ def prepare_aishell(
             transcript_dict[idx_transcript[0]] = ' '.join(idx_transcript[1:])
     manifests = defaultdict(dict)
     dataset_parts = ['train', 'dev', 'test']
-    with ThreadPoolExecutor(num_jobs) as ex:
+    with concurrent.futures.ThreadPoolExecutor(num_jobs) as ex:
         for part in tqdm(dataset_parts, desc='Dataset parts'):
             # Generate a mapping: utt_id -> (audio_path, audio_info, speaker, text)
             recordings = []
             supervisions = []
             wav_path = corpus_dir / 'data_aishell' / 'wav' / f'{part}'
             futures = []
-            for audio_path in tqdm(wav_path.rglob('**/*.wav'), desc='Distributing tasks', leave=False):
-                futures.append(ex.submit(parse_utterance, audio_path, transcript_dict))
-                
-            for future in tqdm(futures, desc='Processing', leave=False):
+
+            future_to_utt = {ex.submit(parse_utterance, audio_path, transcript_dict) for audio_path in wav_path.rglob('**/*.wav')}
+            for future in concurrent.futures.as_completed(future_to_utt):
                 result = future.result()
                 if result is None:
                     continue
