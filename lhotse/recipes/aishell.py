@@ -14,7 +14,7 @@ import tarfile
 from concurrent.futures.thread import ThreadPoolExecutor
 from pathlib import Path
 from tqdm.auto import tqdm
-from typing import Dict, Optional, Union
+from typing import Dict, Optional, Tuple, Union
 
 from lhotse import validate_recordings_and_supervisions
 from lhotse.audio import Recording, RecordingSet
@@ -118,11 +118,11 @@ def parse_utterance(
     speaker = audio_path.parts[-2]
     if idx not in transcript_dict:
         logging.warning(f'No transcript: {idx}')
-        continue
+        return None, None
     text = transcript_dict[idx]
     if not audio_path.is_file():
         logging.warning(f'No such file: {audio_path}')
-        continue
+        return None, None
     recording = Recording.from_file(audio_path)
     recordings.append(recording)
     segment = SupervisionSegment(
