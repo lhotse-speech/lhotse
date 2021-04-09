@@ -1,0 +1,25 @@
+import click
+
+from lhotse.bin.modes import obtain, prepare
+from lhotse.recipes.ljspeech import download_and_untar, prepare_ljspeech
+from lhotse.utils import Pathlike
+
+__all__ = ['ljspeech']
+
+
+@prepare.command(context_settings=dict(show_default=True))
+@click.argument('corpus_dir', type=click.Path(exists=True, dir_okay=True))
+@click.argument('output_dir', type=click.Path())
+def ljspeech(
+        corpus_dir: Pathlike,
+        output_dir: Pathlike,
+):
+    """LJSpeech data preparation."""
+    prepare_ljspeech(corpus_dir, output_dir=output_dir)
+
+
+@obtain.command(context_settings=dict(show_default=True))
+@click.argument('target_dir', type=click.Path(), default='.')
+def ljspeech(target_dir: Pathlike):
+    """LJSpeech download."""
+    download_and_untar(target_dir)
