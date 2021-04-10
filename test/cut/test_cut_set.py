@@ -53,6 +53,8 @@ def test_cut_set_holds_both_simple_and_mixed_cuts(cut_set_with_mixed_cut):
         ('yaml', True),
         ('json', False),
         ('json', True),
+        ('jsonl', False),
+        ('jsonl', True),
     ]
 )
 def test_simple_cut_set_serialization(cut_set, format, compressed):
@@ -63,6 +65,9 @@ def test_simple_cut_set_serialization(cut_set, format, compressed):
         if format == 'json':
             cut_set.to_json(f.name)
             restored = CutSet.from_json(f.name)
+        if format == 'jsonl':
+            cut_set.to_jsonl(f.name)
+            restored = CutSet.from_jsonl(f.name)
     assert cut_set == restored
 
 

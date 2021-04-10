@@ -1,12 +1,12 @@
 Representing a corpus
 =====================
 
-In Lhotse, we represent the data using YAML (more readable) or JSON (faster) manifests.
+In Lhotse, we represent the data using YAML (more readable), JSON, or JSONL (faster) manifests.
 For most audio corpora, we will need two types of manifests to fully describe them:
 a recording manifest and a supervision manifest.
 
 .. caution::
-    We show all the examples in YAML format for improved readability. However, when processing medium/large datasets, we recommend to use JSON, which is much quicker to load and save.
+    We show all the examples in YAML format for improved readability. However, when processing medium/large datasets, we recommend to use JSON or JSONL, which are much quicker to load and save.
 
 Recording manifest
 ------------------

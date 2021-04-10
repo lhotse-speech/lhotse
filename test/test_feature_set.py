@@ -59,6 +59,8 @@ def test_feature_extractor_generic_deserialization():
         ('yaml', True),
         ('json', False),
         ('json', True),
+        ('jsonl', False),
+        ('jsonl', True),
     ]
 )
 def test_feature_set_serialization(format, compressed):
@@ -81,6 +83,9 @@ def test_feature_set_serialization(format, compressed):
         ]
     )
     with NamedTemporaryFile(suffix='.gz' if compressed else '') as f:
+        if format == 'jsonl':
+            feature_set.to_jsonl(f.name)
+            feature_set_deserialized = FeatureSet.from_jsonl(f.name)
         if format == 'json':
             feature_set.to_json(f.name)
             feature_set_deserialized = FeatureSet.from_json(f.name)

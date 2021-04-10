@@ -60,6 +60,8 @@ def test_get_metadata(recording_set):
         ('yaml', True),
         ('json', False),
         ('json', True),
+        ('jsonl', False),
+        ('jsonl', True),
     ]
 )
 def test_serialization(format, compressed):
@@ -84,6 +86,9 @@ def test_serialization(format, compressed):
         )
     ])
     with NamedTemporaryFile(suffix='.gz' if compressed else '') as f:
+        if format == 'jsonl':
+            recording_set.to_jsonl(f.name)
+            deserialized = RecordingSet.from_jsonl(f.name)
         if format == 'yaml':
             recording_set.to_yaml(f.name)
             deserialized = RecordingSet.from_yaml(f.name)

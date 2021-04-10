@@ -3,7 +3,8 @@ from dataclasses import dataclass
 from itertools import islice
 from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence
 
-from lhotse.utils import JsonMixin, Seconds, YamlMixin, asdict_nonull, exactly_one_not_null, fastcopy, \
+from lhotse.serialization import Serializable
+from lhotse.utils import Seconds, asdict_nonull, exactly_one_not_null, fastcopy, \
     index_by_id_and_check, \
     perturb_num_samples, split_sequence
 
@@ -97,7 +98,7 @@ class SupervisionSegment:
 
 
 @dataclass
-class SupervisionSet(JsonMixin, YamlMixin, Sequence[SupervisionSegment]):
+class SupervisionSet(Serializable, Sequence[SupervisionSegment]):
     """
     SupervisionSet represents a collection of segments containing some supervision information.
     The only required fields are the ID of the segment, ID of the corresponding recording,

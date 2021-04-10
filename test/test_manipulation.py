@@ -1,10 +1,10 @@
 import pytest
 from pytest import mark, raises
 
-from lhotse import CutSet
+from lhotse import CutSet, load_manifest
 from lhotse.audio import RecordingSet
 from lhotse.features import FeatureSet
-from lhotse.manipulation import combine, load_manifest
+from lhotse.manipulation import combine
 from lhotse.supervision import SupervisionSet
 from lhotse.testing.dummies import DummyManifest
 from lhotse.utils import nullcontext as does_not_raise
@@ -73,7 +73,7 @@ def test_combine(manifest_type):
         ('test/fixtures/dummy_feats/feature_manifest.json', does_not_raise()),
         ('test/fixtures/libri/cuts.json', does_not_raise()),
         ('test/fixtures/feature_config.yml', raises(ValueError)),
-        ('no/such/path.xd', raises(FileNotFoundError)),
+        ('no/such/path.xd', raises(AssertionError)),
     ]
 )
 def test_load_any_lhotse_manifest(path, exception_expectation):

@@ -86,6 +86,8 @@ def test_supervision_set_iteration():
         ('yaml', True),
         ('json', False),
         ('json', True),
+        ('jsonl', False),
+        ('jsonl', True),
     ]
 )
 def test_supervision_set_serialization(format, compressed):
@@ -109,6 +111,9 @@ def test_supervision_set_serialization(format, compressed):
         if format == 'json':
             supervision_set.to_json(f.name)
             restored = supervision_set.from_json(f.name)
+        if format == 'jsonl':
+            supervision_set.to_jsonl(f.name)
+            restored = supervision_set.from_jsonl(f.name)
     assert supervision_set == restored
 
 

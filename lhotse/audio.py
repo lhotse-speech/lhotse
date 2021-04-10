@@ -12,7 +12,8 @@ from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence, Tupl
 import numpy as np
 
 from lhotse.augmentation import AudioTransform, Resample, Speed
-from lhotse.utils import (Decibels, JsonMixin, Pathlike, Seconds, SetContainingAnything, YamlMixin, asdict_nonull,
+from lhotse.serialization import Serializable
+from lhotse.utils import (Decibels, Pathlike, Seconds, SetContainingAnything, asdict_nonull,
                           compute_num_samples,
                           exactly_one_not_null, fastcopy,
                           index_by_id_and_check, perturb_num_samples, split_sequence)
@@ -368,7 +369,7 @@ class Recording:
 
 
 @dataclass
-class RecordingSet(JsonMixin, YamlMixin, Sequence[Recording]):
+class RecordingSet(Serializable, Sequence[Recording]):
     """
     RecordingSet represents a dataset of recordings. It does not contain any annotation -
     just the information needed to retrieve a recording (possibly multi-channel, from files

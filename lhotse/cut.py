@@ -21,8 +21,9 @@ from lhotse.features import FeatureExtractor, FeatureMixer, FeatureSet, Features
 from lhotse.features.base import compute_global_stats
 from lhotse.features.io import FeaturesWriter, LilcomFilesWriter, LilcomHdf5Writer
 from lhotse.features.mixer import NonPositiveEnergyError
+from lhotse.serialization import Serializable
 from lhotse.supervision import SupervisionSegment, SupervisionSet
-from lhotse.utils import (Decibels, JsonMixin, LOG_EPSILON, Pathlike, Seconds, TimeSpan, YamlMixin, asdict_nonull,
+from lhotse.utils import (Decibels, LOG_EPSILON, Pathlike, Seconds, TimeSpan, asdict_nonull,
                           compute_num_frames, compute_num_samples, exactly_one_not_null, fastcopy,
                           index_by_id_and_check, measure_overlap, overlaps,
                           overspans, perturb_num_samples, split_sequence, uuid4)
@@ -1217,7 +1218,7 @@ class MixedCut(CutUtilsMixin):
 
 
 @dataclass
-class CutSet(JsonMixin, YamlMixin, Sequence[AnyCut]):
+class CutSet(Serializable, Sequence[AnyCut]):
     """
     CutSet combines features with their corresponding supervisions.
     It may have wider span than the actual supervisions, provided the features for the whole span exist.

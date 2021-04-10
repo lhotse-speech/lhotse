@@ -7,10 +7,10 @@ from typing import Optional
 import click
 from cytoolz.functoolz import complement
 
+from lhotse import load_manifest
 from lhotse.bin.modes.cli_base import cli
 from lhotse.manipulation import (
     combine as combine_manifests,
-    load_manifest,
     to_manifest
 )
 from lhotse.utils import Pathlike
