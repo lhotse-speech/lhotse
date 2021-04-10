@@ -17,9 +17,8 @@ from tqdm.auto import tqdm
 from lhotse.audio import Recording
 from lhotse.augmentation import AugmentFn
 from lhotse.features.io import FeaturesWriter, get_reader
-from lhotse.utils import (JsonMixin, Pathlike, Seconds, YamlMixin, compute_num_frames, exactly_one_not_null, fastcopy,
-                          load_yaml,
-                          save_to_yaml,
+from lhotse.serialization import Serializable, load_yaml, save_to_yaml
+from lhotse.utils import (Pathlike, Seconds, compute_num_frames, exactly_one_not_null, fastcopy,
                           split_sequence,
                           uuid4)
 
@@ -395,7 +394,7 @@ class Features:
 
 
 @dataclass
-class FeatureSet(JsonMixin, YamlMixin, Sequence[Features]):
+class FeatureSet(Serializable, Sequence[Features]):
     """
     Represents a feature manifest, and allows to read features for given recordings
     within particular channels and time ranges.

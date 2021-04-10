@@ -1,5 +1,3 @@
-import gzip
-import json
 import math
 import random
 import uuid
@@ -12,7 +10,6 @@ from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence, Tupl
 
 import numpy as np
 import torch
-import yaml
 from tqdm.auto import tqdm
 
 Pathlike = Union[Path, str]
@@ -55,64 +52,6 @@ def uuid4():
     if _lhotse_uuid is not None:
         return _lhotse_uuid()
     return uuid.uuid4()
-
-
-def save_to_yaml(data: Any, path: Pathlike):
-    compressed = str(path).endswith('.gz')
-    opener = gzip.open if compressed else open
-    mode = 'wt' if compressed else 'w'
-    with opener(path, mode) as f:
-        try:
-            # When pyyaml is installed with C extensions, it can speed up the (de)serialization noticeably
-            return yaml.dump(data, stream=f, Dumper=yaml.CSafeDumper)
-        except AttributeError:
-            return yaml.dump(data, stream=f, Dumper=yaml.SafeDumper)
-
-
-def load_yaml(path: Pathlike) -> dict:
-    opener = gzip.open if str(path).endswith('.gz') else open
-    with opener(path) as f:
-        try:
-            # When pyyaml is installed with C extensions, it can speed up the (de)serialization noticeably
-            return yaml.load(stream=f, Loader=yaml.CSafeLoader)
-        except AttributeError:
-            return yaml.load(stream=f, Loader=yaml.SafeLoader)
-
-
-class YamlMixin:
-    def to_yaml(self, path: Pathlike):
-        save_to_yaml(self.to_dicts(), path)
-
-    @classmethod
-    def from_yaml(cls, path: Pathlike):
-        data = load_yaml(path)
-        return cls.from_dicts(data)
-
-
-def save_to_json(data: Any, path: Pathlike):
-    """Save the data to a JSON file. Will use GZip to compress it if the path ends with a ``.gz`` extension."""
-    compressed = str(path).endswith('.gz')
-    opener = gzip.open if compressed else open
-    mode = 'wt' if compressed else 'w'
-    with opener(path, mode) as f:
-        return json.dump(data, f, indent=2)
-
-
-def load_json(path: Pathlike) -> Union[dict, list]:
-    """Load a JSON file. Also supports compressed JSON with a ``.gz`` extension."""
-    opener = gzip.open if str(path).endswith('.gz') else open
-    with opener(path) as f:
-        return json.load(f)
-
-
-class JsonMixin:
-    def to_json(self, path: Pathlike):
-        save_to_json(self.to_dicts(), path)
-
-    @classmethod
-    def from_json(cls, path: Pathlike):
-        data = load_json(path)
-        return cls.from_dicts(data)
 
 
 def asdict_nonull(dclass) -> Dict[str, Any]:

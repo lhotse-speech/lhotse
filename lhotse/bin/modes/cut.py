@@ -4,6 +4,7 @@ import click
 import numpy as np
 from cytoolz.itertoolz import groupby
 
+from lhotse import load_manifest
 from lhotse.bin.modes.cli_base import cli
 from lhotse.cut import (
     CutSet,
@@ -12,7 +13,7 @@ from lhotse.cut import (
     mix_cuts
 )
 from lhotse.features import FeatureSet
-from lhotse.manipulation import combine, load_manifest
+from lhotse.manipulation import combine
 from lhotse.supervision import SupervisionSet
 from lhotse.utils import Pathlike
 
