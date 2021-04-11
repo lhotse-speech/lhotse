@@ -52,49 +52,6 @@ def test_feature_extractor_generic_deserialization():
     assert fe_deserialized.config == fe.config
 
 
-@pytest.mark.parametrize(
-    ['format', 'compressed'],
-    [
-        ('yaml', False),
-        ('yaml', True),
-        ('json', False),
-        ('json', True),
-        ('jsonl', False),
-        ('jsonl', True),
-    ]
-)
-def test_feature_set_serialization(format, compressed):
-    feature_set = FeatureSet(
-        features=[
-            Features(
-                recording_id='irrelevant',
-                channels=0,
-                start=0.0,
-                duration=20.0,
-                type='fbank',
-                num_frames=2000,
-                num_features=20,
-                frame_shift=0.01,
-                sampling_rate=16000,
-                storage_type='lilcom',
-                storage_path='/irrelevant/',
-                storage_key='path.llc'
-            )
-        ]
-    )
-    with NamedTemporaryFile(suffix='.gz' if compressed else '') as f:
-        if format == 'jsonl':
-            feature_set.to_jsonl(f.name)
-            feature_set_deserialized = FeatureSet.from_jsonl(f.name)
-        if format == 'json':
-            feature_set.to_json(f.name)
-            feature_set_deserialized = FeatureSet.from_json(f.name)
-        if format == 'yaml':
-            feature_set.to_yaml(f.name)
-            feature_set_deserialized = FeatureSet.from_yaml(f.name)
-    assert feature_set_deserialized == feature_set
-
-
 @mark.parametrize(
     ['recording_id', 'channel', 'start', 'duration', 'exception_expectation', 'expected_num_frames'],
     [

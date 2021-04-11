@@ -15,7 +15,20 @@ from lhotse.manipulation import (
 )
 from lhotse.utils import Pathlike
 
-__all__ = ['split', 'combine']
+__all__ = ['split', 'combine', 'subset', 'filter']
+
+
+@cli.command()
+@click.argument('input_manifest', type=click.Path(exists=True, dir_okay=False))
+@click.argument('output_manifest', type=click.Path())
+def copy(input_manifest, output_manifest):
+    """
+    Load INPUT_MANIFEST and store it to OUTPUT_MANIFEST.
+    Useful for conversion between different serialization formats (e.g. JSON, JSONL, YAML).
+    Automatically supports gzip compression when '.gz' suffix is detected.
+    """
+    data = load_manifest(input_manifest)
+    data.to_file(output_manifest)
 
 
 @cli.command()
@@ -34,7 +47,7 @@ def split(num_splits: int, manifest: Pathlike, output_dir: Pathlike, shuffle: bo
     parts = any_set.split(num_splits=num_splits, shuffle=shuffle)
     output_dir.mkdir(parents=True, exist_ok=True)
     for idx, part in enumerate(parts):
-        part.to_json((output_dir / manifest).with_suffix(f'.{idx + 1}.{suffix}'))
+        part.to_file((output_dir / manifest).with_suffix(f'.{idx + 1}{suffix}'))
 
 
 @cli.command()
@@ -48,7 +61,7 @@ def subset(manifest: Pathlike, output_manifest: Pathlike, first: Optional[int], 
     manifest = Path(manifest)
     any_set = load_manifest(manifest)
     a_subset = any_set.subset(first=first, last=last)
-    a_subset.to_json(output_manifest)
+    a_subset.to_file(output_manifest)
 
 
 @cli.command()
@@ -57,7 +70,7 @@ def subset(manifest: Pathlike, output_manifest: Pathlike, first: Optional[int], 
 def combine(manifests: Pathlike, output_manifest: Pathlike):
     """Load MANIFESTS, combine them into a single one, and write it to OUTPUT_MANIFEST."""
     data_set = combine_manifests(*[load_manifest(m) for m in manifests])
-    data_set.to_json(output_manifest)
+    data_set.to_file(output_manifest)
 
 
 @cli.command()
@@ -116,4 +129,4 @@ def filter(predicate: str, manifest: Pathlike, output_manifest: Pathlike):
     if filtered_data_set is None:
         click.echo('No items satisfying the predicate.', err=True)
         exit(0)
-    filtered_data_set.to_json(output_manifest)
+    filtered_data_set.to_file(output_manifest)
