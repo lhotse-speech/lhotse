@@ -194,7 +194,8 @@ class SupervisionSet(Serializable, Sequence[SupervisionSegment]):
             channel: Optional[int] = None,
             start_after: Seconds = 0,
             end_before: Optional[Seconds] = None,
-            adjust_offset: bool = False
+            adjust_offset: bool = False,
+            tolerance: Seconds = 0.001
     ) -> Iterable[SupervisionSegment]:
         """
         Return an iterable of segments that match the provided ``recording_id``.
@@ -210,6 +211,8 @@ class SupervisionSet(Serializable, Sequence[SupervisionSegment]):
             In the anticipated use-case, ``start_after`` and ``end_before`` would be
             the beginning and end of a cut;
             this option converts the times to be relative to the start of the cut.
+        :param tolerance: Additional margin to account for floating point rounding errors
+            when comparing segment boundaries.
         :return: An iterator over supervision segments satisfying all criteria.
         """
         segment_by_recording_id = self._index_by_recording_id_and_cache()
@@ -219,8 +222,8 @@ class SupervisionSet(Serializable, Sequence[SupervisionSegment]):
             segment.with_offset(-start_after) if adjust_offset else segment
             for segment in segment_by_recording_id.get(recording_id, [])
             if (channel is None or segment.channel == channel)
-               and segment.start >= start_after
-               and (end_before is None or segment.end <= end_before)
+               and segment.start >= start_after - tolerance
+               and (end_before is None or segment.end <= end_before + tolerance)
         )
 
     # This is a cache that significantly speeds up repeated ``find()`` queries.
