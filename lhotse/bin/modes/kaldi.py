@@ -26,9 +26,9 @@ def import_(data_dir: Pathlike, sampling_rate: int, manifest_dir: Pathlike):
     recording_set, maybe_supervision_set = load_kaldi_data_dir(path=data_dir, sampling_rate=sampling_rate)
     manifest_dir = Path(manifest_dir)
     manifest_dir.mkdir(parents=True, exist_ok=True)
-    recording_set.to_json(manifest_dir / 'audio.json')
+    recording_set.to_file(manifest_dir / 'audio.jsonl')
     if maybe_supervision_set is not None:
-        maybe_supervision_set.to_json(manifest_dir / 'supervision.json')
+        maybe_supervision_set.to_file(manifest_dir / 'supervision.jsonl')
 
 
 @kaldi.command()

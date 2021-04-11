@@ -1,5 +1,4 @@
 from functools import lru_cache
-from tempfile import NamedTemporaryFile
 
 import numpy as np
 import pytest
@@ -51,51 +50,6 @@ def test_get_metadata(recording_set):
     assert 8000 == recording_set.sampling_rate('recording-1')
     assert 4000 == recording_set.num_samples('recording-1')
     assert 0.5 == recording_set.duration('recording-1')
-
-
-@pytest.mark.parametrize(
-    ['format', 'compressed'],
-    [
-        ('yaml', False),
-        ('yaml', True),
-        ('json', False),
-        ('json', True),
-        ('jsonl', False),
-        ('jsonl', True),
-    ]
-)
-def test_serialization(format, compressed):
-    recording_set = RecordingSet.from_recordings([
-        Recording(
-            id='x',
-            sources=[
-                AudioSource(
-                    type='file',
-                    channels=[0],
-                    source='text/fixtures/mono_c0.wav'
-                ),
-                AudioSource(
-                    type='command',
-                    channels=[1],
-                    source='cat text/fixtures/mono_c1.wav'
-                )
-            ],
-            sampling_rate=8000,
-            num_samples=4000,
-            duration=0.5
-        )
-    ])
-    with NamedTemporaryFile(suffix='.gz' if compressed else '') as f:
-        if format == 'jsonl':
-            recording_set.to_jsonl(f.name)
-            deserialized = RecordingSet.from_jsonl(f.name)
-        if format == 'yaml':
-            recording_set.to_yaml(f.name)
-            deserialized = RecordingSet.from_yaml(f.name)
-        if format == 'json':
-            recording_set.to_json(f.name)
-            deserialized = RecordingSet.from_json(f.name)
-    assert deserialized == recording_set
 
 
 def test_iteration(recording_set):

@@ -620,7 +620,7 @@ class FeatureSetBuilder:
                     )
                 )
         if output_manifest is not None:
-            feature_set.to_json(output_manifest)
+            feature_set.to_file(output_manifest)
         return feature_set
 
     def _process_and_store_recording(
