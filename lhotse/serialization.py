@@ -7,7 +7,9 @@ import yaml
 
 from lhotse.utils import Pathlike
 
-Manifest = Union['RecordingSet', 'SupervisionSet', 'FeatureSet', 'CutSet']
+# TODO: figure out how to use some sort of typing stubs
+#  so that linters/static checkers don't complain
+Manifest = Any  # Union['RecordingSet', 'SupervisionSet', 'FeatureSet', 'CutSet']
 
 
 def save_to_yaml(data: Any, path: Pathlike) -> None:
