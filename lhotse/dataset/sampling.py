@@ -96,9 +96,13 @@ class CutSampler(Sampler[List[str]]):
         self.num_batches = None
 
     def _maybe_init_distributed(self, world_size: Optional[int], rank: Optional[int]):
+        if world_size is not None:
+            assert world_size >= 1
+        if rank is not None:
+            assert rank >= 0
         if not dist.is_available() or not dist.is_initialized():
-            self.world_size = 1
-            self.rank = 0
+            self.world_size = 1 if world_size is None else world_size
+            self.rank = 0 if rank is None else rank
             return
         self.world_size = dist.get_world_size() if world_size is None else world_size
         self.rank = dist.get_rank() if rank is None else rank
@@ -526,3 +530,35 @@ def partition_cut_ids(
                      f'this partition has cut IDs range [{partition_start, partition_end}].')
 
     return data_source[partition_start: partition_end]
+
+# def partition_cut_ids(
+#         data_source: List[str],
+#         world_size: int = 1,
+#         rank: int = 0
+# ) -> List[str]:
+#     """
+#     Returns a list of cut IDs to be used by a single dataloading process.
+#     For multiple dataloader workers or ``DistributedDataParallel`` training,
+#     that list will be a subset of ``sampler.full_data_source``.
+#
+#     :param data_source: a list of Cut IDs, representing the full dataset.
+#     :param world_size: Total number of distributed nodes. Set only when using ``DistributedDataParallel``.
+#     :param rank: Index of distributed node. Set only when using ``DistributedDataParallel``.
+#     """
+#
+#     # First, split depending on the world_size and rank.
+#     if world_size == 1:
+#         return data_source
+#     else:
+#         # Distributed training is active - split full dataset into a subset.
+#         total = len(data_source)
+#         per_partition = int(floor(total / float(world_size)))
+#         partition_start = rank * per_partition
+#         partition_end = partition_start + per_partition
+#         assert partition_end < total
+#         logging.info(f'Distributed training with world size of {world_size} detected '
+#                      f'(node\'s local rank is {rank}. '
+#                      f'Splitting cuts into {world_size} partitions ('
+#                      f'this partition has cut IDs range [{partition_start, partition_end}].')
+#
+#     return data_source[partition_start: partition_end]
