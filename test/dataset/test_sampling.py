@@ -494,10 +494,10 @@ def test_bucketing_sampler_time_constraints(constraint):
     assert set(cut_set.ids) == set(cut_ids)
 
 
-@pytest.mark.parametrize('epoch', [0, 1, 2])
 @pytest.mark.parametrize('world_size', [2, 3, 4])
 @pytest.mark.parametrize('n_cuts', [995, 996, 997, 998, 999, 1000, 1001, 1002, 1003])
-def test_partitions_are_equal(epoch, world_size, n_cuts):
+@pytest.mark.parametrize('sampler_cls', [SingleCutSampler, BucketingSampler])
+def test_partitions_are_equal(world_size, n_cuts, sampler_cls):
     # Create a dummy CutSet.
     cut_set = DummyManifest(CutSet, begin_id=0, end_id=n_cuts)
     # Randomize the durations of cuts to increase the chance we run into edge cases.
@@ -505,12 +505,9 @@ def test_partitions_are_equal(epoch, world_size, n_cuts):
         c.duration += (10 * random.random())
     # Create a sampler for each "distributed worker."
     samplers = [
-        SingleCutSampler(cut_set, max_duration=25.0, rank=i, world_size=world_size)
+        sampler_cls(cut_set, max_duration=25.0, rank=i, world_size=world_size)
         for i in range(world_size)
     ]
-    # Set the right epoch (different epochs might result in different number of batches).
-    for s in samplers:
-        s.set_epoch(epoch)
     # Check that it worked.
     n_batches = [len(s) for s in samplers]
     assert all(nb == n_batches[0] for nb in n_batches)
