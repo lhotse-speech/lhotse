@@ -234,10 +234,13 @@ class Recording:
     ) -> np.ndarray:
         if channels is None:
             channels = SetContainingAnything()
-        elif isinstance(channels, int):
-            channels = frozenset([channels])
         else:
-            channels = frozenset(channels)
+            channels = frozenset([channels] if isinstance(channels, int) else channels)
+            recording_channels = frozenset(self.channel_ids)
+            assert channels.issubset(recording_channels), "Requested to load audio from a channel " \
+                                                          "that does not exist in the recording: " \
+                                                          f"(recording channels: {recording_channels} -- " \
+                                                          f"requested channels: {channels})"
 
         offset_sp, duration_sp = self._adjust_for_speed_perturbation(offset, duration)
 
@@ -278,7 +281,8 @@ class Recording:
         if diff == 0:
             pass  # this is normal condition
         elif diff == 1:
-            audio = np.append(audio, np.ones((audio.shape[0], 1), dtype=np.float32), axis=1)
+            # note the extra colon in -1:, which preserves the shape
+            audio = np.append(audio, audio[:, -1:], axis=1)
         elif diff == -1:
             audio = audio[:, :-1]
         else:
