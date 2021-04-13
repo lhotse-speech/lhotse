@@ -30,20 +30,22 @@ class DataSource:
 
 class CutSampler(Sampler[List[str]]):
     """
-    CutSampler is responsible for collecting batches of cuts, given specified criteria.
-    It implements correct handling of distributed sampling in DataLoader,
+    ``CutSampler`` is responsible for collecting batches of cuts, given specified criteria.
+    It implements correct handling of distributed sampling in ``DataLoader``,
     so that the cuts are not duplicated across workers.
 
-    Sampling in a CutSampler is intended to be very quick - it only uses the metadata in
+    Sampling in a ``CutSampler`` is intended to be very quick - it only uses the metadata in
     ``CutSet`` manifest to select the cuts, and is not intended to perform any I/O.
 
     CutSampler works similarly to PyTorch's DistributedSampler - when :attr:`shuffle=True`,
     you should call ``sampler.set_epoch(epoch)`` at each new epoch to have a different
     ordering of returned elements. However, its actual behaviour is different than that of
     DistributedSampler -- instead of partitioning the underlying cuts into equally sized chunks,
-    it will drop every N-th batch instead (where ``N == world_size``).
-    This ensures an equal number of batches in all distributed workers in spite of
-    using a dynamic batch size.
+    it will return every N-th batch and skip the other batches (where ``N == world_size``).
+    The formula used to determine which batches are returned is
+    ``(batch_idx + rank) % world_size == 0``.
+    This ensures that we can return an equal number of batches in all distributed workers
+    in spite of using a dynamic batch size, at the cost of skipping at most ``world_size`` batches.
 
     Example usage::
 
@@ -218,6 +220,16 @@ class SingleCutSampler(CutSampler):
     the batch size is dynamic.
     Exactly zero or one of those constraints can be specified.
     Padding required to collate the batch does not contribute to max frames/samples/duration.
+
+    Example usage::
+
+        >>> dataset = K2SpeechRecognitionDataset(cuts)
+        >>> sampler = SingleCutSampler(cuts, shuffle=True)
+        >>> loader = DataLoader(dataset, sampler=sampler, batch_size=None)
+        >>> for epoch in range(start_epoch, n_epochs):
+        ...     sampler.set_epoch(epoch)
+        ...     train(loader)
+
     """
 
     def __init__(
