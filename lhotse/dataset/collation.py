@@ -1,4 +1,4 @@
-from typing import Iterable, Union, Tuple, List
+from typing import Iterable, List, Tuple, Union
 
 import numpy as np
 import torch
@@ -99,15 +99,22 @@ class TokenCollater:
         return sentences
 
 
-def collate_features(cuts: CutSet) -> Tuple[torch.Tensor, torch.IntTensor]:
+def collate_features(
+        cuts: CutSet,
+        pad_direction: str = 'both'
+) -> Tuple[torch.Tensor, torch.IntTensor]:
     """
     Load features for all the cuts and return them as a batch in a torch tensor.
     The output shape is ``(batch, time, features)``.
     The cuts will be padded with silence if necessary.
+
+    :param cuts: a :class:`CutSet` used to load the features.
+    :param pad_direction: where to apply the padding (``right``, ``left``, or ``both``).
+    :return: a tuple of tensors ``(features, features_lens)``.
     """
     assert all(cut.has_features for cut in cuts)
     features_lens = torch.tensor([cut.num_frames for cut in cuts], dtype=torch.int)
-    cuts = maybe_pad(cuts, num_frames=max(features_lens).item())
+    cuts = maybe_pad(cuts, num_frames=max(features_lens).item(), direction=pad_direction)
     first_cut = next(iter(cuts))
     features = torch.empty(len(cuts), first_cut.num_frames, first_cut.num_features)
     for idx, cut in enumerate(cuts):
@@ -115,15 +122,22 @@ def collate_features(cuts: CutSet) -> Tuple[torch.Tensor, torch.IntTensor]:
     return features, features_lens
 
 
-def collate_audio(cuts: CutSet) -> Tuple[torch.Tensor, torch.IntTensor]:
+def collate_audio(
+        cuts: CutSet,
+        pad_direction: str = 'both'
+) -> Tuple[torch.Tensor, torch.IntTensor]:
     """
     Load audio samples for all the cuts and return them as a batch in a torch tensor.
     The output shape is ``(batch, time)``.
     The cuts will be padded with silence if necessary.
+
+    :param cuts: a :class:`CutSet` used to load the audio samples.
+    :param pad_direction: where to apply the padding (``right``, ``left``, or ``both``).
+    :return: a tuple of tensors ``(audio, audio_lens)``.
     """
     assert all(cut.has_recording for cut in cuts)
     audio_lens = torch.tensor([cut.num_samples for cut in cuts], dtype=torch.int32)
-    cuts = maybe_pad(cuts, num_samples=max(audio_lens).item())
+    cuts = maybe_pad(cuts, num_samples=max(audio_lens).item(), direction=pad_direction)
     first_cut = next(iter(cuts))
     audio = torch.empty(len(cuts), first_cut.num_samples)
     for idx, cut in enumerate(cuts):
@@ -222,10 +236,21 @@ def collate_matrices(
     return result
 
 
-def maybe_pad(cuts: CutSet, duration: int = None, num_frames: int = None, num_samples: int = None) -> CutSet:
+def maybe_pad(
+        cuts: CutSet,
+        duration: int = None,
+        num_frames: int = None,
+        num_samples: int = None,
+        direction: str = 'both'
+) -> CutSet:
     """Check if all cuts' durations are equal and pad them to match the longest cut otherwise."""
     if len(set(c.duration for c in cuts)) == 1:
         # All cuts are of equal duration: nothing to do
         return cuts
     # Non-equal durations: silence padding
-    return cuts.pad(duration=duration, num_frames=num_frames, num_samples=num_samples)
+    return cuts.pad(
+        duration=duration,
+        num_frames=num_frames,
+        num_samples=num_samples,
+        direction=direction
+    )
