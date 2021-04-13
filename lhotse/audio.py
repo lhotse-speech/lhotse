@@ -140,59 +140,11 @@ class Recording:
     transforms: Optional[List[Dict]] = None
 
     @staticmethod
-    def from_sphere(
-            sph_path: Pathlike,
+    def from_file(
+            path: Pathlike,
             recording_id: Optional[str] = None,
             relative_path_depth: Optional[int] = None
     ) -> 'Recording':
-        """
-        Read a SPHERE file's header and create the corresponding ``Recording``.
-
-        :param sph_path: Path to the sphere (.sph) file.
-        :param recording_id: recording id, when not specified ream the filename's stem ("x.wav" -> "x").
-        :param relative_path_depth: optional int specifying how many last parts of the file path
-            should be retained in the ``AudioSource``. By default writes the path as is.
-        :return: a new ``Recording`` instance pointing to the sphere file.
-        """
-        from sphfile import SPHFile
-        sph_path = Path(sph_path)
-        sphf = SPHFile(sph_path)
-        return Recording(
-            id=recording_id if recording_id is not None else sph_path.stem,
-            sampling_rate=sphf.format['sample_rate'],
-            num_samples=sphf.format['sample_count'],
-            duration=sphf.format['sample_count'] / sphf.format['sample_rate'],
-            sources=[
-                AudioSource(
-                    type='file',
-                    channels=list(range(sphf.format['channel_count'])),
-                    source=(
-                        '/'.join(sph_path.parts[-relative_path_depth:])
-                        if relative_path_depth is not None and relative_path_depth > 0
-                        else str(sph_path)
-                    )
-                )
-            ]
-        )
-
-    @staticmethod
-    def from_wav(path: Pathlike, recording_id: Optional[str] = None) -> 'Recording':
-        """
-        Read a WAVE file's header and create the corresponding ``Recording``.
-
-        :param path: Path to the WAVE (.wav) file.
-        :param recording_id: recording id, when not specified ream the filename's stem ("x.wav" -> "x").
-        :return: a new ``Recording`` instance pointing to the audio file.
-        """
-        warnings.warn(
-            'Recording.from_wav() is deprecated and will be removed in Lhotse v0.5; '
-            'please use Recording.from_file() instead.',
-            category=DeprecationWarning
-        )
-        return Recording.from_file(path=path, recording_id=recording_id)
-
-    @staticmethod
-    def from_file(path: Pathlike, recording_id: Optional[str] = None):
         """
         Read an audio file's header and create the corresponding ``Recording``.
         Suitable to use when each physical file represents a separate recording session.
@@ -203,10 +155,12 @@ class Recording:
 
         :param path: Path to an audio file supported by libsoundfile (pysoundfile).
         :param recording_id: recording id, when not specified ream the filename's stem ("x.wav" -> "x").
+        :param relative_path_depth: optional int specifying how many last parts of the file path
+            should be retained in the ``AudioSource``. By default writes the path as is.
         :return: a new ``Recording`` instance pointing to the audio file.
         """
         import soundfile
-        info = soundfile.info(path)
+        info = soundfile.info(str(path))
         return Recording(
             id=recording_id if recording_id is not None else Path(path).stem,
             sampling_rate=info.samplerate,
@@ -216,7 +170,11 @@ class Recording:
                 AudioSource(
                     type='file',
                     channels=list(range(info.channels)),
-                    source=str(path)
+                    source=(
+                        '/'.join(Path(path).parts[-relative_path_depth:])
+                        if relative_path_depth is not None and relative_path_depth > 0
+                        else str(path)
+                    )
                 )
             ]
         )

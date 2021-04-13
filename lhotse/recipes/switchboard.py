@@ -57,7 +57,7 @@ def prepare_switchboard(
         groups.append({'audio': ap, 'text-0': name_to_text[f'{name}A'], 'text-1': name_to_text[f'{name}B']})
 
     recordings = RecordingSet.from_recordings(
-        Recording.from_sphere(group['audio'], relative_path_depth=None if absolute_paths else 3)
+        Recording.from_file(group['audio'], relative_path_depth=None if absolute_paths else 3)
         for group in groups
     )
     supervisions = SupervisionSet.from_segments(chain.from_iterable(

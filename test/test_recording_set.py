@@ -135,7 +135,7 @@ def test_add_recording_sets():
     ]
 )
 def test_recording_from_sphere(relative_path_depth, expected_source_path):
-    rec = Recording.from_sphere('test/fixtures/stereo.sph', relative_path_depth=relative_path_depth)
+    rec = Recording.from_file('test/fixtures/stereo.sph', relative_path_depth=relative_path_depth)
     assert rec == Recording(
         id='stereo',
         sampling_rate=8000,
