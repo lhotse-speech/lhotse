@@ -17,12 +17,12 @@ if not during_docs_build() and _version(torchaudio.__version__) < _version('0.7'
 @dataclass
 class RandomValue:
     """
-    Represents a uniform distribution in the range [start, end].
+    Represents a uniform distribution in the range [start, end).
     """
     start: Union[int, float]
     end: Union[int, float]
 
-    def sample(self):
+    def sample(self) -> float:
         return np.random.uniform(self.start, self.end)
 
 
