@@ -78,7 +78,7 @@ def test_load_audio_from_sphere_file(recording_set):
         (0, expected_channel_0(), does_not_raise()),
         (1, expected_channel_1(), does_not_raise()),
         ([0, 1], expected_stereo_two_sources(), does_not_raise()),
-        (1000, 'irrelevant', raises(ValueError))
+        (1000, 'irrelevant', raises(AssertionError))
     ]
 )
 def test_get_audio_multichannel(recording_set, channels, expected_audio, exception_expectation):
