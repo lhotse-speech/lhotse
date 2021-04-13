@@ -79,7 +79,7 @@ class FeatureExtractor(metaclass=ABCMeta):
     @staticmethod
     def mix(features_a: np.ndarray, features_b: np.ndarray, energy_scaling_factor_b: float) -> np.ndarray:
         """
-        Perform feature-domain mix of two singals, ``a`` and ``b``, and return the mixed signal.
+        Perform feature-domain mix of two signals, ``a`` and ``b``, and return the mixed signal.
 
         :param features_a: Left-hand side (reference) signal.
         :param features_b: Right-hand side (mixed-in) signal.
@@ -478,7 +478,7 @@ class FeatureSet(Serializable, Sequence[Features]):
         :param duration: optional float, requested duration in seconds for the feature chunk.
             By default, return everything from the start.
         :param leeway: float, controls how strictly we have to match the requested start and duration criteria.
-            It is necessary to keep a small positive value here (default 0.05s), as there might be differneces between
+            It is necessary to keep a small positive value here (default 0.05s), as there might be differences between
             the duration of recording/supervision segment, and the duration of features. The latter one is constrained
             to be a multiple of frame_shift, while the former can be arbitrary.
         :return: a Features object satisfying the search criteria.

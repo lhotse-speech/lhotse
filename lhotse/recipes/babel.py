@@ -54,7 +54,7 @@ def prepare_single_babel_language(corpus_dir: Pathlike, output_dir: Optional[Pat
     manifests = defaultdict(dict)
     for split in ('dev', 'eval', 'training'):
         audio_dir = corpus_dir / f'conversational/{split}/audio'
-        recordings = RecordingSet.from_recordings(Recording.from_sphere(p) for p in audio_dir.glob('*.sph'))
+        recordings = RecordingSet.from_recordings(Recording.from_file(p) for p in audio_dir.glob('*.sph'))
         if len(recordings) == 0:
             logging.warning(f"No SPHERE files found in {audio_dir}")
         manifests[split]['recordings'] = recordings

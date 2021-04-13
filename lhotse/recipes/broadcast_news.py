@@ -48,7 +48,7 @@ def prepare_broadcast_news(
     sgml_paths = check_and_rglob(transcripts_dir, '*.sgml')
 
     recordings = RecordingSet.from_recordings(
-        Recording.from_sphere(p, relative_path_depth=None if absolute_paths else 3)
+        Recording.from_file(p, relative_path_depth=None if absolute_paths else 3)
         for p in audio_paths
     )
 
