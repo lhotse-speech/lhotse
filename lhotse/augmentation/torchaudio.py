@@ -103,7 +103,7 @@ class AudioTransform:
     Furthermore, ``AudioTransform`` can be easily (de)serialized to/from dict
     that contains its name and parameters.
     This enables storing recording and cut manifests with the transform info
-    inside, avoiding the need to store the augmented recoreding version on disk.
+    inside, avoiding the need to store the augmented recording version on disk.
 
     All audio transforms derived from this class are "automagically" registered,
     so that ``AudioTransform.from_dict()`` can "find" the right type given its name

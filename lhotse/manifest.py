@@ -11,7 +11,7 @@ RecordingSet: // I know this name has been taken already...
    - For each recording, you would be able to access: the number of channels, the sampling rate, the number of samples (and of course the length in seconds); and when needed you'd be able to access the audio (or at least, selected channels of it).  Of course the metadata would be in the manifest.
    - Where possible it would be nice to support getting a chunk of a selected subset of channels of the audio.  (i.e. have that in the interface, to account for cases where it's possible to seek in the data).
    - Bear in mind that there may be cases where different channels are stored in different files, like in AMI, and cases where we need a command to extract the data, so the interface should be general enough, e.g. don't enable extracting the filename.
-   - When distrbuting data, like from OpenSLR, we may in some cases want to distribute the manifest file along with it, to avoid the user having to launch a time-consuming command, so it might be nice to support relative pathnames and setting a global root-directory prefix.
+   - When distributing data, like from OpenSLR, we may in some cases want to distribute the manifest file along with it, to avoid the user having to launch a time-consuming command, so it might be nice to support relative pathnames and setting a global root-directory prefix.
 
 TextSupervisionSet:
    - This object would contain plaintext supervision information associated with audio.

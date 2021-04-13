@@ -30,7 +30,7 @@ class AudioSource:
     """
     AudioSource represents audio data that can be retrieved from somewhere.
     Supported sources of audio are currently:
-    - 'file' (formats supported by librosa, possibly multi-channel)
+    - 'file' (formats supported by soundfile, possibly multi-channel)
     - 'command' [unix pipe] (must be WAVE, possibly multi-channel)
     - 'url' (any URL type that is supported by "smart_open" library, e.g. http/https/s3/gcp/azure/etc.)
     """
@@ -44,10 +44,13 @@ class AudioSource:
             duration: Optional[Seconds] = None,
     ) -> np.ndarray:
         """
-        Load the AudioSource (both files and commands) with librosa,
+        Load the AudioSource (from files, commands, or URLs) with soundfile,
         accounting for many audio formats and multi-channel inputs.
-        Returns numpy array with shapes: (n_samples) for single-channel,
+        Returns numpy array with shapes: (n_samples,) for single-channel,
         (n_channels, n_samples) for multi-channel.
+
+        Note: The elements in the returned array are in the range [-1.0, 1.0]
+        and are of dtype `np.floatt32`.
         """
         assert self.type in ('file', 'command', 'url')
 

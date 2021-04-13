@@ -38,7 +38,7 @@ def expected_stereo_two_sources() -> np.ndarray:
 
 @lru_cache(1)
 def expected_stereo_single_source() -> np.ndarray:
-    """Contents of test/fixtures/stereo.wav"""
+    """Contents of test/fixtures/stereo.{wav,sph}"""
     return np.vstack([
         np.arange(8000, 16000, dtype=np.int16),
         np.arange(16000, 24000, dtype=np.int16)
@@ -67,7 +67,7 @@ def test_get_stereo_audio_from_single_file(recording_set):
 
 
 def test_load_audio_from_sphere_file(recording_set):
-    samples = recording_set.load_audio('recording-2')
+    samples = recording_set.load_audio('recording-3')
     np.testing.assert_almost_equal(samples, expected_stereo_single_source())
 
 
