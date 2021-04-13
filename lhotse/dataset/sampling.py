@@ -42,10 +42,10 @@ class CutSampler(Sampler[List[str]]):
     ordering of returned elements. However, its actual behaviour is different than that of
     DistributedSampler -- instead of partitioning the underlying cuts into equally sized chunks,
     it will return every N-th batch and skip the other batches (where ``N == world_size``).
-    The formula used to determine which batches are returned is
-    ``(batch_idx + rank) % world_size == 0``.
+    The formula used to determine which batches are returned is:
+    ``(batch_idx + (world_size - rank)) % world_size == 0``.
     This ensures that we can return an equal number of batches in all distributed workers
-    in spite of using a dynamic batch size, at the cost of skipping at most ``world_size`` batches.
+    in spite of using a dynamic batch size, at the cost of skipping at most ``world_size - 1`` batches.
 
     Example usage::
 
@@ -143,7 +143,7 @@ class CutSampler(Sampler[List[str]]):
         # Every time a next batch is required, we will sample self.world_size batches first,
         # and then return the one at position self.rank.
         # This way, if any of the batches raises StopIteration, we'll know to stop early
-        # even a given batch was available for one of the nodes, but not for the others.
+        # when a given batch was available for one of the nodes, but not for the others.
         batches = []
         for _ in range(self.world_size):
             batches.append(self._next_batch())
