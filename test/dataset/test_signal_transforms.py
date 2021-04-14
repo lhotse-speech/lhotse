@@ -117,17 +117,23 @@ def test_randomized_smoothing_p0():
 
 def test_randomized_smoothing_schedule():
     audio = torch.zeros(16, 16000, dtype=torch.float32)
-    tfnm = RandomizedSmoothing(sigma=[
-        (0, 0.01),
-        (100, 0.5)
-    ])
+    tfnm = RandomizedSmoothing(
+        sigma=[
+            (0, 0.01),
+            (100, 0.5)
+        ],
+        p=0.8
+    )
     audio_aug = tfnm(audio)
     # Shapes are the same
     assert audio.shape == audio_aug.shape
     # All samples are different than the input audio
     assert (audio != audio_aug).any()
-    # Different batch samples receive different augmentation
-    assert (audio_aug[0] != audio_aug[1]).any()
+    # Different batch samples receive different augmentation:
+    # we sum along the time axis and compare the summed values;
+    # if all examples got the same augmentation,
+    # there would have been just one unique value.
+    assert len(set(audio_aug.sum(dim=1).tolist())) > 1
 
     tfnm.step = 1000
     audio_aug2 = tfnm(audio)
