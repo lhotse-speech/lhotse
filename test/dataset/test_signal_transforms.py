@@ -77,7 +77,7 @@ def test_specaugment_batch(num_feature_masks, num_frame_masks):
 
 @pytest.mark.parametrize('sample_sigma', [True, False])
 def test_randomized_smoothing(sample_sigma):
-    audio = torch.zeros(16, 16000, dtype=torch.float32)
+    audio = torch.zeros(64, 4000, dtype=torch.float32)
     tfnm = RandomizedSmoothing(sigma=0.1, sample_sigma=sample_sigma)
     audio_aug = tfnm(audio)
     # Shapes are the same
@@ -86,6 +86,30 @@ def test_randomized_smoothing(sample_sigma):
     assert (audio != audio_aug).any()
     # Different batch samples receive different augmentation
     assert (audio_aug[0] != audio_aug[1]).any()
+
+
+def test_randomized_smoothing_p1():
+    audio = torch.zeros(64, 4000, dtype=torch.float32)
+    tfnm = RandomizedSmoothing(sigma=0.1, p=1.0)
+    audio_aug = tfnm(audio)
+    # Shapes are the same
+    assert audio.shape == audio_aug.shape
+    # All samples are different than the input audio
+    assert (audio != audio_aug).all()
+    # Different batch samples receive different augmentation
+    assert (audio_aug[0] != audio_aug[1]).all()
+
+
+def test_randomized_smoothing_p0():
+    audio = torch.zeros(64, 4000, dtype=torch.float32)
+    tfnm = RandomizedSmoothing(sigma=0.1, p=0.0)
+    audio_aug = tfnm(audio)
+    # Shapes are the same
+    assert audio.shape == audio_aug.shape
+    # Audio is unaffacted
+    assert (audio == audio_aug).all()
+    # Audio is unaffacted across batches
+    assert (audio_aug[0] == audio_aug[1]).all()
 
 
 def test_randomized_smoothing_schedule():

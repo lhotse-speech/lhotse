@@ -59,7 +59,8 @@ class RandomizedSmoothing(torch.nn.Module):
     def __init__(
             self,
             sigma: Union[float, Sequence[Tuple[int, float]]] = 0.1,
-            sample_sigma: bool = True
+            sample_sigma: bool = True,
+            p: float = 0.3,
     ):
         """
         RandomizedSmoothing's constructor.
@@ -71,13 +72,17 @@ class RandomizedSmoothing(torch.nn.Module):
         :param sample_sigma: when ``False``, then sigma is used as the standard deviation in each forward step.
             When ``True``, the standard deviation is sampled from a uniform distribution of
             ``[-sigma, sigma]`` for each forward step.
+        :param p: the probability of applying this transform.
         """
         super().__init__()
         self.sigma = sigma
         self.sample_sigma = sample_sigma
+        self.p = p
         self.step = 0
 
     def forward(self, audio: torch.Tensor) -> torch.Tensor:
+
+        # Determine the stddev value
         if isinstance(self.sigma, float):
             # Use a constant stddev value
             sigma = self.sigma
@@ -85,11 +90,22 @@ class RandomizedSmoothing(torch.nn.Module):
             # Determine the right stddev value from a given schedule.
             sigma = schedule_value_for_step(self.sigma, self.step)
             self.step += 1
+
         if self.sample_sigma:
             # In this mode stddev is stochastic itself
             # and is sampled from uniform distribution bounded by [-sigma, sigma] .
-            sigma = sigma * (2 * torch.rand(1).item() - 1)
-        return torch.clip(audio + sigma * torch.randn_like(audio), min=-1.0, max=1.0)
+            mask_shape = (audio.shape[0],) + tuple(1 for _ in audio.shape[1:])
+            # Sigma is of shape (batch_size, 1) - different for each noise example.
+            sigma = sigma * (2 * torch.rand(mask_shape) - 1)
+
+        # Create the random noise examples with identical sigma's.
+        noise = sigma * torch.randn_like(audio)
+
+        # Apply the transform with a probability p -> mask noise examples with probability 1 - p.
+        noise_mask = random_mask_along_batch_axis(noise, p=1.0 - self.p)
+        noise = noise * noise_mask
+
+        return torch.clip(audio + noise, min=-1.0, max=1.0)
 
 
 class SpecAugment(torch.nn.Module):
@@ -222,3 +238,22 @@ def schedule_value_for_step(schedule: Sequence[Tuple[int, T]], step: int) -> T:
                                   f"for steps below {milestones[0]}?"
     idx = bisect.bisect_right(milestones, step) - 1
     return values[idx]
+
+
+def random_mask_along_batch_axis(tensor: torch.Tensor, p: float = 0.5) -> torch.Tensor:
+    """
+    For a given tensor with shape (N, d1, d2, d3, ...), returns a mask with shape (N, 1, 1, 1, ...),
+    that randomly masks the samples in a batch.
+
+    E.g. for a 2D input matrix it looks like:
+
+        >>> [[0., 0., 0., ...],
+        ...  [1., 1., 1., ...],
+        ...  [0., 0., 0., ...]]
+
+    :param tensor: the input tensor.
+    :param p: the probability of masking an element.
+    """
+    mask_shape = (tensor.shape[0],) + tuple(1 for _ in tensor.shape[1:])
+    mask = (torch.rand(mask_shape) > p).to(torch.float32)
+    return mask
