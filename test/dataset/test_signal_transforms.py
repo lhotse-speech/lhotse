@@ -78,14 +78,17 @@ def test_specaugment_batch(num_feature_masks, num_frame_masks):
 @pytest.mark.parametrize('sample_sigma', [True, False])
 def test_randomized_smoothing(sample_sigma):
     audio = torch.zeros(64, 4000, dtype=torch.float32)
-    tfnm = RandomizedSmoothing(sigma=0.1, sample_sigma=sample_sigma)
+    tfnm = RandomizedSmoothing(sigma=0.1, sample_sigma=sample_sigma, p=0.8)
     audio_aug = tfnm(audio)
     # Shapes are the same
     assert audio.shape == audio_aug.shape
     # All samples are different than the input audio
     assert (audio != audio_aug).any()
-    # Different batch samples receive different augmentation
-    assert (audio_aug[0] != audio_aug[1]).any()
+    # Different batch samples receive different augmentation:
+    # we sum along the time axis and compare the summed values;
+    # if all examples got the same augmentation,
+    # there would have been just one unique value.
+    assert len(set(audio_aug.sum(dim=1).tolist())) > 1
 
 
 def test_randomized_smoothing_p1():
