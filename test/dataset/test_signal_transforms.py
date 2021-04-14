@@ -77,11 +77,7 @@ def test_specaugment_batch(num_feature_masks, num_frame_masks):
 
 @pytest.mark.parametrize('sample_sigma', [True, False])
 def test_randomized_smoothing(sample_sigma):
-<<<<<<< HEAD
     audio = torch.zeros(64, 4000, dtype=torch.float32)
-=======
-    audio = torch.zeros(16, 16000, dtype=torch.float32)
->>>>>>> origin/master
     tfnm = RandomizedSmoothing(sigma=0.1, sample_sigma=sample_sigma)
     audio_aug = tfnm(audio)
     # Shapes are the same
