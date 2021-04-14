@@ -195,7 +195,8 @@ def test_k2_speech_recognition_on_the_fly_feature_extraction_with_randomized_smo
         k2_cut_set.drop_features(),
         input_strategy=OnTheFlyFeatures(
             extractor=Fbank(),
-            wave_transforms=[RandomizedSmoothing(sigma=0.5)]
+            # Use p=1.0 to ensure that smoothing is applied in this test.
+            wave_transforms=[RandomizedSmoothing(sigma=0.5, p=1.0)]
         )
     )
     sampler = SingleCutSampler(k2_cut_set, shuffle=False, max_cuts=1)
