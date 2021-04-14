@@ -5,6 +5,7 @@ import torch
 from lhotse import validate
 from lhotse.cut import CutSet
 from lhotse.dataset.input_strategies import InputStrategy, PrecomputedFeatures
+from lhotse.utils import ifnone
 
 
 class VadDataset(torch.utils.data.Dataset):
@@ -33,8 +34,8 @@ class VadDataset(torch.utils.data.Dataset):
         validate(cuts)
         self.cuts = cuts
         self.input_strategy = input_strategy
-        self.cut_transforms = cut_transforms if cut_transforms is not None else ()
-        self.input_transforms = input_transforms if input_transforms is not None else ()
+        self.cut_transforms = ifnone(cut_transforms, [])
+        self.input_transforms = ifnone(input_transforms, [])
 
     def __getitem__(self, cut_ids: Iterable[str]) -> Dict[str, torch.Tensor]:
         cuts = self.cuts.subset(cut_ids=cut_ids).sort_by_duration()

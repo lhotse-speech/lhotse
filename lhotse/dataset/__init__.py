@@ -4,7 +4,7 @@ from . import signal_transforms
 from .cut_transforms import *
 from .diarization import DiarizationDataset
 from .sampling import BucketingSampler, CutPairsSampler, SingleCutSampler
-from .signal_transforms import GlobalMVN, SpecAugment
+from .signal_transforms import GlobalMVN, RandomizedSmoothing, SpecAugment
 from .source_separation import (
     DynamicallyMixedSourceSeparationDataset,
     PreMixedSourceSeparationDataset,

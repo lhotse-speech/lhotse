@@ -4,9 +4,8 @@ import pytest
 import torch
 
 from lhotse import CutSet
-from lhotse.dataset import SpecAugment
+from lhotse.dataset import GlobalMVN, RandomizedSmoothing, SpecAugment
 from lhotse.dataset.collation import collate_features
-from lhotse.dataset.signal_transforms import GlobalMVN
 
 
 @pytest.fixture
@@ -74,3 +73,36 @@ def test_specaugment_batch(num_feature_masks, num_frame_masks):
     )
     augmented = tfnm(feats)
     assert (feats != augmented).any()
+
+
+@pytest.mark.parametrize('sample_sigma', [True, False])
+def test_randomized_smoothing(sample_sigma):
+    audio = torch.zeros(16, 16000, dtype=torch.float32)
+    tfnm = RandomizedSmoothing(sigma=0.1, sample_sigma=sample_sigma)
+    audio_aug = tfnm(audio)
+    # Shapes are the same
+    assert audio.shape == audio_aug.shape
+    # All samples are different than the input audio
+    assert (audio != audio_aug).any()
+    # Different batch samples receive different augmentation
+    assert (audio_aug[0] != audio_aug[1]).any()
+
+
+def test_randomized_smoothing_schedule():
+    audio = torch.zeros(16, 16000, dtype=torch.float32)
+    tfnm = RandomizedSmoothing(sigma=[
+        (0, 0.01),
+        (100, 0.5)
+    ])
+    audio_aug = tfnm(audio)
+    # Shapes are the same
+    assert audio.shape == audio_aug.shape
+    # All samples are different than the input audio
+    assert (audio != audio_aug).any()
+    # Different batch samples receive different augmentation
+    assert (audio_aug[0] != audio_aug[1]).any()
+
+    tfnm.step = 1000
+    audio_aug2 = tfnm(audio)
+    # The schedule kicked in and the abs magnitudes should be much larger.
+    assert audio_aug2.abs().sum() > 10 * audio_aug.abs().sum()
