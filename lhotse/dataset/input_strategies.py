@@ -1,12 +1,12 @@
 import logging
-from typing import Dict, Tuple
+from typing import Callable, Dict, List, Tuple
 
 import torch
 
 from lhotse import CutSet, FeatureExtractor
 from lhotse.cut import compute_supervisions_frame_mask
 from lhotse.dataset.collation import collate_audio, collate_features, collate_vectors
-from lhotse.utils import compute_num_frames, supervision_to_frames, supervision_to_samples
+from lhotse.utils import compute_num_frames, ifnone, supervision_to_frames, supervision_to_samples
 
 
 class InputStrategy:
@@ -158,8 +158,20 @@ class OnTheFlyFeatures(InputStrategy):
     .. automethod:: __call__
     """
 
-    def __init__(self, extractor: FeatureExtractor):
+    def __init__(
+            self,
+            extractor: FeatureExtractor,
+            wave_transforms: List[Callable[[torch.Tensor], torch.Tensor]] = None
+    ) -> None:
+        """
+        OnTheFlyFeatures' constructor.
+
+        :param extractor: the feature extractor used on-the-fly (individually on each waveform).
+        :param wave_transforms: an optional list of transforms applied on the batch of audio
+            waveforms collated into a single tensor, right before the feature extraction.
+        """
         self.extractor = extractor
+        self.wave_transforms = ifnone(wave_transforms, [])
 
     def __call__(self, cuts: CutSet) -> Tuple[torch.Tensor, torch.IntTensor]:
         """
@@ -170,6 +182,9 @@ class OnTheFlyFeatures(InputStrategy):
         :return: a tensor with collated features, and a tensor of ``num_frames`` of each cut before padding.
         """
         audio, _ = collate_audio(cuts)
+
+        for tfnm in self.wave_transforms:
+            audio = tfnm(audio)
 
         features_single = []
         for idx, cut in enumerate(cuts):

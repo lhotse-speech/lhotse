@@ -6,6 +6,7 @@ from lhotse import validate
 from lhotse.cut import CutSet
 from lhotse.dataset.collation import TokenCollater, collate_audio
 from lhotse.dataset.input_strategies import InputStrategy, PrecomputedFeatures
+from lhotse.utils import ifnone
 
 
 class SpeechSynthesisDataset(torch.utils.data.Dataset):
@@ -44,7 +45,7 @@ class SpeechSynthesisDataset(torch.utils.data.Dataset):
 
         self.cuts = cuts
         self.token_collater = TokenCollater(cuts, add_eos=add_eos, add_bos=add_bos)
-        self.cut_transforms = cut_transforms if cut_transforms is not None else ()
+        self.cut_transforms = ifnone(cut_transforms, [])
         self.feature_input_strategy = feature_input_strategy
 
         if feature_transforms is None:

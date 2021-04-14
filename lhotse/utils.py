@@ -400,3 +400,18 @@ def measure_overlap(lhs: Any, rhs: Any) -> float:
     dur = min(lhs.end - lhs.start, rhs.end - rhs.start)
     return overlapped_area / dur
 
+
+def ifnone(item: Optional[Any], alt_item: Any) -> Any:
+    """Return ``alt_item`` if ``item is None``, otherwise ``item``."""
+    return alt_item if item is None else item
+
+
+def lens_to_mask(lens: torch.IntTensor) -> torch.Tensor:
+    """
+    Create a 2-D mask tensor of shape (batch_size, max_length) and dtype float32
+    from a 1-D tensor of integers describing the length of batch samples in another tensor.
+    """
+    mask = lens.new_zeros(lens.shape[0], max(lens), dtype=torch.float32)
+    for i, num in enumerate(lens):
+        mask[i, :num] = 1.0
+    return mask

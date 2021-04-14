@@ -1,5 +1,6 @@
+import bisect
 import random
-from typing import Optional
+from typing import Optional, Sequence, Tuple, TypeVar, Union
 
 import numpy as np
 import torch
@@ -47,6 +48,48 @@ class GlobalMVN(torch.nn.Module):
 
     def inverse(self, features: torch.Tensor) -> torch.Tensor:
         return features * self.norm_stds + self.norm_means
+
+
+class RandomizedSmoothing(torch.nn.Module):
+    """
+    Randomized smoothing - gaussian noise added to an input waveform, or a batch of waveforms.
+    The summed audio is clipped to ``[-1.0, 1.0]`` before returning.
+    """
+
+    def __init__(
+            self,
+            sigma: Union[float, Sequence[Tuple[int, float]]] = 0.1,
+            sample_sigma: bool = True
+    ):
+        """
+        RandomizedSmoothing's constructor.
+
+        :param sigma: standard deviation of the gaussian noise. Either a constant float, or a schedule,
+            i.e. a list of tuples that specify which value to use from which step.
+            For example, ``[(0, 0.01), (1000, 0.1)]`` means that from steps 0-999, the sigma value
+            will be 0.01, and from step 1000 onwards, it will be 0.1.
+        :param sample_sigma: when ``False``, then sigma is used as the standard deviation in each forward step.
+            When ``True``, the standard deviation is sampled from a uniform distribution of
+            ``[-sigma, sigma]`` for each forward step.
+        """
+        super().__init__()
+        self.sigma = sigma
+        self.sample_sigma = sample_sigma
+        self.step = 0
+
+    def forward(self, audio: torch.Tensor) -> torch.Tensor:
+        if isinstance(self.sigma, float):
+            # Use a constant stddev value
+            sigma = self.sigma
+        else:
+            # Determine the right stddev value from a given schedule.
+            sigma = schedule_value_for_step(self.sigma, self.step)
+            self.step += 1
+        if self.sample_sigma:
+            # In this mode stddev is stochastic itself
+            # and is sampled from uniform distribution bounded by [-sigma, sigma] .
+            sigma = sigma * (2 * torch.rand(1).item() - 1)
+        return torch.clip(audio + sigma * torch.randn_like(audio), min=-1.0, max=1.0)
 
 
 class SpecAugment(torch.nn.Module):
@@ -167,3 +210,15 @@ def time_warp(features: torch.Tensor, factor: int) -> torch.Tensor:
         mode="bicubic", align_corners=False,
     )
     return torch.cat((left, right), dim=2).squeeze(0).squeeze(0)
+
+
+T = TypeVar('T')
+
+
+def schedule_value_for_step(schedule: Sequence[Tuple[int, T]], step: int) -> T:
+    milestones, values = zip(*schedule)
+    assert milestones[0] <= step, f"Cannot determine the scheduled value for step {step} with schedule: {schedule}. " \
+                                  f"Did you forget to add the first part of the schedule " \
+                                  f"for steps below {milestones[0]}?"
+    idx = bisect.bisect_right(milestones, step) - 1
+    return values[idx]
