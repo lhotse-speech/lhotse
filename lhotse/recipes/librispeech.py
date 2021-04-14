@@ -83,7 +83,12 @@ def prepare_librispeech(
     corpus_dir = Path(corpus_dir)
     assert corpus_dir.is_dir(), f'No such directory: {corpus_dir}'
 
-    if dataset_parts == 'auto':
+    if dataset_parts == 'mini_librispeech':
+        dataset_parts = (
+            set(MINI_LIBRISPEECH)
+                .intersection(path.name for path in corpus_dir.glob('*'))
+        )
+    elif dataset_parts == 'auto':
         dataset_parts = (
             set(LIBRISPEECH)
                 .union(MINI_LIBRISPEECH)
