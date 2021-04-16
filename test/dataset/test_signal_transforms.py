@@ -54,8 +54,9 @@ def test_specaugment_single():
     cuts = CutSet.from_json('test/fixtures/ljspeech/cuts.json')
     feats = torch.from_numpy(cuts[0].load_features())
     tfnm = SpecAugment(p=1.0, time_warp_factor=10)
-    augmented = tfnm(feats)
-    assert (feats != augmented).any()
+    with pytest.raises(AssertionError):
+        augmented = tfnm(feats)
+        assert (feats != augmented).any()
 
 
 @pytest.mark.parametrize('num_feature_masks', [0, 1, 2])
