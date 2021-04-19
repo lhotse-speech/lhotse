@@ -620,11 +620,13 @@ def _recording_from_sphere(
                          f"sphfile (pip install sphfile) instead and try again.")
     sph_path = Path(sph_path)
     sphf = SPHFile(sph_path)
+    # Some SPHERE file headers actually lie about the number of samples (sic!)
+    sample_count = sphf.content.shape[0]
     return Recording(
         id=recording_id if recording_id is not None else sph_path.stem,
         sampling_rate=sphf.format['sample_rate'],
-        num_samples=sphf.format['sample_count'],
-        duration=sphf.format['sample_count'] / sphf.format['sample_rate'],
+        num_samples=sample_count,
+        duration=sample_count / sphf.format['sample_rate'],
         sources=[
             AudioSource(
                 type='file',
@@ -651,4 +653,4 @@ def _read_sphere_sphfile(
                          f"pysoundfile/libsndfile could not open it. You might want to install "
                          f"sphfile (pip install sphfile) instead and try again.")
     sph_f = SPHFile(str(path))
-    return sph_f.time_range(offset, duration), sph_f.format['sample_rate']
+    return sph_f.time_range(offset, duration) / 255, sph_f.format['sample_rate']
