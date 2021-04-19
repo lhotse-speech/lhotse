@@ -600,7 +600,8 @@ def audio_energy(audio: np.ndarray) -> float:
 
 def _sphere_not_handled_by_libsndfile(exception: BaseException, path: Any):
     return (
-            isinstance(path, Pathlike) and
+        # __args__ is a tuple of all types that are covered by Pathlike
+            isinstance(path, Pathlike.__args__) and
             str(path).endswith('sph') and
             'File contains data in an unimplemented format' in str(exception)
     )
