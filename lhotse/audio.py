@@ -1,5 +1,4 @@
 import logging
-import warnings
 from dataclasses import dataclass
 from decimal import ROUND_HALF_UP
 from io import BytesIO
@@ -160,7 +159,13 @@ class Recording:
         :return: a new ``Recording`` instance pointing to the audio file.
         """
         import soundfile
-        info = soundfile.info(str(path))
+        try:
+            info = soundfile.info(str(path))
+        except RuntimeError as e:
+            if 'File contains data in an unimplemented format' in str(e) and str(path).endswith('sph'):
+                return _recording_from_sphere(path, recording_id, relative_path_depth)
+            else:
+                raise
         return Recording(
             id=recording_id if recording_id is not None else Path(path).stem,
             sampling_rate=info.samplerate,
@@ -586,3 +591,35 @@ class AudioMixer:
 
 def audio_energy(audio: np.ndarray) -> float:
     return float(np.average(audio ** 2))
+
+
+def _recording_from_sphere(
+        sph_path: Pathlike,
+        recording_id: Optional[str] = None,
+        relative_path_depth: Optional[int] = None
+) -> Recording:
+    try:
+        from sphfile import SPHFile
+    except ImportError:
+        raise ValueError(f"The file at path {sph_path} was recognized as a SPHERE file, but "
+                         f"pysoundfile/libsndfile could not open it. You might want to install "
+                         f"sphfile (pip install sphfile) instead and try again.")
+    sph_path = Path(sph_path)
+    sphf = SPHFile(sph_path)
+    return Recording(
+        id=recording_id if recording_id is not None else sph_path.stem,
+        sampling_rate=sphf.format['sample_rate'],
+        num_samples=sphf.format['sample_count'],
+        duration=sphf.format['sample_count'] / sphf.format['sample_rate'],
+        sources=[
+            AudioSource(
+                type='file',
+                channels=list(range(sphf.format['channel_count'])),
+                source=(
+                    '/'.join(sph_path.parts[-relative_path_depth:])
+                    if relative_path_depth is not None and relative_path_depth > 0
+                    else str(sph_path)
+                )
+            )
+        ]
+    )
