@@ -113,17 +113,22 @@ def read_audio(
         duration: Optional[Seconds] = None
 ) -> Tuple[np.ndarray, int]:
     import soundfile as sf
-    with sf.SoundFile(path_or_fd) as sf_desc:
-        sampling_rate = sf_desc.samplerate
-        if offset > 0:
-            # Seek to the start of the target read
-            sf_desc.seek(compute_num_samples(offset, sampling_rate))
-        if duration is not None:
-            frame_duration = compute_num_samples(duration, sampling_rate)
-        else:
-            frame_duration = -1
-        # Load the target number of frames, and transpose to match librosa form
-        return sf_desc.read(frames=frame_duration, dtype=np.float32, always_2d=False).T, sampling_rate
+    try:
+        with sf.SoundFile(path_or_fd) as sf_desc:
+            sampling_rate = sf_desc.samplerate
+            if offset > 0:
+                # Seek to the start of the target read
+                sf_desc.seek(compute_num_samples(offset, sampling_rate))
+            if duration is not None:
+                frame_duration = compute_num_samples(duration, sampling_rate)
+            else:
+                frame_duration = -1
+            # Load the target number of frames, and transpose to match librosa form
+            return sf_desc.read(frames=frame_duration, dtype=np.float32, always_2d=False).T, sampling_rate
+    except RuntimeError as e:
+        if _sphere_not_handled_by_libsndfile(e, path_or_fd):
+            return _read_sphere_sphfile(path_or_fd, offset, duration)
+        raise
 
 
 @dataclass
@@ -162,7 +167,7 @@ class Recording:
         try:
             info = soundfile.info(str(path))
         except RuntimeError as e:
-            if 'File contains data in an unimplemented format' in str(e) and str(path).endswith('sph'):
+            if _sphere_not_handled_by_libsndfile(e, path):
                 return _recording_from_sphere(path, recording_id, relative_path_depth)
             else:
                 raise
@@ -593,6 +598,14 @@ def audio_energy(audio: np.ndarray) -> float:
     return float(np.average(audio ** 2))
 
 
+def _sphere_not_handled_by_libsndfile(exception: BaseException, path: Any):
+    return (
+            isinstance(path, Pathlike) and
+            str(path).endswith('sph') and
+            'File contains data in an unimplemented format' in str(exception)
+    )
+
+
 def _recording_from_sphere(
         sph_path: Pathlike,
         recording_id: Optional[str] = None,
@@ -623,3 +636,18 @@ def _recording_from_sphere(
             )
         ]
     )
+
+
+def _read_sphere_sphfile(
+        path: Pathlike,
+        offset: Seconds,
+        duration: Optional[Seconds]
+) -> Tuple[np.ndarray, int]:
+    try:
+        from sphfile import SPHFile
+    except ImportError:
+        raise ValueError(f"The file at path {path} was recognized as a SPHERE file, but "
+                         f"pysoundfile/libsndfile could not open it. You might want to install "
+                         f"sphfile (pip install sphfile) instead and try again.")
+    sph_f = SPHFile(str(path))
+    return sph_f.time_range(offset, duration), sph_f.format['sample_rate']
