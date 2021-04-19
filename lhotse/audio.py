@@ -653,4 +653,4 @@ def _read_sphere_sphfile(
                          f"pysoundfile/libsndfile could not open it. You might want to install "
                          f"sphfile (pip install sphfile) instead and try again.")
     sph_f = SPHFile(str(path))
-    return sph_f.time_range(offset, duration) / 255, sph_f.format['sample_rate']
+    return sph_f.time_range(offset, duration) / 255.0, sph_f.format['sample_rate']
