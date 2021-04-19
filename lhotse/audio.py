@@ -1,4 +1,5 @@
 import logging
+import warnings
 from dataclasses import dataclass
 from decimal import ROUND_HALF_UP
 from io import BytesIO
@@ -61,9 +62,11 @@ class AudioSource:
                 # TODO(pzelasko): How should we support chunking for commands?
                 #                 We risk being very inefficient when reading many chunks from the same file
                 #                 without some caching scheme, because we'll be re-running commands.
-                raise ValueError("Reading audio chunks from 'command' AudioSource type is currently not supported.")
+                warnings.warn('You requested a subset of a recording that is read from disk via a bash command. '
+                              'Expect large I/O overhead if you are going to read many chunks like these, '
+                              'since every time we will read the whole file rather than its subset.')
             source = BytesIO(run(self.source, shell=True, stdout=PIPE).stdout)
-            samples, sampling_rate = read_audio(source)
+            samples, sampling_rate = read_audio(source, offset=offset, duration=duration)
 
         elif self.type == 'url':
             if offset != 0.0 or duration is not None:
@@ -113,22 +116,17 @@ def read_audio(
         duration: Optional[Seconds] = None
 ) -> Tuple[np.ndarray, int]:
     import soundfile as sf
-    try:
-        with sf.SoundFile(path_or_fd) as sf_desc:
-            sampling_rate = sf_desc.samplerate
-            if offset > 0:
-                # Seek to the start of the target read
-                sf_desc.seek(compute_num_samples(offset, sampling_rate))
-            if duration is not None:
-                frame_duration = compute_num_samples(duration, sampling_rate)
-            else:
-                frame_duration = -1
-            # Load the target number of frames, and transpose to match librosa form
-            return sf_desc.read(frames=frame_duration, dtype=np.float32, always_2d=False).T, sampling_rate
-    except RuntimeError as e:
-        if _sphere_not_handled_by_libsndfile(e, path_or_fd):
-            return _read_sphere_sphfile(path_or_fd, offset, duration)
-        raise
+    with sf.SoundFile(path_or_fd) as sf_desc:
+        sampling_rate = sf_desc.samplerate
+        if offset > 0:
+            # Seek to the start of the target read
+            sf_desc.seek(compute_num_samples(offset, sampling_rate))
+        if duration is not None:
+            frame_duration = compute_num_samples(duration, sampling_rate)
+        else:
+            frame_duration = -1
+        # Load the target number of frames, and transpose to match librosa form
+        return sf_desc.read(frames=frame_duration, dtype=np.float32, always_2d=False).T, sampling_rate
 
 
 @dataclass
@@ -164,13 +162,7 @@ class Recording:
         :return: a new ``Recording`` instance pointing to the audio file.
         """
         import soundfile
-        try:
-            info = soundfile.info(str(path))
-        except RuntimeError as e:
-            if _sphere_not_handled_by_libsndfile(e, path):
-                return _recording_from_sphere(path, recording_id, relative_path_depth)
-            else:
-                raise
+        info = soundfile.info(str(path))
         return Recording(
             id=recording_id if recording_id is not None else Path(path).stem,
             sampling_rate=info.samplerate,
@@ -596,61 +588,3 @@ class AudioMixer:
 
 def audio_energy(audio: np.ndarray) -> float:
     return float(np.average(audio ** 2))
-
-
-def _sphere_not_handled_by_libsndfile(exception: BaseException, path: Any):
-    return (
-        # __args__ is a tuple of all types that are covered by Pathlike
-            isinstance(path, Pathlike.__args__) and
-            str(path).endswith('sph') and
-            'File contains data in an unimplemented format' in str(exception)
-    )
-
-
-def _recording_from_sphere(
-        sph_path: Pathlike,
-        recording_id: Optional[str] = None,
-        relative_path_depth: Optional[int] = None
-) -> Recording:
-    try:
-        from sphfile import SPHFile
-    except ImportError:
-        raise ValueError(f"The file at path {sph_path} was recognized as a SPHERE file, but "
-                         f"pysoundfile/libsndfile could not open it. You might want to install "
-                         f"sphfile (pip install sphfile) instead and try again.")
-    sph_path = Path(sph_path)
-    sphf = SPHFile(sph_path)
-    # Some SPHERE file headers actually lie about the number of samples (sic!)
-    sample_count = sphf.content.shape[0]
-    return Recording(
-        id=recording_id if recording_id is not None else sph_path.stem,
-        sampling_rate=sphf.format['sample_rate'],
-        num_samples=sample_count,
-        duration=sample_count / sphf.format['sample_rate'],
-        sources=[
-            AudioSource(
-                type='file',
-                channels=list(range(sphf.format['channel_count'])),
-                source=(
-                    '/'.join(sph_path.parts[-relative_path_depth:])
-                    if relative_path_depth is not None and relative_path_depth > 0
-                    else str(sph_path)
-                )
-            )
-        ]
-    )
-
-
-def _read_sphere_sphfile(
-        path: Pathlike,
-        offset: Seconds,
-        duration: Optional[Seconds]
-) -> Tuple[np.ndarray, int]:
-    try:
-        from sphfile import SPHFile
-    except ImportError:
-        raise ValueError(f"The file at path {path} was recognized as a SPHERE file, but "
-                         f"pysoundfile/libsndfile could not open it. You might want to install "
-                         f"sphfile (pip install sphfile) instead and try again.")
-    sph_f = SPHFile(str(path))
-    return sph_f.time_range(offset, duration) / 255.0, sph_f.format['sample_rate']
