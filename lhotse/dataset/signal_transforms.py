@@ -191,7 +191,7 @@ class SpecAugment(torch.nn.Module):
                     warp=True,
                     mask=False
                 )
-            # ... and the time-mask the full feature matrices. Note that in this mode,
+            # ... and then time-mask the full feature matrices. Note that in this mode,
             # it might happen that masks are applied to different sequences/examples
             # than the time warping.
             for sequence_idx in range(features.size(0)):
