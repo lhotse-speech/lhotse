@@ -96,6 +96,30 @@ def remove_missing_recordings_and_supervisions(
     return recordings, supervisions
 
 
+def trim_supervisions_to_recordings(recordings: RecordingSet, supervisions: SupervisionSet) -> SupervisionSet:
+    """
+    Return a new :class:`~lhotse.supervision.SupervisionSet` with supervisions that are
+    not exceeding the duration of their corresponding :class:`~lhotse.audio.Recording`.
+    """
+    sups = []
+    removed = 0
+    trimmed = 0
+    for s in supervisions:
+        end = recordings[s.recording_id].duration
+        if s.start > end:
+            removed += 1
+            continue
+        if s.end > end:
+            trimmed += 1
+            s = s.trim(recordings[s.recording_id].duration)
+        sups.append(s)
+    if removed:
+        logging.warning(f'Removed {removed} supervisions starting after the end of the recording.')
+    if trimmed:
+        logging.warning(f'Trimmed {trimmed} supervisions exceeding the end of the recording.')
+    return SupervisionSet.from_segments(sups)
+
+
 def register_validator(fn):
     """
     Decorator registers the function to be invoked inside ``validate()``
