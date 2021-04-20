@@ -18,7 +18,7 @@ def callhome_english(
         sph2pipe: Pathlike
 ):
     """
-    The Switchboard corpus preparation.
+    CallHome English (LDC2001S97) corpus preparation.
 
     \b
      This script prepares data for speaker diarization on

@@ -1,3 +1,9 @@
+"""
+This script prepares data for speaker diarization on
+a portion of CALLHOME used in the 2000 NIST speaker recognition evaluation.
+The 2000 NIST SRE is required, and has an LDC catalog number LDC2001S97.
+"""
+
 import tarfile
 from collections import Counter
 from pathlib import Path
