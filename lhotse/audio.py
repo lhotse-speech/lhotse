@@ -62,9 +62,11 @@ class AudioSource:
                 # TODO(pzelasko): How should we support chunking for commands?
                 #                 We risk being very inefficient when reading many chunks from the same file
                 #                 without some caching scheme, because we'll be re-running commands.
-                raise ValueError("Reading audio chunks from 'command' AudioSource type is currently not supported.")
+                warnings.warn('You requested a subset of a recording that is read from disk via a bash command. '
+                              'Expect large I/O overhead if you are going to read many chunks like these, '
+                              'since every time we will read the whole file rather than its subset.')
             source = BytesIO(run(self.source, shell=True, stdout=PIPE).stdout)
-            samples, sampling_rate = read_audio(source)
+            samples, sampling_rate = read_audio(source, offset=offset, duration=duration)
 
         elif self.type == 'url':
             if offset != 0.0 or duration is not None:
