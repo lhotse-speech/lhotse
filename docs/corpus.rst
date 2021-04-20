@@ -152,6 +152,7 @@ Currently supported corpora:
 - Aishell :func:`lhotse.recipes.prepare_aishell`
 - AMI :func:`lhotse.recipes.prepare_ami`
 - BABEL :func:`lhotse.recipes.prepare_single_babel_language`
+- CallHome English :func:`lhotse.recipes.prepare_callhome_english`
 - CMU Arctic :func:`lhotse.recipes.prepare_cmu_arctic`
 - English Broadcast News 1997 :func:`lhotse.recipes.prepare_broadcast_news`
 - Heroico :func:`lhotse.recipes.prepare_heroico`
