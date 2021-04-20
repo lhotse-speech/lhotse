@@ -1,5 +1,3 @@
-from tempfile import NamedTemporaryFile
-
 import pytest
 
 from lhotse.supervision import SupervisionSegment, SupervisionSet
@@ -77,39 +75,6 @@ def test_supervision_set_iteration():
     )
     assert 2 == len(supervision_set)
     assert 2 == len(list(supervision_set))
-
-
-@pytest.mark.parametrize(
-    ['format', 'compressed'],
-    [
-        ('yaml', False),
-        ('yaml', True),
-        ('json', False),
-        ('json', True),
-    ]
-)
-def test_supervision_set_serialization(format, compressed):
-    supervision_set = SupervisionSet.from_segments([
-        SupervisionSegment(
-            id='segment-1',
-            recording_id='recording-1',
-            channel=0,
-            start=0.1,
-            duration=0.3,
-            text='transcript of the first segment',
-            language='english',
-            speaker='Norman Dyhrentfurth',
-            gender='male'
-        )
-    ])
-    with NamedTemporaryFile(suffix='.gz' if compressed else '') as f:
-        if format == 'yaml':
-            supervision_set.to_yaml(f.name)
-            restored = supervision_set.from_yaml(f.name)
-        if format == 'json':
-            supervision_set.to_json(f.name)
-            restored = supervision_set.from_json(f.name)
-    assert supervision_set == restored
 
 
 def test_add_supervision_sets():

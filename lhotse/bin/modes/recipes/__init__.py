@@ -7,7 +7,9 @@ from .heroico import *
 from .l2_arctic import *
 from .librimix import *
 from .librispeech import *
+from .ljspeech import *
 from .musan import *
 from .nsc import *
 from .switchboard import *
 from .tedlium import *
+from .vctk import *

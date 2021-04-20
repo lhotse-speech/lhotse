@@ -9,6 +9,10 @@ from .fbank import (
     Fbank,
     FbankConfig
 )
+from .librosa_fbank import (
+    LibrosaFbank,
+    LibrosaFbankConfig
+)
 from .io import (
     FeaturesWriter,
     FeaturesReader,

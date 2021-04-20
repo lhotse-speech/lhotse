@@ -1,3 +1,4 @@
+import random
 from itertools import groupby
 
 import pytest
@@ -172,6 +173,21 @@ def test_cut_pairs_sampler():
     assert sampler_cut_ids != [c.id for c in cut_set]
 
 
+def test_cut_pairs_sampler_2():
+    cut_set = CutSet.from_cuts([
+        dummy_cut(0, duration=10),
+        dummy_cut(1, duration=20),
+    ])
+    sampler = CutPairsSampler(
+        source_cuts=cut_set,
+        target_cuts=cut_set,
+        max_source_duration=50,
+        max_target_duration=50,
+    )
+    batch = next(iter(sampler))
+    assert len(batch) == 2
+
+
 @pytest.mark.parametrize(
     ['max_duration', 'max_frames', 'max_samples', 'exception_expectation'],
     [
@@ -293,6 +309,24 @@ def test_concat_cuts():
         30.0,
         20.0 + 1.0 + 2.0 + 1.0 + 3.0,  # == 27.0
         10.0 + 1.0 + 4.0 + 1.0 + 5.0,  # == 21.0
+    ]
+
+
+def test_concat_cuts_with_duration_factor():
+    cuts = [
+        dummy_cut(0, duration=10.0),
+        dummy_cut(1, duration=8.0),
+        dummy_cut(2, duration=6.0),
+        dummy_cut(3, duration=5.0),
+        dummy_cut(4, duration=4.0),
+        dummy_cut(5, duration=3.0),
+        dummy_cut(6, duration=2.0),
+    ]
+    concat = concat_cuts(cuts, gap=1.0, max_duration=20.0)
+    assert [c.duration for c in concat] == [
+        10.0 + 1.0 + 2.0 + 1.0 + 3.0,  # == 17.0
+        8.0 + 1.0 + 4.0 + 1.0 + 5.0,  # == 19.0
+        6.0,  # == 6.0
     ]
 
 
@@ -458,3 +492,22 @@ def test_bucketing_sampler_time_constraints(constraint):
     for batch in sampler:
         cut_ids.extend(batch)
     assert set(cut_set.ids) == set(cut_ids)
+
+
+@pytest.mark.parametrize('world_size', [2, 3, 4])
+@pytest.mark.parametrize('n_cuts', [995, 996, 997, 998, 999, 1000, 1001, 1002, 1003])
+@pytest.mark.parametrize('sampler_cls', [SingleCutSampler, BucketingSampler])
+def test_partitions_are_equal(world_size, n_cuts, sampler_cls):
+    # Create a dummy CutSet.
+    cut_set = DummyManifest(CutSet, begin_id=0, end_id=n_cuts)
+    # Randomize the durations of cuts to increase the chance we run into edge cases.
+    for c in cut_set:
+        c.duration += (10 * random.random())
+    # Create a sampler for each "distributed worker."
+    samplers = [
+        sampler_cls(cut_set, max_duration=25.0, rank=i, world_size=world_size)
+        for i in range(world_size)
+    ]
+    # Check that it worked.
+    n_batches = [len(s) for s in samplers]
+    assert all(nb == n_batches[0] for nb in n_batches)

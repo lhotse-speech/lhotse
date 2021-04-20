@@ -1,8 +1,8 @@
 from collections import defaultdict
 from typing import Dict, Optional, Sequence, Union
 
+from lhotse import load_manifest
 from lhotse.audio import RecordingSet
-from lhotse.manipulation import load_manifest
 from lhotse.supervision import SupervisionSet
 from lhotse.utils import Pathlike
 

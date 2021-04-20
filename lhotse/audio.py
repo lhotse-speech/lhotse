@@ -12,7 +12,8 @@ from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence, Tupl
 import numpy as np
 
 from lhotse.augmentation import AudioTransform, Resample, Speed
-from lhotse.utils import (Decibels, JsonMixin, Pathlike, Seconds, SetContainingAnything, YamlMixin, asdict_nonull,
+from lhotse.serialization import Serializable
+from lhotse.utils import (Decibels, Pathlike, Seconds, SetContainingAnything, asdict_nonull,
                           compute_num_samples,
                           exactly_one_not_null, fastcopy,
                           index_by_id_and_check, perturb_num_samples, split_sequence)
@@ -29,7 +30,7 @@ class AudioSource:
     """
     AudioSource represents audio data that can be retrieved from somewhere.
     Supported sources of audio are currently:
-    - 'file' (formats supported by librosa, possibly multi-channel)
+    - 'file' (formats supported by soundfile, possibly multi-channel)
     - 'command' [unix pipe] (must be WAVE, possibly multi-channel)
     - 'url' (any URL type that is supported by "smart_open" library, e.g. http/https/s3/gcp/azure/etc.)
     """
@@ -43,10 +44,13 @@ class AudioSource:
             duration: Optional[Seconds] = None,
     ) -> np.ndarray:
         """
-        Load the AudioSource (both files and commands) with librosa,
+        Load the AudioSource (from files, commands, or URLs) with soundfile,
         accounting for many audio formats and multi-channel inputs.
-        Returns numpy array with shapes: (n_samples) for single-channel,
+        Returns numpy array with shapes: (n_samples,) for single-channel,
         (n_channels, n_samples) for multi-channel.
+
+        Note: The elements in the returned array are in the range [-1.0, 1.0]
+        and are of dtype `np.floatt32`.
         """
         assert self.type in ('file', 'command', 'url')
 
@@ -58,9 +62,11 @@ class AudioSource:
                 # TODO(pzelasko): How should we support chunking for commands?
                 #                 We risk being very inefficient when reading many chunks from the same file
                 #                 without some caching scheme, because we'll be re-running commands.
-                raise ValueError("Reading audio chunks from 'command' AudioSource type is currently not supported.")
+                warnings.warn('You requested a subset of a recording that is read from disk via a bash command. '
+                              'Expect large I/O overhead if you are going to read many chunks like these, '
+                              'since every time we will read the whole file rather than its subset.')
             source = BytesIO(run(self.source, shell=True, stdout=PIPE).stdout)
-            samples, sampling_rate = read_audio(source)
+            samples, sampling_rate = read_audio(source, offset=offset, duration=duration)
 
         elif self.type == 'url':
             if offset != 0.0 or duration is not None:
@@ -136,59 +142,11 @@ class Recording:
     transforms: Optional[List[Dict]] = None
 
     @staticmethod
-    def from_sphere(
-            sph_path: Pathlike,
+    def from_file(
+            path: Pathlike,
             recording_id: Optional[str] = None,
             relative_path_depth: Optional[int] = None
     ) -> 'Recording':
-        """
-        Read a SPHERE file's header and create the corresponding ``Recording``.
-
-        :param sph_path: Path to the sphere (.sph) file.
-        :param recording_id: recording id, when not specified ream the filename's stem ("x.wav" -> "x").
-        :param relative_path_depth: optional int specifying how many last parts of the file path
-            should be retained in the ``AudioSource``. By default writes the path as is.
-        :return: a new ``Recording`` instance pointing to the sphere file.
-        """
-        from sphfile import SPHFile
-        sph_path = Path(sph_path)
-        sphf = SPHFile(sph_path)
-        return Recording(
-            id=recording_id if recording_id is not None else sph_path.stem,
-            sampling_rate=sphf.format['sample_rate'],
-            num_samples=sphf.format['sample_count'],
-            duration=sphf.format['sample_count'] / sphf.format['sample_rate'],
-            sources=[
-                AudioSource(
-                    type='file',
-                    channels=list(range(sphf.format['channel_count'])),
-                    source=(
-                        '/'.join(sph_path.parts[-relative_path_depth:])
-                        if relative_path_depth is not None and relative_path_depth > 0
-                        else str(sph_path)
-                    )
-                )
-            ]
-        )
-
-    @staticmethod
-    def from_wav(path: Pathlike, recording_id: Optional[str] = None) -> 'Recording':
-        """
-        Read a WAVE file's header and create the corresponding ``Recording``.
-
-        :param path: Path to the WAVE (.wav) file.
-        :param recording_id: recording id, when not specified ream the filename's stem ("x.wav" -> "x").
-        :return: a new ``Recording`` instance pointing to the audio file.
-        """
-        warnings.warn(
-            'Recording.from_wav() is deprecated and will be removed in Lhotse v0.5; '
-            'please use Recording.from_file() instead.',
-            category=DeprecationWarning
-        )
-        return Recording.from_file(path=path, recording_id=recording_id)
-
-    @staticmethod
-    def from_file(path: Pathlike, recording_id: Optional[str] = None):
         """
         Read an audio file's header and create the corresponding ``Recording``.
         Suitable to use when each physical file represents a separate recording session.
@@ -199,10 +157,12 @@ class Recording:
 
         :param path: Path to an audio file supported by libsoundfile (pysoundfile).
         :param recording_id: recording id, when not specified ream the filename's stem ("x.wav" -> "x").
+        :param relative_path_depth: optional int specifying how many last parts of the file path
+            should be retained in the ``AudioSource``. By default writes the path as is.
         :return: a new ``Recording`` instance pointing to the audio file.
         """
         import soundfile
-        info = soundfile.info(path)
+        info = soundfile.info(str(path))
         return Recording(
             id=recording_id if recording_id is not None else Path(path).stem,
             sampling_rate=info.samplerate,
@@ -212,7 +172,11 @@ class Recording:
                 AudioSource(
                     type='file',
                     channels=list(range(info.channels)),
-                    source=str(path)
+                    source=(
+                        '/'.join(Path(path).parts[-relative_path_depth:])
+                        if relative_path_depth is not None and relative_path_depth > 0
+                        else str(path)
+                    )
                 )
             ]
         )
@@ -233,20 +197,24 @@ class Recording:
     ) -> np.ndarray:
         if channels is None:
             channels = SetContainingAnything()
-        elif isinstance(channels, int):
-            channels = frozenset([channels])
         else:
-            channels = frozenset(channels)
+            channels = frozenset([channels] if isinstance(channels, int) else channels)
+            recording_channels = frozenset(self.channel_ids)
+            assert channels.issubset(recording_channels), "Requested to load audio from a channel " \
+                                                          "that does not exist in the recording: " \
+                                                          f"(recording channels: {recording_channels} -- " \
+                                                          f"requested channels: {channels})"
+
+        offset_sp, duration_sp = self._adjust_for_speed_perturbation(offset, duration)
 
         samples_per_source = []
         for source in self.sources:
             # Case: source not requested
             if not channels.intersection(source.channels):
                 continue
-            offset, duration = self._determine_offset_and_duration(offset, duration)
             samples = source.load_audio(
-                offset=offset,
-                duration=duration,
+                offset=offset_sp,
+                duration=duration_sp,
             )
 
             # Case: two-channel audio file but only one channel requested
@@ -267,9 +235,34 @@ class Recording:
             transform = AudioTransform.from_dict(params)
             audio = transform(audio, self.sampling_rate)
 
+        # When resampling in high sampling rates (48k -> 44.1k)
+        # it is difficult to estimate how sox will perform rounding;
+        # we will just add/remove one sample to be consistent with
+        # what we have estimated.
+        expected_num_samples = self._expected_num_samples(offset, duration)
+        diff = expected_num_samples - audio.shape[1]
+        if diff == 0:
+            pass  # this is normal condition
+        elif diff == 1:
+            # note the extra colon in -1:, which preserves the shape
+            audio = np.append(audio, audio[:, -1:], axis=1)
+        elif diff == -1:
+            audio = audio[:, :-1]
+        else:
+            raise ValueError("The number of declared samples in the recording diverged from the one obtained "
+                             "when loading audio. This could be internal Lhotse's error or a faulty "
+                             "transform implementation. Please report this issue in Lhotse and show the "
+                             f"following: diff={diff}, audio.shape={audio.shape}, recording={self}")
+
         return audio
 
-    def _determine_offset_and_duration(self, offset: Seconds, duration: Seconds) -> Tuple[Seconds, Seconds]:
+    def _expected_num_samples(self, offset: Seconds, duration: Optional[Seconds]) -> int:
+        if offset == 0 and duration is None:
+            return self.num_samples
+        duration = duration if duration is not None else self.duration - offset
+        return compute_num_samples(duration, sampling_rate=self.sampling_rate)
+
+    def _adjust_for_speed_perturbation(self, offset: Seconds, duration: Seconds) -> Tuple[Seconds, Seconds]:
         """
         This internal method helps estimate the original offset and duration for a recording
         before speed perturbation was applied.
@@ -343,7 +336,7 @@ class Recording:
 
 
 @dataclass
-class RecordingSet(JsonMixin, YamlMixin, Sequence[Recording]):
+class RecordingSet(Serializable, Sequence[Recording]):
     """
     RecordingSet represents a dataset of recordings. It does not contain any annotation -
     just the information needed to retrieve a recording (possibly multi-channel, from files

@@ -101,6 +101,22 @@ Input strategies' list
 .. automodule:: lhotse.dataset.input_strategies
   :members:
 
+Augmentation - transforms on cuts
+---------------------------------
+
+Some transforms, in order for us to have accurate information about the start and end times of the signal and its supervisions, have to be performed on cuts (or CutSets).
+
+.. automodule:: lhotse.dataset.cut_transforms
+  :members:
+
+Augmentation - transforms on signals
+------------------------------------
+
+These transforms work directly on batches of collated feature matrices (or possibly raw waveforms, if applicable).
+
+.. automodule:: lhotse.dataset.signal_transforms
+  :members:
+
 
 Collation utilities for building custom Datasets
 ------------------------------------------------

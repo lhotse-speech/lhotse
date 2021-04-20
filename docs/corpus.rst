@@ -1,12 +1,12 @@
 Representing a corpus
 =====================
 
-In Lhotse, we represent the data using YAML (more readable) or JSON (faster) manifests.
+In Lhotse, we represent the data using YAML (more readable), JSON, or JSONL (faster) manifests.
 For most audio corpora, we will need two types of manifests to fully describe them:
 a recording manifest and a supervision manifest.
 
 .. caution::
-    We show all the examples in YAML format for improved readability. However, when processing medium/large datasets, we recommend to use JSON, which is much quicker to load and save.
+    We show all the examples in YAML format for improved readability. However, when processing medium/large datasets, we recommend to use JSON or JSONL, which are much quicker to load and save.
 
 Recording manifest
 ------------------
@@ -152,6 +152,8 @@ Currently supported corpora:
 - Aishell :func:`lhotse.recipes.prepare_aishell`
 - AMI :func:`lhotse.recipes.prepare_ami`
 - BABEL :func:`lhotse.recipes.prepare_single_babel_language`
+- CallHome Egyptian :func:`lhotse.recipes.prepare_callhome_egyptian`
+- CallHome English :func:`lhotse.recipes.prepare_callhome_english`
 - CMU Arctic :func:`lhotse.recipes.prepare_cmu_arctic`
 - English Broadcast News 1997 :func:`lhotse.recipes.prepare_broadcast_news`
 - Heroico :func:`lhotse.recipes.prepare_heroico`

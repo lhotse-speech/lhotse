@@ -62,7 +62,7 @@ def concat_cuts(
         return CutSet.from_cuts(cuts)
     cuts = sorted(cuts, key=lambda c: c.duration, reverse=True)
     max_duration = cuts[0].duration if max_duration is None else max_duration
-    current_idx = 1
+    current_idx = 0
     while True:
         can_fit = False
         shortest = cuts[-1]

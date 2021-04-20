@@ -1,6 +1,5 @@
 from functools import reduce
 from itertools import chain
-from json.decoder import JSONDecodeError
 from operator import add
 from typing import Iterable, Optional, TypeVar, Union
 
@@ -8,7 +7,6 @@ from lhotse.audio import Recording, RecordingSet
 from lhotse.cut import Cut, CutSet, MixedCut
 from lhotse.features import FeatureSet, Features
 from lhotse.supervision import SupervisionSegment, SupervisionSet
-from lhotse.utils import Pathlike, load_json, load_yaml
 
 ManifestItem = TypeVar('ManifestItem', Recording, SupervisionSegment, Features, Cut, MixedCut)
 Manifest = TypeVar('Manifest', RecordingSet, SupervisionSet, FeatureSet, CutSet)
@@ -54,21 +52,3 @@ def to_manifest(items: Iterable[ManifestItem]) -> Optional[Manifest]:
     raise ValueError(f"Unknown type of manifest item: {first_item}")
 
 
-def load_manifest(path: Pathlike) -> Manifest:
-    """Generic utility for reading an arbitrary manifest."""
-    try:
-        raw_data = load_json(path)
-    except JSONDecodeError:
-        try:
-            raw_data = load_yaml(path)
-        except:
-            raise ValueError(f"Not a valid manifest: {path}")
-    data_set = None
-    for manifest_type in [RecordingSet, SupervisionSet, FeatureSet, CutSet]:
-        try:
-            data_set = manifest_type.from_dicts(raw_data)
-        except Exception:
-            pass
-    if data_set is None:
-        raise ValueError(f'Unknown type of manifest: {path}')
-    return data_set

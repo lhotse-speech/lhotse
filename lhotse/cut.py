@@ -21,10 +21,11 @@ from lhotse.features import FeatureExtractor, FeatureMixer, FeatureSet, Features
 from lhotse.features.base import compute_global_stats
 from lhotse.features.io import FeaturesWriter, LilcomFilesWriter, LilcomHdf5Writer
 from lhotse.features.mixer import NonPositiveEnergyError
+from lhotse.serialization import Serializable
 from lhotse.supervision import SupervisionSegment, SupervisionSet
-from lhotse.utils import (Decibels, JsonMixin, LOG_EPSILON, Pathlike, Seconds, TimeSpan, YamlMixin, asdict_nonull,
+from lhotse.utils import (Decibels, LOG_EPSILON, Pathlike, Seconds, TimeSpan, asdict_nonull,
                           compute_num_frames, compute_num_samples, exactly_one_not_null, fastcopy,
-                          index_by_id_and_check, overlaps,
+                          index_by_id_and_check, measure_overlap, overlaps,
                           overspans, perturb_num_samples, split_sequence, uuid4)
 
 # One of the design principles for Cuts is a maximally "lazy" implementation, e.g. when mixing Cuts,
@@ -406,10 +407,14 @@ class Cut(CutUtilsMixin):
             # of Intervals that contain the SupervisionSegments matching our criterion.
             # We call "interval.data" to obtain the underlying SupervisionSegment.
             match_supervisions = tree.overlap if keep_excessive_supervisions else tree.envelop
-            supervisions = [
-                interval.data.with_offset(-offset)
-                for interval in match_supervisions(begin=offset, end=offset + new_duration)
-            ]
+            supervisions = []
+            for interval in match_supervisions(begin=offset, end=offset + new_duration):
+                # We are going to measure the overlap ratio of the supervision with the "truncated" cut
+                # and reject segments that overlap less than 1%. This way we can avoid quirks and errors
+                # of limited float precision.
+                olap_ratio = measure_overlap(interval.data, TimeSpan(new_start, new_start + new_duration))
+                if olap_ratio > 0.01:
+                    supervisions.append(interval.data.with_offset(-offset))
 
         return Cut(
             id=self.id if preserve_id else str(uuid4()),
@@ -1065,10 +1070,9 @@ class MixedCut(CutUtilsMixin):
                 audio = audio[:, :self.num_samples]
             if audio.shape[1] - self.num_samples == -1:
                 audio = np.concatenate((audio, audio[:, -1:]), axis=1)
-            assert audio.shape[1] == self.num_samples, "Inconsistent number of samples in a MixedCut: please report " \
-                                                       "this issue at https://github.com/lhotse-speech/lhotse/issues " \
-                                                       "showing the output of print(cut) or str(cut) on which" \
-                                                       "load_audio() was called."
+            assert audio.shape[1] == self.num_samples, f"Inconsistent number of samples in a MixedCut: please report " \
+                                                       f"this issue at https://github.com/lhotse-speech/lhotse/issues " \
+                                                       f"showing the cut below. MixedCut:\n{self}"
         else:
             audio = mixer.unmixed_audio
         return audio
@@ -1214,7 +1218,7 @@ class MixedCut(CutUtilsMixin):
 
 
 @dataclass
-class CutSet(JsonMixin, YamlMixin, Sequence[AnyCut]):
+class CutSet(Serializable, Sequence[AnyCut]):
     """
     CutSet combines features with their corresponding supervisions.
     It may have wider span than the actual supervisions, provided the features for the whole span exist.
@@ -1738,7 +1742,7 @@ class CutSet(JsonMixin, YamlMixin, Sequence[AnyCut]):
             if duration is not None:
                 mixed_in_duration = to_mix.duration
                 # Keep sampling until we mixed in a "duration" amount of noise.
-                while mixed.duration < duration:
+                while mixed_in_duration < duration:
                     to_mix = cuts.sample()
                     # Keep the SNR constant for each cut from "self".
                     mixed = mixed.mix(other=to_mix, snr=snr, offset_other_by=mixed_in_duration)
@@ -2094,6 +2098,11 @@ def mix(
     assert offset <= reference_cut.duration, f"Cannot mix cut '{mixed_in_cut.id}' with offset {offset}," \
                                              f" which is greater than cuts {reference_cut.id} duration" \
                                              f" of {reference_cut.duration}"
+    assert reference_cut.sampling_rate == mixed_in_cut.sampling_rate, \
+        f'Cannot mix cuts with different sampling rates ' \
+        f'({reference_cut.sampling_rate} vs. ' \
+        f'{mixed_in_cut.sampling_rate}). ' \
+        f'Please resample the recordings first.'
     # When the left_cut is a MixedCut, take its existing tracks, otherwise create a new track.
     old_tracks = (
         reference_cut.tracks

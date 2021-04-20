@@ -3,7 +3,8 @@ from dataclasses import dataclass
 from itertools import islice
 from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence
 
-from lhotse.utils import JsonMixin, Seconds, YamlMixin, asdict_nonull, exactly_one_not_null, fastcopy, \
+from lhotse.serialization import Serializable
+from lhotse.utils import Seconds, asdict_nonull, exactly_one_not_null, fastcopy, \
     index_by_id_and_check, \
     perturb_num_samples, split_sequence
 
@@ -97,7 +98,7 @@ class SupervisionSegment:
 
 
 @dataclass
-class SupervisionSet(JsonMixin, YamlMixin, Sequence[SupervisionSegment]):
+class SupervisionSet(Serializable, Sequence[SupervisionSegment]):
     """
     SupervisionSet represents a collection of segments containing some supervision information.
     The only required fields are the ID of the segment, ID of the corresponding recording,
@@ -193,7 +194,8 @@ class SupervisionSet(JsonMixin, YamlMixin, Sequence[SupervisionSegment]):
             channel: Optional[int] = None,
             start_after: Seconds = 0,
             end_before: Optional[Seconds] = None,
-            adjust_offset: bool = False
+            adjust_offset: bool = False,
+            tolerance: Seconds = 0.001
     ) -> Iterable[SupervisionSegment]:
         """
         Return an iterable of segments that match the provided ``recording_id``.
@@ -209,6 +211,8 @@ class SupervisionSet(JsonMixin, YamlMixin, Sequence[SupervisionSegment]):
             In the anticipated use-case, ``start_after`` and ``end_before`` would be
             the beginning and end of a cut;
             this option converts the times to be relative to the start of the cut.
+        :param tolerance: Additional margin to account for floating point rounding errors
+            when comparing segment boundaries.
         :return: An iterator over supervision segments satisfying all criteria.
         """
         segment_by_recording_id = self._index_by_recording_id_and_cache()
@@ -216,10 +220,10 @@ class SupervisionSet(JsonMixin, YamlMixin, Sequence[SupervisionSegment]):
             # We only modify the offset - the duration remains the same, as we're only shifting the segment
             # relative to the Cut's start, and not truncating anything.
             segment.with_offset(-start_after) if adjust_offset else segment
-            for segment in segment_by_recording_id[recording_id]
+            for segment in segment_by_recording_id.get(recording_id, [])
             if (channel is None or segment.channel == channel)
-               and segment.start >= start_after
-               and (end_before is None or segment.end <= end_before)
+               and segment.start >= start_after - tolerance
+               and (end_before is None or segment.end <= end_before + tolerance)
         )
 
     # This is a cache that significantly speeds up repeated ``find()`` queries.

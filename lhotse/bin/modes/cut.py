@@ -4,6 +4,7 @@ import click
 import numpy as np
 from cytoolz.itertoolz import groupby
 
+from lhotse import load_manifest
 from lhotse.bin.modes.cli_base import cli
 from lhotse.cut import (
     CutSet,
@@ -12,7 +13,7 @@ from lhotse.cut import (
     mix_cuts
 )
 from lhotse.features import FeatureSet
-from lhotse.manipulation import combine, load_manifest
+from lhotse.manipulation import combine
 from lhotse.supervision import SupervisionSet
 from lhotse.utils import Pathlike
 
@@ -29,7 +30,7 @@ def cut():
               help='Optional recording manifest - will be used to attach the recordings to the cuts.')
 @click.option('-f', '--feature-manifest', type=click.Path(exists=True, dir_okay=False),
               help='Optional feature manifest - will be used to attach the features to the cuts.')
-@click.option('-s', '--supervision_manifest', type=click.Path(exists=True, dir_okay=False),
+@click.option('-s', '--supervision-manifest', type=click.Path(exists=True, dir_okay=False),
               help='Optional supervision manifest - will be used to attach the supervisions to the cuts.')
 def simple(
         output_cut_manifest: Pathlike,
@@ -49,7 +50,7 @@ def simple(
         for p in (supervision_manifest, feature_manifest, recording_manifest)
     ]
     cut_set = CutSet.from_manifests(recordings=recording_set, supervisions=supervision_set, features=feature_set)
-    cut_set.to_json(output_cut_manifest)
+    cut_set.to_file(output_cut_manifest)
 
 
 @cut.command()
@@ -79,7 +80,7 @@ def windowed(
         cut_shift=cut_shift,
         keep_shorter_windows=keep_shorter_windows
     )
-    cut_set.to_json(output_cut_manifest)
+    cut_set.to_file(output_cut_manifest)
 
 
 @cut.command()
@@ -121,7 +122,7 @@ def random_mixed(
         )
         for left_cut, right_cut, snr, relative_offset in zip(left_cuts, right_cuts, snrs, relative_offsets)
     )
-    mixed_cut_set.to_json(output_cut_manifest)
+    mixed_cut_set.to_file(output_cut_manifest)
 
 
 @cut.command()
@@ -139,7 +140,7 @@ def mix_sequential(
     """
     cut_manifests = [CutSet.from_json(path) for path in cut_manifests]
     mixed_cut_set = CutSet.from_cuts(mix_cuts(cuts) for cuts in zip(*cut_manifests))
-    mixed_cut_set.to_json(output_cut_manifest)
+    mixed_cut_set.to_file(output_cut_manifest)
 
 
 @cut.command()
@@ -156,7 +157,7 @@ def mix_by_recording_id(
     all_cuts = combine(*[CutSet.from_json(path) for path in cut_manifests])
     recording_id_to_cuts = groupby(lambda cut: cut.recording_id, all_cuts)
     mixed_cut_set = CutSet.from_cuts(mix_cuts(cuts) for recording_id, cuts in recording_id_to_cuts.items())
-    mixed_cut_set.to_json(output_cut_manifest)
+    mixed_cut_set.to_file(output_cut_manifest)
 
 
 @cut.command(context_settings=dict(show_default=True))
@@ -184,14 +185,14 @@ def truncate(
     Truncate the cuts in the CUT_MANIFEST and write them to OUTPUT_CUT_MANIFEST.
     Cuts shorter than MAX_DURATION will not be modified.
     """
-    cut_set = CutSet.from_json(cut_manifest)
+    cut_set = CutSet.from_file(cut_manifest)
     truncated_cut_set = cut_set.truncate(
         max_duration=max_duration,
         offset_type=offset_type,
         keep_excessive_supervisions=keep_overflowing_supervisions,
         preserve_id=preserve_id
     )
-    truncated_cut_set.to_json(output_cut_manifest)
+    truncated_cut_set.to_file(output_cut_manifest)
 
 
 @cut.command()
@@ -208,9 +209,9 @@ def append(
     input argument list.
     If CUT_MANIFESTS have different lengths, the script stops once the shortest CutSet is depleted.
     """
-    cut_sets = [CutSet.from_json(path) for path in cut_manifests]
+    cut_sets = [CutSet.from_file(path) for path in cut_manifests]
     appended_cut_set = CutSet.from_cuts(append_cuts(cuts) for cuts in zip(*cut_sets))
-    appended_cut_set.to_json(output_cut_manifest)
+    appended_cut_set.to_file(output_cut_manifest)
 
 
 @cut.command()
@@ -229,6 +230,6 @@ def pad(
     Create a new CutSet by padding the cuts in CUT_MANIFEST. The cuts will be right-padded, i.e. the padding
     is placed after the signal ends.
     """
-    cut_set = CutSet.from_json(cut_manifest)
+    cut_set = CutSet.from_file(cut_manifest)
     padded_cut_set = cut_set.pad(desired_duration=duration)
-    padded_cut_set.to_json(output_cut_manifest)
+    padded_cut_set.to_file(output_cut_manifest)

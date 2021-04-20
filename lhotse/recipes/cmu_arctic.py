@@ -139,8 +139,8 @@ def prepare_cmu_arctic(
     validate_recordings_and_supervisions(recordings, supervisions)
 
     if output_dir is not None:
-        recordings.to_json('recordings.json')
-        supervisions.to_json('supervisions.json')
+        recordings.to_json(output_dir / 'recordings.json')
+        supervisions.to_json(output_dir / 'supervisions.json')
 
     return {
         'recordings': recordings,

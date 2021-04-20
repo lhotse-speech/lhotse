@@ -1,5 +1,4 @@
 from functools import lru_cache
-from tempfile import NamedTemporaryFile
 
 import numpy as np
 import pytest
@@ -39,7 +38,7 @@ def expected_stereo_two_sources() -> np.ndarray:
 
 @lru_cache(1)
 def expected_stereo_single_source() -> np.ndarray:
-    """Contents of test/fixtures/stereo.wav"""
+    """Contents of test/fixtures/stereo.{wav,sph}"""
     return np.vstack([
         np.arange(8000, 16000, dtype=np.int16),
         np.arange(16000, 24000, dtype=np.int16)
@@ -51,46 +50,6 @@ def test_get_metadata(recording_set):
     assert 8000 == recording_set.sampling_rate('recording-1')
     assert 4000 == recording_set.num_samples('recording-1')
     assert 0.5 == recording_set.duration('recording-1')
-
-
-@pytest.mark.parametrize(
-    ['format', 'compressed'],
-    [
-        ('yaml', False),
-        ('yaml', True),
-        ('json', False),
-        ('json', True),
-    ]
-)
-def test_serialization(format, compressed):
-    recording_set = RecordingSet.from_recordings([
-        Recording(
-            id='x',
-            sources=[
-                AudioSource(
-                    type='file',
-                    channels=[0],
-                    source='text/fixtures/mono_c0.wav'
-                ),
-                AudioSource(
-                    type='command',
-                    channels=[1],
-                    source='cat text/fixtures/mono_c1.wav'
-                )
-            ],
-            sampling_rate=8000,
-            num_samples=4000,
-            duration=0.5
-        )
-    ])
-    with NamedTemporaryFile(suffix='.gz' if compressed else '') as f:
-        if format == 'yaml':
-            recording_set.to_yaml(f.name)
-            deserialized = RecordingSet.from_yaml(f.name)
-        if format == 'json':
-            recording_set.to_json(f.name)
-            deserialized = RecordingSet.from_json(f.name)
-    assert deserialized == recording_set
 
 
 def test_iteration(recording_set):
@@ -108,7 +67,7 @@ def test_get_stereo_audio_from_single_file(recording_set):
 
 
 def test_load_audio_from_sphere_file(recording_set):
-    samples = recording_set.load_audio('recording-2')
+    samples = recording_set.load_audio('recording-3')
     np.testing.assert_almost_equal(samples, expected_stereo_single_source())
 
 
@@ -119,7 +78,7 @@ def test_load_audio_from_sphere_file(recording_set):
         (0, expected_channel_0(), does_not_raise()),
         (1, expected_channel_1(), does_not_raise()),
         ([0, 1], expected_stereo_two_sources(), does_not_raise()),
-        (1000, 'irrelevant', raises(ValueError))
+        (1000, 'irrelevant', raises(AssertionError))
     ]
 )
 def test_get_audio_multichannel(recording_set, channels, expected_audio, exception_expectation):
@@ -176,7 +135,7 @@ def test_add_recording_sets():
     ]
 )
 def test_recording_from_sphere(relative_path_depth, expected_source_path):
-    rec = Recording.from_sphere('test/fixtures/stereo.sph', relative_path_depth=relative_path_depth)
+    rec = Recording.from_file('test/fixtures/stereo.sph', relative_path_depth=relative_path_depth)
     assert rec == Recording(
         id='stereo',
         sampling_rate=8000,

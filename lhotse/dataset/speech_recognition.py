@@ -6,6 +6,7 @@ from torch.utils.data.dataloader import DataLoader, default_collate
 from lhotse import validate
 from lhotse.cut import CutSet
 from lhotse.dataset.input_strategies import InputStrategy, PrecomputedFeatures
+from lhotse.utils import ifnone
 
 
 class K2SpeechRecognitionDataset(torch.utils.data.Dataset):
@@ -83,8 +84,8 @@ class K2SpeechRecognitionDataset(torch.utils.data.Dataset):
         # Initialize the fields
         self.cuts = cuts
         self.return_cuts = return_cuts
-        self.cut_transforms = cut_transforms if cut_transforms is not None else ()
-        self.input_transforms = input_transforms if input_transforms is not None else ()
+        self.cut_transforms = ifnone(cut_transforms, [])
+        self.input_transforms = ifnone(input_transforms, [])
         self.input_strategy = input_strategy
         self._validate()
 

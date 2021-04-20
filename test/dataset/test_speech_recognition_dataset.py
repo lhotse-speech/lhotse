@@ -5,6 +5,7 @@ from torch.utils.data import DataLoader
 
 from lhotse import Fbank
 from lhotse.cut import CutSet
+from lhotse.dataset import RandomizedSmoothing
 from lhotse.dataset.cut_transforms import CutConcatenate, CutMix
 from lhotse.dataset.cut_transforms.extra_padding import ExtraPadding
 from lhotse.dataset.input_strategies import AudioSamples, OnTheFlyFeatures
@@ -181,6 +182,29 @@ def test_k2_speech_recognition_on_the_fly_feature_extraction(k2_cut_set):
         # Check that the supervision boundaries are the same.
         assert (batch_pc['supervisions']['start_frame'] == batch_otf['supervisions']['start_frame']).all()
         assert (batch_pc['supervisions']['num_frames'] == batch_otf['supervisions']['num_frames']).all()
+
+
+def test_k2_speech_recognition_on_the_fly_feature_extraction_with_randomized_smoothing(k2_cut_set):
+    dataset = K2SpeechRecognitionDataset(
+        k2_cut_set.drop_features(),
+        input_strategy=OnTheFlyFeatures(
+            extractor=Fbank(),
+        )
+    )
+    rs_dataset = K2SpeechRecognitionDataset(
+        k2_cut_set.drop_features(),
+        input_strategy=OnTheFlyFeatures(
+            extractor=Fbank(),
+            # Use p=1.0 to ensure that smoothing is applied in this test.
+            wave_transforms=[RandomizedSmoothing(sigma=0.5, p=1.0)]
+        )
+    )
+    sampler = SingleCutSampler(k2_cut_set, shuffle=False, max_cuts=1)
+    for cut_ids in sampler:
+        batch = dataset[cut_ids]
+        rs_batch = rs_dataset[cut_ids]
+        # Additive noise should cause the energies to go up
+        assert (rs_batch['inputs'] - batch['inputs']).sum() > 0
 
 
 def test_k2_speech_recognition_audio_inputs(k2_cut_set):

@@ -1,13 +1,12 @@
 import pytest
-from pytest import mark, raises
+from pytest import mark
 
 from lhotse import CutSet
 from lhotse.audio import RecordingSet
 from lhotse.features import FeatureSet
-from lhotse.manipulation import combine, load_manifest
+from lhotse.manipulation import combine
 from lhotse.supervision import SupervisionSet
 from lhotse.testing.dummies import DummyManifest
-from lhotse.utils import nullcontext as does_not_raise
 
 
 @mark.parametrize('manifest_type', [RecordingSet, SupervisionSet, FeatureSet, CutSet])
@@ -63,22 +62,6 @@ def test_combine(manifest_type):
         DummyManifest(manifest_type, begin_id=136, end_id=200),
     ])
     assert combined_iterable == expected
-
-
-@mark.parametrize(
-    ['path', 'exception_expectation'],
-    [
-        ('test/fixtures/audio.json', does_not_raise()),
-        ('test/fixtures/supervision.json', does_not_raise()),
-        ('test/fixtures/dummy_feats/feature_manifest.json', does_not_raise()),
-        ('test/fixtures/libri/cuts.json', does_not_raise()),
-        ('test/fixtures/feature_config.yml', raises(ValueError)),
-        ('no/such/path.xd', raises(FileNotFoundError)),
-    ]
-)
-def test_load_any_lhotse_manifest(path, exception_expectation):
-    with exception_expectation:
-        load_manifest(path)
 
 
 @mark.parametrize('manifest_type', [RecordingSet, SupervisionSet, FeatureSet, CutSet])

@@ -46,46 +46,6 @@ def test_cut_set_holds_both_simple_and_mixed_cuts(cut_set_with_mixed_cut):
     assert len(mixed_cuts) == 1
 
 
-@pytest.mark.parametrize(
-    ['format', 'compressed'],
-    [
-        ('yaml', False),
-        ('yaml', True),
-        ('json', False),
-        ('json', True),
-    ]
-)
-def test_simple_cut_set_serialization(cut_set, format, compressed):
-    with NamedTemporaryFile(suffix='.gz' if compressed else '') as f:
-        if format == 'yaml':
-            cut_set.to_yaml(f.name)
-            restored = CutSet.from_yaml(f.name)
-        if format == 'json':
-            cut_set.to_json(f.name)
-            restored = CutSet.from_json(f.name)
-    assert cut_set == restored
-
-
-@pytest.mark.parametrize(
-    ['format', 'compressed'],
-    [
-        ('yaml', False),
-        ('yaml', True),
-        ('json', False),
-        ('json', True),
-    ]
-)
-def test_mixed_cut_set_serialization(cut_set_with_mixed_cut, format, compressed):
-    with NamedTemporaryFile(suffix='.gz' if compressed else '') as f:
-        if format == 'yaml':
-            cut_set_with_mixed_cut.to_yaml(f.name)
-            restored = CutSet.from_yaml(f.name)
-        if format == 'json':
-            cut_set_with_mixed_cut.to_json(f.name)
-            restored = CutSet.from_json(f.name)
-    assert cut_set_with_mixed_cut == restored
-
-
 def test_filter_cut_set(cut_set, cut1):
     filtered = cut_set.filter(lambda cut: cut.id == 'cut-1')
     assert len(filtered) == 1
@@ -158,14 +118,24 @@ def test_trim_to_supervisions_simple_cuts():
 
 def test_trim_to_supervisions_mixed_cuts():
     cut_set = CutSet.from_cuts([
-        Cut('cut1', start=0, duration=30, channel=0, supervisions=[
-            SupervisionSegment('sup1', 'rec1', start=1.5, duration=8.5),
-            SupervisionSegment('sup2', 'rec1', start=10, duration=5),
-            SupervisionSegment('sup3', 'rec1', start=20, duration=8),
-        ]).append(
-            Cut('cut2', start=0, duration=30, channel=0, supervisions=[
-                SupervisionSegment('sup4', 'rec1', start=0, duration=30),
-            ])
+        Cut('cut1', start=0, duration=30, channel=0,
+            recording=Recording(
+                id='rec1', sources=[], sampling_rate=16000, num_samples=160000, duration=10.0
+            ),
+            supervisions=[
+                SupervisionSegment('sup1', 'rec1', start=1.5, duration=8.5),
+                SupervisionSegment('sup2', 'rec1', start=10, duration=5),
+                SupervisionSegment('sup3', 'rec1', start=20, duration=8),
+            ]
+            ).append(
+            Cut('cut2', start=0, duration=30, channel=0,
+                recording=Recording(
+                    id='rec1', sources=[], sampling_rate=16000, num_samples=160000, duration=10.0
+                ),
+                supervisions=[
+                    SupervisionSegment('sup4', 'rec1', start=0, duration=30),
+                ]
+                )
         )
     ])
     assert isinstance(cut_set[0], MixedCut)
