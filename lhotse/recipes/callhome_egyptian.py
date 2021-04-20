@@ -54,8 +54,12 @@ def prepare_callhome_egyptian(
 
     manifests = {}
 
-    for split in ['train', 'devtest', 'evltest']:
-        audio_paths = check_and_rglob(audio_dir / 'callhome/arabic' / split, '*.sph')
+    for split in ['train', 'devtest', 'evaltest']:
+        audio_paths = check_and_rglob(
+            # The LDC distribution has a typo.
+            audio_dir / 'callhome/arabic' / split.replace('evaltest', 'evltest'),
+            '*.sph'
+        )
         recordings = RecordingSet.from_recordings(
             make_recording_callhome(p, sph2pipe_path=sph2pipe_path) for p in tqdm(audio_paths)
         )
