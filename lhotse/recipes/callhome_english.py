@@ -139,7 +139,7 @@ def read_rttm(path: Pathlike) -> SupervisionSet:
                 start=start,
                 duration=duration,
                 channel=channel,
-                speaker=speaker,
+                speaker=f'{recording_id}_{speaker}',
                 language='English'
             )
         )
