@@ -15,6 +15,7 @@ The corpus can be manually downloaded at https://psi.engr.tamu.edu/l2-arctic-cor
 Note: Lhotse does not read the TextGrid files with word/phone alignment for now for this corpus.
 """
 
+from os import makedirs
 from pathlib import Path
 from typing import Dict, Optional, Union
 
@@ -162,6 +163,8 @@ def prepare_l2_arctic(
     }
 
     if output_dir is not None:
+        output_dir = Path(output_dir)
+        makedirs(output_dir, exist_ok=True)
         for key, manifests in splits.items():
             manifests['recordings'].to_json(output_dir / f'recordings-{key}.json')
             manifests['supervisions'].to_json(output_dir / f'supervisions-{key}.json')
