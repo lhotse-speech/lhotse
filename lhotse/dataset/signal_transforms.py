@@ -183,38 +183,52 @@ class SpecAugment(torch.nn.Module):
             for sequence_idx in range(features.size(0)):
                 features[sequence_idx] = self._forward_single(features[sequence_idx])
         else:
-            # Supervisions provided - we will apply spec augment only on the supervised areas.
+            # Supervisions provided - we will apply time warping only on the supervised areas.
             for sequence_idx, start_frame, num_frames in supervision_segments:
                 end_frame = start_frame + num_frames
-                features[sequence_idx, start_frame: end_frame] = \
-                    self._forward_single(features[sequence_idx, start_frame: end_frame])
+                features[sequence_idx, start_frame: end_frame] = self._forward_single(
+                    features[sequence_idx, start_frame: end_frame],
+                    warp=True,
+                    mask=False
+                )
+            # ... and the time-mask the full feature matrices. Note that in this mode,
+            # it might happen that masks are applied to different sequences/examples
+            # than the time warping.
+            for sequence_idx in range(features.size(0)):
+                features[sequence_idx] = self._forward_single(
+                    features[sequence_idx],
+                    warp=False,
+                    mask=True
+                )
         return features
 
-    def _forward_single(self, features: torch.Tensor) -> torch.Tensor:
+    def _forward_single(self, features: torch.Tensor, warp: bool = True, mask: bool = True) -> torch.Tensor:
         """
         Apply SpecAugment to a single feature matrix of shape (T, F).
         """
         if random.random() > self.p:
             # Randomly choose whether this transform is applied
             return features
-        from torchaudio.functional import mask_along_axis
-        mean = features.mean()
-        if self.time_warp_factor is not None and self.time_warp_factor >= 1:
-            features = time_warp(features, factor=self.time_warp_factor)
-        for _ in range(self.num_feature_masks):
-            features = mask_along_axis(
-                features.unsqueeze(0),
-                mask_param=self.features_mask_size,
-                mask_value=mean,
-                axis=2
-            ).squeeze(0)
-        for _ in range(self.num_frame_masks):
-            features = mask_along_axis(
-                features.unsqueeze(0),
-                mask_param=self.frames_mask_size,
-                mask_value=mean,
-                axis=1
-            ).squeeze(0)
+        if warp:
+            if self.time_warp_factor is not None and self.time_warp_factor >= 1:
+                features = time_warp(features, factor=self.time_warp_factor)
+        if mask:
+            from torchaudio.functional import mask_along_axis
+            mean = features.mean()
+            for _ in range(self.num_feature_masks):
+                features = mask_along_axis(
+                    features.unsqueeze(0),
+                    mask_param=self.features_mask_size,
+                    mask_value=mean,
+                    axis=2
+                ).squeeze(0)
+            for _ in range(self.num_frame_masks):
+                features = mask_along_axis(
+                    features.unsqueeze(0),
+                    mask_param=self.frames_mask_size,
+                    mask_value=mean,
+                    axis=1
+                ).squeeze(0)
         return features
 
 
