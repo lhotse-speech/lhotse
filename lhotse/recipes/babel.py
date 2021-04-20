@@ -8,12 +8,12 @@ of development set recordings.
 import logging
 import re
 from collections import defaultdict
-from typing import List, Optional
+from typing import Dict, Iterable, List, Optional, Union
 
 from cytoolz import sliding_window
 
 from lhotse import Recording, RecordingSet, SupervisionSegment, SupervisionSet, validate_recordings_and_supervisions
-from lhotse.qa import remove_missing_recordings_and_supervisions, trim_supervisions_exceedings_recordings
+from lhotse.qa import remove_missing_recordings_and_supervisions, trim_supervisions_to_recordings
 from lhotse.utils import Pathlike
 
 BABELCODE2LANG = {
@@ -51,9 +51,27 @@ SIL_PATTERN = re.compile(r'<no-speech>')
 REMOVE_PATTERN = re.compile(r'<(male-to-female|female-to-male)> ')
 
 
-def prepare_single_babel_language(corpus_dir: Pathlike, output_dir: Optional[Pathlike] = None, no_eval_ok: bool = False):
+def prepare_single_babel_language(
+        corpus_dir: Pathlike,
+        output_dir: Optional[Pathlike] = None,
+        no_eval_ok: bool = False
+) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet]]]:
     """
-    TODO: write docstring
+    Prepares manifests using a single BABEL LDC package.
+
+    This function works like the following:
+
+        - first, it will scan `corpus_dir` for a directory named `conversational`;
+            if there is more than once, it picks the first one (and emits a warning)
+        - then, it will try to find `dev`, `eval`, and `training` splits inside
+            (if any of them is not present, it will skip it with a warning)
+        - finally, it scans the selected location for SPHERE audio files and transcripts.
+
+    :param corpus_dir: Path to the root of the LDC package with a BABEL language.
+    :param output_dir: Path where the manifests are stored.json
+    :param no_eval_ok: When set to True, this function won't emit a warning
+        that the eval set was not found.
+    :return:
     """
     manifests = defaultdict(dict)
 
@@ -61,7 +79,8 @@ def prepare_single_babel_language(corpus_dir: Pathlike, output_dir: Optional[Pat
     orig_corpus_dir = corpus_dir
     corpus_dir = [d for d in corpus_dir.rglob('conversational') if d.is_dir()]
     if not corpus_dir:
-        raise ValueError(f"Could not find 'conversational' directory anywhere inside '{orig_corpus_dir}' - please check your path.")
+        raise ValueError(f"Could not find 'conversational' directory anywhere inside '{orig_corpus_dir}' "
+                         f"- please check your path.")
     if len(corpus_dir) > 1:
         # People have very messy data distributions, the best we can do is warn them.
         logging.warning(f"It seems there are multiple 'conversational' directories in '{orig_corpus_dir}' - "
@@ -93,7 +112,10 @@ def prepare_single_babel_language(corpus_dir: Pathlike, output_dir: Optional[Pat
             channel = {'inLine': 'A', 'outLine': 'B'}.get(channel, 'A')
             # Fix problematic segments that have two consecutive timestamp lines with no transcript in between
             lines = p.read_text().splitlines() + ['']
-            lines = [prev_l for prev_l, l in sliding_window(2, lines) if not (prev_l.startswith('[') and l.startswith('['))]
+            lines = [
+                prev_l for prev_l, l in sliding_window(2, lines)
+                if not (prev_l.startswith('[') and l.startswith('['))
+            ]
             # Add a None at the end so that the last timestamp is only used as "next_timestamp"
             # and ends the iretation (otherwise we'd lose the last segment).
             lines += [None]
@@ -131,7 +153,7 @@ def prepare_single_babel_language(corpus_dir: Pathlike, output_dir: Optional[Pat
             pass
         else:
             recordings, supervisions = remove_missing_recordings_and_supervisions(recordings, supervisions)
-            recordings, supervisions = trim_supervisions_exceedings_recordings(recordings, supervisions)
+            recordings, supervisions = trim_supervisions_to_recordings(recordings, supervisions)
         validate_recordings_and_supervisions(recordings, supervisions)
 
         manifests[split] = {
@@ -143,10 +165,10 @@ def prepare_single_babel_language(corpus_dir: Pathlike, output_dir: Optional[Pat
             output_dir.mkdir(parents=True, exist_ok=True)
             language = BABELCODE2LANG[lang_code]
             save_split = 'train' if split == 'training' else split
-            recordings.to_json(output_dir / f'recordings_{language}_{save_split}.json')
-            supervisions.to_json(output_dir / f'supervisions_{language}_{save_split}.json')
+            recordings.to_file(output_dir / f'recordings_{language}_{save_split}.json')
+            supervisions.to_file(output_dir / f'supervisions_{language}_{save_split}.json')
 
-    return manifests
+    return dict(manifests)
 
 
 def normalize_text(text: str) -> str:
@@ -158,13 +180,13 @@ def normalize_text(text: str) -> str:
     return text
 
 
-def deduplicate_supervisions(supervisions: SupervisionSegment) -> List[SupervisionSegment]:
+def deduplicate_supervisions(supervisions: Iterable[SupervisionSegment]) -> List[SupervisionSegment]:
     from cytoolz import groupby
     duplicates = groupby((lambda s: s.id), sorted(supervisions, key=lambda s: s.id))
     filtered = []
     for k, v in duplicates.items():
         if len(v) > 1:
-            logging.warning(f'Found {len(v)} supervisions with conflicting IDs ({v[0].id}) - keeping only the first one.')
+            logging.warning(f'Found {len(v)} supervisions with conflicting IDs ({v[0].id}) '
+                            f'- keeping only the first one.')
         filtered.append(v[0])
     return filtered
-
