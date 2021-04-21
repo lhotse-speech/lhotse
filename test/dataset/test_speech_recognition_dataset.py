@@ -150,7 +150,7 @@ def test_k2_speech_recognition_augmentation(k2_cut_set, k2_noise_cut_set):
 
 
 def test_extra_padding_transform(k2_cut_set):
-    transform = ExtraPadding(num_extra_frames=20)
+    transform = ExtraPadding(extra_frames=20)
     padded_cuts = transform(k2_cut_set)
     for cut, padded in zip(k2_cut_set, padded_cuts):
         # first track is for padding

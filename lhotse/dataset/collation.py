@@ -101,7 +101,7 @@ class TokenCollater:
 
 def collate_features(
         cuts: CutSet,
-        pad_direction: str = 'both'
+        pad_direction: str = 'right'
 ) -> Tuple[torch.Tensor, torch.IntTensor]:
     """
     Load features for all the cuts and return them as a batch in a torch tensor.
@@ -124,7 +124,7 @@ def collate_features(
 
 def collate_audio(
         cuts: CutSet,
-        pad_direction: str = 'both'
+        pad_direction: str = 'right'
 ) -> Tuple[torch.Tensor, torch.IntTensor]:
     """
     Load audio samples for all the cuts and return them as a batch in a torch tensor.
@@ -241,7 +241,7 @@ def maybe_pad(
         duration: int = None,
         num_frames: int = None,
         num_samples: int = None,
-        direction: str = 'both'
+        direction: str = 'right'
 ) -> CutSet:
     """Check if all cuts' durations are equal and pad them to match the longest cut otherwise."""
     if len(set(c.duration for c in cuts)) == 1:

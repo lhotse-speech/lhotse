@@ -1,9 +1,11 @@
 import random
 from math import isclose
 
+import pytest
+
 from lhotse import CutSet
 from lhotse.cut import MixedCut
-from lhotse.dataset import CutMix
+from lhotse.dataset import CutMix, ExtraPadding
 from lhotse.dataset import PerturbSpeed
 from lhotse.testing.dummies import DummyManifest
 
@@ -38,3 +40,81 @@ def test_cutmix():
         assert isinstance(c, MixedCut)
         assert c.tracks[0].cut.duration == 10.0
         assert sum(t.cut.duration for t in c.tracks[1:]) == 10.0
+
+
+@pytest.mark.parametrize('randomized', [False, True])
+def test_extra_padding_frames(randomized):
+    cuts = DummyManifest(CutSet, begin_id=0, end_id=10)
+    transform = ExtraPadding(
+        extra_frames=4,
+        randomized=randomized
+    )
+    padded_cuts = transform(cuts)
+
+    # Non-randomized test -- check that all cuts are processed
+    # in the same way.
+    if not randomized:
+        for cut, padded in zip(cuts, padded_cuts):
+            # first track is for padding
+            assert padded.tracks[0].cut.num_frames == 2
+            # second track is for padding
+            assert padded.tracks[-1].cut.num_frames == 2
+            # total num frames is OK
+            assert padded.num_frames == cut.num_frames + 4
+
+    # Randomized test -- check that cuts have different properties.
+    if randomized:
+        nums_frames = [c.num_frames for c in padded_cuts]
+        assert len(set(nums_frames)) > 1
+
+
+@pytest.mark.parametrize('randomized', [False, True])
+def test_extra_padding_samples(randomized):
+    cuts = DummyManifest(CutSet, begin_id=0, end_id=10)
+    transform = ExtraPadding(
+        extra_samples=320,
+        randomized=randomized
+    )
+    padded_cuts = transform(cuts)
+
+    # Non-randomized test -- check that all cuts are processed
+    # in the same way.
+    if not randomized:
+        for cut, padded in zip(cuts, padded_cuts):
+            # first track is for padding
+            assert padded.tracks[0].cut.num_samples == 160
+            # second track is for padding
+            assert padded.tracks[-1].cut.num_samples == 160
+            # total num frames is OK
+            assert padded.num_samples == cut.num_samples + 320
+
+    # Randomized test -- check that cuts have different properties.
+    if randomized:
+        nums_samples = [c.num_samples for c in padded_cuts]
+        assert len(set(nums_samples)) > 1
+
+
+@pytest.mark.parametrize('randomized', [False, True])
+def test_extra_padding_seconds(randomized):
+    cuts = DummyManifest(CutSet, begin_id=0, end_id=10)
+    transform = ExtraPadding(
+        extra_seconds=0.04,
+        randomized=randomized
+    )
+    padded_cuts = transform(cuts)
+
+    # Non-randomized test -- check that all cuts are processed
+    # in the same way.
+    if not randomized:
+        for cut, padded in zip(cuts, padded_cuts):
+            # first track is for padding
+            assert padded.tracks[0].cut.duration == 0.02
+            # second track is for padding
+            assert padded.tracks[-1].cut.duration == 0.02
+            # total num frames is OK
+            assert isclose(padded.duration, cut.duration + 0.04)
+
+    # Randomized test -- check that cuts have different properties.
+    if randomized:
+        durations = [c.duration for c in padded_cuts]
+        assert len(set(durations)) > 1
