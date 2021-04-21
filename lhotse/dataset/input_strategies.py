@@ -1,12 +1,12 @@
 import logging
-from typing import Dict, Tuple
+from typing import Callable, Dict, List, Tuple
 
 import torch
 
 from lhotse import CutSet, FeatureExtractor
 from lhotse.cut import compute_supervisions_frame_mask
 from lhotse.dataset.collation import collate_audio, collate_features, collate_vectors
-from lhotse.utils import compute_num_frames, supervision_to_frames, supervision_to_samples
+from lhotse.utils import compute_num_frames, ifnone, supervision_to_frames, supervision_to_samples
 
 
 class InputStrategy:
@@ -34,8 +34,9 @@ class InputStrategy:
         .. code-block:
 
             {
+                "sequence_idx": tensor(shape=(S,)),
                 "start_frame": tensor(shape=(S,)),
-                "num_frames": tensor(shape=(S,))
+                "num_frames": tensor(shape=(S,)),
             }
 
         or
@@ -43,12 +44,14 @@ class InputStrategy:
         .. code-block:
 
             {
+                "sequence_idx": tensor(shape=(S,)),
                 "start_sample": tensor(shape=(S,)),
                 "num_samples": tensor(shape=(S,))
             }
 
         Where ``S`` is the total number of supervisions encountered in the :class:`CutSet`.
         Note that ``S`` might be different than the number of cuts (``B``).
+        ``sequence_idx`` means the index of the corresponding feature matrix (or cut) in a batch.
         """
         raise NotImplementedError()
 
@@ -86,14 +89,28 @@ class PrecomputedFeatures(InputStrategy):
     def supervision_intervals(self, cuts: CutSet) -> Dict[str, torch.Tensor]:
         """
         Returns a dict that specifies the start and end bounds for each supervision,
-        as a 1-D int tensor, in terms of frames.
+        as a 1-D int tensor, in terms of frames:
+
+        .. code-block:
+
+            {
+                "sequence_idx": tensor(shape=(S,)),
+                "start_frame": tensor(shape=(S,)),
+                "num_frames": tensor(shape=(S,))
+            }
+
+        Where ``S`` is the total number of supervisions encountered in the :class:`CutSet`.
+        Note that ``S`` might be different than the number of cuts (``B``).
+        ``sequence_idx`` means the index of the corresponding feature matrix (or cut) in a batch.
         """
         start_frames, nums_frames = zip(*(
             supervision_to_frames(sup, cut.frame_shift, cut.sampling_rate, max_frames=cut.num_frames)
             for cut in cuts
             for sup in cut.supervisions
         ))
+        sequence_idx = [i for i, c in enumerate(cuts) for s in c.supervisions]
         return {
+            'sequence_idx': torch.tensor(sequence_idx, dtype=torch.int32),
             'start_frame': torch.tensor(start_frames, dtype=torch.int32),
             'num_frames': torch.tensor(nums_frames, dtype=torch.int32)
         }
@@ -125,14 +142,29 @@ class AudioSamples(InputStrategy):
     def supervision_intervals(self, cuts: CutSet) -> Dict[str, torch.Tensor]:
         """
         Returns a dict that specifies the start and end bounds for each supervision,
-        as a 1-D int tensor, in terms of samples.
+        as a 1-D int tensor, in terms of samples:
+
+        .. code-block:
+
+            {
+                "sequence_idx": tensor(shape=(S,)),
+                "start_sample": tensor(shape=(S,)),
+                "num_samples": tensor(shape=(S,))
+            }
+
+        Where ``S`` is the total number of supervisions encountered in the :class:`CutSet`.
+        Note that ``S`` might be different than the number of cuts (``B``).
+        ``sequence_idx`` means the index of the corresponding feature matrix (or cut) in a batch.
+
         """
         start_samples, nums_samples = zip(*(
             supervision_to_samples(sup, cut.sampling_rate)
             for cut in cuts
             for sup in cut.supervisions
         ))
+        sequence_idx = [i for i, c in enumerate(cuts) for s in c.supervisions]
         return {
+            'sequence_idx': torch.tensor(sequence_idx, dtype=torch.int32),
             'start_sample': torch.tensor(start_samples, dtype=torch.int32),
             'num_samples': torch.tensor(nums_samples, dtype=torch.int32)
         }
@@ -158,8 +190,20 @@ class OnTheFlyFeatures(InputStrategy):
     .. automethod:: __call__
     """
 
-    def __init__(self, extractor: FeatureExtractor):
+    def __init__(
+            self,
+            extractor: FeatureExtractor,
+            wave_transforms: List[Callable[[torch.Tensor], torch.Tensor]] = None
+    ) -> None:
+        """
+        OnTheFlyFeatures' constructor.
+
+        :param extractor: the feature extractor used on-the-fly (individually on each waveform).
+        :param wave_transforms: an optional list of transforms applied on the batch of audio
+            waveforms collated into a single tensor, right before the feature extraction.
+        """
         self.extractor = extractor
+        self.wave_transforms = ifnone(wave_transforms, [])
 
     def __call__(self, cuts: CutSet) -> Tuple[torch.Tensor, torch.IntTensor]:
         """
@@ -170,6 +214,9 @@ class OnTheFlyFeatures(InputStrategy):
         :return: a tensor with collated features, and a tensor of ``num_frames`` of each cut before padding.
         """
         audio, _ = collate_audio(cuts)
+
+        for tfnm in self.wave_transforms:
+            audio = tfnm(audio)
 
         features_single = []
         for idx, cut in enumerate(cuts):
@@ -195,14 +242,28 @@ class OnTheFlyFeatures(InputStrategy):
     def supervision_intervals(self, cuts: CutSet) -> Dict[str, torch.Tensor]:
         """
         Returns a dict that specifies the start and end bounds for each supervision,
-        as a 1-D int tensor, in terms of frames.
+        as a 1-D int tensor, in terms of frames:
+
+        .. code-block:
+
+            {
+                "sequence_idx": tensor(shape=(S,)),
+                "start_frame": tensor(shape=(S,)),
+                "num_frames": tensor(shape=(S,))
+            }
+
+        Where ``S`` is the total number of supervisions encountered in the :class:`CutSet`.
+        Note that ``S`` might be different than the number of cuts (``B``).
+        ``sequence_idx`` means the index of the corresponding feature matrix (or cut) in a batch.
         """
         start_frames, nums_frames = zip(*(
             supervision_to_frames(sup, self.extractor.frame_shift, cut.sampling_rate)
             for cut in cuts
             for sup in cut.supervisions
         ))
+        sequence_idx = [i for i, c in enumerate(cuts) for s in c.supervisions]
         return {
+            'sequence_idx': torch.tensor(sequence_idx, dtype=torch.int32),
             'start_frame': torch.tensor(start_frames, dtype=torch.int32),
             'num_frames': torch.tensor(nums_frames, dtype=torch.int32)
         }

@@ -91,7 +91,7 @@ def prepare_tedlium(
     for split in ('train', 'dev', 'test'):
         root = tedlium_root / 'legacy' / split
         recordings = RecordingSet.from_recordings(
-            Recording.from_sphere(p) for p in (root / 'sph').glob('*.sph')
+            Recording.from_file(p) for p in (root / 'sph').glob('*.sph')
         )
         stms = list((root / 'stm').glob('*.stm'))
         assert len(stms) == len(recordings), f'Mismatch: found {len(recordings)} ' \

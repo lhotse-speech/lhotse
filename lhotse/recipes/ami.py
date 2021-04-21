@@ -29,8 +29,8 @@ import logging
 import urllib.request
 import xml.etree.ElementTree as ET
 import zipfile
+import html
 from collections import defaultdict
-from html.parser import HTMLParser
 from pathlib import Path
 from typing import Dict, List, NamedTuple, Optional, Union
 
@@ -238,9 +238,7 @@ def parse_ami_annotations(
         max_pause: float
 ) -> Dict[str, List[SupervisionSegment]]:
     annotations = defaultdict(dict)
-    parser = HTMLParser()
     with zipfile.ZipFile(annotations_zip, 'r') as archive:
-        
         # First we get global speaker ids and channels
         global_spk_id = {}
         channel_id = {}
@@ -273,7 +271,7 @@ def parse_ami_annotations(
                         child.tag != 'w':
                         continue
                     text = child.text if child.tag == 'w' else child.attrib['type']
-                    text = parser.unescape(text) # to convert HTML escape sequences
+                    text = html.unescape(text) # to convert HTML escape sequences
                     annotations[key].append(AmiSegmentAnnotation(
                         text=text,
                         speaker=spk,
