@@ -43,7 +43,7 @@ class GlobalMVN(torch.nn.Module):
     def to_file(self, stats_file: Pathlike):
         torch.save(self.state_dict(), stats_file)
 
-    def forward(self, features: torch.Tensor) -> torch.Tensor:
+    def forward(self, features: torch.Tensor, *args, **kwargs) -> torch.Tensor:
         return (features - self.norm_means) / self.norm_stds
 
     def inverse(self, features: torch.Tensor) -> torch.Tensor:
@@ -80,7 +80,7 @@ class RandomizedSmoothing(torch.nn.Module):
         self.p = p
         self.step = 0
 
-    def forward(self, audio: torch.Tensor) -> torch.Tensor:
+    def forward(self, audio: torch.Tensor, *args, **kwargs) -> torch.Tensor:
 
         # Determine the stddev value
         if isinstance(self.sigma, float):
@@ -153,49 +153,82 @@ class SpecAugment(torch.nn.Module):
         self.frames_mask_size = frames_mask_size
         self.p = p
 
-    def forward(self, features: torch.Tensor) -> torch.Tensor:
+    def forward(
+            self,
+            features: torch.Tensor,
+            supervision_segments: Optional[torch.IntTensor] = None,
+            *args, **kwargs
+    ) -> torch.Tensor:
         """
-        Computes SpecAugment for a matrix or a batch of matrices.
+        Computes SpecAugment for a batch of feature matrices.
 
-        :param features: features tensor of shape (T, F), or a batch of them with shape (B, T, F).
-        :return: a tensor of shape (T, F), or a batch of them with shape (B, T, F)
+        Since the batch will usually already be padded, the user can optionally
+        provide a ``supervision_segments`` tensor that will be used to apply SpecAugment
+        only to selected areas of the input. The format of this input is described below.
+
+        :param features: a batch of feature matrices with shape ``(B, T, F)``.
+        :param supervision_segments: an int tensor of shape ``(S, 3)``. ``S`` is the number of
+            supervision segments that exist in ``features`` -- there may be either
+            less or more than the batch size.
+            The second dimension encoder three kinds of information:
+            the sequence index of the corresponding feature matrix in `features`,
+            the start frame index, and the number of frames for each segment.
+        :return: a tensor of shape ``(T, F)``, or a batch of them with shape ``(B, T, F)``
         """
+        assert len(features.shape) == 3, 'SpecAugment only supports batches of ' \
+                                         'single-channel feature matrices.'
         features = features.clone()
-        # A single sample rather than a batch.
-        if len(features.shape) == 2:
-            return self._forward_single(features)
-
-        # Loop over different examples in the batch to get different
-        # augmentation for each example.
-        for example_idx in range(features.size(0)):
-            features[example_idx] = self._forward_single(features[example_idx])
+        if supervision_segments is None:
+            # No supervisions - apply spec augment to full feature matrices.
+            for sequence_idx in range(features.size(0)):
+                features[sequence_idx] = self._forward_single(features[sequence_idx])
+        else:
+            # Supervisions provided - we will apply time warping only on the supervised areas.
+            for sequence_idx, start_frame, num_frames in supervision_segments:
+                end_frame = start_frame + num_frames
+                features[sequence_idx, start_frame: end_frame] = self._forward_single(
+                    features[sequence_idx, start_frame: end_frame],
+                    warp=True,
+                    mask=False
+                )
+            # ... and then time-mask the full feature matrices. Note that in this mode,
+            # it might happen that masks are applied to different sequences/examples
+            # than the time warping.
+            for sequence_idx in range(features.size(0)):
+                features[sequence_idx] = self._forward_single(
+                    features[sequence_idx],
+                    warp=False,
+                    mask=True
+                )
         return features
 
-    def _forward_single(self, features: torch.Tensor) -> torch.Tensor:
+    def _forward_single(self, features: torch.Tensor, warp: bool = True, mask: bool = True) -> torch.Tensor:
         """
         Apply SpecAugment to a single feature matrix of shape (T, F).
         """
         if random.random() > self.p:
             # Randomly choose whether this transform is applied
             return features
-        from torchaudio.functional import mask_along_axis
-        mean = features.mean()
-        if self.time_warp_factor is not None and self.time_warp_factor >= 1:
-            features = time_warp(features, factor=self.time_warp_factor)
-        for _ in range(self.num_feature_masks):
-            features = mask_along_axis(
-                features.unsqueeze(0),
-                mask_param=self.features_mask_size,
-                mask_value=mean,
-                axis=2
-            ).squeeze(0)
-        for _ in range(self.num_frame_masks):
-            features = mask_along_axis(
-                features.unsqueeze(0),
-                mask_param=self.frames_mask_size,
-                mask_value=mean,
-                axis=1
-            ).squeeze(0)
+        if warp:
+            if self.time_warp_factor is not None and self.time_warp_factor >= 1:
+                features = time_warp(features, factor=self.time_warp_factor)
+        if mask:
+            from torchaudio.functional import mask_along_axis
+            mean = features.mean()
+            for _ in range(self.num_feature_masks):
+                features = mask_along_axis(
+                    features.unsqueeze(0),
+                    mask_param=self.features_mask_size,
+                    mask_value=mean,
+                    axis=2
+                ).squeeze(0)
+            for _ in range(self.num_frame_masks):
+                features = mask_along_axis(
+                    features.unsqueeze(0),
+                    mask_param=self.frames_mask_size,
+                    mask_value=mean,
+                    axis=1
+                ).squeeze(0)
         return features
 
 

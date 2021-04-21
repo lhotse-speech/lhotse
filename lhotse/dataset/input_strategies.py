@@ -34,8 +34,9 @@ class InputStrategy:
         .. code-block:
 
             {
+                "sequence_idx": tensor(shape=(S,)),
                 "start_frame": tensor(shape=(S,)),
-                "num_frames": tensor(shape=(S,))
+                "num_frames": tensor(shape=(S,)),
             }
 
         or
@@ -43,12 +44,14 @@ class InputStrategy:
         .. code-block:
 
             {
+                "sequence_idx": tensor(shape=(S,)),
                 "start_sample": tensor(shape=(S,)),
                 "num_samples": tensor(shape=(S,))
             }
 
         Where ``S`` is the total number of supervisions encountered in the :class:`CutSet`.
         Note that ``S`` might be different than the number of cuts (``B``).
+        ``sequence_idx`` means the index of the corresponding feature matrix (or cut) in a batch.
         """
         raise NotImplementedError()
 
@@ -86,14 +89,28 @@ class PrecomputedFeatures(InputStrategy):
     def supervision_intervals(self, cuts: CutSet) -> Dict[str, torch.Tensor]:
         """
         Returns a dict that specifies the start and end bounds for each supervision,
-        as a 1-D int tensor, in terms of frames.
+        as a 1-D int tensor, in terms of frames:
+
+        .. code-block:
+
+            {
+                "sequence_idx": tensor(shape=(S,)),
+                "start_frame": tensor(shape=(S,)),
+                "num_frames": tensor(shape=(S,))
+            }
+
+        Where ``S`` is the total number of supervisions encountered in the :class:`CutSet`.
+        Note that ``S`` might be different than the number of cuts (``B``).
+        ``sequence_idx`` means the index of the corresponding feature matrix (or cut) in a batch.
         """
         start_frames, nums_frames = zip(*(
             supervision_to_frames(sup, cut.frame_shift, cut.sampling_rate, max_frames=cut.num_frames)
             for cut in cuts
             for sup in cut.supervisions
         ))
+        sequence_idx = [i for i, c in enumerate(cuts) for s in c.supervisions]
         return {
+            'sequence_idx': torch.tensor(sequence_idx, dtype=torch.int32),
             'start_frame': torch.tensor(start_frames, dtype=torch.int32),
             'num_frames': torch.tensor(nums_frames, dtype=torch.int32)
         }
@@ -125,14 +142,29 @@ class AudioSamples(InputStrategy):
     def supervision_intervals(self, cuts: CutSet) -> Dict[str, torch.Tensor]:
         """
         Returns a dict that specifies the start and end bounds for each supervision,
-        as a 1-D int tensor, in terms of samples.
+        as a 1-D int tensor, in terms of samples:
+
+        .. code-block:
+
+            {
+                "sequence_idx": tensor(shape=(S,)),
+                "start_sample": tensor(shape=(S,)),
+                "num_samples": tensor(shape=(S,))
+            }
+
+        Where ``S`` is the total number of supervisions encountered in the :class:`CutSet`.
+        Note that ``S`` might be different than the number of cuts (``B``).
+        ``sequence_idx`` means the index of the corresponding feature matrix (or cut) in a batch.
+
         """
         start_samples, nums_samples = zip(*(
             supervision_to_samples(sup, cut.sampling_rate)
             for cut in cuts
             for sup in cut.supervisions
         ))
+        sequence_idx = [i for i, c in enumerate(cuts) for s in c.supervisions]
         return {
+            'sequence_idx': torch.tensor(sequence_idx, dtype=torch.int32),
             'start_sample': torch.tensor(start_samples, dtype=torch.int32),
             'num_samples': torch.tensor(nums_samples, dtype=torch.int32)
         }
@@ -210,14 +242,28 @@ class OnTheFlyFeatures(InputStrategy):
     def supervision_intervals(self, cuts: CutSet) -> Dict[str, torch.Tensor]:
         """
         Returns a dict that specifies the start and end bounds for each supervision,
-        as a 1-D int tensor, in terms of frames.
+        as a 1-D int tensor, in terms of frames:
+
+        .. code-block:
+
+            {
+                "sequence_idx": tensor(shape=(S,)),
+                "start_frame": tensor(shape=(S,)),
+                "num_frames": tensor(shape=(S,))
+            }
+
+        Where ``S`` is the total number of supervisions encountered in the :class:`CutSet`.
+        Note that ``S`` might be different than the number of cuts (``B``).
+        ``sequence_idx`` means the index of the corresponding feature matrix (or cut) in a batch.
         """
         start_frames, nums_frames = zip(*(
             supervision_to_frames(sup, self.extractor.frame_shift, cut.sampling_rate)
             for cut in cuts
             for sup in cut.supervisions
         ))
+        sequence_idx = [i for i, c in enumerate(cuts) for s in c.supervisions]
         return {
+            'sequence_idx': torch.tensor(sequence_idx, dtype=torch.int32),
             'start_frame': torch.tensor(start_frames, dtype=torch.int32),
             'num_frames': torch.tensor(nums_frames, dtype=torch.int32)
         }
