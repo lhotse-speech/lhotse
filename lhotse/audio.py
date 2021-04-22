@@ -1,5 +1,6 @@
 import logging
 import warnings
+from concurrent.futures import ProcessPoolExecutor
 from contextlib import contextmanager
 from dataclasses import dataclass
 from decimal import ROUND_HALF_UP
@@ -11,6 +12,7 @@ from subprocess import PIPE, run
 from typing import Any, Callable, Dict, Iterable, List, NamedTuple, Optional, Sequence, Tuple, Union
 
 import numpy as np
+from tqdm.auto import tqdm
 
 from lhotse.augmentation import AudioTransform, Resample, Speed
 from lhotse.serialization import Serializable
@@ -335,6 +337,31 @@ class RecordingSet(Serializable, Sequence[Recording]):
     @staticmethod
     def from_recordings(recordings: Iterable[Recording]) -> 'RecordingSet':
         return RecordingSet(recordings=index_by_id_and_check(recordings))
+
+    @staticmethod
+    def from_dir(path: Pathlike, pattern: str, num_jobs: int = 1):
+        msg = f'Scanning audio files ({pattern})'
+        if num_jobs == 1:
+            # Avoid spawning process for one job.
+            return RecordingSet.from_recordings(
+                tqdm(
+                    map(
+                        Recording.from_file,
+                        Path(path).rglob(pattern)
+                    ),
+                    desc=msg
+                )
+            )
+        with ProcessPoolExecutor(num_jobs) as ex:
+            return RecordingSet.from_recordings(
+                tqdm(
+                    ex.map(
+                        Recording.from_file,
+                        Path(path).rglob(pattern)
+                    ),
+                    desc=msg
+                )
+            )
 
     @staticmethod
     def from_dicts(data: Iterable[dict]) -> 'RecordingSet':
