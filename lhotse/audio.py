@@ -615,9 +615,13 @@ def _audioread_info(path):
         duration: float
 
     with audioread.audio_open(path) as input_file:
+        try:
+            num_samples = input_file.nframes
+        except AttributeError:
+            num_samples = compute_num_samples(input_file.duration, input_file.samplerate)
         return _LibsndfileCompatibleAudioInfo(
             channels=input_file.channels,
-            frames=input_file.nframes,
+            frames=num_samples,
             samplerate=input_file.samplerate,
             duration=input_file.duration
         )
