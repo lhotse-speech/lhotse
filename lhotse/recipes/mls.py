@@ -21,7 +21,7 @@ def prepare_mls(
         output_dir: Optional[Pathlike] = None,
         opus: bool = True,
         num_jobs: int = 1
-) -> Dict[str, Dict[str, Dict[Union[RecordingSet, SupervisionSet]]]]:
+) -> Dict[str, Dict[str, Dict[str, Union[RecordingSet, SupervisionSet]]]]:
     """
     Prepare Multilingual LibriSpeech corpus.
 
