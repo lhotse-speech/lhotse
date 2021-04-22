@@ -46,6 +46,7 @@ def prepare_mls(
     :return: A dict with structure: ``d[language][split] = {recordings, supervisions}``.
     """
     corpus_dir = Path(corpus_dir)
+    output_dir = Path(output_dir) if output_dir is not None else None
     assert corpus_dir.is_dir()
 
     languages = {
@@ -120,7 +121,6 @@ def prepare_mls(
 
             # Optional storage on disk.
             if output_dir is not None:
-                output_dir = Path(output_dir)
                 output_dir.mkdir(exist_ok=True, parents=True)
                 recordings.to_jsonl(f'recordings_{lang}_{split}.jsonl')
                 supervisions.to_jsonl(f'supervisions_{lang}_{split}.jsonl')
