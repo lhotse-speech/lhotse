@@ -50,7 +50,7 @@ def prepare_mls(
 
     languages = {
         d.name.split('_')[1]: d
-        for d in corpus_dir.glob('mls_[^lm]*')
+        for d in corpus_dir.glob('mls_*')
         if d.is_dir()
            and '_lm_' not in d.name
            and (opus or not d.name.endswith('opus'))
