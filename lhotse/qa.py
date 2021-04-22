@@ -55,7 +55,11 @@ def fix_manifests(
         the original manifests are not modified.
     """
     recordings, supervisions = remove_missing_recordings_and_supervisions(recordings, supervisions)
+    if len(recordings) == 0 or len(supervisions) == 0:
+        raise ValueError("There are no matching recordings and supervisions in the input manifests.")
     supervisions = trim_supervisions_to_recordings(recordings, supervisions)
+    if len(supervisions) == 0:
+        raise ValueError("All supervisions exceed the recordings duration.")
     return recordings, supervisions
 
 

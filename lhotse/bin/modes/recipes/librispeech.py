@@ -17,7 +17,7 @@ def librispeech(
         output_dir: Pathlike,
         num_jobs: int
 ):
-    """Mini Librispeech ASR data preparation."""
+    """(Mini) Librispeech ASR data preparation."""
     prepare_librispeech(corpus_dir, output_dir=output_dir, num_jobs=num_jobs)
 
 
@@ -28,5 +28,5 @@ def librispeech(
         target_dir: Pathlike,
         full: bool
 ):
-    """Mini Librispeech download."""
+    """(Mini) Librispeech download."""
     download_librispeech(target_dir, dataset_parts='librispeech' if full else 'mini_librispeech')
