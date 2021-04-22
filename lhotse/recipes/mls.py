@@ -58,7 +58,7 @@ def prepare_mls(
     logging.info(f'Found MLS languages: {list(languages)}')
 
     manifests = defaultdict(dict)
-    for lang, lang_dir in tqdm(languages.items(), desc='Langauges'):
+    for lang, lang_dir in tqdm(languages.items(), desc='Langauges', total=len(languages)):
 
         # Read the speaker to gender mapping.
         spk2gender = {}
