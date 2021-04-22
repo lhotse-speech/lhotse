@@ -642,22 +642,19 @@ def _audioread_info(path):
         samplerate: int
         duration: float
 
+    # We just read the file and compute the number of samples
+    # -- no other method seems fully reliable...
     with audioread.audio_open(path) as input_file:
-        try:
-            num_samples = input_file.nframes
-        except AttributeError:
-            # When no metadata is available, we'll need to read the whole thing,
-            # as sometimes the duration can be inaccurate by ~100 samples...
-            shape = _audioread_load(input_file)[0].shape
-            if len(shape) == 1:
-                num_samples = shape[0]
-            else:
-                num_samples = shape[1]
+        shape = _audioread_load(input_file)[0].shape
+        if len(shape) == 1:
+            num_samples = shape[0]
+        else:
+            num_samples = shape[1]
         return _LibsndfileCompatibleAudioInfo(
             channels=input_file.channels,
             frames=num_samples,
             samplerate=input_file.samplerate,
-            duration=input_file.duration
+            duration=num_samples / input_file.samplerate
         )
 
 
