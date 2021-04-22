@@ -71,8 +71,8 @@ def prepare_mls(
         for split in tqdm(['test', 'dev', 'train'], desc='Splits'):
 
             # If everything is ready, read it and skip it.
-            recordings_path = None if output_dir is None else output_dir / f'recordings_{lang}_{split}.jsonl'
-            supervisions_path = None if output_dir is None else output_dir / f'supervisions_{lang}_{split}.jsonl'
+            recordings_path = None if output_dir is None else output_dir / f'recordings_{lang}_{split}.jsonl.gz'
+            supervisions_path = None if output_dir is None else output_dir / f'supervisions_{lang}_{split}.jsonl.gz'
             if (
                     recordings_path is not None and recordings_path.is_file() and
                     supervisions_path is not None and supervisions_path.is_file()
