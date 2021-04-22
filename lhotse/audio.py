@@ -7,7 +7,7 @@ from itertools import islice
 from math import sqrt
 from pathlib import Path
 from subprocess import PIPE, run
-from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence, Tuple, Union
+from typing import Any, Callable, Dict, Iterable, List, NamedTuple, Optional, Sequence, Tuple, Union
 
 import numpy as np
 
@@ -16,7 +16,7 @@ from lhotse.serialization import Serializable
 from lhotse.utils import (Decibels, Pathlike, Seconds, SetContainingAnything, asdict_nonull,
                           compute_num_samples,
                           exactly_one_not_null, fastcopy,
-                          index_by_id_and_check, perturb_num_samples, split_sequence)
+                          index_by_id_and_check, is_module_available, perturb_num_samples, split_sequence)
 
 Channels = Union[int, List[int]]
 
@@ -107,28 +107,6 @@ class AudioSource:
         return AudioSource(**data)
 
 
-FileObject = Any  # Alias for file-like objects
-
-
-def read_audio(
-        path_or_fd: Union[Pathlike, FileObject],
-        offset: Seconds = 0.0,
-        duration: Optional[Seconds] = None
-) -> Tuple[np.ndarray, int]:
-    import soundfile as sf
-    with sf.SoundFile(path_or_fd) as sf_desc:
-        sampling_rate = sf_desc.samplerate
-        if offset > 0:
-            # Seek to the start of the target read
-            sf_desc.seek(compute_num_samples(offset, sampling_rate))
-        if duration is not None:
-            frame_duration = compute_num_samples(duration, sampling_rate)
-        else:
-            frame_duration = -1
-        # Load the target number of frames, and transpose to match librosa form
-        return sf_desc.read(frames=frame_duration, dtype=np.float32, always_2d=False).T, sampling_rate
-
-
 @dataclass
 class Recording:
     """
@@ -161,8 +139,14 @@ class Recording:
             should be retained in the ``AudioSource``. By default writes the path as is.
         :return: a new ``Recording`` instance pointing to the audio file.
         """
-        import soundfile
-        info = soundfile.info(str(path))
+        try:
+            # Try to parse the file using pysoundfile first (Lhotse's main dependency).
+            import soundfile
+            info = soundfile.info(str(path))
+        except:
+            # Try to parse the file using audioread as a fallback (Lhotse's optional dependency).
+            info = _audioread_info(str(path))
+            # If both fail, then Python 3 will display both exception messages.
         return Recording(
             id=recording_id if recording_id is not None else Path(path).stem,
             sampling_rate=info.samplerate,
@@ -588,3 +572,144 @@ class AudioMixer:
 
 def audio_energy(audio: np.ndarray) -> float:
     return float(np.average(audio ** 2))
+
+
+FileObject = Any  # Alias for file-like objects
+
+
+def read_audio(
+        path_or_fd: Union[Pathlike, FileObject],
+        offset: Seconds = 0.0,
+        duration: Optional[Seconds] = None
+) -> Tuple[np.ndarray, int]:
+    try:
+        import soundfile as sf
+        with sf.SoundFile(path_or_fd) as sf_desc:
+            sampling_rate = sf_desc.samplerate
+            if offset > 0:
+                # Seek to the start of the target read
+                sf_desc.seek(compute_num_samples(offset, sampling_rate))
+            if duration is not None:
+                frame_duration = compute_num_samples(duration, sampling_rate)
+            else:
+                frame_duration = -1
+            # Load the target number of frames, and transpose to match librosa form
+            return sf_desc.read(frames=frame_duration, dtype=np.float32, always_2d=False).T, sampling_rate
+    except:
+        return _audioread_load(path_or_fd, offset=offset, duration=duration)
+
+
+def _audioread_info(path):
+    """
+    Return an audio info data structure that's a compatible subset of ``pysoundfile.info()``
+    that we need to create a ``Recording`` manifest.
+    """
+    if not is_module_available('audioread'):
+        raise RuntimeError("Failed when reading audio with audioread: please 'pip install audioread' and try again.")
+    import audioread
+
+    class _LibsndfileCompatibleAudioInfo(NamedTuple):
+        channels: int
+        frames: int
+        samplerate: int
+        duration: float
+
+    with audioread.audio_open(path) as input_file:
+        return _LibsndfileCompatibleAudioInfo(
+            channels=input_file.channels,
+            frames=input_file.nframes,
+            samplerate=input_file.samplerate,
+            duration=input_file.duration
+        )
+
+
+def _audioread_load(path: str, offset: Seconds, duration: Seconds, dtype=np.float32):
+    """Load an audio buffer using audioread.
+    This loads one block at a time, and then concatenates the results.
+
+    This function is based on librosa:
+    https://github.com/librosa/librosa/blob/main/librosa/core/audio.py#L180
+    """
+    if not is_module_available('audioread'):
+        raise RuntimeError("Failed when reading audio with audioread: please 'pip install audioread' and try again.")
+    import audioread
+
+    y = []
+    with audioread.audio_open(path) as input_file:
+        sr_native = input_file.samplerate
+        n_channels = input_file.channels
+
+        s_start = int(np.round(sr_native * offset)) * n_channels
+
+        if duration is None:
+            s_end = np.inf
+        else:
+            s_end = s_start + (int(np.round(sr_native * duration)) * n_channels)
+
+        n = 0
+
+        for frame in input_file:
+            frame = _buf_to_float(frame, dtype=dtype)
+            n_prev = n
+            n = n + len(frame)
+
+            if n < s_start:
+                # offset is after the current frame
+                # keep reading
+                continue
+
+            if s_end < n_prev:
+                # we're off the end.  stop reading
+                break
+
+            if s_end < n:
+                # the end is in this frame.  crop.
+                frame = frame[: s_end - n_prev]
+
+            if n_prev <= s_start <= n:
+                # beginning is in this frame
+                frame = frame[(s_start - n_prev):]
+
+            # tack on the current frame
+            y.append(frame)
+
+    if y:
+        y = np.concatenate(y)
+        if n_channels > 1:
+            y = y.reshape((-1, n_channels)).T
+    else:
+        y = np.empty(0, dtype=dtype)
+
+    return y, sr_native
+
+
+def _buf_to_float(x, n_bytes=2, dtype=np.float32):
+    """Convert an integer buffer to floating point values.
+    This is primarily useful when loading integer-valued wav data
+    into numpy arrays.
+
+    This function is based on librosa:
+    https://github.com/librosa/librosa/blob/main/librosa/util/utils.py#L1312
+
+    Parameters
+    ----------
+    x : np.ndarray [dtype=int]
+        The integer-valued data buffer
+    n_bytes : int [1, 2, 4]
+        The number of bytes per sample in ``x``
+    dtype : numeric type
+        The target output type (default: 32-bit float)
+    Returns
+    -------
+    x_float : np.ndarray [dtype=float]
+        The input data buffer cast to floating point
+    """
+
+    # Invert the scale of the data
+    scale = 1.0 / float(1 << ((8 * n_bytes) - 1))
+
+    # Construct the format string
+    fmt = "<i{:d}".format(n_bytes)
+
+    # Rescale and format the data buffer
+    return scale * np.frombuffer(x, fmt).astype(dtype)
