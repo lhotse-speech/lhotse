@@ -60,6 +60,7 @@ def prepare_mls(
 
     manifests = defaultdict(dict)
     for lang, lang_dir in tqdm(languages.items(), desc='Langauges', total=len(languages)):
+        logging.info(f'Processing language: {lang}')
 
         # Read the speaker to gender mapping.
         spk2gender = {}
@@ -76,6 +77,7 @@ def prepare_mls(
                     recordings_path is not None and recordings_path.is_file() and
                     supervisions_path is not None and supervisions_path.is_file()
             ):
+                logging.info(f'Skipping - {lang}/{split} - already exists!')
                 recordings = RecordingSet.from_file(recordings_path)
                 supervisions = SupervisionSet.from_file(supervisions_path)
                 manifests[lang][split] = {
@@ -122,7 +124,7 @@ def prepare_mls(
             # Optional storage on disk.
             if output_dir is not None:
                 output_dir.mkdir(exist_ok=True, parents=True)
-                recordings.to_jsonl(f'recordings_{lang}_{split}.jsonl')
-                supervisions.to_jsonl(f'supervisions_{lang}_{split}.jsonl')
+                recordings.to_jsonl(recordings_path)
+                supervisions.to_jsonl(supervisions_path)
 
     return dict(manifests)
