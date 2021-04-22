@@ -1,5 +1,6 @@
 import logging
 import warnings
+from contextlib import contextmanager
 from dataclasses import dataclass
 from decimal import ROUND_HALF_UP
 from io import BytesIO
@@ -618,7 +619,13 @@ def _audioread_info(path):
         try:
             num_samples = input_file.nframes
         except AttributeError:
-            num_samples = compute_num_samples(input_file.duration, input_file.samplerate)
+            # When no metadata is available, we'll need to read the whole thing,
+            # as sometimes the duration can be inaccurate by ~100 samples...
+            shape = _audioread_load(input_file)[0].shape
+            if len(shape) == 1:
+                num_samples = shape[0]
+            else:
+                num_samples = shape[1]
         return _LibsndfileCompatibleAudioInfo(
             channels=input_file.channels,
             frames=num_samples,
@@ -627,7 +634,12 @@ def _audioread_info(path):
         )
 
 
-def _audioread_load(path: str, offset: Seconds, duration: Seconds, dtype=np.float32):
+def _audioread_load(
+        path_or_file: Union[Pathlike, FileObject],
+        offset: Seconds = 0.0,
+        duration: Seconds = None,
+        dtype=np.float32
+):
     """Load an audio buffer using audioread.
     This loads one block at a time, and then concatenates the results.
 
@@ -638,8 +650,15 @@ def _audioread_load(path: str, offset: Seconds, duration: Seconds, dtype=np.floa
         raise RuntimeError("Failed when reading audio with audioread: please 'pip install audioread' and try again.")
     import audioread
 
+    @contextmanager
+    def file_handle():
+        if isinstance(path_or_file, (str, Path)):
+            yield audioread.audio_open(path_or_file)
+        else:
+            yield path_or_file
+
     y = []
-    with audioread.audio_open(path) as input_file:
+    with file_handle() as input_file:
         sr_native = input_file.samplerate
         n_channels = input_file.channels
 
