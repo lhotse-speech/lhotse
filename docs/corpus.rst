@@ -19,6 +19,9 @@ It means that when a recording is a 1 hour long file, it is a single item in thi
 When coming from Kaldi, think of it as *wav.scp* on steroids, that also contains *reco2dur*, *reco2num_samples* and
 some extra information.
 
+.. hint::
+    Lhotse reads audio recordings using `pysoundfile`_ and `audioread`_, similarly to librosa, to support multiple audio formats.
+
 This is a YAML manifest for a corpus with two recordings:
 
 .. code-block:: yaml
@@ -184,3 +187,7 @@ General pointers:
 * Some corpora (like LibriSpeech) come with pre-segmented recordings. In these cases, the :class:`SupervisionSegment` will exactly match the :class:`Recording` duration (and there will likely be exactly one segment corresponding to any recording).
 * Corpora with longer recordings (e.g. conversational, like Switchboard) should have exactly one :class:`Recording` object corresponding to a single conversation/session, that spans its whole duration. Each speech segment in that recording should be represented as a :class:`SupervisionSegment` with the same ``recording_id`` value.
 * Corpora with multiple channels for each session (e.g. AMI) should have a single :class:`Recording` with multiple :class:`AudioSource` objects - each corresponding to a separate channel.
+
+
+.. _`pysoundfile`: https://pysoundfile.readthedocs.io/en/latest/
+.. _`audioread`: https://github.com/beetbox/audioread
