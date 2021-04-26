@@ -11,8 +11,10 @@ import json
 import logging
 import shutil
 import tarfile
+import concurrent.futures
 from pathlib import Path
-from typing import Dict, Optional, Union
+from tqdm.auto import tqdm
+from typing import Dict, Optional, Tuple, Union
 
 from lhotse import validate_recordings_and_supervisions
 from lhotse.audio import Recording, RecordingSet
@@ -53,7 +55,8 @@ def download_and_untar(
 
 def prepare_aishell(
         corpus_dir: Pathlike,
-        output_dir: Optional[Pathlike] = None
+        output_dir: Optional[Pathlike] = None,
+        num_jobs: int = 1
 ) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet]]]:
     """
     Returns the manifests which consist of the Recordings and Supervisions
@@ -67,53 +70,67 @@ def prepare_aishell(
         output_dir = Path(output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
     transcript_path = corpus_dir / 'data_aishell/transcript/aishell_transcript_v0.8.txt'
-    transcript_dict = {}
+    transcript_dict = defaultdict(dict)
     with open(transcript_path, 'r', encoding='utf-8') as f:
         for line in f.readlines():
             idx_transcript = line.split()
             transcript_dict[idx_transcript[0]] = ' '.join(idx_transcript[1:])
     manifests = defaultdict(dict)
     dataset_parts = ['train', 'dev', 'test']
-    for part in dataset_parts:
-        # Generate a mapping: utt_id -> (audio_path, audio_info, speaker, text)
-        recordings = []
-        supervisions = []
-        wav_path = corpus_dir / 'data_aishell' / 'wav' / f'{part}'
-        for audio_path in wav_path.rglob('**/*.wav'):
-            idx = audio_path.stem
-            speaker = audio_path.parts[-2]
-            if idx not in transcript_dict:
-                logging.warning(f'No transcript: {idx}')
-                continue
-            text = transcript_dict[idx]
-            if not audio_path.is_file():
-                logging.warning(f'No such file: {audio_path}')
-                continue
-            recording = Recording.from_file(audio_path)
-            recordings.append(recording)
-            segment = SupervisionSegment(
-                id=idx,
-                recording_id=idx,
-                start=0.0,
-                duration=recording.duration,
-                channel=0,
-                language='Chinese',
-                speaker=speaker,
-                text=text.strip()
-            )
-            supervisions.append(segment)
+    with concurrent.futures.ThreadPoolExecutor(num_jobs) as ex:
+        for part in tqdm(dataset_parts, desc='Dataset parts'):
+            # Generate a mapping: utt_id -> (audio_path, audio_info, speaker, text)
+            recordings = []
+            supervisions = []
+            wav_path = corpus_dir / 'data_aishell' / 'wav' / f'{part}'
+            futures = []
 
-        recording_set = RecordingSet.from_recordings(recordings)
-        supervision_set = SupervisionSet.from_segments(supervisions)
-        validate_recordings_and_supervisions(recording_set, supervision_set)
+            future_to_utt = {ex.submit(parse_utterance, audio_path, transcript_dict) for audio_path in wav_path.rglob('**/*.wav')}
+            for future in concurrent.futures.as_completed(future_to_utt):
+                result = future.result()
+                if result is None:
+                    continue
+                recording, segment = result
+                recordings.append(recording)
+                supervisions.append(segment)
 
-        if output_dir is not None:
-            supervision_set.to_json(output_dir / f'supervisions_{part}.json')
-            recording_set.to_json(output_dir / f'recordings_{part}.json')
+            recording_set = RecordingSet.from_recordings(recordings)
+            supervision_set = SupervisionSet.from_segments(supervisions)
+            validate_recordings_and_supervisions(recording_set, supervision_set)
 
-        manifests[part] = {
-            'recordings': recording_set,
-            'supervisions': supervision_set
-        }
+            if output_dir is not None:
+                supervision_set.to_json(output_dir / f'supervisions_{part}.json')
+                recording_set.to_json(output_dir / f'recordings_{part}.json')
+
+            manifests[part] = {
+                'recordings': recording_set,
+                'supervisions': supervision_set
+            }
 
     return manifests
+
+def parse_utterance(
+        audio_path: Path,
+        transcript_dict: dict,
+) -> Optional[Tuple[Recording, SupervisionSegment]]:
+    idx = audio_path.stem
+    speaker = audio_path.parts[-2]
+    if idx not in transcript_dict:
+        logging.warning(f'No transcript: {idx}')
+        return None
+    text = transcript_dict[idx]
+    if not audio_path.is_file():
+        logging.warning(f'No such file: {audio_path}')
+        return None
+    recording = Recording.from_file(audio_path)
+    segment = SupervisionSegment(
+        id=idx,
+        recording_id=idx,
+        start=0.0,
+        duration=recording.duration,
+        channel=0,
+        language='Chinese',
+        speaker=speaker,
+        text=text.strip()
+    )
+    return recording, segment
