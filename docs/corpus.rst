@@ -164,6 +164,7 @@ Currently supported corpora:
 - LJ Speech :func:`lhotse.recipes.prepare_ljspeech`
 - MiniLibriMix :func:`lhotse.recipes.prepare_librimix`
 - MobvoiHotWord :func:`lhotse.recipes.prepare_mobvoihotwords`
+- Multilingual LibriSpeech (MLS) :func:`lhotse.recipes.prepare_mls`
 - MUSAN :func:`lhotse.recipes.prepare_musan`
 - National Speech Corpus (Singaporean English) :func:`lhotse.recipes.prepare_nsc`
 - Switchboard :func:`lhotse.recipes.prepare_switchboard`
