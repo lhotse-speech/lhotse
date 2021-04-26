@@ -5,6 +5,7 @@ from .broadcast_news import prepare_broadcast_news
 from .callhome_egyptian import prepare_callhome_egyptian
 from .callhome_english import prepare_callhome_english
 from .cmu_arctic import download_cmu_arctic, prepare_cmu_arctic
+from .gigaspeech import download_gigaspeech, prepare_gigaspeech
 from .heroico import prepare_heroico
 from .l2_arctic import prepare_l2_arctic
 from .librimix import prepare_librimix
