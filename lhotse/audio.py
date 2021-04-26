@@ -19,7 +19,7 @@ from lhotse.serialization import Serializable
 from lhotse.utils import (Decibels, Pathlike, Seconds, SetContainingAnything, asdict_nonull,
                           compute_num_samples,
                           exactly_one_not_null, fastcopy,
-                          index_by_id_and_check, is_module_available, perturb_num_samples, split_sequence)
+                          index_by_id_and_check, perturb_num_samples, split_sequence)
 
 Channels = Union[int, List[int]]
 
@@ -143,11 +143,11 @@ class Recording:
         :return: a new ``Recording`` instance pointing to the audio file.
         """
         try:
-            # Try to parse the file using pysoundfile first (Lhotse's main dependency).
+            # Try to parse the file using pysoundfile first.
             import soundfile
             info = soundfile.info(str(path))
         except:
-            # Try to parse the file using audioread as a fallback (Lhotse's optional dependency).
+            # Try to parse the file using audioread as a fallback.
             info = _audioread_info(str(path))
             # If both fail, then Python 3 will display both exception messages.
         return Recording(
@@ -632,8 +632,6 @@ def _audioread_info(path):
     Return an audio info data structure that's a compatible subset of ``pysoundfile.info()``
     that we need to create a ``Recording`` manifest.
     """
-    if not is_module_available('audioread'):
-        raise RuntimeError("Failed when reading audio with audioread: please 'pip install audioread' and try again.")
     import audioread
 
     class _LibsndfileCompatibleAudioInfo(NamedTuple):
@@ -670,8 +668,6 @@ def _audioread_load(
     This function is based on librosa:
     https://github.com/librosa/librosa/blob/main/librosa/core/audio.py#L180
     """
-    if not is_module_available('audioread'):
-        raise RuntimeError("Failed when reading audio with audioread: please 'pip install audioread' and try again.")
     import audioread
 
     @contextmanager
