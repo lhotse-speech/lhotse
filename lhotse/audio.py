@@ -4,6 +4,7 @@ from concurrent.futures import ProcessPoolExecutor
 from contextlib import contextmanager
 from dataclasses import dataclass
 from decimal import ROUND_HALF_UP
+from functools import lru_cache
 from io import BytesIO
 from itertools import islice
 from math import sqrt
@@ -642,7 +643,7 @@ def _audioread_info(path):
 
     # We just read the file and compute the number of samples
     # -- no other method seems fully reliable...
-    with audioread.audio_open(path) as input_file:
+    with audioread.audio_open(path, backends=_available_audioread_backends()) as input_file:
         shape = _audioread_load(input_file)[0].shape
         if len(shape) == 1:
             num_samples = shape[0]
@@ -654,6 +655,19 @@ def _audioread_info(path):
             samplerate=input_file.samplerate,
             duration=num_samples / input_file.samplerate
         )
+
+
+@lru_cache(maxsize=1)
+def _available_audioread_backends():
+    """
+    Reduces the overhead of ``audioread.audio_open()`` when called repeatedly
+    by caching the results of scanning for FFMPEG etc.
+    """
+    import audioread
+    backends = audioread.available_backends()
+    logging.info(f'Using audioread. Available backends: {backends}')
+    print(f'Using audioread. Available backends: {backends}')
+    return backends
 
 
 def _audioread_load(
@@ -673,7 +687,7 @@ def _audioread_load(
     @contextmanager
     def file_handle():
         if isinstance(path_or_file, (str, Path)):
-            yield audioread.audio_open(path_or_file)
+            yield audioread.audio_open(path_or_file, backends=_available_audioread_backends())
         else:
             yield path_or_file
 

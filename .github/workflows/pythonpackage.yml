@@ -26,7 +26,7 @@ jobs:
     - name: Install libnsdfile and libsox
       run: |
         sudo apt update
-        sudo apt install libsndfile1-dev libsndfile1
+        sudo apt install libsndfile1-dev libsndfile1 ffmpeg
         sudo apt install --fix-missing sox libsox-dev libsox-fmt-all
     - name: Install Python dependencies
       run: |

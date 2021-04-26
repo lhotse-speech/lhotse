@@ -1,5 +1,6 @@
 from functools import lru_cache
 
+import audioread
 import numpy as np
 import pytest
 from pytest import mark, raises
@@ -311,3 +312,14 @@ class TestAudioMixer:
         np.testing.assert_almost_equal(mixed[0, 4000:8000], 1.31622776)
         np.testing.assert_almost_equal(mixed[0, 8000:], 0.31622776)
         assert mixed.dtype == np.float32
+
+
+@pytest.mark.skipif(
+    all('ffmpeg' not in str(backend).lower() for backend in audioread.available_backends()),
+    reason='Requires FFmpeg to be installed.'
+)
+def test_recording_from_file_using_audioread():
+    path = 'test/fixtures/mono_c0.opus'
+    recording = Recording.from_file(path)
+    recording.load_audio()
+    # OPUS file read succesfully!
