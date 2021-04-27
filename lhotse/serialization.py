@@ -170,12 +170,35 @@ class Serializable(JsonMixin, JsonlMixin, YamlMixin):
 
 
 class LazyDict:
+    """
+    LazyDict imitates a ``dict``, but it uses Apache Arrow (via pyarrow) to
+    read the data on-the-fly from disk using mmap.
+
+    This class is designed to be a "drop-in" replacement for ordinary dicts
+    to support lazy loading of RecordingSet, SupervisionSet and CutSet.
+
+    During initialization, Pyarrow scans a JSONL file using multithreaded
+    native code and determines the JSON schema and the number of items.
+    It is reasonably fast when iterated over, and quite slow when looking
+    up single items (unless we are using it incorrectly, which is possible).
+    Thanks to Pyarrow, we are able to open manifests with more than 10 million
+    items in seconds and iterate over them with a small overhead.
+
+    .. caution:
+        We discourage using this like ``'cut-id' in lazy_dict`` or
+        ``lazy_dict['cut-id']`` -- it is going to be much slower than iteration,
+        which pre-loads chunks of the manifests.
+    """
+
     def __init__(self, path: Pathlike):
         import pyarrow.json as paj
         self.table = paj.read_json(str(path))
 
     def _find_key(self, key: str):
+        # Iterates all batches to find the item with a given ID.
         for b in self.table.to_batches():
+            # Conversion to pandas seems to have the least overhead
+            # due to Arrow's zero-copy memory sharing policy.
             result = b.to_pandas().query(f'id == "{key}"')
             if len(result):
                 return self._deserialize_one(result.iloc[0].to_dict())
@@ -210,7 +233,9 @@ class LazyDict:
 
     def values(self):
         for b in self.table.to_batches():
-            # This seems to be the fastest way to iterate rows in a pyarrow table
+            # This seems to be the fastest way to iterate rows in a pyarrow table.
+            # Conversion to pandas seems to have the least overhead
+            # due to Arrow's zero-copy memory sharing policy.
             yield from (self._deserialize_one(row.to_dict()) for idx, row in b.to_pandas().iterrows())
 
     def items(self):
@@ -218,6 +243,8 @@ class LazyDict:
 
     @staticmethod
     def _deserialize_one(data: dict) -> Any:
+        # Figures out what type of manifest is being decoded with some heuristics
+        # and returns a Lhotse manifest object rather than a raw dict.
         from lhotse import Cut, Features, Recording, SupervisionSegment
         from lhotse.cut import MixedCut
         data = arr2list_recursive(data)
@@ -236,6 +263,10 @@ class LazyDict:
 
 
 def arr2list_recursive(data: dict) -> dict:
+    """
+    A helper method for converting dicts read via pyarrow,
+    which have numpy arrays instead of scalars and regular lists.
+    """
     return {
         k: v.tolist() if isinstance(v, np.ndarray)
         else arr2list_recursive(v) if isinstance(v, dict)
