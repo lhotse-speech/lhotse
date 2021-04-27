@@ -18,7 +18,7 @@ from lhotse.audio import Recording
 from lhotse.augmentation import AugmentFn
 from lhotse.features.io import FeaturesWriter, get_reader
 from lhotse.serialization import Serializable, load_yaml, save_to_yaml
-from lhotse.utils import (Pathlike, Seconds, compute_num_frames, exactly_one_not_null, fastcopy,
+from lhotse.utils import (Pathlike, Seconds, asdict_nonull, compute_num_frames, exactly_one_not_null, fastcopy,
                           split_sequence,
                           uuid4)
 
@@ -380,6 +380,9 @@ class Features:
     def with_path_prefix(self, path: Pathlike) -> 'Features':
         return fastcopy(self, storage_path=str(Path(path) / self.storage_path))
 
+    def to_dict(self) -> dict:
+        return asdict_nonull(self)
+
     @staticmethod
     def from_dict(data: dict) -> 'Features':
         # The "storage_type" check is to ensure that the "data" dict actually contains
@@ -414,8 +417,8 @@ class FeatureSet(Serializable, Sequence[Features]):
     def from_dicts(data: Iterable[dict]) -> 'FeatureSet':
         return FeatureSet(features=[Features.from_dict(feature_data) for feature_data in data])
 
-    def to_dicts(self) -> List[dict]:
-        return [asdict(f) for f in self]
+    def to_dicts(self) -> Iterable[dict]:
+        return (f.to_dict() for f in self)
 
     def with_path_prefix(self, path: Pathlike) -> 'FeatureSet':
         return FeatureSet.from_features(f.with_path_prefix(path) for f in self)

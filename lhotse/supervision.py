@@ -92,6 +92,9 @@ class SupervisionSegment:
             return self
         return fastcopy(self, text=transform_fn(self.text))
 
+    def to_dict(self) -> dict:
+        return asdict_nonull(self)
+
     @staticmethod
     def from_dict(data: dict) -> 'SupervisionSegment':
         return SupervisionSegment(**data)
@@ -117,8 +120,8 @@ class SupervisionSet(Serializable, Sequence[SupervisionSegment]):
     def from_dicts(data: Iterable[Dict]) -> 'SupervisionSet':
         return SupervisionSet.from_segments(SupervisionSegment.from_dict(s) for s in data)
 
-    def to_dicts(self) -> List[dict]:
-        return [asdict_nonull(s) for s in self]
+    def to_dicts(self) -> Iterable[dict]:
+        return (s.to_dict() for s in self)
 
     def split(self, num_splits: int, shuffle: bool = False) -> List['SupervisionSet']:
         """

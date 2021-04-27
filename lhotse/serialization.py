@@ -37,7 +37,7 @@ def load_yaml(path: Pathlike) -> dict:
 
 class YamlMixin:
     def to_yaml(self, path: Pathlike) -> None:
-        save_to_yaml(self.to_dicts(), path)
+        save_to_yaml(list(self.to_dicts()), path)
 
     @classmethod
     def from_yaml(cls, path: Pathlike) -> Manifest:
@@ -63,7 +63,7 @@ def load_json(path: Pathlike) -> Union[dict, list]:
 
 class JsonMixin:
     def to_json(self, path: Pathlike) -> None:
-        save_to_json(self.to_dicts(), path)
+        save_to_json(list(self.to_dicts()), path)
 
     @classmethod
     def from_json(cls, path: Pathlike) -> Manifest:

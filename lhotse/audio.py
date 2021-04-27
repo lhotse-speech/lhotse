@@ -106,6 +106,9 @@ class AudioSource:
             return self
         return fastcopy(self, source=str(Path(path) / self.source))
 
+    def to_dict(self) -> dict:
+        return asdict_nonull(self)
+
     @staticmethod
     def from_dict(data) -> 'AudioSource':
         return AudioSource(**data)
@@ -168,6 +171,9 @@ class Recording:
                 )
             ]
         )
+
+    def to_dict(self) -> dict:
+        return asdict_nonull(self)
 
     @property
     def num_channels(self):
@@ -368,8 +374,8 @@ class RecordingSet(Serializable, Sequence[Recording]):
     def from_dicts(data: Iterable[dict]) -> 'RecordingSet':
         return RecordingSet.from_recordings(Recording.from_dict(raw_rec) for raw_rec in data)
 
-    def to_dicts(self) -> List[dict]:
-        return [asdict_nonull(r) for r in self]
+    def to_dicts(self) -> Iterable[dict]:
+        return (r.to_dict() for r in self)
 
     def filter(self, predicate: Callable[[Recording], bool]) -> 'RecordingSet':
         """

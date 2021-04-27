@@ -50,6 +50,9 @@ class CutUtilsMixin:
     for cuts in the future and make this an ABC instead.
     """
 
+    def to_dict(self) -> dict:
+        return {**asdict_nonull(self), 'type': type(self).__name__}
+
     @property
     def trimmed_supervisions(self) -> List[SupervisionSegment]:
         """
@@ -1329,8 +1332,8 @@ class CutSet(Serializable, Sequence[AnyCut]):
 
         return CutSet.from_cuts(deserialize_one(cut) for cut in data)
 
-    def to_dicts(self) -> List[dict]:
-        return [{**asdict_nonull(cut), 'type': type(cut).__name__} for cut in self]
+    def to_dicts(self) -> Iterable[dict]:
+        return (cut.to_dict() for cut in self)
 
     def describe(self) -> None:
         """
