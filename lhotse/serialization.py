@@ -262,14 +262,35 @@ class LazyDict:
         raise ValueError(f"Unexpected cut type during deserialization: '{cut_type}'")
 
 
-def arr2list_recursive(data: dict) -> dict:
+def arr2list_recursive(data: Union[dict, list]) -> Union[dict, list]:
     """
     A helper method for converting dicts read via pyarrow,
     which have numpy arrays instead of scalars and regular lists.
     """
     return {
-        k: v.tolist() if isinstance(v, np.ndarray)
+        # Array containing objects: go deeper
+        k: [arr2list_recursive(x) for x in v] if isinstance(v, np.ndarray) and v.dtype == np.dtype('O')
+        # Array (likely) containing numeric types: convert to list and to Python numeric types
+        else v.tolist() if isinstance(v, (np.generic, np.ndarray))
+        # Dict: go deeper
         else arr2list_recursive(v) if isinstance(v, dict)
+        # Don't change anything
         else v
         for k, v in data.items()
     }
+
+
+class NumpyEncoder(json.JSONEncoder):
+    """
+    Utility that converts numpy types to native Python types for JSON serialization.
+
+    Example:
+        >>> with open('foo.json', 'w') as f:
+        ...     json.dump({'a': np.arange(10)}, f, cls=NumpyEncoder)
+    """
+
+    def default(self, obj):
+        if isinstance(obj, (np.generic, np.ndarray)):
+            return obj.tolist()
+        else:
+            return super().default(obj)
