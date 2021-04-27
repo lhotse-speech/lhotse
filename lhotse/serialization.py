@@ -6,7 +6,7 @@ from typing import Any, Dict, Generator, Iterable, Optional, Type, Union
 import numpy as np
 import yaml
 
-from lhotse.utils import Pathlike, ifnone
+from lhotse.utils import Pathlike, ifnone, is_module_available
 
 # TODO: figure out how to use some sort of typing stubs
 #  so that linters/static checkers don't complain
@@ -102,6 +102,18 @@ class JsonlMixin:
 
     @classmethod
     def from_jsonl_lazy(cls, path: Pathlike) -> Manifest:
+        """
+        Read a manifest in a lazy manner, using pyarrow and mmap.
+        The contents of the file are not loaded to memory immediately --
+        we will only load them once they are requested.
+
+        In this mode, most operations on the manifest set may be very slow:
+        including selecting specific manifests by their IDs, or splitting,
+        shuffling, sorting, etc.
+        However, iterating over the manifest is going to fairly fast.
+
+        This method requires ``pyarrow`` and ``pandas`` to be installed.
+        """
         return cls(LazyDict(path))
 
 
@@ -191,6 +203,10 @@ class LazyDict:
     """
 
     def __init__(self, path: Pathlike):
+        if not is_module_available('pyarrow', 'pandas'):
+            raise ImportError("In order to leverage lazy manifest capabilities of Lhotse, "
+                              "please install additional, optional dependencies: "
+                              "'pip install pyarrow pandas'")
         import pyarrow.json as paj
         self.table = paj.read_json(str(path))
 
