@@ -1,5 +1,6 @@
 import gzip
 import json
+from collections import deque
 from pathlib import Path
 from typing import Any, Dict, Generator, Iterable, Optional, Type, Union
 
@@ -209,8 +210,30 @@ class LazyDict:
                               "'pip install pyarrow pandas'")
         import pyarrow.json as paj
         self.table = paj.read_json(str(path))
+        self.batches = deque(self.table.to_batches())
+        self.curr_view = self.batches[0].to_pandas()
+
+    def _progress(self):
+        self.batches.rotate()
+        self.curr_view = self.batches[0].to_pandas()
 
     def _find_key(self, key: str):
+        # We will rotate the deque with N lazy views at most N times
+        # to search for a given key.
+        max_rotations = len(self.batches)
+        for _ in range(max_rotations):
+            # Try without any rotations in the first iteration --
+            # this should make search faster for contiguous keys.
+            match = self.curr_view.query(f'id == "{key}"')
+            if len(match):
+                return self._deserialize_one(match.iloc[0].to_dict())
+            # Not found in the current Arrow's "batch" -- we'll advance
+            # to the next one and try again.
+            self._progress()
+        # Key not found anyhwere.
+        return None
+
+    def _find_key_old(self, key: str):
         # Iterates all batches to find the item with a given ID.
         for b in self.table.to_batches():
             # Conversion to pandas seems to have the least overhead
