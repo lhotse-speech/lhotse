@@ -16,8 +16,8 @@ class VadDataset(torch.utils.data.Dataset):
     .. code-block::
 
         {
-            'features': (B x T x F) tensor
-            'features_lens': (B,) tensor
+            'inputs': (B x T x F) tensor
+            'input_lens': (B,) tensor
             'is_voice': (T x 1) tensor
             'cut': List[Cut]
         }
