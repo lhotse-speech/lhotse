@@ -197,10 +197,11 @@ class LazyDict:
     Thanks to Pyarrow, we are able to open manifests with more than 10 million
     items in seconds and iterate over them with a small overhead.
 
-    .. caution:
-        We discourage using this like ``'cut-id' in lazy_dict`` or
-        ``lazy_dict['cut-id']`` -- it is going to be much slower than iteration,
-        which pre-loads chunks of the manifests.
+    .. caution::
+        This class is optimized for iteration or sequential access (i.e. iterating
+        linearly over contiguous sequence of keys).
+        Random access is possible but it may trigger a pessimistic complexity,
+        making it incredibly slow...
     """
 
     def __init__(self, path: Pathlike):
@@ -214,7 +215,9 @@ class LazyDict:
         self.curr_view = self.batches[0].to_pandas()
 
     def _progress(self):
-        self.batches.rotate()
+        # Rotate the deque to the left by one item.
+        # [0, 1, 2] -> [1, 2, 0]
+        self.batches.rotate(-1)
         self.curr_view = self.batches[0].to_pandas()
 
     def _find_key(self, key: str):
@@ -317,7 +320,6 @@ class NumpyEncoder(json.JSONEncoder):
         >>> with open('foo.json', 'w') as f:
         ...     json.dump({'a': np.arange(10)}, f, cls=NumpyEncoder)
     """
-
     def default(self, obj):
         if isinstance(obj, (np.generic, np.ndarray)):
             return obj.tolist()
