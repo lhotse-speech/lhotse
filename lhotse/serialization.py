@@ -3,9 +3,10 @@ import json
 from pathlib import Path
 from typing import Any, Dict, Generator, Iterable, Optional, Type, Union
 
+import numpy as np
 import yaml
 
-from lhotse.utils import Pathlike
+from lhotse.utils import Pathlike, ifnone
 
 # TODO: figure out how to use some sort of typing stubs
 #  so that linters/static checkers don't complain
@@ -99,6 +100,10 @@ class JsonlMixin:
         data = load_jsonl(path)
         return cls.from_dicts(data)
 
+    @classmethod
+    def from_jsonl_lazy(cls, path: Pathlike) -> Manifest:
+        return cls(LazyDict(path))
+
 
 def extension_contains(ext: str, path: Path) -> bool:
     return any(ext == sfx for sfx in path.suffixes)
@@ -162,3 +167,78 @@ class Serializable(JsonMixin, JsonlMixin, YamlMixin):
 
     def to_file(self, path: Pathlike) -> None:
         store_manifest(self, path)
+
+
+class LazyDict:
+    def __init__(self, path: Pathlike):
+        import pyarrow.json as paj
+        self.table = paj.read_json(str(path))
+
+    def _find_key(self, key: str):
+        for b in self.table.to_batches():
+            result = b.to_pandas().query(f'id == "{key}"')
+            if len(result):
+                return self._deserialize_one(result.iloc[0].to_dict())
+        return None
+
+    def __len__(self) -> int:
+        return self.table.num_rows
+
+    def __getitem__(self, key: str):
+        """This is extremely inefficient and should not be used this way."""
+        value = self._find_key(key)
+        if value is None:
+            raise KeyError(f"No such key: {key}")
+        return value
+
+    def get(self, key, or_=None):
+        return ifnone(self._find_key(key), or_)
+
+    def __contains__(self, key: str):
+        value = self._find_key()
+        return value is not None
+
+    def __repr__(self):
+        return f'LazyDict(num_items={self.table.num_rows})'
+
+    def __iter__(self):
+        for b in self.table.to_batches():
+            yield from b['id'].tolist()
+
+    def keys(self):
+        return iter(self)
+
+    def values(self):
+        for b in self.table.to_batches():
+            # This seems to be the fastest way to iterate rows in a pyarrow table
+            yield from (self._deserialize_one(row.to_dict()) for idx, row in b.to_pandas().iterrows())
+
+    def items(self):
+        yield from ((cut.id, cut) for cut in self.values())
+
+    @staticmethod
+    def _deserialize_one(data: dict) -> Any:
+        from lhotse import Cut, Features, Recording, SupervisionSegment
+        from lhotse.cut import MixedCut
+        data = arr2list_recursive(data)
+        if 'sources' in data:
+            return Recording.from_dict(data)
+        if 'num_features' in data:
+            return Features.from_dict(data)
+        if 'type' not in data:
+            return SupervisionSegment.from_dict(data)
+        cut_type = data.pop('type')
+        if cut_type == 'Cut':
+            return Cut.from_dict(data)
+        if cut_type == 'MixedCut':
+            return MixedCut.from_dict(data)
+        raise ValueError(f"Unexpected cut type during deserialization: '{cut_type}'")
+
+
+def arr2list_recursive(data: dict) -> dict:
+    return {
+        k: v.tolist() if isinstance(v, np.ndarray)
+        else arr2list_recursive(v) if isinstance(v, dict)
+        else v
+        for k, v in data.items()
+    }
