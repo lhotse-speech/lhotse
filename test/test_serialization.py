@@ -4,7 +4,7 @@ import pytest
 
 from lhotse import AudioSource, Cut, CutSet, FeatureSet, Features, Recording, RecordingSet, SupervisionSegment, \
     SupervisionSet, load_manifest, store_manifest
-from lhotse.utils import nullcontext as does_not_raise
+from lhotse.utils import is_module_available, nullcontext as does_not_raise
 
 
 @pytest.mark.parametrize(
@@ -287,6 +287,7 @@ def test_generic_serialization(manifests, manifest_type, format, compressed):
         assert manifest == restored
 
 
+@pytest.mark.skipif(not is_module_available('pyarrow'), reason='Requires pyarrow')
 @pytest.mark.parametrize(
     'manifest_type',
     ['recording_set', 'supervision_set', 'cut_set']
@@ -308,6 +309,7 @@ def test_lazy_jsonl_deserialization(manifests, manifest_type, format, compressed
             assert eager_obj == lazy_obj
 
 
+@pytest.mark.skipif(not is_module_available('pyarrow'), reason='Requires pyarrow')
 @pytest.mark.parametrize(
     'manifest_type',
     ['recording_set', 'supervision_set', 'cut_set']
