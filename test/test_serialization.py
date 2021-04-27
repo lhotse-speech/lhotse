@@ -303,10 +303,13 @@ def test_lazy_jsonl_deserialization(manifests, manifest_type, format, compressed
     manifest = manifests[manifest_type]
     with NamedTemporaryFile(suffix='.' + format + ('.gz' if compressed else '')) as f:
         store_manifest(manifest, f.name)
-
         lazy_manifest = type(manifest).from_jsonl_lazy(f.name)
+        # Test iteration
         for eager_obj, lazy_obj in zip(manifest, lazy_manifest):
             assert eager_obj == lazy_obj
+        # Test accessing elements by ID
+        for lazy_obj in lazy_manifest:
+            lazy_manifest[lazy_obj.id]
 
 
 @pytest.mark.skipif(not is_module_available('pyarrow'), reason='Requires pyarrow')
