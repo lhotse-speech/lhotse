@@ -233,16 +233,6 @@ class LazyDict:
         # Key not found anyhwere.
         return None
 
-    def _find_key_old(self, key: str):
-        # Iterates all batches to find the item with a given ID.
-        for b in self.table.to_batches():
-            # Conversion to pandas seems to have the least overhead
-            # due to Arrow's zero-copy memory sharing policy.
-            result = b.to_pandas().query(f'id == "{key}"')
-            if len(result):
-                return self._deserialize_one(result.iloc[0].to_dict())
-        return None
-
     def __len__(self) -> int:
         return self.table.num_rows
 
