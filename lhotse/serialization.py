@@ -1,4 +1,5 @@
 import gzip
+import itertools
 import json
 from collections import deque
 from pathlib import Path
@@ -101,12 +102,15 @@ class JsonlMixin:
         data = load_jsonl(path)
         return cls.from_dicts(data)
 
+
+class LazyMixin:
     @classmethod
     def from_jsonl_lazy(cls, path: Pathlike) -> Manifest:
         """
-        Read a manifest in a lazy manner, using pyarrow and mmap.
-        The contents of the file are not loaded to memory immediately --
-        we will only load them once they are requested.
+        Read a manifest in a lazy manner, using pyarrow.
+        The contents of the file are loaded into memory,
+        but in a memory-saving format, and they are deserialized into
+        Python objects such as Cut, Supervision etc. only upon request.
 
         In this mode, most operations on the manifest set may be very slow:
         including selecting specific manifests by their IDs, or splitting,
@@ -115,7 +119,59 @@ class JsonlMixin:
 
         This method requires ``pyarrow`` and ``pandas`` to be installed.
         """
-        return cls(LazyDict(path))
+        return cls(LazyDict.from_jsonl(path))
+
+    def to_arrow(self, path: Pathlike) -> None:
+        import pyarrow as pa
+        if self.is_lazy:
+            # TODO: I don't want to add a special method for retrieving those in each manifest type;
+            #       after this work is done, I will make a refactoring PR that renames these members
+            #       to sth like ".data" so that it's uniform across manifests.
+            from lhotse import RecordingSet, SupervisionSet, CutSet
+            if isinstance(self, RecordingSet):
+                table = self.recordings.table
+            elif isinstance(self, SupervisionSet):
+                table = self.segments.table
+            elif isinstance(self, CutSet):
+                table = self.cuts.table
+            else:
+                raise NotImplementedError(f"Unsupported type of manifest for arrow serialization: {type(self)}")
+            with open(path, "wb") as f, pa.RecordBatchStreamWriter(f, schema=table.schema) as writer:
+                for batch in table.to_batches():
+                    writer.write_batch(batch)
+        else:
+            raise NotImplementedError("Currently, storing manifests that are not represented as "
+                                      "Arrow tables already is not supported. Instead, you can convert "
+                                      "the manifest by reading it's JSONL using `from_jsonl_lazy` method, "
+                                      "and then calling `to_arrow()` on that instance.")
+
+    @classmethod
+    def from_arrow(cls, path: Pathlike) -> Manifest:
+        """
+        Read a manifest in a lazy manner, using pyarrow and parquet.
+        This method is supposed to use mmap, which should significantly ease
+        the memory usage.
+        The manifest items are deserialized into Python objects such as Cut,
+        Supervision etc. only upon request.
+
+        In this mode, most operations on the manifest set may be very slow:
+        including selecting specific manifests by their IDs, or splitting,
+        shuffling, sorting, etc.
+        However, iterating over the manifest is going to fairly fast.
+
+        This method requires ``pyarrow`` and ``pandas`` to be installed.
+        """
+        return cls(LazyDict.from_arrow(path))
+
+
+def grouper(n, iterable):
+    """https://stackoverflow.com/questions/8991506/iterate-an-iterator-by-chunks-of-n-in-python"""
+    it = iter(iterable)
+    while True:
+        chunk = tuple(itertools.islice(it, n))
+        if not chunk:
+            return
+        yield chunk
 
 
 def extension_contains(ext: str, path: Path) -> bool:
@@ -173,13 +229,20 @@ def store_manifest(manifest: Manifest, path: Pathlike) -> None:
         raise ValueError(f"Unknown serialization format for: {path}")
 
 
-class Serializable(JsonMixin, JsonlMixin, YamlMixin):
+class Serializable(JsonMixin, JsonlMixin, LazyMixin, YamlMixin):
     @classmethod
     def from_file(cls, path: Pathlike) -> Manifest:
         return load_manifest(path, manifest_cls=cls)
 
     def to_file(self, path: Pathlike) -> None:
         store_manifest(self, path)
+
+
+def _check_arrow():
+    if not is_module_available('pyarrow', 'pandas'):
+        raise ImportError("In order to leverage lazy manifest capabilities of Lhotse, "
+                          "please install additional, optional dependencies: "
+                          "'pip install pyarrow pandas'")
 
 
 class LazyDict:
@@ -204,15 +267,27 @@ class LazyDict:
         making it incredibly slow...
     """
 
-    def __init__(self, path: Pathlike):
-        if not is_module_available('pyarrow', 'pandas'):
-            raise ImportError("In order to leverage lazy manifest capabilities of Lhotse, "
-                              "please install additional, optional dependencies: "
-                              "'pip install pyarrow pandas'")
-        import pyarrow.json as paj
-        self.table = paj.read_json(str(path))
+    def __init__(self, table):
+        _check_arrow()
+        self.table = table
         self.batches = deque(self.table.to_batches())
         self.curr_view = self.batches[0].to_pandas()
+
+    @classmethod
+    def from_jsonl(cls, path: Pathlike) -> 'LazyDict':
+        _check_arrow()
+        import pyarrow.json as paj
+        table = paj.read_json(str(path))
+        return cls(table)
+
+    @classmethod
+    def from_arrow(cls, path: Pathlike) -> 'LazyDict':
+        _check_arrow()
+        import pyarrow as pa
+        mmap = pa.memory_map(str(path))
+        stream = pa.ipc.open_stream(mmap)
+        table = stream.read_all()
+        return cls(table)
 
     def _progress(self):
         # Rotate the deque to the left by one item.
@@ -294,7 +369,7 @@ class LazyDict:
         raise ValueError(f"Unexpected cut type during deserialization: '{cut_type}'")
 
 
-def arr2list_recursive(data: Union[dict, list]) -> Union[dict, list]:
+def arr2list_recursive(data: Union[dict, list], filter_none: bool = True) -> Union[dict, list]:
     """
     A helper method for converting dicts read via pyarrow,
     which have numpy arrays instead of scalars and regular lists.
@@ -309,6 +384,7 @@ def arr2list_recursive(data: Union[dict, list]) -> Union[dict, list]:
         # Don't change anything
         else v
         for k, v in data.items()
+        if v is not None or not filter_none
     }
 
 

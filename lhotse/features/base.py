@@ -4,7 +4,7 @@ import pickle
 import warnings
 from abc import ABCMeta, abstractmethod
 from concurrent.futures.process import ProcessPoolExecutor
-from dataclasses import asdict, dataclass, field, is_dataclass
+from dataclasses import asdict, dataclass, is_dataclass
 from itertools import chain
 from math import isclose
 from pathlib import Path
@@ -19,7 +19,7 @@ from lhotse.augmentation import AugmentFn
 from lhotse.features.io import FeaturesWriter, get_reader
 from lhotse.serialization import Serializable, load_yaml, save_to_yaml
 from lhotse.utils import (Pathlike, Seconds, asdict_nonull, compute_num_frames, exactly_one_not_null, fastcopy,
-                          split_sequence,
+                          ifnone, split_sequence,
                           uuid4)
 
 
@@ -396,7 +396,6 @@ class Features:
         return Features(**data)
 
 
-@dataclass
 class FeatureSet(Serializable, Sequence[Features]):
     """
     Represents a feature manifest, and allows to read features for given recordings
@@ -404,10 +403,12 @@ class FeatureSet(Serializable, Sequence[Features]):
     It also keeps information about the feature extractor parameters used to obtain this set.
     When a given recording/time-range/channel is unavailable, raises a KeyError.
     """
-    features: List[Features] = field(default_factory=lambda: list())
 
-    def __post_init__(self):
-        self.features = sorted(self.features)
+    def __init__(self, features: List[Features] = None) -> None:
+        self.features = sorted(ifnone(features, []))
+
+    def __eq__(self, other: 'FeatureSet') -> bool:
+        return self.features == other.features
 
     @staticmethod
     def from_features(features: Iterable[Features]) -> 'FeatureSet':

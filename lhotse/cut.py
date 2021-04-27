@@ -1234,6 +1234,14 @@ class CutSet(Serializable, Sequence[AnyCut]):
         return self.cuts == other.cuts
 
     @property
+    def is_lazy(self) -> bool:
+        """
+        Indicates whether this manifest was opened in lazy (read-on-the-fly) mode or not.
+        """
+        from lhotse.serialization import LazyDict
+        return isinstance(self.cuts, LazyDict)
+
+    @property
     def mixed_cuts(self) -> Dict[str, MixedCut]:
         return {id_: cut for id_, cut in self.cuts.items() if isinstance(cut, MixedCut)}
 

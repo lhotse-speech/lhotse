@@ -10,7 +10,7 @@ from itertools import islice
 from math import sqrt
 from pathlib import Path
 from subprocess import PIPE, run
-from typing import Any, Callable, Dict, Iterable, List, NamedTuple, Optional, Sequence, Tuple, Union
+from typing import Any, Callable, Dict, Iterable, List, Mapping, NamedTuple, Optional, Sequence, Tuple, Union
 
 import numpy as np
 from tqdm.auto import tqdm
@@ -20,7 +20,7 @@ from lhotse.serialization import Serializable
 from lhotse.utils import (Decibels, Pathlike, Seconds, SetContainingAnything, asdict_nonull,
                           compute_num_samples,
                           exactly_one_not_null, fastcopy,
-                          index_by_id_and_check, perturb_num_samples, split_sequence)
+                          ifnone, index_by_id_and_check, perturb_num_samples, split_sequence)
 
 Channels = Union[int, List[int]]
 
@@ -329,7 +329,6 @@ class Recording:
         return Recording(sources=[AudioSource.from_dict(s) for s in raw_sources], **data)
 
 
-@dataclass
 class RecordingSet(Serializable, Sequence[Recording]):
     """
     RecordingSet represents a dataset of recordings. It does not contain any annotation -
@@ -339,7 +338,20 @@ class RecordingSet(Serializable, Sequence[Recording]):
     It also supports (de)serialization to/from YAML and takes care of mapping between
     rich Python classes and YAML primitives during conversion.
     """
-    recordings: Dict[str, Recording]
+
+    def __init__(self, recordings: Mapping[str, Recording] = None) -> None:
+        self.recordings = ifnone(recordings, {})
+
+    def __eq__(self, other: 'RecordingSet') -> bool:
+        return self.recordings == other.recordings
+
+    @property
+    def is_lazy(self) -> bool:
+        """
+        Indicates whether this manifest was opened in lazy (read-on-the-fly) mode or not.
+        """
+        from lhotse.serialization import LazyDict
+        return isinstance(self.recordings, LazyDict)
 
     @staticmethod
     def from_recordings(recordings: Iterable[Recording]) -> 'RecordingSet':
