@@ -196,6 +196,10 @@ def load_manifest(path: Pathlike, manifest_cls: Optional[Type] = None) -> Manife
         raw_data = load_json(path)
     elif extension_contains('.yaml', path):
         raw_data = load_yaml(path)
+    elif extension_contains('.arrow', path):
+        assert manifest_cls is not None, "For lazy deserialization with arrow, " \
+                                         "the manifest type has to be known."
+        return manifest_cls.from_arrow(path)
     else:
         raise ValueError(f"Not a valid manifest: {path}")
     data_set = None
@@ -225,6 +229,8 @@ def store_manifest(manifest: Manifest, path: Pathlike) -> None:
         manifest.to_json(path)
     elif extension_contains('.yaml', path):
         manifest.to_yaml(path)
+    elif extension_contains('.arrow', path):
+        manifest.to_arrow(path)
     else:
         raise ValueError(f"Unknown serialization format for: {path}")
 
@@ -272,6 +278,7 @@ class LazyDict:
         self.table = table
         self.batches = deque(self.table.to_batches())
         self.curr_view = self.batches[0].to_pandas()
+        self.id2pos = dict(zip(self.curr_view.id, range(len(self.curr_view.id))))
 
     @classmethod
     def from_jsonl(cls, path: Pathlike) -> 'LazyDict':
@@ -294,6 +301,7 @@ class LazyDict:
         # [0, 1, 2] -> [1, 2, 0]
         self.batches.rotate(-1)
         self.curr_view = self.batches[0].to_pandas()
+        self.id2pos = dict(zip(self.curr_view.id, range(len(self.curr_view.id))))
 
     def _find_key(self, key: str):
         # We will rotate the deque with N lazy views at most N times
@@ -302,9 +310,9 @@ class LazyDict:
         for _ in range(max_rotations):
             # Try without any rotations in the first iteration --
             # this should make search faster for contiguous keys.
-            match = self.curr_view.query(f'id == "{key}"')
-            if len(match):
-                return self._deserialize_one(match.iloc[0].to_dict())
+            pos = self.id2pos.get(key)
+            if pos is not None:
+                return self._deserialize_one(self.curr_view.iloc[pos].to_dict())
             # Not found in the current Arrow's "batch" -- we'll advance
             # to the next one and try again.
             self._progress()
