@@ -284,6 +284,7 @@ class LazyDict:
         self.batches = deque(self.table.to_batches())
         self.curr_view = self.batches[0].to_pandas()
         self.id2pos = dict(zip(self.curr_view.id, range(len(self.curr_view.id))))
+        self.prev_id2pos = {}
 
     @classmethod
     def from_jsonl(cls, path: Pathlike) -> 'LazyDict':
@@ -306,6 +307,7 @@ class LazyDict:
         # [0, 1, 2] -> [1, 2, 0]
         self.batches.rotate(-1)
         self.curr_view = self.batches[0].to_pandas()
+        self.prev_id2pos = self.id2pos
         self.id2pos = dict(zip(self.curr_view.id, range(len(self.curr_view.id))))
 
     def _find_key(self, key: str):
@@ -315,7 +317,7 @@ class LazyDict:
         for _ in range(max_rotations):
             # Try without any rotations in the first iteration --
             # this should make search faster for contiguous keys.
-            pos = self.id2pos.get(key)
+            pos = self.id2pos.get(key, self.prev_id2pos.get(key))
             if pos is not None:
                 return self._deserialize_one(self.curr_view.iloc[pos].to_dict())
             # Not found in the current Arrow's "batch" -- we'll advance
