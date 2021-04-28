@@ -4,7 +4,7 @@ import pytest
 
 from lhotse import AudioSource, Cut, CutSet, FeatureSet, Features, Recording, RecordingSet, SupervisionSegment, \
     SupervisionSet, load_manifest, store_manifest
-from lhotse.utils import nullcontext as does_not_raise
+from lhotse.utils import is_module_available, nullcontext as does_not_raise
 
 
 @pytest.mark.parametrize(
@@ -285,3 +285,54 @@ def test_generic_serialization(manifests, manifest_type, format, compressed):
         store_manifest(manifest, f.name)
         restored = load_manifest(f.name)
         assert manifest == restored
+
+
+@pytest.mark.skipif(not is_module_available('pyarrow'), reason='Requires pyarrow')
+@pytest.mark.parametrize(
+    'manifest_type',
+    ['recording_set', 'supervision_set', 'cut_set']
+)
+@pytest.mark.parametrize(
+    ['format', 'compressed'],
+    [
+        ('jsonl', False),
+        ('jsonl', True),
+    ]
+)
+def test_lazy_jsonl_deserialization(manifests, manifest_type, format, compressed):
+    manifest = manifests[manifest_type]
+    with NamedTemporaryFile(suffix='.' + format + ('.gz' if compressed else '')) as f:
+        store_manifest(manifest, f.name)
+        lazy_manifest = type(manifest).from_jsonl_lazy(f.name)
+        # Test iteration
+        for eager_obj, lazy_obj in zip(manifest, lazy_manifest):
+            assert eager_obj == lazy_obj
+        # Test accessing elements by ID
+        for lazy_obj in lazy_manifest:
+            lazy_manifest[lazy_obj.id]
+
+
+@pytest.mark.skipif(not is_module_available('pyarrow'), reason='Requires pyarrow')
+@pytest.mark.parametrize(
+    'manifest_type',
+    ['recording_set', 'supervision_set', 'cut_set']
+)
+@pytest.mark.parametrize(
+    ['format', 'compressed'],
+    [
+        ('jsonl', False),
+        ('jsonl', True),
+    ]
+)
+def test_lazy_arrow_serialization(manifests, manifest_type, format, compressed):
+    manifest = manifests[manifest_type]
+    with NamedTemporaryFile(suffix='.' + format + ('.gz' if compressed else '')) as jsonl_f, \
+            NamedTemporaryFile(suffix='.arrow') as arrow_f:
+        store_manifest(manifest, jsonl_f.name)
+        # For now, we have to first create a JSONL so that we can create mmapped arrow...
+        lazy_temp_manifest = type(manifest).from_jsonl_lazy(jsonl_f.name)
+        lazy_temp_manifest.to_arrow(arrow_f.name)
+        # Now read the real mmapped arrow manifest.
+        lazy_manifest = type(manifest).from_arrow(arrow_f.name)
+        for eager_obj, lazy_obj in zip(manifest, lazy_manifest):
+            assert eager_obj == lazy_obj
