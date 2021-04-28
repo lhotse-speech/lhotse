@@ -9,7 +9,9 @@ project_root = Path(__file__).parent
 install_requires = (project_root / 'requirements.txt').read_text().splitlines()
 docs_require = (project_root / 'docs' / 'requirements.txt').read_text().splitlines()
 tests_require = ['pytest==5.4.3', 'flake8==3.8.3', 'coverage==5.1', 'hypothesis==5.41.2']
-dev_requires = docs_require + tests_require + ['jupyterlab', 'matplotlib', 'isort']
+arrow_requires = ['pyarrow>=4.0.0', 'pandas>=1.0.0']
+dev_requires = sorted(docs_require + tests_require + ['jupyterlab', 'matplotlib', 'isort'])
+all_requires = sorted(dev_requires + arrow_requires)
 
 if os.environ.get('READTHEDOCS', False):
     # When building documentation, omit torchaudio installation and mock it instead.
@@ -39,7 +41,9 @@ setup(
     extras_require={
         'docs': docs_require,
         'tests': tests_require,
-        'dev': docs_require + tests_require
+        'arrow': arrow_requires,
+        'dev': docs_require + tests_require,
+        'all': all_requires
     },
     classifiers=[
         "Development Status :: 3 - Alpha",

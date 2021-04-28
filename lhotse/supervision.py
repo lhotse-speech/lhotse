@@ -1,11 +1,11 @@
 import logging
 from dataclasses import dataclass
 from itertools import islice
-from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence
+from typing import Any, Callable, Dict, Iterable, List, Mapping, Optional, Sequence
 
 from lhotse.serialization import Serializable
 from lhotse.utils import Seconds, asdict_nonull, exactly_one_not_null, fastcopy, \
-    index_by_id_and_check, \
+    ifnone, index_by_id_and_check, \
     perturb_num_samples, split_sequence
 
 
@@ -92,12 +92,14 @@ class SupervisionSegment:
             return self
         return fastcopy(self, text=transform_fn(self.text))
 
+    def to_dict(self) -> dict:
+        return asdict_nonull(self)
+
     @staticmethod
     def from_dict(data: dict) -> 'SupervisionSegment':
         return SupervisionSegment(**data)
 
 
-@dataclass
 class SupervisionSet(Serializable, Sequence[SupervisionSegment]):
     """
     SupervisionSet represents a collection of segments containing some supervision information.
@@ -107,7 +109,20 @@ class SupervisionSet(Serializable, Sequence[SupervisionSegment]):
     to support a wide range of tasks, as well as adding more supervision types in the future,
     while retaining backwards compatibility.
     """
-    segments: Dict[str, SupervisionSegment]
+
+    def __init__(self, segments: Mapping[str, SupervisionSegment]) -> None:
+        self.segments = ifnone(segments, {})
+
+    def __eq__(self, other: 'SupervisionSet') -> bool:
+        return self.segments == other.segments
+
+    @property
+    def is_lazy(self) -> bool:
+        """
+        Indicates whether this manifest was opened in lazy (read-on-the-fly) mode or not.
+        """
+        from lhotse.serialization import LazyDict
+        return isinstance(self.segments, LazyDict)
 
     @staticmethod
     def from_segments(segments: Iterable[SupervisionSegment]) -> 'SupervisionSet':
@@ -117,8 +132,8 @@ class SupervisionSet(Serializable, Sequence[SupervisionSegment]):
     def from_dicts(data: Iterable[Dict]) -> 'SupervisionSet':
         return SupervisionSet.from_segments(SupervisionSegment.from_dict(s) for s in data)
 
-    def to_dicts(self) -> List[dict]:
-        return [asdict_nonull(s) for s in self]
+    def to_dicts(self) -> Iterable[dict]:
+        return (s.to_dict() for s in self)
 
     def split(self, num_splits: int, shuffle: bool = False) -> List['SupervisionSet']:
         """
