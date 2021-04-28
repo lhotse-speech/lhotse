@@ -16,6 +16,7 @@ __all__ = ["dihard3"]
     help="Specify whether or not to create UEM supervision",
 )
 @click.option(
+    "-j",
     "-num-jobs",
     type=int,
     default=1,

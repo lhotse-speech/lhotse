@@ -158,6 +158,7 @@ Currently supported corpora:
 - CallHome Egyptian :func:`lhotse.recipes.prepare_callhome_egyptian`
 - CallHome English :func:`lhotse.recipes.prepare_callhome_english`
 - CMU Arctic :func:`lhotse.recipes.prepare_cmu_arctic`
+- DIHARD III :func:`lhotse.recipes.prepare_dihard3`
 - English Broadcast News 1997 :func:`lhotse.recipes.prepare_broadcast_news`
 - Heroico :func:`lhotse.recipes.prepare_heroico`
 - MiniLibriMix :func:`lhotse.recipes.prepare_librimix`
