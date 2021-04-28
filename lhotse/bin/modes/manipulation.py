@@ -7,7 +7,7 @@ from typing import Optional
 import click
 from cytoolz.functoolz import complement
 
-from lhotse import load_manifest
+from lhotse import CutSet, RecordingSet, SupervisionSet, load_manifest
 from lhotse.bin.modes.cli_base import cli
 from lhotse.manipulation import (
     combine as combine_manifests,
@@ -29,6 +29,35 @@ def copy(input_manifest, output_manifest):
     """
     data = load_manifest(input_manifest)
     data.to_file(output_manifest)
+
+
+@cli.command()
+@click.argument('input_manifest', type=click.Path(exists=True, dir_okay=False))
+@click.argument('output_manifest', type=click.Path())
+@click.option('-t', '--type',
+              metavar='manifest_type',
+              type=click.Choice(['cut', 'recording', 'supervision']),
+              default='cut',
+              help='The type of items in the INPUT_MANIFEST '
+                   '(has to be explicitly provided for arrow conversion at this time).'
+              )
+def convert_arrow(input_manifest, output_manifest, manifest_type: str):
+    """
+    Load INPUT_MANIFEST using lazy loading mechanism and store it in
+    OUTPUT_MANIFEST using Apache Arrow binary format.
+
+    The INPUT_MANIFEST has to be a JSONL file.
+    """
+    assert input_manifest.endswith('.jsonl') or input_manifest.endswith('.jsonl.gz'), \
+        'The INPUT_MANIFEST has to be in a JSONL format for lazy loading.'
+    assert output_manifest.endswith('.arrow'), 'The extension of OUTPUT_MANIFEST has to end with ".arrow"'
+    cls = {
+        'cut': CutSet,
+        'recording': RecordingSet,
+        'supervision': SupervisionSet
+    }[manifest_type]
+    data = cls.from_jsonl_lazy(input_manifest)
+    data.to_arrow(output_manifest)
 
 
 @cli.command()
