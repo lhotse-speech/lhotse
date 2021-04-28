@@ -24,6 +24,7 @@ def prepare_dihard3(
     audio_dir: Pathlike,
     output_dir: Optional[Pathlike] = None,
     uem_manifest: Optional[bool] = True,
+    num_jobs: Optional[int] = 1,
 ) -> Dict[str, Union[RecordingSet, SupervisionSet]]:
     """
     Prepare manifests for the DIHARD III corpus.
@@ -35,16 +36,14 @@ def prepare_dihard3(
     :param output_dir: Directory where the manifests should be written. Can be omitted to avoid writing.
     :param uem_manifest: If True, also return a SupervisionSet describing the UEM segments (see use in
         dataset.DiarizationDataset)
+    :param num_jobs: int (default = 1), number of jobs to scan corpus directory for recordings
     :return: A dict with manifests. The keys are: ``{'recordings', 'supervisions'}``.
     """
-    audio_paths = check_and_rglob(audio_dir, "*.flac")
     rttm_paths = list(check_and_rglob(audio_dir, "*.rttm"))
     uem_paths = list(check_and_rglob(audio_dir, "*.uem"))
 
-    recordings = RecordingSet.from_recordings(
-        Recording.from_file(audio_path, recording_id=audio_path.stem)
-        for audio_path in audio_paths
-    )
+    recordings = RecordingSet.from_dir(audio_dir, "*.flac", num_jobs=num_jobs)
+
     supervisions = SupervisionSet.from_segments(
         chain.from_iterable(
             make_rttm_segments(

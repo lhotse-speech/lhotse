@@ -15,6 +15,19 @@ __all__ = ["dihard3"]
     default=True,
     help="Specify whether or not to create UEM supervision",
 )
-def dihard3(corpus_dir: Pathlike, output_dir: Pathlike, uem: Optional[float] = True):
+@click.option(
+    "-num-jobs",
+    type=int,
+    default=1,
+    help="Number of jobs to scan corpus directory for recordings.",
+)
+def dihard3(
+    corpus_dir: Pathlike,
+    output_dir: Pathlike,
+    uem: Optional[float] = True,
+    num_jobs: Optional[int] = 1,
+):
     """DIHARD3 data preparation."""
-    prepare_dihard3(corpus_dir, output_dir=output_dir, uem_manifest=uem)
+    prepare_dihard3(
+        corpus_dir, output_dir=output_dir, uem_manifest=uem, num_jobs=num_jobs
+    )
