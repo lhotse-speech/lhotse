@@ -59,17 +59,23 @@ class SupervisionSegment:
             duration=new_duration
         )
 
-    def trim(self, end: Seconds) -> 'SupervisionSegment':
+    def trim(self, end: Seconds, start: Optional[Seconds] = 0) -> 'SupervisionSegment':
         """
         Return an identical ``SupervisionSegment``, but ensure that ``self.start`` is not negative (in which case
-        it's set to 0) and ``self.end`` does not exceed the ``end`` parameter.
+        it's set to 0) and ``self.end`` does not exceed the ``end`` parameter. If a `start` is optionally
+        provided, the supervision is trimmed from the left (note that start should be relative to the cut times).
 
         This method is useful for ensuring that the supervision does not exceed a cut's bounds,
         in which case pass ``cut.duration`` as the ``end`` argument, since supervision times are relative to the cut.
         """
-        start_exceeds_by = abs(min(0, self.start))
+        assert start >= 0
+        start_exceeds_by = abs(min(0, self.start - start))
         end_exceeds_by = max(0, self.end - end)
-        return fastcopy(self, start=max(0, self.start), duration=self.duration - end_exceeds_by - start_exceeds_by)
+        return fastcopy(
+            self,
+            start=max(start, self.start),
+            duration=self.duration - end_exceeds_by - start_exceeds_by,
+        )
 
     def map(self, transform_fn: Callable[['SupervisionSegment'], 'SupervisionSegment']) -> 'SupervisionSegment':
         """

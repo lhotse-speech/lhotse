@@ -1,4 +1,6 @@
+from itertools import chain
 from typing import Dict, Iterable, Optional
+from numpy import record
 
 import torch
 from torch.nn import CrossEntropyLoss
@@ -63,19 +65,28 @@ class DiarizationDataset(Dataset):
         if not uem:
             self.cuts = cuts
         else:
-            # Get interval tree for UEM supervisions
-            self.cuts = cuts.filter_supervisions(
-                lambda s: any(
-                    [
-                        overspans(
-                            TimeSpan(u.start, u.end),
-                            TimeSpan(s.start, s.end),
-                        )
-                        for u in uem.filter(
-                            lambda seg: seg.recording_id == s.recording_id
-                        )
-                    ]
-                )
+            # We use the `overlap` method in intervaltree to get overlapping regions
+            # between the supervision segments and the UEM segments
+            recordings = RecordingSet(
+                {c.recording.id: c.recording for c in cuts if c.has_recording}
+            )
+            uem_intervals = CutSet.from_manifests(
+                recordings=recordings,
+                supervisions=uem,
+            ).index_supervisions()
+            supervisions = []
+            for cut_id, tree in cuts.index_supervisions().items():
+                if cut_id not in uem_intervals:
+                    supervisions += [it.data for it in tree]
+                    continue
+                supervisions += {
+                    it.data.trim(it.end, start=it.begin)
+                    for uem_it in uem_intervals[cut_id]
+                    for it in tree.overlap(begin=uem_it.begin, end=uem_it.end)
+                }
+            self.cuts = CutSet.from_manifests(
+                recordings=recordings,
+                supervisions=SupervisionSet.from_segments(supervisions),
             )
         self.speakers = (
             {spk: idx for idx, spk in enumerate(self.cuts.speakers)}

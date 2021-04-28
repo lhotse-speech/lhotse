@@ -19,7 +19,7 @@ __all__ = ["dihard3"]
 )
 @click.option(
     "-j",
-    "-num-jobs",
+    "--num-jobs",
     type=int,
     default=1,
     help="Number of jobs to scan corpus directory for recordings.",
