@@ -41,7 +41,7 @@ def copy(input_manifest, output_manifest):
               help='The type of items in the INPUT_MANIFEST '
                    '(has to be explicitly provided for arrow conversion at this time).'
               )
-def convert_arrow(input_manifest, output_manifest, manifest_type: str):
+def convert_to_arrow(input_manifest, output_manifest, manifest_type: str):
     """
     Load INPUT_MANIFEST using lazy loading mechanism and store it in
     OUTPUT_MANIFEST using Apache Arrow binary format.
