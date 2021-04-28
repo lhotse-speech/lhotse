@@ -9,7 +9,6 @@ About the DIHARD III corpus
     More details can be found at:
     https://dihardchallenge.github.io/dihard3/docs/third_dihard_eval_plan_v1.2.pdf
 """
-import tarfile
 from itertools import chain
 from pathlib import Path
 from typing import Optional, List, Dict, Union

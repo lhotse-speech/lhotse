@@ -6,7 +6,9 @@ from torch.utils.data import Dataset
 
 from lhotse import validate
 from lhotse.cut import CutSet
+from lhotse.audio import RecordingSet
 from lhotse.supervision import SupervisionSet
+from lhotse.utils import overspans, TimeSpan
 from lhotse.dataset.collation import collate_features, collate_matrices
 
 
@@ -58,19 +60,23 @@ class DiarizationDataset(Dataset):
     ) -> None:
         super().__init__()
         validate(cuts)
-        self.cuts = (
-            cuts
-            if uem is None
-            else cuts.filter_supervisions(
+        if not uem:
+            self.cuts = cuts
+        else:
+            # Get interval tree for UEM supervisions
+            self.cuts = cuts.filter_supervisions(
                 lambda s: any(
                     [
-                        s.start >= seg.start
-                        and s.start + s.duration <= seg.start + seg.duration
-                        for seg in uem
+                        overspans(
+                            TimeSpan(u.start, u.end),
+                            TimeSpan(s.start, s.end),
+                        )
+                        for u in uem.filter(
+                            lambda seg: seg.recording_id == s.recording_id
+                        )
                     ]
                 )
             )
-        )
         self.speakers = (
             {spk: idx for idx, spk in enumerate(self.cuts.speakers)}
             if global_speaker_ids

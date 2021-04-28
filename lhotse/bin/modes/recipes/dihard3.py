@@ -1,6 +1,8 @@
 import click
 
-from lhotse.bin.modes import obtain, prepare
+from typing import Optional
+
+from lhotse.bin.modes import prepare
 from lhotse.recipes.dihard3 import prepare_dihard3
 from lhotse.utils import Pathlike
 
