@@ -107,9 +107,9 @@ class LazyMixin:
     @classmethod
     def from_jsonl_lazy(cls, path: Pathlike) -> Manifest:
         """
-        Read a manifest in a lazy manner, using pyarrow.
+        Read a JSONL manifest in a lazy manner, using pyarrow.
         The contents of the file are loaded into memory,
-        but in a memory-saving format, and they are deserialized into
+        but in a memory-efficient format, and they are deserialized into
         Python objects such as Cut, Supervision etc. only upon request.
 
         In this mode, most operations on the manifest set may be very slow:
@@ -122,6 +122,11 @@ class LazyMixin:
         return cls(LazyDict.from_jsonl(path))
 
     def to_arrow(self, path: Pathlike) -> None:
+        """
+        Store the manifest in Apache Arrow streaming binary format.
+        For very large manifests it can be ~5x larger that a corresponding compressed JSONL,
+        but it allows to read the manifest with a relatively small memory footprint (~300M).
+        """
         import pyarrow as pa
         if self.is_lazy:
             # TODO: I don't want to add a special method for retrieving those in each manifest type;
@@ -148,7 +153,7 @@ class LazyMixin:
     @classmethod
     def from_arrow(cls, path: Pathlike) -> Manifest:
         """
-        Read a manifest in a lazy manner, using pyarrow and parquet.
+        Read a manifest stored in Apache Arrow streaming binary format in a lazy manner.
         This method is supposed to use mmap, which should significantly ease
         the memory usage.
         The manifest items are deserialized into Python objects such as Cut,
