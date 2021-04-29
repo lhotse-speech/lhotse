@@ -173,8 +173,6 @@ class LazyMixin:
                     table = pa.Table.from_arrays(arrays, schema=schema)
                     # The loop below will iterate only once, since we ensured there's exactly one batch.
                     for idx, batch in enumerate(table.to_batches(max_chunksize=batch_size)):
-                        if idx > 0:
-                            print(idx)
                         writer.write_batch(batch)
 
     @classmethod
