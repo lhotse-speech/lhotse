@@ -1,5 +1,6 @@
 # coding=utf-8
 import os
+from subprocess import run, PIPE
 from pathlib import Path
 
 from setuptools import find_packages, setup
@@ -23,9 +24,19 @@ if os.environ.get('READTHEDOCS', False):
             req.startswith(dep) for dep in ['torchaudio', 'SoundFile']
         )]
 
+try:
+    git_commit = run(['git', 'rev-parse', '--short', 'HEAD'], check=True, stdout=PIPE).stdout.decode().rstrip('\n').strip()
+    dirty_commit = len(run(['git', 'diff', '--shortstat'], check=True, stdout=PIPE).stdout.decode().rstrip('\n').strip()) > 0
+    git_commit = git_commit + '-dirty' if dirty_commit else git_commit + '-clean'
+except Exception:
+    git_commit = ''
+# See the format https://packaging.python.org/guides/distributing-packages-using-setuptools/#local-version-identifiers
+dev_version = '.dev-' + git_commit
+
+
 setup(
     name='lhotse',
-    version='0.6.0',
+    version='0.6.0' + dev_version,
     python_requires='>=3.6.0',
     description='Data preparation for speech processing models training.',
     author='The Lhotse Development Team',
