@@ -12,16 +12,15 @@ About the DIHARD III corpus
 import logging
 from itertools import chain
 from pathlib import Path
-from types import MethodWrapperType
 from typing import Optional, List, Dict, Union
 from collections import defaultdict
 
 from tqdm.auto import tqdm
 
 from lhotse import validate_recordings_and_supervisions
-from lhotse.audio import Recording, RecordingSet, audio_energy
+from lhotse.audio import Recording, RecordingSet
 from lhotse.supervision import SupervisionSegment, SupervisionSet
-from lhotse.utils import Pathlike, check_and_rglob, urlretrieve_progress
+from lhotse.utils import Pathlike, check_and_rglob
 
 
 def prepare_dihard3(
@@ -145,5 +144,5 @@ def make_uem_segments(
             start=float(start),
             duration=round(float(end) - float(start), ndigits=8),
         )
-        for _, channel, start, end in map(str.split, lines)
+        for _, _, start, end in map(str.split, lines)
     ]
