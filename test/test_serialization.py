@@ -125,6 +125,8 @@ def cut_set():
     return CutSet.from_cuts([
         cut,
         fastcopy(cut, id='cut-nosup', supervisions=[]),
+        fastcopy(cut, id='cut-norec', recording=None),
+        fastcopy(cut, id='cut-nofeat', features=None),
         cut.pad(duration=30.0, direction='left'),
         cut.pad(duration=30.0, direction='right'),
         cut.pad(duration=30.0, direction='both'),
