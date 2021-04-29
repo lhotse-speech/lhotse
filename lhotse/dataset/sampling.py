@@ -97,6 +97,11 @@ class CutSampler(Sampler[List[str]]):
         self.epoch = 0
         self.cut_idx = 0
         self.provide_len = provide_len
+        if not self.provide_len and self.shuffle:
+            warnings.warn("The sampler was set not to provide __len__, which suggests that you're "
+                          "using lazy Cut manifests, but shuffle was set to True. "
+                          "If your dataset is large, you might experience very slow performance "
+                          "when iterating the sampler. To fix the issue, set shuffle=False.")
 
         self._maybe_init_distributed(world_size=world_size, rank=rank)
         self.num_batches = None
