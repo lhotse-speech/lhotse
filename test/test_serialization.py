@@ -4,7 +4,7 @@ import pytest
 
 from lhotse import AudioSource, Cut, CutSet, FeatureSet, Features, Recording, RecordingSet, SupervisionSegment, \
     SupervisionSet, load_manifest, store_manifest
-from lhotse.utils import is_module_available, nullcontext as does_not_raise
+from lhotse.utils import fastcopy, is_module_available, nullcontext as does_not_raise
 
 
 @pytest.mark.parametrize(
@@ -124,6 +124,9 @@ def cut_set():
         ])
     return CutSet.from_cuts([
         cut,
+        fastcopy(cut, id='cut-nosup', supervisions=[]),
+        fastcopy(cut, id='cut-norec', recording=None),
+        fastcopy(cut, id='cut-nofeat', features=None),
         cut.pad(duration=30.0, direction='left'),
         cut.pad(duration=30.0, direction='right'),
         cut.pad(duration=30.0, direction='both'),
