@@ -1,5 +1,6 @@
 import random
 from itertools import groupby
+from tempfile import NamedTemporaryFile
 
 import pytest
 
@@ -7,7 +8,7 @@ from lhotse import CutSet
 from lhotse.dataset.cut_transforms import concat_cuts
 from lhotse.dataset.sampling import BucketingSampler, CutPairsSampler, SingleCutSampler
 from lhotse.testing.dummies import DummyManifest, dummy_cut
-from lhotse.utils import nullcontext as does_not_raise
+from lhotse.utils import is_module_available, nullcontext as does_not_raise
 
 
 @pytest.fixture
@@ -511,3 +512,31 @@ def test_partitions_are_equal(world_size, n_cuts, sampler_cls):
     # Check that it worked.
     n_batches = [len(s) for s in samplers]
     assert all(nb == n_batches[0] for nb in n_batches)
+
+
+@pytest.mark.skipif(not is_module_available('pyarrow'), reason='Requires pyarrow.')
+@pytest.mark.parametrize('sampler_cls', [SingleCutSampler, BucketingSampler])
+def test_single_cut_sampler_with_lazy_cuts(sampler_cls):
+    # The dummy cuts have a duration of 1 second each
+    cut_set = DummyManifest(CutSet, begin_id=0, end_id=100)
+    with NamedTemporaryFile(suffix='.arrow') as f:
+        cut_set.to_arrow(f.name)
+        lazy_cuts = CutSet.from_arrow(f.name)
+
+        sampler = sampler_cls(
+            lazy_cuts,
+            # We set shuffle to False to avoid a possibly very costly iteration of the lazy manifest
+            shuffle=False,
+            # Set an effective batch size of 10 cuts, as all have 1s duration == 100 frames
+            # This way we're testing that it works okay when returning multiple batches in
+            # a full epoch.
+            max_frames=1000
+        )
+        sampler_cut_ids = []
+        for batch in sampler:
+            sampler_cut_ids.extend(batch)
+
+        # Invariant 1: we receive the same amount of items in a dataloader epoch as there we in the CutSet
+        assert len(sampler_cut_ids) == len(cut_set)
+        # Invariant 2: the items are not duplicated
+        assert len(set(sampler_cut_ids)) == len(sampler_cut_ids)

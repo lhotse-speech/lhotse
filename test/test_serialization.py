@@ -320,8 +320,8 @@ def test_lazy_jsonl_deserialization(manifests, manifest_type, format, compressed
 def test_lazy_arrow_serialization(manifests, manifest_type):
     manifest = manifests[manifest_type]
     with NamedTemporaryFile(suffix='.arrow') as f:
-        manifest.to_arrow(f.name)
-        lazy_manifest = type(manifest).from_arrow(f.name)
+        manifest.to_file(f.name)
+        lazy_manifest = type(manifest).from_file(f.name)
         # Test iteration
         for eager_obj, lazy_obj in zip(manifest, lazy_manifest):
             assert eager_obj == lazy_obj
