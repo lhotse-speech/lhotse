@@ -2,8 +2,9 @@ import gzip
 import itertools
 import json
 from collections import deque
+from functools import reduce
 from pathlib import Path
-from typing import Any, Dict, Generator, Iterable, Optional, Type, Union
+from typing import Any, Dict, Generator, Iterable, List, Optional, Type, Union
 
 import numpy as np
 import yaml
@@ -148,7 +149,8 @@ class LazyMixin:
                     writer.write_batch(batch)
         else:
             # We will take the first 1000 items from the manifest to infer the schema.
-            schema = infer_arrow_schema_collection(self.subset(first=1000))
+            # TODO: might want to sample items randomly in case their manifests vary...
+            schema = infer_arrow_schema(self.subset(first=1000))
             # Open the file for writing and initialize the pyarrow batch writer.
             # Note that the batch size we determine here will be used to load whole chunks into
             # memory during deserialization.
@@ -164,9 +166,9 @@ class LazyMixin:
                     # These arrays are then used to create an arrow Table.
                     arrays = [
                         pa.array(
-                            [item[key] for item in chunk],
+                            [item.get(key) for item in chunk],
                             type=schema.field(key_idx).type
-                        ) for key_idx, key in enumerate(chunk[0].keys())
+                        ) for key_idx, key in enumerate(schema.names)
                     ]
                     table = pa.Table.from_arrays(arrays, schema=schema)
                     # The loop below will iterate only once, since we ensured there's exactly one batch.
@@ -434,25 +436,84 @@ def arr2list_recursive(data: Union[dict, list], filter_none: bool = True) -> Uni
     }
 
 
-def infer_arrow_schema_collection(manifest: Manifest):
+def infer_arrow_schema(manifest):
+    """
+    This method takes a manifest and infers the corresponding Arrow schema.
+    The work is divided in three stages:
+        1. Go through all the items in the manifest as dicts and convert primitive
+            types to their Arrow variants (e.g. str -> pa.string())
+        2. Merge the manifests for different items (it is needed in case some items
+            have different fields, e.g. Cut and MixedCut) -- the resulting schema
+            is a union of all the fields.
+        3. Now that we have a single merged schema, convert the non-primitive types
+            such as dicts and lists to their Arrow variants (pa.list_, pa.struct)
+        4. The resulting item is of type "pa.DataType" -> convert it to schema and
+            return.
+    """
     import pyarrow as pa
-    return pa.unify_schemas([pa.schema(infer_arrow_schema_item(item)) for item in manifest.to_dicts()])
+    schema_candidates = [infer_arrow_types(d) for d in manifest.to_dicts()]
+    merged = {}
+    for schema in schema_candidates:
+        merged = recursively_merge(merged, schema)
+    arrow_type = convert_to_arrow_type(merged)
+    return pa.schema(arrow_type)
 
 
-def infer_arrow_schema_item(data: Any, key: Optional[str] = None):
+def infer_arrow_types(data: Any, key: Optional[str] = None):
     import pyarrow as pa
     if isinstance(data, int):
-        if key is not None and 'channel' in key:
-            return pa.int8()
-        return pa.int64()
-    if isinstance(data, float):
+        if key is not None:
+            if key == 'channel' or key == 'channels':
+                return pa.int8()
+            if 'num_samples' == key:
+                return pa.int64()  # paranoia mode
+        return pa.int32()
+    elif isinstance(data, float):
         return pa.float64()
-    if isinstance(data, str):
+    elif isinstance(data, str):
         return pa.string()
-    if isinstance(data, list):
-        return pa.list_(infer_arrow_schema_item(data[0]))
+    elif isinstance(data, list):
+        if key == 'channel' or key == 'channels':
+            return pa.list_(pa.int8())
+        return list(infer_arrow_types(d) for d in data)
+    elif isinstance(data, dict):
+        return dict((key, infer_arrow_types(val, key)) for key, val in data.items())
+    else:
+        raise ValueError("Unsupported type")
+
+
+def recursively_merge(a: Union[Dict, List], b: Union[Dict, List]):
+    if isinstance(b, dict):
+        merged = a.copy()
+        for key, val in b.items():
+            if key not in a:
+                if isinstance(val, list):
+                    merged[key] = recursively_merge([], val)
+                else:
+                    merged[key] = val
+            else:
+                merged[key] = recursively_merge(a[key], val)
+        return merged
+    elif isinstance(b, list):
+        mergedlist = [reduce(recursively_merge, a + b)]
+        return mergedlist
+    else:
+        if a != b:
+            raise ValueError(f"Incompatible types {a} and {b}")
+        return a
+
+
+def convert_to_arrow_type(data: Any):
+    import pyarrow as pa
     if isinstance(data, dict):
-        return pa.struct([(key, infer_arrow_schema_item(val, key)) for key, val in data.items()])
+        return pa.struct([
+            (key, convert_to_arrow_type(val)) for key, val in data.items()
+        ])
+    if isinstance(data, list):
+        assert len(data) == 1
+        return pa.list_(convert_to_arrow_type(data[0]))
+    else:
+        return data
 
 
 class NumpyEncoder(json.JSONEncoder):
