@@ -493,7 +493,8 @@ def recursively_merge(a: Union[Dict, List], b: Union[Dict, List]):
                 merged[key] = recursively_merge(a[key], val)
         return merged
     elif isinstance(b, list):
-        mergedlist = [reduce(recursively_merge, a + b)]
+        ab = a + b
+        mergedlist = [reduce(recursively_merge, ab)] if ab else []
         return mergedlist
     else:
         if a != b:
@@ -508,6 +509,8 @@ def convert_to_arrow_type(data: Any):
             (key, convert_to_arrow_type(val)) for key, val in data.items()
         ])
     if isinstance(data, list):
+        if not data:
+            return pa.list_(pa.null())
         assert len(data) == 1
         return pa.list_(convert_to_arrow_type(data[0]))
     else:
