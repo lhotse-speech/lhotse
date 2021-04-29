@@ -284,6 +284,8 @@ class LazyDict:
         self.batches = deque(self.table.to_batches())
         self.curr_view = self.batches[0].to_pandas()
         self.id2pos = dict(zip(self.curr_view.id, range(len(self.curr_view.id))))
+        self.prev_view = None
+        self.prev_id2pos = {}
 
     @classmethod
     def from_jsonl(cls, path: Pathlike) -> 'LazyDict':
@@ -305,7 +307,9 @@ class LazyDict:
         # Rotate the deque to the left by one item.
         # [0, 1, 2] -> [1, 2, 0]
         self.batches.rotate(-1)
+        self.prev_view = self.curr_view
         self.curr_view = self.batches[0].to_pandas()
+        self.prev_id2pos = self.id2pos
         self.id2pos = dict(zip(self.curr_view.id, range(len(self.curr_view.id))))
 
     def _find_key(self, key: str):
@@ -318,6 +322,9 @@ class LazyDict:
             pos = self.id2pos.get(key)
             if pos is not None:
                 return self._deserialize_one(self.curr_view.iloc[pos].to_dict())
+            pos = self.prev_id2pos.get(key)
+            if pos is not None:
+                return self._deserialize_one(self.prev_view.iloc[pos].to_dict())
             # Not found in the current Arrow's "batch" -- we'll advance
             # to the next one and try again.
             self._progress()

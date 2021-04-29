@@ -63,7 +63,8 @@ class K2SpeechRecognitionDataset(torch.utils.data.Dataset):
             return_cuts: bool = False,
             cut_transforms: List[Callable[[CutSet], CutSet]] = None,
             input_transforms: List[Callable[[torch.Tensor], torch.Tensor]] = None,
-            input_strategy: InputStrategy = PrecomputedFeatures()
+            input_strategy: InputStrategy = PrecomputedFeatures(),
+            check_inputs: bool = True
     ):
         """
         K2 ASR IterableDataset constructor.
@@ -79,6 +80,8 @@ class K2SpeechRecognitionDataset(torch.utils.data.Dataset):
             Examples: normalization, SpecAugment, etc.
         :param input_strategy: Converts cuts into a collated batch of audio/features.
             By default, reads pre-computed features from disk.
+        :param check_inputs: Should we iterate over ``cuts`` to validate them.
+            You might want to disable it when using "lazy" CutSets to avoid a very long start up time.
         """
         super().__init__()
         # Initialize the fields
@@ -87,7 +90,8 @@ class K2SpeechRecognitionDataset(torch.utils.data.Dataset):
         self.cut_transforms = ifnone(cut_transforms, [])
         self.input_transforms = ifnone(input_transforms, [])
         self.input_strategy = input_strategy
-        self._validate()
+        if check_inputs:
+            validate_for_asr(self.cuts)
 
     def __len__(self) -> int:
         return len(self.cuts)
@@ -141,13 +145,14 @@ class K2SpeechRecognitionDataset(torch.utils.data.Dataset):
 
         return batch
 
-    def _validate(self) -> None:
-        validate(self.cuts)
-        tol = 1e-3  # 1ms
-        for cut in self.cuts:
-            for supervision in cut.supervisions:
-                assert supervision.start >= -tol, f"Supervisions starting before the cut are not supported for ASR" \
-                                                  f" (sup id: {supervision.id}, cut id: {cut.id})"
-                assert supervision.duration <= cut.duration + tol, f"Supervisions ending after the cut " \
-                                                                   f"are not supported for ASR" \
-                                                                   f" (sup id: {supervision.id}, cut id: {cut.id})"
+
+def validate_for_asr(cuts: CutSet) -> None:
+    validate(cuts)
+    tol = 1e-3  # 1ms
+    for cut in cuts:
+        for supervision in cut.supervisions:
+            assert supervision.start >= -tol, f"Supervisions starting before the cut are not supported for ASR" \
+                                              f" (sup id: {supervision.id}, cut id: {cut.id})"
+            assert supervision.duration <= cut.duration + tol, f"Supervisions ending after the cut " \
+                                                               f"are not supported for ASR" \
+                                                               f" (sup id: {supervision.id}, cut id: {cut.id})"
