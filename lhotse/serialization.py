@@ -128,6 +128,8 @@ class LazyMixin:
         but it allows to read the manifest with a relatively small memory footprint (~300M).
         """
         import pyarrow as pa
+        # If the underlying storage for manifests is already lazy, we can
+        # access the arrow tables directly without the need to convert items.
         if self.is_lazy:
             # TODO: I don't want to add a special method for retrieving those in each manifest type;
             #       after this work is done, I will make a refactoring PR that renames these members
@@ -145,10 +147,33 @@ class LazyMixin:
                 for batch in table.to_batches():
                     writer.write_batch(batch)
         else:
-            raise NotImplementedError("Currently, storing manifests that are not represented as "
-                                      "Arrow tables already is not supported. Instead, you can convert "
-                                      "the manifest by reading it's JSONL using `from_jsonl_lazy` method, "
-                                      "and then calling `to_arrow()` on that instance.")
+            # We will take the first 1000 items from the manifest to infer the schema.
+            schema = infer_arrow_schema_collection(self.subset(first=1000))
+            # Open the file for writing and initialize the pyarrow batch writer.
+            # Note that the batch size we determine here will be used to load whole chunks into
+            # memory during deserialization.
+            with open(path, "wb") as f, pa.RecordBatchStreamWriter(f, schema=schema) as writer:
+                # We are (lazily) grouping the items in manifest into chunks,
+                # each of ``batch_size`` items.
+                batch_size = 10 * 1024
+                chunks = grouper(n=batch_size, iterable=self.to_dicts())
+                for chunk in chunks:
+                    # We convert the items in each chunk into Arrow's columnar representation.
+                    # To do this, we first iterate by available "columns" (i.e. dict keys),
+                    # and for each of them create an Arrow array with the corresponding values.
+                    # These arrays are then used to create an arrow Table.
+                    arrays = [
+                        pa.array(
+                            [item[key] for item in chunk],
+                            type=schema.field(key_idx).type
+                        ) for key_idx, key in enumerate(chunk[0].keys())
+                    ]
+                    table = pa.Table.from_arrays(arrays, schema=schema)
+                    # The loop below will iterate only once, since we ensured there's exactly one batch.
+                    for idx, batch in enumerate(table.to_batches(max_chunksize=batch_size)):
+                        if idx > 0:
+                            print(idx)
+                        writer.write_batch(batch)
 
     @classmethod
     def from_arrow(cls, path: Pathlike) -> Manifest:
@@ -202,8 +227,9 @@ def load_manifest(path: Pathlike, manifest_cls: Optional[Type] = None) -> Manife
     elif extension_contains('.yaml', path):
         raw_data = load_yaml(path)
     elif extension_contains('.arrow', path):
-        assert manifest_cls is not None, "For lazy deserialization with arrow, " \
-                                         "the manifest type has to be known."
+        assert manifest_cls is not None, \
+            "For lazy deserialization with arrow, the manifest type has to be known. " \
+            "Try using [CutSet|RecordingSet|SupervisionSet].from_file(...) instead."
         return manifest_cls.from_arrow(path)
     else:
         raise ValueError(f"Not a valid manifest: {path}")
@@ -406,6 +432,27 @@ def arr2list_recursive(data: Union[dict, list], filter_none: bool = True) -> Uni
         for k, v in data.items()
         if v is not None or not filter_none
     }
+
+
+def infer_arrow_schema_collection(manifest: Manifest):
+    import pyarrow as pa
+    return pa.unify_schemas([pa.schema(infer_arrow_schema_item(item)) for item in manifest.to_dicts()])
+
+
+def infer_arrow_schema_item(data: Any, key: Optional[str] = None):
+    import pyarrow as pa
+    if isinstance(data, int):
+        if key is not None and 'channel' in key:
+            return pa.int8()
+        return pa.int64()
+    if isinstance(data, float):
+        return pa.float64()
+    if isinstance(data, str):
+        return pa.string()
+    if isinstance(data, list):
+        return pa.list_(infer_arrow_schema_item(data[0]))
+    if isinstance(data, dict):
+        return pa.struct([(key, infer_arrow_schema_item(val, key)) for key, val in data.items()])
 
 
 class NumpyEncoder(json.JSONEncoder):
