@@ -9,18 +9,24 @@ About the DIHARD III corpus
     More details can be found at:
     https://dihardchallenge.github.io/dihard3/docs/third_dihard_eval_plan_v1.2.pdf
 """
+import logging
 from itertools import chain
 from pathlib import Path
+from types import MethodWrapperType
 from typing import Optional, List, Dict, Union
+from collections import defaultdict
+
+from tqdm.auto import tqdm
 
 from lhotse import validate_recordings_and_supervisions
-from lhotse.audio import Recording, RecordingSet
+from lhotse.audio import Recording, RecordingSet, audio_energy
 from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import Pathlike, check_and_rglob, urlretrieve_progress
 
 
 def prepare_dihard3(
-    audio_dir: Pathlike,
+    dev_audio_dir: Pathlike,
+    eval_audio_dir: Pathlike,
     output_dir: Optional[Pathlike] = None,
     uem_manifest: Optional[bool] = True,
     num_jobs: Optional[int] = 1,
@@ -30,57 +36,88 @@ def prepare_dihard3(
     We create two manifests: one with recordings, and the other one with supervisions containing speaker id
     and timestamps.
 
-    :param audio_dir: Path to downloaded DIHARD III corpus (LDC2020E12), e.g.
-        `/data/corpora/LDC/LDC2020E12_Third_DIHARD_Challenge_Development_Data`
+    :param dev_audio_dir: Path to downloaded DIHARD III dev corpus (LDC2020E12), e.g.
+        /data/corpora/LDC/LDC2020E12
+    :param eval_audio_dir: Path to downloaded DIHARD III eval corpus (LDC2021E02), e.g.
+        /data/corpora/LDC/LDC2021E02`
     :param output_dir: Directory where the manifests should be written. Can be omitted to avoid writing.
     :param uem_manifest: If True, also return a SupervisionSet describing the UEM segments (see use in
         dataset.DiarizationDataset)
     :param num_jobs: int (default = 1), number of jobs to scan corpus directory for recordings
     :return: A dict with manifests. The keys are: ``{'recordings', 'supervisions'}``.
     """
-    rttm_paths = list(check_and_rglob(audio_dir, "*.rttm"))
-    uem_paths = list(check_and_rglob(audio_dir, "*.uem"))
+    manifests = defaultdict(dict)
+    for part in tqdm(['dev', 'eval'], desc='Preparing DIHARD parts'):
+        audio_dir = dev_audio_dir if part == 'dev' else eval_audio_dir
+        if audio_dir is None or not Path(audio_dir).exists():
+            logging.warning(f"Nothing to be done for {part}")
+            continue
+        rttm_paths = list(check_and_rglob(audio_dir, "*.rttm"))
+        uem_paths = list(check_and_rglob(audio_dir, "*.uem"))
 
-    recordings = RecordingSet.from_dir(audio_dir, "*.flac", num_jobs=num_jobs)
+        recordings = RecordingSet.from_dir(audio_dir, "*.flac", num_jobs=num_jobs)
 
-    supervisions = SupervisionSet.from_segments(
-        chain.from_iterable(
-            make_rttm_segments(
-                rttm_path=[x for x in rttm_paths if x.stem == recording.id][0],
-                recording=recording,
-            )
-            for recording in recordings
-        )
-    )
-    if uem_manifest:
-        uem = SupervisionSet.from_segments(
+        # Read metadata for recordings
+        metadata = parse_metadata(list(check_and_rglob(audio_dir, "recordings.tbl"))[0])
+
+        supervisions = SupervisionSet.from_segments(
             chain.from_iterable(
-                make_uem_segments(
-                    uem_path=[x for x in uem_paths if x.stem == recording.id][0],
+                make_rttm_segments(
+                    rttm_path=[x for x in rttm_paths if x.stem == recording.id][0],
                     recording=recording,
+                    metadata=metadata[recording.id],
                 )
                 for recording in recordings
             )
         )
-
-    validate_recordings_and_supervisions(recordings, supervisions)
-
-    if output_dir is not None:
-        output_dir = Path(output_dir)
-        output_dir.mkdir(parents=True, exist_ok=True)
-        recordings.to_json(output_dir / "recordings.json")
-        supervisions.to_json(output_dir / "supervisions.json")
         if uem_manifest:
-            uem.to_json(output_dir / "uem.json")
-    manifests = {"recordings": recordings, "supervisions": supervisions}
-    if uem_manifest:
-        manifests.update({"uem": uem})
+            uem = SupervisionSet.from_segments(
+                chain.from_iterable(
+                    make_uem_segments(
+                        uem_path=[x for x in uem_paths if x.stem == recording.id][0],
+                        recording=recording,
+                    )
+                    for recording in recordings
+                )
+            )
+
+        validate_recordings_and_supervisions(recordings, supervisions)
+
+        if output_dir is not None:
+            output_dir = Path(output_dir)
+            output_dir.mkdir(parents=True, exist_ok=True)
+            recordings.to_json(output_dir / f"recordings_{part}.json")
+            supervisions.to_json(output_dir / f"supervisions_{part}.json")
+            if uem_manifest:
+                uem.to_json(output_dir / f"uem_{part}.json")
+        manifests[part] = {"recordings": recordings, "supervisions": supervisions}
+        if uem_manifest:
+            manifests[part].update({"uem": uem})
     return manifests
 
 
+def parse_metadata(metadata_path: Pathlike) -> Dict[str, Dict[str, Union[str, bool]]]:
+    """
+    Parses the recordings.tbl file and creates a dictionary from recording id to
+    metadata containing the following keys: in_core, lang, domain, source
+    """
+    metadata = defaultdict(dict)
+    f = open(metadata_path, 'r')
+    next(f)  # skip first line since it contains headers
+    for line in f:
+        reco_id, in_core, lang, domain, source, _, _, _, _ = line.strip().split()
+        metadata[reco_id] = {
+            'in_core': in_core == 'True',
+            'lang': lang,
+            'domain': domain,
+            'source': source,
+        }
+    f.close()
+    return metadata
+
+
 def make_rttm_segments(
-    rttm_path: Pathlike,
-    recording: Recording,
+    rttm_path: Pathlike, recording: Recording, metadata: Dict
 ) -> List[SupervisionSegment]:
     lines = rttm_path.read_text().splitlines()
     return [
@@ -90,6 +127,8 @@ def make_rttm_segments(
             start=float(start),
             duration=float(duration),
             speaker=speaker,
+            language=metadata['lang'],
+            custom=metadata,
         )
         for _, _, channel, start, duration, _, _, speaker, _, _ in map(str.split, lines)
     ]

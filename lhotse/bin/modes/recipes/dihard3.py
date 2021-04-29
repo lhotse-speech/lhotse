@@ -10,8 +10,9 @@ __all__ = ["dihard3"]
 
 
 @prepare.command(context_settings=dict(show_default=True))
-@click.argument("corpus_dir", type=click.Path(exists=True, dir_okay=True))
 @click.argument("output_dir", type=click.Path())
+@click.option("--dev", type=click.Path(exists=True, dir_okay=True))
+@click.option("--eval", type=click.Path(exists=True, dir_okay=True))
 @click.option(
     "--uem/--no-uem",
     default=True,
@@ -25,12 +26,13 @@ __all__ = ["dihard3"]
     help="Number of jobs to scan corpus directory for recordings.",
 )
 def dihard3(
-    corpus_dir: Pathlike,
     output_dir: Pathlike,
+    dev: Optional[Pathlike],
+    eval: Optional[Pathlike],
     uem: Optional[float] = True,
     num_jobs: Optional[int] = 1,
 ):
     """DIHARD3 data preparation."""
     prepare_dihard3(
-        corpus_dir, output_dir=output_dir, uem_manifest=uem, num_jobs=num_jobs
+        dev, eval, output_dir=output_dir, uem_manifest=uem, num_jobs=num_jobs
     )
