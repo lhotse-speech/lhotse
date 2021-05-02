@@ -34,6 +34,35 @@ def validate(obj: Any, read_data: bool = False) -> None:
     valid(obj, read_data=read_data)
 
 
+def fix_manifests(
+        recordings: RecordingSet,
+        supervisions: SupervisionSet
+) -> Tuple[RecordingSet, SupervisionSet]:
+    """
+    Fix a pair of :class:`~lhotse.audio.RecordingSet` and :class:`~lhotse.supervision.SupervisionSet`,
+    which is conceptually similar to how Kaldi's ``utils/fix_data_dir.sh`` works.
+
+    We will:
+        - remove all supervisions without a corresponding recording;
+        - remove all recordings without a corresponding supervision;
+        - remove all supervisions that exceed the duration of a recording;
+        - trim supervisions that exceed the duration of a recording but start before its end;
+        - and possibly other operations in the future.
+
+    :param recordings: a :class:`~lhotse.audio.RecordingSet` instance.
+    :param supervisions: a corresponding :class:`~lhotse.supervision.SupervisionSet` instance.
+    :return: a pair of ``recordings`` and ``supervisions`` that were fixed:
+        the original manifests are not modified.
+    """
+    recordings, supervisions = remove_missing_recordings_and_supervisions(recordings, supervisions)
+    if len(recordings) == 0 or len(supervisions) == 0:
+        raise ValueError("There are no matching recordings and supervisions in the input manifests.")
+    supervisions = trim_supervisions_to_recordings(recordings, supervisions)
+    if len(supervisions) == 0:
+        raise ValueError("All supervisions exceed the recordings duration.")
+    return recordings, supervisions
+
+
 def validate_recordings_and_supervisions(
         recordings: RecordingSet,
         supervisions: SupervisionSet,

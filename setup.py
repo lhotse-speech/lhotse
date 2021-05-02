@@ -1,5 +1,6 @@
 # coding=utf-8
 import os
+from subprocess import run, PIPE
 from pathlib import Path
 
 from setuptools import find_packages, setup
@@ -9,7 +10,9 @@ project_root = Path(__file__).parent
 install_requires = (project_root / 'requirements.txt').read_text().splitlines()
 docs_require = (project_root / 'docs' / 'requirements.txt').read_text().splitlines()
 tests_require = ['pytest==5.4.3', 'flake8==3.8.3', 'coverage==5.1', 'hypothesis==5.41.2']
-dev_requires = docs_require + tests_require + ['jupyterlab', 'matplotlib', 'isort']
+arrow_requires = ['pyarrow>=4.0.0', 'pandas>=1.0.0']
+dev_requires = sorted(docs_require + tests_require + ['jupyterlab', 'matplotlib', 'isort'])
+all_requires = sorted(dev_requires + arrow_requires)
 
 if os.environ.get('READTHEDOCS', False):
     # When building documentation, omit torchaudio installation and mock it instead.
@@ -21,9 +24,19 @@ if os.environ.get('READTHEDOCS', False):
             req.startswith(dep) for dep in ['torchaudio', 'SoundFile']
         )]
 
+try:
+    git_commit = run(['git', 'rev-parse', '--short', 'HEAD'], check=True, stdout=PIPE).stdout.decode().rstrip('\n').strip()
+    dirty_commit = len(run(['git', 'diff', '--shortstat'], check=True, stdout=PIPE).stdout.decode().rstrip('\n').strip()) > 0
+    git_commit = git_commit + '-dirty' if dirty_commit else git_commit + '-clean'
+except Exception:
+    git_commit = ''
+# See the format https://packaging.python.org/guides/distributing-packages-using-setuptools/#local-version-identifiers
+dev_version = '.dev-' + git_commit
+
+
 setup(
     name='lhotse',
-    version='0.6.0-dev',
+    version='0.6.0' + dev_version,
     python_requires='>=3.6.0',
     description='Data preparation for speech processing models training.',
     author='The Lhotse Development Team',
@@ -39,7 +52,9 @@ setup(
     extras_require={
         'docs': docs_require,
         'tests': tests_require,
-        'dev': docs_require + tests_require
+        'arrow': arrow_requires,
+        'dev': docs_require + tests_require,
+        'all': all_requires
     },
     classifiers=[
         "Development Status :: 3 - Alpha",

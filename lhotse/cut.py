@@ -7,7 +7,7 @@ from functools import partial, reduce
 from itertools import islice
 from math import ceil, floor
 from pathlib import Path
-from typing import Any, Callable, Dict, FrozenSet, Iterable, List, Optional, Sequence, Type, TypeVar, Union
+from typing import Any, Callable, Dict, FrozenSet, Iterable, List, Mapping, Optional, Sequence, Type, TypeVar, Union
 
 import numpy as np
 from cytoolz import sliding_window
@@ -25,7 +25,7 @@ from lhotse.serialization import Serializable
 from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import (Decibels, LOG_EPSILON, Pathlike, Seconds, TimeSpan, asdict_nonull,
                           compute_num_frames, compute_num_samples, exactly_one_not_null, fastcopy,
-                          index_by_id_and_check, measure_overlap, overlaps,
+                          ifnone, index_by_id_and_check, measure_overlap, overlaps,
                           overspans, perturb_num_samples, split_sequence, uuid4)
 
 # One of the design principles for Cuts is a maximally "lazy" implementation, e.g. when mixing Cuts,
@@ -49,6 +49,9 @@ class CutUtilsMixin:
     but ABC's do not mix well with dataclasses in Python. It is possible we'll ditch the dataclass
     for cuts in the future and make this an ABC instead.
     """
+
+    def to_dict(self) -> dict:
+        return {**asdict_nonull(self), 'type': type(self).__name__}
 
     @property
     def trimmed_supervisions(self) -> List[SupervisionSegment]:
@@ -1217,14 +1220,26 @@ class MixedCut(CutUtilsMixin):
         return [t.cut for t in self.tracks if not isinstance(t.cut, PaddingCut)][0]
 
 
-@dataclass
 class CutSet(Serializable, Sequence[AnyCut]):
     """
     CutSet combines features with their corresponding supervisions.
     It may have wider span than the actual supervisions, provided the features for the whole span exist.
     It is the basic building block of PyTorch-style Datasets for speech/audio processing tasks.
     """
-    cuts: Dict[str, AnyCut]
+
+    def __init__(self, cuts: Optional[Mapping[str, AnyCut]] = None) -> None:
+        self.cuts = ifnone(cuts, {})
+
+    def __eq__(self, other: 'CutSet') -> bool:
+        return self.cuts == other.cuts
+
+    @property
+    def is_lazy(self) -> bool:
+        """
+        Indicates whether this manifest was opened in lazy (read-on-the-fly) mode or not.
+        """
+        from lhotse.serialization import LazyDict
+        return isinstance(self.cuts, LazyDict)
 
     @property
     def mixed_cuts(self) -> Dict[str, MixedCut]:
@@ -1325,8 +1340,8 @@ class CutSet(Serializable, Sequence[AnyCut]):
 
         return CutSet.from_cuts(deserialize_one(cut) for cut in data)
 
-    def to_dicts(self) -> List[dict]:
-        return [{**asdict_nonull(cut), 'type': type(cut).__name__} for cut in self]
+    def to_dicts(self) -> Iterable[dict]:
+        return (cut.to_dict() for cut in self)
 
     def describe(self) -> None:
         """

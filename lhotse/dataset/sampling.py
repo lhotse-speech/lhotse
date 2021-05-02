@@ -72,6 +72,7 @@ class CutSampler(Sampler[List[str]]):
             world_size: Optional[int] = None,
             rank: Optional[int] = None,
             seed: int = 0,
+            provide_len: bool = True
     ) -> None:
         """
 
@@ -84,6 +85,9 @@ class CutSampler(Sampler[List[str]]):
         :param world_size: Total number of distributed nodes. We will try to infer it by default.
         :param rank: Index of distributed node. We will try to infer it by default.
         :param seed: Random seed used to consistently shuffle the dataset across different processes.
+        :param provide_len: Should we expose the ``__len__`` attribute in this class.
+            It makes sense to turn it off when iterating the sampler is somewhat costly for any reason;
+            e.g. because the underlying manifest is lazily loaded from the filesystem/somewhere else.
         """
         data_source = DataSource(list(cut_ids))
         super().__init__(data_source)
@@ -92,6 +96,12 @@ class CutSampler(Sampler[List[str]]):
         self.seed = seed
         self.epoch = 0
         self.cut_idx = 0
+        self.provide_len = provide_len
+        if not self.provide_len and self.shuffle:
+            warnings.warn("The sampler was set not to provide __len__, which suggests that you're "
+                          "using lazy Cut manifests, but shuffle was set to True. "
+                          "If your dataset is large, you might experience very slow performance "
+                          "when iterating the sampler. To fix the issue, set shuffle=False.")
 
         self._maybe_init_distributed(world_size=world_size, rank=rank)
         self.num_batches = None
@@ -133,6 +143,9 @@ class CutSampler(Sampler[List[str]]):
         return self
 
     def __len__(self) -> int:
+        if not self.provide_len:
+            # Fake non-existence of this attribute
+            raise TypeError(f"object of type '{type(self).__name__}' has no len()")
         if self.num_batches is None:
             self.num_batches = sum(1 for _ in self)
         return self.num_batches
@@ -252,7 +265,7 @@ class SingleCutSampler(CutSampler):
             By default, this constraint is off.
         :param kwargs: Arguments to be passed into ``CutSampler``.
         """
-        super().__init__(cuts.ids, **kwargs)
+        super().__init__(cuts.ids, provide_len=not cuts.is_lazy, **kwargs)
         self.cuts = cuts
         self.time_constraint = TimeConstraint(
             max_duration=max_duration,
@@ -346,7 +359,11 @@ class CutPairsSampler(CutSampler):
         :param max_cuts: The maximum number of cuts sampled to form a mini-batch.
             By default, this constraint is off.
         """
-        super().__init__(source_cuts.ids, **kwargs)
+        super().__init__(
+            source_cuts.ids,
+            provide_len=not source_cuts.is_lazy and not target_cuts.is_lazy,
+            **kwargs
+        )
         self.source_cuts = source_cuts
         self.target_cuts = target_cuts
         assert set(self.source_cuts.ids) == set(self.target_cuts.ids), \
@@ -463,7 +480,13 @@ class BucketingSampler(CutSampler):
         :param kwargs: Arguments used to create the underlying sampler for each bucket.
         """
         # Do not use the distributed capacities of the CutSampler in the top-level sampler.
-        super().__init__(cuts[0].ids, world_size=1, rank=0, seed=seed)
+        super().__init__(
+            cuts[0].ids,
+            provide_len=all(not cs.is_lazy for cs in cuts),
+            world_size=1,
+            rank=0,
+            seed=seed
+        )
         self.num_buckets = num_buckets
         self.sampler_type = sampler_type
         self.sampler_kwargs = kwargs
