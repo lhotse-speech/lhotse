@@ -304,52 +304,46 @@ class LazyDict:
         making it incredibly slow...
     """
 
-    def __init__(self, table, path):
-        _check_arrow()
-        self.path = path
-        self.table = table
-        self.batches = deque(self.table.to_batches())
-        self.curr_view = self.batches[0].to_pandas()
-        self.id2pos = dict(zip(self.curr_view.id, range(len(self.curr_view.id))))
-        self.prev_view = None
-        self.prev_id2pos = {}
+    def __init__(self, path: Pathlike):
+        self.path = Path(path)
+        self._reset()
 
     def __getstate__(self):
-        state = {k: v for k, v in self.__dict__.items() if k == 'path'}
+        """
+        Store the state for pickling -- we'll only store the path, and re-initialize
+        LazyDict when unpickled. This is necessary to transfer LazyDict across processes
+        for PyTorch's DataLoader workers (otherwise mmapped file gets copied into memory).
+        """
+        state = {'path': self.path}
         return state
 
     def __setstate__(self, state):
+        """Restore the state when unpickled -- open the mmap/jsonl file again."""
         self.__dict__.update(state)
-        assert str(self.path).endswith('.arrow')
         self._reset()
 
     def _reset(self):
         _check_arrow()
-        import pyarrow as pa
-        mmap = pa.memory_map(str(self.path))
-        stream = pa.ipc.open_stream(mmap)
-        self.table = stream.read_all()
+        self._init_table_from_path()
         self.batches = deque(self.table.to_batches())
         self.curr_view = self.batches[0].to_pandas()
         self.id2pos = dict(zip(self.curr_view.id, range(len(self.curr_view.id))))
         self.prev_view = None
         self.prev_id2pos = {}
 
-    @classmethod
-    def from_jsonl(cls, path: Pathlike) -> 'LazyDict':
-        _check_arrow()
-        import pyarrow.json as paj
-        table = paj.read_json(str(path))
-        return cls(table, path)
-
-    @classmethod
-    def from_arrow(cls, path: Pathlike) -> 'LazyDict':
-        _check_arrow()
-        import pyarrow as pa
-        mmap = pa.memory_map(str(path))
-        stream = pa.ipc.open_stream(mmap)
-        table = stream.read_all()
-        return cls(table, path)
+    def _init_table_from_path(self):
+        if 'jsonl' in self.path.suffixes:
+            # Can read ".jsonl" or ".jsonl.gz"
+            import pyarrow.json as paj
+            self.table = paj.read_json(str(self.path))
+        elif 'arrow' == self.path.suffixes[-1]:
+            # Can read ".arrow"
+            import pyarrow as pa
+            mmap = pa.memory_map(str(self.path))
+            stream = pa.ipc.open_stream(mmap)
+            self.table = stream.read_all()
+        else:
+            raise ValueError(f"Unknown LazyDict file format : '{self.path}'")
 
     def _progress(self):
         # Rotate the deque to the left by one item.
