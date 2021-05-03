@@ -684,7 +684,6 @@ def _available_audioread_backends():
     import audioread
     backends = audioread.available_backends()
     logging.info(f'Using audioread. Available backends: {backends}')
-    print(f'Using audioread. Available backends: {backends}')
     return backends
 
 

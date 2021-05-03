@@ -34,8 +34,7 @@ def copy(input_manifest, output_manifest):
 @cli.command()
 @click.argument('input_manifest', type=click.Path(exists=True, dir_okay=False))
 @click.argument('output_manifest', type=click.Path())
-@click.option('-t', '--type',
-              metavar='manifest_type',
+@click.option('-t', '--manifest-type',
               type=click.Choice(['cut', 'recording', 'supervision']),
               default='cut',
               help='The type of items in the INPUT_MANIFEST '
