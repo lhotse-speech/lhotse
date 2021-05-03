@@ -120,7 +120,7 @@ class LazyMixin:
 
         This method requires ``pyarrow`` and ``pandas`` to be installed.
         """
-        return cls(LazyDict.from_jsonl(path))
+        return cls(LazyDict(path))
 
     def to_arrow(self, path: Pathlike) -> None:
         """
@@ -191,7 +191,7 @@ class LazyMixin:
 
         This method requires ``pyarrow`` and ``pandas`` to be installed.
         """
-        return cls(LazyDict.from_arrow(path))
+        return cls(LazyDict(path))
 
 
 def grouper(n, iterable):
@@ -332,11 +332,11 @@ class LazyDict:
         self.prev_id2pos = {}
 
     def _init_table_from_path(self):
-        if 'jsonl' in self.path.suffixes:
+        if '.jsonl' in self.path.suffixes:
             # Can read ".jsonl" or ".jsonl.gz"
             import pyarrow.json as paj
             self.table = paj.read_json(str(self.path))
-        elif 'arrow' == self.path.suffixes[-1]:
+        elif '.arrow' == self.path.suffixes[-1]:
             # Can read ".arrow"
             import pyarrow as pa
             mmap = pa.memory_map(str(self.path))
