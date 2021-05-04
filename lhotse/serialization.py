@@ -306,6 +306,7 @@ class LazyDict:
 
     def __init__(self, path: Pathlike):
         self.path = Path(path)
+        self.shuffled = False
         self._reset()
 
     def __getstate__(self):
@@ -314,7 +315,7 @@ class LazyDict:
         LazyDict when unpickled. This is necessary to transfer LazyDict across processes
         for PyTorch's DataLoader workers (otherwise mmapped file gets copied into memory).
         """
-        state = {'path': self.path}
+        state = {'path': self.path, 'shuffled': self.shuffled}
         return state
 
     def __setstate__(self, state):
@@ -406,9 +407,13 @@ class LazyDict:
             yield from b['id'].tolist()
 
     def keys(self):
-        return iter(self)
+        if self.shuffled:
+            yield from self._iter_shuffled(mode='keys')
+        yield from iter(self)
 
     def values(self):
+        if self.shuffled:
+            yield from self._iter_shuffled(mode='values')
         for b in self.table.to_batches():
             # This seems to be the fastest way to iterate rows in a pyarrow table.
             # Conversion to pandas seems to have the least overhead
@@ -416,7 +421,44 @@ class LazyDict:
             yield from (self._deserialize_one(row.to_dict()) for idx, row in b.to_pandas().iterrows())
 
     def items(self):
+        if self.shuffled:
+            yield from self._iter_shuffled(mode='items')
         yield from ((cut.id, cut) for cut in self.values())
+
+    def shuffle(self):
+        self.shuffled = True
+
+    def _iter_shuffled(self, mode: str = 'values'):
+        assert mode in {'keys', 'values', 'items'}
+
+        # First select random chunk in Arrow's table.
+        batches = self.table.to_batches()
+        random.shuffle(batches)
+        for batch in batches:
+            keys = list(batch.column('id'))
+
+            # mode: self.keys()
+            if mode == 'keys':
+                # Shuffle the keys and return them in random order.
+                random.shuffle(keys)
+                yield from keys
+                continue
+
+            # mode: self.values() or self.items()
+            # Remember the original positions of each key in the sub-table,
+            # and then shuffle them.
+            key2idx = {k: idx for idx, k in enumerate(keys)}
+            random.shuffle(keys)
+            df = batch.to_pandas()
+            for id_ in keys:
+                row = df.iloc[key2idx[id_]]
+                item = self._deserialize_one(row.to_dict())
+                if mode == 'values':
+                    yield item
+                elif mode == 'items':
+                    yield item.id, item
+                else:
+                    raise ValueError(f"Unknown 'mode': '{mode}' in self._iter_shuffled()")
 
     @staticmethod
     def _deserialize_one(data: dict) -> Any:
