@@ -1,10 +1,10 @@
 import gzip
 import itertools
 import json
+import random
 from collections import deque
-from functools import reduce
 from pathlib import Path
-from typing import Any, Dict, Generator, Iterable, List, Optional, Type, Union
+from typing import Any, Dict, Generator, Iterable, Optional, Type, Union
 
 import numpy as np
 import yaml
@@ -144,17 +144,17 @@ class LazyMixin:
                 table = self.cuts.table
             else:
                 raise NotImplementedError(f"Unsupported type of manifest for arrow serialization: {type(self)}")
-            with open(path, "wb") as f, pa.RecordBatchStreamWriter(f, schema=table.schema) as writer:
+            with open(path, "wb") as f, pa.RecordBatchFileWriter(f, schema=table.schema) as writer:
                 for batch in table.to_batches():
                     writer.write_batch(batch)
         else:
             # We will take the first 1000 items from the manifest to infer the schema.
             # TODO: might want to sample items randomly in case their manifests vary...
-            schema = infer_arrow_schema(self.subset(first=1000))
+            schema = pa.schema(pa.array(list(self.subset(first=1000).to_dicts())).type)
             # Open the file for writing and initialize the pyarrow batch writer.
             # Note that the batch size we determine here will be used to load whole chunks into
             # memory during deserialization.
-            with open(path, "wb") as f, pa.RecordBatchStreamWriter(f, schema=schema) as writer:
+            with open(path, "wb") as f, pa.RecordBatchFileWriter(f, schema=schema) as writer:
                 # We are (lazily) grouping the items in manifest into chunks,
                 # each of ``batch_size`` items.
                 batch_size = 10 * 1024
@@ -335,12 +335,20 @@ class LazyDict:
         if '.jsonl' in self.path.suffixes:
             # Can read ".jsonl" or ".jsonl.gz"
             import pyarrow.json as paj
-            self.table = paj.read_json(str(self.path))
+            self.table = paj.read_json(
+                str(self.path),
+                read_options=paj.ReadOptions(
+                    # magic constants:
+                    # 894 - estimated average number of bytes per JSON item manifest
+                    # 10000 - how many items we want to have in a chunk (Arrow's "batch")
+                    block_size=894 * 10000
+                )
+            )
         elif '.arrow' == self.path.suffixes[-1]:
             # Can read ".arrow"
             import pyarrow as pa
             mmap = pa.memory_map(str(self.path))
-            stream = pa.ipc.open_stream(mmap)
+            stream = pa.ipc.open_file(mmap)
             self.table = stream.read_all()
         else:
             raise ValueError(f"Unknown LazyDict file format : '{self.path}'")
@@ -448,89 +456,6 @@ def arr2list_recursive(data: Union[dict, list], filter_none: bool = True) -> Uni
         for k, v in data.items()
         if v is not None or not filter_none
     }
-
-
-def infer_arrow_schema(manifest):
-    """
-    This method takes a manifest and infers the corresponding Arrow schema.
-    The work is divided in three stages:
-        1. Go through all the items in the manifest as dicts and convert primitive
-            types to their Arrow variants (e.g. str -> pa.string())
-        2. Merge the manifests for different items (it is needed in case some items
-            have different fields, e.g. Cut and MixedCut) -- the resulting schema
-            is a union of all the fields.
-        3. Now that we have a single merged schema, convert the non-primitive types
-            such as dicts and lists to their Arrow variants (pa.list_, pa.struct)
-        4. The resulting item is of type "pa.DataType" -> convert it to schema and
-            return.
-    """
-    import pyarrow as pa
-    schema_candidates = [infer_arrow_types(d) for d in manifest.to_dicts()]
-    merged = {}
-    for schema in schema_candidates:
-        merged = recursively_merge(merged, schema)
-    arrow_type = convert_to_arrow_type(merged)
-    return pa.schema(arrow_type)
-
-
-def infer_arrow_types(data: Any, key: Optional[str] = None):
-    import pyarrow as pa
-    if isinstance(data, int):
-        if key is not None:
-            if key == 'channel' or key == 'channels':
-                return pa.int8()
-            if 'num_samples' == key:
-                return pa.int64()  # paranoia mode
-        return pa.int32()
-    elif isinstance(data, float):
-        return pa.float64()
-    elif isinstance(data, str):
-        return pa.string()
-    elif isinstance(data, list):
-        if key == 'channel' or key == 'channels':
-            return pa.list_(pa.int8())
-        return list(infer_arrow_types(d) for d in data)
-    elif isinstance(data, dict):
-        return dict((key, infer_arrow_types(val, key)) for key, val in data.items())
-    else:
-        raise ValueError("Unsupported type")
-
-
-def recursively_merge(a: Union[Dict, List], b: Union[Dict, List]):
-    if isinstance(b, dict):
-        merged = a.copy()
-        for key, val in b.items():
-            if key not in a:
-                if isinstance(val, list):
-                    merged[key] = recursively_merge([], val)
-                else:
-                    merged[key] = val
-            else:
-                merged[key] = recursively_merge(a[key], val)
-        return merged
-    elif isinstance(b, list):
-        ab = a + b
-        mergedlist = [reduce(recursively_merge, ab)] if ab else []
-        return mergedlist
-    else:
-        if a != b:
-            raise ValueError(f"Incompatible types {a} and {b}")
-        return a
-
-
-def convert_to_arrow_type(data: Any):
-    import pyarrow as pa
-    if isinstance(data, dict):
-        return pa.struct([
-            (key, convert_to_arrow_type(val)) for key, val in data.items()
-        ])
-    if isinstance(data, list):
-        if not data:
-            return pa.list_(pa.null())
-        assert len(data) == 1
-        return pa.list_(convert_to_arrow_type(data[0]))
-    else:
-        return data
 
 
 class NumpyEncoder(json.JSONEncoder):
