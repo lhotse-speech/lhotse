@@ -161,6 +161,7 @@ Currently supported corpora:
 - DIHARD III :func:`lhotse.recipes.prepare_dihard3`
 - English Broadcast News 1997 :func:`lhotse.recipes.prepare_broadcast_news`
 - GALE Arabic Broadcast Conversation and News (Phases 1 to 4) :func:`lhotse.recipes.prepare_gale_arabic`
+- GALE Mandarin Broadcast Speech :func:`lhotse.recipes.prepare_gale_mandarin`
 - Heroico :func:`lhotse.recipes.prepare_heroico`
 - MiniLibriMix :func:`lhotse.recipes.prepare_librimix`
 - MUSAN :func:`lhotse.recipes.prepare_musan`

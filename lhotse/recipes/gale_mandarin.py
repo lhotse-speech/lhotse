@@ -1,50 +1,18 @@
 """
-The GALE Arabic Broadcast corpus consists of the following LDC corpora:
+The GALE Mandarin Broadcast news corpus consists of the following LDC corpora:
 
-GALE Arabic phase 2 Conversation Speech
-LDC2013S02: http://catalog.ldc.upenn.edu/LDC2013S02
-LDC2013S07: http://catalog.ldc.upenn.edu/LDC2013S07
-LDC2013T17: http://catalog.ldc.upenn.edu/LDC2013T17
-LDC2013T04: http://catalog.ldc.upenn.edu/LDC2013T04
+Audio: LDC2013S08, LDC2013S04, LDC2014S09, LDC2015S06, LDC2015S13, LDC2016S03
+Text: LDC2013T20, LDC2013T08, LDC2014T28, LDC2015T09, LDC2015T25, LDC2016T12
 
-# GALE Arabic phase 2 News Speech
-LDC2014S07: http://catalog.ldc.upenn.edu/LDC2014S07
-LDC2015S01: http://catalog.ldc.upenn.edu/LDC2015S01
-LDC2014T17: http://catalog.ldc.upenn.edu/LDC2014T17
-LDC2015T01: http://catalog.ldc.upenn.edu/LDC2015T01
-
-# GALE Arabic phase 3 Conversation Speech
-LDC2015S11: http://catalog.ldc.upenn.edu/LDC2015S11
-LDC2016S01: http://catalog.ldc.upenn.edu/LDC2016S01
-LDC2015T16: http://catalog.ldc.upenn.edu/LDC2015T16
-LDC2016T06: http://catalog.ldc.upenn.edu/LDC2016T06
-
-# GALE Arabic phase 3 News Speech
-LDC2016S07: http://catalog.ldc.upenn.edu/LDC2016S07
-LDC2017S02: http://catalog.ldc.upenn.edu/LDC2017S02
-LDC2016T17: http://catalog.ldc.upenn.edu/LDC2016T17
-LDC2017T04: http://catalog.ldc.upenn.edu/LDC2017T04
-
-# GALE Arabic phase 4 Conversation Speech
-LDC2017S15: http://catalog.ldc.upenn.edu/LDC2017S15
-LDC2017T12: http://catalog.ldc.upenn.edu/LDC2017T12
-
-# GALE Arabic phase 4 News Speech
-LDC2018S05: http://catalog.ldc.upenn.edu/LDC2018S05
-LDC2018T14: http://catalog.ldc.upenn.edu/LDC2018T14
-
-# Training: 941h Testing: 10.4h
-
-The data has two types of speech: conversational and report.
-There is no separate dev set provided with the corpus.
+# Training:  Testing: 
 
 The `S` corpora contain speech data and the `T` corpora contain the corresponding
 transcriptions. This recipe prepares any subset of these corpora provided as
 arguments, but pairs of speech and transcript corpora must be present. E.g.
 to only prepare phase 3 news speech, the arguments 
-`audio_dirs = ["/export/data/LDC2016S07","/export/data/LDC2017S02"]` and 
-`transcript_dirs = ["/export/data/LDC2016T17","/export/data/LDC2017T04"]` must
-be provided to the `prepare_gale_arabic` method.
+`audio_dirs = ["/export/data/LDC2013S08","/export/data/LDC2014S09"]` and 
+`transcript_dirs = ["/export/data/LDC2013T20","/export/data/LDC2014T28"]` must
+be provided to the `prepare_gale_mandarin` method.
 
 This data is not available for free - your institution needs to have an LDC subscription.
 """
@@ -53,51 +21,62 @@ import logging
 from collections import defaultdict
 from itertools import chain
 from pathlib import Path
+from urllib.request import urlopen
 from typing import Dict, List, Optional, Union
 
 from lhotse import validate_recordings_and_supervisions
 from lhotse.qa import trim_supervisions_to_recordings
 from lhotse.audio import Recording, RecordingSet
+from lhotse.recipes.nsc import check_dependencies
 from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import Pathlike, check_and_rglob, is_module_available
 
-
-# Test recordings from Kaldi split
-# https://github.com/kaldi-asr/kaldi/blob/master/egs/gale_arabic/s5d/local/test/test_p2
-TEST = [
-    "ALAM_WITHEVENT_ARB_20070116_205800",
-    "ALAM_WITHEVENT_ARB_20070206_205801",
-    "ALAM_WITHEVENT_ARB_20070213_205800",
-    "ALAM_WITHEVENT_ARB_20070227_205800",
-    "ALAM_WITHEVENT_ARB_20070306_205800",
-    "ALAM_WITHEVENT_ARB_20070313_205800",
-    "ARABIYA_FROMIRAQ_ARB_20070216_175800",
-    "ARABIYA_FROMIRAQ_ARB_20070223_175801",
-    "ARABIYA_FROMIRAQ_ARB_20070302_175801",
-    "ARABIYA_FROMIRAQ_ARB_20070309_175800",
+# Dev recording ids will be downloaded from the Kaldi repo
+KALDI_BASE_URL = (
+    "https://github.com/kaldi-asr/kaldi/blob/master/egs/gale_mandarin/s5/local/test."
+)
+TEST_FILE_URLS = [
+    KALDI_BASE_URL + name
+    for name in [
+        "LDC2013S04",
+        "LDC2013S08",
+        "LDC2014S09",
+        "LDC2015S06",
+        "LDC2015S13",
+        "LDC2016S03",
+    ]
 ]
 
 
-def check_dependencies():
+def check_dependencies(segment_words: Optional[bool] = False):
     if not is_module_available('pandas'):
         raise ImportError(
-            "Gale Arabic data preparation requires the 'pandas' package to be installed. "
-            "Please install it with 'pip install pandas' and try again"
+            "GALE Mandarin data preparation requires the 'pandas' package to be installed. "
+            "Please install it with 'pip install pandas' and try again."
+        )
+
+    if segment_words and not is_module_available('jieba'):
+        raise ImportError(
+            "The '--segment-words' option requires the 'jieba' package to be installed. "
+            "Please install it with 'pip install jieba' and try again."
         )
 
 
-def prepare_gale_arabic(
+def prepare_gale_mandarin(
     audio_dirs: List[Pathlike],
     transcript_dirs: List[Pathlike],
     output_dir: Optional[Pathlike] = None,
-    absolute_paths: bool = True,
+    absolute_paths: Optional[bool] = True,
+    segment_words: Optional[bool] = False,
 ) -> Dict[str, Union[RecordingSet, SupervisionSet]]:
     """
-    Prepare manifests for GALE Arabic Broadcast speech corpus.
+    Prepare manifests for GALE Mandarin Broadcast speech corpus.
 
     :param audio_dirs: List of paths to audio corpora.
     :param transcripts_dirs: List of paths to transcript corpora.
     :param output_dir: Directory where the manifests should be written. Can be omitted to avoid writing.
+    :param absolute_paths: Wheter to write absolute paths to audio sources (default = False)
+    :param segment_words: Use `jieba` package to perform word segmentation (default = False)
     :return: A dict with manifests. The keys are: ``{'recordings', 'supervisions'}``.
     """
     assert len(audio_dirs) == len(
@@ -124,7 +103,6 @@ def prepare_gale_arabic(
     transcript_paths = chain.from_iterable(
         [check_and_rglob(dir, '*.tdf') for dir in transcript_dirs]
     )
-    transcript_paths = [p for p in transcript_paths]
 
     logging.info("Preparing recordings manifest")
 
@@ -134,14 +112,20 @@ def prepare_gale_arabic(
     )
 
     logging.info("Preparing supervisions manifest")
-    supervisions = SupervisionSet.from_segments(parse_transcripts(transcript_paths))
+    supervisions = SupervisionSet.from_segments(
+        parse_transcripts(transcript_paths, segment_words=segment_words)
+    ).filter(lambda s: s.recording_id in audio_paths)
 
     # Some supervisions exceed recording boundaries, so here we trim them
     supervisions = trim_supervisions_to_recordings(recordings, supervisions)
     validate_recordings_and_supervisions(recordings, supervisions)
 
+    TEST = [
+        line.decode("utf-8").strip() for url in TEST_FILE_URLS for line in urlopen(url)
+    ]
+
     manifests = defaultdict(dict)
-    manifests['test'] = {
+    manifests['dev'] = {
         'recordings': recordings.filter(lambda r: r.id in TEST),
         'supervisions': supervisions.filter(lambda s: s.recording_id in TEST),
     }
@@ -154,7 +138,7 @@ def prepare_gale_arabic(
         logging.info("Writing manifests to JSON files")
         output_dir = Path(output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
-        for part in ["train", "test"]:
+        for part in ["train", "dev"]:
             manifests[part]["recordings"].to_json(
                 output_dir / f'recordings_{part}.json'
             )
@@ -165,10 +149,14 @@ def prepare_gale_arabic(
     return manifests
 
 
-def parse_transcripts(transcript_paths: List[Path]) -> List[SupervisionSegment]:
-    check_dependencies()
+def parse_transcripts(
+    transcript_paths: List[Path], segment_words: Optional[bool] = False
+) -> List[SupervisionSegment]:
+    check_dependencies(segment_words)
     import pandas as pd
 
+    if segment_words:
+        import jieba
     supervisions = []
     supervision_ids = set()
     for file in transcript_paths:
@@ -204,14 +192,16 @@ def parse_transcripts(transcript_paths: List[Path]) -> List[SupervisionSegment]:
             error_bad_lines=False,
             warn_bad_lines=True,
         )
-        # Remove segments with no transcription
-        df = df[df.speaker != "no speaker"]
+        # We only keep sections which have some transcriptions
+        df = df[df.section_type != "nontrans"]
 
-        # some reco_id's end with .sph
-        df['reco_id'] = df['reco_id'].apply(lambda x: x.strip().replace('.sph', ''))
+        # some reco_id's end with `.sph` or `(1)`
+        df['reco_id'] = df['reco_id'].apply(
+            lambda x: x.strip().replace('(1)', '').replace('.sph', '')
+        )
         # some speaker names have `*` in them
         df['speaker'] = df['speaker'].apply(
-            lambda x: x.replace('*', '').strip() if not pd.isnull(x) else x
+            lambda x: x.replace('#', '').strip() if not pd.isnull(x) else x
         )
         df['text'] = df['text'].apply(lambda x: x.strip() if not pd.isnull(x) else x)
         for idx, row in df.iterrows():
@@ -228,7 +218,9 @@ def parse_transcripts(transcript_paths: List[Path]) -> List[SupervisionSegment]:
                     duration=duration,
                     speaker=row['speaker'],
                     gender=row['gender'],
-                    text=row['text'],
+                    text=row['text']
+                    if not segment_words
+                    else " ".join(jieba.cut(row["text"])),
                     channel=row['channel'],
                     custom={
                         'dialect': row['dialect'],

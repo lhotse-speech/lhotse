@@ -7,6 +7,7 @@ from .callhome_english import *
 from .cmu_arctic import *
 from .dihard3 import *
 from .gale_arabic import *
+from .gale_mandarin import *
 from .heroico import *
 from .l2_arctic import *
 from .librimix import *
