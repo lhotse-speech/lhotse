@@ -228,6 +228,7 @@ def parse_transcripts(transcript_paths: List[Path]) -> List[SupervisionSegment]:
                     duration=duration,
                     speaker=row['speaker'],
                     gender=row['gender'],
+                    language='Arabic',
                     text=row['text'],
                     channel=row['channel'],
                     custom={
