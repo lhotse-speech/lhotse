@@ -1,10 +1,11 @@
+import pickle
 from tempfile import NamedTemporaryFile
 
 import pytest
 
 from lhotse import AudioSource, Cut, CutSet, FeatureSet, Features, Recording, RecordingSet, SupervisionSegment, \
     SupervisionSet, load_manifest, store_manifest
-from lhotse.utils import is_module_available, nullcontext as does_not_raise
+from lhotse.utils import fastcopy, is_module_available, nullcontext as does_not_raise
 
 
 @pytest.mark.parametrize(
@@ -124,6 +125,9 @@ def cut_set():
         ])
     return CutSet.from_cuts([
         cut,
+        fastcopy(cut, id='cut-nosup', supervisions=[]),
+        fastcopy(cut, id='cut-norec', recording=None),
+        fastcopy(cut, id='cut-nofeat', features=None),
         cut.pad(duration=30.0, direction='left'),
         cut.pad(duration=30.0, direction='right'),
         cut.pad(duration=30.0, direction='both'),
@@ -328,6 +332,35 @@ def test_lazy_arrow_serialization(manifests, manifest_type):
         # Test accessing elements by ID
         for lazy_obj in lazy_manifest:
             lazy_manifest[lazy_obj.id]
+
+
+@pytest.mark.skipif(not is_module_available('pyarrow'), reason='Requires pyarrow')
+@pytest.mark.parametrize(
+    'manifest_type',
+    ['recording_set', 'supervision_set', 'cut_set']
+)
+def test_lazy_arrow_pickling(manifests, manifest_type):
+    manifest = manifests[manifest_type]
+    with NamedTemporaryFile(suffix='.arrow') as f, NamedTemporaryFile(suffix='.pkl') as f_pkl:
+        # Create an .arrow file that can be mmapped
+        manifest.to_file(f.name)
+        lazy_manifest = type(manifest).from_file(f.name)
+        # Create a pickle with a manifest that refers to an mmapped file
+        pickle.dump(lazy_manifest, f_pkl)
+        f_pkl.flush()
+        f_pkl.seek(0)
+        # Unpickle
+        unpickled_manifest = pickle.load(f_pkl)
+        # Lengths are the same
+        assert len(lazy_manifest) == len(manifest)
+        assert len(unpickled_manifest) == len(manifest)
+        # Test iteration
+        for eager_obj, lazy_obj, unpickled_obj in zip(manifest, lazy_manifest, unpickled_manifest):
+            assert eager_obj == lazy_obj
+            assert eager_obj == unpickled_obj
+        # Test accessing elements by ID
+        for unpickled_obj in unpickled_manifest:
+            unpickled_manifest[unpickled_obj.id]
 
 
 @pytest.mark.skipif(not is_module_available('pyarrow'), reason='Requires pyarrow')
