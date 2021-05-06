@@ -15,7 +15,7 @@ __all__ = ["cslu_kids"]
 @click.option(
     "--absolute-paths",
     type=bool,
-    default=False,
+    default=True,
     help="Use absolute paths for recordings",
 )
 @click.option(

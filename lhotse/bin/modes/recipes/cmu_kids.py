@@ -15,7 +15,7 @@ __all__ = ["cmu_kids"]
 @click.option(
     "--absolute-paths",
     type=bool,
-    default=False,
+    default=True,
     help="Use absolute paths for recordings",
 )
 def cmu_kids(
