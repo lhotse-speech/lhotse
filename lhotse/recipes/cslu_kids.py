@@ -50,17 +50,14 @@ def prepare_cslu_kids(
     normalize_text: Optional[bool] = True,
 ) -> Dict[str, Union[RecordingSet, SupervisionSet]]:
     """
-    Prepare manifests for CSLU Kids corpus. The prepared supervisions contain the
-    prompt text as the `text`. Additionally, in the `custom` tag, we provide the
-    following data: speaker grade/age, population where the speaker came from
-    (SIM95/FP), spoken transcript, and transcription bin (1/2).
+    Prepare manifests for CSLU Kids corpus. The supervision contains either the
+    prompted text, or a transcription of the spontaneous speech, depending on
+    whether the utterance was scripted or spontaneous.
 
-    Here, bin `1` means utterances where the speaker followed the prompt and no
-    noise/mispronunciation is present, and `2` refers to noisy utterances.
-
-    The tag `spoken_transcript` is the transcription that was actually spoken. It
-    contains noise tags and phone transcription in case the pronunciation differed
-    from that in CMU Dict.
+    Additionally, the following information is present in the `custom` tag:
+    scripted/spontaneous utterance, and verification label (rating between 1 and 4)
+    for scripted utterances (see https://catalog.ldc.upenn.edu/docs/LDC2007S18/verification-note.txt
+    or top documentation in this script for more information).
 
     :param corpus_dir: Path to downloaded LDC corpus.
     :param output_dir: Directory where the manifests should be written. Can be omitted to avoid writing.
