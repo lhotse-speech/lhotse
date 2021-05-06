@@ -170,6 +170,8 @@ a CLI tool that create the manifests given a corpus directory.
     - :func:`lhotse.recipes.prepare_cmu_arctic`
   * - CMU Kids
     - :func:`lhotse.recipes.prepare_cmu_kids`
+  * - CSLU Kids
+    - :func:`lhotse.recipes.prepare_cslu_kids`
   * - DIHARD III
     - :func:`lhotse.recipes.prepare_dihard3`
   * - English Broadcast News 1997
