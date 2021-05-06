@@ -101,7 +101,9 @@ def prepare_cmu_kids(
             audio_path = (
                 corpus_dir / 'cmu_kids' / 'kids' / spk / 'signal' / f'{trn_id}.sph'
             )
-            recording = Recording.from_file(audio_path)
+            recording = Recording.from_file(
+                audio_path, relative_path_depth=None if absolute_paths else 3
+            )
             recordings.append(recording)
 
             supervisions.append(
