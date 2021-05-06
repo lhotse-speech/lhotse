@@ -164,8 +164,6 @@ Currently supported corpora:
 - GALE Arabic Broadcast Conversation and News (Phases 1 to 4) :func:`lhotse.recipes.prepare_gale_arabic`
 - GALE Mandarin Broadcast Speech :func:`lhotse.recipes.prepare_gale_mandarin`
 - Heroico :func:`lhotse.recipes.prepare_heroico`
-- MiniLibriMix :func:`lhotse.recipes.prepare_librimix`
-- MUSAN :func:`lhotse.recipes.prepare_musan`
 - L2 Arctic :func:`lhotse.recipes.prepare_l2_arctic`
 - LibriSpeech (including "mini") :func:`lhotse.recipes.prepare_librispeech`
 - LJ Speech :func:`lhotse.recipes.prepare_ljspeech`
