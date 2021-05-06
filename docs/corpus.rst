@@ -150,31 +150,58 @@ Standard data preparation recipes
 We provide a number of standard data preparation recipes. By that, we mean a collection of a Python function +
 a CLI tool that create the manifests given a corpus directory.
 
-Currently supported corpora:
+.. list-table:: Currently supported corpora
+  :widths: 30 50
+  :header-rows: 1
 
-- Aishell :func:`lhotse.recipes.prepare_aishell`
-- AMI :func:`lhotse.recipes.prepare_ami`
-- BABEL :func:`lhotse.recipes.prepare_single_babel_language`
-- CallHome Egyptian :func:`lhotse.recipes.prepare_callhome_egyptian`
-- CallHome English :func:`lhotse.recipes.prepare_callhome_english`
-- CMU Arctic :func:`lhotse.recipes.prepare_cmu_arctic`
-- CMU Kids :func:`lhotse.recipes.prepare_cmu_kids`
-- DIHARD III :func:`lhotse.recipes.prepare_dihard3`
-- English Broadcast News 1997 :func:`lhotse.recipes.prepare_broadcast_news`
-- GALE Arabic Broadcast Conversation and News (Phases 1 to 4) :func:`lhotse.recipes.prepare_gale_arabic`
-- GALE Mandarin Broadcast Speech :func:`lhotse.recipes.prepare_gale_mandarin`
-- Heroico :func:`lhotse.recipes.prepare_heroico`
-- L2 Arctic :func:`lhotse.recipes.prepare_l2_arctic`
-- LibriSpeech (including "mini") :func:`lhotse.recipes.prepare_librispeech`
-- LJ Speech :func:`lhotse.recipes.prepare_ljspeech`
-- MiniLibriMix :func:`lhotse.recipes.prepare_librimix`
-- MobvoiHotWord :func:`lhotse.recipes.prepare_mobvoihotwords`
-- Multilingual LibriSpeech (MLS) :func:`lhotse.recipes.prepare_mls`
-- MUSAN :func:`lhotse.recipes.prepare_musan`
-- National Speech Corpus (Singaporean English) :func:`lhotse.recipes.prepare_nsc`
-- Switchboard :func:`lhotse.recipes.prepare_switchboard`
-- TED-LIUM v3 :func:`lhotse.recipes.prepare_tedlium`
-- VCTK :func:`lhotse.recipes.prepare_vctk`
+  * - Corpus name
+    - Function
+  * - Aishell
+    - :func:`lhotse.recipes.prepare_aishell`
+  * - AMI
+    - :func:`lhotse.recipes.prepare_ami`
+  * - BABEL
+    - :func:`lhotse.recipes.prepare_single_babel_language`
+  * - CallHome Egyptian
+    - :func:`lhotse.recipes.prepare_callhome_egyptian`
+  * - CallHome English
+    - :func:`lhotse.recipes.prepare_callhome_english`
+  * - CMU Arctic
+    - :func:`lhotse.recipes.prepare_cmu_arctic`
+  * - CMU Kids
+    - :func:`lhotse.recipes.prepare_cmu_kids`
+  * - DIHARD III
+    - :func:`lhotse.recipes.prepare_dihard3`
+  * - English Broadcast News 1997
+    - :func:`lhotse.recipes.prepare_broadcast_news`
+  * - GALE Arabic Broadcast Speech
+    - :func:`lhotse.recipes.prepare_gale_arabic`
+  * - GALE Mandarin Broadcast Speech
+    - :func:`lhotse.recipes.prepare_gale_mandarin`
+  * - Heroico
+    - :func:`lhotse.recipes.prepare_heroico`
+  * - L2 Arctic
+    - :func:`lhotse.recipes.prepare_l2_arctic`
+  * - LibriSpeech (including "mini")
+    - :func:`lhotse.recipes.prepare_librispeech`
+  * - LJ Speech
+    - :func:`lhotse.recipes.prepare_ljspeech`
+  * - MiniLibriMix
+    - :func:`lhotse.recipes.prepare_librimix`
+  * - MobvoiHotWord
+    - :func:`lhotse.recipes.prepare_mobvoihotwords`
+  * - Multilingual LibriSpeech (MLS)
+    - :func:`lhotse.recipes.prepare_mls`
+  * - MUSAN
+    - :func:`lhotse.recipes.prepare_musan`
+  * - National Speech Corpus (Singaporean English)
+    - :func:`lhotse.recipes.prepare_nsc`
+  * - Switchboard
+    - :func:`lhotse.recipes.prepare_switchboard`
+  * - TED-LIUM v3
+    - :func:`lhotse.recipes.prepare_tedlium`
+  * - VCTK
+    - :func:`lhotse.recipes.prepare_vctk`
 
 
 Adding new corpora
