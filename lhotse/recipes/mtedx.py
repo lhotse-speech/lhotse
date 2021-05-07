@@ -92,11 +92,11 @@ def prepare_single_mtedx_language(
 
     This function works as follows:
 
-        - First, it looks for the vtt directory in data/{train,dev,test}/vtt
-            which contains the segmentation and transcripts for the audio.
-        - Then it looks for the audio directory in the data/wav where the .flac
+        - First it looks for the audio directory in the data/wav where the .flac
             files are stored.
-    
+        - Then, it looks for the vtt directory in data/{train,dev,test}/vtt
+            which contains the segmentation and transcripts for the audio.
+
     :param corpus_dir: Path to the root of the MTEDx download
     :param output_dir: Path where the manifests are stored as .json files
     :return:
