@@ -276,9 +276,11 @@ def validate_recording_set(recordings: RecordingSet, read_data: bool = False) ->
     sampling_rate = first.sampling_rate
     for r in recordings:
         validate_recording(r, read_data=read_data)
-        assert r.sampling_rate == sampling_rate, f'RecordingSet: Recording {r.id} has a mismatched sampling rate ' \
-                                                 f'(the first recording with ID {first.id} had {sampling_rate}; we got {r.sampling_rate} instead)'
-
+        if r.sampling_rate != sampling_rate:
+            logging.warning(
+                f'RecordingSet: Recording {r.id} has a mismatched sampling rate ' \
+                f'(the first recording with ID {first.id} had {sampling_rate}; we got {r.sampling_rate} instead)'
+            )
 
 @register_validator
 def validate_supervision_set(supervisions: SupervisionSet, **kwargs) -> None:
