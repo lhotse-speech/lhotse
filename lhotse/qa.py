@@ -272,12 +272,15 @@ def validate_cut(c: AnyCut, read_data: bool = False) -> None:
 
 @register_validator
 def validate_recording_set(recordings: RecordingSet, read_data: bool = False) -> None:
-    first = next(iter(recordings))
-    sampling_rate = first.sampling_rate
+    rates = set()
     for r in recordings:
         validate_recording(r, read_data=read_data)
-        assert r.sampling_rate == sampling_rate, f'RecordingSet: Recording {r.id} has a mismatched sampling rate ' \
-                                                 f'(the first recording with ID {first.id} had {sampling_rate}; we got {r.sampling_rate} instead)'
+        rates.add(r.sampling_rate)
+    if len(rates) > 1:
+        logging.warning(
+            f'RecordingSet contains recordings with different sampling rates ({rates}). '
+            f'Make sure that this was intended.'
+        )
 
 
 @register_validator
