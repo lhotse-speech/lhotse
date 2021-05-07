@@ -739,7 +739,7 @@ class PaddingCut(CutUtilsMixin):
             duration=new_duration,
             num_frames=new_num_frames,
             num_features=new_num_features,
-            new_frame_shift=new_frame_shift
+            frame_shift=new_frame_shift
         )
 
     def drop_features(self) -> 'PaddingCut':
