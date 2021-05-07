@@ -462,6 +462,25 @@ class Cut(CutUtilsMixin):
             direction=direction
         )
 
+    def resample(self, sampling_rate: int, affix_id: bool = False) -> 'Cut':
+        """
+        Return a new ``Cut`` that will lazily resample the audio while reading it.
+        This operation will drop the feature manifest, if attached.
+        It does not affect the supervision.
+
+        :param sampling_rate: The new sampling rate.
+        :param affix_id: Should we modify the ID (useful if both versions of the same
+            cut are going to be present in a single manifest).
+        :return: a modified copy of the current ``Cut``.
+        """
+        assert self.has_recording, 'Cannot resample a Cut without Recording.'
+        return fastcopy(
+            self,
+            id=f'{self.id}_rs{sampling_rate}' if affix_id else self.id,
+            recording=self.recording.resample(sampling_rate),
+            features=None,
+        )
+
     def perturb_speed(self, factor: float, affix_id: bool = True) -> 'Cut':
         """
         Return a new ``Cut`` that will lazily perturb the speed while loading audio.
@@ -665,6 +684,28 @@ class PaddingCut(CutUtilsMixin):
             direction=direction
         )
 
+    def resample(self, sampling_rate: int, affix_id: bool = False) -> 'PaddingCut':
+        """
+        Return a new ``Cut`` that will lazily resample the audio while reading it.
+        This operation will drop the feature manifest, if attached.
+        It does not affect the supervision.
+
+        :param sampling_rate: The new sampling rate.
+        :param affix_id: Should we modify the ID (useful if both versions of the same
+            cut are going to be present in a single manifest).
+        :return: a modified copy of the current ``Cut``.
+        """
+        assert self.has_recording, 'Cannot resample a Cut without Recording.'
+        return fastcopy(
+            self,
+            id=f'{self.id}_rs{sampling_rate}' if affix_id else self.id,
+            sampling_rate=sampling_rate,
+            num_samples=compute_num_samples(self.duration, sampling_rate),
+            num_frames=None,
+            num_features=None,
+            frame_shift=None
+        )
+
     def perturb_speed(self, factor: float, affix_id: bool = True) -> 'PaddingCut':
         """
         Return a new ``PaddingCut`` that will "mimic" the effect of speed perturbation
@@ -682,15 +723,23 @@ class PaddingCut(CutUtilsMixin):
                 'The feature manifest will be detached, as we do not support feature-domain '
                 'speed perturbation.'
             )
-            self.num_frames = None
-            self.num_features = None
+            new_num_frames = None
+            new_num_features = None
+            new_frame_shift = None
+        else:
+            new_num_frames = self.num_frames
+            new_num_features = self.num_features
+            new_frame_shift = self.frame_shift
         new_num_samples = perturb_num_samples(self.num_samples, factor)
         new_duration = new_num_samples / self.sampling_rate
         return fastcopy(
             self,
             id=f'{self.id}_sp{factor}' if affix_id else self.id,
             num_samples=new_num_samples,
-            duration=new_duration
+            duration=new_duration,
+            num_frames=new_num_frames,
+            num_features=new_num_features,
+            frame_shift=new_frame_shift
         )
 
     def drop_features(self) -> 'PaddingCut':
@@ -945,6 +994,26 @@ class MixedCut(CutUtilsMixin):
             num_samples=num_samples,
             pad_feat_value=pad_feat_value,
             direction=direction
+        )
+
+    def resample(self, sampling_rate: int, affix_id: bool = False) -> 'MixedCut':
+        """
+        Return a new ``MixedCut`` that will lazily resample the audio while reading it.
+        This operation will drop the feature manifest, if attached.
+        It does not affect the supervision.
+
+        :param sampling_rate: The new sampling rate.
+        :param affix_id: Should we modify the ID (useful if both versions of the same
+            cut are going to be present in a single manifest).
+        :return: a modified copy of the current ``MixedCut``.
+        """
+        assert self.has_recording, 'Cannot resample a MixedCut without Recording.'
+        return MixedCut(
+            id=f'{self.id}_rs{sampling_rate}' if affix_id else self.id,
+            tracks=[
+                fastcopy(t, cut=t.cut.resample(sampling_rate))
+                for t in self.tracks
+            ]
         )
 
     def perturb_speed(self, factor: float, affix_id: bool = True) -> 'MixedCut':
@@ -1701,7 +1770,32 @@ class CutSet(Serializable, Sequence[AnyCut]):
             return cuts[0]
         return CutSet.from_cuts(cuts)
 
+    def resample(self, sampling_rate: int, affix_id: bool = False) -> 'CutSet':
+        """
+        Return a new :class:`~lhotse.cut.CutSet` that contains cuts resampled to the new
+        ``sampling_rate``. All cuts in the manifest must contain recording information.
+        If the feature manifests are attached, they are dropped.
+
+        :param sampling_rate: The new sampling rate.
+        :param affix_id: Should we modify the ID (useful if both versions of the same
+            cut are going to be present in a single manifest).
+        :return: a modified copy of the ``CutSet``.
+        """
+        return self.map(lambda cut: cut.resample(sampling_rate, affix_id=affix_id))
+
     def perturb_speed(self, factor: float, affix_id: bool = True) -> 'CutSet':
+        """
+        Return a new :class:`~lhotse.cut.CutSet` that contains speed perturbed cuts
+        with a factor of ``factor``. It requires the recording manifests to be present.
+        If the feature manifests are attached, they are dropped.
+        The supervision manifests are modified to reflect the speed perturbed
+        start times and durations.
+
+        :param factor: The resulting playback speed is ``factor`` times the original one.
+        :param affix_id: Should we modify the ID (useful if both versions of the same
+            cut are going to be present in a single manifest).
+        :return: a modified copy of the ``CutSet``.
+        """
         return self.map(lambda cut: cut.perturb_speed(factor=factor, affix_id=affix_id))
 
     def mix(
