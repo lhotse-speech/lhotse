@@ -1,7 +1,6 @@
 import gzip
 import itertools
 import json
-import random
 from collections import deque
 from pathlib import Path
 from typing import Any, Dict, Generator, Iterable, Optional, Type, Union
@@ -94,6 +93,81 @@ def load_jsonl(path: Pathlike) -> Generator[Dict[str, Any], None, None]:
             yield ret
 
 
+class SequentialJsonlWriter:
+    """
+    SequentialJsonlWriter allows to store the manifests one by one,
+    without the necessity of storing the whole manifest set in-memory.
+    Supports writing to JSONL format (``.jsonl``), with optional gzip
+    compression (``.jsonl.gz``).
+
+    Example:
+
+        >>> from lhotse import RecordingSet
+        ... recordings = [...]
+        ... with RecordingSet.open_writer('recordings.jsonl.gz') as writer:
+        ...     for recording in recordings:
+        ...         writer.write(recording)
+
+    This writer can be useful for continuing to write files that were previously
+    stopped -- it will open the existing file and scan it for item IDs to skip
+    writing them later. It can also be quried for existing IDs so that the user
+    code may skip preparing the corresponding manifets.
+
+    Example:
+
+        >>> from lhotse import RecordingSet, Recording
+        ... with RecordingSet.open_writer('recordings.jsonl.gz') as writer:
+        ...     for path in Path('.').rglob('*.wav'):
+        ...         recording_id = path.stem
+        ...         if writer.contains(recording_id):
+        ...             # Item already written previously - skip processing.
+        ...             continue
+        ...         # Item doesn't exist yet - run extra work to prepare the manifest
+        ...         # and store it.
+        ...         recording = Recording.from_file(path, recording_id=recording_id)
+        ...         writer.write(recording)
+    """
+
+    def __init__(self, path: Pathlike, overwrite: bool = False) -> None:
+        self.path = Path(path)
+        assert extension_contains('.jsonl', self.path)
+        self.compressed = extension_contains('.gz', self.path)
+        self._open = gzip.open if self.compressed else open
+        self.mode = 'wt' if self.compressed else 'w'
+        self.ignore_ids = set()
+        if self.path.is_file() and not overwrite:
+            self.mode = 'at' if self.compressed else 'a'
+            with self._open(self.path) as f:
+                self.ignore_ids = {json.loads(line)['id'] for line in f}
+
+    def __enter__(self) -> 'SequentialJsonlWriter':
+        self.file = self._open(self.path, self.mode)
+        return self
+
+    def __exit__(self, *args, **kwargs) -> None:
+        self.file.close()
+
+    def __contains__(self, item: Union[str, Any]) -> bool:
+        if isinstance(item, str):
+            return item in self.ignore_ids
+        return item.id in self.ignore_ids
+
+    def contains(self, item: Union[str, Any]) -> bool:
+        return item in self
+
+    def write(self, manifest) -> None:
+        """
+        Serializes a manifest item (e.g. :class:`~lhotse.audio.Recording`,
+        :class:`~lhotse.cut.Cut`, etc.) to JSON and stores it in a JSONL file.
+        """
+        if manifest.id in self.ignore_ids:
+            return
+        print(
+            json.dumps(manifest.to_dict(), cls=NumpyEncoder),
+            file=self.file
+        )
+
+
 class JsonlMixin:
     def to_jsonl(self, path: Pathlike) -> None:
         save_to_jsonl(self.to_dicts(), path)
@@ -102,6 +176,43 @@ class JsonlMixin:
     def from_jsonl(cls, path: Pathlike) -> Manifest:
         data = load_jsonl(path)
         return cls.from_dicts(data)
+
+    @classmethod
+    def open_writer(cls, path: Pathlike, overwrite: bool = False) -> SequentialJsonlWriter:
+        """
+        Open a sequential writer that allows to store the manifests one by one,
+        without the necessity of storing the whole manifest set in-memory.
+        Supports writing to JSONL format (``.jsonl``), with optional gzip
+        compression (``.jsonl.gz``).
+
+        Example:
+
+            >>> from lhotse import RecordingSet
+            ... recordings = [...]
+            ... with RecordingSet.open_writer('recordings.jsonl.gz') as writer:
+            ...     for recording in recordings:
+            ...         writer.write(recording)
+
+        This writer can be useful for continuing to write files that were previously
+        stopped -- it will open the existing file and scan it for item IDs to skip
+        writing them later. It can also be quried for existing IDs so that the user
+        code may skip preparing the corresponding manifets.
+
+        Example:
+
+            >>> from lhotse import RecordingSet, Recording
+            ... with RecordingSet.open_writer('recordings.jsonl.gz') as writer:
+            ...     for path in Path('.').rglob('*.wav'):
+            ...         recording_id = path.stem
+            ...         if writer.contains(recording_id):
+            ...             # Item already written previously - skip processing.
+            ...             continue
+            ...         # Item doesn't exist yet - run extra work to prepare the manifest
+            ...         # and store it.
+            ...         recording = Recording.from_file(path, recording_id=recording_id)
+            ...         writer.write(recording)
+        """
+        return SequentialJsonlWriter(path, overwrite=overwrite)
 
 
 class LazyMixin:
@@ -371,10 +482,10 @@ class LazyDict:
             # this should make search faster for contiguous keys.
             pos = self.id2pos.get(key)
             if pos is not None:
-                return self._deserialize_one(self.curr_view.iloc[pos].to_dict())
+                return deserialize_item(self.curr_view.iloc[pos].to_dict())
             pos = self.prev_id2pos.get(key)
             if pos is not None:
-                return self._deserialize_one(self.prev_view.iloc[pos].to_dict())
+                return deserialize_item(self.prev_view.iloc[pos].to_dict())
             # Not found in the current Arrow's "batch" -- we'll advance
             # to the next one and try again.
             self._progress()
@@ -413,30 +524,30 @@ class LazyDict:
             # This seems to be the fastest way to iterate rows in a pyarrow table.
             # Conversion to pandas seems to have the least overhead
             # due to Arrow's zero-copy memory sharing policy.
-            yield from (self._deserialize_one(row.to_dict()) for idx, row in b.to_pandas().iterrows())
+            yield from (deserialize_item(row.to_dict()) for idx, row in b.to_pandas().iterrows())
 
     def items(self):
         yield from ((cut.id, cut) for cut in self.values())
 
-    @staticmethod
-    def _deserialize_one(data: dict) -> Any:
-        # Figures out what type of manifest is being decoded with some heuristics
-        # and returns a Lhotse manifest object rather than a raw dict.
-        from lhotse import Cut, Features, Recording, SupervisionSegment
-        from lhotse.cut import MixedCut
-        data = arr2list_recursive(data)
-        if 'sources' in data:
-            return Recording.from_dict(data)
-        if 'num_features' in data:
-            return Features.from_dict(data)
-        if 'type' not in data:
-            return SupervisionSegment.from_dict(data)
-        cut_type = data.pop('type')
-        if cut_type == 'Cut':
-            return Cut.from_dict(data)
-        if cut_type == 'MixedCut':
-            return MixedCut.from_dict(data)
-        raise ValueError(f"Unexpected cut type during deserialization: '{cut_type}'")
+
+def deserialize_item(data: dict) -> Any:
+    # Figures out what type of manifest is being decoded with some heuristics
+    # and returns a Lhotse manifest object rather than a raw dict.
+    from lhotse import Cut, Features, Recording, SupervisionSegment
+    from lhotse.cut import MixedCut
+    data = arr2list_recursive(data)
+    if 'sources' in data:
+        return Recording.from_dict(data)
+    if 'num_features' in data:
+        return Features.from_dict(data)
+    if 'type' not in data:
+        return SupervisionSegment.from_dict(data)
+    cut_type = data.pop('type')
+    if cut_type == 'Cut':
+        return Cut.from_dict(data)
+    if cut_type == 'MixedCut':
+        return MixedCut.from_dict(data)
+    raise ValueError(f"Unexpected cut type during deserialization: '{cut_type}'")
 
 
 def arr2list_recursive(data: Union[dict, list], filter_none: bool = True) -> Union[dict, list]:
