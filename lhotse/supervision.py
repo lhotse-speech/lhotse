@@ -1,13 +1,67 @@
 import logging
 from dataclasses import dataclass
 from itertools import islice
-from typing import Any, Callable, Dict, Iterable, List, Mapping, Optional, Sequence
+from typing import Any, Callable, Dict, Iterable, List, Mapping, NamedTuple, Optional, Sequence
 
 from lhotse.serialization import Serializable
 from lhotse.utils import Seconds, asdict_nonull, exactly_one_not_null, fastcopy, \
     ifnone, index_by_id_and_check, \
     perturb_num_samples, split_sequence
 
+
+@dataclass(frozen=True, unsafe_hash=True)
+class AlignmentItem(NamedTuple):
+    symbol: str
+    start: Seconds
+    duration: Seconds
+    
+    @property
+    def end(self) -> Seconds:
+        return round(self.start + self.duration, ndigits=8)
+    
+    def with_offset(self, offset: Seconds) -> 'AlignmentItem':
+        """Return an identical ``AlignmentItem``, but with the ``offset`` added to the ``start`` field."""
+        return fastcopy(self, start=round(self.start + offset, ndigits=8))
+    
+    def perturb_speed(
+            self,
+            factor: float,
+            sampling_rate: int,
+    ) -> 'AlignmentItem':
+        """
+        Return a ``AlignmentItem`` that has time boundaries matching the
+        recording/cut perturbed with the same factor. See `perturb_speed()` method
+        in `SupervisionSegment` for details.
+        """
+        start_sample = round(self.start * sampling_rate)
+        num_samples = round(self.duration * sampling_rate)
+        new_start = perturb_num_samples(start_sample, factor) / sampling_rate
+        new_duration = perturb_num_samples(num_samples, factor) / sampling_rate
+        return fastcopy(
+            self,
+            start=new_start,
+            duration=new_duration
+        )
+        
+    def trim(self, end: Seconds, start: Optional[Seconds] = 0) -> 'AlignmentItem':
+        """
+        See trim() method for SupervisionSegment.
+        """
+        assert start >= 0
+        start_exceeds_by = abs(min(0, self.start - start))
+        end_exceeds_by = max(0, self.end - end)
+        return fastcopy(
+            self,
+            start=max(start, self.start),
+            duration=self.duration - end_exceeds_by - start_exceeds_by,
+        )
+        
+    def transform(self, transform_fn: Callable[[str], str]) -> 'AlignmentItem':
+        """
+        Perform specified transformation on the alignment content.
+        """
+        return fastcopy(self, symbol=transform_fn(self.symbol))
+    
 
 @dataclass(frozen=True, unsafe_hash=True)
 class SupervisionSegment:
@@ -21,6 +75,7 @@ class SupervisionSegment:
     speaker: Optional[str] = None
     gender: Optional[str] = None
     custom: Optional[Dict[str, Any]] = None
+    alignment: Optional[Dict[str, List[AlignmentItem]]]  = None
 
     @property
     def end(self) -> Seconds:
@@ -28,7 +83,17 @@ class SupervisionSegment:
 
     def with_offset(self, offset: Seconds) -> 'SupervisionSegment':
         """Return an identical ``SupervisionSegment``, but with the ``offset`` added to the ``start`` field."""
-        return fastcopy(self, start=round(self.start + offset, ndigits=8))
+        return fastcopy(
+            self, 
+            start=round(self.start + offset, ndigits=8),
+            alignment={
+                type:[
+                    item.with_offset(offset=offset)
+                    for item in ali
+                ]
+                for type, ali in self.alignment.items()
+            }
+        )
 
     def perturb_speed(
             self,
@@ -56,7 +121,14 @@ class SupervisionSegment:
             id=f'{self.id}_sp{factor}' if affix_id else self.id,
             recording_id=f'{self.recording_id}_sp{factor}' if affix_id else self.id,
             start=new_start,
-            duration=new_duration
+            duration=new_duration,
+            alignment={
+                type:[
+                    item.perturb_speed(factor=factor, sampling_rate=sampling_rate)
+                    for item in ali
+                ]
+                for type, ali in self.alignment.items()
+            }
         )
 
     def trim(self, end: Seconds, start: Optional[Seconds] = 0) -> 'SupervisionSegment':
@@ -75,6 +147,13 @@ class SupervisionSegment:
             self,
             start=max(start, self.start),
             duration=self.duration - end_exceeds_by - start_exceeds_by,
+            alignment={
+                type:[
+                    item.trim(end=end, start=start)
+                    for item in ali
+                ]
+                for type, ali in self.alignment.items()
+            }
         )
 
     def map(self, transform_fn: Callable[['SupervisionSegment'], 'SupervisionSegment']) -> 'SupervisionSegment':
@@ -97,6 +176,29 @@ class SupervisionSegment:
         if self.text is None:
             return self
         return fastcopy(self, text=transform_fn(self.text))
+    
+    def transform_alignment(self, transform_fn: Callable[[str], str], type: Optional[str] = 'word') -> 'SupervisionSegment':
+        """
+        Return a copy of the current segment with transformed ``alignment`` field.
+        Useful for text normalization, phonetic transcription, etc.
+
+        :param type:  alignment type to transform (key for alignment dict).
+        :param transform_fn: a function that accepts a string and returns a string.
+        :return: a ``SupervisionSegment`` with adjusted alignments.
+        """
+        if self.alignment is None:
+            return self
+        return fastcopy(
+            self,
+            alignment={
+                ali_type:[
+                    item.transform(transform_fn=transform_fn)
+                    if ali_type == type else item
+                    for item in ali
+                ]
+                for ali_type, ali in self.alignment.items()
+            }
+        )
 
     def to_dict(self) -> dict:
         return asdict_nonull(self)
