@@ -98,10 +98,10 @@ def test_randomized_smoothing_p1():
     audio_aug = tfnm(audio)
     # Shapes are the same
     assert audio.shape == audio_aug.shape
-    # All samples are different than the input audio
-    assert (audio != audio_aug).all()
+    # Some (most) samples are different than the input audio
+    assert (audio != audio_aug).any()
     # Different batch samples receive different augmentation
-    assert (audio_aug[0] != audio_aug[1]).all()
+    assert (audio_aug[0] != audio_aug[1]).any()
 
 
 def test_randomized_smoothing_p0():
