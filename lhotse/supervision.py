@@ -14,15 +14,15 @@ class AlignmentItem(NamedTuple):
     symbol: str
     start: Seconds
     duration: Seconds
-    
+
     @property
     def end(self) -> Seconds:
         return round(self.start + self.duration, ndigits=8)
-    
+
     def with_offset(self, offset: Seconds) -> 'AlignmentItem':
         """Return an identical ``AlignmentItem``, but with the ``offset`` added to the ``start`` field."""
         return fastcopy(self, start=round(self.start + offset, ndigits=8))
-    
+
     def perturb_speed(
             self,
             factor: float,
@@ -42,7 +42,7 @@ class AlignmentItem(NamedTuple):
             start=new_start,
             duration=new_duration
         )
-        
+
     def trim(self, end: Seconds, start: Optional[Seconds] = 0) -> 'AlignmentItem':
         """
         See trim() method for SupervisionSegment.
@@ -55,7 +55,7 @@ class AlignmentItem(NamedTuple):
             start=max(start, self.start),
             duration=self.duration - end_exceeds_by - start_exceeds_by,
         )
-        
+
     def transform(self, transform_fn: Callable[[str], str]) -> 'AlignmentItem':
         """
         Perform specified transformation on the alignment content.
@@ -177,7 +177,11 @@ class SupervisionSegment:
             return self
         return fastcopy(self, text=transform_fn(self.text))
     
-    def transform_alignment(self, transform_fn: Callable[[str], str], type: Optional[str] = 'word') -> 'SupervisionSegment':
+    def transform_alignment(
+        self,
+        transform_fn: Callable[[str], str],
+        type: Optional[str] = 'word'
+    ) -> 'SupervisionSegment':
         """
         Return a copy of the current segment with transformed ``alignment`` field.
         Useful for text normalization, phonetic transcription, etc.
