@@ -517,9 +517,8 @@ def prepare_ami(
         output_dir.mkdir(parents=True, exist_ok=True)
 
     logging.info("Parsing AMI annotations")
-    annotations_dir = data_dir if not annotations_dir else annotations_dir
     annotations = parse_ami_annotations(
-        Path(annotations_dir) / "annotations.zip", max_pause=max_pause
+        annotations_dir / "annotations.zip", max_pause=max_pause
     )
 
     # Audio
