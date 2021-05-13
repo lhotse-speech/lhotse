@@ -64,8 +64,8 @@ def load_json(path: Pathlike) -> Union[dict, list]:
 
 
 class JsonMixin:
-    def to_json(self, path: Pathlike, ensure_ascii: bool = True) -> None:
-        save_to_json(list(self.to_dicts()), path, ensure_ascii)
+    def to_json(self, path: Pathlike) -> None:
+        save_to_json(list(self.to_dicts()), path)
 
     @classmethod
     def from_json(cls, path: Pathlike) -> Manifest:
