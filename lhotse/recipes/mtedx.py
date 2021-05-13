@@ -22,9 +22,12 @@ This recipe only prepares the ASR portion of the data.
 """
 import logging
 import re
+from functools import partial
 from collections import defaultdict
-from typing import Dict, Iterable, List, Optional, Union
+from typing import Dict, Iterable, List, Optional, Union, Sequence
 from pathlib import Path
+from concurrent.futures.thread import ThreadPoolExecutor
+from tqdm.auto import tqdm
 
 from cytoolz import sliding_window
 
@@ -32,10 +35,15 @@ import tarfile
 import shutil
 from lhotse import Recording, RecordingSet, SupervisionSegment, SupervisionSet, validate_recordings_and_supervisions
 from lhotse.qa import remove_missing_recordings_and_supervisions, trim_supervisions_to_recordings
-from lhotse.utils import Pathlike, urlretrieve_progress
-import regex as re2
-from functools import partial
+from lhotse.utils import Pathlike, urlretrieve_progress, is_module_available
 import unicodedata
+
+if not is_module_available('regex'):
+    raise ImportError('regex package not found. Please install...'
+        ' (pip install regex)'
+    ) 
+else:
+    import regex as re2
 
 
 # Keep Markings such as vowel signs, all letters, and decimal numbers 
@@ -60,32 +68,110 @@ ISOCODE2LANG = {
     'de': 'German',
 }
 
-
-def download_and_untar(
+###############################################################################
+#                             Download and Untar
+###############################################################################
+def download_mtedx(
     target_dir: Pathlike = '.',
-    force_download: Optional[bool] = False
-    language: str = 'fr',
+    languages: Optional[Union[str, Sequence[str]]] = 'all',
 ) -> None:
-    target_dir = Path(target_dir)
+    """
+        Download and untar the dataset.
+
+        :param: target_dir: Pathlike, the path of the directory where the
+            mtdex_corpus directory will be created and to which data will
+            be downloaded.
+        :param: languages: A str or sequence of strings specifying which
+            languages to download. The default 'all', downloads all available
+            languages.
+    """
+    target_dir = Path(target_dir) / 'mtedx_corpus'
     target_dir.mkdir(parents=True, exist_ok=True)
-    tar_path = target_dir / f'{language}-{language}.tgz'
-    urlretreive_progress(
-        f'http://www.openslr.org/resources/100/mtedx_{language}-{language}.tgz',
-        filename=tar_path,
-        desc=f'Downloading MTEDx {language}',
-    )
-    corpus_dir = target_dir / f'{language}-{language}.tgz'
-    completed_detector = corpus_dir / '.completed'
-    if not completed_detector.is_file():
-        shutil.rmtree(corpus_dir, ignore_errors=True)
-        with tarfile.open(tar_path) as tar:
-            tar.extractall(path=target_dir)
-            completed_detector.touch()
+   
+    langs_list = list(ISOCODE2LANG.keys())
+    # If for some reason languages = None, assume this also means 'all'
+    if isinstance(languages, str) and languages != 'all':
+        langs_list = [languages]
+    elif isinstance(languages, list) or isinstance(languages, tuple):
+        langs_list = languages
+
+    for lang in tqdm(langs_list, 'Downloading MTEDx languages'):
+        tar_path = target_dir / f'{lang}-{lang}.tgz'
+        urlretrieve_progress(
+            f'http://www.openslr.org/resources/100/mtedx_{lang}.tgz',
+            filename=tar_path,
+            desc=f'Downloading MTEDx {lang}',
+        )
+        corpus_dir = target_dir / f'{lang}-{lang}.tgz'
+        completed_detector = target_dir / f'.{lang}.completed'
+        if not completed_detector.is_file():
+            shutil.rmtree(corpus_dir, ignore_errors=True)
+            with tarfile.open(tar_path) as tar:
+                tar.extractall(path=target_dir)
+                completed_detector.touch()
 
 
+###############################################################################
+#                              Prepare MTEDx                                
+###############################################################################
+def prepare_mtedx(
+    corpus_dir: Pathlike,
+    output_dir: Optional[Pathlike] = None,
+    languages: Optional[Union[str, Sequence[str]]] = 'all',
+    num_jobs: int = 1,
+) -> Dict[str, Dict[str, Dict[str, Union[RecordingSet, SupervisionSet]]]]:
+    """
+    Prepares manifest of all MTEDx languages requested.
+    
+    :param corpus_dir: Path to the root where MTEDx data was downloaded.
+                       It should be called mtedx_corpus.
+    :param output_dir: Root directory where .json manifests are stored.
+    :param languages: str or str sequence specifying the languages to prepare.
+        The str 'all' prepares all languages.
+    :return:
+    """
+    # Resolve corpus_dir type
+    if isinstance(corpus_dir, str):
+        corpus_dir = Path(corpus_dir)
+    
+    # Resolve output_dir type
+    if isinstance(output_dir, str):
+        output_dir = Path(output_dir)
+
+    langs_list = list(ISOCODE2LANG.keys())
+    # If for some reason languages = None, assume this also means 'all'
+    if isinstance(languages, str) and languages != 'all':
+        langs_list = [languages]
+    elif isinstance(languages, list) or isinstance(languages, tuple):
+        if languages[0] != 'all':
+            langs_list = languages
+
+    manifests = defaultdict(dict) 
+    for lang in langs_list:
+        corpus_dir_lang = corpus_dir / f'{lang}-{lang}'
+        output_dir_lang = output_dir / f'{lang}'
+        if corpus_dir_lang.is_dir():
+            manifests[lang] = prepare_single_mtedx_language(
+                corpus_dir_lang,
+                output_dir_lang,
+                language=lang,
+                num_jobs=num_jobs,
+            )
+    
+    return dict(manifests)
+
+
+###############################################################################
+# All remaining functions are just helper functions, mainly for text
+# normalization and parsing the vtt files that come with the mtedx corpus
+###############################################################################
+
+# Prepare data for a single language
 def prepare_single_mtedx_language(
     corpus_dir: Pathlike,
     output_dir: Optional[Pathlike] = None,
+    language: str = 'language',
+    num_jobs: int = 1,
 ) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet]]]:
     """
     Prepares manifests using a single MTEDx language.
@@ -96,90 +182,112 @@ def prepare_single_mtedx_language(
             files are stored.
         - Then, it looks for the vtt directory in data/{train,dev,test}/vtt
             which contains the segmentation and transcripts for the audio.
+        - The transcripts undergo some basic text normalization
 
     :param corpus_dir: Path to the root of the MTEDx download
     :param output_dir: Path where the manifests are stored as .json files
+    :param language: The two-letter language code.
+    :param num_jobs: Number of threads to use when preparing data.
     :return:
     """
     if isinstance(corpus_dir, str):
         corpus_dir = Path(corpus_dir)
     manifests = defaultdict(dict)
-    language = ISOCODE2LANG[corpus_dir.stem.split('-')[0]]
-    filterfun = partial(_filter_word)
 
-    for split in ('train', 'valid', 'test'):
-        audio_dir = corpus_dir / f'data/{split}/wav'
-        recordings = RecordingSet.from_recordings(Recording.from_file(p) for p in audio_dir.glob('*.flac'))
-        if len(recordings) == 0:
-            logging.warning(f'No .flac files found in {audio_dir}')
-        
-        supervisions = []
-        text_dir = corpus_dir / f'data/{split}/vtt'
-        for p in text_dir.glob('*'):
-            lines = p.read_text()            
-            recoid = p.stem.split('.')[0]
-            for start, end, line in _parse_vtt(lines, "<noise>"):
-                line_list = []
-                for w in line.split():
-                    w_ = w.strip()
-                    if re.match(r"^(\([^)]*\) *)+$", w_):
-                        line_list.append(w_)
-                    elif filterfun(w):
-                        line_list.append(w_)
-                    else:
-                        line_list.append("<unk>")
-                    line_ = ' '.join(line_list)
-                if re.match(r"^\w+ *(<[^>]*> *)+$", line_, re.UNICODE):
-                    line_new = line_.strip()
-                elif "<" in line_ or ">" in line_:
-                    continue;
-                else:
-                    line_new = line_.strip()
-                     
-                supervisions.append(
-                    SupervisionSegment(
-                        id=_format_uttid(recoid, start),
-                        recording_id=recoid,
-                        start=start,
-                        duration=round(end - start, ndigits=8),
-                        channel=0,
-                        text=line_new,
-                        language=language,
-                        speaker=recoid,
-                    )
-                )
-    
-        if len(supervisions) == 0:
-            logging.warning(f'No supervisions found in {text_dir}')
-        supervisions = SupervisionSet.from_segments(supervisions)
-        
-        recordings, supervisions = remove_missing_recordings_and_supervisions(recordings, supervisions)
-        supervisions = trim_supervisions_to_recordings(recordings, supervisions)
-        validate_recordings_and_supervisions(recordings, supervisions)
+    with ThreadPoolExecutor(num_jobs) as ex:
+        for split in ('train', 'valid', 'test'):
+            audio_dir = corpus_dir / f'data/{split}/wav'
+            recordings = RecordingSet.from_recordings(Recording.from_file(p) for p in audio_dir.glob('*.flac'))
+            if len(recordings) == 0:
+                logging.warning(f'No .flac files found in {audio_dir}')
+            
+            supervisions = []
+            text_dir = corpus_dir / f'data/{split}/vtt'
+            futures = []
+            for p in text_dir.glob('*'):
+                futures.append(ex.submit(_filename_to_supervisions, p, language))
+            
+            for future in tqdm(futures, desc='Processing', leave=False):
+                result = future.result()
+                if result is None:
+                    continue
+                for sup in result:
+                    supervisions.append(sup)
 
-        manifests[split] = {
-            'recordings': recordings,
-            'supervisions': supervisions,
-        }
+            if len(supervisions) == 0:
+                logging.warning(f'No supervisions found in {text_dir}')
+            supervisions = SupervisionSet.from_segments(supervisions)
+            
+            recordings, supervisions = remove_missing_recordings_and_supervisions(recordings, supervisions)
+            supervisions = trim_supervisions_to_recordings(recordings, supervisions)
+            validate_recordings_and_supervisions(recordings, supervisions)
 
-        if output_dir is not None:
-            if isinstance(output_dir, str):
-                output_dir = Path(output_dir)
-            output_dir.mkdir(parents=True, exist_ok=True)
-            save_split = 'dev' if split == 'valid' else split
-            recordings.to_file(output_dir / f'recordings_{language}_{split}.json')
-            supervisions.to_file(output_dir / f'supervisions_{language}_{split}.json')
+            manifests[split] = {
+                'recordings': recordings,
+                'supervisions': supervisions,
+            }
+
+            if output_dir is not None:
+                if isinstance(output_dir, str):
+                    output_dir = Path(output_dir)
+                output_dir.mkdir(parents=True, exist_ok=True)
+                save_split = 'dev' if split == 'valid' else split
+                recordings.to_file(output_dir / f'recordings_{language}_{split}.json')
+                supervisions.to_file(output_dir / f'supervisions_{language}_{split}.json')
 
     return dict(manifests)
     
 
+# Function that takes in the vtt file name (Path object) and returns a 
+# list of SUpervisionSegments 
+def _filename_to_supervisions(filename: Path, language: str):
+    lines = filename.read_text()
+    recoid = filename.stem.split('.')[0]
+    supervisions = []
+    filterfun = partial(_filter_word)
+    for start, end, line in _parse_vtt(lines, "<noise>"):
+        line_list = []
+        for w in line.split():
+            w_ = w.strip()
+            if re.match(r"^(\([^)]*\) *)+$", w_):
+                line_list.append(w_)
+            elif filterfun(w):
+                line_list.append(w_)
+            else:
+                line_list.append("<unk>")
+        line_ = ' '.join(line_list)
+        if re.match(r"^\w+ *(<[^>]*> *)+$", line_, re.UNICODE):
+            line_new = line_.strip()
+        elif "<" in line_ or ">" in line_:
+            continue;
+        else:
+            line_new = line_.strip()
+
+        supervisions.append(
+            SupervisionSegment(
+                id=_format_uttid(recoid, start),
+                recording_id=recoid,
+                start=start,
+                duration=round(end - start, ndigits=8),
+                channel=0,
+                text=line_new,
+                language=language,
+                speaker=recoid,
+            )
+        )
+    return supervisions
+
+
+# Handles proper formatting (0-padding) of utterance ids
 def _format_uttid(recoid, start):
     # Since each recording is a talk, normally by 1 speaker, we use the
     # recoid as the spkid as well. 
     start = '{0:08d}'.format(int(float(start)*100))
     return '_'.join([recoid, start])
- 
 
+
+# Filters out words from text that do not have the right unicode categories.
+# This includes strange punctuation for instance
 def _filter_word(s):
     for c in s:
         if unicodedata.category(c) not in VALID_CATEGORIES and c not in KEEP_LIST:
@@ -187,15 +295,18 @@ def _filter_word(s):
     return True
 
 
+# This filters out individual characters in a line of text
 def _filter(s):
     return unicodedata.category(s) in VALID_CATEGORIES or s in KEEP_LIST 
 
 
+# Convert time to seconds
 def _time2sec(time):
     hr, mn, sec = time.split(':')
     return int(hr) * 3600.0 + int(mn) * 60.0 + float(sec)
 
 
+# Parse the times in the vtt files
 def _parse_time_segment(l):
     start, end = l.split(' --> ')
     start = _time2sec(start)    
@@ -203,13 +314,14 @@ def _parse_time_segment(l):
     return start, end
 
 
+# There are some strange space symbols that we normalize
 def _normalize_space(c):
     if unicodedata.category(c) == 'Zs':
         return " "
     else:
         return c
 
-
+# Parse the vtt file
 def _parse_vtt(lines, noise):
     blocks = lines.split('\n\n') 
     for i, b in enumerate(blocks, -1):
