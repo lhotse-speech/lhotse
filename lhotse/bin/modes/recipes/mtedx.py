@@ -35,8 +35,8 @@ def mtedx(
 @click.argument('target_dir', type=click.Path())
 @click.option('-l', '--lang', multiple=True, default=['all'],
     help='Specify which languages to download, e.g., '
-    '        lhoste obtain librispeech -l de -l fr -l es '
-    '        lhoste obtain librispeech'    
+    '        lhoste obtain mtedx -l de -l fr -l es '
+    '        lhoste obtain mtedx'    
 )
 def mtedx(
         target_dir: Pathlike,

@@ -53,7 +53,7 @@ def save_to_json(data: Any, path: Pathlike) -> None:
     opener = gzip.open if compressed else open
     mode = 'wt' if compressed else 'w'
     with opener(path, mode) as f:
-        json.dump(data, f, indent=2, ensure_ascii=False)
+        json.dump(data, f, indent=2)
 
 
 def load_json(path: Pathlike) -> Union[dict, list]:
@@ -64,8 +64,8 @@ def load_json(path: Pathlike) -> Union[dict, list]:
 
 
 class JsonMixin:
-    def to_json(self, path: Pathlike) -> None:
-        save_to_json(list(self.to_dicts()), path)
+    def to_json(self, path: Pathlike, ensure_ascii: bool = True) -> None:
+        save_to_json(list(self.to_dicts()), path, ensure_ascii)
 
     @classmethod
     def from_json(cls, path: Pathlike) -> Manifest:
