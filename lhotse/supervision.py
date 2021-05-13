@@ -6,61 +6,57 @@ from typing import Any, Callable, Dict, Iterable, List, Mapping, NamedTuple, Opt
 from lhotse.serialization import Serializable
 from lhotse.utils import Seconds, asdict_nonull, exactly_one_not_null, fastcopy, \
     ifnone, index_by_id_and_check, \
-    perturb_num_samples, split_sequence
+    perturb_num_samples, split_sequence, compute_num_samples
 
 
-@dataclass(frozen=True, unsafe_hash=True)
 class AlignmentItem(NamedTuple):
+    """
+    This class contains an alignment item, for example a word, along with its
+    start time (w.r.t. the start of recording) and duration. It can potentially
+    be used to store other kinds of alignment items, such as subwords, pdfid's etc.
+    
+    We use indexing in most of the functions here instead of named attribute access
+    since it is faster and this code may potentially be executed many times for
+    large supervisions.
+    """
     symbol: str
     start: Seconds
     duration: Seconds
 
     @property
     def end(self) -> Seconds:
-        return round(self.start + self.duration, ndigits=8)
+        return round(self[1] + self[2], ndigits=8)
 
     def with_offset(self, offset: Seconds) -> 'AlignmentItem':
         """Return an identical ``AlignmentItem``, but with the ``offset`` added to the ``start`` field."""
-        return fastcopy(self, start=round(self.start + offset, ndigits=8))
+        return AlignmentItem(self[0], round(self[1] + offset, ndigits=8), self[2])
 
-    def perturb_speed(
-            self,
-            factor: float,
-            sampling_rate: int,
-    ) -> 'AlignmentItem':
+    def perturb_speed(self, factor: float, sampling_rate: int) -> 'AlignmentItem':
         """
-        Return a ``AlignmentItem`` that has time boundaries matching the
-        recording/cut perturbed with the same factor. See `perturb_speed()` method
-        in `SupervisionSegment` for details.
+        Return an ``AlignmentItem`` that has time boundaries matching the
+        recording/cut perturbed with the same factor. See :meth:`SupervisionSegment.perturb_speed` 
+        for details.
         """
-        start_sample = round(self.start * sampling_rate)
-        num_samples = round(self.duration * sampling_rate)
+        start_sample = round(self[1] * sampling_rate)
+        num_samples = compute_num_samples(self.duration, sampling_rate)
         new_start = perturb_num_samples(start_sample, factor) / sampling_rate
         new_duration = perturb_num_samples(num_samples, factor) / sampling_rate
-        return fastcopy(
-            self,
-            start=new_start,
-            duration=new_duration
-        )
+        return AlignmentItem(self[0], new_start, new_duration)
 
-    def trim(self, end: Seconds, start: Optional[Seconds] = 0) -> 'AlignmentItem':
+    def trim(self, end: Seconds, start: Seconds = 0) -> 'AlignmentItem':
         """
-        See trim() method for SupervisionSegment.
+        See :met:`SupervisionSegment.trim`.
         """
         assert start >= 0
-        start_exceeds_by = abs(min(0, self.start - start))
+        start_exceeds_by = abs(min(0, self[1] - start))
         end_exceeds_by = max(0, self.end - end)
-        return fastcopy(
-            self,
-            start=max(start, self.start),
-            duration=self.duration - end_exceeds_by - start_exceeds_by,
-        )
+        return AlignmentItem(self[0], max(start, self[1]), self[2] - end_exceeds_by - start_exceeds_by)
 
     def transform(self, transform_fn: Callable[[str], str]) -> 'AlignmentItem':
         """
         Perform specified transformation on the alignment content.
         """
-        return fastcopy(self, symbol=transform_fn(self.symbol))
+        return AlignmentItem(transform_fn(self[0]), self[1], self[2])
     
 
 @dataclass(frozen=True, unsafe_hash=True)
@@ -75,7 +71,7 @@ class SupervisionSegment:
     speaker: Optional[str] = None
     gender: Optional[str] = None
     custom: Optional[Dict[str, Any]] = None
-    alignment: Optional[Dict[str, List[AlignmentItem]]]  = None
+    alignment: Optional[Dict[str, List[AlignmentItem]]] = None
 
     @property
     def end(self) -> Seconds:
@@ -92,8 +88,8 @@ class SupervisionSegment:
                     for item in ali
                 ]
                 for type, ali in self.alignment.items()
-            }
-        )
+            } if self.alignment else None
+        ) 
 
     def perturb_speed(
             self,
@@ -113,7 +109,7 @@ class SupervisionSegment:
         :return: a modified copy of the current ``Recording``.
         """
         start_sample = round(self.start * sampling_rate)
-        num_samples = round(self.duration * sampling_rate)
+        num_samples = compute_num_samples(self.duration, sampling_rate)
         new_start = perturb_num_samples(start_sample, factor) / sampling_rate
         new_duration = perturb_num_samples(num_samples, factor) / sampling_rate
         return fastcopy(
@@ -128,10 +124,10 @@ class SupervisionSegment:
                     for item in ali
                 ]
                 for type, ali in self.alignment.items()
-            }
+            } if self.alignment else None
         )
 
-    def trim(self, end: Seconds, start: Optional[Seconds] = 0) -> 'SupervisionSegment':
+    def trim(self, end: Seconds, start: Seconds = 0) -> 'SupervisionSegment':
         """
         Return an identical ``SupervisionSegment``, but ensure that ``self.start`` is not negative (in which case
         it's set to 0) and ``self.end`` does not exceed the ``end`` parameter. If a `start` is optionally
@@ -153,7 +149,7 @@ class SupervisionSegment:
                     for item in ali
                 ]
                 for type, ali in self.alignment.items()
-            }
+            } if self.alignment else None
         )
 
     def map(self, transform_fn: Callable[['SupervisionSegment'], 'SupervisionSegment']) -> 'SupervisionSegment':
@@ -201,7 +197,7 @@ class SupervisionSegment:
                     for item in ali
                 ]
                 for ali_type, ali in self.alignment.items()
-            }
+            } if self.alignment else None
         )
 
     def to_dict(self) -> dict:
