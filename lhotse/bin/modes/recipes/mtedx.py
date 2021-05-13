@@ -1,0 +1,46 @@
+import click
+
+from lhotse.bin.modes import obtain, prepare
+from lhotse.recipes.mtedx import download_mtedx, prepare_mtedx
+from lhotse.utils import Pathlike
+from typing import Optional, Union, Sequence
+
+
+__all__ = ['mtedx']
+
+
+@prepare.command(context_settings=dict(show_default=True))
+@click.argument('corpus_dir', type=click.Path(exists=True, dir_okay=True))
+@click.argument('output_dir', type=click.Path())
+@click.option('-j', '--num-jobs', type=int, default=1,
+              help='How many threads to use (can give good speed-ups with slow disks).')
+@click.option('-l', '--lang', multiple=True, default=['all'], 
+    help='Specify which languages to download, e.g., '
+    '        lhoste obtain librispeech -l de -l fr -l es '
+    '        lhoste obtain librispeech'
+)
+def mtedx(
+        corpus_dir: Pathlike,
+        output_dir: Pathlike,
+        num_jobs: int,
+        lang: Optional[Union[str, Sequence[str]]], 
+):
+    """MTEDx ASR data preparation."""
+    prepare_mtedx(corpus_dir, output_dir=output_dir,
+        num_jobs=num_jobs, languages=lang
+    )
+
+
+@obtain.command(context_settings=dict(show_default=True))
+@click.argument('target_dir', type=click.Path())
+@click.option('-l', '--lang', multiple=True, default=['all'],
+    help='Specify which languages to download, e.g., '
+    '        lhoste obtain librispeech -l de -l fr -l es '
+    '        lhoste obtain librispeech'    
+)
+def mtedx(
+        target_dir: Pathlike,
+        langs: Optional[Union[str, Sequence[str]]], 
+):
+    """MTEDx download."""
+    download_mtedx(target_dir, languages=langs)

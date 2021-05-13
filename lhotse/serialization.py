@@ -53,7 +53,7 @@ def save_to_json(data: Any, path: Pathlike) -> None:
     opener = gzip.open if compressed else open
     mode = 'wt' if compressed else 'w'
     with opener(path, mode) as f:
-        json.dump(data, f, indent=2)
+        json.dump(data, f, indent=2, ensure_ascii=False)
 
 
 def load_json(path: Pathlike) -> Union[dict, list]:

@@ -191,7 +191,7 @@ a CLI tool that create the manifests given a corpus directory.
   * - MiniLibriMix
     - :func:`lhotse.recipes.prepare_librimix`
   * - MTEDx
-    - :func:`lhotse.recipes.prepare_single_mtdex_language`
+    - :func:`lhotse.recipes.prepare_mtdex`
   * - MobvoiHotWord
     - :func:`lhotse.recipes.prepare_mobvoihotwords`
   * - Multilingual LibriSpeech (MLS)
