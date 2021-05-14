@@ -4,7 +4,7 @@ from itertools import islice
 from typing import Any, Callable, Dict, Iterable, List, Mapping, NamedTuple, Optional, Sequence
 
 from lhotse.serialization import Serializable
-from lhotse.utils import Seconds, asdict_nonull, exactly_one_not_null, fastcopy, \
+from lhotse.utils import Seconds, asdict_nonull, asdict_nonull_recursive, exactly_one_not_null, fastcopy, \
     ifnone, index_by_id_and_check, \
     perturb_num_samples, split_sequence, compute_num_samples
 
@@ -201,13 +201,19 @@ class SupervisionSegment:
         )
 
     def to_dict(self) -> dict:
-        return asdict_nonull(self, convert_named_tuples=True)
+        """
+        We use the recursive conversion only if alignments are present, since it may
+        potentially be slower due to type checking of member objects.
+        """
+        return asdict_nonull(self) if self.alignment is None else asdict_nonull_recursive(self)
 
     @staticmethod
     def from_dict(data: dict) -> 'SupervisionSegment':
         return SupervisionSegment(
             **{
-                key:(AlignmentItem(**value) if key == 'alignment' else value) 
+                key:(
+                    {k:[AlignmentItem(*x) for x in v] for k,v in value.items()}
+                    if key == 'alignment' else value) 
                 for key, value in data.items()
             }
         )

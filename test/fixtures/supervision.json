@@ -7,7 +7,36 @@
     "duration": 0.3,
     "text": "transcript of the first segment",
     "language": "english",
-    "speaker": "Norman Dyhrentfurth"
+    "speaker": "Norman Dyhrentfurth",
+    "alignment": {
+      "word": [
+        {
+          "symbol": "transcript",
+          "start": 0.1,
+          "duration": 0.08
+        },
+        {
+          "symbol": "of",
+          "start": 0.18,
+          "duration": 0.02
+        },
+        {
+          "symbol": "the",
+          "start": 0.2,
+          "duration": 0.03
+        },
+        {
+          "symbol": "first",
+          "start": 0.23,
+          "duration": 0.07
+        },
+        {
+          "symbol": "segment",
+          "start": 0.3,
+          "duration": 0.1
+        }
+      ]
+    }
   },
   {
     "id": "segment-2",

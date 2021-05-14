@@ -34,19 +34,26 @@ def dummy_recording(unique_id: int) -> Recording:
         duration=1.0
     )
 
-def dummy_alignment(symbol: str = "irrelevant", start: float = 0.0, duration: float = 1.0) -> AlignmentItem:
-    return AlignmentItem(
-        symbol=symbol,
-        start=start,
-        duration=duration
-    )
+
+def dummy_alignment(text: str = "irrelevant", start: float = 0.0, duration: float = 1.0) -> AlignmentItem:
+    subwords = [text[i:i+3] for i in range(0, len(text), 3)]   # Create subwords of 3 chars
+    dur = duration/len(subwords)
+    alignment = [
+        AlignmentItem(
+            symbol=sub,
+            start=start + i*dur,
+            duration=dur
+        ) for i, sub in enumerate(subwords)    
+    ]
+    return {'subword': alignment}
+
 
 def dummy_supervision(
     unique_id: int,
     start: float = 0.0,
     duration: float = 1.0,
     text: str = "irrelevant",
-    alignment: Optional[Dict[str, List[AlignmentItem]]] = None
+    alignment: Optional[Dict[str, List[AlignmentItem]]] = dummy_alignment()
 ) -> SupervisionSegment:
     return SupervisionSegment(
         id=f'dummy-segment-{unique_id:04d}',
