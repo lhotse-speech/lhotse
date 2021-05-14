@@ -6,7 +6,7 @@ from dataclasses import asdict, dataclass
 from decimal import Decimal, ROUND_HALF_DOWN, ROUND_HALF_UP
 from math import ceil, isclose
 from pathlib import Path
-from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence, Tuple, TypeVar, Union
+from typing import Any, Callable, Dict, Iterable, List, NamedTuple, Optional, Sequence, Tuple, TypeVar, Union
 
 import numpy as np
 import torch
@@ -54,10 +54,13 @@ def uuid4():
     return uuid.uuid4()
 
 
-def asdict_nonull(dclass) -> Dict[str, Any]:
+def asdict_nonull(dclass, convert_named_tuples: bool = False) -> Dict[str, Any]:
     """
     Recursively convert a dataclass into a dict, removing all the fields with `None` value.
     Intended to use in place of dataclasses.asdict(), when the null values are not desired in the serialized document.
+    
+    If `convert_named_tuples` is True, any NamedTuple members in the dataclass are serialized
+    to dict (this is useful when writing to JSON, for example, since it retains tuple keys).
     """
 
     def non_null_dict_factory(collection):
@@ -66,6 +69,8 @@ def asdict_nonull(dclass) -> Dict[str, Any]:
         for key, val in d.items():
             if val is None:
                 remove_keys.append(key)
+            if convert_named_tuples and isinstance(val, tuple) and hasattr(val, '_fields'):
+                d[key] = val._asdict()
         for k in remove_keys:
             del d[k]
         return d

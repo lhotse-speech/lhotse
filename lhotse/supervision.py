@@ -37,8 +37,8 @@ class AlignmentItem(NamedTuple):
         recording/cut perturbed with the same factor. See :meth:`SupervisionSegment.perturb_speed` 
         for details.
         """
-        start_sample = round(self[1] * sampling_rate)
-        num_samples = compute_num_samples(self.duration, sampling_rate)
+        start_sample = compute_num_samples(self[1], sampling_rate)
+        num_samples = compute_num_samples(self[2], sampling_rate)
         new_start = perturb_num_samples(start_sample, factor) / sampling_rate
         new_duration = perturb_num_samples(num_samples, factor) / sampling_rate
         return AlignmentItem(self[0], new_start, new_duration)
@@ -108,7 +108,7 @@ class SupervisionSegment:
             by affixing it with "_sp{factor}".
         :return: a modified copy of the current ``Recording``.
         """
-        start_sample = round(self.start * sampling_rate)
+        start_sample = compute_num_samples(self.start, sampling_rate)
         num_samples = compute_num_samples(self.duration, sampling_rate)
         new_start = perturb_num_samples(start_sample, factor) / sampling_rate
         new_duration = perturb_num_samples(num_samples, factor) / sampling_rate
@@ -201,11 +201,16 @@ class SupervisionSegment:
         )
 
     def to_dict(self) -> dict:
-        return asdict_nonull(self)
+        return asdict_nonull(self, convert_named_tuples=True)
 
     @staticmethod
     def from_dict(data: dict) -> 'SupervisionSegment':
-        return SupervisionSegment(**data)
+        return SupervisionSegment(
+            **{
+                key:(AlignmentItem(**value) if key == 'alignment' else value) 
+                for key, value in data.items()
+            }
+        )
 
 
 class SupervisionSet(Serializable, Sequence[SupervisionSegment]):
