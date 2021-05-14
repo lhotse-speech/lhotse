@@ -16,6 +16,7 @@ from .librimix import *
 from .librispeech import *
 from .ljspeech import *
 from .mls import *
+from .mtedx import *
 from .musan import *
 from .nsc import *
 from .switchboard import *
