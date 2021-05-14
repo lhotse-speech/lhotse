@@ -15,9 +15,8 @@ __all__ = ['mtedx']
 @click.option('-j', '--num-jobs', type=int, default=1,
               help='How many threads to use (can give good speed-ups with slow disks).')
 @click.option('-l', '--lang', multiple=True, default=['all'], 
-    help='Specify which languages to download, e.g., '
-    '        lhoste obtain librispeech -l de -l fr -l es '
-    '        lhoste obtain librispeech'
+    help='Specify which languages to prepare, e.g., '
+    '        lhoste prepare librispeech mtedx_corpus data -l de -l fr -l es '
 )
 def mtedx(
         corpus_dir: Pathlike,
@@ -35,12 +34,12 @@ def mtedx(
 @click.argument('target_dir', type=click.Path())
 @click.option('-l', '--lang', multiple=True, default=['all'],
     help='Specify which languages to download, e.g., '
-    '        lhoste obtain mtedx -l de -l fr -l es '
+    '        lhoste obtain mtedx . -l de -l fr -l es '
     '        lhoste obtain mtedx'    
 )
 def mtedx(
         target_dir: Pathlike,
-        langs: Optional[Union[str, Sequence[str]]], 
+        lang: Optional[Union[str, Sequence[str]]], 
 ):
     """MTEDx download."""
-    download_mtedx(target_dir, languages=langs)
+    download_mtedx(target_dir, languages=lang)

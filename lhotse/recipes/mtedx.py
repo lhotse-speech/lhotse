@@ -38,19 +38,9 @@ from lhotse.qa import remove_missing_recordings_and_supervisions, trim_supervisi
 from lhotse.utils import Pathlike, urlretrieve_progress, is_module_available
 import unicodedata
 
-if not is_module_available('regex'):
-    raise ImportError('regex package not found. Please install...'
-        ' (pip install regex)'
-    ) 
-else:
-    import regex as re2
-
 
 # Keep Markings such as vowel signs, all letters, and decimal numbers 
 VALID_CATEGORIES = ('Mc', 'Mn', 'Ll', 'Lm', 'Lo', 'Lt', 'Lu', 'Nd', 'Zs')
-noise_pattern = re2.compile(r'\([^)]*\)', re2.UNICODE)
-apostrophe_pattern = re2.compile(r"(\w)'(\w)")
-html_tags = re2.compile(r"(&[^ ;]*;)|(</?[iu]>)")
 KEEP_LIST = [u'\u2019']
 
 
@@ -323,6 +313,18 @@ def _normalize_space(c):
 
 # Parse the vtt file
 def _parse_vtt(lines, noise):
+    # Import regex for some special unicode handling that re has issues with
+    if not is_module_available('regex'):
+        raise ImportError('regex package not found. Please install...'
+            ' (pip install regex)'
+        ) 
+    else:
+        import regex as re2
+
+    noise_pattern = re2.compile(r'\([^)]*\)', re2.UNICODE)
+    apostrophe_pattern = re2.compile(r"(\w)'(\w)")
+    html_tags = re2.compile(r"(&[^ ;]*;)|(</?[iu]>)")
+
     blocks = lines.split('\n\n') 
     for i, b in enumerate(blocks, -1):
         if i > 0 and b.strip() != "":
