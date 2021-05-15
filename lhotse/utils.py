@@ -77,10 +77,6 @@ def asdict_nonull_recursive(dclass) -> Dict[str, Any]:
     Same as :meth:asdict_nonull, but also handles recursive conversion of namedtuples and
     dataclasses. Code modified from:
     https://codereview.stackexchange.com/questions/209898/unpack-a-nested-dataclass-and-named-tuple
-    
-    We serialize namedtuples as lists instead of dicts to save space in the manifests. So the
-    dataclass will have to make sure they are handled correctly for initialization from
-    the manifest.
     """
     def is_data_class_instance(obj)   -> bool:
         data_class_attrs = {'__dataclass_fields__', '__dataclass_params__'}
@@ -102,7 +98,7 @@ def asdict_nonull_recursive(dclass) -> Dict[str, Any]:
         elif isinstance(obj, list):
             return [unpack(value) for value in obj]
         elif is_named_tuple_instance(obj):
-            return [unpack(value) for value in obj._asdict().values()]
+            return {key: unpack(value) for key, value in obj._asdict().items()}
         elif is_data_class_instance(obj):
             return {key: unpack(getattr(obj, key)) for key in obj.__dataclass_fields__.keys()}
         elif isinstance(obj, tuple):

@@ -10,11 +10,31 @@
     "speaker": "Norman Dyhrentfurth",
     "alignment": {
       "word": [
-        ["transcript", 0.1, 0.08],
-        ["of", 0.18, 0.02],
-        ["the", 0.2, 0.03],
-        ["first", 0.23, 0.07],
-        ["segment", 0.3, 0.1]
+        {
+          "symbol": "transcript",
+          "start": 0.1,
+          "duration": 0.08
+        },
+        {
+          "symbol": "of",
+          "start": 0.18,
+          "duration": 0.02
+        },
+        {
+          "symbol": "the",
+          "start": 0.2,
+          "duration": 0.03
+        },
+        {
+          "symbol": "first",
+          "start": 0.23,
+          "duration": 0.07
+        },
+        {
+          "symbol": "segment",
+          "start": 0.3,
+          "duration": 0.1
+        }
       ]
     }
   },

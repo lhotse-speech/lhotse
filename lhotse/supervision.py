@@ -212,7 +212,7 @@ class SupervisionSegment:
         return SupervisionSegment(
             **{
                 key:(
-                    {k:[AlignmentItem(*x) for x in v] for k,v in value.items()}
+                    {k:[AlignmentItem(**x) for x in v] for k,v in value.items()}
                     if key == 'alignment' else value) 
                 for key, value in data.items()
             }
@@ -250,6 +250,12 @@ class SupervisionSet(Serializable, Sequence[SupervisionSegment]):
     @staticmethod
     def from_dicts(data: Iterable[Dict]) -> 'SupervisionSet':
         return SupervisionSet.from_segments(SupervisionSegment.from_dict(s) for s in data)
+    
+    def add_alignments_from_ctm(ctm) -> 'SupervisionSet':
+        """
+        
+        """
+        pass
 
     def to_dicts(self) -> Iterable[dict]:
         return (s.to_dict() for s in self)
