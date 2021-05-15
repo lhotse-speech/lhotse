@@ -23,7 +23,7 @@ from lhotse.features.io import FeaturesWriter, LilcomFilesWriter, LilcomHdf5Writ
 from lhotse.features.mixer import NonPositiveEnergyError
 from lhotse.serialization import Serializable
 from lhotse.supervision import SupervisionSegment, SupervisionSet
-from lhotse.utils import (Decibels, LOG_EPSILON, Pathlike, Seconds, TimeSpan, asdict_nonull,
+from lhotse.utils import (Decibels, LOG_EPSILON, Pathlike, Seconds, TimeSpan, asdict_nonull, asdict_nonull_recursive,
                           compute_num_frames, compute_num_samples, exactly_one_not_null, fastcopy,
                           ifnone, index_by_id_and_check, measure_overlap, overlaps,
                           overspans, perturb_num_samples, split_sequence, uuid4)
@@ -51,7 +51,9 @@ class CutUtilsMixin:
     """
 
     def to_dict(self) -> dict:
-        return {**asdict_nonull(self), 'type': type(self).__name__}
+        # Use recursive serialization if supervisions contain alignments (which are of type NamedTuple)
+        d = asdict_nonull(self) if all([s.alignment is None for s in self.supervisions]) else asdict_nonull_recursive(self)
+        return {**d, 'type': type(self).__name__}
 
     @property
     def trimmed_supervisions(self) -> List[SupervisionSegment]:
