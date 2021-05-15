@@ -1,6 +1,7 @@
+from typing import Dict, List
 import pytest
 
-from lhotse.supervision import SupervisionSegment, SupervisionSet
+from lhotse.supervision import AlignmentItem, SupervisionSegment, SupervisionSet
 from lhotse.testing.dummies import DummyManifest, remove_spaces_from_segment_text
 from lhotse.utils import fastcopy
 
@@ -9,6 +10,16 @@ from lhotse.utils import fastcopy
 def external_supervision_set() -> SupervisionSet:
     return SupervisionSet.from_json('test/fixtures/supervision.json')
 
+
+@pytest.fixture
+def external_alignment() -> Dict[str, List[AlignmentItem]]:
+    return {'word': [
+        AlignmentItem("transcript", 0.1, 0.08),
+        AlignmentItem("of", 0.18, 0.02),
+        AlignmentItem("the", 0.2, 0.03),
+        AlignmentItem("first", 0.23, 0.07),
+        AlignmentItem("segment", 0.3, 0.1)
+      ]}
 
 def test_supervision_map(external_supervision_set):
     for s in external_supervision_set.map(remove_spaces_from_segment_text):
@@ -22,7 +33,7 @@ def test_supervision_transform_text(external_supervision_set):
             assert s.text == 'dummy'
 
 
-def test_supervision_segment_with_full_metadata(external_supervision_set):
+def test_supervision_segment_with_full_metadata(external_supervision_set, external_alignment):
     segment = external_supervision_set['segment-1']
     assert 'segment-1' == segment.id
     assert 'recording-1' == segment.recording_id
@@ -33,6 +44,7 @@ def test_supervision_segment_with_full_metadata(external_supervision_set):
     assert 'transcript of the first segment' == segment.text
     assert 'english' == segment.language
     assert 'Norman Dyhrentfurth' == segment.speaker
+    assert external_alignment == segment.alignment
 
 
 def test_supervision_segment_with_no_metadata(external_supervision_set):
@@ -46,6 +58,7 @@ def test_supervision_segment_with_no_metadata(external_supervision_set):
     assert segment.text is None
     assert segment.language is None
     assert segment.speaker is None
+    assert segment.alignment is None
 
 
 def test_create_supervision_segment_with_minimum_metadata():
@@ -62,7 +75,13 @@ def test_create_supervision_segment_with_all_metadata():
         text='wysokie szczyty',
         language='polish',
         speaker='Janusz',
-        gender='male'
+        gender='male',
+        alignment={
+            'word': [
+                AlignmentItem(symbol='wysokie', start=0.0, duration=0.05),
+                AlignmentItem(symbol='szczyty', start=0.05, duration=0.05)
+            ]
+        }
     )
 
 
