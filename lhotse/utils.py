@@ -107,16 +107,17 @@ def time_diff_to_num_frames(time_diff: Seconds, frame_length: Seconds, frame_shi
     return int(ceil((time_diff - frame_length) / frame_shift))
 
 
-def check_and_rglob(path: Pathlike, pattern: str) -> List[Path]:
+def check_and_rglob(path: Pathlike, pattern: str, strict: Optional[bool] = True) -> List[Path]:
     """
     Asserts that ``path`` exists, is a directory and contains at least one file satisfying the ``pattern``.
+    If `strict` is False, then zero matches are allowed.
 
     :returns: a list of paths to files matching the ``pattern``.
     """
     path = Path(path)
     assert path.is_dir(), f'No such directory: {path}'
     matches = sorted(path.rglob(pattern))
-    assert len(matches) > 0, f'No files matching pattern "{pattern}" in directory: {path}'
+    assert len(matches) > 0 or not strict, f'No files matching pattern "{pattern}" in directory: {path}'
     return matches
 
 

@@ -2,9 +2,8 @@ import gzip
 import itertools
 import json
 from collections import deque
-from functools import reduce
 from pathlib import Path
-from typing import Any, Dict, Generator, Iterable, List, Optional, Type, Union
+from typing import Any, Dict, Generator, Iterable, Optional, Type, Union
 
 import numpy as np
 import yaml
@@ -94,6 +93,81 @@ def load_jsonl(path: Pathlike) -> Generator[Dict[str, Any], None, None]:
             yield ret
 
 
+class SequentialJsonlWriter:
+    """
+    SequentialJsonlWriter allows to store the manifests one by one,
+    without the necessity of storing the whole manifest set in-memory.
+    Supports writing to JSONL format (``.jsonl``), with optional gzip
+    compression (``.jsonl.gz``).
+
+    Example:
+
+        >>> from lhotse import RecordingSet
+        ... recordings = [...]
+        ... with RecordingSet.open_writer('recordings.jsonl.gz') as writer:
+        ...     for recording in recordings:
+        ...         writer.write(recording)
+
+    This writer can be useful for continuing to write files that were previously
+    stopped -- it will open the existing file and scan it for item IDs to skip
+    writing them later. It can also be quried for existing IDs so that the user
+    code may skip preparing the corresponding manifets.
+
+    Example:
+
+        >>> from lhotse import RecordingSet, Recording
+        ... with RecordingSet.open_writer('recordings.jsonl.gz') as writer:
+        ...     for path in Path('.').rglob('*.wav'):
+        ...         recording_id = path.stem
+        ...         if writer.contains(recording_id):
+        ...             # Item already written previously - skip processing.
+        ...             continue
+        ...         # Item doesn't exist yet - run extra work to prepare the manifest
+        ...         # and store it.
+        ...         recording = Recording.from_file(path, recording_id=recording_id)
+        ...         writer.write(recording)
+    """
+
+    def __init__(self, path: Pathlike, overwrite: bool = False) -> None:
+        self.path = Path(path)
+        assert extension_contains('.jsonl', self.path)
+        self.compressed = extension_contains('.gz', self.path)
+        self._open = gzip.open if self.compressed else open
+        self.mode = 'wt' if self.compressed else 'w'
+        self.ignore_ids = set()
+        if self.path.is_file() and not overwrite:
+            self.mode = 'at' if self.compressed else 'a'
+            with self._open(self.path) as f:
+                self.ignore_ids = {json.loads(line)['id'] for line in f}
+
+    def __enter__(self) -> 'SequentialJsonlWriter':
+        self.file = self._open(self.path, self.mode)
+        return self
+
+    def __exit__(self, *args, **kwargs) -> None:
+        self.file.close()
+
+    def __contains__(self, item: Union[str, Any]) -> bool:
+        if isinstance(item, str):
+            return item in self.ignore_ids
+        return item.id in self.ignore_ids
+
+    def contains(self, item: Union[str, Any]) -> bool:
+        return item in self
+
+    def write(self, manifest) -> None:
+        """
+        Serializes a manifest item (e.g. :class:`~lhotse.audio.Recording`,
+        :class:`~lhotse.cut.Cut`, etc.) to JSON and stores it in a JSONL file.
+        """
+        if manifest.id in self.ignore_ids:
+            return
+        print(
+            json.dumps(manifest.to_dict(), cls=NumpyEncoder),
+            file=self.file
+        )
+
+
 class JsonlMixin:
     def to_jsonl(self, path: Pathlike) -> None:
         save_to_jsonl(self.to_dicts(), path)
@@ -102,6 +176,43 @@ class JsonlMixin:
     def from_jsonl(cls, path: Pathlike) -> Manifest:
         data = load_jsonl(path)
         return cls.from_dicts(data)
+
+    @classmethod
+    def open_writer(cls, path: Pathlike, overwrite: bool = False) -> SequentialJsonlWriter:
+        """
+        Open a sequential writer that allows to store the manifests one by one,
+        without the necessity of storing the whole manifest set in-memory.
+        Supports writing to JSONL format (``.jsonl``), with optional gzip
+        compression (``.jsonl.gz``).
+
+        Example:
+
+            >>> from lhotse import RecordingSet
+            ... recordings = [...]
+            ... with RecordingSet.open_writer('recordings.jsonl.gz') as writer:
+            ...     for recording in recordings:
+            ...         writer.write(recording)
+
+        This writer can be useful for continuing to write files that were previously
+        stopped -- it will open the existing file and scan it for item IDs to skip
+        writing them later. It can also be quried for existing IDs so that the user
+        code may skip preparing the corresponding manifets.
+
+        Example:
+
+            >>> from lhotse import RecordingSet, Recording
+            ... with RecordingSet.open_writer('recordings.jsonl.gz') as writer:
+            ...     for path in Path('.').rglob('*.wav'):
+            ...         recording_id = path.stem
+            ...         if writer.contains(recording_id):
+            ...             # Item already written previously - skip processing.
+            ...             continue
+            ...         # Item doesn't exist yet - run extra work to prepare the manifest
+            ...         # and store it.
+            ...         recording = Recording.from_file(path, recording_id=recording_id)
+            ...         writer.write(recording)
+        """
+        return SequentialJsonlWriter(path, overwrite=overwrite)
 
 
 class LazyMixin:
@@ -120,7 +231,7 @@ class LazyMixin:
 
         This method requires ``pyarrow`` and ``pandas`` to be installed.
         """
-        return cls(LazyDict.from_jsonl(path))
+        return cls(LazyDict(path))
 
     def to_arrow(self, path: Pathlike) -> None:
         """
@@ -144,17 +255,17 @@ class LazyMixin:
                 table = self.cuts.table
             else:
                 raise NotImplementedError(f"Unsupported type of manifest for arrow serialization: {type(self)}")
-            with open(path, "wb") as f, pa.RecordBatchStreamWriter(f, schema=table.schema) as writer:
+            with open(path, "wb") as f, pa.RecordBatchFileWriter(f, schema=table.schema) as writer:
                 for batch in table.to_batches():
                     writer.write_batch(batch)
         else:
             # We will take the first 1000 items from the manifest to infer the schema.
             # TODO: might want to sample items randomly in case their manifests vary...
-            schema = infer_arrow_schema(self.subset(first=1000))
+            schema = pa.schema(pa.array(list(self.subset(first=1000).to_dicts())).type)
             # Open the file for writing and initialize the pyarrow batch writer.
             # Note that the batch size we determine here will be used to load whole chunks into
             # memory during deserialization.
-            with open(path, "wb") as f, pa.RecordBatchStreamWriter(f, schema=schema) as writer:
+            with open(path, "wb") as f, pa.RecordBatchFileWriter(f, schema=schema) as writer:
                 # We are (lazily) grouping the items in manifest into chunks,
                 # each of ``batch_size`` items.
                 batch_size = 10 * 1024
@@ -191,7 +302,7 @@ class LazyMixin:
 
         This method requires ``pyarrow`` and ``pandas`` to be installed.
         """
-        return cls(LazyDict.from_arrow(path))
+        return cls(LazyDict(path))
 
 
 def grouper(n, iterable):
@@ -304,30 +415,54 @@ class LazyDict:
         making it incredibly slow...
     """
 
-    def __init__(self, table):
+    def __init__(self, path: Pathlike):
+        self.path = Path(path)
+        self._reset()
+
+    def __getstate__(self):
+        """
+        Store the state for pickling -- we'll only store the path, and re-initialize
+        LazyDict when unpickled. This is necessary to transfer LazyDict across processes
+        for PyTorch's DataLoader workers (otherwise mmapped file gets copied into memory).
+        """
+        state = {'path': self.path}
+        return state
+
+    def __setstate__(self, state):
+        """Restore the state when unpickled -- open the mmap/jsonl file again."""
+        self.__dict__.update(state)
+        self._reset()
+
+    def _reset(self):
         _check_arrow()
-        self.table = table
+        self._init_table_from_path()
         self.batches = deque(self.table.to_batches())
         self.curr_view = self.batches[0].to_pandas()
         self.id2pos = dict(zip(self.curr_view.id, range(len(self.curr_view.id))))
         self.prev_view = None
         self.prev_id2pos = {}
 
-    @classmethod
-    def from_jsonl(cls, path: Pathlike) -> 'LazyDict':
-        _check_arrow()
-        import pyarrow.json as paj
-        table = paj.read_json(str(path))
-        return cls(table)
-
-    @classmethod
-    def from_arrow(cls, path: Pathlike) -> 'LazyDict':
-        _check_arrow()
-        import pyarrow as pa
-        mmap = pa.memory_map(str(path))
-        stream = pa.ipc.open_stream(mmap)
-        table = stream.read_all()
-        return cls(table)
+    def _init_table_from_path(self):
+        if '.jsonl' in self.path.suffixes:
+            # Can read ".jsonl" or ".jsonl.gz"
+            import pyarrow.json as paj
+            self.table = paj.read_json(
+                str(self.path),
+                read_options=paj.ReadOptions(
+                    # magic constants:
+                    # 894 - estimated average number of bytes per JSON item manifest
+                    # 10000 - how many items we want to have in a chunk (Arrow's "batch")
+                    block_size=894 * 10000
+                )
+            )
+        elif '.arrow' == self.path.suffixes[-1]:
+            # Can read ".arrow"
+            import pyarrow as pa
+            mmap = pa.memory_map(str(self.path))
+            stream = pa.ipc.open_file(mmap)
+            self.table = stream.read_all()
+        else:
+            raise ValueError(f"Unknown LazyDict file format : '{self.path}'")
 
     def _progress(self):
         # Rotate the deque to the left by one item.
@@ -347,10 +482,10 @@ class LazyDict:
             # this should make search faster for contiguous keys.
             pos = self.id2pos.get(key)
             if pos is not None:
-                return self._deserialize_one(self.curr_view.iloc[pos].to_dict())
+                return deserialize_item(self.curr_view.iloc[pos].to_dict())
             pos = self.prev_id2pos.get(key)
             if pos is not None:
-                return self._deserialize_one(self.prev_view.iloc[pos].to_dict())
+                return deserialize_item(self.prev_view.iloc[pos].to_dict())
             # Not found in the current Arrow's "batch" -- we'll advance
             # to the next one and try again.
             self._progress()
@@ -375,7 +510,7 @@ class LazyDict:
         return value is not None
 
     def __repr__(self):
-        return f'LazyDict(num_items={self.table.num_rows})'
+        return f'LazyDict(num_items={len(self)})'
 
     def __iter__(self):
         for b in self.table.to_batches():
@@ -389,30 +524,30 @@ class LazyDict:
             # This seems to be the fastest way to iterate rows in a pyarrow table.
             # Conversion to pandas seems to have the least overhead
             # due to Arrow's zero-copy memory sharing policy.
-            yield from (self._deserialize_one(row.to_dict()) for idx, row in b.to_pandas().iterrows())
+            yield from (deserialize_item(row.to_dict()) for idx, row in b.to_pandas().iterrows())
 
     def items(self):
         yield from ((cut.id, cut) for cut in self.values())
 
-    @staticmethod
-    def _deserialize_one(data: dict) -> Any:
-        # Figures out what type of manifest is being decoded with some heuristics
-        # and returns a Lhotse manifest object rather than a raw dict.
-        from lhotse import Cut, Features, Recording, SupervisionSegment
-        from lhotse.cut import MixedCut
-        data = arr2list_recursive(data)
-        if 'sources' in data:
-            return Recording.from_dict(data)
-        if 'num_features' in data:
-            return Features.from_dict(data)
-        if 'type' not in data:
-            return SupervisionSegment.from_dict(data)
-        cut_type = data.pop('type')
-        if cut_type == 'Cut':
-            return Cut.from_dict(data)
-        if cut_type == 'MixedCut':
-            return MixedCut.from_dict(data)
-        raise ValueError(f"Unexpected cut type during deserialization: '{cut_type}'")
+
+def deserialize_item(data: dict) -> Any:
+    # Figures out what type of manifest is being decoded with some heuristics
+    # and returns a Lhotse manifest object rather than a raw dict.
+    from lhotse import Cut, Features, Recording, SupervisionSegment
+    from lhotse.cut import MixedCut
+    data = arr2list_recursive(data)
+    if 'sources' in data:
+        return Recording.from_dict(data)
+    if 'num_features' in data:
+        return Features.from_dict(data)
+    if 'type' not in data:
+        return SupervisionSegment.from_dict(data)
+    cut_type = data.pop('type')
+    if cut_type == 'Cut':
+        return Cut.from_dict(data)
+    if cut_type == 'MixedCut':
+        return MixedCut.from_dict(data)
+    raise ValueError(f"Unexpected cut type during deserialization: '{cut_type}'")
 
 
 def arr2list_recursive(data: Union[dict, list], filter_none: bool = True) -> Union[dict, list]:
@@ -432,89 +567,6 @@ def arr2list_recursive(data: Union[dict, list], filter_none: bool = True) -> Uni
         for k, v in data.items()
         if v is not None or not filter_none
     }
-
-
-def infer_arrow_schema(manifest):
-    """
-    This method takes a manifest and infers the corresponding Arrow schema.
-    The work is divided in three stages:
-        1. Go through all the items in the manifest as dicts and convert primitive
-            types to their Arrow variants (e.g. str -> pa.string())
-        2. Merge the manifests for different items (it is needed in case some items
-            have different fields, e.g. Cut and MixedCut) -- the resulting schema
-            is a union of all the fields.
-        3. Now that we have a single merged schema, convert the non-primitive types
-            such as dicts and lists to their Arrow variants (pa.list_, pa.struct)
-        4. The resulting item is of type "pa.DataType" -> convert it to schema and
-            return.
-    """
-    import pyarrow as pa
-    schema_candidates = [infer_arrow_types(d) for d in manifest.to_dicts()]
-    merged = {}
-    for schema in schema_candidates:
-        merged = recursively_merge(merged, schema)
-    arrow_type = convert_to_arrow_type(merged)
-    return pa.schema(arrow_type)
-
-
-def infer_arrow_types(data: Any, key: Optional[str] = None):
-    import pyarrow as pa
-    if isinstance(data, int):
-        if key is not None:
-            if key == 'channel' or key == 'channels':
-                return pa.int8()
-            if 'num_samples' == key:
-                return pa.int64()  # paranoia mode
-        return pa.int32()
-    elif isinstance(data, float):
-        return pa.float64()
-    elif isinstance(data, str):
-        return pa.string()
-    elif isinstance(data, list):
-        if key == 'channel' or key == 'channels':
-            return pa.list_(pa.int8())
-        return list(infer_arrow_types(d) for d in data)
-    elif isinstance(data, dict):
-        return dict((key, infer_arrow_types(val, key)) for key, val in data.items())
-    else:
-        raise ValueError("Unsupported type")
-
-
-def recursively_merge(a: Union[Dict, List], b: Union[Dict, List]):
-    if isinstance(b, dict):
-        merged = a.copy()
-        for key, val in b.items():
-            if key not in a:
-                if isinstance(val, list):
-                    merged[key] = recursively_merge([], val)
-                else:
-                    merged[key] = val
-            else:
-                merged[key] = recursively_merge(a[key], val)
-        return merged
-    elif isinstance(b, list):
-        ab = a + b
-        mergedlist = [reduce(recursively_merge, ab)] if ab else []
-        return mergedlist
-    else:
-        if a != b:
-            raise ValueError(f"Incompatible types {a} and {b}")
-        return a
-
-
-def convert_to_arrow_type(data: Any):
-    import pyarrow as pa
-    if isinstance(data, dict):
-        return pa.struct([
-            (key, convert_to_arrow_type(val)) for key, val in data.items()
-        ])
-    if isinstance(data, list):
-        if not data:
-            return pa.list_(pa.null())
-        assert len(data) == 1
-        return pa.list_(convert_to_arrow_type(data[0]))
-    else:
-        return data
 
 
 class NumpyEncoder(json.JSONEncoder):

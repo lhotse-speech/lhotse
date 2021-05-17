@@ -41,7 +41,7 @@ setup(
     description='Data preparation for speech processing models training.',
     author='The Lhotse Development Team',
     author_email="pzelasko@jhu.edu",
-    long_description=(project_root / 'README.md').read_text(),
+    long_description=(project_root / 'README.md').read_text(encoding='utf-8'),
     long_description_content_type="text/markdown",
     license='Apache-2.0 License',
     packages=find_packages(),

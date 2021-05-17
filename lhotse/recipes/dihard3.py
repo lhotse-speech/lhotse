@@ -101,17 +101,16 @@ def parse_metadata(metadata_path: Pathlike) -> Dict[str, Dict[str, Union[str, bo
     metadata containing the following keys: in_core, lang, domain, source
     """
     metadata = defaultdict(dict)
-    f = open(metadata_path, 'r')
-    next(f)  # skip first line since it contains headers
-    for line in f:
-        reco_id, in_core, lang, domain, source, _, _, _, _ = line.strip().split()
-        metadata[reco_id] = {
-            'in_core': in_core == 'True',
-            'lang': lang,
-            'domain': domain,
-            'source': source,
-        }
-    f.close()
+    with open(metadata_path, 'r') as f:
+        next(f)  # skip first line since it contains headers
+        for line in f:
+            reco_id, in_core, lang, domain, source, _, _, _, _ = line.strip().split()
+            metadata[reco_id] = {
+                'in_core': in_core == 'True',
+                'lang': lang,
+                'domain': domain,
+                'source': source,
+            }
     return metadata
 
 

@@ -1,7 +1,7 @@
 import random
 import warnings
 from dataclasses import dataclass
-from typing import Iterable, List, Optional, Tuple, Type, Union
+from typing import Callable, Iterable, List, Optional, Tuple, Type, Union
 
 import torch.distributed as dist
 from torch.utils.data import Sampler
@@ -105,6 +105,7 @@ class CutSampler(Sampler[List[str]]):
 
         self._maybe_init_distributed(world_size=world_size, rank=rank)
         self.num_batches = None
+        self._filter_fn: Optional[Callable[[AnyCut], bool]] = None
 
     def _maybe_init_distributed(self, world_size: Optional[int], rank: Optional[int]):
         if world_size is not None:
@@ -120,7 +121,7 @@ class CutSampler(Sampler[List[str]]):
         assert self.rank < self.world_size
 
     def set_epoch(self, epoch: int) -> None:
-        r"""
+        """
         Sets the epoch for this sampler. When :attr:`shuffle=True`, this ensures all replicas
         use a different random ordering for each epoch. Otherwise, the next iteration of this
         sampler will yield the same ordering.
@@ -129,6 +130,25 @@ class CutSampler(Sampler[List[str]]):
         """
         self.epoch = epoch
         self.num_batches = None
+
+    def filter(self, predicate: Callable[[AnyCut], bool]) -> None:
+        """
+        Add a constraint on invidual cuts that has to be satisfied to consider them.
+
+        Can be useful when handling large, lazy manifests where it is not feasible to
+        pre-filter them before instantiating the sampler.
+
+        When set, we will remove the ``__len__`` attribute on the sampler, as it is now
+        determined dynamically.
+
+        Example:
+            >>> cuts = CutSet(...)
+            ... sampler = SingleCutSampler(cuts, max_duration=100.0)
+            ... # Retain only the cuts that have at least 1s and at most 20s duration.
+            ... sampler.filter(lambda cut: 1.0 <= cut.duration <= 20.0)
+        """
+        self._filter_fn = predicate
+        self.provide_len = False
 
     def _next_batch(self) -> List[str]:
         raise NotImplementedError("Sub-classes of CutSampler have to implement self._next_batch()")
@@ -274,7 +294,7 @@ class SingleCutSampler(CutSampler):
         )
         self.max_cuts = max_cuts
         assert self.time_constraint.is_active() or \
-            not (self.time_constraint.is_active() and self.max_cuts is not None)
+               not (self.time_constraint.is_active() and self.max_cuts is not None)
         # Constraints
         assert is_none_or_gt(self.max_cuts, 0)
 
@@ -298,6 +318,11 @@ class SingleCutSampler(CutSampler):
                     # We did and there is nothing more to return - signal the iteration code to stop.
                     raise StopIteration()
             next_cut = self.cuts[next_cut_id]
+            # Check whether the cut we're about to sample satisfies optional user-requested predicate.
+            if self._filter_fn is not None and not self._filter_fn(next_cut):
+                # No - try another one.
+                self.cut_idx += 1
+                continue
             self.time_constraint.add(next_cut)
             next_num_cuts = len(cut_ids) + 1
             # Did we exceed the max_frames and max_cuts constraints?
@@ -403,6 +428,14 @@ class CutPairsSampler(CutSampler):
                     raise StopIteration()
             next_source_cut = self.source_cuts[next_cut_id]
             next_target_cut = self.target_cuts[next_cut_id]
+            # Check whether the cuts we're about to sample satisfy optional user-requested predicate.
+            if self._filter_fn is not None and (
+                    not self._filter_fn(next_source_cut)
+                    or not self._filter_fn(next_target_cut)
+            ):
+                # No - try another one.
+                self.cut_idx += 1
+                continue
             self.source_constraints.add(next_source_cut)
             self.target_constraints.add(next_target_cut)
             next_num_cuts = len(cut_ids) + 1
@@ -506,9 +539,35 @@ class BucketingSampler(CutSampler):
         self.depleted = [False] * num_buckets
 
     def set_epoch(self, epoch: int) -> None:
+        """
+        Sets the epoch for this sampler. When :attr:`shuffle=True`, this ensures all replicas
+        use a different random ordering for each epoch. Otherwise, the next iteration of this
+        sampler will yield the same ordering.
+
+        :param epoch: Epoch number.
+        """
         for s in self.bucket_samplers:
             s.set_epoch(epoch)
         super().set_epoch(epoch)
+
+    def filter(self, predicate: Callable[[AnyCut], bool]) -> None:
+        """
+        Add a constraint on invidual cuts that has to be satisfied to consider them.
+
+        Can be useful when handling large, lazy manifests where it is not feasible to
+        pre-filter them before instantiating the sampler.
+
+        When set, we will remove the ``__len__`` attribute on the sampler, as it is now
+        determined dynamically.
+
+        Example:
+            >>> cuts = CutSet(...)
+            ... sampler = SingleCutSampler(cuts, max_duration=100.0)
+            ... # Retain only the cuts that have at least 1s and at most 20s duration.
+            ... sampler.filter(lambda cut: 1.0 <= cut.duration <= 20.0)
+        """
+        for sampler in self.bucket_samplers:
+            sampler.filter(predicate)
 
     def __iter__(self) -> 'BucketingSampler':
         self.bucket_rng.seed(self.seed + self.epoch)

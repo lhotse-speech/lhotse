@@ -74,9 +74,12 @@ class AudioSource:
 
         elif self.type == 'url':
             if offset != 0.0 or duration is not None:
-                # We won't support chunking for URLs, as that could generate a lot of unwanted network traffic.
-                # We might consider some caching scheme both for this and the command scheme though.
-                raise ValueError("Reading audio chunks from 'url' AudioSource type is currently not supported.")
+                # TODO(pzelasko): How should we support chunking for URLs?
+                #                 We risk being very inefficient when reading many chunks from the same file
+                #                 without some caching scheme, because we'll be re-running commands.
+                warnings.warn('You requested a subset of a recording that is read from URL. '
+                              'Expect large I/O overhead if you are going to read many chunks like these, '
+                              'since every time we will download the whole file rather than its subset.')
             try:
                 from smart_open import smart_open
             except ImportError:
@@ -85,7 +88,7 @@ class AudioSource:
                                   "'pip install smart_open[s3]' (or smart_open[gcp], etc.) instead.")
             with smart_open(self.source) as f:
                 source = BytesIO(f.read())
-                samples, sampling_rate = read_audio(source)
+                samples, sampling_rate = read_audio(source, offset=offset, duration=duration)
 
         else:  # self.type == 'file'
             samples, sampling_rate = read_audio(source, offset=offset, duration=duration)
@@ -684,7 +687,6 @@ def _available_audioread_backends():
     import audioread
     backends = audioread.available_backends()
     logging.info(f'Using audioread. Available backends: {backends}')
-    print(f'Using audioread. Available backends: {backends}')
     return backends
 
 

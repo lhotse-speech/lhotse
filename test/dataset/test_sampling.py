@@ -540,3 +540,59 @@ def test_single_cut_sampler_with_lazy_cuts(sampler_cls):
         assert len(sampler_cut_ids) == len(cut_set)
         # Invariant 2: the items are not duplicated
         assert len(set(sampler_cut_ids)) == len(sampler_cut_ids)
+
+
+@pytest.mark.parametrize('sampler_cls', [SingleCutSampler, BucketingSampler])
+def test_sampler_filter(sampler_cls):
+    # The dummy cuts have a duration of 1 second each
+    cut_set = DummyManifest(CutSet, begin_id=0, end_id=100)
+    sampler = sampler_cls(
+        cut_set,
+        shuffle=True,
+        # Set an effective batch size of 10 cuts, as all have 1s duration == 100 frames
+        # This way we're testing that it works okay when returning multiple batches in
+        # a full epoch.
+        max_frames=1000
+    )
+    removed_cut_id = 'dummy-cut-0010'
+    sampler.filter(lambda cut: cut.id != removed_cut_id)
+    sampler_cut_ids = []
+    for batch in sampler:
+        sampler_cut_ids.extend(batch)
+
+    # The filtered cut is not there
+    assert removed_cut_id in set(cut_set.ids)
+    assert removed_cut_id not in set(sampler_cut_ids)
+
+    # Invariant 1: we receive the same amount of items in a dataloader epoch as there we in the CutSet
+    assert len(sampler_cut_ids) == len(cut_set) - 1
+    # Invariant 2: the items are not duplicated
+    assert len(set(sampler_cut_ids)) == len(sampler_cut_ids)
+
+
+def test_cut_pairs_sampler_filter():
+    # The dummy cuts have a duration of 1 second each
+    cut_set = DummyManifest(CutSet, begin_id=0, end_id=100)
+    sampler = CutPairsSampler(
+        cut_set,
+        cut_set,
+        shuffle=True,
+        # Set an effective batch size of 10 cuts, as all have 1s duration == 100 frames
+        # This way we're testing that it works okay when returning multiple batches in
+        # a full epoch.
+        max_source_frames=1000
+    )
+    removed_cut_id = 'dummy-cut-0010'
+    sampler.filter(lambda cut: cut.id != removed_cut_id)
+    sampler_cut_ids = []
+    for batch in sampler:
+        sampler_cut_ids.extend(batch)
+
+    # The filtered cut is not there
+    assert removed_cut_id in set(cut_set.ids)
+    assert removed_cut_id not in set(sampler_cut_ids)
+
+    # Invariant 1: we receive the same amount of items in a dataloader epoch as there we in the CutSet
+    assert len(sampler_cut_ids) == len(cut_set) - 1
+    # Invariant 2: the items are not duplicated
+    assert len(set(sampler_cut_ids)) == len(sampler_cut_ids)
