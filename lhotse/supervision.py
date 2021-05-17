@@ -10,15 +10,17 @@ from lhotse.utils import Pathlike, Seconds, TimeSpan, asdict_nonull, asdict_nonu
     perturb_num_samples, split_sequence, compute_num_samples
 
 
-class AlignmentItem(NamedTuple):
+@dataclass(frozen=True, unsafe_hash=True)
+class AlignmentItem():
     """
     This class contains an alignment item, for example a word, along with its
     start time (w.r.t. the start of recording) and duration. It can potentially
     be used to store other kinds of alignment items, such as subwords, pdfid's etc.
     
-    We use indexing in most of the functions here instead of named attribute access
-    since it is faster and this code may potentially be executed many times for
-    large supervisions.
+    We use dataclasses instead of namedtuples (even though they are potentially slower)
+    because of a serialization bug in nested namedtuples and dataclasses in Python 3.7
+    (see this: https://alexdelorenzo.dev/programming/2018/08/09/bug-in-dataclass.html).
+    We can revert to namedtuples if we bump up the Python requirement to 3.8+.
     """
     symbol: str
     start: Seconds
@@ -26,11 +28,11 @@ class AlignmentItem(NamedTuple):
 
     @property
     def end(self) -> Seconds:
-        return round(self[1] + self[2], ndigits=8)
+        return round(self.start + self.duration, ndigits=8)
 
     def with_offset(self, offset: Seconds) -> 'AlignmentItem':
         """Return an identical ``AlignmentItem``, but with the ``offset`` added to the ``start`` field."""
-        return AlignmentItem(self[0], round(self[1] + offset, ndigits=8), self[2])
+        return AlignmentItem(self.symbol, round(self.start + offset, ndigits=8), self.duration)
 
     def perturb_speed(self, factor: float, sampling_rate: int) -> 'AlignmentItem':
         """
@@ -38,26 +40,26 @@ class AlignmentItem(NamedTuple):
         recording/cut perturbed with the same factor. See :meth:`SupervisionSegment.perturb_speed` 
         for details.
         """
-        start_sample = compute_num_samples(self[1], sampling_rate)
-        num_samples = compute_num_samples(self[2], sampling_rate)
+        start_sample = compute_num_samples(self.start, sampling_rate)
+        num_samples = compute_num_samples(self.duration, sampling_rate)
         new_start = perturb_num_samples(start_sample, factor) / sampling_rate
         new_duration = perturb_num_samples(num_samples, factor) / sampling_rate
-        return AlignmentItem(self[0], new_start, new_duration)
+        return AlignmentItem(self.symbol, new_start, new_duration)
 
     def trim(self, end: Seconds, start: Seconds = 0) -> 'AlignmentItem':
         """
         See :met:`SupervisionSegment.trim`.
         """
         assert start >= 0
-        start_exceeds_by = abs(min(0, self[1] - start))
+        start_exceeds_by = abs(min(0, self.start - start))
         end_exceeds_by = max(0, self.end - end)
-        return AlignmentItem(self[0], max(start, self[1]), self[2] - end_exceeds_by - start_exceeds_by)
+        return AlignmentItem(self.symbol, max(start, self.start), self.duration - end_exceeds_by - start_exceeds_by)
 
     def transform(self, transform_fn: Callable[[str], str]) -> 'AlignmentItem':
         """
         Perform specified transformation on the alignment content.
         """
-        return AlignmentItem(transform_fn(self[0]), self[1], self[2])
+        return AlignmentItem(transform_fn(self.start), self.start, self.duration)
     
 
 @dataclass(frozen=True, unsafe_hash=True)
@@ -214,7 +216,7 @@ class SupervisionSegment:
             **{
                 key:(
                     {k:[AlignmentItem(**x) for x in v] for k,v in value.items()}
-                    if key == 'alignment' else value) 
+                    if key == 'alignment' else value)
                 for key, value in data.items()
             }
         )
