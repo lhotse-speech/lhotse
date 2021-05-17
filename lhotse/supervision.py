@@ -1,11 +1,12 @@
 import logging
 from dataclasses import dataclass
-from itertools import islice
+from itertools import islice, groupby
+from collections import defaultdict
 from typing import Any, Callable, Dict, Iterable, List, Mapping, NamedTuple, Optional, Sequence
 
 from lhotse.serialization import Serializable
-from lhotse.utils import Seconds, asdict_nonull, asdict_nonull_recursive, exactly_one_not_null, fastcopy, \
-    ifnone, index_by_id_and_check, \
+from lhotse.utils import Pathlike, Seconds, TimeSpan, asdict_nonull, asdict_nonull_recursive, exactly_one_not_null, fastcopy, \
+    ifnone, index_by_id_and_check, overspans, \
     perturb_num_samples, split_sequence, compute_num_samples
 
 
@@ -251,12 +252,49 @@ class SupervisionSet(Serializable, Sequence[SupervisionSegment]):
     def from_dicts(data: Iterable[Dict]) -> 'SupervisionSet':
         return SupervisionSet.from_segments(SupervisionSegment.from_dict(s) for s in data)
     
-    def add_alignments_from_ctm(ctm) -> 'SupervisionSet':
+    def add_alignments_from_ctm(self, ctm_file: Pathlike, type: str = 'word') -> 'SupervisionSet':
         """
+        Add alignments from CTM file to the supervision set.
         
+        :param ctm: Path to CTM file.
+        :param type: Alignment type (optional, default = `word`).
+        :return: A new SupervisionSet with AlignmentItem objects added to the segments.
         """
-        pass
+        ctm_words = []
+        with open(ctm_file, 'r') as f:
+            for line in f:
+                reco_id, channel, start, duration, symbol = line.strip().split()
+                ctm_words.append((reco_id, channel, float(start), float(duration), symbol))
+        ctm_words = sorted(ctm_words, key=lambda x:x[0])
+        reco_to_ctm = defaultdict(list, {k: list(v) for k,v in groupby(ctm_words, key=lambda x:x[0])})
+        segments = []
+        for reco_id in reco_to_ctm:
+            segs = [s for s in self if s.recording_id == reco_id]
+            for seg in segs:
+                alignment = [AlignmentItem(word[4], word[2], word[3]) for word in ctm_words 
+                             if overspans(
+                                 TimeSpan(start=seg.start, end=seg.end),
+                                 TimeSpan(word[2], word[2] + word[3])
+                                ) and seg.channel == word[1]
+                            ]
+                segments.append(fastcopy(seg, alignment={type: alignment}))
+        return SupervisionSet.from_segments(segments)
+                          
 
+    def write_ctm(self, ctm_file: Pathlike, type: str = 'word') -> None:
+        """
+        Write alignments to CTM file.
+        
+        :param ctm_file: Path to output CTM file (will be created if not exists)
+        :param type: Alignment type to write (default = `word`)
+        """
+        with open(ctm_file, 'w') as f:
+            for s in self:
+                if type in s.alignment:
+                    for ali in s.alignment[type]:
+                        f.write(f'{s.reco_id} {s.channel} {ali.start} {ali.duration} {ali.symbol}\n')
+                
+    
     def to_dicts(self) -> Iterable[dict]:
         return (s.to_dict() for s in self)
 
