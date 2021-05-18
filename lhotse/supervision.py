@@ -59,7 +59,7 @@ class AlignmentItem():
         """
         Perform specified transformation on the alignment content.
         """
-        return AlignmentItem(transform_fn(self.start), self.start, self.duration)
+        return AlignmentItem(transform_fn(self.symbol), self.start, self.duration)
     
 
 @dataclass(frozen=True, unsafe_hash=True)
@@ -254,12 +254,13 @@ class SupervisionSet(Serializable, Sequence[SupervisionSegment]):
     def from_dicts(data: Iterable[Dict]) -> 'SupervisionSet':
         return SupervisionSet.from_segments(SupervisionSegment.from_dict(s) for s in data)
     
-    def add_alignments_from_ctm(self, ctm_file: Pathlike, type: str = 'word') -> 'SupervisionSet':
+    def add_alignments_from_ctm(self, ctm_file: Pathlike, type: str = 'word', match_channel: bool = False) -> 'SupervisionSet':
         """
         Add alignments from CTM file to the supervision set.
         
         :param ctm: Path to CTM file.
         :param type: Alignment type (optional, default = `word`).
+        :param match_channel: if True, also match channel between CTM and SupervisionSegment
         :return: A new SupervisionSet with AlignmentItem objects added to the segments.
         """
         ctm_words = []
@@ -273,11 +274,11 @@ class SupervisionSet(Serializable, Sequence[SupervisionSegment]):
         for reco_id in reco_to_ctm:
             segs = [s for s in self if s.recording_id == reco_id]
             for seg in segs:
-                alignment = [AlignmentItem(word[4], word[2], word[3]) for word in ctm_words 
+                alignment = [AlignmentItem(word[4], word[2], word[3]) for word in reco_to_ctm[reco_id]
                              if overspans(
                                  TimeSpan(start=seg.start, end=seg.end),
                                  TimeSpan(word[2], word[2] + word[3])
-                                ) and seg.channel == word[1]
+                                ) and (seg.channel == word[1] or not match_channel)
                             ]
                 segments.append(fastcopy(seg, alignment={type: alignment}))
         return SupervisionSet.from_segments(segments)
@@ -294,7 +295,7 @@ class SupervisionSet(Serializable, Sequence[SupervisionSegment]):
             for s in self:
                 if type in s.alignment:
                     for ali in s.alignment[type]:
-                        f.write(f'{s.reco_id} {s.channel} {ali.start} {ali.duration} {ali.symbol}\n')
+                        f.write(f'{s.recording_id} {s.channel} {ali.start} {ali.duration} {ali.symbol}\n')
                 
     
     def to_dicts(self) -> Iterable[dict]:
@@ -367,6 +368,17 @@ class SupervisionSet(Serializable, Sequence[SupervisionSegment]):
         :return: a ``SupervisionSet`` with adjusted text.
         """
         return SupervisionSet.from_segments(s.transform_text(transform_fn) for s in self)
+
+    def transform_alignment(self, transform_fn: Callable[[str], str], type: str = 'word') -> 'SupervisionSet':
+        """
+        Return a copy of the current ``SupervisionSet`` with the segments having a transformed ``alignment`` field.
+        Useful for text normalization, phonetic transcription, etc.
+
+        :param transform_fn: a function that accepts a string and returns a string.
+        :param type:  alignment type to transform (key for alignment dict).
+        :return: a ``SupervisionSet`` with adjusted text.
+        """
+        return SupervisionSet.from_segments(s.transform_alignment(transform_fn, type=type) for s in self)
 
     def find(
             self,

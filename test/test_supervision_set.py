@@ -32,6 +32,11 @@ def test_supervision_transform_text(external_supervision_set):
         if s.text is not None:
             assert s.text == 'dummy'
 
+def test_supervision_transform_alignment(external_supervision_set, type='word'):
+    for s in external_supervision_set.transform_alignment(lambda symbol: 'dummy'):
+        if s.alignment is not None:
+            assert all([a.symbol == 'dummy' for a in s.alignment[type]])
+
 
 def test_supervision_segment_with_full_metadata(external_supervision_set, external_alignment):
     segment = external_supervision_set['segment-1']
@@ -194,7 +199,6 @@ def test_supervision_trim(supervision, trim_end, expected_end):
     trimmed = supervision.trim(trim_end)
     assert trimmed.start == 0
     assert trimmed.duration == expected_end
-
 
 @pytest.mark.parametrize('start', [0, 5])
 def test_supervision_trim_does_not_affect_nonnegative_start(supervision, start):
