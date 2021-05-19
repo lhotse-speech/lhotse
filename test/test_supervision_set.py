@@ -65,7 +65,6 @@ def test_supervision_segment_with_no_metadata(external_supervision_set):
     assert segment.text is None
     assert segment.language is None
     assert segment.speaker is None
-    assert segment.alignment is None
 
 
 def test_create_supervision_segment_with_minimum_metadata():

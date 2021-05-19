@@ -273,14 +273,18 @@ class SupervisionSet(Serializable, Sequence[SupervisionSegment]):
         segments = []
         num_total = len(ctm_words)
         num_overspanned = 0
-        for reco_id in reco_to_ctm:
-            for seg in self.find(recording_id=reco_id):
-                alignment = [AlignmentItem(symbol=word[4], start=word[2], duration=word[3]) for word in reco_to_ctm[reco_id] 
-                                if overspans(seg, TimeSpan(word[2], word[2] + word[3]))
-                                and (seg.channel == word[1] or not match_channel)
-                            ]
-                num_overspanned += len(alignment)
-                segments.append(fastcopy(seg, alignment={type: alignment}))
+        for reco_id in set([s.recording_id for s in self]):
+            if reco_id in reco_to_ctm:
+                for seg in self.find(recording_id=reco_id):
+                    alignment = [AlignmentItem(symbol=word[4], start=word[2], duration=word[3]) for word in reco_to_ctm[reco_id] 
+                                    if overspans(seg, TimeSpan(word[2], word[2] + word[3]))
+                                    and (seg.channel == word[1] or not match_channel)
+                                ]
+                    num_overspanned += len(alignment)
+                    segments.append(fastcopy(seg, alignment={type: alignment}))
+            else:
+                segments.append([s for s in self.find(recording_id=reco_id)])
+        print (segments)
         logging.info(f"{num_overspanned} alignments added out of {num_total} total. If there are several"
             " missing, there could be a mismatch problem.")
         return SupervisionSet.from_segments(segments)
