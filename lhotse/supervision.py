@@ -254,7 +254,7 @@ class SupervisionSet(Serializable, Sequence[SupervisionSegment]):
     def from_dicts(data: Iterable[Dict]) -> 'SupervisionSet':
         return SupervisionSet.from_segments(SupervisionSegment.from_dict(s) for s in data)
     
-    def add_alignments_from_ctm(self, ctm_file: Pathlike, type: str = 'word', match_channel: bool = False) -> 'SupervisionSet':
+    def with_alignment_from_ctm(self, ctm_file: Pathlike, type: str = 'word', match_channel: bool = False) -> 'SupervisionSet':
         """
         Add alignments from CTM file to the supervision set.
         
@@ -264,27 +264,29 @@ class SupervisionSet(Serializable, Sequence[SupervisionSegment]):
         :return: A new SupervisionSet with AlignmentItem objects added to the segments.
         """
         ctm_words = []
-        with open(ctm_file, 'r') as f:
+        with open(ctm_file) as f:
             for line in f:
                 reco_id, channel, start, duration, symbol = line.strip().split()
-                ctm_words.append((reco_id, channel, float(start), float(duration), symbol))
-        ctm_words = sorted(ctm_words, key=lambda x:x[0])
+                ctm_words.append((reco_id, int(channel), float(start), float(duration), symbol))
+        ctm_words = sorted(ctm_words, key=lambda x:(x[0], x[2]))
         reco_to_ctm = defaultdict(list, {k: list(v) for k,v in groupby(ctm_words, key=lambda x:x[0])})
         segments = []
+        num_total = len(ctm_words)
+        num_overspanned = 0
         for reco_id in reco_to_ctm:
-            segs = [s for s in self if s.recording_id == reco_id]
-            for seg in segs:
-                alignment = [AlignmentItem(word[4], word[2], word[3]) for word in reco_to_ctm[reco_id]
-                             if overspans(
-                                 TimeSpan(start=seg.start, end=seg.end),
-                                 TimeSpan(word[2], word[2] + word[3])
-                                ) and (seg.channel == word[1] or not match_channel)
+            for seg in self.find(recording_id=reco_id):
+                alignment = [AlignmentItem(symbol=word[4], start=word[2], duration=word[3]) for word in reco_to_ctm[reco_id] 
+                                if overspans(seg, TimeSpan(word[2], word[2] + word[3]))
+                                and (seg.channel == word[1] or not match_channel)
                             ]
+                num_overspanned += len(alignment)
                 segments.append(fastcopy(seg, alignment={type: alignment}))
+        logging.info(f"{num_overspanned} alignments added out of {num_total} total. If there are several"
+            " missing, there could be a mismatch problem.")
         return SupervisionSet.from_segments(segments)
                           
 
-    def write_ctm(self, ctm_file: Pathlike, type: str = 'word') -> None:
+    def write_alignment_to_ctm(self, ctm_file: Pathlike, type: str = 'word') -> None:
         """
         Write alignments to CTM file.
         
@@ -295,7 +297,7 @@ class SupervisionSet(Serializable, Sequence[SupervisionSegment]):
             for s in self:
                 if type in s.alignment:
                     for ali in s.alignment[type]:
-                        f.write(f'{s.recording_id} {s.channel} {ali.start} {ali.duration} {ali.symbol}\n')
+                        f.write(f'{s.recording_id} {s.channel} {ali.start:.02f} {ali.duration:.02f} {ali.symbol}\n')
                 
     
     def to_dicts(self) -> Iterable[dict]:
