@@ -14,6 +14,7 @@ from .heroico import *
 from .l2_arctic import *
 from .librimix import *
 from .librispeech import *
+from .libritts import *
 from .ljspeech import *
 from .mls import *
 from .mtedx import *
