@@ -125,7 +125,7 @@ def prepare_libritts(
             #
             # Example content:
             #   I see her everywhere-till the last month at least-and here she is again!
-            rec_id = trans_path.stem
+            rec_id = trans_path.name.replace('.normalized.txt', '')
             spk_id = rec_id.split('_')[0]
             norm_text = trans_path.read_text().strip()
             orig_text = (
