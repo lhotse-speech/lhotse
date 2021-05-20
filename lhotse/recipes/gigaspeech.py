@@ -1,10 +1,11 @@
 from collections import defaultdict
 from concurrent.futures.thread import ThreadPoolExecutor
 from pathlib import Path
-from tqdm.auto import tqdm
 from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
 
-from lhotse.audio import Recording, RecordingSet
+from tqdm.auto import tqdm
+
+from lhotse.audio import AudioSource, Recording, RecordingSet
 from lhotse.recipes.utils import read_manifests_if_cached
 from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import Pathlike, Seconds, is_module_available
@@ -65,7 +66,13 @@ def parse_utterance(
         audio: Any,
         root_path: Path
 ) -> Optional[Tuple[Recording, List[SupervisionSegment]]]:
-    recording = Recording.from_file(root_path / audio['path'], recording_id=audio['aid'])
+    recording = Recording(id=audio['aid'],
+                          sources=[AudioSource(type='file',
+                                               channels=list(range(int(audio['channels']))),
+                                               source=f'{root_path}/{audio["path"]}')],
+                          num_samples=round(int(audio['sample_rate']) * Seconds(audio['duration']), ndigits=8),
+                          sampling_rate=audio['sample_rate'],
+                          duration=Seconds(audio['duration']))
     segments = []
     for seg in audio['segments']:
         segments.append(SupervisionSegment(id=seg['sid'],
