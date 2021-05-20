@@ -128,7 +128,9 @@ def prepare_libritts(
             rec_id = trans_path.stem
             spk_id = rec_id.split('_')[0]
             norm_text = trans_path.read_text().strip()
-            orig_text = trans_path.with_suffix('.original.txt').read_text().strip()
+            orig_text = (
+                    trans_path.parent / trans_path.name.replace('.normalized.txt', '.original.txt')
+            ).read_text().strip()
             supervisions.append(
                 SupervisionSegment(
                     id=rec_id,
