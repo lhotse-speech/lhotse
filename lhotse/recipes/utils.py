@@ -9,7 +9,8 @@ from lhotse.utils import Pathlike
 
 def read_manifests_if_cached(
         dataset_parts: Optional[Sequence[str]],
-        output_dir: Optional[Pathlike]
+        output_dir: Optional[Pathlike],
+        suffix: Optional[str] = 'json'
 ) -> Optional[Dict[str, Dict[str, Union[RecordingSet, SupervisionSet]]]]:
     """Loads manifests from the disk if all of them exist in the specified paths.
     the manifests are searched for using the pattern `output_dir / f'{manifest}_{part}.json'`,
@@ -21,7 +22,7 @@ def read_manifests_if_cached(
     manifests = defaultdict(dict)
     for part in dataset_parts:
         for manifest in ('recordings', 'supervisions'):
-            path = output_dir / f'{manifest}_{part}.json'
+            path = output_dir / f'{manifest}_{part}.{suffix}'
             if not path.is_file():
                 # If one of the manifests is not available, assume we need to read and prepare everything
                 # to simplify the rest of the code.

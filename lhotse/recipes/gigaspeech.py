@@ -28,7 +28,7 @@ def prepare_gigaspeech(
         output_dir = Path(output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
         # Maybe the manifests already exist: we can read them and save a bit of preparation time.
-        maybe_manifests = read_manifests_if_cached(dataset_parts=dataset_parts, output_dir=output_dir)
+        maybe_manifests = read_manifests_if_cached(dataset_parts=dataset_parts, output_dir=output_dir, suffix='jsonl')
         if maybe_manifests is not None:
             return maybe_manifests
 
@@ -55,8 +55,8 @@ def prepare_gigaspeech(
             }
 
             if output_dir is not None:
-                manifests[part]['recordings'].to_json(output_dir / f'recordings_{part}.json')
-                manifests[part]['supervisions'].to_json(output_dir / f'supervisions_{part}.json')
+                manifests[part]['recordings'].to_file(output_dir / f'recordings_{part}.jsonl')
+                manifests[part]['supervisions'].to_file(output_dir / f'supervisions_{part}.jsonl')
 
     return dict(manifests)
 
@@ -71,7 +71,7 @@ def parse_utterance(
         segments.append(SupervisionSegment(id=seg['sid'],
                                            recording_id=audio['aid'],
                                            start=Seconds(seg['begin_time']),
-                                           duration=Seconds(seg['end_time'] - seg['begin_time']),
+                                           duration=round(Seconds(seg['end_time'] - seg['begin_time']), ndigits=8),
                                            channel=0,
                                            language='English',
                                            speaker=seg['speaker'],
