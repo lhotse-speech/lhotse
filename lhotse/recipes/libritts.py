@@ -119,7 +119,11 @@ def prepare_libritts(
         part_path = corpus_dir / part
         recordings = RecordingSet.from_dir(part_path, '*.wav', num_jobs=num_jobs)
         supervisions = []
-        for trans_path in tqdm(part_path.rglob('*.trans.tsv'), desc='Scanning transcript files', leave=False):
+        for trans_path in tqdm(
+                part_path.rglob('*.trans.tsv'),
+                desc='Scanning transcript files (progbar per speaker)',
+                leave=False
+        ):
             # The trans.tsv files contain only the recordings that were kept for LibriTTS.
             # Example path to a file:
             #   /export/corpora5/LibriTTS/dev-clean/84/121123/84_121123.trans.tsv
