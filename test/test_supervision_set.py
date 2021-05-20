@@ -1,13 +1,26 @@
+from typing import Dict, List
+from pathlib import Path
 import pytest
 
-from lhotse.supervision import SupervisionSegment, SupervisionSet
+from lhotse.supervision import AlignmentItem, SupervisionSegment, SupervisionSet
 from lhotse.testing.dummies import DummyManifest, remove_spaces_from_segment_text
 from lhotse.utils import fastcopy
 
 
 @pytest.fixture
 def external_supervision_set() -> SupervisionSet:
-    return SupervisionSet.from_json('test/fixtures/supervision.json')
+    return SupervisionSet.from_json('test/fixtures/supervision.json').with_alignment_from_ctm('test/fixtures/supervision.ctm')
+
+
+@pytest.fixture
+def external_alignment() -> Dict[str, List[AlignmentItem]]:
+    return {'word': [
+        AlignmentItem("transcript", 0.1, 0.08),
+        AlignmentItem("of", 0.18, 0.02),
+        AlignmentItem("the", 0.2, 0.03),
+        AlignmentItem("first", 0.23, 0.07),
+        AlignmentItem("segment", 0.3, 0.1)
+      ]}
 
 
 def test_supervision_map(external_supervision_set):
@@ -21,8 +34,13 @@ def test_supervision_transform_text(external_supervision_set):
         if s.text is not None:
             assert s.text == 'dummy'
 
+def test_supervision_transform_alignment(external_supervision_set, type='word'):
+    for s in external_supervision_set.transform_alignment(lambda symbol: 'dummy'):
+        if s.alignment is not None:
+            assert all([a.symbol == 'dummy' for a in s.alignment[type]])
 
-def test_supervision_segment_with_full_metadata(external_supervision_set):
+
+def test_supervision_segment_with_full_metadata(external_supervision_set, external_alignment):
     segment = external_supervision_set['segment-1']
     assert 'segment-1' == segment.id
     assert 'recording-1' == segment.recording_id
@@ -33,6 +51,7 @@ def test_supervision_segment_with_full_metadata(external_supervision_set):
     assert 'transcript of the first segment' == segment.text
     assert 'english' == segment.language
     assert 'Norman Dyhrentfurth' == segment.speaker
+    assert external_alignment == segment.alignment
 
 
 def test_supervision_segment_with_no_metadata(external_supervision_set):
@@ -62,8 +81,25 @@ def test_create_supervision_segment_with_all_metadata():
         text='wysokie szczyty',
         language='polish',
         speaker='Janusz',
-        gender='male'
+        gender='male',
+        alignment={
+            'word': [
+                AlignmentItem(symbol='wysokie', start=0.0, duration=0.05),
+                AlignmentItem(symbol='szczyty', start=0.05, duration=0.05)
+            ]
+        }
     )
+
+
+def test_supervision_set_with_alignment_from_ctm(external_supervision_set, external_alignment):
+    segment = external_supervision_set['segment-1']
+    assert external_alignment == segment.alignment
+
+
+def test_supervision_set_write_alignment_to_ctm(external_supervision_set, tmp_path):
+    tmp_ctm_file = tmp_path / "alignment.ctm"
+    external_supervision_set.write_alignment_to_ctm(tmp_ctm_file)
+    assert tmp_ctm_file.read_text() == Path("test/fixtures/supervision.ctm").read_text()
 
 
 def test_supervision_set_iteration():
@@ -175,7 +211,6 @@ def test_supervision_trim(supervision, trim_end, expected_end):
     trimmed = supervision.trim(trim_end)
     assert trimmed.start == 0
     assert trimmed.duration == expected_end
-
 
 @pytest.mark.parametrize('start', [0, 5])
 def test_supervision_trim_does_not_affect_nonnegative_start(supervision, start):

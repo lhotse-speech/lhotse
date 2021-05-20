@@ -1,13 +1,66 @@
 import logging
 from dataclasses import dataclass
-from itertools import islice
-from typing import Any, Callable, Dict, Iterable, List, Mapping, Optional, Sequence
+from itertools import islice, groupby
+from collections import defaultdict
+from typing import Any, Callable, Dict, Iterable, List, Mapping, NamedTuple, Optional, Sequence
 
 from lhotse.serialization import Serializable
-from lhotse.utils import Seconds, asdict_nonull, exactly_one_not_null, fastcopy, \
-    ifnone, index_by_id_and_check, \
-    perturb_num_samples, split_sequence
+from lhotse.utils import Pathlike, Seconds, TimeSpan, asdict_nonull, asdict_nonull_recursive, exactly_one_not_null, fastcopy, \
+    ifnone, index_by_id_and_check, overspans, \
+    perturb_num_samples, split_sequence, compute_num_samples
 
+
+@dataclass(frozen=True, unsafe_hash=True)
+class AlignmentItem():
+    """
+    This class contains an alignment item, for example a word, along with its
+    start time (w.r.t. the start of recording) and duration. It can potentially
+    be used to store other kinds of alignment items, such as subwords, pdfid's etc.
+    
+    We use dataclasses instead of namedtuples (even though they are potentially slower)
+    because of a serialization bug in nested namedtuples and dataclasses in Python 3.7
+    (see this: https://alexdelorenzo.dev/programming/2018/08/09/bug-in-dataclass.html).
+    We can revert to namedtuples if we bump up the Python requirement to 3.8+.
+    """
+    symbol: str
+    start: Seconds
+    duration: Seconds
+
+    @property
+    def end(self) -> Seconds:
+        return round(self.start + self.duration, ndigits=8)
+
+    def with_offset(self, offset: Seconds) -> 'AlignmentItem':
+        """Return an identical ``AlignmentItem``, but with the ``offset`` added to the ``start`` field."""
+        return AlignmentItem(self.symbol, round(self.start + offset, ndigits=8), self.duration)
+
+    def perturb_speed(self, factor: float, sampling_rate: int) -> 'AlignmentItem':
+        """
+        Return an ``AlignmentItem`` that has time boundaries matching the
+        recording/cut perturbed with the same factor. See :meth:`SupervisionSegment.perturb_speed` 
+        for details.
+        """
+        start_sample = compute_num_samples(self.start, sampling_rate)
+        num_samples = compute_num_samples(self.duration, sampling_rate)
+        new_start = perturb_num_samples(start_sample, factor) / sampling_rate
+        new_duration = perturb_num_samples(num_samples, factor) / sampling_rate
+        return AlignmentItem(self.symbol, new_start, new_duration)
+
+    def trim(self, end: Seconds, start: Seconds = 0) -> 'AlignmentItem':
+        """
+        See :met:`SupervisionSegment.trim`.
+        """
+        assert start >= 0
+        start_exceeds_by = abs(min(0, self.start - start))
+        end_exceeds_by = max(0, self.end - end)
+        return AlignmentItem(self.symbol, max(start, self.start), self.duration - end_exceeds_by - start_exceeds_by)
+
+    def transform(self, transform_fn: Callable[[str], str]) -> 'AlignmentItem':
+        """
+        Perform specified transformation on the alignment content.
+        """
+        return AlignmentItem(transform_fn(self.symbol), self.start, self.duration)
+    
 
 @dataclass(frozen=True, unsafe_hash=True)
 class SupervisionSegment:
@@ -21,6 +74,7 @@ class SupervisionSegment:
     speaker: Optional[str] = None
     gender: Optional[str] = None
     custom: Optional[Dict[str, Any]] = None
+    alignment: Optional[Dict[str, List[AlignmentItem]]] = None
 
     @property
     def end(self) -> Seconds:
@@ -28,7 +82,17 @@ class SupervisionSegment:
 
     def with_offset(self, offset: Seconds) -> 'SupervisionSegment':
         """Return an identical ``SupervisionSegment``, but with the ``offset`` added to the ``start`` field."""
-        return fastcopy(self, start=round(self.start + offset, ndigits=8))
+        return fastcopy(
+            self, 
+            start=round(self.start + offset, ndigits=8),
+            alignment={
+                type:[
+                    item.with_offset(offset=offset)
+                    for item in ali
+                ]
+                for type, ali in self.alignment.items()
+            } if self.alignment else None
+        ) 
 
     def perturb_speed(
             self,
@@ -47,8 +111,8 @@ class SupervisionSegment:
             by affixing it with "_sp{factor}".
         :return: a modified copy of the current ``Recording``.
         """
-        start_sample = round(self.start * sampling_rate)
-        num_samples = round(self.duration * sampling_rate)
+        start_sample = compute_num_samples(self.start, sampling_rate)
+        num_samples = compute_num_samples(self.duration, sampling_rate)
         new_start = perturb_num_samples(start_sample, factor) / sampling_rate
         new_duration = perturb_num_samples(num_samples, factor) / sampling_rate
         return fastcopy(
@@ -56,10 +120,17 @@ class SupervisionSegment:
             id=f'{self.id}_sp{factor}' if affix_id else self.id,
             recording_id=f'{self.recording_id}_sp{factor}' if affix_id else self.id,
             start=new_start,
-            duration=new_duration
+            duration=new_duration,
+            alignment={
+                type:[
+                    item.perturb_speed(factor=factor, sampling_rate=sampling_rate)
+                    for item in ali
+                ]
+                for type, ali in self.alignment.items()
+            } if self.alignment else None
         )
 
-    def trim(self, end: Seconds, start: Optional[Seconds] = 0) -> 'SupervisionSegment':
+    def trim(self, end: Seconds, start: Seconds = 0) -> 'SupervisionSegment':
         """
         Return an identical ``SupervisionSegment``, but ensure that ``self.start`` is not negative (in which case
         it's set to 0) and ``self.end`` does not exceed the ``end`` parameter. If a `start` is optionally
@@ -75,6 +146,13 @@ class SupervisionSegment:
             self,
             start=max(start, self.start),
             duration=self.duration - end_exceeds_by - start_exceeds_by,
+            alignment={
+                type:[
+                    item.trim(end=end, start=start)
+                    for item in ali
+                ]
+                for type, ali in self.alignment.items()
+            } if self.alignment else None
         )
 
     def map(self, transform_fn: Callable[['SupervisionSegment'], 'SupervisionSegment']) -> 'SupervisionSegment':
@@ -97,13 +175,51 @@ class SupervisionSegment:
         if self.text is None:
             return self
         return fastcopy(self, text=transform_fn(self.text))
+    
+    def transform_alignment(
+        self,
+        transform_fn: Callable[[str], str],
+        type: Optional[str] = 'word'
+    ) -> 'SupervisionSegment':
+        """
+        Return a copy of the current segment with transformed ``alignment`` field.
+        Useful for text normalization, phonetic transcription, etc.
+
+        :param type:  alignment type to transform (key for alignment dict).
+        :param transform_fn: a function that accepts a string and returns a string.
+        :return: a ``SupervisionSegment`` with adjusted alignments.
+        """
+        if self.alignment is None:
+            return self
+        return fastcopy(
+            self,
+            alignment={
+                ali_type:[
+                    item.transform(transform_fn=transform_fn)
+                    if ali_type == type else item
+                    for item in ali
+                ]
+                for ali_type, ali in self.alignment.items()
+            } if self.alignment else None
+        )
 
     def to_dict(self) -> dict:
-        return asdict_nonull(self)
+        """
+        We use the recursive conversion only if alignments are present, since it may
+        potentially be slower due to type checking of member objects.
+        """
+        return asdict_nonull(self) if self.alignment is None else asdict_nonull_recursive(self)
 
     @staticmethod
     def from_dict(data: dict) -> 'SupervisionSegment':
-        return SupervisionSegment(**data)
+        return SupervisionSegment(
+            **{
+                key:(
+                    {k:[AlignmentItem(**x) for x in v] for k,v in value.items()}
+                    if key == 'alignment' else value)
+                for key, value in data.items()
+            }
+        )
 
 
 class SupervisionSet(Serializable, Sequence[SupervisionSegment]):
@@ -137,7 +253,57 @@ class SupervisionSet(Serializable, Sequence[SupervisionSegment]):
     @staticmethod
     def from_dicts(data: Iterable[Dict]) -> 'SupervisionSet':
         return SupervisionSet.from_segments(SupervisionSegment.from_dict(s) for s in data)
+    
+    def with_alignment_from_ctm(self, ctm_file: Pathlike, type: str = 'word', match_channel: bool = False) -> 'SupervisionSet':
+        """
+        Add alignments from CTM file to the supervision set.
+        
+        :param ctm: Path to CTM file.
+        :param type: Alignment type (optional, default = `word`).
+        :param match_channel: if True, also match channel between CTM and SupervisionSegment
+        :return: A new SupervisionSet with AlignmentItem objects added to the segments.
+        """
+        ctm_words = []
+        with open(ctm_file) as f:
+            for line in f:
+                reco_id, channel, start, duration, symbol = line.strip().split()
+                ctm_words.append((reco_id, int(channel), float(start), float(duration), symbol))
+        ctm_words = sorted(ctm_words, key=lambda x:(x[0], x[2]))
+        reco_to_ctm = defaultdict(list, {k: list(v) for k,v in groupby(ctm_words, key=lambda x:x[0])})
+        segments = []
+        num_total = len(ctm_words)
+        num_overspanned = 0
+        for reco_id in set([s.recording_id for s in self]):
+            if reco_id in reco_to_ctm:
+                for seg in self.find(recording_id=reco_id):
+                    alignment = [AlignmentItem(symbol=word[4], start=word[2], duration=word[3]) for word in reco_to_ctm[reco_id] 
+                                    if overspans(seg, TimeSpan(word[2], word[2] + word[3]))
+                                    and (seg.channel == word[1] or not match_channel)
+                                ]
+                    num_overspanned += len(alignment)
+                    segments.append(fastcopy(seg, alignment={type: alignment}))
+            else:
+                segments.append([s for s in self.find(recording_id=reco_id)])
+        print (segments)
+        logging.info(f"{num_overspanned} alignments added out of {num_total} total. If there are several"
+            " missing, there could be a mismatch problem.")
+        return SupervisionSet.from_segments(segments)
+                          
 
+    def write_alignment_to_ctm(self, ctm_file: Pathlike, type: str = 'word') -> None:
+        """
+        Write alignments to CTM file.
+        
+        :param ctm_file: Path to output CTM file (will be created if not exists)
+        :param type: Alignment type to write (default = `word`)
+        """
+        with open(ctm_file, 'w') as f:
+            for s in self:
+                if type in s.alignment:
+                    for ali in s.alignment[type]:
+                        f.write(f'{s.recording_id} {s.channel} {ali.start:.02f} {ali.duration:.02f} {ali.symbol}\n')
+                
+    
     def to_dicts(self) -> Iterable[dict]:
         return (s.to_dict() for s in self)
 
@@ -208,6 +374,17 @@ class SupervisionSet(Serializable, Sequence[SupervisionSegment]):
         :return: a ``SupervisionSet`` with adjusted text.
         """
         return SupervisionSet.from_segments(s.transform_text(transform_fn) for s in self)
+
+    def transform_alignment(self, transform_fn: Callable[[str], str], type: str = 'word') -> 'SupervisionSet':
+        """
+        Return a copy of the current ``SupervisionSet`` with the segments having a transformed ``alignment`` field.
+        Useful for text normalization, phonetic transcription, etc.
+
+        :param transform_fn: a function that accepts a string and returns a string.
+        :param type:  alignment type to transform (key for alignment dict).
+        :return: a ``SupervisionSet`` with adjusted text.
+        """
+        return SupervisionSet.from_segments(s.transform_alignment(transform_fn, type=type) for s in self)
 
     def find(
             self,
