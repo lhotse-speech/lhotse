@@ -6,7 +6,7 @@ from dataclasses import asdict, dataclass
 from decimal import Decimal, ROUND_HALF_DOWN, ROUND_HALF_UP
 from math import ceil, isclose
 from pathlib import Path
-from typing import Any, Callable, Dict, Iterable, List, NamedTuple, Optional, Sequence, Tuple, TypeVar, Union
+from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence, Tuple, TypeVar, Union
 
 import numpy as np
 import torch
@@ -464,3 +464,7 @@ def lens_to_mask(lens: torch.IntTensor) -> torch.Tensor:
     for i, num in enumerate(lens):
         mask[i, :num] = 1.0
     return mask
+
+
+class NonPositiveEnergyError(ValueError):
+    pass
