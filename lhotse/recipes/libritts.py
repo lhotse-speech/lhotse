@@ -119,32 +119,40 @@ def prepare_libritts(
         part_path = corpus_dir / part
         recordings = RecordingSet.from_dir(part_path, '*.wav', num_jobs=num_jobs)
         supervisions = []
-        for trans_path in tqdm(part_path.rglob('*.normalized.txt'), desc='Scanning transcript files', leave=False):
+        for trans_path in tqdm(part_path.rglob('*.trans.tsv'), desc='Scanning transcript files', leave=False):
+            # The trans.tsv files contain only the recordings that were kept for LibriTTS.
             # Example path to a file:
-            #   /export/corpora5/LibriTTS/dev-clean/2902/9008/2902_9008_000008_000001.normalized.txt
+            #   /export/corpora5/LibriTTS/dev-clean/84/121123/84_121123.trans.tsv
             #
             # Example content:
-            #   I see her everywhere-till the last month at least-and here she is again!
-            rec_id = trans_path.name.replace('.normalized.txt', '')
-            spk_id = rec_id.split('_')[0]
-            norm_text = trans_path.read_text().strip()
-            orig_text = (
-                    trans_path.parent / trans_path.name.replace('.normalized.txt', '.original.txt')
-            ).read_text().strip()
-            supervisions.append(
-                SupervisionSegment(
-                    id=rec_id,
-                    recording_id=rec_id,
-                    start=0.0,
-                    duration=recordings[rec_id].duration,
-                    channel=0,
-                    text=norm_text,
-                    language='English',
-                    speaker=spk_id,
-                    gender=spk2gender[spk_id],
-                    custom={'orig_text': orig_text}
+            #   84_121123_000007_000001 Maximilian.     Maximilian.
+            #   84_121123_000008_000000 Villefort rose, half ashamed of being surprised in such a paroxysm of grief.    Villefort rose, half ashamed of being surprised in such a paroxysm of grief.
+
+            # book.tsv contains additional metadata
+            utt2snr = {
+                rec_id: float(snr)
+                for rec_id, *_, snr in map(
+                    str.split,
+                    (trans_path.parent / trans_path.name.replace('.trans.tsv', '.book.tsv')).read_text().splitlines()
                 )
-            )
+            }
+            for line in trans_path.read_text().splitlines():
+                rec_id, orig_text, norm_text = line.split('\t')
+                spk_id = rec_id.split('_')[0]
+                supervisions.append(
+                    SupervisionSegment(
+                        id=rec_id,
+                        recording_id=rec_id,
+                        start=0.0,
+                        duration=recordings[rec_id].duration,
+                        channel=0,
+                        text=norm_text,
+                        language='English',
+                        speaker=spk_id,
+                        gender=spk2gender[spk_id],
+                        custom={'orig_text': orig_text, 'snr': utt2snr[rec_id]}
+                    )
+                )
 
         supervisions = SupervisionSet.from_segments(supervisions)
         validate_recordings_and_supervisions(recordings, supervisions)
