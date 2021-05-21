@@ -46,7 +46,6 @@ class AudioSource:
             self,
             offset: Seconds = 0.0,
             duration: Optional[Seconds] = None,
-            target_sampling_rate: Optional[int] = None,
     ) -> np.ndarray:
         """
         Load the AudioSource (from files, commands, or URLs) with soundfile,
@@ -93,13 +92,6 @@ class AudioSource:
 
         else:  # self.type == 'file'
             samples, sampling_rate = read_audio(source, offset=offset, duration=duration)
-
-        # A useful case of resampling here is for the opus-format audios. Opus-format audio would be decoded at 48kHz
-        # by force, with the original sampling rate being ignored.
-        if target_sampling_rate is not None and sampling_rate != target_sampling_rate:
-            resample = Resample(sampling_rate, target_sampling_rate)
-            samples = resample(np.vstack([samples.astype(np.float32)]))[0]
-            sampling_rate = target_sampling_rate
 
         # explicit sanity check for duration as soundfile does not complain here
         if duration is not None:
@@ -220,7 +212,6 @@ class Recording:
             samples = source.load_audio(
                 offset=offset_sp,
                 duration=duration_sp,
-                target_sampling_rate=self.sampling_rate
             )
 
             # Case: two-channel audio file but only one channel requested
