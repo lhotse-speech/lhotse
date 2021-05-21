@@ -10,7 +10,7 @@ from lhotse.utils import Pathlike
 def read_manifests_if_cached(
         dataset_parts: Optional[Sequence[str]],
         output_dir: Optional[Pathlike],
-        prefix: str = ''
+        prefix: str = '',
         suffix: Optional[str] = 'json'
 ) -> Optional[Dict[str, Dict[str, Union[RecordingSet, SupervisionSet]]]]:
     """
@@ -22,6 +22,7 @@ def read_manifests_if_cached(
     :param dataset_parts: Names of dataset pieces, e.g. in LibriSpeech: ``["test-clean", "dev-clean", ...]``.
     :param output_dir: Where to look for the files.
     :param prefix: Optional common prefix for the manifest files (underscore is automatically added).
+    :param suffix: Optional common suffix for the manifest files ("json" by default).
     :return: A dict with manifest (``d[dataset_part]['recording'|'manifest']``) or ``None``.
     """
     if output_dir is None:
