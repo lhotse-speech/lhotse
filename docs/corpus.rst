@@ -180,6 +180,8 @@ a CLI tool that create the manifests given a corpus directory.
     - :func:`lhotse.recipes.prepare_gale_arabic`
   * - GALE Mandarin Broadcast Speech
     - :func:`lhotse.recipes.prepare_gale_mandarin`
+  * - GigaSpeech
+    - :func:`lhotse.recipes.prepare_gigaspeech`
   * - Heroico
     - :func:`lhotse.recipes.prepare_heroico`
   * - L2 Arctic
