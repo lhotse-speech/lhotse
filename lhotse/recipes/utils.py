@@ -10,7 +10,8 @@ from lhotse.utils import Pathlike
 def read_manifests_if_cached(
         dataset_parts: Optional[Sequence[str]],
         output_dir: Optional[Pathlike],
-        prefix: str = ''
+        prefix: str = '',
+        suffix: Optional[str] = 'json'
 ) -> Optional[Dict[str, Dict[str, Union[RecordingSet, SupervisionSet]]]]:
     """
     Loads manifests from the disk if all of them exist in the specified paths.
@@ -21,6 +22,7 @@ def read_manifests_if_cached(
     :param dataset_parts: Names of dataset pieces, e.g. in LibriSpeech: ``["test-clean", "dev-clean", ...]``.
     :param output_dir: Where to look for the files.
     :param prefix: Optional common prefix for the manifest files (underscore is automatically added).
+    :param suffix: Optional common suffix for the manifest files ("json" by default).
     :return: A dict with manifest (``d[dataset_part]['recording'|'manifest']``) or ``None``.
     """
     if output_dir is None:
@@ -30,7 +32,7 @@ def read_manifests_if_cached(
     manifests = defaultdict(dict)
     for part in dataset_parts:
         for manifest in ('recordings', 'supervisions'):
-            path = output_dir / f'{prefix}{manifest}_{part}.json'
+            path = output_dir / f'{prefix}{manifest}_{part}.{suffix}'
             if not path.is_file():
                 # If one of the manifests is not available, assume we need to read and prepare everything
                 # to simplify the rest of the code.

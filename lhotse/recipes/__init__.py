@@ -10,6 +10,7 @@ from .cslu_kids import prepare_cslu_kids
 from .dihard3 import prepare_dihard3
 from .gale_arabic import prepare_gale_arabic
 from .gale_mandarin import prepare_gale_mandarin
+from .gigaspeech import prepare_gigaspeech
 from .heroico import prepare_heroico
 from .l2_arctic import prepare_l2_arctic
 from .librimix import prepare_librimix

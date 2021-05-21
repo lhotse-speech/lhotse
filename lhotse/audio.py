@@ -16,7 +16,7 @@ import numpy as np
 from tqdm.auto import tqdm
 
 from lhotse.augmentation import AudioTransform, Resample, Speed
-from lhotse.serialization import Serializable
+from lhotse.serialization import Serializable, extension_contains
 from lhotse.utils import (Decibels, NonPositiveEnergyError, Pathlike, Seconds, SetContainingAnything, asdict_nonull,
                           compute_num_samples,
                           exactly_one_not_null, fastcopy,
@@ -91,7 +91,8 @@ class AudioSource:
                 samples, sampling_rate = read_audio(source, offset=offset, duration=duration)
 
         else:  # self.type == 'file'
-            samples, sampling_rate = read_audio(source, offset=offset, duration=duration)
+            samples, sampling_rate = read_audio(source, offset=offset, duration=duration,
+                                                force_audioread=extension_contains('.opus', Path(self.source)))
 
         # explicit sanity check for duration as soundfile does not complain here
         if duration is not None:
@@ -634,9 +635,12 @@ FileObject = Any  # Alias for file-like objects
 def read_audio(
         path_or_fd: Union[Pathlike, FileObject],
         offset: Seconds = 0.0,
-        duration: Optional[Seconds] = None
+        duration: Optional[Seconds] = None,
+        force_audioread: Optional[bool] = False,
 ) -> Tuple[np.ndarray, int]:
     try:
+        if force_audioread:
+            raise Exception
         import soundfile as sf
         with sf.SoundFile(path_or_fd) as sf_desc:
             sampling_rate = sf_desc.samplerate
