@@ -17,7 +17,7 @@ from tqdm.auto import tqdm
 
 from lhotse.augmentation import AudioTransform, Resample, Speed
 from lhotse.serialization import Serializable, extension_contains
-from lhotse.utils import (Decibels, Pathlike, Seconds, SetContainingAnything, asdict_nonull,
+from lhotse.utils import (Decibels, NonPositiveEnergyError, Pathlike, Seconds, SetContainingAnything, asdict_nonull,
                           compute_num_samples,
                           exactly_one_not_null, fastcopy,
                           ifnone, index_by_id_and_check, perturb_num_samples, split_sequence)
@@ -611,6 +611,10 @@ class AudioMixer:
         gain = 1.0
         if snr is not None:
             added_audio_energy = audio_energy(audio)
+            if added_audio_energy <= 0.0:
+                raise NonPositiveEnergyError(
+                    f"To perform mix, energy must be non-zero and non-negative (got {added_audio_energy}). "
+                )
             target_energy = self.reference_energy * (10.0 ** (-snr / 10))
             # When mixing time-domain singals, we are working with root-power (field) quantities,
             # whereas the energy ratio applies to power quantities. To compute the gain correctly,

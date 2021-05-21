@@ -1,5 +1,6 @@
 import pickle
 from tempfile import NamedTemporaryFile
+from lhotse.supervision import AlignmentItem
 
 import pytest
 
@@ -61,7 +62,16 @@ def supervision_set():
             text='transcript of the first segment',
             language='english',
             speaker='Norman Dyhrentfurth',
-            gender='male'
+            gender='male',
+            alignment={
+                'word':[
+                    AlignmentItem(symbol='transcript', start=0.1, duration=0.08),
+                    AlignmentItem(symbol='of', start=0.18, duration=0.02),
+                    AlignmentItem(symbol='the', start=0.2, duration=0.03),
+                    AlignmentItem(symbol='first', start=0.23, duration=0.07),
+                    AlignmentItem(symbol='segment', start=0.3, duration=0.1),
+                ]
+            }
         )
     ])
 

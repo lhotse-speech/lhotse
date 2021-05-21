@@ -20,10 +20,10 @@ from lhotse.augmentation import AugmentFn
 from lhotse.features import FeatureExtractor, FeatureMixer, FeatureSet, Features, create_default_feature_extractor
 from lhotse.features.base import compute_global_stats
 from lhotse.features.io import FeaturesWriter, LilcomFilesWriter, LilcomHdf5Writer
-from lhotse.features.mixer import NonPositiveEnergyError
 from lhotse.serialization import Serializable
 from lhotse.supervision import SupervisionSegment, SupervisionSet
-from lhotse.utils import (Decibels, LOG_EPSILON, Pathlike, Seconds, TimeSpan, asdict_nonull,
+from lhotse.utils import (Decibels, LOG_EPSILON, NonPositiveEnergyError, Pathlike, Seconds, TimeSpan, asdict_nonull,
+                          asdict_nonull_recursive,
                           compute_num_frames, compute_num_samples, exactly_one_not_null, fastcopy,
                           ifnone, index_by_id_and_check, measure_overlap, overlaps,
                           overspans, perturb_num_samples, split_sequence, uuid4)
@@ -51,7 +51,9 @@ class CutUtilsMixin:
     """
 
     def to_dict(self) -> dict:
-        return {**asdict_nonull(self), 'type': type(self).__name__}
+        # Use recursive serialization if supervisions contain alignments (which are of type NamedTuple)
+        d = asdict_nonull(self) if all([s.alignment is None for s in self.supervisions]) else asdict_nonull_recursive(self)
+        return {**d, 'type': type(self).__name__}
 
     @property
     def trimmed_supervisions(self) -> List[SupervisionSegment]:
@@ -1129,11 +1131,14 @@ class MixedCut(CutUtilsMixin):
             return None
         mixer = AudioMixer(self.tracks[0].cut.load_audio(), sampling_rate=self.tracks[0].cut.sampling_rate)
         for track in self.tracks[1:]:
-            mixer.add_to_mix(
-                audio=track.cut.load_audio(),
-                snr=track.snr,
-                offset=track.offset,
-            )
+            try:
+                mixer.add_to_mix(
+                    audio=track.cut.load_audio(),
+                    snr=track.snr,
+                    offset=track.offset,
+                )
+            except NonPositiveEnergyError as e:
+                logging.warning(str(e) + f' Cut with id "{track.cut.id}" will not be mixed in.')
         if mixed:
             # Off-by-one errors can happen during mixing due to imperfect float arithmetic and rounding;
             # we will fix them on-the-fly so that the manifest does not lie about the num_samples.

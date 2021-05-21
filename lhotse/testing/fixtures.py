@@ -1,5 +1,7 @@
 import random
+from typing import Dict, List
 from tempfile import NamedTemporaryFile, TemporaryDirectory
+from lhotse.supervision import AlignmentItem
 
 import numpy as np
 
@@ -65,6 +67,7 @@ class RandomCutTestCase:
             num_samples: int,
             features: bool = True,
             supervision: bool = False,
+            alignment: bool = False,
             frame_shift: Seconds = 0.01
     ) -> Cut:
         duration = num_samples / sampling_rate
@@ -83,7 +86,8 @@ class RandomCutTestCase:
                 recording_id=cut.recording_id,
                 start=0,
                 duration=cut.duration,
-                text='irrelevant'
+                text='irrelevant',
+                alignment=self._with_alignment(cut, 'irrelevant') if alignment else None
             ))
         return cut
 
@@ -93,3 +97,16 @@ class RandomCutTestCase:
         extractor = Fbank(config=FbankConfig(frame_shift=frame_shift))
         with LilcomFilesWriter(d.name) as storage:
             return cut.compute_and_store_features(extractor, storage=storage)
+        
+    def _with_alignment(self, cut: Cut, text: str) -> Dict[str, List[AlignmentItem]]:
+        subwords = [text[i:i+3] for i in range(0, len(text), 3)]   # Create subwords of 3 chars
+        dur = cut.duration/len(subwords)
+        alignment = [
+            AlignmentItem(
+                symbol=sub,
+                start=i*dur,
+                duration=dur
+            ) for i, sub in enumerate(subwords)    
+        ]
+        return {'subword': alignment}
+        
