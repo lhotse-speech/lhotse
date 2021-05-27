@@ -9,9 +9,20 @@ from .fbank import (
     Fbank,
     FbankConfig
 )
-from .io import (FeaturesReader, FeaturesWriter, LilcomFilesReader, LilcomFilesWriter, LilcomHdf5Reader,
-                 LilcomHdf5Writer, NumpyFilesReader, NumpyFilesWriter, NumpyHdf5Reader, NumpyHdf5Writer,
-                 available_storage_backends, close_cached_file_handles)
+from .io import (
+    FeaturesReader,
+    FeaturesWriter,
+    LilcomFilesReader,
+    LilcomFilesWriter,
+    LilcomHdf5Reader,
+    LilcomHdf5Writer,
+    NumpyFilesReader,
+    NumpyFilesWriter,
+    NumpyHdf5Reader,
+    NumpyHdf5Writer,
+    available_storage_backends,
+    close_cached_file_handles
+)
 from .kaldi.extractors import (
     KaldiFbank,
     KaldiFbankConfig,
