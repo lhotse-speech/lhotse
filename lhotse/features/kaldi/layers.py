@@ -25,12 +25,41 @@ from torch import nn
 try:
     from torch.fft import rfft as torch_rfft
 
-    def rfft(x: torch.Tensor) -> torch.Tensor:
+    _rfft = lambda x: torch_rfft(x, dim=-1)
+    _pow_spectrogram = lambda x: x.abs() ** 2
+    _spectrogram = lambda x: x.abs()
+except ImportError:
+    _rfft = lambda x: torch.rfft(x, 1, normalized=False, onesided=True)
+    _pow_spectrogram = lambda x: x.pow(2).sum(-1)
+    _spectrogram = lambda x: x.pow(2).sum(-1).sqrt()
+
+try:
+    from torch.fft import rfft as torch_rfft
+
+
+    def _rfft(x: torch.Tensor) -> torch.Tensor:
         return torch_rfft(x, dim=-1)
+
+
+    def _pow_spectrogram(x: torch.Tensor) -> torch.Tensor:
+        return x.abs() ** 2
+
+
+    def _spectrogram(x: torch.Tensor) -> torch.Tensor:
+        return x.abs()
+
 except ImportError:
 
-    def rfft(x: torch.Tensor) -> torch.Tensor:
+    def _rfft(x: torch.Tensor) -> torch.Tensor:
         return torch.rfft(x, 1, normalized=False, onesided=True)
+
+
+    def _pow_spectrogram(x: torch.Tensor) -> torch.Tensor:
+        return x.pow(2).sum(-1)
+
+
+    def _spectrogram(x: torch.Tensor) -> torch.Tensor:
+        return x.pow(2).sum(-1).sqrt()
 
 from lhotse.utils import EPSILON, Seconds
 
@@ -202,7 +231,7 @@ class Wav2FFT(nn.Module):
         if self.use_energy:
             x_strided, log_e = x_strided
 
-        X = rfft(x_strided)
+        X = _rfft(x_strided)
 
         if self.use_energy:
             X[:, 0, :, 0] = log_e
@@ -233,17 +262,18 @@ class Wav2Spec(Wav2FFT):
             window_type=window_type, dither=dither, snip_edges=snip_edges,
             energy_floor=energy_floor, raw_energy=raw_energy, use_energy=use_energy)
         self.use_fft_mag = use_fft_mag
+        if use_fft_mag:
+            self._to_spec = _spectrogram
+        else:
+            self._to_spec = _pow_spectrogram
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         x_strided = self.wav2win(x)
         if self.use_energy:
             x_strided, log_e = x_strided
 
-        X = rfft(x_strided)
-
-        pow_spec = X.pow(2).sum(-1)
-        if self.use_fft_mag:
-            pow_spec = pow_spec.sqrt()
+        X = _rfft(x_strided)
+        pow_spec = self._to_spec(X)
 
         if self.use_energy:
             pow_spec[:, 0] = log_e
@@ -274,17 +304,18 @@ class Wav2LogSpec(Wav2FFT):
             window_type=window_type, dither=dither, snip_edges=snip_edges,
             energy_floor=energy_floor, raw_energy=raw_energy, use_energy=use_energy)
         self.use_fft_mag = use_fft_mag
+        if use_fft_mag:
+            self._to_spec = _spectrogram
+        else:
+            self._to_spec = _pow_spectrogram
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         x_strided = self.wav2win(x)
         if self.use_energy:
             x_strided, log_e = x_strided
 
-        X = rfft(x_strided)
-
-        pow_spec = X.pow(2).sum(-1)
-        if self.use_fft_mag:
-            pow_spec = pow_spec.sqrt()
+        X = _rfft(x_strided)
+        pow_spec = self._to_spec(X)
 
         pow_spec = (pow_spec + 1e-15).log()
 
@@ -328,6 +359,11 @@ class Wav2LogFilterBank(Wav2FFT):
         self.num_filters = num_filters
         self.norm_filters = norm_filters
 
+        if use_fft_mag:
+            self._to_spec = _spectrogram
+        else:
+            self._to_spec = _pow_spectrogram
+
         fb = create_mel_scale(
             num_filters=num_filters,
             fft_length=fft_length,
@@ -345,10 +381,8 @@ class Wav2LogFilterBank(Wav2FFT):
         if self.use_energy:
             x_strided, log_e = x_strided
 
-        X = rfft(x_strided)
-        pow_spec = X.pow(2).sum(-1)
-        if self.use_fft_mag:
-            pow_spec = pow_spec.sqrt()
+        X = _rfft(x_strided)
+        pow_spec = self._to_spec(X)
 
         try:
             from torch.cuda.amp import autocast
@@ -405,6 +439,11 @@ class Wav2MFCC(Wav2FFT):
         self.num_ceps = num_ceps
         self.cepstral_lifter = cepstral_lifter
 
+        if use_fft_mag:
+            self._to_spec = _spectrogram
+        else:
+            self._to_spec = _pow_spectrogram
+
         fb = create_mel_scale(
             num_filters=num_filters,
             fft_length=fft_length,
@@ -452,11 +491,8 @@ class Wav2MFCC(Wav2FFT):
         if self.use_energy:
             x_strided, log_e = x_strided
 
-        X = rfft(x_strided)
-
-        pow_spec = X.pow(2).sum(-1)
-        if self.use_fft_mag:
-            pow_spec = pow_spec.sqrt()
+        X = _rfft(x_strided)
+        pow_spec = self._to_spec(X)
 
         try:
             from torch.cuda.amp import autocast
