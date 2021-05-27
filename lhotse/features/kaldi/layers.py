@@ -23,8 +23,7 @@ import torch
 from torch import nn
 
 try:
-    import torch.fft.rfft as torch_rfft
-
+    from torch.fft import rfft as torch_rfft
 
     def rfft(x: torch.Tensor) -> torch.Tensor:
         return torch_rfft(x, dim=-1)
