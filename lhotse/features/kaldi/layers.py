@@ -25,9 +25,13 @@ from torch import nn
 try:
     import torch.fft.rfft as torch_rfft
 
-    rfft = lambda x: torch_rfft(x, dim=-1)
-except:
-    rfft = lambda x: torch.rfft(x, 1, normalized=False, onesided=True)
+
+    def rfft(x: torch.Tensor) -> torch.Tensor:
+        return torch_rfft(x, dim=-1)
+except ImportError:
+
+    def rfft(x: torch.Tensor) -> torch.Tensor:
+        return torch.rfft(x, 1, normalized=False, onesided=True)
 
 from lhotse.utils import EPSILON, Seconds
 
