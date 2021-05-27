@@ -22,6 +22,13 @@ import numpy as np
 import torch
 from torch import nn
 
+try:
+    import torch.fft.rfft as torch_rfft
+
+    rfft = lambda x: torch_rfft(x, dim=-1)
+except:
+    rfft = lambda x: torch.rfft(x, 1, normalized=False, onesided=True)
+
 from lhotse.utils import EPSILON, Seconds
 
 
@@ -192,7 +199,7 @@ class Wav2FFT(nn.Module):
         if self.use_energy:
             x_strided, log_e = x_strided
 
-        X = torch.rfft(x_strided, 1, normalized=False, onesided=True)
+        X = rfft(x_strided)
 
         if self.use_energy:
             X[:, 0, :, 0] = log_e
@@ -229,7 +236,7 @@ class Wav2Spec(Wav2FFT):
         if self.use_energy:
             x_strided, log_e = x_strided
 
-        X = torch.rfft(x_strided, 1, normalized=False, onesided=True)
+        X = rfft(x_strided)
 
         pow_spec = X.pow(2).sum(-1)
         if self.use_fft_mag:
@@ -270,7 +277,7 @@ class Wav2LogSpec(Wav2FFT):
         if self.use_energy:
             x_strided, log_e = x_strided
 
-        X = torch.rfft(x_strided, 1, normalized=False, onesided=True)
+        X = rfft(x_strided)
 
         pow_spec = X.pow(2).sum(-1)
         if self.use_fft_mag:
@@ -335,7 +342,7 @@ class Wav2LogFilterBank(Wav2FFT):
         if self.use_energy:
             x_strided, log_e = x_strided
 
-        X = torch.rfft(x_strided, 1, normalized=False, onesided=True)
+        X = rfft(x_strided)
         pow_spec = X.pow(2).sum(-1)
         if self.use_fft_mag:
             pow_spec = pow_spec.sqrt()
@@ -442,7 +449,7 @@ class Wav2MFCC(Wav2FFT):
         if self.use_energy:
             x_strided, log_e = x_strided
 
-        X = torch.rfft(x_strided, 1, normalized=False, onesided=True)
+        X = rfft(x_strided)
 
         pow_spec = X.pow(2).sum(-1)
         if self.use_fft_mag:
