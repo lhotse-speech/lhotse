@@ -227,39 +227,14 @@ def compute_num_frames(
         duration: Seconds,
         frame_shift: Seconds,
         sampling_rate: int,
-        # rounding: str = ROUND_HALF_DOWN#ROUND_HALF_UP
 ) -> int:
     """
     Compute the number of frames from duration and frame_shift in a safe way.
-
-    The need for this function is best illustrated with an example edge case:
-
-    >>> duration = 16.165
-    >>> frame_shift = 0.01
-    >>> num_frames = duration / frame_shift  # we expect it to finally be 1617
-    >>> num_frames
-      1616.4999999999998
-    >>> round(num_frames)
-      1616
-    >>> Decimal(num_frames).quantize(0, rounding=ROUND_HALF_UP)
-      1616
-    >>> round(num_frames, ndigits=8)
-      1616.5
-    >>> Decimal(round(num_frames, ndigits=8)).quantize(0, rounding=ROUND_HALF_UP)
-      1617
     """
     num_samples = round(duration * sampling_rate)
     window_hop = round(frame_shift * sampling_rate)
     num_frames = int((num_samples + window_hop // 2) // window_hop)
     return num_frames
-    # return int(
-    #     Decimal(
-    #         # 8 is a good number because cases like 14.49175 still work correctly,
-    #         # while problematic cases like 14.49999999998 are typically breaking much later than 8th decimal
-    #         # with double-precision floats.
-    #         round((duration + frame_shift / 2) / frame_shift, ndigits=8)
-    #     ).quantize(0, rounding=rounding)
-    # )
 
 
 def during_docs_build() -> bool:

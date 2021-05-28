@@ -6,6 +6,7 @@ import click
 from lhotse.audio import RecordingSet
 from lhotse.bin.modes.cli_base import cli
 from lhotse.features import Fbank, FeatureExtractor, FeatureSetBuilder, create_default_feature_extractor
+from lhotse.features.base import FEATURE_EXTRACTORS
 from lhotse.features.io import available_storage_backends, get_writer
 from lhotse.utils import Pathlike
 
@@ -18,7 +19,7 @@ def feat():
 
 @feat.command(context_settings=dict(show_default=True))
 @click.argument('output_config', type=click.Path())
-@click.option('-f', '--feature-type', type=click.Choice(['fbank', 'mfcc', 'spectrogram', 'librosa-fbank']), default='fbank',
+@click.option('-f', '--feature-type', type=click.Choice(list(FEATURE_EXTRACTORS)), default='fbank',
               help='Which feature extractor type to use.')
 def write_default_config(output_config: Pathlike, feature_type: str):
     """Save a default feature extraction config to OUTPUT_CONFIG."""
