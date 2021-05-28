@@ -212,7 +212,7 @@ For example:
             num_jobs=8
         )
 
-.. py:currentmodule:: lhotse.cu
+.. py:currentmodule:: lhotse.cut
 
 It is also possible to extract the features directly from :class:`CutSet` - see below:
 
