@@ -127,7 +127,7 @@ class SpecAugment(torch.nn.Module):
             features_mask_size: int = 13,
             num_frame_masks: int = 1,
             frames_mask_size: int = 70,
-            max_frame_mask_fraction: float = 0.2,
+            max_frames_mask_fraction: float = 0.2,
             p=0.5,
     ):
         """
@@ -141,7 +141,7 @@ class SpecAugment(torch.nn.Module):
         :param num_frame_masks: how many frame (temporal) masks should be applied. Set to ``0`` to disable.
         :param frames_mask_size: the width of the frame (temporal) masks (expressed in the number of masked frames).
             This is the ``F`` parameter from the SpecAugment paper.
-        :param max_frame_mask_fraction: limits the size of the frame (temporal) mask to this value times the length
+        :param max_frames_mask_fraction: limits the size of the frame (temporal) mask to this value times the length
             of the utterance (or supervision segment).
             This is the parameter denoted by ``p`` in the SpecAugment paper.
         :param p: the probability of applying this transform.
@@ -158,7 +158,7 @@ class SpecAugment(torch.nn.Module):
         self.features_mask_size = features_mask_size
         self.num_frame_masks = num_frame_masks
         self.frames_mask_size = frames_mask_size
-        self.max_frame_mask_fraction = max_frame_mask_fraction
+        self.max_frames_mask_fraction = max_frames_mask_fraction
         self.p = p
 
     def forward(
@@ -231,7 +231,7 @@ class SpecAugment(torch.nn.Module):
                     axis=2
                 ).squeeze(0)
             for _ in range(self.num_frame_masks):
-                max_mask_frames = min(self.frames_mask_size, self.max_frame_mask_fraction * features.size(0))
+                max_mask_frames = min(self.frames_mask_size, self.max_frames_mask_fraction * features.size(0))
                 features = mask_along_axis(
                     features.unsqueeze(0),
                     mask_param=max_mask_frames,
