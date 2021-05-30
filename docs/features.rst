@@ -1,16 +1,22 @@
 Feature extraction
 ==================
 
-Feature extraction in Lhotse is currently based exclusively on the `Torchaudio`_ library.
-We support spectrograms, log-Mel energies (*fbank*) and MFCCs.
-*Fbank* are the default features.
-We also support custom defined feature extractors via a Python API
-(which won't be available in the CLI, unless there is a popular demand for that).
+Lhotse provides the following feature extractor implementations:
+
+- `Torchaudio`_ based extractors, which involve :class:`~lhotse.features.fbank.Fbank`, :class:`~lhotse.features.mfcc.Mfcc`, and :class:`~lhotse.features.spectrogram.Spectrogram`;
+- `Librosa`_ compatible filter-bank feature extractor :class:`~lhotse.features.librosa_fbank.LibrosaFbank` (compatible with the one used in `ESPnet`_ and `ParallelWaveGAN`_ projects for TTS and vocoders);
+- Log-Mel filter-bank :class:`~lhotse.features.kaldi.extractors.KaldiFbank` and MFCC :class:`~lhotse.features.kaldi.extractors.KaldiMfcc` PyTorch implementations. They are very close to Kaldi's, and their underlying components are PyTorch modules that can be used as layers in neural networks (i.e. support batching, GPUs, and autograd). These classes are found in ``lhotse.features.kaldi.layers`` (in particular: :class:`~lhotse.features.kaldi.layers.Wav2LogFilterBank` and :class:`~lhotse.features.kaldi.layers.Wav2MFCC`).
+
+We also support custom defined feature extractors via a Python API.
 
 We are striving for a simple relation between the audio duration, the number of frames,
-and the frame shift.
-You only need to know two of those values to compute the third one, regardless of the frame length.
-This is equivalent of having Kaldi's ``snip_edges`` parameter set to False.
+and the frame shift (with a known sampling rate)::
+
+    num_samples = round(duration * sampling_rate)
+    window_hop = round(frame_shift * sampling_rate)
+    num_frames = int((num_samples + window_hop // 2) // window_hop)
+
+This is equivalent of having Kaldi's ``snip_edges`` parameter set to False, and Lhotse expects **every** feature extractor to conform to that requirement.
 
 
 Storing features
@@ -144,12 +150,7 @@ They are:
 - ``mix()`` which specifies how to mix two feature matrices to obtain a new feature matrix representing the sum of signals;
 - ``compute_energy()`` which specifies how to obtain a total energy of the feature matrix, which is needed to mix two signals with a specified SNR. E.g. for a power spectrogram, this could be the sum of every time-frequency bin. It is expected to never return a zero.
 
-During the feature-domain mix with a specified signal-to-noise ratio (SNR), we assume that one of the signals is a reference signal - it is used to initialize the ``FeatureMixer`` class. We compute the energy of both signals and scale the non-reference signal, so that its energy satisfies the requested SNR. The scaling factor (gain) is computed using the following formula:
-
-.. literalinclude:: ../lhotse/features/mixer.py
-    :lines: 96-104
-    :linenos:
-    :emphasize-lines: 8
+During the feature-domain mix with a specified signal-to-noise ratio (SNR), we assume that one of the signals is a reference signal - it is used to initialize the ``FeatureMixer`` class. We compute the energy of both signals and scale the non-reference signal, so that its energy satisfies the requested SNR.
 
 Note that we interpret the energy and the SNR in a `power quantity`_ context (as opposed to root-power/field quantities).
 
@@ -194,14 +195,14 @@ For example:
 
 .. code-block:: python
 
-    from lhotse import RecordingSet, Fbank, LilcomFilesWriter
+    from lhotse import RecordingSet, Fbank, LilcomHdf5Writer
 
     # Read a RecordingSet from disk
     recording_set = RecordingSet.from_yaml('audio.yml')
     # Create a log Mel energy filter bank feature extractor with default settings
     feature_extractor = Fbank()
     # Create a feature set builder that uses this extractor and stores the results in a directory called 'features'
-    with LilcomFilesWriter('features') as storage:
+    with LilcomHdf5Writer('feats.h5') as storage:
         builder = FeatureSetBuilder(feature_extractor=feature_extractor, storage=storage)
         # Extract the features using 8 parallel processes, compress, and store them on in 'features/storage/' directory.
         # Then, return the feature manifest object, which is also compressed and
@@ -225,8 +226,8 @@ An equivalent example using the terminal:
 
 .. code-block:: console
 
-    lhotse write-default-feature-config feat-config.yml
-    lhotse make-feats -j 8 --storage-type lilcom_files -f feat-config.yml audio.yml features/
+    lhotse feat write-default-config feat-config.yml
+    lhotse feat extract -j 8 --storage-type lilcom_files -f feat-config.yml audio.yml features/
 
 
 Kaldi compatibility caveats
@@ -238,9 +239,13 @@ However, we are not fully compatible - Kaldi computes energies from a signal sca
 `Torchaudio`_ scales the signal between -1.0 and 1.0.
 It results in Kaldi energies being significantly greater than in Lhotse.
 By default, we turn off dithering for deterministic feature extraction.
+The same is true for features extracted with ``lhotse.features.kaldi`` module.
 
 
 .. _Torchaudio: https://pytorch.org/audio/
+.. _Librosa: https://librosa.org
+.. _ESPnet: https://github.com/espnet/espnet
+.. _ParallelWaveGAN: https://github.com/kan-bayashi/ParallelWaveGAN
 .. _lilcom: https://github.com/danpovey/lilcom
 .. _power quantity: https://en.wikipedia.org/wiki/Power,_root-power,_and_field_quantities
 .. _Torchaudio CMVN: https://pytorch.org/audio/stable/transforms.html#slidingwindowcmn
