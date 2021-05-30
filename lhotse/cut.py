@@ -226,7 +226,7 @@ class CutUtilsMixin:
         :param use_alignment_if_exists: optional str, key for alignment type to use for generating the mask. If not
             exists, fall back on supervision time spans.
         """
-        return compute_supervisions_frame_mask(self, use_alignment_if_exists)
+        return compute_supervisions_frame_mask(self, use_alignment_if_exists=use_alignment_if_exists)
 
     def supervisions_audio_mask(self, use_alignment_if_exists: Optional[str] = None) -> np.ndarray:
         """
@@ -240,7 +240,7 @@ class CutUtilsMixin:
         mask = np.zeros(self.num_samples, dtype=np.float32)
         for supervision in self.supervisions:
             if use_alignment_if_exists and supervision.alignment and use_alignment_if_exists in supervision.alignment:
-                for ali in supervision.alignment:
+                for ali in supervision.alignment[use_alignment_if_exists]:
                     st = round(ali.start * self.sampling_rate) if ali.start > 0 else 0
                     et = (
                         round(ali.end * self.sampling_rate)
@@ -2452,7 +2452,7 @@ def compute_supervisions_frame_mask(
     mask = np.zeros(num_frames, dtype=np.float32)
     for supervision in cut.supervisions:
         if use_alignment_if_exists and supervision.alignment and use_alignment_if_exists in supervision.alignment:
-            for ali in supervision.alignment:
+            for ali in supervision.alignment[use_alignment_if_exists]:
                 st = round(ali.start / frame_shift) if ali.start > 0 else 0
                 et = round(ali.end / frame_shift) if ali.end < cut.duration else num_frames
                 mask[st:et] = 1.0
