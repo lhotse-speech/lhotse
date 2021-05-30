@@ -30,6 +30,19 @@ Features API - extractor and manifests
 .. automodule:: lhotse.features.base
   :members:
 
+Lhotse's feature extractors
+***************************
+
+.. autoclass:: lhotse.features.kaldi.extractors.KaldiFbank
+
+.. autoclass:: lhotse.features.kaldi.extractors.KaldiMfcc
+
+Kaldi feature extractors as network layers
+******************************************
+
+.. automodule:: lhotse.features.kaldi.layers
+    :members:
+
 Torchaudio feature extractors
 *****************************
 
@@ -41,6 +54,12 @@ Torchaudio feature extractors
 
 .. automodule:: lhotse.features.spectrogram
   :members:
+
+Librosa filter-bank
+*******************
+
+.. automodule:: lhotse.features.librosa_fbank
+    :members:
 
 Feature storage
 ***************

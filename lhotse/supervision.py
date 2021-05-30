@@ -61,6 +61,58 @@ class AlignmentItem(NamedTuple):
     
 
 @dataclass(frozen=True, unsafe_hash=True)
+class AlignmentItem():
+    """
+    This class contains an alignment item, for example a word, along with its
+    start time (w.r.t. the start of recording) and duration. It can potentially
+    be used to store other kinds of alignment items, such as subwords, pdfid's etc.
+    
+    We use dataclasses instead of namedtuples (even though they are potentially slower)
+    because of a serialization bug in nested namedtuples and dataclasses in Python 3.7
+    (see this: https://alexdelorenzo.dev/programming/2018/08/09/bug-in-dataclass.html).
+    We can revert to namedtuples if we bump up the Python requirement to 3.8+.
+    """
+    symbol: str
+    start: Seconds
+    duration: Seconds
+
+    @property
+    def end(self) -> Seconds:
+        return round(self.start + self.duration, ndigits=8)
+
+    def with_offset(self, offset: Seconds) -> 'AlignmentItem':
+        """Return an identical ``AlignmentItem``, but with the ``offset`` added to the ``start`` field."""
+        return AlignmentItem(self.symbol, round(self.start + offset, ndigits=8), self.duration)
+
+    def perturb_speed(self, factor: float, sampling_rate: int) -> 'AlignmentItem':
+        """
+        Return an ``AlignmentItem`` that has time boundaries matching the
+        recording/cut perturbed with the same factor. See :meth:`SupervisionSegment.perturb_speed` 
+        for details.
+        """
+        start_sample = compute_num_samples(self.start, sampling_rate)
+        num_samples = compute_num_samples(self.duration, sampling_rate)
+        new_start = perturb_num_samples(start_sample, factor) / sampling_rate
+        new_duration = perturb_num_samples(num_samples, factor) / sampling_rate
+        return AlignmentItem(self.symbol, new_start, new_duration)
+
+    def trim(self, end: Seconds, start: Seconds = 0) -> 'AlignmentItem':
+        """
+        See :met:`SupervisionSegment.trim`.
+        """
+        assert start >= 0
+        start_exceeds_by = abs(min(0, self.start - start))
+        end_exceeds_by = max(0, self.end - end)
+        return AlignmentItem(self.symbol, max(start, self.start), self.duration - end_exceeds_by - start_exceeds_by)
+
+    def transform(self, transform_fn: Callable[[str], str]) -> 'AlignmentItem':
+        """
+        Perform specified transformation on the alignment content.
+        """
+        return AlignmentItem(transform_fn(self.symbol), self.start, self.duration)
+    
+
+@dataclass(frozen=True, unsafe_hash=True)
 class SupervisionSegment:
     id: str
     recording_id: str
@@ -214,7 +266,11 @@ class SupervisionSegment:
             **{
                 key:(
                     {k:[AlignmentItem(**x) for x in v] for k,v in value.items()}
+<<<<<<< HEAD
                     if key == 'alignment' else value) 
+=======
+                    if key == 'alignment' else value)
+>>>>>>> 5182944f344593d0776c917f74d70ff3fcf2a393
                 for key, value in data.items()
             }
         )
@@ -252,36 +308,43 @@ class SupervisionSet(Serializable, Sequence[SupervisionSegment]):
     def from_dicts(data: Iterable[Dict]) -> 'SupervisionSet':
         return SupervisionSet.from_segments(SupervisionSegment.from_dict(s) for s in data)
     
-    def add_alignments_from_ctm(self, ctm_file: Pathlike, type: str = 'word') -> 'SupervisionSet':
+    def with_alignment_from_ctm(self, ctm_file: Pathlike, type: str = 'word', match_channel: bool = False) -> 'SupervisionSet':
         """
         Add alignments from CTM file to the supervision set.
         
         :param ctm: Path to CTM file.
         :param type: Alignment type (optional, default = `word`).
+        :param match_channel: if True, also match channel between CTM and SupervisionSegment
         :return: A new SupervisionSet with AlignmentItem objects added to the segments.
         """
         ctm_words = []
-        with open(ctm_file, 'r') as f:
+        with open(ctm_file) as f:
             for line in f:
                 reco_id, channel, start, duration, symbol = line.strip().split()
-                ctm_words.append((reco_id, channel, float(start), float(duration), symbol))
-        ctm_words = sorted(ctm_words, key=lambda x:x[0])
+                ctm_words.append((reco_id, int(channel), float(start), float(duration), symbol))
+        ctm_words = sorted(ctm_words, key=lambda x:(x[0], x[2]))
         reco_to_ctm = defaultdict(list, {k: list(v) for k,v in groupby(ctm_words, key=lambda x:x[0])})
         segments = []
-        for reco_id in reco_to_ctm:
-            segs = [s for s in self if s.recording_id == reco_id]
-            for seg in segs:
-                alignment = [AlignmentItem(word[4], word[2], word[3]) for word in ctm_words 
-                             if overspans(
-                                 TimeSpan(start=seg.start, end=seg.end),
-                                 TimeSpan(word[2], word[2] + word[3])
-                                ) and seg.channel == word[1]
-                            ]
-                segments.append(fastcopy(seg, alignment={type: alignment}))
+        num_total = len(ctm_words)
+        num_overspanned = 0
+        for reco_id in set([s.recording_id for s in self]):
+            if reco_id in reco_to_ctm:
+                for seg in self.find(recording_id=reco_id):
+                    alignment = [AlignmentItem(symbol=word[4], start=word[2], duration=word[3]) for word in reco_to_ctm[reco_id] 
+                                    if overspans(seg, TimeSpan(word[2], word[2] + word[3]))
+                                    and (seg.channel == word[1] or not match_channel)
+                                ]
+                    num_overspanned += len(alignment)
+                    segments.append(fastcopy(seg, alignment={type: alignment}))
+            else:
+                segments.append([s for s in self.find(recording_id=reco_id)])
+        print (segments)
+        logging.info(f"{num_overspanned} alignments added out of {num_total} total. If there are several"
+            " missing, there could be a mismatch problem.")
         return SupervisionSet.from_segments(segments)
                           
 
-    def write_ctm(self, ctm_file: Pathlike, type: str = 'word') -> None:
+    def write_alignment_to_ctm(self, ctm_file: Pathlike, type: str = 'word') -> None:
         """
         Write alignments to CTM file.
         
@@ -292,7 +355,7 @@ class SupervisionSet(Serializable, Sequence[SupervisionSegment]):
             for s in self:
                 if type in s.alignment:
                     for ali in s.alignment[type]:
-                        f.write(f'{s.reco_id} {s.channel} {ali.start} {ali.duration} {ali.symbol}\n')
+                        f.write(f'{s.recording_id} {s.channel} {ali.start:.02f} {ali.duration:.02f} {ali.symbol}\n')
                 
     
     def to_dicts(self) -> Iterable[dict]:
@@ -365,6 +428,17 @@ class SupervisionSet(Serializable, Sequence[SupervisionSegment]):
         :return: a ``SupervisionSet`` with adjusted text.
         """
         return SupervisionSet.from_segments(s.transform_text(transform_fn) for s in self)
+
+    def transform_alignment(self, transform_fn: Callable[[str], str], type: str = 'word') -> 'SupervisionSet':
+        """
+        Return a copy of the current ``SupervisionSet`` with the segments having a transformed ``alignment`` field.
+        Useful for text normalization, phonetic transcription, etc.
+
+        :param transform_fn: a function that accepts a string and returns a string.
+        :param type:  alignment type to transform (key for alignment dict).
+        :return: a ``SupervisionSet`` with adjusted text.
+        """
+        return SupervisionSet.from_segments(s.transform_alignment(transform_fn, type=type) for s in self)
 
     def find(
             self,
