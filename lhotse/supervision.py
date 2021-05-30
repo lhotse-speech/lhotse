@@ -10,56 +10,6 @@ from lhotse.utils import Pathlike, Seconds, TimeSpan, asdict_nonull, asdict_nonu
     perturb_num_samples, split_sequence, compute_num_samples
 
 
-class AlignmentItem(NamedTuple):
-    """
-    This class contains an alignment item, for example a word, along with its
-    start time (w.r.t. the start of recording) and duration. It can potentially
-    be used to store other kinds of alignment items, such as subwords, pdfid's etc.
-    
-    We use indexing in most of the functions here instead of named attribute access
-    since it is faster and this code may potentially be executed many times for
-    large supervisions.
-    """
-    symbol: str
-    start: Seconds
-    duration: Seconds
-
-    @property
-    def end(self) -> Seconds:
-        return round(self[1] + self[2], ndigits=8)
-
-    def with_offset(self, offset: Seconds) -> 'AlignmentItem':
-        """Return an identical ``AlignmentItem``, but with the ``offset`` added to the ``start`` field."""
-        return AlignmentItem(self[0], round(self[1] + offset, ndigits=8), self[2])
-
-    def perturb_speed(self, factor: float, sampling_rate: int) -> 'AlignmentItem':
-        """
-        Return an ``AlignmentItem`` that has time boundaries matching the
-        recording/cut perturbed with the same factor. See :meth:`SupervisionSegment.perturb_speed` 
-        for details.
-        """
-        start_sample = compute_num_samples(self[1], sampling_rate)
-        num_samples = compute_num_samples(self[2], sampling_rate)
-        new_start = perturb_num_samples(start_sample, factor) / sampling_rate
-        new_duration = perturb_num_samples(num_samples, factor) / sampling_rate
-        return AlignmentItem(self[0], new_start, new_duration)
-
-    def trim(self, end: Seconds, start: Seconds = 0) -> 'AlignmentItem':
-        """
-        See :met:`SupervisionSegment.trim`.
-        """
-        assert start >= 0
-        start_exceeds_by = abs(min(0, self[1] - start))
-        end_exceeds_by = max(0, self.end - end)
-        return AlignmentItem(self[0], max(start, self[1]), self[2] - end_exceeds_by - start_exceeds_by)
-
-    def transform(self, transform_fn: Callable[[str], str]) -> 'AlignmentItem':
-        """
-        Perform specified transformation on the alignment content.
-        """
-        return AlignmentItem(transform_fn(self[0]), self[1], self[2])
-    
-
 @dataclass(frozen=True, unsafe_hash=True)
 class AlignmentItem():
     """
@@ -266,11 +216,7 @@ class SupervisionSegment:
             **{
                 key:(
                     {k:[AlignmentItem(**x) for x in v] for k,v in value.items()}
-<<<<<<< HEAD
-                    if key == 'alignment' else value) 
-=======
                     if key == 'alignment' else value)
->>>>>>> 5182944f344593d0776c917f74d70ff3fcf2a393
                 for key, value in data.items()
             }
         )

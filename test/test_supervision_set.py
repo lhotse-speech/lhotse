@@ -23,16 +23,6 @@ def external_alignment() -> Dict[str, List[AlignmentItem]]:
       ]}
 
 
-@pytest.fixture
-def external_alignment() -> Dict[str, List[AlignmentItem]]:
-    return {'word': [
-        AlignmentItem("transcript", 0.1, 0.08),
-        AlignmentItem("of", 0.18, 0.02),
-        AlignmentItem("the", 0.2, 0.03),
-        AlignmentItem("first", 0.23, 0.07),
-        AlignmentItem("segment", 0.3, 0.1)
-      ]}
-
 def test_supervision_map(external_supervision_set):
     for s in external_supervision_set.map(remove_spaces_from_segment_text):
         if s.text is not None:
@@ -48,6 +38,7 @@ def test_supervision_transform_alignment(external_supervision_set, type='word'):
     for s in external_supervision_set.transform_alignment(lambda symbol: 'dummy'):
         if s.alignment is not None:
             assert all([a.symbol == 'dummy' for a in s.alignment[type]])
+
 
 def test_supervision_segment_with_full_metadata(external_supervision_set, external_alignment):
     segment = external_supervision_set['segment-1']
@@ -74,7 +65,6 @@ def test_supervision_segment_with_no_metadata(external_supervision_set):
     assert segment.text is None
     assert segment.language is None
     assert segment.speaker is None
-    assert segment.alignment is None
 
 
 def test_create_supervision_segment_with_minimum_metadata():
