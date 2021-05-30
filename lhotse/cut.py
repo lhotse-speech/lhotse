@@ -4,7 +4,7 @@ import warnings
 from concurrent.futures import Executor, ProcessPoolExecutor
 from dataclasses import dataclass, field
 from functools import partial, reduce
-from itertools import islice
+from itertools import islice, chain
 from math import ceil, floor
 from pathlib import Path
 from typing import Any, Callable, Dict, FrozenSet, Iterable, List, Mapping, Optional, Sequence, Type, TypeVar, Union
@@ -132,7 +132,8 @@ class CutUtilsMixin:
     def speakers_feature_mask(
             self,
             min_speaker_dim: Optional[int] = None,
-            speaker_to_idx_map: Optional[Dict[str, int]] = None
+            speaker_to_idx_map: Optional[Dict[str, int]] = None,
+            use_alignment_if_exists: Optional[str] = None
     ) -> np.ndarray:
         """
         Return a matrix of per-speaker activity in a cut. The matrix shape is (num_speakers, num_frames),
@@ -145,6 +146,8 @@ class CutUtilsMixin:
             might have less speakers than that).
         :param speaker_to_idx_map: optional dict mapping speaker names (strings) to their global indices (ints).
             Useful when you want to preserve the order of the speakers (e.g. speaker XYZ is always mapped to index 2)
+        :param use_alignment_if_exists: optional str, key for alignment type to use for generating the mask. If not
+            exists, fall back on supervision time spans.
         """
         assert self.has_features, f"No features available. " \
                                   f"Can't compute supervisions feature mask for cut with ID: {self.id}."
@@ -156,15 +159,22 @@ class CutUtilsMixin:
         mask = np.zeros((num_speakers, self.num_frames))
         for supervision in self.supervisions:
             speaker_idx = speaker_to_idx_map[supervision.speaker]
-            st = round(supervision.start / self.frame_shift) if supervision.start > 0 else 0
-            et = round(supervision.end / self.frame_shift) if supervision.end < self.duration else self.num_frames
-            mask[speaker_idx, st:et] = 1
+            if use_alignment_if_exists and supervision.alignment and use_alignment_if_exists in supervision.alignment:
+                for ali in supervision.alignment[use_alignment_if_exists]:
+                    st = round(ali.start / self.frame_shift) if ali.start > 0 else 0
+                    et = round(ali.end / self.frame_shift) if ali.end < self.duration else self.num_frames
+                    mask[speaker_idx, st:et] = 1
+            else:
+                st = round(supervision.start / self.frame_shift) if supervision.start > 0 else 0
+                et = round(supervision.end / self.frame_shift) if supervision.end < self.duration else self.num_frames
+                mask[speaker_idx, st:et] = 1
         return mask
 
     def speakers_audio_mask(
             self,
             min_speaker_dim: Optional[int] = None,
-            speaker_to_idx_map: Optional[Dict[str, int]] = None
+            speaker_to_idx_map: Optional[Dict[str, int]] = None,
+            use_alignment_if_exists: Optional[str] = None
     ) -> np.ndarray:
         """
         Return a matrix of per-speaker activity in a cut. The matrix shape is (num_speakers, num_samples),
@@ -177,6 +187,8 @@ class CutUtilsMixin:
             might have less speakers than that).
         :param speaker_to_idx_map: optional dict mapping speaker names (strings) to their global indices (ints).
             Useful when you want to preserve the order of the speakers (e.g. speaker XYZ is always mapped to index 2)
+        :param use_alignment_if_exists: optional str, key for alignment type to use for generating the mask. If not
+            exists, fall back on supervision time spans.
         """
         assert self.has_recording, f"No recording available. " \
                                    f"Can't compute supervisions audio mask for cut with ID: {self.id}."
@@ -188,38 +200,62 @@ class CutUtilsMixin:
         mask = np.zeros((num_speakers, self.num_samples))
         for supervision in self.supervisions:
             speaker_idx = speaker_to_idx_map[supervision.speaker]
-            st = round(supervision.start * self.sampling_rate) if supervision.start > 0 else 0
-            et = (
-                round(supervision.end * self.sampling_rate)
-                if supervision.end < self.duration
-                else self.duration * self.sampling_rate
-            )
-            mask[speaker_idx, st:et] = 1
+            if use_alignment_if_exists and supervision.alignment and use_alignment_if_exists in supervision.alignment:
+                for ali in supervision.alignment[use_alignment_if_exists]:
+                    st = round(ali.start * self.sampling_rate) if ali.start > 0 else 0
+                    et = (
+                        round(ali.end * self.sampling_rate)
+                        if ali.end < self.duration
+                        else self.duration * self.sampling_rate
+                    )
+                    mask[speaker_idx, st:et] = 1
+            else:
+                st = round(supervision.start * self.sampling_rate) if supervision.start > 0 else 0
+                et = (
+                    round(supervision.end * self.sampling_rate)
+                    if supervision.end < self.duration
+                    else self.duration * self.sampling_rate
+                )
+                mask[speaker_idx, st:et] = 1
         return mask
 
-    def supervisions_feature_mask(self) -> np.ndarray:
+    def supervisions_feature_mask(self, use_alignment_if_exists: Optional[str] = None) -> np.ndarray:
         """
         Return a 1D numpy array with value 1 for **frames** covered by at least one supervision,
         and 0 for **frames** not covered by any supervision.
+        :param use_alignment_if_exists: optional str, key for alignment type to use for generating the mask. If not
+            exists, fall back on supervision time spans.
         """
-        return compute_supervisions_frame_mask(self)
+        return compute_supervisions_frame_mask(self, use_alignment_if_exists=use_alignment_if_exists)
 
-    def supervisions_audio_mask(self) -> np.ndarray:
+    def supervisions_audio_mask(self, use_alignment_if_exists: Optional[str] = None) -> np.ndarray:
         """
         Return a 1D numpy array with value 1 for **samples** covered by at least one supervision,
         and 0 for **samples** not covered by any supervision.
+        :param use_alignment_if_exists: optional str, key for alignment type to use for generating the mask. If not
+            exists, fall back on supervision time spans.
         """
         assert self.has_recording, f"No recording available. " \
                                    f"Can't compute supervisions audio mask for cut with ID: {self.id}."
         mask = np.zeros(self.num_samples, dtype=np.float32)
         for supervision in self.supervisions:
-            st = round(supervision.start * self.sampling_rate) if supervision.start > 0 else 0
-            et = (
-                round(supervision.end * self.sampling_rate)
-                if supervision.end < self.duration
-                else self.duration * self.sampling_rate
-            )
-            mask[st:et] = 1.0
+            if use_alignment_if_exists and supervision.alignment and use_alignment_if_exists in supervision.alignment:
+                for ali in supervision.alignment[use_alignment_if_exists]:
+                    st = round(ali.start * self.sampling_rate) if ali.start > 0 else 0
+                    et = (
+                        round(ali.end * self.sampling_rate)
+                        if ali.end < self.duration
+                        else self.duration * self.sampling_rate
+                    )
+                    mask[st:et] = 1.0
+            else:
+                st = round(supervision.start * self.sampling_rate) if supervision.start > 0 else 0
+                et = (
+                    round(supervision.end * self.sampling_rate)
+                    if supervision.end < self.duration
+                    else self.duration * self.sampling_rate
+                )
+                mask[st:et] = 1.0
         return mask
 
     def with_id(self, id_: str) -> AnyCut:
@@ -2386,13 +2422,19 @@ def append_cuts(cuts: Iterable[AnyCut]) -> AnyCut:
     return reduce(append, cuts)
 
 
-def compute_supervisions_frame_mask(cut: AnyCut, frame_shift: Optional[Seconds] = None):
+def compute_supervisions_frame_mask(
+    cut: AnyCut,
+    frame_shift: Optional[Seconds] = None,
+    use_alignment_if_exists: Optional[str] = None
+):
     """
     Compute a mask that indicates which frames in a cut are covered by supervisions.
 
     :param cut: a cut object.
     :param frame_shift: optional frame shift in seconds; required when the cut does not have
         pre-computed features, otherwise ignored.
+    :param use_alignment_if_exists: optional str (key from alignment dict); use the specified
+        alignment type for generating the mask
     :returns a 1D numpy array with value 1 for **frames** covered by at least one supervision,
     and 0 for **frames** not covered by any supervision.
     """
@@ -2409,7 +2451,13 @@ def compute_supervisions_frame_mask(cut: AnyCut, frame_shift: Optional[Seconds] 
         )
     mask = np.zeros(num_frames, dtype=np.float32)
     for supervision in cut.supervisions:
-        st = round(supervision.start / frame_shift) if supervision.start > 0 else 0
-        et = round(supervision.end / frame_shift) if supervision.end < cut.duration else num_frames
-        mask[st:et] = 1.0
+        if use_alignment_if_exists and supervision.alignment and use_alignment_if_exists in supervision.alignment:
+            for ali in supervision.alignment[use_alignment_if_exists]:
+                st = round(ali.start / frame_shift) if ali.start > 0 else 0
+                et = round(ali.end / frame_shift) if ali.end < cut.duration else num_frames
+                mask[st:et] = 1.0
+        else:
+            st = round(supervision.start / frame_shift) if supervision.start > 0 else 0
+            et = round(supervision.end / frame_shift) if supervision.end < cut.duration else num_frames
+            mask[st:et] = 1.0
     return mask
