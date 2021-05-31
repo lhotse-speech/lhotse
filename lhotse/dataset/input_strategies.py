@@ -1,5 +1,5 @@
 import logging
-from typing import Callable, Dict, List, Tuple
+from typing import Callable, Dict, List, Tuple, Optional
 
 import torch
 
@@ -115,9 +115,12 @@ class PrecomputedFeatures(InputStrategy):
             'num_frames': torch.tensor(nums_frames, dtype=torch.int32)
         }
 
-    def supervision_masks(self, cuts: CutSet) -> torch.Tensor:
-        """Returns the mask for supervised frames."""
-        return collate_vectors([cut.supervisions_feature_mask() for cut in cuts])
+    def supervision_masks(self, cuts: CutSet, use_alignment_if_exists: Optional[str] = None) -> torch.Tensor:
+        """Returns the mask for supervised frames.
+        :param use_alignment_if_exists: optional str, key for alignment type to use for generating the mask. If not
+            exists, fall back on supervision time spans.
+        """
+        return collate_vectors([cut.supervisions_feature_mask(use_alignment_if_exists=use_alignment_if_exists) for cut in cuts])
 
 
 class AudioSamples(InputStrategy):
@@ -169,9 +172,12 @@ class AudioSamples(InputStrategy):
             'num_samples': torch.tensor(nums_samples, dtype=torch.int32)
         }
 
-    def supervision_masks(self, cuts: CutSet) -> torch.Tensor:
-        """Returns the mask for supervised samples."""
-        return collate_vectors([cut.supervisions_audio_mask() for cut in cuts])
+    def supervision_masks(self, cuts: CutSet, use_alignment_if_exists: Optional[str] = None) -> torch.Tensor:
+        """Returns the mask for supervised samples.
+        :param use_alignment_if_exists: optional str, key for alignment type to use for generating the mask. If not
+            exists, fall back on supervision time spans.
+        """
+        return collate_vectors([cut.supervisions_audio_mask(use_alignment_if_exists=use_alignment_if_exists) for cut in cuts])
 
 
 class OnTheFlyFeatures(InputStrategy):
@@ -268,6 +274,17 @@ class OnTheFlyFeatures(InputStrategy):
             'num_frames': torch.tensor(nums_frames, dtype=torch.int32)
         }
 
-    def supervision_masks(self, cuts: CutSet) -> torch.Tensor:
-        """Returns the mask for supervised samples."""
-        return collate_vectors([compute_supervisions_frame_mask(cut, self.extractor.frame_shift) for cut in cuts])
+    def supervision_masks(self, cuts: CutSet, use_alignment_if_exists: Optional[str] = None) -> torch.Tensor:
+        """Returns the mask for supervised samples.
+        :param use_alignment_if_exists: optional str, key for alignment type to use for generating the mask. If not
+            exists, fall back on supervision time spans.
+        """
+        return collate_vectors(
+            [
+                compute_supervisions_frame_mask(
+                    cut,
+                    frame_shift=self.extractor.frame_shift,
+                    use_alignment_if_exists=use_alignment_if_exists
+                ) for cut in cuts
+            ]
+        )
