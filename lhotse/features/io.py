@@ -438,7 +438,7 @@ Lilcom-compressed URL writers
 class LilcomURLReader(FeaturesReader):
     """
     Downloads Lilcom-compressed files from a URL (S3, GCP, Azure, HTTP, etc.).
-    ``storage_path`` corresponds to the root URL (e.g. "s3://my-data-bucket/")
+    ``storage_path`` corresponds to the root URL (e.g. "s3://my-data-bucket")
     ``storage_key`` will be concatenated to ``storage_path`` to form a full URL (e.g. "my-feature-file.llc")
     ``transport_params`` is an optional paramater that is passed through to ``smart_open``
 
@@ -456,7 +456,9 @@ class LilcomURLReader(FeaturesReader):
     ):
         super().__init__()
         self.base_url = str(storage_path)
-        assert self.base_url.endswith('/'), f'The base URL (storage_path) must end with "/" (was "{self.base_url}")'
+        # We are manually adding the slash to join the base URL and the key.
+        if self.base_url.endswith('/'):
+            self.base_url = self.base_url[:-1]
         self.transport_params = transport_params
 
     def read(
@@ -466,7 +468,10 @@ class LilcomURLReader(FeaturesReader):
             right_offset_frames: Optional[int] = None
     ) -> np.ndarray:
         import smart_open
-        with smart_open.open(self.storage_path + key, 'rb', transport_params=self.transport_params) as f:
+        # We are manually adding the slash to join the base URL and the key.
+        if key.startswith('/'):
+            key = key[1:]
+        with smart_open.open(f'{self.storage_path}/{key}', 'rb', transport_params=self.transport_params) as f:
             arr = lilcom.decompress(f.read())
         return arr[left_offset_frames: right_offset_frames]
 
@@ -475,7 +480,7 @@ class LilcomURLReader(FeaturesReader):
 class LilcomURLWriter(FeaturesWriter):
     """
     Writes Lilcom-compressed files to a URL (S3, GCP, Azure, HTTP, etc.).
-    ``storage_path`` corresponds to the root URL (e.g. "s3://my-data-bucket/")
+    ``storage_path`` corresponds to the root URL (e.g. "s3://my-data-bucket")
     ``storage_key`` will be concatenated to ``storage_path`` to form a full URL (e.g. "my-feature-file.llc")
     ``transport_params`` is an optional paramater that is passed through to ``smart_open``
 
@@ -494,7 +499,9 @@ class LilcomURLWriter(FeaturesWriter):
     ):
         super().__init__()
         self.base_url = str(storage_path)
-        assert self.base_url.endswith('/'), f'The base URL (storage_path) must end with "/" (was "{self.base_url}")'
+        # We are manually adding the slash to join the base URL and the key.
+        if self.base_url.endswith('/'):
+            self.base_url = self.base_url[:-1]
         self.tick_power = tick_power
         self.transport_params = transport_params
 
@@ -504,7 +511,10 @@ class LilcomURLWriter(FeaturesWriter):
 
     def write(self, key: str, value: np.ndarray) -> str:
         import smart_open
-        output_features_url = f'{self.base_url}{key}.llc'
+        # We are manually adding the slash to join the base URL and the key.
+        if key.startswith('/'):
+            key = key[1:]
+        output_features_url = f'{self.base_url}/{key}.llc'
         serialized_feats = lilcom.compress(value, tick_power=self.tick_power)
         with smart_open.open(output_features_url, 'wb', transport_params=self.transport_params) as f:
             f.write(serialized_feats)
