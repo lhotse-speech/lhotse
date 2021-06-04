@@ -1967,7 +1967,7 @@ class CutSet(Serializable, Sequence[AnyCut]):
             >>> cuts = CutSet(...)
             ... cuts.compute_and_store_features(
             ...     extractor=Fbank(),
-            ...     storage_path='s3://my-feature-bucket',
+            ...     storage_path='s3://my-feature-bucket/my-corpus-features',
             ...     num_jobs=8,
             ...     storage_type=LilcomURLWriter
             ... )
