@@ -81,6 +81,7 @@ def extract(
 @feat.command(context_settings=dict(show_default=True))
 @click.argument('feature_manifest', type=click.Path(exists=True, dir_okay=False))
 @click.argument('url')
+@click.argument('output_manifest', type=click.Path())
 def upload(
         feature_manifest: Pathlike,
         url: str,
