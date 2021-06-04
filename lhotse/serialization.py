@@ -165,8 +165,11 @@ class SequentialJsonlWriter:
         Serializes a manifest item (e.g. :class:`~lhotse.audio.Recording`,
         :class:`~lhotse.cut.Cut`, etc.) to JSON and stores it in a JSONL file.
         """
-        if manifest.id in self.ignore_ids:
-            return
+        try:
+            if manifest.id in self.ignore_ids:
+                return
+        except AttributeError:
+            pass
         print(
             json.dumps(manifest.to_dict(), cls=NumpyEncoder),
             file=self.file
