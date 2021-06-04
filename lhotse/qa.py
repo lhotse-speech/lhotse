@@ -294,7 +294,7 @@ def validate_feature_set(features: FeatureSet, read_data: bool = False) -> None:
     first = next(iter(features))
     sampling_rate = first.sampling_rate
     num_features = first.num_features
-    features_type = first.features_type
+    features_type = first.type
     for idx, f in enumerate(features):
         validate_features(f, read_data=read_data)
         assert f.sampling_rate == sampling_rate, \

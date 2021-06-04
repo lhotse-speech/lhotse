@@ -1,6 +1,6 @@
 import pytest
 
-from lhotse import Features, RecordingSet, SupervisionSet
+from lhotse import FeatureSet, Features, RecordingSet, SupervisionSet, validate
 from lhotse.qa import remove_missing_recordings_and_supervisions, validate_features
 from lhotse.testing.dummies import DummyManifest
 
@@ -45,3 +45,8 @@ def test_remove_missing_recordings_and_supervisions():
     expected_ids = [f'dummy-recording-{idx:04d}' for idx in range(50, 100)]
     assert [r.id for r in fix_recs] == expected_ids
     assert [s.recording_id for s in fix_sups] == expected_ids
+
+
+def test_validate_feature_set_runs():
+    features = DummyManifest(FeatureSet, begin_id=0, end_id=100)
+    validate(features)
