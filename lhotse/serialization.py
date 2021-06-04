@@ -138,7 +138,7 @@ class SequentialJsonlWriter:
         if self.path.is_file() and not overwrite:
             self.mode = 'at' if self.compressed else 'a'
             with self._open(self.path) as f:
-                self.ignore_ids = {json.loads(line)['id'] for line in f}
+                self.ignore_ids = {data['id'] for data in (json.loads(line) for line in f) if 'id' in data}
 
     def __enter__(self) -> 'SequentialJsonlWriter':
         self.file = self._open(self.path, self.mode)
@@ -150,7 +150,12 @@ class SequentialJsonlWriter:
     def __contains__(self, item: Union[str, Any]) -> bool:
         if isinstance(item, str):
             return item in self.ignore_ids
-        return item.id in self.ignore_ids
+        try:
+            return item.id in self.ignore_ids
+        except AttributeError:
+            # The only case when this happens is for the FeatureSet -- Features do not have IDs.
+            # In that case we can't know if they are already written or not.
+            return False
 
     def contains(self, item: Union[str, Any]) -> bool:
         return item in self
