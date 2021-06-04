@@ -514,8 +514,11 @@ class LilcomURLWriter(FeaturesWriter):
         # We are manually adding the slash to join the base URL and the key.
         if key.startswith('/'):
             key = key[1:]
-        output_features_url = f'{self.base_url}/{key}.llc'
+        # Add lilcom extension.
+        if not key.endswith('.llc'):
+            key = key + '.llc'
+        output_features_url = f'{self.base_url}/{key}'
         serialized_feats = lilcom.compress(value, tick_power=self.tick_power)
         with smart_open.open(output_features_url, 'wb', transport_params=self.transport_params) as f:
             f.write(serialized_feats)
-        return f'{key}.llc'
+        return key

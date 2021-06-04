@@ -2,13 +2,15 @@ from pathlib import Path
 from typing import Optional
 
 import click
+from tqdm import tqdm
 
+from lhotse import FeatureSet, LilcomURLWriter
 from lhotse.audio import RecordingSet
 from lhotse.bin.modes.cli_base import cli
 from lhotse.features import Fbank, FeatureExtractor, FeatureSetBuilder, create_default_feature_extractor
 from lhotse.features.base import FEATURE_EXTRACTORS
 from lhotse.features.io import available_storage_backends, get_writer
-from lhotse.utils import Pathlike
+from lhotse.utils import Pathlike, fastcopy
 
 
 @cli.group()
@@ -74,3 +76,41 @@ def extract(
             output_manifest=output_dir / 'feature_manifest.json.gz',
             num_jobs=num_jobs
         )
+
+
+@feat.command(context_settings=dict(show_default=True))
+@click.argument('feature_manifest', type=click.Path(exists=True, dir_okay=False))
+@click.argument('url')
+def upload(
+        feature_manifest: Pathlike,
+        url: str,
+        output_manifest: Pathlike
+):
+    """
+    Read an existing FEATURE_MANIFEST, upload the feature matrices it contains to a URL location,
+    and save a new feature OUTPUT_MANIFEST that refers to the uploaded features.
+
+    The URL can refer to endpoints such as AWS S3, GCP, Azure, etc.
+    For example: "s3://my-bucket/my-features" is a valid URL.
+
+    This script does not currently support credentials,
+    and assumes that you have the write permissions.
+    """
+    output_manifest = Path(output_manifest)
+    assert '.jsonl' in output_manifest.suffixes, 'This mode only supports writing to JSONL feature manifests.'
+
+    local_features: FeatureSet = FeatureSet.from_file(feature_manifest)
+
+    with LilcomURLWriter(url) as feats_writer, \
+            FeatureSet.open_writer(output_manifest) as manifest_writer:
+        for item in tqdm(local_features, desc=f'Uploading features to {url}'):
+            if item.storage_key in manifest_writer:
+                continue
+            feats_mtx = item.load()
+            new_key = feats_writer.write(key=item.storage_key, value=feats_mtx)
+            manifest_writer.write(fastcopy(
+                item,
+                storage_path=url,
+                storage_key=new_key,
+                storage_type=feats_writer.name
+            ))
