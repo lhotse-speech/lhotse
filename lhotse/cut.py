@@ -4,7 +4,7 @@ import warnings
 from concurrent.futures import Executor, ProcessPoolExecutor
 from dataclasses import dataclass, field
 from functools import partial, reduce
-from itertools import islice, chain
+from itertools import islice
 from math import ceil, floor
 from pathlib import Path
 from typing import Any, Callable, Dict, FrozenSet, Iterable, List, Mapping, Optional, Sequence, Type, TypeVar, Union
@@ -1961,6 +1961,17 @@ class CutSet(Serializable, Sequence[AnyCut]):
             ...     executor=Client(...)
             ... )
 
+            Extract fbank features on one machine using 8 processes,
+            store each array in an S3 bucket (requires ``smart_open``):
+
+            >>> cuts = CutSet(...)
+            ... cuts.compute_and_store_features(
+            ...     extractor=Fbank(),
+            ...     storage_path='s3://my-feature-bucket/my-corpus-features',
+            ...     num_jobs=8,
+            ...     storage_type=LilcomURLWriter
+            ... )
+
         :param extractor: A ``FeatureExtractor`` instance
             (either Lhotse's built-in or a custom implementation).
         :param storage_path: The path to location where we will store the features.
@@ -2022,10 +2033,19 @@ class CutSet(Serializable, Sequence[AnyCut]):
                     )
                 )
 
-        # We are now sure that "storage_path" will be the root for
-        # multiple feature storages - we can create it as a directory
-        storage_path = Path(storage_path)
-        storage_path.mkdir(parents=True, exist_ok=True)
+        # HACK: support URL storage for writing
+        if '://' in str(storage_path):
+            # "storage_path" is actually an URL
+            def sub_storage_path(idx: int) -> str:
+                return f'{storage_path}/feats-{idx}'
+        else:
+            # We are now sure that "storage_path" will be the root for
+            # multiple feature storages - we can create it as a directory
+            storage_path = Path(storage_path)
+            storage_path.mkdir(parents=True, exist_ok=True)
+
+            def sub_storage_path(idx: int) -> str:
+                return storage_path / f'feats-{idx}'
 
         # Parallel execution: prepare the CutSet splits
         cut_sets = self.split(num_jobs, shuffle=True)
@@ -2041,7 +2061,7 @@ class CutSet(Serializable, Sequence[AnyCut]):
                 CutSet.compute_and_store_features,
                 cs,
                 extractor=extractor,
-                storage_path=storage_path / f'feats-{i}',
+                storage_path=sub_storage_path(i),
                 augment_fn=augment_fn,
                 storage_type=storage_type,
                 mix_eagerly=mix_eagerly,
