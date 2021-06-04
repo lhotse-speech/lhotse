@@ -1,10 +1,11 @@
+from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 from typing import Optional
 
 import click
 from tqdm import tqdm
 
-from lhotse import FeatureSet, LilcomURLWriter
+from lhotse import FeatureSet, Features, LilcomURLWriter
 from lhotse.audio import RecordingSet
 from lhotse.bin.modes.cli_base import cli
 from lhotse.features import Fbank, FeatureExtractor, FeatureSetBuilder, create_default_feature_extractor
@@ -82,10 +83,12 @@ def extract(
 @click.argument('feature_manifest', type=click.Path(exists=True, dir_okay=False))
 @click.argument('url')
 @click.argument('output_manifest', type=click.Path())
+@click.option('--num-jobs', '-j', type=int, default=1)
 def upload(
         feature_manifest: Pathlike,
         url: str,
-        output_manifest: Pathlike
+        output_manifest: Pathlike,
+        num_jobs: int
 ):
     """
     Read an existing FEATURE_MANIFEST, upload the feature matrices it contains to a URL location,
@@ -102,16 +105,22 @@ def upload(
 
     local_features: FeatureSet = FeatureSet.from_file(feature_manifest)
 
-    with LilcomURLWriter(url) as feats_writer, \
-            FeatureSet.open_writer(output_manifest) as manifest_writer:
-        for item in tqdm(local_features, desc=f'Uploading features to {url}'):
-            if item.storage_key in manifest_writer:
-                continue
-            feats_mtx = item.load()
-            new_key = feats_writer.write(key=item.storage_key, value=feats_mtx)
-            manifest_writer.write(fastcopy(
-                item,
-                storage_path=url,
-                storage_key=new_key,
-                storage_type=feats_writer.name
-            ))
+    with FeatureSet.open_writer(output_manifest) as manifest_writer, \
+            ProcessPoolExecutor(num_jobs) as ex:
+        futures = []
+        for item in tqdm(local_features, desc='Submitting parallel uploading tasks...'):
+            futures.append(ex.submit(_upload_one, item))
+        for item in tqdm(futures, desc=f'Uploading features to {url}'):
+            manifest_writer.write(item)
+
+
+def _upload_one(item: Features, url: str) -> Features:
+    feats_mtx = item.load()
+    feats_writer = LilcomURLWriter(url)
+    new_key = feats_writer.write(key=item.storage_key, value=feats_mtx)
+    return fastcopy(
+        item,
+        storage_path=url,
+        storage_key=new_key,
+        storage_type=feats_writer.name
+    )
