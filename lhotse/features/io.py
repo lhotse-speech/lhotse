@@ -456,7 +456,7 @@ class LilcomURLReader(FeaturesReader):
     ):
         super().__init__()
         self.base_url = str(storage_path)
-        assert self.base_url.endswith('/'), 'The base URL (storage_path) must end with "/"'
+        assert self.base_url.endswith('/'), f'The base URL (storage_path) must end with "/" (was "{self.base_url}")'
         self.transport_params = transport_params
 
     def read(
@@ -494,7 +494,7 @@ class LilcomURLWriter(FeaturesWriter):
     ):
         super().__init__()
         self.base_url = str(storage_path)
-        assert self.base_url.endswith('/'), 'The base URL (storage_path) must end with "/"'
+        assert self.base_url.endswith('/'), f'The base URL (storage_path) must end with "/" (was "{self.base_url}")'
         self.tick_power = tick_power
         self.transport_params = transport_params
 
