@@ -109,7 +109,7 @@ def upload(
             ProcessPoolExecutor(num_jobs) as ex:
         futures = []
         for item in tqdm(local_features, desc='Submitting parallel uploading tasks...'):
-            futures.append(ex.submit(_upload_one, item))
+            futures.append(ex.submit(_upload_one, item, url))
         for item in tqdm(futures, desc=f'Uploading features to {url}'):
             manifest_writer.write(item.result())
 
