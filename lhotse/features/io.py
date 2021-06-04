@@ -471,7 +471,7 @@ class LilcomURLReader(FeaturesReader):
         # We are manually adding the slash to join the base URL and the key.
         if key.startswith('/'):
             key = key[1:]
-        with smart_open.open(f'{self.storage_path}/{key}', 'rb', transport_params=self.transport_params) as f:
+        with smart_open.open(f'{self.base_url}/{key}', 'rb', transport_params=self.transport_params) as f:
             arr = lilcom.decompress(f.read())
         return arr[left_offset_frames: right_offset_frames]
 
