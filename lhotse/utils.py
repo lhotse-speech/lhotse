@@ -72,53 +72,6 @@ def asdict_nonull(dclass) -> Dict[str, Any]:
     return asdict(dclass, dict_factory=non_null_dict_factory)
 
 
-def asdict_nonull_recursive(dclass) -> Dict[str, Any]:
-    """
-    Same as :meth:asdict_nonull, but also handles recursive conversion of namedtuples and
-    dataclasses. Code modified from:
-    https://codereview.stackexchange.com/questions/209898/unpack-a-nested-dataclass-and-named-tuple
-    """
-    def is_data_class_instance(obj)   -> bool:
-        data_class_attrs = {'__dataclass_fields__', '__dataclass_params__'}
-        return set(dir(obj)).intersection(data_class_attrs) == data_class_attrs
-
-    def is_named_tuple_instance(obj) -> bool:
-        _type = type(obj)
-        bases = _type.__bases__
-        if len(bases) != 1 or bases[0] != tuple:
-            return False
-        fields = getattr(_type, '_fields', None)
-        if not isinstance(fields, tuple):
-            return False
-        return all(type(i)==str for i in fields)
-    
-    def unpack(obj):
-        if isinstance(obj, dict):
-            return {key: unpack(value) for key, value in obj.items()}
-        elif isinstance(obj, list):
-            return [unpack(value) for value in obj]
-        elif is_named_tuple_instance(obj):
-            return {key: unpack(value) for key, value in obj._asdict().items()}
-        elif is_data_class_instance(obj):
-            return {key: unpack(getattr(obj, key)) for key in obj.__dataclass_fields__.keys()}
-        elif isinstance(obj, tuple):
-            return tuple(unpack(value) for value in obj)
-        else:
-            return obj
-    
-    def non_null_dict_factory(collection):
-        d = dict(collection)
-        remove_keys = []
-        for key, val in d.items():
-            if val is None:
-                remove_keys.append(key)
-            else:
-                d[key] = unpack(val)
-        for k in remove_keys:
-            del d[k]
-        return d
-
-    return asdict(dclass, dict_factory=non_null_dict_factory)
 
 
 class SetContainingAnything:
