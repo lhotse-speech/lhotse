@@ -4,7 +4,7 @@ import warnings
 from concurrent.futures import Executor, ProcessPoolExecutor
 from dataclasses import dataclass, field
 from functools import partial, reduce
-from itertools import islice, chain
+from itertools import islice
 from math import ceil, floor
 from pathlib import Path
 from typing import Any, Callable, Dict, FrozenSet, Iterable, List, Mapping, Optional, Sequence, Type, TypeVar, Union
