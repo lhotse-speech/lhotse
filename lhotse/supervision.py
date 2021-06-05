@@ -2,10 +2,10 @@ import logging
 from dataclasses import dataclass
 from itertools import islice, groupby
 from collections import defaultdict
-from typing import Any, Callable, Dict, Iterable, List, Mapping, NamedTuple, Optional, Sequence
+from typing import Any, Callable, Dict, Iterable, List, Mapping, Optional, Sequence
 
 from lhotse.serialization import Serializable
-from lhotse.utils import Pathlike, Seconds, TimeSpan, asdict_nonull, asdict_nonull_recursive, exactly_one_not_null, fastcopy, \
+from lhotse.utils import Pathlike, Seconds, TimeSpan, asdict_nonull, exactly_one_not_null, fastcopy, \
     ifnone, index_by_id_and_check, overspans, \
     perturb_num_samples, split_sequence, compute_num_samples
 
@@ -200,15 +200,11 @@ class SupervisionSegment:
                     for item in ali
                 ]
                 for ali_type, ali in self.alignment.items()
-            } if self.alignment else None
+            }
         )
 
     def to_dict(self) -> dict:
-        """
-        We use the recursive conversion only if alignments are present, since it may
-        potentially be slower due to type checking of member objects.
-        """
-        return asdict_nonull(self) if self.alignment is None else asdict_nonull_recursive(self)
+        return asdict_nonull(self)
 
     @staticmethod
     def from_dict(data: dict) -> 'SupervisionSegment':
@@ -284,7 +280,6 @@ class SupervisionSet(Serializable, Sequence[SupervisionSegment]):
                     segments.append(fastcopy(seg, alignment={type: alignment}))
             else:
                 segments.append([s for s in self.find(recording_id=reco_id)])
-        print (segments)
         logging.info(f"{num_overspanned} alignments added out of {num_total} total. If there are several"
             " missing, there could be a mismatch problem.")
         return SupervisionSet.from_segments(segments)
