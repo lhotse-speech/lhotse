@@ -7,7 +7,7 @@ from decimal import ROUND_HALF_UP
 from functools import lru_cache
 from io import BytesIO
 from itertools import islice
-from math import sqrt
+from math import ceil, sqrt
 from pathlib import Path
 from subprocess import PIPE, run
 from typing import Any, Callable, Dict, Iterable, List, Mapping, NamedTuple, Optional, Sequence, Tuple, Union
@@ -203,7 +203,17 @@ class Recording:
                                                           f"(recording channels: {recording_channels} -- " \
                                                           f"requested channels: {channels})"
 
-        offset_sp, duration_sp = self._adjust_for_speed_perturbation(offset, duration)
+        transforms = [AudioTransform.from_dict(params) for params in self.transforms or []]
+
+        # Do a "backward pass" over data augmentation transforms to get the
+        # offset and duration for loading a piece of the original audio.
+        offset_aug, duration_aug = offset, duration
+        for tfn in reversed(transforms):
+            offset_aug, duration_aug = tfn.reverse_timestamps(
+                offset=offset_aug,
+                duration=duration_aug,
+                sampling_rate=self.sampling_rate
+            )
 
         samples_per_source = []
         for source in self.sources:
@@ -211,8 +221,8 @@ class Recording:
             if not channels.intersection(source.channels):
                 continue
             samples = source.load_audio(
-                offset=offset_sp,
-                duration=duration_sp,
+                offset=offset_aug,
+                duration=duration_aug,
             )
 
             # Case: two-channel audio file but only one channel requested
@@ -229,28 +239,17 @@ class Recording:
         audio = np.vstack(samples_per_source)
 
         # We'll apply the transforms now (if any).
-        for params in self.transforms or []:
-            transform = AudioTransform.from_dict(params)
-            audio = transform(audio, self.sampling_rate)
+        for tfn in transforms:
+            audio = tfn(audio, self.sampling_rate)
 
-        # When resampling in high sampling rates (48k -> 44.1k)
-        # it is difficult to estimate how sox will perform rounding;
-        # we will just add/remove one sample to be consistent with
-        # what we have estimated.
-        expected_num_samples = self._expected_num_samples(offset, duration)
-        diff = expected_num_samples - audio.shape[1]
-        if diff == 0:
-            pass  # this is normal condition
-        elif diff == 1:
-            # note the extra colon in -1:, which preserves the shape
-            audio = np.append(audio, audio[:, -1:], axis=1)
-        elif diff == -1:
-            audio = audio[:, :-1]
-        else:
-            raise ValueError("The number of declared samples in the recording diverged from the one obtained "
-                             "when loading audio. This could be internal Lhotse's error or a faulty "
-                             "transform implementation. Please report this issue in Lhotse and show the "
-                             f"following: diff={diff}, audio.shape={audio.shape}, recording={self}")
+        # Transformation chains can introduce small mismatches in the number of samples:
+        # we'll fix them here, or raise an error if they exceeded a tolerance threshold.
+        audio = assert_and_maybe_fix_num_samples(
+            audio,
+            offset=offset,
+            duration=duration,
+            recording=self
+        )
 
         return audio
 
@@ -259,25 +258,6 @@ class Recording:
             return self.num_samples
         duration = duration if duration is not None else self.duration - offset
         return compute_num_samples(duration, sampling_rate=self.sampling_rate)
-
-    def _adjust_for_speed_perturbation(self, offset: Seconds, duration: Seconds) -> Tuple[Seconds, Seconds]:
-        """
-        This internal method helps estimate the original offset and duration for a recording
-        before speed perturbation was applied.
-        We need this estimate to know how much audio to actually load from disk during the
-        call to ``load_audio()``.
-        """
-        if self.transforms is None or all(t['name'] != 'Speed' for t in self.transforms):
-            return offset, duration
-        start_sample = offset * self.sampling_rate
-        num_samples = duration * self.sampling_rate if duration is not None else None
-        for tfr in reversed(self.transforms):
-            if tfr['name'] != 'Speed':
-                continue
-            factor = tfr['kwargs']['factor']
-            start_sample = perturb_num_samples(start_sample, 1 / factor)
-            num_samples = perturb_num_samples(num_samples, 1 / factor) if num_samples is not None else None
-        return start_sample / self.sampling_rate, num_samples / self.sampling_rate if num_samples is not None else None
 
     def with_path_prefix(self, path: Pathlike) -> 'Recording':
         return fastcopy(self, sources=[s.with_path_prefix(path) for s in self.sources])
@@ -798,3 +778,46 @@ def _buf_to_float(x, n_bytes=2, dtype=np.float32):
 
     # Rescale and format the data buffer
     return scale * np.frombuffer(x, fmt).astype(dtype)
+
+
+# This constant defines by how much our estimation can be mismatched with
+# the actual number of samples after applying audio augmentation.
+# Chains of augmentation effects (such as resampling, speed perturb) can cause
+# difficult to predict roundings and return a few samples more/less than we estimate.
+# The default tolerance is a quarter of a millisecond
+# (the actual number of samples is computed based on the sampling rate).
+AUGMENTATION_DURATION_TOLERANCE: Seconds = 0.00025
+
+
+def assert_and_maybe_fix_num_samples(
+        audio: np.ndarray,
+        offset: Seconds,
+        duration: Optional[Seconds],
+        recording: Recording
+) -> np.ndarray:
+    # When resampling in high sampling rates (48k -> 44.1k)
+    # it is difficult to estimate how sox will perform rounding;
+    # we will just add/remove one sample to be consistent with
+    # what we have estimated.
+    # This effect is exacerbated by chaining multiple augmentations together.
+    expected_num_samples = compute_num_samples(
+        duration=duration if duration is not None else recording.duration - offset,
+        sampling_rate=recording.sampling_rate
+    )
+    diff = expected_num_samples - audio.shape[1]
+    if diff == 0:
+        return audio  # this is normal condition
+    allowed_diff = int(ceil(AUGMENTATION_DURATION_TOLERANCE * recording.sampling_rate))
+    if 0 < diff <= allowed_diff:
+        # note the extra colon in -1:, which preserves the shape
+        audio = np.append(audio, audio[:, -diff:], axis=1)
+        return audio
+    elif -allowed_diff <= diff < 0:
+        audio = audio[:, :diff]
+        return audio
+    else:
+        raise ValueError("The number of declared samples in the recording diverged from the one obtained "
+                         f"when loading audio (offset={offset}, duration={duration}). "
+                         f"This could be internal Lhotse's error or a faulty transform implementation. "
+                         "Please report this issue in Lhotse and show the "
+                         f"following: diff={diff}, audio.shape={audio.shape}, recording={recording}")

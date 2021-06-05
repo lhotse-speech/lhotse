@@ -16,6 +16,8 @@ from .io import (
     LilcomFilesWriter,
     LilcomHdf5Reader,
     LilcomHdf5Writer,
+    LilcomURLReader,
+    LilcomURLWriter,
     NumpyFilesReader,
     NumpyFilesWriter,
     NumpyHdf5Reader,
