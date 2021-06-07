@@ -2143,7 +2143,7 @@ class CutSet(Serializable, Sequence[AnyCut]):
             https://lhotse.readthedocs.io/en/latest/parallelism.html
         :param progress_bar: Should a progress bar be displayed (automatically turned off
             for parallel computation).
-        :return: Returns a new ``CutSet`` with ``Features`` manifests attached to the cuts.
+        :return: Returns a new ``CutSet``.
         """
         from lhotse.manipulation import combine
         from cytoolz import identity
