@@ -1,13 +1,12 @@
 import logging
-from dataclasses import dataclass
-from itertools import islice, groupby
 from collections import defaultdict
+from dataclasses import dataclass
+from itertools import groupby, islice
 from typing import Any, Callable, Dict, Iterable, List, Mapping, Optional, Sequence
 
 from lhotse.serialization import Serializable
-from lhotse.utils import Pathlike, Seconds, TimeSpan, asdict_nonull, exactly_one_not_null, fastcopy, \
-    ifnone, index_by_id_and_check, overspans, \
-    perturb_num_samples, split_sequence, compute_num_samples
+from lhotse.utils import Pathlike, Seconds, TimeSpan, asdict_nonull, compute_num_samples, exactly_one_not_null, \
+    fastcopy, ifnone, index_by_id_and_check, overspans, perturb_num_samples, split_sequence
 
 
 @dataclass(frozen=True, unsafe_hash=True)
@@ -284,7 +283,6 @@ class SupervisionSet(Serializable, Sequence[SupervisionSegment]):
             " missing, there could be a mismatch problem.")
         return SupervisionSet.from_segments(segments)
                           
-
     def write_alignment_to_ctm(self, ctm_file: Pathlike, type: str = 'word') -> None:
         """
         Write alignments to CTM file.
@@ -298,21 +296,24 @@ class SupervisionSet(Serializable, Sequence[SupervisionSegment]):
                     for ali in s.alignment[type]:
                         f.write(f'{s.recording_id} {s.channel} {ali.start:.02f} {ali.duration:.02f} {ali.symbol}\n')
                 
-    
     def to_dicts(self) -> Iterable[dict]:
         return (s.to_dict() for s in self)
 
-    def split(self, num_splits: int, shuffle: bool = False) -> List['SupervisionSet']:
+    def split(self, num_splits: int, shuffle: bool = False, drop_last: bool = False) -> List['SupervisionSet']:
         """
-        Split the ``SupervisionSet`` into ``num_splits`` pieces of equal size.
+        Split the :class:`~lhotse.SupervisionSet` into ``num_splits`` pieces of equal size.
 
         :param num_splits: Requested number of splits.
-        :param shuffle: Optionally shuffle the supervisions order first.
-        :return: A list of ``SupervisionSet`` pieces.
+        :param shuffle: Optionally shuffle the recordings order first.
+        :param drop_last: determines how to handle splitting when ``len(seq)`` is not divisible
+            by ``num_splits``. When ``False`` (default), the splits might have unequal lengths.
+            When ``True``, it may discard the last element in some splits to ensure they are
+            equally long.
+        :return: A list of :class:`~lhotse.SupervisionSet` pieces.
         """
         return [
             SupervisionSet.from_segments(subset) for subset in
-            split_sequence(self, num_splits=num_splits, shuffle=shuffle)
+            split_sequence(self, num_splits=num_splits, shuffle=shuffle, drop_last=drop_last)
         ]
 
     def subset(self, first: Optional[int] = None, last: Optional[int] = None) -> 'SupervisionSet':

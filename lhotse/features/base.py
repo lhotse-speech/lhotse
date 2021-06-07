@@ -424,17 +424,21 @@ class FeatureSet(Serializable, Sequence[Features]):
     def with_path_prefix(self, path: Pathlike) -> 'FeatureSet':
         return FeatureSet.from_features(f.with_path_prefix(path) for f in self)
 
-    def split(self, num_splits: int, shuffle: bool = False) -> List['FeatureSet']:
+    def split(self, num_splits: int, shuffle: bool = False, drop_last: bool = False) -> List['FeatureSet']:
         """
-        Split the ``FeatureSet`` into ``num_splits`` pieces of equal size.
+        Split the :class:`~lhotse.FeatureSet` into ``num_splits`` pieces of equal size.
 
         :param num_splits: Requested number of splits.
-        :param shuffle: Optionally shuffle the features order first.
-        :return: A list of ``FeatureSet`` pieces.
+        :param shuffle: Optionally shuffle the recordings order first.
+        :param drop_last: determines how to handle splitting when ``len(seq)`` is not divisible
+            by ``num_splits``. When ``False`` (default), the splits might have unequal lengths.
+            When ``True``, it may discard the last element in some splits to ensure they are
+            equally long.
+        :return: A list of :class:`~lhotse.FeatureSet` pieces.
         """
         return [
             FeatureSet.from_features(subset) for subset in
-            split_sequence(self, num_splits=num_splits, shuffle=shuffle)
+            split_sequence(self, num_splits=num_splits, shuffle=shuffle, drop_last=drop_last)
         ]
 
     def subset(self, first: Optional[int] = None, last: Optional[int] = None) -> 'FeatureSet':

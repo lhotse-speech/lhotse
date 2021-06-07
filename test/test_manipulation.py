@@ -31,13 +31,35 @@ def test_split_randomize(manifest_type):
 
 
 @mark.parametrize('manifest_type', [RecordingSet, SupervisionSet, FeatureSet, CutSet])
-def test_split_odd(manifest_type):
+@mark.parametrize('drop_last', [True, False])
+def test_split_odd_1(manifest_type, drop_last):
     manifest = DummyManifest(manifest_type, begin_id=0, end_id=100)
-    manifest_subsets = manifest.split(num_splits=3)
+    manifest_subsets = manifest.split(num_splits=3, drop_last=drop_last)
     assert len(manifest_subsets) == 3
-    assert manifest_subsets[0] == DummyManifest(manifest_type, begin_id=0, end_id=34)
-    assert manifest_subsets[1] == DummyManifest(manifest_type, begin_id=34, end_id=68)
-    assert manifest_subsets[2] == DummyManifest(manifest_type, begin_id=68, end_id=100)
+    if drop_last:
+        assert manifest_subsets[0] == DummyManifest(manifest_type, begin_id=0, end_id=33)
+        assert manifest_subsets[1] == DummyManifest(manifest_type, begin_id=33, end_id=66)
+        assert manifest_subsets[2] == DummyManifest(manifest_type, begin_id=66, end_id=99)
+    else:
+        assert manifest_subsets[0] == DummyManifest(manifest_type, begin_id=0, end_id=34)
+        assert manifest_subsets[1] == DummyManifest(manifest_type, begin_id=34, end_id=67)
+        assert manifest_subsets[2] == DummyManifest(manifest_type, begin_id=67, end_id=100)
+
+
+@mark.parametrize('manifest_type', [RecordingSet, SupervisionSet, FeatureSet, CutSet])
+@mark.parametrize('drop_last', [True, False])
+def test_split_odd_2(manifest_type, drop_last):
+    manifest = DummyManifest(manifest_type, begin_id=0, end_id=32)
+    manifest_subsets = manifest.split(num_splits=3, drop_last=drop_last)
+    assert len(manifest_subsets) == 3
+    if drop_last:
+        assert manifest_subsets[0] == DummyManifest(manifest_type, begin_id=0, end_id=10)
+        assert manifest_subsets[1] == DummyManifest(manifest_type, begin_id=10, end_id=20)
+        assert manifest_subsets[2] == DummyManifest(manifest_type, begin_id=20, end_id=30)
+    else:
+        assert manifest_subsets[0] == DummyManifest(manifest_type, begin_id=0, end_id=11)
+        assert manifest_subsets[1] == DummyManifest(manifest_type, begin_id=11, end_id=22)
+        assert manifest_subsets[2] == DummyManifest(manifest_type, begin_id=22, end_id=32)
 
 
 @mark.parametrize('manifest_type', [RecordingSet, SupervisionSet, FeatureSet, CutSet])
