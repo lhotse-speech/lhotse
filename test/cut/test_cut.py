@@ -1,4 +1,6 @@
 import pytest
+from tempfile import NamedTemporaryFile
+import numpy as np
 
 from lhotse.audio import AudioSource, Recording, RecordingSet
 from lhotse.cut import Cut, CutSet
@@ -76,6 +78,18 @@ def test_load_none_features(libri_cut):
     libri_cut.features = None
     feats = libri_cut.load_features()
     assert feats is None
+
+
+def test_store_audio(libri_cut):
+    with NamedTemporaryFile() as f:
+        stored_cut = libri_cut.compute_and_store_recording(f.name)
+        samples1 = libri_cut.load_audio()
+        rec = Recording.from_file(f.name)
+        samples2 = rec.load_audio()
+        assert np.array_equal(samples1, samples2)
+        assert rec.duration == libri_cut.duration
+        assert rec.duration == stored_cut.duration
+        assert libri_cut.duration == stored_cut.duration
 
 
 @pytest.fixture

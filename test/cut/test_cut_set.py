@@ -1,5 +1,6 @@
 import pickle
-from tempfile import NamedTemporaryFile
+from tempfile import NamedTemporaryFile, TemporaryDirectory
+import numpy as np
 
 import pytest
 
@@ -278,3 +279,14 @@ def test_map_cut_set(cut_set_with_mixed_cut):
 def test_map_cut_set_rejects_noncut(cut_set_with_mixed_cut):
     with pytest.raises(AssertionError):
         cut_set = cut_set_with_mixed_cut.map(lambda cut: 'not-a-cut')
+
+
+def test_store_audio(cut_set):
+    cut_set = CutSet.from_json('test/fixtures/libri/cuts.json')
+    with TemporaryDirectory() as tmpdir:
+        stored_cut_set = cut_set.compute_and_store_recordings(tmpdir)
+        for cut1, cut2 in zip(cut_set, stored_cut_set):
+            samples1 = cut1.load_audio()
+            samples2 = cut2.load_audio()
+            assert np.array_equal(samples1, samples2)
+        assert len(stored_cut_set) == len(cut_set)
