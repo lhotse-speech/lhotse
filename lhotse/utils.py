@@ -155,7 +155,12 @@ def fastcopy(dataclass_obj: T, **kwargs) -> T:
     return type(dataclass_obj)(**{**dataclass_obj.__dict__, **kwargs})
 
 
-def split_sequence(seq: Sequence[Any], num_splits: int, shuffle: bool = False) -> List[List[Any]]:
+def split_sequence(
+        seq: Sequence[Any],
+        num_splits: int,
+        shuffle: bool = False,
+        drop_last: bool = False
+) -> List[List[Any]]:
     """
     Split a sequence into ``num_splits`` equal parts. The element order can be randomized.
     Raises a ``ValueError`` if ``num_splits`` is larger than ``len(seq)``.
@@ -163,6 +168,10 @@ def split_sequence(seq: Sequence[Any], num_splits: int, shuffle: bool = False) -
     :param seq: an input iterable (can be a Lhotse manifest).
     :param num_splits: how many output splits should be created.
     :param shuffle: optionally shuffle the sequence before splitting.
+    :param drop_last: determines how to handle splitting when ``len(seq)`` is not divisible
+        by ``num_splits``. When ``False`` (default), the splits might have unequal lengths.
+        When ``True``, it may discard the last element in some splits to ensure they are
+        equally long.
     :return: a list of length ``num_splits`` containing smaller lists (the splits).
     """
     seq = list(seq)
@@ -171,9 +180,28 @@ def split_sequence(seq: Sequence[Any], num_splits: int, shuffle: bool = False) -
         raise ValueError(f"Cannot split iterable into more chunks ({num_splits}) than its number of items {num_items}")
     if shuffle:
         random.shuffle(seq)
-    chunk_size = int(ceil(num_items / num_splits))
-    split_indices = [(i * chunk_size, min(num_items, (i + 1) * chunk_size)) for i in range(num_splits)]
-    return [seq[begin: end] for begin, end in split_indices]
+    chunk_size = num_items // num_splits
+
+    num_shifts = num_items % num_splits
+    if drop_last:
+        # Equally-sized splits; discards the remainder by default, no shifts are needed
+        end_shifts = [0] * num_splits
+        begin_shifts = [0] * num_splits
+    else:
+        # Non-equally sized splits; need to shift the indices like:
+        # [0, 10] -> [0, 11]    (begin_shift=0, end_shift=1)
+        # [10, 20] -> [11, 22]  (begin_shift=1, end_shift=2)
+        # [20, 30] -> [22, 32]  (begin_shift=2, end_shift=2)
+        # for num_items=32 and num_splits=3
+        end_shifts = list(range(1, num_shifts + 1)) + [num_shifts] * (num_splits - num_shifts)
+        begin_shifts = [0] + end_shifts[:-1]
+
+    split_indices = [
+        [i * chunk_size + begin_shift, (i + 1) * chunk_size + end_shift]
+        for i, begin_shift, end_shift in zip(range(num_splits), begin_shifts, end_shifts)
+    ]
+    splits = [seq[begin:end] for begin, end in split_indices]
+    return splits
 
 
 def compute_num_frames(
