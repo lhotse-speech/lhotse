@@ -354,7 +354,7 @@ class NumpyHdf5Writer(FeaturesWriter):
         super().__init__()
         import h5py
         self.storage_path_ = Path(storage_path).with_suffix('.h5')
-        self.hdf = h5py.File(self.storage_path, mode)
+        self.hdf = h5py.File(self.storage_path, mode=mode)
 
     @property
     def storage_path(self) -> str:
