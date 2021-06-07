@@ -180,7 +180,7 @@ def split_sequence(
         raise ValueError(f"Cannot split iterable into more chunks ({num_splits}) than its number of items {num_items}")
     if shuffle:
         random.shuffle(seq)
-    chunk_size = int(math.floor(num_items / num_splits))
+    chunk_size = num_items // num_splits
 
     num_shifts = num_items % num_splits
     if drop_last:
@@ -200,7 +200,7 @@ def split_sequence(
         [i * chunk_size + begin_shift, (i + 1) * chunk_size + end_shift]
         for i, begin_shift, end_shift in zip(range(num_splits), begin_shifts, end_shifts)
     ]
-    splits = [seq[begin: end] for begin, end in split_indices]
+    splits = [seq[begin:end] for begin, end in split_indices]
     return splits
 
 
