@@ -336,11 +336,25 @@ class NumpyHdf5Writer(FeaturesWriter):
     """
     name = 'numpy_hdf5'
 
-    def __init__(self, storage_path: Pathlike, *args, **kwargs):
+    def __init__(
+            self,
+            storage_path: Pathlike,
+            mode: str = 'w',
+            *args,
+            **kwargs
+    ):
+        """
+        :param storage_path: Path under which we'll create the HDF5 file.
+            We will add a ``.h5`` suffix if it is not already in ``storage_path``.
+        :param mode: Modes supported by h5py:
+            w        Create file, truncate if exists (default)
+            w- or x  Create file, fail if exists
+            a        Read/write if exists, create otherwise
+        """
         super().__init__()
         import h5py
         self.storage_path_ = Path(storage_path).with_suffix('.h5')
-        self.hdf = h5py.File(self.storage_path, 'w')
+        self.hdf = h5py.File(self.storage_path, mode)
 
     @property
     def storage_path(self) -> str:
@@ -403,11 +417,28 @@ class LilcomHdf5Writer(FeaturesWriter):
     """
     name = 'lilcom_hdf5'
 
-    def __init__(self, storage_path: Pathlike, tick_power: int = -5, *args, **kwargs):
+    def __init__(
+            self,
+            storage_path: Pathlike,
+            tick_power: int = -5,
+            mode: str = 'w',
+            *args,
+            **kwargs
+    ):
+        """
+        :param storage_path: Path under which we'll create the HDF5 file.
+            We will add a ``.h5`` suffix if it is not already in ``storage_path``.
+        :param tick_power: Determines the lilcom compression accuracy;
+            the input will be compressed to integer multiples of 2^tick_power.
+        :param mode: Modes supported by h5py:
+            w        Create file, truncate if exists (default)
+            w- or x  Create file, fail if exists
+            a        Read/write if exists, create otherwise
+        """
         super().__init__()
         import h5py
         self.storage_path_ = Path(storage_path).with_suffix('.h5')
-        self.hdf = h5py.File(self.storage_path, 'w')
+        self.hdf = h5py.File(self.storage_path, mode=mode)
         self.tick_power = tick_power
 
     @property
