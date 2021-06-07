@@ -1484,17 +1484,21 @@ class CutSet(Serializable, Sequence[AnyCut]):
         with pd.option_context('precision', 1):
             print(durations.describe().drop('count'))
 
-    def split(self, num_splits: int, shuffle: bool = False) -> List['CutSet']:
+    def split(self, num_splits: int, shuffle: bool = False, drop_last: bool = False) -> List['CutSet']:
         """
-        Split the ``CutSet`` into ``num_splits`` pieces of equal size.
+        Split the :class:`~lhotse.CutSet` into ``num_splits`` pieces of equal size.
 
         :param num_splits: Requested number of splits.
-        :param shuffle: Optionally shuffle the cuts order first.
-        :return: A list of ``CutSet`` pieces.
+        :param shuffle: Optionally shuffle the recordings order first.
+        :param drop_last: determines how to handle splitting when ``len(seq)`` is not divisible
+            by ``num_splits``. When ``False`` (default), the splits might have unequal lengths.
+            When ``True``, it may discard the last element in some splits to ensure they are
+            equally long.
+        :return: A list of :class:`~lhotse.CutSet` pieces.
         """
         return [
             CutSet.from_cuts(subset) for subset in
-            split_sequence(self, num_splits=num_splits, shuffle=shuffle)
+            split_sequence(self, num_splits=num_splits, shuffle=shuffle, drop_last=drop_last)
         ]
 
     def subset(
