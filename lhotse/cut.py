@@ -131,15 +131,11 @@ class CutUtilsMixin:
             self,
             storage_path: Pathlike,
             augment_fn: Optional[AugmentFn] = None,
-    ) -> Cut:
+    ) -> 'Cut':
         """
         Store this cut's waveform as audio recording to disk.
 
         :param storage_path: The path to location where we will store the audio recordings.
-            If it ends in '.flac', it is taken as the exact output path; otherwise, it is
-            considered as the base directory, a sub-directory that starts with the first
-            three characters of the cut's ID is created, and the audio recording is stored
-            in the sub-directory, named as the cut's ID and '.flac' as suffix.
         :param augment_fn: an optional callable used for audio augmentation.
             Be careful with the types of augmentations used: if they modify
             the start/end/duration times of the cut and its supervisions,
@@ -147,29 +143,18 @@ class CutUtilsMixin:
             E.g. for speed perturbation, use ``CutSet.perturb_speed()`` instead.
         :return: a new Cut instance.
         """
-        if Path(storage_path).suffix == '.flac':
-            output_audio_path = storage_path
-        else:
-            # Introduce a sub-directory that starts with the first 3 characters of the cut's ID.
-            # This allows to avoid filesystem performance problems related to storing
-            # too many files in a single directory.
-            subdir = storage_path / self.id[:3]
-            subdir.mkdir(exist_ok=True)
-            output_audio_path = (subdir / self.id).with_suffix('.flac')
-
         samples = self.load_audio()
         if augment_fn is not None:
             samples = augment_fn(samples, self.sampling_rate)
         # Store audio as FLAC
         import soundfile as sf
         sf.write(
-            output_audio_path,
-            samples,
-            self.sampling_rate,
-            format='FLAC',
-            subtype='PCM_16'
+            file=storage_path,
+            data=samples.transpose(),
+            samplerate=self.sampling_rate,
+            format='FLAC'
         )
-        recording = Recording.from_file(output_audio_path)
+        recording = Recording.from_file(storage_path)
         return Cut(
             id=self.id,
             start=0,
@@ -2138,9 +2123,12 @@ class CutSet(Serializable, Sequence[AnyCut]):
             progress_bar: bool = True
         ) -> 'CutSet':
         """
-        Store audio recordings of all cuts
+        Store waveforms of all cuts as audio recordings to disk.
 
         :param storage_path: The path to location where we will store the audio recordings.
+            For each cut, a sub-directory will be created that starts with the first 3
+            characters of the cut's ID. The audio recording is then stored in the sub-directory
+            using the cut ID as filename and '.flac' as suffix.
         :param num_jobs: The number of parallel processes used to store the audio recordings.
             We will internally split the CutSet into this many chunks
             and process each chunk in parallel.
@@ -2169,6 +2157,14 @@ class CutSet(Serializable, Sequence[AnyCut]):
                             'we will ignore the executor and use non-parallel execution.')
             executor = None
 
+        def file_storage_path(cut: AnyCut, storage_path: Pathlike) -> Path:
+            # Introduce a sub-directory that starts with the first 3 characters of the cut's ID.
+            # This allows to avoid filesystem performance problems related to storing
+            # too many files in a single directory.
+            subdir = Path(storage_path) / cut.id[:3]
+            subdir.mkdir(exist_ok=True, parents=True)
+            return (subdir / cut.id).with_suffix('.flac')
+
         # Non-parallel execution
         if executor is None and num_jobs == 1:
             if progress_bar:
@@ -2178,7 +2174,7 @@ class CutSet(Serializable, Sequence[AnyCut]):
             return CutSet.from_cuts(
                 progress(
                     cut.compute_and_store_recording(
-                        storage_path=storage_path,
+                        storage_path=file_storage_path(cut, storage_path),
                         augment_fn=augment_fn
                     ) for cut in self
                 )
