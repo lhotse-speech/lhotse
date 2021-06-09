@@ -6,7 +6,7 @@ from typing import List, Optional, Type
 import lilcom
 import numpy as np
 
-from lhotse.utils import Pathlike
+from lhotse.utils import Pathlike, is_module_available
 
 
 class FeaturesWriter(metaclass=ABCMeta):
@@ -553,3 +553,43 @@ class LilcomURLWriter(FeaturesWriter):
         with smart_open.open(output_features_url, 'wb', transport_params=self.transport_params) as f:
             f.write(serialized_feats)
         return key
+
+
+"""
+Kaldi-compatible feature reader
+"""
+
+
+@register_reader
+class KaldiReader(FeaturesReader):
+    """
+    Reads Kaldi's "feats.scp" file using kaldiio.
+    ``storage_path`` corresponds to the path to ``feats.scp``.
+    ``storage_key`` corresponds to the utterance-id in Kaldi.
+
+    .. caution::
+        Requires ``kaldiio`` to be installed (``pip install kaldiio``).
+    """
+    name = 'kaldiio'
+
+    def __init__(
+            self,
+            storage_path: Pathlike,
+            *args,
+            **kwargs
+    ):
+        if not is_module_available('kaldiio'):
+            raise ValueError("To read Kaldi feats.scp, please 'pip install kaldiio' first.")
+        import kaldiio
+        super().__init__()
+        self.storage_path = storage_path
+        self.storage = kaldiio.load_scp(str(self.storage_path))
+
+    def read(
+            self,
+            key: str,
+            left_offset_frames: int = 0,
+            right_offset_frames: Optional[int] = None
+    ) -> np.ndarray:
+        arr = self.storage[key]
+        return arr[left_offset_frames: right_offset_frames]

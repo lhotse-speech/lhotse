@@ -12,6 +12,7 @@ from .fbank import (
 from .io import (
     FeaturesReader,
     FeaturesWriter,
+    KaldiReader,
     LilcomFilesReader,
     LilcomFilesWriter,
     LilcomHdf5Reader,
