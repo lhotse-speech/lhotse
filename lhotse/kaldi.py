@@ -1,14 +1,20 @@
+import warnings
 from collections import defaultdict
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 
-from lhotse import CutSet
+from lhotse import CutSet, FeatureSet, Features, Seconds
 from lhotse.audio import AudioSource, Recording, RecordingSet
 from lhotse.supervision import SupervisionSegment, SupervisionSet
-from lhotse.utils import Pathlike
+from lhotse.utils import Pathlike, is_module_available
 
 
-def load_kaldi_data_dir(path: Pathlike, sampling_rate: int) -> Tuple[RecordingSet, Optional[SupervisionSet]]:
+def load_kaldi_data_dir(
+        path: Pathlike,
+        sampling_rate: int,
+        feature_type: Optional[str] = None,
+        frame_shift: Optional[Seconds] = None,
+) -> Tuple[RecordingSet, Optional[SupervisionSet], Optional[FeatureSet]]:
     """
     Load a Kaldi data directory and convert it to a Lhotse RecordingSet and SupervisionSet manifests.
     For this to work, at least the wav.scp file must exist.
@@ -31,7 +37,7 @@ def load_kaldi_data_dir(path: Pathlike, sampling_rate: int) -> Tuple[RecordingSe
             recording_id, dur = line.strip().split()
             durations[recording_id] = float(dur)
 
-    audio_set = RecordingSet.from_recordings(
+    recording_set = RecordingSet.from_recordings(
         Recording(
             id=recording_id,
             sources=[
@@ -48,35 +54,60 @@ def load_kaldi_data_dir(path: Pathlike, sampling_rate: int) -> Tuple[RecordingSe
         for recording_id, path_or_cmd in recordings.items()
     )
 
-    # must exist for SupervisionSet
+    supervision_set = None
     segments = path / 'segments'
-    if not segments.is_file():
-        return audio_set, None
+    if segments.is_file():
+        with segments.open() as f:
+            supervision_segments = [l.strip().split() for l in f]
 
-    with segments.open() as f:
-        supervision_segments = [l.strip().split() for l in f]
+        texts = load_kaldi_text_mapping(path / 'text')
+        speakers = load_kaldi_text_mapping(path / 'utt2spk')
+        genders = load_kaldi_text_mapping(path / 'spk2gender')
+        languages = load_kaldi_text_mapping(path / 'utt2lang')
 
-    texts = load_kaldi_text_mapping(path / 'text')
-    speakers = load_kaldi_text_mapping(path / 'utt2spk')
-    genders = load_kaldi_text_mapping(path / 'spk2gender')
-    languages = load_kaldi_text_mapping(path / 'utt2lang')
-
-    supervision_set = SupervisionSet.from_segments(
-        SupervisionSegment(
-            id=segment_id,
-            recording_id=recording_id,
-            start=float(start),
-            duration=float(end) - float(start),
-            channel=0,
-            text=texts[segment_id],
-            language=languages[segment_id],
-            speaker=speakers[segment_id],
-            gender=genders[speakers[segment_id]]
+        supervision_set = SupervisionSet.from_segments(
+            SupervisionSegment(
+                id=segment_id,
+                recording_id=recording_id,
+                start=float(start),
+                duration=float(end) - float(start),
+                channel=0,
+                text=texts[segment_id],
+                language=languages[segment_id],
+                speaker=speakers[segment_id],
+                gender=genders[speakers[segment_id]]
+            )
+            for segment_id, recording_id, start, end in supervision_segments
         )
-        for segment_id, recording_id, start, end in supervision_segments
-    )
 
-    return audio_set, supervision_set
+    feature_set = None
+    feats_scp = path / 'feats.scp'
+    if feats_scp.exists() and is_module_available('kaldiio'):
+        if frame_shift is not None and feature_type is not None:
+            import kaldiio
+            from lhotse.features.io import KaldiReader
+            feature_set = FeatureSet.from_features(
+                Features(
+                    type=feature_type,
+                    num_frames=mat.shape[0],
+                    num_features=mat.shape[1],
+                    frame_shift=frame_shift,
+                    sampling_rate=sampling_rate,
+                    start=0,
+                    duration=mat.shape[0] * frame_shift,
+                    storage_type=KaldiReader.name,
+                    storage_path=str(feats_scp),
+                    storage_key=utt_id,
+                    recording_id=supervision_set[utt_id].recording_id if supervision_set is not None else utt_id,
+                    channels=0
+                ) for utt_id, mat in kaldiio.load_scp_sequential(str(feats_scp))
+            )
+        else:
+            warnings.warn(f"Failed to import Kaldi 'feats.scp' to Lhotse: "
+                          f"both feature_type ({feature_type}) and frame_shift ({frame_shift}) must be not None. "
+                          f"Feature import omitted.")
+
+    return recording_set, supervision_set, feature_set
 
 
 def export_to_kaldi(recordings: RecordingSet, supervisions: SupervisionSet, output_dir: Pathlike):
