@@ -12,7 +12,6 @@ from lhotse.utils import Pathlike, is_module_available
 def load_kaldi_data_dir(
         path: Pathlike,
         sampling_rate: int,
-        feature_type: Optional[str] = None,
         frame_shift: Optional[Seconds] = None,
 ) -> Tuple[RecordingSet, Optional[SupervisionSet], Optional[FeatureSet]]:
     """
@@ -83,12 +82,12 @@ def load_kaldi_data_dir(
     feature_set = None
     feats_scp = path / 'feats.scp'
     if feats_scp.exists() and is_module_available('kaldiio'):
-        if frame_shift is not None and feature_type is not None:
+        if frame_shift is not None:
             import kaldiio
             from lhotse.features.io import KaldiReader
             feature_set = FeatureSet.from_features(
                 Features(
-                    type=feature_type,
+                    type='kaldiio',
                     num_frames=mat.shape[0],
                     num_features=mat.shape[1],
                     frame_shift=frame_shift,
@@ -104,7 +103,7 @@ def load_kaldi_data_dir(
             )
         else:
             warnings.warn(f"Failed to import Kaldi 'feats.scp' to Lhotse: "
-                          f"both feature_type ({feature_type}) and frame_shift ({frame_shift}) must be not None. "
+                          f"frame_shift must be not None. "
                           f"Feature import omitted.")
 
     return recording_set, supervision_set, feature_set
