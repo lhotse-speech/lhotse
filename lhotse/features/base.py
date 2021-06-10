@@ -330,7 +330,7 @@ class Features:
     # to a directory holding files with feature matrices (exact semantics depend on storage_type).
     storage_path: str
 
-    # Storage key is either the key used to retrieve a feautre matrix from an archive like HDF5,
+    # Storage key is either the key used to retrieve a feature matrix from an archive like HDF5,
     # or the name of the file in a directory (exact semantics depend on the storage_type).
     storage_key: str
 

@@ -29,6 +29,7 @@ class K2SpeechRecognitionDataset(torch.utils.data.Dataset):
                         - features: (B, T, F)
                         - audio: (B, T)
                       - multi-channel: currently not supported
+            'inputs_lens': int tensor with shape (B,). It contains the length before padding.
             'supervisions': [
                 {
                     'sequence_idx': Tensor[int] of shape (S,)
@@ -115,7 +116,7 @@ class K2SpeechRecognitionDataset(torch.utils.data.Dataset):
 
         # Get a tensor with batched feature matrices, shape (B, T, F)
         # Collation performs auto-padding, if necessary.
-        inputs, _ = self.input_strategy(cuts)
+        inputs, inputs_lens = self.input_strategy(cuts)
 
         # Get a dict of tensors that encode the positional information about supervisions
         # in the batch of feature matrices. The tensors are named "sequence_idx",
@@ -130,6 +131,7 @@ class K2SpeechRecognitionDataset(torch.utils.data.Dataset):
 
         batch = {
             'inputs': inputs,
+            'inputs_lens': inputs_lens,
             'supervisions': default_collate([
                 {
                     'text': supervision.text,

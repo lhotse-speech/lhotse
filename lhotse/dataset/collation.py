@@ -3,6 +3,7 @@ from typing import Iterable, List, Tuple, Union
 import numpy as np
 import torch
 from torch.nn import CrossEntropyLoss
+from torch.nn.utils.rnn import pad_sequence
 
 from lhotse import CutSet
 from lhotse.cut import MixedCut
@@ -120,6 +121,21 @@ def collate_features(
     for idx, cut in enumerate(cuts):
         features[idx] = torch.from_numpy(cut.load_features())
     return features, features_lens
+
+
+def collate_posts(cuts: CutSet) -> Tuple[torch.Tensor, torch.IntTensor]:
+    """
+    Load posteriors for all the cuts and return them as a batch in a torch tensor.
+    The output shape is ``(batch, time, posts_dim)``
+
+    :param cuts: a :class:`CutSet` used to load the posteriors.
+    :return: a tuple of tensors ``(posts, posts_lens)``.
+    """
+    assert all(cut.has_posts for cut in cuts)
+    posts_lens = torch.tensor([cut.posts.num_frames for cut in cuts], dtype=torch.int32)
+
+    posts = [torch.from_numpy(cut.load_posts()) for cut in cuts]
+    return pad_sequence(posts, batch_first=True), posts_lens
 
 
 def collate_audio(

@@ -20,6 +20,7 @@ from lhotse.augmentation import AugmentFn
 from lhotse.features import FeatureExtractor, FeatureMixer, FeatureSet, Features, create_default_feature_extractor
 from lhotse.features.base import compute_global_stats
 from lhotse.features.io import FeaturesWriter, LilcomFilesWriter, LilcomHdf5Writer
+from lhotse.post import Posteriors
 from lhotse.serialization import Serializable
 from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import (Decibels, LOG_EPSILON, NonPositiveEnergyError, Pathlike, Seconds, TimeSpan, asdict_nonull,
@@ -333,6 +334,9 @@ class Cut(CutUtilsMixin):
     # For the cases that the model was trained by raw audio instead of features
     recording: Optional[Recording] = None
 
+    # Output from a neural network
+    posts: Optional[Posteriors] = None
+
     @property
     def recording_id(self) -> str:
         return self.recording.id if self.has_recording else self.features.recording_id
@@ -348,6 +352,10 @@ class Cut(CutUtilsMixin):
     @property
     def has_recording(self) -> bool:
         return self.recording is not None
+
+    @property
+    def has_posts(self) -> bool:
+        return self.posts is not None
 
     @property
     def frame_shift(self) -> Optional[Seconds]:
@@ -383,6 +391,14 @@ class Cut(CutUtilsMixin):
             return self.features.load(start=self.start, duration=self.duration)
         return None
 
+    def load_posts(self) -> Optional[np.ndarray]:
+        """
+        Load the posteriors from the underlying storage.
+        """
+        if self.has_posts:
+            return self.posts.load()
+        return None
+
     def load_audio(self) -> Optional[np.ndarray]:
         """
         Load the audio by locating the appropriate recording in the supplied RecordingSet.
@@ -402,6 +418,18 @@ class Cut(CutUtilsMixin):
         """Return a copy of the current :class:`Cut`, detached from ``features``."""
         assert self.has_recording, f"Cannot detach features from a Cut with no Recording (cut ID = {self.id})."
         return fastcopy(self, features=None)
+
+    def attach_posteriors(
+            self,
+            posts: Posteriors,
+    ) -> 'Cut':
+        """
+        Return a copy of the current :class:`Cut`, with the given posteriors attached.
+
+        :param: posts: the posteriors to be attached to the cut.
+        """
+        assert self.has_posts is False
+        return fastcopy(self, posts=posts)
 
     def compute_and_store_features(
             self,
@@ -627,11 +655,14 @@ class Cut(CutUtilsMixin):
     def from_dict(data: dict) -> 'Cut':
         features = Features.from_dict(data.pop('features')) if 'features' in data else None
         recording = Recording.from_dict(data.pop('recording')) if 'recording' in data else None
+        posts = Posteriors.from_dict(data.pop('posts')) if 'posts' in data else None
+
         supervision_infos = data.pop('supervisions') if 'supervisions' in data else []
         return Cut(
             **data,
             features=features,
             recording=recording,
+            posts=posts,
             supervisions=[SupervisionSegment.from_dict(s) for s in supervision_infos]
         )
 
