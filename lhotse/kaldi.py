@@ -1,7 +1,7 @@
 import warnings
 from collections import defaultdict
 from pathlib import Path
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, Optional, Tuple, NamedTuple
 
 from lhotse import CutSet, FeatureSet, Features, Seconds
 from lhotse.audio import AudioSource, Recording, RecordingSet
@@ -11,7 +11,16 @@ from lhotse.audio import _audioread_info
 
 def from_file(
     path: Pathlike,
-):  
+) - > NamedTuple: 
+    """
+    Read a audio file, it supports pipeline style wave path and real waveform.
+    
+    :param path: Path to an audio file supported by libsoundfile (pysoundfile).
+    :return: NamedTuple, it contains some information of the audio.
+                         duration = info.duration
+                         num_samples = info.frames
+                         sampling_rate = info.samplerate
+    """ 
     try:
         # Try to parse the file using pysoundfile first.
         import soundfile
