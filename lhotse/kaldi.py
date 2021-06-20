@@ -7,6 +7,19 @@ from lhotse import CutSet, FeatureSet, Features, Seconds
 from lhotse.audio import AudioSource, Recording, RecordingSet
 from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import Pathlike, is_module_available
+from lhotse.audio import _audioread_info 
+
+def from_file(
+    path: Pathlike,
+):  
+    try:
+        # Try to parse the file using pysoundfile first.
+        import soundfile
+        info = soundfile.info(str(path))
+    except:
+        # Try to parse the file using audioread as a fallback.
+        info = _audioread_info(str(path))
+    return info
 
 
 def load_kaldi_data_dir(
@@ -28,13 +41,10 @@ def load_kaldi_data_dir(
     recordings = load_kaldi_text_mapping(path / 'wav.scp', must_exist=True)
 
     durations = defaultdict(float)
-    reco2dur = path / 'reco2dur'
-    if not reco2dur.is_file():
-        raise ValueError(f"No such file: '{reco2dur}' -- fix it by running: utils/data/get_reco2dur.sh <data-dir>")
-    with reco2dur.open() as f:
-        for line in f:
-            recording_id, dur = line.strip().split()
-            durations[recording_id] = float(dur)
+    for recording_id, path_or_cmd in recordings.items():
+        info = from_file(path_or_cmd)
+        duration = info.duration
+        durations[recording_id] = duration 
 
     recording_set = RecordingSet.from_recordings(
         Recording(
@@ -47,7 +57,7 @@ def load_kaldi_data_dir(
                 )
             ],
             sampling_rate=sampling_rate,
-            num_samples=int(durations[recording_id] * sampling_rate),
+            num_samples=int(durations[recording_id]* sampling_rate),
             duration=durations[recording_id]
         )
         for recording_id, path_or_cmd in recordings.items()
