@@ -7,19 +7,17 @@ from lhotse import CutSet, FeatureSet, Features, Seconds
 from lhotse.audio import AudioSource, Recording, RecordingSet
 from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import Pathlike, is_module_available
-from lhotse.audio import _audioread_info 
+from lhotse.audio import audioread_info 
+
 
 def from_file(
     path: Pathlike,
-) - > NamedTuple: 
+) -> Tuple[float]: 
     """
     Read a audio file, it supports pipeline style wave path and real waveform.
     
     :param path: Path to an audio file supported by libsoundfile (pysoundfile).
-    :return: NamedTuple, it contains some information of the audio.
-                         duration = info.duration
-                         num_samples = info.frames
-                         sampling_rate = info.samplerate
+    :return: duration of wav it is float.
     """ 
     try:
         # Try to parse the file using pysoundfile first.
@@ -27,8 +25,8 @@ def from_file(
         info = soundfile.info(str(path))
     except:
         # Try to parse the file using audioread as a fallback.
-        info = _audioread_info(str(path))
-    return info
+        info = audioread_info(str(path))
+    return info.duration
 
 
 def load_kaldi_data_dir(
@@ -51,8 +49,8 @@ def load_kaldi_data_dir(
 
     durations = defaultdict(float)
     for recording_id, path_or_cmd in recordings.items():
-        info = from_file(path_or_cmd)
-        duration = info.duration
+        duration = from_file(path_or_cmd)
+        #duration = info.duration
         durations[recording_id] = duration 
 
     recording_set = RecordingSet.from_recordings(
