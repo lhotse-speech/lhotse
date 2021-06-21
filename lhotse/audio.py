@@ -156,7 +156,7 @@ class Recording:
             info = soundfile.info(str(path))
         except:
             # Try to parse the file using audioread as a fallback.
-            info = _audioread_info(str(path))
+            info = audioread_info(str(path))
             # If both fail, then Python 3 will display both exception messages.
         return Recording(
             id=recording_id if recording_id is not None else Path(path).stem,
@@ -641,7 +641,7 @@ def read_audio(
         return _audioread_load(path_or_fd, offset=offset, duration=duration)
 
 
-def _audioread_info(path):
+def audioread_info(path):
     """
     Return an audio info data structure that's a compatible subset of ``pysoundfile.info()``
     that we need to create a ``Recording`` manifest.

@@ -7,6 +7,26 @@ from lhotse import CutSet, FeatureSet, Features, Seconds
 from lhotse.audio import AudioSource, Recording, RecordingSet
 from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import Pathlike, is_module_available
+from lhotse.audio import audioread_info 
+
+
+def get_duration(
+    path: Pathlike,
+) -> float: 
+    """
+    Read a audio file, it supports pipeline style wave path and real waveform.
+    
+    :param path: Path to an audio file supported by libsoundfile (pysoundfile).
+    :return: duration of wav it is float.
+    """ 
+    try:
+        # Try to parse the file using pysoundfile first.
+        import soundfile
+        info = soundfile.info(str(path))
+    except:
+        # Try to parse the file using audioread as a fallback.
+        info = audioread_info(str(path))
+    return info.duration
 
 
 def load_kaldi_data_dir(
@@ -28,13 +48,9 @@ def load_kaldi_data_dir(
     recordings = load_kaldi_text_mapping(path / 'wav.scp', must_exist=True)
 
     durations = defaultdict(float)
-    reco2dur = path / 'reco2dur'
-    if not reco2dur.is_file():
-        raise ValueError(f"No such file: '{reco2dur}' -- fix it by running: utils/data/get_reco2dur.sh <data-dir>")
-    with reco2dur.open() as f:
-        for line in f:
-            recording_id, dur = line.strip().split()
-            durations[recording_id] = float(dur)
+    for recording_id, path_or_cmd in recordings.items():
+        duration = get_duration(path_or_cmd)
+        durations[recording_id] = duration 
 
     recording_set = RecordingSet.from_recordings(
         Recording(
