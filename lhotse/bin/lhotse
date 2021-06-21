@@ -6,7 +6,7 @@ $ lhotse --help
 $ lhotse make-feats --help
 $ lhotse make-feats --compressed recording_manifest.yml mfcc_dir/
 $ lhotse write-default-feature-config feat-conf.yml
-$ lhotse kaldi import  data/train 16000 train_manifests/
+$ lhotse kaldi import data/train 16000 train_manifests/
 $ lhotse split 3 audio.yml split_manifests/
 $ lhotse combine feature.1.yml feature.2.yml combined_feature.yml
 $ lhotse recipe --help

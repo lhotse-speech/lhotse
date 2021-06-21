@@ -1,7 +1,7 @@
 import warnings
 from collections import defaultdict
 from pathlib import Path
-from typing import Any, Dict, Optional, Tuple, NamedTuple
+from typing import Any, Dict, Optional, Tuple
 
 from lhotse import CutSet, FeatureSet, Features, Seconds
 from lhotse.audio import AudioSource, Recording, RecordingSet
@@ -10,9 +10,9 @@ from lhotse.utils import Pathlike, is_module_available
 from lhotse.audio import audioread_info 
 
 
-def from_file(
+def get_duration(
     path: Pathlike,
-) -> Tuple[float]: 
+) -> float: 
     """
     Read a audio file, it supports pipeline style wave path and real waveform.
     
@@ -49,8 +49,7 @@ def load_kaldi_data_dir(
 
     durations = defaultdict(float)
     for recording_id, path_or_cmd in recordings.items():
-        duration = from_file(path_or_cmd)
-        #duration = info.duration
+        duration = get_duration(path_or_cmd)
         durations[recording_id] = duration 
 
     recording_set = RecordingSet.from_recordings(
@@ -64,7 +63,7 @@ def load_kaldi_data_dir(
                 )
             ],
             sampling_rate=sampling_rate,
-            num_samples=int(durations[recording_id]* sampling_rate),
+            num_samples=int(durations[recording_id] * sampling_rate),
             duration=durations[recording_id]
         )
         for recording_id, path_or_cmd in recordings.items()
