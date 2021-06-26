@@ -201,7 +201,7 @@ def load_kaldi_text_mapping(path: Path, must_exist: bool = False) -> Dict[str, O
     mapping = defaultdict(lambda: None)
     if path.is_file():
         with path.open() as f:
-            mapping = dict(line.strip().split(' ', maxsplit=1) for line in f)
+            mapping = dict(line.strip().split(maxsplit=1) for line in f)
     elif must_exist:
         raise ValueError(f"No such file: {path}")
     return mapping
