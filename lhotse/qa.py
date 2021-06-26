@@ -168,7 +168,7 @@ def validate_recording(r: Recording, read_data: bool = False) -> None:
     assert r.num_channels > 0, f'Recording {r.id}: no channels available'
     assert isclose(expected_duration, r.duration), \
         f'Recording {r.id}: mismatched declared duration ({r.duration}) with ' \
-        f'num_samples:{r.num_samples} / sampling_rate:{r.sampling_rate} ({expected_duration}).'
+        f'num_samples / sampling_rate ({expected_duration}).'
     if read_data:
         samples = r.load_audio()
         n_ch, n_s = samples.shape
