@@ -6,7 +6,7 @@ from typing import Any, Dict, Optional, Tuple
 from lhotse import CutSet, FeatureSet, Features, Seconds
 from lhotse.audio import AudioSource, Recording, RecordingSet
 from lhotse.supervision import SupervisionSegment, SupervisionSet
-from lhotse.utils import Pathlike, is_module_available
+from lhotse.utils import Pathlike, is_module_available, compute_num_samples
 from lhotse.audio import audioread_info 
 
 
@@ -63,7 +63,7 @@ def load_kaldi_data_dir(
                 )
             ],
             sampling_rate=sampling_rate,
-            num_samples=int(durations[recording_id] * sampling_rate),
+            num_samples=compute_num_samples(durations[recording_id], sampling_rate),
             duration=durations[recording_id]
         )
         for recording_id, path_or_cmd in recordings.items()
