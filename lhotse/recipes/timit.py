@@ -31,7 +31,7 @@ def download_timit(
     """
     target_dir = Path(target_dir)
     target_dir.mkdir(parents=True, exist_ok=True)
-    tar_name = f'timit.zip'
+    tar_name = 'timit.zip'
     tar_path = target_dir / tar_name
     if force_download or not tar_path.is_file():
         urlretrieve_progress(f'{base_url}', filename=tar_path, desc=f'Downloading {tar_name}')
