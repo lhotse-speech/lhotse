@@ -65,8 +65,6 @@ def prepare_timit(
 
     punctuation_strings = string.punctuation
 
-    id_texts = []
-
     with ThreadPoolExecutor(num_jobs) as ex:
         for part in dataset_parts:
           wav_files = []
