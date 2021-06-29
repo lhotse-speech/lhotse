@@ -78,15 +78,15 @@ def prepare_timit(
             wav_files = []
             file_name = ''
 
-            if part == 'TRAIN':
-                file_name = os.path.join(splits_dir, 'train_samples.txt') 
+            if part == 'TRAIN': 
+                file_name = splits_dir/'train_samples.txt'
             elif part == 'DEV':
-                file_name = os.path.join(splits_dir, 'dev_samples.txt')
+                file_name = splits_dir/'dev_samples.txt'
             else:
-                file_name = os.path.join(splits_dir, 'tst_samples.txt')
-   
+                file_name = splits_dir/'tst_samples.txt'
+            wav_files = []
             with open(file_name, 'r') as f:
-                lines = f.readlines()
+                lines = f.readlines() 
                 for line in lines:
                     items = line.strip().split(' ')
                     wav = os.path.join(corpus_dir, items[-1])
@@ -98,8 +98,8 @@ def prepare_timit(
                 for wav_file in tqdm(wav_files):
                     items = wav_file.split('/')
                     idx = items[-2] + '-' + items[-1][:-4]
-                    speaker = items[-2]
-                    transcript_file = wav_file[:-3] + 'PHN' ###the phone file
+                    speaker = items[-2] 
+                    transcript_file = Path(wav_file).with_suffix('.PHN')
                     if not Path(wav_file).is_file():
                         logging.warning(f'No such file: {wav_file}')
                         continue
