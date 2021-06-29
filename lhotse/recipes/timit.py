@@ -84,7 +84,7 @@ def prepare_timit(
                 file_name = os.path.join(splits_dir, 'dev_samples.txt')
             else:
                 file_name = os.path.join(splits_dir, 'tst_samples.txt')
-            wav_files = []
+   
             with open(file_name, 'r') as f:
                 lines = f.readlines()
                 for line in lines:
