@@ -96,7 +96,7 @@ def prepare_timit(
                 supervisions = []
 
                 for wav_file in tqdm(wav_files):
-                    items = wav_file.split('/')
+                    items = wav_file.split('/').strip()
                     idx = items[-2] + '-' + items[-1][:-4]
                     speaker = items[-2] 
                     transcript_file = Path(wav_file).with_suffix('.PHN')
