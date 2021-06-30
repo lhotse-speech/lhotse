@@ -1,7 +1,7 @@
 # coding=utf-8
 import os
-from subprocess import run, PIPE
 from pathlib import Path
+from subprocess import PIPE, run
 
 from setuptools import find_packages, setup
 
@@ -36,7 +36,7 @@ dev_version = '.dev-' + git_commit
 
 setup(
     name='lhotse',
-    version='0.6.0' + dev_version,
+    version='0.7.0' + dev_version,
     python_requires='>=3.6.0',
     description='Data preparation for speech processing models training.',
     author='The Lhotse Development Team',
