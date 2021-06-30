@@ -69,7 +69,7 @@ Examples
 We have example recipes showing how to prepare data and load it in Python as a PyTorch ``Dataset``.
 They are located in the ``examples`` directory.
 
-A short snippet to show how Lhotse can make audio data prepartion quick and easy:
+A short snippet to show how Lhotse can make audio data preparation quick and easy:
 
 .. code-block::
 

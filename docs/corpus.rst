@@ -11,77 +11,13 @@ a recording manifest and a supervision manifest.
 Recording manifest
 ------------------
 
-The recording manifest describes the recordings in a given corpus.
-It only contains information about the recording itself - this manifest does not specify any segmentation information
-or supervision such as the transcript or the speaker.
-It means that when a recording is a 1 hour long file, it is a single item in this manifest.
+.. autoclass:: lhotse.audio.Recording
+  :no-members:
+  :noindex:
 
-When coming from Kaldi, think of it as *wav.scp* on steroids, that also contains *reco2dur*, *reco2num_samples* and
-some extra information.
-
-.. hint::
-    Lhotse reads audio recordings using `pysoundfile`_ and `audioread`_, similarly to librosa, to support multiple audio formats.
-
-This is a YAML manifest for a corpus with two recordings:
-
-.. code-block:: yaml
-
-    ---
-    - id: 'recording-1'
-      sampling_rate: 8000
-      num_samples: 4000
-      duration: 0.5
-      sources:
-        - type: file
-          channels: [0]
-          source: 'test/fixtures/mono_c0.wav'
-        - type: file
-          channels: [1]
-          source: 'test/fixtures/mono_c1.wav'
-    - id: 'recording-2'
-      sampling_rate: 8000
-      num_samples: 8000
-      duration: 1.0
-      sources:
-        - type: file
-          channels: [0, 1]
-          source: 'test/fixtures/stereo.wav'
-
-Each recording is described by:
-
-- a unique id,
-- its sampling rate,
-- the number of samples,
-- the duration in seconds,
-- a list of audio sources.
-
-Audio source is a useful abstraction for cases when the user has an audio format not supported by the library,
-or wants to use shell tools such as SoX to perform some additional preprocessing.
-An audio source has the following properties:
-
-- type: either `file` or `command`
-- channel_ids: a list of integer identifiers for each channel in the recording
-- source: in case of a `file`, it's a path; in case of a `command`, its a shell command that will be expected to write a WAVE file to stdout.
-
-Python
-******
-
-In Python, the recording manifest is represented by classes :class:`RecordingSet`, :class:`Recording`, and :class:`AudioSource`.
-Example usage:
-
-.. code-block:: python
-
-    recordings = RecordingSet.from_yaml('audio.yml')
-    for recording in recordings:
-        # Note: all time units in Lhotse are seconds
-        if recording.duration >= 7.5:
-            samples = recording.load_audio(
-                channels=0,
-                offset=2.5,
-                duration=5.0
-            )
-            # Further sample processing
-
+.. autoclass:: lhotse.audio.RecordingSet
+  :no-members:
+  :noindex:
 
 Supervision manifest
 --------------------
