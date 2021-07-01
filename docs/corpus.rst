@@ -1,84 +1,35 @@
 Representing a corpus
 =====================
 
-In Lhotse, we represent the data using YAML (more readable), JSON, or JSONL (faster) manifests.
+In Lhotse, we represent the data using a small number of Python classes, enhanced with methods for solving common data manipulation tasks, that can be stored as JSON or JSONL manifests.
 For most audio corpora, we will need two types of manifests to fully describe them:
 a recording manifest and a supervision manifest.
-
-.. caution::
-    We show all the examples in YAML format for improved readability. However, when processing medium/large datasets, we recommend to use JSON or JSONL, which are much quicker to load and save.
 
 Recording manifest
 ------------------
 
 .. autoclass:: lhotse.audio.Recording
   :no-members:
+  :no-special-members:
   :noindex:
 
 .. autoclass:: lhotse.audio.RecordingSet
   :no-members:
+  :no-special-members:
   :noindex:
 
 Supervision manifest
 --------------------
 
-The supervision manifest contains the supervision information that we have about the recordings.
-In particular, it involves the segmentation - there might be a single segment for a single utterance recording,
-and multiple segments for a recording of a converstion.
+.. autoclass:: lhotse.supervision.SupervisionSegment
+  :no-members:
+  :no-special-members:
+  :noindex:
 
-When coming from Kaldi, think of it as a *segments* file on steroids,
-that also contains *utt2spk*, *utt2gender*, *utt2dur*, etc.
-
-This is a YAML supervision manifest:
-
-.. code-block:: yaml
-
-    ---
-    - id: 'segment-1'
-      recording_id: 'recording-2'
-      channel: 0
-      start: 0.1
-      duration: 0.3
-      text: 'transcript of the first segment'
-      language: 'english'
-      speaker: 'Norman Dyhrentfurth'
-
-    - id: 'segment-2'
-      recording_id: 'recording-2'
-      start: 0.5
-      duration: 0.4
-
-Each segment is characterized by the following attributes:
-
-- a unique id,
-- a corresponding recording id,
-- start time in seconds, relative to the beginning of the recording,
-- the duration in seconds
-
-Each segment may be assigned optional supervision information. In this example, the first segment
-contains the transcription text, the language of the utterance and a speaker name.
-The second segment contains only the minimal amount of information, which should be interpreted as:
-"this is some area of interest in the recording that we know nothing else about."
-
-Python
-******
-
-In Python, the supervision manifest is represented by classes :class:`SupervisionSet` and :class:`SupervisionSegment`.
-Example usage:
-
-.. code-block:: python
-
-    supervisions = SupervisionSet.from_segments([
-        SupervisionSegment(
-            id='segment-1',
-            recording_id='recording-1',
-            start=0.5,
-            duration=10.7,
-            text='quite a long utterance'
-        )
-    ])
-    print(f'There is {len(supervisions)} supervision in the set.')
-
+.. autoclass:: lhotse.supervision.SupervisionSet
+  :no-members:
+  :no-special-members:
+  :noindex:
 
 Standard data preparation recipes
 ---------------------------------
@@ -151,15 +102,47 @@ a CLI tool that create the manifests given a corpus directory.
 Adding new corpora
 ------------------
 
-General pointers:
+.. hint::
+    **Python data preparation recipes.** Each corpus has a dedicated Python file in ``lhotse/recipes``,
+    which you can use as the basis for your own recipe.
 
-* Each corpus has a dedicated Python file in ``lhotse/recipes``.
-* For publicly available corpora that can be freely downloaded, we usually define a function called ``download``, ``download_and_untar``, etc.
-* Each data preparation recipe should expose a single function called ``prepare_X``, with X being the name of the corpus, that produces dicts like: ``{'recordings': <RecordingSet>, 'supervisions': <SupervisionSet>}`` for the data in that corpus.
-* When a corpus defines standard split (e.g. train/dev/test), we return a dict with the following structure: ``{'train': {'recordings': <RecordingSet>, 'supervisions': <SupervisionSet>}, 'dev': ...}``
-* Some corpora (like LibriSpeech) come with pre-segmented recordings. In these cases, the :class:`SupervisionSegment` will exactly match the :class:`Recording` duration (and there will likely be exactly one segment corresponding to any recording).
-* Corpora with longer recordings (e.g. conversational, like Switchboard) should have exactly one :class:`Recording` object corresponding to a single conversation/session, that spans its whole duration. Each speech segment in that recording should be represented as a :class:`SupervisionSegment` with the same ``recording_id`` value.
-* Corpora with multiple channels for each session (e.g. AMI) should have a single :class:`Recording` with multiple :class:`AudioSource` objects - each corresponding to a separate channel.
+.. hint::
+    **(optional) Downloading utility.** For publicly available corpora that can be freely downloaded,
+    we usually define a function called ``download_<corpus-name>()``.
+
+.. hint::
+    **Data preparation Python entry-point.** Each data preparation recipe should expose a single function
+    called ``prepare_<corpus-name>``,
+    that produces dicts like: ``{'recordings': <RecordingSet>, 'supervisions': <SupervisionSet>}``.
+
+
+.. hint::
+    **CLI recipe wrappers.** We provide a command-line interface that wraps the ``download`` and ``prepare``
+    functions -- see ``lhotse/bin/modes/recipes`` for examples of how to do it.
+
+.. hint::
+    **Pre-defined train/dev/test splits.** When a corpus defines standard split (e.g. train/dev/test),
+    we return a dict with the following structure:
+    ``{'train': {'recordings': <RecordingSet>, 'supervisions': <SupervisionSet>}, 'dev': ...}``
+
+.. hint::
+    **Isolated utterance corpora.** Some corpora (like LibriSpeech) come with pre-segmented recordings.
+    In these cases, the :class:`~lhotse.supervision.SupervisionSegment` will exactly match the
+    :class:`~lhotse.recording.Recording` duration
+    (and there will likely be exactly one segment corresponding to any recording).
+
+.. hint::
+    **Conversational corpora.** Corpora with longer recordings (e.g. conversational, like Switchboard) should have exactly one
+    :class:`~lhotse.audio.Recording` object corresponding to a single conversation/session,
+    that spans its whole duration.
+    Each speech segment in that recording should be represented as a :class:`~lhotse.supervision.SupervisionSegment`
+    with the same ``recording_id`` value.
+
+.. hint::
+    **Multi-channel corpora.** Corpora with multiple channels for each session (e.g. AMI) should have a single
+    :class:`~lhotse.audio.Recording` with multiple :class:`~lhotse.audio.AudioSource` objects --
+    each corresponding to a separate channel.
+    Remember to make the :class:`~lhotse.supervision.SupervisionSegment` objects correspond to the right channels!
 
 
 .. _`pysoundfile`: https://pysoundfile.readthedocs.io/en/latest/
