@@ -1,6 +1,6 @@
 import pytest
 
-from lhotse import AudioSource, Cut, CutSet, Recording, SupervisionSegment
+from lhotse import AudioSource, MonoCut, CutSet, Recording, SupervisionSegment
 from lhotse.cut import PaddingCut
 
 
@@ -16,7 +16,7 @@ def recording(file_source):
 
 @pytest.fixture
 def cut_with_supervision(recording):
-    return Cut(
+    return MonoCut(
         id='cut',
         start=0.0,
         duration=0.5,
@@ -81,7 +81,7 @@ def test_cut_perturb_speed09(cut_with_supervision):
 
 @pytest.fixture
 def cut_with_supervision_start01(recording):
-    return Cut(
+    return MonoCut(
         id='cut_start01',
         start=0.1,
         duration=0.4,

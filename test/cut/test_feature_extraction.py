@@ -9,7 +9,7 @@ from unittest.mock import Mock
 
 import pytest
 
-from lhotse import Cut, CutSet, Fbank, LilcomHdf5Writer, Recording
+from lhotse import MonoCut, CutSet, Fbank, LilcomHdf5Writer, Recording
 from lhotse.audio import AudioSource
 from lhotse.cut import MixedCut
 from lhotse.features.io import LilcomFilesWriter
@@ -28,7 +28,7 @@ def recording():
 
 @pytest.fixture
 def cut(recording):
-    return Cut(id='cut', start=0, duration=1.0, channel=0, recording=recording)
+    return MonoCut(id='cut', start=0, duration=1.0, channel=0, recording=recording)
 
 
 def test_extract_features(cut):

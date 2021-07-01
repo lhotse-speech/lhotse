@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 
 from lhotse.audio import AudioSource, Recording
-from lhotse.cut import Cut, CutSet, PaddingCut
+from lhotse.cut import MonoCut, CutSet, PaddingCut
 from lhotse.features import Features
 from lhotse.utils import EPSILON, LOG_EPSILON, nullcontext as does_not_raise
 
@@ -73,7 +73,7 @@ def test_truncate(padding_cut, offset, duration, expected_duration, expected_num
 
 @pytest.fixture
 def libri_cut():
-    return Cut(
+    return MonoCut(
         channel=0,
         duration=16.04,
         features=Features(

@@ -7,7 +7,7 @@ import torch.distributed as dist
 from torch.utils.data import Sampler
 
 from lhotse import CutSet
-from lhotse.cut import AnyCut
+from lhotse.cut import Cut
 from lhotse.utils import Seconds, exactly_one_not_null, is_none_or_gt
 
 
@@ -105,7 +105,7 @@ class CutSampler(Sampler[List[str]]):
 
         self._maybe_init_distributed(world_size=world_size, rank=rank)
         self.num_batches = None
-        self._filter_fn: Optional[Callable[[AnyCut], bool]] = None
+        self._filter_fn: Optional[Callable[[Cut], bool]] = None
 
     def _maybe_init_distributed(self, world_size: Optional[int], rank: Optional[int]):
         if world_size is not None:
@@ -131,7 +131,7 @@ class CutSampler(Sampler[List[str]]):
         self.epoch = epoch
         self.num_batches = None
 
-    def filter(self, predicate: Callable[[AnyCut], bool]) -> None:
+    def filter(self, predicate: Callable[[Cut], bool]) -> None:
         """
         Add a constraint on invidual cuts that has to be satisfied to consider them.
 
@@ -214,7 +214,7 @@ class TimeConstraint:
         """Is it an actual constraint, or a dummy one (i.e. never exceeded)."""
         return any(x is not None for x in self._constraints)
 
-    def add(self, cut: AnyCut) -> None:
+    def add(self, cut: Cut) -> None:
         """
         Increment the internal counter for the time constraint,
         selecting the right property from the input ``cut`` object.
@@ -550,7 +550,7 @@ class BucketingSampler(CutSampler):
             s.set_epoch(epoch)
         super().set_epoch(epoch)
 
-    def filter(self, predicate: Callable[[AnyCut], bool]) -> None:
+    def filter(self, predicate: Callable[[Cut], bool]) -> None:
         """
         Add a constraint on invidual cuts that has to be satisfied to consider them.
 

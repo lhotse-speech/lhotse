@@ -4,11 +4,11 @@ from operator import add
 from typing import Iterable, Optional, TypeVar, Union
 
 from lhotse.audio import Recording, RecordingSet
-from lhotse.cut import Cut, CutSet, MixedCut
+from lhotse.cut import CutSet, MixedCut, MonoCut
 from lhotse.features import FeatureSet, Features
 from lhotse.supervision import SupervisionSegment, SupervisionSet
 
-ManifestItem = TypeVar('ManifestItem', Recording, SupervisionSegment, Features, Cut, MixedCut)
+ManifestItem = TypeVar('ManifestItem', Recording, SupervisionSegment, Features, MonoCut, MixedCut)
 Manifest = TypeVar('Manifest', RecordingSet, SupervisionSet, FeatureSet, CutSet)
 
 
@@ -43,7 +43,7 @@ def to_manifest(items: Iterable[ManifestItem]) -> Optional[Manifest]:
         return RecordingSet.from_recordings(items)
     if isinstance(first_item, SupervisionSegment):
         return SupervisionSet.from_segments(items)
-    if isinstance(first_item, (Cut, MixedCut)):
+    if isinstance(first_item, (MonoCut, MixedCut)):
         return CutSet.from_cuts(items)
     if isinstance(first_item, Features):
         raise ValueError("FeatureSet generic construction from iterable is not possible, as the config information "

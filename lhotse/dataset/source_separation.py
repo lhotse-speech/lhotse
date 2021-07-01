@@ -5,7 +5,7 @@ import torch
 from torch.utils.data import Dataset
 
 from lhotse import validate
-from lhotse.cut import AnyCut, Cut, CutSet
+from lhotse.cut import Cut, CutSet, MonoCut
 from lhotse.utils import EPSILON
 
 
@@ -38,7 +38,7 @@ class SourceSeparationDataset(Dataset):
         self.mixtures_set = mixtures_set
         self.cut_ids = list(self.mixtures_set.ids)
 
-    def _obtain_mixture(self, cut_id: str) -> Tuple[AnyCut, List[Cut]]:
+    def _obtain_mixture(self, cut_id: str) -> Tuple[Cut, List[MonoCut]]:
         raise NotImplementedError("You are using SpeechSeparationDataset, which is an abstract base class; instead, "
                                   "use one of its derived classes that specify whether the mix is pre-computed or "
                                   "done dynamically (on-the-fly).")
@@ -116,7 +116,7 @@ class DynamicallyMixedSourceSeparationDataset(SourceSeparationDataset):
         super().validate()
         validate(self.nonsources_set)
 
-    def _obtain_mixture(self, cut_id: str) -> Tuple[AnyCut, List[Cut]]:
+    def _obtain_mixture(self, cut_id: str) -> Tuple[Cut, List[MonoCut]]:
         mixture_cut = self.mixtures_set.mixed_cuts[cut_id]
         source_cuts = [
             track.cut
@@ -162,7 +162,7 @@ class PreMixedSourceSeparationDataset(SourceSeparationDataset):
         }
         super().__init__(sources_set=sources_set, mixtures_set=mixtures_set)
 
-    def _obtain_mixture(self, cut_id: str) -> Tuple[AnyCut, List[Cut]]:
+    def _obtain_mixture(self, cut_id: str) -> Tuple[Cut, List[MonoCut]]:
         mixture_cut = self.mixtures_set.cuts[cut_id]
         source_cuts = [self.sources_set.cuts[id] for id in self.mixture_to_source[mixture_cut.id]]
         return mixture_cut, source_cuts

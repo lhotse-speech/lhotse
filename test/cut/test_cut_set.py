@@ -6,7 +6,7 @@ import pytest
 
 from lhotse import Features, Recording, SupervisionSegment
 from lhotse.audio import AudioSource
-from lhotse.cut import Cut, CutSet, MixTrack, MixedCut
+from lhotse.cut import MonoCut, CutSet, MixTrack, MixedCut
 from lhotse.testing.dummies import remove_spaces_from_segment_text
 from lhotse.utils import is_module_available
 
@@ -40,7 +40,7 @@ def test_cut_set_iteration(cut_set_with_mixed_cut):
 
 def test_cut_set_holds_both_simple_and_mixed_cuts(cut_set_with_mixed_cut):
     simple_cuts = cut_set_with_mixed_cut.simple_cuts.values()
-    assert all(isinstance(c, Cut) for c in simple_cuts)
+    assert all(isinstance(c, MonoCut) for c in simple_cuts)
     assert len(simple_cuts) == 2
     mixed_cuts = cut_set_with_mixed_cut.mixed_cuts.values()
     assert all(isinstance(c, MixedCut) for c in mixed_cuts)
@@ -57,13 +57,13 @@ def test_trim_to_unsupervised_segments():
     cut_set = CutSet.from_cuts([
         # Yields 3 unsupervised cuts - before first supervision,
         # between sup2 and sup3, and after sup3.
-        Cut('cut1', start=0, duration=30, channel=0, supervisions=[
+        MonoCut('cut1', start=0, duration=30, channel=0, supervisions=[
             SupervisionSegment('sup1', 'rec1', start=1.5, duration=8.5),
             SupervisionSegment('sup2', 'rec1', start=10, duration=5),
             SupervisionSegment('sup3', 'rec1', start=20, duration=8),
         ]),
         # Does not yield any "unsupervised" cut.
-        Cut('cut2', start=0, duration=30, channel=0, supervisions=[
+        MonoCut('cut2', start=0, duration=30, channel=0, supervisions=[
             SupervisionSegment('sup4', 'rec1', start=0, duration=30),
         ]),
     ])
@@ -86,12 +86,12 @@ def test_trim_to_unsupervised_segments():
 
 def test_trim_to_supervisions_simple_cuts():
     cut_set = CutSet.from_cuts([
-        Cut('cut1', start=0, duration=30, channel=0, supervisions=[
+        MonoCut('cut1', start=0, duration=30, channel=0, supervisions=[
             SupervisionSegment('sup1', 'rec1', start=1.5, duration=8.5),
             SupervisionSegment('sup2', 'rec1', start=10, duration=5),
             SupervisionSegment('sup3', 'rec1', start=20, duration=8),
         ]),
-        Cut('cut2', start=0, duration=30, channel=0, supervisions=[
+        MonoCut('cut2', start=0, duration=30, channel=0, supervisions=[
             SupervisionSegment('sup4', 'rec1', start=0, duration=30),
         ]),
     ])
@@ -119,31 +119,31 @@ def test_trim_to_supervisions_simple_cuts():
 
 def test_trim_to_supervisions_mixed_cuts():
     cut_set = CutSet.from_cuts([
-        Cut('cut1', start=0, duration=30, channel=0,
-            recording=Recording(
-                id='rec1', sources=[], sampling_rate=16000, num_samples=160000, duration=10.0
-            ),
-            supervisions=[
-                SupervisionSegment('sup1', 'rec1', start=1.5, duration=8.5),
-                SupervisionSegment('sup2', 'rec1', start=10, duration=5),
-                SupervisionSegment('sup3', 'rec1', start=20, duration=8),
-            ]
-            ).append(
-            Cut('cut2', start=0, duration=30, channel=0,
+        MonoCut('cut1', start=0, duration=30, channel=0,
                 recording=Recording(
                     id='rec1', sources=[], sampling_rate=16000, num_samples=160000, duration=10.0
                 ),
                 supervisions=[
-                    SupervisionSegment('sup4', 'rec1', start=0, duration=30),
+                    SupervisionSegment('sup1', 'rec1', start=1.5, duration=8.5),
+                    SupervisionSegment('sup2', 'rec1', start=10, duration=5),
+                    SupervisionSegment('sup3', 'rec1', start=20, duration=8),
                 ]
-                )
+                ).append(
+            MonoCut('cut2', start=0, duration=30, channel=0,
+                    recording=Recording(
+                        id='rec1', sources=[], sampling_rate=16000, num_samples=160000, duration=10.0
+                    ),
+                    supervisions=[
+                        SupervisionSegment('sup4', 'rec1', start=0, duration=30),
+                    ]
+                    )
         )
     ])
     assert isinstance(cut_set[0], MixedCut)
     cuts = cut_set.trim_to_supervisions()
     assert len(cuts) == 4
     # After "trimming", the MixedCut "decayed" into simple, unmixed cuts, as they did not overlap
-    assert all(isinstance(cut, Cut) for cut in cuts)
+    assert all(isinstance(cut, MonoCut) for cut in cuts)
     assert all(len(cut.supervisions) == 1 for cut in cuts)
     assert all(cut.supervisions[0].start == 0 for cut in cuts)
     cut = cuts[0]
@@ -186,13 +186,13 @@ def test_supervision_transform_text(cut_set):
 
 @pytest.fixture
 def cut_with_relative_paths():
-    return Cut('cut', 0, 10, 0,
-               features=Features(type='fbank', num_frames=1000, num_features=40, sampling_rate=8000,
-                                 storage_type='lilcom_files', storage_path='storage_dir', storage_key='feats.llc',
-                                 start=0,
-                                 duration=10, frame_shift=0.01),
-               recording=Recording('rec', [AudioSource('file', [0], 'audio.wav')], 8000, 80000, 10.0)
-               )
+    return MonoCut('cut', 0, 10, 0,
+                   features=Features(type='fbank', num_frames=1000, num_features=40, sampling_rate=8000,
+                                     storage_type='lilcom_files', storage_path='storage_dir', storage_key='feats.llc',
+                                     start=0,
+                                     duration=10, frame_shift=0.01),
+                   recording=Recording('rec', [AudioSource('file', [0], 'audio.wav')], 8000, 80000, 10.0)
+                   )
 
 
 def test_cut_set_prefix(cut_with_relative_paths):
@@ -219,8 +219,8 @@ def test_mix_same_recording_channels():
         AudioSource('file', channels=[1], source='irrelevant2.wav')
     ])
     cut_set = CutSet.from_cuts([
-        Cut('cut1', start=0, duration=30, channel=0, recording=recording),
-        Cut('cut2', start=0, duration=30, channel=1, recording=recording)
+        MonoCut('cut1', start=0, duration=30, channel=0, recording=recording),
+        MonoCut('cut2', start=0, duration=30, channel=1, recording=recording)
     ])
 
     mixed = cut_set.mix_same_recording_channels()

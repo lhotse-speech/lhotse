@@ -43,12 +43,12 @@ Types of cuts
 
 There are three cut classes:
 
-- :class:`Cut`, also referred to as "simple cut", can be traced back to a single particular recording (and channel).
+- :class:`MonoCut`, also referred to as "simple cut", can be traced back to a single particular recording (and channel).
 - :class:`PaddingCut` is an "artificial" recording used for padding other Cuts through mixing to achieve uniform duration.
-- :class:`MixedCut` is a collection of :class:`Cut` and :class:`PaddingCut` objects, together with mix parameters: offset and desired sound-to-noise ratio (SNR) for each track. Both the offset and the SNR are relative to the first cut in the mix.
+- :class:`MixedCut` is a collection of :class:`MonoCut` and :class:`PaddingCut` objects, together with mix parameters: offset and desired sound-to-noise ratio (SNR) for each track. Both the offset and the SNR are relative to the first cut in the mix.
 
 Each of these types has additional attributes that are not common - e.g., it makes sense to specify *start* for
-:class:`Cut` to locate it in the source recording, but it is undefined for :class:`MixedCut` and :class:`PaddingCut`.
+:class:`MonoCut` to locate it in the source recording, but it is undefined for :class:`MixedCut` and :class:`PaddingCut`.
 
 Cut manifests
 *************
@@ -71,7 +71,7 @@ All cut types can be stored in the YAML manifests. An example manifest with simp
       id: 849e13d8-61a2-4d09-a542-dac1aee1b544
       start: 0.0
       supervisions: []
-      type: Cut
+      type: MonoCut
 
 Notice that the cut type is specified in YAML. The supervisions list might be empty - some tasks do not need them,
 e.g. unsupervised training, source separation, or speech enhancement.
