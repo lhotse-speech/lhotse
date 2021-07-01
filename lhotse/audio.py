@@ -125,58 +125,68 @@ class Recording:
     It contains information about the recording, such as its path(s), duration, the number of samples, etc.
     It allows to represent multiple channels coming from one or more files.
 
-    This manifest does not specify any segmentation information or supervision such as the transcript or the speaker.
-    It means that even when a recording is a 1 hour long file, it is a single item in this manifest.
+    This manifest does not specify any segmentation information or supervision such as the transcript or the speaker
+    -- we use :class:`~lhotse.supervision.SupervisionSegment` for that.
+
+    Note that :class:`~lhotse.audio.Recording` can represent both a single utterance (e.g., in LibriSpeech)
+    and a 1-hour session with multiple channels and speakers (e.g., in AMI).
+    In the latter case, it is paritioned into data suitable for model training using :class:`~lhotse.cut.Cut`.
 
     .. hint::
         Lhotse reads audio recordings using `pysoundfile`_ and `audioread`_, similarly to librosa,
         to support multiple audio formats.
 
-    A :class:`~lhotse.audio.Recording` can be simply created from a local audio file::
+    .. hint::
+        Since we support importing Kaldi data dirs, if ``wav.scp`` contains unix pipes,
+        :class:`~lhotse.audio.Recording` will also handle them correctly.
 
-        >>> from lhotse import RecordingSet, Recording, AudioSource
-        >>> recording = Recording.from_file('meeting.wav')
-        >>> recording
-        Recording(
-            id='meeting',
-            sources=[AudioSource(type='file', channels=[0], source='meeting.wav')],
-            sampling_rate=16000,
-            num_samples=57600000,
-            duration=3600.0,
-            transforms=None
-        )
+    Examples
 
-    This manifest can be easily converted to a Python dict and serialized to JSON/JSONL/YAML/etc::
+        A :class:`~lhotse.audio.Recording` can be simply created from a local audio file::
 
-        >>> recording.to_dict()
-        {'id': 'meeting',
-         'sources': [{'type': 'file',
-           'channels': [0],
-           'source': 'meeting.wav'}],
-         'sampling_rate': 16000,
-         'num_samples': 57600000,
-         'duration': 3600.0}
-
-    Recordings can be also created programatically, e.g. when they refer to URLs stored in S3 or somewhere else::
-
-        >>> s3_audio_files = ['s3://my-bucket/123-5678.flac', ...]
-        >>> recs = RecordingSet.from_recordings(
-                Recording(
-                    id=url.split('/')[-1].replace('.flac', ''),
-                    sources=[AudioSource(type='url', source=url, channels=[0])],
-                    sampling_rate=16000,
-                    num_samples=get_num_samples(url),
-                    duration=get_duration(url)
-                )
-                for url in s3_audio_files
+            >>> from lhotse import RecordingSet, Recording, AudioSource
+            >>> recording = Recording.from_file('meeting.wav')
+            >>> recording
+            Recording(
+                id='meeting',
+                sources=[AudioSource(type='file', channels=[0], source='meeting.wav')],
+                sampling_rate=16000,
+                num_samples=57600000,
+                duration=3600.0,
+                transforms=None
             )
 
-    It allows reading a subset of the audio samples as a numpy array::
+        This manifest can be easily converted to a Python dict and serialized to JSON/JSONL/YAML/etc::
 
-        >>> samples = recording.load_audio()
-        >>> assert samples.shape == (1, 16000)
-        >>> samples2 = recording.load_audio(offset=0.5)
-        >>> assert samples2.shape == (1, 8000)
+            >>> recording.to_dict()
+            {'id': 'meeting',
+             'sources': [{'type': 'file',
+               'channels': [0],
+               'source': 'meeting.wav'}],
+             'sampling_rate': 16000,
+             'num_samples': 57600000,
+             'duration': 3600.0}
+
+        Recordings can be also created programatically, e.g. when they refer to URLs stored in S3 or somewhere else::
+
+            >>> s3_audio_files = ['s3://my-bucket/123-5678.flac', ...]
+            >>> recs = RecordingSet.from_recordings(
+            ...     Recording(
+            ...         id=url.split('/')[-1].replace('.flac', ''),
+            ...         sources=[AudioSource(type='url', source=url, channels=[0])],
+            ...         sampling_rate=16000,
+            ...         num_samples=get_num_samples(url),
+            ...         duration=get_duration(url)
+            ...     )
+            ...     for url in s3_audio_files
+            ... )
+
+        It allows reading a subset of the audio samples as a numpy array::
+
+            >>> samples = recording.load_audio()
+            >>> assert samples.shape == (1, 16000)
+            >>> samples2 = recording.load_audio(offset=0.5)
+            >>> assert samples2.shape == (1, 8000)
     """
     id: str
     sources: List[AudioSource]
@@ -395,44 +405,43 @@ class RecordingSet(Serializable, Sequence[Recording]):
     and support reading audio files directly, via a unix pipe, or downloading them on-the-fly from a URL
     (HTTPS/S3/Azure/GCP/etc.).
 
-    :class:`~lhotse.audio.RecordingSet` can be created from an iterable of :class:`~lhotse.audio.Recording` objects::
+    Examples:
 
-        >>> from lhotse import RecordingSet
-        >>> audio_paths = ['123-5678.wav', ...]
-        >>> recs = RecordingSet.from_recordings(Recording.from_file(p) for p in audio_paths)
+        :class:`~lhotse.audio.RecordingSet` can be created from an iterable of :class:`~lhotse.audio.Recording` objects::
 
-    It behaves similarly to a ``dict``::
+            >>> from lhotse import RecordingSet
+            >>> audio_paths = ['123-5678.wav', ...]
+            >>> recs = RecordingSet.from_recordings(Recording.from_file(p) for p in audio_paths)
 
-        >>> '123-5678' in recs
-        True
-        >>> recording = recs['123-5678']
-        >>> for recording in recs:
-        >>>    pass
-        >>> len(recs)
-        127
+        It behaves similarly to a ``dict``::
 
-    It also provides some utilities for I/O::
+            >>> '123-5678' in recs
+            True
+            >>> recording = recs['123-5678']
+            >>> for recording in recs:
+            >>>    pass
+            >>> len(recs)
+            127
 
-        >>> recs.to_file('recordings.jsonl')
-        >>> recs.to_file('recordings.json.gz')  # auto-compression
-        >>> recs2 = RecordingSet.from_file('recordings.jsonl')
+        It also provides some utilities for I/O::
 
-    Manipulation::
+            >>> recs.to_file('recordings.jsonl')
+            >>> recs.to_file('recordings.json.gz')  # auto-compression
+            >>> recs2 = RecordingSet.from_file('recordings.jsonl')
 
-        >>> longer_than_5s = recs.filter(lambda r: r.duration > 5)
-        >>> first_100 = recs.subset(first=100)
-        >>> split_into_4 = recs.split(num_splits=4)
+        Manipulation::
 
-    And lazy data augmentation/transformation, that requires to adjust some information
-    in the manifest (e.g., ``num_samples`` or ``duration``).
-    Note that in the following examples, the audio is untouched -- the operations are stored in the manifest,
-    and executed upon reading the audio::
+            >>> longer_than_5s = recs.filter(lambda r: r.duration > 5)
+            >>> first_100 = recs.subset(first=100)
+            >>> split_into_4 = recs.split(num_splits=4)
 
-        >>> recs_sp = recs.perturb_speed(factor=1.1)
-        >>> recs_24k = recs.resample(24000)
+        And lazy data augmentation/transformation, that requires to adjust some information
+        in the manifest (e.g., ``num_samples`` or ``duration``).
+        Note that in the following examples, the audio is untouched -- the operations are stored in the manifest,
+        and executed upon reading the audio::
 
-    Finally, since we support importing Kaldi data dirs, if ``wav.scp`` contains unix pipes,
-    :class:`~lhotse.audio.Recording` will also handle them correctly.
+            >>> recs_sp = recs.perturb_speed(factor=1.1)
+            >>> recs_24k = recs.resample(24000)
     """
 
     def __init__(self, recordings: Mapping[str, Recording] = None) -> None:
