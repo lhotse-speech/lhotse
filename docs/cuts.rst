@@ -25,6 +25,11 @@ element-wise addition of the spectral energies (possibly with additional exp and
 As of now, we only support this dynamic mix on log Mel energy (_fbank_) features.
 We anticipate to add support for other types of features as well.
 
+.. autoclass:: lhotse.cut.Cut
+    :no-members:
+    :no-special-members:
+    :noindex:
+
 The common attributes for all cut objects are the following:
 
 - id

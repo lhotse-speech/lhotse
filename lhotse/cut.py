@@ -37,12 +37,60 @@ FW = TypeVar('FW', bound=FeaturesWriter)
 
 class Cut:
     """
-    TODO: document as the base class for all cuts
-    A mixin class for cuts which contains all the methods that share common implementations.
+    .. caution::
+        :class:`~lhotse.cut.Cut` is just an abstract class -- the actual logic is implemented by its child classes (scroll down for references).
 
-    Note: Ideally, this would've been an abstract base class specifying the common interface,
-    but ABC's do not mix well with dataclasses in Python. It is possible we'll ditch the dataclass
-    for cuts in the future and make this an ABC instead.
+    :class:`~lhotse.cut.Cut` is a base class for audio cuts.
+    An "audio cut" is a subset of a :class:`~lhotse.audio.Recording` -- it can also be thought of as a "view"
+    or a pointer to a chunk of audio.
+    It is not limited to audio data -- cuts may also point to (sub-spans of) precomputed
+    :class:`~lhotse.features.base.Features`.
+
+    Cuts are different from :class:`~lhotse.supervision.SupervisionSegment` in that they may be arbitrarily
+    longer or shorter than supervisions; cuts may even contain multiple supervisions for creating contextual
+    training data, and unsupervised regions that provide real or synthetic acoustic background context
+    for the supervised segments.
+
+    The following example visualizes how a cut may represent a part of a single-channel recording with
+    two utterances and some background noise in between::
+
+                          Recording
+        |-------------------------------------------|
+        "Hey, Matt!"     "Yes?"        "Oh, nothing"
+        |----------|     |----|        |-----------|
+                   Cut1
+        |------------------------|
+
+    This scenario can be represented in code, using :class:`~lhotse.cut.MonoCut`, as::
+
+        >>> from lhotse import Recording, SupervisionSegment, MonoCut
+        >>> rec = Recording(id='rec1', duration=10.0, sampling_rate=8000, num_samples=80000, sources=[...])
+        >>> sups = [
+        ...     SupervisionSegment(id='sup1', recording_id='rec1', start=0, duration=3.37, text='Hey, Matt!'),
+        ...     SupervisionSegment(id='sup2', recording_id='rec1', start=4.5, duration=0.9, text='Yes?'),
+        ...     SupervisionSegment(id='sup3', recording_id='rec1', start=6.9, duration=2.9, text='Oh, nothing'),
+        ... ]
+        >>> cut = MonoCut(id='rec1-cut1', start=0.0, duration=6.0, channel=0, recording=rec,
+        ...     supervisions=[sups[0], sups[1]])
+
+    Cut allows to check and read audio data or features data::
+
+        >>> assert cut.has_recording
+        >>> samples = cut.load_audio()
+        >>> if cut.has_features:
+        ...     feats = cut.load_features()
+
+    It can be visualized, and listened to, inside Jupyter Notebooks::
+
+        >>> cut.plot_audio()
+        >>> cut.play_audio()
+        >>> cut.plot_features()
+
+    See also:
+
+        - :class:`lhotse.cut.MonoCut`
+        - :class:`lhotse.cut.MixedCut`
+        - :class:`lhotse.cut.CutSet`
     """
 
     # The following is the list of members and properties implemented by the child classes.
