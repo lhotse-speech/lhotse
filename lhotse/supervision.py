@@ -297,7 +297,8 @@ class SupervisionSegment:
 class SupervisionSet(Serializable, Sequence[SupervisionSegment]):
     """
     :class:`~lhotse.supervision.SupervisionSet` represents a collection of segments containing some
-    supervision information (see :class:`~lhotse.supervision.SupervisionSegment`).
+    supervision information (see :class:`~lhotse.supervision.SupervisionSegment`),
+    that are indexed by segment IDs.
 
     It acts as a Python ``dict``, extended with an efficient ``find`` operation that indexes and caches
     the supervision segments in an interval tree.

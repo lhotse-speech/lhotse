@@ -1519,9 +1519,147 @@ class MixedCut(Cut):
 
 class CutSet(Serializable, Sequence[Cut]):
     """
-    CutSet combines features with their corresponding supervisions.
-    It may have wider span than the actual supervisions, provided the features for the whole span exist.
-    It is the basic building block of PyTorch-style Datasets for speech/audio processing tasks.
+    :class:`~lhotse.cut.CutSet` represents a collection of cuts, indexed by cut IDs.
+    CutSet ties together all types of data -- audio, features and supervisions, and is suitable to represent
+    training/dev/test sets.
+
+    .. note::
+        :class:`~lhotse.cut.CutSet` is the basic building block of PyTorch-style Datasets for speech/audio processing tasks.
+
+    When coming from Kaldi, there is really no good equivalent -- the closest concept may be Kaldi's "egs" for training
+    neural networks, which are chunks of feature matrices and corresponding alignments used respectively as inputs and
+    supervisions. :class:`~lhotse.cut.CutSet` is different because it provides you with all kinds of metadata,
+    and you can select just the interesting bits to feed them to your models.
+
+    :class:`~lhotse.cut.CutSet` can be created from any combination of :class:`~lhotse.audio.RecordingSet`,
+    :class:`~lhotse.supervision.SupervisionSet`, and :class:`~lhotse.features.base.FeatureSet`
+    with :meth:`lhotse.cut.CutSet.from_manifests`::
+
+        >>> from lhotse import CutSet
+        >>> cuts = CutSet.from_manifests(recordings=my_recording_set)
+        >>> cuts2 = CutSet.from_manifests(features=my_feature_set)
+        >>> cuts3 = CutSet.from_manifests(
+        ...     recordings=my_recording_set,
+        ...     features=my_feature_set,
+        ...     supervisions=my_supervision_set,
+        ... )
+
+    When creating a :class:`.CutSet` with :meth:`.CutSet.from_manifests`, the resulting cuts will have the same duration
+    as the input recordings or features. For long recordings, it is not viable for training.
+    We provide several methods to transform the cuts into shorter ones.
+
+    Consider the following scenario::
+
+                          Recording
+        |-------------------------------------------|
+        "Hey, Matt!"     "Yes?"        "Oh, nothing"
+        |----------|     |----|        |-----------|
+
+        .......... CutSet.from_manifests() ..........
+                            Cut1
+        |-------------------------------------------|
+
+        ............. Example CutSet A ..............
+            Cut1          Cut2              Cut3
+        |----------|     |----|        |-----------|
+
+        ............. Example CutSet B ..............
+                  Cut1                  Cut2
+        |---------------------||--------------------|
+
+        ............. Example CutSet C ..............
+                     Cut1        Cut2
+                    |---|      |------|
+
+    The CutSet's A, B and C can be created like::
+
+        >>> cuts_A = cuts.trim_to_supervisions()
+        >>> cuts_B = cuts.cut_into_windows(duration=5.0)
+        >>> cuts_C = cuts.trim_to_unsupervised_segments()
+
+    :class:`~lhotse.cut.CutSet` can be stored and read from JSON, JSONL, etc. and supports optional gzip compression::
+
+        >>> cuts.to_file('cuts.jsonl.gz')
+        >>> cuts4 = CutSet.from_file('cuts.jsonl.gz')
+
+    It behaves similarly to a ``dict``::
+
+            >>> 'rec1-1-0' in cuts
+            True
+            >>> cut = cuts['rec1-1-0']
+            >>> for cut in cuts:
+            >>>    pass
+            >>> len(cuts)
+            127
+
+    :class:`~lhotse.cut.CutSet` has some convenience properties and methods to gather information about the dataset::
+
+        >>> ids = list(cuts.ids)
+        >>> speaker_id_set = cuts.speakers
+        >>> # The following prints a message:
+        >>> cuts.describe()
+        Cuts count: 547
+        Total duration (hours): 326.4
+        Speech duration (hours): 79.6 (24.4%)
+        ***
+        Duration statistics (seconds):
+        mean    2148.0
+        std      870.9
+        min      477.0
+        25%     1523.0
+        50%     2157.0
+        75%     2423.0
+        max     5415.0
+        dtype: float64
+
+
+    Manipulation examples::
+
+        >>> longer_than_5s = cuts.filter(lambda c: c.duration > 5)
+        >>> first_100 = cuts.subset(first=100)
+        >>> split_into_4 = cuts.split(num_splits=4)
+        >>> random_sample = cuts.sample(n_cuts=10)
+        >>> new_ids = cuts.modify_ids(lambda c: c.id + '-newid')
+
+    Sometimes specific sorting patterns are useful when a small CutSet represents a mini-batch::
+
+        >>> cuts = cuts.sort_by_duration(ascending=False)
+        >>> cuts = cuts.sort_like(other_cuts)
+
+    :class:`~lhotse.cut.CutSet` offers some batch processing operations::
+
+        >>> cuts = cuts.pad(num_frames=300)  # or duration=30.0
+        >>> cuts = cuts.truncate(max_duration=30.0, offset_type='start')  # truncate from start to 30.0s
+        >>> cuts = cuts.mix(other_cuts, snr=[10, 30], mix_prob=0.5)
+
+    :class:`~lhotse.cut.CutSet` supports lazy data augmentation/transformation methods which require adjusting some information
+    in the manifest (e.g., ``num_samples`` or ``duration``).
+    Note that in the following examples, the audio is untouched -- the operations are stored in the manifest,
+    and executed upon reading the audio::
+
+        >>> cuts_sp = cuts.perturb_speed(factor=1.1)
+        >>> cuts_24k = cuts.resample(24000)
+
+    .. caution::
+        If the :class:`.CutSet` contained :class:`~lhotse.features.base.Features` manifests, they will be
+        detached after performing audio augmentations such as :meth:`.CutSet.perturb_speed` or :meth:`.CutSet.resample`.
+
+    :class:`~lhotse.cut.CutSet` offers parallel feature extraction capabilities
+    (see `meth`:.CutSet.compute_and_store_features: for details),
+    and can be used to estimate global mean and variance::
+
+        >>> from lhotse import Fbank
+        >>> cuts = CutSet()
+        >>> cuts = cuts.compute_and_store_features(
+        ...     extractor=Fbank(),
+        ...     storage_path='/data/feats',
+        ...     num_jobs=4
+        ... )
+        >>> mvn_stats = cuts.compute_global_feature_stats('/data/features/mvn_stats.pkl', max_cuts=10000)
+
+    See also:
+
+        - :class:`~lhotse.cut.Cut`
     """
 
     def __init__(self, cuts: Optional[Mapping[str, Cut]] = None) -> None:
@@ -1567,21 +1705,24 @@ class CutSet(Serializable, Sequence[Cut]):
     ) -> 'CutSet':
         """
         Create a CutSet from any combination of supervision, feature and recording manifests.
-        At least one of ``recording_set`` or ``feature_set`` is required.
-        The MonoCut boundaries correspond to those found in the ``feature_set``, when available,
-        otherwise to those found in the ``recording_set``
-        When a ``supervision_set`` is provided, we'll attach to the MonoCut all supervisions that
-        have a matching recording ID and are fully contained in the MonoCut's boundaries.
+        At least one of ``recordings`` or ``features`` is required.
 
-        :param recordings: a ``RecordingSet`` manifest.
-        :param supervisions: a ``SupervisionSet`` manifest.
-        :param features: a ``FeatureSet`` manifest.
+        The created cuts will be of type :class:`.MonoCut`, even when the recordings have multiple channels.
+        The :class:`.MonoCut` boundaries correspond to those found in the ``features``, when available,
+        otherwise to those found in the ``recordings``.
+
+        When ``supervisions`` are provided, we'll be searching them for matching recording IDs
+        and attaching to created cuts, assuming they are fully within the cut's time span.
+
+        :param recordings: an optional :class:`~lhotse.audio.RecordingSet` manifest.
+        :param supervisions: an optional :class:`~lhotse.supervision.SupervisionSet` manifest.
+        :param features: an optional :class:`~lhotse.features.base.FeatureSet` manifest.
         :param random_ids: boolean, should the cut IDs be randomized. By default, use the recording ID
             with a loop index and a channel idx, i.e. "{recording_id}-{idx}-{channel}")
-        :return: a new ``CutSet`` instance.
+        :return: a new :class:`.CutSet` instance.
         """
         assert features is not None or recordings is not None, \
-            "At least one of feature_set and recording_set has to be provided."
+            "At least one of 'features' or 'recordings' has to be provided."
         sup_ok, feat_ok, rec_ok = supervisions is not None, features is not None, recordings is not None
         if feat_ok:
             # Case I: Features are provided.
