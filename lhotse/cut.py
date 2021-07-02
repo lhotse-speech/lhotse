@@ -100,7 +100,7 @@ class Cut:
         >>> feats = cut.compute_features(extractor=Fbank())
 
     It is also possible to use a :class:`~lhotse.features.io.FeaturesWriter` to store the features and attach
-     their manifest to a copy of the cut::
+    their manifest to a copy of the cut::
 
         >>> from lhotse import LilcomHdf5Writer
         >>> with LilcomHdf5Writer('feats.h5') as storage:
