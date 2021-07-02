@@ -10,47 +10,31 @@ The regions without a supervision are just audio that we don't assume we know an
 noise, non-transcribed speech, etc.
 Task-specific datasets can leverage this information to generate masks for such regions.
 
-Currently, cuts are created after the feature extraction step (we might still change that).
-It means that every cut also represents the extracted features for the part of recording it represents.
-
-Cuts can be modified using three basic operations: truncation, mixing and appending.
-These operations are not immediately performed on the audio or features.
-Instead, we create new :class:`Cut` objects, possibly of different types, that represent a cut after modification.
-We only modify the actual audio and feature matrices once the user calls :meth:`load_features` or :meth:`load_audio`.
-
-This design allows for quick on-the-fly data augmentation.
-In each training epoch, we may mix the cuts with different noises, SNRs, etc.
-We also do not need to re-compute and store the features for different mixes, as the mixing process consists of
-element-wise addition of the spectral energies (possibly with additional exp and log operations for log-energies).
-As of now, we only support this dynamic mix on log Mel energy (_fbank_) features.
-We anticipate to add support for other types of features as well.
-
 .. autoclass:: lhotse.cut.Cut
     :no-members:
     :no-special-members:
     :noindex:
 
-The common attributes for all cut objects are the following:
-
-- id
-- duration
-- supervisions
-- num_frames
-- num_features
-- load_features()
-- truncate()
-- mix()
-- append()
-- from_dict()
-
 Types of cuts
 *************
 
-There are three cut classes:
+There are three cut classes: :class:`~lhotse.cut.MonoCut`, :class:`~lhotse.cut.MixedCut`, and :class:`~lhotse.cut.PaddingCut` that are described below in more detail:
 
-- :class:`MonoCut`, also referred to as "simple cut", can be traced back to a single particular recording (and channel).
-- :class:`PaddingCut` is an "artificial" recording used for padding other Cuts through mixing to achieve uniform duration.
-- :class:`MixedCut` is a collection of :class:`MonoCut` and :class:`PaddingCut` objects, together with mix parameters: offset and desired sound-to-noise ratio (SNR) for each track. Both the offset and the SNR are relative to the first cut in the mix.
+.. autoclass:: lhotse.cut.MonoCut
+    :no-members:
+    :no-special-members:
+    :noindex:
+
+.. autoclass:: lhotse.cut.MixedCut
+    :no-members:
+    :no-special-members:
+    :noindex:
+
+
+.. autoclass:: lhotse.cut.PaddingCut
+    :no-members:
+    :no-special-members:
+    :noindex:
 
 Each of these types has additional attributes that are not common - e.g., it makes sense to specify *start* for
 :class:`MonoCut` to locate it in the source recording, but it is undefined for :class:`MixedCut` and :class:`PaddingCut`.
@@ -173,6 +157,7 @@ Some examples of how cuts can be manipulated to create a desired dataset for mod
 CLI
 ***
 
+We provide a limited CLI to manipulate Lhotse manifests.
 Analogous examples of how to perform the same operations in the terminal:
 
 .. code-block:: bash

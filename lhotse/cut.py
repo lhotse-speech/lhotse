@@ -73,6 +73,14 @@ class Cut:
         >>> cut = MonoCut(id='rec1-cut1', start=0.0, duration=6.0, channel=0, recording=rec,
         ...     supervisions=[sups[0], sups[1]])
 
+    .. note::
+        All Cut classes assume that the :class:`~lhotse.supervision.SupervisionSegment` time boundaries are relative
+        to the beginning of the cut.
+        E.g. if the underlying :class:`~lhotse.audio.Recording` starts at 0s (always true), the cut starts at 100s,
+        and the SupervisionSegment inside the cut starts at 3s, it really did start at 103rd second of the recording.
+        In some cases, the supervision might have a negative start, or a duration exceeding the duration of the cut;
+        this means that the supervision in the recording extends beyond the cut.
+
     Cut allows to check and read audio data or features data::
 
         >>> assert cut.has_recording
@@ -85,6 +93,40 @@ class Cut:
         >>> cut.plot_audio()
         >>> cut.play_audio()
         >>> cut.plot_features()
+
+    Cuts can be used with Lhotse's :class:`~lhotse.features.base.FeatureExtractor` to compute features.
+
+        >>> from lhotse import Fbank
+        >>> feats = cut.compute_features(extractor=Fbank())
+
+    It is also possible to use a :class:`~lhotse.features.io.FeaturesWriter` to store the features and attach
+     their manifest to a copy of the cut::
+
+        >>> from lhotse import LilcomHdf5Writer
+        >>> with LilcomHdf5Writer('feats.h5') as storage:
+        ...     cut_with_feats = cut.compute_and_store_features(
+        ...         extractor=Fbank(),
+        ...         storage=storage
+        ...     )
+
+    Cuts have several methods that allow their manipulation, transformation, and mixing.
+    Some examples (see the respective methods documentation for details)::
+
+        >>> cut_2_to_4s = cut.truncate(offset=2, duration=2)
+        >>> cut_padded = cut.pad(duration=10.0)
+        >>> cut_mixed = cut.mix(other_cut, offset_other_by=5.0, snr=20)
+        >>> cut_append = cut.append(other_cut)
+        >>> cut_24k = cut.resample(24000)
+        >>> cut_sp = cut.perturb_speed(1.1)
+
+    .. note::
+        All cut transformations are performed lazily, on-the-fly, upon calling ``load_audio`` or ``load_features``.
+        The stored waveforms and features are untouched.
+
+    Finally, cuts provide convenience methods to compute feature frame and audio sample masks for supervised regions::
+
+        >>> sup_frames = cut.supervisions_feature_mask()
+        >>> sup_samples = cut.supervisions_audio_mask()
 
     See also:
 
@@ -108,9 +150,21 @@ class Cut:
     has_features: bool
 
     # The following is the list of methods implemented by the child classes.
-    # They are not abstract properties because dataclasses do not work well with the "abc" module.
+    # They are not abstract methods because dataclasses do not work well with the "abc" module.
+    # Check a specific child class for their documentation.
+    from_dict: Callable[[Dict], 'Cut']
     load_audio: Callable[[], np.ndarray]
     load_features: Callable[[], np.ndarray]
+    compute_and_store_features: Callable
+    drop_features: Callable
+    truncate: Callable
+    pad: Callable
+    resample: Callable
+    perturb_speed: Callable
+    map_supervisions: Callable
+    filter_supervisions: Callable
+    with_features_path_prefix: Callable
+    with_recording_path_prefix: Callable
 
     def to_dict(self) -> dict:
         d = asdict_nonull(self)
@@ -126,6 +180,11 @@ class Cut:
         values that indicate the supervision actually begins before the cut, or ``end`` values
         that exceed the Cut's duration (it means the supervision continued in the original recording
         after the Cut's ending).
+
+        .. caution::
+            For some tasks such as speech recognition (ASR), trimmed supervisions
+            could result in corrupted training data. This is because a part of the transcript
+            might actually reside outside of the cut.
         """
         return [s.trim(self.duration) for s in self.supervisions]
 
@@ -321,6 +380,7 @@ class Cut:
         """
         Return a 1D numpy array with value 1 for **frames** covered by at least one supervision,
         and 0 for **frames** not covered by any supervision.
+
         :param use_alignment_if_exists: optional str, key for alignment type to use for generating the mask. If not
             exists, fall back on supervision time spans.
         """
@@ -330,6 +390,7 @@ class Cut:
         """
         Return a 1D numpy array with value 1 for **samples** covered by at least one supervision,
         and 0 for **samples** not covered by any supervision.
+
         :param use_alignment_if_exists: optional str, key for alignment type to use for generating the mask. If not
             exists, fall back on supervision time spans.
         """
@@ -364,18 +425,16 @@ class Cut:
 @dataclass
 class MonoCut(Cut):
     """
-    A MonoCut is a single "segment" that we'll train on. It contains the features corresponding to
-    a piece of a recording, with zero or more SupervisionSegments.
+    :class:`~lhotse.cut.MonoCut` is a :class:`~lhotse.cut.Cut` of a single channel of
+    a :class:`~lhotse.audio.Recording`. In addition to Cut, it has a specified channel attribute. This is the most commonly used type of cut.
 
-    The SupervisionSegments indicate which time spans of the MonoCut contain some kind of supervision information:
-    e.g. transcript, speaker, language, etc. The regions without a corresponding SupervisionSegment may
-    contain anything - usually we assume it's either silence or some kind of noise.
+    Please refer to the documentation of :class:`~lhotse.cut.Cut` to learn more about using cuts.
 
-    Note: The SupervisionSegment time boundaries are relative to the beginning of the cut.
-    E.g. if the underlying Recording starts at 0s (always true), the MonoCut starts at 100s,
-    and the SupervisionSegment starts at 3s, it means that in the Recording the supervision actually started at 103s.
-    In some cases, the supervision might have a negative start, or a duration exceeding the duration of the MonoCut;
-    this means that the supervision in the recording extends beyond the MonoCut.
+    See also:
+
+        - :class:`lhotse.cut.Cut`
+        - :class:`lhotse.cut.MixedCut`
+        - :class:`lhotse.cut.CutSet`
     """
     id: str
 
@@ -711,8 +770,19 @@ class MonoCut(Cut):
 @dataclass
 class PaddingCut(Cut):
     """
-    Represents a cut filled with zeroes in the time domain, or some specified value in the
-    frequency domain. It's used to make training samples evenly sized (same duration/number of frames).
+    :class:`~lhotse.cut.PaddingCut` is a dummy :class:`~lhotse.cut.Cut` that doesn't refer to
+    actual recordings or features --it simply returns zero samples in the time domain
+    and a specified features value in the feature domain.
+    Its main role is to be appended to other cuts to make them evenly sized.
+
+    Please refer to the documentation of :class:`~lhotse.cut.Cut` to learn more about using cuts.
+
+    See also:
+
+        - :class:`lhotse.cut.Cut`
+        - :class:`lhotse.cut.MonoCut`
+        - :class:`lhotse.cut.MixedCut`
+        - :class:`lhotse.cut.CutSet`
     """
     id: str
     duration: Seconds
@@ -950,11 +1020,31 @@ class MixTrack:
 @dataclass
 class MixedCut(Cut):
     """
-    Represents a MonoCut that's created from other Cuts via mix or append operations.
-    The actual mixing operations are performed upon loading the features into memory.
-    In order to load the features, it needs to access the CutSet object that holds the "ingredient" cuts,
-    as it only holds their IDs ("pointers").
-    The SNR and offset of all the tracks are specified relative to the first track.
+    :class:`~lhotse.cut.MixedCut` is a :class:`~lhotse.cut.Cut` that actually consists of multiple other cuts.
+    It can be interpreted as a multi-channel cut, but its primary purpose is to allow
+    time-domain and feature-domain augmentation via mixing the training cuts with noise, music, and babble cuts.
+    The actual mixing operations are performed on-the-fly.
+
+    Internally, :class:`~lhotse.cut.MixedCut` holds other cuts in multiple trakcs (:class:`~lhotse.cut.MixTrack`),
+    each with its own offset and SNR that is relative to the first track.
+
+    Please refer to the documentation of :class:`~lhotse.cut.Cut` to learn more about using cuts.
+
+    In addition to methods available in :class:`~lhotse.cut.Cut`, :class:`~lhotse.cut.MixedCut` provides the methods to
+    read all of its tracks audio and features as separate channels:
+
+        >>> cut = MixedCut(...)
+        >>> mono_features = cut.load_features()
+        >>> assert len(mono_features.shape) == 2
+        >>> multi_features = cut.load_features(mixed=False)
+        >>> # Now, the first dimension is the channel.
+        >>> assert len(multi_features.shape) == 3
+
+    See also:
+
+        - :class:`lhotse.cut.Cut`
+        - :class:`lhotse.cut.MonoCut`
+        - :class:`lhotse.cut.CutSet`
     """
     id: str
     tracks: List[MixTrack]
