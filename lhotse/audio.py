@@ -391,7 +391,7 @@ class Recording:
 
 class RecordingSet(Serializable, Sequence[Recording]):
     """
-    RecordingSet represents a collection of recordings.
+    :class:`~lhotse.audio.RecordingSet` represents a collection of recordings, indexed by recording IDs.
     It does not contain any annotation such as the transcript or the speaker identity --
     just the information needed to retrieve a recording such as its path, URL, number of channels,
     and some recording metadata (duration, number of samples).
@@ -412,6 +412,10 @@ class RecordingSet(Serializable, Sequence[Recording]):
             >>> from lhotse import RecordingSet
             >>> audio_paths = ['123-5678.wav', ...]
             >>> recs = RecordingSet.from_recordings(Recording.from_file(p) for p in audio_paths)
+
+        As well as from a directory, which will be scanned recursively for files with parallel processing::
+
+            >>> recs2 = RecordingSet.from_dir('/data/audio', pattern='*.flac', num_jobs=4)
 
         It behaves similarly to a ``dict``::
 

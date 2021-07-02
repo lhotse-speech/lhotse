@@ -4,7 +4,7 @@ from lhotse.supervision import AlignmentItem
 
 import pytest
 
-from lhotse import AudioSource, Cut, CutSet, FeatureSet, Features, Recording, RecordingSet, SupervisionSegment, \
+from lhotse import AudioSource, MonoCut, CutSet, FeatureSet, Features, Recording, RecordingSet, SupervisionSegment, \
     SupervisionSet, load_manifest, store_manifest
 from lhotse.testing.dummies import DummyManifest
 from lhotse.utils import fastcopy, is_module_available, nullcontext as does_not_raise
@@ -100,7 +100,7 @@ def feature_set():
 
 @pytest.fixture
 def cut_set():
-    cut = Cut(
+    cut = MonoCut(
         id='cut-1',
         start=0.0,
         duration=10.0,

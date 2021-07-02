@@ -1,6 +1,7 @@
 import gzip
 import itertools
 import json
+import warnings
 from collections import deque
 from pathlib import Path
 from typing import Any, Dict, Generator, Iterable, Optional, Type, Union
@@ -541,7 +542,7 @@ class LazyDict:
 def deserialize_item(data: dict) -> Any:
     # Figures out what type of manifest is being decoded with some heuristics
     # and returns a Lhotse manifest object rather than a raw dict.
-    from lhotse import Cut, Features, Recording, SupervisionSegment
+    from lhotse import MonoCut, Features, Recording, SupervisionSegment
     from lhotse.cut import MixedCut
     data = arr2list_recursive(data)
     if 'sources' in data:
@@ -551,8 +552,13 @@ def deserialize_item(data: dict) -> Any:
     if 'type' not in data:
         return SupervisionSegment.from_dict(data)
     cut_type = data.pop('type')
+    if cut_type == 'MonoCut':
+        return MonoCut.from_dict(data)
     if cut_type == 'Cut':
-        return Cut.from_dict(data)
+        warnings.warn('Your manifest was created with Lhotse version earlier than v0.8, when MonoCut was called Cut. '
+                      'Please re-generate it with Lhotse v0.8 as it might stop working in a future version '
+                      '(using manifest.from_file() and then manifest.to_file() should be sufficient).')
+        return MonoCut.from_dict(data)
     if cut_type == 'MixedCut':
         return MixedCut.from_dict(data)
     raise ValueError(f"Unexpected cut type during deserialization: '{cut_type}'")

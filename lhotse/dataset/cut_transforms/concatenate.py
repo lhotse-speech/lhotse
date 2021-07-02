@@ -1,7 +1,7 @@
 from typing import Optional, Sequence
 
 from lhotse import CutSet
-from lhotse.cut import AnyCut
+from lhotse.cut import Cut
 from lhotse.utils import Seconds
 
 
@@ -38,7 +38,7 @@ class CutConcatenate:
 
 
 def concat_cuts(
-        cuts: Sequence[AnyCut],
+        cuts: Sequence[Cut],
         gap: Seconds = 1.0,
         max_duration: Optional[Seconds] = None
 ) -> CutSet:

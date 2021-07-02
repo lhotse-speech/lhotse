@@ -1,17 +1,17 @@
 import random
-from typing import Dict, List
 from tempfile import NamedTemporaryFile, TemporaryDirectory
-from lhotse.supervision import AlignmentItem
+from typing import Dict, List
 
 import numpy as np
 
-from lhotse import AudioSource, Cut, CutSet, Fbank, FbankConfig, LilcomFilesWriter, Recording, SupervisionSegment
+from lhotse import AudioSource, CutSet, Fbank, FbankConfig, LilcomFilesWriter, MonoCut, Recording, SupervisionSegment
+from lhotse.supervision import AlignmentItem
 from lhotse.utils import Seconds, uuid4
 
 
 def random_cut_set(n_cuts=100) -> CutSet:
     return CutSet.from_cuts(
-        Cut(
+        MonoCut(
             id=uuid4(),
             start=round(random.uniform(0, 5), ndigits=8),
             duration=round(random.uniform(3, 10), ndigits=8),
@@ -69,9 +69,9 @@ class RandomCutTestCase:
             supervision: bool = False,
             alignment: bool = False,
             frame_shift: Seconds = 0.01
-    ) -> Cut:
+    ) -> MonoCut:
         duration = num_samples / sampling_rate
-        cut = Cut(
+        cut = MonoCut(
             id=str(uuid4()),
             start=0,
             duration=duration,
@@ -91,22 +91,21 @@ class RandomCutTestCase:
             ))
         return cut
 
-    def _with_features(self, cut: Cut, frame_shift: Seconds) -> Cut:
+    def _with_features(self, cut: MonoCut, frame_shift: Seconds) -> MonoCut:
         d = TemporaryDirectory()
         self.dirs.append(d)
         extractor = Fbank(config=FbankConfig(frame_shift=frame_shift))
         with LilcomFilesWriter(d.name) as storage:
             return cut.compute_and_store_features(extractor, storage=storage)
-        
-    def _with_alignment(self, cut: Cut, text: str) -> Dict[str, List[AlignmentItem]]:
-        subwords = [text[i:i+3] for i in range(0, len(text), 3)]   # Create subwords of 3 chars
-        dur = cut.duration/len(subwords)
+
+    def _with_alignment(self, cut: MonoCut, text: str) -> Dict[str, List[AlignmentItem]]:
+        subwords = [text[i:i + 3] for i in range(0, len(text), 3)]  # Create subwords of 3 chars
+        dur = cut.duration / len(subwords)
         alignment = [
             AlignmentItem(
                 symbol=sub,
-                start=i*dur,
+                start=i * dur,
                 duration=dur
-            ) for i, sub in enumerate(subwords)    
+            ) for i, sub in enumerate(subwords)
         ]
         return {'subword': alignment}
-        

@@ -8,7 +8,7 @@ with warnings.catch_warnings():
 
 from .audio import AudioSource, Recording, RecordingSet
 from .augmentation import *
-from .cut import Cut, CutSet
+from .cut import MonoCut, CutSet
 from .features import *
 from .kaldi import load_kaldi_data_dir
 from .manipulation import combine, to_manifest

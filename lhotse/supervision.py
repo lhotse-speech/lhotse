@@ -76,7 +76,7 @@ class SupervisionSegment:
     Since it is difficult to predict all possible types of metadata, the ``custom`` field (a dict) can be used to
     insert types of supervisions that are not supported out of the box.
 
-    :class:`~lhotse.supervsion.SupervisionSegment` may containing multiple types of alignments.
+    :class:`~lhotse.supervsion.SupervisionSegment` may contain multiple types of alignments.
     The ``alignment`` field is a dict, indexed by alignment's type (e.g., ``word`` or ``phone``),
     and contains a list of :class:`~lhotse.supervision.AlignmentItem` objects -- simple structures
     that contain a given symbol and its time interval.
@@ -297,7 +297,8 @@ class SupervisionSegment:
 class SupervisionSet(Serializable, Sequence[SupervisionSegment]):
     """
     :class:`~lhotse.supervision.SupervisionSet` represents a collection of segments containing some
-    supervision information (see :class:`~lhotse.supervision.SupervisionSegment`).
+    supervision information (see :class:`~lhotse.supervision.SupervisionSegment`),
+    that are indexed by segment IDs.
 
     It acts as a Python ``dict``, extended with an efficient ``find`` operation that indexes and caches
     the supervision segments in an interval tree.

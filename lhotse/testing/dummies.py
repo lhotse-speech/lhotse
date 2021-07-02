@@ -1,11 +1,11 @@
-from typing import Optional, Type, Dict, List
+from typing import Dict, List, Optional, Type
 
 from lhotse import AudioSource
 from lhotse.audio import Recording, RecordingSet
-from lhotse.cut import Cut, CutSet
+from lhotse.cut import CutSet, MonoCut
 from lhotse.features import FeatureSet, Features
 from lhotse.manipulation import Manifest
-from lhotse.supervision import SupervisionSegment, SupervisionSet, AlignmentItem
+from lhotse.supervision import AlignmentItem, SupervisionSegment, SupervisionSet
 from lhotse.utils import fastcopy
 
 
@@ -83,7 +83,7 @@ def dummy_features(unique_id: int) -> Features:
 
 
 def dummy_cut(unique_id: int, start: float = 0.0, duration: float = 1.0, supervisions=None):
-    return Cut(
+    return MonoCut(
         id=f'dummy-cut-{unique_id:04d}',
         start=start,
         duration=duration,

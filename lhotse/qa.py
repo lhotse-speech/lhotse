@@ -5,7 +5,7 @@ from typing import Any, Callable, Dict, Optional, Tuple
 import numpy as np
 
 from lhotse.audio import Recording, RecordingSet
-from lhotse.cut import AnyCut, CutSet, MixedCut, PaddingCut
+from lhotse.cut import Cut, CutSet, MixedCut, PaddingCut
 from lhotse.features import FeatureSet, Features
 from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import compute_num_frames
@@ -25,13 +25,16 @@ def validate(obj: Any, read_data: bool = False) -> None:
     This function determines the passed object's type and automatically calls
     the proper validator for that object.
     """
-    obj_type = type(obj)
-    valid = _VALIDATORS.get(obj_type)
-    if valid is None:
+    validator = None
+    for registered_type in _VALIDATORS:
+        if isinstance(obj, registered_type):
+            validator = _VALIDATORS[registered_type]
+            break
+    if validator is None:
         raise ValueError(
-            f"Object of unknown type passed to validate() (T = {obj_type}, known types = {list(_VALIDATORS)}"
+            f"Object of unknown type passed to validate() (T = {type(obj)}, known types = {list(_VALIDATORS)}"
         )
-    valid(obj, read_data=read_data)
+    validator(obj, read_data=read_data)
 
 
 def fix_manifests(
@@ -217,20 +220,20 @@ def validate_features(f: Features, read_data: bool = False, feats_data: Optional
 
 
 @register_validator
-def validate_cut(c: AnyCut, read_data: bool = False) -> None:
+def validate_cut(c: Cut, read_data: bool = False) -> None:
     # Validate MixedCut
     if isinstance(c, MixedCut):
-        assert len(c.tracks) > 0, f'Cut {c.id}: Mixed cut must have at least one track.'
+        assert len(c.tracks) > 0, f'MonoCut {c.id}: Mixed cut must have at least one track.'
         for idx, track in enumerate(c.tracks):
             validate_cut(track.cut, read_data=read_data)
-            assert track.offset >= 0, f'Cut: {c.id}: track {idx} has a negative offset.'
+            assert track.offset >= 0, f'MonoCut: {c.id}: track {idx} has a negative offset.'
         return
 
-    # Validate Cut and PaddingCut
-    assert c.start >= 0, f'Cut {c.id}: start must be 0 or greater (got {c.start})'
-    assert c.duration > 0, f'Cut {c.id}: duration must be greater than 0 (got {c.duration})'
-    assert c.sampling_rate > 0, f'Cut {c.id}: sampling_rate must be greater than 0 (got {c.sampling_rate})'
-    assert c.has_features or c.has_recording, f'Cut {c.id}: must have either Features or Recording attached.'
+    # Validate MonoCut and PaddingCut
+    assert c.start >= 0, f'MonoCut {c.id}: start must be 0 or greater (got {c.start})'
+    assert c.duration > 0, f'MonoCut {c.id}: duration must be greater than 0 (got {c.duration})'
+    assert c.sampling_rate > 0, f'MonoCut {c.id}: sampling_rate must be greater than 0 (got {c.sampling_rate})'
+    assert c.has_features or c.has_recording, f'MonoCut {c.id}: must have either Features or Recording attached.'
 
     # The rest pertains only to regular Cuts
     if isinstance(c, PaddingCut):
@@ -245,8 +248,8 @@ def validate_cut(c: AnyCut, read_data: bool = False) -> None:
             # we'll just validate the subset of the features relevant for the cut.
             feats = c.load_features()
             n_fr, n_ft = feats.shape
-            assert c.num_frames == n_fr, f'Cut {c.id}: expected num_frames: {c.num_frames}, actual: {n_fr}'
-            assert c.num_features == n_ft, f'Cut {c.id}: expected num_features: {c.num_features}, actual: {n_ft}'
+            assert c.num_frames == n_fr, f'MonoCut {c.id}: expected num_frames: {c.num_frames}, actual: {n_fr}'
+            assert c.num_features == n_ft, f'MonoCut {c.id}: expected num_features: {c.num_features}, actual: {n_ft}'
 
     # Conditions related to recording
     if c.has_recording:
@@ -257,16 +260,16 @@ def validate_cut(c: AnyCut, read_data: bool = False) -> None:
             # we'll just validate the subset of the recording relevant for the cut.
             samples = c.load_audio()
             assert c.num_samples == samples.shape[1], \
-                f'Cut {c.id}: expected {c.num_samples} samples, got {samples.shape[1]}'
+                f'MonoCut {c.id}: expected {c.num_samples} samples, got {samples.shape[1]}'
 
     # Conditions related to supervisions
     for s in c.supervisions:
         validate_supervision(s)
         assert s.recording_id == c.recording_id, \
-            f'Cut {c.id}: supervision {s.id} has a mismatched recording_id ' \
+            f'MonoCut {c.id}: supervision {s.id} has a mismatched recording_id ' \
             f'(expected {c.recording_id}, supervision has {s.recording_id})'
         assert s.channel == c.channel, \
-            f'Cut {c.id}: supervision {s.id} has a mismatched channel ' \
+            f'MonoCut {c.id}: supervision {s.id} has a mismatched channel ' \
             f'(expected {c.channel}, supervision has {s.channel})'
 
 
