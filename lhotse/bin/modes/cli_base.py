@@ -20,6 +20,6 @@ def prepare():
 
 
 @cli.group()
-def obtain():
+def download():
     """Command group for download and extract data."""
     pass

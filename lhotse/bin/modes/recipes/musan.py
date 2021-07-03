@@ -1,6 +1,6 @@
 import click
 
-from lhotse.bin.modes import obtain, prepare
+from lhotse.bin.modes import download, prepare
 from lhotse.recipes.musan import download_musan, prepare_musan
 from lhotse.utils import Pathlike
 
@@ -20,7 +20,7 @@ def musan(
     prepare_musan(corpus_dir, output_dir=output_dir, use_vocals=use_vocals)
 
 
-@obtain.command()
+@download.command()
 @click.argument('target_dir', type=click.Path())
 def musan(
         target_dir: Pathlike

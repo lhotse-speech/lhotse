@@ -10,6 +10,7 @@ from .cslu_kids import *
 from .dihard3 import *
 from .gale_arabic import *
 from .gale_mandarin import *
+from .gigaspeech import *
 from .heroico import *
 from .l2_arctic import *
 from .librimix import *

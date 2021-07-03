@@ -1,6 +1,6 @@
 import click
 
-from lhotse.bin.modes import obtain, prepare
+from lhotse.bin.modes import download, prepare
 from lhotse.recipes.cmu_arctic import download_cmu_arctic, prepare_cmu_arctic
 from lhotse.utils import Pathlike
 
@@ -18,7 +18,7 @@ def cmu_arctic(
     prepare_cmu_arctic(corpus_dir, output_dir=output_dir)
 
 
-@obtain.command()
+@download.command()
 @click.argument('target_dir', type=click.Path())
 def cmu_arctic(
         target_dir: Pathlike
