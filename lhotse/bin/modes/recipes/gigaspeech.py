@@ -1,3 +1,5 @@
+from typing import List
+
 import click
 
 from lhotse.bin.modes import download, prepare
@@ -24,11 +26,14 @@ def gigaspeech(
 
 @download.command(context_settings=dict(show_default=True))
 @click.argument('target_dir', type=click.Path())
-@click.option('--subset', type=click.Choice(('auto',) + GIGASPEECH_PARTS),
-              default=True, help='Which parts of Gigaspeech to download (by default XL + DEV + TEST).')
+@click.option('--subset', type=click.Choice(('auto',) + GIGASPEECH_PARTS), multiple=True,
+              default=['auto'], help='Which parts of Gigaspeech to download (by default XL + DEV + TEST).')
 def gigaspeech(
         target_dir: Pathlike,
-        subset: str
+        subset: List[str]
 ):
     """Gigaspeech download."""
+    # Convert (likely one-element) list with "auto" into a string.
+    if 'auto' in subset:
+        subset = 'auto'
     download_gigaspeech(target_dir, dataset_parts=subset)
