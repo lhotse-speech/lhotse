@@ -1,6 +1,6 @@
 import click
 
-from lhotse.bin.modes import obtain, prepare
+from lhotse.bin.modes import download, prepare
 from lhotse.recipes.librispeech import download_librispeech, prepare_librispeech
 from lhotse.utils import Pathlike
 
@@ -21,7 +21,7 @@ def librispeech(
     prepare_librispeech(corpus_dir, output_dir=output_dir, num_jobs=num_jobs)
 
 
-@obtain.command(context_settings=dict(show_default=True))
+@download.command(context_settings=dict(show_default=True))
 @click.argument('target_dir', type=click.Path())
 @click.option('--full/--mini', default=True, help='Download Librispeech [default] or mini Librispeech.')
 def librispeech(

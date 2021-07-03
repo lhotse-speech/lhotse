@@ -1,10 +1,10 @@
+from typing import Optional, Sequence, Union
+
 import click
 
-from lhotse.bin.modes import obtain, prepare
+from lhotse.bin.modes import download, prepare
 from lhotse.recipes.mtedx import download_mtedx, prepare_mtedx
 from lhotse.utils import Pathlike
-from typing import Optional, Union, Sequence
-
 
 __all__ = ['mtedx']
 
@@ -30,7 +30,7 @@ def mtedx(
     )
 
 
-@obtain.command(context_settings=dict(show_default=True))
+@download.command(context_settings=dict(show_default=True))
 @click.argument('target_dir', type=click.Path())
 @click.option('-l', '--lang', multiple=True, default=['all'],
     help='Specify which languages to download, e.g., '

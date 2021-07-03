@@ -1,6 +1,6 @@
 import click
 
-from lhotse.bin.modes import obtain, prepare
+from lhotse.bin.modes import download, prepare
 from lhotse.recipes import download_vctk, prepare_vctk
 from lhotse.utils import Pathlike
 
@@ -18,7 +18,7 @@ def vctk(
     prepare_vctk(corpus_dir, output_dir=output_dir)
 
 
-@obtain.command()
+@download.command()
 @click.argument('target_dir', type=click.Path())
 def vctk(
         target_dir: Pathlike
