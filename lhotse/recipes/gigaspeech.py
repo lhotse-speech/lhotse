@@ -40,6 +40,7 @@ def download_gigaspeech(
         dataset_parts = [dataset_parts]
 
     for part in dataset_parts:
+        logging.info(f'Downloading GigaSpeech part: {part}')
         try:
             gigaspeech.download(part)
         except NotImplementedError:
@@ -59,6 +60,8 @@ def prepare_gigaspeech(
             'To process the GigaSpeech corpus, please install optional dependency: pip install speechcolab')
 
     subsets = ('{XL}', '{DEV}', '{TEST}') if dataset_parts == 'auto' else dataset_parts
+    if isinstance(subsets, str):
+        subsets = [subsets]
     corpus_dir = Path(corpus_dir)
     gigaspeech = GigaSpeech(corpus_dir)
 
@@ -108,7 +111,7 @@ def parse_utterance(
             AudioSource(
                 type='file',
                 channels=list(range(int(audio['channels']))),
-                source=root_path / audio["path"]
+                source=str(root_path / audio["path"])
             )
         ],
         num_samples=compute_num_samples(
