@@ -123,6 +123,16 @@ class Cut:
         All cut transformations are performed lazily, on-the-fly, upon calling ``load_audio`` or ``load_features``.
         The stored waveforms and features are untouched.
 
+    .. caution::
+        Operations on cuts are not mutating -- they return modified copies of :class:`.Cut` objects,
+        leaving the original object unmodified.
+
+    Cuts can be detached from parts of their metadata::
+
+        >>> cut_no_feat = cut.drop_features()
+        >>> cut_no_rec = cut.drop_recording()
+        >>> cut_no_sup = cut.drop_supervisions()
+
     Finally, cuts provide convenience methods to compute feature frame and audio sample masks for supervised regions::
 
         >>> sup_frames = cut.supervisions_feature_mask()
@@ -1611,6 +1621,10 @@ class CutSet(Serializable, Sequence[Cut]):
         >>> cuts_B = cuts.cut_into_windows(duration=5.0)
         >>> cuts_C = cuts.trim_to_unsupervised_segments()
 
+    .. caution::
+        Operations on cut sets are not mutating -- they return modified copies of :class:`.CutSet` objects,
+        leaving the original object unmodified (and all of its cuts are also unmodified).
+
     :class:`~lhotse.cut.CutSet` can be stored and read from JSON, JSONL, etc. and supports optional gzip compression::
 
         >>> cuts.to_file('cuts.jsonl.gz')
@@ -1654,6 +1668,12 @@ class CutSet(Serializable, Sequence[Cut]):
         >>> split_into_4 = cuts.split(num_splits=4)
         >>> random_sample = cuts.sample(n_cuts=10)
         >>> new_ids = cuts.modify_ids(lambda c: c.id + '-newid')
+
+    Cuts in a :class:`.CutSet` can be detached from parts of their metadata::
+
+        >>> cuts_no_feat = cuts.drop_features()
+        >>> cuts_no_rec = cuts.drop_recordings()
+        >>> cuts_no_sup = cuts.drop_supervisions()
 
     Sometimes specific sorting patterns are useful when a small CutSet represents a mini-batch::
 
