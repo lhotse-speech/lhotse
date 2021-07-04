@@ -138,6 +138,7 @@ class Cut:
     # The following is the list of members and properties implemented by the child classes.
     # They are not abstract properties because dataclasses do not work well with the "abc" module.
     id: str
+    start: Seconds
     duration: Seconds
     sampling_rate: int
     supervisions: List[SupervisionSegment]
@@ -157,6 +158,8 @@ class Cut:
     load_features: Callable[[], np.ndarray]
     compute_and_store_features: Callable
     drop_features: Callable
+    drop_recording: Callable
+    drop_supervisions: Callable
     truncate: Callable
     pad: Callable
     resample: Callable
@@ -521,9 +524,18 @@ class MonoCut(Cut):
         return None
 
     def drop_features(self) -> 'MonoCut':
-        """Return a copy of the current :class:`MonoCut`, detached from ``features``."""
+        """Return a copy of the current :class:`.MonoCut`, detached from ``features``."""
         assert self.has_recording, f"Cannot detach features from a MonoCut with no Recording (cut ID = {self.id})."
         return fastcopy(self, features=None)
+
+    def drop_recording(self) -> 'MonoCut':
+        """Return a copy of the current :class:`.MonoCut`, detached from ``recording``."""
+        assert self.has_features, f"Cannot detach recording from a MonoCut with no Features (cut ID = {self.id})."
+        return fastcopy(self, recording=None)
+
+    def drop_supervisions(self) -> 'MonoCut':
+        """Return a copy of the current :class:`.MonoCut`, detached from ``supervisions``."""
+        return fastcopy(self, supervisions=[])
 
     def compute_and_store_features(
             self,
@@ -610,7 +622,7 @@ class MonoCut(Cut):
                 # We are going to measure the overlap ratio of the supervision with the "truncated" cut
                 # and reject segments that overlap less than 1%. This way we can avoid quirks and errors
                 # of limited float precision.
-                olap_ratio = measure_overlap(interval.data, TimeSpan(new_start, new_start + new_duration))
+                olap_ratio = measure_overlap(interval.data, TimeSpan(offset, offset + new_duration))
                 if olap_ratio > 0.01:
                     supervisions.append(interval.data.with_offset(-offset))
 
@@ -948,9 +960,18 @@ class PaddingCut(Cut):
         )
 
     def drop_features(self) -> 'PaddingCut':
-        """Return a copy of the current :class:`PaddingCut`, detached from ``features``."""
+        """Return a copy of the current :class:`.PaddingCut`, detached from ``features``."""
         assert self.has_recording, f"Cannot detach features from a MonoCut with no Recording (cut ID = {self.id})."
         return fastcopy(self, num_frames=None, num_features=None, frame_shift=None)
+
+    def drop_recording(self) -> 'PaddingCut':
+        """Return a copy of the current :class:`.PaddingCut`, detached from ``recording``."""
+        assert self.has_features, f"Cannot detach recording from a PaddingCut with no Features (cut ID = {self.id})."
+        return fastcopy(self, num_samples=None)
+
+    def drop_supervisions(self) -> 'PaddingCut':
+        """Return a copy of the current :class:`.PaddingCut`, detached from ``supervisions``."""
+        return self
 
     def compute_and_store_features(self, extractor: FeatureExtractor, *args, **kwargs) -> Cut:
         """
@@ -1146,7 +1167,7 @@ class MixedCut(Cut):
             # when the track offset is larger than the truncation offset, we are not truncating the cut;
             # just decreasing the track offset.
 
-            # 'cut_offset' determines how much we're going to truncate the MonoCut for the current track.
+            # 'cut_offset' determines how much we're going to truncate the Cut for the current track.
             cut_offset = max(offset - track.offset, 0)
             # 'track_offset' determines the new track's offset after truncation.
             track_offset = max(track.offset - offset, 0)
@@ -1406,8 +1427,17 @@ class MixedCut(Cut):
 
     def drop_features(self) -> 'MixedCut':
         """Return a copy of the current :class:`MixedCut`, detached from ``features``."""
-        assert self.has_recording, f"Cannot detach features from a MonoCut with no Recording (cut ID = {self.id})."
+        assert self.has_recording, f"Cannot detach features from a MixedCut with no Recording (cut ID = {self.id})."
         return fastcopy(self, tracks=[fastcopy(t, cut=t.cut.drop_features()) for t in self.tracks])
+
+    def drop_recording(self) -> 'MixedCut':
+        """Return a copy of the current :class:`.MixedCut`, detached from ``recording``."""
+        assert self.has_features, f"Cannot detach recording from a MixedCut with no Features (cut ID = {self.id})."
+        return fastcopy(self, tracks=[fastcopy(t, cut=t.cut.drop_recording()) for t in self.tracks])
+
+    def drop_supervisions(self) -> 'MixedCut':
+        """Return a copy of the current :class:`.MixedCut`, detached from ``supervisions``."""
+        return fastcopy(self, tracks=[fastcopy(t, cut=t.cut.drop_supervisions()) for t in self.tracks])
 
     def compute_and_store_features(
             self,
@@ -1487,9 +1517,13 @@ class MixedCut(Cut):
         :param predicate: A callable that accepts `SupervisionSegment` and returns bool
         :return: a modified MonoCut
         """
-        new_mixed_cut = fastcopy(self)
-        for track in new_mixed_cut.tracks:
-            track.cut = track.cut.filter_supervisions(predicate)
+        new_mixed_cut = fastcopy(
+            self,
+            tracks=[
+                fastcopy(track, cut=track.cut.filter_supervisions(predicate))
+                for track in self.tracks
+            ]
+        )
         return new_mixed_cut
 
     @staticmethod
@@ -1915,19 +1949,60 @@ class CutSet(Serializable, Sequence[Cut]):
         """
         return CutSet.from_cuts(cut for cut in self if predicate(cut))
 
-    def trim_to_supervisions(self) -> 'CutSet':
+    def trim_to_supervisions(self, keep_overlapping: bool = True) -> 'CutSet':
         """
         Return a new CutSet with Cuts that have identical spans as their supervisions.
 
+        For example, the following cut::
+
+                    Cut
+            |-----------------|
+             Sup1
+            |----|  Sup2
+               |-----------|
+
+        is transformed into two cuts::
+
+             Cut1
+            |----|
+             Sup1
+            |----|
+               Sup2
+               |-|
+                    Cut2
+               |-----------|
+               Sup1
+               |-|
+                    Sup2
+               |-----------|
+
+        :param keep_overlapping: when ``False``, it will discard parts of other supervisions that overlap with the
+            main supervision. In the illustration above, it would discard ``Sup2`` in ``Cut1`` and ``Sup1`` in ``Cut2``.
         :return: a ``CutSet``.
         """
-        supervisions_index = self.index_supervisions(index_mixed_tracks=True)
-        return CutSet.from_cuts(
-            cut.truncate(offset=segment.start, duration=segment.duration,
-                         _supervisions_index=supervisions_index)
-            for cut in self
-            for segment in cut.supervisions
-        )
+        if keep_overlapping:
+            supervisions_index = self.index_supervisions(index_mixed_tracks=True)
+            return CutSet.from_cuts(
+                cut.truncate(offset=segment.start, duration=segment.duration,
+                             _supervisions_index=supervisions_index)
+                for cut in self
+                for segment in cut.supervisions
+            )
+        else:
+            # If we're not going to keep overlapping supervision, we can use a slightly faster variant
+            # that doesn't require indexing and search of supervisions in an interval tree.
+            return CutSet.from_cuts(
+                (
+                    cut.filter_supervisions(
+                        lambda s: s.id == segment.id
+                    ).truncate(
+                        offset=segment.start,
+                        duration=segment.duration
+                    )
+                )
+                for cut in self
+                for segment in cut.supervisions
+            )
 
     def trim_to_unsupervised_segments(self) -> 'CutSet':
         """
@@ -1996,8 +2071,8 @@ class CutSet(Serializable, Sequence[Cut]):
 
     def index_supervisions(self, index_mixed_tracks: bool = False) -> Dict[str, IntervalTree]:
         """
-        Create a two-level index of supervision segments. It is a mapping from a MonoCut's ID to an
-        interval tree that contains the supervisions of that MonoCut.
+        Create a two-level index of supervision segments. It is a mapping from a Cut's ID to an
+        interval tree that contains the supervisions of that Cut.
 
         The interval tree can be efficiently queried for overlapping and/or enveloping segments.
         It helps speed up some operations on Cuts of very long recordings (1h+) that contain many
@@ -2244,9 +2319,21 @@ class CutSet(Serializable, Sequence[Cut]):
 
     def drop_features(self) -> 'CutSet':
         """
-        Return a new :class:`CutSet`, where each MonoCut is copied and detached from its extracted features.
+        Return a new :class:`.CutSet`, where each :class:`.Cut` is copied and detached from its extracted features.
         """
         return CutSet.from_cuts(c.drop_features() for c in self)
+
+    def drop_recordings(self) -> 'CutSet':
+        """
+        Return a new :class:`.CutSet`, where each :class:`.Cut` is copied and detached from its recordings.
+        """
+        return CutSet.from_cuts(c.drop_recording() for c in self)
+
+    def drop_supervisions(self) -> 'CutSet':
+        """
+        Return a new :class:`.CutSet`, where each :class:`.Cut` is copied and detached from its supervisions.
+        """
+        return CutSet.from_cuts(c.drop_supervisions() for c in self)
 
     def compute_and_store_features(
             self,
@@ -2424,7 +2511,7 @@ class CutSet(Serializable, Sequence[Cut]):
             executor: Optional[Executor] = None,
             augment_fn: Optional[AugmentFn] = None,
             progress_bar: bool = True
-        ) -> 'CutSet':
+    ) -> 'CutSet':
         """
         Store waveforms of all cuts as audio recordings to disk.
 
@@ -2554,16 +2641,16 @@ class CutSet(Serializable, Sequence[Cut]):
 
     def map(self, transform_fn: Callable[[Cut], Cut]) -> 'CutSet':
         """
-        Modify the cuts in this ``CutSet`` and return a new ``CutSet``.
+        Apply `transform_fn` to the cuts in this :class:`.CutSet` and return a new :class:`.CutSet`.
 
         :param transform_fn: A callable (function) that accepts a single cut instance
             and returns a single cut instance.
-        :return: a new ``CutSet`` with modified cuts.
+        :return: a new ``CutSet`` with transformed cuts.
         """
 
         def verified(mapped: Any) -> Cut:
             assert isinstance(mapped, (MonoCut, MixedCut, PaddingCut)), \
-                "The callable passed to CutSet.map() must return a MonoCut class instance."
+                "The callable passed to CutSet.map() must return a Cut class instance."
             return mapped
 
         return CutSet.from_cuts(verified(transform_fn(c)) for c in self)
