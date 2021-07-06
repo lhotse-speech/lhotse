@@ -11,6 +11,7 @@ from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence, Tupl
 import numpy as np
 import torch
 from tqdm.auto import tqdm
+from typing_extensions import Literal
 
 Pathlike = Union[Path, str]
 T = TypeVar('T')
@@ -309,6 +310,42 @@ def compute_num_samples(duration: Seconds, sampling_rate: int, rounding=ROUND_HA
             round(duration * sampling_rate, ndigits=8)
         ).quantize(0, rounding=rounding)
     )
+
+
+def compute_start_duration_for_extended_cut(
+        start: Seconds,
+        duration: Seconds,
+        new_duration: Seconds,
+        direction: Literal['center', 'left', 'right', 'random'] = 'center',
+) -> Tuple[Seconds, Seconds]:
+    """
+    Compute the new value of "start" for a time interval characterized by ``start`` and ``duration``
+    that is being extended to ``new_duration`` towards ``direction``.
+    :return: a new value of ``start`` and ``new_duration`` -- adjusted for possible negative start.
+    """
+
+    if new_duration <= duration:
+        # New duration is shorter; do nothing.
+        return start, duration
+
+    if direction == 'center':
+        new_start = start - (new_duration - duration) / 2
+    elif direction == 'left':
+        new_start = start - (new_duration - duration)
+    elif direction == 'right':
+        new_start = start
+    elif direction == 'random':
+        new_start = random.uniform(start - (new_duration - duration), start)
+    else:
+        raise ValueError(f"Unexpected direction: {direction}")
+
+    if new_start < 0:
+        # We exceeded the start of the recording.
+        # We'll decrease the new_duration by the negative offset.
+        new_duration = round(new_duration + new_start, ndigits=15)
+        new_start = 0
+
+    return round(new_start, ndigits=15), new_duration
 
 
 def index_by_id_and_check(manifests: Iterable[T]) -> Dict[str, T]:

@@ -7,13 +7,15 @@ from functools import partial, reduce
 from itertools import chain, islice
 from math import ceil, floor
 from pathlib import Path
-from typing import Any, Callable, Dict, FrozenSet, Iterable, List, Mapping, Optional, Sequence, Type, TypeVar, Union
+from typing import Any, Callable, Dict, FrozenSet, Iterable, List, Mapping, Optional, Sequence, Type, TypeVar, \
+    Union
 
 import numpy as np
 from cytoolz import sliding_window
 from cytoolz.itertoolz import groupby
 from intervaltree import Interval, IntervalTree
 from tqdm.auto import tqdm
+from typing_extensions import Literal
 
 from lhotse.audio import AudioMixer, Recording, RecordingSet
 from lhotse.augmentation import AugmentFn
@@ -23,7 +25,8 @@ from lhotse.features.io import FeaturesWriter, LilcomFilesWriter, LilcomHdf5Writ
 from lhotse.serialization import Serializable
 from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import (Decibels, LOG_EPSILON, NonPositiveEnergyError, Pathlike, Seconds, TimeSpan, asdict_nonull,
-                          compute_num_frames, compute_num_samples, exactly_one_not_null, fastcopy,
+                          compute_num_frames, compute_num_samples, compute_start_duration_for_extended_cut,
+                          exactly_one_not_null, fastcopy,
                           ifnone, index_by_id_and_check, measure_overlap, overlaps,
                           overspans, perturb_num_samples, split_sequence, uuid4)
 
@@ -126,6 +129,11 @@ class Cut:
     .. caution::
         Operations on cuts are not mutating -- they return modified copies of :class:`.Cut` objects,
         leaving the original object unmodified.
+
+    A :class:`.Cut` that contains multiple segments (:class:`SupervisionSegment`) can be decayed into
+    smaller cuts that correspond directly to supervisions::
+
+        >>> smaller_cuts = cut.trim_to_supervisions()
 
     Cuts can be detached from parts of their metadata::
 
@@ -262,7 +270,12 @@ class Cut:
         features = np.flip(self.load_features().transpose(1, 0), 0)
         return plt.matshow(features)
 
-    def trim_to_supervisions(self, keep_overlapping: bool = True) -> List['Cut']:
+    def trim_to_supervisions(
+            self,
+            keep_overlapping: bool = True,
+            min_duration: Optional[Seconds] = None,
+            context_direction: Literal['center', 'left', 'right', 'random'] = 'center',
+    ) -> List['Cut']:
         """
         Splits the current :class:`.Cut` into as many cuts as there supervisions (:class:`.SupervisionSegment`).
         These cuts have identical start times and durations as the supervisions.
@@ -293,30 +306,52 @@ class Cut:
 
         :param keep_overlapping: when ``False``, it will discard parts of other supervisions that overlap with the
             main supervision. In the illustration above, it would discard ``Sup2`` in ``Cut1`` and ``Sup1`` in ``Cut2``.
-        :return: a ``CutSet``.
+        :param min_duration: An optional duration in seconds; specifying this argument will extend the cuts
+            that would have been shorter than ``min_duration`` with actual acoustic context in the recording/features.
+            If there are supervisions present in the context, they are kept when ``keep_overlapping`` is true.
+            If there is not enough context, the returned cut will be shorter than ``min_duration``.
+            If the supervision segment is longer than ``min_duration``, the return cut will be longer.
+        :param context_direction: Which direction should the cut be expanded towards to include context.
+            The value of "center" implies equal expansion to left and right;
+            random uniformly samples a value between "left" and "right".
+        :return: a list of cuts.
         """
-        if keep_overlapping:
-            supervisions_index = self.index_supervisions(index_mixed_tracks=True)
-            return [
-                self.truncate(
-                    offset=segment.start,
+        cuts = []
+        for segment in self.supervisions:
+
+            if keep_overlapping:
+                # To find out which supervisions overlap with the current one, we are using
+                # an interval tree index.
+                supervisions_index = self.index_supervisions(index_mixed_tracks=True)
+                cut = self
+            else:
+                # If we're not going to keep overlapping supervision, we can use a slightly faster variant
+                # that doesn't require indexing and search of supervisions in an interval tree.
+                # We keep only the current supervision in the cut.
+                supervisions_index = None
+                cut = self.filter_supervisions(lambda s: s.id == segment.id)
+
+            if min_duration is None:
+                # Cut boundaries are equal to the supervision segment boundaries.
+                new_start, new_duration = segment.start, segment.duration
+            else:
+                # Cut boundaries will be extended with some acoustic context.
+                new_start, new_duration = compute_start_duration_for_extended_cut(
+                    start=segment.start,
                     duration=segment.duration,
-                    _supervisions_index=supervisions_index
+                    new_duration=min_duration,
+                    direction=context_direction
                 )
-                for segment in self.supervisions
-            ]
-        else:
-            # If we're not going to keep overlapping supervision, we can use a slightly faster variant
-            # that doesn't require indexing and search of supervisions in an interval tree.
-            return [
-                self.filter_supervisions(
-                    lambda s: s.id == segment.id
-                ).truncate(
-                    offset=segment.start,
-                    duration=segment.duration
+
+            cuts.append(
+                cut.truncate(
+                    offset=new_start,
+                    duration=new_duration,
+                    _supervisions_index=supervisions_index,
                 )
-                for segment in self.supervisions
-            ]
+            )
+
+        return cuts
 
     def index_supervisions(self, index_mixed_tracks: bool = False) -> Dict[str, IntervalTree]:
         """
@@ -662,8 +697,9 @@ class MonoCut(Cut):
         """
         Returns a new MonoCut that is a sub-region of the current MonoCut.
 
-        Note that no operation is done on the actual features - it's only during the call to load_features()
-        when the actual changes happen (a subset of features is loaded).
+        Note that no operation is done on the actual features or recording -
+        it's only during the call to :meth:`MonoCut.load_features` / :meth:`MonoCut.load_audio`
+        when the actual changes happen (a subset of features/audio is loaded).
 
         :param offset: float (seconds), controls the start of the new cut relative to the current MonoCut's start.
             E.g., if the current MonoCut starts at 10.0, and offset is 2.0, the new start is 12.0.
@@ -672,11 +708,14 @@ class MonoCut(Cut):
         :param keep_excessive_supervisions: bool. Since trimming may happen inside a SupervisionSegment,
             the caller has an option to either keep or discard such supervisions.
         :param preserve_id: bool. Should the truncated cut keep the same ID or get a new, random one.
-        :param _supervisions_index: when passed, allows to speed up processing of Cuts with a very
+        :param _supervisions_index: an IntervalTree; when passed, allows to speed up processing of Cuts with a very
             large number of supervisions. Intended as an internal parameter.
         :return: a new MonoCut instance. If the current MonoCut is shorter than the duration, return None.
         """
-        new_start = self.start + offset
+        # Note: technically, truncate's code can be used for "expanding" the cut as well:
+        #       In that case, we must ensure that the start of MonoCut is not before the start
+        #       of the actual Recording, hence max(..., 0).
+        new_start = max(self.start + offset, 0)
         until = offset + (duration if duration is not None else self.duration)
         new_duration = self.duration - new_start if duration is None else until - offset
         assert new_duration > 0.0
@@ -2044,7 +2083,12 @@ class CutSet(Serializable, Sequence[Cut]):
         """
         return CutSet.from_cuts(cut for cut in self if predicate(cut))
 
-    def trim_to_supervisions(self, keep_overlapping: bool = True) -> 'CutSet':
+    def trim_to_supervisions(
+            self,
+            keep_overlapping: bool = True,
+            min_duration: Optional[Seconds] = None,
+            context_direction: Literal['center', 'left', 'right', 'random'] = 'center',
+    ) -> 'CutSet':
         """
         Return a new CutSet with Cuts that have identical spans as their supervisions.
 
@@ -2073,12 +2117,24 @@ class CutSet(Serializable, Sequence[Cut]):
 
         :param keep_overlapping: when ``False``, it will discard parts of other supervisions that overlap with the
             main supervision. In the illustration above, it would discard ``Sup2`` in ``Cut1`` and ``Sup1`` in ``Cut2``.
+        :param min_duration: An optional duration in seconds; specifying this argument will extend the cuts
+            that would have been shorter than ``min_duration`` with actual acoustic context in the recording/features.
+            If there are supervisions present in the context, they are kept when ``keep_overlapping`` is true.
+            If there is not enough context, the returned cut will be shorter than ``min_duration``.
+            If the supervision segment is longer than ``min_duration``, the return cut will be longer.
+        :param context_direction: Which direction should the cut be expanded towards to include context.
+            The value of "center" implies equal expansion to left and right;
+            random uniformly samples a value between "left" and "right".
         :return: a ``CutSet``.
         """
         return CutSet.from_cuts(
             # chain.from_iterable is a flatten operation: Iterable[Iterable[T]] -> Iterable[T]
             chain.from_iterable(
-                cut.trim_to_supervisions(keep_overlapping=keep_overlapping) for cut in self
+                cut.trim_to_supervisions(
+                    keep_overlapping=keep_overlapping,
+                    min_duration=min_duration,
+                    context_direction=context_direction
+                ) for cut in self
             )
         )
 
