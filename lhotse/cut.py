@@ -4,7 +4,7 @@ import warnings
 from concurrent.futures import Executor, ProcessPoolExecutor
 from dataclasses import dataclass, field
 from functools import partial, reduce
-from itertools import islice
+from itertools import chain, islice
 from math import ceil, floor
 from pathlib import Path
 from typing import Any, Callable, Dict, FrozenSet, Iterable, List, Mapping, Optional, Sequence, Type, TypeVar, Union
@@ -261,6 +261,81 @@ class Cut:
         import matplotlib.pyplot as plt
         features = np.flip(self.load_features().transpose(1, 0), 0)
         return plt.matshow(features)
+
+    def trim_to_supervisions(self, keep_overlapping: bool = True) -> List['Cut']:
+        """
+        Splits the current :class:`.Cut` into as many cuts as there supervisions (:class:`.SupervisionSegment`).
+        These cuts have identical start times and durations as the supervisions.
+        When there are overlapping supervisions, they can be kept or discarded via ``keep_overlapping`` flag.
+
+        For example, the following cut::
+
+                    Cut
+            |-----------------|
+             Sup1
+            |----|  Sup2
+               |-----------|
+
+        is transformed into two cuts::
+
+             Cut1
+            |----|
+             Sup1
+            |----|
+               Sup2
+               |-|
+                    Cut2
+               |-----------|
+               Sup1
+               |-|
+                    Sup2
+               |-----------|
+
+        :param keep_overlapping: when ``False``, it will discard parts of other supervisions that overlap with the
+            main supervision. In the illustration above, it would discard ``Sup2`` in ``Cut1`` and ``Sup1`` in ``Cut2``.
+        :return: a ``CutSet``.
+        """
+        if keep_overlapping:
+            supervisions_index = self.index_supervisions(index_mixed_tracks=True)
+            return [
+                self.truncate(
+                    offset=segment.start,
+                    duration=segment.duration,
+                    _supervisions_index=supervisions_index
+                )
+                for segment in self.supervisions
+            ]
+        else:
+            # If we're not going to keep overlapping supervision, we can use a slightly faster variant
+            # that doesn't require indexing and search of supervisions in an interval tree.
+            return [
+                self.filter_supervisions(
+                    lambda s: s.id == segment.id
+                ).truncate(
+                    offset=segment.start,
+                    duration=segment.duration
+                )
+                for segment in self.supervisions
+            ]
+
+    def index_supervisions(self, index_mixed_tracks: bool = False) -> Dict[str, IntervalTree]:
+        """
+        Create a two-level index of supervision segments. It is a mapping from a Cut's ID to an
+        interval tree that contains the supervisions of that Cut.
+
+        The interval tree can be efficiently queried for overlapping and/or enveloping segments.
+        It helps speed up some operations on Cuts of very long recordings (1h+) that contain many
+        supervisions.
+
+        :param index_mixed_tracks: Should the tracks of MixedCut's be indexed as additional, separate entries.
+        :return: a mapping from Cut ID to an interval tree of SupervisionSegments.
+        """
+        indexed = {self.id: IntervalTree(Interval(s.start, s.end, s) for s in self.supervisions)}
+        if index_mixed_tracks:
+            if isinstance(self, MixedCut):
+                for track in self.tracks:
+                    indexed[track.cut.id] = IntervalTree(Interval(s.start, s.end, s) for s in track.cut.supervisions)
+        return indexed
 
     def compute_and_store_recording(
             self,
@@ -2000,29 +2075,12 @@ class CutSet(Serializable, Sequence[Cut]):
             main supervision. In the illustration above, it would discard ``Sup2`` in ``Cut1`` and ``Sup1`` in ``Cut2``.
         :return: a ``CutSet``.
         """
-        if keep_overlapping:
-            supervisions_index = self.index_supervisions(index_mixed_tracks=True)
-            return CutSet.from_cuts(
-                cut.truncate(offset=segment.start, duration=segment.duration,
-                             _supervisions_index=supervisions_index)
-                for cut in self
-                for segment in cut.supervisions
+        return CutSet.from_cuts(
+            # chain.from_iterable is a flatten operation: Iterable[Iterable[T]] -> Iterable[T]
+            chain.from_iterable(
+                cut.trim_to_supervisions(keep_overlapping=keep_overlapping) for cut in self
             )
-        else:
-            # If we're not going to keep overlapping supervision, we can use a slightly faster variant
-            # that doesn't require indexing and search of supervisions in an interval tree.
-            return CutSet.from_cuts(
-                (
-                    cut.filter_supervisions(
-                        lambda s: s.id == segment.id
-                    ).truncate(
-                        offset=segment.start,
-                        duration=segment.duration
-                    )
-                )
-                for cut in self
-                for segment in cut.supervisions
-            )
+        )
 
     def trim_to_unsupervised_segments(self) -> 'CutSet':
         """
@@ -2101,16 +2159,9 @@ class CutSet(Serializable, Sequence[Cut]):
         :param index_mixed_tracks: Should the tracks of MixedCut's be indexed as additional, separate entries.
         :return: a mapping from MonoCut ID to an interval tree of SupervisionSegments.
         """
-        indexed = {
-            cut.id: IntervalTree(Interval(s.start, s.end, s) for s in cut.supervisions)
-            for cut in self
-        }
-        if index_mixed_tracks:
-            for cut in self:
-                if isinstance(cut, MixedCut):
-                    for track in cut.tracks:
-                        indexed[track.cut.id] = IntervalTree(
-                            Interval(s.start, s.end, s) for s in track.cut.supervisions)
+        indexed = {}
+        for cut in self:
+            indexed.update(cut.index_supervisions(index_mixed_tracks=index_mixed_tracks))
         return indexed
 
     def pad(
