@@ -9,7 +9,7 @@ from lhotse.utils import Pathlike, Seconds, TimeSpan, asdict_nonull, compute_num
     fastcopy, ifnone, index_by_id_and_check, overspans, perturb_num_samples, split_sequence
 
 
-@dataclass#(frozen=True, unsafe_hash=True)
+@dataclass
 class AlignmentItem:
     """
     This class contains an alignment item, for example a word, along with its
@@ -61,7 +61,7 @@ class AlignmentItem:
         return AlignmentItem(transform_fn(self.symbol), self.start, self.duration)
 
 
-@dataclass#(frozen=True, unsafe_hash=True)
+@dataclass
 class SupervisionSegment:
     """
     :class:`~lhotse.supervsion.SupervisionSegment` represents a time interval (segment) annotated with some
