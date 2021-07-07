@@ -1,6 +1,7 @@
 import logging
 import random
 import warnings
+from collections import defaultdict
 from concurrent.futures import Executor, ProcessPoolExecutor
 from dataclasses import dataclass, field
 from functools import partial, reduce
@@ -323,13 +324,12 @@ class Cut:
                 # To find out which supervisions overlap with the current one, we are using
                 # an interval tree index.
                 supervisions_index = self.index_supervisions(index_mixed_tracks=True)
-                cut = self
             else:
                 # If we're not going to keep overlapping supervision, we can use a slightly faster variant
                 # that doesn't require indexing and search of supervisions in an interval tree.
-                # We keep only the current supervision in the cut.
-                supervisions_index = None
-                cut = self.filter_supervisions(lambda s: s.id == segment.id)
+                # We keep only the current supervision in the cut, and defaultdict ensures
+                # that if we query sub-cuts of a MixedCut, that supervision will be visible.
+                supervisions_index = defaultdict(lambda: IntervalTree([Interval(segment.start, segment.end, segment)]))
 
             if min_duration is None:
                 # Cut boundaries are equal to the supervision segment boundaries.
@@ -344,9 +344,10 @@ class Cut:
                 )
 
             cuts.append(
-                cut.truncate(
+                self.truncate(
                     offset=new_start,
                     duration=new_duration,
+                    keep_excessive_supervisions=keep_overlapping,
                     _supervisions_index=supervisions_index,
                 )
             )
