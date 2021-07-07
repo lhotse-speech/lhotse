@@ -278,7 +278,7 @@ class Cut:
             context_direction: Literal['center', 'left', 'right', 'random'] = 'center',
     ) -> List['Cut']:
         """
-        Splits the current :class:`.Cut` into as many cuts as there supervisions (:class:`.SupervisionSegment`).
+        Splits the current :class:`.Cut` into as many cuts as there are supervisions (:class:`.SupervisionSegment`).
         These cuts have identical start times and durations as the supervisions.
         When there are overlapping supervisions, they can be kept or discarded via ``keep_overlapping`` flag.
 
