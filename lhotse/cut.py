@@ -4,16 +4,18 @@ import warnings
 from concurrent.futures import Executor, ProcessPoolExecutor
 from dataclasses import dataclass, field
 from functools import partial, reduce
-from itertools import islice
+from itertools import chain, islice
 from math import ceil, floor
 from pathlib import Path
-from typing import Any, Callable, Dict, FrozenSet, Iterable, List, Mapping, Optional, Sequence, Type, TypeVar, Union
+from typing import Any, Callable, Dict, FrozenSet, Iterable, List, Mapping, Optional, Sequence, Set, Type, TypeVar, \
+    Union
 
 import numpy as np
 from cytoolz import sliding_window
 from cytoolz.itertoolz import groupby
 from intervaltree import Interval, IntervalTree
 from tqdm.auto import tqdm
+from typing_extensions import Literal
 
 from lhotse.audio import AudioMixer, Recording, RecordingSet
 from lhotse.augmentation import AugmentFn
@@ -22,8 +24,10 @@ from lhotse.features.base import compute_global_stats
 from lhotse.features.io import FeaturesWriter, LilcomFilesWriter, LilcomHdf5Writer
 from lhotse.serialization import Serializable
 from lhotse.supervision import SupervisionSegment, SupervisionSet
-from lhotse.utils import (Decibels, LOG_EPSILON, NonPositiveEnergyError, Pathlike, Seconds, TimeSpan, asdict_nonull,
-                          compute_num_frames, compute_num_samples, exactly_one_not_null, fastcopy,
+from lhotse.utils import (Decibels, LOG_EPSILON, NonPositiveEnergyError, Pathlike, Seconds, SetContainingAnything,
+                          TimeSpan, asdict_nonull,
+                          compute_num_frames, compute_num_samples, compute_start_duration_for_extended_cut,
+                          exactly_one_not_null, fastcopy,
                           ifnone, index_by_id_and_check, measure_overlap, overlaps,
                           overspans, perturb_num_samples, split_sequence, uuid4)
 
@@ -126,6 +130,11 @@ class Cut:
     .. caution::
         Operations on cuts are not mutating -- they return modified copies of :class:`.Cut` objects,
         leaving the original object unmodified.
+
+    A :class:`.Cut` that contains multiple segments (:class:`SupervisionSegment`) can be decayed into
+    smaller cuts that correspond directly to supervisions::
+
+        >>> smaller_cuts = cut.trim_to_supervisions()
 
     Cuts can be detached from parts of their metadata::
 
@@ -261,6 +270,111 @@ class Cut:
         import matplotlib.pyplot as plt
         features = np.flip(self.load_features().transpose(1, 0), 0)
         return plt.matshow(features)
+
+    def trim_to_supervisions(
+            self,
+            keep_overlapping: bool = True,
+            min_duration: Optional[Seconds] = None,
+            context_direction: Literal['center', 'left', 'right', 'random'] = 'center',
+    ) -> List['Cut']:
+        """
+        Splits the current :class:`.Cut` into as many cuts as there are supervisions (:class:`.SupervisionSegment`).
+        These cuts have identical start times and durations as the supervisions.
+        When there are overlapping supervisions, they can be kept or discarded via ``keep_overlapping`` flag.
+
+        For example, the following cut::
+
+                    Cut
+            |-----------------|
+             Sup1
+            |----|  Sup2
+               |-----------|
+
+        is transformed into two cuts::
+
+             Cut1
+            |----|
+             Sup1
+            |----|
+               Sup2
+               |-|
+                    Cut2
+               |-----------|
+               Sup1
+               |-|
+                    Sup2
+               |-----------|
+
+        :param keep_overlapping: when ``False``, it will discard parts of other supervisions that overlap with the
+            main supervision. In the illustration above, it would discard ``Sup2`` in ``Cut1`` and ``Sup1`` in ``Cut2``.
+        :param min_duration: An optional duration in seconds; specifying this argument will extend the cuts
+            that would have been shorter than ``min_duration`` with actual acoustic context in the recording/features.
+            If there are supervisions present in the context, they are kept when ``keep_overlapping`` is true.
+            If there is not enough context, the returned cut will be shorter than ``min_duration``.
+            If the supervision segment is longer than ``min_duration``, the return cut will be longer.
+        :param context_direction: Which direction should the cut be expanded towards to include context.
+            The value of "center" implies equal expansion to left and right;
+            random uniformly samples a value between "left" and "right".
+        :return: a list of cuts.
+        """
+        cuts = []
+        supervisions_index = self.index_supervisions(index_mixed_tracks=True)
+        for segment in self.supervisions:
+            if min_duration is None:
+                # Cut boundaries are equal to the supervision segment boundaries.
+                new_start, new_duration = segment.start, segment.duration
+            else:
+                # Cut boundaries will be extended with some acoustic context.
+                new_start, new_duration = compute_start_duration_for_extended_cut(
+                    start=segment.start,
+                    duration=segment.duration,
+                    new_duration=min_duration,
+                    direction=context_direction
+                )
+            cuts.append(
+                self.truncate(
+                    offset=new_start,
+                    duration=new_duration,
+                    keep_excessive_supervisions=keep_overlapping,
+                    _supervisions_index=supervisions_index,
+                )
+            )
+        return cuts
+
+    def index_supervisions(
+            self,
+            index_mixed_tracks: bool = False,
+            keep_ids: Optional[Set[str]] = None
+    ) -> Dict[str, IntervalTree]:
+        """
+        Create a two-level index of supervision segments. It is a mapping from a Cut's ID to an
+        interval tree that contains the supervisions of that Cut.
+
+        The interval tree can be efficiently queried for overlapping and/or enveloping segments.
+        It helps speed up some operations on Cuts of very long recordings (1h+) that contain many
+        supervisions.
+
+        :param index_mixed_tracks: Should the tracks of MixedCut's be indexed as additional, separate entries.
+        :param keep_ids: If specified, we will only index the supervisions with the specified IDs.
+        :return: a mapping from Cut ID to an interval tree of SupervisionSegments.
+        """
+        keep_ids = ifnone(keep_ids, SetContainingAnything())
+        indexed = {
+            self.id: IntervalTree(
+                Interval(s.start, s.end, s)
+                for s in self.supervisions
+                if s.id in keep_ids
+            )
+        }
+        if index_mixed_tracks:
+            if isinstance(self, MixedCut):
+                for track in self.tracks:
+                    indexed[track.cut.id] = IntervalTree(
+                        Interval(s.start, s.end, s)
+                        for s in track.cut.supervisions
+                        if s.id in keep_ids
+                    )
+        return indexed
 
     def compute_and_store_recording(
             self,
@@ -587,8 +701,9 @@ class MonoCut(Cut):
         """
         Returns a new MonoCut that is a sub-region of the current MonoCut.
 
-        Note that no operation is done on the actual features - it's only during the call to load_features()
-        when the actual changes happen (a subset of features is loaded).
+        Note that no operation is done on the actual features or recording -
+        it's only during the call to :meth:`MonoCut.load_features` / :meth:`MonoCut.load_audio`
+        when the actual changes happen (a subset of features/audio is loaded).
 
         :param offset: float (seconds), controls the start of the new cut relative to the current MonoCut's start.
             E.g., if the current MonoCut starts at 10.0, and offset is 2.0, the new start is 12.0.
@@ -597,11 +712,14 @@ class MonoCut(Cut):
         :param keep_excessive_supervisions: bool. Since trimming may happen inside a SupervisionSegment,
             the caller has an option to either keep or discard such supervisions.
         :param preserve_id: bool. Should the truncated cut keep the same ID or get a new, random one.
-        :param _supervisions_index: when passed, allows to speed up processing of Cuts with a very
+        :param _supervisions_index: an IntervalTree; when passed, allows to speed up processing of Cuts with a very
             large number of supervisions. Intended as an internal parameter.
         :return: a new MonoCut instance. If the current MonoCut is shorter than the duration, return None.
         """
-        new_start = self.start + offset
+        # Note: technically, truncate's code can be used for "expanding" the cut as well:
+        #       In that case, we must ensure that the start of MonoCut is not before the start
+        #       of the actual Recording, hence max(..., 0).
+        new_start = max(self.start + offset, 0)
         until = offset + (duration if duration is not None else self.duration)
         new_duration = self.duration - new_start if duration is None else until - offset
         assert new_duration > 0.0
@@ -1617,9 +1735,13 @@ class CutSet(Serializable, Sequence[Cut]):
 
     The CutSet's A, B and C can be created like::
 
-        >>> cuts_A = cuts.trim_to_supervisions()
-        >>> cuts_B = cuts.cut_into_windows(duration=5.0)
+        >>> cuts_A = cuts.trim_to_supervisions(num_jobs=4)
+        >>> cuts_B = cuts.cut_into_windows(duration=5.0, num_jobs=4)
         >>> cuts_C = cuts.trim_to_unsupervised_segments()
+
+    .. note::
+        Some operations support parallel execution via an optional ``num_jobs`` parameter.
+        By default, all processing is single-threaded.
 
     .. caution::
         Operations on cut sets are not mutating -- they return modified copies of :class:`.CutSet` objects,
@@ -1969,7 +2091,13 @@ class CutSet(Serializable, Sequence[Cut]):
         """
         return CutSet.from_cuts(cut for cut in self if predicate(cut))
 
-    def trim_to_supervisions(self, keep_overlapping: bool = True) -> 'CutSet':
+    def trim_to_supervisions(
+            self,
+            keep_overlapping: bool = True,
+            min_duration: Optional[Seconds] = None,
+            context_direction: Literal['center', 'left', 'right', 'random'] = 'center',
+            num_jobs: int = 1
+    ) -> 'CutSet':
         """
         Return a new CutSet with Cuts that have identical spans as their supervisions.
 
@@ -1998,31 +2126,40 @@ class CutSet(Serializable, Sequence[Cut]):
 
         :param keep_overlapping: when ``False``, it will discard parts of other supervisions that overlap with the
             main supervision. In the illustration above, it would discard ``Sup2`` in ``Cut1`` and ``Sup1`` in ``Cut2``.
+        :param min_duration: An optional duration in seconds; specifying this argument will extend the cuts
+            that would have been shorter than ``min_duration`` with actual acoustic context in the recording/features.
+            If there are supervisions present in the context, they are kept when ``keep_overlapping`` is true.
+            If there is not enough context, the returned cut will be shorter than ``min_duration``.
+            If the supervision segment is longer than ``min_duration``, the return cut will be longer.
+        :param context_direction: Which direction should the cut be expanded towards to include context.
+            The value of "center" implies equal expansion to left and right;
+            random uniformly samples a value between "left" and "right".
+        :param num_jobs: Number of parallel workers to process the cuts.
         :return: a ``CutSet``.
         """
-        if keep_overlapping:
-            supervisions_index = self.index_supervisions(index_mixed_tracks=True)
+        if num_jobs == 1:
             return CutSet.from_cuts(
-                cut.truncate(offset=segment.start, duration=segment.duration,
-                             _supervisions_index=supervisions_index)
-                for cut in self
-                for segment in cut.supervisions
-            )
-        else:
-            # If we're not going to keep overlapping supervision, we can use a slightly faster variant
-            # that doesn't require indexing and search of supervisions in an interval tree.
-            return CutSet.from_cuts(
-                (
-                    cut.filter_supervisions(
-                        lambda s: s.id == segment.id
-                    ).truncate(
-                        offset=segment.start,
-                        duration=segment.duration
+                # chain.from_iterable is a flatten operation: Iterable[Iterable[T]] -> Iterable[T]
+                chain.from_iterable(
+                    cut.trim_to_supervisions(
+                        keep_overlapping=keep_overlapping,
+                        min_duration=min_duration,
+                        context_direction=context_direction
                     )
+                    for cut in self
                 )
-                for cut in self
-                for segment in cut.supervisions
             )
+
+        from lhotse.manipulation import split_parallelize_combine
+        result = split_parallelize_combine(
+            num_jobs,
+            self,
+            CutSet.trim_to_supervisions,
+            keep_overlapping=keep_overlapping,
+            min_duration=min_duration,
+            context_direction=context_direction
+        )
+        return result
 
     def trim_to_unsupervised_segments(self) -> 'CutSet':
         """
@@ -2089,7 +2226,11 @@ class CutSet(Serializable, Sequence[Cut]):
         assert set(self.ids) == set(other.ids), "sort_like() expects both CutSet's to have identical cut IDs."
         return CutSet.from_cuts(self[cid] for cid in other.ids)
 
-    def index_supervisions(self, index_mixed_tracks: bool = False) -> Dict[str, IntervalTree]:
+    def index_supervisions(
+            self,
+            index_mixed_tracks: bool = False,
+            keep_ids: Optional[Set[str]] = None
+    ) -> Dict[str, IntervalTree]:
         """
         Create a two-level index of supervision segments. It is a mapping from a Cut's ID to an
         interval tree that contains the supervisions of that Cut.
@@ -2099,18 +2240,12 @@ class CutSet(Serializable, Sequence[Cut]):
         supervisions.
 
         :param index_mixed_tracks: Should the tracks of MixedCut's be indexed as additional, separate entries.
+        :param keep_ids: If specified, we will only index the supervisions with the specified IDs.
         :return: a mapping from MonoCut ID to an interval tree of SupervisionSegments.
         """
-        indexed = {
-            cut.id: IntervalTree(Interval(s.start, s.end, s) for s in cut.supervisions)
-            for cut in self
-        }
-        if index_mixed_tracks:
-            for cut in self:
-                if isinstance(cut, MixedCut):
-                    for track in cut.tracks:
-                        indexed[track.cut.id] = IntervalTree(
-                            Interval(s.start, s.end, s) for s in track.cut.supervisions)
+        indexed = {}
+        for cut in self:
+            indexed.update(cut.index_supervisions(index_mixed_tracks=index_mixed_tracks, keep_ids=keep_ids))
         return indexed
 
     def pad(
@@ -2206,7 +2341,12 @@ class CutSet(Serializable, Sequence[Cut]):
             ))
         return CutSet.from_cuts(truncated_cuts)
 
-    def cut_into_windows(self, duration: Seconds, keep_excessive_supervisions: bool = True) -> 'CutSet':
+    def cut_into_windows(
+            self,
+            duration: Seconds,
+            keep_excessive_supervisions: bool = True,
+            num_jobs: int = 1,
+    ) -> 'CutSet':
         """
         Return a new ``CutSet``, made by traversing each ``MonoCut`` in windows of ``duration`` seconds and
         creating new ``MonoCut`` out of them.
@@ -2217,18 +2357,32 @@ class CutSet(Serializable, Sequence[Cut]):
         :param duration: Desired duration of the new cuts in seconds.
         :param keep_excessive_supervisions: bool. When a cut is truncated in the middle of a supervision segment,
             should the supervision be kept.
+        :param num_jobs: The number of parallel workers.
         :return: a new CutSet with cuts made from shorter duration windows.
         """
-        new_cuts = []
-        for cut in self:
-            n_windows = ceil(cut.duration / duration)
-            for i in range(n_windows):
-                new_cuts.append(cut.truncate(
-                    offset=duration * i,
-                    duration=duration,
-                    keep_excessive_supervisions=keep_excessive_supervisions
-                ))
-        return CutSet.from_cuts(new_cuts)
+        if num_jobs == 1:
+            new_cuts = []
+            for cut in self:
+                n_windows = ceil(cut.duration / duration)
+                for i in range(n_windows):
+                    new_cuts.append(
+                        cut.truncate(
+                            offset=duration * i,
+                            duration=duration,
+                            keep_excessive_supervisions=keep_excessive_supervisions
+                        )
+                    )
+            return CutSet(cuts={c.id: c for c in new_cuts})
+
+        from lhotse.manipulation import split_parallelize_combine
+        result = split_parallelize_combine(
+            num_jobs,
+            self,
+            CutSet.cut_into_windows,
+            duration=duration,
+            keep_excessive_supervisions=keep_excessive_supervisions,
+        )
+        return result
 
     def sample(self, n_cuts: int = 1) -> Union[Cut, 'CutSet']:
         """
@@ -2601,7 +2755,7 @@ class CutSet(Serializable, Sequence[Cut]):
         # Each worker runs the non-parallel version of this function inside.
         futures = [
             executor.submit(
-                CutSet.compute_and_store_recording,
+                CutSet.compute_and_store_recordings,
                 cs,
                 storage_path=storage_path,
                 augment_fn=augment_fn,
@@ -2728,7 +2882,10 @@ class CutSet(Serializable, Sequence[Cut]):
         return iter(self.cuts.values())
 
     def __add__(self, other: 'CutSet') -> 'CutSet':
-        assert not set(self.cuts.keys()).intersection(other.cuts.keys()), "Conflicting IDs when concatenating CutSets!"
+        merged_cuts = {**self.cuts, **other.cuts}
+        assert len(merged_cuts) == len(self.cuts) + len(other.cuts), \
+            f"Conflicting IDs when concatenating CutSets! " \
+            f"Failed check: {len(merged_cuts)} == {len(self.cuts)} + {len(other.cuts)}"
         return CutSet(cuts={**self.cuts, **other.cuts})
 
 

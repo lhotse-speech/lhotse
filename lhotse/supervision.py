@@ -158,17 +158,25 @@ class SupervisionSegment:
 
     def with_offset(self, offset: Seconds) -> 'SupervisionSegment':
         """Return an identical ``SupervisionSegment``, but with the ``offset`` added to the ``start`` field."""
-        return fastcopy(
-            self, 
+        return SupervisionSegment(
+            id=self.id,
+            recording_id=self.recording_id,
             start=round(self.start + offset, ndigits=8),
+            duration=self.duration,
+            channel=self.channel,
+            text=self.text,
+            language=self.language,
+            speaker=self.speaker,
+            gender=self.gender,
+            custom=self.custom,
             alignment={
-                type:[
+                type: [
                     item.with_offset(offset=offset)
                     for item in ali
                 ]
                 for type, ali in self.alignment.items()
             } if self.alignment else None
-        ) 
+        )
 
     def perturb_speed(
             self,
