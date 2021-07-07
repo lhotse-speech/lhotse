@@ -85,7 +85,8 @@ def test_trim_to_unsupervised_segments():
 
 
 @pytest.mark.parametrize('keep_overlapping', [True, False])
-def test_trim_to_supervisions_simple_cuts(keep_overlapping):
+@pytest.mark.parametrize('num_jobs', [1, 2])
+def test_trim_to_supervisions_simple_cuts(keep_overlapping, num_jobs):
     cut_set = CutSet.from_cuts([
         MonoCut('cut1', start=0, duration=30, channel=0, supervisions=[
             SupervisionSegment('sup1', 'rec1', start=1.5, duration=10.5),
@@ -96,7 +97,7 @@ def test_trim_to_supervisions_simple_cuts(keep_overlapping):
             SupervisionSegment('sup4', 'rec1', start=0, duration=30),
         ]),
     ])
-    cuts = cut_set.trim_to_supervisions(keep_overlapping=keep_overlapping)
+    cuts = cut_set.trim_to_supervisions(keep_overlapping=keep_overlapping, num_jobs=num_jobs)
     assert len(cuts) == 4
 
     # Note: expected results diverge here depending on the value of keep_overlapping flag

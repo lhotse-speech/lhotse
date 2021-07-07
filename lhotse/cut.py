@@ -2089,6 +2089,7 @@ class CutSet(Serializable, Sequence[Cut]):
             keep_overlapping: bool = True,
             min_duration: Optional[Seconds] = None,
             context_direction: Literal['center', 'left', 'right', 'random'] = 'center',
+            num_jobs: int = 1
     ) -> 'CutSet':
         """
         Return a new CutSet with Cuts that have identical spans as their supervisions.
@@ -2126,18 +2127,24 @@ class CutSet(Serializable, Sequence[Cut]):
         :param context_direction: Which direction should the cut be expanded towards to include context.
             The value of "center" implies equal expansion to left and right;
             random uniformly samples a value between "left" and "right".
+        :param num_jobs: Number of parallel workers to process the cuts.
         :return: a ``CutSet``.
         """
-        return CutSet.from_cuts(
-            # chain.from_iterable is a flatten operation: Iterable[Iterable[T]] -> Iterable[T]
-            chain.from_iterable(
-                cut.trim_to_supervisions(
-                    keep_overlapping=keep_overlapping,
-                    min_duration=min_duration,
-                    context_direction=context_direction
-                ) for cut in self
+        with ProcessPoolExecutor(num_jobs) as ex:
+            return CutSet.from_cuts(
+                # chain.from_iterable is a flatten operation: Iterable[Iterable[T]] -> Iterable[T]
+                chain.from_iterable(
+                    ex.map(
+                        partial(
+                            Cut.trim_to_supervisions,
+                            keep_overlapping=keep_overlapping,
+                            min_duration=min_duration,
+                            context_direction=context_direction
+                        ),
+                        self
+                    )
+                )
             )
-        )
 
     def trim_to_unsupervised_segments(self) -> 'CutSet':
         """
