@@ -2321,7 +2321,12 @@ class CutSet(Serializable, Sequence[Cut]):
             ))
         return CutSet.from_cuts(truncated_cuts)
 
-    def cut_into_windows(self, duration: Seconds, keep_excessive_supervisions: bool = True) -> 'CutSet':
+    def cut_into_windows(
+            self,
+            duration: Seconds,
+            keep_excessive_supervisions: bool = True,
+            num_jobs: int = 1,
+    ) -> 'CutSet':
         """
         Return a new ``CutSet``, made by traversing each ``MonoCut`` in windows of ``duration`` seconds and
         creating new ``MonoCut`` out of them.
@@ -2332,18 +2337,24 @@ class CutSet(Serializable, Sequence[Cut]):
         :param duration: Desired duration of the new cuts in seconds.
         :param keep_excessive_supervisions: bool. When a cut is truncated in the middle of a supervision segment,
             should the supervision be kept.
+        :param num_jobs: The number of parallel workers.
         :return: a new CutSet with cuts made from shorter duration windows.
         """
-        new_cuts = []
-        for cut in self:
-            n_windows = ceil(cut.duration / duration)
-            for i in range(n_windows):
-                new_cuts.append(cut.truncate(
-                    offset=duration * i,
-                    duration=duration,
-                    keep_excessive_supervisions=keep_excessive_supervisions
-                ))
-        return CutSet.from_cuts(new_cuts)
+        futures = []
+        with ProcessPoolExecutor(num_jobs) as ex:
+            for cut in self:
+                n_windows = ceil(cut.duration / duration)
+                for i in range(n_windows):
+                    futures.append(
+                        ex.submit(
+                            cut.truncate,
+                            offset=duration * i,
+                            duration=duration,
+                            keep_excessive_supervisions=keep_excessive_supervisions
+                        )
+                    )
+            new_cuts = (future.result() for future in futures)
+            return CutSet(cuts={c.id: c for c in new_cuts})
 
     def sample(self, n_cuts: int = 1) -> Union[Cut, 'CutSet']:
         """
@@ -2716,7 +2727,7 @@ class CutSet(Serializable, Sequence[Cut]):
         # Each worker runs the non-parallel version of this function inside.
         futures = [
             executor.submit(
-                CutSet.compute_and_store_recording,
+                CutSet.compute_and_store_recordings,
                 cs,
                 storage_path=storage_path,
                 augment_fn=augment_fn,
@@ -2843,7 +2854,10 @@ class CutSet(Serializable, Sequence[Cut]):
         return iter(self.cuts.values())
 
     def __add__(self, other: 'CutSet') -> 'CutSet':
-        assert not set(self.cuts.keys()).intersection(other.cuts.keys()), "Conflicting IDs when concatenating CutSets!"
+        merged_cuts = {**self.cuts, **other.cuts}
+        assert len(merged_cuts) == len(self.cuts) + len(other.cuts), \
+            f"Conflicting IDs when concatenating CutSets! " \
+            f"Failed check: {len(merged_cuts)} == {len(self.cuts)} + {len(other.cuts)}"
         return CutSet(cuts={**self.cuts, **other.cuts})
 
 

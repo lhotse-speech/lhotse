@@ -2,7 +2,7 @@ from math import isclose
 
 import pytest
 
-from lhotse.cut import MonoCut, MixTrack, MixedCut
+from lhotse.cut import MixTrack, MixedCut, MonoCut
 from lhotse.features import Features
 from lhotse.supervision import SupervisionSegment
 from lhotse.testing.dummies import dummy_cut
@@ -212,8 +212,9 @@ def test_truncate_cut_set_offset_random(cut_set):
     assert len(set(cut.end for cut in truncated_cut_set)) > 1
 
 
-def test_cut_set_windows_even_split_keep_supervisions(cut_set):
-    windows_cut_set = cut_set.cut_into_windows(duration=5.0)
+@pytest.mark.parametrize('num_jobs', [1, 2])
+def test_cut_set_windows_even_split_keep_supervisions(cut_set, num_jobs):
+    windows_cut_set = cut_set.cut_into_windows(duration=5.0, num_jobs=num_jobs)
     assert len(windows_cut_set) == 4
     assert all(cut.duration == 5.0 for cut in windows_cut_set)
 
