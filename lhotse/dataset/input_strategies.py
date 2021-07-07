@@ -199,7 +199,8 @@ class OnTheFlyFeatures(InputStrategy):
     def __init__(
             self,
             extractor: FeatureExtractor,
-            wave_transforms: List[Callable[[torch.Tensor], torch.Tensor]] = None
+            wave_transforms: List[Callable[[torch.Tensor], torch.Tensor]] = None,
+            load_audio_params: Optional[dict] = None,
     ) -> None:
         """
         OnTheFlyFeatures' constructor.
@@ -210,6 +211,7 @@ class OnTheFlyFeatures(InputStrategy):
         """
         self.extractor = extractor
         self.wave_transforms = ifnone(wave_transforms, [])
+        self.load_audio_params = load_audio_params
 
     def __call__(self, cuts: CutSet) -> Tuple[torch.Tensor, torch.IntTensor]:
         """
@@ -219,7 +221,7 @@ class OnTheFlyFeatures(InputStrategy):
 
         :return: a tensor with collated features, and a tensor of ``num_frames`` of each cut before padding.
         """
-        audio, _ = collate_audio(cuts)
+        audio, _ = collate_audio(cuts, load_audio_params=self.load_audio_params)
 
         for tfnm in self.wave_transforms:
             audio = tfnm(audio)

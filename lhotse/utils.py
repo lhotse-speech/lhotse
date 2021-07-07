@@ -30,6 +30,47 @@ LOG_EPSILON = math.log(EPSILON)
 _lhotse_uuid: Optional[Callable] = None
 
 
+class SmartOpen:
+    """Wrapper around smart_open.open method
+
+    The class attributes are used to cache smart_open parameters
+    between different calls to smart open
+    """
+    transport_params: Optional[Dict] = None
+    compression: Optional[str] = None
+    import_err_msg = ("Please do 'pip install smart_open' - "
+                      "if you are using S3/GCP/Azure/other cloud-specific URIs, do "
+                      "'pip install smart_open[s3]' (or smart_open[gcp], etc.) instead.")
+    smart_open: Optional[Callable] = None
+
+    @classmethod
+    def setup(
+            cls,
+            compression: Optional[str]=None,
+            transport_params: Optional[dict]= None):
+        try:
+            from smart_open import open as sm_open
+        except ImportError:
+            raise ImportError(cls.import_err_msg)
+        if cls.transport_params is not None and cls.transport_params != transport_params:
+            logging.warning(f'SmartOpen.setup second call overwrites existing transport_params with new version'
+                    f'\t\n{cls.transport_params}\t\nvs\t\n{transport_params}')
+        if cls.compression is not None and cls.compression != compression:
+            logging.warning(f'SmartOpen.setup second call overwrites existing compression param with new version'
+                    f'\t\n{cls.compression} vs {compression}')
+        cls.transport_params = transport_params
+        cls.compression = compression
+        cls.smart_open = sm_open
+
+    @classmethod
+    def open(cls, uri, mode='rb', compression=None, transport_params=None, **kwargs):
+        if cls.smart_open is None:
+            cls.setup(compression=compression, transport_params=transport_params)
+        compression = compression if compression else cls.compression
+        transport_params = transport_params if transport_params else cls.transport_params
+        return cls.smart_open(uri, mode=mode, compression=compression, transport_params=transport_params, **kwargs)
+
+
 def fix_random_seed(random_seed: int):
     """
     Set the same random seed for the libraries and modules that Lhotse interacts with.

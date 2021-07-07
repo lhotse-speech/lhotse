@@ -632,7 +632,8 @@ class MonoCut(Cut):
             return self.features.load(start=self.start, duration=self.duration)
         return None
 
-    def load_audio(self) -> Optional[np.ndarray]:
+    def load_audio(self,
+            ) -> Optional[np.ndarray]:
         """
         Load the audio by locating the appropriate recording in the supplied RecordingSet.
         The audio is trimmed to the [begin, end] range specified by the MonoCut.
@@ -1491,7 +1492,9 @@ class MixedCut(Cut):
         else:
             return mixer.unmixed_feats
 
-    def load_audio(self, mixed: bool = True) -> Optional[np.ndarray]:
+    def load_audio(self,
+            mixed: bool = True,
+            ) -> Optional[np.ndarray]:
         """
         Loads the audios of the source cuts and mix them on-the-fly.
 

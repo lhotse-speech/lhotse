@@ -55,6 +55,7 @@ class AudioSource:
 
         Note: The elements in the returned array are in the range [-1.0, 1.0]
         and are of dtype `np.floatt32`.
+
         """
         assert self.type in ('file', 'command', 'url')
 
@@ -80,13 +81,7 @@ class AudioSource:
                 warnings.warn('You requested a subset of a recording that is read from URL. '
                               'Expect large I/O overhead if you are going to read many chunks like these, '
                               'since every time we will download the whole file rather than its subset.')
-            try:
-                from smart_open import smart_open
-            except ImportError:
-                raise ImportError("To use 'url' audio source type, please do 'pip install smart_open' - "
-                                  "if you are using S3/GCP/Azure/other cloud-specific URIs, do "
-                                  "'pip install smart_open[s3]' (or smart_open[gcp], etc.) instead.")
-            with smart_open(self.source) as f:
+            with SmartOpen.open(self.source, 'rb') as f:
                 source = BytesIO(f.read())
                 samples, sampling_rate = read_audio(source, offset=offset, duration=duration)
 
