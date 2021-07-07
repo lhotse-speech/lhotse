@@ -1,14 +1,13 @@
 import logging
 import random
 import warnings
-from collections import defaultdict
 from concurrent.futures import Executor, ProcessPoolExecutor
 from dataclasses import dataclass, field
 from functools import partial, reduce
 from itertools import chain, islice
 from math import ceil, floor
 from pathlib import Path
-from typing import Any, Callable, Dict, FrozenSet, Iterable, List, Mapping, Optional, Sequence, Type, TypeVar, \
+from typing import Any, Callable, Dict, FrozenSet, Iterable, List, Mapping, Optional, Sequence, Set, Type, TypeVar, \
     Union
 
 import numpy as np
@@ -25,7 +24,8 @@ from lhotse.features.base import compute_global_stats
 from lhotse.features.io import FeaturesWriter, LilcomFilesWriter, LilcomHdf5Writer
 from lhotse.serialization import Serializable
 from lhotse.supervision import SupervisionSegment, SupervisionSet
-from lhotse.utils import (Decibels, LOG_EPSILON, NonPositiveEnergyError, Pathlike, Seconds, TimeSpan, asdict_nonull,
+from lhotse.utils import (Decibels, LOG_EPSILON, NonPositiveEnergyError, Pathlike, Seconds, SetContainingAnything,
+                          TimeSpan, asdict_nonull,
                           compute_num_frames, compute_num_samples, compute_start_duration_for_extended_cut,
                           exactly_one_not_null, fastcopy,
                           ifnone, index_by_id_and_check, measure_overlap, overlaps,
@@ -329,7 +329,7 @@ class Cut:
                 # that doesn't require indexing and search of supervisions in an interval tree.
                 # We keep only the current supervision in the cut, and defaultdict ensures
                 # that if we query sub-cuts of a MixedCut, that supervision will be visible.
-                supervisions_index = defaultdict(lambda: IntervalTree([Interval(segment.start, segment.end, segment)]))
+                supervisions_index = self.index_supervisions(index_mixed_tracks=True, keep_ids={segment.id})
 
             if min_duration is None:
                 # Cut boundaries are equal to the supervision segment boundaries.
@@ -354,7 +354,11 @@ class Cut:
 
         return cuts
 
-    def index_supervisions(self, index_mixed_tracks: bool = False) -> Dict[str, IntervalTree]:
+    def index_supervisions(
+            self,
+            index_mixed_tracks: bool = False,
+            keep_ids: Optional[Set[str]] = None
+    ) -> Dict[str, IntervalTree]:
         """
         Create a two-level index of supervision segments. It is a mapping from a Cut's ID to an
         interval tree that contains the supervisions of that Cut.
@@ -364,13 +368,25 @@ class Cut:
         supervisions.
 
         :param index_mixed_tracks: Should the tracks of MixedCut's be indexed as additional, separate entries.
+        :param keep_ids: If specified, we will only index the supervisions with the specified IDs.
         :return: a mapping from Cut ID to an interval tree of SupervisionSegments.
         """
-        indexed = {self.id: IntervalTree(Interval(s.start, s.end, s) for s in self.supervisions)}
+        keep_ids = ifnone(keep_ids, SetContainingAnything())
+        indexed = {
+            self.id: IntervalTree(
+                Interval(s.start, s.end, s)
+                for s in self.supervisions
+                if s.id in keep_ids
+            )
+        }
         if index_mixed_tracks:
             if isinstance(self, MixedCut):
                 for track in self.tracks:
-                    indexed[track.cut.id] = IntervalTree(Interval(s.start, s.end, s) for s in track.cut.supervisions)
+                    indexed[track.cut.id] = IntervalTree(
+                        Interval(s.start, s.end, s)
+                        for s in track.cut.supervisions
+                        if s.id in keep_ids
+                    )
         return indexed
 
     def compute_and_store_recording(
@@ -2134,21 +2150,29 @@ class CutSet(Serializable, Sequence[Cut]):
         :param num_jobs: Number of parallel workers to process the cuts.
         :return: a ``CutSet``.
         """
-        with ProcessPoolExecutor(num_jobs) as ex:
+        if num_jobs == 1:
             return CutSet.from_cuts(
                 # chain.from_iterable is a flatten operation: Iterable[Iterable[T]] -> Iterable[T]
                 chain.from_iterable(
-                    ex.map(
-                        partial(
-                            Cut.trim_to_supervisions,
-                            keep_overlapping=keep_overlapping,
-                            min_duration=min_duration,
-                            context_direction=context_direction
-                        ),
-                        self
+                    cut.trim_to_supervisions(
+                        keep_overlapping=keep_overlapping,
+                        min_duration=min_duration,
+                        context_direction=context_direction
                     )
+                    for cut in self
                 )
             )
+
+        from lhotse.manipulation import split_parallelize_combine
+        result = split_parallelize_combine(
+            num_jobs,
+            self,
+            CutSet.trim_to_supervisions,
+            keep_overlapping=keep_overlapping,
+            min_duration=min_duration,
+            context_direction=context_direction
+        )
+        return result
 
     def trim_to_unsupervised_segments(self) -> 'CutSet':
         """
@@ -2215,7 +2239,11 @@ class CutSet(Serializable, Sequence[Cut]):
         assert set(self.ids) == set(other.ids), "sort_like() expects both CutSet's to have identical cut IDs."
         return CutSet.from_cuts(self[cid] for cid in other.ids)
 
-    def index_supervisions(self, index_mixed_tracks: bool = False) -> Dict[str, IntervalTree]:
+    def index_supervisions(
+            self,
+            index_mixed_tracks: bool = False,
+            keep_ids: Optional[Set[str]] = None
+    ) -> Dict[str, IntervalTree]:
         """
         Create a two-level index of supervision segments. It is a mapping from a Cut's ID to an
         interval tree that contains the supervisions of that Cut.
@@ -2225,11 +2253,12 @@ class CutSet(Serializable, Sequence[Cut]):
         supervisions.
 
         :param index_mixed_tracks: Should the tracks of MixedCut's be indexed as additional, separate entries.
+        :param keep_ids: If specified, we will only index the supervisions with the specified IDs.
         :return: a mapping from MonoCut ID to an interval tree of SupervisionSegments.
         """
         indexed = {}
         for cut in self:
-            indexed.update(cut.index_supervisions(index_mixed_tracks=index_mixed_tracks))
+            indexed.update(cut.index_supervisions(index_mixed_tracks=index_mixed_tracks, keep_ids=keep_ids))
         return indexed
 
     def pad(
@@ -2344,21 +2373,29 @@ class CutSet(Serializable, Sequence[Cut]):
         :param num_jobs: The number of parallel workers.
         :return: a new CutSet with cuts made from shorter duration windows.
         """
-        futures = []
-        with ProcessPoolExecutor(num_jobs) as ex:
+        if num_jobs == 1:
+            new_cuts = []
             for cut in self:
                 n_windows = ceil(cut.duration / duration)
                 for i in range(n_windows):
-                    futures.append(
-                        ex.submit(
-                            cut.truncate,
+                    new_cuts.append(
+                        cut.truncate(
                             offset=duration * i,
                             duration=duration,
                             keep_excessive_supervisions=keep_excessive_supervisions
                         )
                     )
-            new_cuts = (future.result() for future in futures)
             return CutSet(cuts={c.id: c for c in new_cuts})
+
+        from lhotse.manipulation import split_parallelize_combine
+        result = split_parallelize_combine(
+            num_jobs,
+            self,
+            CutSet.cut_into_windows,
+            duration=duration,
+            keep_excessive_supervisions=keep_excessive_supervisions,
+        )
+        return result
 
     def sample(self, n_cuts: int = 1) -> Union[Cut, 'CutSet']:
         """

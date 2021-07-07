@@ -161,33 +161,33 @@ def test_trim_to_supervisions_simple_cuts(keep_overlapping, num_jobs):
 def mixed_overlapping_cut_set():
     """
     Input mixed cut::
-
-                 rec1 0-30s                 rec1 30-60s
-        |--------------------------||--------------------------|
-             sup1                               sup4
-         |---------|                |--------------------------|
-                   sup2           sup3
-                  |----|    |--------------|
+        |---------------mixedcut--------------------|
+        |--------rec1 0-30s--------|
+                     |-------rec2 15-45s--------|
+         |---sup1--|         |-----sup3-----|
+                 |sup2|
     """
     cut_set = CutSet.from_cuts([
-        MonoCut('cut1', start=0, duration=30, channel=0,
+        MonoCut(
+            'cut1', start=0, duration=30, channel=0,
+            recording=Recording(
+                id='rec1', sources=[], sampling_rate=16000, num_samples=160000, duration=60.0
+            ),
+            supervisions=[
+                SupervisionSegment('sup1', 'rec1', start=1.5, duration=10.5),
+                SupervisionSegment('sup2', 'rec1', start=10, duration=6),
+            ]
+        ).mix(
+            MonoCut(
+                'cut2', start=15, duration=30, channel=0,
                 recording=Recording(
-                    id='rec1', sources=[], sampling_rate=16000, num_samples=160000, duration=60.0
+                    id='rec2', sources=[], sampling_rate=16000, num_samples=160000, duration=60.0
                 ),
                 supervisions=[
-                    SupervisionSegment('sup1', 'rec1', start=1.5, duration=10.5),
-                    SupervisionSegment('sup2', 'rec1', start=10, duration=5),
-                    SupervisionSegment('sup3', 'rec1', start=20, duration=18),
+                    SupervisionSegment('sup3', 'rec2', start=8, duration=18),
                 ]
-                ).append(
-            MonoCut('cut2', start=30, duration=30, channel=0,
-                    recording=Recording(
-                        id='rec1', sources=[], sampling_rate=16000, num_samples=160000, duration=60.0
-                    ),
-                    supervisions=[
-                        SupervisionSegment('sup4', 'rec1', start=0, duration=30),
-                    ]
-                    )
+            ),
+            offset_other_by=15.0
         )
     ])
     assert isinstance(cut_set[0], MixedCut)
@@ -196,7 +196,7 @@ def mixed_overlapping_cut_set():
 
 def test_trim_to_supervisions_mixed_cuts_keep_overlapping_false(mixed_overlapping_cut_set):
     cuts = mixed_overlapping_cut_set.trim_to_supervisions(keep_overlapping=False)
-    assert len(cuts) == 4
+    assert len(cuts) == 3
     # After "trimming", in some instances the MixedCut "decayed" into simple, unmixed cuts, as they did not overlap;
     # In other instances, it's still a MixedCut
     assert all(len(cut.supervisions) == 1 for cut in cuts)
@@ -211,13 +211,13 @@ def test_trim_to_supervisions_mixed_cuts_keep_overlapping_false(mixed_overlappin
     assert sup.duration == 10.5
 
     cut = cuts[1]
-    assert isinstance(cut, MonoCut)
-    assert cut.start == 10
-    assert cut.duration == 5
+    assert isinstance(cut, MixedCut)
+    assert cut.start == 0
+    assert cut.duration == 6
     sup = cut.supervisions[0]
     assert sup.id == 'sup2'
     assert sup.start == 0
-    assert sup.duration == 5
+    assert sup.duration == 6
 
     cut = cuts[2]
     assert isinstance(cut, MixedCut)
@@ -228,19 +228,10 @@ def test_trim_to_supervisions_mixed_cuts_keep_overlapping_false(mixed_overlappin
     assert sup.start == 0
     assert sup.duration == 18
 
-    cut = cuts[3]
-    assert isinstance(cut, MonoCut)
-    assert cut.start == 30
-    assert cut.duration == 30
-    sup = cut.supervisions[0]
-    assert sup.id == 'sup4'
-    assert sup.start == 0
-    assert sup.duration == 30
-
 
 def test_trim_to_supervisions_mixed_cuts_keep_overlapping_true(mixed_overlapping_cut_set):
     cuts = mixed_overlapping_cut_set.trim_to_supervisions(keep_overlapping=True)
-    assert len(cuts) == 4
+    assert len(cuts) == 3
     # After "trimming", in some instances the MixedCut "decayed" into simple, unmixed cuts, as they did not overlap;
     # In other instances, it's still a MixedCut
 
@@ -256,12 +247,12 @@ def test_trim_to_supervisions_mixed_cuts_keep_overlapping_true(mixed_overlapping
     sup = cut.supervisions[1]
     assert sup.id == 'sup2'
     assert sup.start == 8.5
-    assert sup.duration == 5
+    assert sup.duration == 6
 
     cut = cuts[1]
-    assert isinstance(cut, MonoCut)
-    assert cut.start == 10
-    assert cut.duration == 5
+    assert isinstance(cut, MixedCut)
+    assert cut.start == 0
+    assert cut.duration == 6
     assert len(cut.supervisions) == 2
     sup = cut.supervisions[0]
     assert sup.id == 'sup1'
@@ -270,34 +261,17 @@ def test_trim_to_supervisions_mixed_cuts_keep_overlapping_true(mixed_overlapping
     sup = cut.supervisions[1]
     assert sup.id == 'sup2'
     assert sup.start == 0
-    assert sup.duration == 5
+    assert sup.duration == 6
 
     cut = cuts[2]
     assert isinstance(cut, MixedCut)
     assert cut.start == 0
     assert cut.duration == 18
-    assert len(cut.supervisions) == 2
+    assert len(cut.supervisions) == 1
     sup = cut.supervisions[0]
     assert sup.id == 'sup3'
     assert sup.start == 0
     assert sup.duration == 18
-    sup = cut.supervisions[1]
-    assert sup.id == 'sup4'
-    assert sup.start == 10
-    assert sup.duration == 30
-
-    cut = cuts[3]
-    assert isinstance(cut, MonoCut)
-    assert cut.start == 30
-    assert cut.duration == 30
-    # Note: technically, sup3 is overlapping with this cut, but the cuts themselves were not overlapping;
-    #       hence, cut4 has only sup4 and not sup3. If this behavior turns out to be undesirable for some
-    #       reason, we may alter it.
-    assert len(cut.supervisions) == 1
-    sup = cut.supervisions[0]
-    assert sup.id == 'sup4'
-    assert sup.start == 0
-    assert sup.duration == 30
 
 
 @pytest.mark.skipif(not is_module_available('pandas'), reason='Requires pandas to be installed.')

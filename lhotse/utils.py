@@ -73,8 +73,6 @@ def asdict_nonull(dclass) -> Dict[str, Any]:
     return asdict(dclass, dict_factory=non_null_dict_factory)
 
 
-
-
 class SetContainingAnything:
     def __contains__(self, item):
         return True
