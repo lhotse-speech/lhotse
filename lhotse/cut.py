@@ -318,19 +318,8 @@ class Cut:
         :return: a list of cuts.
         """
         cuts = []
+        supervisions_index = self.index_supervisions(index_mixed_tracks=True)
         for segment in self.supervisions:
-
-            if keep_overlapping:
-                # To find out which supervisions overlap with the current one, we are using
-                # an interval tree index.
-                supervisions_index = self.index_supervisions(index_mixed_tracks=True)
-            else:
-                # If we're not going to keep overlapping supervision, we can use a slightly faster variant
-                # that doesn't require indexing and search of supervisions in an interval tree.
-                # We keep only the current supervision in the cut, and defaultdict ensures
-                # that if we query sub-cuts of a MixedCut, that supervision will be visible.
-                supervisions_index = self.index_supervisions(index_mixed_tracks=True, keep_ids={segment.id})
-
             if min_duration is None:
                 # Cut boundaries are equal to the supervision segment boundaries.
                 new_start, new_duration = segment.start, segment.duration
@@ -342,7 +331,6 @@ class Cut:
                     new_duration=min_duration,
                     direction=context_direction
                 )
-
             cuts.append(
                 self.truncate(
                     offset=new_start,
@@ -351,7 +339,6 @@ class Cut:
                     _supervisions_index=supervisions_index,
                 )
             )
-
         return cuts
 
     def index_supervisions(
