@@ -10,7 +10,8 @@ from pytest import mark, raises
 from lhotse.audio import RecordingSet
 from lhotse.features import (Fbank, FeatureExtractor, FeatureMixer, FeatureSet, FeatureSetBuilder, Features, Mfcc,
                              Spectrogram, create_default_feature_extractor)
-from lhotse.features.io import LilcomFilesWriter, LilcomHdf5Writer, NumpyFilesWriter, NumpyHdf5Writer
+from lhotse.features.io import ChunkedLilcomHdf5Writer, LilcomFilesWriter, LilcomHdf5Writer, NumpyFilesWriter, \
+    NumpyHdf5Writer
 from lhotse.testing.dummies import DummyManifest
 from lhotse.utils import Seconds, time_diff_to_num_frames
 from lhotse.utils import nullcontext as does_not_raise
@@ -114,6 +115,7 @@ def test_compute_global_stats():
     'storage', [
         LilcomFilesWriter(TemporaryDirectory().name),
         LilcomHdf5Writer(NamedTemporaryFile().name),
+        ChunkedLilcomHdf5Writer(NamedTemporaryFile().name),
         NumpyFilesWriter(TemporaryDirectory().name),
         NumpyHdf5Writer(NamedTemporaryFile().name)
     ]
