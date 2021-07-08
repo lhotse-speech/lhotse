@@ -37,8 +37,8 @@ class SmartOpen:
     The smart_open.open attributes are cached as classed attributes - they play the role of singleton pattern.
 
     The SmartOpen.setup method is intended for initial setup.
-    I.e. import the `open` method from the optional `smart_open` Python package and setup
-    parameters which can be shared between all calls of the `smart_open.open` method.
+    It imports the `open` method from the optional `smart_open` Python package,
+    and sets the parameters which are shared between all calls of the `smart_open.open` method.
 
     If you do not call the setup method it is called automatically in SmartOpen.open with the provided parameters.
 
