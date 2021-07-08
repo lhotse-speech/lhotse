@@ -471,7 +471,6 @@ class LilcomURLReader(FeaturesReader):
     Downloads Lilcom-compressed files from a URL (S3, GCP, Azure, HTTP, etc.).
     ``storage_path`` corresponds to the root URL (e.g. "s3://my-data-bucket")
     ``storage_key`` will be concatenated to ``storage_path`` to form a full URL (e.g. "my-feature-file.llc")
-    ``transport_params`` is an optional paramater that is passed through to ``smart_open``
 
     .. caution::
         Requires ``smart_open`` to be installed (``pip install smart_open``).
@@ -481,7 +480,6 @@ class LilcomURLReader(FeaturesReader):
     def __init__(
             self,
             storage_path: Pathlike,
-            transport_params: Optional[dict] = None,
             *args,
             **kwargs
     ):
@@ -490,7 +488,6 @@ class LilcomURLReader(FeaturesReader):
         # We are manually adding the slash to join the base URL and the key.
         if self.base_url.endswith('/'):
             self.base_url = self.base_url[:-1]
-        SmartOpen.setup(transport_params=transport_params)
 
     def read(
             self,
@@ -512,7 +509,6 @@ class LilcomURLWriter(FeaturesWriter):
     Writes Lilcom-compressed files to a URL (S3, GCP, Azure, HTTP, etc.).
     ``storage_path`` corresponds to the root URL (e.g. "s3://my-data-bucket")
     ``storage_key`` will be concatenated to ``storage_path`` to form a full URL (e.g. "my-feature-file.llc")
-    ``transport_params`` is an optional paramater that is passed through to ``smart_open``
 
     .. caution::
         Requires ``smart_open`` to be installed (``pip install smart_open``).
@@ -523,7 +519,6 @@ class LilcomURLWriter(FeaturesWriter):
             self,
             storage_path: Pathlike,
             tick_power: int = -5,
-            transport_params: Optional[dict] = None,
             *args,
             **kwargs
     ):
@@ -533,7 +528,6 @@ class LilcomURLWriter(FeaturesWriter):
         if self.base_url.endswith('/'):
             self.base_url = self.base_url[:-1]
         self.tick_power = tick_power
-        SmartOpen.setup(transport_params=transport_params)
 
     @property
     def storage_path(self) -> str:
