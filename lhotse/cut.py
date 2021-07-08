@@ -744,9 +744,14 @@ class MonoCut(Cut):
             # The result of calling that method with a range of (begin, end) is an iterable
             # of Intervals that contain the SupervisionSegments matching our criterion.
             # We call "interval.data" to obtain the underlying SupervisionSegment.
-            match_supervisions = tree.overlap if keep_excessive_supervisions else tree.envelop
+            # Additionally, when the method is tree.envelop, we use a small epsilon to
+            # extend the searched boundaries to account for possible float arithmetic errors.
+            if keep_excessive_supervisions:
+                intervals = tree.overlap(begin=offset, end=offset + new_duration)
+            else:
+                intervals = tree.envelop(begin=offset - 1e-3, end=offset + new_duration + 1e-3)
             supervisions = []
-            for interval in match_supervisions(begin=offset, end=offset + new_duration):
+            for interval in intervals:
                 # We are going to measure the overlap ratio of the supervision with the "truncated" cut
                 # and reject segments that overlap less than 1%. This way we can avoid quirks and errors
                 # of limited float precision.
