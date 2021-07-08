@@ -55,7 +55,6 @@ class AudioSource:
 
         Note: The elements in the returned array are in the range [-1.0, 1.0]
         and are of dtype `np.floatt32`.
-
         """
         assert self.type in ('file', 'command', 'url')
 

@@ -1,4 +1,4 @@
-from typing import Iterable, List, Tuple, Union, Optional
+from typing import Iterable, List, Tuple, Union
 
 import numpy as np
 import torch
@@ -124,7 +124,7 @@ def collate_features(
 
 def collate_audio(
         cuts: CutSet,
-        pad_direction: str = 'right',
+        pad_direction: str = 'right'
 ) -> Tuple[torch.Tensor, torch.IntTensor]:
     """
     Load audio samples for all the cuts and return them as a batch in a torch tensor.
