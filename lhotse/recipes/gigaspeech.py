@@ -20,7 +20,7 @@ from lhotse.recipes.utils import read_manifests_if_cached
 from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import Pathlike, Seconds, is_module_available
 
-GIGASPEECH_PARTS = ('{XL}', '{L}', '{M}', '{S}', '{XS}', '{DEV}', '{TEST}')
+GIGASPEECH_PARTS = ('XL', 'L', 'M', 'S', 'XS', 'DEV', 'TEST')
 
 
 def download_gigaspeech(
@@ -35,14 +35,14 @@ def download_gigaspeech(
     gigaspeech = GigaSpeech(target_dir)
 
     if dataset_parts == 'auto':
-        dataset_parts = ('{XL}', '{DEV}', '{TEST}')
+        dataset_parts = ('XL', 'DEV', 'TEST')
     elif isinstance(dataset_parts, str):
         dataset_parts = [dataset_parts]
 
     for part in dataset_parts:
         logging.info(f'Downloading GigaSpeech part: {part}')
         try:
-            gigaspeech.download(part)
+            gigaspeech.download('{' + part + '}')
         except NotImplementedError:
             raise ValueError(f"Could not download GigaSpeech part {part} -- speechcolab raised NotImplementedError.")
 
@@ -59,7 +59,7 @@ def prepare_gigaspeech(
         raise ImportError(
             'To process the GigaSpeech corpus, please install optional dependency: pip install speechcolab')
 
-    subsets = ('{XL}', '{DEV}', '{TEST}') if dataset_parts == 'auto' else dataset_parts
+    subsets = ('XL', 'DEV', 'TEST') if dataset_parts == 'auto' else dataset_parts
     if isinstance(subsets, str):
         subsets = [subsets]
     corpus_dir = Path(corpus_dir)
@@ -69,7 +69,11 @@ def prepare_gigaspeech(
         output_dir = Path(output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
         # Maybe the manifests already exist: we can read them and save a bit of preparation time.
-        maybe_manifests = read_manifests_if_cached(dataset_parts=dataset_parts, output_dir=output_dir, suffix='jsonl')
+        maybe_manifests = read_manifests_if_cached(
+            dataset_parts=dataset_parts,
+            output_dir=output_dir,
+            suffix='jsonl.gz'
+        )
         if maybe_manifests is not None:
             return maybe_manifests
 
@@ -81,7 +85,7 @@ def prepare_gigaspeech(
             recordings = []
             supervisions = []
             for recording, segments in tqdm(
-                    ex.map(parse_utterance, gigaspeech.audios(part), repeat(gigaspeech.root_path)),
+                    ex.map(parse_utterance, gigaspeech.audios('{' + part + '}'), repeat(gigaspeech.root_path)),
                     desc='Processing GigaSpeech JSON entries'
             ):
                 recordings.append(recording)
@@ -93,8 +97,8 @@ def prepare_gigaspeech(
             }
 
             if output_dir is not None:
-                manifests[part]['recordings'].to_file(output_dir / f'recordings_{part}.jsonl')
-                manifests[part]['supervisions'].to_file(output_dir / f'supervisions_{part}.jsonl')
+                manifests[part]['recordings'].to_file(output_dir / f'recordings_gigaspeech_{part}.jsonl.gz')
+                manifests[part]['supervisions'].to_file(output_dir / f'supervisions_gigaspeech_{part}.jsonl.gz')
 
     return dict(manifests)
 
