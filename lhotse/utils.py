@@ -54,7 +54,7 @@ class SmartOpen:
     if not slow:  # switch between 44s vs 18.9 Wall time
         SmartOpen.setup(transport_params=dict(client=client))
 
-    # Simulating SmartOpen usage as in Lhotse datastructures: AudioSource, Features, etc.
+    # Simulating SmartOpen usage as in Lhotse data structures: AudioSource, Features, etc.
     for i in range(1000):
         SmartOpen.open(s3_url, 'rb') as f:
             source = f.read()
