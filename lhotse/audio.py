@@ -19,7 +19,7 @@ from lhotse.augmentation import AudioTransform, Resample, Speed
 from lhotse.serialization import Serializable, extension_contains
 from lhotse.utils import (Decibels, NonPositiveEnergyError, Pathlike, Seconds, SetContainingAnything, asdict_nonull,
                           compute_num_samples,
-                          exactly_one_not_null, fastcopy,
+                          exactly_one_not_null, fastcopy, SmartOpen,
                           ifnone, index_by_id_and_check, perturb_num_samples, split_sequence)
 
 Channels = Union[int, List[int]]

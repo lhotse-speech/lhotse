@@ -32,10 +32,32 @@ _lhotse_uuid: Optional[Callable] = None
 
 
 class SmartOpen:
-    """Wrapper around smart_open.open method
+    """Wrapper class around smart_open.open method
 
-    The class attributes are used to cache smart_open parameters
-    between different calls to smart open
+    The smart_open.open attributes are cached as classed attributes - they play the role of singleton pattern.
+
+    The SmartOpen.setup method is intended for initial setup.
+    I.e. import the `open` method from the optional `smart_open` Python package and setup
+    parameters which can be shared between all calls of the `smart_open.open` method.
+
+    If you do not call the setup method it is called automatically in SmartOpen.open with the provided parameters.
+
+    The example demonstrates that instantiating S3 `session.client` once,
+    instead using the defaults and leaving the smart_open creating it every time
+    has dramatic performance benefits of 44s vs 18.9s Wall time.
+
+    import boto3
+    session = boto3.Session()
+    client = session.client('s3')
+    from lhotse.utils import SmartOpen
+
+    if not slow:  # switch between 44s vs 18.9 Wall time
+        SmartOpen.setup(transport_params=dict(client=client))
+
+    # Simulating SmartOpen usage as in Lhotse datastructures: AudioSource, Features, etc.
+    for i in range(1000):
+        SmartOpen.open(s3_url, 'rb') as f:
+            source = f.read()
     """
     transport_params: Optional[Dict] = None
     compression: Optional[str] = None
