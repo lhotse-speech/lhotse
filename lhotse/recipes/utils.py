@@ -1,5 +1,5 @@
 from collections import defaultdict
-from typing import Dict, Optional, Sequence, Union
+from typing import Dict, Iterable, Optional, Sequence, Union
 
 from lhotse import load_manifest
 from lhotse.audio import RecordingSet
@@ -12,11 +12,11 @@ def read_manifests_if_cached(
         output_dir: Optional[Pathlike],
         prefix: str = '',
         suffix: Optional[str] = 'json'
-) -> Optional[Dict[str, Dict[str, Union[RecordingSet, SupervisionSet]]]]:
+) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet]]]:
     """
-    Loads manifests from the disk if all of them exist in the specified paths.
-    the manifests are searched for using the pattern `output_dir / f'{prefix}_{manifest}_{part}.json'`,
-    where `manifest` is one of `["recordings", "supervisions"]` and `part` is specified in `dataset_parts`.
+    Loads manifests from the disk, or a subset of them if only some exist.
+    The manifests are searched for using the pattern ``output_dir / f'{prefix}_{manifest}_{part}.json'``,
+    where `manifest` is one of ``["recordings", "supervisions"]`` and ``part`` is specified in ``dataset_parts``.
     This function is intended to speedup data preparation if it has already been done before.
 
     :param dataset_parts: Names of dataset pieces, e.g. in LibriSpeech: ``["test-clean", "dev-clean", ...]``.
@@ -26,16 +26,36 @@ def read_manifests_if_cached(
     :return: A dict with manifest (``d[dataset_part]['recording'|'manifest']``) or ``None``.
     """
     if output_dir is None:
-        return None
-    if prefix:
+        return {}
+    if prefix and not prefix.endswith('_'):
         prefix = f'{prefix}_'
+    if suffix.startswith('.'):
+        suffix = suffix[1:]
     manifests = defaultdict(dict)
     for part in dataset_parts:
         for manifest in ('recordings', 'supervisions'):
             path = output_dir / f'{prefix}{manifest}_{part}.{suffix}'
             if not path.is_file():
-                # If one of the manifests is not available, assume we need to read and prepare everything
-                # to simplify the rest of the code.
-                return None
+                continue
             manifests[part][manifest] = load_manifest(path)
     return dict(manifests)
+
+
+def manifests_exist(
+        part: str,
+        output_dir: Optional[Pathlike],
+        types: Iterable[str] = ('recording', 'supervision'),
+        prefix: str = '',
+        suffix: str = 'json'
+) -> bool:
+    if output_dir is None:
+        return False
+    if prefix and not prefix.endswith('_'):
+        prefix = f'{prefix}_'
+    if suffix.startswith('.'):
+        suffix = suffix[1:]
+    for name in types:
+        path = output_dir / f'{prefix}{name}_{part}.{suffix}'
+        if not path.is_file():
+            return False
+    return True

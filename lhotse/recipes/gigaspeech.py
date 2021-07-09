@@ -16,7 +16,7 @@ from tqdm.auto import tqdm
 
 from lhotse import compute_num_samples
 from lhotse.audio import AudioSource, Recording, RecordingSet
-from lhotse.recipes.utils import read_manifests_if_cached
+from lhotse.recipes.utils import manifests_exist, read_manifests_if_cached
 from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import Pathlike, Seconds, is_module_available
 
@@ -70,19 +70,25 @@ def prepare_gigaspeech(
     if output_dir is not None:
         output_dir = Path(output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
-        # Maybe the manifests already exist: we can read them and save a bit of preparation time.
-        maybe_manifests = read_manifests_if_cached(
+        # Maybe some manifests already exist: we can read them and save a bit of preparation time.
+        manifests = read_manifests_if_cached(
             dataset_parts=dataset_parts,
             output_dir=output_dir,
+            prefix='gigaspeech',
             suffix='jsonl.gz',
-            prefix='gigaspeech'
         )
-        if maybe_manifests is not None:
-            return maybe_manifests
 
     with ProcessPoolExecutor(num_jobs) as ex:
         for part in subsets:
             logging.info(f'Processing GigaSpeech subset: {part}')
+            if manifests_exist(
+                    part=part,
+                    output_dir=output_dir,
+                    prefix='gigaspeech',
+                    suffix='jsonl.gz'
+            ):
+                logging.info(f'GigaSpeech subset: {part} already prepared - skipping.')
+                continue
 
             recordings = []
             supervisions = []

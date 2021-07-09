@@ -1,17 +1,16 @@
-from collections import defaultdict
-
 import logging
 import re
 import shutil
 import tarfile
 from concurrent.futures.thread import ThreadPoolExecutor
 from pathlib import Path
-from tqdm.auto import tqdm
 from typing import Dict, Optional, Sequence, Tuple, Union
+
+from tqdm.auto import tqdm
 
 from lhotse import validate_recordings_and_supervisions
 from lhotse.audio import Recording, RecordingSet
-from lhotse.recipes.utils import read_manifests_if_cached
+from lhotse.recipes.utils import manifests_exist, read_manifests_if_cached
 from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import Pathlike, urlretrieve_progress
 
@@ -99,17 +98,20 @@ def prepare_librispeech(
     elif isinstance(dataset_parts, str):
         dataset_parts = [dataset_parts]
 
+    manifests = {}
+
     if output_dir is not None:
         output_dir = Path(output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
         # Maybe the manifests already exist: we can read them and save a bit of preparation time.
-        maybe_manifests = read_manifests_if_cached(dataset_parts=dataset_parts, output_dir=output_dir)
-        if maybe_manifests is not None:
-            return maybe_manifests
+        manifests = read_manifests_if_cached(dataset_parts=dataset_parts, output_dir=output_dir)
 
-    manifests = defaultdict(dict)
     with ThreadPoolExecutor(num_jobs) as ex:
         for part in tqdm(dataset_parts, desc='Dataset parts'):
+            logging.info(f'Processing LibriSpeech subset: {part}')
+            if manifests_exist(part=part, output_dir=output_dir):
+                logging.info(f'LibriSpeech subset: {part} already prepared - skipping.')
+                continue
             recordings = []
             supervisions = []
             part_path = corpus_dir / part
@@ -148,7 +150,7 @@ def prepare_librispeech(
                 'supervisions': supervision_set
             }
 
-    return dict(manifests)  # Convert to normal dict
+    return manifests
 
 
 def parse_utterance(
