@@ -629,7 +629,16 @@ class MonoCut(Cut):
         [begin, duration] region of the current MonoCut.
         """
         if self.has_features:
-            return self.features.load(start=self.start, duration=self.duration)
+            feats = self.features.load(start=self.start, duration=self.duration)
+            # Note: we forgive off-by-one errors in the feature matrix frames
+            #       due to various hard-to-predict floating point arithmetic issues.
+            #       If needed, we will remove or duplicate the last frame to be
+            #       consistent with the manifests declared "num_frames".
+            if feats.shape[0] - self.num_frames == 1:
+                feats = feats[:self.num_frames, :]
+            elif feats.shape[0] - self.num_frames == -1:
+                feats = np.concatenate((feats, feats[-1:, :]), axis=0)
+            return feats
         return None
 
     def load_audio(self) -> Optional[np.ndarray]:
