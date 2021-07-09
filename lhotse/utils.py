@@ -44,20 +44,23 @@ class SmartOpen:
 
     The example demonstrates that instantiating S3 `session.client` once,
     instead using the defaults and leaving the smart_open creating it every time
-    has dramatic performance benefits of 44s vs 18.9s Wall time.
+    has dramatic performance benefits.
 
-    import boto3
-    session = boto3.Session()
-    client = session.client('s3')
-    from lhotse.utils import SmartOpen
+    Example::
 
-    if not slow:  # switch between 44s vs 18.9 Wall time
-        SmartOpen.setup(transport_params=dict(client=client))
-
-    # Simulating SmartOpen usage as in Lhotse data structures: AudioSource, Features, etc.
-    for i in range(1000):
-        SmartOpen.open(s3_url, 'rb') as f:
-            source = f.read()
+        >>> import boto3
+        >>> session = boto3.Session()
+        >>> client = session.client('s3')
+        >>> from lhotse.utils import SmartOpen
+        >>>
+        >>> if not slow:
+        >>>     # Reusing a single client speeds up the smart_open.open calls
+        >>>     SmartOpen.setup(transport_params=dict(client=client))
+        >>>
+        >>> # Simulating SmartOpen usage as in Lhotse data structures: AudioSource, Features, etc.
+        >>> for i in range(1000):
+        >>>     SmartOpen.open(s3_url, 'rb') as f:
+        >>>         source = f.read()
     """
     transport_params: Optional[Dict] = None
     compression: Optional[str] = None
