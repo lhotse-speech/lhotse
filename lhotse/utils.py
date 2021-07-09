@@ -1,6 +1,7 @@
 import math
 import random
 import uuid
+import logging
 from contextlib import AbstractContextManager, contextmanager
 from dataclasses import asdict, dataclass
 from decimal import Decimal, ROUND_HALF_DOWN, ROUND_HALF_UP
@@ -28,6 +29,72 @@ LOG_EPSILON = math.log(EPSILON)
 # Python's uuid module is not affected by the ``random.seed(value)`` call,
 # so we work around it to provide deterministic ID generation when requested.
 _lhotse_uuid: Optional[Callable] = None
+
+
+class SmartOpen:
+    """Wrapper class around smart_open.open method
+
+    The smart_open.open attributes are cached as classed attributes - they play the role of singleton pattern.
+
+    The SmartOpen.setup method is intended for initial setup.
+    It imports the `open` method from the optional `smart_open` Python package,
+    and sets the parameters which are shared between all calls of the `smart_open.open` method.
+
+    If you do not call the setup method it is called automatically in SmartOpen.open with the provided parameters.
+
+    The example demonstrates that instantiating S3 `session.client` once,
+    instead using the defaults and leaving the smart_open creating it every time
+    has dramatic performance benefits.
+
+    Example::
+
+        >>> import boto3
+        >>> session = boto3.Session()
+        >>> client = session.client('s3')
+        >>> from lhotse.utils import SmartOpen
+        >>>
+        >>> if not slow:
+        >>>     # Reusing a single client speeds up the smart_open.open calls
+        >>>     SmartOpen.setup(transport_params=dict(client=client))
+        >>>
+        >>> # Simulating SmartOpen usage as in Lhotse data structures: AudioSource, Features, etc.
+        >>> for i in range(1000):
+        >>>     SmartOpen.open(s3_url, 'rb') as f:
+        >>>         source = f.read()
+    """
+    transport_params: Optional[Dict] = None
+    compression: Optional[str] = None
+    import_err_msg = ("Please do 'pip install smart_open' - "
+                      "if you are using S3/GCP/Azure/other cloud-specific URIs, do "
+                      "'pip install smart_open[s3]' (or smart_open[gcp], etc.) instead.")
+    smart_open: Optional[Callable] = None
+
+    @classmethod
+    def setup(
+            cls,
+            compression: Optional[str]=None,
+            transport_params: Optional[dict]= None):
+        try:
+            from smart_open import open as sm_open
+        except ImportError:
+            raise ImportError(cls.import_err_msg)
+        if cls.transport_params is not None and cls.transport_params != transport_params:
+            logging.warning(f'SmartOpen.setup second call overwrites existing transport_params with new version'
+                    f'\t\n{cls.transport_params}\t\nvs\t\n{transport_params}')
+        if cls.compression is not None and cls.compression != compression:
+            logging.warning(f'SmartOpen.setup second call overwrites existing compression param with new version'
+                    f'\t\n{cls.compression} vs {compression}')
+        cls.transport_params = transport_params
+        cls.compression = compression
+        cls.smart_open = sm_open
+
+    @classmethod
+    def open(cls, uri, mode='rb', compression=None, transport_params=None, **kwargs):
+        if cls.smart_open is None:
+            cls.setup(compression=compression, transport_params=transport_params)
+        compression = compression if compression else cls.compression
+        transport_params = transport_params if transport_params else cls.transport_params
+        return cls.smart_open(uri, mode=mode, compression=compression, transport_params=transport_params, **kwargs)
 
 
 def fix_random_seed(random_seed: int):
