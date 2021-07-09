@@ -217,8 +217,3 @@ def test_supervision_trim_does_not_affect_nonnegative_start(supervision, start):
     supervision = fastcopy(supervision, start=start)
     trimmed = supervision.trim(50)
     assert trimmed.start == start
-
-
-def test_supervision_is_hashable(supervision):
-    # Check that we can create a dict with the supervision object as the key.
-    d = {supervision: supervision.duration}
