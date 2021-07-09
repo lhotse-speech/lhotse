@@ -6,12 +6,15 @@ from lhotse.audio import RecordingSet
 from lhotse.supervision import SupervisionSet
 from lhotse.utils import Pathlike
 
+DEFAULT_DETECTED_MANIFEST_TYPES = ('recordings', 'supervisions')
+
 
 def read_manifests_if_cached(
         dataset_parts: Optional[Sequence[str]],
         output_dir: Optional[Pathlike],
         prefix: str = '',
-        suffix: Optional[str] = 'json'
+        suffix: Optional[str] = 'json',
+        types: Iterable[str] = DEFAULT_DETECTED_MANIFEST_TYPES
 ) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet]]]:
     """
     Loads manifests from the disk, or a subset of them if only some exist.
@@ -23,6 +26,7 @@ def read_manifests_if_cached(
     :param output_dir: Where to look for the files.
     :param prefix: Optional common prefix for the manifest files (underscore is automatically added).
     :param suffix: Optional common suffix for the manifest files ("json" by default).
+    :param types: Which types of manifests are searched for (default: 'recordings' and 'supervisions').
     :return: A dict with manifest (``d[dataset_part]['recording'|'manifest']``) or ``None``.
     """
     if output_dir is None:
@@ -33,7 +37,7 @@ def read_manifests_if_cached(
         suffix = suffix[1:]
     manifests = defaultdict(dict)
     for part in dataset_parts:
-        for manifest in ('recordings', 'supervisions'):
+        for manifest in types:
             path = output_dir / f'{prefix}{manifest}_{part}.{suffix}'
             if not path.is_file():
                 continue
@@ -44,7 +48,7 @@ def read_manifests_if_cached(
 def manifests_exist(
         part: str,
         output_dir: Optional[Pathlike],
-        types: Iterable[str] = ('recordings', 'supervision'),
+        types: Iterable[str] = DEFAULT_DETECTED_MANIFEST_TYPES,
         prefix: str = '',
         suffix: str = 'json'
 ) -> bool:
