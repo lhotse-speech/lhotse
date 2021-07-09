@@ -65,6 +65,8 @@ def prepare_gigaspeech(
     corpus_dir = Path(corpus_dir)
     gigaspeech = GigaSpeech(corpus_dir)
 
+    manifests = defaultdict(dict)
+
     if output_dir is not None:
         output_dir = Path(output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
@@ -72,12 +74,12 @@ def prepare_gigaspeech(
         maybe_manifests = read_manifests_if_cached(
             dataset_parts=dataset_parts,
             output_dir=output_dir,
-            suffix='jsonl.gz'
+            suffix='jsonl.gz',
+            prefix='gigaspeech'
         )
         if maybe_manifests is not None:
             return maybe_manifests
 
-    manifests = defaultdict(dict)
     with ProcessPoolExecutor(num_jobs) as ex:
         for part in subsets:
             logging.info(f'Processing GigaSpeech subset: {part}')
@@ -97,8 +99,8 @@ def prepare_gigaspeech(
             }
 
             if output_dir is not None:
-                manifests[part]['recordings'].to_file(output_dir / f'recordings_gigaspeech_{part}.jsonl.gz')
-                manifests[part]['supervisions'].to_file(output_dir / f'supervisions_gigaspeech_{part}.jsonl.gz')
+                manifests[part]['recordings'].to_file(output_dir / f'gigaspeech_recordings_{part}.jsonl.gz')
+                manifests[part]['supervisions'].to_file(output_dir / f'gigaspeech_supervisions_{part}.jsonl.gz')
 
     return dict(manifests)
 
