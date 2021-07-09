@@ -44,7 +44,7 @@ def read_manifests_if_cached(
 def manifests_exist(
         part: str,
         output_dir: Optional[Pathlike],
-        types: Iterable[str] = ('recording', 'supervision'),
+        types: Iterable[str] = ('recordings', 'supervision'),
         prefix: str = '',
         suffix: str = 'json'
 ) -> bool:
