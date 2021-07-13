@@ -10,14 +10,13 @@ For more information, refer to the paper "LibriTTS: A Corpus Derived from LibriS
 import logging
 import shutil
 import tarfile
-from collections import defaultdict
 from pathlib import Path
 from typing import Dict, Optional, Sequence, Union
 
 from tqdm import tqdm
 
 from lhotse import RecordingSet, SupervisionSegment, SupervisionSet, validate_recordings_and_supervisions
-from lhotse.recipes.utils import read_manifests_if_cached
+from lhotse.recipes.utils import manifests_exist, read_manifests_if_cached
 from lhotse.utils import Pathlike, urlretrieve_progress
 
 LIBRITTS = ('dev-clean', 'dev-other', 'test-clean', 'test-other',
@@ -88,17 +87,17 @@ def prepare_libritts(
         assert dataset_parts in LIBRITTS
         dataset_parts = [dataset_parts]
 
+    manifests = {}
+
     if output_dir is not None:
         output_dir = Path(output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
         # Maybe the manifests already exist: we can read them and save a bit of preparation time.
-        maybe_manifests = read_manifests_if_cached(
+        manifests = read_manifests_if_cached(
             dataset_parts=dataset_parts,
             output_dir=output_dir,
             prefix='libritts'
         )
-        if maybe_manifests is not None:
-            return maybe_manifests
 
     # Contents of the file
     #   ;ID  |SEX| SUBSET           |MINUTES| NAME
@@ -114,8 +113,10 @@ def prepare_libritts(
         )
     }
 
-    manifests = defaultdict(dict)
     for part in tqdm(dataset_parts, desc='Preparing LibriTTS parts'):
+        if manifests_exist(part=part, output_dir=output_dir, prefix='libritts'):
+            logging.info(f'LibriTTS subset: {part} already prepared - skipping.')
+            continue
         part_path = corpus_dir / part
         recordings = RecordingSet.from_dir(part_path, '*.wav', num_jobs=num_jobs)
         supervisions = []
@@ -170,4 +171,4 @@ def prepare_libritts(
             'supervisions': supervisions
         }
 
-    return dict(manifests)  # Convert to normal dict
+    return manifests

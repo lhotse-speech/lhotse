@@ -148,7 +148,7 @@ class K2SpeechRecognitionDataset(torch.utils.data.Dataset):
 
 def validate_for_asr(cuts: CutSet) -> None:
     validate(cuts)
-    tol = 1e-3  # 1ms
+    tol = 2e-3  # 1ms
     for cut in cuts:
         for supervision in cut.supervisions:
             assert supervision.start >= -tol, f"Supervisions starting before the cut are not supported for ASR" \

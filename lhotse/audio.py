@@ -343,7 +343,7 @@ class Recording:
             by affixing it with "_sp{factor}".
         :return: a modified copy of the current ``Recording``.
         """
-        transforms = self.transforms if self.transforms is not None else []
+        transforms = self.transforms.copy() if self.transforms is not None else []
         transforms.append(Speed(factor=factor).to_dict())
         new_num_samples = perturb_num_samples(self.num_samples, factor)
         new_duration = new_num_samples / self.sampling_rate
@@ -361,9 +361,10 @@ class Recording:
         :param sampling_rate: The new sampling rate.
         :return: A resampled ``Recording``.
         """
-        resampling = [
+        transforms = self.transforms.copy() if self.transforms is not None else []
+        transforms.append(
             Resample(source_sampling_rate=self.sampling_rate, target_sampling_rate=sampling_rate).to_dict()
-        ]
+        )
         new_num_samples = compute_num_samples(self.duration, sampling_rate, rounding=ROUND_HALF_UP)
         # Duration might need an adjustment when doing a non-trivial resampling
         # (e.g. 16000 -> 22050), where the resulting number of samples cannot
@@ -374,7 +375,7 @@ class Recording:
             duration=new_duration,
             num_samples=new_num_samples,
             sampling_rate=sampling_rate,
-            transforms=(self.transforms or []) + resampling
+            transforms=transforms
         )
 
     @staticmethod
