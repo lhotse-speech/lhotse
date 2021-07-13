@@ -14,7 +14,7 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
 
 from tqdm.auto import tqdm
 
-from lhotse import compute_num_samples
+from lhotse import compute_num_samples, fix_manifests, validate_recordings_and_supervisions
 from lhotse.audio import AudioSource, Recording, RecordingSet
 from lhotse.recipes.utils import manifests_exist, read_manifests_if_cached
 from lhotse.supervision import SupervisionSegment, SupervisionSet
@@ -99,10 +99,12 @@ def prepare_gigaspeech(
                 recordings.append(recording)
                 supervisions.extend(segments)
 
-            manifests[part] = {
-                'recordings': RecordingSet.from_recordings(recordings),
-                'supervisions': SupervisionSet.from_segments(supervisions)
-            }
+            recordings, supervisions = fix_manifests(
+                recordings=RecordingSet.from_recordings(recordings),
+                supervisions=SupervisionSet.from_segments(supervisions),
+            )
+            validate_recordings_and_supervisions(recordings=recordings, supervisions=supervisions)
+            manifests[part] = {"recordings": recordings, "supervisions": supervisions}
 
             if output_dir is not None:
                 manifests[part]['recordings'].to_file(output_dir / f'gigaspeech_recordings_{part}.jsonl.gz')
