@@ -4,7 +4,7 @@ from typing import Optional
 import numpy as np
 import torch
 
-from lhotse.features.base import FeatureExtractor, register_extractor
+from lhotse.features.base import FeatureExtractor, iter_extract, register_extractor
 from lhotse.features.kaldi.layers import Wav2LogFilterBank, Wav2MFCC
 from lhotse.utils import EPSILON, Seconds
 
@@ -51,6 +51,20 @@ class KaldiFbank(FeatureExtractor):
                                                            f"{self.config.sampling_rate}, but " \
                                                            f"sampling_rate={sampling_rate} was passed to extract()."
         return self.extractor(torch.from_numpy(samples))[0].numpy()
+
+    def iter_extract(self, samples: np.ndarray, sampling_rate: int) -> np.ndarray:
+        """
+        Extracts features using chunks of samples.
+        This method helps avoid excessive memory usage when the samples array is very long (~1h or more).
+
+        .. note:
+            The chunks are hard-coded to correspond to 1s of audio to avoid excessive complexity in
+            processing chunks of audio, keeping track of remainder samples, etc.
+
+        :param samples: a numpy array of audio samples with shape ``(1, num_samples)``
+        :param sampling_rate: integer sampling rate.
+        """
+        return iter_extract(self, samples=samples, sampling_rate=sampling_rate)
 
     @staticmethod
     def mix(
@@ -113,3 +127,17 @@ class KaldiMfcc(FeatureExtractor):
                                                            f"{self.config.sampling_rate}, but " \
                                                            f"sampling_rate={sampling_rate} was passed to extract()."
         return self.extractor(torch.from_numpy(samples))[0].numpy()
+
+    def iter_extract(self, samples: np.ndarray, sampling_rate: int) -> np.ndarray:
+        """
+        Extracts features using chunks of samples.
+        This method helps avoid excessive memory usage when the samples array is very long (~1h or more).
+
+        .. note:
+            The chunks are hard-coded to correspond to 1s of audio to avoid excessive complexity in
+            processing chunks of audio, keeping track of remainder samples, etc.
+
+        :param samples: a numpy array of audio samples with shape ``(1, num_samples)``
+        :param sampling_rate: integer sampling rate.
+        """
+        return iter_extract(self, samples=samples, sampling_rate=sampling_rate)

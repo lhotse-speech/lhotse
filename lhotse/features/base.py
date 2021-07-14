@@ -145,7 +145,13 @@ class FeatureExtractor(metaclass=ABCMeta):
         if augment_fn is not None:
             samples = augment_fn(samples, sampling_rate)
         duration = round(samples.shape[1] / sampling_rate, ndigits=8)
-        feats = self.extract(samples=samples, sampling_rate=sampling_rate)
+        if hasattr(self, 'iter_extract') and duration > 600.0:
+            # Heuristic: for recordings that are long enough (~10min), try to use an
+            #            incremental version (~31MB vs ~1GB memory usage) at the cost
+            #            of speed (~20% slower).
+            feats = self.iter_extract(samples=samples, sampling_rate=sampling_rate)
+        else:
+            feats = self.extract(samples=samples, sampling_rate=sampling_rate)
         storage_key = store_feature_array(feats, storage=storage)
         manifest = Features(
             start=offset,
@@ -198,7 +204,13 @@ class FeatureExtractor(metaclass=ABCMeta):
         )
         if augment_fn is not None:
             samples = augment_fn(samples, recording.sampling_rate)
-        feats = self.extract(samples=samples, sampling_rate=recording.sampling_rate)
+        if hasattr(self, 'iter_extract') and duration > 600.0:
+            # Heuristic: for recordings that are long enough (10min), try to use an
+            #            incremental version (~31MB vs ~1GB memory usage) at the cost
+            #            of speed (~20% slower).
+            feats = self.iter_extract(samples=samples, sampling_rate=recording.sampling_rate)
+        else:
+            feats = self.extract(samples=samples, sampling_rate=recording.sampling_rate)
         storage_key = store_feature_array(feats, storage=storage)
         manifest = Features(
             recording_id=recording.id,
@@ -295,6 +307,20 @@ class TorchaudioFeatureExtractor(FeatureExtractor):
             samples = samples.unsqueeze(0)
         features = self.feature_fn(samples, **params).to(torch.float32)
         return features.numpy()
+
+    def iter_extract(self, samples: Union[np.ndarray, torch.Tensor], sampling_rate: int) -> np.ndarray:
+        """
+        Extracts features using chunks of samples.
+        This method helps avoid excessive memory usage when the samples array is very long (~1h or more).
+
+        .. note:
+            The chunks are hard-coded to correspond to 1s of audio to avoid excessive complexity in
+            processing chunks of audio, keeping track of remainder samples, etc.
+
+        :param samples: a numpy array of audio samples with shape ``(1, num_samples)``
+        :param sampling_rate: integer sampling rate.
+        """
+        return iter_extract(self, samples=samples, sampling_rate=sampling_rate)
 
     @property
     def frame_shift(self) -> Seconds:
@@ -576,6 +602,49 @@ class FeatureSet(Serializable, Sequence[Features]):
 
     def __add__(self, other: 'FeatureSet') -> 'FeatureSet':
         return FeatureSet(features=self.features + other.features)
+
+
+def iter_extract(extractor: FeatureExtractor, samples: np.ndarray, sampling_rate: int) -> np.ndarray:
+    """
+    Extracts features using chunks of samples.
+    This method helps avoid excessive memory usage when the samples array is very long (~1h or more).
+
+    .. note:
+        The chunks are hard-coded to correspond to 1s of audio to avoid excessive complexity in
+        processing chunks of audio, keeping track of remainder samples, etc.
+
+    .. warning:
+        This method gives almost exact results compared to :meth:`.FeatureExtractor.extract`,
+        but only for Kaldi-style feature extractors (such as :class:`..fbank.Fbank` or
+        :class:`..kaldi.extractors.KaldiFbank)`, because it constructs the chunks to play
+        well with ``snip_edges=False`` windowing behaviour in Kaldi.
+
+    :param extractor: a :class:`FeatureExtractor` instance (must be Kaldi-compatible).
+    :param samples: a numpy array of audio samples with shape ``(1, num_samples)``
+    :param sampling_rate: integer sampling rate.
+    """
+    assert sampling_rate % 8000 == 0, "iter_extract doesn't support sampling rates that are not a multiply of 8000"
+    assert extractor.frame_shift == 0.01, "iter_extract doesn't support frame_shifts different than 0.01s"
+    window_hop = round(extractor.frame_shift * sampling_rate)
+    # Note: each chunk has some extra context so that we can discard frames
+    #       which contain reflected audio due to snip_edges=False.
+    #       It results in a bit of excessive computation, but simplifies the logic.
+    samples_chunks = [
+        samples[:, max(0, i - window_hop): i + sampling_rate + window_hop]
+        for i in range(0, samples.shape[1], sampling_rate)
+    ]
+    feats = []
+    for idx, chunk in enumerate(samples_chunks):
+        if feats:
+            # Remove the last (excessive) frame from the previous chunk which has reflected audio;
+            # Note that this is not executed for the last chunk.
+            feats[-1] = feats[-1][:-1, :]
+        chunk_feats = extractor.extract(chunk, sampling_rate)
+        if idx > 0:
+            # Remove the first (excessive) frame with reflected audio unless this is the first chunk.
+            chunk_feats = chunk_feats[1:, :]
+        feats.append(chunk_feats)
+    return np.concatenate(feats, axis=0)
 
 
 class FeatureSetBuilder:
