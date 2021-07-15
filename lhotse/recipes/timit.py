@@ -34,7 +34,7 @@ def download_timit(
     tar_name = 'timit.zip'
     tar_path = target_dir / tar_name
     if force_download or not tar_path.is_file():
-        urlretrieve_progress(f'{base_url}', filename=tar_path, desc=f'Downloading {tar_name}')
+        urlretrieve_progress(f'{base_url}', filename=tar_path, desc=f'Downloading and unzip {tar_name}')
     
     zip_file = zipfile.ZipFile(tar_path)
     if os.path.isdir(tar_name[:-4]):
@@ -49,6 +49,7 @@ def prepare_timit(
         corpus_dir: Pathlike,
         splits_dir: Pathlike,
         output_dir: Optional[Pathlike] = None,
+        num_phones: int = 48,
         num_jobs: int = 1
 ) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet]]]:
     """
@@ -71,19 +72,18 @@ def prepare_timit(
     manifests = defaultdict(dict)
     dataset_parts = ['TRAIN', 'DEV', 'TEST']
 
-    punctuation_strings = string.punctuation
+    phones_dict = get_phonemes(num_phones)
 
     with ThreadPoolExecutor(num_jobs) as ex:
         for part in dataset_parts:
-            wav_files = []
             file_name = ''
 
             if part == 'TRAIN': 
-                file_name = splits_dir/'train_samples.txt'
+                file_name = splits_dir / 'train_samples.txt'
             elif part == 'DEV':
-                file_name = splits_dir/'dev_samples.txt'
+                file_name = splits_dir / 'dev_samples.txt'
             else:
-                file_name = splits_dir/'tst_samples.txt'
+                file_name = splits_dir / 'tst_samples.txt'
             wav_files = []
             with open(file_name, 'r') as f:
                 lines = f.readlines() 
@@ -111,12 +111,10 @@ def prepare_timit(
                         lines = f.readlines()
                         for line in lines:
                             phone = line.rstrip('\n').split(' ')[-1]
+                            if num_phones != 60: phone = phones_dict[str(phone)]
                             text.append(phone)
-                        text = ' '.join(text).replace('h#', 'sil')
 
-                    for i in punctuation_strings:
-                        if i != "'":
-                            text = text.replace(i, '')
+                        text = ' '.join(text).replace('h#', 'sil')
 
                     recording = Recording.from_file(path=wav_file, recording_id=idx)
                     recordings.append(recording)
@@ -145,3 +143,138 @@ def prepare_timit(
                         'supervisions': supervision_set}
 
     return manifests
+
+def get_phonemes(num_phones):
+    phonemes = {}
+
+    if num_phones == int(48):
+    # This dictionary is used to conver the 60 phoneme set into the 48 one
+        phonemes["sil"] = "sil"
+        phonemes["aa"] = "aa"
+        phonemes["ae"] = "ae"
+        phonemes["ah"] = "ah"
+        phonemes["ao"] = "ao"
+        phonemes["aw"] = "aw"
+        phonemes["ax"] = "ax"
+        phonemes["ax-h"] = "ax"
+        phonemes["axr"] = "er"
+        phonemes["ay"] = "ay"
+        phonemes["b"] = "b"
+        phonemes["bcl"] = "vcl"
+        phonemes["ch"] = "ch"
+        phonemes["d"] = "d"
+        phonemes["dcl"] = "vcl"
+        phonemes["dh"] = "dh"
+        phonemes["dx"] = "dx"
+        phonemes["eh"] = "eh"
+        phonemes["el"] = "el"
+        phonemes["em"] = "m"
+        phonemes["en"] = "en"
+        phonemes["eng"] = "ng"
+        phonemes["epi"] = "epi"
+        phonemes["er"] = "er"
+        phonemes["ey"] = "ey"
+        phonemes["f"] = "f"
+        phonemes["g"] = "g"
+        phonemes["gcl"] = "vcl"
+        phonemes["h#"] = "sil"
+        phonemes["hh"] = "hh"
+        phonemes["hv"] = "hh"
+        phonemes["ih"] = "ih"
+        phonemes["ix"] = "ix"
+        phonemes["iy"] = "iy"
+        phonemes["jh"] = "jh"
+        phonemes["k"] = "k"
+        phonemes["kcl"] = "cl"
+        phonemes["l"] = "l"
+        phonemes["m"] = "m"
+        phonemes["n"] = "n"
+        phonemes["ng"] = "ng"
+        phonemes["nx"] = "n"
+        phonemes["ow"] = "ow"
+        phonemes["oy"] = "oy"
+        phonemes["p"] = "p"
+        phonemes["pau"] = "sil"
+        phonemes["pcl"] = "cl"
+        phonemes["q"] = ""
+        phonemes["r"] = "r"
+        phonemes["s"] = "s"
+        phonemes["sh"] = "sh"
+        phonemes["t"] = "t"
+        phonemes["tcl"] = "cl"
+        phonemes["th"] = "th"
+        phonemes["uh"] = "uh"
+        phonemes["uw"] = "uw"
+        phonemes["ux"] = "uw"
+        phonemes["v"] = "v"
+        phonemes["w"] = "w"
+        phonemes["y"] = "y"
+        phonemes["z"] = "z"
+        phonemes["zh"] = "zh"
+
+    if num_phones == int(39):
+    # This dictionary is used to conver the 60 phoneme set into the 39 one
+        phonemes["sil"] = "sil"
+        phonemes["aa"] = "aa"
+        phonemes["ae"] = "ae"
+        phonemes["ah"] = "ah"
+        phonemes["ao"] = "aa"
+        phonemes["aw"] = "aw"
+        phonemes["ax"] = "ah"
+        phonemes["ax-h"] = "ah"
+        phonemes["axr"] = "er"
+        phonemes["ay"] = "ay"
+        phonemes["b"] = "b"
+        phonemes["bcl"] = "sil"
+        phonemes["ch"] = "ch"
+        phonemes["d"] = "d"
+        phonemes["dcl"] = "sil"
+        phonemes["dh"] = "dh"
+        phonemes["dx"] = "dx"
+        phonemes["eh"] = "eh"
+        phonemes["el"] = "l"
+        phonemes["em"] = "m"
+        phonemes["en"] = "n"
+        phonemes["eng"] = "ng"
+        phonemes["epi"] = "sil"
+        phonemes["er"] = "er"
+        phonemes["ey"] = "ey"
+        phonemes["f"] = "f"
+        phonemes["g"] = "g"
+        phonemes["gcl"] = "sil"
+        phonemes["h#"] = "sil"
+        phonemes["hh"] = "hh"
+        phonemes["hv"] = "hh"
+        phonemes["ih"] = "ih"
+        phonemes["ix"] = "ih"
+        phonemes["iy"] = "iy"
+        phonemes["jh"] = "jh"
+        phonemes["k"] = "k"
+        phonemes["kcl"] = "sil"
+        phonemes["l"] = "l"
+        phonemes["m"] = "m"
+        phonemes["ng"] = "ng"
+        phonemes["n"] = "n"
+        phonemes["nx"] = "n"
+        phonemes["ow"] = "ow"
+        phonemes["oy"] = "oy"
+        phonemes["p"] = "p"
+        phonemes["pau"] = "sil"
+        phonemes["pcl"] = "sil"
+        phonemes["q"] = ""
+        phonemes["r"] = "r"
+        phonemes["s"] = "s"
+        phonemes["sh"] = "sh"
+        phonemes["t"] = "t"
+        phonemes["tcl"] = "sil"
+        phonemes["th"] = "th"
+        phonemes["uh"] = "uh"
+        phonemes["uw"] = "uw"
+        phonemes["ux"] = "uw"
+        phonemes["v"] = "v"
+        phonemes["w"] = "w"
+        phonemes["y"] = "y"
+        phonemes["z"] = "z"
+        phonemes["zh"] = "sh"
+
+    return phonemes
