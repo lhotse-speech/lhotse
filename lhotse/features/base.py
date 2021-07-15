@@ -633,6 +633,24 @@ def iter_extract(extractor: FeatureExtractor, samples: np.ndarray, sampling_rate
         samples[:, max(0, i - window_hop): i + sampling_rate + window_hop]
         for i in range(0, samples.shape[1], sampling_rate)
     ]
+    # We merge the last two chunks to avoid the last chunk being too short
+    # to extract the features for it.
+    if len(samples_chunks) > 1:
+        if samples_chunks[-1].shape[1] - window_hop < window_hop:
+            # The last chunk is fully contained in the previous chunk -- remove it.
+            samples_chunks.pop()
+        else:
+            # The last chunk is not fully contained in the previous chunk -- merge.
+            last_chunk_extended = np.concatenate(
+                (
+                    samples_chunks[-2][:, :-window_hop],
+                    samples_chunks[-1][:, window_hop:]
+                ),
+                axis=1
+            )
+            samples_chunks = samples_chunks[:-2]
+            samples_chunks.append(last_chunk_extended)
+    # Feature extraction chunk by chunk.
     feats = []
     for idx, chunk in enumerate(samples_chunks):
         if feats:
