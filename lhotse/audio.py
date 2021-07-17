@@ -1036,10 +1036,14 @@ def read_opus(
     raw_audio = proc.stdout
     audio = np.frombuffer(raw_audio, dtype=np.float32)
     # Determine if the recording is mono or stereo and decode accordingly.
-    stderr_metadata = [
-        l for l in proc.stderr.decode().splitlines()
-        if "Stream #0:0: Audio: pcm_f32le" in l
-    ][0]
+    try:
+        stderr_metadata = [
+            l for l in proc.stderr.decode().splitlines()
+            if "Stream #0:0: Audio: pcm_f32le" in l
+        ][0]
+    except IndexError:
+        raise ValueError(f"Could not determine the number of channels for OPUS file "
+                         f"from the following ffmpeg output:\n{proc.stderr.decode()}")
     if 'stereo' in stderr_metadata:
         new_audio = np.empty((2, audio.shape[0] // 2), dtype=np.float32)
         new_audio[0, :] = audio[::2]
