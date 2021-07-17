@@ -1,10 +1,11 @@
 import logging
+import subprocess
 import warnings
 from concurrent.futures import ProcessPoolExecutor
 from contextlib import contextmanager
 from dataclasses import dataclass
 from decimal import ROUND_HALF_UP
-from functools import lru_cache
+from functools import lru_cache, partial
 from io import BytesIO
 from itertools import islice
 from math import ceil, sqrt
@@ -16,11 +17,10 @@ import numpy as np
 from tqdm.auto import tqdm
 
 from lhotse.augmentation import AudioTransform, Resample, Speed
-from lhotse.serialization import Serializable, extension_contains
-from lhotse.utils import (Decibels, NonPositiveEnergyError, Pathlike, Seconds, SetContainingAnything, asdict_nonull,
-                          compute_num_samples,
-                          exactly_one_not_null, fastcopy, SmartOpen,
-                          ifnone, index_by_id_and_check, perturb_num_samples, split_sequence)
+from lhotse.serialization import Serializable
+from lhotse.utils import (Decibels, NonPositiveEnergyError, Pathlike, Seconds, SetContainingAnything, SmartOpen,
+                          asdict_nonull, compute_num_samples, exactly_one_not_null, fastcopy, ifnone,
+                          index_by_id_and_check, perturb_num_samples, split_sequence)
 
 Channels = Union[int, List[int]]
 
@@ -46,6 +46,7 @@ class AudioSource:
             self,
             offset: Seconds = 0.0,
             duration: Optional[Seconds] = None,
+            force_opus_sampling_rate: Optional[int] = None,
     ) -> np.ndarray:
         """
         Load the AudioSource (from files, commands, or URLs) with soundfile,
@@ -55,6 +56,9 @@ class AudioSource:
 
         Note: The elements in the returned array are in the range [-1.0, 1.0]
         and are of dtype `np.floatt32`.
+
+        :param force_opus_sampling_rate: This parameter is only used when we detect an OPUS file.
+            It will tell ffmpeg to resample OPUS to this sampling rate.
         """
         assert self.type in ('file', 'command', 'url')
 
@@ -85,8 +89,12 @@ class AudioSource:
                 samples, sampling_rate = read_audio(source, offset=offset, duration=duration)
 
         else:  # self.type == 'file'
-            samples, sampling_rate = read_audio(source, offset=offset, duration=duration,
-                                                force_audioread=extension_contains('.opus', Path(self.source)))
+            samples, sampling_rate = read_audio(
+                source,
+                offset=offset,
+                duration=duration,
+                force_opus_sampling_rate=force_opus_sampling_rate,
+            )
 
         # explicit sanity check for duration as soundfile does not complain here
         if duration is not None:
@@ -128,7 +136,7 @@ class Recording:
 
     .. hint::
         Lhotse reads audio recordings using `pysoundfile`_ and `audioread`_, similarly to librosa,
-        to support multiple audio formats.
+        to support multiple audio formats. For OPUS files we require ffmpeg to be installed.
 
     .. hint::
         Since we support importing Kaldi data dirs, if ``wav.scp`` contains unix pipes,
@@ -193,7 +201,8 @@ class Recording:
     def from_file(
             path: Pathlike,
             recording_id: Optional[str] = None,
-            relative_path_depth: Optional[int] = None
+            relative_path_depth: Optional[int] = None,
+            force_opus_sampling_rate: Optional[int] = None,
     ) -> 'Recording':
         """
         Read an audio file's header and create the corresponding ``Recording``.
@@ -208,18 +217,27 @@ class Recording:
         :param recording_id: recording id, when not specified ream the filename's stem ("x.wav" -> "x").
         :param relative_path_depth: optional int specifying how many last parts of the file path
             should be retained in the ``AudioSource``. By default writes the path as is.
+        :param force_opus_sampling_rate: when specified, this value will be used as the sampling rate
+            instead of the one we read from the manifest. This is useful for OPUS files that always
+            have 48kHz rate and need to be resampled to the real one -- we will perform that operation
+            "under-the-hood". For non-OPUS files this input is undefined.
         :return: a new ``Recording`` instance pointing to the audio file.
         """
-        try:
-            # Try to parse the file using pysoundfile first.
-            import soundfile
-            info = soundfile.info(str(path))
-        except:
-            # Try to parse the file using audioread as a fallback.
-            info = audioread_info(str(path))
-            # If both fail, then Python 3 will display both exception messages.
+        path = Path(path)
+        if path.suffix.lower() == '.opus':
+            # We handle OPUS as a special case because we might need to force a certain sampling rate.
+            info = opus_info(path, force_opus_sampling_rate=force_opus_sampling_rate)
+        else:
+            try:
+                # Try to parse the file using pysoundfile first.
+                import soundfile
+                info = soundfile.info(str(path))
+            except:
+                # Try to parse the file using audioread as a fallback.
+                info = audioread_info(str(path))
+                # If both fail, then Python 3 will display both exception messages.
         return Recording(
-            id=recording_id if recording_id is not None else Path(path).stem,
+            id=recording_id if recording_id is not None else path.stem,
             sampling_rate=info.samplerate,
             num_samples=info.frames,
             duration=info.duration,
@@ -228,7 +246,7 @@ class Recording:
                     type='file',
                     channels=list(range(info.channels)),
                     source=(
-                        '/'.join(Path(path).parts[-relative_path_depth:])
+                        '/'.join(path.parts[-relative_path_depth:])
                         if relative_path_depth is not None and relative_path_depth > 0
                         else str(path)
                     )
@@ -293,6 +311,7 @@ class Recording:
             samples = source.load_audio(
                 offset=offset_aug,
                 duration=duration_aug,
+                force_opus_sampling_rate=self.sampling_rate,
             )
 
             # Case: two-channel audio file but only one channel requested
@@ -462,26 +481,48 @@ class RecordingSet(Serializable, Sequence[Recording]):
         return RecordingSet(recordings=index_by_id_and_check(recordings))
 
     @staticmethod
-    def from_dir(path: Pathlike, pattern: str, num_jobs: int = 1):
+    def from_dir(
+            path: Pathlike,
+            pattern: str,
+            num_jobs: int = 1,
+            force_opus_sampling_rate: Optional[int] = None,
+    ):
+        """
+        Recursively scan a directory ``path`` for audio files that match the given ``pattern`` and create
+        a :class:`.RecordingSet` manifest for them.
+        Suitable to use when each physical file represents a separate recording session.
+
+        .. caution::
+            If a recording session consists of multiple files (e.g. one per channel),
+            it is advisable to create each :class:`.Recording` object manually, with each
+            file represented as a separate :class:`.AudioSource` object, and then
+            a :class:`RecordingSet` that contains all the recordings.
+
+        :param path: Path to a directory of audio of files (possibly with sub-directories).
+        :param pattern: A bash-like pattern specifying allowed filenames, e.g. ``*.wav`` or ``session1-*.flac``.
+        :param num_jobs: The number of parallel workers for reading audio files to get their metadata.
+        :param force_opus_sampling_rate: when specified, this value will be used as the sampling rate
+            instead of the one we read from the manifest. This is useful for OPUS files that always
+            have 48kHz rate and need to be resampled to the real one -- we will perform that operation
+            "under-the-hood". For non-OPUS files this input does nothing.
+        :return: a new ``Recording`` instance pointing to the audio file.
+        """
         msg = f'Scanning audio files ({pattern})'
+        fn = Recording.from_file
+        if force_opus_sampling_rate is not None:
+            fn = partial(Recording.from_file, force_opus_sampling_rate=force_opus_sampling_rate)
         if num_jobs == 1:
             # Avoid spawning process for one job.
             return RecordingSet.from_recordings(
                 tqdm(
-                    map(
-                        Recording.from_file,
-                        Path(path).rglob(pattern)
-                    ),
+                    map(fn, Path(path).rglob(pattern)),
                     desc=msg
                 )
             )
         with ProcessPoolExecutor(num_jobs) as ex:
             return RecordingSet.from_recordings(
                 tqdm(
-                    ex.map(
-                        Recording.from_file,
-                        Path(path).rglob(pattern)
-                    ),
+                    ex.map(fn, Path(path).rglob(pattern)),
                     desc=msg
                 )
             )
@@ -740,11 +781,16 @@ def read_audio(
         path_or_fd: Union[Pathlike, FileObject],
         offset: Seconds = 0.0,
         duration: Optional[Seconds] = None,
-        force_audioread: Optional[bool] = False,
+        force_opus_sampling_rate: Optional[int] = None,
 ) -> Tuple[np.ndarray, int]:
+    if isinstance(path_or_fd, (str, Path)) and str(path_or_fd).lower().endswith('.opus'):
+        return read_opus(
+            path_or_fd,
+            offset=offset,
+            duration=duration,
+            force_opus_sampling_rate=force_opus_sampling_rate,
+        )
     try:
-        if force_audioread:
-            raise Exception
         import soundfile as sf
         with sf.SoundFile(path_or_fd) as sf_desc:
             sampling_rate = sf_desc.samplerate
@@ -761,18 +807,19 @@ def read_audio(
         return _audioread_load(path_or_fd, offset=offset, duration=duration)
 
 
-def audioread_info(path):
+class LibsndfileCompatibleAudioInfo(NamedTuple):
+    channels: int
+    frames: int
+    samplerate: int
+    duration: float
+
+
+def audioread_info(path: Pathlike) -> LibsndfileCompatibleAudioInfo:
     """
     Return an audio info data structure that's a compatible subset of ``pysoundfile.info()``
     that we need to create a ``Recording`` manifest.
     """
     import audioread
-
-    class _LibsndfileCompatibleAudioInfo(NamedTuple):
-        channels: int
-        frames: int
-        samplerate: int
-        duration: float
 
     # We just read the file and compute the number of samples
     # -- no other method seems fully reliable...
@@ -782,7 +829,7 @@ def audioread_info(path):
             num_samples = shape[0]
         else:
             num_samples = shape[1]
-        return _LibsndfileCompatibleAudioInfo(
+        return LibsndfileCompatibleAudioInfo(
             channels=input_file.channels,
             frames=num_samples,
             samplerate=input_file.samplerate,
@@ -945,3 +992,59 @@ def assert_and_maybe_fix_num_samples(
                          f"This could be internal Lhotse's error or a faulty transform implementation. "
                          "Please report this issue in Lhotse and show the "
                          f"following: diff={diff}, audio.shape={audio.shape}, recording={recording}")
+
+
+def opus_info(
+        path: Pathlike,
+        force_opus_sampling_rate: Optional[int] = None
+) -> LibsndfileCompatibleAudioInfo:
+    samples, sampling_rate = read_opus(path, force_opus_sampling_rate=force_opus_sampling_rate)
+    return LibsndfileCompatibleAudioInfo(
+        channels=samples.shape[0],
+        frames=samples.shape[1],
+        samplerate=sampling_rate,
+        duration=samples.shape[1] / sampling_rate
+    )
+
+
+def read_opus(
+        path: Pathlike,
+        offset: Seconds = 0.0,
+        duration: Optional[Seconds] = None,
+        force_opus_sampling_rate: Optional[int] = None
+) -> Tuple[np.ndarray, int]:
+    """
+    Reads OPUS files using ffmpeg in a shell subprocess.
+    Unlike audioread, correctly supports offsets and durations for reading short chunks.
+    Optionally, we can force ffmpeg to resample to the true sampling rate (if we know it up-front).
+
+    :return: a tuple of audio samples and the sampling rate.
+    """
+    # Construct the ffmpeg command depending on the arguments passed.
+    cmd = f'ffmpeg -i {path}'
+    sampling_rate = 48000
+    if offset > 0:
+        cmd += f' -ss {offset}'
+    if duration is not None:
+        cmd += f' -t {duration}'
+    if force_opus_sampling_rate is not None:
+        cmd += f' -ar {force_opus_sampling_rate}'
+        sampling_rate = force_opus_sampling_rate
+    cmd += ' -f f32le pipe:1'
+    # Actual audio reading.
+    proc = subprocess.run(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    raw_audio = proc.stdout
+    audio = np.frombuffer(raw_audio, dtype=np.float32)
+    # Determine if the recording is mono or stereo and decode accordingly.
+    stderr_metadata = [
+        l for l in proc.stderr.decode().splitlines()
+        if "Stream #0:0: Audio: pcm_f32le" in l
+    ][0]
+    if 'stereo' in stderr_metadata:
+        new_audio = np.empty((2, audio.shape[0] // 2), dtype=np.float32)
+        new_audio[0, :] = audio[::2]
+        new_audio[1, :] = audio[1::2]
+        audio = new_audio
+    else:
+        audio = audio.reshape(1, -1)
+    return audio, sampling_rate

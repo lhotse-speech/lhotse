@@ -117,8 +117,7 @@ def parse_utterance(
         audio: Any,
         root_path: Path
 ) -> Optional[Tuple[Recording, List[SupervisionSegment]]]:
-    # Opus-format audio would be decoded at 48kHz by force, with the original sampling rate being ignored.
-    opus_decoding_sample_rate = 48000
+    sampling_rate = int(audio['sample_rate'])
     recording = Recording(
         id=audio['aid'],
         sources=[
@@ -130,10 +129,10 @@ def parse_utterance(
         ],
         num_samples=compute_num_samples(
             duration=Seconds(audio['duration']),
-            sampling_rate=opus_decoding_sample_rate
+            sampling_rate=sampling_rate
         ),
-        sampling_rate=opus_decoding_sample_rate,
-        duration=Seconds(audio['duration'])).resample(int(audio['sample_rate']))
+        sampling_rate=sampling_rate,
+        duration=Seconds(audio['duration']))
     segments = []
     for seg in audio['segments']:
         segments.append(

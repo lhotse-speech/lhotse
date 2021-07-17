@@ -1,4 +1,5 @@
 from functools import lru_cache
+from math import isclose
 
 import audioread
 import numpy as np
@@ -318,8 +319,65 @@ class TestAudioMixer:
     all('ffmpeg' not in str(backend).lower() for backend in audioread.available_backends()),
     reason='Requires FFmpeg to be installed.'
 )
-def test_recording_from_file_using_audioread():
+def test_opus_recording_from_file():
     path = 'test/fixtures/mono_c0.opus'
     recording = Recording.from_file(path)
-    recording.load_audio()
+    # OPUS always overrides the sampling rate to 48000
+    assert recording.sampling_rate == 48000
+    # OPUS may crate extra audio frames / samples...
+    assert isclose(recording.duration, 0.5054166666666666)
+    samples = recording.load_audio()
+    num_channels, num_samples = samples.shape
+    assert num_channels == recording.num_channels
+    assert num_samples == recording.num_samples
+    assert num_samples == 24260
     # OPUS file read succesfully!
+
+
+@pytest.mark.skipif(
+    all('ffmpeg' not in str(backend).lower() for backend in audioread.available_backends()),
+    reason='Requires FFmpeg to be installed.'
+)
+def test_opus_recording_from_file_force_sampling_rate():
+    path = 'test/fixtures/mono_c0.opus'
+    recording = Recording.from_file(path, force_opus_sampling_rate=8000)
+    assert recording.sampling_rate == 8000
+    assert isclose(recording.duration, 0.5055)
+    samples = recording.load_audio()
+    num_channels, num_samples = samples.shape
+    assert num_channels == recording.num_channels
+    assert num_samples == recording.num_samples
+    assert num_samples == 4044
+
+
+@pytest.mark.skipif(
+    all('ffmpeg' not in str(backend).lower() for backend in audioread.available_backends()),
+    reason='Requires FFmpeg to be installed.'
+)
+def test_opus_stereo_recording_from_file_force_sampling_rate():
+    path = 'test/fixtures/stereo.opus'
+    recording = Recording.from_file(path, force_opus_sampling_rate=8000)
+    assert recording.sampling_rate == 8000
+    assert isclose(recording.duration, 1.0055)
+    samples = recording.load_audio()
+    num_channels, num_samples = samples.shape
+    assert num_channels == recording.num_channels
+    assert num_samples == recording.num_samples
+    assert num_samples == 8044
+
+
+@pytest.mark.skipif(
+    all('ffmpeg' not in str(backend).lower() for backend in audioread.available_backends()),
+    reason='Requires FFmpeg to be installed.'
+)
+def test_opus_stereo_recording_from_file_force_sampling_rate_read_chunk():
+    path = 'test/fixtures/stereo.opus'
+    recording = Recording.from_file(path, force_opus_sampling_rate=8000)
+    assert recording.sampling_rate == 8000
+    assert isclose(recording.duration, 1.0055)
+    all_samples = recording.load_audio()
+    samples = recording.load_audio(offset=0.5, duration=0.25)
+    num_channels, num_samples = samples.shape
+    assert num_channels == recording.num_channels
+    assert num_samples == 2000
+    np.testing.assert_equal(samples, all_samples[:, 4000:6000])
