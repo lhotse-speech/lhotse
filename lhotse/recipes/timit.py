@@ -57,6 +57,7 @@ def prepare_timit(
     :param corpus_dir: Pathlike, the path of the data dir. 
     :param splits_dir: Pathlike, the path of the txt files for data division (train, dev, tst).
     :param output_dir: Pathlike, the path where to write and save the manifests.
+    :param num_phones: int=48, the number of phones (60, 48 or 39) for modeling and 48 is regarded as the default value.
     :return: a Dict whose key is the dataset part, and the value is Dicts with the keys 'audio' and 'supervisions'.
     """
     corpus_dir = Path(corpus_dir)
@@ -71,8 +72,17 @@ def prepare_timit(
 
     manifests = defaultdict(dict)
     dataset_parts = ['TRAIN', 'DEV', 'TEST']
+    
+    phones_dict = {}
 
-    phones_dict = get_phonemes(num_phones)
+    try:
+        if num_phones in [60, 48, 39]:
+            phones_dict = get_phonemes(num_phones)
+        else:
+            raise ValueError("The value of num_phones must be in [60, 48, 39].")
+    except ValueError as e:
+        print("Exception: ", repr(e))
+        raise 
 
     with ThreadPoolExecutor(num_jobs) as ex:
         for part in dataset_parts:
@@ -146,9 +156,10 @@ def prepare_timit(
 
 def get_phonemes(num_phones):
     phonemes = {}
-
+   
     if num_phones == int(48):
-    # This dictionary is used to conver the 60 phoneme set into the 48 one
+        print("Using 48 phones for modeling!")
+        # This dictionary is used to conver the 60 phoneme set into the 48 one.
         phonemes["sil"] = "sil"
         phonemes["aa"] = "aa"
         phonemes["ae"] = "ae"
@@ -212,8 +223,9 @@ def get_phonemes(num_phones):
         phonemes["z"] = "z"
         phonemes["zh"] = "zh"
 
-    if num_phones == int(39):
-    # This dictionary is used to conver the 60 phoneme set into the 39 one
+    elif num_phones == int(39):
+        print("Using 39 phones for modeling!")
+        # This dictionary is used to conver the 60 phoneme set into the 39 one.
         phonemes["sil"] = "sil"
         phonemes["aa"] = "aa"
         phonemes["ae"] = "ae"
@@ -276,5 +288,8 @@ def get_phonemes(num_phones):
         phonemes["y"] = "y"
         phonemes["z"] = "z"
         phonemes["zh"] = "sh"
+    
+    else:
+        print("Using 60 phones for modeling!")
 
     return phonemes
