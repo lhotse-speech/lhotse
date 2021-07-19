@@ -4,13 +4,10 @@ Aishell is an open-source Chinese Mandarin speech corpus published by Beijing Sh
 publicly availble on https://www.openslr.org/33
 """
 
-from collections import defaultdict
-
-import glob
-import json
 import logging
 import shutil
 import tarfile
+from collections import defaultdict
 from pathlib import Path
 from typing import Dict, Optional, Union
 
@@ -20,10 +17,10 @@ from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import Pathlike, urlretrieve_progress
 
 
-def download_and_untar(
-        target_dir: Pathlike = '.',
-        force_download: Optional[bool] = False,
-        base_url: Optional[str] = 'http://www.openslr.org/resources'
+def download_aishell(
+    target_dir: Pathlike = ".",
+    force_download: Optional[bool] = False,
+    base_url: Optional[str] = "http://www.openslr.org/resources",
 ) -> None:
     """
     Downdload and untar the dataset
@@ -31,24 +28,27 @@ def download_and_untar(
     :param force_download: Bool, if True, download the tars no matter if the tars exist.
     :param base_url: str, the url of the OpenSLR resources.
     """
-
-    url = f'{base_url}/33'
+    url = f"{base_url}/33"
     target_dir = Path(target_dir)
     target_dir.mkdir(parents=True, exist_ok=True)
-    dataset_tar_name = 'data_aishell.tgz'
-    resources_tar_name = 'resource_aishell.tgz'
+    dataset_tar_name = "data_aishell.tgz"
+    resources_tar_name = "resource_aishell.tgz"
     for tar_name in [dataset_tar_name, resources_tar_name]:
         tar_path = target_dir / tar_name
+        corpus_dir = target_dir / "aishell"
+        extracted_dir = corpus_dir / tar_name[:-4]
+        completed_detector = extracted_dir / ".completed"
+        if completed_detector.is_file():
+            logging.info(f"Skipping download of because {completed_detector} exists.")
+            continue
         if force_download or not tar_path.is_file():
-            urlretrieve_progress(f'{url}/{tar_name}', filename=tar_path, desc=f'Downloading {tar_name}')
-        corpus_dir = target_dir / 'aishell'
-        extracted_dir = corpus_dir / tar_name[: -4]
-        completed_detector = extracted_dir / '.completed'
-        if not completed_detector.is_file():
-            shutil.rmtree(extracted_dir, ignore_errors=True)
-            with tarfile.open(tar_path) as tar:
-                tar.extractall(path=corpus_dir)
-                completed_detector.touch()
+            urlretrieve_progress(
+                f"{url}/{tar_name}", filename=tar_path, desc=f"Downloading {tar_name}"
+            )
+        shutil.rmtree(extracted_dir, ignore_errors=True)
+        with tarfile.open(tar_path) as tar:
+            tar.extractall(path=corpus_dir)
+        completed_detector.touch()
 
 
 def prepare_aishell(

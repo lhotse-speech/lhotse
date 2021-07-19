@@ -18,7 +18,7 @@ usma_dataset = ('usma-prompts.txt')
 folds = ('train', 'devtest', 'test')
 
 
-def download_and_untar(
+def download_heroico(
         target_dir: Pathlike = '.',
         force_download: Optional[bool] = False,
         url: Optional[str] = 'http://www.openslr.org/resources/39'
@@ -27,13 +27,15 @@ def download_and_untar(
     target_dir.mkdir(parents=True, exist_ok=True)
     tar_name = f'LDC2006S37.tar.gz'
     tar_path = target_dir / tar_name
+    completed_detector = target_dir / '.completed'
+    if completed_detector.is_file():
+        logging.info(f'Skipping {tar_name} because {completed_detector} exists.')
+        return
     if force_download or not tar_path.is_file():
         urlretrieve_progress(f'{url}/{tar_name}', filename=tar_path, desc='Downloading Heroico')
-
-    completed_detector = target_dir / '.completed'
     with tarfile.open(tar_path) as tar:
         tar.extractall(path=target_dir)
-        completed_detector.touch()
+    completed_detector.touch()
 
 
 class HeroicoMetaData(NamedTuple):

@@ -13,6 +13,7 @@ The corpus can be cited as follows:
  note = {arXiv:1510.08484v1}
 }
 """
+import logging
 import tarfile
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Sequence, Union
@@ -41,13 +42,15 @@ def download_musan(
 
     tar_name = 'musan.tar.gz'
     tar_path = target_dir / tar_name
+    completed_detector = target_dir / '.musan_completed'
+    if completed_detector.is_file():
+        logging.info(f'Skipping {tar_name} because {completed_detector} exists.')
+        return
     if force_download or not tar_path.is_file():
         urlretrieve_progress(url, filename=tar_path, desc=f'Downloading {tar_name}')
-    completed_detector = target_dir / '.musan_completed'
-    if not completed_detector.is_file():
-        with tarfile.open(tar_path) as tar:
-            tar.extractall(path=target_dir)
-            completed_detector.touch()
+    with tarfile.open(tar_path) as tar:
+        tar.extractall(path=target_dir)
+        completed_detector.touch()
 
 
 def prepare_musan(

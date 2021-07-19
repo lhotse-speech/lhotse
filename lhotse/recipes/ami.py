@@ -24,12 +24,12 @@ NOTE on mic settings: AMI comes with 4 different microphone settings:
 These can be specified using the `mic` argument.
 """
 
+import html
 import itertools
 import logging
 import urllib.request
 import xml.etree.ElementTree as ET
 import zipfile
-import html
 from collections import defaultdict
 from pathlib import Path
 from typing import Dict, List, NamedTuple, Optional, Union
@@ -240,6 +240,9 @@ def download_ami(
     logging.info("Downloading AMI annotations")
     annotations_name = "annotations.zip"
     annotations_path = annotations_dir / annotations_name
+    if annotations_path.exists():
+        logging.info(f'Skip downloading annotations as they exist in: {annotations_path}')
+        return
     annotations_url = f"{url}/AMICorpusAnnotations/ami_public_manual_1.6.2.zip"
     if force_download or not annotations_path.is_file():
         urllib.request.urlretrieve(annotations_url, filename=annotations_path)

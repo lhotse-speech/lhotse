@@ -24,7 +24,7 @@ from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import Pathlike, fastcopy, urlretrieve_progress
 
 
-def download_and_untar(
+def download_ljspeech(
         target_dir: Pathlike = '.',
         force_download: Optional[bool] = False
 ) -> None:
@@ -32,19 +32,21 @@ def download_and_untar(
     target_dir.mkdir(parents=True, exist_ok=True)
     dataset_name = 'LJSpeech-1.1'
     tar_path = target_dir / f'{dataset_name}.tar.bz2'
+    corpus_dir = target_dir / dataset_name
+    completed_detector = corpus_dir / '.completed'
+    if completed_detector.is_file():
+        logging.info(f'Skipping {dataset_name} because {completed_detector} exists.')
+        return
     if force_download or not tar_path.is_file():
         urlretrieve_progress(
             f'http://data.keithito.com/data/speech/{dataset_name}.tar.bz2',
             filename=tar_path,
             desc='Downloading LJSpeech'
         )
-    corpus_dir = target_dir / dataset_name
-    completed_detector = corpus_dir / '.completed'
-    if not completed_detector.is_file():
-        shutil.rmtree(corpus_dir, ignore_errors=True)
-        with tarfile.open(tar_path) as tar:
-            tar.extractall(path=target_dir)
-            completed_detector.touch()
+    shutil.rmtree(corpus_dir, ignore_errors=True)
+    with tarfile.open(tar_path) as tar:
+        tar.extractall(path=target_dir)
+    completed_detector.touch()
 
 
 def prepare_ljspeech(
