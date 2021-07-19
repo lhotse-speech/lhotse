@@ -8,7 +8,6 @@ from collections import defaultdict
 import os
 import zipfile
 import logging
-import string
 from tqdm import tqdm
 from pathlib import Path
 from typing import Dict, Optional, Union
@@ -21,13 +20,13 @@ from lhotse.utils import Pathlike, urlretrieve_progress
 
 def download_timit(
         target_dir: Pathlike = '.',
-        force_download: Optional[bool] = False,
+        force_download: bool = False,
         base_url: Optional[str] = 'https://data.deepai.org/timit.zip') -> None:
     """
     Download and unzip the dataset TIMIT.
-    :param target_dir: Pathlike, the path of the dir to storage the dataset.
-    :param force_download: Bool, if True, download the zips no matter if the zips exists.
-    :param base_url: str, the url of the TIMIT download for free.
+    :param target_dir: Pathlike, the path of the dir to store the dataset.
+    :param force_download: bool, if True, download the zips no matter if the zips exists.
+    :param base_url: str, the URL of the TIMIT dataset to download.
     """
     target_dir = Path(target_dir)
     target_dir.mkdir(parents=True, exist_ok=True)
@@ -75,14 +74,10 @@ def prepare_timit(
     
     phones_dict = {}
 
-    try:
-        if num_phones in [60, 48, 39]:
-            phones_dict = get_phonemes(num_phones)
-        else:
-            raise ValueError("The value of num_phones must be in [60, 48, 39].")
-    except ValueError as e:
-        print("Exception: ", repr(e))
-        raise 
+    if num_phones in [60, 48, 39]:
+        phones_dict = get_phonemes(num_phones)
+    else:
+        raise ValueError("The value of num_phones must be in [60, 48, 39].")
 
     with ThreadPoolExecutor(num_jobs) as ex:
         for part in dataset_parts:
@@ -99,14 +94,14 @@ def prepare_timit(
                 lines = f.readlines() 
                 for line in lines:
                     items = line.strip().split(' ')
-                    wav = os.path.join(corpus_dir, items[-1])
+                    wav = corpus_dir / items[-1]
                     wav_files.append(wav)
-                print(f'{part} dataset manifest generation.')
+                logging.debug(f'{part} dataset manifest generation.')
                 recordings = []
                 supervisions = []
 
                 for wav_file in tqdm(wav_files):
-                    items = wav_file.strip().split('/')
+                    items = str(wav_file).strip().split('/')
                     idx = items[-2] + '-' + items[-1][:-4]
                     speaker = items[-2] 
                     transcript_file = Path(wav_file).with_suffix('.PHN')
@@ -155,11 +150,15 @@ def prepare_timit(
     return manifests
 
 def get_phonemes(num_phones):
+    """
+    Choose and convert the phones for modeling.
+    :param num_phones: the number of phones for modeling. 
+    """
     phonemes = {}
    
     if num_phones == int(48):
-        print("Using 48 phones for modeling!")
-        # This dictionary is used to conver the 60 phoneme set into the 48 one.
+        logging.debug("Using 48 phones for modeling!")
+        # This dictionary is used to convert the 60 phoneme set into the 48 one.
         phonemes["sil"] = "sil"
         phonemes["aa"] = "aa"
         phonemes["ae"] = "ae"
@@ -224,8 +223,8 @@ def get_phonemes(num_phones):
         phonemes["zh"] = "zh"
 
     elif num_phones == int(39):
-        print("Using 39 phones for modeling!")
-        # This dictionary is used to conver the 60 phoneme set into the 39 one.
+        logging.debug("Using 39 phones for modeling!")
+        # This dictionary is used to convert the 60 phoneme set into the 39 one.
         phonemes["sil"] = "sil"
         phonemes["aa"] = "aa"
         phonemes["ae"] = "ae"
@@ -290,6 +289,6 @@ def get_phonemes(num_phones):
         phonemes["zh"] = "sh"
     
     else:
-        print("Using 60 phones for modeling!")
+        logging.debug("Using 60 phones for modeling!")
 
     return phonemes
