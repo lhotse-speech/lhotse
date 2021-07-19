@@ -1,4 +1,5 @@
 from .aishell import prepare_aishell
+from .timit import download_timit, prepare_timit
 from .ami import download_ami, prepare_ami
 from .babel import prepare_single_babel_language
 from .broadcast_news import prepare_broadcast_news
