@@ -1,3 +1,4 @@
+import logging
 import shutil
 from collections import defaultdict
 from pathlib import Path
@@ -10,7 +11,7 @@ from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import Pathlike, Seconds, urlretrieve_progress
 
 
-def download_and_unzip(
+def download_librimix(
         target_dir: Pathlike = '.',
         force_download: Optional[bool] = False,
         url: Optional[str] = 'https://zenodo.org/record/3871592/files/MiniLibriMix.zip'
@@ -18,15 +19,17 @@ def download_and_unzip(
     target_dir = Path(target_dir)
     target_dir.mkdir(parents=True, exist_ok=True)
     zip_path = target_dir / 'MiniLibriMix.zip'
-    if force_download or not zip_path.is_file():
-        urlretrieve_progress(url, filename=zip_path, desc='Downloading MiniLibriMix')
     unzipped_dir = target_dir / 'MiniLibriMix'
     completed_detector = unzipped_dir / '.completed'
-    if not completed_detector.is_file():
-        shutil.rmtree(unzipped_dir, ignore_errors=True)
-        with ZipFile(zip_path) as zf:
-            zf.extractall(path=target_dir)
-            completed_detector.touch()
+    if completed_detector.is_file():
+        logging.info(f'Skipping {zip_path} because {completed_detector} exists.')
+        return
+    if force_download or not zip_path.is_file():
+        urlretrieve_progress(url, filename=zip_path, desc='Downloading MiniLibriMix')
+    shutil.rmtree(unzipped_dir, ignore_errors=True)
+    with ZipFile(zip_path) as zf:
+        zf.extractall(path=target_dir)
+    completed_detector.touch()
 
 
 def prepare_librimix(

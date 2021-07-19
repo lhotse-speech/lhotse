@@ -20,7 +20,7 @@ can be made by improving labelling etc.
 
 Note: The Lhotse recipe is currently not downloading or using the phonetic labeling.
 """
-
+import logging
 import shutil
 import tarfile
 from pathlib import Path
@@ -82,15 +82,17 @@ def download_cmu_arctic(
         tar_name = f'{name}.tar.bz2'
         full_url = f'{base_url}{tar_name}'
         tar_path = target_dir / tar_name
-        if force_download or not tar_path.is_file():
-            urlretrieve_progress(full_url, filename=tar_path, desc=f'Downloading {tar_name}')
         part_dir = target_dir / name
         completed_detector = part_dir / '.completed'
-        if not completed_detector.is_file():
-            shutil.rmtree(part_dir, ignore_errors=True)
-            with tarfile.open(tar_path) as tar:
-                tar.extractall(path=target_dir)
-                completed_detector.touch()
+        if completed_detector.is_file():
+            logging.info(f'Skiping {spk} because {completed_detector} exists.')
+            continue
+        if force_download or not tar_path.is_file():
+            urlretrieve_progress(full_url, filename=tar_path, desc=f'Downloading {tar_name}')
+        shutil.rmtree(part_dir, ignore_errors=True)
+        with tarfile.open(tar_path) as tar:
+            tar.extractall(path=target_dir)
+        completed_detector.touch()
 
 
 def prepare_cmu_arctic(

@@ -3,20 +3,20 @@
 # Copyright 2021 Xiaomi Corporation (Author: Mingshuang Luo)
 # Apache 2.0
 
-from collections import defaultdict
-
-import os
-import zipfile
 import logging
-from tqdm import tqdm
+import zipfile
+from collections import defaultdict
+from concurrent.futures.thread import ThreadPoolExecutor
 from pathlib import Path
 from typing import Dict, Optional, Union
-from concurrent.futures.thread import ThreadPoolExecutor
+
+from tqdm import tqdm
 
 from lhotse import validate_recordings_and_supervisions
 from lhotse.audio import Recording, RecordingSet
 from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import Pathlike, urlretrieve_progress
+
 
 def download_timit(
         target_dir: Pathlike = '.',
@@ -30,19 +30,21 @@ def download_timit(
     """
     target_dir = Path(target_dir)
     target_dir.mkdir(parents=True, exist_ok=True)
-    tar_name = 'timit.zip'
-    tar_path = target_dir / tar_name
-    if force_download or not tar_path.is_file():
-        urlretrieve_progress(f'{base_url}', filename=tar_path, desc=f'Downloading and unzip {tar_name}')
+    zip_name = 'timit.zip'
+    zip_path = target_dir / zip_name
+    corpus_dir = zip_path.with_suffix('')
+    completed_detector = corpus_dir / '.completed'
+    if completed_detector.is_file():
+        logging.info(f'Skipping {zip_name} because {completed_detector} exists.')
+        return
+    if force_download or not zip_path.is_file():
+        urlretrieve_progress(base_url, filename=zip_path, desc=f'Downloading {zip_name}')
     
-    zip_file = zipfile.ZipFile(tar_path)
-    if os.path.isdir(tar_name[:-4]):
-        pass
-    else:
-        os.mkdir(tar_name[:-4])
-    for names in zip_file.namelist():
-        zip_file.extract(names, tar_name[:-4])
-    zip_file.close()
+    with zipfile.ZipFile(zip_path) as zip_file:
+        corpus_dir.mkdir(parents=True, exist_ok=True)
+        for names in zip_file.namelist():
+            zip_file.extract(names, str(corpus_dir))
+
 
 def prepare_timit(
         corpus_dir: Pathlike,

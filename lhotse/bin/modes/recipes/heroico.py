@@ -1,7 +1,7 @@
 import click
 
 from lhotse.bin.modes import download, prepare
-from lhotse.recipes.heroico import download_and_untar, prepare_heroico
+from lhotse.recipes.heroico import download_heroico, prepare_heroico
 from lhotse.utils import Pathlike
 
 __all__ = ['heroico']
@@ -26,4 +26,4 @@ def heroico(
         target_dir: Pathlike
 ):
     """heroico download."""
-    download_and_untar(target_dir)
+    download_heroico(target_dir)

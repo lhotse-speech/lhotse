@@ -43,6 +43,8 @@ def download_librispeech(
         dataset_parts = MINI_LIBRISPEECH
 
     for part in tqdm(dataset_parts, desc='Downloading LibriSpeech parts'):
+        logging.info(f'Processing split: {part}')
+        # Determine the valid URL for a given split.
         if part in LIBRISPEECH:
             url = f'{base_url}/12'
         elif part in MINI_LIBRISPEECH:
@@ -50,17 +52,22 @@ def download_librispeech(
         else:
             logging.warning(f'Invalid dataset part name: {part}')
             continue
+        # Split directory exists and seem valid? Skip this split.
+        part_dir = target_dir / f'LibriSpeech/{part}'
+        completed_detector = part_dir / '.completed'
+        if completed_detector.is_file():
+            logging.info(f'Skipping {part} because {completed_detector} exists.')
+            continue
+        # Maybe-download the archive.
         tar_name = f'{part}.tar.gz'
         tar_path = target_dir / tar_name
         if force_download or not tar_path.is_file():
             urlretrieve_progress(f'{url}/{tar_name}', filename=tar_path, desc=f'Downloading {tar_name}')
-        part_dir = target_dir / f'LibriSpeech/{part}'
-        completed_detector = part_dir / '.completed'
-        if not completed_detector.is_file():
-            shutil.rmtree(part_dir, ignore_errors=True)
-            with tarfile.open(tar_path) as tar:
-                tar.extractall(path=target_dir)
-                completed_detector.touch()
+        # Remove partial unpacked files, if any, and unpack everything.
+        shutil.rmtree(part_dir, ignore_errors=True)
+        with tarfile.open(tar_path) as tar:
+            tar.extractall(path=target_dir)
+        completed_detector.touch()
 
 
 def prepare_librispeech(

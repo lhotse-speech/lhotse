@@ -111,16 +111,18 @@ def download_vctk(
 
     archive_name = url.split('/')[-1]
     archive_path = target_dir / archive_name
-    if force_download or not archive_path.is_file():
-        urlretrieve_progress(url, filename=archive_path, desc=f'Downloading {archive_name}')
     part_dir = target_dir / archive_name.replace('.zip', '').replace('.tar.gz', '')
     completed_detector = part_dir / '.completed'
-    if not completed_detector.is_file():
-        shutil.rmtree(part_dir, ignore_errors=True)
-        opener = zipfile.ZipFile if archive_name.endswith('.zip') else tarfile.open
-        with opener(archive_path) as archive:
-            archive.extractall(path=target_dir)
-            completed_detector.touch()
+    if completed_detector.is_file():
+        logging.info(f'Skipping {archive_name} because {completed_detector} exists.')
+        return
+    if force_download or not archive_path.is_file():
+        urlretrieve_progress(url, filename=archive_path, desc=f'Downloading {archive_name}')
+    shutil.rmtree(part_dir, ignore_errors=True)
+    opener = zipfile.ZipFile if archive_name.endswith('.zip') else tarfile.open
+    with opener(archive_path) as archive:
+        archive.extractall(path=target_dir)
+    completed_detector.touch()
 
 
 def prepare_vctk(

@@ -46,16 +46,18 @@ def download_mobvoihotwords(
     resources_tar_name = 'mobvoi_hotword_dataset_resources.tgz'
     for tar_name in [dataset_tar_name, resources_tar_name]:
         tar_path = target_dir / tar_name
-        if force_download or not tar_path.is_file():
-            urlretrieve_progress(f'{url}/{tar_name}', filename=tar_path, desc=f'Downloading {tar_name}')
         corpus_dir = target_dir / 'MobvoiHotwords'
         extracted_dir = corpus_dir / tar_name[: -4]
         completed_detector = extracted_dir / '.completed'
-        if not completed_detector.is_file():
-            shutil.rmtree(extracted_dir, ignore_errors=True)
-            with tarfile.open(tar_path) as tar:
-                tar.extractall(path=corpus_dir)
-                completed_detector.touch()
+        if completed_detector.is_file():
+            logging.info(f'Skip {tar_name} because {completed_detector} exists.')
+            continue
+        if force_download or not tar_path.is_file():
+            urlretrieve_progress(f'{url}/{tar_name}', filename=tar_path, desc=f'Downloading {tar_name}')
+        shutil.rmtree(extracted_dir, ignore_errors=True)
+        with tarfile.open(tar_path) as tar:
+            tar.extractall(path=corpus_dir)
+        completed_detector.touch()
 
 
 def prepare_mobvoihotwords(
