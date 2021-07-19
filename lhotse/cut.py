@@ -4,16 +4,18 @@ import warnings
 from concurrent.futures import Executor, ProcessPoolExecutor
 from dataclasses import dataclass, field
 from functools import partial, reduce
-from itertools import islice
+from itertools import chain, islice
 from math import ceil, floor
 from pathlib import Path
-from typing import Any, Callable, Dict, FrozenSet, Iterable, List, Mapping, Optional, Sequence, Type, TypeVar, Union
+from typing import Any, Callable, Dict, FrozenSet, Iterable, List, Mapping, Optional, Sequence, Set, Type, TypeVar, \
+    Union
 
 import numpy as np
 from cytoolz import sliding_window
 from cytoolz.itertoolz import groupby
 from intervaltree import Interval, IntervalTree
 from tqdm.auto import tqdm
+from typing_extensions import Literal
 
 from lhotse.audio import AudioMixer, Recording, RecordingSet
 from lhotse.augmentation import AugmentFn
@@ -22,8 +24,10 @@ from lhotse.features.base import compute_global_stats
 from lhotse.features.io import FeaturesWriter, LilcomFilesWriter, LilcomHdf5Writer
 from lhotse.serialization import Serializable
 from lhotse.supervision import SupervisionSegment, SupervisionSet
-from lhotse.utils import (Decibels, LOG_EPSILON, NonPositiveEnergyError, Pathlike, Seconds, TimeSpan, asdict_nonull,
-                          compute_num_frames, compute_num_samples, exactly_one_not_null, fastcopy,
+from lhotse.utils import (Decibels, LOG_EPSILON, NonPositiveEnergyError, Pathlike, Seconds, SetContainingAnything,
+                          TimeSpan, asdict_nonull,
+                          compute_num_frames, compute_num_samples, compute_start_duration_for_extended_cut,
+                          exactly_one_not_null, fastcopy,
                           ifnone, index_by_id_and_check, measure_overlap, overlaps,
                           overspans, perturb_num_samples, split_sequence, uuid4)
 
@@ -32,22 +36,157 @@ from lhotse.utils import (Decibels, LOG_EPSILON, NonPositiveEnergyError, Pathlik
 # an excessive storage size for data augmented in various ways.
 
 
-# Helper "typedef" to artbitrary Cut type as they do not share a common base class.
-# The class names are strings here so that the Python interpreter resolves them after parsing the whole file.
-AnyCut = Union['Cut', 'MixedCut', 'PaddingCut']
-
 FW = TypeVar('FW', bound=FeaturesWriter)
 
 
-# noinspection PyTypeChecker,PyUnresolvedReferences
-class CutUtilsMixin:
+class Cut:
     """
-    A mixin class for cuts which contains all the methods that share common implementations.
+    .. caution::
+        :class:`~lhotse.cut.Cut` is just an abstract class -- the actual logic is implemented by its child classes (scroll down for references).
 
-    Note: Ideally, this would've been an abstract base class specifying the common interface,
-    but ABC's do not mix well with dataclasses in Python. It is possible we'll ditch the dataclass
-    for cuts in the future and make this an ABC instead.
+    :class:`~lhotse.cut.Cut` is a base class for audio cuts.
+    An "audio cut" is a subset of a :class:`~lhotse.audio.Recording` -- it can also be thought of as a "view"
+    or a pointer to a chunk of audio.
+    It is not limited to audio data -- cuts may also point to (sub-spans of) precomputed
+    :class:`~lhotse.features.base.Features`.
+
+    Cuts are different from :class:`~lhotse.supervision.SupervisionSegment` in that they may be arbitrarily
+    longer or shorter than supervisions; cuts may even contain multiple supervisions for creating contextual
+    training data, and unsupervised regions that provide real or synthetic acoustic background context
+    for the supervised segments.
+
+    The following example visualizes how a cut may represent a part of a single-channel recording with
+    two utterances and some background noise in between::
+
+                          Recording
+        |-------------------------------------------|
+        "Hey, Matt!"     "Yes?"        "Oh, nothing"
+        |----------|     |----|        |-----------|
+                   Cut1
+        |------------------------|
+
+    This scenario can be represented in code, using :class:`~lhotse.cut.MonoCut`, as::
+
+        >>> from lhotse import Recording, SupervisionSegment, MonoCut
+        >>> rec = Recording(id='rec1', duration=10.0, sampling_rate=8000, num_samples=80000, sources=[...])
+        >>> sups = [
+        ...     SupervisionSegment(id='sup1', recording_id='rec1', start=0, duration=3.37, text='Hey, Matt!'),
+        ...     SupervisionSegment(id='sup2', recording_id='rec1', start=4.5, duration=0.9, text='Yes?'),
+        ...     SupervisionSegment(id='sup3', recording_id='rec1', start=6.9, duration=2.9, text='Oh, nothing'),
+        ... ]
+        >>> cut = MonoCut(id='rec1-cut1', start=0.0, duration=6.0, channel=0, recording=rec,
+        ...     supervisions=[sups[0], sups[1]])
+
+    .. note::
+        All Cut classes assume that the :class:`~lhotse.supervision.SupervisionSegment` time boundaries are relative
+        to the beginning of the cut.
+        E.g. if the underlying :class:`~lhotse.audio.Recording` starts at 0s (always true), the cut starts at 100s,
+        and the SupervisionSegment inside the cut starts at 3s, it really did start at 103rd second of the recording.
+        In some cases, the supervision might have a negative start, or a duration exceeding the duration of the cut;
+        this means that the supervision in the recording extends beyond the cut.
+
+    Cut allows to check and read audio data or features data::
+
+        >>> assert cut.has_recording
+        >>> samples = cut.load_audio()
+        >>> if cut.has_features:
+        ...     feats = cut.load_features()
+
+    It can be visualized, and listened to, inside Jupyter Notebooks::
+
+        >>> cut.plot_audio()
+        >>> cut.play_audio()
+        >>> cut.plot_features()
+
+    Cuts can be used with Lhotse's :class:`~lhotse.features.base.FeatureExtractor` to compute features.
+
+        >>> from lhotse import Fbank
+        >>> feats = cut.compute_features(extractor=Fbank())
+
+    It is also possible to use a :class:`~lhotse.features.io.FeaturesWriter` to store the features and attach
+    their manifest to a copy of the cut::
+
+        >>> from lhotse import LilcomHdf5Writer
+        >>> with LilcomHdf5Writer('feats.h5') as storage:
+        ...     cut_with_feats = cut.compute_and_store_features(
+        ...         extractor=Fbank(),
+        ...         storage=storage
+        ...     )
+
+    Cuts have several methods that allow their manipulation, transformation, and mixing.
+    Some examples (see the respective methods documentation for details)::
+
+        >>> cut_2_to_4s = cut.truncate(offset=2, duration=2)
+        >>> cut_padded = cut.pad(duration=10.0)
+        >>> cut_mixed = cut.mix(other_cut, offset_other_by=5.0, snr=20)
+        >>> cut_append = cut.append(other_cut)
+        >>> cut_24k = cut.resample(24000)
+        >>> cut_sp = cut.perturb_speed(1.1)
+
+    .. note::
+        All cut transformations are performed lazily, on-the-fly, upon calling ``load_audio`` or ``load_features``.
+        The stored waveforms and features are untouched.
+
+    .. caution::
+        Operations on cuts are not mutating -- they return modified copies of :class:`.Cut` objects,
+        leaving the original object unmodified.
+
+    A :class:`.Cut` that contains multiple segments (:class:`SupervisionSegment`) can be decayed into
+    smaller cuts that correspond directly to supervisions::
+
+        >>> smaller_cuts = cut.trim_to_supervisions()
+
+    Cuts can be detached from parts of their metadata::
+
+        >>> cut_no_feat = cut.drop_features()
+        >>> cut_no_rec = cut.drop_recording()
+        >>> cut_no_sup = cut.drop_supervisions()
+
+    Finally, cuts provide convenience methods to compute feature frame and audio sample masks for supervised regions::
+
+        >>> sup_frames = cut.supervisions_feature_mask()
+        >>> sup_samples = cut.supervisions_audio_mask()
+
+    See also:
+
+        - :class:`lhotse.cut.MonoCut`
+        - :class:`lhotse.cut.MixedCut`
+        - :class:`lhotse.cut.CutSet`
     """
+
+    # The following is the list of members and properties implemented by the child classes.
+    # They are not abstract properties because dataclasses do not work well with the "abc" module.
+    id: str
+    start: Seconds
+    duration: Seconds
+    sampling_rate: int
+    supervisions: List[SupervisionSegment]
+    num_samples: Optional[int]
+    num_frames: Optional[int]
+    num_features: Optional[int]
+    frame_shift: Optional[Seconds]
+    features_type: Optional[str]
+    has_recording: bool
+    has_features: bool
+
+    # The following is the list of methods implemented by the child classes.
+    # They are not abstract methods because dataclasses do not work well with the "abc" module.
+    # Check a specific child class for their documentation.
+    from_dict: Callable[[Dict], 'Cut']
+    load_audio: Callable[[], np.ndarray]
+    load_features: Callable[[], np.ndarray]
+    compute_and_store_features: Callable
+    drop_features: Callable
+    drop_recording: Callable
+    drop_supervisions: Callable
+    truncate: Callable
+    pad: Callable
+    resample: Callable
+    perturb_speed: Callable
+    map_supervisions: Callable
+    filter_supervisions: Callable
+    with_features_path_prefix: Callable
+    with_recording_path_prefix: Callable
 
     def to_dict(self) -> dict:
         d = asdict_nonull(self)
@@ -63,14 +202,19 @@ class CutUtilsMixin:
         values that indicate the supervision actually begins before the cut, or ``end`` values
         that exceed the Cut's duration (it means the supervision continued in the original recording
         after the Cut's ending).
+
+        .. caution::
+            For some tasks such as speech recognition (ASR), trimmed supervisions
+            could result in corrupted training data. This is because a part of the transcript
+            might actually reside outside of the cut.
         """
         return [s.trim(self.duration) for s in self.supervisions]
 
-    def mix(self, other: AnyCut, offset_other_by: Seconds = 0.0, snr: Optional[Decibels] = None) -> 'MixedCut':
-        """Refer to mix() documentation."""
+    def mix(self, other: 'Cut', offset_other_by: Seconds = 0.0, snr: Optional[Decibels] = None) -> 'MixedCut':
+        """Refer to :function:`~lhotse.cut.mix` documentation."""
         return mix(self, other, offset=offset_other_by, snr=snr)
 
-    def append(self, other: AnyCut, snr: Optional[Decibels] = None) -> 'MixedCut':
+    def append(self, other: 'Cut', snr: Optional[Decibels] = None) -> 'MixedCut':
         """
         Append the ``other`` Cut after the current Cut. Conceptually the same as ``mix`` but with an offset
         matching the current cuts length. Optionally scale down (positive SNR) or scale up (negative SNR)
@@ -127,11 +271,116 @@ class CutUtilsMixin:
         features = np.flip(self.load_features().transpose(1, 0), 0)
         return plt.matshow(features)
 
+    def trim_to_supervisions(
+            self,
+            keep_overlapping: bool = True,
+            min_duration: Optional[Seconds] = None,
+            context_direction: Literal['center', 'left', 'right', 'random'] = 'center',
+    ) -> List['Cut']:
+        """
+        Splits the current :class:`.Cut` into as many cuts as there are supervisions (:class:`.SupervisionSegment`).
+        These cuts have identical start times and durations as the supervisions.
+        When there are overlapping supervisions, they can be kept or discarded via ``keep_overlapping`` flag.
+
+        For example, the following cut::
+
+                    Cut
+            |-----------------|
+             Sup1
+            |----|  Sup2
+               |-----------|
+
+        is transformed into two cuts::
+
+             Cut1
+            |----|
+             Sup1
+            |----|
+               Sup2
+               |-|
+                    Cut2
+               |-----------|
+               Sup1
+               |-|
+                    Sup2
+               |-----------|
+
+        :param keep_overlapping: when ``False``, it will discard parts of other supervisions that overlap with the
+            main supervision. In the illustration above, it would discard ``Sup2`` in ``Cut1`` and ``Sup1`` in ``Cut2``.
+        :param min_duration: An optional duration in seconds; specifying this argument will extend the cuts
+            that would have been shorter than ``min_duration`` with actual acoustic context in the recording/features.
+            If there are supervisions present in the context, they are kept when ``keep_overlapping`` is true.
+            If there is not enough context, the returned cut will be shorter than ``min_duration``.
+            If the supervision segment is longer than ``min_duration``, the return cut will be longer.
+        :param context_direction: Which direction should the cut be expanded towards to include context.
+            The value of "center" implies equal expansion to left and right;
+            random uniformly samples a value between "left" and "right".
+        :return: a list of cuts.
+        """
+        cuts = []
+        supervisions_index = self.index_supervisions(index_mixed_tracks=True)
+        for segment in self.supervisions:
+            if min_duration is None:
+                # Cut boundaries are equal to the supervision segment boundaries.
+                new_start, new_duration = segment.start, segment.duration
+            else:
+                # Cut boundaries will be extended with some acoustic context.
+                new_start, new_duration = compute_start_duration_for_extended_cut(
+                    start=segment.start,
+                    duration=segment.duration,
+                    new_duration=min_duration,
+                    direction=context_direction
+                )
+            cuts.append(
+                self.truncate(
+                    offset=new_start,
+                    duration=new_duration,
+                    keep_excessive_supervisions=keep_overlapping,
+                    _supervisions_index=supervisions_index,
+                )
+            )
+        return cuts
+
+    def index_supervisions(
+            self,
+            index_mixed_tracks: bool = False,
+            keep_ids: Optional[Set[str]] = None
+    ) -> Dict[str, IntervalTree]:
+        """
+        Create a two-level index of supervision segments. It is a mapping from a Cut's ID to an
+        interval tree that contains the supervisions of that Cut.
+
+        The interval tree can be efficiently queried for overlapping and/or enveloping segments.
+        It helps speed up some operations on Cuts of very long recordings (1h+) that contain many
+        supervisions.
+
+        :param index_mixed_tracks: Should the tracks of MixedCut's be indexed as additional, separate entries.
+        :param keep_ids: If specified, we will only index the supervisions with the specified IDs.
+        :return: a mapping from Cut ID to an interval tree of SupervisionSegments.
+        """
+        keep_ids = ifnone(keep_ids, SetContainingAnything())
+        indexed = {
+            self.id: IntervalTree(
+                Interval(s.start, s.end, s)
+                for s in self.supervisions
+                if s.id in keep_ids
+            )
+        }
+        if index_mixed_tracks:
+            if isinstance(self, MixedCut):
+                for track in self.tracks:
+                    indexed[track.cut.id] = IntervalTree(
+                        Interval(s.start, s.end, s)
+                        for s in track.cut.supervisions
+                        if s.id in keep_ids
+                    )
+        return indexed
+
     def compute_and_store_recording(
             self,
             storage_path: Pathlike,
             augment_fn: Optional[AugmentFn] = None,
-    ) -> 'Cut':
+    ) -> 'MonoCut':
         """
         Store this cut's waveform as audio recording to disk.
 
@@ -141,7 +390,7 @@ class CutUtilsMixin:
             the start/end/duration times of the cut and its supervisions,
             you will end up with incorrect supervision information when using this API.
             E.g. for speed perturbation, use ``CutSet.perturb_speed()`` instead.
-        :return: a new Cut instance.
+        :return: a new MonoCut instance.
         """
         samples = self.load_audio()
         if augment_fn is not None:
@@ -155,7 +404,7 @@ class CutUtilsMixin:
             format='FLAC'
         )
         recording = Recording.from_file(storage_path)
-        return Cut(
+        return MonoCut(
             id=self.id,
             start=0,
             duration=recording.duration,
@@ -258,6 +507,7 @@ class CutUtilsMixin:
         """
         Return a 1D numpy array with value 1 for **frames** covered by at least one supervision,
         and 0 for **frames** not covered by any supervision.
+
         :param use_alignment_if_exists: optional str, key for alignment type to use for generating the mask. If not
             exists, fall back on supervision time spans.
         """
@@ -267,6 +517,7 @@ class CutUtilsMixin:
         """
         Return a 1D numpy array with value 1 for **samples** covered by at least one supervision,
         and 0 for **samples** not covered by any supervision.
+
         :param use_alignment_if_exists: optional str, key for alignment type to use for generating the mask. If not
             exists, fall back on supervision time spans.
         """
@@ -293,26 +544,24 @@ class CutUtilsMixin:
                 mask[st:et] = 1.0
         return mask
 
-    def with_id(self, id_: str) -> AnyCut:
+    def with_id(self, id_: str) -> 'Cut':
         """Return a copy of the Cut with a new ID."""
         return fastcopy(self, id=id_)
 
 
 @dataclass
-class Cut(CutUtilsMixin):
+class MonoCut(Cut):
     """
-    A Cut is a single "segment" that we'll train on. It contains the features corresponding to
-    a piece of a recording, with zero or more SupervisionSegments.
+    :class:`~lhotse.cut.MonoCut` is a :class:`~lhotse.cut.Cut` of a single channel of
+    a :class:`~lhotse.audio.Recording`. In addition to Cut, it has a specified channel attribute. This is the most commonly used type of cut.
 
-    The SupervisionSegments indicate which time spans of the Cut contain some kind of supervision information:
-    e.g. transcript, speaker, language, etc. The regions without a corresponding SupervisionSegment may
-    contain anything - usually we assume it's either silence or some kind of noise.
+    Please refer to the documentation of :class:`~lhotse.cut.Cut` to learn more about using cuts.
 
-    Note: The SupervisionSegment time boundaries are relative to the beginning of the cut.
-    E.g. if the underlying Recording starts at 0s (always true), the Cut starts at 100s,
-    and the SupervisionSegment starts at 3s, it means that in the Recording the supervision actually started at 103s.
-    In some cases, the supervision might have a negative start, or a duration exceeding the duration of the Cut;
-    this means that the supervision in the recording extends beyond the Cut.
+    See also:
+
+        - :class:`lhotse.cut.Cut`
+        - :class:`lhotse.cut.MixedCut`
+        - :class:`lhotse.cut.CutSet`
     """
     id: str
 
@@ -377,16 +626,25 @@ class Cut(CutUtilsMixin):
     def load_features(self) -> Optional[np.ndarray]:
         """
         Load the features from the underlying storage and cut them to the relevant
-        [begin, duration] region of the current Cut.
+        [begin, duration] region of the current MonoCut.
         """
         if self.has_features:
-            return self.features.load(start=self.start, duration=self.duration)
+            feats = self.features.load(start=self.start, duration=self.duration)
+            # Note: we forgive off-by-one errors in the feature matrix frames
+            #       due to various hard-to-predict floating point arithmetic issues.
+            #       If needed, we will remove or duplicate the last frame to be
+            #       consistent with the manifests declared "num_frames".
+            if feats.shape[0] - self.num_frames == 1:
+                feats = feats[:self.num_frames, :]
+            elif feats.shape[0] - self.num_frames == -1:
+                feats = np.concatenate((feats, feats[-1:, :]), axis=0)
+            return feats
         return None
 
     def load_audio(self) -> Optional[np.ndarray]:
         """
         Load the audio by locating the appropriate recording in the supplied RecordingSet.
-        The audio is trimmed to the [begin, end] range specified by the Cut.
+        The audio is trimmed to the [begin, end] range specified by the MonoCut.
 
         :return: a numpy ndarray with audio samples, with shape (1 <channel>, N <samples>)
         """
@@ -398,10 +656,19 @@ class Cut(CutUtilsMixin):
             )
         return None
 
-    def drop_features(self) -> 'Cut':
-        """Return a copy of the current :class:`Cut`, detached from ``features``."""
-        assert self.has_recording, f"Cannot detach features from a Cut with no Recording (cut ID = {self.id})."
+    def drop_features(self) -> 'MonoCut':
+        """Return a copy of the current :class:`.MonoCut`, detached from ``features``."""
+        assert self.has_recording, f"Cannot detach features from a MonoCut with no Recording (cut ID = {self.id})."
         return fastcopy(self, features=None)
+
+    def drop_recording(self) -> 'MonoCut':
+        """Return a copy of the current :class:`.MonoCut`, detached from ``recording``."""
+        assert self.has_features, f"Cannot detach recording from a MonoCut with no Features (cut ID = {self.id})."
+        return fastcopy(self, recording=None)
+
+    def drop_supervisions(self) -> 'MonoCut':
+        """Return a copy of the current :class:`.MonoCut`, detached from ``supervisions``."""
+        return fastcopy(self, supervisions=[])
 
     def compute_and_store_features(
             self,
@@ -410,15 +677,15 @@ class Cut(CutUtilsMixin):
             augment_fn: Optional[AugmentFn] = None,
             *args,
             **kwargs
-    ) -> AnyCut:
+    ) -> Cut:
         """
         Compute the features from this cut, store them on disk, and attach a feature manifest to this cut.
         This cut has to be able to load audio.
 
         :param extractor: a ``FeatureExtractor`` instance used to compute the features.
-        :param output_dir: the directory where the computed features will be stored.
+        :param storage: a ``FeaturesWriter`` instance used to write the features to a storage.
         :param augment_fn: an optional callable used for audio augmentation.
-        :return: a new ``Cut`` instance with a ``Features`` manifest attached to it.
+        :return: a new ``MonoCut`` instance with a ``Features`` manifest attached to it.
         """
         features_info = extractor.extract_from_samples_and_store(
             samples=self.load_audio(),
@@ -439,31 +706,35 @@ class Cut(CutUtilsMixin):
             keep_excessive_supervisions: bool = True,
             preserve_id: bool = False,
             _supervisions_index: Optional[Dict[str, IntervalTree]] = None
-    ) -> 'Cut':
+    ) -> 'MonoCut':
         """
-        Returns a new Cut that is a sub-region of the current Cut.
+        Returns a new MonoCut that is a sub-region of the current MonoCut.
 
-        Note that no operation is done on the actual features - it's only during the call to load_features()
-        when the actual changes happen (a subset of features is loaded).
+        Note that no operation is done on the actual features or recording -
+        it's only during the call to :meth:`MonoCut.load_features` / :meth:`MonoCut.load_audio`
+        when the actual changes happen (a subset of features/audio is loaded).
 
-        :param offset: float (seconds), controls the start of the new cut relative to the current Cut's start.
-            E.g., if the current Cut starts at 10.0, and offset is 2.0, the new start is 12.0.
-        :param duration: optional float (seconds), controls the duration of the resulting Cut.
+        :param offset: float (seconds), controls the start of the new cut relative to the current MonoCut's start.
+            E.g., if the current MonoCut starts at 10.0, and offset is 2.0, the new start is 12.0.
+        :param duration: optional float (seconds), controls the duration of the resulting MonoCut.
             By default, the duration is (end of the cut before truncation) - (offset).
         :param keep_excessive_supervisions: bool. Since trimming may happen inside a SupervisionSegment,
             the caller has an option to either keep or discard such supervisions.
         :param preserve_id: bool. Should the truncated cut keep the same ID or get a new, random one.
-        :param _supervisions_index: when passed, allows to speed up processing of Cuts with a very
+        :param _supervisions_index: an IntervalTree; when passed, allows to speed up processing of Cuts with a very
             large number of supervisions. Intended as an internal parameter.
-        :return: a new Cut instance. If the current Cut is shorter than the duration, return None.
+        :return: a new MonoCut instance. If the current MonoCut is shorter than the duration, return None.
         """
-        new_start = self.start + offset
+        # Note: technically, truncate's code can be used for "expanding" the cut as well:
+        #       In that case, we must ensure that the start of MonoCut is not before the start
+        #       of the actual Recording, hence max(..., 0).
+        new_start = max(self.start + offset, 0)
         until = offset + (duration if duration is not None else self.duration)
         new_duration = self.duration - new_start if duration is None else until - offset
         assert new_duration > 0.0
         duration_past_end = (new_start + new_duration) - (self.start + self.duration)
         if duration_past_end > 0:
-            # When the end of the Cut has been exceeded, trim the new duration to not exceed the old Cut's end.
+            # When the end of the MonoCut has been exceeded, trim the new duration to not exceed the old MonoCut's end.
             new_duration -= duration_past_end
         # Round the duration to avoid the possible loss of a single audio sample due to floating point
         # additions and subtractions.
@@ -482,17 +753,22 @@ class Cut(CutUtilsMixin):
             # The result of calling that method with a range of (begin, end) is an iterable
             # of Intervals that contain the SupervisionSegments matching our criterion.
             # We call "interval.data" to obtain the underlying SupervisionSegment.
-            match_supervisions = tree.overlap if keep_excessive_supervisions else tree.envelop
+            # Additionally, when the method is tree.envelop, we use a small epsilon to
+            # extend the searched boundaries to account for possible float arithmetic errors.
+            if keep_excessive_supervisions:
+                intervals = tree.overlap(begin=offset, end=offset + new_duration)
+            else:
+                intervals = tree.envelop(begin=offset - 1e-3, end=offset + new_duration + 1e-3)
             supervisions = []
-            for interval in match_supervisions(begin=offset, end=offset + new_duration):
+            for interval in intervals:
                 # We are going to measure the overlap ratio of the supervision with the "truncated" cut
                 # and reject segments that overlap less than 1%. This way we can avoid quirks and errors
                 # of limited float precision.
-                olap_ratio = measure_overlap(interval.data, TimeSpan(new_start, new_start + new_duration))
+                olap_ratio = measure_overlap(interval.data, TimeSpan(offset, offset + new_duration))
                 if olap_ratio > 0.01:
                     supervisions.append(interval.data.with_offset(-offset))
 
-        return Cut(
+        return MonoCut(
             id=self.id if preserve_id else str(uuid4()),
             start=new_start,
             duration=new_duration,
@@ -509,14 +785,13 @@ class Cut(CutUtilsMixin):
             num_samples: int = None,
             pad_feat_value: float = LOG_EPSILON,
             direction: str = 'right'
-    ) -> AnyCut:
+    ) -> Cut:
         """
         Return a new MixedCut, padded with zeros in the recording, and ``pad_feat_value`` in each feature bin.
 
         The user can choose to pad either to a specific `duration`; a specific number of frames `max_frames`;
         or a specific number of samples `num_samples`. The three arguments are mutually exclusive.
 
-        :param cut: Cut to be padded.
         :param duration: The cut's minimal duration after padding.
         :param num_frames: The cut's total number of frames after padding.
         :param num_samples: The cut's total number of samples after padding.
@@ -535,18 +810,18 @@ class Cut(CutUtilsMixin):
             direction=direction
         )
 
-    def resample(self, sampling_rate: int, affix_id: bool = False) -> 'Cut':
+    def resample(self, sampling_rate: int, affix_id: bool = False) -> 'MonoCut':
         """
-        Return a new ``Cut`` that will lazily resample the audio while reading it.
+        Return a new ``MonoCut`` that will lazily resample the audio while reading it.
         This operation will drop the feature manifest, if attached.
         It does not affect the supervision.
 
         :param sampling_rate: The new sampling rate.
         :param affix_id: Should we modify the ID (useful if both versions of the same
             cut are going to be present in a single manifest).
-        :return: a modified copy of the current ``Cut``.
+        :return: a modified copy of the current ``MonoCut``.
         """
-        assert self.has_recording, 'Cannot resample a Cut without Recording.'
+        assert self.has_recording, 'Cannot resample a MonoCut without Recording.'
         return fastcopy(
             self,
             id=f'{self.id}_rs{sampling_rate}' if affix_id else self.id,
@@ -554,23 +829,23 @@ class Cut(CutUtilsMixin):
             features=None,
         )
 
-    def perturb_speed(self, factor: float, affix_id: bool = True) -> 'Cut':
+    def perturb_speed(self, factor: float, affix_id: bool = True) -> 'MonoCut':
         """
-        Return a new ``Cut`` that will lazily perturb the speed while loading audio.
+        Return a new ``MonoCut`` that will lazily perturb the speed while loading audio.
         The ``num_samples``, ``start`` and ``duration`` fields are updated to reflect the
         shrinking/extending effect of speed.
         We are also updating the time markers of the underlying ``Recording`` and the supervisions.
 
         :param factor: The speed will be adjusted this many times (e.g. factor=1.1 means 1.1x faster).
-        :param affix_id: When true, we will modify the ``Cut.id`` field
+        :param affix_id: When true, we will modify the ``MonoCut.id`` field
             by affixing it with "_sp{factor}".
-        :return: a modified copy of the current ``Cut``.
+        :return: a modified copy of the current ``MonoCut``.
         """
         # Pre-conditions
-        assert self.has_recording, 'Cannot perturb speed on a Cut without Recording.'
+        assert self.has_recording, 'Cannot perturb speed on a MonoCut without Recording.'
         if self.has_features:
             logging.warning(
-                'Attempting to perturb speed on a Cut that references pre-computed features. '
+                'Attempting to perturb speed on a MonoCut that references pre-computed features. '
                 'The feature manifest will be detached, as we do not support feature-domain '
                 'speed perturbation.'
             )
@@ -578,7 +853,7 @@ class Cut(CutUtilsMixin):
         # Actual audio perturbation.
         recording_sp = self.recording.perturb_speed(factor=factor, affix_id=affix_id)
         # Match the supervision's start and duration to the perturbed audio.
-        # Since SupervisionSegment "start" is relative to the Cut's, it's okay (and necessary)
+        # Since SupervisionSegment "start" is relative to the MonoCut's, it's okay (and necessary)
         # to perturb it as well.
         supervisions_sp = [
             s.perturb_speed(factor=factor, sampling_rate=self.sampling_rate, affix_id=affix_id)
@@ -598,17 +873,17 @@ class Cut(CutUtilsMixin):
             start=new_start
         )
 
-    def map_supervisions(self, transform_fn: Callable[[SupervisionSegment], SupervisionSegment]) -> AnyCut:
+    def map_supervisions(self, transform_fn: Callable[[SupervisionSegment], SupervisionSegment]) -> Cut:
         """
-        Modify the SupervisionSegments by `transform_fn` of this Cut.
+        Modify the SupervisionSegments by `transform_fn` of this MonoCut.
 
         :param transform_fn: a function that modifies a supervision as an argument.
-        :return: a modified Cut.
+        :return: a modified MonoCut.
         """
         new_cut = fastcopy(self, supervisions=[s.map(transform_fn) for s in self.supervisions])
         return new_cut
 
-    def filter_supervisions(self, predicate: Callable[[SupervisionSegment], bool]) -> AnyCut:
+    def filter_supervisions(self, predicate: Callable[[SupervisionSegment], bool]) -> Cut:
         """
         Modify cut to store only supervisions accepted by `predicate`
 
@@ -618,39 +893,50 @@ class Cut(CutUtilsMixin):
             >>> cut = cut.filter_supervisions(lambda s: s.text is not None)
 
         :param predicate: A callable that accepts `SupervisionSegment` and returns bool
-        :return: a modified Cut
+        :return: a modified MonoCut
         """
         new_cut = fastcopy(self, supervisions=[s for s in self.supervisions if predicate(s)])
         return new_cut
 
     @staticmethod
-    def from_dict(data: dict) -> 'Cut':
+    def from_dict(data: dict) -> 'MonoCut':
         features = Features.from_dict(data.pop('features')) if 'features' in data else None
         recording = Recording.from_dict(data.pop('recording')) if 'recording' in data else None
         supervision_infos = data.pop('supervisions') if 'supervisions' in data else []
-        return Cut(
+        return MonoCut(
             **data,
             features=features,
             recording=recording,
             supervisions=[SupervisionSegment.from_dict(s) for s in supervision_infos]
         )
 
-    def with_features_path_prefix(self, path: Pathlike) -> 'Cut':
+    def with_features_path_prefix(self, path: Pathlike) -> 'MonoCut':
         if not self.has_features:
             return self
         return fastcopy(self, features=self.features.with_path_prefix(path))
 
-    def with_recording_path_prefix(self, path: Pathlike) -> 'Cut':
+    def with_recording_path_prefix(self, path: Pathlike) -> 'MonoCut':
         if not self.has_recording:
             return self
         return fastcopy(self, recording=self.recording.with_path_prefix(path))
 
 
 @dataclass
-class PaddingCut(CutUtilsMixin):
+class PaddingCut(Cut):
     """
-    Represents a cut filled with zeroes in the time domain, or some specified value in the
-    frequency domain. It's used to make training samples evenly sized (same duration/number of frames).
+    :class:`~lhotse.cut.PaddingCut` is a dummy :class:`~lhotse.cut.Cut` that doesn't refer to
+    actual recordings or features --it simply returns zero samples in the time domain
+    and a specified features value in the feature domain.
+    Its main role is to be appended to other cuts to make them evenly sized.
+
+    Please refer to the documentation of :class:`~lhotse.cut.Cut` to learn more about using cuts.
+
+    See also:
+
+        - :class:`lhotse.cut.Cut`
+        - :class:`lhotse.cut.MonoCut`
+        - :class:`lhotse.cut.MixedCut`
+        - :class:`lhotse.cut.CutSet`
     """
     id: str
     duration: Seconds
@@ -732,7 +1018,7 @@ class PaddingCut(CutUtilsMixin):
             num_samples: int = None,
             pad_feat_value: float = LOG_EPSILON,
             direction: str = 'right'
-    ) -> AnyCut:
+    ) -> Cut:
         """
         Return a new MixedCut, padded with zeros in the recording, and ``pad_feat_value`` in each feature bin.
 
@@ -759,16 +1045,16 @@ class PaddingCut(CutUtilsMixin):
 
     def resample(self, sampling_rate: int, affix_id: bool = False) -> 'PaddingCut':
         """
-        Return a new ``Cut`` that will lazily resample the audio while reading it.
+        Return a new ``MonoCut`` that will lazily resample the audio while reading it.
         This operation will drop the feature manifest, if attached.
         It does not affect the supervision.
 
         :param sampling_rate: The new sampling rate.
         :param affix_id: Should we modify the ID (useful if both versions of the same
             cut are going to be present in a single manifest).
-        :return: a modified copy of the current ``Cut``.
+        :return: a modified copy of the current ``MonoCut``.
         """
-        assert self.has_recording, 'Cannot resample a Cut without Recording.'
+        assert self.has_recording, 'Cannot resample a MonoCut without Recording.'
         return fastcopy(
             self,
             id=f'{self.id}_rs{sampling_rate}' if affix_id else self.id,
@@ -792,7 +1078,7 @@ class PaddingCut(CutUtilsMixin):
         # Pre-conditions
         if self.has_features:
             logging.warning(
-                'Attempting to perturb speed on a Cut that references pre-computed features. '
+                'Attempting to perturb speed on a MonoCut that references pre-computed features. '
                 'The feature manifest will be detached, as we do not support feature-domain '
                 'speed perturbation.'
             )
@@ -816,11 +1102,20 @@ class PaddingCut(CutUtilsMixin):
         )
 
     def drop_features(self) -> 'PaddingCut':
-        """Return a copy of the current :class:`PaddingCut`, detached from ``features``."""
-        assert self.has_recording, f"Cannot detach features from a Cut with no Recording (cut ID = {self.id})."
+        """Return a copy of the current :class:`.PaddingCut`, detached from ``features``."""
+        assert self.has_recording, f"Cannot detach features from a MonoCut with no Recording (cut ID = {self.id})."
         return fastcopy(self, num_frames=None, num_features=None, frame_shift=None)
 
-    def compute_and_store_features(self, extractor: FeatureExtractor, *args, **kwargs) -> AnyCut:
+    def drop_recording(self) -> 'PaddingCut':
+        """Return a copy of the current :class:`.PaddingCut`, detached from ``recording``."""
+        assert self.has_features, f"Cannot detach recording from a PaddingCut with no Features (cut ID = {self.id})."
+        return fastcopy(self, num_samples=None)
+
+    def drop_supervisions(self) -> 'PaddingCut':
+        """Return a copy of the current :class:`.PaddingCut`, detached from ``supervisions``."""
+        return self
+
+    def compute_and_store_features(self, extractor: FeatureExtractor, *args, **kwargs) -> Cut:
         """
         Returns a new PaddingCut with updates information about the feature dimension and number of
         feature frames, depending on the ``extractor`` properties.
@@ -836,21 +1131,21 @@ class PaddingCut(CutUtilsMixin):
             frame_shift=extractor.frame_shift
         )
 
-    def map_supervisions(self, transform_fn: Callable[[Any], Any]) -> AnyCut:
+    def map_supervisions(self, transform_fn: Callable[[Any], Any]) -> Cut:
         """
-        Just for consistency with `Cut` and `MixedCut`.
+        Just for consistency with `MonoCut` and `MixedCut`.
 
         :param transform_fn: a dummy function that would be never called actually.
         :return: the PaddingCut itself.
         """
         return self
 
-    def filter_supervisions(self, predicate: Callable[[SupervisionSegment], bool]) -> AnyCut:
+    def filter_supervisions(self, predicate: Callable[[SupervisionSegment], bool]) -> Cut:
         """
-        Just for consistency with `Cut` and `MixedCut`.
+        Just for consistency with `MonoCut` and `MixedCut`.
 
         :param predicate: A callable that accepts `SupervisionSegment` and returns bool
-        :return: a modified Cut
+        :return: a modified MonoCut
         """
         return self
 
@@ -868,10 +1163,10 @@ class PaddingCut(CutUtilsMixin):
 @dataclass
 class MixTrack:
     """
-    Represents a single track in a mix of Cuts. Points to a specific Cut and holds information on
+    Represents a single track in a mix of Cuts. Points to a specific MonoCut and holds information on
     how to mix it with other Cuts, relative to the first track in a mix.
     """
-    cut: Union[Cut, PaddingCut]
+    cut: Union[MonoCut, PaddingCut]
     offset: Seconds = 0.0
     snr: Optional[Decibels] = None
 
@@ -879,20 +1174,40 @@ class MixTrack:
     def from_dict(data: dict):
         raw_cut = data.pop('cut')
         try:
-            cut = Cut.from_dict(raw_cut)
+            cut = MonoCut.from_dict(raw_cut)
         except TypeError:
             cut = PaddingCut.from_dict(raw_cut)
         return MixTrack(cut, **data)
 
 
 @dataclass
-class MixedCut(CutUtilsMixin):
+class MixedCut(Cut):
     """
-    Represents a Cut that's created from other Cuts via mix or append operations.
-    The actual mixing operations are performed upon loading the features into memory.
-    In order to load the features, it needs to access the CutSet object that holds the "ingredient" cuts,
-    as it only holds their IDs ("pointers").
-    The SNR and offset of all the tracks are specified relative to the first track.
+    :class:`~lhotse.cut.MixedCut` is a :class:`~lhotse.cut.Cut` that actually consists of multiple other cuts.
+    It can be interpreted as a multi-channel cut, but its primary purpose is to allow
+    time-domain and feature-domain augmentation via mixing the training cuts with noise, music, and babble cuts.
+    The actual mixing operations are performed on-the-fly.
+
+    Internally, :class:`~lhotse.cut.MixedCut` holds other cuts in multiple trakcs (:class:`~lhotse.cut.MixTrack`),
+    each with its own offset and SNR that is relative to the first track.
+
+    Please refer to the documentation of :class:`~lhotse.cut.Cut` to learn more about using cuts.
+
+    In addition to methods available in :class:`~lhotse.cut.Cut`, :class:`~lhotse.cut.MixedCut` provides the methods to
+    read all of its tracks audio and features as separate channels:
+
+        >>> cut = MixedCut(...)
+        >>> mono_features = cut.load_features()
+        >>> assert len(mono_features.shape) == 2
+        >>> multi_features = cut.load_features(mixed=False)
+        >>> # Now, the first dimension is the channel.
+        >>> assert len(multi_features.shape) == 3
+
+    See also:
+
+        - :class:`lhotse.cut.Cut`
+        - :class:`lhotse.cut.MonoCut`
+        - :class:`lhotse.cut.CutSet`
     """
     id: str
     tracks: List[MixTrack]
@@ -968,7 +1283,7 @@ class MixedCut(CutUtilsMixin):
             keep_excessive_supervisions: bool = True,
             preserve_id: bool = False,
             _supervisions_index: Optional[Dict[str, IntervalTree]] = None
-    ) -> AnyCut:
+    ) -> Cut:
         """
         Returns a new MixedCut that is a sub-region of the current MixedCut. This method truncates the underlying Cuts
         and modifies their offsets in the mix, as needed. Tracks that do not fit in the truncated cut are removed.
@@ -999,11 +1314,11 @@ class MixedCut(CutUtilsMixin):
             # 'track_offset' determines the new track's offset after truncation.
             track_offset = max(track.offset - offset, 0)
             # 'track_end' is expressed relative to the beginning of the mix
-            # (not to be confused with the 'start' of the underlying Cut)
+            # (not to be confused with the 'start' of the underlying MonoCut)
             track_end = track.offset + track.cut.duration
 
             if track_end < offset:
-                # Omit a Cut that ends before the truncation offset.
+                # Omit a MonoCut that ends before the truncation offset.
                 continue
 
             cut_duration_decrease = 0
@@ -1013,10 +1328,10 @@ class MixedCut(CutUtilsMixin):
                 else:
                     cut_duration_decrease = track_end - old_duration
 
-            # Compute the new Cut's duration after trimming the start and the end.
+            # Compute the new MonoCut's duration after trimming the start and the end.
             new_duration = track.cut.duration - cut_offset - cut_duration_decrease
             if new_duration <= 0:
-                # Omit a Cut that is completely outside the time span of the new truncated MixedCut.
+                # Omit a MonoCut that is completely outside the time span of the new truncated MixedCut.
                 continue
 
             new_tracks.append(
@@ -1044,7 +1359,7 @@ class MixedCut(CutUtilsMixin):
             num_samples: int = None,
             pad_feat_value: float = LOG_EPSILON,
             direction: str = 'right'
-    ) -> AnyCut:
+    ) -> Cut:
         """
         Return a new MixedCut, padded with zeros in the recording, and ``pad_feat_value`` in each feature bin.
 
@@ -1104,7 +1419,7 @@ class MixedCut(CutUtilsMixin):
         """
         # TODO(pzelasko): test most extensively for edge cases
         # Pre-conditions
-        assert self.has_recording, 'Cannot perturb speed on a Cut without Recording.'
+        assert self.has_recording, 'Cannot perturb speed on a MonoCut without Recording.'
         if self.has_features:
             logging.warning(
                 'Attempting to perturb speed on a MixedCut that references pre-computed features. '
@@ -1166,7 +1481,7 @@ class MixedCut(CutUtilsMixin):
                     sampling_rate=track.cut.sampling_rate
                 )
             except NonPositiveEnergyError as e:
-                logging.warning(str(e) + f' Cut with id "{track.cut.id}" will not be mixed in.')
+                logging.warning(str(e) + f' MonoCut with id "{track.cut.id}" will not be mixed in.')
         if mixed:
             feats = mixer.mixed_feats
             # Note: The slicing below is a work-around for an edge-case
@@ -1178,7 +1493,7 @@ class MixedCut(CutUtilsMixin):
             if feats.shape[0] - self.num_frames == 1:
                 feats = feats[:self.num_frames, :]
             # TODO(pzelasko): This can sometimes happen in a MixedCut with >= 5 different Cuts,
-            #   with a regular Cut at the end, when the mix offsets are floats with a lot of decimals.
+            #   with a regular MonoCut at the end, when the mix offsets are floats with a lot of decimals.
             #   For now we're duplicating the last frame to match the declared "num_frames" of this cut.
             if feats.shape[0] - self.num_frames == -1:
                 feats = np.concatenate((feats, feats[-1:, :]), axis=0)
@@ -1209,7 +1524,7 @@ class MixedCut(CutUtilsMixin):
                     offset=track.offset,
                 )
             except NonPositiveEnergyError as e:
-                logging.warning(str(e) + f' Cut with id "{track.cut.id}" will not be mixed in.')
+                logging.warning(str(e) + f' MonoCut with id "{track.cut.id}" will not be mixed in.')
         if mixed:
             # Off-by-one errors can happen during mixing due to imperfect float arithmetic and rounding;
             # we will fix them on-the-fly so that the manifest does not lie about the num_samples.
@@ -1254,8 +1569,17 @@ class MixedCut(CutUtilsMixin):
 
     def drop_features(self) -> 'MixedCut':
         """Return a copy of the current :class:`MixedCut`, detached from ``features``."""
-        assert self.has_recording, f"Cannot detach features from a Cut with no Recording (cut ID = {self.id})."
+        assert self.has_recording, f"Cannot detach features from a MixedCut with no Recording (cut ID = {self.id})."
         return fastcopy(self, tracks=[fastcopy(t, cut=t.cut.drop_features()) for t in self.tracks])
+
+    def drop_recording(self) -> 'MixedCut':
+        """Return a copy of the current :class:`.MixedCut`, detached from ``recording``."""
+        assert self.has_features, f"Cannot detach recording from a MixedCut with no Features (cut ID = {self.id})."
+        return fastcopy(self, tracks=[fastcopy(t, cut=t.cut.drop_recording()) for t in self.tracks])
+
+    def drop_supervisions(self) -> 'MixedCut':
+        """Return a copy of the current :class:`.MixedCut`, detached from ``supervisions``."""
+        return fastcopy(self, tracks=[fastcopy(t, cut=t.cut.drop_supervisions()) for t in self.tracks])
 
     def compute_and_store_features(
             self,
@@ -1263,9 +1587,9 @@ class MixedCut(CutUtilsMixin):
             storage: FeaturesWriter,
             augment_fn: Optional[AugmentFn] = None,
             mix_eagerly: bool = True
-    ) -> AnyCut:
+    ) -> Cut:
         """
-        Compute the features from this cut, store them on disk, and create a new `Cut` object with the
+        Compute the features from this cut, store them on disk, and create a new `MonoCut` object with the
         feature manifest attached. This cut has to be able to load audio.
 
         :param extractor: a ``FeatureExtractor`` instance used to compute the features.
@@ -1273,9 +1597,9 @@ class MixedCut(CutUtilsMixin):
         :param augment_fn: an optional callable used for audio augmentation.
         :param mix_eagerly: when False, extract and store the features for each track separately,
             and mix them dynamically when loading the features.
-            When True, mix the audio first and store the mixed features, returning a new ``Cut`` instance
-            with the same ID. The returned ``Cut`` will not have a ``Recording`` attached.
-        :return: a new ``Cut`` instance if ``mix_eagerly`` is True, or returns ``self``
+            When True, mix the audio first and store the mixed features, returning a new ``MonoCut`` instance
+            with the same ID. The returned ``MonoCut`` will not have a ``Recording`` attached.
+        :return: a new ``MonoCut`` instance if ``mix_eagerly`` is True, or returns ``self``
             with each of the tracks containing the ``Features`` manifests.
         """
         if mix_eagerly:
@@ -1287,7 +1611,7 @@ class MixedCut(CutUtilsMixin):
                 channel=0,
                 augment_fn=augment_fn,
             )
-            return Cut(
+            return MonoCut(
                 id=self.id,
                 start=0,
                 duration=self.duration,
@@ -1311,7 +1635,7 @@ class MixedCut(CutUtilsMixin):
             ]
             return MixedCut(id=self.id, tracks=new_tracks)
 
-    def map_supervisions(self, transform_fn: Callable[[SupervisionSegment], SupervisionSegment]) -> AnyCut:
+    def map_supervisions(self, transform_fn: Callable[[SupervisionSegment], SupervisionSegment]) -> Cut:
         """
         Modify the SupervisionSegments by `transform_fn` of this MixedCut.
 
@@ -1323,7 +1647,7 @@ class MixedCut(CutUtilsMixin):
             track.cut.supervisions = [segment.map(transform_fn) for segment in track.cut.supervisions]
         return new_mixed_cut
 
-    def filter_supervisions(self, predicate: Callable[[SupervisionSegment], bool]) -> AnyCut:
+    def filter_supervisions(self, predicate: Callable[[SupervisionSegment], bool]) -> Cut:
         """
         Modify cut to store only supervisions accepted by `predicate`
 
@@ -1333,11 +1657,15 @@ class MixedCut(CutUtilsMixin):
             >>> cut = cut.filter_supervisions(lambda s: s.text is not None)
 
         :param predicate: A callable that accepts `SupervisionSegment` and returns bool
-        :return: a modified Cut
+        :return: a modified MonoCut
         """
-        new_mixed_cut = fastcopy(self)
-        for track in new_mixed_cut.tracks:
-            track.cut = track.cut.filter_supervisions(predicate)
+        new_mixed_cut = fastcopy(
+            self,
+            tracks=[
+                fastcopy(track, cut=track.cut.filter_supervisions(predicate))
+                for track in self.tracks
+            ]
+        )
         return new_mixed_cut
 
     @staticmethod
@@ -1361,18 +1689,170 @@ class MixedCut(CutUtilsMixin):
         )
 
     @property
-    def _first_non_padding_cut(self) -> Cut:
+    def _first_non_padding_cut(self) -> MonoCut:
         return [t.cut for t in self.tracks if not isinstance(t.cut, PaddingCut)][0]
 
 
-class CutSet(Serializable, Sequence[AnyCut]):
+class CutSet(Serializable, Sequence[Cut]):
     """
-    CutSet combines features with their corresponding supervisions.
-    It may have wider span than the actual supervisions, provided the features for the whole span exist.
-    It is the basic building block of PyTorch-style Datasets for speech/audio processing tasks.
+    :class:`~lhotse.cut.CutSet` represents a collection of cuts, indexed by cut IDs.
+    CutSet ties together all types of data -- audio, features and supervisions, and is suitable to represent
+    training/dev/test sets.
+
+    .. note::
+        :class:`~lhotse.cut.CutSet` is the basic building block of PyTorch-style Datasets for speech/audio processing tasks.
+
+    When coming from Kaldi, there is really no good equivalent -- the closest concept may be Kaldi's "egs" for training
+    neural networks, which are chunks of feature matrices and corresponding alignments used respectively as inputs and
+    supervisions. :class:`~lhotse.cut.CutSet` is different because it provides you with all kinds of metadata,
+    and you can select just the interesting bits to feed them to your models.
+
+    :class:`~lhotse.cut.CutSet` can be created from any combination of :class:`~lhotse.audio.RecordingSet`,
+    :class:`~lhotse.supervision.SupervisionSet`, and :class:`~lhotse.features.base.FeatureSet`
+    with :meth:`lhotse.cut.CutSet.from_manifests`::
+
+        >>> from lhotse import CutSet
+        >>> cuts = CutSet.from_manifests(recordings=my_recording_set)
+        >>> cuts2 = CutSet.from_manifests(features=my_feature_set)
+        >>> cuts3 = CutSet.from_manifests(
+        ...     recordings=my_recording_set,
+        ...     features=my_feature_set,
+        ...     supervisions=my_supervision_set,
+        ... )
+
+    When creating a :class:`.CutSet` with :meth:`.CutSet.from_manifests`, the resulting cuts will have the same duration
+    as the input recordings or features. For long recordings, it is not viable for training.
+    We provide several methods to transform the cuts into shorter ones.
+
+    Consider the following scenario::
+
+                          Recording
+        |-------------------------------------------|
+        "Hey, Matt!"     "Yes?"        "Oh, nothing"
+        |----------|     |----|        |-----------|
+
+        .......... CutSet.from_manifests() ..........
+                            Cut1
+        |-------------------------------------------|
+
+        ............. Example CutSet A ..............
+            Cut1          Cut2              Cut3
+        |----------|     |----|        |-----------|
+
+        ............. Example CutSet B ..............
+                  Cut1                  Cut2
+        |---------------------||--------------------|
+
+        ............. Example CutSet C ..............
+                     Cut1        Cut2
+                    |---|      |------|
+
+    The CutSet's A, B and C can be created like::
+
+        >>> cuts_A = cuts.trim_to_supervisions(num_jobs=4)
+        >>> cuts_B = cuts.cut_into_windows(duration=5.0, num_jobs=4)
+        >>> cuts_C = cuts.trim_to_unsupervised_segments()
+
+    .. note::
+        Some operations support parallel execution via an optional ``num_jobs`` parameter.
+        By default, all processing is single-threaded.
+
+    .. caution::
+        Operations on cut sets are not mutating -- they return modified copies of :class:`.CutSet` objects,
+        leaving the original object unmodified (and all of its cuts are also unmodified).
+
+    :class:`~lhotse.cut.CutSet` can be stored and read from JSON, JSONL, etc. and supports optional gzip compression::
+
+        >>> cuts.to_file('cuts.jsonl.gz')
+        >>> cuts4 = CutSet.from_file('cuts.jsonl.gz')
+
+    It behaves similarly to a ``dict``::
+
+            >>> 'rec1-1-0' in cuts
+            True
+            >>> cut = cuts['rec1-1-0']
+            >>> for cut in cuts:
+            >>>    pass
+            >>> len(cuts)
+            127
+
+    :class:`~lhotse.cut.CutSet` has some convenience properties and methods to gather information about the dataset::
+
+        >>> ids = list(cuts.ids)
+        >>> speaker_id_set = cuts.speakers
+        >>> # The following prints a message:
+        >>> cuts.describe()
+        Cuts count: 547
+        Total duration (hours): 326.4
+        Speech duration (hours): 79.6 (24.4%)
+        ***
+        Duration statistics (seconds):
+        mean    2148.0
+        std      870.9
+        min      477.0
+        25%     1523.0
+        50%     2157.0
+        75%     2423.0
+        max     5415.0
+        dtype: float64
+
+
+    Manipulation examples::
+
+        >>> longer_than_5s = cuts.filter(lambda c: c.duration > 5)
+        >>> first_100 = cuts.subset(first=100)
+        >>> split_into_4 = cuts.split(num_splits=4)
+        >>> random_sample = cuts.sample(n_cuts=10)
+        >>> new_ids = cuts.modify_ids(lambda c: c.id + '-newid')
+
+    Cuts in a :class:`.CutSet` can be detached from parts of their metadata::
+
+        >>> cuts_no_feat = cuts.drop_features()
+        >>> cuts_no_rec = cuts.drop_recordings()
+        >>> cuts_no_sup = cuts.drop_supervisions()
+
+    Sometimes specific sorting patterns are useful when a small CutSet represents a mini-batch::
+
+        >>> cuts = cuts.sort_by_duration(ascending=False)
+        >>> cuts = cuts.sort_like(other_cuts)
+
+    :class:`~lhotse.cut.CutSet` offers some batch processing operations::
+
+        >>> cuts = cuts.pad(num_frames=300)  # or duration=30.0
+        >>> cuts = cuts.truncate(max_duration=30.0, offset_type='start')  # truncate from start to 30.0s
+        >>> cuts = cuts.mix(other_cuts, snr=[10, 30], mix_prob=0.5)
+
+    :class:`~lhotse.cut.CutSet` supports lazy data augmentation/transformation methods which require adjusting some information
+    in the manifest (e.g., ``num_samples`` or ``duration``).
+    Note that in the following examples, the audio is untouched -- the operations are stored in the manifest,
+    and executed upon reading the audio::
+
+        >>> cuts_sp = cuts.perturb_speed(factor=1.1)
+        >>> cuts_24k = cuts.resample(24000)
+
+    .. caution::
+        If the :class:`.CutSet` contained :class:`~lhotse.features.base.Features` manifests, they will be
+        detached after performing audio augmentations such as :meth:`.CutSet.perturb_speed` or :meth:`.CutSet.resample`.
+
+    :class:`~lhotse.cut.CutSet` offers parallel feature extraction capabilities
+    (see `meth`:.CutSet.compute_and_store_features: for details),
+    and can be used to estimate global mean and variance::
+
+        >>> from lhotse import Fbank
+        >>> cuts = CutSet()
+        >>> cuts = cuts.compute_and_store_features(
+        ...     extractor=Fbank(),
+        ...     storage_path='/data/feats',
+        ...     num_jobs=4
+        ... )
+        >>> mvn_stats = cuts.compute_global_feature_stats('/data/features/mvn_stats.pkl', max_cuts=10000)
+
+    See also:
+
+        - :class:`~lhotse.cut.Cut`
     """
 
-    def __init__(self, cuts: Optional[Mapping[str, AnyCut]] = None) -> None:
+    def __init__(self, cuts: Optional[Mapping[str, Cut]] = None) -> None:
         self.cuts = ifnone(cuts, {})
 
     def __eq__(self, other: 'CutSet') -> bool:
@@ -1391,8 +1871,8 @@ class CutSet(Serializable, Sequence[AnyCut]):
         return {id_: cut for id_, cut in self.cuts.items() if isinstance(cut, MixedCut)}
 
     @property
-    def simple_cuts(self) -> Dict[str, Cut]:
-        return {id_: cut for id_, cut in self.cuts.items() if isinstance(cut, Cut)}
+    def simple_cuts(self) -> Dict[str, MonoCut]:
+        return {id_: cut for id_, cut in self.cuts.items() if isinstance(cut, MonoCut)}
 
     @property
     def ids(self) -> Iterable[str]:
@@ -1403,7 +1883,7 @@ class CutSet(Serializable, Sequence[AnyCut]):
         return frozenset(supervision.speaker for cut in self for supervision in cut.supervisions)
 
     @staticmethod
-    def from_cuts(cuts: Iterable[AnyCut]) -> 'CutSet':
+    def from_cuts(cuts: Iterable[Cut]) -> 'CutSet':
         return CutSet(cuts=index_by_id_and_check(cuts))
 
     @staticmethod
@@ -1415,27 +1895,30 @@ class CutSet(Serializable, Sequence[AnyCut]):
     ) -> 'CutSet':
         """
         Create a CutSet from any combination of supervision, feature and recording manifests.
-        At least one of ``recording_set`` or ``feature_set`` is required.
-        The Cut boundaries correspond to those found in the ``feature_set``, when available,
-        otherwise to those found in the ``recording_set``
-        When a ``supervision_set`` is provided, we'll attach to the Cut all supervisions that
-        have a matching recording ID and are fully contained in the Cut's boundaries.
+        At least one of ``recordings`` or ``features`` is required.
 
-        :param recordings: a ``RecordingSet`` manifest.
-        :param supervisions: a ``SupervisionSet`` manifest.
-        :param features: a ``FeatureSet`` manifest.
+        The created cuts will be of type :class:`.MonoCut`, even when the recordings have multiple channels.
+        The :class:`.MonoCut` boundaries correspond to those found in the ``features``, when available,
+        otherwise to those found in the ``recordings``.
+
+        When ``supervisions`` are provided, we'll be searching them for matching recording IDs
+        and attaching to created cuts, assuming they are fully within the cut's time span.
+
+        :param recordings: an optional :class:`~lhotse.audio.RecordingSet` manifest.
+        :param supervisions: an optional :class:`~lhotse.supervision.SupervisionSet` manifest.
+        :param features: an optional :class:`~lhotse.features.base.FeatureSet` manifest.
         :param random_ids: boolean, should the cut IDs be randomized. By default, use the recording ID
             with a loop index and a channel idx, i.e. "{recording_id}-{idx}-{channel}")
-        :return: a new ``CutSet`` instance.
+        :return: a new :class:`.CutSet` instance.
         """
         assert features is not None or recordings is not None, \
-            "At least one of feature_set and recording_set has to be provided."
+            "At least one of 'features' or 'recordings' has to be provided."
         sup_ok, feat_ok, rec_ok = supervisions is not None, features is not None, recordings is not None
         if feat_ok:
             # Case I: Features are provided.
             # Use features to determine the cut boundaries and attach recordings and supervisions as available.
             return CutSet.from_cuts(
-                Cut(
+                MonoCut(
                     id=str(uuid4()) if random_ids else f'{feats.recording_id}-{idx}-{feats.channels}',
                     start=feats.start,
                     duration=feats.duration,
@@ -1456,7 +1939,7 @@ class CutSet(Serializable, Sequence[AnyCut]):
         # Case II: Recordings are provided (and features are not).
         # Use recordings to determine the cut boundaries.
         return CutSet.from_cuts(
-            Cut(
+            MonoCut(
                 id=str(uuid4()) if random_ids else f'{recording.id}-{ridx}-{cidx}',
                 start=0,
                 duration=recording.duration,
@@ -1475,10 +1958,16 @@ class CutSet(Serializable, Sequence[AnyCut]):
 
     @staticmethod
     def from_dicts(data: Iterable[dict]) -> 'CutSet':
-        def deserialize_one(raw_cut: dict) -> AnyCut:
+        def deserialize_one(raw_cut: dict) -> Cut:
             cut_type = raw_cut.pop('type')
+            if cut_type == 'MonoCut':
+                return MonoCut.from_dict(raw_cut)
             if cut_type == 'Cut':
-                return Cut.from_dict(raw_cut)
+                warnings.warn(
+                    'Your manifest was created with Lhotse version earlier than v0.8, when MonoCut was called Cut. '
+                    'Please re-generate it with Lhotse v0.8 as it might stop working in a future version '
+                    '(using manifest.from_file() and then manifest.to_file() should be sufficient).')
+                return MonoCut.from_dict(raw_cut)
             if cut_type == 'MixedCut':
                 return MixedCut.from_dict(raw_cut)
             raise ValueError(f"Unexpected cut type during deserialization: '{cut_type}'")
@@ -1607,7 +2096,7 @@ class CutSet(Serializable, Sequence[AnyCut]):
             cut.filter_supervisions(predicate) for cut in self
         )
 
-    def filter(self, predicate: Callable[[AnyCut], bool]) -> 'CutSet':
+    def filter(self, predicate: Callable[[Cut], bool]) -> 'CutSet':
         """
         Return a new CutSet with the Cuts that satisfy the `predicate`.
 
@@ -1616,19 +2105,75 @@ class CutSet(Serializable, Sequence[AnyCut]):
         """
         return CutSet.from_cuts(cut for cut in self if predicate(cut))
 
-    def trim_to_supervisions(self) -> 'CutSet':
+    def trim_to_supervisions(
+            self,
+            keep_overlapping: bool = True,
+            min_duration: Optional[Seconds] = None,
+            context_direction: Literal['center', 'left', 'right', 'random'] = 'center',
+            num_jobs: int = 1
+    ) -> 'CutSet':
         """
         Return a new CutSet with Cuts that have identical spans as their supervisions.
 
+        For example, the following cut::
+
+                    Cut
+            |-----------------|
+             Sup1
+            |----|  Sup2
+               |-----------|
+
+        is transformed into two cuts::
+
+             Cut1
+            |----|
+             Sup1
+            |----|
+               Sup2
+               |-|
+                    Cut2
+               |-----------|
+               Sup1
+               |-|
+                    Sup2
+               |-----------|
+
+        :param keep_overlapping: when ``False``, it will discard parts of other supervisions that overlap with the
+            main supervision. In the illustration above, it would discard ``Sup2`` in ``Cut1`` and ``Sup1`` in ``Cut2``.
+        :param min_duration: An optional duration in seconds; specifying this argument will extend the cuts
+            that would have been shorter than ``min_duration`` with actual acoustic context in the recording/features.
+            If there are supervisions present in the context, they are kept when ``keep_overlapping`` is true.
+            If there is not enough context, the returned cut will be shorter than ``min_duration``.
+            If the supervision segment is longer than ``min_duration``, the return cut will be longer.
+        :param context_direction: Which direction should the cut be expanded towards to include context.
+            The value of "center" implies equal expansion to left and right;
+            random uniformly samples a value between "left" and "right".
+        :param num_jobs: Number of parallel workers to process the cuts.
         :return: a ``CutSet``.
         """
-        supervisions_index = self.index_supervisions(index_mixed_tracks=True)
-        return CutSet.from_cuts(
-            cut.truncate(offset=segment.start, duration=segment.duration,
-                         _supervisions_index=supervisions_index)
-            for cut in self
-            for segment in cut.supervisions
+        if num_jobs == 1:
+            return CutSet.from_cuts(
+                # chain.from_iterable is a flatten operation: Iterable[Iterable[T]] -> Iterable[T]
+                chain.from_iterable(
+                    cut.trim_to_supervisions(
+                        keep_overlapping=keep_overlapping,
+                        min_duration=min_duration,
+                        context_direction=context_direction
+                    )
+                    for cut in self
+                )
+            )
+
+        from lhotse.manipulation import split_parallelize_combine
+        result = split_parallelize_combine(
+            num_jobs,
+            self,
+            CutSet.trim_to_supervisions,
+            keep_overlapping=keep_overlapping,
+            min_duration=min_duration,
+            context_direction=context_direction
         )
+        return result
 
     def trim_to_unsupervised_segments(self) -> 'CutSet':
         """
@@ -1695,7 +2240,11 @@ class CutSet(Serializable, Sequence[AnyCut]):
         assert set(self.ids) == set(other.ids), "sort_like() expects both CutSet's to have identical cut IDs."
         return CutSet.from_cuts(self[cid] for cid in other.ids)
 
-    def index_supervisions(self, index_mixed_tracks: bool = False) -> Dict[str, IntervalTree]:
+    def index_supervisions(
+            self,
+            index_mixed_tracks: bool = False,
+            keep_ids: Optional[Set[str]] = None
+    ) -> Dict[str, IntervalTree]:
         """
         Create a two-level index of supervision segments. It is a mapping from a Cut's ID to an
         interval tree that contains the supervisions of that Cut.
@@ -1705,18 +2254,12 @@ class CutSet(Serializable, Sequence[AnyCut]):
         supervisions.
 
         :param index_mixed_tracks: Should the tracks of MixedCut's be indexed as additional, separate entries.
-        :return: a mapping from Cut ID to an interval tree of SupervisionSegments.
+        :param keep_ids: If specified, we will only index the supervisions with the specified IDs.
+        :return: a mapping from MonoCut ID to an interval tree of SupervisionSegments.
         """
-        indexed = {
-            cut.id: IntervalTree(Interval(s.start, s.end, s) for s in cut.supervisions)
-            for cut in self
-        }
-        if index_mixed_tracks:
-            for cut in self:
-                if isinstance(cut, MixedCut):
-                    for track in cut.tracks:
-                        indexed[track.cut.id] = IntervalTree(
-                            Interval(s.start, s.end, s) for s in track.cut.supervisions)
+        indexed = {}
+        for cut in self:
+            indexed.update(cut.index_supervisions(index_mixed_tracks=index_mixed_tracks, keep_ids=keep_ids))
         return indexed
 
     def pad(
@@ -1812,10 +2355,15 @@ class CutSet(Serializable, Sequence[AnyCut]):
             ))
         return CutSet.from_cuts(truncated_cuts)
 
-    def cut_into_windows(self, duration: Seconds, keep_excessive_supervisions: bool = True) -> 'CutSet':
+    def cut_into_windows(
+            self,
+            duration: Seconds,
+            keep_excessive_supervisions: bool = True,
+            num_jobs: int = 1,
+    ) -> 'CutSet':
         """
-        Return a new ``CutSet``, made by traversing each ``Cut`` in windows of ``duration`` seconds and
-        creating new ``Cut`` out of them.
+        Return a new ``CutSet``, made by traversing each ``MonoCut`` in windows of ``duration`` seconds and
+        creating new ``MonoCut`` out of them.
 
         The last window might have a shorter duration if there was not enough audio, so you might want to
         use either ``.filter()`` or ``.pad()`` afterwards to obtain a uniform duration ``CutSet``.
@@ -1823,20 +2371,34 @@ class CutSet(Serializable, Sequence[AnyCut]):
         :param duration: Desired duration of the new cuts in seconds.
         :param keep_excessive_supervisions: bool. When a cut is truncated in the middle of a supervision segment,
             should the supervision be kept.
+        :param num_jobs: The number of parallel workers.
         :return: a new CutSet with cuts made from shorter duration windows.
         """
-        new_cuts = []
-        for cut in self:
-            n_windows = ceil(cut.duration / duration)
-            for i in range(n_windows):
-                new_cuts.append(cut.truncate(
-                    offset=duration * i,
-                    duration=duration,
-                    keep_excessive_supervisions=keep_excessive_supervisions
-                ))
-        return CutSet.from_cuts(new_cuts)
+        if num_jobs == 1:
+            new_cuts = []
+            for cut in self:
+                n_windows = ceil(cut.duration / duration)
+                for i in range(n_windows):
+                    new_cuts.append(
+                        cut.truncate(
+                            offset=duration * i,
+                            duration=duration,
+                            keep_excessive_supervisions=keep_excessive_supervisions
+                        )
+                    )
+            return CutSet(cuts={c.id: c for c in new_cuts})
 
-    def sample(self, n_cuts: int = 1) -> Union[AnyCut, 'CutSet']:
+        from lhotse.manipulation import split_parallelize_combine
+        result = split_parallelize_combine(
+            num_jobs,
+            self,
+            CutSet.cut_into_windows,
+            duration=duration,
+            keep_excessive_supervisions=keep_excessive_supervisions,
+        )
+        return result
+
+    def sample(self, n_cuts: int = 1) -> Union[Cut, 'CutSet']:
         """
         Randomly sample this ``CutSet`` and return ``n_cuts`` cuts.
         When ``n_cuts`` is 1, will return a single cut instance; otherwise will return a ``CutSet``.
@@ -1945,9 +2507,21 @@ class CutSet(Serializable, Sequence[AnyCut]):
 
     def drop_features(self) -> 'CutSet':
         """
-        Return a new :class:`CutSet`, where each Cut is copied and detached from its extracted features.
+        Return a new :class:`.CutSet`, where each :class:`.Cut` is copied and detached from its extracted features.
         """
         return CutSet.from_cuts(c.drop_features() for c in self)
+
+    def drop_recordings(self) -> 'CutSet':
+        """
+        Return a new :class:`.CutSet`, where each :class:`.Cut` is copied and detached from its recordings.
+        """
+        return CutSet.from_cuts(c.drop_recording() for c in self)
+
+    def drop_supervisions(self) -> 'CutSet':
+        """
+        Return a new :class:`.CutSet`, where each :class:`.Cut` is copied and detached from its supervisions.
+        """
+        return CutSet.from_cuts(c.drop_supervisions() for c in self)
 
     def compute_and_store_features(
             self,
@@ -2036,8 +2610,8 @@ class CutSet(Serializable, Sequence[AnyCut]):
             When False, extract and store the features for each track separately,
             and mix them dynamically when loading the features.
             When True, mix the audio first and store the mixed features,
-            returning a new ``Cut`` instance with the same ID.
-            The returned ``Cut`` will not have a ``Recording`` attached.
+            returning a new ``MonoCut`` instance with the same ID.
+            The returned ``MonoCut`` will not have a ``Recording`` attached.
         :param progress_bar: Should a progress bar be displayed (automatically turned off
             for parallel computation).
         :return: Returns a new ``CutSet`` with ``Features`` manifests attached to the cuts.
@@ -2125,7 +2699,7 @@ class CutSet(Serializable, Sequence[AnyCut]):
             executor: Optional[Executor] = None,
             augment_fn: Optional[AugmentFn] = None,
             progress_bar: bool = True
-        ) -> 'CutSet':
+    ) -> 'CutSet':
         """
         Store waveforms of all cuts as audio recordings to disk.
 
@@ -2161,7 +2735,7 @@ class CutSet(Serializable, Sequence[AnyCut]):
                             'we will ignore the executor and use non-parallel execution.')
             executor = None
 
-        def file_storage_path(cut: AnyCut, storage_path: Pathlike) -> Path:
+        def file_storage_path(cut: Cut, storage_path: Pathlike) -> Path:
             # Introduce a sub-directory that starts with the first 3 characters of the cut's ID.
             # This allows to avoid filesystem performance problems related to storing
             # too many files in a single directory.
@@ -2195,7 +2769,7 @@ class CutSet(Serializable, Sequence[AnyCut]):
         # Each worker runs the non-parallel version of this function inside.
         futures = [
             executor.submit(
-                CutSet.compute_and_store_recording,
+                CutSet.compute_and_store_recordings,
                 cs,
                 storage_path=storage_path,
                 augment_fn=augment_fn,
@@ -2253,17 +2827,17 @@ class CutSet(Serializable, Sequence[AnyCut]):
     def with_recording_path_prefix(self, path: Pathlike) -> 'CutSet':
         return CutSet.from_cuts(c.with_recording_path_prefix(path) for c in self)
 
-    def map(self, transform_fn: Callable[[AnyCut], AnyCut]) -> 'CutSet':
+    def map(self, transform_fn: Callable[[Cut], Cut]) -> 'CutSet':
         """
-        Modify the cuts in this ``CutSet`` and return a new ``CutSet``.
+        Apply `transform_fn` to the cuts in this :class:`.CutSet` and return a new :class:`.CutSet`.
 
         :param transform_fn: A callable (function) that accepts a single cut instance
             and returns a single cut instance.
-        :return: a new ``CutSet`` with modified cuts.
+        :return: a new ``CutSet`` with transformed cuts.
         """
 
-        def verified(mapped: Any) -> AnyCut:
-            assert isinstance(mapped, (Cut, MixedCut, PaddingCut)), \
+        def verified(mapped: Any) -> Cut:
+            assert isinstance(mapped, (MonoCut, MixedCut, PaddingCut)), \
                 "The callable passed to CutSet.map() must return a Cut class instance."
             return mapped
 
@@ -2303,13 +2877,13 @@ class CutSet(Serializable, Sequence[AnyCut]):
     def __repr__(self) -> str:
         return f'CutSet(len={len(self)})'
 
-    def __contains__(self, item: Union[str, Cut, MixedCut]) -> bool:
+    def __contains__(self, item: Union[str, MonoCut, MixedCut]) -> bool:
         if isinstance(item, str):
             return item in self.cuts
         else:
             return item.id in self.cuts
 
-    def __getitem__(self, cut_id_or_index: Union[int, str]) -> 'AnyCut':
+    def __getitem__(self, cut_id_or_index: Union[int, str]) -> 'Cut':
         if isinstance(cut_id_or_index, str):
             return self.cuts[cut_id_or_index]
         # ~100x faster than list(dict.values())[index] for 100k elements
@@ -2318,11 +2892,14 @@ class CutSet(Serializable, Sequence[AnyCut]):
     def __len__(self) -> int:
         return len(self.cuts)
 
-    def __iter__(self) -> Iterable[AnyCut]:
+    def __iter__(self) -> Iterable[Cut]:
         return iter(self.cuts.values())
 
     def __add__(self, other: 'CutSet') -> 'CutSet':
-        assert not set(self.cuts.keys()).intersection(other.cuts.keys()), "Conflicting IDs when concatenating CutSets!"
+        merged_cuts = {**self.cuts, **other.cuts}
+        assert len(merged_cuts) == len(self.cuts) + len(other.cuts), \
+            f"Conflicting IDs when concatenating CutSets! " \
+            f"Failed check: {len(merged_cuts)} == {len(self.cuts)} + {len(other.cuts)}"
         return CutSet(cuts={**self.cuts, **other.cuts})
 
 
@@ -2334,14 +2911,14 @@ def make_windowed_cuts_from_features(
 ) -> CutSet:
     """
     Converts a FeatureSet to a CutSet by traversing each Features object in - possibly overlapping - windows, and
-    creating a Cut out of that area. By default, the last window in traversal will be discarded if it cannot satisfy
+    creating a MonoCut out of that area. By default, the last window in traversal will be discarded if it cannot satisfy
     the `cut_duration` requirement.
 
     :param feature_set: a FeatureSet object.
     :param cut_duration: float, duration of created Cuts in seconds.
     :param cut_shift: optional float, specifies how many seconds are in between the starts of consecutive windows.
         Equals `cut_duration` by default.
-    :param keep_shorter_windows: bool, when True, the last window will be used to create a Cut even if
+    :param keep_shorter_windows: bool, when True, the last window will be used to create a MonoCut even if
         its duration is shorter than `cut_duration`.
     :return: a CutSet object.
     """
@@ -2360,7 +2937,7 @@ def make_windowed_cuts_from_features(
             offset = features.start + idx * cut_shift
             duration = min(cut_duration, features.end - offset)
             cuts.append(
-                Cut(
+                MonoCut(
                     id=str(uuid4()),
                     start=offset,
                     duration=duration,
@@ -2373,8 +2950,8 @@ def make_windowed_cuts_from_features(
 
 
 def mix(
-        reference_cut: AnyCut,
-        mixed_in_cut: AnyCut,
+        reference_cut: Cut,
+        mixed_in_cut: Cut,
         offset: Seconds = 0,
         snr: Optional[Decibels] = None
 ) -> MixedCut:
@@ -2443,20 +3020,20 @@ def mix(
 
 
 def pad(
-        cut: AnyCut,
+        cut: Cut,
         duration: Seconds = None,
         num_frames: int = None,
         num_samples: int = None,
         pad_feat_value: float = LOG_EPSILON,
         direction: str = 'right'
-) -> AnyCut:
+) -> Cut:
     """
     Return a new MixedCut, padded with zeros in the recording, and ``pad_feat_value`` in each feature bin.
 
     The user can choose to pad either to a specific `duration`; a specific number of frames `max_frames`;
     or a specific number of samples `num_samples`. The three arguments are mutually exclusive.
 
-    :param cut: Cut to be padded.
+    :param cut: MonoCut to be padded.
     :param duration: The cut's minimal duration after padding.
     :param num_frames: The cut's total number of frames after padding.
     :param num_samples: The cut's total number of samples after padding.
@@ -2554,22 +3131,22 @@ def pad(
 
 
 def append(
-        left_cut: AnyCut,
-        right_cut: AnyCut,
+        left_cut: Cut,
+        right_cut: Cut,
         snr: Optional[Decibels] = None
 ) -> MixedCut:
     """Helper method for functional-style appending of Cuts."""
     return left_cut.append(right_cut, snr=snr)
 
 
-def mix_cuts(cuts: Iterable[AnyCut]) -> MixedCut:
+def mix_cuts(cuts: Iterable[Cut]) -> MixedCut:
     """Return a MixedCut that consists of the input Cuts mixed with each other as-is."""
     # The following is a fold (accumulate/aggregate) operation; it starts with cuts[0], and mixes it with cuts[1];
     #  then takes their mix and mixes it with cuts[2]; and so on.
     return reduce(mix, cuts)
 
 
-def append_cuts(cuts: Iterable[AnyCut]) -> AnyCut:
+def append_cuts(cuts: Iterable[Cut]) -> Cut:
     """Return a MixedCut that consists of the input Cuts appended to each other as-is."""
     # The following is a fold (accumulate/aggregate) operation; it starts with cuts[0], and appends cuts[1] to it;
     #  then takes their it concatenation and appends cuts[2] to it; and so on.
@@ -2577,9 +3154,9 @@ def append_cuts(cuts: Iterable[AnyCut]) -> AnyCut:
 
 
 def compute_supervisions_frame_mask(
-    cut: AnyCut,
-    frame_shift: Optional[Seconds] = None,
-    use_alignment_if_exists: Optional[str] = None
+        cut: Cut,
+        frame_shift: Optional[Seconds] = None,
+        use_alignment_if_exists: Optional[str] = None
 ):
     """
     Compute a mask that indicates which frames in a cut are covered by supervisions.

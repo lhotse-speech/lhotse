@@ -1,6 +1,6 @@
 import pytest
 
-from lhotse import AudioSource, Cut, CutSet, Recording, SupervisionSegment
+from lhotse import AudioSource, CutSet, MonoCut, Recording, SupervisionSegment
 from lhotse.cut import PaddingCut
 
 
@@ -16,7 +16,7 @@ def recording(file_source):
 
 @pytest.fixture
 def cut_with_supervision(recording):
-    return Cut(
+    return MonoCut(
         id='cut',
         start=0.0,
         duration=0.5,
@@ -79,9 +79,27 @@ def test_cut_perturb_speed09(cut_with_supervision):
     assert recording_samples.shape[1] == 4444
 
 
+def test_cut_set_perturb_speed_doesnt_duplicate_transforms(cut_with_supervision):
+    cuts = CutSet.from_cuts([cut_with_supervision, cut_with_supervision.with_id('other-id')])
+    cuts_sp = cuts.perturb_speed(1.1)
+    for cut in cuts_sp:
+        # This prevents a bug regression where multiple cuts referencing the same recording would
+        # attach transforms to the same manifest
+        assert len(cut.recording.transforms) == 1
+
+
+def test_cut_set_resample_doesnt_duplicate_transforms(cut_with_supervision):
+    cuts = CutSet.from_cuts([cut_with_supervision, cut_with_supervision.with_id('other-id')])
+    cuts_sp = cuts.resample(44100)
+    for cut in cuts_sp:
+        # This prevents a bug regression where multiple cuts referencing the same recording would
+        # attach transforms to the same manifest
+        assert len(cut.recording.transforms) == 1
+
+
 @pytest.fixture
 def cut_with_supervision_start01(recording):
-    return Cut(
+    return MonoCut(
         id='cut_start01',
         start=0.1,
         duration=0.4,

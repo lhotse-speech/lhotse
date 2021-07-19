@@ -1,6 +1,6 @@
 import click
 
-from lhotse.bin.modes import obtain, prepare
+from lhotse.bin.modes import download, prepare
 from lhotse.recipes.ami import download_ami, prepare_ami
 from lhotse.utils import Pathlike
 
@@ -55,7 +55,7 @@ def ami(
     )
 
 
-@obtain.command(context_settings=dict(show_default=True))
+@download.command(context_settings=dict(show_default=True))
 @click.argument('target_dir', type=click.Path())
 @click.option(
     '--annotations',

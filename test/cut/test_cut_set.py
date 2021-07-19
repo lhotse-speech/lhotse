@@ -1,12 +1,12 @@
 import pickle
 from tempfile import NamedTemporaryFile, TemporaryDirectory
-import numpy as np
 
+import numpy as np
 import pytest
 
 from lhotse import Features, Recording, SupervisionSegment
 from lhotse.audio import AudioSource
-from lhotse.cut import Cut, CutSet, MixTrack, MixedCut
+from lhotse.cut import CutSet, MixTrack, MixedCut, MonoCut
 from lhotse.testing.dummies import remove_spaces_from_segment_text
 from lhotse.utils import is_module_available
 
@@ -40,7 +40,7 @@ def test_cut_set_iteration(cut_set_with_mixed_cut):
 
 def test_cut_set_holds_both_simple_and_mixed_cuts(cut_set_with_mixed_cut):
     simple_cuts = cut_set_with_mixed_cut.simple_cuts.values()
-    assert all(isinstance(c, Cut) for c in simple_cuts)
+    assert all(isinstance(c, MonoCut) for c in simple_cuts)
     assert len(simple_cuts) == 2
     mixed_cuts = cut_set_with_mixed_cut.mixed_cuts.values()
     assert all(isinstance(c, MixedCut) for c in mixed_cuts)
@@ -57,13 +57,13 @@ def test_trim_to_unsupervised_segments():
     cut_set = CutSet.from_cuts([
         # Yields 3 unsupervised cuts - before first supervision,
         # between sup2 and sup3, and after sup3.
-        Cut('cut1', start=0, duration=30, channel=0, supervisions=[
+        MonoCut('cut1', start=0, duration=30, channel=0, supervisions=[
             SupervisionSegment('sup1', 'rec1', start=1.5, duration=8.5),
             SupervisionSegment('sup2', 'rec1', start=10, duration=5),
             SupervisionSegment('sup3', 'rec1', start=20, duration=8),
         ]),
         # Does not yield any "unsupervised" cut.
-        Cut('cut2', start=0, duration=30, channel=0, supervisions=[
+        MonoCut('cut2', start=0, duration=30, channel=0, supervisions=[
             SupervisionSegment('sup4', 'rec1', start=0, duration=30),
         ]),
     ])
@@ -84,85 +84,194 @@ def test_trim_to_unsupervised_segments():
     assert unsupervised_cuts[2].supervisions == []
 
 
-def test_trim_to_supervisions_simple_cuts():
+@pytest.mark.parametrize('keep_overlapping', [True, False])
+@pytest.mark.parametrize('num_jobs', [1, 2])
+def test_trim_to_supervisions_simple_cuts(keep_overlapping, num_jobs):
     cut_set = CutSet.from_cuts([
-        Cut('cut1', start=0, duration=30, channel=0, supervisions=[
-            SupervisionSegment('sup1', 'rec1', start=1.5, duration=8.5),
+        MonoCut('cut1', start=0, duration=30, channel=0, supervisions=[
+            SupervisionSegment('sup1', 'rec1', start=1.5, duration=10.5),
             SupervisionSegment('sup2', 'rec1', start=10, duration=5),
             SupervisionSegment('sup3', 'rec1', start=20, duration=8),
         ]),
-        Cut('cut2', start=0, duration=30, channel=0, supervisions=[
+        MonoCut('cut2', start=0, duration=30, channel=0, supervisions=[
             SupervisionSegment('sup4', 'rec1', start=0, duration=30),
         ]),
     ])
-    cuts = cut_set.trim_to_supervisions()
+    cuts = cut_set.trim_to_supervisions(keep_overlapping=keep_overlapping, num_jobs=num_jobs)
     assert len(cuts) == 4
-    assert all(len(cut.supervisions) == 1 for cut in cuts)
-    assert all(cut.supervisions[0].start == 0 for cut in cuts)
+
+    # Note: expected results diverge here depending on the value of keep_overlapping flag
     cut = cuts[0]
     assert cut.start == 1.5
-    assert cut.duration == 8.5
-    assert cut.supervisions[0].id == 'sup1'
+    assert cut.duration == 10.5
+    if keep_overlapping:
+        assert len(cut.supervisions) == 2
+        sup = cut.supervisions[0]
+        assert sup.id == 'sup1'
+        assert sup.start == 0
+        assert sup.duration == 10.5
+        sup = cut.supervisions[1]
+        assert sup.id == 'sup2'
+        assert sup.start == 8.5
+        assert sup.duration == 5
+    else:
+        assert len(cut.supervisions) == 1
+        sup = cut.supervisions[0]
+        assert sup.id == 'sup1'
+        assert sup.start == 0
+        assert sup.duration == 10.5
+
+    # Note: expected results diverge here depending on the value of keep_overlapping flag
     cut = cuts[1]
     assert cut.start == 10
     assert cut.duration == 5
-    assert cut.supervisions[0].id == 'sup2'
+    if keep_overlapping:
+        assert len(cut.supervisions) == 2
+        sup = cut.supervisions[0]
+        assert sup.id == 'sup1'
+        assert sup.start == -8.5
+        assert sup.duration == 10.5
+        sup = cut.supervisions[1]
+        assert sup.id == 'sup2'
+        assert sup.start == 0
+        assert sup.duration == 5
+    else:
+        assert len(cut.supervisions) == 1
+        sup = cut.supervisions[0]
+        assert sup.id == 'sup2'
+        assert sup.start == 0
+        assert sup.duration == 5
+
+    # Note: both test cases have same results
     cut = cuts[2]
+    assert len(cut.supervisions) == 1
     assert cut.start == 20
     assert cut.duration == 8
     assert cut.supervisions[0].id == 'sup3'
+
+    # Note: both test cases have same results
     cut = cuts[3]
+    assert len(cut.supervisions) == 1
     assert cut.start == 0
     assert cut.duration == 30
     assert cut.supervisions[0].id == 'sup4'
 
 
-def test_trim_to_supervisions_mixed_cuts():
+@pytest.fixture()
+def mixed_overlapping_cut_set():
+    """
+    Input mixed cut::
+        |---------------mixedcut--------------------|
+        |--------rec1 0-30s--------|
+                     |-------rec2 15-45s--------|
+         |---sup1--|         |-----sup3-----|
+                 |sup2|
+    """
     cut_set = CutSet.from_cuts([
-        Cut('cut1', start=0, duration=30, channel=0,
+        MonoCut(
+            'cut1', start=0, duration=30, channel=0,
             recording=Recording(
-                id='rec1', sources=[], sampling_rate=16000, num_samples=160000, duration=10.0
+                id='rec1', sources=[], sampling_rate=16000, num_samples=160000, duration=60.0
             ),
             supervisions=[
-                SupervisionSegment('sup1', 'rec1', start=1.5, duration=8.5),
-                SupervisionSegment('sup2', 'rec1', start=10, duration=5),
-                SupervisionSegment('sup3', 'rec1', start=20, duration=8),
+                SupervisionSegment('sup1', 'rec1', start=1.5, duration=10.5),
+                SupervisionSegment('sup2', 'rec1', start=10, duration=6),
             ]
-            ).append(
-            Cut('cut2', start=0, duration=30, channel=0,
+        ).mix(
+            MonoCut(
+                'cut2', start=15, duration=30, channel=0,
                 recording=Recording(
-                    id='rec1', sources=[], sampling_rate=16000, num_samples=160000, duration=10.0
+                    id='rec2', sources=[], sampling_rate=16000, num_samples=160000, duration=60.0
                 ),
                 supervisions=[
-                    SupervisionSegment('sup4', 'rec1', start=0, duration=30),
+                    SupervisionSegment('sup3', 'rec2', start=8, duration=18),
                 ]
-                )
+            ),
+            offset_other_by=15.0
         )
     ])
     assert isinstance(cut_set[0], MixedCut)
-    cuts = cut_set.trim_to_supervisions()
-    assert len(cuts) == 4
-    # After "trimming", the MixedCut "decayed" into simple, unmixed cuts, as they did not overlap
-    assert all(isinstance(cut, Cut) for cut in cuts)
+    return cut_set
+
+
+def test_trim_to_supervisions_mixed_cuts_keep_overlapping_false(mixed_overlapping_cut_set):
+    cuts = mixed_overlapping_cut_set.trim_to_supervisions(keep_overlapping=False)
+    assert len(cuts) == 3
+    # After "trimming", in some instances the MixedCut "decayed" into simple, unmixed cuts, as they did not overlap;
+    # In other instances, it's still a MixedCut
     assert all(len(cut.supervisions) == 1 for cut in cuts)
-    assert all(cut.supervisions[0].start == 0 for cut in cuts)
+
     cut = cuts[0]
-    # Check that the cuts preserved their start/duration/supervisions after trimming
+    assert isinstance(cut, MonoCut)
     assert cut.start == 1.5
-    assert cut.duration == 8.5
-    assert cut.supervisions[0].id == 'sup1'
+    assert cut.duration == 10.5
+    sup = cut.supervisions[0]
+    assert sup.id == 'sup1'
+    assert sup.start == 0
+    assert sup.duration == 10.5
+
     cut = cuts[1]
-    assert cut.start == 10
-    assert cut.duration == 5
-    assert cut.supervisions[0].id == 'sup2'
-    cut = cuts[2]
-    assert cut.start == 20
-    assert cut.duration == 8
-    assert cut.supervisions[0].id == 'sup3'
-    cut = cuts[3]
+    assert isinstance(cut, MixedCut)
     assert cut.start == 0
-    assert cut.duration == 30
-    assert cut.supervisions[0].id == 'sup4'
+    assert cut.duration == 6
+    sup = cut.supervisions[0]
+    assert sup.id == 'sup2'
+    assert sup.start == 0
+    assert sup.duration == 6
+
+    cut = cuts[2]
+    assert isinstance(cut, MixedCut)
+    assert cut.start == 0
+    assert cut.duration == 18
+    sup = cut.supervisions[0]
+    assert sup.id == 'sup3'
+    assert sup.start == 0
+    assert sup.duration == 18
+
+
+def test_trim_to_supervisions_mixed_cuts_keep_overlapping_true(mixed_overlapping_cut_set):
+    cuts = mixed_overlapping_cut_set.trim_to_supervisions(keep_overlapping=True)
+    assert len(cuts) == 3
+    # After "trimming", in some instances the MixedCut "decayed" into simple, unmixed cuts, as they did not overlap;
+    # In other instances, it's still a MixedCut
+
+    cut = cuts[0]
+    assert isinstance(cut, MonoCut)
+    assert cut.start == 1.5
+    assert cut.duration == 10.5
+    assert len(cut.supervisions) == 2
+    sup = cut.supervisions[0]
+    assert sup.id == 'sup1'
+    assert sup.start == 0
+    assert sup.duration == 10.5
+    sup = cut.supervisions[1]
+    assert sup.id == 'sup2'
+    assert sup.start == 8.5
+    assert sup.duration == 6
+
+    cut = cuts[1]
+    assert isinstance(cut, MixedCut)
+    assert cut.start == 0
+    assert cut.duration == 6
+    assert len(cut.supervisions) == 2
+    sup = cut.supervisions[0]
+    assert sup.id == 'sup1'
+    assert sup.start == -8.5
+    assert sup.duration == 10.5
+    sup = cut.supervisions[1]
+    assert sup.id == 'sup2'
+    assert sup.start == 0
+    assert sup.duration == 6
+
+    cut = cuts[2]
+    assert isinstance(cut, MixedCut)
+    assert cut.start == 0
+    assert cut.duration == 18
+    assert len(cut.supervisions) == 1
+    sup = cut.supervisions[0]
+    assert sup.id == 'sup3'
+    assert sup.start == 0
+    assert sup.duration == 18
 
 
 @pytest.mark.skipif(not is_module_available('pandas'), reason='Requires pandas to be installed.')
@@ -186,13 +295,13 @@ def test_supervision_transform_text(cut_set):
 
 @pytest.fixture
 def cut_with_relative_paths():
-    return Cut('cut', 0, 10, 0,
-               features=Features(type='fbank', num_frames=1000, num_features=40, sampling_rate=8000,
-                                 storage_type='lilcom_files', storage_path='storage_dir', storage_key='feats.llc',
-                                 start=0,
-                                 duration=10, frame_shift=0.01),
-               recording=Recording('rec', [AudioSource('file', [0], 'audio.wav')], 8000, 80000, 10.0)
-               )
+    return MonoCut('cut', 0, 10, 0,
+                   features=Features(type='fbank', num_frames=1000, num_features=40, sampling_rate=8000,
+                                     storage_type='lilcom_files', storage_path='storage_dir', storage_key='feats.llc',
+                                     start=0,
+                                     duration=10, frame_shift=0.01),
+                   recording=Recording('rec', [AudioSource('file', [0], 'audio.wav')], 8000, 80000, 10.0)
+                   )
 
 
 def test_cut_set_prefix(cut_with_relative_paths):
@@ -219,8 +328,8 @@ def test_mix_same_recording_channels():
         AudioSource('file', channels=[1], source='irrelevant2.wav')
     ])
     cut_set = CutSet.from_cuts([
-        Cut('cut1', start=0, duration=30, channel=0, recording=recording),
-        Cut('cut2', start=0, duration=30, channel=1, recording=recording)
+        MonoCut('cut1', start=0, duration=30, channel=0, recording=recording),
+        MonoCut('cut2', start=0, duration=30, channel=1, recording=recording)
     ])
 
     mixed = cut_set.mix_same_recording_channels()

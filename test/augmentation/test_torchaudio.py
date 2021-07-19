@@ -8,7 +8,7 @@ from hypothesis import strategies as st
 torchaudio = pytest.importorskip('torchaudio', minversion='0.6')
 
 from lhotse.augmentation import SoxEffectTransform, pitch, reverb, speed, Speed
-from lhotse import AudioTransform, Cut, Recording, Resample, Seconds
+from lhotse import AudioTransform, MonoCut, Recording, Resample, Seconds
 
 SAMPLING_RATE = 16000
 
@@ -92,5 +92,5 @@ def test_augmentation_chain_randomized(
     audio_aug = recording_aug.load_audio()
     assert audio_aug.shape[1] == recording_aug.num_samples
 
-    cut_aug = Cut(id='dummy', start=0.5125, duration=cut_duration, channel=0, recording=recording_aug)
+    cut_aug = MonoCut(id='dummy', start=0.5125, duration=cut_duration, channel=0, recording=recording_aug)
     assert cut_aug.load_audio().shape[1] == cut_aug.num_samples

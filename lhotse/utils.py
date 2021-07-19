@@ -1,6 +1,7 @@
 import math
 import random
 import uuid
+import logging
 from contextlib import AbstractContextManager, contextmanager
 from dataclasses import asdict, dataclass
 from decimal import Decimal, ROUND_HALF_DOWN, ROUND_HALF_UP
@@ -11,6 +12,7 @@ from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence, Tupl
 import numpy as np
 import torch
 from tqdm.auto import tqdm
+from typing_extensions import Literal
 
 Pathlike = Union[Path, str]
 T = TypeVar('T')
@@ -27,6 +29,72 @@ LOG_EPSILON = math.log(EPSILON)
 # Python's uuid module is not affected by the ``random.seed(value)`` call,
 # so we work around it to provide deterministic ID generation when requested.
 _lhotse_uuid: Optional[Callable] = None
+
+
+class SmartOpen:
+    """Wrapper class around smart_open.open method
+
+    The smart_open.open attributes are cached as classed attributes - they play the role of singleton pattern.
+
+    The SmartOpen.setup method is intended for initial setup.
+    It imports the `open` method from the optional `smart_open` Python package,
+    and sets the parameters which are shared between all calls of the `smart_open.open` method.
+
+    If you do not call the setup method it is called automatically in SmartOpen.open with the provided parameters.
+
+    The example demonstrates that instantiating S3 `session.client` once,
+    instead using the defaults and leaving the smart_open creating it every time
+    has dramatic performance benefits.
+
+    Example::
+
+        >>> import boto3
+        >>> session = boto3.Session()
+        >>> client = session.client('s3')
+        >>> from lhotse.utils import SmartOpen
+        >>>
+        >>> if not slow:
+        >>>     # Reusing a single client speeds up the smart_open.open calls
+        >>>     SmartOpen.setup(transport_params=dict(client=client))
+        >>>
+        >>> # Simulating SmartOpen usage as in Lhotse data structures: AudioSource, Features, etc.
+        >>> for i in range(1000):
+        >>>     SmartOpen.open(s3_url, 'rb') as f:
+        >>>         source = f.read()
+    """
+    transport_params: Optional[Dict] = None
+    compression: Optional[str] = None
+    import_err_msg = ("Please do 'pip install smart_open' - "
+                      "if you are using S3/GCP/Azure/other cloud-specific URIs, do "
+                      "'pip install smart_open[s3]' (or smart_open[gcp], etc.) instead.")
+    smart_open: Optional[Callable] = None
+
+    @classmethod
+    def setup(
+            cls,
+            compression: Optional[str]=None,
+            transport_params: Optional[dict]= None):
+        try:
+            from smart_open import open as sm_open
+        except ImportError:
+            raise ImportError(cls.import_err_msg)
+        if cls.transport_params is not None and cls.transport_params != transport_params:
+            logging.warning(f'SmartOpen.setup second call overwrites existing transport_params with new version'
+                    f'\t\n{cls.transport_params}\t\nvs\t\n{transport_params}')
+        if cls.compression is not None and cls.compression != compression:
+            logging.warning(f'SmartOpen.setup second call overwrites existing compression param with new version'
+                    f'\t\n{cls.compression} vs {compression}')
+        cls.transport_params = transport_params
+        cls.compression = compression
+        cls.smart_open = sm_open
+
+    @classmethod
+    def open(cls, uri, mode='rb', compression=None, transport_params=None, **kwargs):
+        if cls.smart_open is None:
+            cls.setup(compression=compression, transport_params=transport_params)
+        compression = compression if compression else cls.compression
+        transport_params = transport_params if transport_params else cls.transport_params
+        return cls.smart_open(uri, mode=mode, compression=compression, transport_params=transport_params, **kwargs)
 
 
 def fix_random_seed(random_seed: int):
@@ -70,8 +138,6 @@ def asdict_nonull(dclass) -> Dict[str, Any]:
         return d
 
     return asdict(dclass, dict_factory=non_null_dict_factory)
-
-
 
 
 class SetContainingAnything:
@@ -309,6 +375,42 @@ def compute_num_samples(duration: Seconds, sampling_rate: int, rounding=ROUND_HA
             round(duration * sampling_rate, ndigits=8)
         ).quantize(0, rounding=rounding)
     )
+
+
+def compute_start_duration_for_extended_cut(
+        start: Seconds,
+        duration: Seconds,
+        new_duration: Seconds,
+        direction: Literal['center', 'left', 'right', 'random'] = 'center',
+) -> Tuple[Seconds, Seconds]:
+    """
+    Compute the new value of "start" for a time interval characterized by ``start`` and ``duration``
+    that is being extended to ``new_duration`` towards ``direction``.
+    :return: a new value of ``start`` and ``new_duration`` -- adjusted for possible negative start.
+    """
+
+    if new_duration <= duration:
+        # New duration is shorter; do nothing.
+        return start, duration
+
+    if direction == 'center':
+        new_start = start - (new_duration - duration) / 2
+    elif direction == 'left':
+        new_start = start - (new_duration - duration)
+    elif direction == 'right':
+        new_start = start
+    elif direction == 'random':
+        new_start = random.uniform(start - (new_duration - duration), start)
+    else:
+        raise ValueError(f"Unexpected direction: {direction}")
+
+    if new_start < 0:
+        # We exceeded the start of the recording.
+        # We'll decrease the new_duration by the negative offset.
+        new_duration = round(new_duration + new_start, ndigits=15)
+        new_start = 0
+
+    return round(new_start, ndigits=15), new_duration
 
 
 def index_by_id_and_check(manifests: Iterable[T]) -> Dict[str, T]:

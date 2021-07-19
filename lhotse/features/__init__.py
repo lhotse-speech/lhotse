@@ -10,6 +10,8 @@ from .fbank import (
     FbankConfig
 )
 from .io import (
+    ChunkedLilcomHdf5Reader,
+    ChunkedLilcomHdf5Writer,
     FeaturesReader,
     FeaturesWriter,
     KaldiReader,

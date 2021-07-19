@@ -9,8 +9,8 @@ from lhotse.utils import Pathlike, Seconds, TimeSpan, asdict_nonull, compute_num
     fastcopy, ifnone, index_by_id_and_check, overspans, perturb_num_samples, split_sequence
 
 
-@dataclass(frozen=True, unsafe_hash=True)
-class AlignmentItem():
+@dataclass
+class AlignmentItem:
     """
     This class contains an alignment item, for example a word, along with its
     start time (w.r.t. the start of recording) and duration. It can potentially
@@ -59,10 +59,87 @@ class AlignmentItem():
         Perform specified transformation on the alignment content.
         """
         return AlignmentItem(transform_fn(self.symbol), self.start, self.duration)
-    
 
-@dataclass(frozen=True, unsafe_hash=True)
+
+@dataclass
 class SupervisionSegment:
+    """
+    :class:`~lhotse.supervsion.SupervisionSegment` represents a time interval (segment) annotated with some
+    supervision labels and/or metadata, such as the transcription, the speaker identity, the language, etc.
+
+    Each supervision has unique ``id`` and always refers to a specific recording (via ``recording_id``)
+    and a specific ``channel`` (by default, 0).
+    It's also characterized by the start time (relative to the beginning of a :class:`~lhotse.audio.Recording`
+    or a :class:`~lhotse.cut.Cut`) and a duration, both expressed in seconds.
+
+    The remaining fields are all optional, and their availability depends on specific corpora.
+    Since it is difficult to predict all possible types of metadata, the ``custom`` field (a dict) can be used to
+    insert types of supervisions that are not supported out of the box.
+
+    :class:`~lhotse.supervsion.SupervisionSegment` may contain multiple types of alignments.
+    The ``alignment`` field is a dict, indexed by alignment's type (e.g., ``word`` or ``phone``),
+    and contains a list of :class:`~lhotse.supervision.AlignmentItem` objects -- simple structures
+    that contain a given symbol and its time interval.
+    Alignments can be read from CTM files or created programatically.
+
+    Examples
+
+        A simple segment with no supervision information::
+
+            >>> from lhotse import SupervisionSegment
+            >>> sup0 = SupervisionSegment(
+            ...     id='rec00001-sup00000', recording_id='rec00001',
+            ...     start=0.5, duration=5.0, channel=0
+            ... )
+
+        Typical supervision containing transcript, speaker ID, gender, and language::
+
+            >>> sup1 = SupervisionSegment(
+            ...     id='rec00001-sup00001', recording_id='rec00001',
+            ...     start=5.5, duration=3.0, channel=0,
+            ...     text='transcript of the second segment',
+            ...     speaker='Norman Dyhrentfurth', language='English', gender='M'
+            ... )
+
+        Two supervisions denoting overlapping speech on two separate channels in a microphone array/multiple headsets
+        (pay attention to ``start``, ``duration``, and ``channel``)::
+
+            >>> sup2 = SupervisionSegment(
+            ...     id='rec00001-sup00002', recording_id='rec00001',
+            ...     start=15.0, duration=5.0, channel=0,
+            ...     text="i have incredibly good news for you",
+            ...     speaker='Norman Dyhrentfurth', language='English', gender='M'
+            ... )
+            >>> sup3 = SupervisionSegment(
+            ...     id='rec00001-sup00003', recording_id='rec00001',
+            ...     start=18.0, duration=3.0, channel=1,
+            ...     text="say what",
+            ...     speaker='Hervey Arman', language='English', gender='M'
+            ... )
+
+        A supervision with a phone alignment::
+
+            >>> from lhotse.supervision import AlignmentItem
+            >>> sup4 = SupervisionSegment(
+            ...     id='rec00001-sup00004', recording_id='rec00001',
+            ...     start=33.0, duration=1.0, channel=0,
+            ...     text="ice",
+            ...     speaker='Maryla Zechariah', language='English', gender='F'
+            ...     alignment={
+            ...         'phone': [
+            ...             AlignmentItem(symbol='AY0', start=33.0, duration=0.6),
+            ...             AlignmentItem(symbol='S', start=33.6, duration=0.4)
+            ...         ]
+            ...     }
+            ... )
+
+        Converting :class:`~lhotse.supervsion.SupervisionSegment` to a ``dict``::
+
+            >>> sup0.to_dict()
+            {'id': 'rec00001-sup00000', 'recording_id': 'rec00001', 'start': 0.5, 'duration': 5.0, 'channel': 0}
+
+
+    """
     id: str
     recording_id: str
     start: Seconds
@@ -81,17 +158,25 @@ class SupervisionSegment:
 
     def with_offset(self, offset: Seconds) -> 'SupervisionSegment':
         """Return an identical ``SupervisionSegment``, but with the ``offset`` added to the ``start`` field."""
-        return fastcopy(
-            self, 
+        return SupervisionSegment(
+            id=self.id,
+            recording_id=self.recording_id,
             start=round(self.start + offset, ndigits=8),
+            duration=self.duration,
+            channel=self.channel,
+            text=self.text,
+            language=self.language,
+            speaker=self.speaker,
+            gender=self.gender,
+            custom=self.custom,
             alignment={
-                type:[
+                type: [
                     item.with_offset(offset=offset)
                     for item in ali
                 ]
                 for type, ali in self.alignment.items()
             } if self.alignment else None
-        ) 
+        )
 
     def perturb_speed(
             self,
@@ -219,12 +304,47 @@ class SupervisionSegment:
 
 class SupervisionSet(Serializable, Sequence[SupervisionSegment]):
     """
-    SupervisionSet represents a collection of segments containing some supervision information.
-    The only required fields are the ID of the segment, ID of the corresponding recording,
-    and the start and duration of the segment in seconds.
-    All other fields, such as text, language or speaker, are deliberately optional
-    to support a wide range of tasks, as well as adding more supervision types in the future,
-    while retaining backwards compatibility.
+    :class:`~lhotse.supervision.SupervisionSet` represents a collection of segments containing some
+    supervision information (see :class:`~lhotse.supervision.SupervisionSegment`),
+    that are indexed by segment IDs.
+
+    It acts as a Python ``dict``, extended with an efficient ``find`` operation that indexes and caches
+    the supervision segments in an interval tree.
+    It allows to quickly find supervision segments that correspond to a specific time interval.
+
+    When coming from Kaldi, think of :class:`~lhotse.supervision.SupervisionSet` as a ``segments`` file on steroids,
+    that may also contain *text*, *utt2spk*, *utt2gender*, *utt2dur*, etc.
+
+    Examples
+
+        Building a :class:`~lhotse.supervision.SupervisionSet`::
+
+            >>> from lhotse import SupervisionSet, SupervisionSegment
+            >>> sups = SupervisionSet.from_segments([SupervisionSegment(...), ...])
+
+        Writing/reading a :class:`~lhotse.supervision.SupervisionSet`::
+
+            >>> sups.to_file('supervisions.jsonl.gz')
+            >>> sups2 = SupervisionSet.from_file('supervisions.jsonl.gz')
+
+        Using :class:`~lhotse.supervision.SupervisionSet` like a dict::
+
+            >>> 'rec00001-sup00000' in sups
+            True
+            >>> sups['rec00001-sup00000']
+            SupervisionSegment(id='rec00001-sup00000', recording_id='rec00001', start=0.5, ...)
+            >>> for segment in sups:
+            ...     pass
+
+        Searching by ``recording_id`` and time interval::
+
+            >>> matched_segments = sups.find(recording_id='rec00001', start_after=17.0, end_before=25.0)
+
+        Manipulation::
+
+            >>> longer_than_5s = sups.filter(lambda s: s.duration > 5)
+            >>> first_100 = sups.subset(first=100)
+            >>> split_into_4 = sups.split(num_splits=4)
     """
 
     def __init__(self, segments: Mapping[str, SupervisionSegment]) -> None:
@@ -248,8 +368,13 @@ class SupervisionSet(Serializable, Sequence[SupervisionSegment]):
     @staticmethod
     def from_dicts(data: Iterable[Dict]) -> 'SupervisionSet':
         return SupervisionSet.from_segments(SupervisionSegment.from_dict(s) for s in data)
-    
-    def with_alignment_from_ctm(self, ctm_file: Pathlike, type: str = 'word', match_channel: bool = False) -> 'SupervisionSet':
+
+    def with_alignment_from_ctm(
+            self,
+            ctm_file: Pathlike,
+            type: str = 'word',
+            match_channel: bool = False
+    ) -> 'SupervisionSet':
         """
         Add alignments from CTM file to the supervision set.
         

@@ -2,7 +2,7 @@ from math import isclose
 
 import pytest
 
-from lhotse.cut import Cut, MixTrack, MixedCut
+from lhotse.cut import MixTrack, MixedCut, MonoCut
 from lhotse.features import Features
 from lhotse.supervision import SupervisionSegment
 from lhotse.testing.dummies import dummy_cut
@@ -10,7 +10,7 @@ from lhotse.testing.dummies import dummy_cut
 
 @pytest.fixture
 def overlapping_supervisions_cut():
-    return Cut(
+    return MonoCut(
         id='cut-1',
         start=0.0,
         duration=0.5,
@@ -126,7 +126,7 @@ def test_truncate_mixed_cut_with_small_offset(simple_mixed_cut):
 
 def test_truncate_mixed_cut_with_offset_exceeding_first_track(simple_mixed_cut):
     truncated_cut = simple_mixed_cut.truncate(offset=11.0)
-    assert isinstance(truncated_cut, Cut)
+    assert isinstance(truncated_cut, MonoCut)
     assert truncated_cut.start == 6.0
     assert truncated_cut.duration == 4.0
     assert truncated_cut.end == 10.0
@@ -152,7 +152,7 @@ def test_truncate_mixed_cut_decreased_duration(simple_mixed_cut):
 
 def test_truncate_mixed_cut_decreased_duration_removing_last_cut(simple_mixed_cut):
     truncated_cut = simple_mixed_cut.truncate(duration=4.0)
-    assert isinstance(truncated_cut, Cut)
+    assert isinstance(truncated_cut, MonoCut)
     assert truncated_cut.start == 0.0
     assert truncated_cut.duration == 4.0
     assert truncated_cut.end == 4.0
@@ -212,8 +212,9 @@ def test_truncate_cut_set_offset_random(cut_set):
     assert len(set(cut.end for cut in truncated_cut_set)) > 1
 
 
-def test_cut_set_windows_even_split_keep_supervisions(cut_set):
-    windows_cut_set = cut_set.cut_into_windows(duration=5.0)
+@pytest.mark.parametrize('num_jobs', [1, 2])
+def test_cut_set_windows_even_split_keep_supervisions(cut_set, num_jobs):
+    windows_cut_set = cut_set.cut_into_windows(duration=5.0, num_jobs=num_jobs)
     assert len(windows_cut_set) == 4
     assert all(cut.duration == 5.0 for cut in windows_cut_set)
 

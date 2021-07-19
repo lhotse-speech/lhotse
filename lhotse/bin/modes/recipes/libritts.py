@@ -1,6 +1,6 @@
 import click
 
-from lhotse.bin.modes import obtain, prepare
+from lhotse.bin.modes import download, prepare
 from lhotse.recipes import download_libritts, prepare_libritts
 from lhotse.utils import Pathlike
 
@@ -21,7 +21,7 @@ def libritts(
     prepare_libritts(corpus_dir, output_dir=output_dir, num_jobs=num_jobs)
 
 
-@obtain.command(context_settings=dict(show_default=True))
+@download.command(context_settings=dict(show_default=True))
 @click.argument('target_dir', type=click.Path())
 def libritts(
         target_dir: Pathlike,

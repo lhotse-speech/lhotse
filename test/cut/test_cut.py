@@ -1,9 +1,10 @@
-import pytest
 from tempfile import NamedTemporaryFile
+
 import numpy as np
+import pytest
 
 from lhotse.audio import AudioSource, Recording, RecordingSet
-from lhotse.cut import Cut, CutSet
+from lhotse.cut import CutSet, MonoCut
 from lhotse.features import FeatureSet, Features
 from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.testing.dummies import dummy_cut, dummy_supervision
@@ -30,7 +31,7 @@ def supervision_set():
 
 
 @pytest.fixture
-def libri_cut(libri_cut_set) -> Cut:
+def libri_cut(libri_cut_set) -> MonoCut:
     return libri_cut_set['e3e70682-c209-4cac-629f-6fbed82c07cd']
 
 
