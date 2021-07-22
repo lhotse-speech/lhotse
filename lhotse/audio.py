@@ -1,5 +1,5 @@
 import logging
-import subprocess
+import random
 import warnings
 from concurrent.futures import ProcessPoolExecutor
 from contextlib import contextmanager
@@ -452,6 +452,7 @@ class RecordingSet(Serializable, Sequence[Recording]):
             >>> longer_than_5s = recs.filter(lambda r: r.duration > 5)
             >>> first_100 = recs.subset(first=100)
             >>> split_into_4 = recs.split(num_splits=4)
+            >>> shuffled = recs.shuffle()
 
         And lazy data augmentation/transformation, that requires to adjust some information
         in the manifest (e.g., ``num_samples`` or ``duration``).
@@ -475,6 +476,10 @@ class RecordingSet(Serializable, Sequence[Recording]):
         """
         from lhotse.serialization import LazyDict
         return isinstance(self.recordings, LazyDict)
+
+    @property
+    def ids(self) -> Iterable[str]:
+        return self.recordings.keys()
 
     @staticmethod
     def from_recordings(recordings: Iterable[Recording]) -> 'RecordingSet':
@@ -542,6 +547,19 @@ class RecordingSet(Serializable, Sequence[Recording]):
         :return: a filtered RecordingSet.
         """
         return RecordingSet.from_recordings(rec for rec in self if predicate(rec))
+
+    def shuffle(self, rng: Optional[random.Random] = None) -> 'RecordingSet':
+        """
+        Shuffle the recording IDs in the current :class:`.RecordingSet` and return a shuffled copy of self.
+
+        :param rng: an optional instance of ``random.Random`` for precise control of randomness.
+        :return: a shuffled copy of self.
+        """
+        if rng is None:
+            rng = random
+        ids = list(self.ids)
+        rng.shuffle(ids)
+        return RecordingSet(recordings={rid: self[rid] for rid in ids})
 
     def split(self, num_splits: int, shuffle: bool = False, drop_last: bool = False) -> List['RecordingSet']:
         """
@@ -1032,7 +1050,7 @@ def read_opus(
         sampling_rate = force_opus_sampling_rate
     cmd += ' -f f32le pipe:1'
     # Actual audio reading.
-    proc = subprocess.run(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    proc = run(cmd, shell=True, stdout=PIPE, stderr=PIPE)
     raw_audio = proc.stdout
     audio = np.frombuffer(raw_audio, dtype=np.float32)
     # Determine if the recording is mono or stereo and decode accordingly.

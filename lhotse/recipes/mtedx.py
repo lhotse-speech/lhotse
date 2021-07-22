@@ -22,24 +22,21 @@ This recipe only prepares the ASR portion of the data.
 """
 import logging
 import re
-from functools import partial
+import tarfile
+import unicodedata
 from collections import defaultdict
-from typing import Dict, Iterable, List, Optional, Union, Sequence
-from pathlib import Path
 from concurrent.futures.thread import ThreadPoolExecutor
+from functools import partial
+from pathlib import Path
+from typing import Dict, Optional, Sequence, Union
+
 from tqdm.auto import tqdm
 
-from cytoolz import sliding_window
-
-import tarfile
-import shutil
 from lhotse import Recording, RecordingSet, SupervisionSegment, SupervisionSet, validate_recordings_and_supervisions
 from lhotse.qa import remove_missing_recordings_and_supervisions, trim_supervisions_to_recordings
-from lhotse.utils import Pathlike, urlretrieve_progress, is_module_available
-import unicodedata
+from lhotse.utils import Pathlike, is_module_available, urlretrieve_progress
 
-
-# Keep Markings such as vowel signs, all letters, and decimal numbers 
+# Keep Markings such as vowel signs, all letters, and decimal numbers
 VALID_CATEGORIES = ('Mc', 'Mn', 'Ll', 'Lm', 'Lo', 'Lt', 'Lu', 'Nd', 'Zs')
 KEEP_LIST = [u'\u2019']
 
@@ -87,18 +84,18 @@ def download_mtedx(
 
     for lang in tqdm(langs_list, 'Downloading MTEDx languages'):
         tar_path = target_dir / f'{lang}-{lang}.tgz'
+        completed_detector = target_dir / f'.{lang}.completed'
+        if completed_detector.is_file():
+            logging.info(f'Skipping {lang} because {completed_detector} exists.')
+            continue
         urlretrieve_progress(
             f'http://www.openslr.org/resources/100/mtedx_{lang}.tgz',
             filename=tar_path,
             desc=f'Downloading MTEDx {lang}',
         )
-        corpus_dir = target_dir / f'{lang}-{lang}.tgz'
-        completed_detector = target_dir / f'.{lang}.completed'
-        if not completed_detector.is_file():
-            shutil.rmtree(corpus_dir, ignore_errors=True)
-            with tarfile.open(tar_path) as tar:
-                tar.extractall(path=target_dir)
-                completed_detector.touch()
+        with tarfile.open(tar_path) as tar:
+            tar.extractall(path=target_dir)
+        completed_detector.touch()
 
 
 ###############################################################################

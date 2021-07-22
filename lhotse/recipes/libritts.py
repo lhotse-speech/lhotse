@@ -50,15 +50,17 @@ def download_libritts(
         url = f'{base_url}/60'
         tar_name = f'{part}.tar.gz'
         tar_path = target_dir / tar_name
-        if force_download or not tar_path.is_file():
-            urlretrieve_progress(f'{url}/{tar_name}', filename=tar_path, desc=f'Downloading {tar_name}')
         part_dir = target_dir / f'LibriTTS/{part}'
         completed_detector = part_dir / '.completed'
-        if not completed_detector.is_file():
-            shutil.rmtree(part_dir, ignore_errors=True)
-            with tarfile.open(tar_path) as tar:
-                tar.extractall(path=target_dir)
-                completed_detector.touch()
+        if completed_detector.is_file():
+            logging.info(f'Skipping {part} because {completed_detector} exists.')
+            continue
+        if force_download or not tar_path.is_file():
+            urlretrieve_progress(f'{url}/{tar_name}', filename=tar_path, desc=f'Downloading {tar_name}')
+        shutil.rmtree(part_dir, ignore_errors=True)
+        with tarfile.open(tar_path) as tar:
+            tar.extractall(path=target_dir)
+        completed_detector.touch()
 
 
 def prepare_libritts(

@@ -41,6 +41,7 @@ François Hernandez, Vincent Nguyen, Sahar Ghannay, Natalia Tomashenko, and Yann
 A preprint version is available on arxiv (and in the doc/ directory):
 https://arxiv.org/abs/1805.04699
 """
+import logging
 import shutil
 import tarfile
 from pathlib import Path
@@ -50,26 +51,28 @@ from lhotse import Recording, RecordingSet, SupervisionSegment, SupervisionSet, 
 from lhotse.utils import Pathlike, urlretrieve_progress
 
 
-def download_and_untar(
+def download_tedlium(
         target_dir: Pathlike = '.',
         force_download: Optional[bool] = False
 ) -> None:
     target_dir = Path(target_dir)
     target_dir.mkdir(parents=True, exist_ok=True)
     tar_path = target_dir / 'TEDLIUM_release-3.tgz'
+    corpus_dir = target_dir / 'TEDLIUM_release-3'
+    completed_detector = corpus_dir / '.completed'
+    if completed_detector.is_file():
+        logging.info(f'Skipping {tar_path.name} because {completed_detector} exists.')
+        return
     if force_download or not tar_path.is_file():
         urlretrieve_progress(
             'http://www.openslr.org/resources/51/TEDLIUM_release-3.tgz',
             filename=tar_path,
             desc='Downloading TEDLIUM v3'
         )
-    corpus_dir = target_dir / 'TEDLIUM_release-3.tgz'
-    completed_detector = corpus_dir / '.completed'
-    if not completed_detector.is_file():
-        shutil.rmtree(corpus_dir, ignore_errors=True)
-        with tarfile.open(tar_path) as tar:
-            tar.extractall(path=target_dir)
-            completed_detector.touch()
+    shutil.rmtree(corpus_dir, ignore_errors=True)
+    with tarfile.open(tar_path) as tar:
+        tar.extractall(path=target_dir)
+    completed_detector.touch()
 
 
 def prepare_tedlium(

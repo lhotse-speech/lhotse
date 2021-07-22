@@ -1,7 +1,7 @@
 import click
 
 from lhotse.bin.modes import download, prepare
-from lhotse.recipes.aishell import download_and_untar, prepare_aishell
+from lhotse.recipes.aishell import download_aishell, prepare_aishell
 from lhotse.utils import Pathlike
 
 __all__ = ['aishell']
@@ -24,4 +24,4 @@ def aishell(
         target_dir: Pathlike
 ):
     """Aishell download."""
-    download_and_untar(target_dir)
+    download_aishell(target_dir)

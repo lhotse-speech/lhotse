@@ -1,4 +1,5 @@
 import logging
+import random
 from collections import defaultdict
 from dataclasses import dataclass
 from itertools import groupby, islice
@@ -345,6 +346,7 @@ class SupervisionSet(Serializable, Sequence[SupervisionSegment]):
             >>> longer_than_5s = sups.filter(lambda s: s.duration > 5)
             >>> first_100 = sups.subset(first=100)
             >>> split_into_4 = sups.split(num_splits=4)
+            >>> shuffled = sups.shuffle()
     """
 
     def __init__(self, segments: Mapping[str, SupervisionSegment]) -> None:
@@ -360,6 +362,10 @@ class SupervisionSet(Serializable, Sequence[SupervisionSegment]):
         """
         from lhotse.serialization import LazyDict
         return isinstance(self.segments, LazyDict)
+
+    @property
+    def ids(self) -> Iterable[str]:
+        return self.segments.keys()
 
     @staticmethod
     def from_segments(segments: Iterable[SupervisionSegment]) -> 'SupervisionSet':
@@ -423,6 +429,19 @@ class SupervisionSet(Serializable, Sequence[SupervisionSegment]):
                 
     def to_dicts(self) -> Iterable[dict]:
         return (s.to_dict() for s in self)
+
+    def shuffle(self, rng: Optional[random.Random] = None) -> 'SupervisionSet':
+        """
+        Shuffle the supervision IDs in the current :class:`.SupervisionSet` and return a shuffled copy of self.
+
+        :param rng: an optional instance of ``random.Random`` for precise control of randomness.
+        :return: a shuffled copy of self.
+        """
+        if rng is None:
+            rng = random
+        ids = list(self.ids)
+        rng.shuffle(ids)
+        return SupervisionSet(segments={sid: self[sid] for sid in ids})
 
     def split(self, num_splits: int, shuffle: bool = False, drop_last: bool = False) -> List['SupervisionSet']:
         """
