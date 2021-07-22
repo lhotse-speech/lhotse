@@ -1040,15 +1040,21 @@ def read_opus(
     :return: a tuple of audio samples and the sampling rate.
     """
     # Construct the ffmpeg command depending on the arguments passed.
-    cmd = f'ffmpeg -i {path}'
+    cmd = f'ffmpeg'
     sampling_rate = 48000
+    # Note: we have to add offset and duration options (-ss and -t) BEFORE specifying the input
+    #       (-i), otherwise ffmpeg will decode everything and trim afterwards...
     if offset > 0:
         cmd += f' -ss {offset}'
     if duration is not None:
         cmd += f' -t {duration}'
+    # Add the input specifier after offset and duration.
+    cmd += f' -i {path}'
+    # Optionally resample the output.
     if force_opus_sampling_rate is not None:
         cmd += f' -ar {force_opus_sampling_rate}'
         sampling_rate = force_opus_sampling_rate
+    # Read audio samples directly as float32.
     cmd += ' -f f32le pipe:1'
     # Actual audio reading.
     proc = run(cmd, shell=True, stdout=PIPE, stderr=PIPE)

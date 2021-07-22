@@ -380,4 +380,4 @@ def test_opus_stereo_recording_from_file_force_sampling_rate_read_chunk():
     num_channels, num_samples = samples.shape
     assert num_channels == recording.num_channels
     assert num_samples == 2000
-    np.testing.assert_equal(samples, all_samples[:, 4000:6000])
+    np.testing.assert_almost_equal(samples, all_samples[:, 4000:6000], decimal=5)
