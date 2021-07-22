@@ -1,5 +1,6 @@
 import logging
-from typing import Callable, Dict, List, Tuple, Optional
+from concurrent.futures import Executor
+from typing import Callable, Dict, List, Optional, Tuple
 
 import torch
 
@@ -15,10 +16,18 @@ class InputStrategy:
     These representations can be e.g. audio samples or features.
     They might also be single or multi channel.
 
-    This is a base class that only defines the interface.
+    All InputStrategies support the ``executor`` parameter in the constructor.
+    It allows to pass a ``ThreadPoolExecutor`` or a ``ProcessPoolExecutor``
+    to parallelize reading audio/features from wherever they are stored.
+    Note that this approach is incompatible with specifying the ``num_workers``
+    to ``torch.utils.data.DataLoader``, but in some instances may be faster.
+
+    .. note:: This is a base class that only defines the interface.
 
     .. automethod:: __call__
     """
+    def __init__(self, executor: Optional[Executor] = None) -> None:
+        self.executor = executor
 
     def __call__(self, cuts: CutSet) -> Tuple[torch.Tensor, torch.IntTensor]:
         """Returns a tensor with collated input signals, and a tensor of length of each signal before padding."""
@@ -84,7 +93,7 @@ class PrecomputedFeatures(InputStrategy):
         The returned shape is ``(B, T, F) => (batch_size, num_frames, num_features)``.
 
         :return: a tensor with collated features, and a tensor of ``num_frames`` of each cut before padding."""
-        return collate_features(cuts)
+        return collate_features(cuts, executor=self.executor)
 
     def supervision_intervals(self, cuts: CutSet) -> Dict[str, torch.Tensor]:
         """
@@ -132,7 +141,6 @@ class AudioSamples(InputStrategy):
 
     .. automethod:: __call__
     """
-
     def __call__(self, cuts: CutSet) -> Tuple[torch.Tensor, torch.IntTensor]:
         """
         Reads the audio samples from recordings on disk/other storage.
@@ -140,7 +148,7 @@ class AudioSamples(InputStrategy):
 
         :return: a tensor with collated audio samples, and a tensor of ``num_samples`` of each cut before padding.
         """
-        return collate_audio(cuts)
+        return collate_audio(cuts, executor=self.executor)
 
     def supervision_intervals(self, cuts: CutSet) -> Dict[str, torch.Tensor]:
         """
@@ -199,7 +207,8 @@ class OnTheFlyFeatures(InputStrategy):
     def __init__(
             self,
             extractor: FeatureExtractor,
-            wave_transforms: List[Callable[[torch.Tensor], torch.Tensor]] = None
+            wave_transforms: List[Callable[[torch.Tensor], torch.Tensor]] = None,
+            executor: Optional[Executor] = None,
     ) -> None:
         """
         OnTheFlyFeatures' constructor.
@@ -208,6 +217,7 @@ class OnTheFlyFeatures(InputStrategy):
         :param wave_transforms: an optional list of transforms applied on the batch of audio
             waveforms collated into a single tensor, right before the feature extraction.
         """
+        super().__init__(executor=executor)
         self.extractor = extractor
         self.wave_transforms = ifnone(wave_transforms, [])
 
@@ -219,7 +229,7 @@ class OnTheFlyFeatures(InputStrategy):
 
         :return: a tensor with collated features, and a tensor of ``num_frames`` of each cut before padding.
         """
-        audio, _ = collate_audio(cuts)
+        audio, _ = collate_audio(cuts, executor=self.executor)
 
         for tfnm in self.wave_transforms:
             audio = tfnm(audio)
