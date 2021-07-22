@@ -1,5 +1,6 @@
 import logging
 import random
+import re
 import warnings
 from concurrent.futures import ProcessPoolExecutor
 from contextlib import contextmanager
@@ -1055,9 +1056,13 @@ def read_opus(
     audio = np.frombuffer(raw_audio, dtype=np.float32)
     # Determine if the recording is mono or stereo and decode accordingly.
     try:
+        # ffmpeg will output line such as the following, amongst others:
+        # "Stream #0:0: Audio: pcm_f32le, 16000 Hz, mono, flt, 512 kb/s"
+        # but sometimes it can be "Stream #0:0(eng):", which we handle with regexp
+        pattern = re.compile(r"Stream #0:0.*: Audio: pcm_f32le")
         stderr_metadata = [
             l for l in proc.stderr.decode().splitlines()
-            if "Stream #0:0: Audio: pcm_f32le" in l
+            if pattern.search(l) is not None
         ][0]
     except IndexError:
         raise ValueError(f"Could not determine the number of channels for OPUS file "
