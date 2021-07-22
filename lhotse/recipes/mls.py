@@ -8,7 +8,7 @@ It is available at OpenSLR: http://openslr.org/94
 import logging
 from collections import defaultdict
 from pathlib import Path
-from typing import Dict, Optional
+from typing import Dict
 
 from tqdm.auto import tqdm
 
@@ -91,7 +91,8 @@ def prepare_mls(
             recordings = RecordingSet.from_dir(
                 path=split_dir,
                 pattern='*.opus' if opus else '*.flac',
-                num_jobs=num_jobs
+                num_jobs=num_jobs,
+                force_opus_sampling_rate=16000,
             )
 
             # Create supervisions manifest.
