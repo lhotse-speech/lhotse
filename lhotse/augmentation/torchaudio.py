@@ -170,6 +170,7 @@ class Speed(AudioTransform):
     factor: float
 
     def __call__(self, samples: np.ndarray, sampling_rate: int) -> np.ndarray:
+        sampling_rate = int(sampling_rate)  # paranoia mode
         effect = [['speed', str(self.factor)], ['rate', str(sampling_rate)]]
         if isinstance(samples, np.ndarray):
             samples = torch.from_numpy(samples)
@@ -202,6 +203,11 @@ class Resample(AudioTransform):
     """
     source_sampling_rate: int
     target_sampling_rate: int
+
+    def __post_init__(self):
+        # paranoia mode
+        self.source_sampling_rate = int(self.source_sampling_rate)
+        self.target_sampling_rate = int(self.source_sampling_rate)
 
     def __call__(self, samples: np.ndarray, *args, **kwargs) -> np.ndarray:
         effect = [['rate', str(self.target_sampling_rate)]]
