@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any, Dict, Generator, Iterable, Optional, Type, Union
 
 import numpy as np
+import pyarrow.ipc
 import yaml
 
 from lhotse.utils import Pathlike, ifnone, is_module_available

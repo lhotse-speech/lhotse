@@ -1,3 +1,5 @@
+import random
+
 import pytest
 from pytest import mark
 
@@ -108,3 +110,12 @@ def test_subset_raises(manifest_type, first, last):
     any_set = DummyManifest(manifest_type, begin_id=0, end_id=200)
     with pytest.raises(AssertionError):
         subset = any_set.subset(first=first, last=last)
+
+
+@mark.parametrize('manifest_type', [RecordingSet, SupervisionSet, CutSet])
+@mark.parametrize('rng', [None, random.Random(1337)])
+def test_shuffle(manifest_type, rng):
+    any_set = DummyManifest(manifest_type, begin_id=0, end_id=200)
+    shuffled = any_set.shuffle(rng=rng)
+    assert list(any_set.ids) != list(shuffled.ids)
+    assert set(any_set.ids) == set(shuffled.ids)

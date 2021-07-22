@@ -2010,6 +2010,19 @@ class CutSet(Serializable, Sequence[Cut]):
         with pd.option_context('precision', 1):
             print(durations.describe().drop('count'))
 
+    def shuffle(self, rng: Optional[random.Random] = None) -> 'CutSet':
+        """
+        Shuffle the cut IDs in the current :class:`.CutSet` and return a shuffled copy of self.
+
+        :param rng: an optional instance of ``random.Random`` for precise control of randomness.
+        :return: a shuffled copy of self.
+        """
+        if rng is None:
+            rng = random
+        ids = list(self.ids)
+        rng.shuffle(ids)
+        return CutSet(cuts={cid: self[cid] for cid in ids})
+
     def split(self, num_splits: int, shuffle: bool = False, drop_last: bool = False) -> List['CutSet']:
         """
         Split the :class:`~lhotse.CutSet` into ``num_splits`` pieces of equal size.

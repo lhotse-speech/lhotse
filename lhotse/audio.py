@@ -1,4 +1,5 @@
 import logging
+import random
 import warnings
 from concurrent.futures import ProcessPoolExecutor
 from contextlib import contextmanager
@@ -457,6 +458,10 @@ class RecordingSet(Serializable, Sequence[Recording]):
         from lhotse.serialization import LazyDict
         return isinstance(self.recordings, LazyDict)
 
+    @property
+    def ids(self) -> Iterable[str]:
+        return self.recordings.keys()
+
     @staticmethod
     def from_recordings(recordings: Iterable[Recording]) -> 'RecordingSet':
         return RecordingSet(recordings=index_by_id_and_check(recordings))
@@ -501,6 +506,19 @@ class RecordingSet(Serializable, Sequence[Recording]):
         :return: a filtered RecordingSet.
         """
         return RecordingSet.from_recordings(rec for rec in self if predicate(rec))
+
+    def shuffle(self, rng: Optional[random.Random] = None) -> 'RecordingSet':
+        """
+        Shuffle the recording IDs in the current :class:`.RecordingSet` and return a shuffled copy of self.
+
+        :param rng: an optional instance of ``random.Random`` for precise control of randomness.
+        :return: a shuffled copy of self.
+        """
+        if rng is None:
+            rng = random
+        ids = list(self.ids)
+        rng.shuffle(ids)
+        return RecordingSet(recordings={rid: self[rid] for rid in ids})
 
     def split(self, num_splits: int, shuffle: bool = False, drop_last: bool = False) -> List['RecordingSet']:
         """
