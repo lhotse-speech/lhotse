@@ -1,4 +1,5 @@
 import logging
+import random
 import warnings
 from concurrent.futures import ProcessPoolExecutor
 from contextlib import contextmanager
@@ -17,10 +18,9 @@ from tqdm.auto import tqdm
 
 from lhotse.augmentation import AudioTransform, Resample, Speed
 from lhotse.serialization import Serializable, extension_contains
-from lhotse.utils import (Decibels, NonPositiveEnergyError, Pathlike, Seconds, SetContainingAnything, asdict_nonull,
-                          compute_num_samples,
-                          exactly_one_not_null, fastcopy, SmartOpen,
-                          ifnone, index_by_id_and_check, perturb_num_samples, split_sequence)
+from lhotse.utils import (Decibels, NonPositiveEnergyError, Pathlike, Seconds, SetContainingAnything, SmartOpen,
+                          asdict_nonull, compute_num_samples, exactly_one_not_null, fastcopy, ifnone,
+                          index_by_id_and_check, perturb_num_samples, split_sequence)
 
 Channels = Union[int, List[int]]
 
@@ -433,6 +433,7 @@ class RecordingSet(Serializable, Sequence[Recording]):
             >>> longer_than_5s = recs.filter(lambda r: r.duration > 5)
             >>> first_100 = recs.subset(first=100)
             >>> split_into_4 = recs.split(num_splits=4)
+            >>> shuffled = recs.shuffle()
 
         And lazy data augmentation/transformation, that requires to adjust some information
         in the manifest (e.g., ``num_samples`` or ``duration``).
@@ -456,6 +457,10 @@ class RecordingSet(Serializable, Sequence[Recording]):
         """
         from lhotse.serialization import LazyDict
         return isinstance(self.recordings, LazyDict)
+
+    @property
+    def ids(self) -> Iterable[str]:
+        return self.recordings.keys()
 
     @staticmethod
     def from_recordings(recordings: Iterable[Recording]) -> 'RecordingSet':
@@ -501,6 +506,19 @@ class RecordingSet(Serializable, Sequence[Recording]):
         :return: a filtered RecordingSet.
         """
         return RecordingSet.from_recordings(rec for rec in self if predicate(rec))
+
+    def shuffle(self, rng: Optional[random.Random] = None) -> 'RecordingSet':
+        """
+        Shuffle the recording IDs in the current :class:`.RecordingSet` and return a shuffled copy of self.
+
+        :param rng: an optional instance of ``random.Random`` for precise control of randomness.
+        :return: a shuffled copy of self.
+        """
+        if rng is None:
+            rng = random
+        ids = list(self.ids)
+        rng.shuffle(ids)
+        return RecordingSet(recordings={rid: self[rid] for rid in ids})
 
     def split(self, num_splits: int, shuffle: bool = False, drop_last: bool = False) -> List['RecordingSet']:
         """
