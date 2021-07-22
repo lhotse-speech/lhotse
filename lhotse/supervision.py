@@ -346,6 +346,7 @@ class SupervisionSet(Serializable, Sequence[SupervisionSegment]):
             >>> longer_than_5s = sups.filter(lambda s: s.duration > 5)
             >>> first_100 = sups.subset(first=100)
             >>> split_into_4 = sups.split(num_splits=4)
+            >>> shuffled = sups.shuffle()
     """
 
     def __init__(self, segments: Mapping[str, SupervisionSegment]) -> None:

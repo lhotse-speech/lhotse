@@ -1802,6 +1802,7 @@ class CutSet(Serializable, Sequence[Cut]):
         >>> longer_than_5s = cuts.filter(lambda c: c.duration > 5)
         >>> first_100 = cuts.subset(first=100)
         >>> split_into_4 = cuts.split(num_splits=4)
+        >>> shuffled = cuts.shuffle()
         >>> random_sample = cuts.sample(n_cuts=10)
         >>> new_ids = cuts.modify_ids(lambda c: c.id + '-newid')
 
