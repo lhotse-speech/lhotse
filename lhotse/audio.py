@@ -1061,23 +1061,38 @@ def read_opus(
     raw_audio = proc.stdout
     audio = np.frombuffer(raw_audio, dtype=np.float32)
     # Determine if the recording is mono or stereo and decode accordingly.
-    try:
-        # ffmpeg will output line such as the following, amongst others:
-        # "Stream #0:0: Audio: pcm_f32le, 16000 Hz, mono, flt, 512 kb/s"
-        # but sometimes it can be "Stream #0:0(eng):", which we handle with regexp
-        pattern = re.compile(r"Stream #0:0.*: Audio: pcm_f32le")
-        stderr_metadata = [
-            l for l in proc.stderr.decode().splitlines()
-            if pattern.search(l) is not None
-        ][0]
-    except IndexError:
-        raise ValueError(f"Could not determine the number of channels for OPUS file "
-                         f"from the following ffmpeg output:\n{proc.stderr.decode()}")
-    if 'stereo' in stderr_metadata:
+    channel_string = parse_channel_from_ffmpeg_output(proc.stderr)
+    if channel_string == 'stereo':
         new_audio = np.empty((2, audio.shape[0] // 2), dtype=np.float32)
         new_audio[0, :] = audio[::2]
         new_audio[1, :] = audio[1::2]
         audio = new_audio
-    else:
+    elif channel_string == 'mono':
         audio = audio.reshape(1, -1)
+    else:
+        raise NotImplementedError(f'Unknown channel description from ffmpeg: {channel_string}')
     return audio, sampling_rate
+
+
+def parse_channel_from_ffmpeg_output(ffmpeg_stderr: bytes) -> str:
+    # ffmpeg will output line such as the following, amongst others:
+    # "Stream #0:0: Audio: pcm_f32le, 16000 Hz, mono, flt, 512 kb/s"
+    # but sometimes it can be "Stream #0:0(eng):", which we handle with regexp
+    pattern = re.compile(r"^\s*Stream #0:0.*: Audio: pcm_f32le.+(mono|stereo).+\s*$")
+    for line in ffmpeg_stderr.splitlines():
+        try:
+            line = line.decode()
+        except UnicodeDecodeError:
+            # Why can we get UnicodeDecoderError from ffmpeg output?
+            # Because some files may contain the metadata, including a short description of the recording,
+            # which may be encoded in arbitrarily encoding different than ASCII/UTF-8, such as latin-1,
+            # and Python will not automatically recognize that.
+            # We simply ignore these lines as they won't have any relevant information for us.
+            continue
+        match = pattern.match(line)
+        if match is not None:
+            return match.group(1)
+    raise ValueError(
+        f"Could not determine the number of channels for OPUS file from the following ffmpeg output "
+        f"(shown as bytestring due to avoid possible encoding issues):\n{str(ffmpeg_stderr)}"
+    )
