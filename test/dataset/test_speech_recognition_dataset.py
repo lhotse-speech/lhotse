@@ -1,5 +1,3 @@
-from concurrent.futures import ProcessPoolExecutor
-
 import pytest
 import torch
 from torch import tensor
@@ -235,12 +233,12 @@ def test_k2_speech_recognition_audio_inputs(k2_cut_set):
         (1, pytest.raises(Exception)),
     ]
 )
-def test_k2_speech_recognition_audio_inputs_with_executor(
+def test_k2_speech_recognition_audio_inputs_with_workers_in_input_strategy(
     k2_cut_set, num_dataloader_workers, exception_expectation
 ):
     on_the_fly_dataset = K2SpeechRecognitionDataset(
         k2_cut_set,
-        input_strategy=AudioSamples(executor=ProcessPoolExecutor(2)),
+        input_strategy=AudioSamples(num_workers=2),
     )
     # all cuts in one batch
     sampler = SingleCutSampler(k2_cut_set, shuffle=False, max_duration=100000.0)

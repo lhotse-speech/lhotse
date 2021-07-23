@@ -1,5 +1,6 @@
 import logging
-from concurrent.futures import Executor
+from concurrent.futures import ProcessPoolExecutor
+from functools import lru_cache
 from typing import Callable, Dict, List, Optional, Tuple
 
 import torch
@@ -26,8 +27,8 @@ class InputStrategy:
 
     .. automethod:: __call__
     """
-    def __init__(self, executor: Optional[Executor] = None) -> None:
-        self.executor = executor
+    def __init__(self, num_workers: int = 0) -> None:
+        self.num_workers = num_workers
 
     def __call__(self, cuts: CutSet) -> Tuple[torch.Tensor, torch.IntTensor]:
         """Returns a tensor with collated input signals, and a tensor of length of each signal before padding."""
@@ -93,7 +94,7 @@ class PrecomputedFeatures(InputStrategy):
         The returned shape is ``(B, T, F) => (batch_size, num_frames, num_features)``.
 
         :return: a tensor with collated features, and a tensor of ``num_frames`` of each cut before padding."""
-        return collate_features(cuts, executor=self.executor)
+        return collate_features(cuts, executor=_get_executor(self.num_workers))
 
     def supervision_intervals(self, cuts: CutSet) -> Dict[str, torch.Tensor]:
         """
@@ -148,7 +149,7 @@ class AudioSamples(InputStrategy):
 
         :return: a tensor with collated audio samples, and a tensor of ``num_samples`` of each cut before padding.
         """
-        return collate_audio(cuts, executor=self.executor)
+        return collate_audio(cuts, executor=_get_executor(self.num_workers))
 
     def supervision_intervals(self, cuts: CutSet) -> Dict[str, torch.Tensor]:
         """
@@ -208,7 +209,7 @@ class OnTheFlyFeatures(InputStrategy):
             self,
             extractor: FeatureExtractor,
             wave_transforms: List[Callable[[torch.Tensor], torch.Tensor]] = None,
-            executor: Optional[Executor] = None,
+            num_workers: int = 0,
     ) -> None:
         """
         OnTheFlyFeatures' constructor.
@@ -217,7 +218,7 @@ class OnTheFlyFeatures(InputStrategy):
         :param wave_transforms: an optional list of transforms applied on the batch of audio
             waveforms collated into a single tensor, right before the feature extraction.
         """
-        super().__init__(executor=executor)
+        super().__init__(num_workers=num_workers)
         self.extractor = extractor
         self.wave_transforms = ifnone(wave_transforms, [])
 
@@ -229,7 +230,7 @@ class OnTheFlyFeatures(InputStrategy):
 
         :return: a tensor with collated features, and a tensor of ``num_frames`` of each cut before padding.
         """
-        audio, _ = collate_audio(cuts, executor=self.executor)
+        audio, _ = collate_audio(cuts, executor=_get_executor(self.num_workers))
 
         for tfnm in self.wave_transforms:
             audio = tfnm(audio)
@@ -298,3 +299,19 @@ class OnTheFlyFeatures(InputStrategy):
                 ) for cut in cuts
             ]
         )
+
+
+@lru_cache(maxsize=1)
+def _get_executor(max_workers: int = 0) -> Optional[ProcessPoolExecutor]:
+    """
+    This function caches a process pool in the global state of a given process.
+    It's useful for keeping a process pool alive across different invocations within the
+    same process for efficiency.
+    We intend it to be used for efficient data reads withing a task executed in a
+    parent process pool.
+    """
+    if max_workers <= 0:
+        return None
+    return ProcessPoolExecutor(max_workers=max_workers)
+
+
