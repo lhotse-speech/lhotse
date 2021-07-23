@@ -1,11 +1,12 @@
-from typing import Iterable, List, Tuple, Union
+from concurrent.futures import Executor
+from typing import Iterable, List, Optional, Tuple, Union
 
 import numpy as np
 import torch
 from torch.nn import CrossEntropyLoss
 
 from lhotse import CutSet
-from lhotse.cut import MixedCut
+from lhotse.cut import Cut, MixedCut
 
 
 class TokenCollater:
@@ -101,7 +102,8 @@ class TokenCollater:
 
 def collate_features(
         cuts: CutSet,
-        pad_direction: str = 'right'
+        pad_direction: str = 'right',
+        executor: Optional[Executor] = None,
 ) -> Tuple[torch.Tensor, torch.IntTensor]:
     """
     Load features for all the cuts and return them as a batch in a torch tensor.
@@ -110,6 +112,8 @@ def collate_features(
 
     :param cuts: a :class:`CutSet` used to load the features.
     :param pad_direction: where to apply the padding (``right``, ``left``, or ``both``).
+    :param executor: an instance of ThreadPoolExecutor or ProcessPoolExecutor; when provided,
+        we will use it to read the features concurrently.
     :return: a tuple of tensors ``(features, features_lens)``.
     """
     assert all(cut.has_features for cut in cuts)
@@ -117,14 +121,19 @@ def collate_features(
     cuts = maybe_pad(cuts, num_frames=max(features_lens).item(), direction=pad_direction)
     first_cut = next(iter(cuts))
     features = torch.empty(len(cuts), first_cut.num_frames, first_cut.num_features)
-    for idx, cut in enumerate(cuts):
-        features[idx] = torch.from_numpy(cut.load_features())
+    if executor is None:
+        for idx, cut in enumerate(cuts):
+            features[idx] = _read_features(cut)
+    else:
+        for idx, example_features in enumerate(executor.map(_read_features, cuts)):
+            features[idx] = example_features
     return features, features_lens
 
 
 def collate_audio(
         cuts: CutSet,
-        pad_direction: str = 'right'
+        pad_direction: str = 'right',
+        executor: Optional[Executor] = None,
 ) -> Tuple[torch.Tensor, torch.IntTensor]:
     """
     Load audio samples for all the cuts and return them as a batch in a torch tensor.
@@ -133,6 +142,8 @@ def collate_audio(
 
     :param cuts: a :class:`CutSet` used to load the audio samples.
     :param pad_direction: where to apply the padding (``right``, ``left``, or ``both``).
+    :param executor: an instance of ThreadPoolExecutor or ProcessPoolExecutor; when provided,
+        we will use it to read audio concurrently.
     :return: a tuple of tensors ``(audio, audio_lens)``.
     """
     assert all(cut.has_recording for cut in cuts)
@@ -140,8 +151,12 @@ def collate_audio(
     cuts = maybe_pad(cuts, num_samples=max(audio_lens).item(), direction=pad_direction)
     first_cut = next(iter(cuts))
     audio = torch.empty(len(cuts), first_cut.num_samples)
-    for idx, cut in enumerate(cuts):
-        audio[idx] = torch.from_numpy(cut.load_audio()[0])
+    if executor is None:
+        for idx, cut in enumerate(cuts):
+            audio[idx] = _read_audio(cut)
+    else:
+        for idx, example_audio in enumerate(executor.map(_read_audio, cuts)):
+            audio[idx] = example_audio
     return audio, audio_lens
 
 
@@ -254,3 +269,16 @@ def maybe_pad(
         num_samples=num_samples,
         direction=direction
     )
+
+
+"""
+Helper functions to dispatch jobs to the concurrent executors.
+"""
+
+
+def _read_audio(cut: Cut) -> torch.Tensor:
+    return torch.from_numpy(cut.load_audio()[0])
+
+
+def _read_features(cut: Cut) -> torch.Tensor:
+    return torch.from_numpy(cut.load_features())

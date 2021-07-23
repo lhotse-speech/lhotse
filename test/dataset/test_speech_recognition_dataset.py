@@ -223,3 +223,28 @@ def test_k2_speech_recognition_audio_inputs(k2_cut_set):
     assert batch['supervisions']['text'] == ['EXAMPLE OF TEXT'] * 5  # a list, not tensor
     assert (batch['supervisions']['start_sample'] == tensor([0, 160000, 0, 0, 0])).all()
     assert (batch['supervisions']['num_samples'] == tensor([160000] * 5)).all()
+
+
+def test_k2_speech_recognition_audio_inputs_with_workers_in_input_strategy(
+    k2_cut_set
+):
+    on_the_fly_dataset = K2SpeechRecognitionDataset(
+        k2_cut_set,
+        input_strategy=AudioSamples(num_workers=2),
+    )
+    # all cuts in one batch
+    sampler = SingleCutSampler(k2_cut_set, shuffle=False, max_duration=100000.0)
+    dloader = DataLoader(
+        on_the_fly_dataset,
+        batch_size=None,
+        sampler=sampler,
+        num_workers=0,  # has to be 0 because DataLoader workers can't spawn subprocesses
+    )
+    batch = next(iter(dloader))
+    assert batch['inputs'].shape == (4, 320000)
+    # Each list has 5 items, to account for:
+    # one cut with two supervisions + 3 three cuts with one supervision
+    assert (batch['supervisions']['sequence_idx'] == tensor([0, 0, 1, 2, 3])).all()
+    assert batch['supervisions']['text'] == ['EXAMPLE OF TEXT'] * 5  # a list, not tensor
+    assert (batch['supervisions']['start_sample'] == tensor([0, 160000, 0, 0, 0])).all()
+    assert (batch['supervisions']['num_samples'] == tensor([160000] * 5)).all()

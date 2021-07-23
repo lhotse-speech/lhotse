@@ -5,7 +5,7 @@ from torch.utils.data.dataloader import DataLoader, default_collate
 
 from lhotse import validate
 from lhotse.cut import CutSet
-from lhotse.dataset.input_strategies import InputStrategy, PrecomputedFeatures
+from lhotse.dataset.input_strategies import BatchIO, PrecomputedFeatures
 from lhotse.utils import ifnone
 
 
@@ -63,7 +63,7 @@ class K2SpeechRecognitionDataset(torch.utils.data.Dataset):
             return_cuts: bool = False,
             cut_transforms: List[Callable[[CutSet], CutSet]] = None,
             input_transforms: List[Callable[[torch.Tensor], torch.Tensor]] = None,
-            input_strategy: InputStrategy = PrecomputedFeatures(),
+            input_strategy: BatchIO = PrecomputedFeatures(),
             check_inputs: bool = True
     ):
         """
