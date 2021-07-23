@@ -5,7 +5,7 @@ class LhotseDataLoader:
     def __init__(self, dataset, sampler, num_workers: int = 1, prefetch_factor: int = 2) -> None:
         self.dataset = dataset
         self.sampler = sampler
-        self.pool = ProcessPoolExecutor(num_workers)
+        self.pool = ProcessPoolExecutor(num_workers, initializer=_init_worker, initargs=(dataset,))
         self.num_workers = num_workers
         self.prefetch_factor = prefetch_factor
         self._iter = None
@@ -21,7 +21,7 @@ class LhotseDataLoader:
         if self._iter is not None:
             try:
                 self._futures.append(
-                    self.pool.submit(self.dataset.__getitem__, next(self._iter))
+                    self.pool.submit(_get_item, next(self._iter))
                 )
             except StopIteration:
                 self._iter = None
@@ -34,3 +34,15 @@ class LhotseDataLoader:
     def __next__(self):
         self._schedule_one()
         return self._retrieve_one()
+
+
+def _init_worker(dataset):
+    global _GLOBAL_DATASET_CACHE
+    _GLOBAL_DATASET_CACHE = dataset
+
+
+def _get_item(arg):
+    return _GLOBAL_DATASET_CACHE[arg]
+
+
+_GLOBAL_DATASET_CACHE = None
