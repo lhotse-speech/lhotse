@@ -1,4 +1,7 @@
+import platform
+
 import pytest
+from packaging.version import parse as _version
 
 from lhotse.cut import CutSet
 from lhotse.dataset import SingleCutSampler, UnsupervisedDataset
@@ -19,6 +22,10 @@ def dataset(cuts):
     return UnsupervisedDataset(cuts)
 
 
+@pytest.mark.skipif(
+    _version(platform.python_version()) < _version("3.7"),
+    reason="LhotseDataLoader requires Python 3.7+",
+)
 def test_lhotse_dataloader_runs(cuts, dataset):
     sampler = SingleCutSampler(cuts, max_cuts=2)
     dloader = LhotseDataLoader(dataset, sampler, num_workers=2)
