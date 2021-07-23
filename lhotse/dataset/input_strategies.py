@@ -11,7 +11,7 @@ from lhotse.dataset.collation import collate_audio, collate_features, collate_ve
 from lhotse.utils import compute_num_frames, ifnone, supervision_to_frames, supervision_to_samples
 
 
-class InputStrategy:
+class BatchIO:
     """
     Converts a :class:`CutSet` into a collated batch of audio representations.
     These representations can be e.g. audio samples or features.
@@ -78,7 +78,7 @@ class InputStrategy:
         raise NotImplementedError()
 
 
-class PrecomputedFeatures(InputStrategy):
+class PrecomputedFeatures(BatchIO):
     """
     :class:`InputStrategy` that reads pre-computed features, whose manifests
     are attached to cuts, from disk.
@@ -133,7 +133,7 @@ class PrecomputedFeatures(InputStrategy):
         return collate_vectors([cut.supervisions_feature_mask(use_alignment_if_exists=use_alignment_if_exists) for cut in cuts])
 
 
-class AudioSamples(InputStrategy):
+class AudioSamples(BatchIO):
     """
     :class:`InputStrategy` that reads single-channel recordings, whose manifests
     are attached to cuts, from disk (or other audio source).
@@ -189,7 +189,7 @@ class AudioSamples(InputStrategy):
         return collate_vectors([cut.supervisions_audio_mask(use_alignment_if_exists=use_alignment_if_exists) for cut in cuts])
 
 
-class OnTheFlyFeatures(InputStrategy):
+class OnTheFlyFeatures(BatchIO):
     """
     :class:`InputStrategy` that reads single-channel recordings, whose manifests
     are attached to cuts, from disk (or other audio source).

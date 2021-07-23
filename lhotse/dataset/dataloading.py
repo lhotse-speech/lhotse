@@ -14,6 +14,13 @@ class LhotseDataLoader:
     :class:`.LhotseDataLoader` allows to launch subprocesses inside of its workers.
     This is useful for working with dataset classes which perform dynamic batching
     and need to perform concurrent I/O to read all the necessary data from disk/network.
+
+    .. note:: :class:`.LhotseDataLoader` does not support ``num_workers=0``.
+
+    .. warning:: :class:`.LhotseDataLoader` is experimental and not guaranteed to work
+        correctly across all possible edge cases related to subprocess worker termination.
+        If you experience stability problems, contact us or use a standard ``DataLoader``
+        instead.
     """
     def __init__(
         self,
