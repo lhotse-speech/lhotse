@@ -606,7 +606,7 @@ def test_zip_sampler():
         SingleCutSampler(cuts1, max_duration=10),
         SingleCutSampler(cuts2, max_duration=2)
     )
-    batches = list(sampler)
+    batches = [b for b in sampler]
     assert len(batches) == 10
     for idx, batch in enumerate(batches):
         assert len(batch) == 12  # twelve 1s items

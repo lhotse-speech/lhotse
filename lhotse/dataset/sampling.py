@@ -650,7 +650,7 @@ class ZipSampler(CutSampler):
 
         >>> sampler = ZipSampler(
         ...     SingleCutSampler(cuts_corpusA, max_duration=250, shuffle=True),
-        ...     SingleCutSampler(cuts_corpusB, max_duration=100, shuffle=True)
+        ...     SingleCutSampler(cuts_corpusB, max_duration=100, shuffle=True),
         ... )
         >>> for cut_ids in sampler:
         ...     pass  # profit
