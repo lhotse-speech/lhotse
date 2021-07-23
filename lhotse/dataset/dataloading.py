@@ -90,4 +90,4 @@ def _get_item(cut_ids: List[str]) -> Dict[str, Any]:
     return _GLOBAL_DATASET_CACHE[cut_ids]
 
 
-_GLOBAL_DATASET_CACHE: torch.utils.data.Dataset = None
+_GLOBAL_DATASET_CACHE = None
