@@ -12,7 +12,8 @@ from lhotse.utils import Seconds, compute_num_samples, during_docs_build, pertur
 
 if not during_docs_build() and _version(torchaudio.__version__) < _version('0.7'):
     warnings.warn('Torchaudio SoX effects chains are only introduced in version 0.7 - '
-                  'please upgrade your PyTorch to 1.7+ and torchaudio to 0.7+ to use them.')
+                  'please upgrade your PyTorch to 1.7.1 and torchaudio to 0.7.2 (or higher) '
+                  'to use them.')
 
 
 @dataclass

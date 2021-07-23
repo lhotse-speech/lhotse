@@ -49,11 +49,11 @@ A typical Lhotse's dataset API usage might look like this:
     for batch in dloader:
         ...  # process data
 
-Pre-computed vs. on-the-fly: input strategies
----------------------------------------------
+Batch I/O: pre-computed vs. on-the-fly features
+-----------------------------------------------
 
 Depending on the experimental setup and infrastructure, it might be more convenient to either pre-compute and store features like filter-bank energies for later use (as traditionally done in Kaldi/ESPnet/Espresso toolkits), or compute them dynamically during training ("on-the-fly").
-Lhotse supports both modes of computation by introducing a class called :class:`~lhotse.dataset.input_strategies.InputStrategy`.
+Lhotse supports both modes of computation by introducing a class called :class:`~lhotse.dataset.input_strategies.BatchIO`.
 It is accepted as an argument in most dataset classes, and defaults to :class:`~lhotse.dataset.input_strategies.PrecomputedFeatures`.
 Other available choices are :class:`~lhotse.dataset.input_strategies.AudioSamples` for working with waveforms directly,
 and :class:`~lhotse.dataset.input_strategies.OnTheFlyFeatures`, which wraps a :class:`~lhotse.features.base.FeatureExtractor` and applies it to a batch of recordings. These strategies automatically pad and collate the inputs, and provide information about the original signal lengths: as a number of frames/samples, binary mask, or start-end frame/sample pairs.
@@ -122,3 +122,8 @@ Collation utilities for building custom Datasets
 ------------------------------------------------
 
 .. automodule:: lhotse.dataset.collation
+
+Experimental: LhotseDataLoader
+------------------------------
+
+.. autoclass:: lhotse.dataset.dataloading.LhotseDataLoader

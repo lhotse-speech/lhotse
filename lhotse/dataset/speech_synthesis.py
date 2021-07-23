@@ -5,7 +5,7 @@ import torch
 from lhotse import validate
 from lhotse.cut import CutSet
 from lhotse.dataset.collation import TokenCollater, collate_audio
-from lhotse.dataset.input_strategies import InputStrategy, PrecomputedFeatures
+from lhotse.dataset.input_strategies import BatchIO, PrecomputedFeatures
 from lhotse.utils import ifnone
 
 
@@ -30,7 +30,7 @@ class SpeechSynthesisDataset(torch.utils.data.Dataset):
             self,
             cuts: CutSet,
             cut_transforms: List[Callable[[CutSet], CutSet]] = None,
-            feature_input_strategy: InputStrategy = PrecomputedFeatures(),
+            feature_input_strategy: BatchIO = PrecomputedFeatures(),
             feature_transforms: Union[Sequence[Callable], Callable] = None,
             add_eos: bool = True,
             add_bos: bool = True,
