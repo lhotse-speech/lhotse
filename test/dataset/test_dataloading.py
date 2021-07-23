@@ -8,8 +8,9 @@ from lhotse.dataset.dataloading import LhotseDataLoader
 @pytest.fixture
 def cuts():
     cuts = CutSet.from_file("test/fixtures/libri/cuts.json")
+    # Concatenate 100 cut sets together, starting with an empty CutSet()
     return sum(
-        (cuts.modify_ids(lambda cid: cid + str(i)) for i in range(100)), start=CutSet()
+        (cuts.modify_ids(lambda cid: cid + str(i)) for i in range(100)), CutSet()
     )
 
 
