@@ -272,7 +272,10 @@ class SingleCutSampler(CutSampler):
             max_samples: int = None,
             max_duration: Seconds = None,
             max_cuts: Optional[int] = None,
-            **kwargs
+            shuffle: bool = False,
+            world_size: Optional[int] = None,
+            rank: Optional[int] = None,
+            seed: int = 0,
     ):
         """
         SingleCutSampler's constructor.
@@ -283,9 +286,22 @@ class SingleCutSampler(CutSampler):
         :param max_duration: The maximum total recording duration from ``cuts``.
         :param max_cuts: The maximum number of cuts sampled to form a mini-batch.
             By default, this constraint is off.
-        :param kwargs: Arguments to be passed into ``CutSampler``.
+        :param shuffle: When ``True``, the cuts will be shuffled at the start of iteration.
+            Convenient when mini-batch loop is inside an outer epoch-level loop, e.g.:
+            `for epoch in range(10): for batch in dataset: ...` as every epoch will see a
+            different cuts order.
+        :param world_size: Total number of distributed nodes. We will try to infer it by default.
+        :param rank: Index of distributed node. We will try to infer it by default.
+        :param seed: Random seed used to consistently shuffle the dataset across different processes.
         """
-        super().__init__(cuts.ids, provide_len=not cuts.is_lazy, **kwargs)
+        super().__init__(
+            cuts.ids,
+            provide_len=not cuts.is_lazy,
+            shuffle=shuffle,
+            world_size=world_size,
+            rank=rank,
+            seed=seed,
+        )
         self.cuts = cuts
         self.time_constraint = TimeConstraint(
             max_duration=max_duration,
@@ -368,7 +384,10 @@ class CutPairsSampler(CutSampler):
             max_target_samples: int = None,
             max_target_duration: int = None,
             max_cuts: Optional[int] = None,
-            **kwargs
+            shuffle: bool = False,
+            world_size: Optional[int] = None,
+            rank: Optional[int] = None,
+            seed: int = 0,
     ):
         """
         CutPairsSampler's constructor.
@@ -383,11 +402,21 @@ class CutPairsSampler(CutSampler):
         :param max_target_duration: The maximum total recording duration from ``target_cuts``.
         :param max_cuts: The maximum number of cuts sampled to form a mini-batch.
             By default, this constraint is off.
+        :param shuffle: When ``True``, the cuts will be shuffled at the start of iteration.
+            Convenient when mini-batch loop is inside an outer epoch-level loop, e.g.:
+            `for epoch in range(10): for batch in dataset: ...` as every epoch will see a
+            different cuts order.
+        :param world_size: Total number of distributed nodes. We will try to infer it by default.
+        :param rank: Index of distributed node. We will try to infer it by default.
+        :param seed: Random seed used to consistently shuffle the dataset across different processes.
         """
         super().__init__(
             source_cuts.ids,
             provide_len=not source_cuts.is_lazy and not target_cuts.is_lazy,
-            **kwargs
+            shuffle=shuffle,
+            world_size=world_size,
+            rank=rank,
+            seed=seed,
         )
         self.source_cuts = source_cuts
         self.target_cuts = target_cuts
