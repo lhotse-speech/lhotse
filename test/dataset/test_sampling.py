@@ -6,7 +6,7 @@ import pytest
 
 from lhotse import CutSet
 from lhotse.dataset.cut_transforms import concat_cuts
-from lhotse.dataset.sampling import BucketingSampler, CutPairsSampler, SingleCutSampler
+from lhotse.dataset.sampling import BucketingSampler, CutPairsSampler, SingleCutSampler, ZipSampler
 from lhotse.testing.dummies import DummyManifest, dummy_cut
 from lhotse.utils import is_module_available, nullcontext as does_not_raise
 
@@ -596,3 +596,19 @@ def test_cut_pairs_sampler_filter():
     assert len(sampler_cut_ids) == len(cut_set) - 1
     # Invariant 2: the items are not duplicated
     assert len(set(sampler_cut_ids)) == len(sampler_cut_ids)
+
+
+def test_zip_sampler():
+    cuts1 = DummyManifest(CutSet, begin_id=0, end_id=100)
+    cuts2 = DummyManifest(CutSet, begin_id=1000, end_id=1100)
+    sampler = ZipSampler(
+        # Note: each cut is 1s duration in this test.
+        SingleCutSampler(cuts1, max_duration=10),
+        SingleCutSampler(cuts2, max_duration=2)
+    )
+    batches = list(sampler)
+    assert len(batches) == 10
+    for idx, batch in enumerate(batches):
+        assert len(batch) == 12  # twelve 1s items
+        assert len([cid for cid in batch if 0 <= int(cid.split('-')[-1]) <= 100]) == 10  # ten come from cuts1
+        assert len([cid for cid in batch if 1000 <= int(cid.split('-')[-1]) <= 1100]) == 2  # two come from cuts2
