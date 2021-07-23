@@ -1,5 +1,7 @@
+import platform
 from collections import deque
 from concurrent.futures import ProcessPoolExecutor
+from multiprocessing import get_context
 from typing import Any, Dict, List
 
 import torch.utils.data
@@ -21,7 +23,10 @@ class LhotseDataLoader:
         correctly across all possible edge cases related to subprocess worker termination.
         If you experience stability problems, contact us or use a standard ``DataLoader``
         instead.
+
+    .. warning:: :class:`.LhotseDataLoader` requires Python >= 3.7.
     """
+
     def __init__(
         self,
         dataset: torch.utils.data.Dataset,
@@ -29,6 +34,10 @@ class LhotseDataLoader:
         num_workers: int = 1,
         prefetch_factor: int = 2,
     ) -> None:
+        from packaging.version import parse as _version
+
+        if _version(platform.python_version()) < _version("3.7"):
+            raise RuntimeError("LhotseDataLoader requires Python version at least 3.7")
         assert num_workers >= 1
         assert prefetch_factor >= 1
         self.dataset = dataset
@@ -43,10 +52,13 @@ class LhotseDataLoader:
         # for subsequent tasks sent to the worker. This helps avoid excessive
         # communication between the processes.
         self.pool = ProcessPoolExecutor(
-            num_workers, initializer=_init_worker, initargs=(dataset,)
+            num_workers,
+            initializer=_init_worker,
+            initargs=(dataset,),
+            mp_context=get_context("spawn"),
         )
 
-    def __iter__(self) -> 'LhotseDataLoader':
+    def __iter__(self) -> "LhotseDataLoader":
         """Prepares the sampler for iteration and schedules initial tasks to the workers."""
         self._iter = iter(self.sampler)
         for _ in range(self.prefetch_factor * self.num_workers):
