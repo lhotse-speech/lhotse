@@ -429,7 +429,21 @@ class LazyJsonlIterator:
         return self
 
     def __next__(self):
-        return next(self._file)
+        data = next(self._file)
+        item = deserialize_item(data)
+        return item
+
+    def values(self):
+        yield from self
+
+    def keys(self):
+        return (item.id for item in self)
+
+    def items(self):
+        return (item.id, item for item in self)
+
+    def __len__(self) -> int:
+        return count_newlines_fast(self.path)
 
 
 class LazyDict:
@@ -626,3 +640,23 @@ class NumpyEncoder(json.JSONEncoder):
             return obj.tolist()
         else:
             return super().default(obj)
+
+
+def count_newlines_fast(path: Pathlike):
+    """
+    Counts newlines in a file using buffered chunk reads.
+    The fastest possible option in Python according to:
+    https://stackoverflow.com/a/68385697/5285891
+    (This is a slightly modified variant of that answer.)
+    """
+    def _make_gen(reader):
+        b = reader(2 ** 16)
+        while b:
+            yield b
+            b = reader(2 ** 16)
+
+    path = Path(path)
+    opener = gzip.open if str(path).endswith('.gz') else open
+    with opener(path, "rb") as f:
+        count = sum(buf.count(b"\n") for buf in _make_gen(f.read))
+    return count
