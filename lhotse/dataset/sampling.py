@@ -272,7 +272,10 @@ class SingleCutSampler(CutSampler):
             max_samples: int = None,
             max_duration: Seconds = None,
             max_cuts: Optional[int] = None,
-            **kwargs
+            shuffle: bool = False,
+            world_size: Optional[int] = None,
+            rank: Optional[int] = None,
+            seed: int = 0,
     ):
         """
         SingleCutSampler's constructor.
@@ -283,9 +286,22 @@ class SingleCutSampler(CutSampler):
         :param max_duration: The maximum total recording duration from ``cuts``.
         :param max_cuts: The maximum number of cuts sampled to form a mini-batch.
             By default, this constraint is off.
-        :param kwargs: Arguments to be passed into ``CutSampler``.
+        :param shuffle: When ``True``, the cuts will be shuffled at the start of iteration.
+            Convenient when mini-batch loop is inside an outer epoch-level loop, e.g.:
+            `for epoch in range(10): for batch in dataset: ...` as every epoch will see a
+            different cuts order.
+        :param world_size: Total number of distributed nodes. We will try to infer it by default.
+        :param rank: Index of distributed node. We will try to infer it by default.
+        :param seed: Random seed used to consistently shuffle the dataset across different processes.
         """
-        super().__init__(cuts.ids, provide_len=not cuts.is_lazy, **kwargs)
+        super().__init__(
+            cuts.ids,
+            provide_len=not cuts.is_lazy,
+            shuffle=shuffle,
+            world_size=world_size,
+            rank=rank,
+            seed=seed,
+        )
         self.cuts = cuts
         self.time_constraint = TimeConstraint(
             max_duration=max_duration,
@@ -368,7 +384,10 @@ class CutPairsSampler(CutSampler):
             max_target_samples: int = None,
             max_target_duration: int = None,
             max_cuts: Optional[int] = None,
-            **kwargs
+            shuffle: bool = False,
+            world_size: Optional[int] = None,
+            rank: Optional[int] = None,
+            seed: int = 0,
     ):
         """
         CutPairsSampler's constructor.
@@ -383,11 +402,21 @@ class CutPairsSampler(CutSampler):
         :param max_target_duration: The maximum total recording duration from ``target_cuts``.
         :param max_cuts: The maximum number of cuts sampled to form a mini-batch.
             By default, this constraint is off.
+        :param shuffle: When ``True``, the cuts will be shuffled at the start of iteration.
+            Convenient when mini-batch loop is inside an outer epoch-level loop, e.g.:
+            `for epoch in range(10): for batch in dataset: ...` as every epoch will see a
+            different cuts order.
+        :param world_size: Total number of distributed nodes. We will try to infer it by default.
+        :param rank: Index of distributed node. We will try to infer it by default.
+        :param seed: Random seed used to consistently shuffle the dataset across different processes.
         """
         super().__init__(
             source_cuts.ids,
             provide_len=not source_cuts.is_lazy and not target_cuts.is_lazy,
-            **kwargs
+            shuffle=shuffle,
+            world_size=world_size,
+            rank=rank,
+            seed=seed,
         )
         self.source_cuts = source_cuts
         self.target_cuts = target_cuts
@@ -604,3 +633,75 @@ class BucketingSampler(CutSampler):
             enumerate(zip(self.bucket_samplers, self.depleted))
             if not depleted
         ]
+
+
+class ZipSampler(CutSampler):
+    """
+    :class:`.ZipSampler` takes several samplers as input and concatenates their
+    sampled batch cut IDs together into a single list.
+    It is helpful for ensuring that each batch consists of some proportion of cuts
+    coming from different sources.
+
+    The input samplers do not have to provide the same number of batches -- when
+    any of the samplers becomes depleted, the iteration will stop (like with
+    Python's ``zip()`` function).
+
+    Example::
+
+        >>> sampler = ZipSampler(
+        ...     SingleCutSampler(cuts_corpusA, max_duration=250, shuffle=True),
+        ...     SingleCutSampler(cuts_corpusB, max_duration=100, shuffle=True),
+        ... )
+        >>> for cut_ids in sampler:
+        ...     pass  # profit
+    """
+    def __init__(self, *samplers: CutSampler) -> None:
+        super().__init__([])  # dummy initialization, might need to refactor.
+        self.samplers = samplers
+
+    def __iter__(self):
+        for sampler in self.samplers:
+            iter(sampler)
+        return self
+
+    def _next_batch(self) -> List[str]:
+        batches = []
+        for sampler in self.samplers:
+            batches.append(next(sampler))
+        return [item for batch in batches for item in batch]
+
+    def set_epoch(self, epoch: int) -> None:
+        """
+        Sets the epoch for this sampler. When :attr:`shuffle=True`, this ensures all replicas
+        use a different random ordering for each epoch. Otherwise, the next iteration of this
+        sampler will yield the same ordering.
+
+        :param epoch: Epoch number.
+        """
+        for s in self.samplers:
+            s.set_epoch(epoch)
+        super().set_epoch(epoch)
+
+    def filter(self, predicate: Callable[[Cut], bool]) -> None:
+        """
+        Add a constraint on invidual cuts that has to be satisfied to consider them.
+
+        Can be useful when handling large, lazy manifests where it is not feasible to
+        pre-filter them before instantiating the sampler.
+
+        When set, we will remove the ``__len__`` attribute on the sampler, as it is now
+        determined dynamically.
+
+        Example:
+            >>> cuts = CutSet(...)
+            ... sampler = SingleCutSampler(cuts, max_duration=100.0)
+            ... # Retain only the cuts that have at least 1s and at most 20s duration.
+            ... sampler.filter(lambda cut: 1.0 <= cut.duration <= 20.0)
+        """
+        for sampler in self.samplers:
+            sampler.filter(predicate)
+
+    def __len__(self):
+        if self.num_batches is None:
+            self.num_batches = min(len(sampler) for sampler in self.samplers)
+        return self.num_batches
