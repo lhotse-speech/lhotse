@@ -429,7 +429,8 @@ class LazyJsonlIterator:
         return self
 
     def __next__(self):
-        data = next(self._file)
+        line = next(self._file)
+        data = json.loads(line)
         item = deserialize_item(data)
         return item
 
