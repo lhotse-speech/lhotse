@@ -405,7 +405,7 @@ def _check_arrow():
 class LazyJsonlIterator:
     def __init__(self, path: Pathlike) -> None:
         self.path = Path(path)
-        assert extension_contains('.jsonl', path)
+        assert extension_contains('.jsonl', self.path)
 
     def _reset(self) -> None:
         opener = gzip.open if str(self.path).endswith('.gz') else open
