@@ -440,7 +440,7 @@ class LazyJsonlIterator:
         return (item.id for item in self)
 
     def items(self):
-        return (item.id, item for item in self)
+        return ((item.id, item) for item in self)
 
     def __len__(self) -> int:
         return count_newlines_fast(self.path)
