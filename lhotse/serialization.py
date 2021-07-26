@@ -404,7 +404,7 @@ def _check_arrow():
 
 class LazyJsonlIterator:
     def __init__(self, path: Pathlike) -> None:
-        self.path = path
+        self.path = Path(path)
         assert extension_contains('.jsonl', path)
 
     def _reset(self) -> None:
