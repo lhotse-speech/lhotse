@@ -240,7 +240,7 @@ class LazyMixin:
 
         This method requires ``pyarrow`` and ``pandas`` to be installed.
         """
-        return cls(LazyDict(path))
+        return cls(LazyJsonlIterator(path))
 
     def to_arrow(self, path: Pathlike) -> None:
         """
@@ -400,6 +400,36 @@ def _check_arrow():
         raise ImportError("In order to leverage lazy manifest capabilities of Lhotse, "
                           "please install additional, optional dependencies: "
                           "'pip install pyarrow pandas'")
+
+
+class LazyJsonlIterator:
+    def __init__(self, path: Pathlike) -> None:
+        self.path = path
+        assert extension_contains('.jsonl', path)
+
+    def _reset(self) -> None:
+        opener = gzip.open if str(self.path).endswith('.gz') else open
+        self._file = opener(self.path)
+
+    def __getstate__(self):
+        """
+        Store the state for pickling -- we'll only store the path, and re-initialize
+        this iterator when unpickled. This is necessary to transfer this object across processes
+        for PyTorch's DataLoader workers.
+        """
+        state = {'path': self.path}
+        return state
+
+    def __setstate__(self, state: Dict):
+        """Restore the state when unpickled -- open the jsonl file again."""
+        self.__dict__.update(state)
+
+    def __iter__(self):
+        self._reset()
+        return self
+
+    def __next__(self):
+        return next(self._file)
 
 
 class LazyDict:
