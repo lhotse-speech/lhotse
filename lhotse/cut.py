@@ -1864,8 +1864,8 @@ class CutSet(Serializable, Sequence[Cut]):
         """
         Indicates whether this manifest was opened in lazy (read-on-the-fly) mode or not.
         """
-        from lhotse.serialization import LazyDict
-        return isinstance(self.cuts, LazyDict)
+        from lhotse.serialization import LazyJsonlIterator
+        return isinstance(self.cuts, LazyJsonlIterator)
 
     @property
     def mixed_cuts(self) -> Dict[str, MixedCut]:

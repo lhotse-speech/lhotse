@@ -1,4 +1,3 @@
-import pickle
 from tempfile import NamedTemporaryFile
 from lhotse.supervision import AlignmentItem
 
@@ -7,7 +6,16 @@ import pytest
 from lhotse import AudioSource, MonoCut, CutSet, FeatureSet, Features, Recording, RecordingSet, SupervisionSegment, \
     SupervisionSet, load_manifest, store_manifest
 from lhotse.testing.dummies import DummyManifest
-from lhotse.utils import fastcopy, is_module_available, nullcontext as does_not_raise
+from lhotse.utils import fastcopy, nullcontext as does_not_raise
+from tempfile import NamedTemporaryFile
+
+import pytest
+
+from lhotse import AudioSource, CutSet, FeatureSet, Features, MonoCut, Recording, RecordingSet, SupervisionSegment, \
+    SupervisionSet, load_manifest, store_manifest
+from lhotse.supervision import AlignmentItem
+from lhotse.testing.dummies import DummyManifest
+from lhotse.utils import fastcopy, nullcontext as does_not_raise
 
 
 @pytest.mark.parametrize(
@@ -300,104 +308,6 @@ def test_generic_serialization(manifests, manifest_type, format, compressed):
         store_manifest(manifest, f.name)
         restored = load_manifest(f.name)
         assert manifest == restored
-
-
-@pytest.mark.skipif(not is_module_available('pyarrow'), reason='Requires pyarrow')
-@pytest.mark.parametrize(
-    'manifest_type',
-    ['recording_set', 'supervision_set', 'cut_set']
-)
-@pytest.mark.parametrize(
-    ['format', 'compressed'],
-    [
-        ('jsonl', False),
-        ('jsonl', True),
-    ]
-)
-def test_lazy_jsonl_deserialization(manifests, manifest_type, format, compressed):
-    manifest = manifests[manifest_type]
-    with NamedTemporaryFile(suffix='.' + format + ('.gz' if compressed else '')) as f:
-        store_manifest(manifest, f.name)
-        lazy_manifest = type(manifest).from_jsonl_lazy(f.name)
-        # Test iteration
-        for eager_obj, lazy_obj in zip(manifest, lazy_manifest):
-            assert eager_obj == lazy_obj
-        # Test accessing elements by ID
-        for lazy_obj in lazy_manifest:
-            lazy_manifest[lazy_obj.id]
-
-
-@pytest.mark.skipif(not is_module_available('pyarrow'), reason='Requires pyarrow')
-@pytest.mark.parametrize(
-    'manifest_type',
-    ['recording_set', 'supervision_set', 'cut_set']
-)
-def test_lazy_arrow_serialization(manifests, manifest_type):
-    manifest = manifests[manifest_type]
-    with NamedTemporaryFile(suffix='.arrow') as f:
-        manifest.to_file(f.name)
-        lazy_manifest = type(manifest).from_file(f.name)
-        # Test iteration
-        for eager_obj, lazy_obj in zip(manifest, lazy_manifest):
-            assert eager_obj == lazy_obj
-        # Test accessing elements by ID
-        for lazy_obj in lazy_manifest:
-            lazy_manifest[lazy_obj.id]
-
-
-@pytest.mark.skipif(not is_module_available('pyarrow'), reason='Requires pyarrow')
-@pytest.mark.parametrize(
-    'manifest_type',
-    ['recording_set', 'supervision_set', 'cut_set']
-)
-def test_lazy_arrow_pickling(manifests, manifest_type):
-    manifest = manifests[manifest_type]
-    with NamedTemporaryFile(suffix='.arrow') as f, NamedTemporaryFile(suffix='.pkl') as f_pkl:
-        # Create an .arrow file that can be mmapped
-        manifest.to_file(f.name)
-        lazy_manifest = type(manifest).from_file(f.name)
-        # Create a pickle with a manifest that refers to an mmapped file
-        pickle.dump(lazy_manifest, f_pkl)
-        f_pkl.flush()
-        f_pkl.seek(0)
-        # Unpickle
-        unpickled_manifest = pickle.load(f_pkl)
-        # Lengths are the same
-        assert len(lazy_manifest) == len(manifest)
-        assert len(unpickled_manifest) == len(manifest)
-        # Test iteration
-        for eager_obj, lazy_obj, unpickled_obj in zip(manifest, lazy_manifest, unpickled_manifest):
-            assert eager_obj == lazy_obj
-            assert eager_obj == unpickled_obj
-        # Test accessing elements by ID
-        for unpickled_obj in unpickled_manifest:
-            unpickled_manifest[unpickled_obj.id]
-
-
-@pytest.mark.skipif(not is_module_available('pyarrow'), reason='Requires pyarrow')
-@pytest.mark.parametrize(
-    'manifest_type',
-    ['recording_set', 'supervision_set', 'cut_set']
-)
-@pytest.mark.parametrize(
-    ['format', 'compressed'],
-    [
-        ('jsonl', False),
-        ('jsonl', True),
-    ]
-)
-def test_lazy_jsonl_to_arrow_serialization(manifests, manifest_type, format, compressed):
-    manifest = manifests[manifest_type]
-    with NamedTemporaryFile(suffix='.' + format + ('.gz' if compressed else '')) as jsonl_f, \
-            NamedTemporaryFile(suffix='.arrow') as arrow_f:
-        store_manifest(manifest, jsonl_f.name)
-        # For now, we have to first create a JSONL so that we can create mmapped arrow...
-        lazy_temp_manifest = type(manifest).from_jsonl_lazy(jsonl_f.name)
-        lazy_temp_manifest.to_arrow(arrow_f.name)
-        # Now read the real mmapped arrow manifest.
-        lazy_manifest = type(manifest).from_arrow(arrow_f.name)
-        for eager_obj, lazy_obj in zip(manifest, lazy_manifest):
-            assert eager_obj == lazy_obj
 
 
 @pytest.mark.parametrize(
