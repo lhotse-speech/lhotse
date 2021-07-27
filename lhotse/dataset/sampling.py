@@ -165,7 +165,7 @@ class CutSampler(Sampler):
     def __iter__(self):
         raise NotImplementedError("Sub-classes of CutSampler have to implement __iter__()")
 
-    def _next_batch(self) -> T_co:
+    def _next_batch(self):
         raise NotImplementedError("Sub-classes of CutSampler have to implement self._next_batch()")
 
     def __len__(self) -> int:
@@ -176,7 +176,7 @@ class CutSampler(Sampler):
             self.num_batches = sum(1 for _ in self)
         return self.num_batches
 
-    def __next__(self) -> T_co:
+    def __next__(self):
         # We use the following trick to ensure equal number of batches for each distributed
         # worker:
         # Every time a next batch is required, we will sample self.world_size batches first,
@@ -250,7 +250,7 @@ class TimeConstraint:
         self.current = 0
 
 
-class SingleCutSampler(CutSampler[CutSet]):
+class SingleCutSampler(CutSampler):
     """
     Samples cuts from a CutSet to satisfy the input constraints.
     It behaves like an iterable that yields lists of strings (cut IDs).

@@ -13,8 +13,6 @@ def cut_set():
 
 @pytest.mark.parametrize('transform', [None, GlobalMVN, [GlobalMVN]])
 def test_speech_synthesis_dataset(cut_set, transform):
-    ids = cut_set.ids
-
     if isinstance(transform, list):
         transform = [transform[0].from_cuts(cut_set)]
     elif isinstance(transform, GlobalMVN):
@@ -23,7 +21,7 @@ def test_speech_synthesis_dataset(cut_set, transform):
         transform = None
 
     dataset = SpeechSynthesisDataset(cut_set, feature_transforms=transform)
-    example = dataset[ids]
+    example = dataset[cut_set]
     assert example['audio'].shape[1] > 0
     assert example['features'].shape[1] > 0
     assert example['tokens'].shape[1] > 0

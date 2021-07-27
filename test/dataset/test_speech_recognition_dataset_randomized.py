@@ -52,7 +52,6 @@ class TestCollationRandomized(RandomCutTestCase):
         )
         # Create an ASR dataset
         dataset = K2SpeechRecognitionDataset(
-            mixed_cuts,
             return_cuts=True,
             cut_transforms=[
                 CutConcatenate(duration_factor=3.0)

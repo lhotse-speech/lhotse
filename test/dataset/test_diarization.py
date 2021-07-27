@@ -59,9 +59,8 @@ def cut_set():
 
 
 def test_diarization_dataset(cut_set):
-    ids = cut_set.ids
     dataset = DiarizationDataset(cut_set)
-    example = dataset[ids]
+    example = dataset[cut_set]
     assert example['features'].shape == (1, 1000, 40)
 
     assert example['speaker_activity'].shape == (1, 4, 1000)

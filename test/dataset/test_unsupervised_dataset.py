@@ -14,25 +14,22 @@ def libri_cut_set():
 
 
 def test_unsupervised_dataset(libri_cut_set):
-    dataset = UnsupervisedDataset(libri_cut_set)
-    assert len(dataset) == 1
+    dataset = UnsupervisedDataset()
     out = dataset[libri_cut_set]
     assert out["features"].shape == (1, 1000, 40)
 
 
 def test_unsupervised_waveform_dataset(libri_cut_set):
-    dataset = UnsupervisedWaveformDataset(libri_cut_set)
-    assert len(dataset) == 1
+    dataset = UnsupervisedWaveformDataset()
     out = dataset[libri_cut_set]
     assert out["audio"].shape == (1, 10 * 16000)
     assert isinstance(out["audio_lens"], torch.IntTensor)
 
 
 def test_on_the_fly_feature_extraction_unsupervised_dataset(libri_cut_set):
-    ref_dataset = UnsupervisedDataset(libri_cut_set)
+    ref_dataset = UnsupervisedDataset()
     tested_dataset = DynamicUnsupervisedDataset(
         feature_extractor=Fbank(),
-        cuts=libri_cut_set
     )
     out = ref_dataset[libri_cut_set]
     ref_feats = out["features"]

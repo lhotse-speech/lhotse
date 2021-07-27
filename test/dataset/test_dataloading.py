@@ -17,17 +17,12 @@ def cuts():
     )
 
 
-@pytest.fixture
-def dataset(cuts):
-    return UnsupervisedDataset(cuts)
-
-
 @pytest.mark.skipif(
     _version(platform.python_version()) < _version("3.7"),
     reason="LhotseDataLoader requires Python 3.7+",
 )
-def test_lhotse_dataloader_runs(cuts, dataset):
+def test_lhotse_dataloader_runs(cuts):
     sampler = SingleCutSampler(cuts, max_cuts=2)
-    dloader = LhotseDataLoader(dataset, sampler, num_workers=2)
+    dloader = LhotseDataLoader(UnsupervisedDataset(), sampler, num_workers=2)
     batches = list(dloader)
     assert len(batches) == 50

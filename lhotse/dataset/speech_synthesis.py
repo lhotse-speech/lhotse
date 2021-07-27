@@ -1,4 +1,4 @@
-from typing import Callable, Dict, Iterable, List, Sequence, Union
+from typing import Callable, Dict, List, Sequence, Union
 
 import torch
 
@@ -37,12 +37,6 @@ class SpeechSynthesisDataset(torch.utils.data.Dataset):
     ) -> None:
         super().__init__()
 
-        validate(cuts)
-        for cut in cuts:
-            assert (
-                    len(cut.supervisions) == 1
-            ), "Only the Cuts with single supervision are supported."
-
         self.cuts = cuts
         self.token_collater = TokenCollater(cuts, add_eos=add_eos, add_bos=add_bos)
         self.cut_transforms = ifnone(cut_transforms, [])
@@ -57,8 +51,8 @@ class SpeechSynthesisDataset(torch.utils.data.Dataset):
             "Feature transforms must be Callable"
         self.feature_transforms = feature_transforms
 
-    def __getitem__(self, cut_ids: Iterable[str]) -> Dict[str, torch.Tensor]:
-        cuts = self.cuts.subset(cut_ids=cut_ids)
+    def __getitem__(self, cuts: CutSet) -> Dict[str, torch.Tensor]:
+        validate_for_tts(cuts)
 
         for transform in self.cut_transforms:
             cuts = transform(cuts)
@@ -80,5 +74,10 @@ class SpeechSynthesisDataset(torch.utils.data.Dataset):
             "tokens_lens": tokens_lens,
         }
 
-    def __len__(self) -> int:
-        return len(self.cuts)
+
+def validate_for_tts(cuts: CutSet) -> None:
+    validate(cuts)
+    for cut in cuts:
+        assert (
+                len(cut.supervisions) == 1
+        ), "Only the Cuts with single supervision are supported."
