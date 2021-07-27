@@ -96,14 +96,14 @@ class K2SpeechRecognitionDataset(torch.utils.data.Dataset):
     def __len__(self) -> int:
         return len(self.cuts)
 
-    def __getitem__(self, cut_ids: List[str]) -> Dict[str, Union[torch.Tensor, List[str]]]:
+    def __getitem__(self, cuts: CutSet) -> Dict[str, Union[torch.Tensor, List[str]]]:
         """
         Return a new batch, with the batch size automatically determined using the contraints
         of max_frames and max_cuts.
         """
         # Collect the cuts that will form a batch, satisfying the criteria of max_cuts and max_frames.
         # The returned object is a CutSet that we can keep on modifying (e.g. padding, mixing, etc.)
-        cuts = self.cuts.subset(cut_ids=cut_ids)
+        # cuts = self.cuts.subset(cut_ids=cut_ids)
 
         # Sort the cuts by duration so that the first one determines the batch time dimensions.
         cuts = cuts.sort_by_duration(ascending=False)

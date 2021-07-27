@@ -1,7 +1,8 @@
 import random
 import warnings
+from collections import deque
 from dataclasses import dataclass
-from typing import Callable, Iterable, List, Optional, Tuple, Type, Union
+from typing import Callable, List, Optional, Tuple, Type, Union
 
 import torch.distributed as dist
 from torch.utils.data import Sampler
@@ -12,23 +13,41 @@ from lhotse.utils import Seconds, exactly_one_not_null, is_none_or_gt
 
 
 class DataSource:
-    def __init__(self, items):
-        self._items = items
-        self._permutation = list(range(len(self._items)))
+    def __init__(self, items: CutSet):
+        self._orig_items = items
+        self._shuffled_items = self._orig_items
+        self._iter = None
+        self._reusable = deque()
 
     def shuffle(self, seed):
         r = random.Random(seed)
-        self._permutation = list(range(len(self._items)))
-        r.shuffle(self._permutation)
+        self._shuffled_items = self._orig_items.shuffle(rng=r)
+        self._iter = None
+        self._reusable.clear()
 
-    def __getitem__(self, idx):
-        return self._items[self._permutation[idx]]
+    def sort_like(self, other: 'DataSource'):
+        self._shuffled_items = self._orig_items.sort_like(other._shuffled_items)
+        self._iter = None
+        self._reusable.clear()
+
+    def __iter__(self):
+        self._iter = iter(self._shuffled_items)
+        self._reusable.clear()
+        return self
+
+    def __next__(self):
+        if self._reusable:
+            return self._reusable.popleft()
+        return next(self._iter)
+
+    def take_back(self, cut: Cut) -> None:
+        self._reusable.append(cut)
 
     def __len__(self):
-        return len(self._items)
+        return len(self._shuffled_items)
 
 
-class CutSampler(Sampler[List[str]]):
+class CutSampler(Sampler):
     """
     ``CutSampler`` is responsible for collecting batches of cuts, given specified criteria.
     It implements correct handling of distributed sampling in ``DataLoader``,
@@ -67,7 +86,6 @@ class CutSampler(Sampler[List[str]]):
 
     def __init__(
             self,
-            cut_ids: Iterable[str],
             shuffle: bool = False,
             world_size: Optional[int] = None,
             rank: Optional[int] = None,
@@ -75,9 +93,6 @@ class CutSampler(Sampler[List[str]]):
             provide_len: bool = True
     ) -> None:
         """
-
-        :param cut_ids: An iterable of cut IDs for the full dataset.
-            CutSampler will take care of partitioning that into distributed workers (if needed).
         :param shuffle: When ``True``, the cuts will be shuffled at the start of iteration.
             Convenient when mini-batch loop is inside an outer epoch-level loop, e.g.:
             `for epoch in range(10): for batch in dataset: ...` as every epoch will see a
@@ -89,13 +104,10 @@ class CutSampler(Sampler[List[str]]):
             It makes sense to turn it off when iterating the sampler is somewhat costly for any reason;
             e.g. because the underlying manifest is lazily loaded from the filesystem/somewhere else.
         """
-        data_source = DataSource(list(cut_ids))
-        super().__init__(data_source)
-        self.data_source = data_source
+        super().__init__(data_source=None)  # the "data_source" arg is not used in Sampler...
         self.shuffle = shuffle
         self.seed = seed
         self.epoch = 0
-        self.cut_idx = 0
         self.provide_len = provide_len
         if not self.provide_len and self.shuffle:
             warnings.warn("The sampler was set not to provide __len__, which suggests that you're "
@@ -150,17 +162,11 @@ class CutSampler(Sampler[List[str]]):
         self._filter_fn = predicate
         self.provide_len = False
 
-    def _next_batch(self) -> List[str]:
-        raise NotImplementedError("Sub-classes of CutSampler have to implement self._next_batch()")
+    def __iter__(self):
+        raise NotImplementedError("Sub-classes of CutSampler have to implement __iter__()")
 
-    def __iter__(self) -> 'CutSampler':
-        """
-        Prepare the dataset for iterating over a new epoch. Will shuffle the data if requested.
-        """
-        if self.shuffle:
-            self.data_source.shuffle(self.seed + self.epoch)
-        self.cut_idx = 0
-        return self
+    def _next_batch(self) -> T_co:
+        raise NotImplementedError("Sub-classes of CutSampler have to implement self._next_batch()")
 
     def __len__(self) -> int:
         if not self.provide_len:
@@ -170,7 +176,7 @@ class CutSampler(Sampler[List[str]]):
             self.num_batches = sum(1 for _ in self)
         return self.num_batches
 
-    def __next__(self) -> List[str]:
+    def __next__(self) -> T_co:
         # We use the following trick to ensure equal number of batches for each distributed
         # worker:
         # Every time a next batch is required, we will sample self.world_size batches first,
@@ -244,7 +250,7 @@ class TimeConstraint:
         self.current = 0
 
 
-class SingleCutSampler(CutSampler):
+class SingleCutSampler(CutSampler[CutSet]):
     """
     Samples cuts from a CutSet to satisfy the input constraints.
     It behaves like an iterable that yields lists of strings (cut IDs).
@@ -295,14 +301,13 @@ class SingleCutSampler(CutSampler):
         :param seed: Random seed used to consistently shuffle the dataset across different processes.
         """
         super().__init__(
-            cuts.ids,
             provide_len=not cuts.is_lazy,
             shuffle=shuffle,
             world_size=world_size,
             rank=rank,
             seed=seed,
         )
-        self.cuts = cuts
+        self.data_source = DataSource(cuts)
         self.time_constraint = TimeConstraint(
             max_duration=max_duration,
             max_frames=max_frames,
@@ -314,51 +319,63 @@ class SingleCutSampler(CutSampler):
         # Constraints
         assert is_none_or_gt(self.max_cuts, 0)
 
-    def _next_batch(self) -> List[str]:
+    def __iter__(self) -> 'SingleCutSampler':
+        """
+        Prepare the dataset for iterating over a new epoch. Will shuffle the data if requested.
+        """
+        if self.shuffle:
+            self.data_source.shuffle(self.seed + self.epoch)
+        iter(self.data_source)
+        return self
+
+    def _next_batch(self) -> CutSet:
         # Keep iterating the underlying CutSet as long as we hit or exceed the constraints
         # provided by user (the max number of frames or max number of cuts).
         # Note: no actual data is loaded into memory yet because the manifests contain all the metadata
         # required to do this operation.
         self.time_constraint.reset()
-        cut_ids = []
+        cuts = []
         while True:
+
             # Check that we have not reached the end of the dataset.
-            if self.cut_idx < len(self.data_source):
-                # We didn't - grab the next cut
-                next_cut_id = self.data_source[self.cut_idx]
-            else:
-                if cut_ids:
+            try:
+                # If this doesn't raise (typical case), it's not the end: keep processing.
+                next_cut = next(self.data_source)
+            except StopIteration:
+                if cuts:
                     # We did and we have a partial batch - return it.
-                    return cut_ids
+                    return CutSet.from_cuts(cuts)
                 else:
                     # We did and there is nothing more to return - signal the iteration code to stop.
                     raise StopIteration()
-            next_cut = self.cuts[next_cut_id]
+
             # Check whether the cut we're about to sample satisfies optional user-requested predicate.
             if self._filter_fn is not None and not self._filter_fn(next_cut):
                 # No - try another one.
-                self.cut_idx += 1
                 continue
+
+            # Track the duration/frames/etc. constraints.
             self.time_constraint.add(next_cut)
-            next_num_cuts = len(cut_ids) + 1
+            next_num_cuts = len(cuts) + 1
+
             # Did we exceed the max_frames and max_cuts constraints?
             if not self.time_constraint.exceeded() and (self.max_cuts is None or next_num_cuts <= self.max_cuts):
                 # No - add the next cut to the batch, and keep trying.
-                cut_ids.append(next_cut.id)
-                self.cut_idx += 1
+                cuts.append(next_cut)
             else:
                 # Yes. Do we have at least one cut in the batch?
-                if cut_ids:
-                    # Yes. Return it.
+                if cuts:
+                    # Yes. Return the batch, but keep the currently drawn cut for later.
+                    self.data_source.take_back(next_cut)
                     break
                 else:
                     # No. We'll warn the user that the constrains might be too tight,
                     # and return the cut anyway.
                     warnings.warn("The first cut drawn in batch collection violates the max_frames or max_cuts "
                                   "constraints - we'll return it anyway. Consider increasing max_frames/max_cuts.")
-                    cut_ids.append(next_cut.id)
-                    self.cut_idx += 1
-        return cut_ids
+                    cuts.append(next_cut)
+
+        return CutSet.from_cuts(cuts)
 
 
 class CutPairsSampler(CutSampler):
@@ -411,17 +428,14 @@ class CutPairsSampler(CutSampler):
         :param seed: Random seed used to consistently shuffle the dataset across different processes.
         """
         super().__init__(
-            source_cuts.ids,
             provide_len=not source_cuts.is_lazy and not target_cuts.is_lazy,
             shuffle=shuffle,
             world_size=world_size,
             rank=rank,
             seed=seed,
         )
-        self.source_cuts = source_cuts
-        self.target_cuts = target_cuts
-        assert set(self.source_cuts.ids) == set(self.target_cuts.ids), \
-            "Expected source and target cuts to have the same set of IDs."
+        self.source_cuts = DataSource(source_cuts)
+        self.target_cuts = DataSource(target_cuts)
         # Constraints
         self.source_constraints = TimeConstraint(
             max_duration=max_source_duration,
@@ -435,59 +449,86 @@ class CutPairsSampler(CutSampler):
         )
         self.max_cuts = max_cuts
 
-    def _next_batch(self) -> List[str]:
+    def __iter__(self) -> 'CutPairsSampler':
+        """
+        Prepare the dataset for iterating over a new epoch. Will shuffle the data if requested.
+        """
+        if self.shuffle:
+            self.source_cuts.shuffle(self.seed + self.epoch)
+            self.target_cuts.sort_like(self.source_cuts)
+        iter(self.source_cuts)
+        iter(self.target_cuts)
+        return self
+
+    def _next_batch(self) -> Tuple[CutSet, CutSet]:
         # Keep iterating the underlying CutSets as long as we hit or exceed the constraints
         # provided by user (the max number of source_feats or max number of cuts).
         # Note: no actual data is loaded into memory yet because the manifests contain all the metadata
         # required to do this operation.
         self.source_constraints.reset()
         self.target_constraints.reset()
-        cut_ids = []
+        source_cuts = []
+        target_cuts = []
         while True:
             # Check that we have not reached the end of the dataset.
-            if self.cut_idx < len(self.data_source):
+            try:
                 # We didn't - grab the next cut
-                next_cut_id = self.data_source[self.cut_idx]
-            else:
-                if cut_ids:
+                next_source_cut = next(self.source_cuts)
+                next_target_cut = next(self.target_cuts)
+                assert next_source_cut.id == next_target_cut.id, (
+                    "Sampled source and target cuts with differing IDs. "
+                    "Ensure that your source and target cuts have the same length, "
+                    "the same IDs, and the same order."
+                )
+            except StopIteration:
+                if source_cuts:
                     # We did and we have a partial batch - return it.
-                    return cut_ids
+                    assert len(source_cuts) == len(
+                        target_cuts
+                    ), "Unexpected state: some cuts in source / target are missing their counterparts..."
+                    return CutSet.from_cuts(source_cuts), CutSet.from_cuts(target_cuts)
                 else:
                     # We did and there is nothing more to return - signal the iteration code to stop.
                     raise StopIteration()
-            next_source_cut = self.source_cuts[next_cut_id]
-            next_target_cut = self.target_cuts[next_cut_id]
+
             # Check whether the cuts we're about to sample satisfy optional user-requested predicate.
             if self._filter_fn is not None and (
                     not self._filter_fn(next_source_cut)
                     or not self._filter_fn(next_target_cut)
             ):
                 # No - try another one.
-                self.cut_idx += 1
                 continue
+
             self.source_constraints.add(next_source_cut)
             self.target_constraints.add(next_target_cut)
-            next_num_cuts = len(cut_ids) + 1
+            next_num_cuts = len(source_cuts) + 1
+
             # Did we exceed the max_source_frames and max_cuts constraints?
             if not self.source_constraints.exceeded() \
                     and not self.target_constraints.exceeded() \
                     and (self.max_cuts is None or next_num_cuts <= self.max_cuts):
                 # No - add the next cut to the batch, and keep trying.
-                cut_ids.append(next_source_cut.id)
-                self.cut_idx += 1
+                source_cuts.append(next_source_cut)
+                target_cuts.append(next_target_cut)
             else:
                 # Yes. Do we have at least one cut in the batch?
-                if cut_ids:
+                if source_cuts:
                     # Yes. Return it.
+                    self.source_cuts.take_back(next_source_cut)
+                    self.target_cuts.take_back(next_target_cut)
                     break
                 else:
                     # No. We'll warn the user that the constrains might be too tight,
                     # and return the cut anyway.
                     warnings.warn("The first cut drawn in batch collection violates one of the max_... constraints"
                                   "we'll return it anyway. Consider increasing max_source_frames/max_cuts/etc.")
-                    cut_ids.append(next_source_cut.id)
-                    self.cut_idx += 1
-        return cut_ids
+                    source_cuts.append(next_source_cut)
+                    target_cuts.append(next_target_cut)
+
+        assert len(source_cuts) == len(
+            target_cuts
+        ), "Unexpected state: some cuts in source / target are missing their counterparts..."
+        return CutSet.from_cuts(source_cuts), CutSet.from_cuts(target_cuts)
 
 
 class BucketingSampler(CutSampler):
@@ -543,7 +584,6 @@ class BucketingSampler(CutSampler):
         """
         # Do not use the distributed capacities of the CutSampler in the top-level sampler.
         super().__init__(
-            cuts[0].ids,
             provide_len=all(not cs.is_lazy for cs in cuts),
             world_size=1,
             rank=0,
@@ -605,7 +645,7 @@ class BucketingSampler(CutSampler):
         self.depleted = [False] * self.num_buckets
         return self
 
-    def _next_batch(self) -> List[str]:
+    def _next_batch(self):
         while not self.is_depleted:
             idx, sampler = self.bucket_rng.choice(self._nondepleted_samplers_with_idxs)
             try:

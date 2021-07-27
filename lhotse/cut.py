@@ -1806,6 +1806,11 @@ class CutSet(Serializable, Sequence[Cut]):
         >>> random_sample = cuts.sample(n_cuts=10)
         >>> new_ids = cuts.modify_ids(lambda c: c.id + '-newid')
 
+    These operations can be composed to implement more complex operations, e.g.
+    bucketing by duration:
+
+        >>> buckets = cuts.sort_by_duration().split(num_splits=30)
+
     Cuts in a :class:`.CutSet` can be detached from parts of their metadata::
 
         >>> cuts_no_feat = cuts.drop_features()

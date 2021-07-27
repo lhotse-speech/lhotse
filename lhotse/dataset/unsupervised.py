@@ -1,4 +1,4 @@
-from typing import Iterable, Optional
+from typing import Optional
 
 import torch
 
@@ -26,8 +26,8 @@ class UnsupervisedDataset(torch.utils.data.Dataset):
         self.cuts = cuts
         self._validate()
 
-    def __getitem__(self, cut_ids: Iterable[str]) -> torch.Tensor:
-        cuts = self.cuts.subset(cut_ids=cut_ids)
+    def __getitem__(self, cuts: CutSet) -> torch.Tensor:
+        # cuts = self.cuts.subset(cut_ids=cut_ids)
         features, features_lens = collate_features(cuts)
         return {
             'features': features,
@@ -58,8 +58,7 @@ class UnsupervisedWaveformDataset(UnsupervisedDataset):
         }
     """
 
-    def __getitem__(self, cut_ids: Iterable[str]) -> torch.Tensor:
-        cuts = self.cuts.subset(cut_ids=cut_ids)
+    def __getitem__(self, cuts: CutSet) -> torch.Tensor:
         audio, audio_lens = collate_audio(cuts)
         return {
             'audio': audio,
@@ -91,8 +90,7 @@ class DynamicUnsupervisedDataset(UnsupervisedDataset):
         self.feature_extractor = feature_extractor
         self.augment_fn = augment_fn
 
-    def __getitem__(self, cut_ids: Iterable[str]) -> torch.Tensor:
-        cuts = self.cuts.subset(cut_ids=cut_ids)
+    def __getitem__(self, cuts: CutSet) -> torch.Tensor:
         features = collate_matrices(
             cut.compute_features(
                 extractor=self.feature_extractor,
