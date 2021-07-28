@@ -678,7 +678,7 @@ class BucketingSampler(CutSampler):
 class ZipSampler(CutSampler):
     """
     :class:`.ZipSampler` takes several samplers as input and concatenates their
-    sampled batch cut IDs together into a single list.
+    sampled batch cuts together into a single list.
     It is helpful for ensuring that each batch consists of some proportion of cuts
     coming from different sources.
 
@@ -692,7 +692,7 @@ class ZipSampler(CutSampler):
         ...     SingleCutSampler(cuts_corpusA, max_duration=250, shuffle=True),
         ...     SingleCutSampler(cuts_corpusB, max_duration=100, shuffle=True),
         ... )
-        >>> for cut_ids in sampler:
+        >>> for cut in sampler:
         ...     pass  # profit
     """
     def __init__(self, *samplers: CutSampler) -> None:
