@@ -30,9 +30,9 @@ def test_vad_dataset(cut_set):
     # Convert long cuts into 5s cuts
     window_cut_set = cut_set.cut_into_windows(duration=duration)
     # Create a one-element list with the ID of the first cut
-    first_id = [next(iter(window_cut_set.ids))]
-    dataset = VadDataset(window_cut_set)
-    example = dataset[first_id]
+    first = window_cut_set.subset(first=1)
+    dataset = VadDataset()
+    example = dataset[first]
     is_voice = example['is_voice'][0]
     assert isclose(float(torch.mean(is_voice[0:v1_start])), 0)
     assert isclose(float(torch.mean(is_voice[v1_start:v1_end])), 1)

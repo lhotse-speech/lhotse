@@ -1,4 +1,4 @@
-from typing import Iterable, Optional
+from typing import Optional
 
 import torch
 
@@ -21,25 +21,20 @@ class UnsupervisedDataset(torch.utils.data.Dataset):
         }
     """
 
-    def __init__(self, cuts: CutSet) -> None:
+    def __init__(self) -> None:
         super().__init__()
-        self.cuts = cuts
-        self._validate()
 
-    def __getitem__(self, cut_ids: Iterable[str]) -> torch.Tensor:
-        cuts = self.cuts.subset(cut_ids=cut_ids)
+    def __getitem__(self, cuts: CutSet) -> torch.Tensor:
+        self._validate(cuts)
         features, features_lens = collate_features(cuts)
         return {
             'features': features,
             'features_lens': features_lens,
         }
 
-    def __len__(self):
-        return len(self.cuts)
-
-    def _validate(self) -> None:
-        validate(self.cuts)
-        assert all(cut.has_features for cut in self.cuts)
+    def _validate(self, cuts: CutSet) -> None:
+        validate(cuts)
+        assert all(cut.has_features for cut in cuts)
 
 
 class UnsupervisedWaveformDataset(UnsupervisedDataset):
@@ -58,17 +53,16 @@ class UnsupervisedWaveformDataset(UnsupervisedDataset):
         }
     """
 
-    def __getitem__(self, cut_ids: Iterable[str]) -> torch.Tensor:
-        cuts = self.cuts.subset(cut_ids=cut_ids)
+    def __getitem__(self, cuts: CutSet) -> torch.Tensor:
         audio, audio_lens = collate_audio(cuts)
         return {
             'audio': audio,
             'audio_lens': audio_lens,
         }
 
-    def _validate(self) -> None:
-        validate(self.cuts)
-        assert all(cut.has_recording for cut in self.cuts)
+    def _validate(self, cuts: CutSet) -> None:
+        validate(cuts)
+        assert all(cut.has_recording for cut in cuts)
 
 
 class DynamicUnsupervisedDataset(UnsupervisedDataset):
@@ -84,15 +78,14 @@ class DynamicUnsupervisedDataset(UnsupervisedDataset):
     def __init__(
             self,
             feature_extractor: FeatureExtractor,
-            cuts: CutSet,
             augment_fn: Optional[AugmentFn] = None,
     ):
-        super().__init__(cuts)
+        super().__init__()
         self.feature_extractor = feature_extractor
         self.augment_fn = augment_fn
 
-    def __getitem__(self, cut_ids: Iterable[str]) -> torch.Tensor:
-        cuts = self.cuts.subset(cut_ids=cut_ids)
+    def __getitem__(self, cuts: CutSet) -> torch.Tensor:
+        self._validate(cuts)
         features = collate_matrices(
             cut.compute_features(
                 extractor=self.feature_extractor,
@@ -101,6 +94,6 @@ class DynamicUnsupervisedDataset(UnsupervisedDataset):
         )
         return features
 
-    def _validate(self):
-        validate(self.cuts)
-        assert all(cut.has_recording for cut in self.cuts)
+    def _validate(self, cuts: CutSet) -> None:
+        validate(cuts)
+        assert all(cut.has_recording for cut in cuts)

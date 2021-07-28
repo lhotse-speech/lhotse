@@ -360,8 +360,8 @@ class SupervisionSet(Serializable, Sequence[SupervisionSegment]):
         """
         Indicates whether this manifest was opened in lazy (read-on-the-fly) mode or not.
         """
-        from lhotse.serialization import LazyDict
-        return isinstance(self.segments, LazyDict)
+        from lhotse.serialization import LazyJsonlIterator
+        return isinstance(self.segments, LazyJsonlIterator)
 
     @property
     def ids(self) -> Iterable[str]:

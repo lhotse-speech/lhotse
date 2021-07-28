@@ -59,17 +59,14 @@ class K2SpeechRecognitionDataset(torch.utils.data.Dataset):
 
     def __init__(
             self,
-            cuts: CutSet,
             return_cuts: bool = False,
             cut_transforms: List[Callable[[CutSet], CutSet]] = None,
             input_transforms: List[Callable[[torch.Tensor], torch.Tensor]] = None,
             input_strategy: BatchIO = PrecomputedFeatures(),
-            check_inputs: bool = True
     ):
         """
         K2 ASR IterableDataset constructor.
 
-        :param cuts: the ``CutSet`` to sample data from.
         :param return_cuts: When ``True``, will additionally return a "cut" field in each batch with the Cut
             objects used to create that batch.
         :param cut_transforms: A list of transforms to be applied on each sampled batch,
@@ -80,30 +77,20 @@ class K2SpeechRecognitionDataset(torch.utils.data.Dataset):
             Examples: normalization, SpecAugment, etc.
         :param input_strategy: Converts cuts into a collated batch of audio/features.
             By default, reads pre-computed features from disk.
-        :param check_inputs: Should we iterate over ``cuts`` to validate them.
-            You might want to disable it when using "lazy" CutSets to avoid a very long start up time.
         """
         super().__init__()
         # Initialize the fields
-        self.cuts = cuts
         self.return_cuts = return_cuts
         self.cut_transforms = ifnone(cut_transforms, [])
         self.input_transforms = ifnone(input_transforms, [])
         self.input_strategy = input_strategy
-        if check_inputs:
-            validate_for_asr(self.cuts)
 
-    def __len__(self) -> int:
-        return len(self.cuts)
-
-    def __getitem__(self, cut_ids: List[str]) -> Dict[str, Union[torch.Tensor, List[str]]]:
+    def __getitem__(self, cuts: CutSet) -> Dict[str, Union[torch.Tensor, List[str]]]:
         """
         Return a new batch, with the batch size automatically determined using the contraints
         of max_frames and max_cuts.
         """
-        # Collect the cuts that will form a batch, satisfying the criteria of max_cuts and max_frames.
-        # The returned object is a CutSet that we can keep on modifying (e.g. padding, mixing, etc.)
-        cuts = self.cuts.subset(cut_ids=cut_ids)
+        validate_for_asr(cuts)
 
         # Sort the cuts by duration so that the first one determines the batch time dimensions.
         cuts = cuts.sort_by_duration(ascending=False)

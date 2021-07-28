@@ -1,4 +1,4 @@
-from typing import Callable, Dict, Iterable, Sequence
+from typing import Callable, Dict, Sequence
 
 import torch
 
@@ -25,20 +25,18 @@ class VadDataset(torch.utils.data.Dataset):
 
     def __init__(
             self,
-            cuts: CutSet,
             input_strategy: BatchIO = PrecomputedFeatures(),
             cut_transforms: Sequence[Callable[[CutSet], CutSet]] = None,
             input_transforms: Sequence[Callable[[torch.Tensor], torch.Tensor]] = None
     ) -> None:
         super().__init__()
-        validate(cuts)
-        self.cuts = cuts
         self.input_strategy = input_strategy
         self.cut_transforms = ifnone(cut_transforms, [])
         self.input_transforms = ifnone(input_transforms, [])
 
-    def __getitem__(self, cut_ids: Iterable[str]) -> Dict[str, torch.Tensor]:
-        cuts = self.cuts.subset(cut_ids=cut_ids).sort_by_duration()
+    def __getitem__(self, cuts: CutSet) -> Dict[str, torch.Tensor]:
+        validate(cuts)
+        cuts = cuts.sort_by_duration()
         for tfnm in self.cut_transforms:
             cuts = tfnm(cuts)
         inputs, input_lens = self.input_strategy(cuts)
@@ -50,6 +48,3 @@ class VadDataset(torch.utils.data.Dataset):
             'is_voice': self.input_strategy.supervision_masks(cuts),
             'cut': cuts
         }
-
-    def __len__(self) -> int:
-        return len(self.cuts)

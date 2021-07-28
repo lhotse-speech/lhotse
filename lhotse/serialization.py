@@ -2,14 +2,12 @@ import gzip
 import itertools
 import json
 import warnings
-from collections import deque
 from pathlib import Path
 from typing import Any, Dict, Generator, Iterable, Optional, Type, Union
 
-import numpy as np
 import yaml
 
-from lhotse.utils import Pathlike, ifnone, is_module_available
+from lhotse.utils import Pathlike
 
 # TODO: figure out how to use some sort of typing stubs
 #  so that linters/static checkers don't complain
@@ -172,7 +170,7 @@ class SequentialJsonlWriter:
         except AttributeError:
             pass
         print(
-            json.dumps(manifest.to_dict(), cls=NumpyEncoder),
+            json.dumps(manifest.to_dict()),
             file=self.file
         )
 
@@ -228,90 +226,13 @@ class LazyMixin:
     @classmethod
     def from_jsonl_lazy(cls, path: Pathlike) -> Manifest:
         """
-        Read a JSONL manifest in a lazy manner, using pyarrow.
-        The contents of the file are loaded into memory,
-        but in a memory-efficient format, and they are deserialized into
-        Python objects such as Cut, Supervision etc. only upon request.
+        Read a JSONL manifest in a lazy manner, which opens the file but does not
+        read it immediately. It is only suitable for sequential reads and iteration.
 
-        In this mode, most operations on the manifest set may be very slow:
-        including selecting specific manifests by their IDs, or splitting,
-        shuffling, sorting, etc.
-        However, iterating over the manifest is going to fairly fast.
-
-        This method requires ``pyarrow`` and ``pandas`` to be installed.
+        .. warning:: Opening the manifest in this way might cause some methods that
+            rely on random access to fail.
         """
-        return cls(LazyDict(path))
-
-    def to_arrow(self, path: Pathlike) -> None:
-        """
-        Store the manifest in Apache Arrow streaming binary format.
-        For very large manifests it can be ~5x larger that a corresponding compressed JSONL,
-        but it allows to read the manifest with a relatively small memory footprint (~300M).
-        """
-        import pyarrow as pa
-        # If the underlying storage for manifests is already lazy, we can
-        # access the arrow tables directly without the need to convert items.
-        if self.is_lazy:
-            # TODO: I don't want to add a special method for retrieving those in each manifest type;
-            #       after this work is done, I will make a refactoring PR that renames these members
-            #       to sth like ".data" so that it's uniform across manifests.
-            from lhotse import RecordingSet, SupervisionSet, CutSet
-            if isinstance(self, RecordingSet):
-                table = self.recordings.table
-            elif isinstance(self, SupervisionSet):
-                table = self.segments.table
-            elif isinstance(self, CutSet):
-                table = self.cuts.table
-            else:
-                raise NotImplementedError(f"Unsupported type of manifest for arrow serialization: {type(self)}")
-            with open(path, "wb") as f, pa.RecordBatchFileWriter(f, schema=table.schema) as writer:
-                for batch in table.to_batches():
-                    writer.write_batch(batch)
-        else:
-            # We will take the first 1000 items from the manifest to infer the schema.
-            # TODO: might want to sample items randomly in case their manifests vary...
-            schema = pa.schema(pa.array(list(self.subset(first=1000).to_dicts())).type)
-            # Open the file for writing and initialize the pyarrow batch writer.
-            # Note that the batch size we determine here will be used to load whole chunks into
-            # memory during deserialization.
-            with open(path, "wb") as f, pa.RecordBatchFileWriter(f, schema=schema) as writer:
-                # We are (lazily) grouping the items in manifest into chunks,
-                # each of ``batch_size`` items.
-                batch_size = 10 * 1024
-                chunks = grouper(n=batch_size, iterable=self.to_dicts())
-                for chunk in chunks:
-                    # We convert the items in each chunk into Arrow's columnar representation.
-                    # To do this, we first iterate by available "columns" (i.e. dict keys),
-                    # and for each of them create an Arrow array with the corresponding values.
-                    # These arrays are then used to create an arrow Table.
-                    arrays = [
-                        pa.array(
-                            [item.get(key) for item in chunk],
-                            type=schema.field(key_idx).type
-                        ) for key_idx, key in enumerate(schema.names)
-                    ]
-                    table = pa.Table.from_arrays(arrays, schema=schema)
-                    # The loop below will iterate only once, since we ensured there's exactly one batch.
-                    for idx, batch in enumerate(table.to_batches(max_chunksize=batch_size)):
-                        writer.write_batch(batch)
-
-    @classmethod
-    def from_arrow(cls, path: Pathlike) -> Manifest:
-        """
-        Read a manifest stored in Apache Arrow streaming binary format in a lazy manner.
-        This method is supposed to use mmap, which should significantly ease
-        the memory usage.
-        The manifest items are deserialized into Python objects such as Cut,
-        Supervision etc. only upon request.
-
-        In this mode, most operations on the manifest set may be very slow:
-        including selecting specific manifests by their IDs, or splitting,
-        shuffling, sorting, etc.
-        However, iterating over the manifest is going to fairly fast.
-
-        This method requires ``pyarrow`` and ``pandas`` to be installed.
-        """
-        return cls(LazyDict(path))
+        return cls(LazyJsonlIterator(path))
 
 
 def grouper(n, iterable):
@@ -346,11 +267,6 @@ def load_manifest(path: Pathlike, manifest_cls: Optional[Type] = None) -> Manife
         raw_data = load_json(path)
     elif extension_contains('.yaml', path):
         raw_data = load_yaml(path)
-    elif extension_contains('.arrow', path):
-        assert manifest_cls is not None, \
-            "For lazy deserialization with arrow, the manifest type has to be known. " \
-            "Try using [CutSet|RecordingSet|SupervisionSet].from_file(...) instead."
-        return manifest_cls.from_arrow(path)
     else:
         raise ValueError(f"Not a valid manifest: {path}")
     data_set = None
@@ -380,8 +296,6 @@ def store_manifest(manifest: Manifest, path: Pathlike) -> None:
         manifest.to_json(path)
     elif extension_contains('.yaml', path):
         manifest.to_yaml(path)
-    elif extension_contains('.arrow', path):
-        manifest.to_arrow(path)
     else:
         raise ValueError(f"Unknown serialization format for: {path}")
 
@@ -395,148 +309,58 @@ class Serializable(JsonMixin, JsonlMixin, LazyMixin, YamlMixin):
         store_manifest(self, path)
 
 
-def _check_arrow():
-    if not is_module_available('pyarrow', 'pandas'):
-        raise ImportError("In order to leverage lazy manifest capabilities of Lhotse, "
-                          "please install additional, optional dependencies: "
-                          "'pip install pyarrow pandas'")
-
-
-class LazyDict:
+class LazyJsonlIterator:
     """
-    LazyDict imitates a ``dict``, but it uses Apache Arrow (via pyarrow) to
-    read the data on-the-fly from disk using mmap.
+    LazyJsonlIterator provides the ability to read Lhotse objects from a
+    JSONL file on-the-fly, without reading its full contents into memory.
 
-    This class is designed to be a "drop-in" replacement for ordinary dicts
+    This class is designed to be a partial "drop-in" replacement for ordinary dicts
     to support lazy loading of RecordingSet, SupervisionSet and CutSet.
-
-    During initialization, Pyarrow scans a JSONL file using multithreaded
-    native code and determines the JSON schema and the number of items.
-    It is reasonably fast when iterated over, and quite slow when looking
-    up single items (unless we are using it incorrectly, which is possible).
-    Thanks to Pyarrow, we are able to open manifests with more than 10 million
-    items in seconds and iterate over them with a small overhead.
-
-    .. caution::
-        This class is optimized for iteration or sequential access (i.e. iterating
-        linearly over contiguous sequence of keys).
-        Random access is possible but it may trigger a pessimistic complexity,
-        making it incredibly slow...
+    Since it does not support random access reads, some methods of these classes
+    might not work properly.
     """
-
-    def __init__(self, path: Pathlike):
+    def __init__(self, path: Pathlike) -> None:
         self.path = Path(path)
-        self._reset()
+        assert extension_contains('.jsonl', self.path)
+
+    def _reset(self) -> None:
+        opener = gzip.open if str(self.path).endswith('.gz') else open
+        self._file = opener(self.path)
 
     def __getstate__(self):
         """
         Store the state for pickling -- we'll only store the path, and re-initialize
-        LazyDict when unpickled. This is necessary to transfer LazyDict across processes
-        for PyTorch's DataLoader workers (otherwise mmapped file gets copied into memory).
+        this iterator when unpickled. This is necessary to transfer this object across processes
+        for PyTorch's DataLoader workers.
         """
         state = {'path': self.path}
         return state
 
-    def __setstate__(self, state):
-        """Restore the state when unpickled -- open the mmap/jsonl file again."""
+    def __setstate__(self, state: Dict):
+        """Restore the state when unpickled -- open the jsonl file again."""
         self.__dict__.update(state)
-        self._reset()
-
-    def _reset(self):
-        _check_arrow()
-        self._init_table_from_path()
-        self.batches = deque(self.table.to_batches())
-        self.curr_view = self.batches[0].to_pandas()
-        self.id2pos = dict(zip(self.curr_view.id, range(len(self.curr_view.id))))
-        self.prev_view = None
-        self.prev_id2pos = {}
-
-    def _init_table_from_path(self):
-        if '.jsonl' in self.path.suffixes:
-            # Can read ".jsonl" or ".jsonl.gz"
-            import pyarrow.json as paj
-            self.table = paj.read_json(
-                str(self.path),
-                read_options=paj.ReadOptions(
-                    # magic constants:
-                    # 894 - estimated average number of bytes per JSON item manifest
-                    # 10000 - how many items we want to have in a chunk (Arrow's "batch")
-                    block_size=894 * 10000
-                )
-            )
-        elif '.arrow' == self.path.suffixes[-1]:
-            # Can read ".arrow"
-            import pyarrow as pa
-            mmap = pa.memory_map(str(self.path))
-            stream = pa.ipc.open_file(mmap)
-            self.table = stream.read_all()
-        else:
-            raise ValueError(f"Unknown LazyDict file format : '{self.path}'")
-
-    def _progress(self):
-        # Rotate the deque to the left by one item.
-        # [0, 1, 2] -> [1, 2, 0]
-        self.batches.rotate(-1)
-        self.prev_view = self.curr_view
-        self.curr_view = self.batches[0].to_pandas()
-        self.prev_id2pos = self.id2pos
-        self.id2pos = dict(zip(self.curr_view.id, range(len(self.curr_view.id))))
-
-    def _find_key(self, key: str):
-        # We will rotate the deque with N lazy views at most N times
-        # to search for a given key.
-        max_rotations = len(self.batches)
-        for _ in range(max_rotations):
-            # Try without any rotations in the first iteration --
-            # this should make search faster for contiguous keys.
-            pos = self.id2pos.get(key)
-            if pos is not None:
-                return deserialize_item(self.curr_view.iloc[pos].to_dict())
-            pos = self.prev_id2pos.get(key)
-            if pos is not None:
-                return deserialize_item(self.prev_view.iloc[pos].to_dict())
-            # Not found in the current Arrow's "batch" -- we'll advance
-            # to the next one and try again.
-            self._progress()
-        # Key not found anyhwere.
-        return None
-
-    def __len__(self) -> int:
-        return self.table.num_rows
-
-    def __getitem__(self, key: str):
-        """This is extremely inefficient and should not be used this way."""
-        value = self._find_key(key)
-        if value is None:
-            raise KeyError(f"No such key: {key}")
-        return value
-
-    def get(self, key, or_=None):
-        return ifnone(self._find_key(key), or_)
-
-    def __contains__(self, key: str):
-        value = self._find_key()
-        return value is not None
-
-    def __repr__(self):
-        return f'LazyDict(num_items={len(self)})'
 
     def __iter__(self):
-        for b in self.table.to_batches():
-            yield from b['id'].tolist()
+        self._reset()
+        return self
 
-    def keys(self):
-        return iter(self)
+    def __next__(self):
+        line = next(self._file)
+        data = json.loads(line)
+        item = deserialize_item(data)
+        return item
 
     def values(self):
-        for b in self.table.to_batches():
-            # This seems to be the fastest way to iterate rows in a pyarrow table.
-            # Conversion to pandas seems to have the least overhead
-            # due to Arrow's zero-copy memory sharing policy.
-            yield from (deserialize_item(row.to_dict()) for idx, row in b.to_pandas().iterrows())
+        yield from self
+
+    def keys(self):
+        return (item.id for item in self)
 
     def items(self):
-        yield from ((cut.id, cut) for cut in self.values())
+        return ((item.id, item) for item in self)
+
+    def __len__(self) -> int:
+        return count_newlines_fast(self.path)
 
 
 def deserialize_item(data: dict) -> Any:
@@ -544,7 +368,6 @@ def deserialize_item(data: dict) -> Any:
     # and returns a Lhotse manifest object rather than a raw dict.
     from lhotse import MonoCut, Features, Recording, SupervisionSegment
     from lhotse.cut import MixedCut
-    data = arr2list_recursive(data)
     if 'sources' in data:
         return Recording.from_dict(data)
     if 'num_features' in data:
@@ -564,35 +387,21 @@ def deserialize_item(data: dict) -> Any:
     raise ValueError(f"Unexpected cut type during deserialization: '{cut_type}'")
 
 
-def arr2list_recursive(data: Union[dict, list], filter_none: bool = True) -> Union[dict, list]:
+def count_newlines_fast(path: Pathlike):
     """
-    A helper method for converting dicts read via pyarrow,
-    which have numpy arrays instead of scalars and regular lists.
+    Counts newlines in a file using buffered chunk reads.
+    The fastest possible option in Python according to:
+    https://stackoverflow.com/a/68385697/5285891
+    (This is a slightly modified variant of that answer.)
     """
-    return {
-        # Array containing objects: go deeper
-        k: [arr2list_recursive(x) for x in v] if isinstance(v, np.ndarray) and v.dtype == np.dtype('O')
-        # Array (likely) containing numeric types: convert to list and to Python numeric types
-        else v.tolist() if isinstance(v, (np.generic, np.ndarray))
-        # Dict: go deeper
-        else arr2list_recursive(v) if isinstance(v, dict)
-        # Don't change anything
-        else v
-        for k, v in data.items()
-        if v is not None or not filter_none
-    }
+    def _make_gen(reader):
+        b = reader(2 ** 16)
+        while b:
+            yield b
+            b = reader(2 ** 16)
 
-
-class NumpyEncoder(json.JSONEncoder):
-    """
-    Utility that converts numpy types to native Python types for JSON serialization.
-
-    Example:
-        >>> with open('foo.json', 'w') as f:
-        ...     json.dump({'a': np.arange(10)}, f, cls=NumpyEncoder)
-    """
-    def default(self, obj):
-        if isinstance(obj, (np.generic, np.ndarray)):
-            return obj.tolist()
-        else:
-            return super().default(obj)
+    path = Path(path)
+    opener = gzip.open if str(path).endswith('.gz') else open
+    with opener(path, "rb") as f:
+        count = sum(buf.count(b"\n") for buf in _make_gen(f.read))
+    return count

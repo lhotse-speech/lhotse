@@ -36,7 +36,6 @@ def k2_cut_set(libri_cut_set):
 @pytest.mark.parametrize('num_workers', [0, 1])
 def test_k2_speech_recognition_iterable_dataset(k2_cut_set, num_workers):
     dataset = K2SpeechRecognitionDataset(
-        k2_cut_set,
         cut_transforms=[CutConcatenate()]
     )
     sampler = SingleCutSampler(k2_cut_set, shuffle=False)
@@ -57,7 +56,6 @@ def test_k2_speech_recognition_iterable_dataset(k2_cut_set, num_workers):
 def test_k2_speech_recognition_iterable_dataset_multiple_workers(k2_cut_set, num_workers):
     k2_cut_set = k2_cut_set.pad()
     dataset = K2SpeechRecognitionDataset(
-        k2_cut_set,
         cut_transforms=[CutConcatenate()]
     )
     sampler = SingleCutSampler(k2_cut_set, shuffle=False)
@@ -86,7 +84,6 @@ def test_k2_speech_recognition_iterable_dataset_shuffling():
     cut_set = DummyManifest(CutSet, begin_id=0, end_id=100)
 
     dataset = K2SpeechRecognitionDataset(
-        cuts=cut_set,
         return_cuts=True,
         cut_transforms=[
             CutConcatenate(),
@@ -116,7 +113,7 @@ def test_k2_speech_recognition_iterable_dataset_shuffling():
 
 
 def test_k2_speech_recognition_iterable_dataset_low_max_frames(k2_cut_set):
-    dataset = K2SpeechRecognitionDataset(k2_cut_set)
+    dataset = K2SpeechRecognitionDataset()
     sampler = SingleCutSampler(k2_cut_set, shuffle=False, max_frames=2)
     dloader = DataLoader(dataset, sampler=sampler, batch_size=None)
     # Check that it does not crash
@@ -136,7 +133,6 @@ def k2_noise_cut_set(libri_cut_set):
 
 def test_k2_speech_recognition_augmentation(k2_cut_set, k2_noise_cut_set):
     dataset = K2SpeechRecognitionDataset(
-        k2_cut_set,
         cut_transforms=[
             CutConcatenate(),
             CutMix(k2_noise_cut_set)
@@ -162,9 +158,8 @@ def test_extra_padding_transform(k2_cut_set):
 
 
 def test_k2_speech_recognition_on_the_fly_feature_extraction(k2_cut_set):
-    precomputed_dataset = K2SpeechRecognitionDataset(k2_cut_set)
+    precomputed_dataset = K2SpeechRecognitionDataset()
     on_the_fly_dataset = K2SpeechRecognitionDataset(
-        k2_cut_set.drop_features(),
         input_strategy=OnTheFlyFeatures(Fbank())
     )
     sampler = SingleCutSampler(k2_cut_set, shuffle=False, max_cuts=1)
@@ -186,13 +181,11 @@ def test_k2_speech_recognition_on_the_fly_feature_extraction(k2_cut_set):
 
 def test_k2_speech_recognition_on_the_fly_feature_extraction_with_randomized_smoothing(k2_cut_set):
     dataset = K2SpeechRecognitionDataset(
-        k2_cut_set.drop_features(),
         input_strategy=OnTheFlyFeatures(
             extractor=Fbank(),
         )
     )
     rs_dataset = K2SpeechRecognitionDataset(
-        k2_cut_set.drop_features(),
         input_strategy=OnTheFlyFeatures(
             extractor=Fbank(),
             # Use p=1.0 to ensure that smoothing is applied in this test.
@@ -209,7 +202,6 @@ def test_k2_speech_recognition_on_the_fly_feature_extraction_with_randomized_smo
 
 def test_k2_speech_recognition_audio_inputs(k2_cut_set):
     on_the_fly_dataset = K2SpeechRecognitionDataset(
-        k2_cut_set,
         input_strategy=AudioSamples(),
     )
     # all cuts in one batch
@@ -229,7 +221,6 @@ def test_k2_speech_recognition_audio_inputs_with_workers_in_input_strategy(
     k2_cut_set
 ):
     on_the_fly_dataset = K2SpeechRecognitionDataset(
-        k2_cut_set,
         input_strategy=AudioSamples(num_workers=2),
     )
     # all cuts in one batch

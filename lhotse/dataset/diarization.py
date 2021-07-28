@@ -1,17 +1,14 @@
-from itertools import chain
-from typing import Dict, Iterable, Optional
-from numpy import record
+from typing import Dict, Optional
 
 import torch
 from torch.nn import CrossEntropyLoss
 from torch.utils.data import Dataset
 
 from lhotse import validate
-from lhotse.cut import CutSet
 from lhotse.audio import RecordingSet
-from lhotse.supervision import SupervisionSet
-from lhotse.utils import overspans, TimeSpan
+from lhotse.cut import CutSet
 from lhotse.dataset.collation import collate_features, collate_matrices
+from lhotse.supervision import SupervisionSet
 
 
 class DiarizationDataset(Dataset):
@@ -95,8 +92,7 @@ class DiarizationDataset(Dataset):
         )
         self.min_speaker_dim = min_speaker_dim
 
-    def __getitem__(self, cut_ids: Iterable[str]) -> Dict[str, torch.Tensor]:
-        cuts = self.cuts.subset(cut_ids=cut_ids)
+    def __getitem__(self, cuts: CutSet) -> Dict[str, torch.Tensor]:
         features, features_lens = collate_features(cuts)
         return {
             "features": features,
@@ -114,6 +110,3 @@ class DiarizationDataset(Dataset):
                 padding_value=CrossEntropyLoss().ignore_index,
             ),
         }
-
-    def __len__(self) -> int:
-        return len(self.cuts)
