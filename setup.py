@@ -28,6 +28,7 @@ try:
     # If the user already installed torch, we'll try to find the compatible
     # torchaudio version. If they haven't installed torch, we'll just install
     # the latest torch and torchaudio.
+    # This code is partially borrowed from ESPnet's setup.py.
     import torch
 
     torch_ver = LooseVersion(torch.__version__)
