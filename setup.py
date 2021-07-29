@@ -1,5 +1,6 @@
 # coding=utf-8
 import os
+from distutils.version import LooseVersion
 from pathlib import Path
 from subprocess import PIPE, run
 
@@ -7,12 +8,51 @@ from setuptools import find_packages, setup
 
 project_root = Path(__file__).parent
 
-install_requires = (project_root / 'requirements.txt').read_text().splitlines()
+install_requires = [
+    "audioread>=2.1.9",
+    "SoundFile>=0.10",
+    "click>=7.1.1",
+    "cytoolz>=0.10.1",
+    "dataclasses",
+    "h5py>=2.10.0",
+    "intervaltree>= 3.1.0",
+    "lilcom>=1.1.0",
+    "numpy>=1.18.1",
+    "packaging",
+    "pyyaml>=5.3.1",
+    "tqdm",
+]
+
+try:
+    # A matrix of compatible torch and torchaudio versions.
+    # If the user already installed torch, we'll try to find the compatible
+    # torchaudio version. If they haven't installed torch, we'll just install
+    # the latest torch and torchaudio.
+    import torch
+
+    torch_ver = LooseVersion(torch.__version__)
+    if torch_ver >= LooseVersion("1.9.1"):
+        raise NotImplementedError("Not yet supported")
+    elif torch_ver >= LooseVersion("1.9.0"):
+        install_requires.append("torchaudio==0.9.0")
+    elif torch_ver >= LooseVersion("1.8.1"):
+        install_requires.append("torchaudio==0.8.1")
+    elif torch_ver >= LooseVersion("1.8.0"):
+        install_requires.append("torchaudio==0.8.0")
+    elif torch_ver >= LooseVersion("1.7.1"):
+        install_requires.append("torchaudio==0.7.2")
+    else:
+        raise ValueError(
+            f"Lhotse requires torch>=1.7.1 and torchaudio 1.7.2 -- "
+            f"please update your torch (detected version: {torch_ver})."
+        )
+except ImportError:
+    install_requires.extend(["torch", "torchaudio"])
+
 docs_require = (project_root / 'docs' / 'requirements.txt').read_text().splitlines()
 tests_require = ['pytest==5.4.3', 'flake8==3.8.3', 'coverage==5.1', 'hypothesis==5.41.2']
-arrow_requires = ['pyarrow>=4.0.0', 'pandas>=1.0.0']
 dev_requires = sorted(docs_require + tests_require + ['jupyterlab', 'matplotlib', 'isort'])
-all_requires = sorted(dev_requires + arrow_requires)
+all_requires = sorted(dev_requires)
 
 if os.environ.get('READTHEDOCS', False):
     # When building documentation, omit torchaudio installation and mock it instead.
@@ -56,7 +96,6 @@ setup(
     extras_require={
         'docs': docs_require,
         'tests': tests_require,
-        'arrow': arrow_requires,
         'dev': docs_require + tests_require,
         'all': all_requires
     },
