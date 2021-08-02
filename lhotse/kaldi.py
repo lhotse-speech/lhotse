@@ -5,14 +5,14 @@ from typing import Any, Dict, Optional, Tuple
 
 from lhotse import CutSet, FeatureSet, Features, Seconds
 from lhotse.audio import AudioSource, Recording, RecordingSet
+from lhotse.audio import audioread_info
 from lhotse.supervision import SupervisionSegment, SupervisionSet
-from lhotse.utils import Pathlike, is_module_available, compute_num_samples
-from lhotse.audio import audioread_info 
+from lhotse.utils import Pathlike, compute_num_samples, is_module_available
 
 
 def get_duration(
-    path: Pathlike,
-) -> float: 
+        path: Pathlike,
+) -> float:
     """
     Read a audio file, it supports pipeline style wave path and real waveform.
     
@@ -125,7 +125,11 @@ def load_kaldi_data_dir(
     return recording_set, supervision_set, feature_set
 
 
-def export_to_kaldi(recordings: RecordingSet, supervisions: SupervisionSet, output_dir: Pathlike):
+def export_to_kaldi(
+        recordings: RecordingSet,
+        supervisions: SupervisionSet,
+        output_dir: Pathlike
+):
     """
     Export a pair of ``RecordingSet`` and ``SupervisionSet`` to a Kaldi data directory.
     Currently, it only supports single-channel recordings that have a single ``AudioSource``.
@@ -151,9 +155,9 @@ def export_to_kaldi(recordings: RecordingSet, supervisions: SupervisionSet, outp
     # wav.scp
     save_kaldi_text_mapping(
         data={
-            recording.id: f'{source.source} |' if source.type == 'command' else source.source
+            recording.id: make_wavscp_string(source, sampling_rate=recording.sampling_rate)
             for recording in recordings
-            for src_idx, source in enumerate(recording.sources)
+            for source in recording.sources
         },
         path=output_dir / 'wav.scp'
     )
@@ -212,3 +216,17 @@ def save_kaldi_text_mapping(data: Dict[str, Any], path: Path):
     with path.open('w') as f:
         for key, value in data.items():
             print(key, value, file=f)
+
+
+def make_wavscp_string(source: AudioSource, sampling_rate: int) -> str:
+    if source.type == 'url':
+        raise ValueError("URL audio sources are not supported by Kaldi.")
+    elif source.type == 'command':
+        return f'{source.source} |'
+    elif source.type == 'file':
+        if Path(source.source).suffix == '.wav':
+            return source.source
+        else:
+            return f'ffmpeg -i {source.source} -ar {sampling_rate} -f wav pipe:1 |'
+    else:
+        raise ValueError(f"Unknown AudioSource type: {source.type}")
