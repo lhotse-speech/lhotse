@@ -576,8 +576,11 @@ class SupervisionSet(Serializable, Sequence[SupervisionSegment]):
     def __repr__(self) -> str:
         return f'SupervisionSet(len={len(self)})'
 
-    def __getitem__(self, item: str) -> SupervisionSegment:
-        return self.segments[item]
+    def __getitem__(self, sup_id_or_index: Union[int, str]) -> SupervisionSegment:
+        if isinstance(sup_id_or_index, str):
+            return self.segments[sup_id_or_index]
+        # ~100x faster than list(dict.values())[index] for 100k elements
+        return next(val for idx, val in enumerate(self.segments.values()) if idx == sup_id_or_index)
 
     def __contains__(self, item: Union[str, SupervisionSegment]) -> bool:
         if isinstance(item, str):
