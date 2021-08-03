@@ -658,6 +658,12 @@ class RecordingSet(Serializable, Sequence[Recording]):
     def __repr__(self) -> str:
         return f'RecordingSet(len={len(self)})'
 
+    def __contains__(self, item: Union[str, Recording]) -> bool:
+        if isinstance(item, str):
+            return item in self.recordings
+        else:
+            return item.id in self.recordings
+
     def __getitem__(self, recording_id_or_index: Union[int, str]) -> Recording:
         if isinstance(recording_id_or_index, str):
             return self.recordings[recording_id_or_index]

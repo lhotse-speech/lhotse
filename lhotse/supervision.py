@@ -3,7 +3,7 @@ import random
 from collections import defaultdict
 from dataclasses import dataclass
 from itertools import groupby, islice
-from typing import Any, Callable, Dict, Iterable, List, Mapping, Optional, Sequence
+from typing import Any, Callable, Dict, Iterable, List, Mapping, Optional, Sequence, Union
 
 from lhotse.serialization import Serializable
 from lhotse.utils import Pathlike, Seconds, TimeSpan, asdict_nonull, compute_num_samples, exactly_one_not_null, \
@@ -578,6 +578,12 @@ class SupervisionSet(Serializable, Sequence[SupervisionSegment]):
 
     def __getitem__(self, item: str) -> SupervisionSegment:
         return self.segments[item]
+
+    def __contains__(self, item: Union[str, SupervisionSegment]) -> bool:
+        if isinstance(item, str):
+            return item in self.segments
+        else:
+            return item.id in self.segments
 
     def __iter__(self) -> Iterable[SupervisionSegment]:
         return iter(self.segments.values())
