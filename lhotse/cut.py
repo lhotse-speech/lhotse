@@ -2896,7 +2896,7 @@ class CutSet(Serializable, Sequence[Cut]):
     def __repr__(self) -> str:
         return f'CutSet(len={len(self)})'
 
-    def __contains__(self, item: Union[str, MonoCut, MixedCut]) -> bool:
+    def __contains__(self, item: Union[str, Cut]) -> bool:
         if isinstance(item, str):
             return item in self.cuts
         else:

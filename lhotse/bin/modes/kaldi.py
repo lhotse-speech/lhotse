@@ -47,8 +47,12 @@ def export(recordings: Pathlike, supervisions: Pathlike, output_dir: Pathlike):
     """
     Convert a pair of ``RecordingSet`` and ``SupervisionSet`` manifests into a Kaldi-style data directory.
     """
+    output_dir = Path(output_dir)
     export_to_kaldi(
         recordings=load_manifest(recordings),
         supervisions=load_manifest(supervisions),
         output_dir=output_dir
     )
+    click.secho('Export completed! You likely need to run the following Kaldi commands:', bold=True, fg='yellow')
+    click.secho(f'  utils/utt2spk_to_spk2utt.pl {output_dir}/utt2spk > {output_dir}/spk2utt', fg='yellow')
+    click.secho(f'  utils/fix_data_dir.sh {output_dir}', fg='yellow')
