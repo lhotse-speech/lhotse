@@ -276,6 +276,20 @@ Helper functions to dispatch jobs to the concurrent executors.
 """
 
 
+def read_audio_from_cuts(
+        cuts: Iterable[Cut], executor: Optional[Executor] = None
+) -> List[torch.Tensor]:
+    map_fn = map if executor is None else executor.map
+    return list(map_fn(_read_audio, cuts))
+
+
+def read_features_from_cuts(
+        cuts: Iterable[Cut], executor: Optional[Executor] = None
+) -> List[torch.Tensor]:
+    map_fn = map if executor is None else executor.map
+    return list(map_fn(_read_features, cuts))
+
+
 def _read_audio(cut: Cut) -> torch.Tensor:
     return torch.from_numpy(cut.load_audio()[0])
 
