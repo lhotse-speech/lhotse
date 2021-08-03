@@ -7,8 +7,9 @@ import torch
 
 from lhotse import CutSet, FeatureExtractor
 from lhotse.cut import compute_supervisions_frame_mask
-from lhotse.dataset.collation import collate_audio, collate_features, collate_vectors
-from lhotse.utils import compute_num_frames, ifnone, supervision_to_frames, supervision_to_samples
+from lhotse.dataset.collation import collate_audio, collate_features, collate_matrices, collate_vectors, \
+    read_audio_from_cuts
+from lhotse.utils import LOG_EPSILON, compute_num_frames, ifnone, supervision_to_frames, supervision_to_samples
 
 
 class BatchIO:
@@ -230,21 +231,22 @@ class OnTheFlyFeatures(BatchIO):
 
         :return: a tensor with collated features, and a tensor of ``num_frames`` of each cut before padding.
         """
-        audio, _ = collate_audio(cuts, executor=_get_executor(self.num_workers))
+        audios = read_audio_from_cuts(cuts, executor=_get_executor(self.num_workers))
 
         for tfnm in self.wave_transforms:
-            audio = tfnm(audio)
+            for idx in range(len(audios)):
+                audios[idx] = tfnm(audios[idx])
 
         features_single = []
         for idx, cut in enumerate(cuts):
-            samples = audio[idx].numpy()
+            samples = audios[idx].numpy()
             try:
                 features = self.extractor.extract(samples, cuts[idx].sampling_rate)
             except:
                 logging.error(f"Error while extracting the features for cut with ID {cut.id} -- details:\n{cut}")
                 raise
             features_single.append(torch.from_numpy(features))
-        features_batch = torch.stack(features_single)
+        features_batch = collate_matrices(features_single, padding_value=LOG_EPSILON)
 
         feature_lens = torch.tensor([
             compute_num_frames(
