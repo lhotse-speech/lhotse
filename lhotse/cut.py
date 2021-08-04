@@ -2095,7 +2095,6 @@ class CutSet(Serializable, Sequence[Cut]):
             )
 
         if cut_ids is not None:
-            cut_ids = set(cut_ids)
             return CutSet.from_cuts(self[cid] for cid in cut_ids)
 
     def filter_supervisions(self, predicate: Callable[[SupervisionSegment], bool]) -> 'CutSet':
