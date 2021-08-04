@@ -16,16 +16,27 @@ def get_duration(
     """
     Read a audio file, it supports pipeline style wave path and real waveform.
     
-    :param path: Path to an audio file supported by libsoundfile (pysoundfile).
-    :return: duration of wav it is float.
-    """ 
+    :param path: Path to an audio file or a Kaldi-style pipe.
+    :return: float duration of the recording, in seconds.
+    """
+    path = str(path)
+    if path.strip().endswith('|'):
+        if not is_module_available('kaldiio'):
+            raise ValueError("To read Kaldi's data dir where wav.scp has 'pipe' inputs, "
+                             "please 'pip install kaldiio' first.")
+        from kaldiio import load_mat
+        # Note: kaldiio.load_mat returns (sampling_rate: int, samples: 1-D np.array[int])
+        sampling_rate, samples = load_mat(path)
+        assert len(samples.shape) == 1
+        duration = samples.shape[0] / sampling_rate
+        return duration
     try:
         # Try to parse the file using pysoundfile first.
         import soundfile
-        info = soundfile.info(str(path))
+        info = soundfile.info(path)
     except:
         # Try to parse the file using audioread as a fallback.
-        info = audioread_info(str(path))
+        info = audioread_info(path)
     return info.duration
 
 
@@ -47,7 +58,7 @@ def load_kaldi_data_dir(
     # must exist for RecordingSet
     recordings = load_kaldi_text_mapping(path / 'wav.scp', must_exist=True)
 
-    durations = defaultdict(float)
+    durations = {}
     for recording_id, path_or_cmd in recordings.items():
         duration = get_duration(path_or_cmd)
         durations[recording_id] = duration 
