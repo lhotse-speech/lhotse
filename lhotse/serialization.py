@@ -115,7 +115,7 @@ class SequentialJsonlWriter:
     Example:
 
         >>> from lhotse import RecordingSet, Recording
-        ... with RecordingSet.open_writer('recordings.jsonl.gz') as writer:
+        ... with RecordingSet.open_writer('recordings.jsonl.gz', overwrite=False) as writer:
         ...     for path in Path('.').rglob('*.wav'):
         ...         recording_id = path.stem
         ...         if writer.contains(recording_id):
