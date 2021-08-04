@@ -127,7 +127,7 @@ class SequentialJsonlWriter:
         ...         writer.write(recording)
     """
 
-    def __init__(self, path: Pathlike, overwrite: bool = False) -> None:
+    def __init__(self, path: Pathlike, overwrite: bool = True) -> None:
         self.path = Path(path)
         assert extension_contains('.jsonl', self.path)
         self.compressed = extension_contains('.gz', self.path)
