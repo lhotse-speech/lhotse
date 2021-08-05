@@ -633,3 +633,69 @@ def test_zip_sampler():
         assert len(batch) == 12  # twelve 1s items
         assert len([c for c in batch if 0 <= int(c.id.split('-')[-1]) <= 100]) == 10  # ten come from cuts1
         assert len([c for c in batch if 1000 <= int(c.id.split('-')[-1]) <= 1100]) == 2  # two come from cuts2
+
+
+def test_single_cut_sampler_drop_last():
+    # The dummy cuts have a duration of 1 second each
+    cut_set = DummyManifest(CutSet, begin_id=0, end_id=100)
+
+    sampler = SingleCutSampler(
+        cut_set,
+        # Set an effective batch size of 15 cuts, as all have 1s duration == 100 frames
+        # This way we're testing that it works okay when returning multiple batches in
+        # a full epoch.
+        max_frames=1500,
+        drop_last=True,
+    )
+    batches = []
+    for batch in sampler:
+        assert len(batch) == 15
+        batches.append(batch)
+
+    print(sampler.get_report())
+
+    assert len(batches) == 6
+
+
+def test_bucketing_sampler_drop_last():
+    # CutSet that has 50 cuts: 10 have 1s, 10 have 2s, etc.
+    cut_set = CutSet()
+    for i in range(5):
+        new_cuts = DummyManifest(CutSet, begin_id=i * 10, end_id=(i + 1) * 10)
+        for c in new_cuts:
+            c.duration = i + 1
+        cut_set = cut_set + new_cuts
+
+    # Sampler that always select one cut.
+    sampler = BucketingSampler(
+        cut_set,
+        sampler_type=SingleCutSampler,
+        max_duration=10.5,
+        num_buckets=5,
+        drop_last=True,
+    )
+    batches = []
+    for batch in sampler:
+        # Assert there is a single cut duration per bucket.
+        for cut in batch:
+            assert cut.duration == batch[0].duration
+        batches.append(batch)
+
+    print(sampler.get_report())
+
+    # Expectation:
+    # 10 x 1s cuts == 1 batch (10 cuts each, 0 left over)
+    # 10 x 2s cuts == 2 batches (4 cuts each, 2 left over)
+    # 10 x 3s cuts == 3 batches (3 cuts each, 3 left over)
+    # 10 x 4s cuts == 5 batches (2 cuts each, 0 left over)
+    # 10 x 5s cuts == 5 batches (2 cuts each, 0 left over)
+    # total num batches == 15
+    # total num cuts == 45
+    # discarded num cuts == 5
+
+    expected_num_batches = 15
+    num_sampled_cuts = sum(len(b) for b in batches)
+    num_discarded_cuts = len(cut_set) - num_sampled_cuts
+    assert len(batches) == expected_num_batches
+    assert num_sampled_cuts == 45
+    assert num_discarded_cuts == 5

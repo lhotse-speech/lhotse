@@ -1,8 +1,11 @@
 import random
 import warnings
 from collections import deque
-from dataclasses import dataclass
-from typing import Callable, List, Optional, Tuple, Type, Union
+from dataclasses import dataclass, field
+from functools import reduce
+from math import isclose
+from operator import add
+from typing import Callable, Iterable, List, Optional, Tuple, Type, Union
 
 import torch.distributed as dist
 from torch.utils.data import Sampler
@@ -118,6 +121,7 @@ class CutSampler(Sampler):
         self._maybe_init_distributed(world_size=world_size, rank=rank)
         self.num_batches = None
         self._filter_fn: Optional[Callable[[Cut], bool]] = None
+        self.diagnostics = SamplingDiagnostics()
 
     def _maybe_init_distributed(self, world_size: Optional[int], rank: Optional[int]):
         if world_size is not None:
@@ -188,6 +192,10 @@ class CutSampler(Sampler):
             batches.append(self._next_batch())
         return batches[self.rank]
 
+    def get_report(self) -> str:
+        """Returns a string describing the statistics of the sampling process so far."""
+        return self.diagnostics.get_report()
+
 
 @dataclass
 class TimeConstraint:
@@ -206,6 +214,7 @@ class TimeConstraint:
     max_samples: Optional[int] = None
     max_frames: Optional[int] = None
     current: Union[int, Seconds] = 0
+    num_cuts: int = 0
 
     def __post_init__(self) -> None:
         assert exactly_one_not_null(*self._constraints) or all(x is None for x in self._constraints)
@@ -231,6 +240,7 @@ class TimeConstraint:
             self.current += cut.num_samples
         if self.max_duration is not None:
             self.current += cut.duration
+        self.num_cuts += 1
 
     def exceeded(self) -> bool:
         """Is the constraint exceeded or not."""
@@ -242,12 +252,113 @@ class TimeConstraint:
             return self.current > self.max_duration
         return False
 
+    def close_to_exceeding(self) -> bool:
+        """
+        Check if the batch is close to satisfying the constraints.
+        We define "closeness" as: if we added one more cut that has
+        duration/num_frames/num_samples equal to the mean of the current
+        batch, then the batch would have exceeded the constraints.
+        """
+        mean = self.current / self.num_cuts
+        if self.max_frames is not None:
+            return self.current + mean > self.max_frames
+        if self.max_samples is not None:
+            return self.current + mean > self.max_samples
+        if self.max_duration is not None:
+            return self.current + mean > self.max_duration
+        return False
+
     def reset(self) -> None:
         """
         Reset the internal counter (to be used after a batch was created,
         to start collecting a new one).
         """
         self.current = 0
+        self.num_cuts = 0
+
+    def __add__(self, other: 'TimeConstraint') -> 'TimeConstraint':
+        for key in ('max_duration', 'max_frames', 'max_samples'):
+            self_attr = getattr(self, key)
+            other_attr = getattr(other, key)
+            is_none = self_attr is None and other_attr is None
+            assert is_none or isclose(self_attr, other_attr), (
+                f"To add two TimeConstraint objects, they need to represent the same constraint "
+                f"(got self.{key}={self_attr} != other.{key}={other_attr})."
+            )
+        return TimeConstraint(
+            max_duration=self.max_duration,
+            max_frames=self.max_frames,
+            max_samples=self.max_samples,
+            current=self.current + other.current,
+            num_cuts=self.num_cuts + other.num_cuts
+        )
+
+
+@dataclass
+class SamplingDiagnostics:
+    """
+    Utility for collecting diagnostics about the sampling process:
+    how many cuts/batches were discarded.
+    """
+    kept_stats: TimeConstraint = field(default_factory=lambda: TimeConstraint(max_duration=float('inf')))
+    discarded_stats: TimeConstraint = field(default_factory=lambda: TimeConstraint(max_duration=float('inf')))
+    num_kept_batches: int = 0
+    num_discarded_batches: int = 0
+
+    def keep(self, cuts: Iterable[Cut]) -> None:
+        cntr = 0
+        for cut in cuts:
+            self.kept_stats.add(cut)
+            cntr += 1
+        if not cntr:
+            warnings.warn('Found an accepted batch with zero cuts. This could be an error.')
+        self.num_kept_batches += 1
+
+    def discard(self, cuts: Iterable[Cut]) -> None:
+        cntr = 0
+        for cut in cuts:
+            self.discarded_stats.add(cut)
+            cntr += 1
+        if cntr:
+            # We don't warn about discarded batches with 0 cuts.
+            self.num_discarded_batches += 1
+
+    def reset(self) -> None:
+        self.kept_stats.reset()
+        self.discarded_stats.reset()
+
+    @property
+    def total_cuts(self) -> int:
+        return self.kept_stats.num_cuts + self.discarded_stats.num_cuts
+
+    @property
+    def total_batches(self) -> int:
+        return self.num_kept_batches + self.num_discarded_batches
+
+    def get_report(self) -> str:
+        """Returns a string describing the statistics of the sampling process so far."""
+        if self.total_batches == 0 or self.total_cuts == 0:
+            return "Sampling statistics unvavailable: the SamplerDiagnostics received no cuts or batches. " \
+                   "If this is unexpected, and you're using a custom sampler, ensure that the sampler " \
+                   "is registering the batches in SamplerDiagnostics."
+        return (
+            f"Sampling statistics: \n"
+            f"Kept {self.kept_stats.num_cuts:d}/{self.total_cuts:d} "
+            f"({self.kept_stats.num_cuts / self.total_cuts:.2%}) cuts "
+            f"({self.discarded_stats.num_cuts:d} cuts discarded).\n"
+            f"Kept {self.num_kept_batches:d}/{self.total_batches:d} "
+            f"({self.num_kept_batches / self.total_batches:.2%}) batches "
+            f"({self.num_discarded_batches:d} batches discarded).\n"
+            f"Overall, {self.discarded_stats.current:.1f} seconds of supervision were discarded."
+        )
+
+    def __add__(self, other: 'SamplingDiagnostics') -> 'SamplingDiagnostics':
+        return SamplingDiagnostics(
+            kept_stats=self.kept_stats + other.kept_stats,
+            discarded_stats=self.discarded_stats + other.discarded_stats,
+            num_kept_batches=self.num_kept_batches + other.num_kept_batches,
+            num_discarded_batches=self.num_discarded_batches + other.num_discarded_batches
+        )
 
 
 class SingleCutSampler(CutSampler):
@@ -279,6 +390,7 @@ class SingleCutSampler(CutSampler):
             max_duration: Seconds = None,
             max_cuts: Optional[int] = None,
             shuffle: bool = False,
+            drop_last: bool = False,
             world_size: Optional[int] = None,
             rank: Optional[int] = None,
             seed: int = 0,
@@ -296,6 +408,7 @@ class SingleCutSampler(CutSampler):
             Convenient when mini-batch loop is inside an outer epoch-level loop, e.g.:
             `for epoch in range(10): for batch in dataset: ...` as every epoch will see a
             different cuts order.
+        :param drop_last: When ``True``, the last batch is dropped if it's incomplete.
         :param world_size: Total number of distributed nodes. We will try to infer it by default.
         :param rank: Index of distributed node. We will try to infer it by default.
         :param seed: Random seed used to consistently shuffle the dataset across different processes.
@@ -313,6 +426,7 @@ class SingleCutSampler(CutSampler):
             max_frames=max_frames,
             max_samples=max_samples
         )
+        self.drop_last = drop_last
         self.max_cuts = max_cuts
         assert self.time_constraint.is_active() or \
                not (self.time_constraint.is_active() and self.max_cuts is not None)
@@ -326,6 +440,7 @@ class SingleCutSampler(CutSampler):
         if self.shuffle:
             self.data_source.shuffle(self.seed + self.epoch)
         iter(self.data_source)
+        self.diagnostics.reset()
         return self
 
     def _next_batch(self) -> CutSet:
@@ -342,11 +457,17 @@ class SingleCutSampler(CutSampler):
                 # If this doesn't raise (typical case), it's not the end: keep processing.
                 next_cut = next(self.data_source)
             except StopIteration:
-                if cuts:
-                    # We did and we have a partial batch - return it.
+                # No more cuts to sample from: if we have a partial batch,
+                # we may output it, unless the user requested to drop it.
+                # We also check if the batch is "almost there" to override drop_last.
+                if cuts and (not self.drop_last or self.time_constraint.close_to_exceeding()):
+                    # We have a partial batch and we can return it.
+                    self.diagnostics.keep(cuts)
                     return CutSet.from_cuts(cuts)
                 else:
-                    # We did and there is nothing more to return - signal the iteration code to stop.
+                    # There is nothing more to return or it's discarded:
+                    # signal the iteration code to stop.
+                    self.diagnostics.discard(cuts)
                     raise StopIteration()
 
             # Check whether the cut we're about to sample satisfies optional user-requested predicate.
@@ -375,6 +496,7 @@ class SingleCutSampler(CutSampler):
                                   "constraints - we'll return it anyway. Consider increasing max_frames/max_cuts.")
                     cuts.append(next_cut)
 
+        self.diagnostics.keep(cuts)
         return CutSet.from_cuts(cuts)
 
 
@@ -402,6 +524,7 @@ class CutPairsSampler(CutSampler):
             max_target_duration: int = None,
             max_cuts: Optional[int] = None,
             shuffle: bool = False,
+            drop_last: bool = False,
             world_size: Optional[int] = None,
             rank: Optional[int] = None,
             seed: int = 0,
@@ -423,6 +546,7 @@ class CutPairsSampler(CutSampler):
             Convenient when mini-batch loop is inside an outer epoch-level loop, e.g.:
             `for epoch in range(10): for batch in dataset: ...` as every epoch will see a
             different cuts order.
+        :param drop_last: When ``True``, the last batch is dropped if it's incomplete.
         :param world_size: Total number of distributed nodes. We will try to infer it by default.
         :param rank: Index of distributed node. We will try to infer it by default.
         :param seed: Random seed used to consistently shuffle the dataset across different processes.
@@ -448,6 +572,7 @@ class CutPairsSampler(CutSampler):
             max_frames=max_target_frames
         )
         self.max_cuts = max_cuts
+        self.drop_last = drop_last
 
     def __iter__(self) -> 'CutPairsSampler':
         """
@@ -458,6 +583,7 @@ class CutPairsSampler(CutSampler):
             self.target_cuts.sort_like(self.source_cuts)
         iter(self.source_cuts)
         iter(self.target_cuts)
+        self.diagnostics.reset()
         return self
 
     def _next_batch(self) -> Tuple[CutSet, CutSet]:
@@ -481,14 +607,24 @@ class CutPairsSampler(CutSampler):
                     "the same IDs, and the same order."
                 )
             except StopIteration:
-                if source_cuts:
-                    # We did and we have a partial batch - return it.
+                # No more cuts to sample from: if we have a partial batch,
+                # we may output it, unless the user requested to drop it.
+                # We also check if the batch is "almost there" to override drop_last.
+                if source_cuts and (
+                        not self.drop_last
+                        or self.source_constraints.close_to_exceeding()
+                        or self.target_constraints.close_to_exceeding()
+                ):
+                    # We have a partial batch and we can return it.
                     assert len(source_cuts) == len(
                         target_cuts
                     ), "Unexpected state: some cuts in source / target are missing their counterparts..."
+                    self.diagnostics.keep(source_cuts)
                     return CutSet.from_cuts(source_cuts), CutSet.from_cuts(target_cuts)
                 else:
-                    # We did and there is nothing more to return - signal the iteration code to stop.
+                    # There is nothing more to return or it's discarded:
+                    # signal the iteration code to stop.
+                    self.diagnostics.discard(source_cuts)
                     raise StopIteration()
 
             # Check whether the cuts we're about to sample satisfy optional user-requested predicate.
@@ -528,6 +664,7 @@ class CutPairsSampler(CutSampler):
         assert len(source_cuts) == len(
             target_cuts
         ), "Unexpected state: some cuts in source / target are missing their counterparts..."
+        self.diagnostics.keep(source_cuts)
         return CutSet.from_cuts(source_cuts), CutSet.from_cuts(target_cuts)
 
 
@@ -568,6 +705,7 @@ class BucketingSampler(CutSampler):
             *cuts: CutSet,
             sampler_type: Type = SingleCutSampler,
             num_buckets: int = 10,
+            drop_last: bool = False,
             seed: int = 0,
             **kwargs
     ):
@@ -579,6 +717,9 @@ class BucketingSampler(CutSampler):
             Then, all of them will be used to instantiate the per-bucket samplers.
         :param sampler_type: a sampler type that will be created for each underlying bucket.
         :param num_buckets: how many buckets to create.
+        :param drop_last: When ``True``, we will drop all incomplete batches.
+            A batch is considered incomplete if it depleted a bucket before
+            hitting the constraint such as max_duration, max_cuts, etc.
         :param seed: random seed for bucket selection
         :param kwargs: Arguments used to create the underlying sampler for each bucket.
         """
@@ -590,6 +731,7 @@ class BucketingSampler(CutSampler):
             seed=seed
         )
         self.num_buckets = num_buckets
+        self.drop_last = drop_last
         self.sampler_type = sampler_type
         self.sampler_kwargs = kwargs
         self.cut_sets = cuts
@@ -601,7 +743,7 @@ class BucketingSampler(CutSampler):
         # [(cs0_0, cs1_0, cs2_0), (cs0_1, cs1_1, cs2_1)] -> [(cs0_0, cs0_1), (cs1_0, cs1_1), (cs2_0, cs2_1)]
         self.buckets = list(zip(*buckets))
         self.bucket_samplers = [
-            self.sampler_type(*bucket_cut_sets, **kwargs)
+            self.sampler_type(*bucket_cut_sets, drop_last=drop_last, **kwargs)
             for bucket_cut_sets in self.buckets
         ]
         self.bucket_rng = random.Random(self.seed + self.epoch)
@@ -674,6 +816,11 @@ class BucketingSampler(CutSampler):
             if not depleted
         ]
 
+    def get_report(self) -> str:
+        """Returns a string describing the statistics of the sampling process so far."""
+        total_diagnostics = reduce(add, (bucket.diagnostics for bucket in self.bucket_samplers))
+        return total_diagnostics.get_report()
+
 
 class ZipSampler(CutSampler):
     """
@@ -745,3 +892,8 @@ class ZipSampler(CutSampler):
         if self.num_batches is None:
             self.num_batches = min(len(sampler) for sampler in self.samplers)
         return self.num_batches
+
+    def get_report(self) -> str:
+        """Returns a string describing the statistics of the sampling process so far."""
+        total_diagnostics = reduce(add, (sampler.diagnostics for sampler in self.samplers))
+        return total_diagnostics.get_report()
