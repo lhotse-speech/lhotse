@@ -326,6 +326,8 @@ class SamplingDiagnostics:
     def reset(self) -> None:
         self.kept_stats.reset()
         self.discarded_stats.reset()
+        self.num_kept_batches = 0
+        self.num_discarded_batches = 0
 
     @property
     def total_cuts(self) -> int:
@@ -349,7 +351,7 @@ class SamplingDiagnostics:
             f"Kept {self.num_kept_batches:d}/{self.total_batches:d} "
             f"({self.num_kept_batches / self.total_batches:.2%}) batches "
             f"({self.num_discarded_batches:d} batches discarded).\n"
-            f"Overall, {self.discarded_stats.current:.1f} seconds of supervision were discarded."
+            f"Overall, {round(self.discarded_stats.current):d} seconds of supervision were discarded."
         )
 
     def __add__(self, other: 'SamplingDiagnostics') -> 'SamplingDiagnostics':

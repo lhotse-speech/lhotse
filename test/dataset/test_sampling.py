@@ -675,7 +675,7 @@ def test_bucketing_sampler_drop_last(drop_last):
     )
     batches = []
     for batch in sampler:
-        # Assert there is a single cut duration per bucket.
+        # Assert there is a consistent cut duration per bucket in this test.
         for cut in batch:
             assert cut.duration == batch[0].duration
         batches.append(batch)
