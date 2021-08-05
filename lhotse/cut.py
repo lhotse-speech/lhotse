@@ -17,7 +17,7 @@ from intervaltree import Interval, IntervalTree
 from tqdm.auto import tqdm
 from typing_extensions import Literal
 
-from lhotse.audio import AudioMixer, Recording, RecordingSet
+from lhotse.audio import AudioMixer, AudioSource, Recording, RecordingSet
 from lhotse.augmentation import AugmentFn
 from lhotse.features import FeatureExtractor, FeatureMixer, FeatureSet, Features, create_default_feature_extractor
 from lhotse.features.base import compute_global_stats
@@ -392,18 +392,31 @@ class Cut:
             E.g. for speed perturbation, use ``CutSet.perturb_speed()`` instead.
         :return: a new MonoCut instance.
         """
+        storage_path = Path(storage_path)
         samples = self.load_audio()
         if augment_fn is not None:
             samples = augment_fn(samples, self.sampling_rate)
         # Store audio as FLAC
         import soundfile as sf
         sf.write(
-            file=storage_path,
+            file=str(storage_path),
             data=samples.transpose(),
             samplerate=self.sampling_rate,
             format='FLAC'
         )
-        recording = Recording.from_file(storage_path)
+        recording = Recording(
+            id=storage_path.stem,
+            sampling_rate=self.sampling_rate,
+            num_samples=samples.shape[1],
+            duration=samples.shape[1] / self.sampling_rate,
+            sources=[
+                AudioSource(
+                    type='file',
+                    channels=[0],
+                    source=str(storage_path),
+                )
+            ]
+        )
         return MonoCut(
             id=self.id,
             start=0,

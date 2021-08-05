@@ -115,7 +115,7 @@ class SequentialJsonlWriter:
     Example:
 
         >>> from lhotse import RecordingSet, Recording
-        ... with RecordingSet.open_writer('recordings.jsonl.gz') as writer:
+        ... with RecordingSet.open_writer('recordings.jsonl.gz', overwrite=False) as writer:
         ...     for path in Path('.').rglob('*.wav'):
         ...         recording_id = path.stem
         ...         if writer.contains(recording_id):
@@ -127,7 +127,7 @@ class SequentialJsonlWriter:
         ...         writer.write(recording)
     """
 
-    def __init__(self, path: Pathlike, overwrite: bool = False) -> None:
+    def __init__(self, path: Pathlike, overwrite: bool = True) -> None:
         self.path = Path(path)
         assert extension_contains('.jsonl', self.path)
         self.compressed = extension_contains('.gz', self.path)
@@ -185,7 +185,7 @@ class JsonlMixin:
         return cls.from_dicts(data)
 
     @classmethod
-    def open_writer(cls, path: Pathlike, overwrite: bool = False) -> SequentialJsonlWriter:
+    def open_writer(cls, path: Pathlike, overwrite: bool = True) -> SequentialJsonlWriter:
         """
         Open a sequential writer that allows to store the manifests one by one,
         without the necessity of storing the whole manifest set in-memory.
@@ -208,7 +208,7 @@ class JsonlMixin:
         Example:
 
             >>> from lhotse import RecordingSet, Recording
-            ... with RecordingSet.open_writer('recordings.jsonl.gz') as writer:
+            ... with RecordingSet.open_writer('recordings.jsonl.gz', overwrite=False) as writer:
             ...     for path in Path('.').rglob('*.wav'):
             ...         recording_id = path.stem
             ...         if writer.contains(recording_id):
