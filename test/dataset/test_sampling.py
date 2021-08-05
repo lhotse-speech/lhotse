@@ -655,7 +655,8 @@ def test_single_cut_sampler_drop_last():
     assert len(batches) == 6
 
 
-def test_bucketing_sampler_drop_last():
+@pytest.mark.parametrize('drop_last', [False, True])
+def test_bucketing_sampler_drop_last(drop_last):
     # CutSet that has 50 cuts: 10 have 1s, 10 have 2s, etc.
     cut_set = CutSet()
     for i in range(5):
@@ -670,7 +671,7 @@ def test_bucketing_sampler_drop_last():
         sampler_type=SingleCutSampler,
         max_duration=10.5,
         num_buckets=5,
-        drop_last=True,
+        drop_last=drop_last,
     )
     batches = []
     for batch in sampler:
@@ -680,14 +681,22 @@ def test_bucketing_sampler_drop_last():
         batches.append(batch)
 
     # Expectation:
-    # 10 x 1s cuts == 1 batch (10 cuts each, 0 left over)
-    # 10 x 2s cuts == 2 batches (5 cuts each, 0 left over)
-    # 10 x 3s cuts == 3 batches (3 cuts each, 1 left over)
-    # 10 x 4s cuts == 5 batches (2 cuts each, 0 left over)
-    # 10 x 5s cuts == 5 batches (2 cuts each, 0 left over)
-    expected_num_batches = 16
-    expected_num_cuts = 49
-    expected_discarded_cuts = 1
+    if drop_last:
+        # When drop_last = True:
+        #   10 x 1s cuts == 1 batch (10 cuts each, 0 left over)
+        #   10 x 2s cuts == 2 batches (5 cuts each, 0 left over)
+        #   10 x 3s cuts == 3 batches (3 cuts each, 1 left over)
+        #   10 x 4s cuts == 5 batches (2 cuts each, 0 left over)
+        #   10 x 5s cuts == 5 batches (2 cuts each, 0 left over)
+        expected_num_batches = 16
+        expected_num_cuts = 49
+        expected_discarded_cuts = 1
+    else:
+        # When drop_last = False:
+        #   There will be one more batch with a single 3s cut.
+        expected_num_batches = 17
+        expected_num_cuts = 50
+        expected_discarded_cuts = 0
 
     num_sampled_cuts = sum(len(b) for b in batches)
     num_discarded_cuts = len(cut_set) - num_sampled_cuts
