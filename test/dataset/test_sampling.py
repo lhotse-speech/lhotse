@@ -652,8 +652,6 @@ def test_single_cut_sampler_drop_last():
         assert len(batch) == 15
         batches.append(batch)
 
-    print(sampler.get_report())
-
     assert len(batches) == 6
 
 
@@ -681,21 +679,39 @@ def test_bucketing_sampler_drop_last():
             assert cut.duration == batch[0].duration
         batches.append(batch)
 
-    print(sampler.get_report())
-
     # Expectation:
     # 10 x 1s cuts == 1 batch (10 cuts each, 0 left over)
-    # 10 x 2s cuts == 2 batches (4 cuts each, 2 left over)
-    # 10 x 3s cuts == 3 batches (3 cuts each, 3 left over)
+    # 10 x 2s cuts == 2 batches (5 cuts each, 0 left over)
+    # 10 x 3s cuts == 3 batches (3 cuts each, 1 left over)
     # 10 x 4s cuts == 5 batches (2 cuts each, 0 left over)
     # 10 x 5s cuts == 5 batches (2 cuts each, 0 left over)
-    # total num batches == 15
-    # total num cuts == 45
-    # discarded num cuts == 5
+    expected_num_batches = 16
+    expected_num_cuts = 49
+    expected_discarded_cuts = 1
 
-    expected_num_batches = 15
     num_sampled_cuts = sum(len(b) for b in batches)
     num_discarded_cuts = len(cut_set) - num_sampled_cuts
     assert len(batches) == expected_num_batches
-    assert num_sampled_cuts == 45
-    assert num_discarded_cuts == 5
+    assert num_sampled_cuts == expected_num_cuts
+    assert num_discarded_cuts == expected_discarded_cuts
+
+
+@pytest.mark.parametrize(
+    "sampler",
+    [
+        SingleCutSampler(DummyManifest(CutSet, begin_id=0, end_id=10)),
+        CutPairsSampler(
+            DummyManifest(CutSet, begin_id=0, end_id=10),
+            DummyManifest(CutSet, begin_id=0, end_id=10),
+        ),
+        BucketingSampler(DummyManifest(CutSet, begin_id=0, end_id=10)),
+        ZipSampler(
+            SingleCutSampler(DummyManifest(CutSet, begin_id=0, end_id=10)),
+            SingleCutSampler(DummyManifest(CutSet, begin_id=0, end_id=10)),
+        ),
+    ],
+)
+def test_sampler_get_report(sampler):
+    _ = [b for b in sampler]
+    print(sampler.get_report())
+    # It runs - voila!
