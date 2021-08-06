@@ -541,7 +541,6 @@ def test_single_cut_sampler_with_lazy_cuts(sampler_cls):
 
         sampler = sampler_cls(
             lazy_cuts,
-            # We set shuffle to False to avoid a possibly very costly iteration of the lazy manifest
             shuffle=False,
             # Set an effective batch size of 10 cuts, as all have 1s duration == 100 frames
             # This way we're testing that it works okay when returning multiple batches in
@@ -742,7 +741,6 @@ def test_single_cut_sampler_lazy_shuffle(sampler_cls):
 
         sampler = sampler_cls(
             lazy_cuts,
-            # We set shuffle to False to avoid a possibly very costly iteration of the lazy manifest
             shuffle=True,
             # Set an effective batch size of 10 cuts, as all have 1s duration == 100 frames
             # This way we're testing that it works okay when returning multiple batches in
@@ -781,7 +779,6 @@ def test_cut_pairs_sampler_lazy_shuffle(sampler_cls):
         sampler = sampler_cls(
             lazy_cuts,
             lazy_cuts,
-            # We set shuffle to False to avoid a possibly very costly iteration of the lazy manifest
             shuffle=True,
             # Set an effective batch size of 10 cuts, as all have 1s duration == 100 frames
             # This way we're testing that it works okay when returning multiple batches in
