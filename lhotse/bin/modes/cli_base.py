@@ -1,3 +1,5 @@
+import logging
+
 import click
 
 from lhotse.utils import fix_random_seed
@@ -9,6 +11,10 @@ def cli(seed):
     """
     The shell entry point to Lhotse, a tool and a library for audio data manipulation in high altitudes.
     """
+    logging.basicConfig(
+        format='%(asctime)s %(levelname)s [%(filename)s:%(lineno)d] %(message)s',
+        level=logging.INFO
+    )
     if seed is not None:
         fix_random_seed(seed)
 
