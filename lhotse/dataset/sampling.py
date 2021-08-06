@@ -5,7 +5,7 @@ from dataclasses import dataclass, field
 from functools import reduce
 from math import isclose
 from operator import add
-from typing import Callable, Dict, Iterable, List, Optional, Tuple, Type, Union
+from typing import Callable, Dict, Generator, Iterable, List, Optional, Tuple, Type, Union
 
 import torch.distributed as dist
 from torch.utils.data import Sampler
@@ -16,37 +16,61 @@ from lhotse.utils import Seconds, exactly_one_not_null, is_none_or_gt
 
 
 class DataSource:
+    """
+    An iterator wrapper over CutSet that helps with the sampling process:
+    it allows for deterministic re-shuffling of elements and "returning"
+    sampled elements to be yielded again.
+    """
+
     def __init__(self, items: CutSet):
         self._orig_items = items
         self._shuffled_items = self._orig_items
         self._iter = None
         self._reusable = deque()
 
-    def shuffle(self, seed):
+    def shuffle(self, seed: int) -> 'DataSource':
+        """
+        Shuffles the elements using the provided random seed value.
+        When the input CutSet is lazy, we use a streaming variant of
+        shuffle, that may be less random.
+        """
+        self.reset()
         r = random.Random(seed)
-        self._shuffled_items = self._orig_items.shuffle(rng=r)
-        self._iter = None
-        self._reusable.clear()
-
-    def sort_like(self, other: 'DataSource'):
-        self._shuffled_items = self._orig_items.sort_like(other._shuffled_items)
-        self._iter = None
-        self._reusable.clear()
-
-    def __iter__(self):
-        self._iter = iter(self._shuffled_items)
-        self._reusable.clear()
+        if self._orig_items.is_lazy:
+            self._shuffled_items = streaming_shuffle(iter(self._orig_items), rng=r)
+        else:
+            self._shuffled_items = self._orig_items.shuffle(rng=r)
         return self
 
-    def __next__(self):
+    def sort_like(self, other: 'DataSource') -> 'DataSource':
+        """
+        Sorts the underlying CutSet to provide Cuts in the same order of cut_ids
+        as the other DataSource.
+        """
+        self.reset()
+        self._shuffled_items = self._orig_items.sort_like(other._shuffled_items)
+        return self
+
+    def take_back(self, cut: Cut) -> None:
+        """Push the cut in front of other cuts to be sampled again."""
+        self._reusable.append(cut)
+
+    def reset(self) -> None:
+        """Reset the iterable state of DataSource."""
+        self._iter = None
+        self._reusable.clear()
+
+    def __iter__(self) -> 'DataSource':
+        self.reset()
+        self._iter = iter(self._shuffled_items)
+        return self
+
+    def __next__(self) -> Cut:
         if self._reusable:
             return self._reusable.popleft()
         return next(self._iter)
 
-    def take_back(self, cut: Cut) -> None:
-        self._reusable.append(cut)
-
-    def __len__(self):
+    def __len__(self) -> int:
         return len(self._shuffled_items)
 
 
@@ -112,11 +136,6 @@ class CutSampler(Sampler):
         self.seed = seed
         self.epoch = 0
         self.provide_len = provide_len
-        if not self.provide_len and self.shuffle:
-            warnings.warn("The sampler was set not to provide __len__, which suggests that you're "
-                          "using lazy Cut manifests, but shuffle was set to True. "
-                          "If your dataset is large, you might experience very slow performance "
-                          "when iterating the sampler. To fix the issue, set shuffle=False.")
 
         self._maybe_init_distributed(world_size=world_size, rank=rank)
         self.num_batches = None
@@ -582,7 +601,7 @@ class CutPairsSampler(CutSampler):
         """
         if self.shuffle:
             self.source_cuts.shuffle(self.seed + self.epoch)
-            self.target_cuts.sort_like(self.source_cuts)
+            self.target_cuts.shuffle(self.seed + self.epoch)
         iter(self.source_cuts)
         iter(self.target_cuts)
         self.diagnostics.reset()
@@ -737,9 +756,14 @@ class BucketingSampler(CutSampler):
         self.sampler_type = sampler_type
         self.sampler_kwargs = kwargs
         self.cut_sets = cuts
+        if cuts[0].is_lazy:
+            warnings.warn(
+                "Lazy CutSet detected in BucketingSampler: this is not well supported yet, "
+                "and you might experience a potentially long lag while the buckets are being created."
+            )
         first_cut_set = cuts[0].sort_by_duration()
-        buckets = [
-            cs.sort_like(first_cut_set).split(num_buckets) for cs in self.cut_sets
+        buckets = [first_cut_set.split(num_buckets)] + [
+            cs.sort_like(first_cut_set).split(num_buckets) for cs in self.cut_sets[1:]
         ]
         # zip(*buckets) does:
         # [(cs0_0, cs1_0, cs2_0), (cs0_1, cs1_1, cs2_1)] -> [(cs0_0, cs0_1), (cs1_0, cs1_1), (cs2_0, cs2_1)]
@@ -845,7 +869,7 @@ class ZipSampler(CutSampler):
         ...     pass  # profit
     """
     def __init__(self, *samplers: CutSampler) -> None:
-        super().__init__([])  # dummy initialization, might need to refactor.
+        super().__init__()
         self.samplers = samplers
 
     def __iter__(self):
@@ -894,7 +918,7 @@ class ZipSampler(CutSampler):
         if self.num_batches is None:
             self.num_batches = min(len(sampler) for sampler in self.samplers)
         return self.num_batches
-      
+
     def get_report(self) -> str:
         """Returns a string describing the statistics of the sampling process so far."""
         total_diagnostics = reduce(add, (sampler.diagnostics for sampler in self.samplers))
@@ -977,3 +1001,47 @@ def find_pessimistic_batches(
                 top_batches[crit] = batch
 
     return top_batches, top_values
+
+
+def streaming_shuffle(
+        data: Iterable[Cut],
+        bufsize: int = 10000,
+        rng: random.Random = random,
+) -> Generator[Cut, None, None]:
+    """
+    Shuffle the data in the stream.
+
+    This uses a buffer of size ``bufsize``. Shuffling at
+    startup is less random; this is traded off against
+    yielding samples quickly.
+
+    This code is mostly borrowed from WebDataset; note that we use much larger default
+    buffer size because Cuts are very lightweight and fast to read.
+    https://github.com/webdataset/webdataset/blob/master/webdataset/iterators.py#L145
+
+    .. warning: The order of the elements is expected to be much less random than
+        if the whole sequence was shuffled before-hand with standard methods like
+        ``random.shuffle``.
+
+    :param data: iterator
+    :param bufsize: buffer size for shuffling
+    :param rng: either random module or random.Random instance
+    :return: a generator of cuts, shuffled on-the-fly.
+    """
+    buf = []
+    startup = True
+    for sample in data:
+        if len(buf) < bufsize:
+            try:
+                buf.append(next(data))
+            except StopIteration:
+                pass
+        k = rng.randint(0, len(buf) - 1)
+        sample, buf[k] = buf[k], sample
+        if startup and len(buf) < bufsize:
+            buf.append(sample)
+            continue
+        startup = False
+        yield sample
+    for sample in buf:
+        yield sample

@@ -6,7 +6,7 @@ import pytest
 
 from lhotse import CutSet
 from lhotse.dataset.cut_transforms import concat_cuts
-from lhotse.dataset.sampling import BucketingSampler, CutPairsSampler, SingleCutSampler, ZipSampler
+from lhotse.dataset.sampling import BucketingSampler, CutPairsSampler, SingleCutSampler, ZipSampler, streaming_shuffle
 from lhotse.testing.dummies import DummyManifest, dummy_cut
 from lhotse.utils import nullcontext as does_not_raise
 
@@ -529,7 +529,7 @@ def test_partitions_are_equal(world_size, n_cuts, sampler_cls):
     'sampler_cls',
     [
         SingleCutSampler,
-        pytest.param(BucketingSampler, marks=pytest.mark.xfail())
+        BucketingSampler,
     ]
 )
 def test_single_cut_sampler_with_lazy_cuts(sampler_cls):
@@ -541,7 +541,6 @@ def test_single_cut_sampler_with_lazy_cuts(sampler_cls):
 
         sampler = sampler_cls(
             lazy_cuts,
-            # We set shuffle to False to avoid a possibly very costly iteration of the lazy manifest
             shuffle=False,
             # Set an effective batch size of 10 cuts, as all have 1s duration == 100 frames
             # This way we're testing that it works okay when returning multiple batches in
@@ -724,3 +723,90 @@ def test_sampler_get_report(sampler):
     _ = [b for b in sampler]
     print(sampler.get_report())
     # It runs - voila!
+
+
+@pytest.mark.parametrize(
+    'sampler_cls',
+    [
+        SingleCutSampler,
+        BucketingSampler,
+    ]
+)
+def test_single_cut_sampler_lazy_shuffle(sampler_cls):
+    # The dummy cuts have a duration of 1 second each
+    cut_set = DummyManifest(CutSet, begin_id=0, end_id=100)
+    with NamedTemporaryFile(suffix='.jsonl') as f:
+        cut_set.to_jsonl(f.name)
+        lazy_cuts = CutSet.from_jsonl_lazy(f.name)
+
+        sampler = sampler_cls(
+            lazy_cuts,
+            shuffle=True,
+            # Set an effective batch size of 10 cuts, as all have 1s duration == 100 frames
+            # This way we're testing that it works okay when returning multiple batches in
+            # a full epoch.
+            max_frames=1000
+        )
+        sampled_cuts = []
+        for batch in sampler:
+            sampled_cuts.extend(batch)
+
+        # Invariant 1: we receive the same amount of items in a dataloader epoch as there we in the CutSet
+        assert len(sampled_cuts) == len(cut_set)
+        # Invariant 2: the items are not duplicated
+        assert len(set(c.id for c in sampled_cuts)) == len(sampled_cuts)
+        # Invariant 3: the items are shuffled
+        assert [c.id for c in sampled_cuts] != [c.id for c in lazy_cuts]
+
+
+@pytest.mark.parametrize(
+    'sampler_cls',
+    [
+        CutPairsSampler,
+        pytest.param(
+            BucketingSampler,
+            marks=pytest.mark.xfail(reason="BucketingSampler does not support lazy cuts pairs yet."),
+        )
+    ]
+)
+def test_cut_pairs_sampler_lazy_shuffle(sampler_cls):
+    # The dummy cuts have a duration of 1 second each
+    cut_set = DummyManifest(CutSet, begin_id=0, end_id=100)
+    with NamedTemporaryFile(suffix='.jsonl') as f:
+        cut_set.to_jsonl(f.name)
+        lazy_cuts = CutSet.from_jsonl_lazy(f.name)
+
+        sampler = sampler_cls(
+            lazy_cuts,
+            lazy_cuts,
+            shuffle=True,
+            # Set an effective batch size of 10 cuts, as all have 1s duration == 100 frames
+            # This way we're testing that it works okay when returning multiple batches in
+            # a full epoch.
+            max_source_frames=1000
+        )
+        sampled_src_cuts = []
+        sampled_tgt_cuts = []
+        for src_batch, tgt_batch in sampler:
+            # Invariant 0: The order of source and target cut IDs is preserved within each batch.
+            assert list(src_batch.ids) == list(tgt_batch.ids)
+            sampled_src_cuts.extend(src_batch)
+            sampled_tgt_cuts.extend(tgt_batch)
+
+        # Invariant 1: we receive the same amount of items in a dataloader epoch as there we in the CutSet
+        assert len(sampled_src_cuts) == len(cut_set)
+        assert len(sampled_tgt_cuts) == len(cut_set)
+        # Invariant 2: the items are not duplicated
+        assert len(set(c.id for c in sampled_src_cuts)) == len(sampled_src_cuts)
+        # Invariant 3: the items are shuffled
+        assert [c.id for c in sampled_src_cuts] != [c.id for c in lazy_cuts]
+
+
+@pytest.mark.parametrize('datasize', [10, 1000, 20000])
+@pytest.mark.parametrize('bufsize', [100, 1000, 10000])
+def test_streaming_shuffle(datasize, bufsize):
+    data = list(range(int(datasize)))
+    shuffled = list(streaming_shuffle(iter(data), bufsize=int(bufsize)))
+    assert len(data) == len(shuffled)
+    assert len(shuffled) == len(set(shuffled))
+    assert data != shuffled
