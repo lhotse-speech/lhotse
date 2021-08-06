@@ -37,7 +37,7 @@ class DataSource:
         self.reset()
         r = random.Random(seed)
         if self._orig_items.is_lazy:
-            self._shuffled_items = streaming_shuffle(self._orig_items, rng=r)
+            self._shuffled_items = streaming_shuffle(iter(self._orig_items), rng=r)
         else:
             self._shuffled_items = self._orig_items.shuffle(rng=r)
         return self
@@ -756,9 +756,14 @@ class BucketingSampler(CutSampler):
         self.sampler_type = sampler_type
         self.sampler_kwargs = kwargs
         self.cut_sets = cuts
+        if cuts[0].is_lazy:
+            warnings.warn(
+                "Lazy CutSet detected in BucketingSampler: this is not well supported yet, "
+                "and you might experience a potentially long lag while the buckets are being created."
+            )
         first_cut_set = cuts[0].sort_by_duration()
-        buckets = [
-            cs.sort_like(first_cut_set).split(num_buckets) for cs in self.cut_sets
+        buckets = [first_cut_set.split(num_buckets)] + [
+            cs.sort_like(first_cut_set).split(num_buckets) for cs in self.cut_sets[1:]
         ]
         # zip(*buckets) does:
         # [(cs0_0, cs1_0, cs2_0), (cs0_1, cs1_1, cs2_1)] -> [(cs0_0, cs0_1), (cs1_0, cs1_1), (cs2_0, cs2_1)]
