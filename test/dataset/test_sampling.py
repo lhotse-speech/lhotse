@@ -6,7 +6,7 @@ import pytest
 
 from lhotse import CutSet
 from lhotse.dataset.cut_transforms import concat_cuts
-from lhotse.dataset.sampling import BucketingSampler, CutPairsSampler, SingleCutSampler, ZipSampler
+from lhotse.dataset.sampling import BucketingSampler, CutPairsSampler, SingleCutSampler, ZipSampler, streaming_shuffle
 from lhotse.testing.dummies import DummyManifest, dummy_cut
 from lhotse.utils import nullcontext as does_not_raise
 
@@ -803,3 +803,13 @@ def test_cut_pairs_sampler_lazy_shuffle(sampler_cls):
         assert len(set(c.id for c in sampled_src_cuts)) == len(sampled_src_cuts)
         # Invariant 3: the items are shuffled
         assert [c.id for c in sampled_src_cuts] != [c.id for c in lazy_cuts]
+
+
+@pytest.mark.parametrize('datasize', [10, 1000, 20000])
+@pytest.mark.parametrize('bufsize', [100, 1000, 10000])
+def test_streaming_shuffle(datasize, bufsize):
+    data = list(range(int(datasize)))
+    shuffled = list(streaming_shuffle(iter(data), bufsize=int(bufsize)))
+    assert len(data) == len(shuffled)
+    assert len(shuffled) == len(set(shuffled))
+    assert data != shuffled
