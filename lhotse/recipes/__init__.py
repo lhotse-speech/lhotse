@@ -24,5 +24,5 @@ from .musan import download_musan, prepare_musan
 from .nsc import prepare_nsc
 from .switchboard import prepare_switchboard
 from .tedlium import download_tedlium, prepare_tedlium
-from .timit import download_timit, prepare_timit
+from .timit import download_timit, prepare_timit, get_phonemes
 from .vctk import download_vctk, prepare_vctk
