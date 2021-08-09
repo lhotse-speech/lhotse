@@ -1762,8 +1762,8 @@ class CutSet(Serializable, Sequence[Cut]):
 
     The CutSet's A, B and C can be created like::
 
-        >>> cuts_A = cuts.trim_to_supervisions(num_jobs=4)
-        >>> cuts_B = cuts.cut_into_windows(duration=5.0, num_jobs=4)
+        >>> cuts_A = cuts.trim_to_supervisions()
+        >>> cuts_B = cuts.cut_into_windows(duration=5.0)
         >>> cuts_C = cuts.trim_to_unsupervised_segments()
 
     .. note::

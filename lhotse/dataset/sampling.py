@@ -5,7 +5,7 @@ from dataclasses import dataclass, field
 from functools import reduce
 from math import isclose
 from operator import add
-from typing import Callable, Dict, Generator, Iterable, List, Optional, Tuple, Type, Union
+from typing import Callable, Dict, Generator, Iterable, Optional, Tuple, Type, Union
 
 import torch.distributed as dist
 from torch.utils.data import Sampler
@@ -868,6 +868,7 @@ class ZipSampler(CutSampler):
         >>> for cut in sampler:
         ...     pass  # profit
     """
+
     def __init__(self, *samplers: CutSampler) -> None:
         super().__init__()
         self.samplers = samplers
@@ -877,11 +878,11 @@ class ZipSampler(CutSampler):
             iter(sampler)
         return self
 
-    def _next_batch(self) -> List[str]:
-        batches = []
+    def _next_batch(self) -> CutSet:
+        cuts = []
         for sampler in self.samplers:
-            batches.append(next(sampler))
-        return [item for batch in batches for item in batch]
+            cuts.extend(next(sampler))
+        return CutSet.from_cuts(cuts)
 
     def set_epoch(self, epoch: int) -> None:
         """
