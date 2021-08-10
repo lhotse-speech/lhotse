@@ -715,7 +715,7 @@ def test_bucketing_sampler_drop_last(drop_last):
         BucketingSampler(DummyManifest(CutSet, begin_id=0, end_id=10)),
         ZipSampler(
             SingleCutSampler(DummyManifest(CutSet, begin_id=0, end_id=10)),
-            SingleCutSampler(DummyManifest(CutSet, begin_id=0, end_id=10)),
+            SingleCutSampler(DummyManifest(CutSet, begin_id=10, end_id=20)),
         ),
     ],
 )
