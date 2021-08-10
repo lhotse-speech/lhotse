@@ -1,5 +1,6 @@
 import random
 from itertools import groupby
+from statistics import mean
 from tempfile import NamedTemporaryFile
 
 import pytest
@@ -8,7 +9,7 @@ from lhotse import CutSet
 from lhotse.dataset.cut_transforms import concat_cuts
 from lhotse.dataset.sampling import BucketingSampler, CutPairsSampler, SingleCutSampler, ZipSampler, streaming_shuffle
 from lhotse.testing.dummies import DummyManifest, dummy_cut
-from lhotse.utils import nullcontext as does_not_raise
+from lhotse.utils import fastcopy, nullcontext as does_not_raise
 
 
 @pytest.fixture
@@ -350,6 +351,47 @@ def test_bucketing_sampler_single_cuts():
     assert set(cut_set.ids) == set(c.id for c in sampled_cuts)
 
 
+def test_bucketing_sampler_single_cuts_equal_len():
+    cut_set = DummyManifest(CutSet, begin_id=0, end_id=1000)
+    for idx, c in enumerate(cut_set):
+        c.duration = 3 + idx * 1 / 50  # each cut has a different duration between [3, 23]
+    sampler = BucketingSampler(
+        cut_set, sampler_type=SingleCutSampler, bucket_method="equal_len", num_buckets=10
+    )
+
+    bucket_cum_durs = []
+    for bucket, in sampler.buckets:
+        bucket_cum_durs.append(sum(c.duration for c in bucket))
+        assert len(bucket) == 100
+
+    # The variations in duration are over 10% of the mean bucket duration (because of equal lengths).
+    mean_bucket_dur = mean(bucket_cum_durs)
+    assert not all(abs(d - mean_bucket_dur) < 0.1 * mean_bucket_dur for d in bucket_cum_durs)
+
+
+def test_bucketing_sampler_single_cuts_equal_duration():
+    cut_set = DummyManifest(CutSet, begin_id=0, end_id=1000)
+    for idx, c in enumerate(cut_set):
+        c.duration = 3 + idx * 1 / 50  # each cut has a different duration between [3, 23]
+    sampler = BucketingSampler(
+        cut_set, sampler_type=SingleCutSampler, bucket_method="equal_duration", num_buckets=10
+    )
+
+    # Ensure that each consecutive bucket has less cuts than the previous one
+    prev_len = float('inf')
+    bucket_cum_durs = []
+    for bucket, in sampler.buckets:
+        bucket_cum_durs.append(sum(c.duration for c in bucket))
+        curr_len = len(bucket)
+        assert curr_len < prev_len
+        prev_len = curr_len
+
+    # Assert that all bucket cumulative durations are within 1/10th of the mean
+    mean_bucket_dur = mean(bucket_cum_durs)  # ~ 1300s
+    for d in bucket_cum_durs:
+        assert abs(d - mean_bucket_dur) < 0.1 * mean_bucket_dur
+
+
 def test_bucketing_sampler_shuffle():
     cut_set = DummyManifest(CutSet, begin_id=0, end_id=10)
     sampler = BucketingSampler(cut_set, sampler_type=SingleCutSampler, shuffle=True, num_buckets=2, max_frames=200)
@@ -383,6 +425,69 @@ def test_bucketing_sampler_cut_pairs():
         tgt_cuts.extend(tgt_batch)
     assert set(cut_set1.ids) == set(c.id for c in src_cuts)
     assert set(cut_set2.ids) == set(c.id for c in tgt_cuts)
+
+
+@pytest.mark.parametrize('shuffle', [False, True])
+def test_bucketing_sampler_cut_pairs_equal_len(shuffle):
+    cut_set = DummyManifest(CutSet, begin_id=0, end_id=1000)
+    for idx, c in enumerate(cut_set):
+        c.duration = 3 + idx * 1 / 50  # each cut has a different duration between [3, 23]
+    # Target CutSet is going to have different durations
+    # -- make sure the bucketing works well with that.
+    cut_set_tgt = cut_set.map(lambda c: fastcopy(c, duration=1 / c.duration))
+
+    sampler = BucketingSampler(
+        cut_set,
+        cut_set_tgt,
+        sampler_type=CutPairsSampler,
+        bucket_method="equal_len",
+        num_buckets=10,
+        shuffle=shuffle
+    )
+
+    bucket_cum_durs = []
+    for bucket_src, bucket_tgt in sampler.buckets:
+        bucket_cum_durs.append(sum(c.duration for c in bucket_src))
+        assert len(bucket_src) == 100
+        assert list(bucket_src.ids) == list(bucket_tgt.ids)
+
+    # The variations in duration are over 10% of the mean bucket duration (because of equal lengths).
+    mean_bucket_dur = mean(bucket_cum_durs)
+    assert not all(abs(d - mean_bucket_dur) < 0.1 * mean_bucket_dur for d in bucket_cum_durs)
+
+
+@pytest.mark.parametrize('shuffle', [False, True])
+def test_bucketing_sampler_cut_pairs_equal_duration(shuffle):
+    cut_set = DummyManifest(CutSet, begin_id=0, end_id=1000)
+    for idx, c in enumerate(cut_set):
+        c.duration = 3 + idx * 1 / 50  # each cut has a different duration between [3, 23]
+    # Target CutSet is going to have different durations
+    # -- make sure the bucketing works well with that.
+    cut_set_tgt = cut_set.map(lambda c: fastcopy(c, duration=1 / c.duration))
+
+    sampler = BucketingSampler(
+        cut_set,
+        cut_set_tgt,
+        sampler_type=CutPairsSampler,
+        bucket_method="equal_duration",
+        num_buckets=10,
+        shuffle=shuffle
+    )
+
+    # Ensure that each consecutive bucket has less cuts than the previous one
+    prev_len = float('inf')
+    bucket_cum_durs = []
+    for bucket_src, bucket_tgt in sampler.buckets:
+        assert list(bucket_src.ids) == list(bucket_tgt.ids)
+        bucket_cum_durs.append(sum(c.duration for c in bucket_src))
+        curr_len = len(bucket_src)
+        assert curr_len < prev_len
+        prev_len = curr_len
+
+    # Assert that all bucket cumulative durations are within 1/10th of the mean
+    mean_bucket_dur = mean(bucket_cum_durs)  # ~ 1300s
+    for d in bucket_cum_durs:
+        assert abs(d - mean_bucket_dur) < 0.1 * mean_bucket_dur
 
 
 def test_bucketing_sampler_order_is_deterministic_given_epoch():

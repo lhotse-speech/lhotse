@@ -3,10 +3,12 @@ import warnings
 from collections import deque
 from dataclasses import dataclass, field
 from functools import reduce
+from itertools import chain
 from math import isclose
 from operator import add
-from typing import Callable, Dict, Generator, Iterable, Optional, Tuple, Type, Union
+from typing import Callable, Dict, Generator, Iterable, List, Literal, Optional, Tuple, Type, Union
 
+import numpy as np
 import torch.distributed as dist
 from torch.utils.data import Sampler
 
@@ -726,6 +728,7 @@ class BucketingSampler(CutSampler):
             *cuts: CutSet,
             sampler_type: Type = SingleCutSampler,
             num_buckets: int = 10,
+            bucket_method: Literal['equal_len', 'equal_duration'] = 'equal_len',
             drop_last: bool = False,
             seed: int = 0,
             **kwargs
@@ -738,6 +741,10 @@ class BucketingSampler(CutSampler):
             Then, all of them will be used to instantiate the per-bucket samplers.
         :param sampler_type: a sampler type that will be created for each underlying bucket.
         :param num_buckets: how many buckets to create.
+        :param bucket_method: how should we shape the buckets. Available options are:
+            "equal_len", where each bucket contains the same number of cuts,
+            and "equal_duration", where each bucket has the same cumulative duration
+            (but different number of cuts).
         :param drop_last: When ``True``, we will drop all incomplete batches.
             A batch is considered incomplete if it depleted a bucket before
             hitting the constraint such as max_duration, max_cuts, etc.
@@ -756,22 +763,32 @@ class BucketingSampler(CutSampler):
         self.sampler_type = sampler_type
         self.sampler_kwargs = kwargs
         self.cut_sets = cuts
-        if cuts[0].is_lazy:
+        if self.cut_sets[0].is_lazy:
             warnings.warn(
                 "Lazy CutSet detected in BucketingSampler: this is not well supported yet, "
                 "and you might experience a potentially long lag while the buckets are being created."
             )
-        first_cut_set = cuts[0].sort_by_duration()
-        buckets = [first_cut_set.split(num_buckets)] + [
-            cs.sort_like(first_cut_set).split(num_buckets) for cs in self.cut_sets[1:]
-        ]
-        # zip(*buckets) does:
-        # [(cs0_0, cs1_0, cs2_0), (cs0_1, cs1_1, cs2_1)] -> [(cs0_0, cs0_1), (cs1_0, cs1_1), (cs2_0, cs2_1)]
-        self.buckets = list(zip(*buckets))
+
+        # Split data into buckets.
+        if bucket_method == "equal_len":
+            self.buckets = create_buckets_equal_len(*self.cut_sets, num_buckets=num_buckets)
+        elif bucket_method == "equal_duration":
+            self.buckets = create_buckets_equal_duration(
+                *self.cut_sets, num_buckets=num_buckets
+            )
+        else:
+            raise ValueError(
+                f"Unknown bucket_method: '{bucket_method}'. "
+                f"Use one of: 'equal_len' or 'equal_duration'."
+            )
+
+        # Create a separate sampler for each bucket.
         self.bucket_samplers = [
             self.sampler_type(*bucket_cut_sets, drop_last=drop_last, **kwargs)
             for bucket_cut_sets in self.buckets
         ]
+
+        # Initialize mutable stable.
         self.bucket_rng = random.Random(self.seed + self.epoch)
         self.depleted = [False] * num_buckets
 
@@ -846,6 +863,91 @@ class BucketingSampler(CutSampler):
         """Returns a string describing the statistics of the sampling process so far."""
         total_diagnostics = reduce(add, (bucket.diagnostics for bucket in self.bucket_samplers))
         return total_diagnostics.get_report()
+
+
+def create_buckets_equal_len(
+        *cuts: CutSet, num_buckets: int
+) -> List[Tuple[CutSet, ...]]:
+    """
+    Creates buckets of cuts with similar durations.
+    Each bucket has the same number of cuts, but different cumulative duration.
+
+    :param cuts: One or more CutSets; the input CutSets are assumed to have the same cut IDs
+        (i.e., the cuts correspond to each other and are meant to be sampled together as pairs,
+        triples, etc.).
+    :param num_buckets: The number of buckets.
+    :return: A list of CutSet buckets (or tuples of CutSet buckets, depending on the input).
+    """
+    first_cut_set = cuts[0].sort_by_duration()
+    buckets = [first_cut_set.split(num_buckets)] + [
+        cs.sort_like(first_cut_set).split(num_buckets) for cs in cuts[1:]
+    ]
+    # zip(*buckets) does:
+    # [(cs0_0, cs1_0, cs2_0), (cs0_1, cs1_1, cs2_1)] -> [(cs0_0, cs0_1), (cs1_0, cs1_1), (cs2_0, cs2_1)]
+    buckets = list(zip(*buckets))
+    return buckets
+
+
+def create_buckets_equal_duration(
+        *cuts: CutSet, num_buckets: int
+) -> List[Tuple[CutSet, ...]]:
+    """
+    Creates buckets of cuts with similar durations.
+    Each bucket has the same cumulative duration, but a different number of cuts.
+
+    :param cuts: One or more CutSets; the input CutSets are assumed to have the same cut IDs
+        (i.e., the cuts correspond to each other and are meant to be sampled together as pairs,
+        triples, etc.).
+    :param num_buckets: The number of buckets.
+    :return: A list of CutSet buckets (or tuples of CutSet buckets, depending on the input).
+    """
+    first_cut_set = cuts[0].sort_by_duration(ascending=True)
+    buckets_per_cutset = [
+        _create_buckets_equal_duration_single(
+            first_cut_set, num_buckets=num_buckets
+        )
+    ]
+    for cut_set in cuts[1:]:
+        buckets_per_cutset.append(
+            # .subset() will cause the output CutSet to have the same order of cuts as `bucket`
+            cut_set.subset(cut_ids=bucket.ids) for bucket in buckets_per_cutset[0]
+        )
+    # zip(*buckets) does:
+    # [(cs0_0, cs1_0, cs2_0), (cs0_1, cs1_1, cs2_1)] -> [(cs0_0, cs0_1), (cs1_0, cs1_1), (cs2_0, cs2_1)]
+    return list(zip(*buckets_per_cutset))
+
+
+def _create_buckets_equal_duration_single(
+        cuts: CutSet, num_buckets: int
+) -> List[CutSet]:
+    """
+    Helper method to partition a single CutSet into buckets that have the same
+    cumulative duration.
+
+    See also: :meth:`.create_buckets_from_duration_percentiles`.
+    """
+    total_duration = np.sum(c.duration for c in cuts)
+    bucket_duration = total_duration / num_buckets
+    iter_cuts = iter(cuts)
+    buckets = []
+    for bucket_idx in range(num_buckets):
+        bucket = []
+        current_duration = 0
+        try:
+            while current_duration < bucket_duration:
+                bucket.append(next(iter_cuts))
+                current_duration += bucket[-1].duration
+            # Every odd bucket, take the cut that exceeded the bucket's duration
+            # and put it in the front of the iterable, so that it goes to the
+            # next bucket instead. It will ensure that the last bucket is not too
+            # thin (otherwise all the previous buckets are a little too large).
+            if bucket_idx % 2:
+                last_cut = bucket.pop()
+                iter_cuts = chain([last_cut], iter_cuts)
+        except StopIteration:
+            assert bucket_idx == num_buckets - 1
+        buckets.append(CutSet.from_cuts(bucket))
+    return buckets
 
 
 class ZipSampler(CutSampler):
