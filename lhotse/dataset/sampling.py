@@ -6,11 +6,12 @@ from functools import reduce
 from itertools import chain
 from math import isclose
 from operator import add
-from typing import Callable, Dict, Generator, Iterable, List, Literal, Optional, Tuple, Type, Union
+from typing import Callable, Dict, Generator, Iterable, List, Optional, Tuple, Type, Union
 
 import numpy as np
 import torch.distributed as dist
 from torch.utils.data import Sampler
+from typing_extensions import Literal
 
 from lhotse import CutSet
 from lhotse.cut import Cut
@@ -731,8 +732,8 @@ class BucketingSampler(CutSampler):
             bucket_method: Literal['equal_len', 'equal_duration'] = 'equal_len',
             drop_last: bool = False,
             seed: int = 0,
-            **kwargs
-    ):
+            **kwargs: Dict
+    ) -> None:
         """
         BucketingSampler's constructor.
 
@@ -784,7 +785,7 @@ class BucketingSampler(CutSampler):
 
         # Create a separate sampler for each bucket.
         self.bucket_samplers = [
-            self.sampler_type(*bucket_cut_sets, drop_last=drop_last, **kwargs)
+            self.sampler_type(*bucket_cut_sets, drop_last=drop_last, **self.sampler_kwargs)
             for bucket_cut_sets in self.buckets
         ]
 
