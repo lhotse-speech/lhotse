@@ -10,7 +10,8 @@ from lhotse.utils import Pathlike
 
 __all__ = [
     'GlobalMVN',
-    'SpecAugment'
+    'SpecAugment',
+    'RandomizedSmoothing'
 ]
 
 
