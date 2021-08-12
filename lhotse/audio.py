@@ -228,6 +228,10 @@ class Recording:
         if path.suffix.lower() == '.opus':
             # We handle OPUS as a special case because we might need to force a certain sampling rate.
             info = opus_info(path, force_opus_sampling_rate=force_opus_sampling_rate)
+        elif path.suffix.lower() == '.sph':
+            # We handle SPHERE as another special case because some old codecs (i.e. "shorten" codec)
+            # can't be handled by neither pysoundfile nor pyaudioread.
+            info = sph_info(path)
         else:
             try:
                 # Try to parse the file using pysoundfile first.
