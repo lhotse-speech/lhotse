@@ -6,7 +6,7 @@ from typing import Any, Dict, List
 
 import torch.utils.data
 
-from lhotse.dataset.sampling import CutSampler
+from lhotse.dataset.sampling.base import CutSampler
 
 
 class LhotseDataLoader:

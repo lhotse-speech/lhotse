@@ -1,9 +1,7 @@
-import random
 import warnings
-from typing import Dict, Generator, Iterable, Tuple
+from typing import Dict, Tuple
 
 from lhotse import CutSet
-from lhotse.cut import Cut
 from lhotse.dataset.sampling.base import CutSampler
 
 
@@ -68,7 +66,7 @@ def find_pessimistic_batches(
             first_batch = first_batch[batch_tuple_index]
     except StopIteration:
         warnings.warn("Empty sampler encountered in find_pessimistic_batches()")
-        return {}
+        return {}, {}
 
     top_batches = {k: first_batch for k in criteria}
     top_values = {k: fn(first_batch) for k, fn in criteria.items()}
@@ -83,47 +81,3 @@ def find_pessimistic_batches(
                 top_batches[crit] = batch
 
     return top_batches, top_values
-
-
-def streaming_shuffle(
-        data: Iterable[Cut],
-        bufsize: int = 10000,
-        rng: random.Random = random,
-) -> Generator[Cut, None, None]:
-    """
-    Shuffle the data in the stream.
-
-    This uses a buffer of size ``bufsize``. Shuffling at
-    startup is less random; this is traded off against
-    yielding samples quickly.
-
-    This code is mostly borrowed from WebDataset; note that we use much larger default
-    buffer size because Cuts are very lightweight and fast to read.
-    https://github.com/webdataset/webdataset/blob/master/webdataset/iterators.py#L145
-
-    .. warning: The order of the elements is expected to be much less random than
-        if the whole sequence was shuffled before-hand with standard methods like
-        ``random.shuffle``.
-
-    :param data: iterator
-    :param bufsize: buffer size for shuffling
-    :param rng: either random module or random.Random instance
-    :return: a generator of cuts, shuffled on-the-fly.
-    """
-    buf = []
-    startup = True
-    for sample in data:
-        if len(buf) < bufsize:
-            try:
-                buf.append(next(data))
-            except StopIteration:
-                pass
-        k = rng.randint(0, len(buf) - 1)
-        sample, buf[k] = buf[k], sample
-        if startup and len(buf) < bufsize:
-            buf.append(sample)
-            continue
-        startup = False
-        yield sample
-    for sample in buf:
-        yield sample

@@ -70,17 +70,17 @@ class CutPairsSampler(CutSampler):
         self.source_constraints = TimeConstraint(
             max_duration=max_source_duration,
             max_samples=max_source_samples,
-            max_frames=max_source_frames
+            max_frames=max_source_frames,
         )
         self.target_constraints = TimeConstraint(
             max_duration=max_target_duration,
             max_samples=max_target_samples,
-            max_frames=max_target_frames
+            max_frames=max_target_frames,
         )
         self.max_cuts = max_cuts
         self.drop_last = drop_last
 
-    def __iter__(self) -> 'CutPairsSampler':
+    def __iter__(self) -> "CutPairsSampler":
         """
         Prepare the dataset for iterating over a new epoch. Will shuffle the data if requested.
         """
@@ -146,9 +146,11 @@ class CutPairsSampler(CutSampler):
             next_num_cuts = len(source_cuts) + 1
 
             # Did we exceed the max_source_frames and max_cuts constraints?
-            if not self.source_constraints.exceeded() \
-                    and not self.target_constraints.exceeded() \
-                    and (self.max_cuts is None or next_num_cuts <= self.max_cuts):
+            if (
+                    not self.source_constraints.exceeded()
+                    and not self.target_constraints.exceeded()
+                    and (self.max_cuts is None or next_num_cuts <= self.max_cuts)
+            ):
                 # No - add the next cut to the batch, and keep trying.
                 source_cuts.append(next_source_cut)
                 target_cuts.append(next_target_cut)
@@ -162,8 +164,10 @@ class CutPairsSampler(CutSampler):
                 else:
                     # No. We'll warn the user that the constrains might be too tight,
                     # and return the cut anyway.
-                    warnings.warn("The first cut drawn in batch collection violates one of the max_... constraints"
-                                  "we'll return it anyway. Consider increasing max_source_frames/max_cuts/etc.")
+                    warnings.warn(
+                        "The first cut drawn in batch collection violates one of the max_... constraints"
+                        "we'll return it anyway. Consider increasing max_source_frames/max_cuts/etc."
+                    )
                     source_cuts.append(next_source_cut)
                     target_cuts.append(next_target_cut)
 

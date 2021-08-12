@@ -68,18 +68,17 @@ class SingleCutSampler(CutSampler):
         )
         self.data_source = DataSource(cuts)
         self.time_constraint = TimeConstraint(
-            max_duration=max_duration,
-            max_frames=max_frames,
-            max_samples=max_samples
+            max_duration=max_duration, max_frames=max_frames, max_samples=max_samples
         )
         self.drop_last = drop_last
         self.max_cuts = max_cuts
-        assert self.time_constraint.is_active() or \
-               not (self.time_constraint.is_active() and self.max_cuts is not None)
+        assert self.time_constraint.is_active() or not (
+                self.time_constraint.is_active() and self.max_cuts is not None
+        )
         # Constraints
         assert is_none_or_gt(self.max_cuts, 0)
 
-    def __iter__(self) -> 'SingleCutSampler':
+    def __iter__(self) -> "SingleCutSampler":
         """
         Prepare the dataset for iterating over a new epoch. Will shuffle the data if requested.
         """
@@ -106,7 +105,9 @@ class SingleCutSampler(CutSampler):
                 # No more cuts to sample from: if we have a partial batch,
                 # we may output it, unless the user requested to drop it.
                 # We also check if the batch is "almost there" to override drop_last.
-                if cuts and (not self.drop_last or self.time_constraint.close_to_exceeding()):
+                if cuts and (
+                        not self.drop_last or self.time_constraint.close_to_exceeding()
+                ):
                     # We have a partial batch and we can return it.
                     self.diagnostics.keep(cuts)
                     return CutSet.from_cuts(cuts)
@@ -126,7 +127,9 @@ class SingleCutSampler(CutSampler):
             next_num_cuts = len(cuts) + 1
 
             # Did we exceed the max_frames and max_cuts constraints?
-            if not self.time_constraint.exceeded() and (self.max_cuts is None or next_num_cuts <= self.max_cuts):
+            if not self.time_constraint.exceeded() and (
+                    self.max_cuts is None or next_num_cuts <= self.max_cuts
+            ):
                 # No - add the next cut to the batch, and keep trying.
                 cuts.append(next_cut)
             else:
@@ -138,8 +141,10 @@ class SingleCutSampler(CutSampler):
                 else:
                     # No. We'll warn the user that the constrains might be too tight,
                     # and return the cut anyway.
-                    warnings.warn("The first cut drawn in batch collection violates the max_frames or max_cuts "
-                                  "constraints - we'll return it anyway. Consider increasing max_frames/max_cuts.")
+                    warnings.warn(
+                        "The first cut drawn in batch collection violates the max_frames or max_cuts "
+                        "constraints - we'll return it anyway. Consider increasing max_frames/max_cuts."
+                    )
                     cuts.append(next_cut)
 
         self.diagnostics.keep(cuts)

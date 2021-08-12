@@ -54,7 +54,7 @@ class CutSampler(Sampler):
             world_size: Optional[int] = None,
             rank: Optional[int] = None,
             seed: int = 0,
-            provide_len: bool = True
+            provide_len: bool = True,
     ) -> None:
         """
         :param shuffle: When ``True``, the cuts will be shuffled at the start of iteration.
@@ -68,7 +68,9 @@ class CutSampler(Sampler):
             It makes sense to turn it off when iterating the sampler is somewhat costly for any reason;
             e.g. because the underlying manifest is lazily loaded from the filesystem/somewhere else.
         """
-        super().__init__(data_source=None)  # the "data_source" arg is not used in Sampler...
+        super().__init__(
+            data_source=None
+        )  # the "data_source" arg is not used in Sampler...
         self.shuffle = shuffle
         self.seed = seed
         self.epoch = 0
@@ -123,10 +125,14 @@ class CutSampler(Sampler):
         self.provide_len = False
 
     def __iter__(self):
-        raise NotImplementedError("Sub-classes of CutSampler have to implement __iter__()")
+        raise NotImplementedError(
+            "Sub-classes of CutSampler have to implement __iter__()"
+        )
 
     def _next_batch(self):
-        raise NotImplementedError("Sub-classes of CutSampler have to implement self._next_batch()")
+        raise NotImplementedError(
+            "Sub-classes of CutSampler have to implement self._next_batch()"
+        )
 
     def __len__(self) -> int:
         if not self.provide_len:
@@ -166,6 +172,7 @@ class TimeConstraint:
     It will automatically track the right criterion (i.e. select frames/samples/duration from the cut).
     It can also be a null constraint (never exceeded).
     """
+
     max_duration: Optional[Seconds] = None
     max_samples: Optional[int] = None
     max_frames: Optional[int] = None
@@ -173,7 +180,9 @@ class TimeConstraint:
     num_cuts: int = 0
 
     def __post_init__(self) -> None:
-        assert exactly_one_not_null(*self._constraints) or all(x is None for x in self._constraints)
+        assert exactly_one_not_null(*self._constraints) or all(
+            x is None for x in self._constraints
+        )
         for c in self._constraints:
             assert is_none_or_gt(c, 0)
 
@@ -232,8 +241,8 @@ class TimeConstraint:
         self.current = 0
         self.num_cuts = 0
 
-    def __add__(self, other: 'TimeConstraint') -> 'TimeConstraint':
-        for key in ('max_duration', 'max_frames', 'max_samples'):
+    def __add__(self, other: "TimeConstraint") -> "TimeConstraint":
+        for key in ("max_duration", "max_frames", "max_samples"):
             self_attr = getattr(self, key)
             other_attr = getattr(other, key)
             is_none = self_attr is None and other_attr is None
@@ -246,7 +255,7 @@ class TimeConstraint:
             max_frames=self.max_frames,
             max_samples=self.max_samples,
             current=self.current + other.current,
-            num_cuts=self.num_cuts + other.num_cuts
+            num_cuts=self.num_cuts + other.num_cuts,
         )
 
 
@@ -256,8 +265,13 @@ class SamplingDiagnostics:
     Utility for collecting diagnostics about the sampling process:
     how many cuts/batches were discarded.
     """
-    kept_stats: TimeConstraint = field(default_factory=lambda: TimeConstraint(max_duration=float('inf')))
-    discarded_stats: TimeConstraint = field(default_factory=lambda: TimeConstraint(max_duration=float('inf')))
+
+    kept_stats: TimeConstraint = field(
+        default_factory=lambda: TimeConstraint(max_duration=float("inf"))
+    )
+    discarded_stats: TimeConstraint = field(
+        default_factory=lambda: TimeConstraint(max_duration=float("inf"))
+    )
     num_kept_batches: int = 0
     num_discarded_batches: int = 0
 
@@ -267,7 +281,9 @@ class SamplingDiagnostics:
             self.kept_stats.add(cut)
             cntr += 1
         if not cntr:
-            warnings.warn('Found an accepted batch with zero cuts. This could be an error.')
+            warnings.warn(
+                "Found an accepted batch with zero cuts. This could be an error."
+            )
         self.num_kept_batches += 1
 
     def discard(self, cuts: Iterable[Cut]) -> None:
@@ -296,9 +312,11 @@ class SamplingDiagnostics:
     def get_report(self) -> str:
         """Returns a string describing the statistics of the sampling process so far."""
         if self.total_batches == 0 or self.total_cuts == 0:
-            return "Sampling statistics unvavailable: the SamplerDiagnostics received no cuts or batches. " \
-                   "If this is unexpected, and you're using a custom sampler, ensure that the sampler " \
-                   "is registering the batches in SamplerDiagnostics."
+            return (
+                "Sampling statistics unvavailable: the SamplerDiagnostics received no cuts or batches. "
+                "If this is unexpected, and you're using a custom sampler, ensure that the sampler "
+                "is registering the batches in SamplerDiagnostics."
+            )
         return (
             f"Sampling statistics: \n"
             f"Kept {self.kept_stats.num_cuts:d}/{self.total_cuts:d} "
@@ -310,10 +328,11 @@ class SamplingDiagnostics:
             f"Overall, {round(self.discarded_stats.current):d} seconds of supervision were discarded."
         )
 
-    def __add__(self, other: 'SamplingDiagnostics') -> 'SamplingDiagnostics':
+    def __add__(self, other: "SamplingDiagnostics") -> "SamplingDiagnostics":
         return SamplingDiagnostics(
             kept_stats=self.kept_stats + other.kept_stats,
             discarded_stats=self.discarded_stats + other.discarded_stats,
             num_kept_batches=self.num_kept_batches + other.num_kept_batches,
-            num_discarded_batches=self.num_discarded_batches + other.num_discarded_batches
+            num_discarded_batches=self.num_discarded_batches
+                                  + other.num_discarded_batches,
         )

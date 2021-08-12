@@ -51,10 +51,10 @@ class BucketingSampler(CutSampler):
             *cuts: CutSet,
             sampler_type: Type = SingleCutSampler,
             num_buckets: int = 10,
-            bucket_method: Literal['equal_len', 'equal_duration'] = 'equal_len',
+            bucket_method: Literal["equal_len", "equal_duration"] = "equal_len",
             drop_last: bool = False,
             seed: int = 0,
-            **kwargs: Dict
+            **kwargs: Dict,
     ) -> None:
         """
         BucketingSampler's constructor.
@@ -79,7 +79,7 @@ class BucketingSampler(CutSampler):
             provide_len=all(not cs.is_lazy for cs in cuts),
             world_size=1,
             rank=0,
-            seed=seed
+            seed=seed,
         )
         self.num_buckets = num_buckets
         self.drop_last = drop_last
@@ -94,7 +94,9 @@ class BucketingSampler(CutSampler):
 
         # Split data into buckets.
         if bucket_method == "equal_len":
-            self.buckets = create_buckets_equal_len(*self.cut_sets, num_buckets=num_buckets)
+            self.buckets = create_buckets_equal_len(
+                *self.cut_sets, num_buckets=num_buckets
+            )
         elif bucket_method == "equal_duration":
             self.buckets = create_buckets_equal_duration(
                 *self.cut_sets, num_buckets=num_buckets
@@ -107,7 +109,9 @@ class BucketingSampler(CutSampler):
 
         # Create a separate sampler for each bucket.
         self.bucket_samplers = [
-            self.sampler_type(*bucket_cut_sets, drop_last=drop_last, **self.sampler_kwargs)
+            self.sampler_type(
+                *bucket_cut_sets, drop_last=drop_last, **self.sampler_kwargs
+            )
             for bucket_cut_sets in self.buckets
         ]
 
@@ -146,7 +150,7 @@ class BucketingSampler(CutSampler):
         for sampler in self.bucket_samplers:
             sampler.filter(predicate)
 
-    def __iter__(self) -> 'BucketingSampler':
+    def __iter__(self) -> "BucketingSampler":
         self.bucket_rng.seed(self.seed + self.epoch)
         for b in self.bucket_samplers:
             iter(b)
@@ -164,10 +168,7 @@ class BucketingSampler(CutSampler):
 
     def __len__(self):
         if self.num_batches is None:
-            self.num_batches = sum(
-                len(sampler)
-                for sampler in self.bucket_samplers
-            )
+            self.num_batches = sum(len(sampler) for sampler in self.bucket_samplers)
         return self.num_batches
 
     @property
@@ -177,14 +178,18 @@ class BucketingSampler(CutSampler):
     @property
     def _nondepleted_samplers_with_idxs(self):
         return [
-            (idx, bs) for idx, (bs, depleted) in
-            enumerate(zip(self.bucket_samplers, self.depleted))
+            (idx, bs)
+            for idx, (bs, depleted) in enumerate(
+                zip(self.bucket_samplers, self.depleted)
+            )
             if not depleted
         ]
 
     def get_report(self) -> str:
         """Returns a string describing the statistics of the sampling process so far."""
-        total_diagnostics = reduce(add, (bucket.diagnostics for bucket in self.bucket_samplers))
+        total_diagnostics = reduce(
+            add, (bucket.diagnostics for bucket in self.bucket_samplers)
+        )
         return total_diagnostics.get_report()
 
 
@@ -226,14 +231,13 @@ def create_buckets_equal_duration(
     """
     first_cut_set = cuts[0].sort_by_duration(ascending=True)
     buckets_per_cutset = [
-        _create_buckets_equal_duration_single(
-            first_cut_set, num_buckets=num_buckets
-        )
+        _create_buckets_equal_duration_single(first_cut_set, num_buckets=num_buckets)
     ]
     for cut_set in cuts[1:]:
         buckets_per_cutset.append(
             # .subset() will cause the output CutSet to have the same order of cuts as `bucket`
-            cut_set.subset(cut_ids=bucket.ids) for bucket in buckets_per_cutset[0]
+            cut_set.subset(cut_ids=bucket.ids)
+            for bucket in buckets_per_cutset[0]
         )
     # zip(*buckets) does:
     # [(cs0_0, cs1_0, cs2_0), (cs0_1, cs1_1, cs2_1)] -> [(cs0_0, cs0_1), (cs1_0, cs1_1), (cs2_0, cs2_1)]

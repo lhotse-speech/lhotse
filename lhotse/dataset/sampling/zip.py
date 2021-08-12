@@ -81,5 +81,7 @@ class ZipSampler(CutSampler):
 
     def get_report(self) -> str:
         """Returns a string describing the statistics of the sampling process so far."""
-        total_diagnostics = reduce(add, (sampler.diagnostics for sampler in self.samplers))
+        total_diagnostics = reduce(
+            add, (sampler.diagnostics for sampler in self.samplers)
+        )
         return total_diagnostics.get_report()
