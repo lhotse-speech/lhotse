@@ -15,7 +15,6 @@ from subprocess import PIPE, run
 from typing import Any, Callable, Dict, Iterable, List, Mapping, NamedTuple, Optional, Sequence, Tuple, Union
 
 import numpy as np
-import soundfile as sf
 from tqdm.auto import tqdm
 
 from lhotse.augmentation import AudioTransform, Resample, Speed
@@ -232,6 +231,7 @@ class Recording:
         else:
             try:
                 # Try to parse the file using pysoundfile first.
+                import soundfile as sf
                 info = sf.info(str(path))
             except:
                 # Try to parse the file using audioread as a fallback.
@@ -822,6 +822,7 @@ def read_audio(
             duration=duration
         )
     try:
+        import soundfile as sf
         with sf.SoundFile(path_or_fd) as sf_desc:
             sampling_rate = sf_desc.samplerate
             if offset > 0:
@@ -1143,6 +1144,8 @@ def read_sph(
 
     # Actual audio reading.
     proc = BytesIO(run(cmd, shell=True, check=True, stdout=PIPE, stderr=PIPE).stdout)
+
+    import soundfile as sf
     with sf.SoundFile(proc) as sf_desc:
         audio, sampling_rate = sf_desc.read(dtype=np.float32), sf_desc.samplerate
         audio = audio.reshape(1, -1) if sf_desc.channels == 1 else audio.T
