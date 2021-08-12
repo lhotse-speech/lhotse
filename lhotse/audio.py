@@ -1142,7 +1142,7 @@ def read_sph(
     cmd += f' {sph_path}'
 
     # Actual audio reading.
-    proc = BytesIO(run(cmd, shell=True, stdout=PIPE, stderr=PIPE).stdout)
+    proc = BytesIO(run(cmd, shell=True, check=True, stdout=PIPE, stderr=PIPE).stdout)
     with sf.SoundFile(proc) as sf_desc:
         audio, sampling_rate = sf_desc.read(dtype=np.float32), sf_desc.samplerate
         audio = audio.reshape(1, -1) if sf_desc.channels == 1 else audio.T
