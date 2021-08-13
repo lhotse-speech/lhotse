@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-# This script launches the lhotse data preparation steps for the Heroico corpus from the commandline 
+# This script launches the lhotse data preparation steps for the Heroico corpus from the commandline
 
 set -eou pipefail
 
@@ -17,7 +17,7 @@ output_dir=$root/heroico
 [[ $(uname) == 'Darwin' ]] && nj=$(sysctl -n machdep.cpu.thread_count) || nj=$(grep -c ^processor /proc/cpuinfo)
 
 # Download and untar heroico dataset
-lhotse obtain heroico $root
+lhotse download heroico $root
 
 echo "$0: Prepare audio and supervision manifests for heroico."
 lhotse prepare heroico $speech_root $transcripts_dir $output_dir
