@@ -197,7 +197,6 @@ class BucketingSampler(CutSampler):
         return self
 
     def _select_bucket_with_idx(self) -> Tuple[int, CutSampler]:
-        # return self.bucket_rng.choice(self._nondepleted_samplers_with_idxs)
         if self.cut_sets[0].is_lazy:
             # With lazy CutSets, we simply choose a random bucket,
             # because we can't know how much data is left in the buckets.
