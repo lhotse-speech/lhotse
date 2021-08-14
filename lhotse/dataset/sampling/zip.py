@@ -1,6 +1,6 @@
 from functools import reduce
 from operator import add
-from typing import Callable
+from typing import Callable, Optional
 
 from lhotse import CutSet
 from lhotse.cut import Cut
@@ -31,6 +31,44 @@ class ZipSampler(CutSampler):
     def __init__(self, *samplers: CutSampler) -> None:
         super().__init__()
         self.samplers = samplers
+
+    @property
+    def remaining_duration(self) -> Optional[float]:
+        """
+        Remaining duration of data left in the sampler (may be inexact due to float arithmetic).
+
+        .. note: For ZipSampler, it's the minimum of remaining durations in its sub-samplers.
+        """
+        durs = [s.remaining_duration for s in self.samplers]
+        if any(d is None for d in durs):
+            return None
+        return min(durs)
+
+    @property
+    def remaining_cuts(self) -> Optional[int]:
+        """
+        Remaining number of cuts in the sampler.
+        Not available when the CutSet is read in lazy mode (returns None).
+
+        .. note: For ZipSampler, it's the minimum of remaining cuts in its sub-samplers.
+        """
+        counts = [s.remaining_cuts for s in self.samplers]
+        if any(c is None for c in counts):
+            return None
+        return min(counts)
+
+    @property
+    def num_cuts(self) -> Optional[int]:
+        """
+        Total number of cuts in the sampler.
+        Not available when the CutSet is read in lazy mode (returns None).
+
+        .. note: For ZipSampler, it's the minimum of num cuts in its sub-samplers.
+        """
+        counts = [s.num_cuts for s in self.samplers]
+        if any(c is None for c in counts):
+            return None
+        return min(counts)
 
     def __iter__(self):
         for sampler in self.samplers:

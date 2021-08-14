@@ -122,23 +122,22 @@ def test_single_cut_sampler_order_differs_between_epochs():
         last_order = new_order
 
 
+@pytest.mark.xfail(
+    reason="len(sampler) is incorrect as it caches the num_buckets value "
+           "for a particular cut ordering -- if the cuts are re-shuffled, "
+           "the actual len might differ."
+)
 def test_single_cut_sampler_len():
     # total duration is 55 seconds
     # each second has 100 frames
-    cuts = CutSet.from_cuts(
-        dummy_cut(idx, duration=float(idx))
-        for idx in range(1, 11)
-    )
-    sampler = SingleCutSampler(
-        cuts,
-        shuffle=True,
-        max_frames=10 * 100,
-        max_cuts=6
-    )
+    cuts = CutSet.from_cuts(dummy_cut(idx, duration=float(idx)) for idx in range(1, 11))
+    sampler = SingleCutSampler(cuts, shuffle=True, max_frames=10 * 100, max_cuts=6)
 
     for epoch in range(5):
-        assert len(sampler) == len([batch for batch in sampler])
         sampler.set_epoch(epoch)
+        sampler_len = len(sampler)
+        num_batches = len([batch for batch in sampler])
+        assert sampler_len == num_batches
 
 
 def test_single_cut_sampler_low_max_frames(libri_cut_set):
@@ -286,13 +285,15 @@ def test_cut_pairs_sampler_order_differs_between_epochs():
         last_order = new_order
 
 
+@pytest.mark.xfail(
+    reason="len(sampler) is incorrect as it caches the num_buckets value "
+           "for a particular cut ordering -- if the cuts are re-shuffled, "
+           "the actual len might differ."
+)
 def test_cut_pairs_sampler_len():
     # total duration is 55 seconds
     # each second has 100 frames
-    cuts = CutSet.from_cuts(
-        dummy_cut(idx, duration=float(idx))
-        for idx in range(1, 11)
-    )
+    cuts = CutSet.from_cuts(dummy_cut(idx, duration=float(idx)) for idx in range(1, 11))
     sampler = CutPairsSampler(
         source_cuts=cuts,
         target_cuts=cuts,

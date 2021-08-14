@@ -68,9 +68,7 @@ class CutSampler(Sampler):
             It makes sense to turn it off when iterating the sampler is somewhat costly for any reason;
             e.g. because the underlying manifest is lazily loaded from the filesystem/somewhere else.
         """
-        super().__init__(
-            data_source=None
-        )  # the "data_source" arg is not used in Sampler...
+        super().__init__(data_source=None)  # the "data_source" arg is not used in Sampler...
         self.shuffle = shuffle
         self.seed = seed
         self.epoch = 0
@@ -103,7 +101,6 @@ class CutSampler(Sampler):
         :param epoch: Epoch number.
         """
         self.epoch = epoch
-        self.num_batches = None
 
     def filter(self, predicate: Callable[[Cut], bool]) -> None:
         """
@@ -132,6 +129,36 @@ class CutSampler(Sampler):
     def _next_batch(self):
         raise NotImplementedError(
             "Sub-classes of CutSampler have to implement self._next_batch()"
+        )
+
+    @property
+    def remaining_duration(self) -> Optional[float]:
+        """
+        Remaining duration of data left in the sampler (may be inexact due to float arithmetic).
+        Not available when the CutSet is read in lazy mode (returns None).
+        """
+        raise NotImplementedError(
+            'Sub-classes of CutSampler have to implement self.remaining_duration'
+        )
+
+    @property
+    def remaining_cuts(self) -> Optional[int]:
+        """
+        Remaining number of cuts in the sampler.
+        Not available when the CutSet is read in lazy mode (returns None).
+        """
+        raise NotImplementedError(
+            'Sub-classes of CutSampler have to implement self.remaining_cuts'
+        )
+
+    @property
+    def num_cuts(self) -> Optional[int]:
+        """
+        Total number of cuts in the sampler.
+        Not available when the CutSet is read in lazy mode (returns None).
+        """
+        raise NotImplementedError(
+            'Sub-classes of CutSampler have to implement self.num_cuts'
         )
 
     def __len__(self) -> int:

@@ -80,6 +80,34 @@ class CutPairsSampler(CutSampler):
         self.max_cuts = max_cuts
         self.drop_last = drop_last
 
+    @property
+    def remaining_duration(self) -> Optional[float]:
+        """
+        Remaining duration of data left in the sampler (may be inexact due to float arithmetic).
+        Not available when the CutSet is read in lazy mode (returns None).
+
+        .. note: For :class:`.CutPairsSampler` we return the source cuts duration.
+        """
+        return self.source_cuts.remaining_duration
+
+    @property
+    def remaining_cuts(self) -> Optional[int]:
+        """
+        Remaining number of cuts in the sampler.
+        Not available when the CutSet is read in lazy mode (returns None).
+        """
+        return self.source_cuts.remaining_cuts
+
+    @property
+    def num_cuts(self) -> Optional[int]:
+        """
+        Total number of cuts in the sampler.
+        Not available when the CutSet is read in lazy mode (returns None).
+        """
+        if self.source_cuts.is_lazy:
+            return None
+        return len(self.source_cuts)
+
     def __iter__(self) -> "CutPairsSampler":
         """
         Prepare the dataset for iterating over a new epoch. Will shuffle the data if requested.
