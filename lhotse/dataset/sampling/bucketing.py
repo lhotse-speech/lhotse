@@ -153,7 +153,7 @@ class BucketingSampler(CutSampler):
 
         .. note: For BucketingSampler, it's the sum of num cuts in all buckets.
         """
-        counts = [s.num_cuts for _, s in self._nondepleted_samplers_with_idxs]
+        counts = [s.num_cuts for s in self.bucket_samplers]
         if any(c is None for c in counts):
             return None
         return sum(counts)

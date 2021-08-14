@@ -1,5 +1,6 @@
 import random
 from itertools import groupby
+from math import isclose
 from statistics import mean
 from tempfile import NamedTemporaryFile
 
@@ -916,3 +917,28 @@ def test_streaming_shuffle(datasize, bufsize):
     assert len(data) == len(shuffled)
     assert len(shuffled) == len(set(shuffled))
     assert data != shuffled
+
+
+@pytest.mark.parametrize(
+    "sampler",
+    [
+        SingleCutSampler(DummyManifest(CutSet, begin_id=0, end_id=10)),
+        CutPairsSampler(
+            DummyManifest(CutSet, begin_id=0, end_id=10),
+            DummyManifest(CutSet, begin_id=0, end_id=10),
+        ),
+        BucketingSampler(DummyManifest(CutSet, begin_id=0, end_id=10)),
+        ZipSampler(
+            SingleCutSampler(DummyManifest(CutSet, begin_id=0, end_id=10)),
+            SingleCutSampler(DummyManifest(CutSet, begin_id=10, end_id=20)),
+        ),
+    ],
+)
+def test_sampler_properties(sampler):
+    assert sampler.remaining_cuts == 10
+    assert isclose(sampler.remaining_duration, 10.0)
+    assert sampler.num_cuts == 10
+    batches = [b for b in sampler]
+    assert sampler.remaining_cuts == 0
+    assert isclose(sampler.remaining_duration, 0.0)
+    assert sampler.num_cuts == 10
