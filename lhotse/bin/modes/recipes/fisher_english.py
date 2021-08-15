@@ -14,11 +14,14 @@ from lhotse.utils import Pathlike
               help='Audio dirs, e.g., `LDC2004T19 LDC2005T19`. Multiple corpora can be provided by repeating `-ad`.')
 @click.option('-td', '--transcript-dirs', type=str, multiple=True, default=['LDC2004T19', 'LDC2005T19'],
               help='Transcript dirs, e.g., `LDC2004T19 LDC2005T19`. Multiple corpora can be provided by repeating `-ad`.')
+@click.option('--absolute-paths', default=False,
+              help='Whether to return absolute or relative (to the corpus dir) paths for recordings.')
 def fisher_english(
         corpus_dir: Pathlike,
         audio_dirs: List[str],
         transcript_dirs: List[str],
         output_dir: Pathlike,
+        absolute_paths: bool
 ):
     """
     The Fisher English Part 1, 2 corpus preparation.
@@ -33,5 +36,6 @@ def fisher_english(
         corpus_dir=corpus_dir,
         audio_dirs=audio_dirs,
         transcript_dirs=transcript_dirs,
-        output_dir=output_dir
+        output_dir=output_dir,
+        absolute_paths=absolute_paths
     )

@@ -11,15 +11,14 @@ import codecs
 import os
 import itertools as it
 
-from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor
-from typing import Dict, List, Tuple, Optional, Union
+from pathlib import Path
 from tqdm.auto import tqdm
+from typing import Dict, List, Tuple, Optional, Union
 
-from lhotse import validate_recordings_and_supervisions, CutSet
-from lhotse.audio import AudioSource, Recording, RecordingSet, sph_info
+from lhotse.audio import Recording, RecordingSet
+from lhotse.qa import trim_supervisions_to_recordings, validate_recordings_and_supervisions
 from lhotse.supervision import SupervisionSegment, SupervisionSet
-from lhotse.qa import trim_supervisions_to_recordings
 from lhotse.utils import Pathlike, check_and_rglob
 
 
@@ -31,20 +30,9 @@ def get_paths(fold_path_and_pattern: Tuple[Pathlike, str]) -> List[Path]:
     return check_and_rglob(*fold_path_and_pattern)
 
 
-def create_recording(audio_path: Pathlike) -> Recording:
-    
-    audio_path = Path(audio_path)
-    audio_info = sph_info(audio_path)
-    
-    recording = Recording(
-        id=audio_path.stem.split('_')[2],
-        sampling_rate=audio_info.samplerate, 
-        num_samples=audio_info.frames, 
-        duration=audio_info.duration,
-        sources=[AudioSource(type='file', channels=list(range(audio_info.channels)), source=str(audio_path))]
-    )
-    
-    return recording
+def create_recording(audio_path_and_rel_path_depth: Tuple[Pathlike, Union[int, None]]) -> Recording:
+    audio_path, rel_path_depth = audio_path_and_rel_path_depth
+    return Recording.from_file(audio_path, relative_path_depth=rel_path_depth)
 
 
 def create_supervision(
@@ -67,8 +55,8 @@ def create_supervision(
         
         segments = [
             SupervisionSegment(
-                id=session_id + '-' + str(k).zfill(len(str(len(lines)))),
-                recording_id=session_id,
+                id=transcript_path.stem + '-' + str(k).zfill(len(str(len(lines)))),
+                recording_id=transcript_path.stem,
                 start=round(l[0], 3),
                 duration=round(l[1] - l[0], 3),
                 channel=channel_to_int[l[2]],
@@ -102,7 +90,8 @@ def prepare_fisher_english(
     corpus_path: Pathlike,
     audio_dirs: List[str] = FISHER_AUDIO_DIRS,
     transcript_dirs: List[str] = FISHER_TRANSCRIPT_DIRS,
-    output_dir: Optional[Pathlike] = None
+    output_dir: Optional[Pathlike] = None,
+    absolute_paths: bool = False
 ) -> Dict[str, Union[RecordingSet, SupervisionSet]]:
     
     """
@@ -114,6 +103,7 @@ def prepare_fisher_english(
     :param audio_dirs: List of dirs of audio corpora.
     :param transcripts_dirs: List of dirs of transcript corpora.
     :param output_dir: Directory where the manifests should be written. Can be omitted to avoid writing.
+    :param absolute_paths: Whether to return absolute or relative (to the corpus dir) paths for recordings.
     :return: A dict with manifests. The keys are: ``{'recordings', 'supervisions'}``.
     """
     
@@ -150,11 +140,12 @@ def prepare_fisher_english(
 
     assert len(transcript_paths) == len(sessions) == len(audio_paths)
     
+    create_recordings_input = [(p, None if absolute_paths else 5) for p in audio_paths]
     recordings = [None] * len(audio_paths)
     with ThreadPoolExecutor(os.cpu_count() * 4) as executor:
         with tqdm(total=len(audio_paths)) as pbar:
             pbar.set_description('Collect recordings')
-            for i, reco in enumerate(executor.map(create_recording, audio_paths)):
+            for i, reco in enumerate(executor.map(create_recording, create_recordings_input)):
                 recordings[i] = reco
                 pbar.update()
         

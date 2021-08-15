@@ -22,12 +22,7 @@ from typing import Dict, Optional, Union
 from tqdm.auto import tqdm
 
 from lhotse import RecordingSet, SupervisionSegment, SupervisionSet
-from lhotse.qa import (
-    remove_missing_recordings_and_supervisions,
-    trim_supervisions_to_recordings,
-    validate_recordings_and_supervisions
-)
-from lhotse.recipes.callhome_english import make_recording_callhome
+from lhotse.qa import fix_manifests, validate_recordings_and_supervisions
 from lhotse.utils import Pathlike, check_and_rglob
 
 
@@ -35,7 +30,7 @@ def prepare_callhome_egyptian(
         audio_dir: Pathlike,
         transcript_dir: Pathlike,
         output_dir: Optional[Pathlike] = None,
-        sph2pipe_path: Optional[Pathlike] = None,
+        absolute_paths: bool = False
 ) -> Dict[str, Union[RecordingSet, SupervisionSet]]:
     """
     Prepare manifests for the Switchboard corpus.
@@ -46,7 +41,7 @@ def prepare_callhome_egyptian(
     :param rttm_dir: Path to the transcripts directory (typically named "swb_ms98_transcriptions").
         If not provided, the transcripts will be downloaded.
     :param output_dir: Directory where the manifests should be written. Can be omitted to avoid writing.
-    :param sph2pipe_path: When provided, we will "hard-wire" the sph2pipe path into the recording manifests.
+    :param absolute_paths: Whether to return absolute or relative (to the corpus dir) paths for recordings.
     :return: A dict with manifests. The keys are: ``{'recordings', 'supervisions'}``.
     """
     audio_dir = Path(audio_dir)
@@ -61,7 +56,8 @@ def prepare_callhome_egyptian(
             '*.sph'
         )
         recordings = RecordingSet.from_recordings(
-            make_recording_callhome(p, sph2pipe_path=sph2pipe_path) for p in tqdm(audio_paths)
+            Recording.from_file(p, relative_path_depth=None if absolute_paths else 4)
+            for p in tqdm(audio_paths)
         )
 
         transcript_paths = check_and_rglob(
@@ -98,8 +94,7 @@ def prepare_callhome_egyptian(
                 idx += 1
         supervisions = SupervisionSet.from_segments(supervisions)
 
-        recordings, supervisions = remove_missing_recordings_and_supervisions(recordings, supervisions)
-        supervisions = trim_supervisions_to_recordings(recordings, supervisions)
+        recordings, supervisions = fix_manifests(recordings, supervisions)
         validate_recordings_and_supervisions(recordings, supervisions)
 
         if output_dir is not None:
