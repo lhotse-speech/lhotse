@@ -53,6 +53,7 @@ class BucketingSampler(CutSampler):
             num_buckets: int = 10,
             bucket_method: Literal["equal_len", "equal_duration"] = "equal_len",
             drop_last: bool = False,
+            proportional_sampling: bool = True,
             seed: int = 0,
             **kwargs: Dict,
     ) -> None:
@@ -71,6 +72,10 @@ class BucketingSampler(CutSampler):
         :param drop_last: When ``True``, we will drop all incomplete batches.
             A batch is considered incomplete if it depleted a bucket before
             hitting the constraint such as max_duration, max_cuts, etc.
+        :param proportional_sampling: When ``True``, we will introduce an approximate
+            proportional sampling mechanism in the bucket selection.
+            This mechanism reduces the chance that any of the buckets gets depleted early.
+            Enabled by default.
         :param seed: random seed for bucket selection
         :param kwargs: Arguments used to create the underlying sampler for each bucket.
         """
@@ -83,6 +88,7 @@ class BucketingSampler(CutSampler):
         )
         self.num_buckets = num_buckets
         self.drop_last = drop_last
+        self.proportional_sampling = proportional_sampling
         self.sampler_type = sampler_type
         self.sampler_kwargs = kwargs
         self.cut_sets = cuts
@@ -197,7 +203,8 @@ class BucketingSampler(CutSampler):
         return self
 
     def _select_bucket_with_idx(self) -> Tuple[int, CutSampler]:
-        if self.cut_sets[0].is_lazy:
+        if not self.proportional_sampling or self.cut_sets[0].is_lazy:
+            # Either proportional sampling was disabled, or the CutSet is lazy.
             # With lazy CutSets, we simply choose a random bucket,
             # because we can't know how much data is left in the buckets.
             return self.bucket_rng.choice(self._nondepleted_samplers_with_idxs)

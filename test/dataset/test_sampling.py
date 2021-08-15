@@ -353,6 +353,15 @@ def test_bucketing_sampler_single_cuts():
     assert set(cut_set.ids) == set(c.id for c in sampled_cuts)
 
 
+def test_bucketing_sampler_single_cuts_no_proportional_sampling():
+    cut_set = DummyManifest(CutSet, begin_id=0, end_id=1000)
+    sampler = BucketingSampler(cut_set, proportional_sampling=False, sampler_type=SingleCutSampler)
+    sampled_cuts = []
+    for batch in sampler:
+        sampled_cuts.extend(batch)
+    assert set(cut_set.ids) == set(c.id for c in sampled_cuts)
+
+
 def test_bucketing_sampler_single_cuts_equal_len():
     cut_set = DummyManifest(CutSet, begin_id=0, end_id=1000)
     for idx, c in enumerate(cut_set):
