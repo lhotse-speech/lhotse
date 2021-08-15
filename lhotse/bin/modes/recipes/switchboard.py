@@ -13,12 +13,15 @@ from lhotse.utils import Pathlike
               help='Optional path to LDC2020T14 package with sentiment annotations for SWBD.')
 @click.option('--omit-silence/--retain-silence', default=True,
               help='Should the [silence] segments be kept.')
+@click.option('--absolute-paths', default=False,
+              help='Whether to return absolute or relative (to the corpus dir) paths for recordings.')
 def switchboard(
         audio_dir: Pathlike,
         output_dir: Pathlike,
         transcript_dir: Pathlike,
         sentiment_dir: Pathlike,
-        omit_silence: bool
+        omit_silence: bool,
+        absolute_paths: bool
 ):
     """
     The Switchboard corpus preparation.
@@ -38,5 +41,6 @@ def switchboard(
         transcripts_dir=transcript_dir,
         sentiment_dir=sentiment_dir,
         output_dir=output_dir,
-        omit_silence=omit_silence
+        omit_silence=omit_silence,
+        absolute_paths=absolute_paths
     )

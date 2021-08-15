@@ -8,6 +8,7 @@ from .cmu_arctic import *
 from .cmu_kids import *
 from .cslu_kids import *
 from .dihard3 import *
+from .fisher_english import *
 from .gale_arabic import *
 from .gale_mandarin import *
 from .gigaspeech import *

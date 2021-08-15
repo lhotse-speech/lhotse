@@ -9,13 +9,13 @@ from lhotse.utils import Pathlike
 @click.argument('audio-dir', type=click.Path(exists=True, file_okay=False))
 @click.argument('transcript-dir', type=click.Path(exists=True, file_okay=False))
 @click.argument('output-dir', type=click.Path())
-@click.option('--sph2pipe', type=click.Path(exists=True, dir_okay=False),
-              help='Path to sph2pipe program.')
+@click.option('--absolute-paths', default=False,
+              help='Whether to return absolute or relative (to the corpus dir) paths for recordings.')
 def callhome_egyptian(
         audio_dir: Pathlike,
         transcript_dir: Pathlike,
         output_dir: Pathlike,
-        sph2pipe: Pathlike
+        absolute_paths: bool
 ):
     """
     About the Callhome Egyptian Arabic Corpus
@@ -41,5 +41,5 @@ def callhome_egyptian(
         audio_dir=audio_dir,
         transcript_dir=transcript_dir,
         output_dir=output_dir,
-        sph2pipe_path=sph2pipe
+        absolute_paths=absolute_paths
     )

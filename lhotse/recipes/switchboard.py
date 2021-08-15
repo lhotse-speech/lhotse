@@ -43,6 +43,7 @@ def prepare_switchboard(
         for SWBD segments.
     :param output_dir: Directory where the manifests should be written. Can be omitted to avoid writing.
     :param omit_silence: Whether supervision segments with ``[silence]`` token should be removed or kept.
+    :param absolute_paths: Whether to return absolute or relative (to the corpus dir) paths for recordings.
     :return: A dict with manifests. The keys are: ``{'recordings', 'supervisions'}``.
     """
     if transcripts_dir is None:
