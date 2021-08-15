@@ -228,11 +228,15 @@ class Recording:
         if path.suffix.lower() == '.opus':
             # We handle OPUS as a special case because we might need to force a certain sampling rate.
             info = opus_info(path, force_opus_sampling_rate=force_opus_sampling_rate)
+        elif path.suffix.lower() == '.sph':
+            # We handle SPHERE as another special case because some old codecs (i.e. "shorten" codec)
+            # can't be handled by neither pysoundfile nor pyaudioread.
+            info = sph_info(path)
         else:
             try:
                 # Try to parse the file using pysoundfile first.
-                import soundfile
-                info = soundfile.info(str(path))
+                import soundfile as sf
+                info = sf.info(str(path))
             except:
                 # Try to parse the file using audioread as a fallback.
                 info = audioread_info(str(path))
@@ -815,6 +819,12 @@ def read_audio(
             duration=duration,
             force_opus_sampling_rate=force_opus_sampling_rate,
         )
+    elif isinstance(path_or_fd, (str, Path)) and str(path_or_fd).lower().endswith('.sph'):
+        return read_sph(
+            path_or_fd,
+            offset=offset,
+            duration=duration
+        )
     try:
         import soundfile as sf
         with sf.SoundFile(path_or_fd) as sf_desc:
@@ -1102,3 +1112,46 @@ def parse_channel_from_ffmpeg_output(ffmpeg_stderr: bytes) -> str:
         f"Could not determine the number of channels for OPUS file from the following ffmpeg output "
         f"(shown as bytestring due to avoid possible encoding issues):\n{str(ffmpeg_stderr)}"
     )
+
+
+def sph_info(path: Pathlike) -> LibsndfileCompatibleAudioInfo:
+    samples, sampling_rate = read_sph(path)
+    return LibsndfileCompatibleAudioInfo(
+        channels=samples.shape[0],
+        frames=samples.shape[1],
+        samplerate=sampling_rate,
+        duration=samples.shape[1] / sampling_rate
+    )
+
+
+def read_sph(
+        sph_path: Pathlike,
+        offset: Seconds = 0.0,
+        duration: Optional[Seconds] = None
+) -> Tuple[np.ndarray, int]:
+    """
+    Reads SPH files using sph2pipe in a shell subprocess.
+    Unlike audioread, correctly supports offsets and durations for reading short chunks.
+
+    :return: a tuple of audio samples and the sampling rate.
+    """
+
+    sph_path = Path(sph_path)
+
+    # Construct the sph2pipe command depending on the arguments passed.
+    cmd = f'sph2pipe -f wav -p -t {offset}:'
+
+    if duration is not None:
+        cmd += f'{round(offset + duration, 5)}'
+    # Add the input specifier after offset and duration.
+    cmd += f' {sph_path}'
+
+    # Actual audio reading.
+    proc = BytesIO(run(cmd, shell=True, check=True, stdout=PIPE, stderr=PIPE).stdout)
+
+    import soundfile as sf
+    with sf.SoundFile(proc) as sf_desc:
+        audio, sampling_rate = sf_desc.read(dtype=np.float32), sf_desc.samplerate
+        audio = audio.reshape(1, -1) if sf_desc.channels == 1 else audio.T
+
+    return audio, sampling_rate
