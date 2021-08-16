@@ -133,10 +133,10 @@ class BucketingSampler(CutSampler):
 
         .. note: For BucketingSampler, it's the sum of remaining duration in all buckets.
         """
-        durs = [s.remaining_duration for _, s in self._nondepleted_samplers_with_idxs]
-        if any(d is None for d in durs):
+        try:
+            return sum(s.remaining_duration for _, s in self._nondepleted_samplers_with_idxs)
+        except TypeError:
             return None
-        return sum(durs)
 
     @property
     def remaining_cuts(self) -> Optional[int]:
@@ -146,10 +146,10 @@ class BucketingSampler(CutSampler):
 
         .. note: For BucketingSampler, it's the sum of remaining cuts in all buckets.
         """
-        counts = [s.remaining_cuts for _, s in self._nondepleted_samplers_with_idxs]
-        if any(c is None for c in counts):
+        try:
+            return sum(s.remaining_cuts for _, s in self._nondepleted_samplers_with_idxs)
+        except TypeError:
             return None
-        return sum(counts)
 
     @property
     def num_cuts(self) -> Optional[int]:
@@ -159,10 +159,10 @@ class BucketingSampler(CutSampler):
 
         .. note: For BucketingSampler, it's the sum of num cuts in all buckets.
         """
-        counts = [s.num_cuts for s in self.bucket_samplers]
-        if any(c is None for c in counts):
+        try:
+            return sum(s.num_cuts for s in self.bucket_samplers)
+        except TypeError:
             return None
-        return sum(counts)
 
     def set_epoch(self, epoch: int) -> None:
         """
