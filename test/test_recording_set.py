@@ -189,11 +189,38 @@ def test_recording_perturb_speed(recording, factor, affix_id):
     assert samples.shape[1] == rec_sp.num_samples
 
 
+@pytest.mark.parametrize(
+    ['factor', 'affix_id'],
+    [
+        (1.0, True),
+        (1.0, False),
+        (0.9, True),
+        (1.1, True),
+    ]
+)
+def test_recording_perturb_tempo(recording, factor, affix_id):
+    rec_sp = recording.perturb_tempo(factor=factor, affix_id=affix_id)
+    if affix_id:
+        assert rec_sp.id == f'{recording.id}_tp{factor}'
+    else:
+        assert rec_sp.id == recording.id
+    samples = rec_sp.load_audio()
+    assert samples.shape[0] == rec_sp.num_channels
+    assert samples.shape[1] == rec_sp.num_samples
+
+
 def test_recording_set_perturb_speed(recording_set):
     recs_sp = recording_set.perturb_speed(factor=1.1)
     for r, r_sp in zip(recording_set, recs_sp):
         assert r.duration > r_sp.duration  # Faster recording => shorter duration
         assert r.sampling_rate == r_sp.sampling_rate
+
+
+def test_recording_set_perturb_tempo(recording_set):
+    recs_sp = recording_set.perturb_tempo(factor=1.1)
+    for r, r_tp in zip(recording_set, recs_sp):
+        assert r.duration > r_tp.duration  # Faster recording => shorter duration
+        assert r.sampling_rate == r_tp.sampling_rate
 
 
 @pytest.mark.parametrize('sampling_rate', [8000, 16000, 22050, 32000, 44100, 48000])
