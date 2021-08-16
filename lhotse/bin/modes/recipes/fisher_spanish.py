@@ -6,8 +6,8 @@ from lhotse.utils import Pathlike
 
 
 @prepare.command(context_settings=dict(show_default=True))
-@click.argument('audio-dir', type=click.Path(exists=True, file_okay=False), help='Audio directory path.')
-@click.argument('transcript-dir', type=click.Path(exists=True, file_okay=False), help='Transcripts directory path.')
+@click.argument('audio-dir', type=click.Path(exists=True, file_okay=False))
+@click.argument('transcript-dir', type=click.Path(exists=True, file_okay=False))
 @click.argument('output-dir', type=click.Path())
 @click.option('--absolute-paths', default=False,
               help='Whether to return absolute or relative (to the corpus dir) paths for recordings.')
