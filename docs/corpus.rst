@@ -65,6 +65,8 @@ a CLI tool that create the manifests given a corpus directory.
     - :func:`lhotse.recipes.prepare_broadcast_news`
   * - Fisher English Part 1, 2
     - :func:`lhotse.recipes.prepare_fisher_english`
+  * - Fisher Spanish
+    - :func:`lhotse.recipes.prepare_fisher_spanish`
   * - GALE Arabic Broadcast Speech
     - :func:`lhotse.recipes.prepare_gale_arabic`
   * - GALE Mandarin Broadcast Speech
