@@ -97,7 +97,7 @@ setup(
     extras_require={
         'docs': docs_require,
         'tests': tests_require,
-        'dev': docs_require + tests_require,
+        'dev': dev_requires,
         'all': all_requires
     },
     classifiers=[
