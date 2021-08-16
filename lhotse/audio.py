@@ -676,6 +676,19 @@ class RecordingSet(Serializable, Sequence[Recording]):
         """
         return RecordingSet.from_recordings(r.perturb_speed(factor=factor, affix_id=affix_id) for r in self)
 
+    def perturb_tempo(self, factor: float, affix_id: bool = True) -> 'RecordingSet':
+        """
+        Return a new ``RecordingSet`` that will lazily perturb the tempo while loading audio.
+        The ``num_samples`` and ``duration`` fields are updated to reflect the
+        shrinking/extending effect of tempo.
+
+        :param factor: The speed will be adjusted this many times (e.g. factor=1.1 means 1.1x faster).
+        :param affix_id: When true, we will modify the ``Recording.id`` field
+            by affixing it with "_sp{factor}".
+        :return: a ``RecordingSet`` containing the perturbed ``Recording`` objects.
+        """
+        return RecordingSet.from_recordings(r.perturb_tempo(factor=factor, affix_id=affix_id) for r in self)
+
     def resample(self, sampling_rate: int) -> 'RecordingSet':
         """
         Apply resampling to all recordings in the ``RecordingSet`` and return a new ``RecordingSet``.
