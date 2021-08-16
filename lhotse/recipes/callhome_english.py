@@ -11,18 +11,16 @@ from typing import Dict, Optional, Union
 
 from tqdm.auto import tqdm
 
-from lhotse import AudioSource, Recording, RecordingSet, SupervisionSegment, SupervisionSet
-from lhotse.qa import remove_missing_recordings_and_supervisions, trim_supervisions_to_recordings, \
-    validate_recordings_and_supervisions
-from lhotse.utils import Pathlike, check_and_rglob
-from lhotse.utils import urlretrieve_progress
+from lhotse import Recording, RecordingSet, SupervisionSegment, SupervisionSet
+from lhotse.qa import fix_manifests, validate_recordings_and_supervisions
+from lhotse.utils import Pathlike, urlretrieve_progress, check_and_rglob
 
 
 def prepare_callhome_english(
         audio_dir: Pathlike,
         rttm_dir: Optional[Pathlike] = None,
         output_dir: Optional[Pathlike] = None,
-        sph2pipe_path: Optional[Pathlike] = None,
+        absolute_paths: bool = False
 ) -> Dict[str, Union[RecordingSet, SupervisionSet]]:
     """
     Prepare manifests for the Switchboard corpus.
@@ -30,10 +28,9 @@ def prepare_callhome_english(
     When ``sentiment_dir`` is provided, we create another supervision manifest with sentiment annotations.
 
     :param audio_dir: Path to ``LDC2001S97`` package.
-    :param rttm_dir: Path to the transcripts directory (typically named "swb_ms98_transcriptions").
-        If not provided, the transcripts will be downloaded.
+    :param rttm_dir: Path to the transcripts directory. If not provided, the transcripts will be downloaded.
     :param output_dir: Directory where the manifests should be written. Can be omitted to avoid writing.
-    :param sph2pipe_path: When provided, we will "hard-wire" the sph2pipe path into the recording manifests.
+    :param absolute_paths: Whether to return absolute or relative (to the corpus dir) paths for recordings.
     :return: A dict with manifests. The keys are: ``{'recordings', 'supervisions'}``.
     """
     if rttm_dir is None:
@@ -43,12 +40,11 @@ def prepare_callhome_english(
 
     audio_paths = check_and_rglob(audio_dir, '*.sph')
     recordings = RecordingSet.from_recordings(
-        make_recording_callhome(p, sph2pipe_path=sph2pipe_path) for p in tqdm(audio_paths)
+        Recording.from_file(p, relative_path_depth=None if absolute_paths else 4)
+        for p in tqdm(audio_paths)
     )
 
-    recordings, supervisions = remove_missing_recordings_and_supervisions(recordings, supervisions)
-    supervisions = trim_supervisions_to_recordings(recordings, supervisions)
-
+    recordings, supervisions = fix_manifests(recordings, supervisions)
     validate_recordings_and_supervisions(recordings, supervisions)
 
     if output_dir is not None:
@@ -79,47 +75,6 @@ def download_callhome_metadata(
     with tarfile.open(tar_path) as tar:
         tar.extractall(path=target_dir)
     return sre_dir
-
-
-def make_recording_callhome(
-        sph_path: Pathlike,
-        recording_id: Optional[str] = None,
-        relative_path_depth: Optional[int] = None,
-        sph2pipe_path: Optional[Pathlike] = None
-) -> Recording:
-    """
-    This function creates manifests for CallHome recordings that are compressed
-    with shorten, a rare and mostly unsupported codec. You will need to install
-    sph2pipe (e.g. using Kaldi) in order to read these files.
-    """
-    try:
-        from sphfile import SPHFile
-    except ImportError:
-        raise ImportError("Please install sphfile (pip install sphfile) instead and "
-                          "try preparing CallHome English again.")
-    if sph2pipe_path is None:
-        sph2pipe_path = 'sph2pipe'
-    else:
-        sph2pipe_path = str(sph2pipe_path).strip()
-    sph_path = Path(sph_path)
-    sphf = SPHFile(sph_path)
-    return Recording(
-        id=recording_id if recording_id is not None else sph_path.stem,
-        sampling_rate=sphf.format['sample_rate'],
-        num_samples=sphf.format['sample_count'],
-        duration=sphf.format['sample_count'] / sphf.format['sample_rate'],
-        sources=[
-            AudioSource(
-                type='command',
-                channels=list(range(sphf.format['channel_count'])),
-                source=f'{sph2pipe_path} -f wav -p ' + (
-                    '/'.join(sph_path.parts[-relative_path_depth:])
-                    if relative_path_depth is not None and relative_path_depth > 0
-                    else str(sph_path)
-                )
-            )
-        ]
-    )
 
 
 def read_rttm(path: Pathlike) -> SupervisionSet:
