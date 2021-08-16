@@ -72,12 +72,11 @@ def create_supervision(
 
 def walk_dirs_parallel(dirs: List[Pathlike], pattern: str, pbar_desc: str) -> List[Path]:
 
+    get_path_inputs = [(Path(dir_path), pattern) for dir_path in dirs]
     output_paths = [None] * len(dirs)
     njobs = min(len(dirs), os.cpu_count() * 4)
     with ThreadPoolExecutor(njobs) as executor:
-        with tqdm(total=len(output_paths)) as pbar:
-            pbar.set_description(pbar_desc)
-            get_path_inputs = [(Path(dir_path), pattern) for dir_path in dirs]
+        with tqdm(total=len(get_path_inputs), desc=pbar_desc) as pbar:
             for k, tmp_output_paths in enumerate(executor.map(get_paths, get_path_inputs)):
                 output_paths[k] = tmp_output_paths
                 pbar.update()
@@ -143,8 +142,7 @@ def prepare_fisher_english(
     create_recordings_input = [(p, None if absolute_paths else 5) for p in audio_paths]
     recordings = [None] * len(audio_paths)
     with ThreadPoolExecutor(os.cpu_count() * 4) as executor:
-        with tqdm(total=len(audio_paths)) as pbar:
-            pbar.set_description('Collect recordings')
+        with tqdm(total=len(create_recordings_input), desc='Collect recordings') as pbar:
             for i, reco in enumerate(executor.map(create_recording, create_recordings_input)):
                 recordings[i] = reco
                 pbar.update()
@@ -154,8 +152,7 @@ def prepare_fisher_english(
     create_supervisions_input = [(sessions, p) for p in transcript_paths]
     supervisions = [None] * len(create_supervisions_input)
     with ThreadPoolExecutor(os.cpu_count() * 4) as executor:
-        with tqdm(total=len(create_supervisions_input)) as pbar:
-            pbar.set_description('Create supervisions')
+        with tqdm(total=len(create_supervisions_input), desc='Create supervisions') as pbar:
             for i, tmp_supervisions in enumerate(executor.map(create_supervision, create_supervisions_input)):
                 supervisions[i] = tmp_supervisions
                 pbar.update()
