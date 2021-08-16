@@ -78,6 +78,32 @@ class SingleCutSampler(CutSampler):
         # Constraints
         assert is_none_or_gt(self.max_cuts, 0)
 
+    @property
+    def remaining_duration(self) -> Optional[float]:
+        """
+        Remaining duration of data left in the sampler (may be inexact due to float arithmetic).
+        Not available when the CutSet is read in lazy mode (returns None).
+        """
+        return self.data_source.remaining_duration
+
+    @property
+    def remaining_cuts(self) -> Optional[int]:
+        """
+        Remaining number of cuts in the sampler.
+        Not available when the CutSet is read in lazy mode (returns None).
+        """
+        return self.data_source.remaining_cuts
+
+    @property
+    def num_cuts(self) -> Optional[int]:
+        """
+        Total number of cuts in the sampler.
+        Not available when the CutSet is read in lazy mode (returns None).
+        """
+        if self.data_source.is_lazy:
+            return None
+        return len(self.data_source)
+
     def __iter__(self) -> "SingleCutSampler":
         """
         Prepare the dataset for iterating over a new epoch. Will shuffle the data if requested.

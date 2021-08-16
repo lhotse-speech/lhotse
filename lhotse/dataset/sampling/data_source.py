@@ -1,6 +1,6 @@
 import random
 from collections import deque
-from typing import Generator, Iterable
+from typing import Generator, Iterable, Optional
 
 from lhotse import CutSet
 from lhotse.cut import Cut
@@ -18,6 +18,27 @@ class DataSource:
         self._shuffled_items = self._orig_items
         self._iter = None
         self._reusable = deque()
+        # Add duration tracking for non-lazy CutSets
+        if not self.is_lazy:
+            self._total_duration = sum(c.duration for c in self._orig_items)
+            self._total_cuts = len(self._orig_items)
+        else:
+            self._total_duration = None
+            self._total_cuts = None
+        self._remaining_duration = self._total_duration
+        self.remaining_cuts = self._total_cuts
+
+    @property
+    def is_lazy(self) -> bool:
+        return self._orig_items.is_lazy
+
+    @property
+    def remaining_duration(self) -> Optional[float]:
+        # Paranoia mode: float arithmetic is imprecise, so we'll make sure
+        # that the returned duration is non-negative.
+        if self._remaining_duration is None:
+            return None
+        return max(0, self._remaining_duration)
 
     def shuffle(self, seed: int) -> "DataSource":
         """
@@ -45,11 +66,16 @@ class DataSource:
     def take_back(self, cut: Cut) -> None:
         """Push the cut in front of other cuts to be sampled again."""
         self._reusable.append(cut)
+        if not self.is_lazy:
+            self._remaining_duration += cut.duration
+            self.remaining_cuts += 1
 
     def reset(self) -> None:
         """Reset the iterable state of DataSource."""
         self._iter = None
         self._reusable.clear()
+        self._remaining_duration = self._total_duration
+        self.remaining_cuts = self._total_cuts
 
     def __iter__(self) -> "DataSource":
         self.reset()
@@ -58,8 +84,13 @@ class DataSource:
 
     def __next__(self) -> Cut:
         if self._reusable:
-            return self._reusable.popleft()
-        return next(self._iter)
+            next_cut = self._reusable.popleft()
+        else:
+            next_cut = next(self._iter)
+        if not self.is_lazy:
+            self._remaining_duration -= next_cut.duration
+            self.remaining_cuts -= 1
+        return next_cut
 
     def __len__(self) -> int:
         return len(self._shuffled_items)

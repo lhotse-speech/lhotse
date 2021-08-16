@@ -3,7 +3,7 @@ import warnings
 from functools import reduce
 from itertools import chain
 from operator import add
-from typing import Callable, Dict, List, Tuple, Type
+from typing import Callable, Dict, List, Optional, Tuple, Type
 
 import numpy as np
 from typing_extensions import Literal
@@ -53,6 +53,7 @@ class BucketingSampler(CutSampler):
             num_buckets: int = 10,
             bucket_method: Literal["equal_len", "equal_duration"] = "equal_len",
             drop_last: bool = False,
+            proportional_sampling: bool = True,
             seed: int = 0,
             **kwargs: Dict,
     ) -> None:
@@ -71,6 +72,10 @@ class BucketingSampler(CutSampler):
         :param drop_last: When ``True``, we will drop all incomplete batches.
             A batch is considered incomplete if it depleted a bucket before
             hitting the constraint such as max_duration, max_cuts, etc.
+        :param proportional_sampling: When ``True``, we will introduce an approximate
+            proportional sampling mechanism in the bucket selection.
+            This mechanism reduces the chance that any of the buckets gets depleted early.
+            Enabled by default.
         :param seed: random seed for bucket selection
         :param kwargs: Arguments used to create the underlying sampler for each bucket.
         """
@@ -83,6 +88,7 @@ class BucketingSampler(CutSampler):
         )
         self.num_buckets = num_buckets
         self.drop_last = drop_last
+        self.proportional_sampling = proportional_sampling
         self.sampler_type = sampler_type
         self.sampler_kwargs = kwargs
         self.cut_sets = cuts
@@ -118,6 +124,45 @@ class BucketingSampler(CutSampler):
         # Initialize mutable stable.
         self.bucket_rng = random.Random(self.seed + self.epoch)
         self.depleted = [False] * num_buckets
+
+    @property
+    def remaining_duration(self) -> Optional[float]:
+        """
+        Remaining duration of data left in the sampler (may be inexact due to float arithmetic).
+        Not available when the CutSet is read in lazy mode (returns None).
+
+        .. note: For BucketingSampler, it's the sum of remaining duration in all buckets.
+        """
+        try:
+            return sum(s.remaining_duration for _, s in self._nondepleted_samplers_with_idxs)
+        except TypeError:
+            return None
+
+    @property
+    def remaining_cuts(self) -> Optional[int]:
+        """
+        Remaining number of cuts in the sampler.
+        Not available when the CutSet is read in lazy mode (returns None).
+
+        .. note: For BucketingSampler, it's the sum of remaining cuts in all buckets.
+        """
+        try:
+            return sum(s.remaining_cuts for _, s in self._nondepleted_samplers_with_idxs)
+        except TypeError:
+            return None
+
+    @property
+    def num_cuts(self) -> Optional[int]:
+        """
+        Total number of cuts in the sampler.
+        Not available when the CutSet is read in lazy mode (returns None).
+
+        .. note: For BucketingSampler, it's the sum of num cuts in all buckets.
+        """
+        try:
+            return sum(s.num_cuts for s in self.bucket_samplers)
+        except TypeError:
+            return None
 
     def set_epoch(self, epoch: int) -> None:
         """
@@ -157,9 +202,45 @@ class BucketingSampler(CutSampler):
         self.depleted = [False] * self.num_buckets
         return self
 
+    def _select_bucket_with_idx(self) -> Tuple[int, CutSampler]:
+        if not self.proportional_sampling or self.cut_sets[0].is_lazy:
+            # Either proportional sampling was disabled, or the CutSet is lazy.
+            # With lazy CutSets, we simply choose a random bucket,
+            # because we can't know how much data is left in the buckets.
+            return self.bucket_rng.choice(self._nondepleted_samplers_with_idxs)
+        idx_sampler_pairs = self._nondepleted_samplers_with_idxs
+        if len(idx_sampler_pairs) == 1:
+            # Only a single bucket left -- choose it.
+            return idx_sampler_pairs[0]
+        # If we got there, it means there are at least 2 buckets we can sample from.
+        # We are going to use approximate proportional sampling:
+        # for that, we randomly select two buckets, and then assign a higher probability
+        # to the bucket that has more cumulative data duration left to sample.
+        # This helps ensure that none of the buckets is depleted much earlier than
+        # the others.
+        idx1, sampler1 = self.bucket_rng.choice(idx_sampler_pairs)
+        idx2, sampler2 = self.bucket_rng.choice(idx_sampler_pairs)
+        # Note: prob1 is the probability of selecting sampler1
+        try:
+            prob1 = sampler1.remaining_duration / (
+                    sampler1.remaining_duration + sampler2.remaining_duration
+            )
+        except ZeroDivisionError:
+            # This will happen when we have already depleted the samplers,
+            # but the BucketingSampler doesn't know it yet. We only truly
+            # know that a sampler is depleted when we try to get a batch
+            # and it raises a StopIteration, which is done after this stage.
+            # We can't depend on remaining_duration for lazy CutSets.
+            # If both samplers are zero duration, just return the first one.
+            return idx1, sampler1
+        if self.bucket_rng.random() > prob1:
+            return idx2, sampler2
+        else:
+            return idx1, sampler1
+
     def _next_batch(self):
         while not self.is_depleted:
-            idx, sampler = self.bucket_rng.choice(self._nondepleted_samplers_with_idxs)
+            idx, sampler = self._select_bucket_with_idx()
             try:
                 return next(sampler)
             except StopIteration:
