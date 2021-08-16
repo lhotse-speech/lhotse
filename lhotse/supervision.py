@@ -225,16 +225,21 @@ class SupervisionSegment:
         Return a ``SupervisionSegment`` that has time boundaries matching the
         recording/cut perturbed with the same factor.
 
-        :param factor: The speed will be adjusted this many times (e.g. factor=1.1 means 1.1x faster).
+        :param factor: The tempo will be adjusted this many times (e.g. factor=1.1 means 1.1x faster).
         :param sampling_rate: The sampling rate is necessary to accurately perturb the start
             and duration (going through the sample counts).
         :param affix_id: When true, we will modify the ``id`` and ``recording_id`` fields
-            by affixing it with "_sp{factor}".
+            by affixing it with "_tp{factor}".
         :return: a modified copy of the current ``Recording``.
         """
 
         # speed and tempo perturbation have the same effect on supervisions
-        return self.perturb_speed(factor, sampling_rate, affix_id)
+        perturbed = self.perturb_speed(factor, sampling_rate, affix_id)
+        return fastcopy(
+            perturbed,
+            id=f'{self.id}_tp{factor}' if affix_id else self.id,
+            recording_id=f'{self.recording_id}_tp{factor}' if affix_id else self.id,
+        )
 
     def trim(self, end: Seconds, start: Seconds = 0) -> 'SupervisionSegment':
         """

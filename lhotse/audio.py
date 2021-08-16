@@ -382,12 +382,14 @@ class Recording:
     def perturb_tempo(self, factor: float, affix_id: bool = True) -> 'Recording':
         """
         Return a new ``Recording`` that will lazily perturb the tempo while loading audio.
-        The ``num_samples`` and ``duration`` fields are updated to reflect the
-        shrinking/extending effect of speed.
 
-        :param factor: The speed will be adjusted this many times (e.g. factor=1.1 means 1.1x faster).
+        Compared to speed perturbation, tempo preserves pitch.
+        The ``num_samples`` and ``duration`` fields are updated to reflect the
+        shrinking/extending effect of tempo.
+
+        :param factor: The tempo will be adjusted this many times (e.g. factor=1.1 means 1.1x faster).
         :param affix_id: When true, we will modify the ``Recording.id`` field
-            by affixing it with "_sp{factor}".
+            by affixing it with "_tp{factor}".
         :return: a modified copy of the current ``Recording``.
         """
         transforms = self.transforms.copy() if self.transforms is not None else []
@@ -396,7 +398,7 @@ class Recording:
         new_duration = new_num_samples / self.sampling_rate
         return fastcopy(
             self,
-            id=f'{self.id}_sp{factor}' if affix_id else self.id,
+            id=f'{self.id}_tp{factor}' if affix_id else self.id,
             num_samples=new_num_samples,
             duration=new_duration,
             transforms=transforms
