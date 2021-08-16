@@ -73,6 +73,18 @@ This is an editable installation (`-e` option), meaning that your changes to the
 reflected when importing lhotse (no re-install needed). The `[dev]` part means you're installing extra dependencies
 that are used to run tests, build documentation or launch jupyter notebooks.
 
+### Extra dependencies
+
+For reading older LDC SPHERE (.sph) audio files that are compressed with codecs unsupported by ffmpeg and sox, please run:
+
+    # CLI
+    lhotse install-sph2pipe
+
+    # Python
+    from lhotse.tools import install_sph2pipe
+    install_sph2pipe()
+
+It will download it to `~/.lhotse/tools`, compile it, and auto-register in `PATH`. The program should be automatically detected and used by Lhotse. 
 
 ## Examples
 
