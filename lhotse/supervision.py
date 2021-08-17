@@ -234,7 +234,7 @@ class SupervisionSegment:
         """
 
         # speed and tempo perturbation have the same effect on supervisions
-        perturbed = self.perturb_speed(factor, sampling_rate, affix_id)
+        perturbed = self.perturb_speed(factor, sampling_rate, affix_id=False)
         return fastcopy(
             perturbed,
             id=f'{self.id}_tp{factor}' if affix_id else self.id,
