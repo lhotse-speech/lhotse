@@ -102,7 +102,7 @@ def test_cut_perturb_tempo09(cut_with_supervision):
     assert recording_samples.shape[1] == 4444
 
 
-def test_cut_perturb_speed11(cut_with_supervision):
+def test_cut_perturb_tempo11(cut_with_supervision):
     cut_tp = cut_with_supervision.perturb_tempo(1.1)
     assert cut_tp.start == 0.0
     assert cut_tp.duration == 0.4545
