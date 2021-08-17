@@ -183,6 +183,7 @@ class Cut:
     pad: Callable
     resample: Callable
     perturb_speed: Callable
+    perturb_tempo: Callable
     map_supervisions: Callable
     filter_supervisions: Callable
     with_features_path_prefix: Callable
@@ -886,6 +887,52 @@ class MonoCut(Cut):
             start=new_start
         )
 
+    def perturb_tempo(self, factor: float, affix_id: bool = True) -> 'MonoCut':
+        """
+        Return a new ``MonoCut`` that will lazily perturb the tempo while loading audio.
+
+        Compared to speed perturbation, tempo preserves pitch.
+        The ``num_samples``, ``start`` and ``duration`` fields are updated to reflect the
+        shrinking/extending effect of speed.
+        We are also updating the time markers of the underlying ``Recording`` and the supervisions.
+
+        :param factor: The tempo will be adjusted this many times (e.g. factor=1.1 means 1.1x faster).
+        :param affix_id: When true, we will modify the ``MonoCut.id`` field
+            by affixing it with "_tp{factor}".
+        :return: a modified copy of the current ``MonoCut``.
+        """
+        # Pre-conditions
+        assert self.has_recording, 'Cannot perturb speed on a MonoCut without Recording.'
+        if self.has_features:
+            logging.warning(
+                'Attempting to perturb tempo on a MonoCut that references pre-computed features. '
+                'The feature manifest will be detached, as we do not support feature-domain '
+                'speed perturbation.'
+            )
+            self.features = None
+        # Actual audio perturbation.
+        recording_sp = self.recording.perturb_tempo(factor=factor, affix_id=affix_id)
+        # Match the supervision's start and duration to the perturbed audio.
+        # Since SupervisionSegment "start" is relative to the MonoCut's, it's okay (and necessary)
+        # to perturb it as well.
+        supervisions_sp = [
+            s.perturb_tempo(factor=factor, sampling_rate=self.sampling_rate, affix_id=affix_id)
+            for s in self.supervisions
+        ]
+        # New start and duration have to be computed through num_samples to be accurate
+        start_samples = perturb_num_samples(compute_num_samples(self.start, self.sampling_rate), factor)
+        new_start = start_samples / self.sampling_rate
+        new_num_samples = perturb_num_samples(self.num_samples, factor)
+        new_duration = new_num_samples / self.sampling_rate
+        return fastcopy(
+            self,
+            id=f'{self.id}_tp{factor}' if affix_id else self.id,
+            recording=recording_sp,
+            supervisions=supervisions_sp,
+            duration=new_duration,
+            start=new_start
+        )
+
     def map_supervisions(self, transform_fn: Callable[[SupervisionSegment], SupervisionSegment]) -> Cut:
         """
         Modify the SupervisionSegments by `transform_fn` of this MonoCut.
@@ -1107,6 +1154,43 @@ class PaddingCut(Cut):
         return fastcopy(
             self,
             id=f'{self.id}_sp{factor}' if affix_id else self.id,
+            num_samples=new_num_samples,
+            duration=new_duration,
+            num_frames=new_num_frames,
+            num_features=new_num_features,
+            frame_shift=new_frame_shift
+        )
+
+    def perturb_tempo(self, factor: float, affix_id: bool = True) -> 'PaddingCut':
+        """
+        Return a new ``PaddingCut`` that will "mimic" the effect of tempo perturbation
+        on ``duration`` and ``num_samples``.
+
+        Compared to speed perturbation, tempo preserves pitch.
+        :param factor: The tempo will be adjusted this many times (e.g. factor=1.1 means 1.1x faster).
+        :param affix_id: When true, we will modify the ``PaddingCut.id`` field
+            by affixing it with "_tp{factor}".
+        :return: a modified copy of the current ``PaddingCut``.
+        """
+        # Pre-conditions
+        if self.has_features:
+            logging.warning(
+                'Attempting to perturb tempo on a MonoCut that references pre-computed features. '
+                'The feature manifest will be detached, as we do not support feature-domain '
+                'tempo perturbation.'
+            )
+            new_num_frames = None
+            new_num_features = None
+            new_frame_shift = None
+        else:
+            new_num_frames = self.num_frames
+            new_num_features = self.num_features
+            new_frame_shift = self.frame_shift
+        new_num_samples = perturb_num_samples(self.num_samples, factor)
+        new_duration = new_num_samples / self.sampling_rate
+        return fastcopy(
+            self,
+            id=f'{self.id}_tp{factor}' if affix_id else self.id,
             num_samples=new_num_samples,
             duration=new_duration,
             num_frames=new_num_frames,
@@ -1444,6 +1528,48 @@ class MixedCut(Cut):
             tracks=[
                 MixTrack(
                     cut=track.cut.perturb_speed(factor=factor, affix_id=affix_id),
+                    offset=round(
+                        perturb_num_samples(
+                            num_samples=compute_num_samples(track.offset, self.sampling_rate),
+                            factor=factor
+                        ) / self.sampling_rate,
+                        ndigits=8
+                    ),
+                    snr=track.snr
+                )
+                for track in self.tracks
+            ]
+        )
+
+    def perturb_tempo(self, factor: float, affix_id: bool = True) -> 'MixedCut':
+        """
+        Return a new ``MixedCut`` that will lazily perturb the tempo while loading audio.
+
+        Compared to speed perturbation, tempo preserves pitch.
+        The ``num_samples``, ``start`` and ``duration`` fields of the underlying Cuts
+        (and their Recordings and SupervisionSegments) are updated to reflect
+        the shrinking/extending effect of tempo.
+        We are also updating the offsets of all underlying tracks.
+
+        :param factor: The tempo will be adjusted this many times (e.g. factor=1.1 means 1.1x faster).
+        :param affix_id: When true, we will modify the ``MixedCut.id`` field
+            by affixing it with "_tp{factor}".
+        :return: a modified copy of the current ``MixedCut``.
+        """
+        # TODO(pzelasko): test most extensively for edge cases
+        # Pre-conditions
+        assert self.has_recording, 'Cannot perturb tempo on a MonoCut without Recording.'
+        if self.has_features:
+            logging.warning(
+                'Attempting to perturb tempo on a MixedCut that references pre-computed features. '
+                'The feature manifest(s) will be detached, as we do not support feature-domain '
+                'tempo perturbation.'
+            )
+        return MixedCut(
+            id=f'{self.id}_tp{factor}' if affix_id else self.id,
+            tracks=[
+                MixTrack(
+                    cut=track.cut.perturb_tempo(factor=factor, affix_id=affix_id),
                     offset=round(
                         perturb_num_samples(
                             num_samples=compute_num_samples(track.offset, self.sampling_rate),
@@ -2470,6 +2596,24 @@ class CutSet(Serializable, Sequence[Cut]):
         :return: a modified copy of the ``CutSet``.
         """
         return self.map(lambda cut: cut.perturb_speed(factor=factor, affix_id=affix_id))
+
+    def perturb_tempo(self, factor: float, affix_id: bool = True) -> 'CutSet':
+        """
+        Return a new :class:`~lhotse.cut.CutSet` that contains tempo perturbed cuts
+        with a factor of ``factor``.
+
+        Compared to speed perturbation, tempo preserves pitch.
+        It requires the recording manifests to be present.
+        If the feature manifests are attached, they are dropped.
+        The supervision manifests are modified to reflect the tempo perturbed
+        start times and durations.
+
+        :param factor: The resulting playback tempo is ``factor`` times the original one.
+        :param affix_id: Should we modify the ID (useful if both versions of the same
+            cut are going to be present in a single manifest).
+        :return: a modified copy of the ``CutSet``.
+        """
+        return self.map(lambda cut: cut.perturb_tempo(factor=factor, affix_id=affix_id))
 
     def mix(
             self,

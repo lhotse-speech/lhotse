@@ -79,6 +79,52 @@ def test_cut_perturb_speed09(cut_with_supervision):
     assert recording_samples.shape[1] == 4444
 
 
+def test_cut_perturb_tempo09(cut_with_supervision):
+    cut_tp = cut_with_supervision.perturb_tempo(0.9)
+    assert cut_tp.start == 0.0
+    assert cut_tp.duration == 0.5555
+    assert cut_tp.end == 0.5555
+    assert cut_tp.num_samples == 4444
+
+    assert cut_tp.recording.duration == 0.5555
+    assert cut_tp.recording.num_samples == 4444
+
+    assert cut_tp.supervisions[0].start == 0.0
+    assert cut_tp.supervisions[0].duration == 0.5555
+    assert cut_tp.supervisions[0].end == 0.5555
+
+    cut_samples = cut_tp.load_audio()
+    assert cut_samples.shape[0] == 1
+    assert cut_samples.shape[1] == 4444
+
+    recording_samples = cut_tp.recording.load_audio()
+    assert recording_samples.shape[0] == 1
+    assert recording_samples.shape[1] == 4444
+
+
+def test_cut_perturb_tempo11(cut_with_supervision):
+    cut_tp = cut_with_supervision.perturb_tempo(1.1)
+    assert cut_tp.start == 0.0
+    assert cut_tp.duration == 0.4545
+    assert cut_tp.end == 0.4545
+    assert cut_tp.num_samples == 3636
+
+    assert cut_tp.recording.duration == 0.4545
+    assert cut_tp.recording.num_samples == 3636
+
+    assert cut_tp.supervisions[0].start == 0.0
+    assert cut_tp.supervisions[0].duration == 0.4545
+    assert cut_tp.supervisions[0].end == 0.4545
+
+    cut_samples = cut_tp.load_audio()
+    assert cut_samples.shape[0] == 1
+    assert cut_samples.shape[1] == 3636
+
+    recording_samples = cut_tp.recording.load_audio()
+    assert recording_samples.shape[0] == 1
+    assert recording_samples.shape[1] == 3636
+
+
 def test_cut_set_perturb_speed_doesnt_duplicate_transforms(cut_with_supervision):
     cuts = CutSet.from_cuts([cut_with_supervision, cut_with_supervision.with_id('other-id')])
     cuts_sp = cuts.perturb_speed(1.1)

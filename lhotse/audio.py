@@ -17,7 +17,7 @@ from typing import Any, Callable, Dict, Iterable, List, Mapping, NamedTuple, Opt
 import numpy as np
 from tqdm.auto import tqdm
 
-from lhotse.augmentation import AudioTransform, Resample, Speed
+from lhotse.augmentation import AudioTransform, Resample, Speed, Tempo
 from lhotse.serialization import Serializable
 from lhotse.utils import (Decibels, NonPositiveEnergyError, Pathlike, Seconds, SetContainingAnything, SmartOpen,
                           asdict_nonull, compute_num_samples, exactly_one_not_null, fastcopy, ifnone,
@@ -379,6 +379,31 @@ class Recording:
             transforms=transforms
         )
 
+    def perturb_tempo(self, factor: float, affix_id: bool = True) -> 'Recording':
+        """
+        Return a new ``Recording`` that will lazily perturb the tempo while loading audio.
+
+        Compared to speed perturbation, tempo preserves pitch.
+        The ``num_samples`` and ``duration`` fields are updated to reflect the
+        shrinking/extending effect of tempo.
+
+        :param factor: The tempo will be adjusted this many times (e.g. factor=1.1 means 1.1x faster).
+        :param affix_id: When true, we will modify the ``Recording.id`` field
+            by affixing it with "_tp{factor}".
+        :return: a modified copy of the current ``Recording``.
+        """
+        transforms = self.transforms.copy() if self.transforms is not None else []
+        transforms.append(Tempo(factor=factor).to_dict())
+        new_num_samples = perturb_num_samples(self.num_samples, factor)
+        new_duration = new_num_samples / self.sampling_rate
+        return fastcopy(
+            self,
+            id=f'{self.id}_tp{factor}' if affix_id else self.id,
+            num_samples=new_num_samples,
+            duration=new_duration,
+            transforms=transforms
+        )
+
     def resample(self, sampling_rate: int) -> 'Recording':
         """
         Return a new ``Recording`` that will be lazily resampled while loading audio.
@@ -650,6 +675,19 @@ class RecordingSet(Serializable, Sequence[Recording]):
         :return: a ``RecordingSet`` containing the perturbed ``Recording`` objects.
         """
         return RecordingSet.from_recordings(r.perturb_speed(factor=factor, affix_id=affix_id) for r in self)
+
+    def perturb_tempo(self, factor: float, affix_id: bool = True) -> 'RecordingSet':
+        """
+        Return a new ``RecordingSet`` that will lazily perturb the tempo while loading audio.
+        The ``num_samples`` and ``duration`` fields are updated to reflect the
+        shrinking/extending effect of tempo.
+
+        :param factor: The speed will be adjusted this many times (e.g. factor=1.1 means 1.1x faster).
+        :param affix_id: When true, we will modify the ``Recording.id`` field
+            by affixing it with "_sp{factor}".
+        :return: a ``RecordingSet`` containing the perturbed ``Recording`` objects.
+        """
+        return RecordingSet.from_recordings(r.perturb_tempo(factor=factor, affix_id=affix_id) for r in self)
 
     def resample(self, sampling_rate: int) -> 'RecordingSet':
         """

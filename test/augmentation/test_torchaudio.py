@@ -7,7 +7,7 @@ from hypothesis import strategies as st
 
 torchaudio = pytest.importorskip('torchaudio', minversion='0.6')
 
-from lhotse.augmentation import SoxEffectTransform, pitch, reverb, speed, Speed
+from lhotse.augmentation import SoxEffectTransform, Tempo, pitch, reverb, speed, Speed
 from lhotse import AudioTransform, MonoCut, Recording, Resample, Seconds
 
 SAMPLING_RATE = 16000
@@ -63,6 +63,12 @@ def test_resample(audio, sampling_rate):
     speed = Resample(source_sampling_rate=16000, target_sampling_rate=sampling_rate)
     perturbed = speed(audio, SAMPLING_RATE)
     assert perturbed.shape == (1, sampling_rate)
+
+
+def test_tempo(audio):
+    tempo = Tempo(factor=1.1)
+    perturbed = tempo(audio, SAMPLING_RATE)
+    assert perturbed.shape == (1, 14545)
 
 
 @settings(deadline=None, print_blob=True, max_examples=200)
