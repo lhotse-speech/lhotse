@@ -6,7 +6,7 @@ from torch.utils.data.dataloader import DataLoader, default_collate
 from lhotse import validate
 from lhotse.cut import CutSet
 from lhotse.dataset.input_strategies import BatchIO, PrecomputedFeatures
-from lhotse.utils import ifnone
+from lhotse.utils import compute_num_frames, ifnone
 
 
 class K2SpeechRecognitionDataset(torch.utils.data.Dataset):
@@ -136,12 +136,42 @@ class K2SpeechRecognitionDataset(torch.utils.data.Dataset):
             for s in c.supervisions
         )
         if has_word_alignments:
+            # TODO: might need to refactor BatchIO API to move the following conditional logic
+            #       into these objects (e.g. use like: self.input_strategy.convert_timestamp(),
+            #       that returns either num_frames or num_samples depending on the strategy).
             words, starts, ends = [], [], []
+            frame_shift = cuts[0].frame_shift
+            sampling_rate = cuts[0].sampling_rate
+            if frame_shift is None:
+                try:
+                    frame_shift = self.input_strategy.extractor.frame_shift
+                except AttributeError:
+                    raise ValueError(
+                        "Can't determine the frame_shift -- it is not present either in cuts or the input_strategy. "
+                    )
             for c in cuts:
                 for s in c.supervisions:
                     words.append([aliword.symbol for aliword in s.alignment["word"]])
-                    starts.append([aliword.start for aliword in s.alignment["word"]])
-                    ends.append([aliword.end for aliword in s.alignment["word"]])
+                    starts.append(
+                        [
+                            compute_num_frames(
+                                aliword.start,
+                                frame_shift=frame_shift,
+                                sampling_rate=sampling_rate,
+                            )
+                            for aliword in s.alignment["word"]
+                        ]
+                    )
+                    ends.append(
+                        [
+                            compute_num_frames(
+                                aliword.end,
+                                frame_shift=frame_shift,
+                                sampling_rate=sampling_rate,
+                            )
+                            for aliword in s.alignment["word"]
+                        ]
+                    )
             batch["supervisions"]["word"] = words
             batch["supervisions"]["word_start"] = starts
             batch["supervisions"]["word_end"] = ends
