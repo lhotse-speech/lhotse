@@ -130,6 +130,22 @@ class K2SpeechRecognitionDataset(torch.utils.data.Dataset):
         if self.return_cuts:
             batch['supervisions']['cut'] = [cut for cut in cuts for sup in cut.supervisions]
 
+        has_word_alignments = all(
+            s.alignment is not None and "word" in s.alignment
+            for c in cuts
+            for s in c.supervisions
+        )
+        if has_word_alignments:
+            words, starts, ends = [], [], []
+            for c in cuts:
+                for s in c.supervisions:
+                    words.append([aliword.symbol for aliword in s.alignment["word"]])
+                    starts.append([aliword.start for aliword in s.alignment["word"]])
+                    ends.append([aliword.end for aliword in s.alignment["word"]])
+            batch["supervisions"]["word"] = words
+            batch["supervisions"]["word_start"] = starts
+            batch["supervisions"]["word_end"] = ends
+
         return batch
 
 
