@@ -104,7 +104,7 @@ class CutSampler(Sampler):
 
     def filter(self, predicate: Callable[[Cut], bool]) -> None:
         """
-        Add a constraint on invidual cuts that has to be satisfied to consider them.
+        Add a constraint on individual cuts that has to be satisfied to consider them.
 
         Can be useful when handling large, lazy manifests where it is not feasible to
         pre-filter them before instantiating the sampler.
@@ -340,7 +340,7 @@ class SamplingDiagnostics:
         """Returns a string describing the statistics of the sampling process so far."""
         if self.total_batches == 0 or self.total_cuts == 0:
             return (
-                "Sampling statistics unvavailable: the SamplerDiagnostics received no cuts or batches. "
+                "Sampling statistics unavailable: the SamplerDiagnostics received no cuts or batches. "
                 "If this is unexpected, and you're using a custom sampler, ensure that the sampler "
                 "is registering the batches in SamplerDiagnostics."
             )

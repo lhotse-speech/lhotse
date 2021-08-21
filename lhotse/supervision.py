@@ -16,7 +16,7 @@ class AlignmentItem:
     This class contains an alignment item, for example a word, along with its
     start time (w.r.t. the start of recording) and duration. It can potentially
     be used to store other kinds of alignment items, such as subwords, pdfid's etc.
-    
+
     We use dataclasses instead of namedtuples (even though they are potentially slower)
     because of a serialization bug in nested namedtuples and dataclasses in Python 3.7
     (see this: https://alexdelorenzo.dev/programming/2018/08/09/bug-in-dataclass.html).
@@ -37,7 +37,7 @@ class AlignmentItem:
     def perturb_speed(self, factor: float, sampling_rate: int) -> 'AlignmentItem':
         """
         Return an ``AlignmentItem`` that has time boundaries matching the
-        recording/cut perturbed with the same factor. See :meth:`SupervisionSegment.perturb_speed` 
+        recording/cut perturbed with the same factor. See :meth:`SupervisionSegment.perturb_speed`
         for details.
         """
         start_sample = compute_num_samples(self.start, sampling_rate)
@@ -286,7 +286,7 @@ class SupervisionSegment:
         if self.text is None:
             return self
         return fastcopy(self, text=transform_fn(self.text))
-    
+
     def transform_alignment(
         self,
         transform_fn: Callable[[str], str],
@@ -409,7 +409,7 @@ class SupervisionSet(Serializable, Sequence[SupervisionSegment]):
     ) -> 'SupervisionSet':
         """
         Add alignments from CTM file to the supervision set.
-        
+
         :param ctm: Path to CTM file.
         :param type: Alignment type (optional, default = `word`).
         :param match_channel: if True, also match channel between CTM and SupervisionSegment
@@ -428,7 +428,7 @@ class SupervisionSet(Serializable, Sequence[SupervisionSegment]):
         for reco_id in set([s.recording_id for s in self]):
             if reco_id in reco_to_ctm:
                 for seg in self.find(recording_id=reco_id):
-                    alignment = [AlignmentItem(symbol=word[4], start=word[2], duration=word[3]) for word in reco_to_ctm[reco_id] 
+                    alignment = [AlignmentItem(symbol=word[4], start=word[2], duration=word[3]) for word in reco_to_ctm[reco_id]
                                     if overspans(seg, TimeSpan(word[2], word[2] + word[3]))
                                     and (seg.channel == word[1] or not match_channel)
                                 ]
@@ -439,11 +439,11 @@ class SupervisionSet(Serializable, Sequence[SupervisionSegment]):
         logging.info(f"{num_overspanned} alignments added out of {num_total} total. If there are several"
             " missing, there could be a mismatch problem.")
         return SupervisionSet.from_segments(segments)
-                          
+
     def write_alignment_to_ctm(self, ctm_file: Pathlike, type: str = 'word') -> None:
         """
         Write alignments to CTM file.
-        
+
         :param ctm_file: Path to output CTM file (will be created if not exists)
         :param type: Alignment type to write (default = `word`)
         """
@@ -452,7 +452,7 @@ class SupervisionSet(Serializable, Sequence[SupervisionSegment]):
                 if type in s.alignment:
                     for ali in s.alignment[type]:
                         f.write(f'{s.recording_id} {s.channel} {ali.start:.02f} {ali.duration:.02f} {ali.symbol}\n')
-                
+
     def to_dicts(self) -> Iterable[dict]:
         return (s.to_dict() for s in self)
 
@@ -569,7 +569,7 @@ class SupervisionSet(Serializable, Sequence[SupervisionSegment]):
         :param start_after: When specified, return segments that start after the given value.
         :param end_before: When specified, return segments that end before the given value.
         :param adjust_offset: When true, return segments as if the recordings had started at ``start_after``.
-            This is useful for creating Cuts. Fom a user perspective, when dealing with a Cut, it is no
+            This is useful for creating Cuts. From a user perspective, when dealing with a Cut, it is no
             longer helpful to know when the supervisions starts in a recording - instead, it's useful to
             know when the supervision starts relative to the start of the Cut.
             In the anticipated use-case, ``start_after`` and ``end_before`` would be

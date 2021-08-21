@@ -23,7 +23,7 @@ TextSupervisionSet:
 FeatureSet:
    - Represents a set of extracted features associated with recordings.
      (could also have dynamic versions).
-   - Caution: we shouldn't assume that we are extracting features for the entire recording, or that the frame rates are always consant (perturbing the frame rates might be useful).
+   - Caution: we shouldn't assume that we are extracting features for the entire recording, or that the frame rates are always constant (perturbing the frame rates might be useful).
    - I don't want to obscure the relationship between segments and the original recordings by introducing another arbitrary level of id (like the 'cut' we discussed on the call, but see later).   What I am thinking is that the features would be accessible by recording-id, optional channel-info and time, maybe?   E.g. "what do you have for channel 0 of recording 'foo' between t=16 and t=22.2" ?
    - Again, we should make the metadata available separately from the actual data.
   - Please see the `lilcom` project on my github, which I have now finalized with the aim being to support compression of feature files in a general numpy-compatible way.  This will be useful here (but maybe shouldn't be visible from the interface).

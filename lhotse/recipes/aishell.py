@@ -59,7 +59,7 @@ def prepare_aishell(
     Returns the manifests which consist of the Recordings and Supervisions
     :param corpus_dir: Pathlike, the path of the data dir.
     :param output_dir: Pathlike, the path where to write the manifests.
-    :return: a Dict whose key is the dataset part, and the value is Dicts with the keys 'audio' and 'supervisions'.
+    :return: a Dict whose key is the dataset part, and the value is Dicts with the keys 'recordings' and 'supervisions'.
     """
     corpus_dir = Path(corpus_dir)
     assert corpus_dir.is_dir(), f'No such directory: {corpus_dir}'
