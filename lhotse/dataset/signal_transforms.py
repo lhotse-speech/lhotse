@@ -132,7 +132,7 @@ class SpecAugment(torch.nn.Module):
             p=0.5,
     ):
         """
-        SpecAugment's contructor.
+        SpecAugment's constructor.
 
         :param time_warp_factor: parameter for the time warping; larger values mean more warping.
             Set to ``None``, or less than ``1``, to disable.

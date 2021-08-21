@@ -15,7 +15,7 @@ def get_duration(
 ) -> float:
     """
     Read a audio file, it supports pipeline style wave path and real waveform.
-    
+
     :param path: Path to an audio file or a Kaldi-style pipe.
     :return: float duration of the recording, in seconds.
     """
@@ -61,7 +61,7 @@ def load_kaldi_data_dir(
     durations = {}
     for recording_id, path_or_cmd in recordings.items():
         duration = get_duration(path_or_cmd)
-        durations[recording_id] = duration 
+        durations[recording_id] = duration
 
     recording_set = RecordingSet.from_recordings(
         Recording(

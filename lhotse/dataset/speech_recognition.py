@@ -11,7 +11,7 @@ from lhotse.utils import compute_num_frames, ifnone
 
 class K2SpeechRecognitionDataset(torch.utils.data.Dataset):
     """
-    The PyTorch Dataset for the speech recognition task using K2 library.
+    The PyTorch Dataset for the speech recognition task using k2 library.
 
     This dataset expects to be queried with lists of cut IDs,
     for which it loads features and automatically collates/batches them.
@@ -65,7 +65,7 @@ class K2SpeechRecognitionDataset(torch.utils.data.Dataset):
             input_strategy: BatchIO = PrecomputedFeatures(),
     ):
         """
-        K2 ASR IterableDataset constructor.
+        k2 ASR IterableDataset constructor.
 
         :param return_cuts: When ``True``, will additionally return a "cut" field in each batch with the Cut
             objects used to create that batch.
@@ -87,7 +87,7 @@ class K2SpeechRecognitionDataset(torch.utils.data.Dataset):
 
     def __getitem__(self, cuts: CutSet) -> Dict[str, Union[torch.Tensor, List[str]]]:
         """
-        Return a new batch, with the batch size automatically determined using the contraints
+        Return a new batch, with the batch size automatically determined using the constraints
         of max_frames and max_cuts.
         """
         validate_for_asr(cuts)

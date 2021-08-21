@@ -109,7 +109,7 @@ class SequentialJsonlWriter:
 
     This writer can be useful for continuing to write files that were previously
     stopped -- it will open the existing file and scan it for item IDs to skip
-    writing them later. It can also be quried for existing IDs so that the user
+    writing them later. It can also be queried for existing IDs so that the user
     code may skip preparing the corresponding manifets.
 
     Example:
@@ -202,7 +202,7 @@ class JsonlMixin:
 
         This writer can be useful for continuing to write files that were previously
         stopped -- it will open the existing file and scan it for item IDs to skip
-        writing them later. It can also be quried for existing IDs so that the user
+        writing them later. It can also be queried for existing IDs so that the user
         code may skip preparing the corresponding manifets.
 
         Example:

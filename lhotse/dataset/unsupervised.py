@@ -41,7 +41,7 @@ class UnsupervisedWaveformDataset(UnsupervisedDataset):
     """
     A variant of UnsupervisedDataset that provides waveform samples instead of features.
     The output is a tensor of shape (C, T), with C being the number of channels and T the number of audio samples.
-    In this implemenation, there will always be a single channel.
+    In this implementation, there will always be a single channel.
 
     Returns:
 

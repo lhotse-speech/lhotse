@@ -133,7 +133,7 @@ class Recording:
 
     Note that :class:`~lhotse.audio.Recording` can represent both a single utterance (e.g., in LibriSpeech)
     and a 1-hour session with multiple channels and speakers (e.g., in AMI).
-    In the latter case, it is paritioned into data suitable for model training using :class:`~lhotse.cut.Cut`.
+    In the latter case, it is partitioned into data suitable for model training using :class:`~lhotse.cut.Cut`.
 
     .. hint::
         Lhotse reads audio recordings using `pysoundfile`_ and `audioread`_, similarly to librosa,
@@ -828,7 +828,7 @@ class AudioMixer:
                     f"To perform mix, energy must be non-zero and non-negative (got {added_audio_energy}). "
                 )
             target_energy = self.reference_energy * (10.0 ** (-snr / 10))
-            # When mixing time-domain singals, we are working with root-power (field) quantities,
+            # When mixing time-domain signals, we are working with root-power (field) quantities,
             # whereas the energy ratio applies to power quantities. To compute the gain correctly,
             # we need to take a square root of the energy ratio.
             gain = sqrt(target_energy / added_audio_energy)
