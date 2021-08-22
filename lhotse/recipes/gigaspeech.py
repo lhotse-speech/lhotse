@@ -24,6 +24,7 @@ GIGASPEECH_PARTS = ('XL', 'L', 'M', 'S', 'XS', 'DEV', 'TEST')
 
 
 def download_gigaspeech(
+        password: str,
         target_dir: Pathlike = '.',
         dataset_parts: Optional[Union[str, Sequence[str]]] = "auto",
 ):
@@ -41,10 +42,7 @@ def download_gigaspeech(
 
     for part in dataset_parts:
         logging.info(f'Downloading GigaSpeech part: {part}')
-        try:
-            gigaspeech.download('{' + part + '}')
-        except NotImplementedError:
-            raise ValueError(f"Could not download GigaSpeech part {part} -- speechcolab raised NotImplementedError.")
+        gigaspeech.download(password, '{' + part + '}')
 
 
 def prepare_gigaspeech(
