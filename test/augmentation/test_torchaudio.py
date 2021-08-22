@@ -4,10 +4,11 @@ import pytest
 import torch
 from hypothesis import given, settings
 from hypothesis import strategies as st
+from numpy.testing import assert_array_almost_equal
 
 torchaudio = pytest.importorskip('torchaudio', minversion='0.6')
 
-from lhotse.augmentation import SoxEffectTransform, Tempo, pitch, reverb, speed, Speed
+from lhotse.augmentation import SoxEffectTransform, pitch, reverb, speed, vol, Speed, Tempo, Vol
 from lhotse import AudioTransform, MonoCut, Recording, Resample, Seconds
 
 SAMPLING_RATE = 16000
@@ -18,7 +19,13 @@ def audio():
     return torch.sin(2 * math.pi * torch.linspace(0, 1, 16000)).unsqueeze(0).numpy()
 
 
-@pytest.mark.parametrize('effect', [reverb, pitch, speed])
+# to avoid clipping during volume perturbation test
+@pytest.fixture
+def audio_vol():
+    return torch.sin(2 * math.pi * torch.linspace(0, 1, 16000)).unsqueeze(0).numpy() / 3.
+
+
+@pytest.mark.parametrize('effect', [reverb, pitch, speed, vol])
 def test_example_augmentation(audio, effect):
     augment_fn = SoxEffectTransform(effects=effect(SAMPLING_RATE))
     augmented_audio = augment_fn(audio, sampling_rate=SAMPLING_RATE)
@@ -36,33 +43,66 @@ def test_speed_does_not_change_num_samples(audio):
         augmented_audio = augment_fn(audio, sampling_rate=SAMPLING_RATE)
         assert augmented_audio.shape == audio.shape
         assert augmented_audio != audio
+        
+        
+def test_vol_does_not_change_num_samples(audio):
+    augment_fn = SoxEffectTransform(effects=vol(SAMPLING_RATE))
+    for _ in range(10):
+        augmented_audio = augment_fn(audio, sampling_rate=SAMPLING_RATE)
+        assert augmented_audio.shape == audio.shape
+        assert augmented_audio != audio
 
 
 def test_speed(audio):
     speed = Speed(factor=1.1)
     perturbed = speed(audio, SAMPLING_RATE)
     assert perturbed.shape == (1, 14545)
+    
+
+@pytest.mark.parametrize('scale', [0.125, 1., 2.])
+def test_vol(audio_vol, scale):
+    vol = Vol(factor=scale)
+    
+    audio_perturbed = vol(audio_vol, SAMPLING_RATE)
+    
+    assert audio_perturbed.shape == audio_vol.shape
+    assert_array_almost_equal(audio_perturbed, scale * audio_vol)
 
 
 def test_deserialize_transform(audio):
     speed = AudioTransform.from_dict({'name': 'Speed', 'kwargs': {'factor': 1.1}})
-    perturbed = speed(audio, SAMPLING_RATE)
-    assert perturbed.shape == (1, 14545)
+    vol = AudioTransform.from_dict({'name': 'Vol', 'kwargs': {'factor': 0.5}})
+    
+    perturbed_speed = speed(audio, SAMPLING_RATE)
+    perturbed_vol = vol(audio, SAMPLING_RATE)
+    
+    assert perturbed_speed.shape == (1, 14545)
+    assert perturbed_vol.shape == audio.shape
+    assert_array_almost_equal(perturbed_vol, audio / 2.)
 
 
 def test_serialize_deserialize_transform(audio):
     speed_orig = Speed(factor=1.1)
-    data = speed_orig.to_dict()
-    speed = AudioTransform.from_dict(data)
-    perturbed = speed(audio, SAMPLING_RATE)
-    assert perturbed.shape == (1, 14545)
+    vol_orig = Vol(factor=0.5)
+    
+    data_speed = speed_orig.to_dict()
+    data_vol = vol_orig.to_dict()
+    
+    speed = AudioTransform.from_dict(data_speed)
+    vol = AudioTransform.from_dict(data_vol)
+    
+    perturbed_speed = speed(audio, SAMPLING_RATE)
+    perturbed_vol = vol(audio, SAMPLING_RATE)
+    assert perturbed_speed.shape == (1, 14545)
+    assert perturbed_vol.shape == audio.shape
+    assert_array_almost_equal(perturbed_vol, audio * 0.5)
 
 
 @pytest.mark.parametrize('sampling_rate', [8000, 16000, 22050, 32000, 44100, 48000])
 def test_resample(audio, sampling_rate):
-    speed = Resample(source_sampling_rate=16000, target_sampling_rate=sampling_rate)
-    perturbed = speed(audio, SAMPLING_RATE)
-    assert perturbed.shape == (1, sampling_rate)
+    resample = Resample(source_sampling_rate=16000, target_sampling_rate=sampling_rate)
+    resampled = resample(audio, SAMPLING_RATE)
+    assert resampled.shape == (1, sampling_rate)
 
 
 def test_tempo(audio):
@@ -77,6 +117,8 @@ def test_tempo(audio):
     st.one_of([st.just(v) for v in [8000, 22050, 32000, 44100, 48000]]),
     # Speed perturbation values
     st.one_of([st.just(v) for v in [0.9, 0.95, 1.05, 1.1]]),
+    # Volume perturbation values
+    st.one_of([st.just(v) for v in [0.125, 0.5, 1.5, 2.]]),
     # Resampling first?
     st.booleans(),
     # Cut duration (full recording has 16.04s)
@@ -85,15 +127,16 @@ def test_tempo(audio):
 def test_augmentation_chain_randomized(
         target_sampling_rate: int,
         sp_factor: float,
+        vp_factor: float,
         resample_first: bool,
         cut_duration: Seconds
 ):
     recording = Recording.from_file('test/fixtures/libri/libri-1088-134315-0000.wav')
 
     if resample_first:
-        recording_aug = recording.resample(target_sampling_rate).perturb_speed(sp_factor)
+        recording_aug = recording.resample(target_sampling_rate).perturb_speed(sp_factor).perturb_vol(vp_factor)
     else:
-        recording_aug = recording.perturb_speed(sp_factor).resample(target_sampling_rate)
+        recording_aug = recording.perturb_speed(sp_factor).resample(target_sampling_rate).perturb_vol(vp_factor)
 
     audio_aug = recording_aug.load_audio()
     assert audio_aug.shape[1] == recording_aug.num_samples

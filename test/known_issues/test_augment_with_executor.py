@@ -32,11 +32,21 @@ class TestAugmentationWithExecutor(RandomCutTestCase):
         cut = self.with_cut(sampling_rate=16000, num_samples=16000)
         with TemporaryDirectory() as d, \
                 exec_type(max_workers=4) as ex:
-            cut_set = CutSet.from_cuts(
+            cut_set_speed = CutSet.from_cuts(
                 cut.with_id(str(i)) for i in range(100)
             ).perturb_speed(1.1)  # perturb_speed uses torchaudio SoX effect that could hang
             # Just test that it runs and does not hang.
-            cut_set_feats = cut_set.compute_and_store_features(
+            cut_set_speed_feats = cut_set_speed.compute_and_store_features(
+                extractor=Fbank(),
+                storage_path=d,
+                executor=ex
+            )
+            
+            cut_set_vol = CutSet.from_cuts(
+                cut.with_id(str(i)) for i in range(100)
+            ).perturb_vol(0.125)  # perturb_vol uses torchaudio SoX effect that could hang
+            # Just test that it runs and does not hang.
+            cut_set_vol_feats = cut_set_vol.compute_and_store_features(
                 extractor=Fbank(),
                 storage_path=d,
                 executor=ex

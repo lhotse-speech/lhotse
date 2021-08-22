@@ -122,6 +122,7 @@ class Cut:
         >>> cut_append = cut.append(other_cut)
         >>> cut_24k = cut.resample(24000)
         >>> cut_sp = cut.perturb_speed(1.1)
+        >>> cut_vp = cut.perturb_vol(2.)
 
     .. note::
         All cut transformations are performed lazily, on-the-fly, upon calling ``load_audio`` or ``load_features``.
@@ -184,6 +185,7 @@ class Cut:
     resample: Callable
     perturb_speed: Callable
     perturb_tempo: Callable
+    perturb_vol: Callable
     map_supervisions: Callable
     filter_supervisions: Callable
     with_features_path_prefix: Callable
@@ -932,6 +934,36 @@ class MonoCut(Cut):
             duration=new_duration,
             start=new_start
         )
+    
+    def perturb_vol(self, factor: float, affix_id: bool = True) -> 'MonoCut':
+        """
+        Return a new ``MonoCut`` that will lazily perturb the volume while loading audio.
+
+        :param factor: The volume will be adjusted this many times (e.g. factor=1.1 means 1.1x louder).
+        :param affix_id: When true, we will modify the ``MonoCut.id`` field
+            by affixing it with "_vp{factor}".
+        :return: a modified copy of the current ``MonoCut``.
+        """
+        # Pre-conditions
+        assert self.has_recording, 'Cannot perturb volume on a MonoCut without Recording.'
+        if self.has_features:
+            logging.warning(
+                'Attempting to perturb volume on a MonoCut that references pre-computed features. '
+                'The feature manifest will be detached, as we do not support feature-domain '
+                'volume perturbation.'
+            )
+            self.features = None
+        # Actual audio perturbation.
+        recording_vp = self.recording.perturb_vol(factor=factor, affix_id=affix_id)
+        # Match the supervision's id (and it's underlying recording id).
+        supervisions_vp = [s.perturb_vol(factor=factor, affix_id=affix_id) for s in self.supervisions]
+        
+        return fastcopy(
+            self,
+            id=f'{self.id}_vp{factor}' if affix_id else self.id,
+            recording=recording_vp,
+            supervisions=supervisions_vp
+        )
 
     def map_supervisions(self, transform_fn: Callable[[SupervisionSegment], SupervisionSegment]) -> Cut:
         """
@@ -1197,6 +1229,19 @@ class PaddingCut(Cut):
             num_features=new_num_features,
             frame_shift=new_frame_shift
         )
+    
+    def perturb_vol(self, factor: float, affix_id: bool = True) -> 'PaddingCut':
+        """
+        Return a new ``PaddingCut`` that will "mimic" the effect of volume perturbation
+        on amplitude of samples.
+
+        :param factor: The vol will be adjusted this many times (e.g. factor=1.1 means 1.1x louder).
+        :param affix_id: When true, we will modify the ``PaddingCut.id`` field
+            by affixing it with "_vp{factor}".
+        :return: a modified copy of the current ``PaddingCut``.
+        """
+        
+        return fastcopy(self, id=f'{self.id}_vp{factor}' if affix_id else self.id)
 
     def drop_features(self) -> 'PaddingCut':
         """Return a copy of the current :class:`.PaddingCut`, detached from ``features``."""
@@ -1579,6 +1624,32 @@ class MixedCut(Cut):
                     ),
                     snr=track.snr
                 )
+                for track in self.tracks
+            ]
+        )
+    
+    def perturb_vol(self, factor: float, affix_id: bool = True) -> 'MixedCut':
+        """
+        Return a new ``MixedCut`` that will lazily perturb the volume while loading audio.
+        Recordings of the underlying Cuts are updated to reflect volume change.
+
+        :param factor: The volume will be adjusted this many times (e.g. factor=1.1 means 1.1x louder).
+        :param affix_id: When true, we will modify the ``MixedCut.id`` field
+            by affixing it with "_vp{factor}".
+        :return: a modified copy of the current ``MixedCut``.
+        """
+        # Pre-conditions
+        assert self.has_recording, 'Cannot perturb volume on a MonoCut without Recording.'
+        if self.has_features:
+            logging.warning(
+                'Attempting to perturb volume on a MixedCut that references pre-computed features. '
+                'The feature manifest(s) will be detached, as we do not support feature-domain '
+                'volume perturbation.'
+            )
+        return MixedCut(
+            id=f'{self.id}_vp{factor}' if affix_id else self.id,
+            tracks=[
+                fastcopy(track, cut=track.cut.perturb_vol(factor=factor, affix_id=affix_id))
                 for track in self.tracks
             ]
         )
@@ -1973,11 +2044,12 @@ class CutSet(Serializable, Sequence[Cut]):
     and executed upon reading the audio::
 
         >>> cuts_sp = cuts.perturb_speed(factor=1.1)
+        >>> cuts_vp = cuts.perturb_vol(factor=2.)
         >>> cuts_24k = cuts.resample(24000)
 
     .. caution::
         If the :class:`.CutSet` contained :class:`~lhotse.features.base.Features` manifests, they will be
-        detached after performing audio augmentations such as :meth:`.CutSet.perturb_speed` or :meth:`.CutSet.resample`.
+        detached after performing audio augmentations such as :meth:`.CutSet.perturb_speed` or :meth:`.CutSet.resample` or :meth:`.CutSet.perturb_vol`.
 
     :class:`~lhotse.cut.CutSet` offers parallel feature extraction capabilities
     (see `meth`:.CutSet.compute_and_store_features: for details),
@@ -2614,6 +2686,20 @@ class CutSet(Serializable, Sequence[Cut]):
         :return: a modified copy of the ``CutSet``.
         """
         return self.map(lambda cut: cut.perturb_tempo(factor=factor, affix_id=affix_id))
+    
+    def perturb_vol(self, factor: float, affix_id: bool = True) -> 'CutSet':
+        """
+        Return a new :class:`~lhotse.cut.CutSet` that contains volume perturbed cuts
+        with a factor of ``factor``. It requires the recording manifests to be present.
+        If the feature manifests are attached, they are dropped.
+        The supervision manifests are remaining the same.
+
+        :param factor: The resulting playback volume is ``factor`` times the original one.
+        :param affix_id: Should we modify the ID (useful if both versions of the same
+            cut are going to be present in a single manifest).
+        :return: a modified copy of the ``CutSet``.
+        """
+        return self.map(lambda cut: cut.perturb_vol(factor=factor, affix_id=affix_id))
 
     def mix(
             self,
