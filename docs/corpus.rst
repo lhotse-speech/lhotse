@@ -101,6 +101,8 @@ a CLI tool that create the manifests given a corpus directory.
     - :func:`lhotse.recipes.prepare_tedlium`
   * - VCTK
     - :func:`lhotse.recipes.prepare_vctk`
+  * - YesNo
+    - :func:`lhotse.recipes.prepare_yesno`
 
 
 Adding new corpora

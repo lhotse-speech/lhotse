@@ -6,12 +6,12 @@ from torch.utils.data.dataloader import DataLoader, default_collate
 from lhotse import validate
 from lhotse.cut import CutSet
 from lhotse.dataset.input_strategies import BatchIO, PrecomputedFeatures
-from lhotse.utils import ifnone
+from lhotse.utils import compute_num_frames, ifnone
 
 
 class K2SpeechRecognitionDataset(torch.utils.data.Dataset):
     """
-    The PyTorch Dataset for the speech recognition task using K2 library.
+    The PyTorch Dataset for the speech recognition task using k2 library.
 
     This dataset expects to be queried with lists of cut IDs,
     for which it loads features and automatically collates/batches them.
@@ -65,7 +65,7 @@ class K2SpeechRecognitionDataset(torch.utils.data.Dataset):
             input_strategy: BatchIO = PrecomputedFeatures(),
     ):
         """
-        K2 ASR IterableDataset constructor.
+        k2 ASR IterableDataset constructor.
 
         :param return_cuts: When ``True``, will additionally return a "cut" field in each batch with the Cut
             objects used to create that batch.
@@ -87,7 +87,7 @@ class K2SpeechRecognitionDataset(torch.utils.data.Dataset):
 
     def __getitem__(self, cuts: CutSet) -> Dict[str, Union[torch.Tensor, List[str]]]:
         """
-        Return a new batch, with the batch size automatically determined using the contraints
+        Return a new batch, with the batch size automatically determined using the constraints
         of max_frames and max_cuts.
         """
         validate_for_asr(cuts)
@@ -129,6 +129,52 @@ class K2SpeechRecognitionDataset(torch.utils.data.Dataset):
         batch['supervisions'].update(supervision_intervals)
         if self.return_cuts:
             batch['supervisions']['cut'] = [cut for cut in cuts for sup in cut.supervisions]
+
+        has_word_alignments = all(
+            s.alignment is not None and "word" in s.alignment
+            for c in cuts
+            for s in c.supervisions
+        )
+        if has_word_alignments:
+            # TODO: might need to refactor BatchIO API to move the following conditional logic
+            #       into these objects (e.g. use like: self.input_strategy.convert_timestamp(),
+            #       that returns either num_frames or num_samples depending on the strategy).
+            words, starts, ends = [], [], []
+            frame_shift = cuts[0].frame_shift
+            sampling_rate = cuts[0].sampling_rate
+            if frame_shift is None:
+                try:
+                    frame_shift = self.input_strategy.extractor.frame_shift
+                except AttributeError:
+                    raise ValueError(
+                        "Can't determine the frame_shift -- it is not present either in cuts or the input_strategy. "
+                    )
+            for c in cuts:
+                for s in c.supervisions:
+                    words.append([aliword.symbol for aliword in s.alignment["word"]])
+                    starts.append(
+                        [
+                            compute_num_frames(
+                                aliword.start,
+                                frame_shift=frame_shift,
+                                sampling_rate=sampling_rate,
+                            )
+                            for aliword in s.alignment["word"]
+                        ]
+                    )
+                    ends.append(
+                        [
+                            compute_num_frames(
+                                aliword.end,
+                                frame_shift=frame_shift,
+                                sampling_rate=sampling_rate,
+                            )
+                            for aliword in s.alignment["word"]
+                        ]
+                    )
+            batch["supervisions"]["word"] = words
+            batch["supervisions"]["word_start"] = starts
+            batch["supervisions"]["word_end"] = ends
 
         return batch
 

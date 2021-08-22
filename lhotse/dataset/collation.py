@@ -23,7 +23,7 @@ class TokenCollater:
 
     Returns:
         tokens_batch: IntTensor of shape (B, L)
-            B: batch dimensoion, number of input sentences
+            B: batch dimension, number of input sentences
             L: length of the longest sentence
         tokens_lens: IntTensor of shape (B,)
             Length of each sentence after adding <eos> and <bos>

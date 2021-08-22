@@ -2,28 +2,33 @@ import logging
 import re
 import shutil
 import tarfile
+import zipfile
 from concurrent.futures.thread import ThreadPoolExecutor
 from pathlib import Path
-from typing import Dict, Optional, Sequence, Tuple, Union
+from typing import Dict, List, Optional, Sequence, Tuple, Union
 
 from tqdm.auto import tqdm
 
 from lhotse import validate_recordings_and_supervisions
 from lhotse.audio import Recording, RecordingSet
 from lhotse.recipes.utils import manifests_exist, read_manifests_if_cached
-from lhotse.supervision import SupervisionSegment, SupervisionSet
-from lhotse.utils import Pathlike, urlretrieve_progress
+from lhotse.supervision import AlignmentItem, SupervisionSegment, SupervisionSet
+from lhotse.utils import Pathlike, is_module_available, urlretrieve_progress
 
 LIBRISPEECH = ('dev-clean', 'dev-other', 'test-clean', 'test-other',
                'train-clean-100', 'train-clean-360', 'train-other-500')
 MINI_LIBRISPEECH = ('dev-clean-2', 'train-clean-5')
 
+LIBRISPEECH_ALIGNMENTS_URL = 'https://drive.google.com/uc?id=1WYfgr31T-PPwMcxuAq09XZfHQO5Mw8fE'
+
 
 def download_librispeech(
         target_dir: Pathlike = '.',
         dataset_parts: Optional[Union[str, Sequence[str]]] = "mini_librispeech",
-        force_download: Optional[bool] = False,
-        base_url: Optional[str] = 'http://www.openslr.org/resources'
+        force_download: bool = False,
+        alignments: bool = False,
+        base_url: str = 'http://www.openslr.org/resources',
+        alignments_url: str = LIBRISPEECH_ALIGNMENTS_URL,
 ) -> None:
     """
     Download and untar the dataset, supporting both LibriSpeech and MiniLibrispeech
@@ -32,7 +37,10 @@ def download_librispeech(
     :param dataset_parts: "librispeech", "mini_librispeech",
         or a list of splits (e.g. "dev-clean") to download.
     :param force_download: Bool, if True, download the tars no matter if the tars exist.
+    :param alignments: should we download the alignments. The original source is:
+        https://github.com/CorentinJ/librispeech-alignments
     :param base_url: str, the url of the OpenSLR resources.
+    :param alignments_url: str, the url of LibriSpeech word alignments
     """
     target_dir = Path(target_dir)
     target_dir.mkdir(parents=True, exist_ok=True)
@@ -41,6 +49,8 @@ def download_librispeech(
         dataset_parts = LIBRISPEECH
     elif dataset_parts == "mini_librispeech":
         dataset_parts = MINI_LIBRISPEECH
+    elif isinstance(dataset_parts, str):
+        dataset_parts = [dataset_parts]
 
     for part in tqdm(dataset_parts, desc='Downloading LibriSpeech parts'):
         logging.info(f'Processing split: {part}')
@@ -68,6 +78,18 @@ def download_librispeech(
         with tarfile.open(tar_path) as tar:
             tar.extractall(path=target_dir)
         completed_detector.touch()
+
+    if alignments:
+        completed_detector = target_dir / '.ali_completed'
+        if completed_detector.is_file() and not force_download:
+            return
+        assert is_module_available('gdown'), 'To download LibriSpeech alignments, please install "pip install gdown"'
+        import gdown
+        ali_zip_path = str(target_dir / 'LibriSpeech-Alignments.zip')
+        gdown.download(alignments_url, output=ali_zip_path)
+        with zipfile.ZipFile(ali_zip_path) as f:
+            f.extractall(path=target_dir)
+            completed_detector.touch()
 
 
 def prepare_librispeech(
@@ -123,7 +145,12 @@ def prepare_librispeech(
             supervisions = []
             part_path = corpus_dir / part
             futures = []
-            for trans_path in tqdm(part_path.rglob('*.txt'), desc='Distributing tasks', leave=False):
+            for trans_path in tqdm(part_path.rglob('*.trans.txt'), desc='Distributing tasks', leave=False):
+                alignments = {}
+                ali_path = trans_path.parent / (trans_path.stem.split('.')[0] + '.alignment.txt')
+                print(ali_path)
+                if ali_path.exists():
+                    alignments = parse_alignments(ali_path)
                 # "trans_path" file contains lines like:
                 #
                 #   121-121726-0000 ALSO A POPULAR CONTRIVANCE
@@ -133,7 +160,7 @@ def prepare_librispeech(
                 # We will create a separate Recording and SupervisionSegment for those.
                 with open(trans_path) as f:
                     for line in f:
-                        futures.append(ex.submit(parse_utterance, part_path, line))
+                        futures.append(ex.submit(parse_utterance, part_path, line, alignments))
 
             for future in tqdm(futures, desc='Processing', leave=False):
                 result = future.result()
@@ -163,6 +190,7 @@ def prepare_librispeech(
 def parse_utterance(
         dataset_split_path: Path,
         line: str,
+        alignments: Dict[str, List[AlignmentItem]],
 ) -> Optional[Tuple[Recording, SupervisionSegment]]:
     recording_id, text = line.strip().split(maxsplit=1)
     # Create the Recording first
@@ -180,6 +208,20 @@ def parse_utterance(
         channel=0,
         language='English',
         speaker=re.sub(r'-.*', r'', recording.id),
-        text=text.strip()
+        text=text.strip(),
+        alignment={"word": alignments[recording_id]} if recording_id in alignments else None
     )
     return recording, segment
+
+
+def parse_alignments(ali_path: Pathlike) -> Dict[str, List[AlignmentItem]]:
+    alignments = {}
+    for line in Path(ali_path).read_text().splitlines():
+        utt_id, words, timestamps = line.split()
+        words = words.replace('"', '').split(',')
+        timestamps = [0.0] + list(map(float, timestamps.replace('"', '').split(',')))
+        alignments[utt_id] = [
+            AlignmentItem(symbol=word, start=start, duration=round(end - start, ndigits=8))
+            for word, start, end in zip(words, timestamps, timestamps[1:])
+        ]
+    return alignments

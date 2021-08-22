@@ -2860,7 +2860,7 @@ class CutSet(Serializable, Sequence[Cut]):
             you will end up with incorrect supervision information when using this API.
             E.g. for speed perturbation, use ``CutSet.perturb_speed()`` instead.
         :param storage_type: a ``FeaturesWriter`` subclass type.
-            It determines how the featurs are stored to disk,
+            It determines how the features are stored to disk,
             e.g. separate file per array, HDF5 files with multiple arrays, etc.
         :param executor: when provided, will be used to parallelize the feature extraction process.
             By default, we will instantiate a ProcessPoolExecutor.

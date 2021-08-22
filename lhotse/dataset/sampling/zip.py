@@ -95,7 +95,7 @@ class ZipSampler(CutSampler):
 
     def filter(self, predicate: Callable[[Cut], bool]) -> None:
         """
-        Add a constraint on invidual cuts that has to be satisfied to consider them.
+        Add a constraint on individual cuts that has to be satisfied to consider them.
 
         Can be useful when handling large, lazy manifests where it is not feasible to
         pre-filter them before instantiating the sampler.
