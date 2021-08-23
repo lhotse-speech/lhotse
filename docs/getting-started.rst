@@ -19,6 +19,16 @@ Main goals
 - Flexible data preparation for model training with the notion of **audio cuts**.
 - **Efficiency**, especially in terms of I/O bandwidth and storage capacity.
 
+Examples of use
+***************
+
+Check out the following links to see how Lhotse is being put to use:
+- `Icefall recipes`_: where k2 and Lhotse meet.
+- Minima ESPnet+Lhotse example: |yesno colab notebook|
+
+ .. |yesno colab notebook| image:: https://colab.research.google.com/assets/colab-badge.svg
+    :target: https://colab.research.google.com/drive/1HKSYPsWx_HoCdrnLpaPdYj5zwlPsM3NH
+
 Main ideas
 **********
 
@@ -117,3 +127,4 @@ the speech starts roughly at the first second (100 frames):
 
 .. _k2: https://github.com/kaldi-asr/kaldi
 .. _Kaldi: https://github.com/kaldi-asr/kaldi
+.. _Icefall recipes: https://github.com/k2-fsa/icefall

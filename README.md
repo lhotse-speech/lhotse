@@ -28,6 +28,12 @@ Lhotse is a Python library aiming to make speech and audio data preparation flex
 - Flexible data preparation for model training with the notion of **audio cuts**.
 - **Efficiency**, especially in terms of I/O bandwidth and storage capacity.
 
+### Examples of use
+
+Check out the following links to see how Lhotse is being put to use:
+- [Icefall recipes](https://github.com/k2-fsa/icefall): where k2 and Lhotse meet.
+- Minima ESPnet+Lhotse example: [![Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/drive/1HKSYPsWx_HoCdrnLpaPdYj5zwlPsM3NH)
+
 ### Main ideas
 
 Like Kaldi, Lhotse provides standard data preparation recipes, but extends that with a seamless PyTorch integration
