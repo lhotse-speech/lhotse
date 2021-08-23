@@ -12,19 +12,20 @@ About
 Main goals
 **********
 
-- Attract a wider community to speech processing tasks with a **Python-centric design**.
-- Accommodate experienced Kaldi users with an **expressive command-line interface**.
-- Provide **standard data preparation recipes** for commonly used corpora.
-- Provide **PyTorch Dataset classes** for speech and audio related tasks.
-- Flexible data preparation for model training with the notion of **audio cuts**.
-- **Efficiency**, especially in terms of I/O bandwidth and storage capacity.
+* Attract a wider community to speech processing tasks with a **Python-centric design**.
+* Accommodate experienced Kaldi users with an **expressive command-line interface**.
+* Provide **standard data preparation recipes** for commonly used corpora.
+* Provide **PyTorch Dataset classes** for speech and audio related tasks.
+* Flexible data preparation for model training with the notion of **audio cuts**.
+* **Efficiency**, especially in terms of I/O bandwidth and storage capacity.
 
 Examples of use
 ***************
 
 Check out the following links to see how Lhotse is being put to use:
-- `Icefall recipes`_: where k2 and Lhotse meet.
-- Minima ESPnet+Lhotse example: |yesno colab notebook|
+
+* `Icefall recipes`_: where k2 and Lhotse meet.
+* Minima ESPnet+Lhotse example: |yesno colab notebook|
 
  .. |yesno colab notebook| image:: https://colab.research.google.com/assets/colab-badge.svg
     :target: https://colab.research.google.com/drive/1HKSYPsWx_HoCdrnLpaPdYj5zwlPsM3NH
