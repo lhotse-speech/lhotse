@@ -36,11 +36,12 @@ def download_gigaspeech(
             'To process the GigaSpeech corpus, please install optional dependency: pip install speechcolab')
     gigaspeech = GigaSpeech(target_dir)
 
-    subsets = ('XL', 'DEV', 'TEST') if dataset_parts == 'auto' else dataset_parts
-    if isinstance(subsets, str):
-        subsets = [subsets]
+    if dataset_parts == 'auto':
+        dataset_parts = ('XL', 'DEV', 'TEST')
+    elif isinstance(dataset_parts, str):
+        dataset_parts = [dataset_parts]
 
-    for part in subsets:
+    for part in dataset_parts:
         logging.info(f'Downloading GigaSpeech part: {part}')
         gigaspeech.download(password, '{' + part + '}', host=host)
 
