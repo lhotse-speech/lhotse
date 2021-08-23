@@ -24,8 +24,10 @@ GIGASPEECH_PARTS = ('XL', 'L', 'M', 'S', 'XS', 'DEV', 'TEST')
 
 
 def download_gigaspeech(
+        password: str,
         target_dir: Pathlike = '.',
         dataset_parts: Optional[Union[str, Sequence[str]]] = "auto",
+        host: Optional[str] = 'tsinghua'
 ):
     if is_module_available('speechcolab'):
         from speechcolab.datasets.gigaspeech import GigaSpeech
@@ -41,10 +43,7 @@ def download_gigaspeech(
 
     for part in dataset_parts:
         logging.info(f'Downloading GigaSpeech part: {part}')
-        try:
-            gigaspeech.download('{' + part + '}')
-        except NotImplementedError:
-            raise ValueError(f"Could not download GigaSpeech part {part} -- speechcolab raised NotImplementedError.")
+        gigaspeech.download(password, '{' + part + '}', host=host)
 
 
 def prepare_gigaspeech(
@@ -93,7 +92,7 @@ def prepare_gigaspeech(
             recordings = []
             supervisions = []
             for recording, segments in tqdm(
-                    ex.map(parse_utterance, gigaspeech.audios('{' + part + '}'), repeat(gigaspeech.root_path)),
+                    ex.map(parse_utterance, gigaspeech.audios('{' + part + '}'), repeat(gigaspeech.gigaspeech_dataset_dir)),
                     desc='Processing GigaSpeech JSON entries'
             ):
                 recordings.append(recording)

@@ -29,16 +29,20 @@ def gigaspeech(
 
 
 @download.command(context_settings=dict(show_default=True))
+@click.argument('password', type=str)
 @click.argument('target_dir', type=click.Path())
 @click.option('--subset', type=click.Choice(('auto',) + GIGASPEECH_PARTS), multiple=True,
               default=['auto'], help='Which parts of Gigaspeech to download (by default XL + DEV + TEST).')
+@click.option('--host', type=str, default='tsinghua', help='Which host to download Gigaspeech.')
 def gigaspeech(
+        password: str,
         target_dir: Pathlike,
-        subset: List[str]
+        subset: List[str],
+        host: str
 ):
     """Gigaspeech download."""
     # Convert (likely one-element) list with "auto" into a string.
     logging.basicConfig(level=logging.INFO)
     if 'auto' in subset:
         subset = 'auto'
-    download_gigaspeech(target_dir, dataset_parts=subset)
+    download_gigaspeech(password, target_dir, dataset_parts=subset, host=host)
