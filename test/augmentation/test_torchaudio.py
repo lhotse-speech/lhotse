@@ -45,7 +45,7 @@ def test_speed_does_not_change_num_samples(audio):
         assert augmented_audio != audio
         
         
-def test_vol_does_not_change_num_samples(audio):
+def test_volume_does_not_change_num_samples(audio):
     augment_fn = SoxEffectTransform(effects=vol(SAMPLING_RATE))
     for _ in range(10):
         augmented_audio = augment_fn(audio, sampling_rate=SAMPLING_RATE)
@@ -60,42 +60,46 @@ def test_speed(audio):
     
 
 @pytest.mark.parametrize('scale', [0.125, 1., 2.])
-def test_vol(audio_vol, scale):
-    vol = Vol(factor=scale)
+def test_volume(audio, scale):
+    volume = Vol(factor=scale)
+    audio_perturbed = volume(audio, SAMPLING_RATE)
     
-    audio_perturbed = vol(audio_vol, SAMPLING_RATE)
-    
-    assert audio_perturbed.shape == audio_vol.shape
-    assert_array_almost_equal(audio_perturbed, scale * audio_vol)
+    assert audio_perturbed.shape == audio.shape
+    assert_array_almost_equal(audio_perturbed, scale * audio)
 
 
-def test_deserialize_transform(audio):
+def test_deserialize_transform_speed(audio):
     speed = AudioTransform.from_dict({'name': 'Speed', 'kwargs': {'factor': 1.1}})
-    vol = AudioTransform.from_dict({'name': 'Vol', 'kwargs': {'factor': 0.5}})
-    
     perturbed_speed = speed(audio, SAMPLING_RATE)
-    perturbed_vol = vol(audio, SAMPLING_RATE)
-    
+
     assert perturbed_speed.shape == (1, 14545)
-    assert perturbed_vol.shape == audio.shape
-    assert_array_almost_equal(perturbed_vol, audio / 2.)
 
 
-def test_serialize_deserialize_transform(audio):
+def test_deserialize_transform_volume(audio):
+    volume = AudioTransform.from_dict({'name': 'Vol', 'kwargs': {'factor': 0.5}})
+    perturbed_volume = volume(audio, SAMPLING_RATE)
+    
+    assert perturbed_volume.shape == audio.shape
+    assert_array_almost_equal(perturbed_volume, audio * 0.5)
+
+
+def test_serialize_deserialize_transform_speed(audio):
     speed_orig = Speed(factor=1.1)
-    vol_orig = Vol(factor=0.5)
-    
     data_speed = speed_orig.to_dict()
-    data_vol = vol_orig.to_dict()
-    
     speed = AudioTransform.from_dict(data_speed)
-    vol = AudioTransform.from_dict(data_vol)
-    
     perturbed_speed = speed(audio, SAMPLING_RATE)
-    perturbed_vol = vol(audio, SAMPLING_RATE)
+
     assert perturbed_speed.shape == (1, 14545)
-    assert perturbed_vol.shape == audio.shape
-    assert_array_almost_equal(perturbed_vol, audio * 0.5)
+
+
+def test_serialize_deserialize_transform_volume(audio):
+    volume_orig = Vol(factor=0.5)
+    data_volume = volume_orig.to_dict()
+    volume = AudioTransform.from_dict(data_volume)
+    perturbed_volume = volume(audio, SAMPLING_RATE)
+
+    assert perturbed_volume.shape == audio.shape
+    assert_array_almost_equal(perturbed_volume, audio * 0.5)
 
 
 @pytest.mark.parametrize('sampling_rate', [8000, 16000, 22050, 32000, 44100, 48000])

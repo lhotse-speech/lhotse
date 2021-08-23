@@ -15,7 +15,7 @@ class PerturbSpeed:
 
     def __init__(
             self,
-            factors: Union[float, List[float]],
+            factors: Union[float, Sequence[float]],
             p: float,
             randgen: random.Random = None
     ) -> None:
