@@ -203,7 +203,7 @@ class SupervisionSegment:
         return fastcopy(
             self,
             id=f'{self.id}_sp{factor}' if affix_id else self.id,
-            recording_id=f'{self.recording_id}_sp{factor}' if affix_id else self.id,
+            recording_id=f'{self.recording_id}_sp{factor}' if affix_id else self.recording_id,
             start=new_start,
             duration=new_duration,
             alignment={
@@ -238,7 +238,7 @@ class SupervisionSegment:
         return fastcopy(
             perturbed,
             id=f'{self.id}_tp{factor}' if affix_id else self.id,
-            recording_id=f'{self.recording_id}_tp{factor}' if affix_id else self.id,
+            recording_id=f'{self.recording_id}_tp{factor}' if affix_id else self.recording_id,
         )
 
     def perturb_volume(
@@ -258,7 +258,7 @@ class SupervisionSegment:
         return fastcopy(
             self,
             id=f'{self.id}_vp{factor}' if affix_id else self.id,
-            recording_id=f'{self.recording_id}_vp{factor}' if affix_id else self.id
+            recording_id=f'{self.recording_id}_vp{factor}' if affix_id else self.recording_id
         )
 
     def trim(self, end: Seconds, start: Seconds = 0) -> 'SupervisionSegment':
