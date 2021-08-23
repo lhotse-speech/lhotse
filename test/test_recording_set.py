@@ -207,8 +207,8 @@ def test_recording_perturb_tempo(recording, factor, affix_id):
     samples = rec_sp.load_audio()
     assert samples.shape[0] == rec_sp.num_channels
     assert samples.shape[1] == rec_sp.num_samples
-    
-    
+
+
 @pytest.mark.parametrize(
     ['factor', 'affix_id'],
     [
@@ -220,8 +220,8 @@ def test_recording_perturb_tempo(recording, factor, affix_id):
         (2., False),
     ]
 )
-def test_recording_perturb_vol(recording, factor, affix_id):
-    rec_vp = recording.perturb_vol(factor=factor, affix_id=affix_id)
+def test_recording_perturb_volume(recording, factor, affix_id):
+    rec_vp = recording.perturb_volume(factor=factor, affix_id=affix_id)
     if affix_id:
         assert rec_vp.id == f'{recording.id}_vp{factor}'
     else:
@@ -243,10 +243,10 @@ def test_recording_set_perturb_tempo(recording_set):
     for r, r_tp in zip(recording_set, recs_sp):
         assert r.duration > r_tp.duration  # Faster recording => shorter duration
         assert r.sampling_rate == r_tp.sampling_rate
-        
-        
-def test_recording_set_perturb_vol(recording_set):
-    recs_vp = recording_set.perturb_vol(factor=2.)
+
+
+def test_recording_set_perturb_volume(recording_set):
+    recs_vp = recording_set.perturb_volume(factor=2.)
     for r, r_vp in zip(recording_set, recs_vp):
         assert r.duration == r_vp.duration
         assert r.sampling_rate == r_vp.sampling_rate

@@ -240,8 +240,8 @@ class SupervisionSegment:
             id=f'{self.id}_tp{factor}' if affix_id else self.id,
             recording_id=f'{self.recording_id}_tp{factor}' if affix_id else self.id,
         )
-    
-    def perturb_vol(
+
+    def perturb_volume(
             self,
             factor: float,
             affix_id: bool = True
@@ -254,7 +254,7 @@ class SupervisionSegment:
             by affixing it with "_vp{factor}".
         :return: a modified copy of the current ``SupervisionSegment``.
         """
-        
+
         return fastcopy(
             self,
             id=f'{self.id}_vp{factor}' if affix_id else self.id,

@@ -44,7 +44,7 @@ class SoxEffectTransform:
         >>> augment_fn = SoxEffectTransform(effects=[
         >>>    ['reverb', 50, 50, RandomValue(0, 100)],
         >>>    ['speed', RandomValue(0.9, 1.1)],
-        >>>    ['vol', RandomValue(0.125, 2.)],
+        >>>    ['volume', RandomValue(0.125, 2.)],
         >>>    ['rate', 16000],
         >>> ])
         >>> augmented = augment_fn(audio, 16000)
@@ -295,10 +295,10 @@ class Tempo(AudioTransform):
             start_sample / sampling_rate,
             num_samples / sampling_rate if num_samples is not None else None,
         )
-    
-    
+
+
 @dataclass
-class Vol(AudioTransform):
+class Volume(AudioTransform):
     """
     Volume perturbation effect, the same one as invoked with `sox vol` in the command line.
 
@@ -322,10 +322,10 @@ class Vol(AudioTransform):
             sampling_rate: Optional[int] # Not used, made for compatibility purposes
     ) -> Tuple[Seconds, Optional[Seconds]]:
         """
-        This method just returnes the original offset and duration as vol perturbation 
+        This method just returnes the original offset and duration as volume perturbation
         doesn't change any these audio properies.
         """
-        
+
         return offset, duration
 
 
@@ -343,7 +343,7 @@ def reverb(sampling_rate: int) -> List[List[str]]:
     ]
 
 
-def vol(sampling_rate: int) -> List[List[str]]:
+def volume(sampling_rate: int) -> List[List[str]]:
     return [['vol', RandomValue(0.125, 2.)]]
 
 

@@ -6,7 +6,7 @@ import pytest
 from lhotse import CutSet
 from lhotse.cut import MixedCut
 from lhotse.dataset import CutMix, ExtraPadding
-from lhotse.dataset import PerturbSpeed, PerturbVol
+from lhotse.dataset import PerturbSpeed, PerturbVolume
 from lhotse.testing.dummies import DummyManifest
 
 
@@ -22,10 +22,10 @@ def test_perturb_speed():
         any(isclose(cut.duration, v, abs_tol=0.0125) for v in [0.9, 1.0, 1.1])
         for cut in cuts_sp
     )
-    
-    
-def test_perturb_vol():
-    tfnm = PerturbVol(factors=[0.125, 2.], p=0.5, randgen=random.Random(42))
+
+
+def test_perturb_volume():
+    tfnm = PerturbVolume(factors=[0.125, 2.], p=0.5, randgen=random.Random(42))
     cuts = DummyManifest(CutSet, begin_id=0, end_id=10)
     cuts_vp = tfnm(cuts)
 

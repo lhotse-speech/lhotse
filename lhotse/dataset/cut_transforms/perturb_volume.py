@@ -4,7 +4,7 @@ from typing import List, Sequence, Union
 from lhotse import CutSet
 
 
-class PerturbVol:
+class PerturbVolume:
     """
     A transform on batch of cuts (``CutSet``) that perturbs the volume of the recordings
     with a given probability :attr:`p`.
@@ -27,7 +27,7 @@ class PerturbVol:
         if self.random is None:
             self.random = random
         return CutSet.from_cuts(
-            cut.perturb_vol(factor=self.random.choice(self.factors))
+            cut.perturb_volume(factor=self.random.choice(self.factors))
             if self.random.random() >= self.p
             else cut
             for cut in cuts
