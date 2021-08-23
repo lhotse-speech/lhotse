@@ -194,7 +194,7 @@ class SupervisionSegment:
             and duration (going through the sample counts).
         :param affix_id: When true, we will modify the ``id`` and ``recording_id`` fields
             by affixing it with "_sp{factor}".
-        :return: a modified copy of the current ``Recording``.
+        :return: a modified copy of the current ``SupervisionSegment``.
         """
         start_sample = compute_num_samples(self.start, sampling_rate)
         num_samples = compute_num_samples(self.duration, sampling_rate)
@@ -203,7 +203,7 @@ class SupervisionSegment:
         return fastcopy(
             self,
             id=f'{self.id}_sp{factor}' if affix_id else self.id,
-            recording_id=f'{self.recording_id}_sp{factor}' if affix_id else self.id,
+            recording_id=f'{self.recording_id}_sp{factor}' if affix_id else self.recording_id,
             start=new_start,
             duration=new_duration,
             alignment={
@@ -230,7 +230,7 @@ class SupervisionSegment:
             and duration (going through the sample counts).
         :param affix_id: When true, we will modify the ``id`` and ``recording_id`` fields
             by affixing it with "_tp{factor}".
-        :return: a modified copy of the current ``Recording``.
+        :return: a modified copy of the current ``SupervisionSegment``.
         """
 
         # speed and tempo perturbation have the same effect on supervisions
@@ -238,7 +238,27 @@ class SupervisionSegment:
         return fastcopy(
             perturbed,
             id=f'{self.id}_tp{factor}' if affix_id else self.id,
-            recording_id=f'{self.recording_id}_tp{factor}' if affix_id else self.id,
+            recording_id=f'{self.recording_id}_tp{factor}' if affix_id else self.recording_id,
+        )
+
+    def perturb_volume(
+            self,
+            factor: float,
+            affix_id: bool = True
+    ) -> 'SupervisionSegment':
+        """
+        Return a ``SupervisionSegment`` with modified ids.
+
+        :param factor: The volume will be adjusted this many times (e.g. factor=1.1 means 1.1x louder).
+        :param affix_id: When true, we will modify the ``id`` and ``recording_id`` fields
+            by affixing it with "_vp{factor}".
+        :return: a modified copy of the current ``SupervisionSegment``.
+        """
+
+        return fastcopy(
+            self,
+            id=f'{self.id}_vp{factor}' if affix_id else self.id,
+            recording_id=f'{self.recording_id}_vp{factor}' if affix_id else self.recording_id
         )
 
     def trim(self, end: Seconds, start: Seconds = 0) -> 'SupervisionSegment':

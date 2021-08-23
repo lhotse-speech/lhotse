@@ -44,6 +44,7 @@ class SoxEffectTransform:
         >>> augment_fn = SoxEffectTransform(effects=[
         >>>    ['reverb', 50, 50, RandomValue(0, 100)],
         >>>    ['speed', RandomValue(0.9, 1.1)],
+        >>>    ['volume', RandomValue(0.125, 2.)],
         >>>    ['rate', 16000],
         >>> ])
         >>> augmented = augment_fn(audio, 16000)
@@ -296,6 +297,38 @@ class Tempo(AudioTransform):
         )
 
 
+@dataclass
+class Volume(AudioTransform):
+    """
+    Volume perturbation effect, the same one as invoked with `sox vol` in the command line.
+
+    It changes the amplitude of the original samples, so the absolute values of output samples will
+    be smaller or greater, depending on the vol factor.
+    """
+    factor: float
+
+    def __call__(self, samples: np.ndarray, sampling_rate: int) -> np.ndarray:
+        sampling_rate = int(sampling_rate)  # paranoia mode
+        effect = [['vol', str(self.factor)]]
+        if isinstance(samples, np.ndarray):
+            samples = torch.from_numpy(samples)
+        augmented, _ = torchaudio.sox_effects.apply_effects_tensor(samples, sampling_rate, effect)
+        return augmented.numpy()
+
+    def reverse_timestamps(
+            self,
+            offset: Seconds,
+            duration: Optional[Seconds],
+            sampling_rate: Optional[int] # Not used, made for compatibility purposes
+    ) -> Tuple[Seconds, Optional[Seconds]]:
+        """
+        This method just returnes the original offset and duration as volume perturbation
+        doesn't change any these audio properies.
+        """
+
+        return offset, duration
+
+
 def speed(sampling_rate: int) -> List[List[str]]:
     return [
         ['speed', RandomValue(0.9, 1.1)],
@@ -308,6 +341,10 @@ def reverb(sampling_rate: int) -> List[List[str]]:
         ['reverb', 50, 50, RandomValue(0, 100)],
         ['remix', '-'],  # Merge all channels (reverb changes mono to stereo)
     ]
+
+
+def volume(sampling_rate: int) -> List[List[str]]:
+    return [['vol', RandomValue(0.125, 2.)]]
 
 
 def pitch(sampling_rate: int) -> List[List[str]]:

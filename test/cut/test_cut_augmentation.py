@@ -1,5 +1,7 @@
 import pytest
 
+import numpy as np
+
 from lhotse import AudioSource, CutSet, MonoCut, Recording, SupervisionSegment
 from lhotse.cut import PaddingCut
 
@@ -134,10 +136,19 @@ def test_cut_set_perturb_speed_doesnt_duplicate_transforms(cut_with_supervision)
         assert len(cut.recording.transforms) == 1
 
 
+def test_cut_set_perturb_volume_doesnt_duplicate_transforms(cut_with_supervision):
+    cuts = CutSet.from_cuts([cut_with_supervision, cut_with_supervision.with_id('other-id')])
+    cuts_vp = cuts.perturb_volume(2.)
+    for cut in cuts_vp:
+        # This prevents a bug regression where multiple cuts referencing the same recording would
+        # attach transforms to the same manifest
+        assert len(cut.recording.transforms) == 1
+
+
 def test_cut_set_resample_doesnt_duplicate_transforms(cut_with_supervision):
     cuts = CutSet.from_cuts([cut_with_supervision, cut_with_supervision.with_id('other-id')])
-    cuts_sp = cuts.resample(44100)
-    for cut in cuts_sp:
+    cuts_res = cuts.resample(44100)
+    for cut in cuts_res:
         # This prevents a bug regression where multiple cuts referencing the same recording would
         # attach transforms to the same manifest
         assert len(cut.recording.transforms) == 1
@@ -208,7 +219,7 @@ def test_cut_start01_perturb_speed09(cut_with_supervision_start01):
     assert recording_samples.shape[1] == 4444
 
 
-def test_mixed_cut_start01_perturb(cut_with_supervision_start01):
+def test_mixed_cut_start01_perturb_speed(cut_with_supervision_start01):
     mixed_sp = (
         cut_with_supervision_start01
             .append(cut_with_supervision_start01)
@@ -231,14 +242,53 @@ def test_mixed_cut_start01_perturb(cut_with_supervision_start01):
     assert cut_samples.shape[1] == 2909 * 2
 
 
-def test_padding_cut_perturb():
+def test_mixed_cut_start01_perturb_volume(cut_with_supervision_start01):
+    mixed_vp = (
+        cut_with_supervision_start01
+            .append(cut_with_supervision_start01)
+            .perturb_volume(0.125)
+    )
+    assert mixed_vp.start == 0  # MixedCut always starts at 0
+    assert mixed_vp.duration == cut_with_supervision_start01.duration * 2
+    assert mixed_vp.end == cut_with_supervision_start01.duration * 2
+    assert mixed_vp.num_samples == cut_with_supervision_start01.num_samples * 2
+
+    assert mixed_vp.supervisions[0].start == cut_with_supervision_start01.supervisions[0].start
+    assert mixed_vp.supervisions[0].duration == cut_with_supervision_start01.supervisions[0].duration
+    assert mixed_vp.supervisions[0].end == cut_with_supervision_start01.supervisions[0].end
+    assert mixed_vp.supervisions[1].start == (cut_with_supervision_start01.duration +
+                                              cut_with_supervision_start01.supervisions[0].start)
+    assert mixed_vp.supervisions[1].duration == cut_with_supervision_start01.supervisions[0].duration
+    assert mixed_vp.supervisions[1].end == (cut_with_supervision_start01.duration +
+                                            cut_with_supervision_start01.supervisions[0].end)
+
+
+    cut_samples = mixed_vp.load_audio()
+    cut_with_supervision_start01_samples = cut_with_supervision_start01.load_audio()
+    assert (cut_samples.shape[0] == cut_with_supervision_start01_samples.shape[0] and
+            cut_samples.shape[1] == cut_with_supervision_start01_samples.shape[1] * 2)
+    np.testing.assert_array_almost_equal(
+        cut_samples,
+        np.hstack((cut_with_supervision_start01_samples, cut_with_supervision_start01_samples)) * 0.125
+    )
+
+
+def test_padding_cut_perturb_speed():
     cut = PaddingCut(id='cut', duration=5.75, sampling_rate=16000, feat_value=1e-10, num_samples=92000)
     cut_sp = cut.perturb_speed(1.1)
     assert cut_sp.num_samples == 83636
     assert cut_sp.duration == 5.22725
 
 
-def test_cut_set_perturb(cut_with_supervision, cut_with_supervision_start01):
+def test_padding_cut_perturb_volume():
+    cut = PaddingCut(id='cut', duration=5.75, sampling_rate=16000, feat_value=1e-10, num_samples=92000)
+    cut_vp = cut.perturb_volume(0.125)
+    assert cut_vp.num_samples == cut.num_samples
+    assert cut_vp.duration == cut.duration
+    np.testing.assert_array_almost_equal(cut_vp.load_audio(), cut.load_audio())
+
+
+def test_cut_set_perturb_speed(cut_with_supervision, cut_with_supervision_start01):
     cut_set = CutSet.from_cuts([cut_with_supervision, cut_with_supervision_start01])
     cs_sp = cut_set.perturb_speed(1.1)
     for cut_sp, cut in zip(cs_sp, cut_set):
@@ -248,19 +298,44 @@ def test_cut_set_perturb(cut_with_supervision, cut_with_supervision_start01):
 
 
 @pytest.fixture()
-def resampling_cuts(cut_with_supervision, cut_with_supervision_start01):
+def cut_set(cut_with_supervision, cut_with_supervision_start01):
     return CutSet.from_cuts([cut_with_supervision, cut_with_supervision_start01])
 
 
 @pytest.mark.parametrize('cut_id', ['cut', 'cut_start01'])
-def test_resample_cut(resampling_cuts, cut_id):
-    original = resampling_cuts[cut_id]
+def test_resample_cut(cut_set, cut_id):
+    original = cut_set[cut_id]
     resampled = original.resample(16000)
     assert original.sampling_rate == 8000
     assert resampled.sampling_rate == 16000
     assert resampled.num_samples == 2 * original.num_samples
     samples = resampled.load_audio()
     assert samples.shape[1] == resampled.num_samples
+
+
+@pytest.mark.parametrize('cut_id', ['cut', 'cut_start01'])
+@pytest.mark.parametrize('scale', [0.125, 2.])
+def test_cut_perturb_volume(cut_set, cut_id, scale):
+
+    cut = cut_set[cut_id]
+    cut_vp = cut.perturb_volume(scale)
+    assert cut_vp.start == cut.start
+    assert cut_vp.duration == cut.duration
+    assert cut_vp.end == cut.end
+    assert cut_vp.num_samples == cut.num_samples
+
+    assert cut_vp.recording.duration == cut.recording.duration
+    assert cut_vp.recording.num_samples == cut.recording.num_samples
+
+    assert cut_vp.supervisions[0].start == cut.supervisions[0].start
+    assert cut_vp.supervisions[0].duration == cut.supervisions[0].duration
+    assert cut_vp.supervisions[0].end == cut.supervisions[0].end
+
+    assert cut_vp.load_audio().shape == cut.load_audio().shape
+    assert cut_vp.recording.load_audio().shape == cut.recording.load_audio().shape
+
+    np.testing.assert_array_almost_equal(cut_vp.load_audio(), cut.load_audio() * scale)
+    np.testing.assert_array_almost_equal(cut_vp.recording.load_audio(), cut.recording.load_audio() * scale)
 
 
 def test_resample_padding_cut():
@@ -283,9 +358,9 @@ def test_resample_mixed_cut(cut_with_supervision_start01):
 
 
 @pytest.mark.parametrize('affix_id', [True, False])
-def test_resample_cut_set(resampling_cuts, affix_id):
-    resampled_cs = resampling_cuts.resample(16000, affix_id=affix_id)
-    for original, resampled in zip(resampling_cuts, resampled_cs):
+def test_resample_cut_set(cut_set, affix_id):
+    resampled_cs = cut_set.resample(16000, affix_id=affix_id)
+    for original, resampled in zip(cut_set, resampled_cs):
         if affix_id:
             assert original.id != resampled.id
             assert resampled.id.endswith('_rs16000')
@@ -296,3 +371,19 @@ def test_resample_cut_set(resampling_cuts, affix_id):
         assert resampled.num_samples == 2 * original.num_samples
         samples = resampled.load_audio()
         assert samples.shape[1] == resampled.num_samples
+
+
+@pytest.mark.parametrize('scale', [0.125, 2.])
+@pytest.mark.parametrize('affix_id', [True, False])
+def test_cut_set_perturb_volume(cut_set, affix_id, scale):
+    perturbed_vp_cs = cut_set.perturb_volume(scale, affix_id=affix_id)
+    for original, perturbed_vp in zip(cut_set, perturbed_vp_cs):
+        if affix_id:
+            assert original.id != perturbed_vp.id
+            assert perturbed_vp.id.endswith(f'_vp{scale}')
+        else:
+            assert original.id == perturbed_vp.id
+        assert original.sampling_rate == perturbed_vp.sampling_rate
+        assert original.num_samples == perturbed_vp.num_samples
+        assert original.load_audio().shape == perturbed_vp.load_audio().shape
+        np.testing.assert_array_almost_equal(perturbed_vp.load_audio(), original.load_audio() * scale)

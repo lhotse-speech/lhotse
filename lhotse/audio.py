@@ -17,7 +17,7 @@ from typing import Any, Callable, Dict, Iterable, List, Mapping, NamedTuple, Opt
 import numpy as np
 from tqdm.auto import tqdm
 
-from lhotse.augmentation import AudioTransform, Resample, Speed, Tempo
+from lhotse.augmentation import AudioTransform, Resample, Speed, Tempo, Volume
 from lhotse.serialization import Serializable
 from lhotse.utils import (Decibels, NonPositiveEnergyError, Pathlike, Seconds, SetContainingAnything, SmartOpen,
                           asdict_nonull, compute_num_samples, exactly_one_not_null, fastcopy, ifnone,
@@ -404,6 +404,23 @@ class Recording:
             transforms=transforms
         )
 
+    def perturb_volume(self, factor: float, affix_id: bool = True) -> 'Recording':
+        """
+        Return a new ``Recording`` that will lazily perturb the volume while loading audio.
+
+        :param factor: The volume scale to be applied (e.g. factor=1.1 means 1.1x louder).
+        :param affix_id: When true, we will modify the ``Recording.id`` field
+            by affixing it with "_tp{factor}".
+        :return: a modified copy of the current ``Recording``.
+        """
+        transforms = self.transforms.copy() if self.transforms is not None else []
+        transforms.append(Volume(factor=factor).to_dict())
+        return fastcopy(
+            self,
+            id=f'{self.id}_vp{factor}' if affix_id else self.id,
+            transforms=transforms
+        )
+
     def resample(self, sampling_rate: int) -> 'Recording':
         """
         Return a new ``Recording`` that will be lazily resampled while loading audio.
@@ -490,6 +507,7 @@ class RecordingSet(Serializable, Sequence[Recording]):
         and executed upon reading the audio::
 
             >>> recs_sp = recs.perturb_speed(factor=1.1)
+            >>> recs_vp = recs.perturb_volume(factor=2.)
             >>> recs_24k = recs.resample(24000)
     """
 
@@ -688,6 +706,17 @@ class RecordingSet(Serializable, Sequence[Recording]):
         :return: a ``RecordingSet`` containing the perturbed ``Recording`` objects.
         """
         return RecordingSet.from_recordings(r.perturb_tempo(factor=factor, affix_id=affix_id) for r in self)
+
+    def perturb_volume(self, factor: float, affix_id: bool = True) -> 'RecordingSet':
+        """
+        Return a new ``RecordingSet`` that will lazily perturb the volume while loading audio.
+
+        :param factor: The volume scale to be applied (e.g. factor=1.1 means 1.1x louder).
+        :param affix_id: When true, we will modify the ``Recording.id`` field
+            by affixing it with "_sp{factor}".
+        :return: a ``RecordingSet`` containing the perturbed ``Recording`` objects.
+        """
+        return RecordingSet.from_recordings(r.perturb_volume(factor=factor, affix_id=affix_id) for r in self)
 
     def resample(self, sampling_rate: int) -> 'RecordingSet':
         """
