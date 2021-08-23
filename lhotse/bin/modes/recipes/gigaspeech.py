@@ -12,7 +12,7 @@ from lhotse.utils import Pathlike
 @click.argument('corpus_dir', type=click.Path(exists=True, dir_okay=True))
 @click.argument('output_dir', type=click.Path())
 @click.option('--subset', type=click.Choice(('auto',) + GIGASPEECH_PARTS), multiple=True,
-              default=['auto'], help='Which parts of Gigaspeech to download (by default {XL} + {DEV} + {TEST}).')
+              default=['auto'], help='Which parts of Gigaspeech to download (by default XL + DEV + TEST).')
 @click.option('-j', '--num-jobs', type=int, default=1,
               help='How many threads to use (can give good speed-ups with slow disks).')
 def gigaspeech(
@@ -32,7 +32,7 @@ def gigaspeech(
 @click.argument('password', type=str)
 @click.argument('target_dir', type=click.Path())
 @click.option('--subset', type=click.Choice(('auto',) + GIGASPEECH_PARTS), multiple=True,
-              default=['auto'], help='Which parts of Gigaspeech to download (by default {XL} + {DEV} + {TEST}).')
+              default=['auto'], help='Which parts of Gigaspeech to download (by default XL + DEV + TEST).')
 @click.option('--host', type=str, default='tsinghua', help='Which host to download Gigaspeech.')
 def gigaspeech(
         password: str,

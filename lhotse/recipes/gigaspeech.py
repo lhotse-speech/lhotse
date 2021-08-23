@@ -34,13 +34,13 @@ def download_gigaspeech(
             'To process the GigaSpeech corpus, please install optional dependency: pip install speechcolab')
     gigaspeech = GigaSpeech(target_dir)
 
-    subsets = ('{XL}', '{DEV}', '{TEST}') if dataset_parts == 'auto' else dataset_parts
+    subsets = ('XL', 'DEV', 'TEST') if dataset_parts == 'auto' else dataset_parts
     if isinstance(subsets, str):
         subsets = [subsets]
 
     for part in subsets:
         logging.info(f'Downloading GigaSpeech part: {part}')
-        gigaspeech.download(password, part, host=host)
+        gigaspeech.download(password, '{' + part + '}', host=host)
 
 
 def prepare_gigaspeech(
@@ -55,7 +55,7 @@ def prepare_gigaspeech(
         raise ImportError(
             'To process the GigaSpeech corpus, please install optional dependency: pip install speechcolab')
 
-    subsets = ('{XL}', '{DEV}', '{TEST}') if dataset_parts == 'auto' else dataset_parts
+    subsets = ('XL', 'DEV', 'TEST') if dataset_parts == 'auto' else dataset_parts
     if isinstance(subsets, str):
         subsets = [subsets]
     corpus_dir = Path(corpus_dir)
@@ -89,7 +89,7 @@ def prepare_gigaspeech(
             recordings = []
             supervisions = []
             for recording, segments in tqdm(
-                    ex.map(parse_utterance, gigaspeech.audios(part), repeat(gigaspeech.gigaspeech_dataset_dir)),
+                    ex.map(parse_utterance, gigaspeech.audios('{' + part + '}'), repeat(gigaspeech.gigaspeech_dataset_dir)),
                     desc='Processing GigaSpeech JSON entries'
             ):
                 recordings.append(recording)
