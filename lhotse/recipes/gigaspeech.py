@@ -89,7 +89,7 @@ def prepare_gigaspeech(
             recordings = []
             supervisions = []
             for recording, segments in tqdm(
-                    ex.map(parse_utterance, gigaspeech.audios('{' + part + '}'), repeat(gigaspeech.root_path)),
+                    ex.map(parse_utterance, gigaspeech.audios(part), repeat(gigaspeech.gigaspeech_dataset_dir)),
                     desc='Processing GigaSpeech JSON entries'
             ):
                 recordings.append(recording)
