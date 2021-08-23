@@ -20,13 +20,12 @@ from lhotse.recipes.utils import manifests_exist, read_manifests_if_cached
 from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import Pathlike, Seconds, is_module_available
 
-GIGASPEECH_PARTS = ('XL', 'L', 'M', 'S', 'XS', 'DEV', 'TEST')
-
 
 def download_gigaspeech(
         password: str,
         target_dir: Pathlike = '.',
         dataset_parts: Optional[Union[str, Sequence[str]]] = "auto",
+        host: Optional[str] = 'tsinghua'
 ):
     if is_module_available('speechcolab'):
         from speechcolab.datasets.gigaspeech import GigaSpeech
@@ -35,14 +34,13 @@ def download_gigaspeech(
             'To process the GigaSpeech corpus, please install optional dependency: pip install speechcolab')
     gigaspeech = GigaSpeech(target_dir)
 
-    if dataset_parts == 'auto':
-        dataset_parts = ('XL', 'DEV', 'TEST')
-    elif isinstance(dataset_parts, str):
-        dataset_parts = [dataset_parts]
+    subsets = ('{XL}', '{DEV}', '{TEST}') if dataset_parts == 'auto' else dataset_parts
+    if isinstance(subsets, str):
+        subsets = [subsets]
 
-    for part in dataset_parts:
+    for part in subsets:
         logging.info(f'Downloading GigaSpeech part: {part}')
-        gigaspeech.download(password, '{' + part + '}')
+        gigaspeech.download(password, part, host=host)
 
 
 def prepare_gigaspeech(
@@ -57,7 +55,7 @@ def prepare_gigaspeech(
         raise ImportError(
             'To process the GigaSpeech corpus, please install optional dependency: pip install speechcolab')
 
-    subsets = ('XL', 'DEV', 'TEST') if dataset_parts == 'auto' else dataset_parts
+    subsets = ('{XL}', '{DEV}', '{TEST}') if dataset_parts == 'auto' else dataset_parts
     if isinstance(subsets, str):
         subsets = [subsets]
     corpus_dir = Path(corpus_dir)
