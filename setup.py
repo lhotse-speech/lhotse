@@ -90,9 +90,6 @@ setup(
     long_description_content_type="text/markdown",
     license='Apache-2.0 License',
     packages=find_packages(),
-    # The line below makes every script in the list an executable that's inserted in PATH
-    # as long as the virtualenv/conda env is active; they can be used like any other shell program
-    # scripts=['lhotse/bin/lhotse'],
     entry_points={
         "console_scripts": [
             "lhotse=lhotse.bin.lhotse:cli",

@@ -18,7 +18,8 @@ $ lhotse cut --help
 $ lhotse cut simple supervisions.yml features.yml simple_cuts.yml
 $ lhotse cut stereo-mixed supervisions.yml features.yml mixed_cuts.yml
 """
-from lhotse.bin.modes import *
 
-#if __name__ == '__main__':
-#    cli()
+# Note: we import all the CLI modes here so they get auto-registered
+#       in Lhotse's main CLI entry-point. Then, setuptools is told to
+#       invoke the "cli()" method from this script.
+from lhotse.bin.modes import *
