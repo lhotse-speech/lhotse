@@ -20,5 +20,5 @@ $ lhotse cut stereo-mixed supervisions.yml features.yml mixed_cuts.yml
 """
 from lhotse.bin.modes import *
 
-if __name__ == '__main__':
-    cli()
+#if __name__ == '__main__':
+#    cli()

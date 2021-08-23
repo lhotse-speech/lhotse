@@ -92,7 +92,12 @@ setup(
     packages=find_packages(),
     # The line below makes every script in the list an executable that's inserted in PATH
     # as long as the virtualenv/conda env is active; they can be used like any other shell program
-    scripts=['lhotse/bin/lhotse'],
+    # scripts=['lhotse/bin/lhotse'],
+    entry_points={
+        "console_scripts": [
+            "lhotse=lhotse.bin.lhotse:cli",
+        ]
+    },
     install_requires=install_requires,
     extras_require={
         'docs': docs_require,
