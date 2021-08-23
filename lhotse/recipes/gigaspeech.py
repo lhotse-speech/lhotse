@@ -20,8 +20,7 @@ from lhotse.recipes.utils import manifests_exist, read_manifests_if_cached
 from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import Pathlike, Seconds, is_module_available
 
-
-GIGASPEECH_PARTS = ('XS', 'S', 'M', 'L', 'XL', 'DEV', 'TEST')
+GIGASPEECH_PARTS = ('XL', 'L', 'M', 'S', 'XS', 'DEV', 'TEST')
 
 
 def download_gigaspeech(
