@@ -100,7 +100,7 @@ try:
         install_requires.append("torchaudio==0.7.2")
     else:
         raise ValueError(
-            f"Lhotse requires torch>=1.7.1 and torchaudio 1.7.2 -- "
+            f"Lhotse requires torch>=1.7.1 and torchaudio>=0.7.2 -- "
             f"please update your torch (detected version: {torch_ver})."
         )
 except ImportError:
