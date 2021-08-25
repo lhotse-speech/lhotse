@@ -2,64 +2,12 @@
 import os
 from distutils.version import LooseVersion
 from pathlib import Path
-from subprocess import PIPE, run
 
 from setuptools import find_packages, setup
 
+from lhotse.version import discover_lhotse_version
+
 project_root = Path(__file__).parent
-
-
-def discover_lhotse_version():
-    """
-    Scans Lhotse source code to determine the current version.
-    When development version is detected, it queries git for the commit hash
-    to append it as a local version identifier.
-    """
-
-    # Read the version from "lhotse.__version__"
-    try:
-        version_line = [
-            line
-            for line in (project_root / "lhotse" / "__init__.py")
-            .read_text()
-            .splitlines()
-            if line.startswith("__version__ = ")
-        ][0]
-        version = version_line.split('"')[1]
-    except IndexError:
-        print("Unable to discover Lhotse's version: specifying placeholder 0.0.0.dev0")
-        version = "0.0.0.dev0"
-
-    # .dev suffix is only going to be removed for public releases
-    if ".dev" not in version:
-        return version
-
-    # This is not a PyPI release -- try to read the git commit
-    try:
-        git_commit = (
-            run(["git", "rev-parse", "--short", "HEAD"], check=True, stdout=PIPE)
-            .stdout.decode()
-            .rstrip("\n")
-            .strip()
-        )
-        dirty_commit = (
-            len(
-                run(["git", "diff", "--shortstat"], check=True, stdout=PIPE)
-                .stdout.decode()
-                .rstrip("\n")
-                .strip()
-            )
-            > 0
-        )
-        git_commit = git_commit + ".dirty" if dirty_commit else git_commit + ".clean"
-    except Exception:
-        git_commit = ".unknowncommit"
-    # See the format:
-    # https://packaging.python.org/guides/distributing-packages-using-setuptools/#local-version-identifiers
-    version = version + '+git.' + git_commit
-
-    return version
-
 
 LHOTSE_VERSION = discover_lhotse_version()
 
@@ -138,7 +86,7 @@ setup(
     long_description=(project_root / "README.md").read_text(encoding="utf-8"),
     long_description_content_type="text/markdown",
     license="Apache-2.0 License",
-    packages=find_packages(exclude=['*test*']),
+    packages=find_packages(exclude=["*test*"]),
     include_package_data=True,
     entry_points={
         "console_scripts": [
