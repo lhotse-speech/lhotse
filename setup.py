@@ -138,7 +138,8 @@ setup(
     long_description=(project_root / "README.md").read_text(encoding="utf-8"),
     long_description_content_type="text/markdown",
     license="Apache-2.0 License",
-    packages=find_packages(),
+    packages=find_packages(exclude=['*test*']),
+    include_package_data=True,
     entry_points={
         "console_scripts": [
             "lhotse=lhotse.bin.lhotse:cli",

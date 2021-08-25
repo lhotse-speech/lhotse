@@ -1,0 +1,7 @@
+include LICENSE README.md
+recursive-exclude * __pycache__
+recursive-exclude * *.pyc
+recursive-exclude * *.pyo
+recursive-exclude * *.orig
+prune docs*
+prune test*
