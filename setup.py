@@ -2,14 +2,82 @@
 import os
 from distutils.version import LooseVersion
 from pathlib import Path
+from subprocess import DEVNULL, PIPE, run
 
 from setuptools import find_packages, setup
 
-from lhotse.version import discover_lhotse_version
-
 project_root = Path(__file__).parent
 
+MAJOR_VERSION = 0
+MINOR_VERSION = 8
+PATCH_VERSION = 0
+IS_DEV_VERSION = False  # False = public release, True = otherwise
+
+
+def discover_lhotse_version() -> str:
+    """
+    Scans Lhotse source code to determine the current version.
+    When development version is detected, it queries git for the commit hash
+    to append it as a local version identifier.
+
+    Ideally this function would have been imported from lhotse.version and
+    re-used when lhotse is imported to set the version, but it introduces
+    a circular dependency. To avoid this, we write the determined version
+    into project_root / 'lhotse' / 'version.py' during setup and read it
+    from there later. If it's not detected, the version will be 0.0.0.dev.
+    """
+
+    version = f"{MAJOR_VERSION}.{MINOR_VERSION}.{PATCH_VERSION}"
+    if not IS_DEV_VERSION:
+        # This is a PyPI public release -- return a clean version string.
+        return version
+
+    version = version + ".dev"
+
+    # This is not a PyPI release -- try to read the git commit
+    try:
+        git_commit = (
+            run(
+                ["git", "rev-parse", "--short", "HEAD"],
+                check=True,
+                stdout=PIPE,
+                stderr=DEVNULL,
+            )
+                .stdout.decode()
+                .rstrip("\n")
+                .strip()
+        )
+        dirty_commit = (
+                len(
+                    run(
+                        ["git", "diff", "--shortstat"],
+                        check=True,
+                        stdout=PIPE,
+                        stderr=DEVNULL,
+                    )
+                        .stdout.decode()
+                        .rstrip("\n")
+                        .strip()
+                )
+                > 0
+        )
+        git_commit = git_commit + ".dirty" if dirty_commit else git_commit + ".clean"
+        source_version = f"+git.{git_commit}"
+    except Exception:
+        source_version = ".unknownsource"
+    # See the format:
+    # https://packaging.python.org/guides/distributing-packages-using-setuptools/#local-version-identifiers
+    version = version + source_version
+
+    return version
+
+
+def mark_lhotse_version(version: str) -> None:
+    (project_root / 'lhotse' / 'version.py').write_text(f'__version__ = "{version}"')
+
+
 LHOTSE_VERSION = discover_lhotse_version()
+mark_lhotse_version(LHOTSE_VERSION)
 
 
 install_requires = [
