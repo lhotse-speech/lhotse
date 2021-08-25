@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 
 set -eou pipefail  # "strict" mode
-set -x  # show executed commands
 
 if grep '__version__' lhotse/__init__.py | grep '\.dev'; then
   echo 'It seems you are trying to release a development version of Lhotse.'
@@ -10,8 +9,10 @@ if grep '__version__' lhotse/__init__.py | grep '\.dev'; then
   exit 1
 fi
 
+set -x  # show executed commands
+
 # Clean up old builds.
-rm -rf dist/ build/
+rm -rf dist/ build/ lhotse.egg_info/
 
 # Build wheels and package current source code
 python setup.py sdist bdist_wheel
