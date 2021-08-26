@@ -2,7 +2,7 @@ import warnings
 
 with warnings.catch_warnings():
     # Those torchaudio warnings are a real nuisance
-    warnings.simplefilter('ignore')
+    warnings.simplefilter("ignore")
     # noinspection PyUnresolvedReferences
     import torchaudio
 
@@ -16,6 +16,13 @@ from .serialization import load_manifest, store_manifest
 from .supervision import SupervisionSegment, SupervisionSet
 from .tools.env import add_tools_to_path as _add_tools_to_path
 from .qa import validate, validate_recordings_and_supervisions, fix_manifests
+
+try:
+    # Try to get Lhotse's version (should be created during running pip install / python setup.py ...)
+    from .version import __version__
+except:
+    # Use a default placeholder when the version is unavailable...
+    __version__ = '0.0.0.dev'
 
 from . import augmentation
 from . import dataset
