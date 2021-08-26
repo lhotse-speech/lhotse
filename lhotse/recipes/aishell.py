@@ -5,6 +5,7 @@ publicly availble on https://www.openslr.org/33
 """
 
 import logging
+import os
 import shutil
 import tarfile
 from collections import defaultdict
@@ -48,6 +49,11 @@ def download_aishell(
         shutil.rmtree(extracted_dir, ignore_errors=True)
         with tarfile.open(tar_path) as tar:
             tar.extractall(path=corpus_dir)
+        if tar_name == dataset_tar_name:
+            wav_dir = extracted_dir / "wav"
+            for sub_tar_name in os.listdir(wav_dir):
+                with tarfile.open(wav_dir / sub_tar_name) as tar:
+                    tar.extractall(path=wav_dir)
         completed_detector.touch()
 
 
