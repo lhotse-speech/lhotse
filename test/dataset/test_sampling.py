@@ -734,7 +734,7 @@ def test_cut_pairs_sampler_filter():
     assert len(set(c.id for c in target_cuts)) == len(target_cuts)
 
 
-def test_zip_sampler():
+def test_zip_sampler_merge_batches_true():
     cuts1 = DummyManifest(CutSet, begin_id=0, end_id=100)
     cuts2 = DummyManifest(CutSet, begin_id=1000, end_id=1100)
     sampler = ZipSampler(
@@ -748,6 +748,24 @@ def test_zip_sampler():
         assert len(batch) == 12  # twelve 1s items
         assert len([c for c in batch if 0 <= int(c.id.split('-')[-1]) <= 100]) == 10  # ten come from cuts1
         assert len([c for c in batch if 1000 <= int(c.id.split('-')[-1]) <= 1100]) == 2  # two come from cuts2
+
+
+def test_zip_sampler_merge_batches_false():
+    cuts1 = DummyManifest(CutSet, begin_id=0, end_id=100)
+    cuts2 = DummyManifest(CutSet, begin_id=1000, end_id=1100)
+    sampler = ZipSampler(
+        # Note: each cut is 1s duration in this test.
+        SingleCutSampler(cuts1, max_duration=10),
+        SingleCutSampler(cuts2, max_duration=2),
+        merge_batches=False
+    )
+    batches = [b for b in sampler]
+    assert len(batches) == 10
+    for idx, (batch_sampler1, batch_sampler2) in enumerate(batches):
+        assert len(batch_sampler1) == 10
+        assert len([c for c in batch_sampler1 if 0 <= int(c.id.split('-')[-1]) <= 100]) == 10  # ten come from cuts1
+        assert len(batch_sampler2) == 2
+        assert len([c for c in batch_sampler2 if 1000 <= int(c.id.split('-')[-1]) <= 1100]) == 2  # two come from cuts2
 
 
 def test_single_cut_sampler_drop_last():
