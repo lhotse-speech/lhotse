@@ -1,6 +1,6 @@
 from functools import reduce
 from operator import add
-from typing import Callable, Optional
+from typing import Callable, List, Optional, Tuple, Union
 
 from lhotse import CutSet
 from lhotse.cut import Cut
@@ -28,9 +28,17 @@ class ZipSampler(CutSampler):
         ...     pass  # profit
     """
 
-    def __init__(self, *samplers: CutSampler) -> None:
+    def __init__(self, *samplers: CutSampler, merge_batches: bool = True) -> None:
+        """
+        ZipSampler's constructor.
+
+        :param samplers: The list of samplers from which we sample batches together.
+        :param merge_batches: Should we merge the batches from each sampler into a single CutSet,
+            or return a tuple of CutSets.
+        """
         super().__init__()
         self.samplers = samplers
+        self.merge_batches = merge_batches
 
     @property
     def remaining_duration(self) -> Optional[float]:
@@ -75,11 +83,22 @@ class ZipSampler(CutSampler):
             iter(sampler)
         return self
 
-    def _next_batch(self) -> CutSet:
-        cuts = []
-        for sampler in self.samplers:
-            cuts.extend(next(sampler))
-        return CutSet.from_cuts(cuts)
+    def _next_batch(self) -> Union[CutSet, Tuple[CutSet]]:
+        if self.merge_batches:
+            # Take a batch from each sampler and merge it.
+            # Useful when the Dataset class doesn't treat
+            # different sources of cuts in any different way.
+            cuts: List[Cut] = []
+            for sampler in self.samplers:
+                cuts.extend(next(sampler))
+            return CutSet.from_cuts(cuts)
+        else:
+            # Take a batch from each sampler and return tuple of batches.
+            # Useful when the Dataset treats each source differently.
+            cuts: List[CutSet] = []
+            for sampler in self.samplers:
+                cuts.append(next(sampler))
+            return tuple(cuts)
 
     def set_epoch(self, epoch: int) -> None:
         """
