@@ -10,7 +10,8 @@ from lhotse.dataset.sampling.base import CutSampler
 class ZipSampler(CutSampler):
     """
     :class:`.ZipSampler` takes several samplers as input and concatenates their
-    sampled batch cuts together into a single list.
+    sampled mini-batch cuts together into a single :class:`~lhotse.cut.CutSet`,
+    or returns a tuple of the mini-batch CutSets.
     It is helpful for ensuring that each batch consists of some proportion of cuts
     coming from different sources.
 
@@ -34,7 +35,8 @@ class ZipSampler(CutSampler):
 
         :param samplers: The list of samplers from which we sample batches together.
         :param merge_batches: Should we merge the batches from each sampler into a single CutSet,
-            or return a tuple of CutSets.
+            or return a tuple of CutSets. Setting this to ``False`` makes ZipSampler behave
+            more like Python's ``zip`` function.
         """
         super().__init__()
         self.samplers = samplers
