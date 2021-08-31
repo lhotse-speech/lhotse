@@ -3,7 +3,7 @@ import warnings
 from functools import reduce
 from itertools import chain
 from operator import add
-from typing import Callable, Dict, List, Optional, Tuple, Type
+from typing import Any, Callable, Dict, List, Optional, Tuple, Type
 
 import numpy as np
 from typing_extensions import Literal
@@ -55,7 +55,7 @@ class BucketingSampler(CutSampler):
             drop_last: bool = False,
             proportional_sampling: bool = True,
             seed: int = 0,
-            **kwargs: Dict,
+            **kwargs: Any,
     ) -> None:
         """
         BucketingSampler's constructor.
