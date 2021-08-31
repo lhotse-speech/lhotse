@@ -144,8 +144,9 @@ class SingleCutSampler(CutSampler):
                     raise StopIteration()
 
             # Check whether the cut we're about to sample satisfies optional user-requested predicate.
-            if self._filter_fn is not None and not self._filter_fn(next_cut):
+            if not self._filter_fn(next_cut):
                 # No - try another one.
+                self.diagnostics.discard_single(next_cut)
                 continue
 
             # Track the duration/frames/etc. constraints.

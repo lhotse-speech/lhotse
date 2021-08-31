@@ -162,11 +162,12 @@ class CutPairsSampler(CutSampler):
                     raise StopIteration()
 
             # Check whether the cuts we're about to sample satisfy optional user-requested predicate.
-            if self._filter_fn is not None and (
+            if (
                     not self._filter_fn(next_source_cut)
                     or not self._filter_fn(next_target_cut)
             ):
                 # No - try another one.
+                self.diagnostics.discard_single(next_source_cut)
                 continue
 
             self.source_constraints.add(next_source_cut)
