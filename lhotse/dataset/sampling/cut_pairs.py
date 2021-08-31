@@ -58,7 +58,6 @@ class CutPairsSampler(CutSampler):
         :param seed: Random seed used to consistently shuffle the dataset across different processes.
         """
         super().__init__(
-            provide_len=not source_cuts.is_lazy and not target_cuts.is_lazy,
             shuffle=shuffle,
             world_size=world_size,
             rank=rank,
