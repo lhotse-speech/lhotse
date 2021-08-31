@@ -54,7 +54,6 @@ class CutSampler(Sampler):
             world_size: Optional[int] = None,
             rank: Optional[int] = None,
             seed: int = 0,
-            provide_len: bool = True,
     ) -> None:
         """
         :param shuffle: When ``True``, the cuts will be shuffled at the start of iteration.
@@ -64,18 +63,13 @@ class CutSampler(Sampler):
         :param world_size: Total number of distributed nodes. We will try to infer it by default.
         :param rank: Index of distributed node. We will try to infer it by default.
         :param seed: Random seed used to consistently shuffle the dataset across different processes.
-        :param provide_len: Should we expose the ``__len__`` attribute in this class.
-            It makes sense to turn it off when iterating the sampler is somewhat costly for any reason;
-            e.g. because the underlying manifest is lazily loaded from the filesystem/somewhere else.
         """
         super().__init__(data_source=None)  # the "data_source" arg is not used in Sampler...
         self.shuffle = shuffle
         self.seed = seed
         self.epoch = 0
-        self.provide_len = provide_len
 
         self._maybe_init_distributed(world_size=world_size, rank=rank)
-        self.num_batches = None
         # By default, self._filter_fn passes every Cut through.
         self._filter_fn: Callable[[Cut], bool] = lambda cut: True
         self.diagnostics = SamplingDiagnostics()
@@ -110,9 +104,6 @@ class CutSampler(Sampler):
         Can be useful when handling large, lazy manifests where it is not feasible to
         pre-filter them before instantiating the sampler.
 
-        When set, we will remove the ``__len__`` attribute on the sampler, as it is now
-        determined dynamically.
-
         Example:
             >>> cuts = CutSet(...)
             ... sampler = SingleCutSampler(cuts, max_duration=100.0)
@@ -120,7 +111,6 @@ class CutSampler(Sampler):
             ... sampler.filter(lambda cut: 1.0 <= cut.duration <= 20.0)
         """
         self._filter_fn = predicate
-        self.provide_len = False
 
     def __iter__(self):
         raise NotImplementedError(
@@ -161,14 +151,6 @@ class CutSampler(Sampler):
         raise NotImplementedError(
             'Sub-classes of CutSampler have to implement self.num_cuts'
         )
-
-    def __len__(self) -> int:
-        if not self.provide_len:
-            # Fake non-existence of this attribute
-            raise TypeError(f"object of type '{type(self).__name__}' has no len()")
-        if self.num_batches is None:
-            self.num_batches = sum(1 for _ in self)
-        return self.num_batches
 
     def __next__(self):
         # We use the following trick to ensure equal number of batches for each distributed
