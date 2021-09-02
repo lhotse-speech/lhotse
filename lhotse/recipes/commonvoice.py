@@ -1,6 +1,7 @@
 import logging
 import shutil
 import tarfile
+from collections import defaultdict
 from concurrent.futures.thread import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any, Dict, Iterable, Optional, Sequence, Tuple, Union
@@ -221,9 +222,8 @@ def read_cv_manifests_if_cached(
     """
     if output_dir is None:
         return {}
-    manifests = {}
+    manifests = defaultdict(dict)
     for part in ["train", "dev", "test"]:
-        manifests[part] = {}
         for manifest in ["recordings", "supervisions"]:
             path = output_dir / f"cv_{manifest}_{language}_{part}.jsonl.gz"
             if not path.is_file():
