@@ -14,6 +14,7 @@ import numpy as np
 import torch
 from tqdm.auto import tqdm
 
+from lhotse.array import Array
 from lhotse.audio import Recording
 from lhotse.augmentation import AugmentFn
 from lhotse.features.io import FeaturesWriter, get_reader
@@ -301,38 +302,28 @@ class TorchaudioFeatureExtractor(FeatureExtractor):
         return self.config.frame_shift
 
 
-@dataclass(order=True)
-class Features:
+class Features(Array):
     """
-    Represents features extracted for some particular time range in a given recording and channel.
-    It contains metadata about how it's stored: storage_type describes "how to read it", for now
-    it supports numpy arrays serialized with np.save, as well as arrays compressed with lilcom;
-    storage_path is the path to the file on the local filesystem.
     """
+    temporal_axis = 1
+
     # Useful information about the features - their type (fbank, mfcc) and shape
     type: str
-    num_frames: int
-    num_features: int
+
+    @property
+    def num_frames(self) -> int:
+        return self.shape[0]
+
+    @property
+    def num_features(self) -> int:
+        return self.shape[1]
+
     frame_shift: Seconds
     sampling_rate: int
 
     # Information about the time range of the features.
     start: Seconds
     duration: Seconds
-
-    # Parameters related to storage - they define how to load the feature matrix.
-
-    # Storage type defines which features reader type should be instantiated
-    # e.g. 'lilcom_files', 'numpy_files', 'lilcom_hdf5'
-    storage_type: str
-
-    # Storage path is either the path to some kind of archive (like HDF5 file) or a path
-    # to a directory holding files with feature matrices (exact semantics depend on storage_type).
-    storage_path: str
-
-    # Storage key is either the key used to retrieve a feautre matrix from an archive like HDF5,
-    # or the name of the file in a directory (exact semantics depend on the storage_type).
-    storage_key: str
 
     # Information which recording and channels were used to extract the features.
     # When ``recording_id`` and ``channels`` are ``None``, it means that the
@@ -378,21 +369,6 @@ class Features:
 
     def with_path_prefix(self, path: Pathlike) -> 'Features':
         return fastcopy(self, storage_path=str(Path(path) / self.storage_path))
-
-    def to_dict(self) -> dict:
-        return asdict_nonull(self)
-
-    @staticmethod
-    def from_dict(data: dict) -> 'Features':
-        # The "storage_type" check is to ensure that the "data" dict actually contains
-        # the data for a "Features" object, and not something else.
-        # Some Lhotse utilities try to "guess" what is the right object type via trial-and-error,
-        # and would have created a false alarm here.
-        if 'frame_shift' not in data and 'storage_type' in data:
-            warnings.warn('The "frame_shift" field was not found in a feature manifest; '
-                          'we\'ll try to infer it for now, but you should recreate the manifests.')
-            data['frame_shift'] = round(data['duration'] / data['num_frames'], ndigits=3)
-        return Features(**data)
 
 
 class FeatureSet(Serializable, Sequence[Features]):
