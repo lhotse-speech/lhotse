@@ -189,7 +189,7 @@ def parse_utterance(
     row: Any, dataset_split_path: Path, language: str
 ) -> Optional[Tuple[Recording, SupervisionSegment]]:
     # Create the Recording first
-    audio_path = dataset_split_path / dataset_split_path / "clips" / row.path
+    audio_path = dataset_split_path / "clips" / row.path
     if not audio_path.is_file():
         logging.warning(f"No such file: {audio_path}")
         return None
