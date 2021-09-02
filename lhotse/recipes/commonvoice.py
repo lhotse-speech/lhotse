@@ -16,7 +16,9 @@ from lhotse.supervision import AlignmentItem, SupervisionSegment, SupervisionSet
 from lhotse.utils import Pathlike, is_module_available, urlretrieve_progress
 
 
-DEFAULT_COMMONVOICE_URL = "https://voice-prod-bundler-ee1969a6ce8178826482b88e843c335139bd3fb4.s3.amazonaws.com/cv-corpus-5.1-2020-06-22"
+DEFAULT_COMMONVOICE_URL = "https://voice-prod-bundler-ee1969a6ce8178826482b88e843c335139bd3fb4.s3.amazonaws.com"
+DEFAULT_COMMONVOICE_RELEASE = "cv-corpus-5.1-2020-06-22"
+
 
 COMMONVOICE_LANGS = "en de fr cy tt kab ca zh-TW it fa eu es ru tr nl eo zh-CN rw pt zh-HK cs pl uk".split()
 
@@ -26,6 +28,7 @@ def download_commonvoice(
         languages: Union[str, Iterable[str]] = 'all',
         force_download: bool = False,
         base_url: str = DEFAULT_COMMONVOICE_URL,
+        release: str = DEFAULT_COMMONVOICE_RELEASE
 ) -> None:
     """
     Download and untar the CommonVoice dataset.
@@ -35,9 +38,12 @@ def download_commonvoice(
         or a list of language codes.
     :param force_download: Bool, if True, download the tars no matter if the tars exist.
     :param base_url: str, the base URL for CommonVoice.
+    :param release: str, the name of the CommonVoice release (e.g., "cv-corpus-5.1-2020-06-22").
+        It is used as part of the download URL.
     """
     target_dir = Path(target_dir)
     target_dir.mkdir(parents=True, exist_ok=True)
+    url = f'{base_url}/{release}'
 
     if languages == "all":
         languages = COMMONVOICE_LANGS
@@ -50,7 +56,7 @@ def download_commonvoice(
     for lang in tqdm(languages, desc='Downloading CommonVoice languages'):
         logging.info(f'Language: {lang}')
         # Split directory exists and seem valid? Skip this split.
-        part_dir = target_dir / 'CommonVoice' / lang
+        part_dir = target_dir / release / lang
         completed_detector = part_dir / '.completed'
         if completed_detector.is_file():
             logging.info(f'Skipping {lang} because {completed_detector} exists.')
@@ -59,7 +65,7 @@ def download_commonvoice(
         tar_name = f'{lang}.tar.gz'
         tar_path = target_dir / tar_name
         if force_download or not tar_path.is_file():
-            urlretrieve_progress(f'{base_url}/{tar_name}', filename=tar_path, desc=f'Downloading {tar_name}')
+            urlretrieve_progress(url, filename=tar_path, desc=f'Downloading {tar_name}')
         # Remove partial unpacked files, if any, and unpack everything.
         shutil.rmtree(part_dir, ignore_errors=True)
         with tarfile.open(tar_path) as tar:
