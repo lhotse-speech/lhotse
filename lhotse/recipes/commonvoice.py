@@ -175,7 +175,12 @@ def prepare_commonvoice(
                         output_dir / f"cv_recordings_{lang}_{part}.jsonl.gz"
                     )
 
-                manifests[lang] = lang_manifests
+                lang_manifests[part] = {
+                    'supervisions': supervision_set,
+                    'recordings': recording_set
+                }
+
+            manifests[lang] = lang_manifests
 
     return manifests
 
