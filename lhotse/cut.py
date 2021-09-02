@@ -2275,7 +2275,8 @@ class CutSet(Serializable, Sequence[Cut]):
             >>> test_set = cuts.subset(supervision_ids=test_ids)
 
         :param supervision_ids: List of supervision IDs to keep.
-        :param cut_ids: List of cut IDs to keep. The returned
+        :param cut_ids: List of cut IDs to keep.
+            The returned :class:`.CutSet` preserves the order of `cut_ids`.
         :param first: int, the number of first cuts to keep.
         :param last: int, the number of last cuts to keep.
         :return: a new ``CutSet`` with the subset results.
