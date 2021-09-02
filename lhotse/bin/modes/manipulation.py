@@ -47,7 +47,7 @@ def split(num_splits: int, manifest: Pathlike, output_dir: Pathlike, shuffle: bo
     parts = any_set.split(num_splits=num_splits, shuffle=shuffle)
     output_dir.mkdir(parents=True, exist_ok=True)
     for idx, part in enumerate(parts):
-        part.to_file((output_dir / manifest).with_suffix(f'.{idx + 1}{suffix}'))
+        part.to_file((output_dir / manifest.stem).with_suffix(f'.{idx + 1}{suffix}'))
 
 
 @cli.command()
