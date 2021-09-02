@@ -121,9 +121,6 @@ class ZipSampler(CutSampler):
         Can be useful when handling large, lazy manifests where it is not feasible to
         pre-filter them before instantiating the sampler.
 
-        When set, we will remove the ``__len__`` attribute on the sampler, as it is now
-        determined dynamically.
-
         Example:
             >>> cuts = CutSet(...)
             ... sampler = SingleCutSampler(cuts, max_duration=100.0)
@@ -132,11 +129,6 @@ class ZipSampler(CutSampler):
         """
         for sampler in self.samplers:
             sampler.filter(predicate)
-
-    def __len__(self):
-        if self.num_batches is None:
-            self.num_batches = min(len(sampler) for sampler in self.samplers)
-        return self.num_batches
 
     def get_report(self) -> str:
         """Returns a string describing the statistics of the sampling process so far."""

@@ -60,7 +60,6 @@ class SingleCutSampler(CutSampler):
         :param seed: Random seed used to consistently shuffle the dataset across different processes.
         """
         super().__init__(
-            provide_len=not cuts.is_lazy,
             shuffle=shuffle,
             world_size=world_size,
             rank=rank,

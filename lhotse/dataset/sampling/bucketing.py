@@ -3,7 +3,7 @@ import warnings
 from functools import reduce
 from itertools import chain
 from operator import add
-from typing import Callable, Dict, List, Optional, Tuple, Type
+from typing import Any, Callable, Dict, List, Optional, Tuple, Type
 
 import numpy as np
 from typing_extensions import Literal
@@ -55,7 +55,7 @@ class BucketingSampler(CutSampler):
             drop_last: bool = False,
             proportional_sampling: bool = True,
             seed: int = 0,
-            **kwargs: Dict,
+            **kwargs: Any,
     ) -> None:
         """
         BucketingSampler's constructor.
@@ -81,7 +81,6 @@ class BucketingSampler(CutSampler):
         """
         # Do not use the distributed capacities of the CutSampler in the top-level sampler.
         super().__init__(
-            provide_len=all(not cs.is_lazy for cs in cuts),
             world_size=1,
             rank=0,
             seed=seed,
@@ -183,9 +182,6 @@ class BucketingSampler(CutSampler):
         Can be useful when handling large, lazy manifests where it is not feasible to
         pre-filter them before instantiating the sampler.
 
-        When set, we will remove the ``__len__`` attribute on the sampler, as it is now
-        determined dynamically.
-
         Example:
             >>> cuts = CutSet(...)
             ... sampler = SingleCutSampler(cuts, max_duration=100.0)
@@ -246,11 +242,6 @@ class BucketingSampler(CutSampler):
             except StopIteration:
                 self.depleted[idx] = True
         raise StopIteration()
-
-    def __len__(self):
-        if self.num_batches is None:
-            self.num_batches = sum(len(sampler) for sampler in self.bucket_samplers)
-        return self.num_batches
 
     @property
     def is_depleted(self) -> bool:

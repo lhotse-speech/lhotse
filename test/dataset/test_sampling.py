@@ -522,27 +522,6 @@ def test_bucketing_sampler_order_differs_between_epochs():
         last_order = new_order
 
 
-def test_bucketing_sampler_len():
-    # total duration is 550 seconds
-    # each second has 100 frames
-    cuts = CutSet.from_cuts(
-        dummy_cut(idx, duration=float(duration))
-        for idx, duration in enumerate(list(range(1, 11)) * 10)
-    )
-
-    sampler = BucketingSampler(
-        cuts,
-        num_buckets=4,
-        shuffle=True,
-        max_frames=64 * 100,
-        max_cuts=6
-    )
-
-    for epoch in range(5):
-        assert len(sampler) == len([item for item in sampler])
-        sampler.set_epoch(epoch)
-
-
 def test_bucketing_sampler_buckets_have_different_durations():
     cut_set_1s = DummyManifest(CutSet, begin_id=0, end_id=10)
     cut_set_2s = DummyManifest(CutSet, begin_id=10, end_id=20)
@@ -637,7 +616,7 @@ def test_partitions_are_equal(world_size, n_cuts, sampler_cls):
         for i in range(world_size)
     ]
     # Check that it worked.
-    n_batches = [len(s) for s in samplers]
+    n_batches = [len([b for b in s]) for s in samplers]
     assert all(nb == n_batches[0] for nb in n_batches)
 
 
