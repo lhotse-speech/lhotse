@@ -223,6 +223,7 @@ def read_cv_manifests_if_cached(
         return {}
     manifests = {}
     for part in ["train", "dev", "test"]:
+        manifests[part] = {}
         for manifest in ["recordings", "supervisions"]:
             path = output_dir / f"cv_{manifest}_{language}_{part}.jsonl.gz"
             if not path.is_file():
