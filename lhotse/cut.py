@@ -2276,6 +2276,7 @@ class CutSet(Serializable, Sequence[Cut]):
 
         :param supervision_ids: List of supervision IDs to keep.
         :param cut_ids: List of cut IDs to keep.
+            The returned :class:`.CutSet` preserves the order of `cut_ids`.
         :param first: int, the number of first cuts to keep.
         :param last: int, the number of last cuts to keep.
         :return: a new ``CutSet`` with the subset results.
@@ -2306,7 +2307,17 @@ class CutSet(Serializable, Sequence[Cut]):
             )
 
         if cut_ids is not None:
-            return CutSet.from_cuts(self[cid] for cid in cut_ids)
+            cut_ids = list(cut_ids)  # Remember the original order
+            id_set = frozenset(cut_ids)  # Make a set for quick lookup
+            # Iteration makes it possible to subset lazy manifests
+            cuts = CutSet.from_cuts(cut for cut in self if cut.id in id_set)
+            if len(cuts) < len(cut_ids):
+                logging.warning(
+                    f"In CutSet.subset(cut_ids=...): expected {len(cut_ids)} cuts but got {len(cuts)} "
+                    f"instead ({len(cut_ids) - len(cuts)} cut IDs were not in the CutSet)."
+                )
+            # Restore the requested cut_ids order.
+            return CutSet.from_cuts(cuts[cid] for cid in cut_ids)
 
     def filter_supervisions(self, predicate: Callable[[SupervisionSegment], bool]) -> 'CutSet':
         """

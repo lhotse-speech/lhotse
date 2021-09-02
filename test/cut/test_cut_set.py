@@ -7,7 +7,7 @@ import pytest
 from lhotse import Features, Recording, SupervisionSegment
 from lhotse.audio import AudioSource
 from lhotse.cut import CutSet, MixTrack, MixedCut, MonoCut
-from lhotse.testing.dummies import remove_spaces_from_segment_text
+from lhotse.testing.dummies import DummyManifest, remove_spaces_from_segment_text
 from lhotse.utils import is_module_available
 
 
@@ -390,7 +390,7 @@ def test_map_cut_set_rejects_noncut(cut_set_with_mixed_cut):
         cut_set = cut_set_with_mixed_cut.map(lambda cut: 'not-a-cut')
 
 
-def test_store_audio(cut_set):
+def test_store_audio():
     cut_set = CutSet.from_json('test/fixtures/libri/cuts.json')
     with TemporaryDirectory() as tmpdir:
         stored_cut_set = cut_set.compute_and_store_recordings(tmpdir)
@@ -399,3 +399,26 @@ def test_store_audio(cut_set):
             samples2 = cut2.load_audio()
             assert np.array_equal(samples1, samples2)
         assert len(stored_cut_set) == len(cut_set)
+
+
+def test_cut_set_subset_cut_ids_preserves_order():
+    cuts = DummyManifest(CutSet, begin_id=0, end_id=1000)
+    cut_ids = ['dummy-cut-0010', 'dummy-cut-0171', 'dummy-cut-0009']
+    subcuts = cuts.subset(cut_ids=cut_ids)
+    cut1, cut2, cut3 = subcuts
+    assert cut1.id == 'dummy-cut-0010'
+    assert cut2.id == 'dummy-cut-0171'
+    assert cut3.id == 'dummy-cut-0009'
+
+
+def test_cut_set_subset_cut_ids_preserves_order_with_lazy_manifest():
+    cuts = DummyManifest(CutSet, begin_id=0, end_id=1000)
+    cut_ids = ['dummy-cut-0010', 'dummy-cut-0171', 'dummy-cut-0009']
+    with NamedTemporaryFile(suffix='.jsonl.gz') as f:
+        cuts.to_file(f.name)
+        cuts = cuts.from_jsonl_lazy(f.name)
+        subcuts = cuts.subset(cut_ids=cut_ids)
+        cut1, cut2, cut3 = subcuts
+        assert cut1.id == 'dummy-cut-0010'
+        assert cut2.id == 'dummy-cut-0171'
+        assert cut3.id == 'dummy-cut-0009'
