@@ -6,6 +6,7 @@ from .callhome_egyptian import prepare_callhome_egyptian
 from .callhome_english import prepare_callhome_english
 from .cmu_arctic import download_cmu_arctic, prepare_cmu_arctic
 from .cmu_kids import prepare_cmu_kids
+from .commonvoice import prepare_commonvoice
 from .cslu_kids import prepare_cslu_kids
 from .dihard3 import prepare_dihard3
 from .fisher_english import prepare_fisher_english

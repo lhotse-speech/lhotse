@@ -148,7 +148,6 @@ def prepare_librispeech(
             for trans_path in tqdm(part_path.rglob('*.trans.txt'), desc='Distributing tasks', leave=False):
                 alignments = {}
                 ali_path = trans_path.parent / (trans_path.stem.split('.')[0] + '.alignment.txt')
-                print(ali_path)
                 if ali_path.exists():
                     alignments = parse_alignments(ali_path)
                 # "trans_path" file contains lines like:
@@ -176,8 +175,8 @@ def prepare_librispeech(
             validate_recordings_and_supervisions(recording_set, supervision_set)
 
             if output_dir is not None:
-                supervision_set.to_json(output_dir / f'supervisions_{part}.json')
-                recording_set.to_json(output_dir / f'recordings_{part}.json')
+                supervision_set.to_file(output_dir / f'supervisions_{part}.json')
+                recording_set.to_file(output_dir / f'recordings_{part}.json')
 
             manifests[part] = {
                 'recordings': recording_set,
