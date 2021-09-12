@@ -1,8 +1,19 @@
+"""
+Official description from the "about" page of Mozilla CommonVoice project
+(source link: https://commonvoice.mozilla.org/en/about)
+
+Why Common Voice?
+Mozilla Common Voice is an initiative to help teach machines how real people speak.
+This project is an effort to bridge the digital speech divide. Voice recognition technologies bring a human dimension to our devices, but developers need an enormous amount of voice data to build them. Currently, most of that data is expensive and proprietary. We want to make voice data freely and publicly available, and make sure the data represents the diversity of real people. Together we can make voice recognition better for everyone.
+
+How does it work?
+We’re crowdsourcing an open-source dataset of voices. Donate your voice, validate the accuracy of other people’s clips, make the dataset better for everyone.
+"""
 import logging
 import shutil
 import tarfile
 from collections import defaultdict
-from concurrent.futures.thread import ThreadPoolExecutor
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
 from typing import Any, Dict, Iterable, Optional, Sequence, Tuple, Union
 
@@ -21,6 +32,7 @@ COMMONVOICE_LANGS = "en de fr cy tt kab ca zh-TW it fa eu es ru tr nl eo zh-CN r
 COMMONVOICE_SPLITS = ("train", "dev", "test")
 
 # TODO: a list of mapping from language codes (e.g., "en") to actual language names (e.g., "US English")
+COMMONVOICE_CODE2LANG = {}
 
 
 def download_commonvoice(
@@ -41,6 +53,12 @@ def download_commonvoice(
     :param release: str, the name of the CommonVoice release (e.g., "cv-corpus-5.1-2020-06-22").
         It is used as part of the download URL.
     """
+    # note(pzelasko): This code should work in general if we supply the right URL,
+    # but the URL stopped working during the development of this script --
+    # I'm not going to fight this, maybe somebody else would be interested to pick it up.
+    raise NotImplementedError("CommonVoice requires you to enter e-mail to download the data"
+                              "-- please download it manually for now. "
+                              "We are open to contributions to support downloading CV via lhotse.")
     target_dir = Path(target_dir)
     target_dir.mkdir(parents=True, exist_ok=True)
     url = f"{base_url}/{release}"
@@ -87,6 +105,13 @@ def prepare_commonvoice(
     Returns the manifests which consist of the Recordings and Supervisions.
     When all the manifests are available in the ``output_dir``, it will simply read and return them.
 
+    This function expects the input directory structure of::
+
+        >>> metadata_path = corpus_dir / language_code / "{train,dev,test}.tsv"
+        >>> # e.g. pl_train_metadata_path = "/path/to/cv-corpus-7.0-2021-07-21/pl/train.tsv"
+        >>> audio_path = corpus_dir / language_code / "clips"
+        >>> # e.g. pl_audio_path = "/path/to/cv-corpus-7.0-2021-07-21/pl/clips"
+
     Returns a dict with 3-level structure (lang -> split -> manifest-type)::
 
         >>> {'en/fr/pl/...': {'train/dev/test': {'recordings/supervisions': manifest}}}
@@ -123,7 +148,7 @@ def prepare_commonvoice(
         output_dir = Path(output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
 
-    with ThreadPoolExecutor(num_jobs) as ex:
+    with ProcessPoolExecutor(num_jobs) as ex:
         for lang in tqdm(languages, desc="Processing CommonVoice languages"):
             logging.info(f"Language: {lang}")
             recordings = []
@@ -155,7 +180,7 @@ def prepare_commonvoice(
                 ):
                     futures.append(ex.submit(parse_utterance, row, part_path, lang))
 
-                for future in tqdm(futures, desc="Collecting results", leave=False):
+                for future in tqdm(as_completed(futures), desc="Collecting results", leave=False):
                     result = future.result()
                     if result is None:
                         continue
@@ -203,7 +228,9 @@ def parse_utterance(
         start=0.0,
         duration=recording.duration,
         channel=0,
-        language=language,
+        # Look up language code => language name mapping (it is empty at the time of writing this comment)
+        # if the language code is unknown, fall back to using the language code.
+        language=COMMONVOICE_CODE2LANG.get(language, language),
         speaker=row.client_id,
         text=row.sentence.strip(),
         gender=row.gender,
