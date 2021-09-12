@@ -1,5 +1,5 @@
 """
-Official description from the "about" page of Mozilla CommonVoice project
+Official description from the "about" page of the Mozilla CommonVoice project
 (source link: https://commonvoice.mozilla.org/en/about)
 
 Why Common Voice?
@@ -13,7 +13,7 @@ import logging
 import shutil
 import tarfile
 from collections import defaultdict
-from concurrent.futures import ProcessPoolExecutor, as_completed
+from concurrent.futures import Executor, ProcessPoolExecutor, ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Any, Dict, Iterable, Optional, Sequence, Tuple, Union
 
@@ -56,9 +56,11 @@ def download_commonvoice(
     # note(pzelasko): This code should work in general if we supply the right URL,
     # but the URL stopped working during the development of this script --
     # I'm not going to fight this, maybe somebody else would be interested to pick it up.
-    raise NotImplementedError("CommonVoice requires you to enter e-mail to download the data"
-                              "-- please download it manually for now. "
-                              "We are open to contributions to support downloading CV via lhotse.")
+    raise NotImplementedError(
+        "CommonVoice requires you to enter e-mail to download the data"
+        "-- please download it manually for now. "
+        "We are open to contributions to support downloading CV via lhotse."
+    )
     target_dir = Path(target_dir)
     target_dir.mkdir(parents=True, exist_ok=True)
     url = f"{base_url}/{release}"
@@ -126,7 +128,6 @@ def prepare_commonvoice(
         raise ValueError(
             "To prepare CommonVoice data, please 'pip install pandas' first."
         )
-    import pandas as pd
 
     corpus_dir = Path(corpus_dir)
     assert corpus_dir.is_dir(), f"No such directory: {corpus_dir}"
@@ -151,9 +152,7 @@ def prepare_commonvoice(
     with ProcessPoolExecutor(num_jobs) as ex:
         for lang in tqdm(languages, desc="Processing CommonVoice languages"):
             logging.info(f"Language: {lang}")
-            recordings = []
-            supervisions = []
-            part_path = corpus_dir / lang
+            lang_path = corpus_dir / lang
 
             # Maybe the manifests already exist: we can read them and save a bit of preparation time.
             # Pattern: "cv_recordings_en_train.jsonl.gz" / "cv_supervisions_en_train.jsonl.gz"
@@ -163,36 +162,17 @@ def prepare_commonvoice(
 
             for part in COMMONVOICE_SPLITS:
                 logging.info(f"Split: {part}")
-
                 if part in lang_manifests:
                     logging.info(
                         f"CommonVoice language: {lang} already prepared - skipping."
                     )
                     continue
-
-                # Read the metadata
-                df = pd.read_csv(part_path / f"{part}.tsv", sep="\t")
-
-                # Scan all the audio files
-                futures = []
-                for idx, row in tqdm(
-                    df.iterrows(), desc="Processing audio files", leave=False
-                ):
-                    futures.append(ex.submit(parse_utterance, row, part_path, lang))
-
-                for future in tqdm(as_completed(futures), desc="Collecting results", leave=False):
-                    result = future.result()
-                    if result is None:
-                        continue
-                    recording, segment = result
-                    recordings.append(recording)
-                    supervisions.append(segment)
-
-                recording_set = RecordingSet.from_recordings(recordings)
-                supervision_set = SupervisionSet.from_segments(supervisions)
-
-                validate_recordings_and_supervisions(recording_set, supervision_set)
-
+                recording_set, supervision_set = prepare_single_commonvoice_tsv(
+                    lang=lang,
+                    tsv_path=lang_path / f'{part}.tsv',
+                    lang_path=lang_path,
+                    executor=ex,
+                )
                 if output_dir is not None:
                     supervision_set.to_file(
                         output_dir / f"cv_supervisions_{lang}_{part}.jsonl.gz"
@@ -200,10 +180,9 @@ def prepare_commonvoice(
                     recording_set.to_file(
                         output_dir / f"cv_recordings_{lang}_{part}.jsonl.gz"
                     )
-
                 lang_manifests[part] = {
-                    'supervisions': supervision_set,
-                    'recordings': recording_set
+                    "supervisions": supervision_set,
+                    "recordings": recording_set,
                 }
 
             manifests[lang] = lang_manifests
@@ -211,11 +190,60 @@ def prepare_commonvoice(
     return manifests
 
 
+def prepare_single_commonvoice_tsv(
+    lang: str, tsv_path: Pathlike, lang_path: Pathlike, executor: Executor = None
+) -> Tuple[RecordingSet, SupervisionSet]:
+    """
+    Prepares part of CommonVoice data from a single TSV file.
+
+    :param lang: string language code (e.g., "en").
+    :param tsv_path: path to a TSV with CommonVoice metadata
+        (e.g., "/path/to/cv-corpus-7.0-2021-07-21/pl/train.tsv").
+    :param lang_path: path to a CommonVoice directory for a specific language
+        (e.g., "/path/to/cv-corpus-7.0-2021-07-21/pl").
+    :param executor: optional Executor object for parallelism
+        (by default it spawns a single-threaded executor to simplify the code).
+    :return: a tuple of (RecordingSet, SupervisionSet) object.
+    """
+    if not is_module_available("pandas"):
+        raise ValueError(
+            "To prepare CommonVoice data, please 'pip install pandas' first."
+        )
+    import pandas as pd
+
+    if executor is None:
+        executor = ThreadPoolExecutor(max_workers=1)
+
+    lang_path = Path(lang_path)
+
+    recordings = []
+    supervisions = []
+    # Read the metadata
+    df = pd.read_csv(tsv_path, sep="\t")
+    # Scan all the audio files
+    futures = []
+    for idx, row in tqdm(df.iterrows(), desc="Processing audio files", total=len(df)):
+        futures.append(executor.submit(parse_utterance, row, lang_path, lang))
+    with tqdm(total=len(futures), desc="Collecting results") as pbar:
+        for future in as_completed(futures):
+            result = future.result()
+            if result is None:
+                continue
+            recording, segment = result
+            recordings.append(recording)
+            supervisions.append(segment)
+            pbar.update(1)
+    recording_set = RecordingSet.from_recordings(recordings)
+    supervision_set = SupervisionSet.from_segments(supervisions)
+    validate_recordings_and_supervisions(recording_set, supervision_set)
+    return recording_set, supervision_set
+
+
 def parse_utterance(
-    row: Any, dataset_split_path: Path, language: str
+    row: Any, lang_path: Path, language: str
 ) -> Optional[Tuple[Recording, SupervisionSegment]]:
     # Create the Recording first
-    audio_path = dataset_split_path / "clips" / row.path
+    audio_path = lang_path / "clips" / row.path
     if not audio_path.is_file():
         logging.warning(f"No such file: {audio_path}")
         return None
@@ -233,8 +261,11 @@ def parse_utterance(
         language=COMMONVOICE_CODE2LANG.get(language, language),
         speaker=row.client_id,
         text=row.sentence.strip(),
-        gender=row.gender,
-        custom={"age": row.age, "accent": row.accent},
+        gender=row.gender if row.gender != 'nan' else None,
+        custom={
+            "age": row.age if row.age != 'nan' else None,
+            "accent": row.accent if row.accent != 'nan' else None,
+        },
     )
     return recording, segment
 
