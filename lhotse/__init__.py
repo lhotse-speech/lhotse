@@ -21,8 +21,11 @@ try:
     # Try to get Lhotse's version (should be created during running pip install / python setup.py ...)
     from .version import __version__
 except:
+    # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! #
+    # NOTE: REMEMBER TO UPDATE THE ACTUAL VERSION IN setup.py WHEN RELEASING #
+    # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! #
     # Use a default placeholder when the version is unavailable...
-    __version__ = '0.0.0.dev'
+    __version__ = '0.9.0.dev+missing.version.file'
 
 from . import augmentation
 from . import dataset
