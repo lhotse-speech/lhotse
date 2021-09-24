@@ -1,11 +1,3 @@
-import warnings
-
-with warnings.catch_warnings():
-    # Those torchaudio warnings are a real nuisance
-    warnings.simplefilter("ignore")
-    # noinspection PyUnresolvedReferences
-    import torchaudio
-
 from .audio import AudioSource, Recording, RecordingSet
 from .augmentation import *
 from .cut import MonoCut, CutSet

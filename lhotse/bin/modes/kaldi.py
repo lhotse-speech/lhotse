@@ -2,9 +2,7 @@ from pathlib import Path
 
 import click
 
-from lhotse import Seconds, load_manifest
 from lhotse.bin.modes.cli_base import cli
-from lhotse.kaldi import export_to_kaldi, load_kaldi_data_dir
 from lhotse.utils import Pathlike
 
 
@@ -20,11 +18,13 @@ def kaldi():
 @click.argument('manifest_dir', type=click.Path())
 @click.option('-f', '--frame-shift', type=float,
               help='Frame shift (in seconds) is required to support reading feats.scp.')
-def import_(data_dir: Pathlike, sampling_rate: int, manifest_dir: Pathlike, frame_shift: Seconds):
+def import_(data_dir: Pathlike, sampling_rate: int, manifest_dir: Pathlike, frame_shift: float):
     """
     Convert a Kaldi data dir DATA_DIR into a directory MANIFEST_DIR of lhotse manifests. Ignores feats.scp.
     The SAMPLING_RATE has to be explicitly specified as it is not available to read from DATA_DIR.
     """
+    from lhotse.kaldi import load_kaldi_data_dir
+
     recording_set, maybe_supervision_set, maybe_feature_set = load_kaldi_data_dir(
         path=data_dir,
         sampling_rate=sampling_rate,
@@ -47,6 +47,9 @@ def export(recordings: Pathlike, supervisions: Pathlike, output_dir: Pathlike):
     """
     Convert a pair of ``RecordingSet`` and ``SupervisionSet`` manifests into a Kaldi-style data directory.
     """
+    from lhotse import load_manifest
+    from lhotse.kaldi import export_to_kaldi
+
     output_dir = Path(output_dir)
     export_to_kaldi(
         recordings=load_manifest(recordings),

@@ -1,7 +1,6 @@
 from dataclasses import dataclass
 
 import numpy as np
-import torchaudio
 
 from lhotse.features.base import TorchaudioFeatureExtractor, register_extractor
 from lhotse.utils import EPSILON, Seconds
@@ -29,7 +28,10 @@ class Spectrogram(TorchaudioFeatureExtractor):
     """Log spectrogram feature extractor based on ``torchaudio.compliance.kaldi.spectrogram`` function."""
     name = 'spectrogram'
     config_type = SpectrogramConfig
-    feature_fn = staticmethod(torchaudio.compliance.kaldi.spectrogram)
+
+    def _feature_fn(self, *args, **kwargs):
+        from torchaudio.compliance.kaldi import spectrogram
+        return spectrogram(*args, **kwargs)
 
     def feature_dim(self, sampling_rate: int) -> int:
         from torchaudio.compliance.kaldi import _next_power_of_2

@@ -1,7 +1,6 @@
 from dataclasses import dataclass
 
 import numpy as np
-import torchaudio
 
 from lhotse.features.base import TorchaudioFeatureExtractor, register_extractor
 from lhotse.utils import EPSILON, Seconds
@@ -37,7 +36,10 @@ class Fbank(TorchaudioFeatureExtractor):
     """Log Mel energy filter bank feature extractor based on ``torchaudio.compliance.kaldi.fbank`` function."""
     name = 'fbank'
     config_type = FbankConfig
-    feature_fn = staticmethod(torchaudio.compliance.kaldi.fbank)
+
+    def _feature_fn(self, *args, **kwargs):
+        from torchaudio.compliance.kaldi import fbank
+        return fbank(*args, **kwargs)
 
     def feature_dim(self, sampling_rate: int) -> int:
         return self.config.num_mel_bins

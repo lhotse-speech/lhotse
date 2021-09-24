@@ -1,7 +1,5 @@
 from dataclasses import dataclass
 
-import torchaudio
-
 from lhotse.features.base import TorchaudioFeatureExtractor, register_extractor
 from lhotse.utils import EPSILON, Seconds
 
@@ -38,7 +36,10 @@ class Mfcc(TorchaudioFeatureExtractor):
     """MFCC feature extractor based on ``torchaudio.compliance.kaldi.mfcc`` function."""
     name = 'mfcc'
     config_type = MfccConfig
-    feature_fn = staticmethod(torchaudio.compliance.kaldi.mfcc)
+
+    def _feature_fn(self, *args, **kwargs):
+        from torchaudio.compliance.kaldi import mfcc
+        return mfcc(*args, **kwargs)
 
     def feature_dim(self, sampling_rate: int) -> int:
         return self.config.num_ceps

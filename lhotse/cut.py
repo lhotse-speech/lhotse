@@ -11,8 +11,6 @@ from typing import Any, Callable, Dict, FrozenSet, Iterable, List, Mapping, Opti
     Union
 
 import numpy as np
-from cytoolz import sliding_window
-from cytoolz.itertoolz import groupby
 from intervaltree import Interval, IntervalTree
 from tqdm.auto import tqdm
 from typing_extensions import Literal
@@ -2422,6 +2420,7 @@ class CutSet(Serializable, Sequence[Cut]):
 
         :return: a ``CutSet``.
         """
+        from cytoolz import sliding_window
         cuts = []
         for cut in self:
             segments = []
@@ -2464,6 +2463,7 @@ class CutSet(Serializable, Sequence[Cut]):
         """
         if self.mixed_cuts:
             raise ValueError("This operation is not applicable to CutSet's containing MixedCut's.")
+        from cytoolz.itertoolz import groupby
         groups = groupby(lambda cut: (cut.recording.id, cut.start, cut.end), self)
         return CutSet.from_cuts(mix_cuts(cuts) for cuts in groups.values())
 

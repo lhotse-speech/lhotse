@@ -2,7 +2,6 @@ from pathlib import Path
 
 import click
 
-from lhotse import RecordingSet, SupervisionSet, fix_manifests, load_manifest, validate
 from lhotse.bin.modes.cli_base import cli
 from lhotse.utils import Pathlike
 
@@ -14,6 +13,7 @@ from lhotse.utils import Pathlike
                    '(could be extremely slow for large manifests).')
 def validate_(manifest: Pathlike, read_data: bool):
     """Validate a Lhotse manifest file."""
+    from lhotse import load_manifest, validate
     data = load_manifest(manifest)
     validate(data, read_data=read_data)
 
@@ -30,6 +30,7 @@ def fix_(recordings: Pathlike, supervisions: Pathlike, output_dir: Pathlike):
     Stores the output files in OUTPUT_DIR under the same names as the input
     files.
     """
+    from lhotse import RecordingSet, SupervisionSet, fix_manifests
     output_dir = Path(output_dir)
     recordings = Path(recordings)
     supervisions = Path(supervisions)

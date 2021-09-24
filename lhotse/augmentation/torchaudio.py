@@ -5,15 +5,8 @@ from typing import List, Optional, Tuple, Union
 
 import numpy as np
 import torch
-import torchaudio
-from packaging.version import parse as _version
 
 from lhotse.utils import Seconds, compute_num_samples, during_docs_build, perturb_num_samples
-
-if not during_docs_build() and _version(torchaudio.__version__) < _version('0.7'):
-    warnings.warn('Torchaudio SoX effects chains are only introduced in version 0.7 - '
-                  'please upgrade your PyTorch to 1.7.1 and torchaudio to 0.7.2 (or higher) '
-                  'to use them.')
 
 
 @dataclass
@@ -58,6 +51,9 @@ class SoxEffectTransform:
         self.effects = effects
 
     def __call__(self, tensor: Union[torch.Tensor, np.ndarray], sampling_rate: int):
+        check_torchaudio_version()
+        import torchaudio
+
         if isinstance(tensor, np.ndarray):
             tensor = torch.from_numpy(tensor)
         effects = self.sample_effects()
@@ -172,6 +168,9 @@ class Speed(AudioTransform):
     factor: float
 
     def __call__(self, samples: np.ndarray, sampling_rate: int) -> np.ndarray:
+        check_torchaudio_version()
+        import torchaudio
+
         sampling_rate = int(sampling_rate)  # paranoia mode
         effect = [['speed', str(self.factor)], ['rate', str(sampling_rate)]]
         if isinstance(samples, np.ndarray):
@@ -212,6 +211,9 @@ class Resample(AudioTransform):
         self.target_sampling_rate = int(self.target_sampling_rate)
 
     def __call__(self, samples: np.ndarray, *args, **kwargs) -> np.ndarray:
+        check_torchaudio_version()
+        import torchaudio
+
         effect = [['rate', str(self.target_sampling_rate)]]
         if isinstance(samples, np.ndarray):
             samples = torch.from_numpy(samples)
@@ -258,6 +260,9 @@ class Tempo(AudioTransform):
     factor: float
 
     def __call__(self, samples: np.ndarray, sampling_rate: int) -> np.ndarray:
+        check_torchaudio_version()
+        import torchaudio
+
         sampling_rate = int(sampling_rate)  # paranoia mode
         if isinstance(samples, np.ndarray):
             samples = torch.from_numpy(samples)
@@ -308,6 +313,9 @@ class Volume(AudioTransform):
     factor: float
 
     def __call__(self, samples: np.ndarray, sampling_rate: int) -> np.ndarray:
+        check_torchaudio_version()
+        import torchaudio
+
         sampling_rate = int(sampling_rate)  # paranoia mode
         effect = [['vol', str(self.factor)]]
         if isinstance(samples, np.ndarray):
@@ -353,3 +361,12 @@ def pitch(sampling_rate: int) -> List[List[str]]:
         ['pitch', '-q', RandomValue(-300, 300)],
         ['rate', sampling_rate]  # Resample back to the original sampling rate (pitch changes it)
     ]
+
+
+def check_torchaudio_version():
+    import torchaudio
+    from packaging.version import parse as _version
+    if not during_docs_build() and _version(torchaudio.__version__) < _version('0.7'):
+        warnings.warn('Torchaudio SoX effects chains are only introduced in version 0.7 - '
+                      'please upgrade your PyTorch to 1.7.1 and torchaudio to 0.7.2 (or higher) '
+                      'to use them.')

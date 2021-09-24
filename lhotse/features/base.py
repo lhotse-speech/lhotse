@@ -278,7 +278,6 @@ def register_extractor(cls):
 
 class TorchaudioFeatureExtractor(FeatureExtractor):
     """Common abstract base class for all torchaudio based feature extractors."""
-    feature_fn = None
 
     def extract(self, samples: Union[np.ndarray, torch.Tensor], sampling_rate: int) -> np.ndarray:
         params = asdict(self.config)
@@ -295,6 +294,9 @@ class TorchaudioFeatureExtractor(FeatureExtractor):
             samples = samples.unsqueeze(0)
         features = self.feature_fn(samples, **params).to(torch.float32)
         return features.numpy()
+
+    def _feature_fn(self, *args, **kwargs):
+        raise NotImplementedError()
 
     @property
     def frame_shift(self) -> Seconds:
