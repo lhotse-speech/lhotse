@@ -2,8 +2,6 @@ import logging
 
 import click
 
-from lhotse.utils import fix_random_seed
-
 
 @click.group()
 @click.option('-s', '--seed', type=int, help='Random seed.')
@@ -16,6 +14,7 @@ def cli(seed):
         level=logging.INFO
     )
     if seed is not None:
+        from lhotse.utils import fix_random_seed
         fix_random_seed(seed)
 
 

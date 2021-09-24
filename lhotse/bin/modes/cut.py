@@ -1,10 +1,7 @@
 from typing import List, Optional, Tuple
 
 import click
-import numpy as np
-from cytoolz.itertoolz import groupby
 
-from lhotse import load_manifest
 from lhotse.bin.modes.cli_base import cli
 from lhotse.cut import (
     CutSet,
@@ -12,9 +9,6 @@ from lhotse.cut import (
     make_windowed_cuts_from_features,
     mix_cuts
 )
-from lhotse.features import FeatureSet
-from lhotse.manipulation import combine
-from lhotse.supervision import SupervisionSet
 from lhotse.utils import Pathlike
 
 
@@ -45,6 +39,7 @@ def simple(
     When SUPERVISION_MANIFEST is provided, the cuts time span will correspond to that of the supervision segments.
     Otherwise, that time span corresponds to the one found in features, if available, otherwise recordings.
     """
+    from lhotse import load_manifest
     supervision_set, feature_set, recording_set = [
         load_manifest(p) if p is not None else None
         for p in (supervision_manifest, feature_manifest, recording_manifest)
@@ -73,6 +68,7 @@ def windowed(
     Create a CutSet stored in OUTPUT_CUT_MANIFEST from feature regions in FEATURE_MANIFEST.
     The feature matrices are traversed in windows with CUT_SHIFT increments, creating cuts of constant CUT_DURATION.
     """
+    from lhotse.features import FeatureSet
     feature_set = FeatureSet.from_json(feature_manifest)
     cut_set = make_windowed_cuts_from_features(
         feature_set=feature_set,
@@ -105,6 +101,10 @@ def random_mixed(
     parts and mixes their features.
     The parameters of the mix are controlled via SNR_RANGE and OFFSET_RANGE.
     """
+    import numpy as np
+    from lhotse.supervision import SupervisionSet
+    from lhotse.features import FeatureSet
+
     supervision_set = SupervisionSet.from_json(supervision_manifest)
     feature_set = FeatureSet.from_json(feature_manifest)
 
@@ -154,6 +154,8 @@ def mix_by_recording_id(
     Create a CutSet stored in OUTPUT_CUT_MANIFEST by matching the Cuts from CUT_MANIFESTS by their recording IDs
     and mixing them together.
     """
+    from cytoolz.itertoolz import groupby
+    from lhotse.manipulation import combine
     all_cuts = combine(*[CutSet.from_json(path) for path in cut_manifests])
     recording_id_to_cuts = groupby(lambda cut: cut.recording_id, all_cuts)
     mixed_cut_set = CutSet.from_cuts(mix_cuts(cuts) for recording_id, cuts in recording_id_to_cuts.items())

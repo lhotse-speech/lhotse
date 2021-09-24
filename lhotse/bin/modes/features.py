@@ -1,9 +1,7 @@
-from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 from typing import Optional
 
 import click
-from tqdm import tqdm
 
 from lhotse import FeatureSet, Features, LilcomURLWriter
 from lhotse.audio import RecordingSet
@@ -100,6 +98,9 @@ def upload(
     This script does not currently support credentials,
     and assumes that you have the write permissions.
     """
+    from concurrent.futures import ProcessPoolExecutor
+    from tqdm import tqdm
+
     output_manifest = Path(output_manifest)
     assert '.jsonl' in output_manifest.suffixes, 'This mode only supports writing to JSONL feature manifests.'
 
