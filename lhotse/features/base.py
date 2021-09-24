@@ -292,7 +292,7 @@ class TorchaudioFeatureExtractor(FeatureExtractor):
         # Torchaudio Kaldi feature extractors expect the channel dimension to be first.
         if len(samples.shape) == 1:
             samples = samples.unsqueeze(0)
-        features = self.feature_fn(samples, **params).to(torch.float32)
+        features = self._feature_fn(samples, **params).to(torch.float32)
         return features.numpy()
 
     def _feature_fn(self, *args, **kwargs):
