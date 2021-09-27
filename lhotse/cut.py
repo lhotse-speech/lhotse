@@ -211,19 +211,33 @@ class Cut:
         """
         return [s.trim(self.duration) for s in self.supervisions]
 
-    def mix(self, other: 'Cut', offset_other_by: Seconds = 0.0, snr: Optional[Decibels] = None) -> 'MixedCut':
+    def mix(
+        self,
+        other: "Cut",
+        offset_other_by: Seconds = 0.0,
+        snr: Optional[Decibels] = None,
+        preserve_id: Optional[str] = None,
+    ) -> "MixedCut":
         """Refer to :function:`~lhotse.cut.mix` documentation."""
-        return mix(self, other, offset=offset_other_by, snr=snr)
+        return mix(self, other, offset=offset_other_by, snr=snr, preserve_id=preserve_id)
 
-    def append(self, other: 'Cut', snr: Optional[Decibels] = None) -> 'MixedCut':
+    def append(
+        self,
+        other: "Cut",
+        snr: Optional[Decibels] = None,
+        preserve_id: Optional[str] = None,
+    ) -> "MixedCut":
         """
         Append the ``other`` Cut after the current Cut. Conceptually the same as ``mix`` but with an offset
         matching the current cuts length. Optionally scale down (positive SNR) or scale up (negative SNR)
         the ``other`` cut.
         Returns a MixedCut, which only keeps the information about the mix; actual mixing is performed
         during the call to ``load_features``.
+
+        :param preserve_id: optional string ("left", "right"). When specified, append will preserve the cut ID
+            of the left- or right-hand side argument. Otherwise, a new random ID is generated.
         """
-        return mix(self, other, offset=self.duration, snr=snr)
+        return mix(self, other, offset=self.duration, snr=snr, preserve_id=preserve_id)
 
     def compute_features(
             self,
@@ -798,7 +812,8 @@ class MonoCut(Cut):
             num_frames: int = None,
             num_samples: int = None,
             pad_feat_value: float = LOG_EPSILON,
-            direction: str = 'right'
+            direction: str = 'right',
+            preserve_id: bool = False,
     ) -> Cut:
         """
         Return a new MixedCut, padded with zeros in the recording, and ``pad_feat_value`` in each feature bin.
@@ -813,6 +828,8 @@ class MonoCut(Cut):
             By default we assume a log-energy floor of approx. -23 (1e-10 after exp).
         :param direction: string, 'left', 'right' or 'both'. Determines whether the padding is added before or after
             the cut.
+        :param preserve_id: When ``True``, preserves the cut ID before padding.
+            Otherwise, a new random ID is generated for the padded cut (default).
         :return: a padded MixedCut if duration is greater than this cut's duration, otherwise ``self``.
         """
         return pad(
@@ -821,7 +838,8 @@ class MonoCut(Cut):
             num_frames=num_frames,
             num_samples=num_samples,
             pad_feat_value=pad_feat_value,
-            direction=direction
+            direction=direction,
+            preserve_id=preserve_id,
         )
 
     def resample(self, sampling_rate: int, affix_id: bool = False) -> 'MonoCut':
@@ -1107,7 +1125,8 @@ class PaddingCut(Cut):
             num_frames: int = None,
             num_samples: int = None,
             pad_feat_value: float = LOG_EPSILON,
-            direction: str = 'right'
+            direction: str = 'right',
+            preserve_id: bool = False,
     ) -> Cut:
         """
         Return a new MixedCut, padded with zeros in the recording, and ``pad_feat_value`` in each feature bin.
@@ -1122,6 +1141,8 @@ class PaddingCut(Cut):
             By default we assume a log-energy floor of approx. -23 (1e-10 after exp).
         :param direction: string, 'left', 'right' or 'both'. Determines whether the padding is added before or after
             the cut.
+        :param preserve_id: When ``True``, preserves the cut ID from before padding.
+            Otherwise, generates a new random ID (default).
         :return: a padded MixedCut if duration is greater than this cut's duration, otherwise ``self``.
         """
         return pad(
@@ -1130,7 +1151,8 @@ class PaddingCut(Cut):
             num_frames=num_frames,
             num_samples=num_samples,
             pad_feat_value=pad_feat_value,
-            direction=direction
+            direction=direction,
+            preserve_id=preserve_id,
         )
 
     def resample(self, sampling_rate: int, affix_id: bool = False) -> 'PaddingCut':
@@ -1490,7 +1512,7 @@ class MixedCut(Cut):
         if len(new_tracks) == 1:
             # The truncation resulted in just a single cut - simply return it.
             return new_tracks[0].cut
-        return MixedCut(id=str(uuid4()), tracks=new_tracks)
+        return MixedCut(id=self.id if preserve_id else str(uuid4()), tracks=new_tracks)
 
     def pad(
             self,
@@ -1498,7 +1520,8 @@ class MixedCut(Cut):
             num_frames: int = None,
             num_samples: int = None,
             pad_feat_value: float = LOG_EPSILON,
-            direction: str = 'right'
+            direction: str = 'right',
+            preserve_id: bool = False,
     ) -> Cut:
         """
         Return a new MixedCut, padded with zeros in the recording, and ``pad_feat_value`` in each feature bin.
@@ -1513,6 +1536,8 @@ class MixedCut(Cut):
             By default we assume a log-energy floor of approx. -23 (1e-10 after exp).
         :param direction: string, 'left', 'right' or 'both'. Determines whether the padding is added before or after
             the cut.
+        :param preserve_id: When ``True``, preserves the cut ID from before padding.
+            Otherwise, generates a new random ID (default).
         :return: a padded MixedCut if duration is greater than this cut's duration, otherwise ``self``.
         """
         return pad(
@@ -1521,7 +1546,8 @@ class MixedCut(Cut):
             num_frames=num_frames,
             num_samples=num_samples,
             pad_feat_value=pad_feat_value,
-            direction=direction
+            direction=direction,
+            preserve_id=preserve_id,
         )
 
     def resample(self, sampling_rate: int, affix_id: bool = False) -> 'MixedCut':
@@ -2508,7 +2534,8 @@ class CutSet(Serializable, Sequence[Cut]):
             num_frames: int = None,
             num_samples: int = None,
             pad_feat_value: float = LOG_EPSILON,
-            direction: str = 'right'
+            direction: str = 'right',
+            preserve_id: bool = False,
     ) -> 'CutSet':
         """
         Return a new CutSet with Cuts padded to ``duration``, ``num_frames`` or ``num_samples``.
@@ -2527,6 +2554,8 @@ class CutSet(Serializable, Sequence[Cut]):
             By default we assume a log-energy floor of approx. -23 (1e-10 after exp).
         :param direction: string, 'left', 'right' or 'both'. Determines whether the padding is added
             before or after the cut.
+        :param preserve_id: When ``True``, preserves the cut ID from before padding.
+            Otherwise, generates a new random ID (default).
         :return: A padded CutSet.
         """
         # When the user does not specify explicit padding duration/num_frames/num_samples,
@@ -2547,7 +2576,8 @@ class CutSet(Serializable, Sequence[Cut]):
                 num_frames=num_frames,
                 num_samples=num_samples,
                 pad_feat_value=pad_feat_value,
-                direction=direction
+                direction=direction,
+                preserve_id=preserve_id,
             ) for cut in self
         )
 
@@ -2717,6 +2747,7 @@ class CutSet(Serializable, Sequence[Cut]):
             cuts: 'CutSet',
             duration: Optional[Seconds] = None,
             snr: Optional[Union[Decibels, Sequence[Decibels]]] = 20,
+            preserve_id: Optional[str] = None,
             mix_prob: float = 1.0
     ) -> 'CutSet':
         """
@@ -2735,6 +2766,8 @@ class CutSet(Serializable, Sequence[Cut]):
             When it's a pair of floats, we will uniformly sample SNR values from that range.
             When ``None``, we will mix the cuts without any level adjustment
             (could be too noisy for data augmentation).
+        :param preserve_id: optional string ("left", "right"). when specified, append will preserve the cut id
+            of the left- or right-hand side argument. otherwise, a new random id is generated.
         :param mix_prob: an optional float in range [0, 1].
             Specifies the probability of performing a mix.
             Values lower than 1.0 mean that some cuts in the output will be unchanged.
@@ -2743,7 +2776,9 @@ class CutSet(Serializable, Sequence[Cut]):
         assert 0.0 <= mix_prob <= 1.0
         assert duration is None or duration > 0
         if isinstance(snr, (tuple, list)):
-            assert len(snr) == 2, f"SNR range must be a list or tuple with exactly two values (got: {snr})"
+            assert (
+                len(snr) == 2
+            ), f"SNR range must be a list or tuple with exactly two values (got: {snr})"
         else:
             assert isinstance(snr, (type(None), int, float))
         mixed_cuts = []
@@ -2758,7 +2793,7 @@ class CutSet(Serializable, Sequence[Cut]):
             # Determine the SNR - either it's specified or we need to sample one.
             snr = random.uniform(*snr) if isinstance(snr, (list, tuple)) else snr
             # Actual mixing
-            mixed = cut.mix(other=to_mix, snr=snr)
+            mixed = cut.mix(other=to_mix, snr=snr, preserve_id=preserve_id)
             # Did the user specify a duration?
             # If yes, we will ensure that shorter cuts have more noise mixed in
             # to "pad" them with at the end.
@@ -2768,12 +2803,20 @@ class CutSet(Serializable, Sequence[Cut]):
                 while mixed_in_duration < duration:
                     to_mix = cuts.sample()
                     # Keep the SNR constant for each cut from "self".
-                    mixed = mixed.mix(other=to_mix, snr=snr, offset_other_by=mixed_in_duration)
+                    mixed = mixed.mix(
+                        other=to_mix,
+                        snr=snr,
+                        offset_other_by=mixed_in_duration,
+                        preserve_id=preserve_id,
+                    )
                     # Since we're adding floats, we can be off by an epsilon and trigger
                     # some assertions for exceeding duration; do precautionary rounding here.
                     mixed_in_duration = round(mixed_in_duration + to_mix.duration, ndigits=8)
             # We truncate the mixed to either the original duration or the requested duration.
-            mixed = mixed.truncate(duration=cut.duration if duration is None else duration)
+            mixed = mixed.truncate(
+                duration=cut.duration if duration is None else duration,
+                preserve_id=preserve_id is not None,
+            )
             mixed_cuts.append(mixed)
         return CutSet.from_cuts(mixed_cuts)
 
@@ -3225,7 +3268,8 @@ def mix(
         reference_cut: Cut,
         mixed_in_cut: Cut,
         offset: Seconds = 0,
-        snr: Optional[Decibels] = None
+        snr: Optional[Decibels] = None,
+        preserve_id: Optional[str] = None,
 ) -> MixedCut:
     """
     Overlay, or mix, two cuts. Optionally the `mixed_in_cut` may be shifted by `offset` seconds
@@ -3237,6 +3281,8 @@ def mix(
     :param mixed_in_cut: The mixed-in cut - it will be offset and rescaled to match the offset and snr parameters.
     :param offset: How many seconds to shift the ``mixed_in_cut`` w.r.t. the ``reference_cut``.
     :param snr: Desired SNR of the `right_cut` w.r.t. the `left_cut` in the mix.
+    :param preserve_id: optional string ("left", "right"). when specified, append will preserve the cut id
+        of the left- or right-hand side argument. otherwise, a new random id is generated.
     :return: A MixedCut instance.
     """
     if any(isinstance(cut, PaddingCut) for cut in (reference_cut, mixed_in_cut)) and snr is not None:
@@ -3246,16 +3292,31 @@ def mix(
         snr = None
 
     if reference_cut.num_features is not None:
-        assert reference_cut.num_features == mixed_in_cut.num_features, "Cannot mix cuts with different feature " \
-                                                                        "dimensions. "
-    assert offset <= reference_cut.duration, f"Cannot mix cut '{mixed_in_cut.id}' with offset {offset}," \
-                                             f" which is greater than cuts {reference_cut.id} duration" \
-                                             f" of {reference_cut.duration}"
+        assert reference_cut.num_features == mixed_in_cut.num_features, (
+            "Cannot mix cuts with different feature " "dimensions. "
+        )
+    assert offset <= reference_cut.duration, (
+        f"Cannot mix cut '{mixed_in_cut.id}' with offset {offset},"
+        f" which is greater than cuts {reference_cut.id} duration"
+        f" of {reference_cut.duration}"
+    )
     assert reference_cut.sampling_rate == mixed_in_cut.sampling_rate, \
         f'Cannot mix cuts with different sampling rates ' \
         f'({reference_cut.sampling_rate} vs. ' \
         f'{mixed_in_cut.sampling_rate}). ' \
         f'Please resample the recordings first.'
+    # Determine the ID of the result.
+    if preserve_id is None:
+        mixed_cut_id = str(uuid4())
+    elif preserve_id == "left":
+        mixed_cut_id = reference_cut.id
+    elif preserve_id == "right":
+        mixed_cut_id = mixed_in_cut.id
+    else:
+        raise ValueError(
+            "Unexpected value for 'preserve_id' argument: "
+            f"got '{preserve_id}', expected one of (None, 'left', 'right')."
+        )
     # When the left_cut is a MixedCut, take its existing tracks, otherwise create a new track.
     old_tracks = (
         reference_cut.tracks
@@ -3286,7 +3347,7 @@ def mix(
         else [MixTrack(cut=mixed_in_cut, offset=offset, snr=snr)]
     )
     return MixedCut(
-        id=str(uuid4()),
+        id=mixed_cut_id,
         tracks=old_tracks + new_tracks
     )
 
@@ -3297,7 +3358,8 @@ def pad(
         num_frames: int = None,
         num_samples: int = None,
         pad_feat_value: float = LOG_EPSILON,
-        direction: str = 'right'
+        direction: str = 'right',
+        preserve_id: bool = False,
 ) -> Cut:
     """
     Return a new MixedCut, padded with zeros in the recording, and ``pad_feat_value`` in each feature bin.
@@ -3313,6 +3375,8 @@ def pad(
         By default we assume a log-energy floor of approx. -23 (1e-10 after exp).
     :param direction: string, 'left', 'right' or 'both'. Determines whether the padding is added before or after
         the cut.
+    :param preserve_id: When ``True``, preserves the cut ID before padding.
+        Otherwise, a new random ID is generated for the padded cut (default).
     :return: a padded MixedCut if duration is greater than this cut's duration, otherwise ``self``.
     """
     assert exactly_one_not_null(duration, num_frames, num_samples), \
@@ -3386,15 +3450,22 @@ def pad(
         sampling_rate=cut.sampling_rate,
     )
 
-    if direction == 'right':
-        padded = cut.append(padding_cut)
-    elif direction == 'left':
-        padded = padding_cut.append(cut)
-    elif direction == 'both':
+    if direction == "right":
+        padded = cut.append(
+            padding_cut, preserve_id="left" if preserve_id else None
+        )
+    elif direction == "left":
+        padded = padding_cut.append(
+            cut, preserve_id="right" if preserve_id else None
+        )
+    elif direction == "both":
         padded = (
             padding_cut.truncate(duration=padding_cut.duration / 2)
-                .append(cut)
-                .append(padding_cut.truncate(duration=padding_cut.duration / 2))
+            .append(cut, preserve_id="right" if preserve_id else None)
+            .append(
+                padding_cut.truncate(duration=padding_cut.duration / 2),
+                preserve_id="left" if preserve_id else None,
+            )
         )
     else:
         raise ValueError(f"Unknown type of padding: {direction}")
@@ -3405,10 +3476,11 @@ def pad(
 def append(
         left_cut: Cut,
         right_cut: Cut,
-        snr: Optional[Decibels] = None
+        snr: Optional[Decibels] = None,
+        preserve_id: Optional[str] = None,
 ) -> MixedCut:
     """Helper method for functional-style appending of Cuts."""
-    return left_cut.append(right_cut, snr=snr)
+    return left_cut.append(right_cut, snr=snr, preserve_id=preserve_id)
 
 
 def mix_cuts(cuts: Iterable[Cut]) -> MixedCut:

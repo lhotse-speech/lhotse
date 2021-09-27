@@ -17,17 +17,21 @@ class PerturbSpeed:
             self,
             factors: Union[float, Sequence[float]],
             p: float,
-            randgen: random.Random = None
+            randgen: random.Random = None,
+            preserve_id: bool = False,
     ) -> None:
         self.factors = factors if isinstance(factors, Sequence) else [factors]
         self.p = p
         self.random = randgen
+        self.preserve_id = preserve_id
 
     def __call__(self, cuts: CutSet) -> CutSet:
         if self.random is None:
             self.random = random
         return CutSet.from_cuts(
-            cut.perturb_speed(factor=self.random.choice(self.factors))
+            cut.perturb_speed(
+                factor=self.random.choice(self.factors), affix_id=not self.preserve_id
+            )
             if self.random.random() >= self.p
             else cut
             for cut in cuts

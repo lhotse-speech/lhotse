@@ -4,9 +4,9 @@ from typing import List, Sequence, Union
 from lhotse import CutSet
 
 
-class PerturbVolume:
+class PerturbTempo:
     """
-    A transform on batch of cuts (``CutSet``) that perturbs the volume of the recordings
+    A transform on batch of cuts (``CutSet``) that perturbs the tempo of the recordings
     with a given probability :attr:`p`.
 
     If the effect is applied, then one of the perturbation factors from the constructor's
@@ -29,7 +29,7 @@ class PerturbVolume:
         if self.random is None:
             self.random = random
         return CutSet.from_cuts(
-            cut.perturb_volume(
+            cut.perturb_tempo(
                 factor=self.random.choice(self.factors), affix_id=not self.preserve_id
             )
             if self.random.random() >= self.p
