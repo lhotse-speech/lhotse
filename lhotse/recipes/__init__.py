@@ -15,6 +15,7 @@ from .gale_arabic import prepare_gale_arabic
 from .gale_mandarin import prepare_gale_mandarin
 from .gigaspeech import prepare_gigaspeech
 from .heroico import download_heroico, prepare_heroico
+from .hifitts import download_hifitts, prepare_hifitts
 from .l2_arctic import prepare_l2_arctic
 from .librimix import download_librimix, prepare_librimix
 from .librispeech import download_librispeech, prepare_librispeech

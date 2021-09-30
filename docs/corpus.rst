@@ -77,6 +77,8 @@ a CLI tool that create the manifests given a corpus directory.
     - :func:`lhotse.recipes.prepare_gigaspeech`
   * - Heroico
     - :func:`lhotse.recipes.prepare_heroico`
+  * - HiFiTTS
+    - :func:`lhotse.recipes.prepare_hifitts`
   * - L2 Arctic
     - :func:`lhotse.recipes.prepare_l2_arctic`
   * - LibriSpeech (including "mini")

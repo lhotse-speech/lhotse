@@ -15,6 +15,7 @@ from .gale_arabic import *
 from .gale_mandarin import *
 from .gigaspeech import *
 from .heroico import *
+from .hifitts import *
 from .l2_arctic import *
 from .librimix import *
 from .librispeech import *
