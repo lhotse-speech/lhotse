@@ -157,6 +157,7 @@ def prepare_cmu_indic(
     validate_recordings_and_supervisions(recordings, supervisions)
 
     if output_dir is not None:
+        output_dir = Path(output_dir)
         recordings.to_json(output_dir / "cmu_indic_recordings.json")
         supervisions.to_json(output_dir / "cmu_indic_supervisions.json")
 
