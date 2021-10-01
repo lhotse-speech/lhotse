@@ -136,6 +136,8 @@ def prepare_cmu_indic(
             l = l[2:-2]  # get rid of parentheses and whitespaces on the edges
             seg_id, text = l.split(maxsplit=1)
             seg_id = f"{speaker}-{seg_id}"
+            language = LANGUAGE_MAP[lang_code]
+            is_english = 'arctic' in seg_id
             supervisions.append(
                 SupervisionSegment(
                     id=seg_id,
@@ -143,9 +145,10 @@ def prepare_cmu_indic(
                     start=0,
                     duration=recordings[seg_id].duration,
                     text=text.replace('"', ""),  # get rid of quotation marks,
-                    language=LANGUAGE_MAP[lang_code],
+                    language='English' if is_english else language,
                     speaker=speaker,
                     gender=GENDER_MAP.get(speaker),
+                    custom={'accent': language} if is_english else None
                 )
             )
     supervisions = SupervisionSet.from_segments(supervisions)
