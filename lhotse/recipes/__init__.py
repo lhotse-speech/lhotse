@@ -5,6 +5,7 @@ from .broadcast_news import prepare_broadcast_news
 from .callhome_egyptian import prepare_callhome_egyptian
 from .callhome_english import prepare_callhome_english
 from .cmu_arctic import download_cmu_arctic, prepare_cmu_arctic
+from .cmu_indic import download_cmu_indic, prepare_cmu_indic
 from .cmu_kids import prepare_cmu_kids
 from .commonvoice import prepare_commonvoice
 from .cslu_kids import prepare_cslu_kids

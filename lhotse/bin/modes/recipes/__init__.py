@@ -5,6 +5,7 @@ from .broadcast_news import *
 from .callhome_egyptian import *
 from .callhome_english import *
 from .cmu_arctic import *
+from .cmu_indic import *
 from .cmu_kids import *
 from .commonvoice import *
 from .cslu_kids import *
