@@ -2238,9 +2238,8 @@ class CutSet(Serializable, Sequence[Cut]):
             max     5415.0
             dtype: float64
         """
-        import pandas as pd
-        durations = pd.Series([c.duration for c in self])
-        speech_durations = pd.Series([s.trim(c.duration).duration for c in self for s in c.supervisions])
+        durations = np.array([c.duration for c in self])
+        speech_durations = np.array([s.trim(c.duration).duration for c in self for s in c.supervisions])
         total_sum = durations.sum()
         speech_sum = speech_durations.sum()
         print('Cuts count:', len(self))
@@ -2248,8 +2247,13 @@ class CutSet(Serializable, Sequence[Cut]):
         print(f'Speech duration (hours): {speech_sum / 3600:.1f} ({speech_sum / total_sum:.1%})')
         print('***')
         print('Duration statistics (seconds):')
-        with pd.option_context('precision', 1):
-            print(durations.describe().drop('count'))
+        print(f'mean\t{np.mean(durations):.1f}')
+        print(f'std\t{np.std(durations):.1f}')
+        print(f'min\t{np.min(durations):.1f}')
+        print(f'25%\t{np.percentile(durations, 25):.1f}')
+        print(f'50%\t{np.median(durations):.1f}')
+        print(f'75%\t{np.percentile(durations, 75):.1f}')
+        print(f'max\t{np.max(durations):.1f}')
 
     def shuffle(self, rng: Optional[random.Random] = None) -> 'CutSet':
         """
