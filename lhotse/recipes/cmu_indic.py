@@ -59,6 +59,7 @@ GENDER_MAP = {
 LANGUAGE_MAP = {
     "ben": "Bengali",
     "guj": "Gujarati",
+    "kan": "Kannada",
     "hin": "Hindi",
     "mar": "Marathi",
     "pan": "Punjabi",
