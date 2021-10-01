@@ -67,7 +67,7 @@ def download_cmu_arctic(
         base_url: Optional[str] = BASE_URL
 ) -> None:
     """
-    Download and untar the dataset, supporting both LibriSpeech and MiniLibrispeech
+    Download and untar the CMU Arctic dataset.
 
     :param target_dir: Pathlike, the path of the dir to storage the dataset.
     :param speakers: a list of speakers to download. By default, downloads all.
@@ -141,8 +141,9 @@ def prepare_cmu_arctic(
     validate_recordings_and_supervisions(recordings, supervisions)
 
     if output_dir is not None:
-        recordings.to_json(output_dir / 'recordings.json')
-        supervisions.to_json(output_dir / 'supervisions.json')
+        output_dir = Path(output_dir)
+        recordings.to_json(output_dir / 'cmu_arctic_recordings.json')
+        supervisions.to_json(output_dir / 'cmu_arctic_supervisions.json')
 
     return {
         'recordings': recordings,

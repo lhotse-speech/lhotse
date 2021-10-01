@@ -55,6 +55,8 @@ a CLI tool that create the manifests given a corpus directory.
     - :func:`lhotse.recipes.prepare_callhome_english`
   * - CMU Arctic
     - :func:`lhotse.recipes.prepare_cmu_arctic`
+  * - CMU Indic
+    - :func:`lhotse.recipes.prepare_cmu_indic`
   * - CMU Kids
     - :func:`lhotse.recipes.prepare_cmu_kids`
   * - CommonVoice
