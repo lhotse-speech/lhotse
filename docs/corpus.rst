@@ -43,6 +43,8 @@ a CLI tool that create the manifests given a corpus directory.
 
   * - Corpus name
     - Function
+  * - ADEPT
+    - :func:`lhotse.recipes.prepare_adept`
   * - Aishell
     - :func:`lhotse.recipes.prepare_aishell`
   * - AMI
