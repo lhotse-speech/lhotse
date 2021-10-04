@@ -1,3 +1,4 @@
+from .adept import *
 from .aishell import *
 from .ami import *
 from .babel import *

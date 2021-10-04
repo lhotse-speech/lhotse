@@ -1,3 +1,4 @@
+from .adept import download_adept, prepare_adept
 from .aishell import download_aishell, prepare_aishell
 from .ami import download_ami, prepare_ami
 from .babel import prepare_single_babel_language
