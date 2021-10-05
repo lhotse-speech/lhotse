@@ -13,15 +13,13 @@ import logging
 import shutil
 import tarfile
 from collections import defaultdict
-from functools import partial
 from pathlib import Path
-from typing import Any, Dict, Iterable, Optional, Sequence, Set, Tuple, Union
+from typing import Any, Dict, Iterable, Optional, Sequence, Tuple, Union
 
 from tqdm.auto import tqdm
 
 from lhotse import load_manifest, validate_recordings_and_supervisions
 from lhotse.audio import Recording, RecordingSet
-from lhotse.parallel import parallel_map
 from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import Pathlike, is_module_available, urlretrieve_progress
 
@@ -226,12 +224,8 @@ def prepare_single_commonvoice_tsv(
         output_dir / f"cv_supervisions_{lang}_{part}.jsonl.gz",
         overwrite=False,
     ) as sups_writer:
-        ignore_ids = recs_writer.ignore_ids & sups_writer.ignore_ids
-        do_work = partial(
-            parse_utterance, lang_path=lang_path, language=lang, ignore_ids=ignore_ids
-        )
         for idx, row in tqdm(
-            parallel_map(do_work, df.iterrows(), num_jobs=4),
+            df.iterrows(),
             desc="Processing audio files",
             total=len(df),
         ):
@@ -248,7 +242,7 @@ def prepare_single_commonvoice_tsv(
 
 
 def parse_utterance(
-    idx_and_row: Any, lang_path: Path, language: str, ignore_ids: Set[str] = frozenset()
+    idx_and_row: Any, lang_path: Path, language: str
 ) -> Optional[Tuple[Recording, SupervisionSegment]]:
     idx, row = idx_and_row
     try:
@@ -257,8 +251,6 @@ def parse_utterance(
         if not audio_path.is_file():
             raise ValueError(f"No such file: {audio_path}")
         recording_id = Path(row.path).stem
-        if recording_id in ignore_ids:
-            return None
         recording = Recording.from_file(audio_path, recording_id=recording_id)
         # Then, create the corresponding supervisions
         segment = SupervisionSegment(
