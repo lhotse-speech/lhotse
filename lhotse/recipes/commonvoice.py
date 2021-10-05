@@ -231,21 +231,21 @@ def prepare_single_commonvoice_tsv(
         output_dir / f"cv_supervisions_{lang}_{part}.jsonl.gz",
         overwrite=False,
     ) as sups_writer:
-        for idx, row in tqdm(df.iterrows(), desc="Processing audio files", total=len(df)):
+        for idx, row in tqdm(
+            df.iterrows(), desc="Processing audio files", total=len(df)
+        ):
             recording_id = Path(row.path).stem
             if recording_id in recs_writer and recording_id in sups_writer:
                 # Skip files already processed (resume preparation)
                 continue
             try:
-                result = parse_utterance(row, lang_path, lang)
+                recording, segment = parse_utterance(row, lang_path, lang)
             except Exception as e:
-                # Handle unexpected errors
-                raise ValueError(f"Error when processing file: '{tsv_path}', line no. {idx}: '{row}'.\n"
-                                 f"Original error message: {e}")
-            if result is None:
-                # Skip expected errors
+                logging.error(
+                    f"Error when processing file: '{tsv_path}', line no. {idx}: '{row}'.\n"
+                    f"Original error message: {e}"
+                )
                 continue
-            recording, segment = result
             validate_recordings_and_supervisions(recording, segment)
             recs_writer.write(recording)
             sups_writer.write(segment)
@@ -256,12 +256,11 @@ def prepare_single_commonvoice_tsv(
 
 def parse_utterance(
     row: Any, lang_path: Path, language: str
-) -> Optional[Tuple[Recording, SupervisionSegment]]:
+) -> Tuple[Recording, SupervisionSegment]:
     # Create the Recording first
     audio_path = lang_path / "clips" / row.path
     if not audio_path.is_file():
-        logging.warning(f"No such file: {audio_path}")
-        return None
+        raise ValueError(f"No such file: {audio_path}")
     recording_id = Path(row.path).stem
     recording = Recording.from_file(audio_path, recording_id=recording_id)
     # Then, create the corresponding supervisions
@@ -276,10 +275,10 @@ def parse_utterance(
         language=COMMONVOICE_CODE2LANG.get(language, language),
         speaker=row.client_id,
         text=row.sentence.strip(),
-        gender=row.gender if row.gender != 'nan' else None,
+        gender=row.gender if row.gender != "nan" else None,
         custom={
-            "age": row.age if row.age != 'nan' else None,
-            "accent": row.accent if row.accent != 'nan' else None,
+            "age": row.age if row.age != "nan" else None,
+            "accent": row.accent if row.accent != "nan" else None,
         },
     )
     return recording, segment
