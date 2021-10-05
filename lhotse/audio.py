@@ -225,31 +225,16 @@ class Recording:
         :return: a new ``Recording`` instance pointing to the audio file.
         """
         path = Path(path)
-        if path.suffix.lower() == '.opus':
-            # We handle OPUS as a special case because we might need to force a certain sampling rate.
-            info = opus_info(path, force_opus_sampling_rate=force_opus_sampling_rate)
-        elif path.suffix.lower() == '.sph':
-            # We handle SPHERE as another special case because some old codecs (i.e. "shorten" codec)
-            # can't be handled by neither pysoundfile nor pyaudioread.
-            info = sph_info(path)
-        else:
-            try:
-                # Try to parse the file using pysoundfile first.
-                import soundfile as sf
-                info = sf.info(str(path))
-            except:
-                # Try to parse the file using audioread as a fallback.
-                info = audioread_info(str(path))
-                # If both fail, then Python 3 will display both exception messages.
+        audio_info = info(path, force_opus_sampling_rate=force_opus_sampling_rate)
         return Recording(
             id=recording_id if recording_id is not None else path.stem,
-            sampling_rate=info.samplerate,
-            num_samples=info.frames,
-            duration=info.duration,
+            sampling_rate=audio_info.samplerate,
+            num_samples=audio_info.frames,
+            duration=audio_info.duration,
             sources=[
                 AudioSource(
                     type='file',
-                    channels=list(range(info.channels)),
+                    channels=list(range(audio_info.channels)),
                     source=(
                         '/'.join(path.parts[-relative_path_depth:])
                         if relative_path_depth is not None and relative_path_depth > 0
@@ -904,6 +889,28 @@ class LibsndfileCompatibleAudioInfo(NamedTuple):
     frames: int
     samplerate: int
     duration: float
+
+
+def info(path: Pathlike, force_opus_sampling_rate: Optional[int] = None) -> LibsndfileCompatibleAudioInfo:
+    if path.suffix.lower() == '.opus':
+        # We handle OPUS as a special case because we might need to force a certain sampling rate.
+        return opus_info(path, force_opus_sampling_rate=force_opus_sampling_rate)
+    elif path.suffix.lower() == '.sph':
+        # We handle SPHERE as another special case because some old codecs (i.e. "shorten" codec)
+        # can't be handled by neither pysoundfile nor pyaudioread.
+        return sph_info(path)
+    try:
+        # Try to parse the file using torchaudio first.
+        return torchaudio_info(path)
+    except:
+        try:
+            # Try to parse the file using pysoundfile as a fallback.
+            import soundfile as sf
+            return sf.info(str(path))
+        except:
+            # Try to parse the file using audioread as the last fallback.
+            return audioread_info(str(path))
+            # If both fail, then Python 3 will display both exception messages.
 
 
 def torchaudio_info(path: Pathlike) -> LibsndfileCompatibleAudioInfo:
