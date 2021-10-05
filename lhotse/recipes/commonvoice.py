@@ -13,8 +13,10 @@ import logging
 import shutil
 import tarfile
 from collections import defaultdict
+from concurrent.futures import ProcessPoolExecutor
+from functools import partial
 from pathlib import Path
-from typing import Any, Dict, Iterable, Optional, Sequence, Tuple, Union
+from typing import Any, Dict, Iterable, Optional, Sequence, Set, Tuple, Union
 
 from tqdm.auto import tqdm
 
@@ -177,13 +179,6 @@ def prepare_commonvoice(
                 output_dir=output_dir,
                 lang_path=lang_path,
             )
-            if output_dir is not None:
-                supervision_set.to_file(
-                    output_dir / f"cv_supervisions_{lang}_{part}.jsonl.gz"
-                )
-                recording_set.to_file(
-                    output_dir / f"cv_recordings_{lang}_{part}.jsonl.gz"
-                )
             lang_manifests[part] = {
                 "supervisions": supervision_set,
                 "recordings": recording_set,
@@ -230,20 +225,27 @@ def prepare_single_commonvoice_tsv(
     ) as recs_writer, SupervisionSet.open_writer(
         output_dir / f"cv_supervisions_{lang}_{part}.jsonl.gz",
         overwrite=False,
-    ) as sups_writer:
+    ) as sups_writer, ProcessPoolExecutor(
+        max_workers=4
+    ) as ex:
+        ignore_ids = recs_writer.ignore_ids & sups_writer.ignore_ids
+        do_work = partial(
+            parse_utterance, lang_path=lang_path, lang=lang, ignore_ids=ignore_ids
+        )
         for idx, row in tqdm(
-            df.iterrows(), desc="Processing audio files", total=len(df)
+            ex.map(do_work, df.iterrows(), chunksize=5000),
+            desc="Processing audio files",
+            total=len(df),
         ):
-            recording_id = Path(row.path).stem
-            if recording_id in recs_writer and recording_id in sups_writer:
-                # Skip files already processed (resume preparation)
-                continue
             try:
-                recording, segment = parse_utterance(row, lang_path, lang)
+                result = parse_utterance(row, lang_path, lang)
+                if result is None:
+                    continue
+                recording, segment = result
             except Exception as e:
                 logging.error(
                     f"Error when processing file: '{tsv_path}', line no. {idx}: '{row}'.\n"
-                    f"Original error message: {e}"
+                    f"Original error type: '{type(e)}' and message: {e}"
                 )
                 continue
             validate_recordings_and_supervisions(recording, segment)
@@ -255,13 +257,15 @@ def prepare_single_commonvoice_tsv(
 
 
 def parse_utterance(
-    row: Any, lang_path: Path, language: str
-) -> Tuple[Recording, SupervisionSegment]:
+    row: Any, lang_path: Path, language: str, ignore_ids: Set[str] = frozenset()
+) -> Optional[Tuple[Recording, SupervisionSegment]]:
     # Create the Recording first
     audio_path = lang_path / "clips" / row.path
     if not audio_path.is_file():
         raise ValueError(f"No such file: {audio_path}")
     recording_id = Path(row.path).stem
+    if recording_id in ignore_ids:
+        return None
     recording = Recording.from_file(audio_path, recording_id=recording_id)
     # Then, create the corresponding supervisions
     segment = SupervisionSegment(
