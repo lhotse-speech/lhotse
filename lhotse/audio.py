@@ -924,7 +924,7 @@ def torchaudio_info(path: Pathlike) -> LibsndfileCompatibleAudioInfo:
         channels=info.num_channels,
         frames=info.num_frames,
         samplerate=info.sample_rate,
-        duration=info.num_frames * info.sample_rate,
+        duration=info.num_frames / info.sample_rate,
     )
 
 
