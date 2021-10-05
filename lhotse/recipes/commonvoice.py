@@ -29,7 +29,8 @@ DEFAULT_COMMONVOICE_RELEASE = "cv-corpus-5.1-2020-06-22"
 
 
 COMMONVOICE_LANGS = "en de fr cy tt kab ca zh-TW it fa eu es ru tr nl eo zh-CN rw pt zh-HK cs pl uk".split()
-COMMONVOICE_SPLITS = ("train", "dev", "test")
+COMMONVOICE_SPLITS = ("train", "dev", "test", "validated", "invalidated", "other")
+COMMONVOICE_DEFAULT_SPLITS = ("train", "dev", "test")
 
 # TODO: a list of mapping from language codes (e.g., "en") to actual language names (e.g., "US English")
 COMMONVOICE_CODE2LANG = {}
@@ -99,8 +100,9 @@ def download_commonvoice(
 
 def prepare_commonvoice(
     corpus_dir: Pathlike,
+    output_dir: Pathlike,
     languages: Union[str, Sequence[str]] = "auto",
-    output_dir: Optional[Pathlike] = None,
+    splits: Union[str, Sequence[str]] = COMMONVOICE_DEFAULT_SPLITS,
     num_jobs: int = 1,
 ) -> Dict[str, Dict[str, Dict[str, Union[RecordingSet, SupervisionSet]]]]:
     """
@@ -119,8 +121,10 @@ def prepare_commonvoice(
         >>> {'en/fr/pl/...': {'train/dev/test': {'recordings/supervisions': manifest}}}
 
     :param corpus_dir: Pathlike, the path to the downloaded corpus.
-    :param languages: 'auto' (prepare all discovered data) or a list of language codes.
     :param output_dir: Pathlike, the path where to write the manifests.
+    :param languages: 'auto' (prepare all discovered data) or a list of language codes.
+    :param splits: by default ``['train', 'dev', 'test']``, can also include
+        ``'validated'``, ``'invalidated'``, and ``'other'``.
     :param num_jobs: How many concurrent workers to use for scanning of the audio files.
     :return: a dict with manifests for all specified languagues and their train/dev/test splits.
     """
@@ -131,6 +135,12 @@ def prepare_commonvoice(
 
     corpus_dir = Path(corpus_dir)
     assert corpus_dir.is_dir(), f"No such directory: {corpus_dir}"
+    assert output_dir is not None, (
+        "CommonVoice recipe requires to specify the output "
+        "manifest directory (output_dir cannot be None)."
+    )
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
 
     if languages == "auto":
         languages = set(COMMONVOICE_LANGS).intersection(
@@ -145,10 +155,6 @@ def prepare_commonvoice(
 
     manifests = {}
 
-    if output_dir is not None:
-        output_dir = Path(output_dir)
-        output_dir.mkdir(parents=True, exist_ok=True)
-
     with ProcessPoolExecutor(num_jobs) as ex:
         for lang in tqdm(languages, desc="Processing CommonVoice languages"):
             logging.info(f"Language: {lang}")
@@ -160,7 +166,7 @@ def prepare_commonvoice(
                 output_dir=output_dir, language=lang
             )
 
-            for part in COMMONVOICE_SPLITS:
+            for part in splits:
                 logging.info(f"Split: {part}")
                 if part in lang_manifests:
                     logging.info(
@@ -169,7 +175,8 @@ def prepare_commonvoice(
                     continue
                 recording_set, supervision_set = prepare_single_commonvoice_tsv(
                     lang=lang,
-                    tsv_path=lang_path / f'{part}.tsv',
+                    part=part,
+                    output_dir=output_dir,
                     lang_path=lang_path,
                     executor=ex,
                 )
@@ -191,19 +198,24 @@ def prepare_commonvoice(
 
 
 def prepare_single_commonvoice_tsv(
-    lang: str, tsv_path: Pathlike, lang_path: Pathlike, executor: Executor = None
+    lang: str,
+    part: str,
+    output_dir: Pathlike,
+    lang_path: Pathlike,
+    executor: Executor = None,
 ) -> Tuple[RecordingSet, SupervisionSet]:
     """
     Prepares part of CommonVoice data from a single TSV file.
 
     :param lang: string language code (e.g., "en").
-    :param tsv_path: path to a TSV with CommonVoice metadata
-        (e.g., "/path/to/cv-corpus-7.0-2021-07-21/pl/train.tsv").
+    :param part: which split to prepare (e.g., "train", "validated", etc.).
+    :param output_dir: path to directory where we will store the manifests.
     :param lang_path: path to a CommonVoice directory for a specific language
         (e.g., "/path/to/cv-corpus-7.0-2021-07-21/pl").
     :param executor: optional Executor object for parallelism
         (by default it spawns a single-threaded executor to simplify the code).
-    :return: a tuple of (RecordingSet, SupervisionSet) object.
+    :return: a tuple of (RecordingSet, SupervisionSet) objects opened in lazy mode,
+        as CommonVoice manifests may be fairly large in memory.
     """
     if not is_module_available("pandas"):
         raise ValueError(
@@ -215,28 +227,34 @@ def prepare_single_commonvoice_tsv(
         executor = ThreadPoolExecutor(max_workers=1)
 
     lang_path = Path(lang_path)
+    output_dir = Path(output_dir)
+    tsv_path = lang_path / f"{part}.tsv"
 
-    recordings = []
-    supervisions = []
     # Read the metadata
     df = pd.read_csv(tsv_path, sep="\t")
     # Scan all the audio files
     futures = []
     for idx, row in tqdm(df.iterrows(), desc="Processing audio files", total=len(df)):
         futures.append(executor.submit(parse_utterance, row, lang_path, lang))
-    with tqdm(total=len(futures), desc="Collecting results") as pbar:
+    with tqdm(
+        total=len(futures), desc="Storing manifests on disk"
+    ) as pbar, RecordingSet.open_writer(
+        output_dir / f"cv_recordings_{lang}_{part}.jsonl.gz"
+    ) as recs_writer, SupervisionSet.open_writer(
+        output_dir / f"cv_supervisions_{lang}_{part}.jsonl.gz"
+    ) as sups_writer:
         for future in as_completed(futures):
             result = future.result()
             if result is None:
                 continue
             recording, segment = result
-            recordings.append(recording)
-            supervisions.append(segment)
+            validate_recordings_and_supervisions(recording, segment)
+            recs_writer.write(recording)
+            sups_writer.write(segment)
             pbar.update(1)
-    recording_set = RecordingSet.from_recordings(recordings)
-    supervision_set = SupervisionSet.from_segments(supervisions)
-    validate_recordings_and_supervisions(recording_set, supervision_set)
-    return recording_set, supervision_set
+    recordings = RecordingSet.from_jsonl_lazy(recs_writer.path)
+    supervisions = SupervisionSet.from_jsonl_lazy(sups_writer.path)
+    return recordings, supervisions
 
 
 def parse_utterance(

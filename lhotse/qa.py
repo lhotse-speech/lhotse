@@ -1,6 +1,6 @@
 import logging
 from math import isclose
-from typing import Any, Callable, Dict, Optional, Tuple
+from typing import Any, Callable, Dict, Optional, Tuple, Union
 
 import numpy as np
 
@@ -67,8 +67,8 @@ def fix_manifests(
 
 
 def validate_recordings_and_supervisions(
-        recordings: RecordingSet,
-        supervisions: SupervisionSet,
+        recordings: Union[RecordingSet, Recording],
+        supervisions: Union[SupervisionSet, SupervisionSegment],
         read_data: bool = False
 ) -> None:
     """
@@ -79,6 +79,10 @@ def validate_recordings_and_supervisions(
     are missing their counterparts.
     These items will be discarded by default when creating a CutSet.
     """
+    if isinstance(recordings, Recording):
+        recordings = RecordingSet.from_recordings([recordings])
+    if isinstance(supervisions, SupervisionSegment):
+        supervisions = SupervisionSet.from_segments([supervisions])
     validate(recordings, read_data=read_data)
     validate(supervisions)
     # Errors
