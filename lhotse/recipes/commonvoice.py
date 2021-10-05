@@ -13,7 +13,6 @@ import logging
 import shutil
 import tarfile
 from collections import defaultdict
-from concurrent.futures import ProcessPoolExecutor
 from functools import partial
 from pathlib import Path
 from typing import Any, Dict, Iterable, Optional, Sequence, Set, Tuple, Union
@@ -22,6 +21,7 @@ from tqdm.auto import tqdm
 
 from lhotse import load_manifest, validate_recordings_and_supervisions
 from lhotse.audio import Recording, RecordingSet
+from lhotse.parallel import parallel_map
 from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import Pathlike, is_module_available, urlretrieve_progress
 
@@ -225,29 +225,20 @@ def prepare_single_commonvoice_tsv(
     ) as recs_writer, SupervisionSet.open_writer(
         output_dir / f"cv_supervisions_{lang}_{part}.jsonl.gz",
         overwrite=False,
-    ) as sups_writer, ProcessPoolExecutor(
-        max_workers=4
-    ) as ex:
+    ) as sups_writer:
         ignore_ids = recs_writer.ignore_ids & sups_writer.ignore_ids
         do_work = partial(
             parse_utterance, lang_path=lang_path, language=lang, ignore_ids=ignore_ids
         )
         for idx, row in tqdm(
-            ex.map(do_work, df.iterrows(), chunksize=5000),
+            parallel_map(do_work, df.iterrows(), num_jobs=4),
             desc="Processing audio files",
             total=len(df),
         ):
-            try:
-                result = parse_utterance(row, lang_path, lang)
-                if result is None:
-                    continue
-                recording, segment = result
-            except Exception as e:
-                logging.error(
-                    f"Error when processing file: '{tsv_path}', line no. {idx}: '{row}'.\n"
-                    f"Original error type: '{type(e)}' and message: {e}"
-                )
+            result = parse_utterance(row, lang_path, lang)
+            if result is None:
                 continue
+            recording, segment = result
             validate_recordings_and_supervisions(recording, segment)
             recs_writer.write(recording)
             sups_writer.write(segment)
@@ -260,37 +251,44 @@ def parse_utterance(
     idx_and_row: Any, lang_path: Path, language: str, ignore_ids: Set[str] = frozenset()
 ) -> Optional[Tuple[Recording, SupervisionSegment]]:
     idx, row = idx_and_row
-    # Create the Recording first
-    audio_path = lang_path / "clips" / row.path
-    if not audio_path.is_file():
-        raise ValueError(f"No such file: {audio_path}")
-    recording_id = Path(row.path).stem
-    if recording_id in ignore_ids:
+    try:
+        # Create the Recording first
+        audio_path = lang_path / "clips" / row.path
+        if not audio_path.is_file():
+            raise ValueError(f"No such file: {audio_path}")
+        recording_id = Path(row.path).stem
+        if recording_id in ignore_ids:
+            return None
+        recording = Recording.from_file(audio_path, recording_id=recording_id)
+        # Then, create the corresponding supervisions
+        segment = SupervisionSegment(
+            id=recording_id,
+            recording_id=recording_id,
+            start=0.0,
+            duration=recording.duration,
+            channel=0,
+            # Look up language code => language name mapping (it is empty at the time of writing this comment)
+            # if the language code is unknown, fall back to using the language code.
+            language=COMMONVOICE_CODE2LANG.get(language, language),
+            speaker=row.client_id,
+            text=row.sentence.strip(),
+            gender=row.gender if row.gender != "nan" else None,
+            custom={
+                "age": row.age if row.age != "nan" else None,
+                "accent": row.accent if row.accent != "nan" else None,
+            },
+        )
+        return recording, segment
+    except Exception as e:
+        logging.error(
+            f"Error when processing TSV file: line no. {idx}: '{row}'.\n"
+            f"Original error type: '{type(e)}' and message: {e}"
+        )
         return None
-    recording = Recording.from_file(audio_path, recording_id=recording_id)
-    # Then, create the corresponding supervisions
-    segment = SupervisionSegment(
-        id=recording_id,
-        recording_id=recording_id,
-        start=0.0,
-        duration=recording.duration,
-        channel=0,
-        # Look up language code => language name mapping (it is empty at the time of writing this comment)
-        # if the language code is unknown, fall back to using the language code.
-        language=COMMONVOICE_CODE2LANG.get(language, language),
-        speaker=row.client_id,
-        text=row.sentence.strip(),
-        gender=row.gender if row.gender != "nan" else None,
-        custom={
-            "age": row.age if row.age != "nan" else None,
-            "accent": row.accent if row.accent != "nan" else None,
-        },
-    )
-    return recording, segment
 
 
 def read_cv_manifests_if_cached(
-    output_dir: Optional[Pathlike],
+        output_dir: Optional[Pathlike],
     language: str,
 ) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet]]]:
     """
