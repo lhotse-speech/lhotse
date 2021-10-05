@@ -225,13 +225,25 @@ def prepare_single_commonvoice_tsv(
     df = pd.read_csv(tsv_path, sep="\t")
     # Scan all the audio files
     with RecordingSet.open_writer(
-        output_dir / f"cv_recordings_{lang}_{part}.jsonl.gz"
+        output_dir / f"cv_recordings_{lang}_{part}.jsonl.gz",
+        overwrite=False,
     ) as recs_writer, SupervisionSet.open_writer(
-        output_dir / f"cv_supervisions_{lang}_{part}.jsonl.gz"
+        output_dir / f"cv_supervisions_{lang}_{part}.jsonl.gz",
+        overwrite=False,
     ) as sups_writer:
         for idx, row in tqdm(df.iterrows(), desc="Processing audio files", total=len(df)):
-            result = parse_utterance( row, lang_path, lang)
+            recording_id = Path(row.path).stem
+            if recording_id in recs_writer and recording_id in sups_writer:
+                # Skip files already processed (resume preparation)
+                continue
+            try:
+                result = parse_utterance(row, lang_path, lang)
+            except Exception as e:
+                # Handle unexpected errors
+                raise ValueError(f"Error when processing file: '{tsv_path}', line no. {idx}: '{row}'.\n"
+                                 f"Original error message: {e}")
             if result is None:
+                # Skip expected errors
                 continue
             recording, segment = result
             validate_recordings_and_supervisions(recording, segment)
