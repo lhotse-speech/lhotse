@@ -242,9 +242,8 @@ def prepare_single_commonvoice_tsv(
 
 
 def parse_utterance(
-    idx_and_row: Any, lang_path: Path, language: str
+    row: Any, lang_path: Path, language: str
 ) -> Optional[Tuple[Recording, SupervisionSegment]]:
-    idx, row = idx_and_row
     try:
         # Create the Recording first
         audio_path = lang_path / "clips" / row.path
