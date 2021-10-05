@@ -13,7 +13,7 @@ from lhotse.utils import Pathlike
 @click.option(
     "-l",
     "--language",
-    default=["all"],
+    default=["auto"],
     multiple=True,
     help="Languages to prepare (scans CORPUS_DIR for language codes by default).",
 )
