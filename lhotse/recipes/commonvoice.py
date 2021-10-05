@@ -13,7 +13,6 @@ import logging
 import shutil
 import tarfile
 from collections import defaultdict
-from concurrent.futures import Executor, ProcessPoolExecutor, ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Any, Dict, Iterable, Optional, Sequence, Tuple, Union
 
@@ -155,44 +154,42 @@ def prepare_commonvoice(
 
     manifests = {}
 
-    with ProcessPoolExecutor(num_jobs) as ex:
-        for lang in tqdm(languages, desc="Processing CommonVoice languages"):
-            logging.info(f"Language: {lang}")
-            lang_path = corpus_dir / lang
+    for lang in tqdm(languages, desc="Processing CommonVoice languages"):
+        logging.info(f"Language: {lang}")
+        lang_path = corpus_dir / lang
 
-            # Maybe the manifests already exist: we can read them and save a bit of preparation time.
-            # Pattern: "cv_recordings_en_train.jsonl.gz" / "cv_supervisions_en_train.jsonl.gz"
-            lang_manifests = read_cv_manifests_if_cached(
-                output_dir=output_dir, language=lang
-            )
+        # Maybe the manifests already exist: we can read them and save a bit of preparation time.
+        # Pattern: "cv_recordings_en_train.jsonl.gz" / "cv_supervisions_en_train.jsonl.gz"
+        lang_manifests = read_cv_manifests_if_cached(
+            output_dir=output_dir, language=lang
+        )
 
-            for part in splits:
-                logging.info(f"Split: {part}")
-                if part in lang_manifests:
-                    logging.info(
-                        f"CommonVoice language: {lang} already prepared - skipping."
-                    )
-                    continue
-                recording_set, supervision_set = prepare_single_commonvoice_tsv(
-                    lang=lang,
-                    part=part,
-                    output_dir=output_dir,
-                    lang_path=lang_path,
-                    executor=ex,
+        for part in splits:
+            logging.info(f"Split: {part}")
+            if part in lang_manifests:
+                logging.info(
+                    f"CommonVoice language: {lang} already prepared - skipping."
                 )
-                if output_dir is not None:
-                    supervision_set.to_file(
-                        output_dir / f"cv_supervisions_{lang}_{part}.jsonl.gz"
-                    )
-                    recording_set.to_file(
-                        output_dir / f"cv_recordings_{lang}_{part}.jsonl.gz"
-                    )
-                lang_manifests[part] = {
-                    "supervisions": supervision_set,
-                    "recordings": recording_set,
-                }
+                continue
+            recording_set, supervision_set = prepare_single_commonvoice_tsv(
+                lang=lang,
+                part=part,
+                output_dir=output_dir,
+                lang_path=lang_path,
+            )
+            if output_dir is not None:
+                supervision_set.to_file(
+                    output_dir / f"cv_supervisions_{lang}_{part}.jsonl.gz"
+                )
+                recording_set.to_file(
+                    output_dir / f"cv_recordings_{lang}_{part}.jsonl.gz"
+                )
+            lang_manifests[part] = {
+                "supervisions": supervision_set,
+                "recordings": recording_set,
+            }
 
-            manifests[lang] = lang_manifests
+        manifests[lang] = lang_manifests
 
     return manifests
 
@@ -202,7 +199,6 @@ def prepare_single_commonvoice_tsv(
     part: str,
     output_dir: Pathlike,
     lang_path: Pathlike,
-    executor: Executor = None,
 ) -> Tuple[RecordingSet, SupervisionSet]:
     """
     Prepares part of CommonVoice data from a single TSV file.
@@ -212,8 +208,6 @@ def prepare_single_commonvoice_tsv(
     :param output_dir: path to directory where we will store the manifests.
     :param lang_path: path to a CommonVoice directory for a specific language
         (e.g., "/path/to/cv-corpus-7.0-2021-07-21/pl").
-    :param executor: optional Executor object for parallelism
-        (by default it spawns a single-threaded executor to simplify the code).
     :return: a tuple of (RecordingSet, SupervisionSet) objects opened in lazy mode,
         as CommonVoice manifests may be fairly large in memory.
     """
@@ -223,9 +217,6 @@ def prepare_single_commonvoice_tsv(
         )
     import pandas as pd
 
-    if executor is None:
-        executor = ThreadPoolExecutor(max_workers=1)
-
     lang_path = Path(lang_path)
     output_dir = Path(output_dir)
     tsv_path = lang_path / f"{part}.tsv"
@@ -233,25 +224,19 @@ def prepare_single_commonvoice_tsv(
     # Read the metadata
     df = pd.read_csv(tsv_path, sep="\t")
     # Scan all the audio files
-    futures = []
-    for idx, row in tqdm(df.iterrows(), desc="Processing audio files", total=len(df)):
-        futures.append(executor.submit(parse_utterance, row, lang_path, lang))
-    with tqdm(
-        total=len(futures), desc="Storing manifests on disk"
-    ) as pbar, RecordingSet.open_writer(
+    with RecordingSet.open_writer(
         output_dir / f"cv_recordings_{lang}_{part}.jsonl.gz"
     ) as recs_writer, SupervisionSet.open_writer(
         output_dir / f"cv_supervisions_{lang}_{part}.jsonl.gz"
     ) as sups_writer:
-        for future in as_completed(futures):
-            result = future.result()
+        for idx, row in tqdm(df.iterrows(), desc="Processing audio files", total=len(df)):
+            result = parse_utterance( row, lang_path, lang)
             if result is None:
                 continue
             recording, segment = result
             validate_recordings_and_supervisions(recording, segment)
             recs_writer.write(recording)
             sups_writer.write(segment)
-            pbar.update(1)
     recordings = RecordingSet.from_jsonl_lazy(recs_writer.path)
     supervisions = SupervisionSet.from_jsonl_lazy(sups_writer.path)
     return recordings, supervisions
