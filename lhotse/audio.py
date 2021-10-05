@@ -879,6 +879,8 @@ def read_audio(
         duration: Optional[Seconds] = None,
         force_opus_sampling_rate: Optional[int] = None,
 ) -> Tuple[np.ndarray, int]:
+    # First handle special cases: OPUS and SPHERE (SPHERE may be encoded with shorten,
+    #   which can only be decoded by binaries "shorten" and "sph2pipe").
     if isinstance(path_or_fd, (str, Path)) and str(path_or_fd).lower().endswith('.opus'):
         return read_opus(
             path_or_fd,
@@ -887,26 +889,14 @@ def read_audio(
             force_opus_sampling_rate=force_opus_sampling_rate,
         )
     elif isinstance(path_or_fd, (str, Path)) and str(path_or_fd).lower().endswith('.sph'):
-        return read_sph(
-            path_or_fd,
-            offset=offset,
-            duration=duration
-        )
+        return read_sph(path_or_fd, offset=offset, duration=duration)
     try:
-        import soundfile as sf
-        with sf.SoundFile(path_or_fd) as sf_desc:
-            sampling_rate = sf_desc.samplerate
-            if offset > 0:
-                # Seek to the start of the target read
-                sf_desc.seek(compute_num_samples(offset, sampling_rate))
-            if duration is not None:
-                frame_duration = compute_num_samples(duration, sampling_rate)
-            else:
-                frame_duration = -1
-            # Load the target number of frames, and transpose to match librosa form
-            return sf_desc.read(frames=frame_duration, dtype=np.float32, always_2d=False).T, sampling_rate
+        return torchaudio_load(path_or_fd, offset=offset, duration=duration)
     except:
-        return _audioread_load(path_or_fd, offset=offset, duration=duration)
+        try:
+            return soundfile_load(path_or_fd, offset=offset, duration=duration)
+        except:
+            return audioread_load(path_or_fd, offset=offset, duration=duration)
 
 
 class LibsndfileCompatibleAudioInfo(NamedTuple):
@@ -914,6 +904,65 @@ class LibsndfileCompatibleAudioInfo(NamedTuple):
     frames: int
     samplerate: int
     duration: float
+
+
+def torchaudio_info(path: Pathlike) -> LibsndfileCompatibleAudioInfo:
+    """
+    Return an audio info data structure that's a compatible subset of ``pysoundfile.info()``
+    that we need to create a ``Recording`` manifest.
+    """
+    import torchaudio
+    info = torchaudio.info(path)
+    return LibsndfileCompatibleAudioInfo(
+        channels=info.num_channels,
+        frames=info.num_frames,
+        samplerate=info.sample_rate,
+        duration=info.num_frames * info.sample_rate,
+    )
+
+
+def torchaudio_load(
+    path_or_fd: Pathlike, offset: Seconds = 0, duration: Optional[Seconds] = None
+) -> Tuple[np.ndarray, int]:
+    import torchaudio
+
+    # Just read everything: no need to compute the number of samples from seconds.
+    if offset == 0 and duration is None:
+        audio, sr = torchaudio.load(path_or_fd)
+        return audio.numpy(), sr
+
+    # Need to grab the "info" about sampling rate before reading to compute
+    # the number of samples provided in offset / num_frames.
+    audio_info = torchaudio_info(path_or_fd)
+    frame_offset = 0
+    num_frames = -1
+    if offset > 0:
+        frame_offset = compute_num_samples(offset, audio_info.samplerate)
+    if duration is not None:
+        num_frames = compute_num_samples(duration, audio_info.samplerate)
+    audio, sr = torchaudio.load(
+        path_or_fd,
+        frame_offset=frame_offset,
+        num_frames=num_frames,
+    )
+    return audio.numpy(), sr
+
+
+def soundfile_load(
+        path_or_fd: Pathlike, offset: Seconds = 0, duration: Optional[Seconds] = None
+) -> Tuple[np.ndarray, int]:
+    import soundfile as sf
+    with sf.SoundFile(path_or_fd) as sf_desc:
+        sampling_rate = sf_desc.samplerate
+        if offset > 0:
+            # Seek to the start of the target read
+            sf_desc.seek(compute_num_samples(offset, sampling_rate))
+        if duration is not None:
+            frame_duration = compute_num_samples(duration, sampling_rate)
+        else:
+            frame_duration = -1
+        # Load the target number of frames, and transpose to match librosa form
+        return sf_desc.read(frames=frame_duration, dtype=np.float32, always_2d=False).T, sampling_rate
 
 
 def audioread_info(path: Pathlike) -> LibsndfileCompatibleAudioInfo:
@@ -926,7 +975,7 @@ def audioread_info(path: Pathlike) -> LibsndfileCompatibleAudioInfo:
     # We just read the file and compute the number of samples
     # -- no other method seems fully reliable...
     with audioread.audio_open(path, backends=_available_audioread_backends()) as input_file:
-        shape = _audioread_load(input_file)[0].shape
+        shape = audioread_load(input_file)[0].shape
         if len(shape) == 1:
             num_samples = shape[0]
         else:
@@ -951,7 +1000,7 @@ def _available_audioread_backends():
     return backends
 
 
-def _audioread_load(
+def audioread_load(
         path_or_file: Union[Pathlike, FileObject],
         offset: Seconds = 0.0,
         duration: Seconds = None,
