@@ -230,7 +230,7 @@ def prepare_single_commonvoice_tsv(
     ) as ex:
         ignore_ids = recs_writer.ignore_ids & sups_writer.ignore_ids
         do_work = partial(
-            parse_utterance, lang_path=lang_path, lang=lang, ignore_ids=ignore_ids
+            parse_utterance, lang_path=lang_path, language=lang, ignore_ids=ignore_ids
         )
         for idx, row in tqdm(
             ex.map(do_work, df.iterrows(), chunksize=5000),
