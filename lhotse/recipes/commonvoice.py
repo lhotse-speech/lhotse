@@ -12,6 +12,7 @@ We’re crowdsourcing an open-source dataset of voices. Donate your voice, valid
 import logging
 import shutil
 import tarfile
+import warnings
 from collections import defaultdict
 from pathlib import Path
 from typing import Any, Dict, Iterable, Optional, Sequence, Tuple, Union
@@ -131,6 +132,9 @@ def prepare_commonvoice(
         raise ValueError(
             "To prepare CommonVoice data, please 'pip install pandas' first."
         )
+    if num_jobs > 1:
+        warnings.warn('num_jobs>1 currently not supported for CommonVoice data prep;'
+                      'setting to 1.')
 
     corpus_dir = Path(corpus_dir)
     assert corpus_dir.is_dir(), f"No such directory: {corpus_dir}"
