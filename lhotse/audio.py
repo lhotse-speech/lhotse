@@ -225,31 +225,16 @@ class Recording:
         :return: a new ``Recording`` instance pointing to the audio file.
         """
         path = Path(path)
-        if path.suffix.lower() == '.opus':
-            # We handle OPUS as a special case because we might need to force a certain sampling rate.
-            info = opus_info(path, force_opus_sampling_rate=force_opus_sampling_rate)
-        elif path.suffix.lower() == '.sph':
-            # We handle SPHERE as another special case because some old codecs (i.e. "shorten" codec)
-            # can't be handled by neither pysoundfile nor pyaudioread.
-            info = sph_info(path)
-        else:
-            try:
-                # Try to parse the file using pysoundfile first.
-                import soundfile as sf
-                info = sf.info(str(path))
-            except:
-                # Try to parse the file using audioread as a fallback.
-                info = audioread_info(str(path))
-                # If both fail, then Python 3 will display both exception messages.
+        audio_info = info(path, force_opus_sampling_rate=force_opus_sampling_rate)
         return Recording(
             id=recording_id if recording_id is not None else path.stem,
-            sampling_rate=info.samplerate,
-            num_samples=info.frames,
-            duration=info.duration,
+            sampling_rate=audio_info.samplerate,
+            num_samples=audio_info.frames,
+            duration=audio_info.duration,
             sources=[
                 AudioSource(
                     type='file',
-                    channels=list(range(info.channels)),
+                    channels=list(range(audio_info.channels)),
                     source=(
                         '/'.join(path.parts[-relative_path_depth:])
                         if relative_path_depth is not None and relative_path_depth > 0
@@ -879,6 +864,8 @@ def read_audio(
         duration: Optional[Seconds] = None,
         force_opus_sampling_rate: Optional[int] = None,
 ) -> Tuple[np.ndarray, int]:
+    # First handle special cases: OPUS and SPHERE (SPHERE may be encoded with shorten,
+    #   which can only be decoded by binaries "shorten" and "sph2pipe").
     if isinstance(path_or_fd, (str, Path)) and str(path_or_fd).lower().endswith('.opus'):
         return read_opus(
             path_or_fd,
@@ -887,26 +874,14 @@ def read_audio(
             force_opus_sampling_rate=force_opus_sampling_rate,
         )
     elif isinstance(path_or_fd, (str, Path)) and str(path_or_fd).lower().endswith('.sph'):
-        return read_sph(
-            path_or_fd,
-            offset=offset,
-            duration=duration
-        )
+        return read_sph(path_or_fd, offset=offset, duration=duration)
     try:
-        import soundfile as sf
-        with sf.SoundFile(path_or_fd) as sf_desc:
-            sampling_rate = sf_desc.samplerate
-            if offset > 0:
-                # Seek to the start of the target read
-                sf_desc.seek(compute_num_samples(offset, sampling_rate))
-            if duration is not None:
-                frame_duration = compute_num_samples(duration, sampling_rate)
-            else:
-                frame_duration = -1
-            # Load the target number of frames, and transpose to match librosa form
-            return sf_desc.read(frames=frame_duration, dtype=np.float32, always_2d=False).T, sampling_rate
+        return torchaudio_load(path_or_fd, offset=offset, duration=duration)
     except:
-        return _audioread_load(path_or_fd, offset=offset, duration=duration)
+        try:
+            return soundfile_load(path_or_fd, offset=offset, duration=duration)
+        except:
+            return audioread_load(path_or_fd, offset=offset, duration=duration)
 
 
 class LibsndfileCompatibleAudioInfo(NamedTuple):
@@ -914,6 +889,122 @@ class LibsndfileCompatibleAudioInfo(NamedTuple):
     frames: int
     samplerate: int
     duration: float
+
+
+def info(path: Pathlike, force_opus_sampling_rate: Optional[int] = None) -> LibsndfileCompatibleAudioInfo:
+    if path.suffix.lower() == '.opus':
+        # We handle OPUS as a special case because we might need to force a certain sampling rate.
+        return opus_info(path, force_opus_sampling_rate=force_opus_sampling_rate)
+    elif path.suffix.lower() == '.sph':
+        # We handle SPHERE as another special case because some old codecs (i.e. "shorten" codec)
+        # can't be handled by neither pysoundfile nor pyaudioread.
+        return sph_info(path)
+    try:
+        # Try to parse the file using torchaudio first.
+        return torchaudio_info(path)
+    except:
+        try:
+            # Try to parse the file using pysoundfile as a fallback.
+            import soundfile as sf
+            return sf.info(str(path))
+        except:
+            # Try to parse the file using audioread as the last fallback.
+            return audioread_info(str(path))
+            # If both fail, then Python 3 will display both exception messages.
+
+
+def torchaudio_info(path: Pathlike) -> LibsndfileCompatibleAudioInfo:
+    """
+    Return an audio info data structure that's a compatible subset of ``pysoundfile.info()``
+    that we need to create a ``Recording`` manifest.
+    """
+    import torchaudio
+    info = torchaudio.info(path)
+    return LibsndfileCompatibleAudioInfo(
+        channels=info.num_channels,
+        frames=info.num_frames,
+        samplerate=info.sample_rate,
+        duration=info.num_frames / info.sample_rate,
+    )
+
+
+def torchaudio_load(
+    path_or_fd: Pathlike, offset: Seconds = 0, duration: Optional[Seconds] = None
+) -> Tuple[np.ndarray, int]:
+    import torch
+    import torchaudio
+
+    if not isinstance(path_or_fd, (str, Path)):
+        # Special case: we are likely dealing with a file descriptor (open file).
+        # If we run torchaudio.info() on it, it will consume some data,
+        # which will cause torchaudio.load() to fail.
+        # We expect offset and duration have default values, otherwise we fail.
+        assert offset == 0 and duration is None, (
+            "Lhotse doesn't support using torchaudio.load() "
+            "with open file objects when offset or duration "
+            "arguments are non-default."
+        )
+        audio, sampling_rate = torchaudio.load(path_or_fd)
+        return audio.numpy(), sampling_rate
+
+    # Need to grab the "info" about sampling rate before reading to compute
+    # the number of samples provided in offset / num_frames.
+    audio_info = torchaudio_info(path_or_fd)
+    frame_offset = 0
+    num_frames = -1
+    if offset > 0:
+        frame_offset = compute_num_samples(offset, audio_info.samplerate)
+    if duration is not None:
+        num_frames = compute_num_samples(duration, audio_info.samplerate)
+    audio, sampling_rate = torchaudio.load(
+        path_or_fd,
+        frame_offset=frame_offset,
+        num_frames=num_frames,
+    )
+
+    # MP3 has weird behaviour sometimes: torchaudio.info() `num_frames` indicates
+    # a different number of samples than data shape from torchaudio.load().
+    # We'll truncate/zero-pad to ensure the shape is the same as from info,
+    # up to some threshold determined heuristically (25ms).
+    THRESHOLD: Seconds = 0.025
+    threshold_samples = THRESHOLD / sampling_rate
+    diff = audio.shape[1] - audio_info.frames
+    if diff < 0:
+        if abs(diff) <= threshold_samples:
+            audio = torch.nn.functional.pad(audio, (0, abs(diff)), mode='constant', value=0)
+        else:
+            raise ValueError(
+                f"Inconsistent audio data for '{path_or_fd}': torchaudio.info() declared "
+                f"{audio_info.frames} samples, but torchaudio.load() returned {audio.shape[1]} samples. "
+                f"Please report an issue in Lhotse or Torchaudio GitHub."
+            )
+    elif diff > 0:
+        if abs(diff) <= threshold_samples:
+            audio = audio[:, :-diff]
+        else:
+            raise ValueError(
+                f"Inconsistent audio data for '{path_or_fd}': torchaudio.info() declared "
+                f"{audio_info.frames} samples, but torchaudio.load() returned {audio.shape[1]} samples. "
+                f"Please report an issue in Lhotse or Torchaudio GitHub."
+            )
+    return audio.numpy(), sampling_rate
+
+
+def soundfile_load(
+        path_or_fd: Pathlike, offset: Seconds = 0, duration: Optional[Seconds] = None
+) -> Tuple[np.ndarray, int]:
+    import soundfile as sf
+    with sf.SoundFile(path_or_fd) as sf_desc:
+        sampling_rate = sf_desc.samplerate
+        if offset > 0:
+            # Seek to the start of the target read
+            sf_desc.seek(compute_num_samples(offset, sampling_rate))
+        if duration is not None:
+            frame_duration = compute_num_samples(duration, sampling_rate)
+        else:
+            frame_duration = -1
+        # Load the target number of frames, and transpose to match librosa form
+        return sf_desc.read(frames=frame_duration, dtype=np.float32, always_2d=False).T, sampling_rate
 
 
 def audioread_info(path: Pathlike) -> LibsndfileCompatibleAudioInfo:
@@ -926,7 +1017,7 @@ def audioread_info(path: Pathlike) -> LibsndfileCompatibleAudioInfo:
     # We just read the file and compute the number of samples
     # -- no other method seems fully reliable...
     with audioread.audio_open(path, backends=_available_audioread_backends()) as input_file:
-        shape = _audioread_load(input_file)[0].shape
+        shape = audioread_load(input_file)[0].shape
         if len(shape) == 1:
             num_samples = shape[0]
         else:
@@ -951,7 +1042,7 @@ def _available_audioread_backends():
     return backends
 
 
-def _audioread_load(
+def audioread_load(
         path_or_file: Union[Pathlike, FileObject],
         offset: Seconds = 0.0,
         duration: Seconds = None,
