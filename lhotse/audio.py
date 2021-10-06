@@ -933,6 +933,20 @@ def torchaudio_load(
 ) -> Tuple[np.ndarray, int]:
     import torch
     import torchaudio
+
+    if not isinstance(path_or_fd, (str, Path)):
+        # Special case: we are likely dealing with a file descriptor (open file).
+        # If we run torchaudio.info() on it, it will consume some data,
+        # which will cause torchaudio.load() to fail.
+        # We expect offset and duration have default values, otherwise we fail.
+        assert offset == 0 and duration is None, (
+            "Lhotse doesn't support using torchaudio.load() "
+            "with open file objects when offset or duration "
+            "arguments are non-default."
+        )
+        audio, sampling_rate = torchaudio.load(path_or_fd)
+        return audio.numpy(), sampling_rate
+
     # Need to grab the "info" about sampling rate before reading to compute
     # the number of samples provided in offset / num_frames.
     audio_info = torchaudio_info(path_or_fd)
@@ -947,6 +961,7 @@ def torchaudio_load(
         frame_offset=frame_offset,
         num_frames=num_frames,
     )
+
     # MP3 has weird behaviour sometimes: torchaudio.info() `num_frames` indicates
     # a different number of samples than data shape from torchaudio.load().
     # We'll truncate/zero-pad to ensure the shape is the same as from info,
