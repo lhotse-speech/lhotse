@@ -931,13 +931,8 @@ def torchaudio_info(path: Pathlike) -> LibsndfileCompatibleAudioInfo:
 def torchaudio_load(
     path_or_fd: Pathlike, offset: Seconds = 0, duration: Optional[Seconds] = None
 ) -> Tuple[np.ndarray, int]:
+    import torch
     import torchaudio
-
-    # Just read everything: no need to compute the number of samples from seconds.
-    if offset == 0 and duration is None:
-        audio, sr = torchaudio.load(path_or_fd)
-        return audio.numpy(), sr
-
     # Need to grab the "info" about sampling rate before reading to compute
     # the number of samples provided in offset / num_frames.
     audio_info = torchaudio_info(path_or_fd)
@@ -947,12 +942,37 @@ def torchaudio_load(
         frame_offset = compute_num_samples(offset, audio_info.samplerate)
     if duration is not None:
         num_frames = compute_num_samples(duration, audio_info.samplerate)
-    audio, sr = torchaudio.load(
+    audio, sampling_rate = torchaudio.load(
         path_or_fd,
         frame_offset=frame_offset,
         num_frames=num_frames,
     )
-    return audio.numpy(), sr
+    # MP3 has weird behaviour sometimes: torchaudio.info() `num_frames` indicates
+    # a different number of samples than data shape from torchaudio.load().
+    # We'll truncate/zero-pad to ensure the shape is the same as from info,
+    # up to some threshold determined heuristically (25ms).
+    THRESHOLD: Seconds = 0.025
+    threshold_samples = THRESHOLD / sampling_rate
+    diff = audio.shape[1] - audio_info.frames
+    if diff < 0:
+        if abs(diff) <= threshold_samples:
+            audio = torch.nn.functional.pad(audio, (0, abs(diff)), mode='constant', value=0)
+        else:
+            raise ValueError(
+                f"Inconsistent audio data for '{path_or_fd}': torchaudio.info() declared "
+                f"{audio_info.frames} samples, but torchaudio.load() returned {audio.shape[1]} samples. "
+                f"Please report an issue in Lhotse or Torchaudio GitHub."
+            )
+    elif diff > 0:
+        if abs(diff) <= threshold_samples:
+            audio = audio[:, :-diff]
+        else:
+            raise ValueError(
+                f"Inconsistent audio data for '{path_or_fd}': torchaudio.info() declared "
+                f"{audio_info.frames} samples, but torchaudio.load() returned {audio.shape[1]} samples. "
+                f"Please report an issue in Lhotse or Torchaudio GitHub."
+            )
+    return audio.numpy(), sampling_rate
 
 
 def soundfile_load(
