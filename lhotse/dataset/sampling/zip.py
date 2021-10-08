@@ -1,6 +1,6 @@
 from functools import reduce
 from operator import add
-from typing import Callable, List, Optional, Tuple, Union
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 from lhotse import CutSet
 from lhotse.cut import Cut
@@ -79,6 +79,27 @@ class ZipSampler(CutSampler):
             return min(s.num_cuts for s in self.samplers)
         except TypeError:
             return None
+
+    def state_dict(self) -> Dict[str, Any]:
+        # Note: no super().state_dict() call here is on purpose.
+        state_dict = {
+            'merge_batches': self.merge_batches,
+            'samplers': [s.state_dict() for s in self.samplers]
+        }
+        return state_dict
+
+    def load_state_dict(self, state_dict: Dict[str, Any]) -> None:
+        self.merge_batches = state_dict.pop('merge_batches')
+        assert len(self.samplers) == len(state_dict['samplers']), (
+            "Error in ZipSampler.load_state_dict(): Inconsistent number of samplers: "
+            f"current ZipSampler has {len(self.samplers)}, the state_dict has {len(state_dict['samplers'])}."
+        )
+        for sampler, sampler_sd in zip(self.samplers, state_dict.pop('samplers')):
+            sampler.load_state_dict(sampler_sd)
+        assert len(state_dict) == 0, (
+            "Error in ZipSampler.load_state_dict(): Unexpected keys:\n- " +
+            "\n- ".join(state_dict.keys())
+        )
 
     def __iter__(self):
         for sampler in self.samplers:

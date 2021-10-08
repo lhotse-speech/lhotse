@@ -1,7 +1,7 @@
 import warnings
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from math import isclose
-from typing import Callable, Iterable, Optional, Tuple, Union
+from typing import Any, Callable, Dict, Iterable, Optional, Tuple, Union
 
 from torch import distributed as dist
 from torch.utils.data import Sampler
@@ -111,6 +111,28 @@ class CutSampler(Sampler):
             ... sampler.filter(lambda cut: 1.0 <= cut.duration <= 20.0)
         """
         self._filter_fn = predicate
+
+    def state_dict(self) -> Dict[str, Any]:
+        return {
+            'epoch': self.epoch,
+            'world_size': self.world_size,
+            'rank': self.rank,
+            'seed': self.seed,
+            'shuffle': self.shuffle,
+            'diagnostics': self.diagnostics.state_dict(),
+        }
+
+    def load_state_dict(self, state_dict: Dict[str, Any]) -> None:
+        assert self.world_size == state_dict.pop('world_size')
+        # assert self.rank == state_dict.pop('rank')
+        assert self.seed == state_dict.pop('seed')
+        assert self.shuffle == state_dict.pop('shuffle')
+        self.epoch = state_dict.pop('epoch')
+        self.diagnostics.load_state_dict(state_dict.pop('diagnostics'))
+        assert len(state_dict) == 0, (
+            "Error in CutSampler.load_state_dict(): Unexpected keys:\n- " +
+            "\n- ".join(state_dict.keys())
+        )
 
     def __iter__(self):
         raise NotImplementedError(
@@ -251,6 +273,20 @@ class TimeConstraint:
         self.current = 0
         self.num_cuts = 0
 
+    def state_dict(self) -> Dict[str, Any]:
+        return asdict(self)
+
+    def load_state_dict(self, state_dict: Dict[str, Any]) -> None:
+        self.max_duration = state_dict.pop('max_duration')
+        self.max_samples = state_dict.pop('max_samples')
+        self.max_frames = state_dict.pop('max_frames')
+        self.current = state_dict.pop('current')
+        self.num_cuts = state_dict.pop('num_cuts')
+        assert len(state_dict) == 0, (
+            "Error in TimeConstraint.load_state_dict(): Unexpected keys:\n- " +
+            "\n- ".join(state_dict.keys())
+        )
+
     def __add__(self, other: "TimeConstraint") -> "TimeConstraint":
         for key in ("max_duration", "max_frames", "max_samples"):
             self_attr = getattr(self, key)
@@ -339,6 +375,19 @@ class SamplingDiagnostics:
             f"({self.num_kept_batches / self.total_batches:.2%}) batches "
             f"({self.num_discarded_batches:d} batches discarded).\n"
             f"Overall, {round(self.discarded_stats.current):d} seconds of supervision were discarded."
+        )
+
+    def state_dict(self) -> Dict[str, Any]:
+        return asdict(self)
+
+    def load_state_dict(self, state_dict: Dict[str, Any]) -> None:
+        self.num_kept_batches = state_dict.pop('num_kept_batches')
+        self.num_discarded_batches = state_dict.pop('num_discarded_batches')
+        self.kept_stats.load_state_dict(state_dict.pop('kept_stats'))
+        self.discarded_stats.load_state_dict(state_dict.pop('discarded_stats'))
+        assert len(state_dict) == 0, (
+            "Error in SamplingDiagnostics.load_state_dict(): Unexpected keys:\n- " +
+            "\n- ".join(state_dict.keys())
         )
 
     def __add__(self, other: "SamplingDiagnostics") -> "SamplingDiagnostics":

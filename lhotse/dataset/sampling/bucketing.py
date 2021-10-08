@@ -98,17 +98,18 @@ class BucketingSampler(CutSampler):
             )
 
         # Split data into buckets.
-        if bucket_method == "equal_len":
+        self.bucket_method = bucket_method
+        if self.bucket_method == "equal_len":
             self.buckets = create_buckets_equal_len(
                 *self.cut_sets, num_buckets=num_buckets
             )
-        elif bucket_method == "equal_duration":
+        elif self.bucket_method == "equal_duration":
             self.buckets = create_buckets_equal_duration(
                 *self.cut_sets, num_buckets=num_buckets
             )
         else:
             raise ValueError(
-                f"Unknown bucket_method: '{bucket_method}'. "
+                f"Unknown bucket_method: '{self.bucket_method}'. "
                 f"Use one of: 'equal_len' or 'equal_duration'."
             )
 
@@ -120,7 +121,7 @@ class BucketingSampler(CutSampler):
             for bucket_cut_sets in self.buckets
         ]
 
-        # Initialize mutable stable.
+        # Initialize mutable state.
         self.bucket_rng = random.Random(self.seed + self.epoch)
         self.depleted = [False] * num_buckets
 
@@ -190,6 +191,41 @@ class BucketingSampler(CutSampler):
         """
         for sampler in self.bucket_samplers:
             sampler.filter(predicate)
+
+    def state_dict(self) -> Dict[str, Any]:
+        # Note: no super().state_dict() call here is on purpose.
+        state_dict = {
+            'num_buckets': self.num_buckets,
+            'drop_last': self.drop_last,
+            'proportional_sampling': self.proportional_sampling,
+            'bucket_method': self.bucket_method,
+            'depleted': self.depleted,
+            'bucket_samplers': [s.state_dict() for s in self.bucket_samplers],
+        }
+        return state_dict
+
+    def load_state_dict(self, state_dict: Dict[str, Any]) -> None:
+        num_buckets = state_dict.pop('num_buckets')
+        assert self.num_buckets == num_buckets, (
+            "Error in BucketingSampler.load_state_dict(): Inconsistent number of buckets: "
+            f"current sampler has {self.num_buckets}, the state_dict has {num_buckets}."
+        )
+        self.drop_last = state_dict.pop('drop_last')
+        self.proportional_sampling = state_dict.pop('proportional_sampling')
+        self.bucket_method = state_dict.pop('bucket_method')
+        self.depleted = state_dict.pop('depleted')
+
+        assert len(self.bucket_samplers) == len(state_dict['bucket_samplers']), (
+            "Error in BucketingSampler.load_state_dict(): Inconsistent number of samplers: "
+            f"current sampler has {len(self.bucket_samplers)}, "
+            f"the state_dict has {len(state_dict['bucket_samplers'])}."
+        )
+        for sampler, sampler_sd in zip(self.bucket_samplers, state_dict.pop('bucket_samplers')):
+            sampler.load_state_dict(sampler_sd)
+        assert len(state_dict) == 0, (
+                "Error in BucketingSampler.load_state_dict(): Unexpected keys:\n- " +
+                "\n- ".join(state_dict.keys())
+        )
 
     def __iter__(self) -> "BucketingSampler":
         self.bucket_rng.seed(self.seed + self.epoch)

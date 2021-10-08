@@ -1,5 +1,5 @@
 import warnings
-from typing import Optional
+from typing import Any, Dict, Optional
 
 from lhotse import CutSet, Seconds
 from lhotse.dataset.sampling.base import CutSampler, TimeConstraint
@@ -102,6 +102,39 @@ class SingleCutSampler(CutSampler):
         if self.data_source.is_lazy:
             return None
         return len(self.data_source)
+
+    def state_dict(self) -> Dict[str, Any]:
+        state_dict = super().state_dict()
+        state_dict.update({
+            'drop_last': self.drop_last,
+            'time_constraint': self.time_constraint.state_dict(),
+            'max_cuts': self.max_cuts,
+        })
+        return state_dict
+
+    def load_state_dict(self, state_dict: Dict[str, Any]) -> None:
+        self.drop_last = state_dict.pop('drop_last')
+
+        time_constraint = TimeConstraint(**state_dict.pop('time_constraint'))
+        if self.time_constraint != time_constraint:
+            warnings.warn('SingleCutSampler.load_state_dict(): Inconsistent time_constraint:\n'
+                          f'expected {self.time_constraint}\n'
+                          f'received {time_constraint}\n'
+                          f'We will ignore the received settings.')
+
+        max_cuts = state_dict.pop('max_cuts')
+        if self.max_cuts != max_cuts:
+            warnings.warn('SingleCutSampler.load_state_dict(): Inconsistent max_cuts:\n'
+                          f'expected {self.max_cuts}\n'
+                          f'received {max_cuts}\n'
+                          f'We will ignore the received settings.')
+
+        super().load_state_dict(state_dict)
+
+        # Restore the data source's state
+        if self.shuffle:
+            self.data_source.shuffle(self.seed + self.epoch)
+        self.data_source.fast_forward(self.diagnostics.total_cuts)
 
     def __iter__(self) -> "SingleCutSampler":
         """
