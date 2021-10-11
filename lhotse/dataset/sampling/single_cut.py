@@ -120,14 +120,16 @@ class SingleCutSampler(CutSampler):
             warnings.warn('SingleCutSampler.load_state_dict(): Inconsistent time_constraint:\n'
                           f'expected {self.time_constraint}\n'
                           f'received {time_constraint}\n'
-                          f'We will ignore the received settings.')
+                          f'We will overwrite the settings with the received state_dict.')
+        self.time_constraint = time_constraint
 
         max_cuts = state_dict.pop('max_cuts')
         if self.max_cuts != max_cuts:
             warnings.warn('SingleCutSampler.load_state_dict(): Inconsistent max_cuts:\n'
                           f'expected {self.max_cuts}\n'
                           f'received {max_cuts}\n'
-                          f'We will ignore the received settings.')
+                          f'We will overwrite the settings with the received state_dict.')
+        self.max_cuts = max_cuts
 
         super().load_state_dict(state_dict)
 
@@ -140,6 +142,10 @@ class SingleCutSampler(CutSampler):
         """
         Prepare the dataset for iterating over a new epoch. Will shuffle the data if requested.
         """
+        # Restored state with load_state_dict()? Skip resetting only this once.
+        if self._just_restored_state:
+            return self
+        # Reset the state to the beginning of the epoch.
         if self.shuffle:
             self.data_source.shuffle(self.seed + self.epoch)
         iter(self.data_source)

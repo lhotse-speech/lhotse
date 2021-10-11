@@ -69,6 +69,11 @@ class CutSampler(Sampler):
         self.seed = seed
         self.epoch = 0
 
+        # This flag is used to indicate that we have restored a sampler's state from a state_dict.
+        # When it is set, we will ignore the next call to iter(), which would have resetted the
+        # iteration state. This way we can resume training exactly from where it was left off.
+        self._just_restored_state = False
+
         self._maybe_init_distributed(world_size=world_size, rank=rank)
         # By default, self._filter_fn passes every Cut through.
         self._filter_fn: Callable[[Cut], bool] = lambda cut: True
@@ -113,6 +118,11 @@ class CutSampler(Sampler):
         self._filter_fn = predicate
 
     def state_dict(self) -> Dict[str, Any]:
+        """
+        Return the current state of the sampler in a state_dict.
+        Together with ``load_state_dict()``, this can be used to restore the
+        training loop's state to start where it currently is.
+        """
         return {
             'epoch': self.epoch,
             'world_size': self.world_size,
@@ -123,16 +133,41 @@ class CutSampler(Sampler):
         }
 
     def load_state_dict(self, state_dict: Dict[str, Any]) -> None:
-        assert self.world_size == state_dict.pop('world_size')
-        # assert self.rank == state_dict.pop('rank')
+        """
+        Restore the state of the sampler that is described in a state_dict.
+        This will result in the sampler yielding batches from where the previous training left it off.
+
+        .. caution::
+            The samplers are expected to be initialized with the same CutSets,
+            but this is not explicitly checked anywhere.
+
+        .. note::
+            For implementers of sub-classes of CutSampler: the flag ``self._just_restored_state`` has to be
+            handled in ``__iter__`` to make it avoid resetting the just-restored state (only once).
+        """
+        world_size = state_dict.pop('world_size')
+        assert self.world_size == world_size, (
+            f"Cannot restore sampler with a different world_size (before load_state_dict(): {self.world_size},"
+            f"attempted restoring to {world_size}). Changing the world_size would result in different batches "
+            f"being returned from the sampler."
+        )
+        # We are explicitly discarding the "rank" argument to support restoring multi-GPU training
+        # without too much hassle.
+        # We assume that if the world_size is OK, the samplers local ranks are fine.
+        del state_dict['rank']
         assert self.seed == state_dict.pop('seed')
-        assert self.shuffle == state_dict.pop('shuffle')
+        shuffle = state_dict.pop('shuffle')
+        if self.shuffle != shuffle:
+            warnings.warn('Overriding the shuffle value in CutSampler based on state_dict'
+                          f'(initialized to {self.shuffle}; restored to {shuffle}).')
+        self.shuffle = shuffle
         self.epoch = state_dict.pop('epoch')
         self.diagnostics.load_state_dict(state_dict.pop('diagnostics'))
         assert len(state_dict) == 0, (
             "Error in CutSampler.load_state_dict(): Unexpected keys:\n- " +
             "\n- ".join(state_dict.keys())
         )
+        self._just_restored_state = True
 
     def __iter__(self):
         raise NotImplementedError(
@@ -181,6 +216,7 @@ class CutSampler(Sampler):
         # and then return the one at position self.rank.
         # This way, if any of the batches raises StopIteration, we'll know to stop early
         # when a given batch was available for one of the nodes, but not for the others.
+        self._just_restored_state = False
         batches = []
         for _ in range(self.world_size):
             batches.append(self._next_batch())

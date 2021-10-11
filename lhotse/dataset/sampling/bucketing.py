@@ -1,5 +1,6 @@
 import random
 import warnings
+from copy import deepcopy
 from functools import reduce
 from itertools import chain
 from operator import add
@@ -193,15 +194,18 @@ class BucketingSampler(CutSampler):
             sampler.filter(predicate)
 
     def state_dict(self) -> Dict[str, Any]:
-        # Note: no super().state_dict() call here is on purpose.
-        state_dict = {
+        state_dict = super().state_dict()
+        # We use deepcopies just in case somebody loads state dict during the same execution...
+        state_dict.update({
             'num_buckets': self.num_buckets,
             'drop_last': self.drop_last,
             'proportional_sampling': self.proportional_sampling,
             'bucket_method': self.bucket_method,
-            'depleted': self.depleted,
+            'depleted': deepcopy(self.depleted),
             'bucket_samplers': [s.state_dict() for s in self.bucket_samplers],
-        }
+            'sampler_kwargs': deepcopy(self.sampler_kwargs),
+            'bucket_rng_state': self.bucket_rng.getstate(),
+        })
         return state_dict
 
     def load_state_dict(self, state_dict: Dict[str, Any]) -> None:
@@ -213,7 +217,9 @@ class BucketingSampler(CutSampler):
         self.drop_last = state_dict.pop('drop_last')
         self.proportional_sampling = state_dict.pop('proportional_sampling')
         self.bucket_method = state_dict.pop('bucket_method')
+        self.sampler_kwargs = state_dict.pop('sampler_kwargs')
         self.depleted = state_dict.pop('depleted')
+        self.bucket_rng.setstate(state_dict.pop('bucket_rng_state'))
 
         assert len(self.bucket_samplers) == len(state_dict['bucket_samplers']), (
             "Error in BucketingSampler.load_state_dict(): Inconsistent number of samplers: "
@@ -222,12 +228,14 @@ class BucketingSampler(CutSampler):
         )
         for sampler, sampler_sd in zip(self.bucket_samplers, state_dict.pop('bucket_samplers')):
             sampler.load_state_dict(sampler_sd)
-        assert len(state_dict) == 0, (
-                "Error in BucketingSampler.load_state_dict(): Unexpected keys:\n- " +
-                "\n- ".join(state_dict.keys())
-        )
+
+        super().load_state_dict(state_dict)
 
     def __iter__(self) -> "BucketingSampler":
+        # Restored state with load_state_dict()? Skip resetting.
+        if self._just_restored_state:
+            return self
+        # Reset the state to the beginning of the epoch.
         self.bucket_rng.seed(self.seed + self.epoch)
         for b in self.bucket_samplers:
             iter(b)

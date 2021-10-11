@@ -125,14 +125,16 @@ class CutPairsSampler(CutSampler):
             warnings.warn('CutPairsSampler.load_state_dict(): Inconsistent source_constraint:\n'
                           f'expected {self.source_constraints}\n'
                           f'received {source_constraints}\n'
-                          f'We will ignore the received settings.')
+                          f'We will overwrite the settings with the received state_dict.')
+        self.source_constraints = source_constraints
 
         target_constraints = TimeConstraint(**state_dict.pop('target_constraints'))
         if self.source_constraints != target_constraints:
             warnings.warn('CutPairsSampler.load_state_dict(): Inconsistent target_constraint:\n'
                           f'expected {self.target_constraints}\n'
                           f'received {target_constraints}\n'
-                          f'We will ignore the received settings.')
+                          f'We will overwrite the settings with the received state_dict.')
+        self.target_constraints = target_constraints
 
         max_cuts = state_dict.pop('max_cuts')
         if self.max_cuts != max_cuts:
@@ -154,6 +156,10 @@ class CutPairsSampler(CutSampler):
         """
         Prepare the dataset for iterating over a new epoch. Will shuffle the data if requested.
         """
+        # Restored state with load_state_dict()? Skip resetting only this once.
+        if self._just_restored_state:
+            return self
+        # Reset the state to the beginning of the epoch.
         if self.shuffle:
             self.source_cuts.shuffle(self.seed + self.epoch)
             self.target_cuts.shuffle(self.seed + self.epoch)

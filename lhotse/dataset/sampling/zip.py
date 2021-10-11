@@ -81,11 +81,11 @@ class ZipSampler(CutSampler):
             return None
 
     def state_dict(self) -> Dict[str, Any]:
-        # Note: no super().state_dict() call here is on purpose.
-        state_dict = {
+        state_dict = super().state_dict()
+        state_dict.update({
             'merge_batches': self.merge_batches,
             'samplers': [s.state_dict() for s in self.samplers]
-        }
+        })
         return state_dict
 
     def load_state_dict(self, state_dict: Dict[str, Any]) -> None:
@@ -96,10 +96,7 @@ class ZipSampler(CutSampler):
         )
         for sampler, sampler_sd in zip(self.samplers, state_dict.pop('samplers')):
             sampler.load_state_dict(sampler_sd)
-        assert len(state_dict) == 0, (
-            "Error in ZipSampler.load_state_dict(): Unexpected keys:\n- " +
-            "\n- ".join(state_dict.keys())
-        )
+        super().load_state_dict(state_dict)
 
     def __iter__(self):
         for sampler in self.samplers:
@@ -111,10 +108,28 @@ class ZipSampler(CutSampler):
             # Take a batch from each sampler and merge it.
             # Useful when the Dataset class doesn't treat
             # different sources of cuts in any different way.
-            cuts: List[Cut] = []
+            #
+            # Note: merging batches is tricky because the samplers can be either
+            # SingleCutSampler or CutPairsSampler, and we need to handle them differently.
+            cuts: List[Union[CutSet, Tuple[CutSet]]] = []
             for sampler in self.samplers:
-                cuts.extend(next(sampler))
-            return CutSet.from_cuts(cuts)
+                batch = next(sampler)
+                cuts.append(batch)
+            if not cuts:
+                return CutSet()
+            if isinstance(batch, CutSet):
+                # Each returned batch is a CutSet -- flatten them.
+                return CutSet.from_cuts(c for batch in cuts for c in batch)
+            else:
+                # Each returned batch is a tuple of CutSets -- determine the tuple size N
+                # and merge each N-th CutSet together; return a tuple of merged CutSets.
+                tuple_len = len(batch)
+                cut_sets = []
+                for i in range(tuple_len):
+                    cut_sets.append(
+                        CutSet.from_cuts(c for batch in cuts for c in batch[i])
+                    )
+                return tuple(cut_sets)
         else:
             # Take a batch from each sampler and return tuple of batches.
             # Useful when the Dataset treats each source differently.
