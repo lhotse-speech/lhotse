@@ -100,7 +100,10 @@ class CutSampler(Sampler):
 
         :param epoch: Epoch number.
         """
-        self.allow_iter_to_reset_state()
+        if self.epoch != epoch:
+            # Changing the epoch automatically tells the sampler to discard the progress
+            # from a previously read state dict.
+            self.allow_iter_to_reset_state()
         self.epoch = epoch
 
     def filter(self, predicate: Callable[[Cut], bool]) -> None:
