@@ -111,9 +111,60 @@ def test_restore_sampler_state(sampler, restored_sampler):
 
 
 @pytest.mark.parametrize(["sampler", "restored_sampler"], SAMPLERS_TO_TEST)
+def test_restored_sampler_continues_as_normal(sampler, restored_sampler):
+    # Iterate the sampler a bit. With max_duration=10s, all samplers should have 10 batches total per epoch.
+    sampler.set_epoch(3)
+    iter(sampler)
+    for _ in range(5):
+        next(sampler)
+
+    # Restore state.
+    restored_sampler.load_state_dict(sampler.state_dict())
+
+    batches = []
+    for b in restored_sampler:
+        # Iterate the restored sampler normally, as it is intended to be used this way.
+        # It "knows" that it was just restored and won't reset it's state on the first call to iter().
+        batches.append(b)
+
+    # There should be a total of 5 batches since we're starting mid-epoch.
+    assert len(batches) == 5
+
+    # Now check that when we iterate the same epoch again, there are full 10 batches.
+    batches_reiter = []
+    for b in restored_sampler:
+        batches_reiter.append(b)
+    assert len(batches_reiter) == 10
+
+
+@pytest.mark.parametrize(["sampler", "restored_sampler"], SAMPLERS_TO_TEST)
+def test_restored_sampler_forced_to_start_from_scratch(sampler, restored_sampler):
+    # Iterate the sampler a bit. With max_duration=10s, all samplers should have 10 batches total per epoch.
+    sampler.set_epoch(3)
+    iter(sampler)
+    for _ in range(5):
+        next(sampler)
+
+    # Restore state.
+    restored_sampler.load_state_dict(sampler.state_dict())
+
+    # Tells the sampler that we want to discard the current progress.
+    restored_sampler.allow_iter_to_reset_state()
+
+    batches = []
+    for b in restored_sampler:
+        # Iterate the restored sampler normally, as it is intended to be used this way.
+        # It "knows" that it was just restored and won't reset it's state on the first call to iter().
+        batches.append(b)
+
+    # There should be a total of 10 batches since we're starting mid-epoch.
+    assert len(batches) == 10
+
+
+@pytest.mark.parametrize(["sampler", "restored_sampler"], SAMPLERS_TO_TEST)
 def test_save_and_load_sampler_state(sampler, restored_sampler):
     sd = sampler.state_dict()
-    with NamedTemporaryFile(suffix='.pt') as f:
+    with NamedTemporaryFile(suffix=".pt") as f:
         torch.save(sd, f.name)
         f.flush()
         sd_restored = torch.load(f.name)
@@ -125,14 +176,16 @@ class DummyDataset(torch.utils.data.Dataset):
         return list(item.ids)
 
 
-@pytest.mark.parametrize('num_workers', [0, 1])
+@pytest.mark.parametrize("num_workers", [0, 1])
 def test_e2e_restore_with_dataloader(num_workers):
     dset = DummyDataset()
     # Expecting 10 batches in total.
     sampler = SingleCutSampler(CUTS, max_duration=10.0, shuffle=True, drop_last=True)
     sampler.set_epoch(1)
     # Note: not testing with num_workers > 1 as it will randomize the order of batches.
-    dloader = DataLoader(dset, batch_size=None, sampler=sampler, num_workers=num_workers)
+    dloader = DataLoader(
+        dset, batch_size=None, sampler=sampler, num_workers=num_workers
+    )
 
     expected_batches = []
     for idx, b in enumerate(dloader):
@@ -148,7 +201,9 @@ def test_e2e_restore_with_dataloader(num_workers):
     restored_sampler.load_state_dict(state)
 
     # Initialize a new dloader with the restored sampler.
-    restored_dloader = DataLoader(dset, batch_size=None, sampler=restored_sampler, num_workers=num_workers)
+    restored_dloader = DataLoader(
+        dset, batch_size=None, sampler=restored_sampler, num_workers=num_workers
+    )
     batches = []
     for b in restored_dloader:
         batches.append(b)

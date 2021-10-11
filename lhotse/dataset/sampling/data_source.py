@@ -83,14 +83,6 @@ class DataSource:
         iter(self)
         for i in range(steps):
             next(self)
-    #
-    # def state_dict(self) -> Dict[str, Any]:
-    #     return {
-    #         '_total_duration': self._total_duration,
-    #         '_total_cuts': self._total_cuts,
-    #         '_remaining_duration': self._remaining_duration,
-    #         'remaining_cuts': self.remaining_cuts
-    #     }
 
     def __iter__(self) -> "DataSource":
         self.reset()

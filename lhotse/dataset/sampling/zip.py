@@ -80,6 +80,17 @@ class ZipSampler(CutSampler):
         except TypeError:
             return None
 
+    def allow_iter_to_reset_state(self):
+        """
+        Enables re-setting to the start of an epoch when iter() is called.
+        This is only needed in one specific scenario: when we restored previous
+        sampler state via ``sampler.load_state_dict()`` but want to discard
+        the progress in the current epoch and start from the beginning.
+        """
+        super().allow_iter_to_reset_state()
+        for s in self.samplers:
+            s.allow_iter_to_reset_state()
+
     def state_dict(self) -> Dict[str, Any]:
         state_dict = super().state_dict()
         state_dict.update({
@@ -104,6 +115,7 @@ class ZipSampler(CutSampler):
         return self
 
     def _next_batch(self) -> Union[CutSet, Tuple[CutSet]]:
+        self.allow_iter_to_reset_state()
         if self.merge_batches:
             # Take a batch from each sampler and merge it.
             # Useful when the Dataset class doesn't treat

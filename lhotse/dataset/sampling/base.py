@@ -100,6 +100,7 @@ class CutSampler(Sampler):
 
         :param epoch: Epoch number.
         """
+        self.allow_iter_to_reset_state()
         self.epoch = epoch
 
     def filter(self, predicate: Callable[[Cut], bool]) -> None:
@@ -209,14 +210,23 @@ class CutSampler(Sampler):
             'Sub-classes of CutSampler have to implement self.num_cuts'
         )
 
+    def allow_iter_to_reset_state(self):
+        """
+        Enables re-setting to the start of an epoch when iter() is called.
+        This is only needed in one specific scenario: when we restored previous
+        sampler state via ``sampler.load_state_dict()`` but want to discard
+        the progress in the current epoch and start from the beginning.
+        """
+        self._just_restored_state = False
+
     def __next__(self):
+        self.allow_iter_to_reset_state()
         # We use the following trick to ensure equal number of batches for each distributed
         # worker:
         # Every time a next batch is required, we will sample self.world_size batches first,
         # and then return the one at position self.rank.
         # This way, if any of the batches raises StopIteration, we'll know to stop early
         # when a given batch was available for one of the nodes, but not for the others.
-        self._just_restored_state = False
         batches = []
         for _ in range(self.world_size):
             batches.append(self._next_batch())

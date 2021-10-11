@@ -193,6 +193,17 @@ class BucketingSampler(CutSampler):
         for sampler in self.bucket_samplers:
             sampler.filter(predicate)
 
+    def allow_iter_to_reset_state(self):
+        """
+        Enables re-setting to the start of an epoch when iter() is called.
+        This is only needed in one specific scenario: when we restored previous
+        sampler state via ``sampler.load_state_dict()`` but want to discard
+        the progress in the current epoch and start from the beginning.
+        """
+        super().allow_iter_to_reset_state()
+        for s in self.bucket_samplers:
+            s.allow_iter_to_reset_state()
+
     def state_dict(self) -> Dict[str, Any]:
         state_dict = super().state_dict()
         # We use deepcopies just in case somebody loads state dict during the same execution...
@@ -279,6 +290,7 @@ class BucketingSampler(CutSampler):
             return idx1, sampler1
 
     def _next_batch(self):
+        self.allow_iter_to_reset_state()
         while not self.is_depleted:
             idx, sampler = self._select_bucket_with_idx()
             try:
