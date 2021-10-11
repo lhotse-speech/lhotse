@@ -108,6 +108,11 @@ class CutPairsSampler(CutSampler):
         return len(self.source_cuts)
 
     def state_dict(self) -> Dict[str, Any]:
+        """
+        Return the current state of the sampler in a state_dict.
+        Together with ``load_state_dict()``, this can be used to restore the
+        training loop's state to the one stored in the state_dict.
+        """
         state_dict = super().state_dict()
         state_dict.update({
             'drop_last': self.drop_last,
@@ -118,6 +123,23 @@ class CutPairsSampler(CutSampler):
         return state_dict
 
     def load_state_dict(self, state_dict: Dict[str, Any]) -> None:
+        """
+        Restore the state of the sampler that is described in a state_dict.
+        This will result in the sampler yielding batches from where the previous training left it off.
+
+        .. caution::
+            The samplers are expected to be initialized with the same CutSets,
+            but this is not explicitly checked anywhere.
+
+        .. caution::
+            The input ``state_dict`` is being mutated: we remove each consumed key, and expect
+            it to be empty at the end of loading. If you don't want this behavior, pass a copy
+            inside of this function (e.g., using ``import deepcopy``).
+
+        .. note::
+            For implementers of sub-classes of CutSampler: the flag ``self._just_restored_state`` has to be
+            handled in ``__iter__`` to make it avoid resetting the just-restored state (only once).
+        """
         self.drop_last = state_dict.pop('drop_last')
 
         source_constraints = TimeConstraint(**state_dict.pop('source_constraints'))

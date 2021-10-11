@@ -125,7 +125,7 @@ class CutSampler(Sampler):
         """
         Return the current state of the sampler in a state_dict.
         Together with ``load_state_dict()``, this can be used to restore the
-        training loop's state to start where it currently is.
+        training loop's state to the one stored in the state_dict.
         """
         return {
             'epoch': self.epoch,
@@ -144,6 +144,11 @@ class CutSampler(Sampler):
         .. caution::
             The samplers are expected to be initialized with the same CutSets,
             but this is not explicitly checked anywhere.
+
+        .. caution::
+            The input ``state_dict`` is being mutated: we remove each consumed key, and expect
+            it to be empty at the end of loading. If you don't want this behavior, pass a copy
+            inside of this function (e.g., using ``import deepcopy``).
 
         .. note::
             For implementers of sub-classes of CutSampler: the flag ``self._just_restored_state`` has to be
