@@ -70,7 +70,7 @@ class CutSampler(Sampler):
         self.epoch = 0
 
         # This flag is used to indicate that we have restored a sampler's state from a state_dict.
-        # When it is set, we will ignore the next call to iter(), which would have resetted the
+        # When it is set, we will ignore the next call to iter(), which would have reset the
         # iteration state. This way we can resume training exactly from where it was left off.
         self._just_restored_state = False
 
