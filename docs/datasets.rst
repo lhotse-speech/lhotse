@@ -49,8 +49,8 @@ A typical Lhotse's dataset API usage might look like this:
     for batch in dloader:
         ...  # process data
 
-Restoring sampler's state: continuing training
-----------------------------------------------
+Restoring sampler's state: continuing the training
+--------------------------------------------------
 
 All :class:`~lhotse.dataset.sampling.CutSampler` types can save their progress and pick up from that checkpoint.
 For consistency with PyTorch tensors, the relevant methods are called ``.state_dict()`` and ``.load_state_dict()``.
@@ -98,6 +98,19 @@ we can resume the training from where it left off like the following:
 
             # ... processing forward, backward, etc.
             global_step += 1
+
+.. note::
+
+    In general, the sampler arguments may be different -- loading a ``state_dict`` will
+    overwrite the arguments, and emit a warning for the user to be aware what happened.
+    :class:`~lhotse.dataset.sampling.BucketingSampler` is an exception -- the ``num_buckets``
+    and ``bucket_method`` must be consistent, otherwise we couldn't guarantee identical
+    outcomes after training resumption.
+
+.. note::
+
+    The ``DataLoader``'s ``num_workers`` can be different after resuming.
+
 
 Batch I/O: pre-computed vs. on-the-fly features
 -----------------------------------------------
