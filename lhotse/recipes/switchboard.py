@@ -15,7 +15,7 @@ from itertools import chain
 from pathlib import Path
 from typing import Dict, Optional, Union
 
-from lhotse import validate_recordings_and_supervisions
+from lhotse import fix_manifests, validate_recordings_and_supervisions
 from lhotse.audio import Recording, RecordingSet
 from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import Pathlike, check_and_rglob, urlretrieve_progress
@@ -72,6 +72,7 @@ def prepare_switchboard(
         for channel in [0, 1]
     ))
 
+    recordings, supervisions = fix_manifests(recordings, supervisions)
     validate_recordings_and_supervisions(recordings, supervisions)
 
     if sentiment_dir is not None:
@@ -80,8 +81,8 @@ def prepare_switchboard(
     if output_dir is not None:
         output_dir = Path(output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
-        recordings.to_json(output_dir / 'recordings.json')
-        supervisions.to_json(output_dir / 'supervisions.json')
+        recordings.to_file(output_dir / 'swbd_recordings.jsonl')
+        supervisions.to_file(output_dir / 'swbd_supervisions.jsonl')
     return {
         'recordings': recordings,
         'supervisions': supervisions
