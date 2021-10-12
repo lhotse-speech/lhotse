@@ -99,7 +99,7 @@ we can resume the training from where it left off like the following:
             # ... processing forward, backward, etc.
             global_step += 1
 
-.. note:
+.. note::
 
     In general, the sampler arguments may be different -- loading a ``state_dict`` will
     overwrite the arguments, and emit a warning for the user to be aware what happened.
@@ -107,7 +107,7 @@ we can resume the training from where it left off like the following:
     and ``bucket_method`` must be consistent, otherwise we couldn't guarantee identical
     outcomes after training resumption.
 
-.. note:
+.. note::
 
     The ``DataLoader``'s ``num_workers`` can be different after resuming.
 
