@@ -1,5 +1,6 @@
 import random
 import warnings
+from copy import deepcopy
 from functools import reduce
 from itertools import chain
 from operator import add
@@ -98,17 +99,18 @@ class BucketingSampler(CutSampler):
             )
 
         # Split data into buckets.
-        if bucket_method == "equal_len":
+        self.bucket_method = bucket_method
+        if self.bucket_method == "equal_len":
             self.buckets = create_buckets_equal_len(
                 *self.cut_sets, num_buckets=num_buckets
             )
-        elif bucket_method == "equal_duration":
+        elif self.bucket_method == "equal_duration":
             self.buckets = create_buckets_equal_duration(
                 *self.cut_sets, num_buckets=num_buckets
             )
         else:
             raise ValueError(
-                f"Unknown bucket_method: '{bucket_method}'. "
+                f"Unknown bucket_method: '{self.bucket_method}'. "
                 f"Use one of: 'equal_len' or 'equal_duration'."
             )
 
@@ -120,7 +122,7 @@ class BucketingSampler(CutSampler):
             for bucket_cut_sets in self.buckets
         ]
 
-        # Initialize mutable stable.
+        # Initialize mutable state.
         self.bucket_rng = random.Random(self.seed + self.epoch)
         self.depleted = [False] * num_buckets
 
@@ -191,7 +193,82 @@ class BucketingSampler(CutSampler):
         for sampler in self.bucket_samplers:
             sampler.filter(predicate)
 
+    def allow_iter_to_reset_state(self):
+        """
+        Enables re-setting to the start of an epoch when iter() is called.
+        This is only needed in one specific scenario: when we restored previous
+        sampler state via ``sampler.load_state_dict()`` but want to discard
+        the progress in the current epoch and start from the beginning.
+        """
+        super().allow_iter_to_reset_state()
+        for s in self.bucket_samplers:
+            s.allow_iter_to_reset_state()
+
+    def state_dict(self) -> Dict[str, Any]:
+        """
+        Return the current state of the sampler in a state_dict.
+        Together with ``load_state_dict()``, this can be used to restore the
+        training loop's state to the one stored in the state_dict.
+        """
+        state_dict = super().state_dict()
+        # We use deepcopies just in case somebody loads state dict during the same execution...
+        state_dict.update({
+            'num_buckets': self.num_buckets,
+            'drop_last': self.drop_last,
+            'proportional_sampling': self.proportional_sampling,
+            'bucket_method': self.bucket_method,
+            'depleted': deepcopy(self.depleted),
+            'bucket_samplers': [s.state_dict() for s in self.bucket_samplers],
+            'sampler_kwargs': deepcopy(self.sampler_kwargs),
+            'bucket_rng_state': self.bucket_rng.getstate(),
+        })
+        return state_dict
+
+    def load_state_dict(self, state_dict: Dict[str, Any]) -> None:
+        """
+        Restore the state of the sampler that is described in a state_dict.
+        This will result in the sampler yielding batches from where the previous training left it off.
+
+        .. caution::
+            The samplers are expected to be initialized with the same CutSets,
+            but this is not explicitly checked anywhere.
+
+        .. caution::
+            The input ``state_dict`` is being mutated: we remove each consumed key, and expect
+            it to be empty at the end of loading. If you don't want this behavior, pass a copy
+            inside of this function (e.g., using ``import deepcopy``).
+
+        .. note::
+            For implementers of sub-classes of CutSampler: the flag ``self._just_restored_state`` has to be
+            handled in ``__iter__`` to make it avoid resetting the just-restored state (only once).
+        """
+        num_buckets = state_dict.pop('num_buckets')
+        assert self.num_buckets == num_buckets, (
+            "Error in BucketingSampler.load_state_dict(): Inconsistent number of buckets: "
+            f"current sampler has {self.num_buckets}, the state_dict has {num_buckets}."
+        )
+        self.drop_last = state_dict.pop('drop_last')
+        self.proportional_sampling = state_dict.pop('proportional_sampling')
+        self.bucket_method = state_dict.pop('bucket_method')
+        self.sampler_kwargs = state_dict.pop('sampler_kwargs')
+        self.depleted = state_dict.pop('depleted')
+        self.bucket_rng.setstate(state_dict.pop('bucket_rng_state'))
+
+        assert len(self.bucket_samplers) == len(state_dict['bucket_samplers']), (
+            "Error in BucketingSampler.load_state_dict(): Inconsistent number of samplers: "
+            f"current sampler has {len(self.bucket_samplers)}, "
+            f"the state_dict has {len(state_dict['bucket_samplers'])}."
+        )
+        for sampler, sampler_sd in zip(self.bucket_samplers, state_dict.pop('bucket_samplers')):
+            sampler.load_state_dict(sampler_sd)
+
+        super().load_state_dict(state_dict)
+
     def __iter__(self) -> "BucketingSampler":
+        # Restored state with load_state_dict()? Skip resetting.
+        if self._just_restored_state:
+            return self
+        # Reset the state to the beginning of the epoch.
         self.bucket_rng.seed(self.seed + self.epoch)
         for b in self.bucket_samplers:
             iter(b)
@@ -235,6 +312,7 @@ class BucketingSampler(CutSampler):
             return idx1, sampler1
 
     def _next_batch(self):
+        self.allow_iter_to_reset_state()
         while not self.is_depleted:
             idx, sampler = self._select_bucket_with_idx()
             try:

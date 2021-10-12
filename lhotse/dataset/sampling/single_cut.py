@@ -1,5 +1,5 @@
 import warnings
-from typing import Optional
+from typing import Any, Dict, Optional
 
 from lhotse import CutSet, Seconds
 from lhotse.dataset.sampling.base import CutSampler, TimeConstraint
@@ -103,10 +103,71 @@ class SingleCutSampler(CutSampler):
             return None
         return len(self.data_source)
 
+    def state_dict(self) -> Dict[str, Any]:
+        """
+        Return the current state of the sampler in a state_dict.
+        Together with ``load_state_dict()``, this can be used to restore the
+        training loop's state to the one stored in the state_dict.
+        """
+        state_dict = super().state_dict()
+        state_dict.update({
+            'drop_last': self.drop_last,
+            'time_constraint': self.time_constraint.state_dict(),
+            'max_cuts': self.max_cuts,
+        })
+        return state_dict
+
+    def load_state_dict(self, state_dict: Dict[str, Any]) -> None:
+        """
+        Restore the state of the sampler that is described in a state_dict.
+        This will result in the sampler yielding batches from where the previous training left it off.
+
+        .. caution::
+            The samplers are expected to be initialized with the same CutSets,
+            but this is not explicitly checked anywhere.
+
+        .. caution::
+            The input ``state_dict`` is being mutated: we remove each consumed key, and expect
+            it to be empty at the end of loading. If you don't want this behavior, pass a copy
+            inside of this function (e.g., using ``import deepcopy``).
+
+        .. note::
+            For implementers of sub-classes of CutSampler: the flag ``self._just_restored_state`` has to be
+            handled in ``__iter__`` to make it avoid resetting the just-restored state (only once).
+        """
+        self.drop_last = state_dict.pop('drop_last')
+
+        time_constraint = TimeConstraint(**state_dict.pop('time_constraint'))
+        if self.time_constraint != time_constraint:
+            warnings.warn('SingleCutSampler.load_state_dict(): Inconsistent time_constraint:\n'
+                          f'expected {self.time_constraint}\n'
+                          f'received {time_constraint}\n'
+                          f'We will overwrite the settings with the received state_dict.')
+        self.time_constraint = time_constraint
+
+        max_cuts = state_dict.pop('max_cuts')
+        if self.max_cuts != max_cuts:
+            warnings.warn('SingleCutSampler.load_state_dict(): Inconsistent max_cuts:\n'
+                          f'expected {self.max_cuts}\n'
+                          f'received {max_cuts}\n'
+                          f'We will overwrite the settings with the received state_dict.')
+        self.max_cuts = max_cuts
+
+        super().load_state_dict(state_dict)
+
+        # Restore the data source's state
+        if self.shuffle:
+            self.data_source.shuffle(self.seed + self.epoch)
+        self.data_source.fast_forward(self.diagnostics.total_cuts)
+
     def __iter__(self) -> "SingleCutSampler":
         """
         Prepare the dataset for iterating over a new epoch. Will shuffle the data if requested.
         """
+        # Restored state with load_state_dict()? Skip resetting only this once.
+        if self._just_restored_state:
+            return self
+        # Reset the state to the beginning of the epoch.
         if self.shuffle:
             self.data_source.shuffle(self.seed + self.epoch)
         iter(self.data_source)

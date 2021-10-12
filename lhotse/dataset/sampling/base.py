@@ -1,7 +1,7 @@
 import warnings
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from math import isclose
-from typing import Callable, Iterable, Optional, Tuple, Union
+from typing import Any, Callable, Dict, Iterable, Optional, Tuple, Union
 
 from torch import distributed as dist
 from torch.utils.data import Sampler
@@ -69,6 +69,11 @@ class CutSampler(Sampler):
         self.seed = seed
         self.epoch = 0
 
+        # This flag is used to indicate that we have restored a sampler's state from a state_dict.
+        # When it is set, we will ignore the next call to iter(), which would have resetted the
+        # iteration state. This way we can resume training exactly from where it was left off.
+        self._just_restored_state = False
+
         self._maybe_init_distributed(world_size=world_size, rank=rank)
         # By default, self._filter_fn passes every Cut through.
         self._filter_fn: Callable[[Cut], bool] = lambda cut: True
@@ -95,6 +100,10 @@ class CutSampler(Sampler):
 
         :param epoch: Epoch number.
         """
+        if self.epoch != epoch:
+            # Changing the epoch automatically tells the sampler to discard the progress
+            # from a previously read state dict.
+            self.allow_iter_to_reset_state()
         self.epoch = epoch
 
     def filter(self, predicate: Callable[[Cut], bool]) -> None:
@@ -111,6 +120,63 @@ class CutSampler(Sampler):
             ... sampler.filter(lambda cut: 1.0 <= cut.duration <= 20.0)
         """
         self._filter_fn = predicate
+
+    def state_dict(self) -> Dict[str, Any]:
+        """
+        Return the current state of the sampler in a state_dict.
+        Together with ``load_state_dict()``, this can be used to restore the
+        training loop's state to the one stored in the state_dict.
+        """
+        return {
+            'epoch': self.epoch,
+            'world_size': self.world_size,
+            'rank': self.rank,
+            'seed': self.seed,
+            'shuffle': self.shuffle,
+            'diagnostics': self.diagnostics.state_dict(),
+        }
+
+    def load_state_dict(self, state_dict: Dict[str, Any]) -> None:
+        """
+        Restore the state of the sampler that is described in a state_dict.
+        This will result in the sampler yielding batches from where the previous training left it off.
+
+        .. caution::
+            The samplers are expected to be initialized with the same CutSets,
+            but this is not explicitly checked anywhere.
+
+        .. caution::
+            The input ``state_dict`` is being mutated: we remove each consumed key, and expect
+            it to be empty at the end of loading. If you don't want this behavior, pass a copy
+            inside of this function (e.g., using ``import deepcopy``).
+
+        .. note::
+            For implementers of sub-classes of CutSampler: the flag ``self._just_restored_state`` has to be
+            handled in ``__iter__`` to make it avoid resetting the just-restored state (only once).
+        """
+        world_size = state_dict.pop('world_size')
+        assert self.world_size == world_size, (
+            f"Cannot restore sampler with a different world_size (before load_state_dict(): {self.world_size},"
+            f"attempted restoring to {world_size}). Changing the world_size would result in different batches "
+            f"being returned from the sampler."
+        )
+        # We are explicitly discarding the "rank" argument to support restoring multi-GPU training
+        # without too much hassle.
+        # We assume that if the world_size is OK, the samplers local ranks are fine.
+        del state_dict['rank']
+        assert self.seed == state_dict.pop('seed')
+        shuffle = state_dict.pop('shuffle')
+        if self.shuffle != shuffle:
+            warnings.warn('Overriding the shuffle value in CutSampler based on state_dict'
+                          f'(initialized to {self.shuffle}; restored to {shuffle}).')
+        self.shuffle = shuffle
+        self.epoch = state_dict.pop('epoch')
+        self.diagnostics.load_state_dict(state_dict.pop('diagnostics'))
+        assert len(state_dict) == 0, (
+            "Error in CutSampler.load_state_dict(): Unexpected keys:\n- " +
+            "\n- ".join(state_dict.keys())
+        )
+        self._just_restored_state = True
 
     def __iter__(self):
         raise NotImplementedError(
@@ -152,7 +218,17 @@ class CutSampler(Sampler):
             'Sub-classes of CutSampler have to implement self.num_cuts'
         )
 
+    def allow_iter_to_reset_state(self):
+        """
+        Enables re-setting to the start of an epoch when iter() is called.
+        This is only needed in one specific scenario: when we restored previous
+        sampler state via ``sampler.load_state_dict()`` but want to discard
+        the progress in the current epoch and start from the beginning.
+        """
+        self._just_restored_state = False
+
     def __next__(self):
+        self.allow_iter_to_reset_state()
         # We use the following trick to ensure equal number of batches for each distributed
         # worker:
         # Every time a next batch is required, we will sample self.world_size batches first,
@@ -251,6 +327,20 @@ class TimeConstraint:
         self.current = 0
         self.num_cuts = 0
 
+    def state_dict(self) -> Dict[str, Any]:
+        return asdict(self)
+
+    def load_state_dict(self, state_dict: Dict[str, Any]) -> None:
+        self.max_duration = state_dict.pop('max_duration')
+        self.max_samples = state_dict.pop('max_samples')
+        self.max_frames = state_dict.pop('max_frames')
+        self.current = state_dict.pop('current')
+        self.num_cuts = state_dict.pop('num_cuts')
+        assert len(state_dict) == 0, (
+            "Error in TimeConstraint.load_state_dict(): Unexpected keys:\n- " +
+            "\n- ".join(state_dict.keys())
+        )
+
     def __add__(self, other: "TimeConstraint") -> "TimeConstraint":
         for key in ("max_duration", "max_frames", "max_samples"):
             self_attr = getattr(self, key)
@@ -339,6 +429,19 @@ class SamplingDiagnostics:
             f"({self.num_kept_batches / self.total_batches:.2%}) batches "
             f"({self.num_discarded_batches:d} batches discarded).\n"
             f"Overall, {round(self.discarded_stats.current):d} seconds of supervision were discarded."
+        )
+
+    def state_dict(self) -> Dict[str, Any]:
+        return asdict(self)
+
+    def load_state_dict(self, state_dict: Dict[str, Any]) -> None:
+        self.num_kept_batches = state_dict.pop('num_kept_batches')
+        self.num_discarded_batches = state_dict.pop('num_discarded_batches')
+        self.kept_stats.load_state_dict(state_dict.pop('kept_stats'))
+        self.discarded_stats.load_state_dict(state_dict.pop('discarded_stats'))
+        assert len(state_dict) == 0, (
+            "Error in SamplingDiagnostics.load_state_dict(): Unexpected keys:\n- " +
+            "\n- ".join(state_dict.keys())
         )
 
     def __add__(self, other: "SamplingDiagnostics") -> "SamplingDiagnostics":

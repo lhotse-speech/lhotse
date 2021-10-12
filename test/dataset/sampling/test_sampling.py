@@ -729,6 +729,23 @@ def test_zip_sampler_merge_batches_true():
         assert len([c for c in batch if 1000 <= int(c.id.split('-')[-1]) <= 1100]) == 2  # two come from cuts2
 
 
+def test_zip_sampler_cut_pairs_merge_batches_true():
+    cuts1 = DummyManifest(CutSet, begin_id=0, end_id=100)
+    cuts2 = DummyManifest(CutSet, begin_id=1000, end_id=1100)
+    sampler = ZipSampler(
+        # Note: each cut is 1s duration in this test.
+        CutPairsSampler(cuts1, cuts1, max_source_duration=10),
+        CutPairsSampler(cuts2, cuts2, max_source_duration=2),
+    )
+    batches = [b for b in sampler]
+    assert len(batches) == 10
+    for idx, (batch_src, batch_tgt) in enumerate(batches):
+        assert len(batch_src) == len(batch_tgt)
+        assert len(batch_src) == 12  # twelve 1s items
+        assert len([c for c in batch_src if 0 <= int(c.id.split('-')[-1]) <= 100]) == 10  # ten come from cuts1
+        assert len([c for c in batch_src if 1000 <= int(c.id.split('-')[-1]) <= 1100]) == 2  # two come from cuts2
+
+
 def test_zip_sampler_merge_batches_false():
     cuts1 = DummyManifest(CutSet, begin_id=0, end_id=100)
     cuts2 = DummyManifest(CutSet, begin_id=1000, end_id=1100)

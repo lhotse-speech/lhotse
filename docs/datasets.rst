@@ -49,6 +49,56 @@ A typical Lhotse's dataset API usage might look like this:
     for batch in dloader:
         ...  # process data
 
+Restoring sampler's state: continuing training
+----------------------------------------------
+
+All :class:`~lhotse.dataset.sampling.CutSampler` types can save their progress and pick up from that checkpoint.
+For consistency with PyTorch tensors, the relevant methods are called ``.state_dict()`` and ``.load_state_dict()``.
+The following example illustrates how to save the sampler's state (pay attention to the last bit):
+
+.. code-block::
+
+    dataset = ...  # Some task-specific dataset initialization
+    sampler = BucketingSampler(cuts, max_duration=200, shuffle=True, num_buckets=30)
+    dloader = DataLoader(dataset, batch_size=None, sampler=sampler, num_workers=4)
+    global_step = 0
+    for epoch in range(30):
+        dloader.sampler.set_epoch(epoch)
+        for batch in dloader:
+            # ... processing forward, backward, etc.
+            global_step += 1
+
+            if global_step % 5000 == 0:
+                state = dloader.sampler.state_dict()
+                torch.save(state, f'sampler-ckpt-ep{epoch}-step{global_step}.pt')
+
+In case that the training is ended abruptly and the epochs are very long
+(10k+ steps, not uncommon with large datasets these days),
+we can resume the training from where it left off like the following:
+
+.. code-block::
+
+    # Creating a vanilla sampler, we will read the previous progress into it.
+    sampler = BucketingSampler(cuts, max_duration=200, shuffle=True, num_buckets=30)
+
+    # Restore the sampler's state.
+    state = torch.load('sampler-ckpt-ep5-step75000.pt')
+    sampler.load_state_dict(state)
+
+    dloader = DataLoader(dataset, batch_size=None, sampler=sampler, num_workers=4)
+
+    global_step = sampler.diagnostics.total_cuts  # <-- Restore the global step idx.
+    for epoch in range(sampler.epoch, 30):  # <-- Skip previous epochs that are already processed.
+
+        dloader.sampler.set_epoch(epoch)
+        for batch in dloader:
+            # Note: the first batch is going to be from step 75009.
+            # With DataLoader num_workers==0, it would have been 75001, but we get
+            # +8 because of num_workers==4 * prefetching_factor==2
+
+            # ... processing forward, backward, etc.
+            global_step += 1
+
 Batch I/O: pre-computed vs. on-the-fly features
 -----------------------------------------------
 
