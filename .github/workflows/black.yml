@@ -11,5 +11,5 @@ jobs:
     steps:
       - uses: actions/checkout@v2
       - uses: psf/black@stable
-      with:
-        options: "--check --diff --color"
+        with:
+          options: "--check --diff --color"
