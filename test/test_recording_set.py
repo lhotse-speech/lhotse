@@ -14,7 +14,7 @@ from lhotse.utils import fastcopy, nullcontext as does_not_raise
 
 @pytest.fixture
 def recording_set() -> RecordingSet:
-    return RecordingSet.from_json('test/fixtures/audio.json')
+    return RecordingSet.from_json("test/fixtures/audio.json")
 
 
 @lru_cache(1)
@@ -32,26 +32,28 @@ def expected_channel_1() -> np.ndarray:
 @lru_cache(1)
 def expected_stereo_two_sources() -> np.ndarray:
     """Combined contents of test/fixtures/mono_c{0,1}.wav as channels 0 and 1"""
-    return np.vstack([
-        expected_channel_0(),
-        expected_channel_1()
-    ])
+    return np.vstack([expected_channel_0(), expected_channel_1()])
 
 
 @lru_cache(1)
 def expected_stereo_single_source() -> np.ndarray:
     """Contents of test/fixtures/stereo.{wav,sph}"""
-    return np.vstack([
-        np.arange(8000, 16000, dtype=np.int16),
-        np.arange(16000, 24000, dtype=np.int16)
-    ]) / INT16MAX
+    return (
+        np.vstack(
+            [
+                np.arange(8000, 16000, dtype=np.int16),
+                np.arange(16000, 24000, dtype=np.int16),
+            ]
+        )
+        / INT16MAX
+    )
 
 
 def test_get_metadata(recording_set):
-    assert 2 == recording_set.num_channels('recording-1')
-    assert 8000 == recording_set.sampling_rate('recording-1')
-    assert 4000 == recording_set.num_samples('recording-1')
-    assert 0.5 == recording_set.duration('recording-1')
+    assert 2 == recording_set.num_channels("recording-1")
+    assert 8000 == recording_set.sampling_rate("recording-1")
+    assert 4000 == recording_set.num_samples("recording-1")
+    assert 0.5 == recording_set.duration("recording-1")
 
 
 def test_iteration(recording_set):
@@ -59,62 +61,78 @@ def test_iteration(recording_set):
 
 
 def test_get_audio_from_multiple_files(recording_set):
-    samples = recording_set.load_audio('recording-1')
+    samples = recording_set.load_audio("recording-1")
     np.testing.assert_almost_equal(samples, expected_stereo_two_sources())
 
 
 def test_get_stereo_audio_from_single_file(recording_set):
-    samples = recording_set.load_audio('recording-2')
+    samples = recording_set.load_audio("recording-2")
     np.testing.assert_almost_equal(samples, expected_stereo_single_source())
 
 
 def test_load_audio_from_sphere_file(recording_set):
-    samples = recording_set.load_audio('recording-3')
+    samples = recording_set.load_audio("recording-3")
     np.testing.assert_almost_equal(samples, expected_stereo_single_source())
 
 
 @mark.parametrize(
-    ['channels', 'expected_audio', 'exception_expectation'],
+    ["channels", "expected_audio", "exception_expectation"],
     [
         (None, expected_stereo_two_sources(), does_not_raise()),
         (0, expected_channel_0(), does_not_raise()),
         (1, expected_channel_1(), does_not_raise()),
         ([0, 1], expected_stereo_two_sources(), does_not_raise()),
-        (1000, 'irrelevant', raises(AssertionError))
-    ]
+        (1000, "irrelevant", raises(AssertionError)),
+    ],
 )
-def test_get_audio_multichannel(recording_set, channels, expected_audio, exception_expectation):
+def test_get_audio_multichannel(
+    recording_set, channels, expected_audio, exception_expectation
+):
     with exception_expectation:
-        loaded_audio = recording_set.load_audio('recording-1', channels=channels)
+        loaded_audio = recording_set.load_audio("recording-1", channels=channels)
         np.testing.assert_almost_equal(loaded_audio, expected_audio)
 
 
 @mark.parametrize(
-    ['begin_at', 'duration', 'expected_start_sample', 'expected_end_sample', 'exception_expectation'],
+    [
+        "begin_at",
+        "duration",
+        "expected_start_sample",
+        "expected_end_sample",
+        "exception_expectation",
+    ],
     [
         (0, None, 0, 4000, does_not_raise()),
         (0.1, None, 800, 4000, does_not_raise()),
         (0, 0.3, 0, 2400, does_not_raise()),
         (0.1, 0.2, 800, 2400, does_not_raise()),
-        (0.3, 10.0, 'irrelevant', 'irrelevant', raises(ValueError))  # requested more audio than available
-    ]
+        (
+            0.3,
+            10.0,
+            "irrelevant",
+            "irrelevant",
+            raises(ValueError),
+        ),  # requested more audio than available
+    ],
 )
 def test_get_audio_chunks(
-        recording_set,
-        begin_at,
-        duration,
-        expected_start_sample,
-        expected_end_sample,
-        exception_expectation
+    recording_set,
+    begin_at,
+    duration,
+    expected_start_sample,
+    expected_end_sample,
+    exception_expectation,
 ):
     with exception_expectation:
         actual_audio = recording_set.load_audio(
-            recording_id='recording-1',
+            recording_id="recording-1",
             channels=0,
             offset_seconds=begin_at,
-            duration_seconds=duration
+            duration_seconds=duration,
         )
-        expected_audio = expected_channel_0()[:, expected_start_sample: expected_end_sample]
+        expected_audio = expected_channel_0()[
+            :, expected_start_sample:expected_end_sample
+        ]
         np.testing.assert_almost_equal(actual_audio, expected_audio)
 
 
@@ -127,61 +145,66 @@ def test_add_recording_sets():
 
 
 @pytest.mark.parametrize(
-    ['relative_path_depth', 'expected_source_path'],
+    ["relative_path_depth", "expected_source_path"],
     [
-        (None, 'test/fixtures/stereo.sph'),
-        (1, 'stereo.sph'),
-        (2, 'fixtures/stereo.sph'),
-        (3, 'test/fixtures/stereo.sph'),
-        (4, 'test/fixtures/stereo.sph')
-    ]
+        (None, "test/fixtures/stereo.sph"),
+        (1, "stereo.sph"),
+        (2, "fixtures/stereo.sph"),
+        (3, "test/fixtures/stereo.sph"),
+        (4, "test/fixtures/stereo.sph"),
+    ],
 )
 def test_recording_from_sphere(relative_path_depth, expected_source_path):
-    rec = Recording.from_file('test/fixtures/stereo.sph', relative_path_depth=relative_path_depth)
+    rec = Recording.from_file(
+        "test/fixtures/stereo.sph", relative_path_depth=relative_path_depth
+    )
     assert rec == Recording(
-        id='stereo',
+        id="stereo",
         sampling_rate=8000,
         num_samples=8000,
         duration=1.0,
         sources=[
-            AudioSource(
-                type='file',
-                channels=[0, 1],
-                source=expected_source_path
-            )
-        ]
+            AudioSource(type="file", channels=[0, 1], source=expected_source_path)
+        ],
     )
 
 
 @pytest.fixture
 def file_source():
-    return AudioSource(type='file', channels=[0], source='test/fixtures/mono_c0.wav')
+    return AudioSource(type="file", channels=[0], source="test/fixtures/mono_c0.wav")
 
 
 @pytest.fixture
 def nonfile_source():
-    return AudioSource(type='command', channels=[0], source='cat test/fixtures/mono_c0.wav')
+    return AudioSource(
+        type="command", channels=[0], source="cat test/fixtures/mono_c0.wav"
+    )
 
 
 @pytest.fixture
 def recording(file_source):
-    return Recording(id='rec', sources=[file_source, fastcopy(file_source, channels=[1])], sampling_rate=8000,
-                     num_samples=4000, duration=0.5)
+    return Recording(
+        id="rec",
+        sources=[file_source, fastcopy(file_source, channels=[1])],
+        sampling_rate=8000,
+        num_samples=4000,
+        duration=0.5,
+    )
 
 
 @pytest.mark.parametrize(
-    ['factor', 'affix_id'],
+    ["factor", "affix_id"],
     [
         (1.0, True),
         (1.0, False),
         (0.9, True),
         (1.1, True),
-    ]
+    ],
 )
 def test_recording_perturb_speed(recording, factor, affix_id):
     rec_sp = recording.perturb_speed(factor=factor, affix_id=affix_id)
     if affix_id:
-        assert rec_sp.id == f'{recording.id}_sp{factor}'
+        assert rec_sp.id == f"{recording.id}_sp{factor}"
     else:
         assert rec_sp.id == recording.id
     samples = rec_sp.load_audio()
@@ -190,18 +213,18 @@ def test_recording_perturb_speed(recording, factor, affix_id):
 
 
 @pytest.mark.parametrize(
-    ['factor', 'affix_id'],
+    ["factor", "affix_id"],
     [
         (1.0, True),
         (1.0, False),
         (0.9, True),
         (1.1, True),
-    ]
+    ],
 )
 def test_recording_perturb_tempo(recording, factor, affix_id):
     rec_sp = recording.perturb_tempo(factor=factor, affix_id=affix_id)
     if affix_id:
-        assert rec_sp.id == f'{recording.id}_tp{factor}'
+        assert rec_sp.id == f"{recording.id}_tp{factor}"
     else:
         assert rec_sp.id == recording.id
     samples = rec_sp.load_audio()
@@ -210,20 +233,20 @@ def test_recording_perturb_tempo(recording, factor, affix_id):
 
 
 @pytest.mark.parametrize(
-    ['factor', 'affix_id'],
+    ["factor", "affix_id"],
     [
         (1.0, True),
         (1.0, False),
         (0.125, True),
         (0.125, False),
-        (2., True),
-        (2., False),
-    ]
+        (2.0, True),
+        (2.0, False),
+    ],
 )
 def test_recording_perturb_volume(recording, factor, affix_id):
     rec_vp = recording.perturb_volume(factor=factor, affix_id=affix_id)
     if affix_id:
-        assert rec_vp.id == f'{recording.id}_vp{factor}'
+        assert rec_vp.id == f"{recording.id}_vp{factor}"
     else:
         assert rec_vp.id == recording.id
     samples = rec_vp.load_audio()
@@ -246,13 +269,13 @@ def test_recording_set_perturb_tempo(recording_set):
 
 
 def test_recording_set_perturb_volume(recording_set):
-    recs_vp = recording_set.perturb_volume(factor=2.)
+    recs_vp = recording_set.perturb_volume(factor=2.0)
     for r, r_vp in zip(recording_set, recs_vp):
         assert r.duration == r_vp.duration
         assert r.sampling_rate == r_vp.sampling_rate
 
 
-@pytest.mark.parametrize('sampling_rate', [8000, 16000, 22050, 32000, 44100, 48000])
+@pytest.mark.parametrize("sampling_rate", [8000, 16000, 22050, 32000, 44100, 48000])
 def test_recording_resample(recording, sampling_rate):
     rec_sp = recording.resample(sampling_rate)
     assert rec_sp.id == recording.id
@@ -272,28 +295,34 @@ def test_recording_set_resample(recording_set):
 
 @pytest.fixture
 def recording_set2(recording):
-    return RecordingSet.from_recordings([
-        fastcopy(recording, id=f'{recording.id}-{i}') for i in range(5)
-    ])
+    return RecordingSet.from_recordings(
+        [fastcopy(recording, id=f"{recording.id}-{i}") for i in range(5)]
+    )
 
 
 def test_audio_source_path_prefix(file_source):
-    assert str(file_source.with_path_prefix('/data').source) == '/data/test/fixtures/mono_c0.wav'
+    assert (
+        str(file_source.with_path_prefix("/data").source)
+        == "/data/test/fixtures/mono_c0.wav"
+    )
 
 
 def test_audio_source_nonfile_path_prefix(nonfile_source):
-    assert str(nonfile_source.with_path_prefix('/data').source) == 'cat test/fixtures/mono_c0.wav'
+    assert (
+        str(nonfile_source.with_path_prefix("/data").source)
+        == "cat test/fixtures/mono_c0.wav"
+    )
 
 
 def test_recording_path_prefix(recording):
-    for source in recording.with_path_prefix('/data').sources:
-        assert str(source.source) == '/data/test/fixtures/mono_c0.wav'
+    for source in recording.with_path_prefix("/data").sources:
+        assert str(source.source) == "/data/test/fixtures/mono_c0.wav"
 
 
 def test_recording_set_prefix(recording_set2):
-    for recording in recording_set2.with_path_prefix('/data'):
+    for recording in recording_set2.with_path_prefix("/data"):
         for source in recording.sources:
-            assert str(source.source) == '/data/test/fixtures/mono_c0.wav'
+            assert str(source.source) == "/data/test/fixtures/mono_c0.wav"
 
 
 class TestAudioMixer:
@@ -372,11 +401,14 @@ class TestAudioMixer:
 
 
 @pytest.mark.skipif(
-    all('ffmpeg' not in str(backend).lower() for backend in audioread.available_backends()),
-    reason='Requires FFmpeg to be installed.'
+    all(
+        "ffmpeg" not in str(backend).lower()
+        for backend in audioread.available_backends()
+    ),
+    reason="Requires FFmpeg to be installed.",
 )
 def test_opus_recording_from_file():
-    path = 'test/fixtures/mono_c0.opus'
+    path = "test/fixtures/mono_c0.opus"
     recording = Recording.from_file(path)
     # OPUS always overrides the sampling rate to 48000
     assert recording.sampling_rate == 48000
@@ -391,11 +423,14 @@ def test_opus_recording_from_file():
 
 
 @pytest.mark.skipif(
-    all('ffmpeg' not in str(backend).lower() for backend in audioread.available_backends()),
-    reason='Requires FFmpeg to be installed.'
+    all(
+        "ffmpeg" not in str(backend).lower()
+        for backend in audioread.available_backends()
+    ),
+    reason="Requires FFmpeg to be installed.",
 )
 def test_opus_recording_from_file_force_sampling_rate():
-    path = 'test/fixtures/mono_c0.opus'
+    path = "test/fixtures/mono_c0.opus"
     recording = Recording.from_file(path, force_opus_sampling_rate=8000)
     assert recording.sampling_rate == 8000
     assert isclose(recording.duration, 0.5055)
@@ -407,11 +442,14 @@ def test_opus_recording_from_file_force_sampling_rate():
 
 
 @pytest.mark.skipif(
-    all('ffmpeg' not in str(backend).lower() for backend in audioread.available_backends()),
-    reason='Requires FFmpeg to be installed.'
+    all(
+        "ffmpeg" not in str(backend).lower()
+        for backend in audioread.available_backends()
+    ),
+    reason="Requires FFmpeg to be installed.",
 )
 def test_opus_stereo_recording_from_file_force_sampling_rate():
-    path = 'test/fixtures/stereo.opus'
+    path = "test/fixtures/stereo.opus"
     recording = Recording.from_file(path, force_opus_sampling_rate=8000)
     assert recording.sampling_rate == 8000
     assert isclose(recording.duration, 1.0055)
@@ -423,11 +461,14 @@ def test_opus_stereo_recording_from_file_force_sampling_rate():
 
 
 @pytest.mark.skipif(
-    all('ffmpeg' not in str(backend).lower() for backend in audioread.available_backends()),
-    reason='Requires FFmpeg to be installed.'
+    all(
+        "ffmpeg" not in str(backend).lower()
+        for backend in audioread.available_backends()
+    ),
+    reason="Requires FFmpeg to be installed.",
 )
 def test_opus_stereo_recording_from_file_force_sampling_rate_read_chunk():
-    path = 'test/fixtures/stereo.opus'
+    path = "test/fixtures/stereo.opus"
     recording = Recording.from_file(path, force_opus_sampling_rate=8000)
     assert recording.sampling_rate == 8000
     assert isclose(recording.duration, 1.0055)

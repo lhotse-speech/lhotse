@@ -6,7 +6,7 @@ from lhotse.dataset.sampling.base import CutSampler
 
 
 def find_pessimistic_batches(
-        sampler: CutSampler, batch_tuple_index: int = 0
+    sampler: CutSampler, batch_tuple_index: int = 0
 ) -> Tuple[Dict[str, CutSet], Dict[str, float]]:
     """
     Function for finding 'pessimistic' batches, i.e. batches that have the highest potential

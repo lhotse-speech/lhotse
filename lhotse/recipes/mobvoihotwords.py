@@ -27,9 +27,9 @@ from lhotse.utils import Pathlike, urlretrieve_progress
 
 
 def download_mobvoihotwords(
-        target_dir: Pathlike = '.',
-        force_download: Optional[bool] = False,
-        base_url: Optional[str] = 'http://www.openslr.org/resources'
+    target_dir: Pathlike = ".",
+    force_download: Optional[bool] = False,
+    base_url: Optional[str] = "http://www.openslr.org/resources",
 ) -> None:
     """
     Downdload and untar the dataset
@@ -39,21 +39,23 @@ def download_mobvoihotwords(
     :param base_url: str, the url of the OpenSLR resources.
     """
 
-    url = f'{base_url}/87'
+    url = f"{base_url}/87"
     target_dir = Path(target_dir)
     target_dir.mkdir(parents=True, exist_ok=True)
-    dataset_tar_name = 'mobvoi_hotword_dataset.tgz'
-    resources_tar_name = 'mobvoi_hotword_dataset_resources.tgz'
+    dataset_tar_name = "mobvoi_hotword_dataset.tgz"
+    resources_tar_name = "mobvoi_hotword_dataset_resources.tgz"
     for tar_name in [dataset_tar_name, resources_tar_name]:
         tar_path = target_dir / tar_name
-        corpus_dir = target_dir / 'MobvoiHotwords'
-        extracted_dir = corpus_dir / tar_name[: -4]
-        completed_detector = extracted_dir / '.completed'
+        corpus_dir = target_dir / "MobvoiHotwords"
+        extracted_dir = corpus_dir / tar_name[:-4]
+        completed_detector = extracted_dir / ".completed"
         if completed_detector.is_file():
-            logging.info(f'Skip {tar_name} because {completed_detector} exists.')
+            logging.info(f"Skip {tar_name} because {completed_detector} exists.")
             continue
         if force_download or not tar_path.is_file():
-            urlretrieve_progress(f'{url}/{tar_name}', filename=tar_path, desc=f'Downloading {tar_name}')
+            urlretrieve_progress(
+                f"{url}/{tar_name}", filename=tar_path, desc=f"Downloading {tar_name}"
+            )
         shutil.rmtree(extracted_dir, ignore_errors=True)
         with tarfile.open(tar_path) as tar:
             tar.extractall(path=corpus_dir)
@@ -61,8 +63,7 @@ def download_mobvoihotwords(
 
 
 def prepare_mobvoihotwords(
-        corpus_dir: Pathlike,
-        output_dir: Optional[Pathlike] = None
+    corpus_dir: Pathlike, output_dir: Optional[Pathlike] = None
 ) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet]]]:
     """
     Returns the manifests which consist of the Recordings and Supervisions
@@ -72,8 +73,8 @@ def prepare_mobvoihotwords(
     :return: a Dict whose key is the dataset part, and the value is Dicts with the keys 'audio' and 'supervisions'.
     """
     corpus_dir = Path(corpus_dir)
-    assert corpus_dir.is_dir(), f'No such directory: {corpus_dir}'
-    dataset_parts = ['train', 'dev', 'test']
+    assert corpus_dir.is_dir(), f"No such directory: {corpus_dir}"
+    dataset_parts = ["train", "dev", "test"]
 
     manifests = {}
 
@@ -81,34 +82,42 @@ def prepare_mobvoihotwords(
         output_dir = Path(output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
         # Maybe the manifests already exist: we can read them and save a bit of preparation time.
-        manifests = read_manifests_if_cached(dataset_parts=dataset_parts, output_dir=output_dir)
+        manifests = read_manifests_if_cached(
+            dataset_parts=dataset_parts, output_dir=output_dir
+        )
 
     for part in dataset_parts:
-        logging.info(f'Preparing MobvoiHotwords subset: {part}')
+        logging.info(f"Preparing MobvoiHotwords subset: {part}")
         if manifests_exist(part=part, output_dir=output_dir):
-            logging.info(f'MobvoiHotwords subset: {part} already prepared - skipping.')
+            logging.info(f"MobvoiHotwords subset: {part} already prepared - skipping.")
             continue
         # Generate a mapping: utt_id -> (audio_path, audio_info, speaker, text)
         recordings = []
         supervisions = []
-        for prefix in ['p_', 'n_']:
+        for prefix in ["p_", "n_"]:
             prefixed_part = prefix + part
-            json_path = corpus_dir / 'mobvoi_hotword_dataset_resources' / f'{prefixed_part}.json'
-            with open(json_path, 'r', encoding='utf-8') as f:
+            json_path = (
+                corpus_dir
+                / "mobvoi_hotword_dataset_resources"
+                / f"{prefixed_part}.json"
+            )
+            with open(json_path, "r", encoding="utf-8") as f:
                 json_data = json.load(f)
                 for entry in json_data:
-                    idx = entry['utt_id']
-                    speaker = idx if entry['speaker_id'] is None else entry['speaker_id']
-                    audio_path = corpus_dir / 'mobvoi_hotword_dataset' / f'{idx}.wav'
-                    text = 'FREETEXT'
-                    if entry['keyword_id'] == 0:
-                        text = 'HiXiaowen'
-                    elif entry['keyword_id'] == 1:
-                        text = 'NihaoWenwen'
+                    idx = entry["utt_id"]
+                    speaker = (
+                        idx if entry["speaker_id"] is None else entry["speaker_id"]
+                    )
+                    audio_path = corpus_dir / "mobvoi_hotword_dataset" / f"{idx}.wav"
+                    text = "FREETEXT"
+                    if entry["keyword_id"] == 0:
+                        text = "HiXiaowen"
+                    elif entry["keyword_id"] == 1:
+                        text = "NihaoWenwen"
                     else:
-                        assert entry['keyword_id'] == -1
+                        assert entry["keyword_id"] == -1
                     if not audio_path.is_file():
-                        logging.warning(f'No such file: {audio_path}')
+                        logging.warning(f"No such file: {audio_path}")
                         continue
                     recording = Recording.from_file(audio_path)
                     recordings.append(recording)
@@ -118,9 +127,9 @@ def prepare_mobvoihotwords(
                         start=0.0,
                         duration=recording.duration,
                         channel=0,
-                        language='Chinese',
+                        language="Chinese",
                         speaker=speaker,
-                        text=text.strip()
+                        text=text.strip(),
                     )
                     supervisions.append(segment)
 
@@ -129,12 +138,9 @@ def prepare_mobvoihotwords(
         validate_recordings_and_supervisions(recording_set, supervision_set)
 
         if output_dir is not None:
-            supervision_set.to_json(output_dir / f'supervisions_{part}.json')
-            recording_set.to_json(output_dir / f'recordings_{part}.json')
+            supervision_set.to_json(output_dir / f"supervisions_{part}.json")
+            recording_set.to_json(output_dir / f"recordings_{part}.json")
 
-        manifests[part] = {
-            'recordings': recording_set,
-            'supervisions': supervision_set
-        }
+        manifests[part] = {"recordings": recording_set, "supervisions": supervision_set}
 
     return manifests

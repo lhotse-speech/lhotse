@@ -8,20 +8,23 @@ import pytest
 
 from lhotse import CutSet
 from lhotse.dataset.cut_transforms import concat_cuts
-from lhotse.dataset.sampling import BucketingSampler, CutPairsSampler, SingleCutSampler, ZipSampler, streaming_shuffle
+from lhotse.dataset.sampling import (
+    BucketingSampler,
+    CutPairsSampler,
+    SingleCutSampler,
+    ZipSampler,
+    streaming_shuffle,
+)
 from lhotse.testing.dummies import DummyManifest, dummy_cut
 from lhotse.utils import fastcopy, nullcontext as does_not_raise
 
 
 @pytest.fixture
 def libri_cut_set():
-    cs = CutSet.from_json('test/fixtures/libri/cuts.json')
-    return CutSet.from_cuts([
-        cs[0],
-        cs[0].with_id('copy-1'),
-        cs[0].with_id('copy-2'),
-        cs[0].append(cs[0])
-    ])
+    cs = CutSet.from_json("test/fixtures/libri/cuts.json")
+    return CutSet.from_cuts(
+        [cs[0], cs[0].with_id("copy-1"), cs[0].with_id("copy-2"), cs[0].append(cs[0])]
+    )
 
 
 def test_single_cut_sampler_shuffling():
@@ -34,7 +37,7 @@ def test_single_cut_sampler_shuffling():
         # Set an effective batch size of 10 cuts, as all have 1s duration == 100 frames
         # This way we're testing that it works okay when returning multiple batches in
         # a full epoch.
-        max_frames=1000
+        max_frames=1000,
     )
     sampled_cuts = []
     for batch in sampler:
@@ -49,17 +52,24 @@ def test_single_cut_sampler_shuffling():
 
 
 @pytest.mark.parametrize(
-    ['max_duration', 'max_frames', 'max_samples', 'exception_expectation'],
+    ["max_duration", "max_frames", "max_samples", "exception_expectation"],
     [
-        (None, None, None, does_not_raise()),  # represents no criterion (unlimited batch size)
+        (
+            None,
+            None,
+            None,
+            does_not_raise(),
+        ),  # represents no criterion (unlimited batch size)
         (10.0, None, None, does_not_raise()),
         (None, 1000, None, does_not_raise()),
         (None, None, 160000, does_not_raise()),
         (None, 1000, 160000, pytest.raises(AssertionError)),
         (5.0, 1000, 160000, pytest.raises(AssertionError)),
-    ]
+    ],
 )
-def test_single_cut_sampler_time_constraints(max_duration, max_frames, max_samples, exception_expectation):
+def test_single_cut_sampler_time_constraints(
+    max_duration, max_frames, max_samples, exception_expectation
+):
     # The dummy cuts have a duration of 1 second each
     cut_set = DummyManifest(CutSet, begin_id=0, end_id=100)
     if max_frames is None:
@@ -74,7 +84,7 @@ def test_single_cut_sampler_time_constraints(max_duration, max_frames, max_sampl
             # a full epoch.
             max_frames=max_frames,
             max_samples=max_samples,
-            max_duration=max_duration
+            max_duration=max_duration,
         )
         sampler_cut_ids = []
         for batch in sampler:
@@ -97,7 +107,7 @@ def test_single_cut_sampler_order_is_deterministic_given_epoch():
         # Set an effective batch size of 10 cuts, as all have 1s duration == 100 frames
         # This way we're testing that it works okay when returning multiple batches in
         # a full epoch.
-        max_frames=1000
+        max_frames=1000,
     )
     sampler.set_epoch(42)
     # calling the sampler twice without epoch update gives identical ordering
@@ -113,7 +123,7 @@ def test_single_cut_sampler_order_differs_between_epochs():
         # Set an effective batch size of 10 cuts, as all have 1s duration == 100 frames
         # This way we're testing that it works okay when returning multiple batches in
         # a full epoch.
-        max_frames=1000
+        max_frames=1000,
     )
     last_order = [item for item in sampler]
     for epoch in range(1, 6):
@@ -125,8 +135,8 @@ def test_single_cut_sampler_order_differs_between_epochs():
 
 @pytest.mark.xfail(
     reason="len(sampler) is incorrect as it caches the num_buckets value "
-           "for a particular cut ordering -- if the cuts are re-shuffled, "
-           "the actual len might differ."
+    "for a particular cut ordering -- if the cuts are re-shuffled, "
+    "the actual len might differ."
 )
 def test_single_cut_sampler_len():
     # total duration is 55 seconds
@@ -181,10 +191,12 @@ def test_cut_pairs_sampler():
 
 
 def test_cut_pairs_sampler_2():
-    cut_set = CutSet.from_cuts([
-        dummy_cut(0, duration=10),
-        dummy_cut(1, duration=20),
-    ])
+    cut_set = CutSet.from_cuts(
+        [
+            dummy_cut(0, duration=10),
+            dummy_cut(1, duration=20),
+        ]
+    )
     sampler = CutPairsSampler(
         source_cuts=cut_set,
         target_cuts=cut_set,
@@ -196,17 +208,24 @@ def test_cut_pairs_sampler_2():
 
 
 @pytest.mark.parametrize(
-    ['max_duration', 'max_frames', 'max_samples', 'exception_expectation'],
+    ["max_duration", "max_frames", "max_samples", "exception_expectation"],
     [
-        (None, None, None, does_not_raise()),  # represents no criterion (unlimited batch size)
+        (
+            None,
+            None,
+            None,
+            does_not_raise(),
+        ),  # represents no criterion (unlimited batch size)
         (10.0, None, None, does_not_raise()),
         (None, 1000, None, does_not_raise()),
         (None, None, 160000, does_not_raise()),
         (None, 1000, 160000, pytest.raises(AssertionError)),
         (5.0, 1000, 160000, pytest.raises(AssertionError)),
-    ]
+    ],
 )
-def test_cut_pairs_sampler_time_constraints(max_duration, max_frames, max_samples, exception_expectation):
+def test_cut_pairs_sampler_time_constraints(
+    max_duration, max_frames, max_samples, exception_expectation
+):
     # The dummy cuts have a duration of 1 second each
     cut_set = DummyManifest(CutSet, begin_id=0, end_id=100)
     if max_frames is None:
@@ -288,8 +307,8 @@ def test_cut_pairs_sampler_order_differs_between_epochs():
 
 @pytest.mark.xfail(
     reason="len(sampler) is incorrect as it caches the num_buckets value "
-           "for a particular cut ordering -- if the cuts are re-shuffled, "
-           "the actual len might differ."
+    "for a particular cut ordering -- if the cuts are re-shuffled, "
+    "the actual len might differ."
 )
 def test_cut_pairs_sampler_len():
     # total duration is 55 seconds
@@ -355,7 +374,9 @@ def test_bucketing_sampler_single_cuts():
 
 def test_bucketing_sampler_single_cuts_no_proportional_sampling():
     cut_set = DummyManifest(CutSet, begin_id=0, end_id=1000)
-    sampler = BucketingSampler(cut_set, proportional_sampling=False, sampler_type=SingleCutSampler)
+    sampler = BucketingSampler(
+        cut_set, proportional_sampling=False, sampler_type=SingleCutSampler
+    )
     sampled_cuts = []
     for batch in sampler:
         sampled_cuts.extend(batch)
@@ -365,33 +386,45 @@ def test_bucketing_sampler_single_cuts_no_proportional_sampling():
 def test_bucketing_sampler_single_cuts_equal_len():
     cut_set = DummyManifest(CutSet, begin_id=0, end_id=1000)
     for idx, c in enumerate(cut_set):
-        c.duration = 3 + idx * 1 / 50  # each cut has a different duration between [3, 23]
+        c.duration = (
+            3 + idx * 1 / 50
+        )  # each cut has a different duration between [3, 23]
     sampler = BucketingSampler(
-        cut_set, sampler_type=SingleCutSampler, bucket_method="equal_len", num_buckets=10
+        cut_set,
+        sampler_type=SingleCutSampler,
+        bucket_method="equal_len",
+        num_buckets=10,
     )
 
     bucket_cum_durs = []
-    for bucket, in sampler.buckets:
+    for (bucket,) in sampler.buckets:
         bucket_cum_durs.append(sum(c.duration for c in bucket))
         assert len(bucket) == 100
 
     # The variations in duration are over 10% of the mean bucket duration (because of equal lengths).
     mean_bucket_dur = mean(bucket_cum_durs)
-    assert not all(abs(d - mean_bucket_dur) < 0.1 * mean_bucket_dur for d in bucket_cum_durs)
+    assert not all(
+        abs(d - mean_bucket_dur) < 0.1 * mean_bucket_dur for d in bucket_cum_durs
+    )
 
 
 def test_bucketing_sampler_single_cuts_equal_duration():
     cut_set = DummyManifest(CutSet, begin_id=0, end_id=1000)
     for idx, c in enumerate(cut_set):
-        c.duration = 3 + idx * 1 / 50  # each cut has a different duration between [3, 23]
+        c.duration = (
+            3 + idx * 1 / 50
+        )  # each cut has a different duration between [3, 23]
     sampler = BucketingSampler(
-        cut_set, sampler_type=SingleCutSampler, bucket_method="equal_duration", num_buckets=10
+        cut_set,
+        sampler_type=SingleCutSampler,
+        bucket_method="equal_duration",
+        num_buckets=10,
     )
 
     # Ensure that each consecutive bucket has less cuts than the previous one
-    prev_len = float('inf')
+    prev_len = float("inf")
     bucket_cum_durs = []
-    for bucket, in sampler.buckets:
+    for (bucket,) in sampler.buckets:
         bucket_cum_durs.append(sum(c.duration for c in bucket))
         curr_len = len(bucket)
         assert curr_len < prev_len
@@ -405,7 +438,13 @@ def test_bucketing_sampler_single_cuts_equal_duration():
 
 def test_bucketing_sampler_shuffle():
     cut_set = DummyManifest(CutSet, begin_id=0, end_id=10)
-    sampler = BucketingSampler(cut_set, sampler_type=SingleCutSampler, shuffle=True, num_buckets=2, max_frames=200)
+    sampler = BucketingSampler(
+        cut_set,
+        sampler_type=SingleCutSampler,
+        shuffle=True,
+        num_buckets=2,
+        max_frames=200,
+    )
 
     sampler.set_epoch(0)
     batches_ep0 = []
@@ -438,11 +477,13 @@ def test_bucketing_sampler_cut_pairs():
     assert set(cut_set2.ids) == set(c.id for c in tgt_cuts)
 
 
-@pytest.mark.parametrize('shuffle', [False, True])
+@pytest.mark.parametrize("shuffle", [False, True])
 def test_bucketing_sampler_cut_pairs_equal_len(shuffle):
     cut_set = DummyManifest(CutSet, begin_id=0, end_id=1000)
     for idx, c in enumerate(cut_set):
-        c.duration = 3 + idx * 1 / 50  # each cut has a different duration between [3, 23]
+        c.duration = (
+            3 + idx * 1 / 50
+        )  # each cut has a different duration between [3, 23]
     # Target CutSet is going to have different durations
     # -- make sure the bucketing works well with that.
     cut_set_tgt = cut_set.map(lambda c: fastcopy(c, duration=1 / c.duration))
@@ -453,7 +494,7 @@ def test_bucketing_sampler_cut_pairs_equal_len(shuffle):
         sampler_type=CutPairsSampler,
         bucket_method="equal_len",
         num_buckets=10,
-        shuffle=shuffle
+        shuffle=shuffle,
     )
 
     bucket_cum_durs = []
@@ -464,14 +505,18 @@ def test_bucketing_sampler_cut_pairs_equal_len(shuffle):
 
     # The variations in duration are over 10% of the mean bucket duration (because of equal lengths).
     mean_bucket_dur = mean(bucket_cum_durs)
-    assert not all(abs(d - mean_bucket_dur) < 0.1 * mean_bucket_dur for d in bucket_cum_durs)
+    assert not all(
+        abs(d - mean_bucket_dur) < 0.1 * mean_bucket_dur for d in bucket_cum_durs
+    )
 
 
-@pytest.mark.parametrize('shuffle', [False, True])
+@pytest.mark.parametrize("shuffle", [False, True])
 def test_bucketing_sampler_cut_pairs_equal_duration(shuffle):
     cut_set = DummyManifest(CutSet, begin_id=0, end_id=1000)
     for idx, c in enumerate(cut_set):
-        c.duration = 3 + idx * 1 / 50  # each cut has a different duration between [3, 23]
+        c.duration = (
+            3 + idx * 1 / 50
+        )  # each cut has a different duration between [3, 23]
     # Target CutSet is going to have different durations
     # -- make sure the bucketing works well with that.
     cut_set_tgt = cut_set.map(lambda c: fastcopy(c, duration=1 / c.duration))
@@ -482,11 +527,11 @@ def test_bucketing_sampler_cut_pairs_equal_duration(shuffle):
         sampler_type=CutPairsSampler,
         bucket_method="equal_duration",
         num_buckets=10,
-        shuffle=shuffle
+        shuffle=shuffle,
     )
 
     # Ensure that each consecutive bucket has less cuts than the previous one
-    prev_len = float('inf')
+    prev_len = float("inf")
     bucket_cum_durs = []
     for bucket_src, bucket_tgt in sampler.buckets:
         assert list(bucket_src.ids) == list(bucket_tgt.ids)
@@ -531,10 +576,7 @@ def test_bucketing_sampler_buckets_have_different_durations():
 
     # The bucketing sampler should return 5 batches with two 1s cuts, and 10 batches with one 2s cut.
     sampler = BucketingSampler(
-        cut_set,
-        sampler_type=SingleCutSampler,
-        max_frames=200,
-        num_buckets=2
+        cut_set, sampler_type=SingleCutSampler, max_frames=200, num_buckets=2
     )
     batches = [item for item in sampler]
     assert len(batches) == 15
@@ -565,7 +607,7 @@ def test_bucketing_sampler_chooses_buckets_randomly():
         sampler_type=SingleCutSampler,
         max_cuts=1,
         max_frames=1000000000,
-        num_buckets=100
+        num_buckets=100,
     )
 
     # Batches of 1 guarantee that item is always a single-element list of cut IDs.
@@ -585,12 +627,7 @@ def test_bucketing_sampler_chooses_buckets_randomly():
 
 
 @pytest.mark.parametrize(
-    'constraint',
-    [
-        {'max_frames': 1000},
-        {'max_samples': 16000},
-        {'max_duration': 10.0}
-    ]
+    "constraint", [{"max_frames": 1000}, {"max_samples": 16000}, {"max_duration": 10.0}]
 )
 def test_bucketing_sampler_time_constraints(constraint):
     cut_set = DummyManifest(CutSet, begin_id=0, end_id=1000)
@@ -601,15 +638,15 @@ def test_bucketing_sampler_time_constraints(constraint):
     assert set(cut_set.ids) == set(c.id for c in sampled_cuts)
 
 
-@pytest.mark.parametrize('world_size', [2, 3, 4])
-@pytest.mark.parametrize('n_cuts', [995, 996, 997, 998, 999, 1000, 1001, 1002, 1003])
-@pytest.mark.parametrize('sampler_cls', [SingleCutSampler, BucketingSampler])
+@pytest.mark.parametrize("world_size", [2, 3, 4])
+@pytest.mark.parametrize("n_cuts", [995, 996, 997, 998, 999, 1000, 1001, 1002, 1003])
+@pytest.mark.parametrize("sampler_cls", [SingleCutSampler, BucketingSampler])
 def test_partitions_are_equal(world_size, n_cuts, sampler_cls):
     # Create a dummy CutSet.
     cut_set = DummyManifest(CutSet, begin_id=0, end_id=n_cuts)
     # Randomize the durations of cuts to increase the chance we run into edge cases.
     for c in cut_set:
-        c.duration += (10 * random.random())
+        c.duration += 10 * random.random()
     # Create a sampler for each "distributed worker."
     samplers = [
         sampler_cls(cut_set, max_duration=25.0, rank=i, world_size=world_size)
@@ -621,16 +658,16 @@ def test_partitions_are_equal(world_size, n_cuts, sampler_cls):
 
 
 @pytest.mark.parametrize(
-    'sampler_cls',
+    "sampler_cls",
     [
         SingleCutSampler,
         BucketingSampler,
-    ]
+    ],
 )
 def test_single_cut_sampler_with_lazy_cuts(sampler_cls):
     # The dummy cuts have a duration of 1 second each
     cut_set = DummyManifest(CutSet, begin_id=0, end_id=100)
-    with NamedTemporaryFile(suffix='.jsonl') as f:
+    with NamedTemporaryFile(suffix=".jsonl") as f:
         cut_set.to_jsonl(f.name)
         lazy_cuts = CutSet.from_jsonl_lazy(f.name)
 
@@ -640,7 +677,7 @@ def test_single_cut_sampler_with_lazy_cuts(sampler_cls):
             # Set an effective batch size of 10 cuts, as all have 1s duration == 100 frames
             # This way we're testing that it works okay when returning multiple batches in
             # a full epoch.
-            max_frames=1000
+            max_frames=1000,
         )
         sampled_cuts = []
         for batch in sampler:
@@ -652,7 +689,7 @@ def test_single_cut_sampler_with_lazy_cuts(sampler_cls):
         assert len(set(c.id for c in sampled_cuts)) == len(sampled_cuts)
 
 
-@pytest.mark.parametrize('sampler_cls', [SingleCutSampler, BucketingSampler])
+@pytest.mark.parametrize("sampler_cls", [SingleCutSampler, BucketingSampler])
 def test_sampler_filter(sampler_cls):
     # The dummy cuts have a duration of 1 second each
     cut_set = DummyManifest(CutSet, begin_id=0, end_id=100)
@@ -662,9 +699,9 @@ def test_sampler_filter(sampler_cls):
         # Set an effective batch size of 10 cuts, as all have 1s duration == 100 frames
         # This way we're testing that it works okay when returning multiple batches in
         # a full epoch.
-        max_frames=1000
+        max_frames=1000,
     )
-    removed_cut_id = 'dummy-cut-0010'
+    removed_cut_id = "dummy-cut-0010"
     sampler.filter(lambda cut: cut.id != removed_cut_id)
     sampled_cuts = []
     for batch in sampler:
@@ -690,9 +727,9 @@ def test_cut_pairs_sampler_filter():
         # Set an effective batch size of 10 cuts, as all have 1s duration == 100 frames
         # This way we're testing that it works okay when returning multiple batches in
         # a full epoch.
-        max_source_frames=1000
+        max_source_frames=1000,
     )
-    removed_cut_id = 'dummy-cut-0010'
+    removed_cut_id = "dummy-cut-0010"
     sampler.filter(lambda cut: cut.id != removed_cut_id)
 
     source_cuts, target_cuts = [], []
@@ -719,14 +756,18 @@ def test_zip_sampler_merge_batches_true():
     sampler = ZipSampler(
         # Note: each cut is 1s duration in this test.
         SingleCutSampler(cuts1, max_duration=10),
-        SingleCutSampler(cuts2, max_duration=2)
+        SingleCutSampler(cuts2, max_duration=2),
     )
     batches = [b for b in sampler]
     assert len(batches) == 10
     for idx, batch in enumerate(batches):
         assert len(batch) == 12  # twelve 1s items
-        assert len([c for c in batch if 0 <= int(c.id.split('-')[-1]) <= 100]) == 10  # ten come from cuts1
-        assert len([c for c in batch if 1000 <= int(c.id.split('-')[-1]) <= 1100]) == 2  # two come from cuts2
+        assert (
+            len([c for c in batch if 0 <= int(c.id.split("-")[-1]) <= 100]) == 10
+        )  # ten come from cuts1
+        assert (
+            len([c for c in batch if 1000 <= int(c.id.split("-")[-1]) <= 1100]) == 2
+        )  # two come from cuts2
 
 
 def test_zip_sampler_cut_pairs_merge_batches_true():
@@ -742,8 +783,12 @@ def test_zip_sampler_cut_pairs_merge_batches_true():
     for idx, (batch_src, batch_tgt) in enumerate(batches):
         assert len(batch_src) == len(batch_tgt)
         assert len(batch_src) == 12  # twelve 1s items
-        assert len([c for c in batch_src if 0 <= int(c.id.split('-')[-1]) <= 100]) == 10  # ten come from cuts1
-        assert len([c for c in batch_src if 1000 <= int(c.id.split('-')[-1]) <= 1100]) == 2  # two come from cuts2
+        assert (
+            len([c for c in batch_src if 0 <= int(c.id.split("-")[-1]) <= 100]) == 10
+        )  # ten come from cuts1
+        assert (
+            len([c for c in batch_src if 1000 <= int(c.id.split("-")[-1]) <= 1100]) == 2
+        )  # two come from cuts2
 
 
 def test_zip_sampler_merge_batches_false():
@@ -753,15 +798,21 @@ def test_zip_sampler_merge_batches_false():
         # Note: each cut is 1s duration in this test.
         SingleCutSampler(cuts1, max_duration=10),
         SingleCutSampler(cuts2, max_duration=2),
-        merge_batches=False
+        merge_batches=False,
     )
     batches = [b for b in sampler]
     assert len(batches) == 10
     for idx, (batch_sampler1, batch_sampler2) in enumerate(batches):
         assert len(batch_sampler1) == 10
-        assert len([c for c in batch_sampler1 if 0 <= int(c.id.split('-')[-1]) <= 100]) == 10  # ten come from cuts1
+        assert (
+            len([c for c in batch_sampler1 if 0 <= int(c.id.split("-")[-1]) <= 100])
+            == 10
+        )  # ten come from cuts1
         assert len(batch_sampler2) == 2
-        assert len([c for c in batch_sampler2 if 1000 <= int(c.id.split('-')[-1]) <= 1100]) == 2  # two come from cuts2
+        assert (
+            len([c for c in batch_sampler2 if 1000 <= int(c.id.split("-")[-1]) <= 1100])
+            == 2
+        )  # two come from cuts2
 
 
 def test_single_cut_sampler_drop_last():
@@ -784,7 +835,7 @@ def test_single_cut_sampler_drop_last():
     assert len(batches) == 6
 
 
-@pytest.mark.parametrize('drop_last', [False, True])
+@pytest.mark.parametrize("drop_last", [False, True])
 def test_bucketing_sampler_drop_last(drop_last):
     # CutSet that has 50 cuts: 10 have 1s, 10 have 2s, etc.
     cut_set = CutSet()
@@ -856,16 +907,16 @@ def test_sampler_get_report(sampler):
 
 
 @pytest.mark.parametrize(
-    'sampler_cls',
+    "sampler_cls",
     [
         SingleCutSampler,
         BucketingSampler,
-    ]
+    ],
 )
 def test_single_cut_sampler_lazy_shuffle(sampler_cls):
     # The dummy cuts have a duration of 1 second each
     cut_set = DummyManifest(CutSet, begin_id=0, end_id=100)
-    with NamedTemporaryFile(suffix='.jsonl') as f:
+    with NamedTemporaryFile(suffix=".jsonl") as f:
         cut_set.to_jsonl(f.name)
         lazy_cuts = CutSet.from_jsonl_lazy(f.name)
 
@@ -875,7 +926,7 @@ def test_single_cut_sampler_lazy_shuffle(sampler_cls):
             # Set an effective batch size of 10 cuts, as all have 1s duration == 100 frames
             # This way we're testing that it works okay when returning multiple batches in
             # a full epoch.
-            max_frames=1000
+            max_frames=1000,
         )
         sampled_cuts = []
         for batch in sampler:
@@ -890,19 +941,21 @@ def test_single_cut_sampler_lazy_shuffle(sampler_cls):
 
 
 @pytest.mark.parametrize(
-    'sampler_cls',
+    "sampler_cls",
     [
         CutPairsSampler,
         pytest.param(
             BucketingSampler,
-            marks=pytest.mark.xfail(reason="BucketingSampler does not support lazy cuts pairs yet."),
-        )
-    ]
+            marks=pytest.mark.xfail(
+                reason="BucketingSampler does not support lazy cuts pairs yet."
+            ),
+        ),
+    ],
 )
 def test_cut_pairs_sampler_lazy_shuffle(sampler_cls):
     # The dummy cuts have a duration of 1 second each
     cut_set = DummyManifest(CutSet, begin_id=0, end_id=100)
-    with NamedTemporaryFile(suffix='.jsonl') as f:
+    with NamedTemporaryFile(suffix=".jsonl") as f:
         cut_set.to_jsonl(f.name)
         lazy_cuts = CutSet.from_jsonl_lazy(f.name)
 
@@ -913,7 +966,7 @@ def test_cut_pairs_sampler_lazy_shuffle(sampler_cls):
             # Set an effective batch size of 10 cuts, as all have 1s duration == 100 frames
             # This way we're testing that it works okay when returning multiple batches in
             # a full epoch.
-            max_source_frames=1000
+            max_source_frames=1000,
         )
         sampled_src_cuts = []
         sampled_tgt_cuts = []
@@ -932,8 +985,8 @@ def test_cut_pairs_sampler_lazy_shuffle(sampler_cls):
         assert [c.id for c in sampled_src_cuts] != [c.id for c in lazy_cuts]
 
 
-@pytest.mark.parametrize('datasize', [10, 1000, 20000])
-@pytest.mark.parametrize('bufsize', [100, 1000, 10000])
+@pytest.mark.parametrize("datasize", [10, 1000, 20000])
+@pytest.mark.parametrize("bufsize", [100, 1000, 10000])
 def test_streaming_shuffle(datasize, bufsize):
     data = list(range(int(datasize)))
     shuffled = list(streaming_shuffle(iter(data), bufsize=int(bufsize)))

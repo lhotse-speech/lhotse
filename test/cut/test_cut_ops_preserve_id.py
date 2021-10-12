@@ -9,26 +9,26 @@ import pytest
 # ########################################
 
 
-@pytest.mark.parametrize('direction', ['right', 'left', 'both'])
+@pytest.mark.parametrize("direction", ["right", "left", "both"])
 def test_pad_cut_preserve_id_false(cut1, direction: str):
     padded = cut1.pad(duration=300, direction=direction)
     assert padded.id != cut1.id
 
 
-@pytest.mark.parametrize('direction', ['right', 'left', 'both'])
+@pytest.mark.parametrize("direction", ["right", "left", "both"])
 def test_pad_cut_preserve_id_true(cut1, direction: str):
     padded = cut1.pad(duration=300, direction=direction, preserve_id=True)
     assert padded.id == cut1.id
 
 
-@pytest.mark.parametrize('direction', ['right', 'left', 'both'])
+@pytest.mark.parametrize("direction", ["right", "left", "both"])
 def test_pad_mixed_cut_preserve_id_false(cut1, direction: str):
     mixed = cut1.append(cut1)
     padded = mixed.pad(duration=300, direction=direction)
     assert padded.id != mixed.id
 
 
-@pytest.mark.parametrize('direction', ['right', 'left', 'both'])
+@pytest.mark.parametrize("direction", ["right", "left", "both"])
 def test_pad_mixed_cut_preserve_id_true(cut1, direction: str):
     mixed = cut1.append(cut1)
     padded = mixed.pad(duration=300, direction=direction, preserve_id=True)
@@ -47,13 +47,13 @@ def test_append_cut_preserve_id_none(cut1, cut2):
 
 
 def test_append_cut_preserve_id_left(cut1, cut2):
-    appended = cut1.append(cut2, preserve_id='left')
+    appended = cut1.append(cut2, preserve_id="left")
     assert appended.id == cut1.id
     assert appended.id != cut2.id
 
 
 def test_append_cut_preserve_id_right(cut1, cut2):
-    appended = cut1.append(cut2, preserve_id='right')
+    appended = cut1.append(cut2, preserve_id="right")
     assert appended.id != cut1.id
     assert appended.id == cut2.id
 
@@ -67,14 +67,14 @@ def test_append_mixed_cut_preserve_id_none(cut1, cut2):
 
 def test_append_mixed_cut_preserve_id_left(cut1, cut2):
     premixed = cut1.append(cut1)
-    appended = premixed.append(cut2, preserve_id='left')
+    appended = premixed.append(cut2, preserve_id="left")
     assert appended.id == premixed.id
     assert appended.id != cut2.id
 
 
 def test_append_mixed_cut_preserve_id_right(cut1, cut2):
     premixed = cut1.append(cut1)
-    appended = premixed.append(cut2, preserve_id='right')
+    appended = premixed.append(cut2, preserve_id="right")
     assert appended.id != premixed.id
     assert appended.id == cut2.id
 
@@ -91,13 +91,13 @@ def test_mix_cut_preserve_id_none(cut1, cut2):
 
 
 def test_mix_cut_preserve_id_left(cut1, cut2):
-    mixed = cut1.mix(cut2, preserve_id='left')
+    mixed = cut1.mix(cut2, preserve_id="left")
     assert mixed.id == cut1.id
     assert mixed.id != cut2.id
 
 
 def test_mix_cut_preserve_id_right(cut1, cut2):
-    mixed = cut1.mix(cut2, preserve_id='right')
+    mixed = cut1.mix(cut2, preserve_id="right")
     assert mixed.id != cut1.id
     assert mixed.id == cut2.id
 
@@ -111,14 +111,14 @@ def test_mix_mixed_cut_preserve_id_none(cut1, cut2):
 
 def test_mix_mixed_cut_preserve_id_left(cut1, cut2):
     premixed = cut1.append(cut1)
-    mixed = premixed.mix(cut2, preserve_id='left')
+    mixed = premixed.mix(cut2, preserve_id="left")
     assert mixed.id == premixed.id
     assert mixed.id != cut2.id
 
 
 def test_mix_mixed_cut_preserve_id_right(cut1, cut2):
     premixed = cut1.append(cut1)
-    mixed = premixed.mix(cut2, preserve_id='right')
+    mixed = premixed.mix(cut2, preserve_id="right")
     assert mixed.id != premixed.id
     assert mixed.id == cut2.id
 

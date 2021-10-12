@@ -5,19 +5,28 @@ from lhotse.cut import PaddingCut
 from lhotse.testing.dummies import dummy_cut, dummy_supervision
 
 parametrize_on_cut_types = pytest.mark.parametrize(
-    'cut', [
+    "cut",
+    [
         # MonoCut
         dummy_cut(0, supervisions=[dummy_supervision(0)]),
         # PaddingCut
-        PaddingCut('pad', duration=1.0, sampling_rate=16000, feat_value=-100,
-                   num_frames=100, frame_shift=0.01, num_features=80, num_samples=16000),
+        PaddingCut(
+            "pad",
+            duration=1.0,
+            sampling_rate=16000,
+            feat_value=-100,
+            num_frames=100,
+            frame_shift=0.01,
+            num_features=80,
+            num_samples=16000,
+        ),
         # MixedCut
         dummy_cut(0, supervisions=[dummy_supervision(0)]).mix(
             dummy_cut(1, supervisions=[dummy_supervision(1)]),
             offset_other_by=0.5,
-            snr=10
-        )
-    ]
+            snr=10,
+        ),
+    ],
 )
 
 
@@ -47,19 +56,29 @@ def test_drop_supervisions(cut):
 
 @pytest.fixture()
 def cutset():
-    return CutSet.from_cuts([
-        # MonoCut
-        dummy_cut(0, supervisions=[dummy_supervision(0)]),
-        # PaddingCut
-        PaddingCut('pad', duration=1.0, sampling_rate=16000, feat_value=-100,
-                   num_frames=100, frame_shift=0.01, num_features=80, num_samples=16000),
-        # MixedCut
-        dummy_cut(0, supervisions=[dummy_supervision(0)]).mix(
-            dummy_cut(1, supervisions=[dummy_supervision(1)]),
-            offset_other_by=0.5,
-            snr=10
-        )
-    ])
+    return CutSet.from_cuts(
+        [
+            # MonoCut
+            dummy_cut(0, supervisions=[dummy_supervision(0)]),
+            # PaddingCut
+            PaddingCut(
+                "pad",
+                duration=1.0,
+                sampling_rate=16000,
+                feat_value=-100,
+                num_frames=100,
+                frame_shift=0.01,
+                num_features=80,
+                num_samples=16000,
+            ),
+            # MixedCut
+            dummy_cut(0, supervisions=[dummy_supervision(0)]).mix(
+                dummy_cut(1, supervisions=[dummy_supervision(1)]),
+                offset_other_by=0.5,
+                snr=10,
+            ),
+        ]
+    )
 
 
 def test_drop_features_cutset(cutset):

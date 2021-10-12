@@ -22,14 +22,14 @@ def test_cut_set_mixing_default(speech_cuts, noise_cuts):
             assert all(t.snr == 20 for t in mix_cut.tracks[1:])
 
 
-@pytest.mark.parametrize('duration', [1.0, 5.1, 17.5, 30.0])
+@pytest.mark.parametrize("duration", [1.0, 5.1, 17.5, 30.0])
 def test_cut_set_mixing_with_duration(speech_cuts, noise_cuts, duration):
     mixed_cuts = speech_cuts.mix(noise_cuts, duration=duration)
     for orig_cut, mix_cut in zip(speech_cuts, mixed_cuts):
         assert mix_cut.duration == duration
 
 
-@pytest.mark.parametrize('snr', [17.5, None])
+@pytest.mark.parametrize("snr", [17.5, None])
 def test_cut_set_mixing_with_snr_value(speech_cuts, noise_cuts, snr):
     mixed_cuts = speech_cuts.mix(noise_cuts, snr=snr)
     for orig_cut, mix_cut in zip(speech_cuts, mixed_cuts):

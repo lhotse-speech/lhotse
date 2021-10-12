@@ -15,9 +15,9 @@ Manifest = Any  # Union['RecordingSet', 'SupervisionSet', 'FeatureSet', 'CutSet'
 
 
 def save_to_yaml(data: Any, path: Pathlike) -> None:
-    compressed = str(path).endswith('.gz')
+    compressed = str(path).endswith(".gz")
     opener = gzip.open if compressed else open
-    mode = 'wt' if compressed else 'w'
+    mode = "wt" if compressed else "w"
     with opener(path, mode) as f:
         try:
             # When pyyaml is installed with C extensions, it can speed up the (de)serialization noticeably
@@ -27,7 +27,7 @@ def save_to_yaml(data: Any, path: Pathlike) -> None:
 
 
 def load_yaml(path: Pathlike) -> dict:
-    opener = gzip.open if str(path).endswith('.gz') else open
+    opener = gzip.open if str(path).endswith(".gz") else open
     with opener(path) as f:
         try:
             # When pyyaml is installed with C extensions, it can speed up the (de)serialization noticeably
@@ -48,16 +48,16 @@ class YamlMixin:
 
 def save_to_json(data: Any, path: Pathlike) -> None:
     """Save the data to a JSON file. Will use GZip to compress it if the path ends with a ``.gz`` extension."""
-    compressed = str(path).endswith('.gz')
+    compressed = str(path).endswith(".gz")
     opener = gzip.open if compressed else open
-    mode = 'wt' if compressed else 'w'
+    mode = "wt" if compressed else "w"
     with opener(path, mode) as f:
         json.dump(data, f, indent=2)
 
 
 def load_json(path: Pathlike) -> Union[dict, list]:
     """Load a JSON file. Also supports compressed JSON with a ``.gz`` extension."""
-    opener = gzip.open if str(path).endswith('.gz') else open
+    opener = gzip.open if str(path).endswith(".gz") else open
     with opener(path) as f:
         return json.load(f)
 
@@ -74,9 +74,9 @@ class JsonMixin:
 
 def save_to_jsonl(data: Iterable[Dict[str, Any]], path: Pathlike) -> None:
     """Save the data to a JSON file. Will use GZip to compress it if the path ends with a ``.gz`` extension."""
-    compressed = str(path).endswith('.gz')
+    compressed = str(path).endswith(".gz")
     opener = gzip.open if compressed else open
-    mode = 'wt' if compressed else 'w'
+    mode = "wt" if compressed else "w"
     with opener(path, mode) as f:
         for item in data:
             print(json.dumps(item), file=f)
@@ -84,7 +84,7 @@ def save_to_jsonl(data: Iterable[Dict[str, Any]], path: Pathlike) -> None:
 
 def load_jsonl(path: Pathlike) -> Generator[Dict[str, Any], None, None]:
     """Load a JSON file. Also supports compressed JSON with a ``.gz`` extension."""
-    opener = gzip.open if str(path).endswith('.gz') else open
+    opener = gzip.open if str(path).endswith(".gz") else open
     with opener(path) as f:
         for line in f:
             # The temporary variable helps fail fast
@@ -129,17 +129,21 @@ class SequentialJsonlWriter:
 
     def __init__(self, path: Pathlike, overwrite: bool = True) -> None:
         self.path = Path(path)
-        assert extension_contains('.jsonl', self.path)
-        self.compressed = extension_contains('.gz', self.path)
+        assert extension_contains(".jsonl", self.path)
+        self.compressed = extension_contains(".gz", self.path)
         self._open = gzip.open if self.compressed else open
-        self.mode = 'wt' if self.compressed else 'w'
+        self.mode = "wt" if self.compressed else "w"
         self.ignore_ids = set()
         if self.path.is_file() and not overwrite:
-            self.mode = 'at' if self.compressed else 'a'
+            self.mode = "at" if self.compressed else "a"
             with self._open(self.path) as f:
-                self.ignore_ids = {data['id'] for data in (json.loads(line) for line in f) if 'id' in data}
+                self.ignore_ids = {
+                    data["id"]
+                    for data in (json.loads(line) for line in f)
+                    if "id" in data
+                }
 
-    def __enter__(self) -> 'SequentialJsonlWriter':
+    def __enter__(self) -> "SequentialJsonlWriter":
         self.file = self._open(self.path, self.mode)
         return self
 
@@ -169,10 +173,7 @@ class SequentialJsonlWriter:
                 return
         except AttributeError:
             pass
-        print(
-            json.dumps(manifest.to_dict()),
-            file=self.file
-        )
+        print(json.dumps(manifest.to_dict()), file=self.file)
 
 
 class JsonlMixin:
@@ -185,7 +186,9 @@ class JsonlMixin:
         return cls.from_dicts(data)
 
     @classmethod
-    def open_writer(cls, path: Pathlike, overwrite: bool = True) -> SequentialJsonlWriter:
+    def open_writer(
+        cls, path: Pathlike, overwrite: bool = True
+    ) -> SequentialJsonlWriter:
         """
         Open a sequential writer that allows to store the manifests one by one,
         without the necessity of storing the whole manifest set in-memory.
@@ -252,10 +255,11 @@ def extension_contains(ext: str, path: Path) -> bool:
 def load_manifest(path: Pathlike, manifest_cls: Optional[Type] = None) -> Manifest:
     """Generic utility for reading an arbitrary manifest."""
     from lhotse import CutSet, FeatureSet, RecordingSet, SupervisionSet
+
     # Determine the serialization format and read the raw data.
     path = Path(path)
-    assert path.is_file(), f'No such path: {path}'
-    if extension_contains('.jsonl', path):
+    assert path.is_file(), f"No such path: {path}"
+    if extension_contains(".jsonl", path):
         raw_data = load_jsonl(path)
         if manifest_cls is None:
             # Note: for now, we need to load the whole JSONL rather than read it in
@@ -263,9 +267,9 @@ def load_manifest(path: Pathlike, manifest_cls: Optional[Type] = None) -> Manife
             # we should decode later; since we're consuming the underlying generator
             # each time we try, not materializing the list first could lead to data loss
             raw_data = list(raw_data)
-    elif extension_contains('.json', path):
+    elif extension_contains(".json", path):
         raw_data = load_json(path)
-    elif extension_contains('.yaml', path):
+    elif extension_contains(".yaml", path):
         raw_data = load_yaml(path)
     else:
         raise ValueError(f"Not a valid manifest: {path}")
@@ -284,17 +288,17 @@ def load_manifest(path: Pathlike, manifest_cls: Optional[Type] = None) -> Manife
         except Exception:
             pass
     if data_set is None:
-        raise ValueError(f'Unknown type of manifest: {path}')
+        raise ValueError(f"Unknown type of manifest: {path}")
     return data_set
 
 
 def store_manifest(manifest: Manifest, path: Pathlike) -> None:
     path = Path(path)
-    if extension_contains('.jsonl', path):
+    if extension_contains(".jsonl", path):
         manifest.to_jsonl(path)
-    elif extension_contains('.json', path):
+    elif extension_contains(".json", path):
         manifest.to_json(path)
-    elif extension_contains('.yaml', path):
+    elif extension_contains(".yaml", path):
         manifest.to_yaml(path)
     else:
         raise ValueError(f"Unknown serialization format for: {path}")
@@ -319,12 +323,13 @@ class LazyJsonlIterator:
     Since it does not support random access reads, some methods of these classes
     might not work properly.
     """
+
     def __init__(self, path: Pathlike) -> None:
         self.path = Path(path)
-        assert extension_contains('.jsonl', self.path)
+        assert extension_contains(".jsonl", self.path)
 
     def _reset(self) -> None:
-        opener = gzip.open if str(self.path).endswith('.gz') else open
+        opener = gzip.open if str(self.path).endswith(".gz") else open
         self._file = opener(self.path)
 
     def __getstate__(self):
@@ -333,7 +338,7 @@ class LazyJsonlIterator:
         this iterator when unpickled. This is necessary to transfer this object across processes
         for PyTorch's DataLoader workers.
         """
-        state = {'path': self.path}
+        state = {"path": self.path}
         return state
 
     def __setstate__(self, state: Dict):
@@ -368,21 +373,24 @@ def deserialize_item(data: dict) -> Any:
     # and returns a Lhotse manifest object rather than a raw dict.
     from lhotse import MonoCut, Features, Recording, SupervisionSegment
     from lhotse.cut import MixedCut
-    if 'sources' in data:
+
+    if "sources" in data:
         return Recording.from_dict(data)
-    if 'num_features' in data:
+    if "num_features" in data:
         return Features.from_dict(data)
-    if 'type' not in data:
+    if "type" not in data:
         return SupervisionSegment.from_dict(data)
-    cut_type = data.pop('type')
-    if cut_type == 'MonoCut':
+    cut_type = data.pop("type")
+    if cut_type == "MonoCut":
         return MonoCut.from_dict(data)
-    if cut_type == 'Cut':
-        warnings.warn('Your manifest was created with Lhotse version earlier than v0.8, when MonoCut was called Cut. '
-                      'Please re-generate it with Lhotse v0.8 as it might stop working in a future version '
-                      '(using manifest.from_file() and then manifest.to_file() should be sufficient).')
+    if cut_type == "Cut":
+        warnings.warn(
+            "Your manifest was created with Lhotse version earlier than v0.8, when MonoCut was called Cut. "
+            "Please re-generate it with Lhotse v0.8 as it might stop working in a future version "
+            "(using manifest.from_file() and then manifest.to_file() should be sufficient)."
+        )
         return MonoCut.from_dict(data)
-    if cut_type == 'MixedCut':
+    if cut_type == "MixedCut":
         return MixedCut.from_dict(data)
     raise ValueError(f"Unexpected cut type during deserialization: '{cut_type}'")
 
@@ -394,6 +402,7 @@ def count_newlines_fast(path: Pathlike):
     https://stackoverflow.com/a/68385697/5285891
     (This is a slightly modified variant of that answer.)
     """
+
     def _make_gen(reader):
         b = reader(2 ** 16)
         while b:
@@ -401,7 +410,7 @@ def count_newlines_fast(path: Pathlike):
             b = reader(2 ** 16)
 
     path = Path(path)
-    opener = gzip.open if str(path).endswith('.gz') else open
+    opener = gzip.open if str(path).endswith(".gz") else open
     with opener(path, "rb") as f:
         count = sum(buf.count(b"\n") for buf in _make_gen(f.read))
     return count

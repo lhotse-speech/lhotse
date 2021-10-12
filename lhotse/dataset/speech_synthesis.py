@@ -27,13 +27,13 @@ class SpeechSynthesisDataset(torch.utils.data.Dataset):
     """
 
     def __init__(
-            self,
-            cuts: CutSet,
-            cut_transforms: List[Callable[[CutSet], CutSet]] = None,
-            feature_input_strategy: BatchIO = PrecomputedFeatures(),
-            feature_transforms: Union[Sequence[Callable], Callable] = None,
-            add_eos: bool = True,
-            add_bos: bool = True,
+        self,
+        cuts: CutSet,
+        cut_transforms: List[Callable[[CutSet], CutSet]] = None,
+        feature_input_strategy: BatchIO = PrecomputedFeatures(),
+        feature_transforms: Union[Sequence[Callable], Callable] = None,
+        add_eos: bool = True,
+        add_bos: bool = True,
     ) -> None:
         super().__init__()
 
@@ -47,8 +47,9 @@ class SpeechSynthesisDataset(torch.utils.data.Dataset):
         elif not isinstance(feature_transforms, Sequence):
             feature_transforms = [feature_transforms]
 
-        assert all(isinstance(transform, Callable) for transform in feature_transforms), \
-            "Feature transforms must be Callable"
+        assert all(
+            isinstance(transform, Callable) for transform in feature_transforms
+        ), "Feature transforms must be Callable"
         self.feature_transforms = feature_transforms
 
     def __getitem__(self, cuts: CutSet) -> Dict[str, torch.Tensor]:
@@ -79,5 +80,5 @@ def validate_for_tts(cuts: CutSet) -> None:
     validate(cuts)
     for cut in cuts:
         assert (
-                len(cut.supervisions) == 1
+            len(cut.supervisions) == 1
         ), "Only the Cuts with single supervision are supported."

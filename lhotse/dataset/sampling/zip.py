@@ -98,10 +98,12 @@ class ZipSampler(CutSampler):
         training loop's state to the one stored in the state_dict.
         """
         state_dict = super().state_dict()
-        state_dict.update({
-            'merge_batches': self.merge_batches,
-            'samplers': [s.state_dict() for s in self.samplers]
-        })
+        state_dict.update(
+            {
+                "merge_batches": self.merge_batches,
+                "samplers": [s.state_dict() for s in self.samplers],
+            }
+        )
         return state_dict
 
     def load_state_dict(self, state_dict: Dict[str, Any]) -> None:
@@ -122,12 +124,12 @@ class ZipSampler(CutSampler):
             For implementers of sub-classes of CutSampler: the flag ``self._just_restored_state`` has to be
             handled in ``__iter__`` to make it avoid resetting the just-restored state (only once).
         """
-        self.merge_batches = state_dict.pop('merge_batches')
-        assert len(self.samplers) == len(state_dict['samplers']), (
+        self.merge_batches = state_dict.pop("merge_batches")
+        assert len(self.samplers) == len(state_dict["samplers"]), (
             "Error in ZipSampler.load_state_dict(): Inconsistent number of samplers: "
             f"current ZipSampler has {len(self.samplers)}, the state_dict has {len(state_dict['samplers'])}."
         )
-        for sampler, sampler_sd in zip(self.samplers, state_dict.pop('samplers')):
+        for sampler, sampler_sd in zip(self.samplers, state_dict.pop("samplers")):
             sampler.load_state_dict(sampler_sd)
         super().load_state_dict(state_dict)
 

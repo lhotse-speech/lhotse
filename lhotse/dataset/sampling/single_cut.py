@@ -29,17 +29,17 @@ class SingleCutSampler(CutSampler):
     """
 
     def __init__(
-            self,
-            cuts: CutSet,
-            max_frames: int = None,
-            max_samples: int = None,
-            max_duration: Seconds = None,
-            max_cuts: Optional[int] = None,
-            shuffle: bool = False,
-            drop_last: bool = False,
-            world_size: Optional[int] = None,
-            rank: Optional[int] = None,
-            seed: int = 0,
+        self,
+        cuts: CutSet,
+        max_frames: int = None,
+        max_samples: int = None,
+        max_duration: Seconds = None,
+        max_cuts: Optional[int] = None,
+        shuffle: bool = False,
+        drop_last: bool = False,
+        world_size: Optional[int] = None,
+        rank: Optional[int] = None,
+        seed: int = 0,
     ):
         """
         SingleCutSampler's constructor.
@@ -72,7 +72,7 @@ class SingleCutSampler(CutSampler):
         self.drop_last = drop_last
         self.max_cuts = max_cuts
         assert self.time_constraint.is_active() or not (
-                self.time_constraint.is_active() and self.max_cuts is not None
+            self.time_constraint.is_active() and self.max_cuts is not None
         )
         # Constraints
         assert is_none_or_gt(self.max_cuts, 0)
@@ -110,11 +110,13 @@ class SingleCutSampler(CutSampler):
         training loop's state to the one stored in the state_dict.
         """
         state_dict = super().state_dict()
-        state_dict.update({
-            'drop_last': self.drop_last,
-            'time_constraint': self.time_constraint.state_dict(),
-            'max_cuts': self.max_cuts,
-        })
+        state_dict.update(
+            {
+                "drop_last": self.drop_last,
+                "time_constraint": self.time_constraint.state_dict(),
+                "max_cuts": self.max_cuts,
+            }
+        )
         return state_dict
 
     def load_state_dict(self, state_dict: Dict[str, Any]) -> None:
@@ -135,22 +137,26 @@ class SingleCutSampler(CutSampler):
             For implementers of sub-classes of CutSampler: the flag ``self._just_restored_state`` has to be
             handled in ``__iter__`` to make it avoid resetting the just-restored state (only once).
         """
-        self.drop_last = state_dict.pop('drop_last')
+        self.drop_last = state_dict.pop("drop_last")
 
-        time_constraint = TimeConstraint(**state_dict.pop('time_constraint'))
+        time_constraint = TimeConstraint(**state_dict.pop("time_constraint"))
         if self.time_constraint != time_constraint:
-            warnings.warn('SingleCutSampler.load_state_dict(): Inconsistent time_constraint:\n'
-                          f'expected {self.time_constraint}\n'
-                          f'received {time_constraint}\n'
-                          f'We will overwrite the settings with the received state_dict.')
+            warnings.warn(
+                "SingleCutSampler.load_state_dict(): Inconsistent time_constraint:\n"
+                f"expected {self.time_constraint}\n"
+                f"received {time_constraint}\n"
+                f"We will overwrite the settings with the received state_dict."
+            )
         self.time_constraint = time_constraint
 
-        max_cuts = state_dict.pop('max_cuts')
+        max_cuts = state_dict.pop("max_cuts")
         if self.max_cuts != max_cuts:
-            warnings.warn('SingleCutSampler.load_state_dict(): Inconsistent max_cuts:\n'
-                          f'expected {self.max_cuts}\n'
-                          f'received {max_cuts}\n'
-                          f'We will overwrite the settings with the received state_dict.')
+            warnings.warn(
+                "SingleCutSampler.load_state_dict(): Inconsistent max_cuts:\n"
+                f"expected {self.max_cuts}\n"
+                f"received {max_cuts}\n"
+                f"We will overwrite the settings with the received state_dict."
+            )
         self.max_cuts = max_cuts
 
         super().load_state_dict(state_dict)
@@ -192,7 +198,7 @@ class SingleCutSampler(CutSampler):
                 # we may output it, unless the user requested to drop it.
                 # We also check if the batch is "almost there" to override drop_last.
                 if cuts and (
-                        not self.drop_last or self.time_constraint.close_to_exceeding()
+                    not self.drop_last or self.time_constraint.close_to_exceeding()
                 ):
                     # We have a partial batch and we can return it.
                     self.diagnostics.keep(cuts)
@@ -215,7 +221,7 @@ class SingleCutSampler(CutSampler):
 
             # Did we exceed the max_frames and max_cuts constraints?
             if not self.time_constraint.exceeded() and (
-                    self.max_cuts is None or next_num_cuts <= self.max_cuts
+                self.max_cuts is None or next_num_cuts <= self.max_cuts
             ):
                 # No - add the next cut to the batch, and keep trying.
                 cuts.append(next_cut)

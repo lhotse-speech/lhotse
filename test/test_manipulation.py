@@ -11,7 +11,7 @@ from lhotse.supervision import SupervisionSet
 from lhotse.testing.dummies import DummyManifest
 
 
-@mark.parametrize('manifest_type', [RecordingSet, SupervisionSet, FeatureSet, CutSet])
+@mark.parametrize("manifest_type", [RecordingSet, SupervisionSet, FeatureSet, CutSet])
 def test_split_even(manifest_type):
     manifest = DummyManifest(manifest_type, begin_id=0, end_id=100)
     manifest_subsets = manifest.split(num_splits=2)
@@ -20,7 +20,7 @@ def test_split_even(manifest_type):
     assert manifest_subsets[1] == DummyManifest(manifest_type, begin_id=50, end_id=100)
 
 
-@mark.parametrize('manifest_type', [RecordingSet, SupervisionSet, FeatureSet, CutSet])
+@mark.parametrize("manifest_type", [RecordingSet, SupervisionSet, FeatureSet, CutSet])
 def test_split_randomize(manifest_type):
     manifest = DummyManifest(manifest_type, begin_id=0, end_id=100)
     manifest_subsets = manifest.split(num_splits=2, shuffle=True)
@@ -32,46 +32,70 @@ def test_split_randomize(manifest_type):
     assert recombined_items != list(manifest)
 
 
-@mark.parametrize('manifest_type', [RecordingSet, SupervisionSet, FeatureSet, CutSet])
-@mark.parametrize('drop_last', [True, False])
+@mark.parametrize("manifest_type", [RecordingSet, SupervisionSet, FeatureSet, CutSet])
+@mark.parametrize("drop_last", [True, False])
 def test_split_odd_1(manifest_type, drop_last):
     manifest = DummyManifest(manifest_type, begin_id=0, end_id=100)
     manifest_subsets = manifest.split(num_splits=3, drop_last=drop_last)
     assert len(manifest_subsets) == 3
     if drop_last:
-        assert manifest_subsets[0] == DummyManifest(manifest_type, begin_id=0, end_id=33)
-        assert manifest_subsets[1] == DummyManifest(manifest_type, begin_id=33, end_id=66)
-        assert manifest_subsets[2] == DummyManifest(manifest_type, begin_id=66, end_id=99)
+        assert manifest_subsets[0] == DummyManifest(
+            manifest_type, begin_id=0, end_id=33
+        )
+        assert manifest_subsets[1] == DummyManifest(
+            manifest_type, begin_id=33, end_id=66
+        )
+        assert manifest_subsets[2] == DummyManifest(
+            manifest_type, begin_id=66, end_id=99
+        )
     else:
-        assert manifest_subsets[0] == DummyManifest(manifest_type, begin_id=0, end_id=34)
-        assert manifest_subsets[1] == DummyManifest(manifest_type, begin_id=34, end_id=67)
-        assert manifest_subsets[2] == DummyManifest(manifest_type, begin_id=67, end_id=100)
+        assert manifest_subsets[0] == DummyManifest(
+            manifest_type, begin_id=0, end_id=34
+        )
+        assert manifest_subsets[1] == DummyManifest(
+            manifest_type, begin_id=34, end_id=67
+        )
+        assert manifest_subsets[2] == DummyManifest(
+            manifest_type, begin_id=67, end_id=100
+        )
 
 
-@mark.parametrize('manifest_type', [RecordingSet, SupervisionSet, FeatureSet, CutSet])
-@mark.parametrize('drop_last', [True, False])
+@mark.parametrize("manifest_type", [RecordingSet, SupervisionSet, FeatureSet, CutSet])
+@mark.parametrize("drop_last", [True, False])
 def test_split_odd_2(manifest_type, drop_last):
     manifest = DummyManifest(manifest_type, begin_id=0, end_id=32)
     manifest_subsets = manifest.split(num_splits=3, drop_last=drop_last)
     assert len(manifest_subsets) == 3
     if drop_last:
-        assert manifest_subsets[0] == DummyManifest(manifest_type, begin_id=0, end_id=10)
-        assert manifest_subsets[1] == DummyManifest(manifest_type, begin_id=10, end_id=20)
-        assert manifest_subsets[2] == DummyManifest(manifest_type, begin_id=20, end_id=30)
+        assert manifest_subsets[0] == DummyManifest(
+            manifest_type, begin_id=0, end_id=10
+        )
+        assert manifest_subsets[1] == DummyManifest(
+            manifest_type, begin_id=10, end_id=20
+        )
+        assert manifest_subsets[2] == DummyManifest(
+            manifest_type, begin_id=20, end_id=30
+        )
     else:
-        assert manifest_subsets[0] == DummyManifest(manifest_type, begin_id=0, end_id=11)
-        assert manifest_subsets[1] == DummyManifest(manifest_type, begin_id=11, end_id=22)
-        assert manifest_subsets[2] == DummyManifest(manifest_type, begin_id=22, end_id=32)
+        assert manifest_subsets[0] == DummyManifest(
+            manifest_type, begin_id=0, end_id=11
+        )
+        assert manifest_subsets[1] == DummyManifest(
+            manifest_type, begin_id=11, end_id=22
+        )
+        assert manifest_subsets[2] == DummyManifest(
+            manifest_type, begin_id=22, end_id=32
+        )
 
 
-@mark.parametrize('manifest_type', [RecordingSet, SupervisionSet, FeatureSet, CutSet])
+@mark.parametrize("manifest_type", [RecordingSet, SupervisionSet, FeatureSet, CutSet])
 def test_cannot_split_to_more_chunks_than_items(manifest_type):
     manifest = DummyManifest(manifest_type, begin_id=0, end_id=1)
     with pytest.raises(ValueError):
         manifest.split(num_splits=10)
 
 
-@mark.parametrize('manifest_type', [RecordingSet, SupervisionSet, FeatureSet, CutSet])
+@mark.parametrize("manifest_type", [RecordingSet, SupervisionSet, FeatureSet, CutSet])
 def test_combine(manifest_type):
     expected = DummyManifest(manifest_type, begin_id=0, end_id=200)
     combined = combine(
@@ -80,15 +104,17 @@ def test_combine(manifest_type):
         DummyManifest(manifest_type, begin_id=136, end_id=200),
     )
     assert combined == expected
-    combined_iterable = combine([
-        DummyManifest(manifest_type, begin_id=0, end_id=68),
-        DummyManifest(manifest_type, begin_id=68, end_id=136),
-        DummyManifest(manifest_type, begin_id=136, end_id=200),
-    ])
+    combined_iterable = combine(
+        [
+            DummyManifest(manifest_type, begin_id=0, end_id=68),
+            DummyManifest(manifest_type, begin_id=68, end_id=136),
+            DummyManifest(manifest_type, begin_id=136, end_id=200),
+        ]
+    )
     assert combined_iterable == expected
 
 
-@mark.parametrize('manifest_type', [RecordingSet, SupervisionSet, FeatureSet, CutSet])
+@mark.parametrize("manifest_type", [RecordingSet, SupervisionSet, FeatureSet, CutSet])
 def test_subset_first(manifest_type):
     any_set = DummyManifest(manifest_type, begin_id=0, end_id=200)
     expected = DummyManifest(manifest_type, begin_id=0, end_id=10)
@@ -96,7 +122,7 @@ def test_subset_first(manifest_type):
     assert subset == expected
 
 
-@mark.parametrize('manifest_type', [RecordingSet, SupervisionSet, FeatureSet, CutSet])
+@mark.parametrize("manifest_type", [RecordingSet, SupervisionSet, FeatureSet, CutSet])
 def test_subset_last(manifest_type):
     any_set = DummyManifest(manifest_type, begin_id=0, end_id=200)
     expected = DummyManifest(manifest_type, begin_id=190, end_id=200)
@@ -104,16 +130,16 @@ def test_subset_last(manifest_type):
     assert subset == expected
 
 
-@mark.parametrize('manifest_type', [RecordingSet, SupervisionSet, FeatureSet, CutSet])
-@mark.parametrize(['first', 'last'], [(None, None), (10, 10)])
+@mark.parametrize("manifest_type", [RecordingSet, SupervisionSet, FeatureSet, CutSet])
+@mark.parametrize(["first", "last"], [(None, None), (10, 10)])
 def test_subset_raises(manifest_type, first, last):
     any_set = DummyManifest(manifest_type, begin_id=0, end_id=200)
     with pytest.raises(AssertionError):
         subset = any_set.subset(first=first, last=last)
 
 
-@mark.parametrize('manifest_type', [RecordingSet, SupervisionSet, CutSet])
-@mark.parametrize('rng', [None, random.Random(1337)])
+@mark.parametrize("manifest_type", [RecordingSet, SupervisionSet, CutSet])
+@mark.parametrize("rng", [None, random.Random(1337)])
 def test_shuffle(manifest_type, rng):
     any_set = DummyManifest(manifest_type, begin_id=0, end_id=200)
     shuffled = any_set.shuffle(rng=rng)

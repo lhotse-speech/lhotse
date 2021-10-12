@@ -5,7 +5,7 @@ from lhotse.testing.fixtures import RandomCutTestCase
 
 class TestConsistentNumFramesAndSamples(RandomCutTestCase):
     @pytest.mark.parametrize(
-        ['sampling_rate', 'num_samples'],
+        ["sampling_rate", "num_samples"],
         [
             (16000, 15995),
             (16000, 15996),
@@ -18,9 +18,11 @@ class TestConsistentNumFramesAndSamples(RandomCutTestCase):
             (16000, 16003),
             (16000, 16004),
             (16000, 16005),
-        ]
+        ],
     )
-    def test_simple_cut_num_frames_and_samples_are_consistent(self, sampling_rate, num_samples):
+    def test_simple_cut_num_frames_and_samples_are_consistent(
+        self, sampling_rate, num_samples
+    ):
         cut = self.with_cut(sampling_rate, num_samples)
         feats = cut.load_features()
         samples = cut.load_audio()
@@ -37,7 +39,7 @@ class TestConsistentNumFramesAndSamples(RandomCutTestCase):
         assert samples.shape[1] == cut.num_samples
 
     @pytest.mark.parametrize(
-        ['sampling_rate', 'num_samples', 'padded_duration'],
+        ["sampling_rate", "num_samples", "padded_duration"],
         [
             (16000, 15995, 1.5),
             (16000, 15996, 1.5),
@@ -50,9 +52,11 @@ class TestConsistentNumFramesAndSamples(RandomCutTestCase):
             (16000, 16003, 1.5),
             (16000, 16004, 1.5),
             (16000, 16005, 1.5),
-        ]
+        ],
     )
-    def test_padded_cut_num_frames_and_samples_are_consistent(self, sampling_rate, num_samples, padded_duration):
+    def test_padded_cut_num_frames_and_samples_are_consistent(
+        self, sampling_rate, num_samples, padded_duration
+    ):
         cut = self.with_cut(sampling_rate, num_samples)
         cut = cut.pad(padded_duration)
         feats = cut.load_features()

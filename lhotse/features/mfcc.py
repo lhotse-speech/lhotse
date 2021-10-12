@@ -34,11 +34,13 @@ class MfccConfig:
 @register_extractor
 class Mfcc(TorchaudioFeatureExtractor):
     """MFCC feature extractor based on ``torchaudio.compliance.kaldi.mfcc`` function."""
-    name = 'mfcc'
+
+    name = "mfcc"
     config_type = MfccConfig
 
     def _feature_fn(self, *args, **kwargs):
         from torchaudio.compliance.kaldi import mfcc
+
         return mfcc(*args, **kwargs)
 
     def feature_dim(self, sampling_rate: int) -> int:

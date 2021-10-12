@@ -10,7 +10,7 @@ from lhotse.features import Fbank
 
 @pytest.fixture
 def libri_cut_set():
-    return CutSet.from_json('test/fixtures/libri/cuts.json')
+    return CutSet.from_json("test/fixtures/libri/cuts.json")
 
 
 def test_unsupervised_dataset(libri_cut_set):

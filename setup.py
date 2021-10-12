@@ -87,23 +87,23 @@ def discover_lhotse_version() -> str:
                 stdout=PIPE,
                 stderr=DEVNULL,
             )
+            .stdout.decode()
+            .rstrip("\n")
+            .strip()
+        )
+        dirty_commit = (
+            len(
+                run(
+                    ["git", "diff", "--shortstat"],
+                    check=True,
+                    stdout=PIPE,
+                    stderr=DEVNULL,
+                )
                 .stdout.decode()
                 .rstrip("\n")
                 .strip()
-        )
-        dirty_commit = (
-                len(
-                    run(
-                        ["git", "diff", "--shortstat"],
-                        check=True,
-                        stdout=PIPE,
-                        stderr=DEVNULL,
-                    )
-                        .stdout.decode()
-                        .rstrip("\n")
-                        .strip()
-                )
-                > 0
+            )
+            > 0
         )
         git_commit = git_commit + ".dirty" if dirty_commit else git_commit + ".clean"
         source_version = f"+git.{git_commit}"
@@ -117,7 +117,7 @@ def discover_lhotse_version() -> str:
 
 
 def mark_lhotse_version(version: str) -> None:
-    (project_root / 'lhotse' / 'version.py').write_text(f'__version__ = "{version}"')
+    (project_root / "lhotse" / "version.py").write_text(f'__version__ = "{version}"')
 
 
 LHOTSE_VERSION = discover_lhotse_version()

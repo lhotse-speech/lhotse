@@ -19,21 +19,21 @@ class CutPairsSampler(CutSampler):
     """
 
     def __init__(
-            self,
-            source_cuts: CutSet,
-            target_cuts: CutSet,
-            max_source_frames: int = None,
-            max_source_samples: int = None,
-            max_source_duration: Seconds = None,
-            max_target_frames: int = None,
-            max_target_samples: int = None,
-            max_target_duration: int = None,
-            max_cuts: Optional[int] = None,
-            shuffle: bool = False,
-            drop_last: bool = False,
-            world_size: Optional[int] = None,
-            rank: Optional[int] = None,
-            seed: int = 0,
+        self,
+        source_cuts: CutSet,
+        target_cuts: CutSet,
+        max_source_frames: int = None,
+        max_source_samples: int = None,
+        max_source_duration: Seconds = None,
+        max_target_frames: int = None,
+        max_target_samples: int = None,
+        max_target_duration: int = None,
+        max_cuts: Optional[int] = None,
+        shuffle: bool = False,
+        drop_last: bool = False,
+        world_size: Optional[int] = None,
+        rank: Optional[int] = None,
+        seed: int = 0,
     ):
         """
         CutPairsSampler's constructor.
@@ -114,12 +114,14 @@ class CutPairsSampler(CutSampler):
         training loop's state to the one stored in the state_dict.
         """
         state_dict = super().state_dict()
-        state_dict.update({
-            'drop_last': self.drop_last,
-            'source_constraints': self.source_constraints.state_dict(),
-            'target_constraints': self.target_constraints.state_dict(),
-            'max_cuts': self.max_cuts,
-        })
+        state_dict.update(
+            {
+                "drop_last": self.drop_last,
+                "source_constraints": self.source_constraints.state_dict(),
+                "target_constraints": self.target_constraints.state_dict(),
+                "max_cuts": self.max_cuts,
+            }
+        )
         return state_dict
 
     def load_state_dict(self, state_dict: Dict[str, Any]) -> None:
@@ -140,30 +142,36 @@ class CutPairsSampler(CutSampler):
             For implementers of sub-classes of CutSampler: the flag ``self._just_restored_state`` has to be
             handled in ``__iter__`` to make it avoid resetting the just-restored state (only once).
         """
-        self.drop_last = state_dict.pop('drop_last')
+        self.drop_last = state_dict.pop("drop_last")
 
-        source_constraints = TimeConstraint(**state_dict.pop('source_constraints'))
+        source_constraints = TimeConstraint(**state_dict.pop("source_constraints"))
         if self.source_constraints != source_constraints:
-            warnings.warn('CutPairsSampler.load_state_dict(): Inconsistent source_constraint:\n'
-                          f'expected {self.source_constraints}\n'
-                          f'received {source_constraints}\n'
-                          f'We will overwrite the settings with the received state_dict.')
+            warnings.warn(
+                "CutPairsSampler.load_state_dict(): Inconsistent source_constraint:\n"
+                f"expected {self.source_constraints}\n"
+                f"received {source_constraints}\n"
+                f"We will overwrite the settings with the received state_dict."
+            )
         self.source_constraints = source_constraints
 
-        target_constraints = TimeConstraint(**state_dict.pop('target_constraints'))
+        target_constraints = TimeConstraint(**state_dict.pop("target_constraints"))
         if self.source_constraints != target_constraints:
-            warnings.warn('CutPairsSampler.load_state_dict(): Inconsistent target_constraint:\n'
-                          f'expected {self.target_constraints}\n'
-                          f'received {target_constraints}\n'
-                          f'We will overwrite the settings with the received state_dict.')
+            warnings.warn(
+                "CutPairsSampler.load_state_dict(): Inconsistent target_constraint:\n"
+                f"expected {self.target_constraints}\n"
+                f"received {target_constraints}\n"
+                f"We will overwrite the settings with the received state_dict."
+            )
         self.target_constraints = target_constraints
 
-        max_cuts = state_dict.pop('max_cuts')
+        max_cuts = state_dict.pop("max_cuts")
         if self.max_cuts != max_cuts:
-            warnings.warn('CutPairsSampler.load_state_dict(): Inconsistent max_cuts:\n'
-                          f'expected {self.max_cuts}\n'
-                          f'received {max_cuts}\n'
-                          f'We will ignore the received settings.')
+            warnings.warn(
+                "CutPairsSampler.load_state_dict(): Inconsistent max_cuts:\n"
+                f"expected {self.max_cuts}\n"
+                f"received {max_cuts}\n"
+                f"We will ignore the received settings."
+            )
 
         super().load_state_dict(state_dict)
 
@@ -215,9 +223,9 @@ class CutPairsSampler(CutSampler):
                 # we may output it, unless the user requested to drop it.
                 # We also check if the batch is "almost there" to override drop_last.
                 if source_cuts and (
-                        not self.drop_last
-                        or self.source_constraints.close_to_exceeding()
-                        or self.target_constraints.close_to_exceeding()
+                    not self.drop_last
+                    or self.source_constraints.close_to_exceeding()
+                    or self.target_constraints.close_to_exceeding()
                 ):
                     # We have a partial batch and we can return it.
                     assert len(source_cuts) == len(
@@ -232,9 +240,8 @@ class CutPairsSampler(CutSampler):
                     raise StopIteration()
 
             # Check whether the cuts we're about to sample satisfy optional user-requested predicate.
-            if (
-                    not self._filter_fn(next_source_cut)
-                    or not self._filter_fn(next_target_cut)
+            if not self._filter_fn(next_source_cut) or not self._filter_fn(
+                next_target_cut
             ):
                 # No - try another one.
                 self.diagnostics.discard_single(next_source_cut)
@@ -246,9 +253,9 @@ class CutPairsSampler(CutSampler):
 
             # Did we exceed the max_source_frames and max_cuts constraints?
             if (
-                    not self.source_constraints.exceeded()
-                    and not self.target_constraints.exceeded()
-                    and (self.max_cuts is None or next_num_cuts <= self.max_cuts)
+                not self.source_constraints.exceeded()
+                and not self.target_constraints.exceeded()
+                and (self.max_cuts is None or next_num_cuts <= self.max_cuts)
             ):
                 # No - add the next cut to the batch, and keep trying.
                 source_cuts.append(next_source_cut)

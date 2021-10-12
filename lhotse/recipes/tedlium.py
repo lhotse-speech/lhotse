@@ -47,27 +47,32 @@ import tarfile
 from pathlib import Path
 from typing import Dict, Optional, Union
 
-from lhotse import Recording, RecordingSet, SupervisionSegment, SupervisionSet, validate_recordings_and_supervisions
+from lhotse import (
+    Recording,
+    RecordingSet,
+    SupervisionSegment,
+    SupervisionSet,
+    validate_recordings_and_supervisions,
+)
 from lhotse.utils import Pathlike, urlretrieve_progress
 
 
 def download_tedlium(
-        target_dir: Pathlike = '.',
-        force_download: Optional[bool] = False
+    target_dir: Pathlike = ".", force_download: Optional[bool] = False
 ) -> None:
     target_dir = Path(target_dir)
     target_dir.mkdir(parents=True, exist_ok=True)
-    tar_path = target_dir / 'TEDLIUM_release-3.tgz'
-    corpus_dir = target_dir / 'TEDLIUM_release-3'
-    completed_detector = corpus_dir / '.completed'
+    tar_path = target_dir / "TEDLIUM_release-3.tgz"
+    corpus_dir = target_dir / "TEDLIUM_release-3"
+    completed_detector = corpus_dir / ".completed"
     if completed_detector.is_file():
-        logging.info(f'Skipping {tar_path.name} because {completed_detector} exists.')
+        logging.info(f"Skipping {tar_path.name} because {completed_detector} exists.")
         return
     if force_download or not tar_path.is_file():
         urlretrieve_progress(
-            'http://www.openslr.org/resources/51/TEDLIUM_release-3.tgz',
+            "http://www.openslr.org/resources/51/TEDLIUM_release-3.tgz",
             filename=tar_path,
-            desc='Downloading TEDLIUM v3'
+            desc="Downloading TEDLIUM v3",
         )
     shutil.rmtree(corpus_dir, ignore_errors=True)
     with tarfile.open(tar_path) as tar:
@@ -76,8 +81,7 @@ def download_tedlium(
 
 
 def prepare_tedlium(
-        tedlium_root: Pathlike,
-        output_dir: Optional[Pathlike] = None
+    tedlium_root: Pathlike, output_dir: Optional[Pathlike] = None
 ) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet]]]:
     """
     Prepare manifests for the TED-LIUM v3 corpus.
@@ -91,46 +95,45 @@ def prepare_tedlium(
     tedlium_root = Path(tedlium_root)
     output_dir = Path(output_dir) if output_dir is not None else None
     corpus = {}
-    for split in ('train', 'dev', 'test'):
-        root = tedlium_root / 'legacy' / split
+    for split in ("train", "dev", "test"):
+        root = tedlium_root / "legacy" / split
         recordings = RecordingSet.from_recordings(
-            Recording.from_file(p) for p in (root / 'sph').glob('*.sph')
+            Recording.from_file(p) for p in (root / "sph").glob("*.sph")
         )
-        stms = list((root / 'stm').glob('*.stm'))
-        assert len(stms) == len(recordings), f'Mismatch: found {len(recordings)} ' \
-                                             f'sphere files and {len(stms)} STM files. ' \
-                                             f'You might be missing some parts of TEDLIUM...'
+        stms = list((root / "stm").glob("*.stm"))
+        assert len(stms) == len(recordings), (
+            f"Mismatch: found {len(recordings)} "
+            f"sphere files and {len(stms)} STM files. "
+            f"You might be missing some parts of TEDLIUM..."
+        )
         segments = []
         for p in stms:
             with p.open() as f:
                 for idx, l in enumerate(f):
                     rec_id, _, _, start, end, _, *words = l.split()
                     start, end = float(start), float(end)
-                    text = ' '.join(words).replace('{NOISE}', '[NOISE]')
-                    if text == 'ignore_time_segment_in_scoring':
+                    text = " ".join(words).replace("{NOISE}", "[NOISE]")
+                    if text == "ignore_time_segment_in_scoring":
                         continue
                     segments.append(
                         SupervisionSegment(
-                            id=f'{rec_id}-{idx}',
+                            id=f"{rec_id}-{idx}",
                             recording_id=rec_id,
                             start=start,
                             duration=round(end - start, ndigits=8),
                             channel=0,
                             text=text,
-                            language='English',
+                            language="English",
                             speaker=rec_id,
                         )
                     )
         supervisions = SupervisionSet.from_segments(segments)
-        corpus[split] = {
-            'recordings': recordings,
-            'supervisions': supervisions
-        }
+        corpus[split] = {"recordings": recordings, "supervisions": supervisions}
 
         validate_recordings_and_supervisions(**corpus[split])
 
         if output_dir is not None:
-            recordings.to_json(output_dir / f'{split}_recordings.json')
-            supervisions.to_json(output_dir / f'{split}_supervisions.json')
+            recordings.to_json(output_dir / f"{split}_recordings.json")
+            supervisions.to_json(output_dir / f"{split}_supervisions.json")
 
     return corpus

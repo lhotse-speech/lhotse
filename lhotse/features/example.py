@@ -20,7 +20,8 @@ class ExampleFeatureExtractor(FeatureExtractor):
     Note that the "@register_extractor" decorator is commented out so that this example
     is not visible beyond this file.
     """
-    name = 'example-feature-extractor'
+
+    name = "example-feature-extractor"
     config_type = ExampleFeatureExtractorConfig
 
     def extract(self, samples: np.ndarray, sampling_rate: int) -> np.ndarray:
@@ -28,7 +29,7 @@ class ExampleFeatureExtractor(FeatureExtractor):
             samples,
             sampling_rate,
             nperseg=round(self.config.frame_len * sampling_rate),
-            noverlap=round(self.frame_shift * sampling_rate)
+            noverlap=round(self.frame_shift * sampling_rate),
         )
         # Note: returning a magnitude of the STFT might interact badly with lilcom compression,
         # as it performs quantization of the float values and works best with log-scale quantities.

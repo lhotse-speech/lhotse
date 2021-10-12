@@ -5,10 +5,7 @@ from .base import (
     Features,
     create_default_feature_extractor,
 )
-from .fbank import (
-    Fbank,
-    FbankConfig
-)
+from .fbank import Fbank, FbankConfig
 from .io import (
     ChunkedLilcomHdf5Reader,
     ChunkedLilcomHdf5Writer,
@@ -26,26 +23,10 @@ from .io import (
     NumpyHdf5Reader,
     NumpyHdf5Writer,
     available_storage_backends,
-    close_cached_file_handles
+    close_cached_file_handles,
 )
-from .kaldi.extractors import (
-    KaldiFbank,
-    KaldiFbankConfig,
-    KaldiMfcc,
-    KaldiMfccConfig
-)
-from .librosa_fbank import (
-    LibrosaFbank,
-    LibrosaFbankConfig
-)
-from .mfcc import (
-    Mfcc,
-    MfccConfig
-)
-from .mixer import (
-    FeatureMixer
-)
-from .spectrogram import (
-    Spectrogram,
-    SpectrogramConfig
-)
+from .kaldi.extractors import KaldiFbank, KaldiFbankConfig, KaldiMfcc, KaldiMfccConfig
+from .librosa_fbank import LibrosaFbank, LibrosaFbankConfig
+from .mfcc import Mfcc, MfccConfig
+from .mixer import FeatureMixer
+from .spectrogram import Spectrogram, SpectrogramConfig

@@ -21,12 +21,12 @@ import logging
 from collections import defaultdict
 from itertools import chain
 from pathlib import Path
-from urllib.request import urlopen
 from typing import Dict, List, Optional, Union
+from urllib.request import urlopen
 
 from lhotse import validate_recordings_and_supervisions
-from lhotse.qa import trim_supervisions_to_recordings
 from lhotse.audio import Recording, RecordingSet
+from lhotse.qa import trim_supervisions_to_recordings
 from lhotse.recipes.nsc import check_dependencies
 from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import Pathlike, check_and_rglob, is_module_available
@@ -49,13 +49,13 @@ TEST_FILE_URLS = [
 
 
 def check_dependencies(segment_words: Optional[bool] = False):
-    if not is_module_available('pandas'):
+    if not is_module_available("pandas"):
         raise ImportError(
             "GALE Mandarin data preparation requires the 'pandas' package to be installed. "
             "Please install it with 'pip install pandas' and try again."
         )
 
-    if segment_words and not is_module_available('jieba'):
+    if segment_words and not is_module_available("jieba"):
         raise ImportError(
             "The '--segment-words' option requires the 'jieba' package to be installed. "
             "Please install it with 'pip install jieba' and try again."
@@ -95,13 +95,13 @@ def prepare_gale_mandarin(
                 [
                     check_and_rglob(dir, ext, strict=False)
                     for dir in audio_dirs
-                    for ext in ['*.wav', '*.flac']
+                    for ext in ["*.wav", "*.flac"]
                 ]
             )
         },
     )
     transcript_paths = chain.from_iterable(
-        [check_and_rglob(dir, '*.tdf') for dir in transcript_dirs]
+        [check_and_rglob(dir, "*.tdf") for dir in transcript_dirs]
     )
 
     logging.info("Preparing recordings manifest")
@@ -125,13 +125,13 @@ def prepare_gale_mandarin(
     ]
 
     manifests = defaultdict(dict)
-    manifests['dev'] = {
-        'recordings': recordings.filter(lambda r: r.id in TEST),
-        'supervisions': supervisions.filter(lambda s: s.recording_id in TEST),
+    manifests["dev"] = {
+        "recordings": recordings.filter(lambda r: r.id in TEST),
+        "supervisions": supervisions.filter(lambda s: s.recording_id in TEST),
     }
-    manifests['train'] = {
-        'recordings': recordings.filter(lambda r: r.id not in TEST),
-        'supervisions': supervisions.filter(lambda s: s.recording_id not in TEST),
+    manifests["train"] = {
+        "recordings": recordings.filter(lambda r: r.id not in TEST),
+        "supervisions": supervisions.filter(lambda s: s.recording_id not in TEST),
     }
 
     if output_dir is not None:
@@ -140,10 +140,10 @@ def prepare_gale_mandarin(
         output_dir.mkdir(parents=True, exist_ok=True)
         for part in ["train", "dev"]:
             manifests[part]["recordings"].to_json(
-                output_dir / f'recordings_{part}.json'
+                output_dir / f"recordings_{part}.json"
             )
             manifests[part]["supervisions"].to_json(
-                output_dir / f'supervisions_{part}.json'
+                output_dir / f"supervisions_{part}.json"
             )
 
     return manifests
@@ -162,31 +162,31 @@ def parse_transcripts(
     for file in transcript_paths:
         df = pd.read_csv(
             file,
-            delimiter='\t',
+            delimiter="\t",
             skiprows=3,
             usecols=range(13),
             names=[
-                'reco_id',
-                'channel',
-                'start',
-                'end',
-                'speaker',
-                'gender',
-                'dialect',
-                'text',
-                'section',
-                'turn',
-                'segment',
-                'section_type',
-                'su_type',
+                "reco_id",
+                "channel",
+                "start",
+                "end",
+                "speaker",
+                "gender",
+                "dialect",
+                "text",
+                "section",
+                "turn",
+                "segment",
+                "section_type",
+                "su_type",
             ],
             dtype={
-                'reco_id': str,
-                'channel': int,
-                'start': float,
-                'end': float,
-                'speaker': str,
-                'text': str,
+                "reco_id": str,
+                "channel": int,
+                "start": float,
+                "end": float,
+                "speaker": str,
+                "text": str,
             },
             skipinitialspace=True,
             error_bad_lines=False,
@@ -196,40 +196,40 @@ def parse_transcripts(
         df = df[df.section_type != "nontrans"]
 
         # some reco_id's end with `.sph` or `(1)`
-        df['reco_id'] = df['reco_id'].apply(
-            lambda x: x.strip().replace('(1)', '').replace('.sph', '')
+        df["reco_id"] = df["reco_id"].apply(
+            lambda x: x.strip().replace("(1)", "").replace(".sph", "")
         )
         # some speaker names have `*` in them
-        df['speaker'] = df['speaker'].apply(
-            lambda x: x.replace('#', '').strip() if not pd.isnull(x) else x
+        df["speaker"] = df["speaker"].apply(
+            lambda x: x.replace("#", "").strip() if not pd.isnull(x) else x
         )
-        df['text'] = df['text'].apply(lambda x: x.strip() if not pd.isnull(x) else x)
+        df["text"] = df["text"].apply(lambda x: x.strip() if not pd.isnull(x) else x)
         for idx, row in df.iterrows():
             supervision_id = f"{row['reco_id']}-{row['speaker']}-{idx}"
-            duration = round(row['end'] - row['start'], ndigits=8)
+            duration = round(row["end"] - row["start"], ndigits=8)
             if supervision_id in supervision_ids or duration <= 0:
                 continue
             supervision_ids.add(supervision_id)
             supervisions.append(
                 SupervisionSegment(
                     id=supervision_id,
-                    recording_id=row['reco_id'],
-                    start=row['start'],
+                    recording_id=row["reco_id"],
+                    start=row["start"],
                     duration=duration,
-                    speaker=row['speaker'],
-                    gender=row['gender'],
-                    language='Mandarin',
-                    text=row['text']
+                    speaker=row["speaker"],
+                    gender=row["gender"],
+                    language="Mandarin",
+                    text=row["text"]
                     if not segment_words
                     else " ".join(jieba.cut(row["text"])),
-                    channel=row['channel'],
+                    channel=row["channel"],
                     custom={
-                        'dialect': row['dialect'],
-                        'section': row['section'],
-                        'turn': row['turn'],
-                        'segment': row['segment'],
-                        'section_type': row['section_type'],
-                        'su_type': row['su_type'],
+                        "dialect": row["dialect"],
+                        "section": row["section"],
+                        "turn": row["turn"],
+                        "segment": row["segment"],
+                        "section_type": row["section_type"],
+                        "su_type": row["su_type"],
                     },
                 )
             )

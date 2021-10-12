@@ -18,9 +18,17 @@ from lhotse.audio import Recording
 from lhotse.augmentation import AugmentFn
 from lhotse.features.io import FeaturesWriter, get_reader
 from lhotse.serialization import Serializable, load_yaml, save_to_yaml
-from lhotse.utils import (Pathlike, Seconds, asdict_nonull, compute_num_frames, exactly_one_not_null, fastcopy,
-                          ifnone, split_sequence,
-                          uuid4)
+from lhotse.utils import (
+    Pathlike,
+    Seconds,
+    asdict_nonull,
+    compute_num_frames,
+    exactly_one_not_null,
+    fastcopy,
+    ifnone,
+    split_sequence,
+    uuid4,
+)
 
 
 class FeatureExtractor(metaclass=ABCMeta):
@@ -49,13 +57,16 @@ class FeatureExtractor(metaclass=ABCMeta):
 
     These methods run a larger feature extraction pipeline that involves data augmentation and disk storage.
     """
+
     name = None
     config_type = None
 
     def __init__(self, config: Optional[Any] = None):
         if config is None:
             config = self.config_type()
-        assert is_dataclass(config), "The feature configuration object must be a dataclass."
+        assert is_dataclass(
+            config
+        ), "The feature configuration object must be a dataclass."
         self.config = config
 
     @abstractmethod
@@ -77,7 +88,9 @@ class FeatureExtractor(metaclass=ABCMeta):
         ...
 
     @staticmethod
-    def mix(features_a: np.ndarray, features_b: np.ndarray, energy_scaling_factor_b: float) -> np.ndarray:
+    def mix(
+        features_a: np.ndarray, features_b: np.ndarray, energy_scaling_factor_b: float
+    ) -> np.ndarray:
         """
         Perform feature-domain mix of two signals, ``a`` and ``b``, and return the mixed signal.
 
@@ -92,9 +105,11 @@ class FeatureExtractor(metaclass=ABCMeta):
             where to apply ``energy_scaling_factor_b`` to the signal is determined by the implementer.
         :return: A mixed feature matrix.
         """
-        raise ValueError('The feature extractor\'s "mix" operation is undefined. '
-                         'It does not support feature-domain mix, consider computing the features '
-                         'after, rather than before mixing the cuts.')
+        raise ValueError(
+            'The feature extractor\'s "mix" operation is undefined. '
+            "It does not support feature-domain mix, consider computing the features "
+            "after, rather than before mixing the cuts."
+        )
 
     @staticmethod
     def compute_energy(features: np.ndarray) -> float:
@@ -106,19 +121,21 @@ class FeatureExtractor(metaclass=ABCMeta):
         :param features: A feature matrix.
         :return: A positive float value of the signal energy.
         """
-        raise ValueError('The feature extractor\'s "compute_energy" operation is undefined. '
-                         'It does not support feature-domain mix, consider computing the features '
-                         'after, rather than before mixing the cuts.')
+        raise ValueError(
+            'The feature extractor\'s "compute_energy" operation is undefined. '
+            "It does not support feature-domain mix, consider computing the features "
+            "after, rather than before mixing the cuts."
+        )
 
     def extract_from_samples_and_store(
-            self,
-            samples: np.ndarray,
-            storage: FeaturesWriter,
-            sampling_rate: int,
-            offset: Seconds = 0,
-            channel: Optional[int] = None,
-            augment_fn: Optional[AugmentFn] = None,
-    ) -> 'Features':
+        self,
+        samples: np.ndarray,
+        storage: FeaturesWriter,
+        sampling_rate: int,
+        offset: Seconds = 0,
+        channel: Optional[int] = None,
+        augment_fn: Optional[AugmentFn] = None,
+    ) -> "Features":
         """
         Extract the features from an array of audio samples in a full pipeline:
 
@@ -142,6 +159,7 @@ class FeatureExtractor(metaclass=ABCMeta):
         :return: a ``Features`` manifest item for the extracted feature matrix (it is not written to disk).
         """
         from lhotse.qa import validate_features
+
         if augment_fn is not None:
             samples = augment_fn(samples, sampling_rate)
         duration = round(samples.shape[1] / sampling_rate, ndigits=8)
@@ -158,20 +176,20 @@ class FeatureExtractor(metaclass=ABCMeta):
             channels=channel,
             storage_type=storage.name,
             storage_path=str(storage.storage_path),
-            storage_key=storage_key
+            storage_key=storage_key,
         )
         validate_features(manifest, feats_data=feats)
         return manifest
 
     def extract_from_recording_and_store(
-            self,
-            recording: Recording,
-            storage: FeaturesWriter,
-            offset: Seconds = 0,
-            duration: Optional[Seconds] = None,
-            channels: Union[int, List[int]] = None,
-            augment_fn: Optional[AugmentFn] = None,
-    ) -> 'Features':
+        self,
+        recording: Recording,
+        storage: FeaturesWriter,
+        offset: Seconds = 0,
+        duration: Optional[Seconds] = None,
+        channels: Union[int, List[int]] = None,
+        augment_fn: Optional[AugmentFn] = None,
+    ) -> "Features":
         """
         Extract the features from a ``Recording`` in a full pipeline:
 
@@ -191,6 +209,7 @@ class FeatureExtractor(metaclass=ABCMeta):
         :return: a ``Features`` manifest item for the extracted feature matrix.
         """
         from lhotse.qa import validate_features
+
         samples = recording.load_audio(
             offset=offset,
             duration=duration,
@@ -213,26 +232,26 @@ class FeatureExtractor(metaclass=ABCMeta):
             sampling_rate=recording.sampling_rate,
             storage_type=storage.name,
             storage_path=str(storage.storage_path),
-            storage_key=storage_key
+            storage_key=storage_key,
         )
         validate_features(manifest, feats_data=feats)
         return manifest
 
     @classmethod
-    def from_dict(cls, data: dict) -> 'FeatureExtractor':
-        feature_type = data.pop('feature_type')
+    def from_dict(cls, data: dict) -> "FeatureExtractor":
+        feature_type = data.pop("feature_type")
         extractor_type = get_extractor_type(feature_type)
         # noinspection PyUnresolvedReferences
         config = extractor_type.config_type(**data)
         return extractor_type(config)
 
     @classmethod
-    def from_yaml(cls, path: Pathlike) -> 'FeatureExtractor':
+    def from_yaml(cls, path: Pathlike) -> "FeatureExtractor":
         return cls.from_dict(load_yaml(path))
 
     def to_yaml(self, path: Pathlike):
         data = asdict(self.config)
-        data['feature_type'] = self.name  # Insert the typename for config readability
+        data["feature_type"] = self.name  # Insert the typename for config readability
         save_to_yaml(data, path=path)
 
 
@@ -249,7 +268,7 @@ def get_extractor_type(name: str) -> Type:
     return FEATURE_EXTRACTORS[name]
 
 
-def create_default_feature_extractor(name: str) -> 'Optional[FeatureExtractor]':
+def create_default_feature_extractor(name: str) -> "Optional[FeatureExtractor]":
     """
     Create a feature extractor object with a default configuration.
 
@@ -279,14 +298,13 @@ def register_extractor(cls):
 class TorchaudioFeatureExtractor(FeatureExtractor):
     """Common abstract base class for all torchaudio based feature extractors."""
 
-    def extract(self, samples: Union[np.ndarray, torch.Tensor], sampling_rate: int) -> np.ndarray:
+    def extract(
+        self, samples: Union[np.ndarray, torch.Tensor], sampling_rate: int
+    ) -> np.ndarray:
         params = asdict(self.config)
-        params.update({
-            "sample_frequency": sampling_rate,
-            "snip_edges": False
-        })
-        params['frame_shift'] *= 1000.0
-        params['frame_length'] *= 1000.0
+        params.update({"sample_frequency": sampling_rate, "snip_edges": False})
+        params["frame_shift"] *= 1000.0
+        params["frame_length"] *= 1000.0
         if not isinstance(samples, torch.Tensor):
             samples = torch.from_numpy(samples)
         # Torchaudio Kaldi feature extractors expect the channel dimension to be first.
@@ -311,6 +329,7 @@ class Features:
     it supports numpy arrays serialized with np.save, as well as arrays compressed with lilcom;
     storage_path is the path to the file on the local filesystem.
     """
+
     # Useful information about the features - their type (fbank, mfcc) and shape
     type: str
     num_frames: int
@@ -348,9 +367,9 @@ class Features:
         return self.start + self.duration
 
     def load(
-            self,
-            start: Optional[Seconds] = None,
-            duration: Optional[Seconds] = None,
+        self,
+        start: Optional[Seconds] = None,
+        duration: Optional[Seconds] = None,
     ) -> np.ndarray:
         # noinspection PyArgumentList
         storage = get_reader(self.storage_type)(self.storage_path)
@@ -361,39 +380,49 @@ class Features:
         # In case the caller requested only a sub-span of the features, trim them.
         # Left trim
         if start < self.start - 1e-5:
-            raise ValueError(f"Cannot load features for recording {self.recording_id} starting from {start}s. "
-                             f"The available range is ({self.start}, {self.end}) seconds.")
+            raise ValueError(
+                f"Cannot load features for recording {self.recording_id} starting from {start}s. "
+                f"The available range is ({self.start}, {self.end}) seconds."
+            )
         if not isclose(start, self.start):
-            left_offset_frames = compute_num_frames(start - self.start, frame_shift=self.frame_shift,
-                                                    sampling_rate=self.sampling_rate)
+            left_offset_frames = compute_num_frames(
+                start - self.start,
+                frame_shift=self.frame_shift,
+                sampling_rate=self.sampling_rate,
+            )
         # Right trim
         if duration is not None:
-            right_offset_frames = left_offset_frames + compute_num_frames(duration, frame_shift=self.frame_shift,
-                                                                          sampling_rate=self.sampling_rate)
+            right_offset_frames = left_offset_frames + compute_num_frames(
+                duration, frame_shift=self.frame_shift, sampling_rate=self.sampling_rate
+            )
 
         # Load and return the features (subset) from the storage
         return storage.read(
             self.storage_key,
             left_offset_frames=left_offset_frames,
-            right_offset_frames=right_offset_frames
+            right_offset_frames=right_offset_frames,
         )
 
-    def with_path_prefix(self, path: Pathlike) -> 'Features':
+    def with_path_prefix(self, path: Pathlike) -> "Features":
         return fastcopy(self, storage_path=str(Path(path) / self.storage_path))
 
     def to_dict(self) -> dict:
         return asdict_nonull(self)
 
     @staticmethod
-    def from_dict(data: dict) -> 'Features':
+    def from_dict(data: dict) -> "Features":
         # The "storage_type" check is to ensure that the "data" dict actually contains
         # the data for a "Features" object, and not something else.
         # Some Lhotse utilities try to "guess" what is the right object type via trial-and-error,
         # and would have created a false alarm here.
-        if 'frame_shift' not in data and 'storage_type' in data:
-            warnings.warn('The "frame_shift" field was not found in a feature manifest; '
-                          'we\'ll try to infer it for now, but you should recreate the manifests.')
-            data['frame_shift'] = round(data['duration'] / data['num_frames'], ndigits=3)
+        if "frame_shift" not in data and "storage_type" in data:
+            warnings.warn(
+                'The "frame_shift" field was not found in a feature manifest; '
+                "we'll try to infer it for now, but you should recreate the manifests."
+            )
+            data["frame_shift"] = round(
+                data["duration"] / data["num_frames"], ndigits=3
+            )
         return Features(**data)
 
 
@@ -408,24 +437,28 @@ class FeatureSet(Serializable, Sequence[Features]):
     def __init__(self, features: List[Features] = None) -> None:
         self.features = sorted(ifnone(features, []))
 
-    def __eq__(self, other: 'FeatureSet') -> bool:
+    def __eq__(self, other: "FeatureSet") -> bool:
         return self.features == other.features
 
     @staticmethod
-    def from_features(features: Iterable[Features]) -> 'FeatureSet':
+    def from_features(features: Iterable[Features]) -> "FeatureSet":
         return FeatureSet(list(features))  # just for consistency with other *Sets
 
     @staticmethod
-    def from_dicts(data: Iterable[dict]) -> 'FeatureSet':
-        return FeatureSet(features=[Features.from_dict(feature_data) for feature_data in data])
+    def from_dicts(data: Iterable[dict]) -> "FeatureSet":
+        return FeatureSet(
+            features=[Features.from_dict(feature_data) for feature_data in data]
+        )
 
     def to_dicts(self) -> Iterable[dict]:
         return (f.to_dict() for f in self)
 
-    def with_path_prefix(self, path: Pathlike) -> 'FeatureSet':
+    def with_path_prefix(self, path: Pathlike) -> "FeatureSet":
         return FeatureSet.from_features(f.with_path_prefix(path) for f in self)
 
-    def split(self, num_splits: int, shuffle: bool = False, drop_last: bool = False) -> List['FeatureSet']:
+    def split(
+        self, num_splits: int, shuffle: bool = False, drop_last: bool = False
+    ) -> List["FeatureSet"]:
         """
         Split the :class:`~lhotse.FeatureSet` into ``num_splits`` pieces of equal size.
 
@@ -438,11 +471,15 @@ class FeatureSet(Serializable, Sequence[Features]):
         :return: A list of :class:`~lhotse.FeatureSet` pieces.
         """
         return [
-            FeatureSet.from_features(subset) for subset in
-            split_sequence(self, num_splits=num_splits, shuffle=shuffle, drop_last=drop_last)
+            FeatureSet.from_features(subset)
+            for subset in split_sequence(
+                self, num_splits=num_splits, shuffle=shuffle, drop_last=drop_last
+            )
         ]
 
-    def subset(self, first: Optional[int] = None, last: Optional[int] = None) -> 'FeatureSet':
+    def subset(
+        self, first: Optional[int] = None, last: Optional[int] = None
+    ) -> "FeatureSet":
         """
         Return a new ``FeatureSet`` according to the selected subset criterion.
         Only a single argument to ``subset`` is supported at this time.
@@ -451,31 +488,37 @@ class FeatureSet(Serializable, Sequence[Features]):
         :param last: int, the number of last supervisions to keep.
         :return: a new ``FeatureSet`` with the subset results.
         """
-        assert exactly_one_not_null(first, last), "subset() can handle only one non-None arg."
+        assert exactly_one_not_null(
+            first, last
+        ), "subset() can handle only one non-None arg."
 
         if first is not None:
             assert first > 0
             if first > len(self):
-                logging.warning(f'FeatureSet has only {len(self)} items but first {first} required; '
-                                f'not doing anything.')
+                logging.warning(
+                    f"FeatureSet has only {len(self)} items but first {first} required; "
+                    f"not doing anything."
+                )
                 return self
             return FeatureSet.from_features(self.features[:first])
 
         if last is not None:
             assert last > 0
             if last > len(self):
-                logging.warning(f'FeatureSet has only {len(self)} items but last {last} required; '
-                                f'not doing anything.')
+                logging.warning(
+                    f"FeatureSet has only {len(self)} items but last {last} required; "
+                    f"not doing anything."
+                )
                 return self
             return FeatureSet.from_features(self.features[-last:])
 
     def find(
-            self,
-            recording_id: str,
-            channel_id: int = 0,
-            start: Seconds = 0.0,
-            duration: Optional[Seconds] = None,
-            leeway: Seconds = 0.05
+        self,
+        recording_id: str,
+        channel_id: int = 0,
+        start: Seconds = 0.0,
+        duration: Optional[Seconds] = None,
+        leeway: Seconds = 0.05,
     ) -> Features:
         """
         Find and return a Features object that best satisfies the search criteria.
@@ -497,9 +540,9 @@ class FeatureSet(Serializable, Sequence[Features]):
         # TODO: naive linear search; will likely require optimization
         candidates = self._index_by_recording_id_and_cache()[recording_id]
         candidates = (
-            f for f in candidates
-            if f.channels == channel_id
-               and f.start - leeway <= start < f.end + leeway
+            f
+            for f in candidates
+            if f.channels == channel_id and f.start - leeway <= start < f.end + leeway
             # filter edge case: start 1.5, features available till 1.0, duration is None
         )
         if duration is not None:
@@ -510,12 +553,15 @@ class FeatureSet(Serializable, Sequence[Features]):
         if not candidates:
             raise KeyError(
                 f"No features available for recording '{recording_id}', channel {channel_id} in time range [{start}s,"
-                f" {'end' if duration is None else duration}s]")
+                f" {'end' if duration is None else duration}s]"
+            )
 
         # in case there is more than one candidate feature segment, select the best fit
         # by minimizing the MSE of the time markers...
         if duration is not None:
-            feature_info = min(candidates, key=lambda f: (start - f.start) ** 2 + (end - f.end) ** 2)
+            feature_info = min(
+                candidates, key=lambda f: (start - f.start) ** 2 + (end - f.end) ** 2
+            )
         else:
             feature_info = min(candidates, key=lambda f: (start - f.start) ** 2)
 
@@ -527,15 +573,18 @@ class FeatureSet(Serializable, Sequence[Features]):
     def _index_by_recording_id_and_cache(self):
         if self._features_by_recording_id is None:
             from cytoolz import groupby
-            self._features_by_recording_id = groupby(lambda feat: feat.recording_id, self)
+
+            self._features_by_recording_id = groupby(
+                lambda feat: feat.recording_id, self
+            )
         return self._features_by_recording_id
 
     def load(
-            self,
-            recording_id: str,
-            channel_id: int = 0,
-            start: Seconds = 0.0,
-            duration: Optional[Seconds] = None,
+        self,
+        recording_id: str,
+        channel_id: int = 0,
+        start: Seconds = 0.0,
+        duration: Optional[Seconds] = None,
     ) -> np.ndarray:
         """
         Find a Features object that best satisfies the search criteria and load the features as a numpy ndarray.
@@ -545,12 +594,14 @@ class FeatureSet(Serializable, Sequence[Features]):
             recording_id=recording_id,
             channel_id=channel_id,
             start=start,
-            duration=duration
+            duration=duration,
         )
         features = feature_info.load(start=start, duration=duration)
         return features
 
-    def compute_global_stats(self, storage_path: Optional[Pathlike] = None) -> Dict[str, np.ndarray]:
+    def compute_global_stats(
+        self, storage_path: Optional[Pathlike] = None
+    ) -> Dict[str, np.ndarray]:
         """
         Compute the global means and standard deviations for each feature bin in the manifest.
         It follows the implementation in scikit-learn:
@@ -565,7 +616,7 @@ class FeatureSet(Serializable, Sequence[Features]):
         return compute_global_stats(feature_manifests=self, storage_path=storage_path)
 
     def __repr__(self) -> str:
-        return f'FeatureSet(len={len(self)})'
+        return f"FeatureSet(len={len(self)})"
 
     def __iter__(self) -> Iterable[Features]:
         return iter(self.features)
@@ -576,7 +627,7 @@ class FeatureSet(Serializable, Sequence[Features]):
     def __len__(self) -> int:
         return len(self.features)
 
-    def __add__(self, other: 'FeatureSet') -> 'FeatureSet':
+    def __add__(self, other: "FeatureSet") -> "FeatureSet":
         return FeatureSet(features=self.features + other.features)
 
 
@@ -591,20 +642,20 @@ class FeatureSetBuilder:
     """
 
     def __init__(
-            self,
-            feature_extractor: FeatureExtractor,
-            storage: FeaturesWriter,
-            augment_fn: Optional[AugmentFn] = None
+        self,
+        feature_extractor: FeatureExtractor,
+        storage: FeaturesWriter,
+        augment_fn: Optional[AugmentFn] = None,
     ):
         self.feature_extractor = feature_extractor
         self.storage = storage
         self.augment_fn = augment_fn
 
     def process_and_store_recordings(
-            self,
-            recordings: Sequence[Recording],
-            output_manifest: Optional[Pathlike] = None,
-            num_jobs: int = 1
+        self,
+        recordings: Sequence[Recording],
+        output_manifest: Optional[Pathlike] = None,
+        num_jobs: int = 1,
     ) -> FeatureSet:
         if num_jobs == 1:
             # Avoid spawning subprocesses for single threaded processing
@@ -614,18 +665,20 @@ class FeatureSetBuilder:
                         map(self._process_and_store_recording, recordings)
                     ),
                     total=len(recordings),
-                    desc='Extracting and storing features'
+                    desc="Extracting and storing features",
                 )
             )
         else:
-            with ProcessPoolExecutor(num_jobs, mp_context=multiprocessing.get_context('spawn')) as ex:
+            with ProcessPoolExecutor(
+                num_jobs, mp_context=multiprocessing.get_context("spawn")
+            ) as ex:
                 feature_set = FeatureSet.from_features(
                     tqdm(
                         chain.from_iterable(
                             ex.map(self._process_and_store_recording, recordings)
                         ),
                         total=len(recordings),
-                        desc='Extracting and storing features in parallel'
+                        desc="Extracting and storing features in parallel",
                     )
                 )
         if output_manifest is not None:
@@ -633,23 +686,25 @@ class FeatureSetBuilder:
         return feature_set
 
     def _process_and_store_recording(
-            self,
-            recording: Recording,
+        self,
+        recording: Recording,
     ) -> List[Features]:
         results = []
         for channel in recording.channel_ids:
-            results.append(self.feature_extractor.extract_from_recording_and_store(
-                recording=recording,
-                storage=self.storage,
-                channels=channel,
-                augment_fn=self.augment_fn,
-            ))
+            results.append(
+                self.feature_extractor.extract_from_recording_and_store(
+                    recording=recording,
+                    storage=self.storage,
+                    channels=channel,
+                    augment_fn=self.augment_fn,
+                )
+            )
         return results
 
 
 def store_feature_array(
-        feats: np.ndarray,
-        storage: FeaturesWriter,
+    feats: np.ndarray,
+    storage: FeaturesWriter,
 ) -> str:
     """
     Store ``feats`` array on disk, using ``lilcom`` compression by default.
@@ -664,8 +719,7 @@ def store_feature_array(
 
 
 def compute_global_stats(
-        feature_manifests: Iterable[Features],
-        storage_path: Optional[Pathlike] = None
+    feature_manifests: Iterable[Features], storage_path: Optional[Pathlike] = None
 ) -> Dict[str, np.ndarray]:
     """
     Compute the global means and standard deviations for each feature bin in the manifest.
@@ -687,7 +741,7 @@ def compute_global_stats(
     total_sum = np.zeros((first.num_features,), dtype=np.float64)
     total_unnorm_var = np.zeros((first.num_features,), dtype=np.float64)
     total_frames = 0
-    with np.errstate(divide='ignore', invalid='ignore'):
+    with np.errstate(divide="ignore", invalid="ignore"):
         for features in chain([first], feature_manifests):
             # Read the features
             arr = features.load().astype(np.float64)
@@ -702,18 +756,21 @@ def compute_global_stats(
             curr_unnorm_var = np.var(arr, axis=0) * curr_frames
             if total_frames > 0:
                 total_unnorm_var = (
-                        total_unnorm_var + curr_unnorm_var +
-                        total_over_curr_frames / updated_total_frames *
-                        (total_sum / total_over_curr_frames - curr_sum) ** 2)
+                    total_unnorm_var
+                    + curr_unnorm_var
+                    + total_over_curr_frames
+                    / updated_total_frames
+                    * (total_sum / total_over_curr_frames - curr_sum) ** 2
+                )
             else:
                 total_unnorm_var = curr_unnorm_var
             total_sum = updated_total_sum
             total_frames = updated_total_frames
     stats = {
-        'norm_means': total_sum / total_frames,
-        'norm_stds': np.sqrt(total_unnorm_var / total_frames)
+        "norm_means": total_sum / total_frames,
+        "norm_stds": np.sqrt(total_unnorm_var / total_frames),
     }
     if storage_path is not None:
-        with open(storage_path, 'wb') as f:
+        with open(storage_path, "wb") as f:
             pickle.dump(stats, f)
     return stats

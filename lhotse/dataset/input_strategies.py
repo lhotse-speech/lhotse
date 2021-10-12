@@ -7,9 +7,20 @@ import torch
 
 from lhotse import CutSet, FeatureExtractor
 from lhotse.cut import compute_supervisions_frame_mask
-from lhotse.dataset.collation import collate_audio, collate_features, collate_matrices, collate_vectors, \
-    read_audio_from_cuts
-from lhotse.utils import LOG_EPSILON, compute_num_frames, ifnone, supervision_to_frames, supervision_to_samples
+from lhotse.dataset.collation import (
+    collate_audio,
+    collate_features,
+    collate_matrices,
+    collate_vectors,
+    read_audio_from_cuts,
+)
+from lhotse.utils import (
+    LOG_EPSILON,
+    compute_num_frames,
+    ifnone,
+    supervision_to_frames,
+    supervision_to_samples,
+)
 
 
 class BatchIO:
@@ -28,6 +39,7 @@ class BatchIO:
 
     .. automethod:: __call__
     """
+
     def __init__(self, num_workers: int = 0) -> None:
         self.num_workers = num_workers
 
@@ -114,24 +126,37 @@ class PrecomputedFeatures(BatchIO):
         Note that ``S`` might be different than the number of cuts (``B``).
         ``sequence_idx`` means the index of the corresponding feature matrix (or cut) in a batch.
         """
-        start_frames, nums_frames = zip(*(
-            supervision_to_frames(sup, cut.frame_shift, cut.sampling_rate, max_frames=cut.num_frames)
-            for cut in cuts
-            for sup in cut.supervisions
-        ))
+        start_frames, nums_frames = zip(
+            *(
+                supervision_to_frames(
+                    sup, cut.frame_shift, cut.sampling_rate, max_frames=cut.num_frames
+                )
+                for cut in cuts
+                for sup in cut.supervisions
+            )
+        )
         sequence_idx = [i for i, c in enumerate(cuts) for s in c.supervisions]
         return {
-            'sequence_idx': torch.tensor(sequence_idx, dtype=torch.int32),
-            'start_frame': torch.tensor(start_frames, dtype=torch.int32),
-            'num_frames': torch.tensor(nums_frames, dtype=torch.int32)
+            "sequence_idx": torch.tensor(sequence_idx, dtype=torch.int32),
+            "start_frame": torch.tensor(start_frames, dtype=torch.int32),
+            "num_frames": torch.tensor(nums_frames, dtype=torch.int32),
         }
 
-    def supervision_masks(self, cuts: CutSet, use_alignment_if_exists: Optional[str] = None) -> torch.Tensor:
+    def supervision_masks(
+        self, cuts: CutSet, use_alignment_if_exists: Optional[str] = None
+    ) -> torch.Tensor:
         """Returns the mask for supervised frames.
         :param use_alignment_if_exists: optional str, key for alignment type to use for generating the mask. If not
             exists, fall back on supervision time spans.
         """
-        return collate_vectors([cut.supervisions_feature_mask(use_alignment_if_exists=use_alignment_if_exists) for cut in cuts])
+        return collate_vectors(
+            [
+                cut.supervisions_feature_mask(
+                    use_alignment_if_exists=use_alignment_if_exists
+                )
+                for cut in cuts
+            ]
+        )
 
 
 class AudioSamples(BatchIO):
@@ -143,6 +168,7 @@ class AudioSamples(BatchIO):
 
     .. automethod:: __call__
     """
+
     def __call__(self, cuts: CutSet) -> Tuple[torch.Tensor, torch.IntTensor]:
         """
         Reads the audio samples from recordings on disk/other storage.
@@ -170,24 +196,35 @@ class AudioSamples(BatchIO):
         ``sequence_idx`` means the index of the corresponding feature matrix (or cut) in a batch.
 
         """
-        start_samples, nums_samples = zip(*(
-            supervision_to_samples(sup, cut.sampling_rate)
-            for cut in cuts
-            for sup in cut.supervisions
-        ))
+        start_samples, nums_samples = zip(
+            *(
+                supervision_to_samples(sup, cut.sampling_rate)
+                for cut in cuts
+                for sup in cut.supervisions
+            )
+        )
         sequence_idx = [i for i, c in enumerate(cuts) for s in c.supervisions]
         return {
-            'sequence_idx': torch.tensor(sequence_idx, dtype=torch.int32),
-            'start_sample': torch.tensor(start_samples, dtype=torch.int32),
-            'num_samples': torch.tensor(nums_samples, dtype=torch.int32)
+            "sequence_idx": torch.tensor(sequence_idx, dtype=torch.int32),
+            "start_sample": torch.tensor(start_samples, dtype=torch.int32),
+            "num_samples": torch.tensor(nums_samples, dtype=torch.int32),
         }
 
-    def supervision_masks(self, cuts: CutSet, use_alignment_if_exists: Optional[str] = None) -> torch.Tensor:
+    def supervision_masks(
+        self, cuts: CutSet, use_alignment_if_exists: Optional[str] = None
+    ) -> torch.Tensor:
         """Returns the mask for supervised samples.
         :param use_alignment_if_exists: optional str, key for alignment type to use for generating the mask. If not
             exists, fall back on supervision time spans.
         """
-        return collate_vectors([cut.supervisions_audio_mask(use_alignment_if_exists=use_alignment_if_exists) for cut in cuts])
+        return collate_vectors(
+            [
+                cut.supervisions_audio_mask(
+                    use_alignment_if_exists=use_alignment_if_exists
+                )
+                for cut in cuts
+            ]
+        )
 
 
 class OnTheFlyFeatures(BatchIO):
@@ -207,10 +244,10 @@ class OnTheFlyFeatures(BatchIO):
     """
 
     def __init__(
-            self,
-            extractor: FeatureExtractor,
-            wave_transforms: List[Callable[[torch.Tensor], torch.Tensor]] = None,
-            num_workers: int = 0,
+        self,
+        extractor: FeatureExtractor,
+        wave_transforms: List[Callable[[torch.Tensor], torch.Tensor]] = None,
+        num_workers: int = 0,
     ) -> None:
         """
         OnTheFlyFeatures' constructor.
@@ -243,18 +280,22 @@ class OnTheFlyFeatures(BatchIO):
             try:
                 features = self.extractor.extract(samples, cuts[idx].sampling_rate)
             except:
-                logging.error(f"Error while extracting the features for cut with ID {cut.id} -- details:\n{cut}")
+                logging.error(
+                    f"Error while extracting the features for cut with ID {cut.id} -- details:\n{cut}"
+                )
                 raise
             features_single.append(torch.from_numpy(features))
         features_batch = collate_matrices(features_single, padding_value=LOG_EPSILON)
 
-        feature_lens = torch.tensor([
-            compute_num_frames(
-                cut.duration,
-                self.extractor.frame_shift,
-                cut.sampling_rate
-            ) for cut in cuts
-        ], dtype=torch.int32)
+        feature_lens = torch.tensor(
+            [
+                compute_num_frames(
+                    cut.duration, self.extractor.frame_shift, cut.sampling_rate
+                )
+                for cut in cuts
+            ],
+            dtype=torch.int32,
+        )
 
         return features_batch, feature_lens
 
@@ -275,19 +316,25 @@ class OnTheFlyFeatures(BatchIO):
         Note that ``S`` might be different than the number of cuts (``B``).
         ``sequence_idx`` means the index of the corresponding feature matrix (or cut) in a batch.
         """
-        start_frames, nums_frames = zip(*(
-            supervision_to_frames(sup, self.extractor.frame_shift, cut.sampling_rate)
-            for cut in cuts
-            for sup in cut.supervisions
-        ))
+        start_frames, nums_frames = zip(
+            *(
+                supervision_to_frames(
+                    sup, self.extractor.frame_shift, cut.sampling_rate
+                )
+                for cut in cuts
+                for sup in cut.supervisions
+            )
+        )
         sequence_idx = [i for i, c in enumerate(cuts) for s in c.supervisions]
         return {
-            'sequence_idx': torch.tensor(sequence_idx, dtype=torch.int32),
-            'start_frame': torch.tensor(start_frames, dtype=torch.int32),
-            'num_frames': torch.tensor(nums_frames, dtype=torch.int32)
+            "sequence_idx": torch.tensor(sequence_idx, dtype=torch.int32),
+            "start_frame": torch.tensor(start_frames, dtype=torch.int32),
+            "num_frames": torch.tensor(nums_frames, dtype=torch.int32),
         }
 
-    def supervision_masks(self, cuts: CutSet, use_alignment_if_exists: Optional[str] = None) -> torch.Tensor:
+    def supervision_masks(
+        self, cuts: CutSet, use_alignment_if_exists: Optional[str] = None
+    ) -> torch.Tensor:
         """Returns the mask for supervised samples.
         :param use_alignment_if_exists: optional str, key for alignment type to use for generating the mask. If not
             exists, fall back on supervision time spans.
@@ -297,8 +344,9 @@ class OnTheFlyFeatures(BatchIO):
                 compute_supervisions_frame_mask(
                     cut,
                     frame_shift=self.extractor.frame_shift,
-                    use_alignment_if_exists=use_alignment_if_exists
-                ) for cut in cuts
+                    use_alignment_if_exists=use_alignment_if_exists,
+                )
+                for cut in cuts
             ]
         )
 
@@ -315,5 +363,3 @@ def _get_executor(max_workers: int = 0) -> Optional[ProcessPoolExecutor]:
     if max_workers <= 0:
         return None
     return ProcessPoolExecutor(max_workers=max_workers)
-
-

@@ -20,8 +20,8 @@ Prompted speech is verified and divided into following categories:
 
 This data is not available for free - your institution needs to have an LDC subscription.
 """
-import re
 import logging
+import re
 from pathlib import Path
 from typing import Dict, Optional, Union
 
@@ -32,14 +32,13 @@ from lhotse.audio import Recording, RecordingSet
 from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import Pathlike, check_and_rglob
 
-
-NOISE_TAGS_REGEX = re.compile('<.*?>')
+NOISE_TAGS_REGEX = re.compile("<.*?>")
 
 
 def read_text(file: Path, normalize: Optional[bool] = True) -> str:
-    with open(file, 'r') as f:
+    with open(file, "r") as f:
         text = f.read().replace("\n", " ")
-        text = re.sub(NOISE_TAGS_REGEX, '', text) if normalize else text
+        text = re.sub(NOISE_TAGS_REGEX, "", text) if normalize else text
     return text
 
 
@@ -68,12 +67,12 @@ def prepare_cslu_kids(
     corpus_dir = Path(corpus_dir) if isinstance(corpus_dir, str) else corpus_dir
 
     # Get list of all recordings
-    audio_paths = check_and_rglob(corpus_dir, '*.wav')
+    audio_paths = check_and_rglob(corpus_dir, "*.wav")
 
     # Read verification labels
     verification = {}
     for file in check_and_rglob(corpus_dir, "*-verified.txt"):
-        with open(file, 'r') as f:
+        with open(file, "r") as f:
             for line in f:
                 path, label = line.strip().split()
                 utt = Path(path).stem
@@ -81,7 +80,7 @@ def prepare_cslu_kids(
 
     # Read prompted transcriptions
     prompts = {}
-    with open(corpus_dir / 'docs' / 'all.map', 'r') as f:
+    with open(corpus_dir / "docs" / "all.map", "r") as f:
         for line in f:
             if line.strip() != "":
                 prompt, text = line.strip().split(maxsplit=1)
@@ -106,13 +105,13 @@ def prepare_cslu_kids(
         if type == "scripted":
             text = prompts[prompt]
             verification_label = verification[uttid] if uttid in verification else None
-            custom = {'type': type, 'verification_label': verification_label}
+            custom = {"type": type, "verification_label": verification_label}
         elif type == "spontaneous":
             text = read_text(
-                corpus_dir / 'trans' / type / prompt / cat / spk / f'{uttid}.txt',
+                corpus_dir / "trans" / type / prompt / cat / spk / f"{uttid}.txt",
                 normalize=normalize_text,
             )
-            custom = {'type': type}
+            custom = {"type": type}
         supervisions.append(
             SupervisionSegment(
                 id=uttid,
@@ -120,7 +119,7 @@ def prepare_cslu_kids(
                 start=0,
                 duration=recording.duration,
                 speaker=spk,
-                language='English',
+                language="English",
                 text=text,
                 custom=custom,
             )
@@ -132,15 +131,15 @@ def prepare_cslu_kids(
     validate_recordings_and_supervisions(recordings, supervisions)
 
     manifests = {
-        'recordings': recordings,
-        'supervisions': supervisions,
+        "recordings": recordings,
+        "supervisions": supervisions,
     }
 
     if output_dir is not None:
         logging.info("Writing manifests to JSON files")
         output_dir = Path(output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
-        manifests["recordings"].to_json(output_dir / 'recordings.json')
-        manifests["supervisions"].to_json(output_dir / 'supervisions.json')
+        manifests["recordings"].to_json(output_dir / "recordings.json")
+        manifests["supervisions"].to_json(output_dir / "supervisions.json")
 
     return manifests
