@@ -3,7 +3,13 @@ from dataclasses import asdict, dataclass
 import numpy as np
 
 from lhotse.features.base import FeatureExtractor, register_extractor
-from lhotse.utils import (EPSILON, LOG_EPSILON, Seconds, compute_num_frames, is_module_available)
+from lhotse.utils import (
+    EPSILON,
+    LOG_EPSILON,
+    Seconds,
+    compute_num_frames,
+    is_module_available,
+)
 
 
 @dataclass
