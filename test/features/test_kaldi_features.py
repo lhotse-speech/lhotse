@@ -8,7 +8,7 @@ from lhotse.features.kaldi.layers import Wav2LogFilterBank, Wav2MFCC
 
 @pytest.fixture()
 def recording():
-    return Recording.from_file('test/fixtures/libri/libri-1088-134315-0000.wav')
+    return Recording.from_file("test/fixtures/libri/libri-1088-134315-0000.wav")
 
 
 def test_kaldi_fbank_layer(recording):

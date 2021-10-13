@@ -1,15 +1,13 @@
 import multiprocessing
 import sys
 from concurrent.futures.process import ProcessPoolExecutor
-from concurrent.futures.thread import ThreadPoolExecutor
-from lhotse.utils import nullcontext as no_executor
 from functools import partial
 from tempfile import TemporaryDirectory
 from unittest.mock import Mock
 
 import pytest
 
-from lhotse import MonoCut, CutSet, Fbank, LilcomHdf5Writer, Recording
+from lhotse import CutSet, Fbank, LilcomHdf5Writer, MonoCut, Recording
 from lhotse.audio import AudioSource
 from lhotse.cut import MixedCut
 from lhotse.features.io import LilcomFilesWriter
@@ -18,17 +16,19 @@ from lhotse.features.io import LilcomFilesWriter
 @pytest.fixture
 def recording():
     return Recording(
-        id='rec',
-        sources=[AudioSource(type='file', channels=[0, 1], source='test/fixtures/stereo.wav')],
+        id="rec",
+        sources=[
+            AudioSource(type="file", channels=[0, 1], source="test/fixtures/stereo.wav")
+        ],
         sampling_rate=8000,
         num_samples=8000,
-        duration=1.0
+        duration=1.0,
     )
 
 
 @pytest.fixture
 def cut(recording):
-    return MonoCut(id='cut', start=0, duration=1.0, channel=0, recording=recording)
+    return MonoCut(id="cut", start=0, duration=1.0, channel=0, recording=recording)
 
 
 def test_extract_features(cut):
@@ -41,21 +41,21 @@ def test_extract_features(cut):
 def test_extract_and_store_features(cut):
     extractor = Fbank()
     with TemporaryDirectory() as tmpdir, LilcomFilesWriter(tmpdir) as storage:
-        cut_with_feats = cut.compute_and_store_features(extractor=extractor, storage=storage)
+        cut_with_feats = cut.compute_and_store_features(
+            extractor=extractor, storage=storage
+        )
         arr = cut_with_feats.load_features()
     assert arr.shape[0] == 100
     assert arr.shape[1] == extractor.feature_dim(cut.sampling_rate)
 
 
-@pytest.mark.parametrize('mix_eagerly', [False, True])
+@pytest.mark.parametrize("mix_eagerly", [False, True])
 def test_extract_and_store_features_from_mixed_cut(cut, mix_eagerly):
     mixed_cut = cut.append(cut)
     extractor = Fbank()
     with TemporaryDirectory() as tmpdir, LilcomFilesWriter(tmpdir) as storage:
         cut_with_feats = mixed_cut.compute_and_store_features(
-            extractor=extractor,
-            storage=storage,
-            mix_eagerly=mix_eagerly
+            extractor=extractor, storage=storage, mix_eagerly=mix_eagerly
         )
         arr = cut_with_feats.load_features()
     assert arr.shape[0] == 200
@@ -83,32 +83,39 @@ def is_dask_availabe():
     try:
         import dask
         import distributed
+
         return True
     except:
         return False
 
 
-@pytest.mark.parametrize('mix_eagerly', [False, True])
-@pytest.mark.parametrize('storage_type', [LilcomFilesWriter, LilcomHdf5Writer])
+@pytest.mark.parametrize("mix_eagerly", [False, True])
+@pytest.mark.parametrize("storage_type", [LilcomFilesWriter, LilcomHdf5Writer])
 @pytest.mark.parametrize(
-    ['executor', 'num_jobs'],
+    ["executor", "num_jobs"],
     [
         (None, 1),
         # For some reason in tests, we need to use the "spawn" context otherwise it hangs
         pytest.param(
-            partial(ProcessPoolExecutor, mp_context=multiprocessing.get_context("spawn")), 2,
+            partial(
+                ProcessPoolExecutor, mp_context=multiprocessing.get_context("spawn")
+            ),
+            2,
             marks=pytest.mark.skipif(
                 sys.version_info[0] == 3 and sys.version_info[1] < 7,
-                reason="The mp_context argument is introduced in Python 3.7"
-            )
+                reason="The mp_context argument is introduced in Python 3.7",
+            ),
         ),
         pytest.param(
-            distributed.Client, 2,
-            marks=pytest.mark.skipif(not is_dask_availabe(), reason='Requires Dask')
-        )
-    ]
+            distributed.Client,
+            2,
+            marks=pytest.mark.skipif(not is_dask_availabe(), reason="Requires Dask"),
+        ),
+    ],
 )
-def test_extract_and_store_features_from_cut_set(cut_set, executor, num_jobs, storage_type, mix_eagerly):
+def test_extract_and_store_features_from_cut_set(
+    cut_set, executor, num_jobs, storage_type, mix_eagerly
+):
     extractor = Fbank()
     with TemporaryDirectory() as tmpdir:
         cut_set_with_feats = cut_set.compute_and_store_features(
@@ -117,7 +124,7 @@ def test_extract_and_store_features_from_cut_set(cut_set, executor, num_jobs, st
             num_jobs=num_jobs,
             mix_eagerly=mix_eagerly,
             executor=executor() if executor else None,
-            storage_type=storage_type
+            storage_type=storage_type,
         ).sort_by_duration()  # sort by duration to ensure the same order of cuts
 
         # The same number of cuts

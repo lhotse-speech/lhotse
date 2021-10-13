@@ -6,11 +6,11 @@ from lhotse.utils import Pathlike
 
 
 @prepare.command(context_settings=dict(show_default=True))
-@click.argument('corpus_dir', type=click.Path(exists=True, dir_okay=True))
-@click.argument('output_dir', type=click.Path())
+@click.argument("corpus_dir", type=click.Path(exists=True, dir_okay=True))
+@click.argument("output_dir", type=click.Path())
 def babel(
-        corpus_dir: Pathlike,
-        output_dir: Pathlike,
+    corpus_dir: Pathlike,
+    output_dir: Pathlike,
 ):
     """
     This is a data preparation recipe for the IARPA BABEL corpus

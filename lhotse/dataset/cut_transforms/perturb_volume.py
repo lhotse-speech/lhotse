@@ -1,5 +1,5 @@
 import random
-from typing import List, Sequence, Union
+from typing import Sequence, Union
 
 from lhotse import CutSet
 
@@ -14,11 +14,11 @@ class PerturbVolume:
     """
 
     def __init__(
-            self,
-            factors: Union[float, Sequence[float]],
-            p: float,
-            randgen: random.Random = None,
-            preserve_id: bool = False,
+        self,
+        factors: Union[float, Sequence[float]],
+        p: float,
+        randgen: random.Random = None,
+        preserve_id: bool = False,
     ) -> None:
         self.factors = factors if isinstance(factors, Sequence) else [factors]
         self.p = p

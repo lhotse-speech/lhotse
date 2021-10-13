@@ -34,23 +34,27 @@ class FbankConfig:
 @register_extractor
 class Fbank(TorchaudioFeatureExtractor):
     """Log Mel energy filter bank feature extractor based on ``torchaudio.compliance.kaldi.fbank`` function."""
-    name = 'fbank'
+
+    name = "fbank"
     config_type = FbankConfig
 
     def _feature_fn(self, *args, **kwargs):
         from torchaudio.compliance.kaldi import fbank
+
         return fbank(*args, **kwargs)
 
     def feature_dim(self, sampling_rate: int) -> int:
         return self.config.num_mel_bins
 
     @staticmethod
-    def mix(features_a: np.ndarray, features_b: np.ndarray, energy_scaling_factor_b: float) -> np.ndarray:
+    def mix(
+        features_a: np.ndarray, features_b: np.ndarray, energy_scaling_factor_b: float
+    ) -> np.ndarray:
         return np.log(
             np.maximum(
                 # protection against log(0); max with EPSILON is adequate since these are energies (always >= 0)
                 EPSILON,
-                np.exp(features_a) + energy_scaling_factor_b * np.exp(features_b)
+                np.exp(features_a) + energy_scaling_factor_b * np.exp(features_b),
             )
         )
 

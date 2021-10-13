@@ -36,49 +36,46 @@ except ImportError:
 try:
     from torch.fft import rfft as torch_rfft
 
-
     def _rfft(x: torch.Tensor) -> torch.Tensor:
         return torch_rfft(x, dim=-1)
-
 
     def _pow_spectrogram(x: torch.Tensor) -> torch.Tensor:
         return x.abs() ** 2
 
-
     def _spectrogram(x: torch.Tensor) -> torch.Tensor:
         return x.abs()
+
 
 except ImportError:
 
     def _rfft(x: torch.Tensor) -> torch.Tensor:
         return torch.rfft(x, 1, normalized=False, onesided=True)
 
-
     def _pow_spectrogram(x: torch.Tensor) -> torch.Tensor:
         return x.pow(2).sum(-1)
 
-
     def _spectrogram(x: torch.Tensor) -> torch.Tensor:
         return x.pow(2).sum(-1).sqrt()
+
 
 from lhotse.utils import EPSILON, Seconds
 
 
 class Wav2Win(nn.Module):
     def __init__(
-            self,
-            sampling_rate: int = 16000,
-            frame_length: Seconds = 0.025,
-            frame_shift: Seconds = 0.01,
-            pad_length: Optional[int] = None,
-            remove_dc_offset: bool = True,
-            preemph_coeff: float = 0.97,
-            window_type: str = 'povey',
-            dither: float = 0.0,
-            snip_edges: bool = False,
-            energy_floor: float = EPSILON,
-            raw_energy: bool = True,
-            return_log_energy: bool = False
+        self,
+        sampling_rate: int = 16000,
+        frame_length: Seconds = 0.025,
+        frame_shift: Seconds = 0.01,
+        pad_length: Optional[int] = None,
+        remove_dc_offset: bool = True,
+        preemph_coeff: float = 0.97,
+        window_type: str = "povey",
+        dither: float = 0.0,
+        snip_edges: bool = False,
+        energy_floor: float = EPSILON,
+        raw_energy: bool = True,
+        return_log_energy: bool = False,
     ) -> None:
         super().__init__()
         self.sampling_rate = sampling_rate
@@ -93,30 +90,46 @@ class Wav2Win(nn.Module):
         self.raw_energy = raw_energy
         self.return_log_energy = return_log_energy
         if snip_edges:
-            warnings.warn('Setting snip_edges=True is generally incompatible with Lhotse -- '
-                          'you might experience mismatched duration/num_frames errors.')
+            warnings.warn(
+                "Setting snip_edges=True is generally incompatible with Lhotse -- "
+                "you might experience mismatched duration/num_frames errors."
+            )
 
         N = int(math.floor(frame_length * sampling_rate))
         self._length = N
         self._shift = int(math.floor(frame_shift * sampling_rate))
 
         self._window = nn.Parameter(
-            create_frame_window(N, window_type=window_type),
-            requires_grad=False)
+            create_frame_window(N, window_type=window_type), requires_grad=False
+        )
         self.pad_length = N if pad_length is None else pad_length
-        assert self.pad_length >= N, f"pad_length (or fft_length) = {pad_length} cannot be smaller than N = {N}"
+        assert (
+            self.pad_length >= N
+        ), f"pad_length (or fft_length) = {pad_length} cannot be smaller than N = {N}"
 
     def __repr__(self):
         return self.__str__()
 
     def __str__(self):
-        s = ('{}(sampling_rate={}, frame_length={}, frame_shift={}, pad_length={}, '
-             'remove_dc_offset={}, preemph_coeff={}, window_type={} '
-             'dither={}, snip_edges={}, energy_floor={}, raw_energy={}, return_log_energy={})').format(
-            self.__class__.__name__, self.sampling_rate, self.frame_length, self.frame_shift,
-            self.pad_length, self.remove_dc_offset, self.preemph_coeff,
-            self.window_type, self.dither, self.snip_edges,
-            self.energy_floor, self.raw_energy, self.return_log_energy)
+        s = (
+            "{}(sampling_rate={}, frame_length={}, frame_shift={}, pad_length={}, "
+            "remove_dc_offset={}, preemph_coeff={}, window_type={} "
+            "dither={}, snip_edges={}, energy_floor={}, raw_energy={}, return_log_energy={})"
+        ).format(
+            self.__class__.__name__,
+            self.sampling_rate,
+            self.frame_length,
+            self.frame_shift,
+            self.pad_length,
+            self.remove_dc_offset,
+            self.preemph_coeff,
+            self.window_type,
+            self.dither,
+            self.snip_edges,
+            self.energy_floor,
+            self.raw_energy,
+            self.return_log_energy,
+        )
         return s
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -132,12 +145,15 @@ class Wav2Win(nn.Module):
 
         if self.return_log_energy and self.raw_energy:
             # Compute the log energy of each frame
-            x_strided = _get_strided_batch(x, self._length, self._shift, self.snip_edges)
+            x_strided = _get_strided_batch(
+                x, self._length, self._shift, self.snip_edges
+            )
             log_energy = _get_log_energy(x_strided, self.energy_floor)  # size (m)
 
         if self.preemph_coeff != 0.0:
             x_offset = torch.nn.functional.pad(
-                x.unsqueeze(1), (1, 0), mode='replicate').squeeze(1)
+                x.unsqueeze(1), (1, 0), mode="replicate"
+            ).squeeze(1)
             x = x - self.preemph_coeff * x_offset[:, :-1]
 
         x_strided = _get_strided_batch(x, self._length, self._shift, self.snip_edges)
@@ -149,7 +165,8 @@ class Wav2Win(nn.Module):
         if self.pad_length != self._length:
             pad = self.pad_length - self._length
             x_strided = torch.nn.functional.pad(
-                x_strided.unsqueeze(1), (0, pad), mode='constant', value=0).squeeze(1)
+                x_strided.unsqueeze(1), (0, pad), mode="constant", value=0
+            ).squeeze(1)
 
         if self.return_log_energy:
             return x_strided, log_energy
@@ -159,19 +176,19 @@ class Wav2Win(nn.Module):
 
 class Wav2FFT(nn.Module):
     def __init__(
-            self,
-            sampling_rate: int = 16000,
-            frame_length: Seconds = 0.025,
-            frame_shift: Seconds = 0.01,
-            fft_length: int = 512,
-            remove_dc_offset: bool = True,
-            preemph_coeff: float = 0.97,
-            window_type: str = 'povey',
-            dither: float = 0.0,
-            snip_edges: bool = False,
-            energy_floor: float = EPSILON,
-            raw_energy: bool = True,
-            use_energy: bool = True,
+        self,
+        sampling_rate: int = 16000,
+        frame_length: Seconds = 0.025,
+        frame_shift: Seconds = 0.01,
+        fft_length: int = 512,
+        remove_dc_offset: bool = True,
+        preemph_coeff: float = 0.97,
+        window_type: str = "povey",
+        dither: float = 0.0,
+        snip_edges: bool = False,
+        energy_floor: float = EPSILON,
+        raw_energy: bool = True,
+        use_energy: bool = True,
     ) -> None:
         super().__init__()
 
@@ -192,7 +209,7 @@ class Wav2FFT(nn.Module):
             snip_edges=snip_edges,
             energy_floor=energy_floor,
             raw_energy=raw_energy,
-            return_log_energy=use_energy
+            return_log_energy=use_energy,
         )
 
         self.fft_length = fft_length
@@ -241,26 +258,35 @@ class Wav2FFT(nn.Module):
 
 class Wav2Spec(Wav2FFT):
     def __init__(
-            self,
-            sampling_rate: int = 16000,
-            frame_length: Seconds = 0.025,
-            frame_shift: Seconds = 0.01,
-            fft_length: int = 512,
-            remove_dc_offset: bool = True,
-            preemph_coeff: float = 0.97,
-            window_type: str = 'povey',
-            dither: float = 0.0,
-            snip_edges: bool = False,
-            energy_floor: float = EPSILON,
-            raw_energy: bool = True,
-            use_energy: bool = True,
-            use_fft_mag: bool = False,
+        self,
+        sampling_rate: int = 16000,
+        frame_length: Seconds = 0.025,
+        frame_shift: Seconds = 0.01,
+        fft_length: int = 512,
+        remove_dc_offset: bool = True,
+        preemph_coeff: float = 0.97,
+        window_type: str = "povey",
+        dither: float = 0.0,
+        snip_edges: bool = False,
+        energy_floor: float = EPSILON,
+        raw_energy: bool = True,
+        use_energy: bool = True,
+        use_fft_mag: bool = False,
     ) -> None:
         super().__init__(
-            sampling_rate, frame_length, frame_shift, fft_length,
-            remove_dc_offset=remove_dc_offset, preemph_coeff=preemph_coeff,
-            window_type=window_type, dither=dither, snip_edges=snip_edges,
-            energy_floor=energy_floor, raw_energy=raw_energy, use_energy=use_energy)
+            sampling_rate,
+            frame_length,
+            frame_shift,
+            fft_length,
+            remove_dc_offset=remove_dc_offset,
+            preemph_coeff=preemph_coeff,
+            window_type=window_type,
+            dither=dither,
+            snip_edges=snip_edges,
+            energy_floor=energy_floor,
+            raw_energy=raw_energy,
+            use_energy=use_energy,
+        )
         self.use_fft_mag = use_fft_mag
         if use_fft_mag:
             self._to_spec = _spectrogram
@@ -283,26 +309,35 @@ class Wav2Spec(Wav2FFT):
 
 class Wav2LogSpec(Wav2FFT):
     def __init__(
-            self,
-            sampling_rate: int = 16000,
-            frame_length: Seconds = 0.025,
-            frame_shift: Seconds = 0.01,
-            fft_length: int = 512,
-            remove_dc_offset: bool = True,
-            preemph_coeff: float = 0.97,
-            window_type: str = 'povey',
-            dither: float = 0.0,
-            snip_edges: bool = False,
-            energy_floor: float = EPSILON,
-            raw_energy: bool = True,
-            use_energy: bool = True,
-            use_fft_mag: bool = False,
+        self,
+        sampling_rate: int = 16000,
+        frame_length: Seconds = 0.025,
+        frame_shift: Seconds = 0.01,
+        fft_length: int = 512,
+        remove_dc_offset: bool = True,
+        preemph_coeff: float = 0.97,
+        window_type: str = "povey",
+        dither: float = 0.0,
+        snip_edges: bool = False,
+        energy_floor: float = EPSILON,
+        raw_energy: bool = True,
+        use_energy: bool = True,
+        use_fft_mag: bool = False,
     ) -> None:
         super().__init__(
-            sampling_rate, frame_length, frame_shift, fft_length,
-            remove_dc_offset=remove_dc_offset, preemph_coeff=preemph_coeff,
-            window_type=window_type, dither=dither, snip_edges=snip_edges,
-            energy_floor=energy_floor, raw_energy=raw_energy, use_energy=use_energy)
+            sampling_rate,
+            frame_length,
+            frame_shift,
+            fft_length,
+            remove_dc_offset=remove_dc_offset,
+            preemph_coeff=preemph_coeff,
+            window_type=window_type,
+            dither=dither,
+            snip_edges=snip_edges,
+            energy_floor=energy_floor,
+            raw_energy=raw_energy,
+            use_energy=use_energy,
+        )
         self.use_fft_mag = use_fft_mag
         if use_fft_mag:
             self._to_spec = _spectrogram
@@ -327,31 +362,40 @@ class Wav2LogSpec(Wav2FFT):
 
 class Wav2LogFilterBank(Wav2FFT):
     def __init__(
-            self,
-            sampling_rate: int = 16000,
-            frame_length: Seconds = 0.025,
-            frame_shift: Seconds = 0.01,
-            fft_length: int = 512,
-            remove_dc_offset: bool = True,
-            preemph_coeff: float = 0.97,
-            window_type: str = 'povey',
-            dither: float = 0.0,
-            snip_edges: bool = False,
-            energy_floor: float = EPSILON,
-            raw_energy: bool = True,
-            use_energy: bool = False,
-            use_fft_mag: bool = False,
-            low_freq: float = 20.0,
-            high_freq: float = -400.0,
-            num_filters: int = 80,
-            norm_filters: bool = False,
+        self,
+        sampling_rate: int = 16000,
+        frame_length: Seconds = 0.025,
+        frame_shift: Seconds = 0.01,
+        fft_length: int = 512,
+        remove_dc_offset: bool = True,
+        preemph_coeff: float = 0.97,
+        window_type: str = "povey",
+        dither: float = 0.0,
+        snip_edges: bool = False,
+        energy_floor: float = EPSILON,
+        raw_energy: bool = True,
+        use_energy: bool = False,
+        use_fft_mag: bool = False,
+        low_freq: float = 20.0,
+        high_freq: float = -400.0,
+        num_filters: int = 80,
+        norm_filters: bool = False,
     ):
 
         super().__init__(
-            sampling_rate, frame_length, frame_shift, fft_length,
-            remove_dc_offset=remove_dc_offset, preemph_coeff=preemph_coeff,
-            window_type=window_type, dither=dither, snip_edges=snip_edges,
-            energy_floor=energy_floor, raw_energy=raw_energy, use_energy=use_energy)
+            sampling_rate,
+            frame_length,
+            frame_shift,
+            fft_length,
+            remove_dc_offset=remove_dc_offset,
+            preemph_coeff=preemph_coeff,
+            window_type=window_type,
+            dither=dither,
+            snip_edges=snip_edges,
+            energy_floor=energy_floor,
+            raw_energy=raw_energy,
+            use_energy=use_energy,
+        )
 
         self.use_fft_mag = use_fft_mag
         self.low_freq = low_freq
@@ -370,11 +414,11 @@ class Wav2LogFilterBank(Wav2FFT):
             sampling_rate=sampling_rate,
             low_freq=low_freq,
             high_freq=high_freq,
-            norm_filters=norm_filters
+            norm_filters=norm_filters,
         )
         self._fb = nn.Parameter(
-            torch.tensor(fb, dtype=torch.get_default_dtype()),
-            requires_grad=False)
+            torch.tensor(fb, dtype=torch.get_default_dtype()), requires_grad=False
+        )
 
     def forward(self, x):
         x_strided = self.wav2win(x)
@@ -387,9 +431,11 @@ class Wav2LogFilterBank(Wav2FFT):
         try:
             from torch.cuda.amp import autocast
         except ImportError:
-            warnings.warn('Could not import torch.cuda.amp.autocast -- '
-                          'when using mixed precision with another package such as apex, '
-                          'you might experience numerical stability issues.')
+            warnings.warn(
+                "Could not import torch.cuda.amp.autocast -- "
+                "when using mixed precision with another package such as apex, "
+                "you might experience numerical stability issues."
+            )
             pow_spec = torch.matmul(pow_spec.float(), self._fb.float())
         else:
             with autocast(enabled=False):
@@ -403,33 +449,42 @@ class Wav2LogFilterBank(Wav2FFT):
 
 class Wav2MFCC(Wav2FFT):
     def __init__(
-            self,
-            sampling_rate: int = 16000,
-            frame_length: Seconds = 0.025,
-            frame_shift: Seconds = 0.01,
-            fft_length: int = 512,
-            remove_dc_offset: bool = True,
-            preemph_coeff: float = 0.97,
-            window_type: str = 'povey',
-            dither: float = 0.0,
-            snip_edges: bool = False,
-            energy_floor: float = EPSILON,
-            raw_energy: bool = True,
-            use_energy: bool = False,
-            use_fft_mag: bool = False,
-            low_freq: float = 20.0,
-            high_freq: float = -400.0,
-            num_filters: int = 23,
-            norm_filters: bool = False,
-            num_ceps: int = 13,
-            cepstral_lifter: int = 22,
+        self,
+        sampling_rate: int = 16000,
+        frame_length: Seconds = 0.025,
+        frame_shift: Seconds = 0.01,
+        fft_length: int = 512,
+        remove_dc_offset: bool = True,
+        preemph_coeff: float = 0.97,
+        window_type: str = "povey",
+        dither: float = 0.0,
+        snip_edges: bool = False,
+        energy_floor: float = EPSILON,
+        raw_energy: bool = True,
+        use_energy: bool = False,
+        use_fft_mag: bool = False,
+        low_freq: float = 20.0,
+        high_freq: float = -400.0,
+        num_filters: int = 23,
+        norm_filters: bool = False,
+        num_ceps: int = 13,
+        cepstral_lifter: int = 22,
     ):
 
         super().__init__(
-            sampling_rate, frame_length, frame_shift, fft_length,
-            remove_dc_offset=remove_dc_offset, preemph_coeff=preemph_coeff,
-            window_type=window_type, dither=dither, snip_edges=snip_edges,
-            energy_floor=energy_floor, raw_energy=raw_energy, use_energy=use_energy)
+            sampling_rate,
+            frame_length,
+            frame_shift,
+            fft_length,
+            remove_dc_offset=remove_dc_offset,
+            preemph_coeff=preemph_coeff,
+            window_type=window_type,
+            dither=dither,
+            snip_edges=snip_edges,
+            energy_floor=energy_floor,
+            raw_energy=raw_energy,
+            use_energy=use_energy,
+        )
 
         self.use_fft_mag = use_fft_mag
         self.low_freq = low_freq
@@ -450,38 +505,41 @@ class Wav2MFCC(Wav2FFT):
             sampling_rate=sampling_rate,
             low_freq=low_freq,
             high_freq=high_freq,
-            norm_filters=norm_filters
+            norm_filters=norm_filters,
         )
         self._fb = nn.Parameter(
-            torch.tensor(fb, dtype=torch.get_default_dtype()),
-            requires_grad=False)
+            torch.tensor(fb, dtype=torch.get_default_dtype()), requires_grad=False
+        )
         self._dct = nn.Parameter(
-            self.make_dct_matrix(self.num_ceps, self.num_filters),
-            requires_grad=False)
+            self.make_dct_matrix(self.num_ceps, self.num_filters), requires_grad=False
+        )
         self._lifter = nn.Parameter(
-            self.make_lifter(self.num_ceps, self.cepstral_lifter),
-            requires_grad=False)
+            self.make_lifter(self.num_ceps, self.cepstral_lifter), requires_grad=False
+        )
 
     @staticmethod
     def make_lifter(N, Q):
         """Makes the liftering function
 
-           Args:
-             N: Number of cepstral coefficients.
-             Q: Liftering parameter
-           Returns:
-             Liftering vector.
+        Args:
+          N: Number of cepstral coefficients.
+          Q: Liftering parameter
+        Returns:
+          Liftering vector.
         """
         if Q == 0:
             return 1
-        return 1 + 0.5 * Q * torch.sin(math.pi * torch.arange(
-            N, dtype=torch.get_default_dtype()) / Q)
+        return 1 + 0.5 * Q * torch.sin(
+            math.pi * torch.arange(N, dtype=torch.get_default_dtype()) / Q
+        )
 
     @staticmethod
     def make_dct_matrix(num_ceps, num_filters):
         n = torch.arange(float(num_filters)).unsqueeze(1)
         k = torch.arange(float(num_ceps))
-        dct = torch.cos(math.pi / float(num_filters) * (n + 0.5) * k)  # size (n_mfcc, n_mels)
+        dct = torch.cos(
+            math.pi / float(num_filters) * (n + 0.5) * k
+        )  # size (n_mfcc, n_mels)
         dct[:, 0] *= 1.0 / math.sqrt(2.0)
         dct *= math.sqrt(2.0 / float(num_filters))
         return dct
@@ -497,9 +555,11 @@ class Wav2MFCC(Wav2FFT):
         try:
             from torch.cuda.amp import autocast
         except ImportError:
-            warnings.warn('Could not import torch.cuda.amp.autocast -- '
-                          'when using mixed precision with another package such as apex, '
-                          'you might experience numerical stability issues.')
+            warnings.warn(
+                "Could not import torch.cuda.amp.autocast -- "
+                "when using mixed precision with another package such as apex, "
+                "you might experience numerical stability issues."
+            )
             pow_spec = torch.matmul(pow_spec.float(), self._fb.float())
         else:
             with autocast(enabled=False):
@@ -546,11 +606,15 @@ def _get_strided_batch(waveform, window_length, window_shift, snip_edges):
         npad_left = int((window_length - window_shift) // 2)
         npad_right = npad - npad_left
         # waveform = nn.functional.pad(waveform, (npad_left, npad_right), mode='reflect')
-        pad_left = torch.flip(waveform[:, 1:npad_left + 1], (1,))
-        pad_right = torch.flip(waveform[:, -npad_right - 1:-1], (1,))
+        pad_left = torch.flip(waveform[:, 1 : npad_left + 1], (1,))
+        pad_right = torch.flip(waveform[:, -npad_right - 1 : -1], (1,))
         waveform = torch.cat((pad_left, waveform, pad_right), dim=1)
 
-    strides = (waveform.stride(0), window_shift * waveform.stride(1), waveform.stride(1))
+    strides = (
+        waveform.stride(0),
+        window_shift * waveform.stride(1),
+        waveform.stride(1),
+    )
     sizes = (batch_size, num_frames, window_length)
     return waveform.as_strided(sizes, strides)
 
@@ -563,19 +627,19 @@ def _get_log_energy(x: torch.Tensor, energy_floor: float) -> torch.Tensor:
     if energy_floor > 0.0:
         log_energy = torch.max(
             log_energy,
-            torch.tensor(math.log(energy_floor), dtype=torch.get_default_dtype())
+            torch.tensor(math.log(energy_floor), dtype=torch.get_default_dtype()),
         )
 
     return log_energy
 
 
 def create_mel_scale(
-        num_filters: int,
-        fft_length: int,
-        sampling_rate: int,
-        low_freq: float = 0,
-        high_freq: Optional[float] = None,
-        norm_filters: bool = True,
+    num_filters: int,
+    fft_length: int,
+    sampling_rate: int,
+    low_freq: float = 0,
+    high_freq: Optional[float] = None,
+    norm_filters: bool = True,
 ):
     if high_freq is None or high_freq == 0:
         high_freq = sampling_rate / 2
@@ -610,16 +674,15 @@ def available_windows() -> List[str]:
     return [HAMMING, HANNING, POVEY, RECTANGULAR, BLACKMAN]
 
 
-HAMMING = 'hamming'
-HANNING = 'hanning'
-POVEY = 'povey'
-RECTANGULAR = 'rectangular'
-BLACKMAN = 'blackman'
+HAMMING = "hamming"
+HANNING = "hanning"
+POVEY = "povey"
+RECTANGULAR = "rectangular"
+BLACKMAN = "blackman"
 
 
-def create_frame_window(window_size, window_type: str = 'povey', blackman_coeff=0.42):
-    r"""Returns a window function with the given type and size
-    """
+def create_frame_window(window_size, window_type: str = "povey", blackman_coeff=0.42):
+    r"""Returns a window function with the given type and size"""
     if window_type == HANNING:
         return torch.hann_window(window_size, periodic=True)
     elif window_type == HAMMING:
@@ -633,10 +696,13 @@ def create_frame_window(window_size, window_type: str = 'povey', blackman_coeff=
     elif window_type == BLACKMAN:
         a = 2 * math.pi / window_size
         window_function = torch.arange(window_size, dtype=torch.get_default_dtype())
-        return blackman_coeff - 0.5 * torch.cos(a * window_function) + \
-               (0.5 - blackman_coeff) * torch.cos(2 * a * window_function)
+        return (
+            blackman_coeff
+            - 0.5 * torch.cos(a * window_function)
+            + (0.5 - blackman_coeff) * torch.cos(2 * a * window_function)
+        )
     else:
-        raise Exception(f'Invalid window type: {window_type}')
+        raise Exception(f"Invalid window type: {window_type}")
 
 
 def lin2mel(x):

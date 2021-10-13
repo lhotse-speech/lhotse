@@ -6,10 +6,10 @@ from .perturb_tempo import PerturbTempo
 from .perturb_volume import PerturbVolume
 
 __all__ = [
-    'CutConcatenate',
-    'CutMix',
-    'ExtraPadding',
-    'PerturbSpeed',
-    'PerturbTempo',
-    'PerturbVolume'
+    "CutConcatenate",
+    "CutMix",
+    "ExtraPadding",
+    "PerturbSpeed",
+    "PerturbTempo",
+    "PerturbVolume",
 ]

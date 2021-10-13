@@ -10,10 +10,10 @@ About the DIHARD III corpus
     https://dihardchallenge.github.io/dihard3/docs/third_dihard_eval_plan_v1.2.pdf
 """
 import logging
+from collections import defaultdict
 from itertools import chain
 from pathlib import Path
-from typing import Optional, List, Dict, Union
-from collections import defaultdict
+from typing import Dict, List, Optional, Union
 
 from tqdm.auto import tqdm
 
@@ -46,8 +46,8 @@ def prepare_dihard3(
     :return: A dict with manifests. The keys are: ``{'recordings', 'supervisions'}``.
     """
     manifests = defaultdict(dict)
-    for part in tqdm(['dev', 'eval'], desc='Preparing DIHARD parts'):
-        audio_dir = dev_audio_dir if part == 'dev' else eval_audio_dir
+    for part in tqdm(["dev", "eval"], desc="Preparing DIHARD parts"):
+        audio_dir = dev_audio_dir if part == "dev" else eval_audio_dir
         if audio_dir is None or not Path(audio_dir).exists():
             logging.warning(f"Nothing to be done for {part}")
             continue
@@ -101,15 +101,15 @@ def parse_metadata(metadata_path: Pathlike) -> Dict[str, Dict[str, Union[str, bo
     metadata containing the following keys: in_core, lang, domain, source
     """
     metadata = defaultdict(dict)
-    with open(metadata_path, 'r') as f:
+    with open(metadata_path, "r") as f:
         next(f)  # skip first line since it contains headers
         for line in f:
             reco_id, in_core, lang, domain, source, _, _, _, _ = line.strip().split()
             metadata[reco_id] = {
-                'in_core': in_core == 'True',
-                'lang': lang,
-                'domain': domain,
-                'source': source,
+                "in_core": in_core == "True",
+                "lang": lang,
+                "domain": domain,
+                "source": source,
             }
     return metadata
 
@@ -125,7 +125,7 @@ def make_rttm_segments(
             start=float(start),
             duration=float(duration),
             speaker=speaker,
-            language=metadata['lang'],
+            language=metadata["lang"],
             custom=metadata,
         )
         for _, _, channel, start, duration, _, _, speaker, _, _ in map(str.split, lines)

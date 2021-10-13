@@ -1,6 +1,6 @@
-import click
+from typing import List, Optional
 
-from typing import Optional, List
+import click
 
 from lhotse.bin.modes import prepare
 from lhotse.recipes.gale_mandarin import prepare_gale_mandarin
@@ -16,14 +16,14 @@ __all__ = ["gale_mandarin"]
     "--audio",
     type=click.Path(exists=True, dir_okay=True),
     multiple=True,
-    help='Paths to audio dirs, e.g., LDC2013S08. Multiple corpora can be provided by repeating `-s`.',
+    help="Paths to audio dirs, e.g., LDC2013S08. Multiple corpora can be provided by repeating `-s`.",
 )
 @click.option(
     "-t",
     "--transcript",
     type=click.Path(exists=True, dir_okay=True),
     multiple=True,
-    help='Paths to transcript dirs, e.g., LDC2013T20. Multiple corpora can be provided by repeating `-t`',
+    help="Paths to transcript dirs, e.g., LDC2013T20. Multiple corpora can be provided by repeating `-t`",
 )
 @click.option(
     "--absolute-paths",

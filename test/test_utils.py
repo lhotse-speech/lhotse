@@ -3,12 +3,25 @@ from tempfile import NamedTemporaryFile
 
 import pytest
 
-from lhotse.serialization import load_json, load_jsonl, load_yaml, save_to_json, save_to_jsonl, save_to_yaml
-from lhotse.utils import TimeSpan, compute_start_duration_for_extended_cut, overlaps, overspans
+from lhotse.serialization import (
+    load_json,
+    load_jsonl,
+    load_yaml,
+    save_to_json,
+    save_to_jsonl,
+    save_to_yaml,
+)
+from lhotse.utils import (
+    TimeSpan,
+    compute_start_duration_for_extended_cut,
+    overlaps,
+    overspans,
+)
 
 
 @pytest.mark.parametrize(
-    ['lhs', 'rhs', 'expected'], [
+    ["lhs", "rhs", "expected"],
+    [
         (TimeSpan(0, 1), TimeSpan(0, 1), True),
         (TimeSpan(0.5, 1), TimeSpan(0, 1), True),
         (TimeSpan(0, 0.5), TimeSpan(0, 1), True),
@@ -20,7 +33,7 @@ from lhotse.utils import TimeSpan, compute_start_duration_for_extended_cut, over
         (TimeSpan(-1, 1), TimeSpan(0, 1), True),
         (TimeSpan(0, 1), TimeSpan(-1, 1), True),
         (TimeSpan(-2, -1), TimeSpan(1, 2), False),
-    ]
+    ],
 )
 def test_overlaps(lhs, rhs, expected):
     assert overlaps(lhs, rhs) == expected
@@ -28,7 +41,8 @@ def test_overlaps(lhs, rhs, expected):
 
 
 @pytest.mark.parametrize(
-    ['lhs', 'rhs', 'expected'], [
+    ["lhs", "rhs", "expected"],
+    [
         (TimeSpan(0, 1), TimeSpan(0, 1), True),
         (TimeSpan(0.5, 1), TimeSpan(0, 1), False),
         (TimeSpan(0, 1), TimeSpan(0.5, 1), True),
@@ -47,15 +61,15 @@ def test_overlaps(lhs, rhs, expected):
         (TimeSpan(-1, 1), TimeSpan(0, 1), True),
         (TimeSpan(0, 1), TimeSpan(-1, 1), False),
         (TimeSpan(-2, -1), TimeSpan(1, 2), False),
-    ]
+    ],
 )
 def test_overspans(lhs, rhs, expected):
     assert overspans(lhs, rhs) == expected
 
 
-@pytest.mark.parametrize('extension', ['.yml', '.yml.gz'])
+@pytest.mark.parametrize("extension", [".yml", ".yml.gz"])
 def test_yaml_save_load_roundtrip(extension):
-    data = {'some': ['data']}
+    data = {"some": ["data"]}
     with NamedTemporaryFile() as f:
         path = Path(f.name).with_suffix(extension)
         save_to_yaml(data, path)
@@ -64,9 +78,9 @@ def test_yaml_save_load_roundtrip(extension):
     assert data == data_deserialized
 
 
-@pytest.mark.parametrize('extension', ['.json', '.json.gz'])
+@pytest.mark.parametrize("extension", [".json", ".json.gz"])
 def test_json_save_load_roundtrip(extension):
-    data = {'some': ['data']}
+    data = {"some": ["data"]}
     with NamedTemporaryFile() as f:
         path = Path(f.name).with_suffix(extension)
         save_to_json(data, path)
@@ -75,9 +89,9 @@ def test_json_save_load_roundtrip(extension):
     assert data == data_deserialized
 
 
-@pytest.mark.parametrize('extension', ['.jsonl', '.jsonl.gz'])
+@pytest.mark.parametrize("extension", [".jsonl", ".jsonl.gz"])
 def test_jsonl_save_load_roundtrip(extension):
-    data = [{'some': ['data']}]
+    data = [{"some": ["data"]}]
     with NamedTemporaryFile() as f:
         path = Path(f.name).with_suffix(extension)
         save_to_jsonl(data, path)
@@ -87,13 +101,8 @@ def test_jsonl_save_load_roundtrip(extension):
 
 
 @pytest.mark.parametrize(
-    ['direction', 'expected_start'],
-    [
-        ('left', 4.0),
-        ('right', 5.0),
-        ('center', 4.5),
-        ('random', None)
-    ]
+    ["direction", "expected_start"],
+    [("left", 4.0), ("right", 5.0), ("center", 4.5), ("random", None)],
 )
 def test_compute_start_when_extending_duration(direction, expected_start):
     # noinspection PyTypeChecker
@@ -104,7 +113,7 @@ def test_compute_start_when_extending_duration(direction, expected_start):
         direction=direction,
     )
     assert new_duration == 11.0
-    if direction != 'random':
+    if direction != "random":
         assert new_start == expected_start
     else:
         assert 4.0 <= new_start <= 5.0
@@ -116,7 +125,7 @@ def test_compute_start_when_extending_duration_exceeded_left_side():
         start=0.0,
         duration=10.0,
         new_duration=11.0,
-        direction='center',
+        direction="center",
     )
     assert new_start == 0.0
     assert new_duration == 10.5
@@ -124,4 +133,4 @@ def test_compute_start_when_extending_duration_exceeded_left_side():
 
 def test_compute_start_when_extending_duration_incorrect_direction():
     with pytest.raises(ValueError):
-        compute_start_duration_for_extended_cut(0, 1, 2, 'bad-direction-string')
+        compute_start_duration_for_extended_cut(0, 1, 2, "bad-direction-string")

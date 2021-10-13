@@ -58,11 +58,11 @@ class K2SpeechRecognitionDataset(torch.utils.data.Dataset):
     """
 
     def __init__(
-            self,
-            return_cuts: bool = False,
-            cut_transforms: List[Callable[[CutSet], CutSet]] = None,
-            input_transforms: List[Callable[[torch.Tensor], torch.Tensor]] = None,
-            input_strategy: BatchIO = PrecomputedFeatures(),
+        self,
+        return_cuts: bool = False,
+        cut_transforms: List[Callable[[CutSet], CutSet]] = None,
+        input_transforms: List[Callable[[torch.Tensor], torch.Tensor]] = None,
+        input_strategy: BatchIO = PrecomputedFeatures(),
     ):
         """
         k2 ASR IterableDataset constructor.
@@ -116,19 +116,23 @@ class K2SpeechRecognitionDataset(torch.utils.data.Dataset):
             inputs = tnfm(inputs, supervision_segments=segments)
 
         batch = {
-            'inputs': inputs,
-            'supervisions': default_collate([
-                {
-                    'text': supervision.text,
-                }
-                for sequence_idx, cut in enumerate(cuts)
-                for supervision in cut.supervisions
-            ])
+            "inputs": inputs,
+            "supervisions": default_collate(
+                [
+                    {
+                        "text": supervision.text,
+                    }
+                    for sequence_idx, cut in enumerate(cuts)
+                    for supervision in cut.supervisions
+                ]
+            ),
         }
         # Update the 'supervisions' field with sequence_idx and start/num frames/samples
-        batch['supervisions'].update(supervision_intervals)
+        batch["supervisions"].update(supervision_intervals)
         if self.return_cuts:
-            batch['supervisions']['cut'] = [cut for cut in cuts for sup in cut.supervisions]
+            batch["supervisions"]["cut"] = [
+                cut for cut in cuts for sup in cut.supervisions
+            ]
 
         has_word_alignments = all(
             s.alignment is not None and "word" in s.alignment
@@ -184,8 +188,12 @@ def validate_for_asr(cuts: CutSet) -> None:
     tol = 2e-3  # 1ms
     for cut in cuts:
         for supervision in cut.supervisions:
-            assert supervision.start >= -tol, f"Supervisions starting before the cut are not supported for ASR" \
-                                              f" (sup id: {supervision.id}, cut id: {cut.id})"
-            assert supervision.duration <= cut.duration + tol, f"Supervisions ending after the cut " \
-                                                               f"are not supported for ASR" \
-                                                               f" (sup id: {supervision.id}, cut id: {cut.id})"
+            assert supervision.start >= -tol, (
+                f"Supervisions starting before the cut are not supported for ASR"
+                f" (sup id: {supervision.id}, cut id: {cut.id})"
+            )
+            assert supervision.duration <= cut.duration + tol, (
+                f"Supervisions ending after the cut "
+                f"are not supported for ASR"
+                f" (sup id: {supervision.id}, cut id: {cut.id})"
+            )

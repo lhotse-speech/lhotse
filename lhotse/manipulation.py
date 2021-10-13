@@ -9,8 +9,10 @@ from lhotse.cut import CutSet, MixedCut, MonoCut
 from lhotse.features import FeatureSet, Features
 from lhotse.supervision import SupervisionSegment, SupervisionSet
 
-ManifestItem = TypeVar('ManifestItem', Recording, SupervisionSegment, Features, MonoCut, MixedCut)
-Manifest = TypeVar('Manifest', RecordingSet, SupervisionSet, FeatureSet, CutSet)
+ManifestItem = TypeVar(
+    "ManifestItem", Recording, SupervisionSegment, Features, MonoCut, MixedCut
+)
+Manifest = TypeVar("Manifest", RecordingSet, SupervisionSet, FeatureSet, CutSet)
 
 
 def combine(*manifests: Union[Manifest, Iterable[Manifest]]) -> Manifest:
@@ -29,11 +31,7 @@ def combine(*manifests: Union[Manifest, Iterable[Manifest]]) -> Manifest:
 
 
 def split_parallelize_combine(
-        num_jobs: int,
-        manifest: Manifest,
-        fn: Callable,
-        *args,
-        **kwargs
+    num_jobs: int, manifest: Manifest, fn: Callable, *args, **kwargs
 ) -> Manifest:
     """
     Convenience wrapper that parallelizes the execution of functions
@@ -69,10 +67,7 @@ def split_parallelize_combine(
     """
     splits = manifest.split(num_splits=num_jobs)
     with ProcessPoolExecutor(num_jobs) as ex:
-        futures = [
-            ex.submit(fn, subset, *args, **kwargs)
-            for subset in splits
-        ]
+        futures = [ex.submit(fn, subset, *args, **kwargs) for subset in splits]
         result = combine([f.result() for f in futures])
     return result
 
@@ -96,9 +91,9 @@ def to_manifest(items: Iterable[ManifestItem]) -> Optional[Manifest]:
     if isinstance(first_item, (MonoCut, MixedCut)):
         return CutSet.from_cuts(items)
     if isinstance(first_item, Features):
-        raise ValueError("FeatureSet generic construction from iterable is not possible, as the config information "
-                         "would have been lost. Call FeatureSet.from_features() directly instead.")
+        raise ValueError(
+            "FeatureSet generic construction from iterable is not possible, as the config information "
+            "would have been lost. Call FeatureSet.from_features() directly instead."
+        )
 
     raise ValueError(f"Unknown type of manifest item: {first_item}")
-
-

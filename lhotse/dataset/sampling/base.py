@@ -49,11 +49,11 @@ class CutSampler(Sampler):
     """
 
     def __init__(
-            self,
-            shuffle: bool = False,
-            world_size: Optional[int] = None,
-            rank: Optional[int] = None,
-            seed: int = 0,
+        self,
+        shuffle: bool = False,
+        world_size: Optional[int] = None,
+        rank: Optional[int] = None,
+        seed: int = 0,
     ) -> None:
         """
         :param shuffle: When ``True``, the cuts will be shuffled at the start of iteration.
@@ -64,7 +64,9 @@ class CutSampler(Sampler):
         :param rank: Index of distributed node. We will try to infer it by default.
         :param seed: Random seed used to consistently shuffle the dataset across different processes.
         """
-        super().__init__(data_source=None)  # the "data_source" arg is not used in Sampler...
+        super().__init__(
+            data_source=None
+        )  # the "data_source" arg is not used in Sampler...
         self.shuffle = shuffle
         self.seed = seed
         self.epoch = 0
@@ -128,12 +130,12 @@ class CutSampler(Sampler):
         training loop's state to the one stored in the state_dict.
         """
         return {
-            'epoch': self.epoch,
-            'world_size': self.world_size,
-            'rank': self.rank,
-            'seed': self.seed,
-            'shuffle': self.shuffle,
-            'diagnostics': self.diagnostics.state_dict(),
+            "epoch": self.epoch,
+            "world_size": self.world_size,
+            "rank": self.rank,
+            "seed": self.seed,
+            "shuffle": self.shuffle,
+            "diagnostics": self.diagnostics.state_dict(),
         }
 
     def load_state_dict(self, state_dict: Dict[str, Any]) -> None:
@@ -154,7 +156,7 @@ class CutSampler(Sampler):
             For implementers of sub-classes of CutSampler: the flag ``self._just_restored_state`` has to be
             handled in ``__iter__`` to make it avoid resetting the just-restored state (only once).
         """
-        world_size = state_dict.pop('world_size')
+        world_size = state_dict.pop("world_size")
         assert self.world_size == world_size, (
             f"Cannot restore sampler with a different world_size (before load_state_dict(): {self.world_size},"
             f"attempted restoring to {world_size}). Changing the world_size would result in different batches "
@@ -163,18 +165,21 @@ class CutSampler(Sampler):
         # We are explicitly discarding the "rank" argument to support restoring multi-GPU training
         # without too much hassle.
         # We assume that if the world_size is OK, the samplers local ranks are fine.
-        del state_dict['rank']
-        assert self.seed == state_dict.pop('seed')
-        shuffle = state_dict.pop('shuffle')
+        del state_dict["rank"]
+        assert self.seed == state_dict.pop("seed")
+        shuffle = state_dict.pop("shuffle")
         if self.shuffle != shuffle:
-            warnings.warn('Overriding the shuffle value in CutSampler based on state_dict'
-                          f'(initialized to {self.shuffle}; restored to {shuffle}).')
+            warnings.warn(
+                "Overriding the shuffle value in CutSampler based on state_dict"
+                f"(initialized to {self.shuffle}; restored to {shuffle})."
+            )
         self.shuffle = shuffle
-        self.epoch = state_dict.pop('epoch')
-        self.diagnostics.load_state_dict(state_dict.pop('diagnostics'))
-        assert len(state_dict) == 0, (
-            "Error in CutSampler.load_state_dict(): Unexpected keys:\n- " +
-            "\n- ".join(state_dict.keys())
+        self.epoch = state_dict.pop("epoch")
+        self.diagnostics.load_state_dict(state_dict.pop("diagnostics"))
+        assert (
+            len(state_dict) == 0
+        ), "Error in CutSampler.load_state_dict(): Unexpected keys:\n- " + "\n- ".join(
+            state_dict.keys()
         )
         self._just_restored_state = True
 
@@ -195,7 +200,7 @@ class CutSampler(Sampler):
         Not available when the CutSet is read in lazy mode (returns None).
         """
         raise NotImplementedError(
-            'Sub-classes of CutSampler have to implement self.remaining_duration'
+            "Sub-classes of CutSampler have to implement self.remaining_duration"
         )
 
     @property
@@ -205,7 +210,7 @@ class CutSampler(Sampler):
         Not available when the CutSet is read in lazy mode (returns None).
         """
         raise NotImplementedError(
-            'Sub-classes of CutSampler have to implement self.remaining_cuts'
+            "Sub-classes of CutSampler have to implement self.remaining_cuts"
         )
 
     @property
@@ -215,7 +220,7 @@ class CutSampler(Sampler):
         Not available when the CutSet is read in lazy mode (returns None).
         """
         raise NotImplementedError(
-            'Sub-classes of CutSampler have to implement self.num_cuts'
+            "Sub-classes of CutSampler have to implement self.num_cuts"
         )
 
     def allow_iter_to_reset_state(self):
@@ -331,14 +336,14 @@ class TimeConstraint:
         return asdict(self)
 
     def load_state_dict(self, state_dict: Dict[str, Any]) -> None:
-        self.max_duration = state_dict.pop('max_duration')
-        self.max_samples = state_dict.pop('max_samples')
-        self.max_frames = state_dict.pop('max_frames')
-        self.current = state_dict.pop('current')
-        self.num_cuts = state_dict.pop('num_cuts')
+        self.max_duration = state_dict.pop("max_duration")
+        self.max_samples = state_dict.pop("max_samples")
+        self.max_frames = state_dict.pop("max_frames")
+        self.current = state_dict.pop("current")
+        self.num_cuts = state_dict.pop("num_cuts")
         assert len(state_dict) == 0, (
-            "Error in TimeConstraint.load_state_dict(): Unexpected keys:\n- " +
-            "\n- ".join(state_dict.keys())
+            "Error in TimeConstraint.load_state_dict(): Unexpected keys:\n- "
+            + "\n- ".join(state_dict.keys())
         )
 
     def __add__(self, other: "TimeConstraint") -> "TimeConstraint":
@@ -435,13 +440,13 @@ class SamplingDiagnostics:
         return asdict(self)
 
     def load_state_dict(self, state_dict: Dict[str, Any]) -> None:
-        self.num_kept_batches = state_dict.pop('num_kept_batches')
-        self.num_discarded_batches = state_dict.pop('num_discarded_batches')
-        self.kept_stats.load_state_dict(state_dict.pop('kept_stats'))
-        self.discarded_stats.load_state_dict(state_dict.pop('discarded_stats'))
+        self.num_kept_batches = state_dict.pop("num_kept_batches")
+        self.num_discarded_batches = state_dict.pop("num_discarded_batches")
+        self.kept_stats.load_state_dict(state_dict.pop("kept_stats"))
+        self.discarded_stats.load_state_dict(state_dict.pop("discarded_stats"))
         assert len(state_dict) == 0, (
-            "Error in SamplingDiagnostics.load_state_dict(): Unexpected keys:\n- " +
-            "\n- ".join(state_dict.keys())
+            "Error in SamplingDiagnostics.load_state_dict(): Unexpected keys:\n- "
+            + "\n- ".join(state_dict.keys())
         )
 
     def __add__(self, other: "SamplingDiagnostics") -> "SamplingDiagnostics":
@@ -450,5 +455,5 @@ class SamplingDiagnostics:
             discarded_stats=self.discarded_stats + other.discarded_stats,
             num_kept_batches=self.num_kept_batches + other.num_kept_batches,
             num_discarded_batches=self.num_discarded_batches
-                                  + other.num_discarded_batches,
+            + other.num_discarded_batches,
         )

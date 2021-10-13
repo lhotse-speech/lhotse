@@ -104,9 +104,9 @@ class DataSource:
 
 
 def streaming_shuffle(
-        data: Iterable[Cut],
-        bufsize: int = 10000,
-        rng: random.Random = random,
+    data: Iterable[Cut],
+    bufsize: int = 10000,
+    rng: random.Random = random,
 ) -> Generator[Cut, None, None]:
     """
     Shuffle the data in the stream.

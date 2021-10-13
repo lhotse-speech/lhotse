@@ -23,4 +23,5 @@ def install_sph2pipe(install_dir: str, url: str):
     It downloads an archive and then decompresses and compiles the contents.
     """
     from lhotse.tools.sph2pipe import install_sph2pipe
+
     install_sph2pipe(where=install_dir, download_from=url)

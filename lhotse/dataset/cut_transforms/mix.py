@@ -11,12 +11,12 @@ class CutMix:
     """
 
     def __init__(
-            self,
-            cuts: CutSet,
-            snr: Optional[Union[Decibels, Tuple[Decibels, Decibels]]] = (10, 20),
-            prob: float = 0.5,
-            pad_to_longest: bool = True,
-            preserve_id: bool = False,
+        self,
+        cuts: CutSet,
+        snr: Optional[Union[Decibels, Tuple[Decibels, Decibels]]] = (10, 20),
+        prob: float = 0.5,
+        pad_to_longest: bool = True,
+        preserve_id: bool = False,
     ) -> None:
         """
         CutMix's constructor.
@@ -41,11 +41,13 @@ class CutMix:
         self.preserve_id = preserve_id
 
     def __call__(self, cuts: CutSet) -> CutSet:
-        maybe_max_duration = max(c.duration for c in cuts) if self.pad_to_longest else None
+        maybe_max_duration = (
+            max(c.duration for c in cuts) if self.pad_to_longest else None
+        )
         return cuts.mix(
             cuts=self.cuts,
             duration=maybe_max_duration,
             snr=self.snr,
             mix_prob=self.prob,
-            preserve_id='left' if self.preserve_id else None,
+            preserve_id="left" if self.preserve_id else None,
         )

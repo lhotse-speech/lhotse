@@ -71,26 +71,26 @@ def prepare_cmu_kids(
 
     # Get transcripts for all utterances
     utterances = {}
-    with open(corpus_dir / 'cmu_kids' / 'tables' / 'sentence.tbl', 'r') as f:
+    with open(corpus_dir / "cmu_kids" / "tables" / "sentence.tbl", "r") as f:
         for line in f:
-            utt, count, text = line.strip().split('\t')
+            utt, count, text = line.strip().split("\t")
             utterances[utt] = text
 
     # Get speaker metadata
     speaker_info = {}
-    with open(corpus_dir / 'cmu_kids' / 'tables' / 'speaker.tbl', 'r') as f:
+    with open(corpus_dir / "cmu_kids" / "tables" / "speaker.tbl", "r") as f:
         for _ in range(2):
             next(f)
         for line in f:
             # ID    LOC     GR/AGE  TOT     BIN2
             # fabm    SUM95   3/9     100     62
             # facs    SUM95   2/8     90      55
-            spk, pop, gr_age, _, _ = line.strip().split('\t')
-            grade, age = gr_age.split('/')
+            spk, pop, gr_age, _, _ = line.strip().split("\t")
+            grade, age = gr_age.split("/")
             speaker_info[spk] = (pop, grade, age)
 
     # Iterate through all transcriptions and add to supervisions
-    with open(corpus_dir / 'cmu_kids' / 'tables' / 'transcrp.tbl', 'r') as f:
+    with open(corpus_dir / "cmu_kids" / "tables" / "transcrp.tbl", "r") as f:
         for line in f:
             trn_id, transcript = line.strip().split(maxsplit=1)
             spk = trn_id[0:4]
@@ -99,7 +99,7 @@ def prepare_cmu_kids(
             pop, grade, age = speaker_info[spk]
 
             audio_path = (
-                corpus_dir / 'cmu_kids' / 'kids' / spk / 'signal' / f'{trn_id}.sph'
+                corpus_dir / "cmu_kids" / "kids" / spk / "signal" / f"{trn_id}.sph"
             )
             recording = Recording.from_file(
                 audio_path, relative_path_depth=None if absolute_paths else 3
@@ -113,15 +113,15 @@ def prepare_cmu_kids(
                     start=0,
                     duration=recording.duration,
                     speaker=spk,
-                    gender="Male" if spk[0] == 'm' else "Female",
-                    language='English',
+                    gender="Male" if spk[0] == "m" else "Female",
+                    language="English",
                     text=utterances[utt],
                     custom={
-                        'speaker_grade': grade if grade != "NA" else None,
-                        'speaker_age': int(age) if age != "NA" else None,
-                        'speaker_population': pop,
-                        'bin': bin,
-                        'spoken_transcript': transcript,
+                        "speaker_grade": grade if grade != "NA" else None,
+                        "speaker_age": int(age) if age != "NA" else None,
+                        "speaker_population": pop,
+                        "bin": bin,
+                        "spoken_transcript": transcript,
                     },
                 )
             )
@@ -132,15 +132,15 @@ def prepare_cmu_kids(
     validate_recordings_and_supervisions(recordings, supervisions)
 
     manifests = {
-        'recordings': recordings,
-        'supervisions': supervisions,
+        "recordings": recordings,
+        "supervisions": supervisions,
     }
 
     if output_dir is not None:
         logging.info("Writing manifests to JSON files")
         output_dir = Path(output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
-        manifests["recordings"].to_json(output_dir / 'recordings.json')
-        manifests["supervisions"].to_json(output_dir / 'supervisions.json')
+        manifests["recordings"].to_json(output_dir / "recordings.json")
+        manifests["supervisions"].to_json(output_dir / "supervisions.json")
 
     return manifests

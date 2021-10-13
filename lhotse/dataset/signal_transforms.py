@@ -8,11 +8,7 @@ import torch
 from lhotse import CutSet
 from lhotse.utils import Pathlike
 
-__all__ = [
-    'GlobalMVN',
-    'SpecAugment',
-    'RandomizedSmoothing'
-]
+__all__ = ["GlobalMVN", "SpecAugment", "RandomizedSmoothing"]
 
 
 class GlobalMVN(torch.nn.Module):
@@ -28,7 +24,7 @@ class GlobalMVN(torch.nn.Module):
     def from_cuts(cls, cuts: CutSet, max_cuts: Optional[int] = None) -> "GlobalMVN":
         stats = cuts.compute_global_feature_stats(max_cuts=max_cuts)
         stats = {name: torch.as_tensor(value) for name, value in stats.items()}
-        feature_dim, = stats["norm_means"].shape
+        (feature_dim,) = stats["norm_means"].shape
         global_mvn = cls(feature_dim)
         global_mvn.load_state_dict(stats)
         return global_mvn
@@ -36,7 +32,7 @@ class GlobalMVN(torch.nn.Module):
     @classmethod
     def from_file(cls, stats_file: Pathlike) -> "GlobalMVN":
         stats = torch.load(stats_file)
-        feature_dim, = stats["norm_means"].shape
+        (feature_dim,) = stats["norm_means"].shape
         global_mvn = cls(feature_dim)
         global_mvn.load_state_dict(stats)
         return global_mvn
@@ -58,10 +54,10 @@ class RandomizedSmoothing(torch.nn.Module):
     """
 
     def __init__(
-            self,
-            sigma: Union[float, Sequence[Tuple[int, float]]] = 0.1,
-            sample_sigma: bool = True,
-            p: float = 0.3,
+        self,
+        sigma: Union[float, Sequence[Tuple[int, float]]] = 0.1,
+        sample_sigma: bool = True,
+        p: float = 0.3,
     ):
         """
         RandomizedSmoothing's constructor.
@@ -122,14 +118,14 @@ class SpecAugment(torch.nn.Module):
     """
 
     def __init__(
-            self,
-            time_warp_factor: Optional[int] = 80,
-            num_feature_masks: int = 1,
-            features_mask_size: int = 13,
-            num_frame_masks: int = 1,
-            frames_mask_size: int = 70,
-            max_frames_mask_fraction: float = 0.2,
-            p=0.5,
+        self,
+        time_warp_factor: Optional[int] = 80,
+        num_feature_masks: int = 1,
+        features_mask_size: int = 13,
+        num_frame_masks: int = 1,
+        frames_mask_size: int = 70,
+        max_frames_mask_fraction: float = 0.2,
+        p=0.5,
     ):
         """
         SpecAugment's constructor.
@@ -163,10 +159,11 @@ class SpecAugment(torch.nn.Module):
         self.p = p
 
     def forward(
-            self,
-            features: torch.Tensor,
-            supervision_segments: Optional[torch.IntTensor] = None,
-            *args, **kwargs
+        self,
+        features: torch.Tensor,
+        supervision_segments: Optional[torch.IntTensor] = None,
+        *args,
+        **kwargs,
     ) -> torch.Tensor:
         """
         Computes SpecAugment for a batch of feature matrices.
@@ -184,8 +181,9 @@ class SpecAugment(torch.nn.Module):
             the start frame index, and the number of frames for each segment.
         :return: a tensor of shape ``(T, F)``, or a batch of them with shape ``(B, T, F)``
         """
-        assert len(features.shape) == 3, 'SpecAugment only supports batches of ' \
-                                         'single-channel feature matrices.'
+        assert len(features.shape) == 3, (
+            "SpecAugment only supports batches of " "single-channel feature matrices."
+        )
         features = features.clone()
         if supervision_segments is None:
             # No supervisions - apply spec augment to full feature matrices.
@@ -195,23 +193,21 @@ class SpecAugment(torch.nn.Module):
             # Supervisions provided - we will apply time warping only on the supervised areas.
             for sequence_idx, start_frame, num_frames in supervision_segments:
                 end_frame = start_frame + num_frames
-                features[sequence_idx, start_frame: end_frame] = self._forward_single(
-                    features[sequence_idx, start_frame: end_frame],
-                    warp=True,
-                    mask=False
+                features[sequence_idx, start_frame:end_frame] = self._forward_single(
+                    features[sequence_idx, start_frame:end_frame], warp=True, mask=False
                 )
             # ... and then time-mask the full feature matrices. Note that in this mode,
             # it might happen that masks are applied to different sequences/examples
             # than the time warping.
             for sequence_idx in range(features.size(0)):
                 features[sequence_idx] = self._forward_single(
-                    features[sequence_idx],
-                    warp=False,
-                    mask=True
+                    features[sequence_idx], warp=False, mask=True
                 )
         return features
 
-    def _forward_single(self, features: torch.Tensor, warp: bool = True, mask: bool = True) -> torch.Tensor:
+    def _forward_single(
+        self, features: torch.Tensor, warp: bool = True, mask: bool = True
+    ) -> torch.Tensor:
         """
         Apply SpecAugment to a single feature matrix of shape (T, F).
         """
@@ -223,21 +219,25 @@ class SpecAugment(torch.nn.Module):
                 features = time_warp(features, factor=self.time_warp_factor)
         if mask:
             from torchaudio.functional import mask_along_axis
+
             mean = features.mean()
             for _ in range(self.num_feature_masks):
                 features = mask_along_axis(
                     features.unsqueeze(0),
                     mask_param=self.features_mask_size,
                     mask_value=mean,
-                    axis=2
+                    axis=2,
                 ).squeeze(0)
             for _ in range(self.num_frame_masks):
-                max_mask_frames = min(self.frames_mask_size, self.max_frames_mask_fraction * features.size(0))
+                max_mask_frames = min(
+                    self.frames_mask_size,
+                    self.max_frames_mask_fraction * features.size(0),
+                )
                 features = mask_along_axis(
                     features.unsqueeze(0),
                     mask_param=max_mask_frames,
                     mask_value=mean,
-                    axis=1
+                    axis=1,
                 ).squeeze(0)
         return features
 
@@ -261,24 +261,30 @@ def time_warp(features: torch.Tensor, factor: int) -> torch.Tensor:
         return features
     features = features.unsqueeze(0).unsqueeze(0)
     left = torch.nn.functional.interpolate(
-        features[:, :, :center, :], size=(warped, features.size(3)),
-        mode="bicubic", align_corners=False,
+        features[:, :, :center, :],
+        size=(warped, features.size(3)),
+        mode="bicubic",
+        align_corners=False,
     )
     right = torch.nn.functional.interpolate(
-        features[:, :, center:, :], size=(t - warped, features.size(3)),
-        mode="bicubic", align_corners=False,
+        features[:, :, center:, :],
+        size=(t - warped, features.size(3)),
+        mode="bicubic",
+        align_corners=False,
     )
     return torch.cat((left, right), dim=2).squeeze(0).squeeze(0)
 
 
-T = TypeVar('T')
+T = TypeVar("T")
 
 
 def schedule_value_for_step(schedule: Sequence[Tuple[int, T]], step: int) -> T:
     milestones, values = zip(*schedule)
-    assert milestones[0] <= step, f"Cannot determine the scheduled value for step {step} with schedule: {schedule}. " \
-                                  f"Did you forget to add the first part of the schedule " \
-                                  f"for steps below {milestones[0]}?"
+    assert milestones[0] <= step, (
+        f"Cannot determine the scheduled value for step {step} with schedule: {schedule}. "
+        f"Did you forget to add the first part of the schedule "
+        f"for steps below {milestones[0]}?"
+    )
     idx = bisect.bisect_right(milestones, step) - 1
     return values[idx]
 

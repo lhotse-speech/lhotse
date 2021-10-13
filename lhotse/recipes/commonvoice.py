@@ -133,8 +133,10 @@ def prepare_commonvoice(
             "To prepare CommonVoice data, please 'pip install pandas' first."
         )
     if num_jobs > 1:
-        warnings.warn('num_jobs>1 currently not supported for CommonVoice data prep;'
-                      'setting to 1.')
+        warnings.warn(
+            "num_jobs>1 currently not supported for CommonVoice data prep;"
+            "setting to 1."
+        )
 
     corpus_dir = Path(corpus_dir)
     assert corpus_dir.is_dir(), f"No such directory: {corpus_dir}"
@@ -283,7 +285,7 @@ def parse_utterance(
 
 
 def read_cv_manifests_if_cached(
-        output_dir: Optional[Pathlike],
+    output_dir: Optional[Pathlike],
     language: str,
 ) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet]]]:
     """

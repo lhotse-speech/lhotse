@@ -8,52 +8,52 @@ from lhotse.dataset import DiarizationDataset
 @pytest.fixture
 def cut_set():
     # The contents of 'test/fixtures/libri/cuts.json'
-    cs = CutSet.from_dicts([
-        {
-            "channel": 0,
-            "duration": 10.0,
-            "features": {
-                "channels": 0,
-                "duration": 16.04,
-                "frame_shift": 0.01,
-                "num_features": 40,
-                "num_frames": 1604,
-                "recording_id": "recording-1",
-                "sampling_rate": 16000,
+    cs = CutSet.from_dicts(
+        [
+            {
+                "channel": 0,
+                "duration": 10.0,
+                "features": {
+                    "channels": 0,
+                    "duration": 16.04,
+                    "frame_shift": 0.01,
+                    "num_features": 40,
+                    "num_frames": 1604,
+                    "recording_id": "recording-1",
+                    "sampling_rate": 16000,
+                    "start": 0.0,
+                    "storage_path": "test/fixtures/libri/storage",
+                    "storage_key": "30c2440c-93cb-4e83-b382-f2a59b3859b4.llc",
+                    "storage_type": "lilcom_files",
+                    "type": "fbank",
+                },
+                "id": "e3e70682-c209-4cac-629f-6fbed82c07cd",
+                "recording": {
+                    "duration": 16.04,
+                    "id": "recording-1",
+                    "num_samples": 256640,
+                    "sampling_rate": 16000,
+                    "sources": [
+                        {
+                            "channels": [0],
+                            "source": "test/fixtures/libri/libri-1088-134315-0000.wav",
+                            "type": "file",
+                        }
+                    ],
+                },
                 "start": 0.0,
-                "storage_path": "test/fixtures/libri/storage",
-                "storage_key": "30c2440c-93cb-4e83-b382-f2a59b3859b4.llc",
-                "storage_type": "lilcom_files",
-                "type": "fbank"
-            },
-            "id": "e3e70682-c209-4cac-629f-6fbed82c07cd",
-            "recording": {
-                "duration": 16.04,
-                "id": "recording-1",
-                "num_samples": 256640,
-                "sampling_rate": 16000,
-                "sources": [
-                    {
-                        "channels": [
-                            0
-                        ],
-                        "source": "test/fixtures/libri/libri-1088-134315-0000.wav",
-                        "type": "file"
-                    }
-                ]
-            },
-            "start": 0.0,
-            "supervisions": [],
-            "type": "Cut"
-        }
-    ])
+                "supervisions": [],
+                "type": "Cut",
+            }
+        ]
+    )
     # These supervisions are artificially overwritten in a 10 seconds long LibriSpeech cut
     # to test the speaker activity matrix in the DiarizationDataset.
     cs[0].supervisions = [
-        SupervisionSegment('s1', 'recording-1', 0, 3, speaker='spk1'),
-        SupervisionSegment('s2', 'recording-1', 2, 4, speaker='spk2'),
-        SupervisionSegment('s3', 'recording-1', 5, 2, speaker='spk3'),
-        SupervisionSegment('s4', 'recording-1', 7.5, 2.5, speaker='spk4'),
+        SupervisionSegment("s1", "recording-1", 0, 3, speaker="spk1"),
+        SupervisionSegment("s2", "recording-1", 2, 4, speaker="spk2"),
+        SupervisionSegment("s3", "recording-1", 5, 2, speaker="spk3"),
+        SupervisionSegment("s4", "recording-1", 7.5, 2.5, speaker="spk4"),
     ]
     return cs
 
@@ -61,10 +61,10 @@ def cut_set():
 def test_diarization_dataset(cut_set):
     dataset = DiarizationDataset(cut_set)
     example = dataset[cut_set]
-    assert example['features'].shape == (1, 1000, 40)
+    assert example["features"].shape == (1, 1000, 40)
 
-    assert example['speaker_activity'].shape == (1, 4, 1000)
-    sa = example['speaker_activity'][0]
+    assert example["speaker_activity"].shape == (1, 4, 1000)
+    sa = example["speaker_activity"][0]
     # Supervision s1
     assert (sa[0, :300] == 1).all()
     assert (sa[0, 300:] == 0).all()

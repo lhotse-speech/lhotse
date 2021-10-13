@@ -12,11 +12,7 @@ class CutConcatenate:
     adding some silence between them to avoid a large number of padding frames that waste the computation.
     """
 
-    def __init__(
-            self,
-            gap: Seconds = 1.0,
-            duration_factor: float = 1.0
-    ) -> None:
+    def __init__(self, gap: Seconds = 1.0, duration_factor: float = 1.0) -> None:
         """
         CutConcatenate's constructor.
 
@@ -31,16 +27,12 @@ class CutConcatenate:
     def __call__(self, cuts: CutSet) -> CutSet:
         cuts = cuts.sort_by_duration(ascending=False)
         return concat_cuts(
-            cuts,
-            gap=self.gap,
-            max_duration=cuts[0].duration * self.duration_factor
+            cuts, gap=self.gap, max_duration=cuts[0].duration * self.duration_factor
         )
 
 
 def concat_cuts(
-        cuts: Sequence[Cut],
-        gap: Seconds = 1.0,
-        max_duration: Optional[Seconds] = None
+    cuts: Sequence[Cut], gap: Seconds = 1.0, max_duration: Optional[Seconds] = None
 ) -> CutSet:
     """
     We're going to concatenate the cuts to minimize the amount of total padding frames used.

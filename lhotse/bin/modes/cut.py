@@ -3,12 +3,7 @@ from typing import List, Optional, Tuple
 import click
 
 from lhotse.bin.modes.cli_base import cli
-from lhotse.cut import (
-    CutSet,
-    append_cuts,
-    make_windowed_cuts_from_features,
-    mix_cuts
-)
+from lhotse.cut import CutSet, append_cuts, make_windowed_cuts_from_features, mix_cuts
 from lhotse.utils import Pathlike
 
 
@@ -19,18 +14,30 @@ def cut():
 
 
 @cut.command()
-@click.argument('output_cut_manifest', type=click.Path())
-@click.option('-r', '--recording-manifest', type=click.Path(exists=True, dir_okay=False),
-              help='Optional recording manifest - will be used to attach the recordings to the cuts.')
-@click.option('-f', '--feature-manifest', type=click.Path(exists=True, dir_okay=False),
-              help='Optional feature manifest - will be used to attach the features to the cuts.')
-@click.option('-s', '--supervision-manifest', type=click.Path(exists=True, dir_okay=False),
-              help='Optional supervision manifest - will be used to attach the supervisions to the cuts.')
+@click.argument("output_cut_manifest", type=click.Path())
+@click.option(
+    "-r",
+    "--recording-manifest",
+    type=click.Path(exists=True, dir_okay=False),
+    help="Optional recording manifest - will be used to attach the recordings to the cuts.",
+)
+@click.option(
+    "-f",
+    "--feature-manifest",
+    type=click.Path(exists=True, dir_okay=False),
+    help="Optional feature manifest - will be used to attach the features to the cuts.",
+)
+@click.option(
+    "-s",
+    "--supervision-manifest",
+    type=click.Path(exists=True, dir_okay=False),
+    help="Optional supervision manifest - will be used to attach the supervisions to the cuts.",
+)
 def simple(
-        output_cut_manifest: Pathlike,
-        recording_manifest: Optional[Pathlike],
-        feature_manifest: Optional[Pathlike],
-        supervision_manifest: Optional[Pathlike],
+    output_cut_manifest: Pathlike,
+    recording_manifest: Optional[Pathlike],
+    feature_manifest: Optional[Pathlike],
+    supervision_manifest: Optional[Pathlike],
 ):
     """
     Create a CutSet stored in OUTPUT_CUT_MANIFEST. Depending on the provided options, it may contain any combination
@@ -40,60 +47,89 @@ def simple(
     Otherwise, that time span corresponds to the one found in features, if available, otherwise recordings.
     """
     from lhotse import load_manifest
+
     supervision_set, feature_set, recording_set = [
         load_manifest(p) if p is not None else None
         for p in (supervision_manifest, feature_manifest, recording_manifest)
     ]
-    cut_set = CutSet.from_manifests(recordings=recording_set, supervisions=supervision_set, features=feature_set)
+    cut_set = CutSet.from_manifests(
+        recordings=recording_set, supervisions=supervision_set, features=feature_set
+    )
     cut_set.to_file(output_cut_manifest)
 
 
 @cut.command()
-@click.argument('feature_manifest', type=click.Path(exists=True, dir_okay=False))
-@click.argument('output_cut_manifest', type=click.Path())
-@click.option('-d', '--cut-duration', type=float, default=5.0, help='How long should the cuts be in seconds.')
-@click.option('-s', '--cut-shift', type=float, default=None,
-              help='How much to shift the cutting window in seconds (by default the shift is equal to CUT_DURATION).')
-@click.option('--keep-shorter-windows/--discard-shorter-windows', type=bool, default=False,
-              help='When true, the last window will be used to create a Cut even if its duration is '
-                   'shorter than CUT_DURATION.')
+@click.argument("feature_manifest", type=click.Path(exists=True, dir_okay=False))
+@click.argument("output_cut_manifest", type=click.Path())
+@click.option(
+    "-d",
+    "--cut-duration",
+    type=float,
+    default=5.0,
+    help="How long should the cuts be in seconds.",
+)
+@click.option(
+    "-s",
+    "--cut-shift",
+    type=float,
+    default=None,
+    help="How much to shift the cutting window in seconds (by default the shift is equal to CUT_DURATION).",
+)
+@click.option(
+    "--keep-shorter-windows/--discard-shorter-windows",
+    type=bool,
+    default=False,
+    help="When true, the last window will be used to create a Cut even if its duration is "
+    "shorter than CUT_DURATION.",
+)
 def windowed(
-        feature_manifest: Pathlike,
-        output_cut_manifest: Pathlike,
-        cut_duration: float,
-        cut_shift: Optional[float],
-        keep_shorter_windows: bool
+    feature_manifest: Pathlike,
+    output_cut_manifest: Pathlike,
+    cut_duration: float,
+    cut_shift: Optional[float],
+    keep_shorter_windows: bool,
 ):
     """
     Create a CutSet stored in OUTPUT_CUT_MANIFEST from feature regions in FEATURE_MANIFEST.
     The feature matrices are traversed in windows with CUT_SHIFT increments, creating cuts of constant CUT_DURATION.
     """
     from lhotse.features import FeatureSet
+
     feature_set = FeatureSet.from_json(feature_manifest)
     cut_set = make_windowed_cuts_from_features(
         feature_set=feature_set,
         cut_duration=cut_duration,
         cut_shift=cut_shift,
-        keep_shorter_windows=keep_shorter_windows
+        keep_shorter_windows=keep_shorter_windows,
     )
     cut_set.to_file(output_cut_manifest)
 
 
 @cut.command()
-@click.argument('supervision_manifest', type=click.Path(exists=True, dir_okay=False))
-@click.argument('feature_manifest', type=click.Path(exists=True, dir_okay=False))
-@click.argument('output_cut_manifest', type=click.Path())
-@click.option('-s', '--snr-range', type=(float, float), default=(20, 20),
-              help='Range of SNR values (in dB) that will be uniformly sampled in order to mix the signals.')
-@click.option('-o', '--offset-range', type=(float, float), default=(0.5, 0.5),
-              help='Range of relative offset values (0 - 1), which will offset the "right" signal by this many times '
-                   'the duration of the "left" signal. It is uniformly sampled for each mix operation.')
+@click.argument("supervision_manifest", type=click.Path(exists=True, dir_okay=False))
+@click.argument("feature_manifest", type=click.Path(exists=True, dir_okay=False))
+@click.argument("output_cut_manifest", type=click.Path())
+@click.option(
+    "-s",
+    "--snr-range",
+    type=(float, float),
+    default=(20, 20),
+    help="Range of SNR values (in dB) that will be uniformly sampled in order to mix the signals.",
+)
+@click.option(
+    "-o",
+    "--offset-range",
+    type=(float, float),
+    default=(0.5, 0.5),
+    help='Range of relative offset values (0 - 1), which will offset the "right" signal by this many times '
+    'the duration of the "left" signal. It is uniformly sampled for each mix operation.',
+)
 def random_mixed(
-        supervision_manifest: Pathlike,
-        feature_manifest: Pathlike,
-        output_cut_manifest: Pathlike,
-        snr_range: Tuple[float, float],
-        offset_range: Tuple[float, float]
+    supervision_manifest: Pathlike,
+    feature_manifest: Pathlike,
+    output_cut_manifest: Pathlike,
+    snr_range: Tuple[float, float],
+    offset_range: Tuple[float, float],
 ):
     """
     Create a CutSet stored in OUTPUT_CUT_MANIFEST that contains supervision regions from SUPERVISION_MANIFEST
@@ -108,7 +144,9 @@ def random_mixed(
     supervision_set = SupervisionSet.from_json(supervision_manifest)
     feature_set = FeatureSet.from_json(feature_manifest)
 
-    source_cut_set = CutSet.from_manifests(supervisions=supervision_set, features=feature_set)
+    source_cut_set = CutSet.from_manifests(
+        supervisions=supervision_set, features=feature_set
+    )
     left_cuts, right_cuts = source_cut_set.split(num_splits=2, shuffle=True)
 
     snrs = np.random.uniform(*snr_range, size=len(left_cuts)).tolist()
@@ -116,22 +154,19 @@ def random_mixed(
 
     mixed_cut_set = CutSet.from_cuts(
         left_cut.mix(
-            right_cut,
-            offset_other_by=left_cut.duration * relative_offset,
-            snr=snr
+            right_cut, offset_other_by=left_cut.duration * relative_offset, snr=snr
         )
-        for left_cut, right_cut, snr, relative_offset in zip(left_cuts, right_cuts, snrs, relative_offsets)
+        for left_cut, right_cut, snr, relative_offset in zip(
+            left_cuts, right_cuts, snrs, relative_offsets
+        )
     )
     mixed_cut_set.to_file(output_cut_manifest)
 
 
 @cut.command()
-@click.argument('cut_manifests', nargs=-1, type=click.Path(exists=True, dir_okay=False))
-@click.argument('output_cut_manifest', type=click.Path())
-def mix_sequential(
-        cut_manifests: List[Pathlike],
-        output_cut_manifest: Pathlike
-):
+@click.argument("cut_manifests", nargs=-1, type=click.Path(exists=True, dir_okay=False))
+@click.argument("output_cut_manifest", type=click.Path())
+def mix_sequential(cut_manifests: List[Pathlike], output_cut_manifest: Pathlike):
     """
     Create a CutSet stored in OUTPUT_CUT_MANIFEST by iterating jointly over CUT_MANIFESTS and mixing the Cuts
     on the same positions. E.g. the first output cut is created from the first cuts in each input manifest.
@@ -144,44 +179,61 @@ def mix_sequential(
 
 
 @cut.command()
-@click.argument('cut_manifests', nargs=-1, type=click.Path(exists=True, dir_okay=False))
-@click.argument('output_cut_manifest', type=click.Path())
-def mix_by_recording_id(
-        cut_manifests: List[Pathlike],
-        output_cut_manifest: Pathlike
-):
+@click.argument("cut_manifests", nargs=-1, type=click.Path(exists=True, dir_okay=False))
+@click.argument("output_cut_manifest", type=click.Path())
+def mix_by_recording_id(cut_manifests: List[Pathlike], output_cut_manifest: Pathlike):
     """
     Create a CutSet stored in OUTPUT_CUT_MANIFEST by matching the Cuts from CUT_MANIFESTS by their recording IDs
     and mixing them together.
     """
     from cytoolz.itertoolz import groupby
     from lhotse.manipulation import combine
+
     all_cuts = combine(*[CutSet.from_json(path) for path in cut_manifests])
     recording_id_to_cuts = groupby(lambda cut: cut.recording_id, all_cuts)
-    mixed_cut_set = CutSet.from_cuts(mix_cuts(cuts) for recording_id, cuts in recording_id_to_cuts.items())
+    mixed_cut_set = CutSet.from_cuts(
+        mix_cuts(cuts) for recording_id, cuts in recording_id_to_cuts.items()
+    )
     mixed_cut_set.to_file(output_cut_manifest)
 
 
 @cut.command(context_settings=dict(show_default=True))
-@click.argument('cut_manifest', type=click.Path(exists=True, dir_okay=False))
-@click.argument('output_cut_manifest', type=click.Path())
-@click.option('--preserve-id', is_flag=True,
-              help='Should the cuts preserve IDs (by default, they will get new, random IDs)')
-@click.option('-d', '--max-duration', type=float, required=True,
-              help='The maximum duration in seconds of a cut in the resulting manifest.')
-@click.option('-o', '--offset-type', type=click.Choice(['start', 'end', 'random']), default='start',
-              help='Where should the truncated cut start: "start" - at the start of the original cut, '
-                   '"end" - MAX_DURATION before the end of the original cut, '
-                   '"random" - randomly choose somewhere between "start" and "end" options.')
-@click.option('--keep-overflowing-supervisions/--discard-overflowing-supervisions', type=bool, default=False,
-              help='When a cut is truncated in the middle of a supervision segment, should the supervision be kept.')
+@click.argument("cut_manifest", type=click.Path(exists=True, dir_okay=False))
+@click.argument("output_cut_manifest", type=click.Path())
+@click.option(
+    "--preserve-id",
+    is_flag=True,
+    help="Should the cuts preserve IDs (by default, they will get new, random IDs)",
+)
+@click.option(
+    "-d",
+    "--max-duration",
+    type=float,
+    required=True,
+    help="The maximum duration in seconds of a cut in the resulting manifest.",
+)
+@click.option(
+    "-o",
+    "--offset-type",
+    type=click.Choice(["start", "end", "random"]),
+    default="start",
+    help='Where should the truncated cut start: "start" - at the start of the original cut, '
+    '"end" - MAX_DURATION before the end of the original cut, '
+    '"random" - randomly choose somewhere between "start" and "end" options.',
+)
+@click.option(
+    "--keep-overflowing-supervisions/--discard-overflowing-supervisions",
+    type=bool,
+    default=False,
+    help="When a cut is truncated in the middle of a supervision segment, should the supervision be kept.",
+)
 def truncate(
-        cut_manifest: Pathlike,
-        output_cut_manifest: Pathlike,
-        preserve_id: bool,
-        max_duration: float,
-        offset_type: str,
-        keep_overflowing_supervisions: bool,
+    cut_manifest: Pathlike,
+    output_cut_manifest: Pathlike,
+    preserve_id: bool,
+    max_duration: float,
+    offset_type: str,
+    keep_overflowing_supervisions: bool,
 ):
     """
     Truncate the cuts in the CUT_MANIFEST and write them to OUTPUT_CUT_MANIFEST.
@@ -192,17 +244,17 @@ def truncate(
         max_duration=max_duration,
         offset_type=offset_type,
         keep_excessive_supervisions=keep_overflowing_supervisions,
-        preserve_id=preserve_id
+        preserve_id=preserve_id,
     )
     truncated_cut_set.to_file(output_cut_manifest)
 
 
 @cut.command()
-@click.argument('cut_manifests', nargs=-1, type=click.Path(exists=True, dir_okay=False))
-@click.argument('output_cut_manifest', type=click.Path())
+@click.argument("cut_manifests", nargs=-1, type=click.Path(exists=True, dir_okay=False))
+@click.argument("output_cut_manifest", type=click.Path())
 def append(
-        cut_manifests: List[Pathlike],
-        output_cut_manifest: Pathlike,
+    cut_manifests: List[Pathlike],
+    output_cut_manifest: Pathlike,
 ):
     """
     Create a new CutSet by appending the cuts in CUT_MANIFESTS. CUT_MANIFESTS are iterated position-wise (the
@@ -217,16 +269,19 @@ def append(
 
 
 @cut.command()
-@click.argument('cut_manifest', type=click.Path(exists=True, dir_okay=False))
-@click.argument('output_cut_manifest', type=click.Path())
-@click.option('-d', '--duration', default=None, type=float,
-              help="Desired duration of cuts after padding. "
-                   "Cuts longer than this won't be affected. "
-                   "By default, pad to the longest cut duration found in CUT_MANIFEST.")
+@click.argument("cut_manifest", type=click.Path(exists=True, dir_okay=False))
+@click.argument("output_cut_manifest", type=click.Path())
+@click.option(
+    "-d",
+    "--duration",
+    default=None,
+    type=float,
+    help="Desired duration of cuts after padding. "
+    "Cuts longer than this won't be affected. "
+    "By default, pad to the longest cut duration found in CUT_MANIFEST.",
+)
 def pad(
-        cut_manifest: Pathlike,
-        output_cut_manifest: Pathlike,
-        duration: Optional[float]
+    cut_manifest: Pathlike, output_cut_manifest: Pathlike, duration: Optional[float]
 ):
     """
     Create a new CutSet by padding the cuts in CUT_MANIFEST. The cuts will be right-padded, i.e. the padding

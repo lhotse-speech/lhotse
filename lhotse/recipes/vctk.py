@@ -85,19 +85,26 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Dict, Optional, Union
 
-from lhotse import Recording, RecordingSet, SupervisionSegment, SupervisionSet, \
-    validate_recordings_and_supervisions
+from lhotse import (
+    Recording,
+    RecordingSet,
+    SupervisionSegment,
+    SupervisionSet,
+    validate_recordings_and_supervisions,
+)
 from lhotse.qa import remove_missing_recordings_and_supervisions
 from lhotse.utils import Pathlike, urlretrieve_progress
 
-EDINBURGH_VCTK_URL = "https://datashare.ed.ac.uk/bitstream/handle/10283/3443/VCTK-Corpus-0.92.zip"
+EDINBURGH_VCTK_URL = (
+    "https://datashare.ed.ac.uk/bitstream/handle/10283/3443/VCTK-Corpus-0.92.zip"
+)
 CREST_VCTK_URL = "http://www.udialogue.org/download/VCTK-Corpus.tar.gz"
 
 
 def download_vctk(
-        target_dir: Pathlike = '.',
-        force_download: Optional[bool] = False,
-        url: Optional[str] = CREST_VCTK_URL
+    target_dir: Pathlike = ".",
+    force_download: Optional[bool] = False,
+    url: Optional[str] = CREST_VCTK_URL,
 ) -> None:
     """
     Download and untar/unzip the VCTK dataset.
@@ -109,25 +116,27 @@ def download_vctk(
     target_dir = Path(target_dir)
     target_dir.mkdir(parents=True, exist_ok=True)
 
-    archive_name = url.split('/')[-1]
+    archive_name = url.split("/")[-1]
     archive_path = target_dir / archive_name
-    part_dir = target_dir / archive_name.replace('.zip', '').replace('.tar.gz', '')
-    completed_detector = part_dir / '.completed'
+    part_dir = target_dir / archive_name.replace(".zip", "").replace(".tar.gz", "")
+    completed_detector = part_dir / ".completed"
     if completed_detector.is_file():
-        logging.info(f'Skipping {archive_name} because {completed_detector} exists.')
+        logging.info(f"Skipping {archive_name} because {completed_detector} exists.")
         return
     if force_download or not archive_path.is_file():
-        urlretrieve_progress(url, filename=archive_path, desc=f'Downloading {archive_name}')
+        urlretrieve_progress(
+            url, filename=archive_path, desc=f"Downloading {archive_name}"
+        )
     shutil.rmtree(part_dir, ignore_errors=True)
-    opener = zipfile.ZipFile if archive_name.endswith('.zip') else tarfile.open
+    opener = zipfile.ZipFile if archive_name.endswith(".zip") else tarfile.open
     with opener(archive_path) as archive:
         archive.extractall(path=target_dir)
     completed_detector.touch()
 
 
 def prepare_vctk(
-        corpus_dir: Pathlike,
-        output_dir: Optional[Pathlike] = None,
+    corpus_dir: Pathlike,
+    output_dir: Optional[Pathlike] = None,
 ) -> Dict[str, Union[RecordingSet, SupervisionSet]]:
     """
     Prepares and returns the L2 Arctic manifests which consist of Recordings and Supervisions.
@@ -138,68 +147,70 @@ def prepare_vctk(
         Each hold another dict of {'recordings': ..., 'supervisions': ...}
     """
     corpus_dir = Path(corpus_dir)
-    assert corpus_dir.is_dir(), f'No such directory: {corpus_dir}'
+    assert corpus_dir.is_dir(), f"No such directory: {corpus_dir}"
 
     speaker_meta = _parse_speaker_description(corpus_dir)
 
     recordings = RecordingSet.from_recordings(
-        Recording.from_file(wav) for wav in (corpus_dir / 'wav48').rglob('*.wav')
+        Recording.from_file(wav) for wav in (corpus_dir / "wav48").rglob("*.wav")
     )
     supervisions = []
-    for path in (corpus_dir / 'txt').rglob('*.txt'):
+    for path in (corpus_dir / "txt").rglob("*.txt"):
         # One utterance (line) per file
         text = path.read_text().strip()
-        speaker = path.name.split('_')[0]  # p226_001.txt -> p226
+        speaker = path.name.split("_")[0]  # p226_001.txt -> p226
         seg_id = path.stem
         meta = speaker_meta.get(speaker, defaultdict(lambda: None))
         if meta is None:
-            logging.warning(f'Cannot find metadata for speaker {speaker}.')
-        supervisions.append(SupervisionSegment(
-            id=seg_id,
-            recording_id=seg_id,
-            start=0,
-            duration=recordings[seg_id].duration,
-            text=text,
-            language='English',
-            speaker=speaker,
-            gender=meta['gender'],
-            custom={
-                'accent': meta['accent'],
-                'age': meta['age'],
-                'region': meta['region']
-            }
-        ))
+            logging.warning(f"Cannot find metadata for speaker {speaker}.")
+        supervisions.append(
+            SupervisionSegment(
+                id=seg_id,
+                recording_id=seg_id,
+                start=0,
+                duration=recordings[seg_id].duration,
+                text=text,
+                language="English",
+                speaker=speaker,
+                gender=meta["gender"],
+                custom={
+                    "accent": meta["accent"],
+                    "age": meta["age"],
+                    "region": meta["region"],
+                },
+            )
+        )
     supervisions = SupervisionSet.from_segments(supervisions)
 
     # note(pzelasko): There were 172 recordings without supervisions when I ran it.
     #                 I am just removing them.
-    recordings, supervisions = remove_missing_recordings_and_supervisions(recordings, supervisions)
+    recordings, supervisions = remove_missing_recordings_and_supervisions(
+        recordings, supervisions
+    )
     validate_recordings_and_supervisions(recordings, supervisions)
 
     if output_dir is not None:
         output_dir = Path(output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
-        recordings.to_json(output_dir / 'recordings.json')
-        supervisions.to_json(output_dir / 'supervisions.json')
+        recordings.to_json(output_dir / "recordings.json")
+        supervisions.to_json(output_dir / "supervisions.json")
 
-    return {
-        'recordings': recordings,
-        'supervisions': supervisions
-    }
+    return {"recordings": recordings, "supervisions": supervisions}
 
 
 def _parse_speaker_description(corpus_dir: Pathlike):
     meta = {}
     lines = [
-        line.split() for line in (corpus_dir / 'speaker-info.txt').read_text().splitlines()
+        line.split()
+        for line in (corpus_dir / "speaker-info.txt").read_text().splitlines()
     ]
     header = lines[0]
-    assert header == ['ID', 'AGE', 'GENDER', 'ACCENTS', 'REGION']
+    assert header == ["ID", "AGE", "GENDER", "ACCENTS", "REGION"]
     for spk, age, gender, accent, *region in lines[1:]:
-        meta[f'p{spk}'] = {
-            'age': int(age),
-            'gender': gender,
-            'accent': accent,
-            'region': ' '.join(region) if region is not None else None
+        meta[f"p{spk}"] = {
+            "age": int(age),
+            "gender": gender,
+            "accent": accent,
+            "region": " ".join(region) if region is not None else None,
         }
     return meta

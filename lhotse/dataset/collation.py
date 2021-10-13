@@ -29,6 +29,7 @@ class TokenCollater:
             Length of each sentence after adding <eos> and <bos>
             but before padding.
     """
+
     def __init__(
         self,
         cuts: CutSet,
@@ -47,10 +48,7 @@ class TokenCollater:
         self.add_eos = add_eos
         self.add_bos = add_bos
 
-        tokens = {
-            char for cut in cuts
-            for char in cut.supervisions[0].text
-        }
+        tokens = {char for cut in cuts for char in cut.supervisions[0].text}
         tokens_unique = (
             [pad_symbol, unk_symbol]
             + ([bos_symbol] if add_bos else [])
@@ -76,34 +74,42 @@ class TokenCollater:
             for seq in token_sequences
         ]
 
-        tokens_batch = torch.from_numpy(np.array([
-            [self.token2idx[token] for token in seq]
-            for seq in seqs
-        ], dtype=np.int64))
+        tokens_batch = torch.from_numpy(
+            np.array(
+                [[self.token2idx[token] for token in seq] for seq in seqs],
+                dtype=np.int64,
+            )
+        )
 
-        tokens_lens = torch.IntTensor([
-            len(seq) + int(self.add_eos) + int(self.add_bos)
-            for seq in token_sequences
-        ])
+        tokens_lens = torch.IntTensor(
+            [
+                len(seq) + int(self.add_eos) + int(self.add_bos)
+                for seq in token_sequences
+            ]
+        )
 
         return tokens_batch, tokens_lens
 
-    def inverse(self, tokens_batch: torch.LongTensor, tokens_lens: torch.IntTensor) -> List[str]:
+    def inverse(
+        self, tokens_batch: torch.LongTensor, tokens_lens: torch.IntTensor
+    ) -> List[str]:
         start = 1 if self.add_bos else 0
         sentences = [
-            "".join([
-                self.idx2token[idx]
-                for idx in tokens_list[start:end - int(self.add_eos)]
-            ])
+            "".join(
+                [
+                    self.idx2token[idx]
+                    for idx in tokens_list[start : end - int(self.add_eos)]
+                ]
+            )
             for tokens_list, end in zip(tokens_batch, tokens_lens)
         ]
         return sentences
 
 
 def collate_features(
-        cuts: CutSet,
-        pad_direction: str = 'right',
-        executor: Optional[Executor] = None,
+    cuts: CutSet,
+    pad_direction: str = "right",
+    executor: Optional[Executor] = None,
 ) -> Tuple[torch.Tensor, torch.IntTensor]:
     """
     Load features for all the cuts and return them as a batch in a torch tensor.
@@ -118,7 +124,9 @@ def collate_features(
     """
     assert all(cut.has_features for cut in cuts)
     features_lens = torch.tensor([cut.num_frames for cut in cuts], dtype=torch.int)
-    cuts = maybe_pad(cuts, num_frames=max(features_lens).item(), direction=pad_direction)
+    cuts = maybe_pad(
+        cuts, num_frames=max(features_lens).item(), direction=pad_direction
+    )
     first_cut = next(iter(cuts))
     features = torch.empty(len(cuts), first_cut.num_frames, first_cut.num_features)
     if executor is None:
@@ -131,9 +139,9 @@ def collate_features(
 
 
 def collate_audio(
-        cuts: CutSet,
-        pad_direction: str = 'right',
-        executor: Optional[Executor] = None,
+    cuts: CutSet,
+    pad_direction: str = "right",
+    executor: Optional[Executor] = None,
 ) -> Tuple[torch.Tensor, torch.IntTensor]:
     """
     Load audio samples for all the cuts and return them as a batch in a torch tensor.
@@ -174,7 +182,9 @@ def collate_multi_channel_features(cuts: CutSet) -> torch.Tensor:
     first_cut = next(iter(cuts))
     # TODO: make MixedCut more friendly to use with multi channel audio;
     #  discount PaddingCuts in "tracks" when specifying the number of channels
-    features = torch.empty(len(cuts), len(first_cut.tracks), first_cut.num_frames, first_cut.num_features)
+    features = torch.empty(
+        len(cuts), len(first_cut.tracks), first_cut.num_frames, first_cut.num_features
+    )
     for idx, cut in enumerate(cuts):
         features[idx] = torch.from_numpy(cut.load_features(mixed=False))
     return features
@@ -198,9 +208,9 @@ def collate_multi_channel_audio(cuts: CutSet) -> torch.Tensor:
 
 
 def collate_vectors(
-        tensors: Iterable[Union[torch.Tensor, np.ndarray]],
-        padding_value: Union[int, float] = CrossEntropyLoss().ignore_index,
-        matching_shapes: bool = False
+    tensors: Iterable[Union[torch.Tensor, np.ndarray]],
+    padding_value: Union[int, float] = CrossEntropyLoss().ignore_index,
+    matching_shapes: bool = False,
 ) -> torch.Tensor:
     """
     Convert an iterable of 1-D tensors (of possibly various lengths)
@@ -212,22 +222,25 @@ def collate_vectors(
     :return: a tensor with shape ``(B, L)`` where ``B`` is the number of input tensors and
         ``L`` is the number of items in the longest tensor.
     """
-    tensors = [t if isinstance(t, torch.Tensor) else torch.from_numpy(t) for t in tensors]
+    tensors = [
+        t if isinstance(t, torch.Tensor) else torch.from_numpy(t) for t in tensors
+    ]
     assert all(len(t.shape) == 1 for t in tensors), "Expected only 1-D input tensors."
     longest = max(tensors, key=lambda t: t.shape[0])
     if matching_shapes:
-        assert all(t.shape == longest.shape for t in tensors), \
-            "All tensors must have the same shape when matching_shapes is set to True."
+        assert all(
+            t.shape == longest.shape for t in tensors
+        ), "All tensors must have the same shape when matching_shapes is set to True."
     result = longest.new_ones(len(tensors), longest.shape[0]) * padding_value
     for i, t in enumerate(tensors):
-        result[i, :t.shape[0]] = t
+        result[i, : t.shape[0]] = t
     return result
 
 
 def collate_matrices(
-        tensors: Iterable[Union[torch.Tensor, np.ndarray]],
-        padding_value: Union[int, float] = 0,
-        matching_shapes: bool = False
+    tensors: Iterable[Union[torch.Tensor, np.ndarray]],
+    padding_value: Union[int, float] = 0,
+    matching_shapes: bool = False,
 ) -> torch.Tensor:
     """
     Convert an iterable of 2-D tensors (of possibly various first dimension, but consistent second dimension)
@@ -239,24 +252,27 @@ def collate_matrices(
     :return: a tensor with shape ``(B, L, F)`` where ``B`` is the number of input tensors,
         ``L`` is the largest found shape[0], and ``F`` is equal to shape[1].
     """
-    tensors = [t if isinstance(t, torch.Tensor) else torch.from_numpy(t) for t in tensors]
+    tensors = [
+        t if isinstance(t, torch.Tensor) else torch.from_numpy(t) for t in tensors
+    ]
     assert all(len(t.shape) == 2 for t in tensors), "Expected only 2-D input tensors."
     longest = max(tensors, key=lambda t: t.shape[0])
     if matching_shapes:
-        assert all(t.shape == longest.shape for t in tensors), \
-            "All tensors must have the same shape when matching_shapes is set to True."
+        assert all(
+            t.shape == longest.shape for t in tensors
+        ), "All tensors must have the same shape when matching_shapes is set to True."
     result = longest.new_ones(len(tensors), *longest.shape) * padding_value
     for i, t in enumerate(tensors):
-        result[i, :t.shape[0]] = t
+        result[i, : t.shape[0]] = t
     return result
 
 
 def maybe_pad(
-        cuts: CutSet,
-        duration: int = None,
-        num_frames: int = None,
-        num_samples: int = None,
-        direction: str = 'right'
+    cuts: CutSet,
+    duration: int = None,
+    num_frames: int = None,
+    num_samples: int = None,
+    direction: str = "right",
 ) -> CutSet:
     """Check if all cuts' durations are equal and pad them to match the longest cut otherwise."""
     if len(set(c.duration for c in cuts)) == 1:
@@ -267,7 +283,7 @@ def maybe_pad(
         duration=duration,
         num_frames=num_frames,
         num_samples=num_samples,
-        direction=direction
+        direction=direction,
     )
 
 
@@ -277,14 +293,14 @@ Helper functions to dispatch jobs to the concurrent executors.
 
 
 def read_audio_from_cuts(
-        cuts: Iterable[Cut], executor: Optional[Executor] = None
+    cuts: Iterable[Cut], executor: Optional[Executor] = None
 ) -> List[torch.Tensor]:
     map_fn = map if executor is None else executor.map
     return list(map_fn(_read_audio, cuts))
 
 
 def read_features_from_cuts(
-        cuts: Iterable[Cut], executor: Optional[Executor] = None
+    cuts: Iterable[Cut], executor: Optional[Executor] = None
 ) -> List[torch.Tensor]:
     map_fn = map if executor is None else executor.map
     return list(map_fn(_read_features, cuts))

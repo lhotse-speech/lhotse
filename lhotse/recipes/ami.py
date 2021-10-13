@@ -241,7 +241,9 @@ def download_ami(
     annotations_name = "annotations.zip"
     annotations_path = annotations_dir / annotations_name
     if annotations_path.exists():
-        logging.info(f'Skip downloading annotations as they exist in: {annotations_path}')
+        logging.info(
+            f"Skip downloading annotations as they exist in: {annotations_path}"
+        )
         return
     annotations_url = f"{url}/AMICorpusAnnotations/ami_public_manual_1.6.2.zip"
     if force_download or not annotations_path.is_file():

@@ -6,16 +6,19 @@ from lhotse.utils import Pathlike
 
 
 @prepare.command(context_settings=dict(show_default=True))
-@click.argument('audio-dir', type=click.Path(exists=True, file_okay=False))
-@click.argument('transcript-dir', type=click.Path(exists=True, file_okay=False))
-@click.argument('output-dir', type=click.Path())
-@click.option('--absolute-paths', default=False,
-              help='Whether to return absolute or relative (to the corpus dir) paths for recordings.')
+@click.argument("audio-dir", type=click.Path(exists=True, file_okay=False))
+@click.argument("transcript-dir", type=click.Path(exists=True, file_okay=False))
+@click.argument("output-dir", type=click.Path())
+@click.option(
+    "--absolute-paths",
+    default=False,
+    help="Whether to return absolute or relative (to the corpus dir) paths for recordings.",
+)
 def callhome_egyptian(
-        audio_dir: Pathlike,
-        transcript_dir: Pathlike,
-        output_dir: Pathlike,
-        absolute_paths: bool
+    audio_dir: Pathlike,
+    transcript_dir: Pathlike,
+    output_dir: Pathlike,
+    absolute_paths: bool,
 ):
     """
     About the Callhome Egyptian Arabic Corpus
@@ -41,5 +44,5 @@ def callhome_egyptian(
         audio_dir=audio_dir,
         transcript_dir=transcript_dir,
         output_dir=output_dir,
-        absolute_paths=absolute_paths
+        absolute_paths=absolute_paths,
     )

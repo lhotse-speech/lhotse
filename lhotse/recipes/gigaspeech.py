@@ -14,51 +14,57 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
 
 from tqdm.auto import tqdm
 
-from lhotse import compute_num_samples, fix_manifests, validate_recordings_and_supervisions
+from lhotse import (
+    compute_num_samples,
+    fix_manifests,
+    validate_recordings_and_supervisions,
+)
 from lhotse.audio import AudioSource, Recording, RecordingSet
 from lhotse.recipes.utils import manifests_exist, read_manifests_if_cached
 from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import Pathlike, Seconds, is_module_available
 
-GIGASPEECH_PARTS = ('XL', 'L', 'M', 'S', 'XS', 'DEV', 'TEST')
+GIGASPEECH_PARTS = ("XL", "L", "M", "S", "XS", "DEV", "TEST")
 
 
 def download_gigaspeech(
-        password: str,
-        target_dir: Pathlike = '.',
-        dataset_parts: Optional[Union[str, Sequence[str]]] = "auto",
-        host: Optional[str] = 'tsinghua'
+    password: str,
+    target_dir: Pathlike = ".",
+    dataset_parts: Optional[Union[str, Sequence[str]]] = "auto",
+    host: Optional[str] = "tsinghua",
 ):
-    if is_module_available('speechcolab'):
+    if is_module_available("speechcolab"):
         from speechcolab.datasets.gigaspeech import GigaSpeech
     else:
         raise ImportError(
-            'To process the GigaSpeech corpus, please install optional dependency: pip install speechcolab')
+            "To process the GigaSpeech corpus, please install optional dependency: pip install speechcolab"
+        )
     gigaspeech = GigaSpeech(target_dir)
 
-    if dataset_parts == 'auto':
-        dataset_parts = ('XL', 'DEV', 'TEST')
+    if dataset_parts == "auto":
+        dataset_parts = ("XL", "DEV", "TEST")
     elif isinstance(dataset_parts, str):
         dataset_parts = [dataset_parts]
 
     for part in dataset_parts:
-        logging.info(f'Downloading GigaSpeech part: {part}')
-        gigaspeech.download(password, '{' + part + '}', host=host)
+        logging.info(f"Downloading GigaSpeech part: {part}")
+        gigaspeech.download(password, "{" + part + "}", host=host)
 
 
 def prepare_gigaspeech(
-        corpus_dir: Pathlike,
-        dataset_parts: Union[str, Sequence[str]] = 'auto',
-        output_dir: Optional[Pathlike] = None,
-        num_jobs: int = 1
+    corpus_dir: Pathlike,
+    dataset_parts: Union[str, Sequence[str]] = "auto",
+    output_dir: Optional[Pathlike] = None,
+    num_jobs: int = 1,
 ) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet]]]:
-    if is_module_available('speechcolab'):
+    if is_module_available("speechcolab"):
         from speechcolab.datasets.gigaspeech import GigaSpeech
     else:
         raise ImportError(
-            'To process the GigaSpeech corpus, please install optional dependency: pip install speechcolab')
+            "To process the GigaSpeech corpus, please install optional dependency: pip install speechcolab"
+        )
 
-    subsets = ('XL', 'DEV', 'TEST') if dataset_parts == 'auto' else dataset_parts
+    subsets = ("XL", "DEV", "TEST") if dataset_parts == "auto" else dataset_parts
     if isinstance(subsets, str):
         subsets = [subsets]
     corpus_dir = Path(corpus_dir)
@@ -73,27 +79,28 @@ def prepare_gigaspeech(
         manifests = read_manifests_if_cached(
             dataset_parts=dataset_parts,
             output_dir=output_dir,
-            prefix='gigaspeech',
-            suffix='jsonl.gz',
+            prefix="gigaspeech",
+            suffix="jsonl.gz",
         )
 
     with ProcessPoolExecutor(num_jobs) as ex:
         for part in subsets:
-            logging.info(f'Processing GigaSpeech subset: {part}')
+            logging.info(f"Processing GigaSpeech subset: {part}")
             if manifests_exist(
-                    part=part,
-                    output_dir=output_dir,
-                    prefix='gigaspeech',
-                    suffix='jsonl.gz'
+                part=part, output_dir=output_dir, prefix="gigaspeech", suffix="jsonl.gz"
             ):
-                logging.info(f'GigaSpeech subset: {part} already prepared - skipping.')
+                logging.info(f"GigaSpeech subset: {part} already prepared - skipping.")
                 continue
 
             recordings = []
             supervisions = []
             for recording, segments in tqdm(
-                    ex.map(parse_utterance, gigaspeech.audios('{' + part + '}'), repeat(gigaspeech.gigaspeech_dataset_dir)),
-                    desc='Processing GigaSpeech JSON entries'
+                ex.map(
+                    parse_utterance,
+                    gigaspeech.audios("{" + part + "}"),
+                    repeat(gigaspeech.gigaspeech_dataset_dir),
+                ),
+                desc="Processing GigaSpeech JSON entries",
             ):
                 recordings.append(recording)
                 supervisions.extend(segments)
@@ -102,48 +109,53 @@ def prepare_gigaspeech(
                 recordings=RecordingSet.from_recordings(recordings),
                 supervisions=SupervisionSet.from_segments(supervisions),
             )
-            validate_recordings_and_supervisions(recordings=recordings, supervisions=supervisions)
+            validate_recordings_and_supervisions(
+                recordings=recordings, supervisions=supervisions
+            )
             manifests[part] = {"recordings": recordings, "supervisions": supervisions}
 
             if output_dir is not None:
-                manifests[part]['recordings'].to_file(output_dir / f'gigaspeech_recordings_{part}.jsonl.gz')
-                manifests[part]['supervisions'].to_file(output_dir / f'gigaspeech_supervisions_{part}.jsonl.gz')
+                manifests[part]["recordings"].to_file(
+                    output_dir / f"gigaspeech_recordings_{part}.jsonl.gz"
+                )
+                manifests[part]["supervisions"].to_file(
+                    output_dir / f"gigaspeech_supervisions_{part}.jsonl.gz"
+                )
 
     return dict(manifests)
 
 
 def parse_utterance(
-        audio: Any,
-        root_path: Path
+    audio: Any, root_path: Path
 ) -> Optional[Tuple[Recording, List[SupervisionSegment]]]:
-    sampling_rate = int(audio['sample_rate'])
+    sampling_rate = int(audio["sample_rate"])
     recording = Recording(
-        id=audio['aid'],
+        id=audio["aid"],
         sources=[
             AudioSource(
-                type='file',
-                channels=list(range(int(audio['channels']))),
-                source=str(root_path / audio["path"])
+                type="file",
+                channels=list(range(int(audio["channels"]))),
+                source=str(root_path / audio["path"]),
             )
         ],
         num_samples=compute_num_samples(
-            duration=Seconds(audio['duration']),
-            sampling_rate=sampling_rate
+            duration=Seconds(audio["duration"]), sampling_rate=sampling_rate
         ),
         sampling_rate=sampling_rate,
-        duration=Seconds(audio['duration']))
+        duration=Seconds(audio["duration"]),
+    )
     segments = []
-    for seg in audio['segments']:
+    for seg in audio["segments"]:
         segments.append(
             SupervisionSegment(
-                id=seg['sid'],
-                recording_id=audio['aid'],
-                start=Seconds(seg['begin_time']),
-                duration=round(Seconds(seg['end_time'] - seg['begin_time']), ndigits=8),
+                id=seg["sid"],
+                recording_id=audio["aid"],
+                start=Seconds(seg["begin_time"]),
+                duration=round(Seconds(seg["end_time"] - seg["begin_time"]), ndigits=8),
                 channel=0,
-                language='English',
-                speaker=seg['speaker'],
-                text=seg['text_tn']
+                language="English",
+                speaker=seg["speaker"],
+                text=seg["text_tn"],
             )
         )
     return recording, segments

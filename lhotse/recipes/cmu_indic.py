@@ -54,19 +54,19 @@ SPEAKERS = (
 # Note: some genders and accents are missing, I filled in the metadata that
 #       was easily available for now.
 GENDER_MAP = {
-    'tel_kpn': 'F',
-    'hin_ab': 'F',
-    'kan_plv': 'F',
-    'ben_rm': 'F',
-    'guj_ad': 'M',
-    'mar_slp': 'F',
-    'guj_dp': 'F',
-    'tam_sdr': 'F',
-    'guj_kt': 'F',
-    'pan_amp': 'F',
-    'tel_ss': 'F',
-    'tel_sk': 'M',
-    'mar_aup': 'M',
+    "tel_kpn": "F",
+    "hin_ab": "F",
+    "kan_plv": "F",
+    "ben_rm": "F",
+    "guj_ad": "M",
+    "mar_slp": "F",
+    "guj_dp": "F",
+    "tam_sdr": "F",
+    "guj_kt": "F",
+    "pan_amp": "F",
+    "tel_ss": "F",
+    "tel_sk": "M",
+    "mar_aup": "M",
 }
 
 LANGUAGE_MAP = {
@@ -144,7 +144,7 @@ def prepare_cmu_indic(
     for path in corpus_dir.rglob("txt.done.data"):
         lines = path.read_text().splitlines()
         speaker = _get_speaker(path.parent.parent.name)
-        lang_code = speaker.split('_')[0]  # example: 'ben_rm' -> 'ben' (Bengali)
+        lang_code = speaker.split("_")[0]  # example: 'ben_rm' -> 'ben' (Bengali)
         try:
             # Example contents of voice.feats file:
             #   variant guj
@@ -153,7 +153,13 @@ def prepare_cmu_indic(
             #   description Built with build_cg_rfs_voice, 3 rf and 3 dur
             #   gujarati_data h2r_prompts
             #   prompt_dur 59.27min
-            age = int((path.parent / 'voice.feats').read_text().splitlines()[1].replace('age ', '').strip())
+            age = int(
+                (path.parent / "voice.feats")
+                .read_text()
+                .splitlines()[1]
+                .replace("age ", "")
+                .strip()
+            )
         except:
             age = None
         for l in lines:
@@ -161,16 +167,16 @@ def prepare_cmu_indic(
             seg_id, text = l.split(maxsplit=1)
             seg_id = f"{speaker}-{seg_id}"
             language = LANGUAGE_MAP[lang_code]
-            is_english = 'arctic' in seg_id
+            is_english = "arctic" in seg_id
 
             # Determine available custom meta-data to attach.
             custom = None
             if is_english or age is not None:
                 custom = {}
                 if is_english:
-                    custom['accent'] = language
+                    custom["accent"] = language
                 if age is not None:
-                    custom['age'] = age
+                    custom["age"] = age
 
             supervisions.append(
                 SupervisionSegment(
@@ -179,7 +185,7 @@ def prepare_cmu_indic(
                     start=0,
                     duration=recordings[seg_id].duration,
                     text=text.replace('"', ""),  # get rid of quotation marks,
-                    language='English' if is_english else language,
+                    language="English" if is_english else language,
                     speaker=speaker,
                     gender=GENDER_MAP.get(speaker),
                     custom=custom,

@@ -48,15 +48,15 @@ class BucketingSampler(CutSampler):
     """
 
     def __init__(
-            self,
-            *cuts: CutSet,
-            sampler_type: Type = SingleCutSampler,
-            num_buckets: int = 10,
-            bucket_method: Literal["equal_len", "equal_duration"] = "equal_len",
-            drop_last: bool = False,
-            proportional_sampling: bool = True,
-            seed: int = 0,
-            **kwargs: Any,
+        self,
+        *cuts: CutSet,
+        sampler_type: Type = SingleCutSampler,
+        num_buckets: int = 10,
+        bucket_method: Literal["equal_len", "equal_duration"] = "equal_len",
+        drop_last: bool = False,
+        proportional_sampling: bool = True,
+        seed: int = 0,
+        **kwargs: Any,
     ) -> None:
         """
         BucketingSampler's constructor.
@@ -135,7 +135,9 @@ class BucketingSampler(CutSampler):
         .. note: For BucketingSampler, it's the sum of remaining duration in all buckets.
         """
         try:
-            return sum(s.remaining_duration for _, s in self._nondepleted_samplers_with_idxs)
+            return sum(
+                s.remaining_duration for _, s in self._nondepleted_samplers_with_idxs
+            )
         except TypeError:
             return None
 
@@ -148,7 +150,9 @@ class BucketingSampler(CutSampler):
         .. note: For BucketingSampler, it's the sum of remaining cuts in all buckets.
         """
         try:
-            return sum(s.remaining_cuts for _, s in self._nondepleted_samplers_with_idxs)
+            return sum(
+                s.remaining_cuts for _, s in self._nondepleted_samplers_with_idxs
+            )
         except TypeError:
             return None
 
@@ -212,16 +216,18 @@ class BucketingSampler(CutSampler):
         """
         state_dict = super().state_dict()
         # We use deepcopies just in case somebody loads state dict during the same execution...
-        state_dict.update({
-            'num_buckets': self.num_buckets,
-            'drop_last': self.drop_last,
-            'proportional_sampling': self.proportional_sampling,
-            'bucket_method': self.bucket_method,
-            'depleted': deepcopy(self.depleted),
-            'bucket_samplers': [s.state_dict() for s in self.bucket_samplers],
-            'sampler_kwargs': deepcopy(self.sampler_kwargs),
-            'bucket_rng_state': self.bucket_rng.getstate(),
-        })
+        state_dict.update(
+            {
+                "num_buckets": self.num_buckets,
+                "drop_last": self.drop_last,
+                "proportional_sampling": self.proportional_sampling,
+                "bucket_method": self.bucket_method,
+                "depleted": deepcopy(self.depleted),
+                "bucket_samplers": [s.state_dict() for s in self.bucket_samplers],
+                "sampler_kwargs": deepcopy(self.sampler_kwargs),
+                "bucket_rng_state": self.bucket_rng.getstate(),
+            }
+        )
         return state_dict
 
     def load_state_dict(self, state_dict: Dict[str, Any]) -> None:
@@ -242,24 +248,26 @@ class BucketingSampler(CutSampler):
             For implementers of sub-classes of CutSampler: the flag ``self._just_restored_state`` has to be
             handled in ``__iter__`` to make it avoid resetting the just-restored state (only once).
         """
-        num_buckets = state_dict.pop('num_buckets')
+        num_buckets = state_dict.pop("num_buckets")
         assert self.num_buckets == num_buckets, (
             "Error in BucketingSampler.load_state_dict(): Inconsistent number of buckets: "
             f"current sampler has {self.num_buckets}, the state_dict has {num_buckets}."
         )
-        self.drop_last = state_dict.pop('drop_last')
-        self.proportional_sampling = state_dict.pop('proportional_sampling')
-        self.bucket_method = state_dict.pop('bucket_method')
-        self.sampler_kwargs = state_dict.pop('sampler_kwargs')
-        self.depleted = state_dict.pop('depleted')
-        self.bucket_rng.setstate(state_dict.pop('bucket_rng_state'))
+        self.drop_last = state_dict.pop("drop_last")
+        self.proportional_sampling = state_dict.pop("proportional_sampling")
+        self.bucket_method = state_dict.pop("bucket_method")
+        self.sampler_kwargs = state_dict.pop("sampler_kwargs")
+        self.depleted = state_dict.pop("depleted")
+        self.bucket_rng.setstate(state_dict.pop("bucket_rng_state"))
 
-        assert len(self.bucket_samplers) == len(state_dict['bucket_samplers']), (
+        assert len(self.bucket_samplers) == len(state_dict["bucket_samplers"]), (
             "Error in BucketingSampler.load_state_dict(): Inconsistent number of samplers: "
             f"current sampler has {len(self.bucket_samplers)}, "
             f"the state_dict has {len(state_dict['bucket_samplers'])}."
         )
-        for sampler, sampler_sd in zip(self.bucket_samplers, state_dict.pop('bucket_samplers')):
+        for sampler, sampler_sd in zip(
+            self.bucket_samplers, state_dict.pop("bucket_samplers")
+        ):
             sampler.load_state_dict(sampler_sd)
 
         super().load_state_dict(state_dict)
@@ -296,7 +304,7 @@ class BucketingSampler(CutSampler):
         # Note: prob1 is the probability of selecting sampler1
         try:
             prob1 = sampler1.remaining_duration / (
-                    sampler1.remaining_duration + sampler2.remaining_duration
+                sampler1.remaining_duration + sampler2.remaining_duration
             )
         except ZeroDivisionError:
             # This will happen when we have already depleted the samplers,
@@ -344,7 +352,7 @@ class BucketingSampler(CutSampler):
 
 
 def create_buckets_equal_len(
-        *cuts: CutSet, num_buckets: int
+    *cuts: CutSet, num_buckets: int
 ) -> List[Tuple[CutSet, ...]]:
     """
     Creates buckets of cuts with similar durations.
@@ -367,7 +375,7 @@ def create_buckets_equal_len(
 
 
 def create_buckets_equal_duration(
-        *cuts: CutSet, num_buckets: int
+    *cuts: CutSet, num_buckets: int
 ) -> List[Tuple[CutSet, ...]]:
     """
     Creates buckets of cuts with similar durations.
@@ -395,7 +403,7 @@ def create_buckets_equal_duration(
 
 
 def _create_buckets_equal_duration_single(
-        cuts: CutSet, num_buckets: int
+    cuts: CutSet, num_buckets: int
 ) -> List[CutSet]:
     """
     Helper method to partition a single CutSet into buckets that have the same

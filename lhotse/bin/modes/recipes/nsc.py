@@ -6,15 +6,16 @@ from lhotse.utils import Pathlike
 
 
 @prepare.command(context_settings=dict(show_default=True))
-@click.argument('corpus_dir', type=click.Path(exists=True, dir_okay=True))
-@click.argument('output_dir', type=click.Path())
-@click.option('-p', '--dataset-part', type=click.Choice(NSC_PARTS), default='PART3_SameCloseMic',
-              help='Which part of NSC should be prepared')
-def nsc(
-        corpus_dir: Pathlike,
-        output_dir: Pathlike,
-        dataset_part: str
-):
+@click.argument("corpus_dir", type=click.Path(exists=True, dir_okay=True))
+@click.argument("output_dir", type=click.Path())
+@click.option(
+    "-p",
+    "--dataset-part",
+    type=click.Choice(NSC_PARTS),
+    default="PART3_SameCloseMic",
+    help="Which part of NSC should be prepared",
+)
+def nsc(corpus_dir: Pathlike, output_dir: Pathlike, dataset_part: str):
     """
     This is a data preparation recipe for the National Corpus of Speech in Singaporean English.
     """

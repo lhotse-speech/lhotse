@@ -6,16 +6,16 @@ from lhotse.utils import Pathlike
 
 
 @prepare.command(context_settings=dict(show_default=True))
-@click.argument('audio-dir', type=click.Path(exists=True, file_okay=False))
-@click.argument('output-dir', type=click.Path())
-@click.option('--rttm-dir', type=click.Path(exists=True, file_okay=False))
-@click.option('--absolute-paths', default=False,
-              help='Whether to return absolute or relative (to the corpus dir) paths for recordings.')
+@click.argument("audio-dir", type=click.Path(exists=True, file_okay=False))
+@click.argument("output-dir", type=click.Path())
+@click.option("--rttm-dir", type=click.Path(exists=True, file_okay=False))
+@click.option(
+    "--absolute-paths",
+    default=False,
+    help="Whether to return absolute or relative (to the corpus dir) paths for recordings.",
+)
 def callhome_english(
-        audio_dir: Pathlike,
-        output_dir: Pathlike,
-        rttm_dir: Pathlike,
-        absolute_paths: bool
+    audio_dir: Pathlike, output_dir: Pathlike, rttm_dir: Pathlike, absolute_paths: bool
 ):
     """
     CallHome English (LDC2001S97) corpus preparation.
@@ -39,5 +39,5 @@ def callhome_english(
         audio_dir=audio_dir,
         rttm_dir=rttm_dir,
         output_dir=output_dir,
-        absolute_paths=absolute_paths
+        absolute_paths=absolute_paths,
     )
