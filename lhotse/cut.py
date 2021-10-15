@@ -3140,18 +3140,19 @@ class CutSet(Serializable, Sequence[Cut]):
         requires a CUDA GPU and works only with feature extractors from ``kaldifeat``
         library.
 
-        Examples:
 
-            Extract fbank features on one machine using 8 processes,
-            store arrays partitioned in 8 HDF5 files with lilcom compression:
+        Example: extract fbank features on one GPU, using 4 dataloading workers
+        for reading audio, and store the arrays in an HDF5 file with
+        lilcom compression::
 
             >>> import kaldifeat
             >>> extractor = kaldifeat.Fbank(kaldifeat.FbankOptions())
             >>> cuts = CutSet(...)
-            ... cuts.compute_and_store_features_cuda(
+            ... cuts = cuts.compute_and_store_features_cuda(
             ...     extractor=extractor,
             ...     storage_path='feats',
             ...     batch_duration=500,
+            ...     num_workers=4,
             ... )
 
         :param extractor: A feature extractor from ``kaldifeat`` library.
@@ -3194,7 +3195,7 @@ class CutSet(Serializable, Sequence[Cut]):
             "Lhotse does not support using snip_edges == True. "
             "Set it to False in your feature extractor."
         )
-        assert str(extractor.opts.device).startswith('cuda'), (
+        assert str(extractor.opts.device).startswith("cuda"), (
             "Your feature extractor doesn't seem to be placed on a CUDA device "
             f"(we detected: {extractor.opts.device}). "
         )
