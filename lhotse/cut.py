@@ -3195,13 +3195,13 @@ class CutSet(Serializable, Sequence[Cut]):
             "Lhotse does not support using snip_edges == True. "
             "Set it to False in your feature extractor."
         )
-        assert str(extractor.opts.device).startswith("cuda"), (
+        assert extractor.opts.device.type == "cuda", (
             "Your feature extractor doesn't seem to be placed on a CUDA device "
             f"(we detected: {extractor.opts.device}). "
         )
 
         frame_shift = extractor.opts.frame_opts.frame_shift_ms / 1000.0
-        dataset = UnsupervisedWaveformDataset()
+        dataset = UnsupervisedWaveformDataset(collate=False)
         sampler = SingleCutSampler(self, max_duration=batch_duration)
         dloader = DataLoader(
             dataset, batch_size=None, sampler=sampler, num_workers=num_workers
