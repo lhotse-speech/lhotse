@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Any, Dict, Optional
 
 import torch
 
@@ -24,10 +24,11 @@ class UnsupervisedDataset(torch.utils.data.Dataset):
     def __init__(self) -> None:
         super().__init__()
 
-    def __getitem__(self, cuts: CutSet) -> torch.Tensor:
+    def __getitem__(self, cuts: CutSet) -> Dict[str, Any]:
         self._validate(cuts)
         features, features_lens = collate_features(cuts)
         return {
+            "cuts": cuts,
             "features": features,
             "features_lens": features_lens,
         }
@@ -53,12 +54,20 @@ class UnsupervisedWaveformDataset(UnsupervisedDataset):
         }
     """
 
-    def __getitem__(self, cuts: CutSet) -> torch.Tensor:
-        audio, audio_lens = collate_audio(cuts)
-        return {
-            "audio": audio,
-            "audio_lens": audio_lens,
-        }
+    def __init__(self, collate: bool = True) -> None:
+        super().__init__()
+        self.collate = collate
+
+    def __getitem__(self, cuts: CutSet) -> Dict[str, Any]:
+        if self.collate:
+            audio, audio_lens = collate_audio(cuts)
+            return {
+                "cuts": cuts,
+                "audio": audio,
+                "audio_lens": audio_lens,
+            }
+        else:
+            return {"cuts": cuts, "audio": [c.load_audio() for c in cuts]}
 
     def _validate(self, cuts: CutSet) -> None:
         validate(cuts)

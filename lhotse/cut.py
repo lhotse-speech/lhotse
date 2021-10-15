@@ -3124,6 +3124,163 @@ class CutSet(Serializable, Sequence[Cut]):
         """
         return CutSet.from_cuts(c.drop_supervisions() for c in self)
 
+    def compute_and_store_features_cuda(
+        self,
+        extractor,
+        storage_path: Pathlike,
+        batch_duration: Seconds = 600.0,
+        num_workers: int = 4,
+        chunk_size: Optional[int] = 1000,
+        augment_fn: Optional[AugmentFn] = None,
+        storage_type: Type[FW] = LilcomHdf5Writer,
+    ) -> "CutSet":
+        """
+        Extract features for all cuts in batches, using GPU.
+        This may be much faster than :meth:`.CutSet.compute_and_store_features` but
+        requires a CUDA GPU and works only with feature extractors from ``kaldifeat``
+        library.
+
+        Examples:
+
+            Extract fbank features on one machine using 8 processes,
+            store arrays partitioned in 8 HDF5 files with lilcom compression:
+
+            >>> import kaldifeat
+            >>> extractor = kaldifeat.Fbank(kaldifeat.FbankOptions())
+            >>> cuts = CutSet(...)
+            ... cuts.compute_and_store_features_cuda(
+            ...     extractor=extractor,
+            ...     storage_path='feats',
+            ...     batch_duration=500,
+            ... )
+
+        :param extractor: A feature extractor from ``kaldifeat`` library.
+        :param storage_path: The path to location where we will store the features.
+            The exact type and layout of stored files will be dictated by the
+            ``storage_type`` argument.
+        :param batch_duration: The maximum number of audio seconds in a batch.
+            Determines batch size dynamically.
+        :param num_workers: How many background dataloading workers should be used
+            for reading the audio.
+        :param chunk_size: Safe-guard against memory blow-ups when processing long
+            recordings. At each time, at most this many frames will be computed.
+            Default 1000 frames; set to ``None`` to disable.
+        :param augment_fn: an optional callable used for audio augmentation.
+            Be careful with the types of augmentations used: if they modify
+            the start/end/duration times of the cut and its supervisions,
+            you will end up with incorrect supervision information when using this API.
+            E.g. for speed perturbation, use ``CutSet.perturb_speed()`` instead.
+        :param storage_type: a ``FeaturesWriter`` subclass type.
+            It determines how the features are stored to disk,
+            e.g. separate file per array, HDF5 files with multiple arrays, etc.
+        :return: Returns a new ``CutSet`` with ``Features`` manifests attached to the cuts.
+        """
+        KALDIFEAT_ERR_MESSAGE = (
+            "For GPU pre-computed feature extraction, we only support kaldifeat extractors. "
+            "See https://github.com/csukuangfj/kaldifeat for details."
+        )
+
+        import torch
+        from torch.utils.data import DataLoader
+        from lhotse.dataset import SingleCutSampler, UnsupervisedWaveformDataset
+        from lhotse.qa import validate_features
+        from lhotse.utils import is_module_available
+
+        assert is_module_available("kaldifeat"), KALDIFEAT_ERR_MESSAGE
+        from kaldifeat.offline_feature import OfflineFeature
+
+        assert isinstance(extractor, OfflineFeature), KALDIFEAT_ERR_MESSAGE
+        assert not extractor.opts.frame_opts.snip_edges, (
+            "Lhotse does not support using snip_edges == True. "
+            "Set it to False in your feature extractor."
+        )
+        assert str(extractor.opts.device).startswith('cuda'), (
+            "Your feature extractor doesn't seem to be placed on a CUDA device "
+            f"(we detected: {extractor.opts.device}). "
+        )
+
+        frame_shift = extractor.opts.frame_opts.frame_shift_ms / 1000.0
+        dataset = UnsupervisedWaveformDataset()
+        sampler = SingleCutSampler(self, max_duration=batch_duration)
+        dloader = DataLoader(
+            dataset, batch_size=None, sampler=sampler, num_workers=num_workers
+        )
+
+        cuts_with_feats = []
+        with storage_type(storage_path) as writer, tqdm(
+            desc="Computing features in batches", total=sampler.num_cuts
+        ) as progress:
+            for batch in dloader:
+                cuts = batch["cuts"]
+                waves = batch["audio"]
+
+                # Optionally apply the augment_fn
+                if augment_fn is not None:
+                    waves = [
+                        augment_fn(w, c.sampling_rate) for c, w in zip(cuts, waves)
+                    ]
+
+                # Move the audio data to the GPU and remove the channel dimension.
+                waves = [w.squeeze().to(extractor.opts.device) for w in waves]
+
+                # The actual extraction is here.
+                with torch.no_grad():
+                    # Note: chunk_size option limits the memory consumption
+                    # for very long cuts.
+                    features = extractor(waves, chunk_size=chunk_size)
+
+                for cut, feat_mtx in zip(cuts, features):
+                    if isinstance(cut, PaddingCut):
+                        # For padding cuts, just fill out the fields in the manfiest
+                        # and don't store anything.
+                        cuts_with_feats.append(
+                            fastcopy(
+                                cut,
+                                num_frames=feat_mtx.shape[0],
+                                num_features=feat_mtx.shape[1],
+                                frame_shift=frame_shift,
+                            )
+                        )
+                        continue
+                    # Store the computed features and describe them in a manifest.
+                    storage_key = writer.write(cut.id, feat_mtx.cpu().numpy())
+                    feat_manifest = Features(
+                        start=cut.start,
+                        duration=cut.duration,
+                        type=f"kaldifeat.{extractor}",
+                        num_frames=feat_mtx.shape[0],
+                        num_features=feat_mtx.shape[1],
+                        frame_shift=frame_shift,
+                        sampling_rate=cut.sampling_rate,
+                        channels=0,
+                        storage_type=writer.name,
+                        storage_path=str(writer.storage_path),
+                        storage_key=storage_key,
+                    )
+                    validate_features(feat_manifest, feats_data=feat_mtx)
+
+                    # Update the cut manifest.
+                    if isinstance(cut, MonoCut):
+                        cut = fastcopy(cut, features=feat_manifest)
+                    if isinstance(cut, MixedCut):
+                        # If this was a mixed cut, we will just discard its
+                        # recordings and create a new mono cut that has just
+                        # the features attached.
+                        cut = MonoCut(
+                            id=cut.id,
+                            start=0,
+                            duration=cut.duration,
+                            channel=0,
+                            supervisions=cut.supervisions,
+                            features=feat_manifest,
+                            recording=None,
+                        )
+                    cuts_with_feats.append(cut)
+
+                progress.update(len(cuts))
+
+        return CutSet.from_cuts(cuts_with_feats)
+
     def compute_and_store_features(
         self,
         extractor: FeatureExtractor,
