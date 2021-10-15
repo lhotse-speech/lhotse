@@ -8,8 +8,17 @@ __all__ = ["timit"]
 
 
 @prepare.command(context_settings=dict(show_default=True))
-@click.argument("corpus_dir", type=click.Path(exists=True, dir_okay=True))
-@click.argument("splits_dir", type=click.Path(exists=True, dir_okay=True))
+@click.argument(
+    "corpus_dir",
+    type=click.Path(exists=True, dir_okay=True),
+    help="The path of the data dir",
+)
+@click.argument(
+    "splits_dir",
+    type=click.Path(exists=True, dir_okay=True),
+    help="The path of the txt files for data division. "
+    "The data is divided into (train, dev, tst) in the same way as kaldi.",
+)
 @click.argument("output_dir", type=click.Path())
 @click.option(
     "-p",
