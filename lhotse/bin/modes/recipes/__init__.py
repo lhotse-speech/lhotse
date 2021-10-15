@@ -29,5 +29,6 @@ from .musan import *
 from .nsc import *
 from .switchboard import *
 from .tedlium import *
+from .timit import *
 from .vctk import *
 from .yesno import *
