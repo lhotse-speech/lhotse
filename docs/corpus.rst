@@ -107,6 +107,8 @@ a CLI tool that create the manifests given a corpus directory.
     - :func:`lhotse.recipes.prepare_switchboard`
   * - TED-LIUM v3
     - :func:`lhotse.recipes.prepare_tedlium`
+  * - TIMIT
+    - :func:`lhotse.recipes.prepare_timit`
   * - VCTK
     - :func:`lhotse.recipes.prepare_vctk`
   * - YesNo
