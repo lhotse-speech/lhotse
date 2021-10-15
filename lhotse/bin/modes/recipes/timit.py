@@ -37,7 +37,6 @@ def timit(
     :param corpus_dir: Pathlike, the path of the data dir.
     :param splits_dir: Pathlike, the path of the txt files for data division (train, dev, tst).
     :param output_dir: Pathlike, the path where to write and save the manifests.
-    :param num_phones: int=48, the number of phones (60, 48 or 39) for modeling and 48 is regarded as the default value.
     """
     prepare_timit(
         corpus_dir,
