@@ -8,17 +8,8 @@ __all__ = ["timit"]
 
 
 @prepare.command(context_settings=dict(show_default=True))
-@click.argument(
-    "corpus_dir",
-    type=click.Path(exists=True, dir_okay=True),
-    help="The path of the data dir",
-)
-@click.argument(
-    "splits_dir",
-    type=click.Path(exists=True, dir_okay=True),
-    help="The path of the txt files for data division. "
-    "The data is divided into (train, dev, tst) in the same way as kaldi.",
-)
+@click.argument("corpus_dir", type=click.Path(exists=True, dir_okay=True))
+@click.argument("splits_dir", type=click.Path(exists=True, dir_okay=True))
 @click.argument("output_dir", type=click.Path())
 @click.option(
     "-p",
@@ -40,9 +31,14 @@ def timit(
     splits_dir: Pathlike,
     output_dir: Pathlike,
     num_phones: int,
-    num_jobs: int,
+    num_jobs: int = 1,
 ):
-    """TIMIT data preparation."""
+    """TIMIT data preparation.
+    :param corpus_dir: Pathlike, the path of the data dir.
+    :param splits_dir: Pathlike, the path of the txt files for data division (train, dev, tst).
+    :param output_dir: Pathlike, the path where to write and save the manifests.
+    :param num_phones: int=48, the number of phones (60, 48 or 39) for modeling and 48 is regarded as the default value.
+    """
     prepare_timit(
         corpus_dir,
         splits_dir=splits_dir,
