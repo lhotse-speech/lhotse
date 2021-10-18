@@ -22,7 +22,7 @@ class MfccConfig:
 
     # MFCC-related part
     low_freq: float = 20.0
-    high_freq: float = 0.0
+    high_freq: float = -400.0
     num_mel_bins: int = 23
     use_energy: bool = False
     vtln_low: float = 100.0

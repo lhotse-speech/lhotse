@@ -91,13 +91,12 @@ class KaldifeatFbankConfig:
     def from_dict(data: Dict[str, Any]) -> "KaldifeatFbankConfig":
         frame_opts = KaldifeatFrameOptions.from_dict(data.pop("frame_opts"))
         mel_opts = KaldifeatMelOptions.from_dict(data.pop("mel_opts"))
-        x = KaldifeatFbankConfig(frame_opts=frame_opts, mel_opts=mel_opts, **data)
-        return x
+        return KaldifeatFbankConfig(frame_opts=frame_opts, mel_opts=mel_opts, **data)
 
 
 @register_extractor
 class KaldifeatFbank(FeatureExtractor):
-    """Log Mel energy filter bank feature extractor based on ``torchaudio.compliance.kaldi.fbank`` function."""
+    """Log Mel energy filter bank feature extractor based on ``kaldifeat`` package."""
 
     name = "kaldifeat-fbank"
     config_type = KaldifeatFbankConfig
@@ -166,3 +165,97 @@ class KaldifeatFbank(FeatureExtractor):
     @staticmethod
     def compute_energy(features: np.ndarray) -> float:
         return float(np.sum(np.exp(features)))
+
+
+@dataclass
+class KaldifeatMfccConfig:
+    frame_opts: KaldifeatFrameOptions = KaldifeatFrameOptions()
+    mel_opts: KaldifeatMelOptions = KaldifeatMelOptions(num_bins=23)
+    num_ceps: int = 13
+    use_energy: bool = False
+    energy_floor: float = EPSILON  # default was 0.0
+    raw_energy: bool = True
+    cepstral_lifter: float = 22.0
+    htk_compat: bool = False
+    device: Union[str, torch.device] = "cpu"
+
+    # This is an extra setting compared to kaldifeat FbankOptions:
+    # by default, we'll ask kaldifeat to compute the feats in chunks
+    # to avoid excessive memory usage.
+    chunk_size: Optional[int] = 1000
+
+    def __post_init__(self):
+        if not isinstance(self.device, torch.device):
+            self.device = torch.device(self.device)
+
+    def to_dict(self) -> Dict[str, Any]:
+        d = asdict(self)
+        d["frame_opts"] = self.frame_opts.to_dict()
+        d["mel_opts"] = self.mel_opts.to_dict()
+        # Note: always overwrite the device to avoid CUDA placement errors
+        #       when loading from config file.
+        d["device"] = "cpu"
+        return d
+
+    @staticmethod
+    def from_dict(data: Dict[str, Any]) -> "KaldifeatMfccConfig":
+        frame_opts = KaldifeatFrameOptions.from_dict(data.pop("frame_opts"))
+        mel_opts = KaldifeatMelOptions.from_dict(data.pop("mel_opts"))
+        return KaldifeatMfccConfig(frame_opts=frame_opts, mel_opts=mel_opts, **data)
+
+
+@register_extractor
+class KaldifeatMfcc(FeatureExtractor):
+    """MFCC feature extractor based on ``kaldifeat`` package."""
+
+    name = "kaldifeat-mfcc"
+    config_type = KaldifeatMfccConfig
+
+    def __init__(self, config: Optional[KaldifeatMfccConfig] = None) -> None:
+        super().__init__(config=config)
+        assert is_module_available(
+            "kaldifeat"
+        ), 'To use KaldifeatMfcc, please "pip install kaldifeat" first.'
+
+        from kaldifeat import Mfcc, MfccOptions
+
+        settings = self.config.to_dict()
+        settings.pop("chunk_size")  # kaldifeat expects that setting elsewhere
+        settings["device"] = self.config.device
+        self.extractor = Mfcc(MfccOptions.from_dict(settings))
+
+    def extract(
+            self, samples: Union[np.ndarray, torch.Tensor], sampling_rate: int
+    ) -> Union[np.ndarray, torch.Tensor, List[np.ndarray], List[torch.Tensor]]:
+        # Check for sampling rate compatibility.
+        expected_sr = self.config.frame_opts.sampling_rate
+        assert (
+                sampling_rate == expected_sr
+        ), f"Mismatched sampling rate: extractor expects {expected_sr}, got {sampling_rate}"
+
+        # kaldifeat expects a list of 1D torch tensors.
+        # If we got a torch tensor / list of torch tensors in the input,
+        # we'll also return torch tensors. If we got numpy arrays, we
+        # will convert back to numpy.
+        maybe_as_numpy = lambda x: x
+        samples = list(samples)
+        for idx in range(len(samples)):
+            if isinstance(samples[idx], np.ndarray):
+                samples[idx] = torch.from_numpy(samples[idx])
+                maybe_as_numpy = lambda x: x.numpy()
+
+        # Actual feature extraction.
+        result = self.extractor(samples, chunk_size=self.config.chunk_size)
+
+        # If all items are of the same shape, concatenate
+        if all(item.shape == result[0].shape for item in result):
+            return maybe_as_numpy(torch.cat(result, dim=0))
+        else:
+            return [maybe_as_numpy(r) for r in result]
+
+    def feature_dim(self, sampling_rate: int) -> int:
+        return self.config.mel_opts.num_bins
+
+    @property
+    def frame_shift(self) -> Seconds:
+        return self.config.frame_opts.frame_shift

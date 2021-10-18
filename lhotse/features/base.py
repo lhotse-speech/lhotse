@@ -255,7 +255,7 @@ class FeatureExtractor(metaclass=ABCMeta):
         return cls.from_dict(load_yaml(path))
 
     def to_yaml(self, path: Pathlike):
-        data = self.config.to_dict()
+        data = self.to_dict()
         save_to_yaml(data, path=path)
 
 

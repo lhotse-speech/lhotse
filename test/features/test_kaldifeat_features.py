@@ -4,10 +4,11 @@ import numpy as np
 import pytest
 import torchaudio
 
-from lhotse import Fbank, KaldifeatFbank
+from lhotse import Fbank, KaldifeatFbank, Mfcc
 from lhotse.features import (
     create_default_feature_extractor,
 )
+from lhotse.features.kaldifeat import KaldifeatMfcc
 from lhotse.utils import nullcontext as does_not_raise
 
 # TODO: uncomment before merging
@@ -20,6 +21,7 @@ from lhotse.utils import nullcontext as does_not_raise
     ["feature_type", "exception_expectation"],
     [
         ("kaldifeat-fbank", does_not_raise()),
+        ("kaldifeat-mfcc", does_not_raise()),
     ],
 )
 def test_feature_extractor(feature_type, exception_expectation):
@@ -34,6 +36,7 @@ def test_feature_extractor(feature_type, exception_expectation):
     ["extractor1", "extractor2"],
     [
         (KaldifeatFbank(), Fbank()),
+        (KaldifeatMfcc(), Mfcc()),
     ],
 )
 def test_kaldifeat_torchaudio_equivalence(extractor1, extractor2):
@@ -45,7 +48,7 @@ def test_kaldifeat_torchaudio_equivalence(extractor1, extractor2):
     np.testing.assert_almost_equal(feat1, feat2, decimal=4)
 
 
-@pytest.mark.parametrize("feature_type", ["kaldifeat-fbank"])
+@pytest.mark.parametrize("feature_type", ["kaldifeat-fbank", "kaldifeat-mfcc"])
 def test_feature_extractor_serialization(feature_type):
     fe = create_default_feature_extractor(feature_type)
     with NamedTemporaryFile() as f:
