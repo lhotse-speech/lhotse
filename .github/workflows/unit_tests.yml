@@ -34,6 +34,7 @@ jobs:
         pip install --no-cache-dir numpy
         pip install --no-cache-dir '.[tests]'
         pip install smart_open[http]  # for URL audio downloading test
+        pip install kaldifeat  # for running kaldifeat tests
     - name: Install sph2pipe
       run: |
         lhotse install-sph2pipe  # Handle sphere files.

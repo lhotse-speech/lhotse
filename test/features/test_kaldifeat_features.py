@@ -4,12 +4,16 @@ import numpy as np
 import pytest
 import torchaudio
 
-from lhotse import Fbank, KaldiFbank, KaldifeatFbank
+from lhotse import Fbank, KaldifeatFbank
 from lhotse.features import (
     create_default_feature_extractor,
 )
 from lhotse.utils import nullcontext as does_not_raise
 
+# TODO: uncomment before merging
+# kaldifeat = pytest.importorskip(
+#     "kaldifeat", reason="Kaldifeat tests require kaldifeat to be installed."
+# )
 
 @pytest.mark.parametrize(
     ["feature_type", "exception_expectation"],
@@ -26,10 +30,10 @@ def test_feature_extractor(feature_type, exception_expectation):
 
 
 @pytest.mark.parametrize(
-    ['extractor1', 'extractor2'],
+    ["extractor1", "extractor2"],
     [
         (KaldifeatFbank(), Fbank()),
-    ]
+    ],
 )
 def test_kaldifeat_torchaudio_equivalence(extractor1, extractor2):
     sampling_rate = 16000
