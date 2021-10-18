@@ -112,7 +112,7 @@ class KaldifeatFbank(FeatureExtractor):
 
         settings = self.config.to_dict()
         settings.pop("chunk_size")  # kaldifeat expects that setting elsewhere
-        settings['device'] = self.config.device
+        settings["device"] = self.config.device
         self.extractor = Fbank(FbankOptions.from_dict(settings))
 
     def extract(

@@ -15,6 +15,7 @@ from lhotse.utils import nullcontext as does_not_raise
 #     "kaldifeat", reason="Kaldifeat tests require kaldifeat to be installed."
 # )
 
+
 @pytest.mark.parametrize(
     ["feature_type", "exception_expectation"],
     [

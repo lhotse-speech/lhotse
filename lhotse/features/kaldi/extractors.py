@@ -108,7 +108,6 @@ class KaldiMfccConfig:
         return KaldiMfccConfig(**data)
 
 
-
 @register_extractor
 class KaldiMfcc(FeatureExtractor):
     name = "kaldi-mfcc"
