@@ -26,7 +26,12 @@ from .io import (
     close_cached_file_handles,
 )
 from .kaldi.extractors import KaldiFbank, KaldiFbankConfig, KaldiMfcc, KaldiMfccConfig
-from .kaldifeat import KaldifeatFbank, KaldifeatFbankConfig
+from .kaldifeat import (
+    KaldifeatFbank,
+    KaldifeatFbankConfig,
+    KaldifeatMfcc,
+    KaldifeatMfccConfig,
+)
 from .librosa_fbank import LibrosaFbank, LibrosaFbankConfig
 from .mfcc import Mfcc, MfccConfig
 from .mixer import FeatureMixer
