@@ -1,4 +1,5 @@
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
+from typing import Any, Dict
 
 from lhotse.features.base import TorchaudioFeatureExtractor, register_extractor
 from lhotse.utils import EPSILON, Seconds
@@ -29,6 +30,13 @@ class MfccConfig:
     vtln_warp: float = 1.0
     cepstral_lifter: float = 22.0
     num_ceps: int = 13
+
+    def to_dict(self) -> Dict[str, Any]:
+        return asdict(self)
+
+    @staticmethod
+    def from_dict(data: Dict[str, Any]) -> "MfccConfig":
+        return MfccConfig(**data)
 
 
 @register_extractor

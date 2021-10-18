@@ -242,16 +242,20 @@ class FeatureExtractor(metaclass=ABCMeta):
         feature_type = data.pop("feature_type")
         extractor_type = get_extractor_type(feature_type)
         # noinspection PyUnresolvedReferences
-        config = extractor_type.config_type(**data)
+        config = extractor_type.config_type.from_dict(data)
         return extractor_type(config)
+
+    def to_dict(self) -> Dict[str, Any]:
+        d = self.config.to_dict()
+        d["feature_type"] = self.name  # Insert the typename for config readability
+        return d
 
     @classmethod
     def from_yaml(cls, path: Pathlike) -> "FeatureExtractor":
         return cls.from_dict(load_yaml(path))
 
     def to_yaml(self, path: Pathlike):
-        data = asdict(self.config)
-        data["feature_type"] = self.name  # Insert the typename for config readability
+        data = self.config.to_dict()
         save_to_yaml(data, path=path)
 
 
