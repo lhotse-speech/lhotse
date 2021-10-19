@@ -1,5 +1,7 @@
 from pathlib import Path
 from typing import Optional
+import os
+import json
 
 import click
 
@@ -55,19 +57,35 @@ def split(num_splits: int, manifest: Pathlike, output_dir: Pathlike, shuffle: bo
 @click.argument("output_manifest", type=click.Path())
 @click.option("--first", type=int)
 @click.option("--last", type=int)
+@click.option(
+    "--cutids",
+    type=str,
+    help="Json string or path to json file containing array of cutids strings",
+)
 def subset(
     manifest: Pathlike,
     output_manifest: Pathlike,
     first: Optional[int],
     last: Optional[int],
+    cutids: Optional[str],
 ):
     """Load MANIFEST, select the FIRST or LAST number of items and store it in OUTPUT_MANIFEST."""
     from lhotse import load_manifest
 
     output_manifest = Path(output_manifest)
     manifest = Path(manifest)
-    any_set = load_manifest(manifest)
-    a_subset = any_set.subset(first=first, last=last)
+    a_subset = load_manifest(manifest)
+
+    if cutids:
+        if os.path.exists(cutids):
+            with open(cutids, "rt") as r:
+                ids = json.load(r)
+        else:
+            ids = json.loads(cutids)
+        a_subset = a_subset.subset(cut_ids=ids)
+
+    if first is not None or last is not None:
+        a_subset = a_subset.subset(first=first, last=last)
     a_subset.to_file(output_manifest)
 
 
