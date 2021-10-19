@@ -33,12 +33,16 @@ def test_feature_extractor(feature_type, exception_expectation):
         ("pitch", pytest.raises(Exception)),
     ],
 )
-def test_feature_extractor_batch_extract_uneven_sequences(feature_type, exception_expectation):
+def test_feature_extractor_batch_extract_uneven_sequences(
+    feature_type, exception_expectation
+):
     # For now, just test that it runs
     with exception_expectation:
         fe = create_default_feature_extractor(feature_type)
         samples, sr = torchaudio.load("test/fixtures/libri/libri-1088-134315-0000.wav")
-        results = fe.extract_batch(samples=[samples, samples[:, :4000]], sampling_rate=sr)
+        results = fe.extract_batch(
+            samples=[samples, samples[:, :4000]], sampling_rate=sr
+        )
         assert isinstance(results, list)
         assert len(results) == 2
 
