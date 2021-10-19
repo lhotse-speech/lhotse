@@ -76,7 +76,7 @@ def subset(
     manifest = Path(manifest)
     a_subset = load_manifest(manifest)
 
-    if cutids:
+    if cutids is not None:
         if os.path.exists(cutids):
             with open(cutids, "rt") as r:
                 ids = json.load(r)
