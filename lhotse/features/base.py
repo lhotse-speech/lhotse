@@ -127,6 +127,43 @@ class FeatureExtractor(metaclass=ABCMeta):
             "after, rather than before mixing the cuts."
         )
 
+    def extract_batch(
+        self, samples: Union[np.ndarray, Sequence[np.ndarray]], sampling_rate: int
+    ) -> Union[np.ndarray, List[np.ndarray]]:
+        """
+        Performs batch extraction. It is not guaranteed to be faster
+        than :meth:`FeatureExtractor.extract` -- it depends on whether
+        the implementation of a particular feature extractor supports
+        accelerated batch computation.
+
+        .. note::
+            Unless overridden by child classes, it defaults to sequentially
+            calling :meth:`FeatureExtractor.extract` on the inputs.
+
+        .. note::
+            This method *should* support variable length inputs.
+        """
+
+        if isinstance(samples, list):
+            pass
+        elif samples.ndim > 1:
+            samples = list(samples)
+        else:
+            # The user passed an array/tensor of shape (num_samples,)
+            samples = [samples.reshape(1, -1)]
+
+        result = []
+        for item in samples:
+            result.append(self.extract(item, sampling_rate=sampling_rate))
+
+        # If all items are of the same shape, concatenate
+        if len(result) == 1:
+            return result[0]
+        elif all(item.shape == result[0].shape for item in result[1:]):
+            return np.stack(result, dim=0)
+        else:
+            return result
+
     def extract_from_samples_and_store(
         self,
         samples: np.ndarray,

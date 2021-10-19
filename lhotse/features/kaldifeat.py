@@ -59,7 +59,10 @@ class KaldifeatMelOptions:
 
 
 class KaldifeatExtractor(FeatureExtractor, ABC):
-    """Base class with shared implementation for kaldifeat feature extractors."""
+    """
+    Base class with shared implementation for kaldifeat feature extractors.
+    Derived classes are expected to set ``self.extractor`` inside ``__init__``.
+    """
 
     def __init__(self, config: Optional[Any] = None) -> None:
         super().__init__(config=config)
@@ -71,6 +74,15 @@ class KaldifeatExtractor(FeatureExtractor, ABC):
         settings.pop("chunk_size")  # kaldifeat expects that setting elsewhere
         settings["device"] = self.config.device
 
+    def extract_batch(
+        self,
+        samples: Union[
+            np.ndarray, torch.Tensor, Sequence[np.ndarray], Sequence[torch.Tensor]
+        ],
+        sampling_rate: int,
+    ) -> Union[np.ndarray, torch.Tensor, List[np.ndarray], List[torch.Tensor]]:
+        return self.extract(samples=samples, sampling_rate=sampling_rate)
+
     def extract(
         self,
         samples: Union[
@@ -80,16 +92,25 @@ class KaldifeatExtractor(FeatureExtractor, ABC):
     ) -> Union[np.ndarray, torch.Tensor, List[np.ndarray], List[torch.Tensor]]:
         # Check for sampling rate compatibility.
         expected_sr = self.config.frame_opts.sampling_rate
-        assert (
-            sampling_rate == expected_sr
-        ), f"Mismatched sampling rate: extractor expects {expected_sr}, got {sampling_rate}"
+        assert sampling_rate == expected_sr, (
+            f"Mismatched sampling rate: extractor expects {expected_sr}, "
+            f"got {sampling_rate}"
+        )
 
         # kaldifeat expects a list of 1D torch tensors.
         # If we got a torch tensor / list of torch tensors in the input,
         # we'll also return torch tensors. If we got numpy arrays, we
         # will convert back to numpy.
         maybe_as_numpy = lambda x: x
-        samples = list(samples)
+
+        if isinstance(samples, list):
+            pass
+        elif samples.ndim > 1:
+            samples = list(samples)
+        else:
+            # The user passed an array/tensor of shape (num_samples,)
+            samples = [samples]
+
         for idx in range(len(samples)):
             if isinstance(samples[idx], np.ndarray):
                 samples[idx] = torch.from_numpy(samples[idx])
@@ -102,8 +123,10 @@ class KaldifeatExtractor(FeatureExtractor, ABC):
         result = self.extractor(samples, chunk_size=self.config.chunk_size)
 
         # If all items are of the same shape, concatenate
-        if all(item.shape == result[0].shape for item in result):
-            return maybe_as_numpy(torch.cat(result, dim=0))
+        if len(result) == 1:
+            return maybe_as_numpy(result[0])
+        elif all(item.shape == result[0].shape for item in result[1:]):
+            return maybe_as_numpy(torch.stack(result, dim=0))
         else:
             return [maybe_as_numpy(r) for r in result]
 
@@ -160,7 +183,9 @@ class KaldifeatFbank(KaldifeatExtractor):
         super().__init__(config)
         import kaldifeat
 
-        self.extractor = kaldifeat.Fbank(kaldifeat.FbankOptions.from_dict(self.config.to_dict()))
+        self.extractor = kaldifeat.Fbank(
+            kaldifeat.FbankOptions.from_dict(self.config.to_dict())
+        )
 
     def feature_dim(self, sampling_rate: int) -> int:
         return self.config.mel_opts.num_bins
@@ -230,7 +255,9 @@ class KaldifeatMfcc(KaldifeatExtractor):
         super().__init__(config)
         import kaldifeat
 
-        self.extractor = kaldifeat.Mfcc(kaldifeat.MfccOptions.from_dict(self.config.to_dict()))
+        self.extractor = kaldifeat.Mfcc(
+            kaldifeat.MfccOptions.from_dict(self.config.to_dict())
+        )
 
     def feature_dim(self, sampling_rate: int) -> int:
         return self.config.num_ceps

@@ -2,6 +2,7 @@ from tempfile import NamedTemporaryFile
 
 import numpy as np
 import pytest
+import torch
 import torchaudio
 
 from lhotse import Fbank, KaldifeatFbank, Mfcc
@@ -30,6 +31,56 @@ def test_feature_extractor(feature_type, exception_expectation):
         fe = create_default_feature_extractor(feature_type)
         samples, sr = torchaudio.load("test/fixtures/libri/libri-1088-134315-0000.wav")
         fe.extract(samples=samples, sampling_rate=sr)
+
+
+@pytest.mark.parametrize(
+    "input",
+    [
+        np.arange(8000, dtype=np.float32),
+        torch.arange(8000, dtype=torch.float32),
+        [np.arange(8000, dtype=np.float32)],
+        torch.arange(8000, dtype=torch.float32),
+        [np.arange(8000, dtype=np.float32).reshape(1, -1)],
+        [torch.arange(8000, dtype=torch.float32).unsqueeze(0)],
+    ],
+)
+def test_kaldifeat_supports_single_input_waveform(input):
+    fe = KaldifeatFbank()
+    feats = fe.extract(input, sampling_rate=16000)
+    assert feats.shape == (50, 80)
+
+
+@pytest.mark.parametrize(
+    "input",
+    [
+        [
+            np.arange(8000, dtype=np.float32),
+            np.arange(8000, dtype=np.float32),
+        ],
+        [
+            torch.arange(8000, dtype=torch.float32),
+            torch.arange(8000, dtype=torch.float32),
+        ],
+    ],
+)
+def test_kaldifeat_supports_list_of_even_len_inputs(input):
+    fe = KaldifeatFbank()
+    feats = fe.extract(input, sampling_rate=16000)
+    assert feats.ndim == 3
+    assert feats.shape == (2, 50, 80)
+
+
+def test_kaldifeat_supports_list_of_uneven_len_inputs():
+    input = [
+        torch.arange(8000, dtype=torch.float32),
+        torch.arange(16000, dtype=torch.float32),
+    ]
+    fe = KaldifeatFbank()
+    feats = fe.extract(input, sampling_rate=16000)
+    assert len(feats) == 2
+    f1, f2 = feats
+    assert f1.shape == (50, 80)
+    assert f2.shape == (100, 80)
 
 
 @pytest.mark.parametrize(
