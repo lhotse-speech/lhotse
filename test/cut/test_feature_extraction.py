@@ -2,15 +2,29 @@ import multiprocessing
 import sys
 from concurrent.futures.process import ProcessPoolExecutor
 from functools import partial
-from tempfile import TemporaryDirectory
+from tempfile import NamedTemporaryFile, TemporaryDirectory
 from unittest.mock import Mock
 
 import pytest
 
-from lhotse import CutSet, Fbank, LilcomHdf5Writer, MonoCut, Recording
+from lhotse import (
+    CutSet,
+    Fbank,
+    KaldiFbank,
+    KaldiMfcc,
+    KaldifeatFbank,
+    KaldifeatMfcc,
+    LibrosaFbank,
+    LibrosaFbankConfig, LilcomHdf5Writer,
+    Mfcc,
+    MonoCut,
+    Recording,
+    validate,
+)
 from lhotse.audio import AudioSource
 from lhotse.cut import MixedCut
 from lhotse.features.io import LilcomFilesWriter
+from lhotse.utils import is_module_available
 
 
 @pytest.fixture
@@ -148,3 +162,45 @@ def test_extract_and_store_features_from_cut_set(
         arr = cuts[1].load_features()
         assert arr.shape[0] == 100
         assert arr.shape[1] == extractor.feature_dim(cuts[0].sampling_rate)
+
+
+@pytest.mark.parametrize(
+    "extractor_type",
+    [
+        Fbank,
+        Mfcc,
+        KaldiFbank,
+        KaldiMfcc,
+        pytest.param(
+            KaldifeatFbank,
+            marks=pytest.mark.skipif(
+                not is_module_available("kaldifeat"),
+                reason="Requires kaldifeat to run.",
+            ),
+        ),
+        pytest.param(
+            KaldifeatMfcc,
+            marks=pytest.mark.skipif(
+                not is_module_available("kaldifeat"),
+                reason="Requires kaldifeat to run.",
+            ),
+        ),
+        pytest.param(
+            lambda: LibrosaFbank(LibrosaFbankConfig(sampling_rate=16000)),
+            marks=pytest.mark.skipif(
+                not is_module_available("librosa"),
+                reason="Requires librosa to run.",
+            ),
+        ),
+    ],
+)
+def test_cut_set_batch_feature_extraction(cut_set, extractor_type):
+    extractor = extractor_type()
+    cut_set = cut_set.resample(16000)
+    with NamedTemporaryFile() as tmpf:
+        cut_set_with_feats = cut_set.compute_and_store_features_batch(
+            extractor=extractor,
+            storage_path=tmpf.name,
+            num_workers=0,
+        )
+        validate(cut_set_with_feats, read_data=True)

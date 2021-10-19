@@ -44,16 +44,29 @@ def test_kaldifeat_config():
     [
         np.arange(8000, dtype=np.float32),
         torch.arange(8000, dtype=torch.float32),
-        [np.arange(8000, dtype=np.float32)],
         torch.arange(8000, dtype=torch.float32),
-        [np.arange(8000, dtype=np.float32).reshape(1, -1)],
-        [torch.arange(8000, dtype=torch.float32).unsqueeze(0)],
     ],
 )
 def test_kaldifeat_supports_single_input_waveform(input):
     fe = KaldifeatFbank()
     feats = fe.extract(input, sampling_rate=16000)
     assert feats.shape == (50, 80)
+
+
+@pytest.mark.parametrize(
+    "input",
+    [
+        [np.arange(8000, dtype=np.float32)],
+        [np.arange(8000, dtype=np.float32).reshape(1, -1)],
+        [torch.arange(8000, dtype=torch.float32).unsqueeze(0)],
+    ],
+)
+def test_kaldifeat_supports_list_with_single_input_waveform(input):
+    fe = KaldifeatFbank()
+    feats = fe.extract(input, sampling_rate=16000)
+    assert isinstance(feats, list)
+    assert len(feats) == 1
+    assert feats[0].shape == (50, 80)
 
 
 @pytest.mark.parametrize(

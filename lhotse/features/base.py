@@ -87,6 +87,10 @@ class FeatureExtractor(metaclass=ABCMeta):
     def feature_dim(self, sampling_rate: int) -> int:
         ...
 
+    @property
+    def device(self) -> Union[str, torch.device]:
+        return "cpu"
+
     @staticmethod
     def mix(
         features_a: np.ndarray, features_b: np.ndarray, energy_scaling_factor_b: float
@@ -143,9 +147,11 @@ class FeatureExtractor(metaclass=ABCMeta):
         .. note::
             This method *should* support variable length inputs.
         """
+        input_is_list = False
 
         if isinstance(samples, list):
-            pass
+            input_is_list = True
+            pass  # nothing to do with `samples`
         elif samples.ndim > 1:
             samples = list(samples)
         else:
@@ -158,7 +164,10 @@ class FeatureExtractor(metaclass=ABCMeta):
 
         # If all items are of the same shape, concatenate
         if len(result) == 1:
-            return result[0]
+            if input_is_list:
+                return result
+            else:
+                return result[0]
         elif all(item.shape == result[0].shape for item in result[1:]):
             return np.stack(result, dim=0)
         else:
