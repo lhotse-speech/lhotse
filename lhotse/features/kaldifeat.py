@@ -158,15 +158,13 @@ class KaldifeatFbankConfig:
     chunk_size: Optional[int] = 1000
 
     def __post_init__(self):
-        if not isinstance(self.device, torch.device):
+        if isinstance(self.device, str):
             self.device = torch.device(self.device)
 
     def to_dict(self) -> Dict[str, Any]:
         d = asdict(self)
         d["frame_opts"] = self.frame_opts.to_dict()
         d["mel_opts"] = self.mel_opts.to_dict()
-        if isinstance(self.device, torch.device):
-            d["device"] = self.device.type
         return d
 
     @staticmethod
@@ -229,15 +227,14 @@ class KaldifeatMfccConfig:
     chunk_size: Optional[int] = 1000
 
     def __post_init__(self):
-        if not isinstance(self.device, torch.device):
+        if isinstance(self.device, str):
             self.device = torch.device(self.device)
 
     def to_dict(self) -> Dict[str, Any]:
         d = asdict(self)
         d["frame_opts"] = self.frame_opts.to_dict()
         d["mel_opts"] = self.mel_opts.to_dict()
-        if isinstance(self.device, torch.device):
-            d["device"] = self.device.type
+        d["device"] = self.device
         return d
 
     @staticmethod

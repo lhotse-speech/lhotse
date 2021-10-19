@@ -302,6 +302,11 @@ class FeatureExtractor(metaclass=ABCMeta):
 
     def to_yaml(self, path: Pathlike):
         data = self.to_dict()
+        # Some feature extractors might have a "device" field:
+        # to make sure they get nicely serialized to YAML, we will convert
+        # the torch.device object to its string type.
+        if 'device' in data and isinstance(data['device'], torch.device):
+            data['device'] = data['device'].type
         save_to_yaml(data, path=path)
 
 
