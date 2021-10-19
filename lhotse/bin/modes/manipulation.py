@@ -7,6 +7,7 @@ import click
 
 from lhotse.bin.modes.cli_base import cli
 from lhotse.utils import Pathlike
+from lhotse.cut import CutSet
 
 __all__ = ["split", "combine", "subset", "filter"]
 
@@ -60,7 +61,10 @@ def split(num_splits: int, manifest: Pathlike, output_dir: Pathlike, shuffle: bo
 @click.option(
     "--cutids",
     type=str,
-    help="Json string or path to json file containing array of cutids strings",
+    help=(
+        "A json string or path to json file containing array of cutids strings. "
+        'E.g. --cutids \'["cutid1", "cutid2"]\'.'
+    ),
 )
 def subset(
     manifest: Pathlike,
@@ -74,18 +78,22 @@ def subset(
 
     output_manifest = Path(output_manifest)
     manifest = Path(manifest)
-    a_subset = load_manifest(manifest)
+    any_set = load_manifest(manifest)
 
+    cids = None
     if cutids is not None:
         if os.path.exists(cutids):
             with open(cutids, "rt") as r:
-                ids = json.load(r)
+                cids = json.load(r)
         else:
-            ids = json.loads(cutids)
-        a_subset = a_subset.subset(cut_ids=ids)
+            cids = json.loads(cutids)
 
-    if first is not None or last is not None:
-        a_subset = a_subset.subset(first=first, last=last)
+    if cids is not None and not isinstance(any_set, CutSet):
+        raise ValueError(
+            f"Expected a CutSet manifest with cut_ids argument; got {type(any_set)}"
+        )
+
+    a_subset = any_set.subset(first=first, last=last, cut_ids=cids)
     a_subset.to_file(output_manifest)
 
 
