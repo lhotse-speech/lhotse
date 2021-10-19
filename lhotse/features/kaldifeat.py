@@ -165,9 +165,8 @@ class KaldifeatFbankConfig:
         d = asdict(self)
         d["frame_opts"] = self.frame_opts.to_dict()
         d["mel_opts"] = self.mel_opts.to_dict()
-        # Note: always overwrite the device to avoid CUDA placement errors
-        #       when loading from config file.
-        d["device"] = "cpu"
+        if isinstance(self.device, torch.device):
+            d["device"] = self.device.type
         return d
 
     @staticmethod
@@ -237,9 +236,8 @@ class KaldifeatMfccConfig:
         d = asdict(self)
         d["frame_opts"] = self.frame_opts.to_dict()
         d["mel_opts"] = self.mel_opts.to_dict()
-        # Note: always overwrite the device to avoid CUDA placement errors
-        #       when loading from config file.
-        d["device"] = "cpu"
+        if isinstance(self.device, torch.device):
+            d["device"] = self.device.type
         return d
 
     @staticmethod

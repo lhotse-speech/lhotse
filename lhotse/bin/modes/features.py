@@ -3,7 +3,7 @@ from typing import Optional
 
 import click
 
-from lhotse import FeatureSet, Features, LilcomURLWriter
+from lhotse import FeatureSet, Features, LilcomURLWriter, Seconds
 from lhotse.audio import RecordingSet
 from lhotse.bin.modes.cli_base import cli
 from lhotse.features import (
@@ -111,6 +111,131 @@ def extract(
             output_manifest=output_dir / "feature_manifest.json.gz",
             num_jobs=num_jobs,
         )
+
+
+@feat.command(context_settings=dict(show_default=True))
+@click.argument("cutset", type=click.Path(exists=True, dir_okay=False))
+@click.argument("output_cutset", type=click.Path())
+@click.argument("storage_path", type=click.Path())
+@click.option(
+    "-f",
+    "--feature-manifest",
+    type=click.Path(exists=True, dir_okay=False),
+    help="Optional manifest specifying feature extractor configuration.",
+)
+@click.option(
+    "--storage-type",
+    type=click.Choice(available_storage_backends()),
+    default="lilcom_hdf5",
+    help="Select a storage backend for the feature matrices.",
+)
+@click.option(
+    "-j", "--num-jobs", type=int, default=1, help="Number of parallel processes."
+)
+def extract_cuts(
+    cutset: Pathlike,
+    output_cutset: Pathlike,
+    storage_path: Pathlike,
+    feature_manifest: Optional[Pathlike],
+    storage_type: str,
+    num_jobs: int,
+):
+    """
+    Extract features for cuts in a given CUTSET manifest.
+    The features are stored in STORAGE_PATH, and the output manifest
+    with features is stored in OUTPUT_CUTSET.
+    """
+    from lhotse import CutSet
+
+    cuts: CutSet = CutSet.from_file(cutset)
+    feature_extractor = (
+        FeatureExtractor.from_yaml(feature_manifest)
+        if feature_manifest is not None
+        else Fbank()
+    )
+    cuts = cuts.compute_and_store_features(
+        extractor=feature_extractor,
+        storage_path=storage_path,
+        num_jobs=num_jobs,
+        storage_type=get_writer(storage_type),
+    )
+    output_cutset.parent.mkdir(parents=True, exist_ok=True)
+    cuts.to_file(output_cutset)
+
+
+@feat.command(context_settings=dict(show_default=True))
+@click.argument("cutset", type=click.Path(exists=True, dir_okay=False))
+@click.argument("output_cutset", type=click.Path())
+@click.argument("storage_path", type=click.Path())
+@click.option(
+    "-f",
+    "--feature-manifest",
+    type=click.Path(exists=True, dir_okay=False),
+    help="Optional manifest specifying feature extractor configuration. "
+    "If you want to use CUDA, you should specify the device in this "
+    "config.",
+)
+@click.option(
+    "--storage-type",
+    type=click.Choice(available_storage_backends()),
+    default="lilcom_hdf5",
+    help="Select a storage backend for the feature matrices.",
+)
+@click.option(
+    "-j", "--num-jobs", type=int, default=4, help="Number of dataloader workers."
+)
+@click.option(
+    "-b",
+    "--batch-duration",
+    type=float,
+    default=600.0,
+    help="At most this many seconds of audio will be processed in each batch.",
+)
+def extract_cuts_batch(
+    cutset: Pathlike,
+    output_cutset: Pathlike,
+    storage_path: Pathlike,
+    feature_manifest: Optional[Pathlike],
+    storage_type: str,
+    num_jobs: int,
+    batch_duration: Seconds,
+):
+    """
+    Extract features for cuts in a given CUTSET manifest.
+    The features are stored in STORAGE_PATH, and the output manifest
+    with features is stored in OUTPUT_CUTSET.
+
+    This version enables CUDA acceleration for feature extractors
+    that support it (e.g., kaldifeat extractors).
+
+    \b
+    Example usage of kaldifeat fbank with CUDA:
+
+        $ pip install kaldifeat  # note: ensure it's compiled with CUDA
+
+        $ lhotse feat write-default-config -f kaldifeat-fbank feat.yml
+
+        $ sed 's/device: cpu/device: cuda/' feat.yml feat-cuda.yml
+
+        $ lhotse feat extract-cuts-batch -f feat-cuda.yml cuts.jsonl cuts_with_feats.jsonl feats.h5
+    """
+    from lhotse import CutSet
+
+    cuts: CutSet = CutSet.from_file(cutset)
+    feature_extractor = (
+        FeatureExtractor.from_yaml(feature_manifest)
+        if feature_manifest is not None
+        else Fbank()
+    )
+    cuts = cuts.compute_and_store_features_batch(
+        extractor=feature_extractor,
+        storage_path=storage_path,
+        batch_duration=batch_duration,
+        num_workers=num_jobs,
+        storage_type=get_writer(storage_type),
+    )
+    output_cutset.parent.mkdir(parents=True, exist_ok=True)
+    cuts.to_file(output_cutset)
 
 
 @feat.command(context_settings=dict(show_default=True))
