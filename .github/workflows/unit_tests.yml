@@ -32,6 +32,8 @@ jobs:
       run: |
         python -m pip install --upgrade pip
         pip install --no-cache-dir numpy
+        # Force the installation of a CPU-only PyTorch
+        pip install torch==1.9.1+cpu -f https://download.pytorch.org/whl/torch_stable.html
         pip install --no-cache-dir '.[tests]'
         pip install smart_open[http]  # for URL audio downloading test
         pip install kaldifeat  # for running kaldifeat tests
