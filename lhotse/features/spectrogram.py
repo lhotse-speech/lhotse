@@ -1,4 +1,5 @@
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
+from typing import Any, Dict
 
 import numpy as np
 
@@ -21,6 +22,13 @@ class SpectrogramConfig:
     min_duration: float = 0.0
     preemphasis_coefficient: float = 0.97
     raw_energy: bool = True
+
+    def to_dict(self) -> Dict[str, Any]:
+        return asdict(self)
+
+    @staticmethod
+    def from_dict(data: Dict[str, Any]) -> "SpectrogramConfig":
+        return SpectrogramConfig(**data)
 
 
 @register_extractor

@@ -1,5 +1,5 @@
 from dataclasses import asdict, dataclass
-from typing import Optional
+from typing import Any, Dict, Optional
 
 import numpy as np
 import torch
@@ -28,6 +28,13 @@ class KaldiFbankConfig:
     high_freq: float = -400.0
     num_filters: int = 80
     norm_filters: bool = False
+
+    def to_dict(self) -> Dict[str, Any]:
+        return asdict(self)
+
+    @staticmethod
+    def from_dict(data: Dict[str, Any]) -> "KaldiFbankConfig":
+        return KaldiFbankConfig(**data)
 
 
 @register_extractor
@@ -92,6 +99,13 @@ class KaldiMfccConfig:
     norm_filters: bool = False
     num_ceps: int = 13
     cepstral_lifter: int = 22
+
+    def to_dict(self) -> Dict[str, Any]:
+        return asdict(self)
+
+    @staticmethod
+    def from_dict(data: Dict[str, Any]) -> "KaldiMfccConfig":
+        return KaldiMfccConfig(**data)
 
 
 @register_extractor
