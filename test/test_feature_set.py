@@ -7,6 +7,7 @@ import pytest
 import torchaudio
 from pytest import mark, raises
 
+from lhotse import FbankConfig
 from lhotse.audio import RecordingSet
 from lhotse.features import (
     Fbank,
@@ -244,7 +245,7 @@ def test_add_feature_sets():
 @pytest.mark.parametrize(
     ["feature_extractor", "decimal", "exception_expectation"],
     [
-        (Fbank(), 0, does_not_raise()),
+        (Fbank(FbankConfig(num_mel_bins=40)), 0, does_not_raise()),
         (Spectrogram(), -1, does_not_raise()),
         (Mfcc(), None, raises(ValueError)),
     ],
