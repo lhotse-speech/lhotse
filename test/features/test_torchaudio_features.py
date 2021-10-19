@@ -1,6 +1,7 @@
 from tempfile import NamedTemporaryFile
 
 import pytest
+import torch
 import torchaudio
 
 from lhotse import Fbank, FeatureExtractor, create_default_feature_extractor

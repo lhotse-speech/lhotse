@@ -5,7 +5,6 @@ from lhotse.audio import Recording
 from lhotse.features.kaldi.extractors import KaldiFbank, KaldiMfcc
 from lhotse.features.kaldi.layers import Wav2LogFilterBank, Wav2MFCC
 
-
 @pytest.fixture()
 def recording():
     return Recording.from_file("test/fixtures/libri/libri-1088-134315-0000.wav")

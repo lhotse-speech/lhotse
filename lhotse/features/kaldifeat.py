@@ -70,10 +70,6 @@ class KaldifeatExtractor(FeatureExtractor, ABC):
             "kaldifeat"
         ), 'To use kaldifeat extractors, please "pip install kaldifeat" first.'
 
-        settings = self.config.to_dict()
-        settings.pop("chunk_size")  # kaldifeat expects that setting elsewhere
-        settings["device"] = self.config.device
-
     def extract_batch(
         self,
         samples: Union[

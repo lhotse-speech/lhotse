@@ -5,11 +5,11 @@ import pytest
 import torch
 import torchaudio
 
-from lhotse import Fbank, KaldifeatFbank, Mfcc
+from lhotse import Fbank, KaldifeatFbank, KaldifeatFbankConfig, Mfcc
 from lhotse.features import (
     create_default_feature_extractor,
 )
-from lhotse.features.kaldifeat import KaldifeatMfcc
+from lhotse.features.kaldifeat import KaldifeatMelOptions, KaldifeatMfcc
 from lhotse.utils import nullcontext as does_not_raise
 
 # TODO: uncomment before merging
@@ -31,6 +31,13 @@ def test_feature_extractor(feature_type, exception_expectation):
         fe = create_default_feature_extractor(feature_type)
         samples, sr = torchaudio.load("test/fixtures/libri/libri-1088-134315-0000.wav")
         fe.extract(samples=samples, sampling_rate=sr)
+
+
+def test_kaldifeat_config():
+    x = np.arange(8000, dtype=np.float32)
+    fe = KaldifeatFbank(KaldifeatFbankConfig(mel_opts=KaldifeatMelOptions(num_bins=27)))
+    feats = fe.extract(x, sampling_rate=16000)
+    assert feats.shape == (50, 27)
 
 
 @pytest.mark.parametrize(
