@@ -4,20 +4,18 @@ from typing import Optional
 
 import numpy as np
 import pytest
-import torchaudio
 from pytest import mark, raises
 
+from lhotse import FbankConfig
 from lhotse.audio import RecordingSet
 from lhotse.features import (
     Fbank,
-    FeatureExtractor,
     FeatureMixer,
     FeatureSet,
     FeatureSetBuilder,
     Features,
     Mfcc,
     Spectrogram,
-    create_default_feature_extractor,
 )
 from lhotse.features.io import (
     ChunkedLilcomHdf5Writer,
@@ -32,39 +30,6 @@ from lhotse.utils import nullcontext as does_not_raise
 
 other_params = {}
 some_augmentation = None
-
-
-@mark.parametrize(
-    ["feature_type", "exception_expectation"],
-    [
-        ("mfcc", does_not_raise()),
-        ("fbank", does_not_raise()),
-        ("spectrogram", does_not_raise()),
-        ("pitch", raises(Exception)),
-    ],
-)
-def test_feature_extractor(feature_type, exception_expectation):
-    # For now, just test that it runs
-    with exception_expectation:
-        fe = create_default_feature_extractor(feature_type)
-        samples, sr = torchaudio.load("test/fixtures/libri/libri-1088-134315-0000.wav")
-        fe.extract(samples=samples, sampling_rate=sr)
-
-
-def test_feature_extractor_serialization():
-    fe = Fbank()
-    with NamedTemporaryFile() as f:
-        fe.to_yaml(f.name)
-        fe_deserialized = Fbank.from_yaml(f.name)
-    assert fe_deserialized.config == fe.config
-
-
-def test_feature_extractor_generic_deserialization():
-    fe = Fbank()
-    with NamedTemporaryFile() as f:
-        fe.to_yaml(f.name)
-        fe_deserialized = FeatureExtractor.from_yaml(f.name)
-    assert fe_deserialized.config == fe.config
 
 
 @mark.parametrize(
@@ -244,7 +209,7 @@ def test_add_feature_sets():
 @pytest.mark.parametrize(
     ["feature_extractor", "decimal", "exception_expectation"],
     [
-        (Fbank(), 0, does_not_raise()),
+        (Fbank(FbankConfig(num_mel_bins=40)), 0, does_not_raise()),
         (Spectrogram(), -1, does_not_raise()),
         (Mfcc(), None, raises(ValueError)),
     ],

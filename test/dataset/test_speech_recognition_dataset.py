@@ -3,7 +3,7 @@ import torch
 from torch import tensor
 from torch.utils.data import DataLoader
 
-from lhotse import Fbank
+from lhotse import Fbank, FbankConfig
 from lhotse.cut import CutSet
 from lhotse.dataset import RandomizedSmoothing
 from lhotse.dataset.cut_transforms import CutConcatenate, CutMix
@@ -12,9 +12,6 @@ from lhotse.dataset.input_strategies import AudioSamples, OnTheFlyFeatures
 from lhotse.dataset.sampling import SingleCutSampler
 from lhotse.dataset.speech_recognition import K2SpeechRecognitionDataset
 from lhotse.testing.dummies import DummyManifest
-
-torch.set_num_threads(1)
-torch.set_num_interop_threads(1)
 
 
 @pytest.fixture
@@ -167,7 +164,7 @@ def test_extra_padding_transform(k2_cut_set):
 def test_k2_speech_recognition_on_the_fly_feature_extraction(k2_cut_set):
     precomputed_dataset = K2SpeechRecognitionDataset()
     on_the_fly_dataset = K2SpeechRecognitionDataset(
-        input_strategy=OnTheFlyFeatures(Fbank())
+        input_strategy=OnTheFlyFeatures(Fbank(FbankConfig(num_mel_bins=40)))
     )
     sampler = SingleCutSampler(k2_cut_set, shuffle=False, max_cuts=1)
     for cut_ids in sampler:

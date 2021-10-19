@@ -1,4 +1,5 @@
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
+from typing import Any, Dict
 
 import numpy as np
 
@@ -24,11 +25,18 @@ class FbankConfig:
     # Fbank-related part
     low_freq: float = 20.0
     high_freq: float = -400.0
-    num_mel_bins: int = 40
+    num_mel_bins: int = 80
     use_energy: bool = False
     vtln_low: float = 100.0
     vtln_high: float = -500.0
     vtln_warp: float = 1.0
+
+    def to_dict(self) -> Dict[str, Any]:
+        return asdict(self)
+
+    @staticmethod
+    def from_dict(data: Dict[str, Any]) -> "FbankConfig":
+        return FbankConfig(**data)
 
 
 @register_extractor
