@@ -1,5 +1,5 @@
 from dataclasses import asdict, dataclass
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Union
 
 import numpy as np
 import torch
@@ -53,13 +53,23 @@ class KaldiFbank(FeatureExtractor):
     def feature_dim(self, sampling_rate: int) -> int:
         return self.config.num_filters
 
-    def extract(self, samples: np.ndarray, sampling_rate: int) -> np.ndarray:
+    def extract(
+        self, samples: Union[np.ndarray, torch.Tensor], sampling_rate: int
+    ) -> Union[np.ndarray, torch.Tensor]:
         assert sampling_rate == self.config.sampling_rate, (
             f"KaldiFbank was instantiated for sampling_rate "
             f"{self.config.sampling_rate}, but "
             f"sampling_rate={sampling_rate} was passed to extract()."
         )
-        return self.extractor(torch.from_numpy(samples))[0].numpy()
+        is_numpy = False
+        if not isinstance(samples, torch.Tensor):
+            samples = torch.from_numpy(samples)
+            is_numpy = True
+        feats = self.extractor(samples)[0]
+        if is_numpy:
+            return feats.cpu().numpy()
+        else:
+            return feats
 
     @staticmethod
     def mix(
@@ -124,10 +134,20 @@ class KaldiMfcc(FeatureExtractor):
     def feature_dim(self, sampling_rate: int) -> int:
         return self.config.num_ceps
 
-    def extract(self, samples: np.ndarray, sampling_rate: int) -> np.ndarray:
+    def extract(
+        self, samples: Union[np.ndarray, torch.Tensor], sampling_rate: int
+    ) -> Union[np.ndarray, torch.Tensor]:
         assert sampling_rate == self.config.sampling_rate, (
             f"KaldiFbank was instantiated for sampling_rate "
             f"{self.config.sampling_rate}, but "
             f"sampling_rate={sampling_rate} was passed to extract()."
         )
-        return self.extractor(torch.from_numpy(samples))[0].numpy()
+        is_numpy = False
+        if not isinstance(samples, torch.Tensor):
+            samples = torch.from_numpy(samples)
+            is_numpy = True
+        feats = self.extractor(samples)[0]
+        if is_numpy:
+            return feats.cpu().numpy()
+        else:
+            return feats

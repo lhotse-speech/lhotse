@@ -161,10 +161,15 @@ def test_extra_padding_transform(k2_cut_set):
         assert padded.num_frames == cut.num_frames + 20
 
 
-def test_k2_speech_recognition_on_the_fly_feature_extraction(k2_cut_set):
+@pytest.mark.parametrize("use_batch_extract", [True, False])
+def test_k2_speech_recognition_on_the_fly_feature_extraction(
+    k2_cut_set, use_batch_extract
+):
     precomputed_dataset = K2SpeechRecognitionDataset()
     on_the_fly_dataset = K2SpeechRecognitionDataset(
-        input_strategy=OnTheFlyFeatures(Fbank(FbankConfig(num_mel_bins=40)))
+        input_strategy=OnTheFlyFeatures(
+            Fbank(FbankConfig(num_mel_bins=40)), use_batch_extract=use_batch_extract
+        )
     )
     sampler = SingleCutSampler(k2_cut_set, shuffle=False, max_cuts=1)
     for cut_ids in sampler:

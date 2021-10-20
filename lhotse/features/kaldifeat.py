@@ -70,6 +70,10 @@ class KaldifeatExtractor(FeatureExtractor, ABC):
             "kaldifeat"
         ), 'To use kaldifeat extractors, please "pip install kaldifeat" first.'
 
+    @property
+    def device(self) -> Union[str, torch.device]:
+        return self.config.device
+
     def extract_batch(
         self,
         samples: Union[
@@ -98,9 +102,11 @@ class KaldifeatExtractor(FeatureExtractor, ABC):
         # we'll also return torch tensors. If we got numpy arrays, we
         # will convert back to numpy.
         maybe_as_numpy = lambda x: x
+        input_is_list = False
 
         if isinstance(samples, list):
-            pass
+            input_is_list = True
+            pass  # nothing to do with `samples`
         elif samples.ndim > 1:
             samples = list(samples)
         else:
@@ -120,7 +126,10 @@ class KaldifeatExtractor(FeatureExtractor, ABC):
 
         # If all items are of the same shape, concatenate
         if len(result) == 1:
-            return maybe_as_numpy(result[0])
+            if input_is_list:
+                return [maybe_as_numpy(result[0])]
+            else:
+                return maybe_as_numpy(result[0])
         elif all(item.shape == result[0].shape for item in result[1:]):
             return maybe_as_numpy(torch.stack(result, dim=0))
         else:
@@ -148,17 +157,10 @@ class KaldifeatFbankConfig:
     # to avoid excessive memory usage.
     chunk_size: Optional[int] = 1000
 
-    def __post_init__(self):
-        if not isinstance(self.device, torch.device):
-            self.device = torch.device(self.device)
-
     def to_dict(self) -> Dict[str, Any]:
         d = asdict(self)
         d["frame_opts"] = self.frame_opts.to_dict()
         d["mel_opts"] = self.mel_opts.to_dict()
-        # Note: always overwrite the device to avoid CUDA placement errors
-        #       when loading from config file.
-        d["device"] = "cpu"
         return d
 
     @staticmethod
@@ -220,17 +222,10 @@ class KaldifeatMfccConfig:
     # to avoid excessive memory usage.
     chunk_size: Optional[int] = 1000
 
-    def __post_init__(self):
-        if not isinstance(self.device, torch.device):
-            self.device = torch.device(self.device)
-
     def to_dict(self) -> Dict[str, Any]:
         d = asdict(self)
         d["frame_opts"] = self.frame_opts.to_dict()
         d["mel_opts"] = self.mel_opts.to_dict()
-        # Note: always overwrite the device to avoid CUDA placement errors
-        #       when loading from config file.
-        d["device"] = "cpu"
         return d
 
     @staticmethod
