@@ -159,7 +159,7 @@ def extract_cuts(
         num_jobs=num_jobs,
         storage_type=get_writer(storage_type),
     )
-    output_cutset.parent.mkdir(parents=True, exist_ok=True)
+    Path(output_cutset).parent.mkdir(parents=True, exist_ok=True)
     cuts.to_file(output_cutset)
 
 
@@ -234,7 +234,7 @@ def extract_cuts_batch(
         num_workers=num_jobs,
         storage_type=get_writer(storage_type),
     )
-    output_cutset.parent.mkdir(parents=True, exist_ok=True)
+    Path(output_cutset).parent.mkdir(parents=True, exist_ok=True)
     cuts.to_file(output_cutset)
 
 
