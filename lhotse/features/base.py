@@ -305,8 +305,11 @@ class FeatureExtractor(metaclass=ABCMeta):
         # Some feature extractors might have a "device" field:
         # to make sure they get nicely serialized to YAML, we will convert
         # the torch.device object to its string type.
-        if 'device' in data and isinstance(data['device'], torch.device):
-            data['device'] = data['device'].type
+        # Note: we don't store the device ID (e.g. we change "cuda:1" to "cuda")
+        # so that the config remains valid even if we use it in a separate run
+        # on a different device.
+        if "device" in data and isinstance(data["device"], torch.device):
+            data["device"] = data["device"].type
         save_to_yaml(data, path=path)
 
 

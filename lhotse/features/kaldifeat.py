@@ -157,10 +157,6 @@ class KaldifeatFbankConfig:
     # to avoid excessive memory usage.
     chunk_size: Optional[int] = 1000
 
-    def __post_init__(self):
-        if isinstance(self.device, str):
-            self.device = torch.device(self.device)
-
     def to_dict(self) -> Dict[str, Any]:
         d = asdict(self)
         d["frame_opts"] = self.frame_opts.to_dict()
@@ -226,15 +222,10 @@ class KaldifeatMfccConfig:
     # to avoid excessive memory usage.
     chunk_size: Optional[int] = 1000
 
-    def __post_init__(self):
-        if isinstance(self.device, str):
-            self.device = torch.device(self.device)
-
     def to_dict(self) -> Dict[str, Any]:
         d = asdict(self)
         d["frame_opts"] = self.frame_opts.to_dict()
         d["mel_opts"] = self.mel_opts.to_dict()
-        d["device"] = self.device
         return d
 
     @staticmethod
