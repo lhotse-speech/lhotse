@@ -88,12 +88,15 @@ def subset(
         else:
             cids = json.loads(cutids)
 
-    if cids is not None and not isinstance(any_set, CutSet):
-        raise ValueError(
-            f"Expected a CutSet manifest with cut_ids argument; got {type(any_set)}"
-        )
+    if isinstance(any_set, CutSet):
+        a_subset = any_set.subset(first=first, last=last, cut_ids=cids)
+    else:
+        if cutids is not None:
+            raise ValueError(
+                f"Expected a CutSet manifest with cut_ids argument; got {type(any_set)}"
+            )
+        a_subset = any_set.subset(first=first, last=last)
 
-    a_subset = any_set.subset(first=first, last=last, cut_ids=cids)
     a_subset.to_file(output_manifest)
 
 
