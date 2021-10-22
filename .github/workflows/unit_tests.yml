@@ -17,6 +17,8 @@ jobs:
       matrix:
         python-version: [ 3.6, 3.7, 3.8, 3.9 ]
 
+      fail-fast: false
+
     steps:
     - uses: actions/checkout@v2
     - name: Set up Python ${{ matrix.python-version }}
@@ -32,8 +34,11 @@ jobs:
       run: |
         python -m pip install --upgrade pip
         pip install --no-cache-dir numpy
+        # Force the installation of a CPU-only PyTorch
+        pip install torch==1.9.1+cpu -f https://download.pytorch.org/whl/torch_stable.html
         pip install --no-cache-dir '.[tests]'
         pip install smart_open[http]  # for URL audio downloading test
+        pip install kaldifeat  # for running kaldifeat tests
     - name: Install sph2pipe
       run: |
         lhotse install-sph2pipe  # Handle sphere files.

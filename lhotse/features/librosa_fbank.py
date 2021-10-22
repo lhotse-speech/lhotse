@@ -1,4 +1,5 @@
 from dataclasses import asdict, dataclass
+from typing import Any, Dict
 
 import numpy as np
 
@@ -28,6 +29,13 @@ class LibrosaFbankConfig:
     num_mel_bins: int = 80
     fmin: int = 80
     fmax: int = 7600
+
+    def to_dict(self) -> Dict[str, Any]:
+        return asdict(self)
+
+    @staticmethod
+    def from_dict(data: Dict[str, Any]) -> "LibrosaFbankConfig":
+        return LibrosaFbankConfig(**data)
 
 
 def pad_or_truncate_features(
