@@ -1,10 +1,13 @@
 from pathlib import Path
 from typing import Optional
+import os
+import json
 
 import click
 
 from lhotse.bin.modes.cli_base import cli
 from lhotse.utils import Pathlike
+from lhotse.cut import CutSet
 
 __all__ = ["split", "combine", "subset", "filter"]
 
@@ -55,11 +58,20 @@ def split(num_splits: int, manifest: Pathlike, output_dir: Pathlike, shuffle: bo
 @click.argument("output_manifest", type=click.Path())
 @click.option("--first", type=int)
 @click.option("--last", type=int)
+@click.option(
+    "--cutids",
+    type=str,
+    help=(
+        "A json string or path to json file containing array of cutids strings. "
+        'E.g. --cutids \'["cutid1", "cutid2"]\'.'
+    ),
+)
 def subset(
     manifest: Pathlike,
     output_manifest: Pathlike,
     first: Optional[int],
     last: Optional[int],
+    cutids: Optional[str],
 ):
     """Load MANIFEST, select the FIRST or LAST number of items and store it in OUTPUT_MANIFEST."""
     from lhotse import load_manifest
@@ -67,7 +79,24 @@ def subset(
     output_manifest = Path(output_manifest)
     manifest = Path(manifest)
     any_set = load_manifest(manifest)
-    a_subset = any_set.subset(first=first, last=last)
+
+    cids = None
+    if cutids is not None:
+        if os.path.exists(cutids):
+            with open(cutids, "rt") as r:
+                cids = json.load(r)
+        else:
+            cids = json.loads(cutids)
+
+    if isinstance(any_set, CutSet):
+        a_subset = any_set.subset(first=first, last=last, cut_ids=cids)
+    else:
+        if cutids is not None:
+            raise ValueError(
+                f"Expected a CutSet manifest with cut_ids argument; got {type(any_set)}"
+            )
+        a_subset = any_set.subset(first=first, last=last)
+
     a_subset.to_file(output_manifest)
 
 
