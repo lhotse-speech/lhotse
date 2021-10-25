@@ -7,7 +7,12 @@ from lhotse import CutSet, FeatureSet, Features, Seconds
 from lhotse.audio import AudioSource, Recording, RecordingSet
 from lhotse.audio import audioread_info
 from lhotse.supervision import SupervisionSegment, SupervisionSet
-from lhotse.utils import Pathlike, compute_num_samples, is_module_available
+from lhotse.utils import (
+    Pathlike,
+    add_durations,
+    compute_num_samples,
+    is_module_available,
+)
 
 
 def get_duration(
@@ -102,7 +107,7 @@ def load_kaldi_data_dir(
                 id=segment_id,
                 recording_id=recording_id,
                 start=float(start),
-                duration=float(end) - float(start),
+                duration=add_durations(float(end), -float(start)),
                 channel=0,
                 text=texts[segment_id],
                 language=languages[segment_id],
