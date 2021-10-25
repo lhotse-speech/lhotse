@@ -107,7 +107,9 @@ def load_kaldi_data_dir(
                 id=segment_id,
                 recording_id=recording_id,
                 start=float(start),
-                duration=add_durations(float(end), -float(start)),
+                duration=add_durations(
+                    float(end), -float(start), sampling_rate=sampling_rate
+                ),
                 channel=0,
                 text=texts[segment_id],
                 language=languages[segment_id],
