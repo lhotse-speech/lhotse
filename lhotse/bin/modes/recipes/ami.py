@@ -31,10 +31,9 @@ __all__ = ["ami"]
     help="Data partition to use (see http://groups.inf.ed.ac.uk/ami/corpus/datasets.shtml).",
 )
 @click.option(
-    "--max-pause",
-    type=float,
-    default=0.0,
-    help="Max pause allowed between word segments to combine segments.",
+    "--normalize-text",
+    is_flag=True,
+    help="If set, convert all text annotations to upper case (similar to Kaldi)",
 )
 def ami(
     corpus_dir: Pathlike,
@@ -42,7 +41,7 @@ def ami(
     annotations: Pathlike,
     mic: str,
     partition: str,
-    max_pause: float,
+    normalize_text: bool,
 ):
     """AMI data preparation."""
     prepare_ami(
@@ -51,7 +50,7 @@ def ami(
         output_dir=output_dir,
         mic=mic,
         partition=partition,
-        max_pause=max_pause,
+        normalize_text=normalize_text,
     )
 
 
