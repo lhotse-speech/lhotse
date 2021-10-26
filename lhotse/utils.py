@@ -427,6 +427,18 @@ def compute_num_samples(
     )
 
 
+def add_durations(d1: Seconds, d2: Seconds, sampling_rate: int) -> Seconds:
+    """
+    Adds two durations in a way that avoids floating point precision issues.
+    The durations in seconds are first converted to audio sample counts,
+    then added, and finally converted back to floating point seconds.
+    """
+    s1 = compute_num_samples(d1, sampling_rate=sampling_rate)
+    s2 = compute_num_samples(d2, sampling_rate=sampling_rate)
+    tot = s1 + s2
+    return tot / sampling_rate
+
+
 def compute_start_duration_for_extended_cut(
     start: Seconds,
     duration: Seconds,
