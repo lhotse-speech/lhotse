@@ -216,7 +216,7 @@ def download_audio(
 
 def download_ami(
     target_dir: Pathlike = ".",
-    annotations_dir: Optional[Pathlike] = None,
+    annotations: Optional[Pathlike] = None,
     force_download: Optional[bool] = False,
     url: Optional[str] = "http://groups.inf.ed.ac.uk/ami",
     mic: Optional[str] = "ihm",
@@ -224,108 +224,134 @@ def download_ami(
     """
     Download AMI audio and annotations for provided microphone setting.
     :param target_dir: Pathlike, the path to store the data.
-    :param annotations_dir: Pathlike (default = None), path to save annotations zip file
+    :param annotations: Pathlike (default = None), path to save annotations zip file
     :param force_download: bool (default = False), if True, download even if file is present.
     :param url: str (default = 'http://groups.inf.ed.ac.uk/ami'), AMI download URL.
     :param mic: str {'ihm','ihm-mix','sdm','mdm'}, type of mic setting.
+
+    Example usage:
+    1. Download AMI data for IHM mic setting:
+    >>> download_ami(mic='ihm')
+    2. Download AMI data for IHM-mix mic setting, and use existing annotations:
+    >>> download_ami(mic='ihm-mix', annotations='/path/to/existing/annotations.zip')
     """
     target_dir = Path(target_dir)
 
-    annotations_dir = target_dir if not annotations_dir else annotations_dir
+    annotations = (
+        target_dir / "ami_public_manual_1.6.2.zip" if not annotations else annotations
+    )
 
     # Audio
     download_audio(target_dir, force_download, url, mic)
 
     # Annotations
     logging.info("Downloading AMI annotations")
-    annotations_name = "annotations.zip"
-    annotations_path = annotations_dir / annotations_name
-    if annotations_path.exists():
-        logging.info(
-            f"Skip downloading annotations as they exist in: {annotations_path}"
-        )
+
+    if annotations.exists():
+        logging.info(f"Skip downloading annotations as they exist in: {annotations}")
         return
     annotations_url = f"{url}/AMICorpusAnnotations/ami_public_manual_1.6.2.zip"
-    if force_download or not annotations_path.is_file():
-        urllib.request.urlretrieve(annotations_url, filename=annotations_path)
+    if force_download or not annotations.is_file():
+        urllib.request.urlretrieve(annotations_url, filename=annotations)
 
 
 class AmiSegmentAnnotation(NamedTuple):
     text: str
     speaker: str
     gender: str
-    begin_time: Seconds
+    start_time: Seconds
     end_time: Seconds
 
 
 def parse_ami_annotations(
-    annotations_zip: Pathlike, max_pause: float
+    annotations_dir: Pathlike, normalize_text: bool = True
 ) -> Dict[str, List[SupervisionSegment]]:
     annotations = defaultdict(dict)
-    with zipfile.ZipFile(annotations_zip, "r") as archive:
-        # First we get global speaker ids and channels
-        global_spk_id = {}
-        channel_id = {}
-        with archive.open("corpusResources/meetings.xml") as f:
+
+    # Extract if zipped file
+    if str(annotations_dir).endswith(".zip"):
+        import zipfile
+
+        with zipfile.ZipFile(annotations_dir) as z:
+            z.extractall(path=annotations_dir.parent)
+        annotations_dir = annotations_dir.parent
+
+    # First we get global speaker ids and channels
+    global_spk_id = {}
+    channel_id = {}
+    with open(annotations_dir / "corpusResources" / "meetings.xml") as f:
+        tree = ET.parse(f)
+        for meeting in tree.getroot():
+            meet_id = meeting.attrib["observation"]
+            for speaker in meeting:
+                local_id = (meet_id, speaker.attrib["nxt_agent"])
+                global_spk_id[local_id] = speaker.attrib["global_name"]
+                channel_id[local_id] = int(speaker.attrib["channel"])
+
+    # Now we parse all the words and save their ids (since segments only contain
+    # word ids instead of words)
+    wid_to_word = {}
+    for file in (annotations_dir / "words").iterdir():
+        with open(file) as f:
             tree = ET.parse(f)
-            for meeting in tree.getroot():
-                meet_id = meeting.attrib["observation"]
-                for speaker in meeting:
-                    local_id = (meet_id, speaker.attrib["nxt_agent"])
-                    global_spk_id[local_id] = speaker.attrib["global_name"]
-                    channel_id[local_id] = int(speaker.attrib["channel"])
-
-        # Now iterate over all alignments
-        for file in archive.namelist():
-            if file.startswith("words/") and file[-1] != "/":
-                meet_id, x, _, _ = file.split("/")[1].split(".")
-                if (meet_id, x) not in global_spk_id:
-                    logging.warning(
-                        f"No speaker {meet_id}.{x} found! Skipping annotation."
-                    )
+            for word in tree.getroot():
+                if word.tag != "w" or "punc" in word.attrib:
                     continue
-                spk = global_spk_id[(meet_id, x)]
-                channel = channel_id[(meet_id, x)]
-                tree = ET.parse(archive.open(file))
-                key = (meet_id, spk, channel)
-                if key not in annotations:
-                    annotations[key] = []
-                for child in tree.getroot():
-                    # If the alignment does not contain start or end time info,
-                    # ignore them. Also, only consider words in the alignment XML files.
-                    if (
-                        "starttime" not in child.attrib
-                        or "endtime" not in child.attrib
-                        or child.tag != "w"
-                    ):
-                        continue
-                    text = child.text if child.tag == "w" else child.attrib["type"]
-                    # to convert HTML escape sequences
-                    text = html.unescape(text)
-                    annotations[key].append(
-                        AmiSegmentAnnotation(
-                            text=text,
-                            speaker=spk,
-                            gender=spk[0],
-                            begin_time=float(child.attrib["starttime"]),
-                            end_time=float(child.attrib["endtime"]),
-                        )
-                    )
+                wid_to_word[word.attrib["{http://nite.sourceforge.net/}id"]] = (
+                    word.text.upper() if normalize_text else word.text
+                )
 
-        # Post-process segments and combine neighboring segments from the same speaker
-        for key in annotations:
-            new_segs = []
-            cur_seg = list(annotations[key])[0]
-            for seg in list(annotations[key])[1:]:
-                if seg.begin_time - cur_seg.end_time <= max_pause:
-                    cur_seg._replace(
-                        text=f"{cur_seg.text} {seg.text}", end_time=seg.end_time
+    def _parse_href(href, wid_to_word):
+        # The href argument is originally a string of the form "ES2002b.B.words.xml#id(ES2002b.B.words0)..id(ES2002b.B.words4)".
+        # We need to extract the word ids and return a string containing the corresponding words.
+        href = href.split("#")[1]
+        word_ids = href.split("..")
+        word_ids = [x.split("(")[1].split(")")[0] for x in word_ids]
+        if len(word_ids) == 1:
+            return wid_to_word[word_ids[0]] if word_ids[0] in wid_to_word else ""
+        start_id, end_id = word_ids[0], word_ids[1]
+        meeting_stem, word_start = start_id.split("words")
+        _, word_end = end_id.split("words")
+        return " ".join(
+            wid_to_word[f"{meeting_stem}words{i}"]
+            for i in range(int(word_start), int(word_end) + 1)
+            if f"{meeting_stem}words{i}" in wid_to_word
+        )
+
+    # Now iterate over all segments and create transcripts
+    for file in (annotations_dir / "segments").iterdir():
+        meet_id, local_spkid, _ = file.stem.split(".")
+        if (meet_id, local_spkid) not in global_spk_id:
+            logging.warning(
+                f"No speaker {meet_id}.{local_spkid} found! Skipping annotation."
+            )
+            continue
+        with open(file) as f:
+            spk = global_spk_id[(meet_id, local_spkid)]
+            channel = channel_id[(meet_id, local_spkid)]
+            tree = ET.parse(f)
+            key = (meet_id, spk, channel)
+            if key not in annotations:
+                annotations[key] = []
+            for seg in tree.getroot():
+                if seg.tag != "segment":
+                    continue
+                start_time = float(seg.attrib["transcriber_start"])
+                end_time = float(seg.attrib["transcriber_end"])
+                assert len(seg.getchildren()) == 1, "Multiple child segments found"
+                seg_child = seg.getchildren()[0]
+                if "href" in seg_child.attrib:
+                    text = _parse_href(seg_child.attrib["href"], wid_to_word)
+                annotations[key].append(
+                    AmiSegmentAnnotation(
+                        text=text.upper() if normalize_text else text,
+                        speaker=spk,
+                        gender=spk[0],
+                        start_time=start_time,
+                        end_time=end_time,
                     )
-                else:
-                    new_segs.append(cur_seg)
-                    cur_seg = seg
-            new_segs.append(cur_seg)
-            annotations[key] = new_segs
+                )
+
     return annotations
 
 
@@ -370,8 +396,6 @@ def prepare_audio_single(
     audio_paths: List[Pathlike],
 ) -> RecordingSet:
     import soundfile as sf
-
-    recording_manifest = defaultdict(dict)
 
     recordings = []
     for audio_path in audio_paths:
@@ -423,7 +447,7 @@ def prepare_supervision_ihm(
                 continue
 
             for seg_idx, seg_info in enumerate(annotation):
-                duration = seg_info.end_time - seg_info.begin_time
+                duration = seg_info.end_time - seg_info.start_time
                 # Some annotations in IHM setting exceed audio duration, so we
                 # ignore such segments
                 if seg_info.end_time > recording.duration:
@@ -437,7 +461,7 @@ def prepare_supervision_ihm(
                         SupervisionSegment(
                             id=f"{recording.id}-{channel}-{seg_idx}",
                             recording_id=recording.id,
-                            start=seg_info.begin_time,
+                            start=seg_info.start_time,
                             duration=duration,
                             channel=channel,
                             language="English",
@@ -472,13 +496,13 @@ def prepare_supervision_other(
             )
 
         for seg_idx, seg_info in enumerate(annotation):
-            duration = seg_info.end_time - seg_info.begin_time
+            duration = seg_info.end_time - seg_info.start_time
             if duration > 0:
                 segments.append(
                     SupervisionSegment(
                         id=f"{recording.id}-{seg_idx}",
                         recording_id=recording.id,
-                        start=seg_info.begin_time,
+                        start=seg_info.start_time,
                         duration=duration,
                         channel=0,
                         language="English",
@@ -496,21 +520,24 @@ def prepare_ami(
     output_dir: Optional[Pathlike] = None,
     mic: Optional[str] = "ihm",
     partition: Optional[str] = "full-corpus",
-    max_pause: Optional[float] = 0.0,
+    normalize_text: bool = True,
 ) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet]]]:
     """
     Returns the manifests which consist of the Recordings and Supervisions
     :param data_dir: Pathlike, the path of the data dir.
+    :param annotations: Pathlike, the path of the annotations dir or zip file.
     :param output_dir: Pathlike, the path where to write the manifests.
     :param mic: str {'ihm','ihm-mix','sdm','mdm'}, type of mic to use.
     :param partition: str {'full-corpus','full-corpus-asr','scenario-only'}, AMI official data split
-    :param max_pause: float (default = 0.0), max pause allowed between word segments to combine segments
+    :param normalize_text: bool, whether to normalize text to uppercase
     :return: a Dict whose key is ('train', 'dev', 'eval'), and the values are dicts of manifests under keys
         'recordings' and 'supervisions'.
 
-    The `partition` and `max_pause` must be chosen depending on the task. For example:
-    - Speaker diarization: set `partition="full-corpus"` and `max_pause=0`
-    - ASR: set `partition="full-corpus-asr"` and `max_pause=0.3` (or some value in the range 0.2-0.5)
+    Example usage:
+    1. Prepare IHM-Mix data for ASR:
+    >>> manifests = prepare_ami('/path/to/ami-corpus', mic='ihm-mix', partition='full-corpus-asr')
+    2. Prepare SDM data:
+    >>> manifests = prepare_ami('/path/to/ami-corpus', mic='sdm', partition='full-corpus')
     """
     data_dir = Path(data_dir)
     assert data_dir.is_dir(), f"No such directory: {data_dir}"
@@ -522,10 +549,17 @@ def prepare_ami(
         output_dir.mkdir(parents=True, exist_ok=True)
 
     logging.info("Parsing AMI annotations")
-    annotations_dir = data_dir if not annotations_dir else annotations_dir
-    annotations = parse_ami_annotations(
-        Path(annotations_dir) / "annotations.zip", max_pause=max_pause
-    )
+    if not annotations_dir:
+        if (data_dir / "ami_public_manual_1.6.2").is_dir():
+            annotations_dir = data_dir / "ami_public_manual_1.6.2"
+        elif (data_dir / "ami_public_manual_1.6.2.zip").is_file():
+            annotations_dir = data_dir / "ami_public_manual_1.6.2.zip"
+        else:
+            raise ValueError(
+                f"No annotations directory specified and no zip file found in {data_dir}"
+            )
+    # Prepare annotations which is a list of segment-level transcriptions
+    annotations = parse_ami_annotations(annotations_dir, normalize_text)
 
     # Audio
     logging.info("Preparing recording manifests")
