@@ -13,6 +13,7 @@ from lhotse.serialization import (
 )
 from lhotse.utils import (
     TimeSpan,
+    add_durations,
     compute_start_duration_for_extended_cut,
     overlaps,
     overspans,
@@ -134,3 +135,13 @@ def test_compute_start_when_extending_duration_exceeded_left_side():
 def test_compute_start_when_extending_duration_incorrect_direction():
     with pytest.raises(ValueError):
         compute_start_duration_for_extended_cut(0, 1, 2, "bad-direction-string")
+
+
+def test_add_durations():
+    begin = 0.94
+    end = 7.06
+    expected = 6.12
+    naive = end - begin
+    assert naive != expected
+    safe = add_durations(end, -begin, sampling_rate=16000)
+    assert safe == expected
