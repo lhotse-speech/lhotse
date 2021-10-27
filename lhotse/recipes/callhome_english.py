@@ -23,15 +23,19 @@ def prepare_callhome_english(
     absolute_paths: bool = False,
 ) -> Dict[str, Union[RecordingSet, SupervisionSet]]:
     """
-    Prepare manifests for the Switchboard corpus.
-    We create two manifests: one with recordings, and the other one with text supervisions.
-    When ``sentiment_dir`` is provided, we create another supervision manifest with sentiment annotations.
+    Prepare manifests for the Callhome American English portion prepartion.
+    We create two manifests: one with recordings, and the other one with text
+    supervisions.
 
     :param audio_dir: Path to ``LDC2001S97`` package.
-    :param rttm_dir: Path to the transcripts directory. If not provided, the transcripts will be downloaded.
-    :param output_dir: Directory where the manifests should be written. Can be omitted to avoid writing.
-    :param absolute_paths: Whether to return absolute or relative (to the corpus dir) paths for recordings.
-    :return: A dict with manifests. The keys are: ``{'recordings', 'supervisions'}``.
+    :param rttm_dir: Path to the transcripts directory. If not provided,
+        the transcripts will be downloaded.
+    :param output_dir: Directory where the manifests should be written.
+        Can be omitted to avoid writing.
+    :param absolute_paths: Whether to return absolute or relative
+        (to the corpus dir) paths for recordings.
+    :return: A dict with manifests.
+        The keys are: ``{'recordings', 'supervisions'}``.
     """
     if rttm_dir is None:
         rttm_dir = download_callhome_metadata()
