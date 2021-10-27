@@ -138,3 +138,7 @@ dmypy.json
 
 # For macOS
 .DS_Store
+
+Testing/
+lhotse/Testing/
+lhotse/version.py
