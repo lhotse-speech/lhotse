@@ -33,15 +33,16 @@ def prepare_callhome_egyptian(
     absolute_paths: bool = False,
 ) -> Dict[str, Union[RecordingSet, SupervisionSet]]:
     """
-    Prepare manifests for the Switchboard corpus.
-    We create two manifests: one with recordings, and the other one with text supervisions.
-    When ``sentiment_dir`` is provided, we create another supervision manifest with sentiment annotations.
+    Prepare manifests for the Callhome Egyptian Arabic Corpus
+    We create two manifests: one with recordings, and the other one with text
+    supervisions.
 
-    :param audio_dir: Path to ``LDC2001S97`` package.
-    :param rttm_dir: Path to the transcripts directory (typically named "swb_ms98_transcriptions").
-        If not provided, the transcripts will be downloaded.
-    :param output_dir: Directory where the manifests should be written. Can be omitted to avoid writing.
-    :param absolute_paths: Whether to return absolute or relative (to the corpus dir) paths for recordings.
+    :param audio_dir: Path to ``LDC97S45`` package.
+    :param transcript_dir: Path to the ``LDC97T19`` content
+    :param output_dir: Directory where the manifests should be written. Can be omitted
+        to avoid writing.
+    :param absolute_paths: Whether to return absolute or relative (to the corpus dir)
+        paths for recordings.
     :return: A dict with manifests. The keys are: ``{'recordings', 'supervisions'}``.
     """
     audio_dir = Path(audio_dir)
