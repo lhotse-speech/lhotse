@@ -27,20 +27,33 @@ from lhotse.utils import Pathlike, check_and_rglob
 OVERLAP_RATIOS = ["0L", "0S", "OV10", "OV20", "OV30", "OV40"]
 
 
-def download_libricss(target_dir: Pathlike):
+def download_libricss(target_dir: Pathlike, force_download: bool = False):
     """
-    Downloads the LibriCSS data from the Google Drive.
+    Downloads the LibriCSS data from the Google Drive and extracts it.
     :param target_dir: the directory where the LibriCSS data will be saved.
+    :param force_download: if True, it will download the LibriCSS data even if it is already present.
     """
     # Download command (taken from https://github.com/chenzhuo1011/libri_css/blob/9e3b7b0c9bffd8ef6da19f7056f3a2f2c2484ffa/dataprep/scripts/dataprep.sh#L27)
     command = """wget --load-cookies /tmp/cookies.txt "https://docs.google.com/uc?export=download&confirm=$(wget --quiet --save-cookies /tmp/cookies.txt --keep-session-cookies --no-check-certificate 'https://docs.google.com/uc?export=download&id=1Piioxd5G_85K9Bhcr8ebdhXx0CnaHy7l' -O- | sed -rn 's/.*confirm=([0-9A-Za-z_]+).*/\1\n/p')&id=1Piioxd5G_85K9Bhcr8ebdhXx0CnaHy7l" -O for_release.zip && rm -rf /tmp/cookies.txt"""
 
-    Path(target_dir).mkdir(parents=True, exist_ok=True)
-    subprocess.run(command, shell=True, cwd=target_dir)
+    target_dir = Path(target_dir)
+    target_dir.mkdir(parents=True, exist_ok=True)
+    corpus_zip = target_dir / "for_release.zip"
+    corpus_dir = target_dir / "for_release"
+
+    if not force_download and corpus_zip.exists():
+        logging.info(f"{corpus_zip} already exists. Skipping download.")
+    else:
+        subprocess.run(command, shell=True, cwd=target_dir)
+
+    # Extract the zipped file
+    if not (corpus_dir).exists() or force_download:
+        logging.info(f"Extracting {corpus_zip} to {target_dir}")
+        corpus_zip.unzip(target_dir)
 
 
 def prepare_libricss(
-    corpus_zip: Pathlike,
+    corpus_dir: Pathlike,
     output_dir: Pathlike = None,
     type: str = "replay",
 ) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet]]]:
@@ -48,33 +61,25 @@ def prepare_libricss(
     Returns the manifests which consist of the Recordings and Supervisions.
     When all the manifests are available in the ``output_dir``, it will simply read and return them.
 
-    NOTE: To run this function, you need to pass the `for_release.zip` file, which contains
-    the LibriCSS data. You can download it from the Google Drive by running ``download_libricss(target_dir)``.
-
     NOTE: The recordings contain all 7 channels. If you want to use only one channel, you can
     use either ``recording.load_audio(channel=0)`` or ``MonoCut(id=...,recording=recording,channel=0)``
     while creating the CutSet.
 
-    :param corpus_zip: Pathlike, the path to the for_release.zip file.
+    :param corpus_dir: Pathlike, the path to the extracted corpus.
     :param output_dir: Pathlike, the path where to write the manifests.
     :param type: str, the type of the LibriCSS data. It should be one of "replay" or "mix" for the replayed audio
         and the mixed audio respectively.
     :return: a Dict whose key is the dataset part, and the value is Dicts with the keys 'audio' and 'supervisions'.
 
     """
-    corpus_zip = Path(corpus_zip)
-    assert (
-        corpus_zip.is_file()
-    ), f"""No such file: {corpus_zip}. Please run `help(prepare_libricss)` for details"""
     assert type in ["replay", "mix"], f"type should be one of 'replay' or 'mix'"
 
     manifests = {}
 
-    if not (corpus_zip.parent / "for_release").exists():
-        logging.info(f"Extracting {corpus_zip} to {corpus_zip.parent}")
-        corpus_zip.unzip(corpus_zip.parent)
-
-    corpus_dir = corpus_zip.parent / "for_release"
+    corpus_dir = Path(corpus_dir)
+    corpus_dir = (
+        corpus_dir / "for_release" if corpus_dir.stem != "for_release" else corpus_dir
+    )
 
     recordings = []
     segments = []
