@@ -68,9 +68,15 @@ def load_kaldi_data_dir(
     :param map_string_to_underscores: optional string, when specified, we will replace
         all instances of this string in SupervisonSegment IDs to underscores.
         This is to help with handling underscores in Kaldi (see :func:`.export_to_kaldi`).
+        This is also done for speaker IDs.
     """
     path = Path(path)
     assert path.is_dir()
+
+    def fix_id(t: str) -> str:
+        if map_string_to_underscores is None:
+            return t
+        return t.replace(map_string_to_underscores, "_")
 
     # must exist for RecordingSet
     recordings = load_kaldi_text_mapping(path / "wav.scp", must_exist=True)
@@ -111,11 +117,7 @@ def load_kaldi_data_dir(
 
         supervision_set = SupervisionSet.from_segments(
             SupervisionSegment(
-                id=(
-                    segment_id
-                    if map_string_to_underscores is None
-                    else segment_id.replace(map_string_to_underscores, "_")
-                ),
+                id=fix_id(segment_id),
                 recording_id=recording_id,
                 start=float(start),
                 duration=add_durations(
@@ -124,7 +126,7 @@ def load_kaldi_data_dir(
                 channel=0,
                 text=texts[segment_id],
                 language=languages[segment_id],
-                speaker=speakers[segment_id],
+                speaker=fix_id(speakers[segment_id]),
                 gender=genders[speakers[segment_id]],
             )
             for segment_id, recording_id, start, end in supervision_segments
@@ -198,7 +200,11 @@ def export_to_kaldi(
 
     if map_underscores_to is not None:
         supervisions = supervisions.map(
-            lambda s: fastcopy(s, id=s.id.replace("_", map_underscores_to))
+            lambda s: fastcopy(
+                s,
+                id=s.id.replace("_", map_underscores_to),
+                speaker=s.speaker.replace("_", map_underscores_to),
+            )
         )
 
     # Create a simple CutSet that ties together the recording <-> supervision information.
