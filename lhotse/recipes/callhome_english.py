@@ -196,6 +196,7 @@ def prepare_callhome_english_asr(
                         start=start,
                         duration=duration,
                         speaker=f"{recording_id}_{spk}",
+                        channel=ord(spk[0]) - ord("A"),
                         text=text,
                     )
                 )
