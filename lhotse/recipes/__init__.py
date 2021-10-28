@@ -5,7 +5,6 @@ from .babel import prepare_single_babel_language
 from .broadcast_news import prepare_broadcast_news
 from .callhome_egyptian import prepare_callhome_egyptian
 from .callhome_english import prepare_callhome_english
-from .callhome_english2 import prepare_callhome_english2
 from .cmu_arctic import download_cmu_arctic, prepare_cmu_arctic
 from .cmu_indic import download_cmu_indic, prepare_cmu_indic
 from .cmu_kids import prepare_cmu_kids

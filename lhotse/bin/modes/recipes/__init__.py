@@ -5,7 +5,6 @@ from .babel import *
 from .broadcast_news import *
 from .callhome_egyptian import *
 from .callhome_english import *
-from .callhome_english2 import *
 from .cmu_arctic import *
 from .cmu_indic import *
 from .cmu_kids import *
