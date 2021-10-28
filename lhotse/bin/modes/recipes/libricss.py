@@ -1,7 +1,7 @@
 import click
 
 from lhotse.bin.modes import download, prepare
-from lhotse.recipes.libricss import prepare_libricss
+from lhotse.recipes.libricss import download_libricss, prepare_libricss
 from lhotse.utils import Pathlike
 
 
@@ -22,7 +22,9 @@ def libricss(corpus_zip: Pathlike, output_dir: Pathlike, type: str = "replay"):
 
 
 @download.command()
-@click.argument("target_dir", type=click.Path())
+@click.argument("target_dir", type=click.Path(exists=True, dir_okay=True))
 def libricss(target_dir: Pathlike):
-    """Just print the help message."""
-    help(prepare_libricss)
+    """
+    Download LibriCSS dataset.
+    """
+    download_libricss(target_dir)

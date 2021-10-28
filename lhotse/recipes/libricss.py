@@ -6,12 +6,11 @@ For more information, refer to the paper:
 Z. Chen et al., "Continuous speech separation: dataset and analysis," 
 ICASSP 2020 - 2020 IEEE International Conference on Acoustics, Speech and Signal Processing (ICASSP), 
 Barcelona, Spain, 2020
-
-This recipe prepares the LibriCSS data from the for_release.zip file which should be
-downloaded using:
-wget --load-cookies /tmp/cookies.txt "https://docs.google.com/uc?export=download&confirm=$(wget --quiet --save-cookies /tmp/cookies.txt --keep-session-cookies --no-check-certificate 'https://docs.google.com/uc?export=download&id=1Piioxd5G_85K9Bhcr8ebdhXx0CnaHy7l' -O- | sed -rn 's/.*confirm=([0-9A-Za-z_]+).*/\1\n/p')&id=1Piioxd5G_85K9Bhcr8ebdhXx0CnaHy7l" -O for_release.zip && rm -rf /tmp/cookies.txt
 """
 import logging
+import subprocess
+import os
+
 from pathlib import Path
 from typing import Dict, Union
 from lhotse.audio import Recording
@@ -28,6 +27,18 @@ from lhotse.utils import Pathlike, check_and_rglob
 OVERLAP_RATIOS = ["0L", "0S", "OV10", "OV20", "OV30", "OV40"]
 
 
+def download_libricss(target_dir: Pathlike):
+    """
+    Downloads the LibriCSS data from the Google Drive.
+    :param target_dir: the directory where the LibriCSS data will be saved.
+    """
+    # Download command (taken from https://github.com/chenzhuo1011/libri_css/blob/9e3b7b0c9bffd8ef6da19f7056f3a2f2c2484ffa/dataprep/scripts/dataprep.sh#L27)
+    command = """wget --load-cookies /tmp/cookies.txt "https://docs.google.com/uc?export=download&confirm=$(wget --quiet --save-cookies /tmp/cookies.txt --keep-session-cookies --no-check-certificate 'https://docs.google.com/uc?export=download&id=1Piioxd5G_85K9Bhcr8ebdhXx0CnaHy7l' -O- | sed -rn 's/.*confirm=([0-9A-Za-z_]+).*/\1\n/p')&id=1Piioxd5G_85K9Bhcr8ebdhXx0CnaHy7l" -O for_release.zip && rm -rf /tmp/cookies.txt"""
+
+    Path(target_dir).mkdir(parents=True, exist_ok=True)
+    subprocess.run(command, shell=True, cwd=target_dir)
+
+
 def prepare_libricss(
     corpus_zip: Pathlike,
     output_dir: Pathlike = None,
@@ -38,8 +49,7 @@ def prepare_libricss(
     When all the manifests are available in the ``output_dir``, it will simply read and return them.
 
     NOTE: To run this function, you need to pass the `for_release.zip` file, which contains
-    the LibriCSS data. It can be downloaded by running the following command:
-    ``wget --load-cookies /tmp/cookies.txt "https://docs.google.com/uc?export=download&confirm=$(wget --quiet --save-cookies /tmp/cookies.txt --keep-session-cookies --no-check-certificate 'https://docs.google.com/uc?export=download&id=1Piioxd5G_85K9Bhcr8ebdhXx0CnaHy7l' -O- | sed -rn 's/.*confirm=([0-9A-Za-z_]+).*/\1\n/p')&id=1Piioxd5G_85K9Bhcr8ebdhXx0CnaHy7l" -O for_release.zip && rm -rf /tmp/cookies.txt``
+    the LibriCSS data. You can download it from the Google Drive by running ``download_libricss(target_dir)``.
 
     NOTE: The recordings contain all 7 channels. If you want to use only one channel, you can
     use either ``recording.load_audio(channel=0)`` or ``MonoCut(id=...,recording=recording,channel=0)``
@@ -103,8 +113,10 @@ def prepare_libricss(
     validate_recordings_and_supervisions(recordings, supervisions)
 
     if output_dir is not None:
-        recordings.to_json(output_dir / f"recordings.json")
-        supervisions.to_json(output_dir / f"supervisions.json")
+        output_dir = Path(output_dir)
+        output_dir.mkdir(exist_ok=True, parents=True)
+        recordings.to_jsonl(output_dir / "recordings.jsonl")
+        supervisions.to_jsonl(output_dir / "supervisions.jsonl")
 
     return {'recordings': recordings, 'supervisions': supervisions}
 
