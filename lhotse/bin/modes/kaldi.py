@@ -45,7 +45,7 @@ def import_(
     manifest_dir: Pathlike,
     frame_shift: float,
     map_string_to_underscores: Optional[str],
-    num_jobs: int
+    num_jobs: int,
 ):
     """
     Convert a Kaldi data dir DATA_DIR into a directory MANIFEST_DIR of lhotse manifests. Ignores feats.scp.
@@ -58,7 +58,7 @@ def import_(
         sampling_rate=sampling_rate,
         frame_shift=frame_shift,
         map_string_to_underscores=map_string_to_underscores,
-        num_jobs=num_jobs
+        num_jobs=num_jobs,
     )
     manifest_dir = Path(manifest_dir)
     manifest_dir.mkdir(parents=True, exist_ok=True)
