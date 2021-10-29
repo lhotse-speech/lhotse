@@ -123,7 +123,7 @@ def prepare_libricss(
         recordings.to_jsonl(output_dir / "recordings.jsonl")
         supervisions.to_jsonl(output_dir / "supervisions.jsonl")
 
-    return {'recordings': recordings, 'supervisions': supervisions}
+    return {"recordings": recordings, "supervisions": supervisions}
 
 
 def parse_transcript(file_name):
