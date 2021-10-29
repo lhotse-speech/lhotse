@@ -1,5 +1,6 @@
 import warnings
 from collections import defaultdict
+from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 
@@ -11,6 +12,7 @@ from lhotse.utils import (
     Pathlike,
     add_durations,
     compute_num_samples,
+    fastcopy,
     is_module_available,
 )
 
@@ -53,6 +55,8 @@ def load_kaldi_data_dir(
     path: Pathlike,
     sampling_rate: int,
     frame_shift: Optional[Seconds] = None,
+    map_string_to_underscores: Optional[str] = None,
+    num_jobs: int = 1,
 ) -> Tuple[RecordingSet, Optional[SupervisionSet], Optional[FeatureSet]]:
     """
     Load a Kaldi data directory and convert it to a Lhotse RecordingSet and SupervisionSet manifests.
@@ -60,17 +64,26 @@ def load_kaldi_data_dir(
     SupervisionSet is created only when a segments file exists.
     All the other files (text, utt2spk, etc.) are optional, and some of them might not be handled yet.
     In particular, feats.scp files are ignored.
+
+    :param map_string_to_underscores: optional string, when specified, we will replace
+        all instances of this string in SupervisonSegment IDs to underscores.
+        This is to help with handling underscores in Kaldi (see :func:`.export_to_kaldi`).
+        This is also done for speaker IDs.
     """
     path = Path(path)
     assert path.is_dir()
 
+    def fix_id(t: str) -> str:
+        if map_string_to_underscores is None:
+            return t
+        return t.replace(map_string_to_underscores, "_")
+
     # must exist for RecordingSet
     recordings = load_kaldi_text_mapping(path / "wav.scp", must_exist=True)
 
-    durations = {}
-    for recording_id, path_or_cmd in recordings.items():
-        duration = get_duration(path_or_cmd)
-        durations[recording_id] = duration
+    with ProcessPoolExecutor(num_jobs) as ex:
+        dur_vals = ex.map(get_duration, recordings.values())
+    durations = dict(zip(recordings.keys(), dur_vals))
 
     recording_set = RecordingSet.from_recordings(
         Recording(
@@ -104,7 +117,7 @@ def load_kaldi_data_dir(
 
         supervision_set = SupervisionSet.from_segments(
             SupervisionSegment(
-                id=segment_id,
+                id=fix_id(segment_id),
                 recording_id=recording_id,
                 start=float(start),
                 duration=add_durations(
@@ -113,7 +126,7 @@ def load_kaldi_data_dir(
                 channel=0,
                 text=texts[segment_id],
                 language=languages[segment_id],
-                speaker=speakers[segment_id],
+                speaker=fix_id(speakers[segment_id]),
                 gender=genders[speakers[segment_id]],
             )
             for segment_id, recording_id, start, end in supervision_segments
@@ -156,7 +169,10 @@ def load_kaldi_data_dir(
 
 
 def export_to_kaldi(
-    recordings: RecordingSet, supervisions: SupervisionSet, output_dir: Pathlike
+    recordings: RecordingSet,
+    supervisions: SupervisionSet,
+    output_dir: Pathlike,
+    map_underscores_to: Optional[str] = None,
 ):
     """
     Export a pair of ``RecordingSet`` and ``SupervisionSet`` to a Kaldi data directory.
@@ -168,6 +184,8 @@ def export_to_kaldi(
     :param recordings: a ``RecordingSet`` manifest.
     :param supervisions: a ``SupervisionSet`` manifest.
     :param output_dir: path where the Kaldi-style data directory will be created.
+    :param map_underscores_to: optional string with which we will replace all underscores.
+        This helps avoid issues with Kaldi data dir sorting.
     """
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -179,6 +197,15 @@ def export_to_kaldi(
     assert all(r.num_channels == 1 for r in recordings), (
         "Kaldi export of multi-channel Recordings is currently " "not supported."
     )
+
+    if map_underscores_to is not None:
+        supervisions = supervisions.map(
+            lambda s: fastcopy(
+                s,
+                id=s.id.replace("_", map_underscores_to),
+                speaker=s.speaker.replace("_", map_underscores_to),
+            )
+        )
 
     # Create a simple CutSet that ties together the recording <-> supervision information.
     cuts = CutSet.from_manifests(

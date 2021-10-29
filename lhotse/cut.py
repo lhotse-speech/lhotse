@@ -39,7 +39,6 @@ from lhotse.features import (
 )
 from lhotse.features.base import compute_global_stats
 from lhotse.features.io import FeaturesWriter, LilcomFilesWriter, LilcomHdf5Writer
-from lhotse.features.kaldifeat import KaldifeatExtractor
 from lhotse.serialization import Serializable
 from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import (
@@ -327,6 +326,60 @@ class Cut:
 
         features = np.flip(self.load_features().transpose(1, 0), 0)
         return plt.matshow(features)
+
+    def plot_alignment(self, alignment_type: str = "word"):
+        """
+        Display the alignment on top of a spectrogram. Requires matplotlib to be installed.
+        """
+        import matplotlib.pyplot as plt
+        from lhotse import Fbank
+        from lhotse.utils import compute_num_frames
+
+        assert (
+            len(self.supervisions) == 1
+        ), "Cannot plot alignment: there has to be exactly one supervision in a Cut."
+        sup = self.supervisions[0]
+        assert (
+            sup.alignment is not None and alignment_type in sup.alignment
+        ), f"Cannot plot alignment: missing alignment field or alignment type '{alignment_type}'"
+
+        fbank = Fbank()
+
+        feats = self.compute_features(fbank)
+        speaker = sup.speaker
+        language = sup.language
+
+        fig = plt.matshow(np.flip(feats.transpose(1, 0), 0))
+        plt.title(
+            "Cut ID:" + self.id + ", Speaker:" + speaker + ", Language:" + language
+        )
+        plt.tick_params(
+            axis="both",
+            which="major",
+            labelbottom=True,
+            labeltop=False,
+            bottom=True,
+            top=False,
+        )
+
+        for idx, item in enumerate(sup.alignment[alignment_type]):
+            is_even = bool(idx % 2)
+            end_frame = compute_num_frames(
+                item.end,
+                frame_shift=fbank.frame_shift,
+                sampling_rate=self.sampling_rate,
+            )
+            plt.text(
+                end_frame - 4,
+                70 if is_even else 45,
+                item.symbol,
+                fontsize=12,
+                color="w",
+                rotation="vertical",
+            )
+            plt.axvline(end_frame, color="k")
+
+        plt.show()
 
     def trim_to_supervisions(
         self,
