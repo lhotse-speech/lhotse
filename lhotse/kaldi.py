@@ -108,7 +108,7 @@ def load_kaldi_data_dir(
     segments = path / "segments"
     if segments.is_file():
         with segments.open() as f:
-            supervision_segments = [l.strip().split() for l in f]
+            supervision_segments = [sup_string.strip().split() for sup_string in f]
 
         texts = load_kaldi_text_mapping(path / "text")
         speakers = load_kaldi_text_mapping(path / "utt2spk")
@@ -160,9 +160,9 @@ def load_kaldi_data_dir(
             )
         else:
             warnings.warn(
-                f"Failed to import Kaldi 'feats.scp' to Lhotse: "
-                f"frame_shift must be not None. "
-                f"Feature import omitted."
+                "Failed to import Kaldi 'feats.scp' to Lhotse: "
+                "frame_shift must be not None. "
+                "Feature import omitted."
             )
 
     return recording_set, supervision_set, feature_set
@@ -194,9 +194,9 @@ def export_to_kaldi(
         "Kaldi export of Recordings with multiple audio sources "
         "is currently not supported."
     )
-    assert all(r.num_channels == 1 for r in recordings), (
-        "Kaldi export of multi-channel Recordings is currently " "not supported."
-    )
+    # assert all(r.num_channels == 1 for r in recordings), (
+    #     "Kaldi export of multi-channel Recordings is currently " "not supported."
+    # )
 
     if map_underscores_to is not None:
         supervisions = supervisions.map(
@@ -207,7 +207,8 @@ def export_to_kaldi(
             )
         )
 
-    # Create a simple CutSet that ties together the recording <-> supervision information.
+    # Create a simple CutSet that ties together
+    # the recording <-> supervision information.
     cuts = CutSet.from_manifests(
         recordings=recordings, supervisions=supervisions
     ).trim_to_supervisions()
@@ -215,18 +216,21 @@ def export_to_kaldi(
     # wav.scp
     save_kaldi_text_mapping(
         data={
-            recording.id: make_wavscp_string(
+            f"{recording.id}_{channel}": make_wavscp_string(
                 source, sampling_rate=recording.sampling_rate
-            )
+            )[channel]
             for recording in recordings
             for source in recording.sources
+            for channel in source.channels
         },
         path=output_dir / "wav.scp",
     )
     # segments
     save_kaldi_text_mapping(
         data={
-            cut.supervisions[0].id: f"{cut.recording_id} {cut.start} {cut.end}"
+            cut.supervisions[
+                0
+            ].id: f"{cut.recording_id}_{cut.channel} {cut.start} {cut.end}"
             for cut in cuts
         },
         path=output_dir / "segments",
@@ -292,8 +296,27 @@ def make_wavscp_string(source: AudioSource, sampling_rate: int) -> str:
         return f"{source.source} |"
     elif source.type == "file":
         if Path(source.source).suffix == ".wav":
-            return source.source
+            audios = dict()
+            for channel in source.channels:
+                audios[channel] = source.source
+            return audios
+        elif Path(source.source).suffix == ".sph":
+            # we will do this specifically using the sph2pipe because
+            # ffmpeg does not support shorten compression, which is sometimes
+            # used in the sph files
+            audios = dict()
+            for channel in source.channels:
+                audios[
+                    channel
+                ] = f"sph2pipe {source.source} -f wav -c {channel+1} -p | ffmpeg -i pipe:0 -ar {sampling_rate} -f wav  pipe:1 |"
+            return audios
         else:
-            return f"ffmpeg -i {source.source} -ar {sampling_rate} -f wav pipe:1 |"
+            audios = dict()
+            for channel in source.channels:
+                audios[
+                    channel
+                ] = f"ffmpeg -i {source.source} -ar {sampling_rate} -map_channel 0.0.{channel}  -f wav pipe:1 |"
+            return audios
+
     else:
         raise ValueError(f"Unknown AudioSource type: {source.type}")
