@@ -94,7 +94,7 @@ def prepare_aishell4(
 
             try:
                 tg = textgrid.TextGrid.fromFile(
-                    f'{corpus_dir}/{part}/TextGrid/{idx}.TextGrid'
+                    f"{corpus_dir}/{part}/TextGrid/{idx}.TextGrid"
                 )
             except ValueError:
                 logging.warning(
