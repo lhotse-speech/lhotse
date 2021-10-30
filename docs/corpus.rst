@@ -47,6 +47,8 @@ a CLI tool that create the manifests given a corpus directory.
     - :func:`lhotse.recipes.prepare_adept`
   * - Aishell
     - :func:`lhotse.recipes.prepare_aishell`
+  * - AISHELL-4
+    - :func:`lhotse.recipes.prepare_aishell4`
   * - AMI
     - :func:`lhotse.recipes.prepare_ami`
   * - BABEL

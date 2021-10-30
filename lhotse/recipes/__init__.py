@@ -1,5 +1,6 @@
 from .adept import download_adept, prepare_adept
 from .aishell import download_aishell, prepare_aishell
+from .aishell4 import download_aishell4, prepare_aishell4
 from .ami import download_ami, prepare_ami
 from .babel import prepare_single_babel_language
 from .broadcast_news import prepare_broadcast_news
