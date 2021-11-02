@@ -35,7 +35,8 @@ def get_duration(
             )
         from kaldiio import load_mat
 
-        # Note: kaldiio.load_mat returns (sampling_rate: int, samples: 1-D np.array[int])
+        # Note: kaldiio.load_mat returns
+        # (sampling_rate: int, samples: 1-D np.array[int])
         sampling_rate, samples = load_mat(path)
         assert len(samples.shape) == 1
         duration = samples.shape[0] / sampling_rate
@@ -59,16 +60,16 @@ def load_kaldi_data_dir(
     num_jobs: int = 1,
 ) -> Tuple[RecordingSet, Optional[SupervisionSet], Optional[FeatureSet]]:
     """
-    Load a Kaldi data directory and convert it to a Lhotse RecordingSet and SupervisionSet manifests.
-    For this to work, at least the wav.scp file must exist.
+    Load a Kaldi data directory and convert it to a Lhotse RecordingSet and
+    SupervisionSet manifests. For this to work, at least the wav.scp file must exist.
     SupervisionSet is created only when a segments file exists.
-    All the other files (text, utt2spk, etc.) are optional, and some of them might not be handled yet.
-    In particular, feats.scp files are ignored.
+    All the other files (text, utt2spk, etc.) are optional, and some of them might
+    not be handled yet. In particular, feats.scp files are ignored.
 
     :param map_string_to_underscores: optional string, when specified, we will replace
         all instances of this string in SupervisonSegment IDs to underscores.
-        This is to help with handling underscores in Kaldi (see :func:`.export_to_kaldi`).
-        This is also done for speaker IDs.
+        This is to help with handling underscores in Kaldi
+        (see :func:`.export_to_kaldi`). This is also done for speaker IDs.
     """
     path = Path(path)
     assert path.is_dir()
@@ -108,7 +109,7 @@ def load_kaldi_data_dir(
     segments = path / "segments"
     if segments.is_file():
         with segments.open() as f:
-            supervision_segments = [l.strip().split() for l in f]
+            supervision_segments = [sup_string.strip().split() for sup_string in f]
 
         texts = load_kaldi_text_mapping(path / "text")
         speakers = load_kaldi_text_mapping(path / "utt2spk")
@@ -160,9 +161,9 @@ def load_kaldi_data_dir(
             )
         else:
             warnings.warn(
-                f"Failed to import Kaldi 'feats.scp' to Lhotse: "
-                f"frame_shift must be not None. "
-                f"Feature import omitted."
+                "Failed to import Kaldi 'feats.scp' to Lhotse: "
+                "frame_shift must be not None. "
+                "Feature import omitted."
             )
 
     return recording_set, supervision_set, feature_set
@@ -175,17 +176,18 @@ def export_to_kaldi(
     map_underscores_to: Optional[str] = None,
 ):
     """
-    Export a pair of ``RecordingSet`` and ``SupervisionSet`` to a Kaldi data directory.
-    Currently, it only supports single-channel recordings that have a single ``AudioSource``.
+    Export a pair of ``RecordingSet`` and ``SupervisionSet`` to a Kaldi data
+    directory. It even supports recordings that have multiple channels but
+    the recordings will still have to have a single ``AudioSource``.
 
-    The ``RecordingSet`` and ``SupervisionSet`` must be compatible, i.e. it must be possible to create a
-    ``CutSet`` out of them.
+    The ``RecordingSet`` and ``SupervisionSet`` must be compatible, i.e. it must
+    be possible to create a ``CutSet`` out of them.
 
     :param recordings: a ``RecordingSet`` manifest.
     :param supervisions: a ``SupervisionSet`` manifest.
     :param output_dir: path where the Kaldi-style data directory will be created.
-    :param map_underscores_to: optional string with which we will replace all underscores.
-        This helps avoid issues with Kaldi data dir sorting.
+    :param map_underscores_to: optional string with which we will replace all
+        underscores. This helps avoid issues with Kaldi data dir sorting.
     """
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -194,9 +196,9 @@ def export_to_kaldi(
         "Kaldi export of Recordings with multiple audio sources "
         "is currently not supported."
     )
-    assert all(r.num_channels == 1 for r in recordings), (
-        "Kaldi export of multi-channel Recordings is currently " "not supported."
-    )
+    # assert all(r.num_channels == 1 for r in recordings), (
+    #     "Kaldi export of multi-channel Recordings is currently " "not supported."
+    # )
 
     if map_underscores_to is not None:
         supervisions = supervisions.map(
@@ -207,7 +209,8 @@ def export_to_kaldi(
             )
         )
 
-    # Create a simple CutSet that ties together the recording <-> supervision information.
+    # Create a simple CutSet that ties together
+    # the recording <-> supervision information.
     cuts = CutSet.from_manifests(
         recordings=recordings, supervisions=supervisions
     ).trim_to_supervisions()
@@ -215,18 +218,21 @@ def export_to_kaldi(
     # wav.scp
     save_kaldi_text_mapping(
         data={
-            recording.id: make_wavscp_string(
+            f"{recording.id}_{channel}": make_wavscp_channel_string_map(
                 source, sampling_rate=recording.sampling_rate
-            )
+            )[channel]
             for recording in recordings
             for source in recording.sources
+            for channel in source.channels
         },
         path=output_dir / "wav.scp",
     )
     # segments
     save_kaldi_text_mapping(
         data={
-            cut.supervisions[0].id: f"{cut.recording_id} {cut.start} {cut.end}"
+            cut.supervisions[
+                0
+            ].id: f"{cut.recording_id}_{cut.channel} {cut.start} {cut.end}"
             for cut in cuts
         },
         path=output_dir / "segments",
@@ -248,7 +254,11 @@ def export_to_kaldi(
     )
     # reco2dur
     save_kaldi_text_mapping(
-        data={recording.id: recording.duration for recording in recordings},
+        data={
+            f"{recording.id}_{channel}": recording.duration
+            for recording in recordings
+            for channel in recording.sources[0].channels
+        },
         path=output_dir / "reco2dur",
     )
     # utt2lang [optional]
@@ -281,19 +291,45 @@ def load_kaldi_text_mapping(
 def save_kaldi_text_mapping(data: Dict[str, Any], path: Path):
     """Save flat dicts to Kaldi files such as utt2spk, spk2gender, text, etc."""
     with path.open("w") as f:
-        for key, value in data.items():
+        for key, value in sorted(data.items()):
             print(key, value, file=f)
 
 
-def make_wavscp_string(source: AudioSource, sampling_rate: int) -> str:
+def make_wavscp_channel_string_map(
+    source: AudioSource, sampling_rate: int
+) -> Dict[int, str]:
     if source.type == "url":
         raise ValueError("URL audio sources are not supported by Kaldi.")
     elif source.type == "command":
+        if len(source.channels) != 1:
+            raise ValueError(
+                "Command audio multichannel sources are not supported yet."
+            )
         return f"{source.source} |"
     elif source.type == "file":
         if Path(source.source).suffix == ".wav":
-            return source.source
+            audios = dict()
+            for channel in source.channels:
+                audios[channel] = source.source
+            return audios
+        elif Path(source.source).suffix == ".sph":
+            # we will do this specifically using the sph2pipe because
+            # ffmpeg does not support shorten compression, which is sometimes
+            # used in the sph files
+            audios = dict()
+            for channel in source.channels:
+                audios[
+                    channel
+                ] = f"sph2pipe {source.source} -f wav -c {channel+1} -p | ffmpeg -i pipe:0 -ar {sampling_rate} -f wav  pipe:1 |"
+
+            return audios
         else:
-            return f"ffmpeg -i {source.source} -ar {sampling_rate} -f wav pipe:1 |"
+            audios = dict()
+            for channel in source.channels:
+                audios[
+                    channel
+                ] = f"ffmpeg -i {source.source} -ar {sampling_rate} -map_channel 0.0.{channel}  -f wav pipe:1 |"
+            return audios
+
     else:
         raise ValueError(f"Unknown AudioSource type: {source.type}")
