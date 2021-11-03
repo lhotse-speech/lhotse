@@ -73,7 +73,7 @@ class AlignmentItem:
 
     def trim(self, end: Seconds, start: Seconds = 0) -> "AlignmentItem":
         """
-        See :met:`SupervisionSegment.trim`.
+        See :meth:`SupervisionSegment.trim`.
         """
         assert start >= 0
         start_exceeds_by = abs(min(0, self.start - start))

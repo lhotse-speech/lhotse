@@ -146,6 +146,7 @@ class PrecomputedFeatures(BatchIO):
         self, cuts: CutSet, use_alignment_if_exists: Optional[str] = None
     ) -> torch.Tensor:
         """Returns the mask for supervised frames.
+
         :param use_alignment_if_exists: optional str, key for alignment type to use for generating the mask. If not
             exists, fall back on supervision time spans.
         """
@@ -214,6 +215,7 @@ class AudioSamples(BatchIO):
         self, cuts: CutSet, use_alignment_if_exists: Optional[str] = None
     ) -> torch.Tensor:
         """Returns the mask for supervised samples.
+
         :param use_alignment_if_exists: optional str, key for alignment type to use for generating the mask. If not
             exists, fall back on supervision time spans.
         """
@@ -352,6 +354,7 @@ class OnTheFlyFeatures(BatchIO):
         self, cuts: CutSet, use_alignment_if_exists: Optional[str] = None
     ) -> torch.Tensor:
         """Returns the mask for supervised samples.
+
         :param use_alignment_if_exists: optional str, key for alignment type to use for generating the mask. If not
             exists, fall back on supervision time spans.
         """

@@ -3782,18 +3782,18 @@ def mix(
     preserve_id: Optional[str] = None,
 ) -> MixedCut:
     """
-    Overlay, or mix, two cuts. Optionally the `mixed_in_cut` may be shifted by `offset` seconds
+    Overlay, or mix, two cuts. Optionally the ``mixed_in_cut`` may be shifted by ``offset`` seconds
     and scaled down (positive SNR) or scaled up (negative SNR).
     Returns a MixedCut, which contains both cuts and the mix information.
-    The actual feature mixing is performed during the call to ``MixedCut.load_features()``.
+    The actual feature mixing is performed during the call to :meth:`~MixedCut.load_features`.
 
     :param reference_cut: The reference cut for the mix - offset and snr are specified w.r.t this cut.
     :param mixed_in_cut: The mixed-in cut - it will be offset and rescaled to match the offset and snr parameters.
     :param offset: How many seconds to shift the ``mixed_in_cut`` w.r.t. the ``reference_cut``.
-    :param snr: Desired SNR of the `right_cut` w.r.t. the `left_cut` in the mix.
+    :param snr: Desired SNR of the ``right_cut`` w.r.t. the ``left_cut`` in the mix.
     :param preserve_id: optional string ("left", "right"). when specified, append will preserve the cut id
         of the left- or right-hand side argument. otherwise, a new random id is generated.
-    :return: A MixedCut instance.
+    :return: A :class:`~MixedCut` instance.
     """
     if (
         any(isinstance(cut, PaddingCut) for cut in (reference_cut, mixed_in_cut))

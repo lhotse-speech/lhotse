@@ -115,7 +115,7 @@ def register_reader(cls):
     """
     Decorator used to add a new ``FeaturesReader`` to Lhotse's registry.
 
-    Example:
+    Example::
 
         @register_reader
         class MyFeatureReader(FeatureReader):
@@ -129,7 +129,7 @@ def register_writer(cls):
     """
     Decorator used to add a new ``FeaturesWriter`` to Lhotse's registry.
 
-    Example:
+    Example::
 
         @register_writer
         class MyFeatureWriter(FeatureWriter):
@@ -299,7 +299,7 @@ def lookup_cache_or_open(storage_path: str):
     """
     Helper internal function used in HDF5 readers.
     It opens the HDF files and keeps their handles open in a global program cache
-    to avoid excessive amount of syscalls when the *Reader class is instantiated
+    to avoid excessive amount of syscalls when the Reader class is instantiated
     and destroyed in a loop repeatedly (frequent use-case).
 
     The file handles can be freed at any time by calling ``close_cached_file_handles()``.
