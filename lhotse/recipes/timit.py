@@ -20,9 +20,9 @@ from lhotse.utils import Pathlike, urlretrieve_progress
 
 
 def download_timit(
-    target_dir: Pathlike = '.',
+    target_dir: Pathlike = ".",
     force_download: bool = False,
-    base_url: Optional[str] = 'https://data.deepai.org/timit.zip',
+    base_url: Optional[str] = "https://data.deepai.org/timit.zip",
 ) -> None:
     """
     Download and unzip the dataset TIMIT.
@@ -32,16 +32,18 @@ def download_timit(
     """
     target_dir = Path(target_dir)
     target_dir.mkdir(parents=True, exist_ok=True)
-    zip_name = 'timit.zip'
+    zip_name = "timit.zip"
     zip_path = target_dir / zip_name
-    corpus_dir = zip_path.with_suffix('')
-    completed_detector = corpus_dir / '.completed'
+    corpus_dir = zip_path.with_suffix("")
+    completed_detector = corpus_dir / ".completed"
     if completed_detector.is_file():
-        logging.info(f'Skipping {zip_name} because {completed_detector} exists.')
+        logging.info(f"Skipping {zip_name} because {completed_detector} exists.")
         return
     if force_download or not zip_path.is_file():
-        urlretrieve_progress(base_url, filename=zip_path, desc=f'Downloading {zip_name}')
-    
+        urlretrieve_progress(
+            base_url, filename=zip_path, desc=f"Downloading {zip_name}"
+        )
+
     with zipfile.ZipFile(zip_path) as zip_file:
         corpus_dir.mkdir(parents=True, exist_ok=True)
         for names in zip_file.namelist():
@@ -56,20 +58,20 @@ def prepare_timit(
 ) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet]]]:
     """
     Returns the manifests which consists of the Recodings and Supervisions.
-    :param corpus_dir: Pathlike, the path of the data dir. 
+    :param corpus_dir: Pathlike, the path of the data dir.
     :param output_dir: Pathlike, the path where to write and save the manifests.
     :param num_phones: int=48, the number of phones (60, 48 or 39) for modeling and 48 is regarded as the default value.
     :return: a Dict whose key is the dataset part, and the value is Dicts with the keys 'audio' and 'supervisions'.
     """
     corpus_dir = Path(corpus_dir)
-    assert corpus_dir.is_dir(), f'No such directory: {corpus_dir}'
+    assert corpus_dir.is_dir(), f"No such directory: {corpus_dir}"
 
     if output_dir is not None:
         output_dir = Path(output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
 
     manifests = defaultdict(dict)
-    dataset_parts = ['TRAIN', 'DEV', 'TEST']
+    dataset_parts = ["TRAIN", "DEV", "TEST"]
 
     phones_dict = {}
 
@@ -82,49 +84,59 @@ def prepare_timit(
 
     with ThreadPoolExecutor(num_jobs) as ex:
         for part in dataset_parts:
-            file_name = ''
             wav_files = []
-            
-            if part == 'TRAIN': 
-                print('starting....')
+
+            if part == "TRAIN":
+                print("starting....")
                 wav_files = glob.glob(str(corpus_dir) + "/TRAIN/*/*/*.WAV")
                 # filter the SA (dialect sentences)
-                wav_files = list(filter(lambda x: x.split("/")[-1][:2] != "SA", wav_files))
-            elif part == 'DEV':
+                wav_files = list(
+                    filter(lambda x: x.split("/")[-1][:2] != "SA", wav_files)
+                )
+            elif part == "DEV":
                 wav_files = glob.glob(str(corpus_dir) + "/TEST/*/*/*.WAV")
                 # filter the SA (dialect sentences)
-                wav_files = list(filter(lambda x: x.split("/")[-1][:2] != "SA", wav_files))
-                wav_files = list(filter(lambda x: x.split("/")[-2].lower() in dev_spks, wav_files))
+                wav_files = list(
+                    filter(lambda x: x.split("/")[-1][:2] != "SA", wav_files)
+                )
+                wav_files = list(
+                    filter(lambda x: x.split("/")[-2].lower() in dev_spks, wav_files)
+                )
             else:
                 wav_files = glob.glob(str(corpus_dir) + "/TEST/*/*/*.WAV")
                 # filter the SA (dialect sentences)
-                wav_files = list(filter(lambda x: x.split("/")[-1][:2] != "SA", wav_files))
-                wav_files = list(filter(lambda x: x.split("/")[-2].lower() in test_spks, wav_files))
-            
-            logging.debug(f'{part} dataset manifest generation.')
+                wav_files = list(
+                    filter(lambda x: x.split("/")[-1][:2] != "SA", wav_files)
+                )
+                wav_files = list(
+                    filter(lambda x: x.split("/")[-2].lower() in test_spks, wav_files)
+                )
+
+            logging.debug(f"{part} dataset manifest generation.")
             recordings = []
             supervisions = []
 
             for wav_file in tqdm(wav_files):
-                items = str(wav_file).strip().split('/')
-                idx = items[-2] + '-' + items[-1][:-4]
-                speaker = items[-2] 
-                transcript_file = Path(wav_file).with_suffix('.PHN')
+                items = str(wav_file).strip().split("/")
+                idx = items[-2] + "-" + items[-1][:-4]
+                speaker = items[-2]
+                transcript_file = Path(wav_file).with_suffix(".PHN")
                 if not Path(wav_file).is_file():
-                    logging.warning(f'No such file: {wav_file}')
+                    logging.warning(f"No such file: {wav_file}")
                     continue
                 if not Path(transcript_file).is_file():
-                    logging.warning(f'No transcript: {transcript_file}')
+                    logging.warning(f"No transcript: {transcript_file}")
                     continue
                 text = []
-                with open(transcript_file, 'r') as f:
+                with open(transcript_file, "r") as f:
                     lines = f.readlines()
                     for line in lines:
-                        phone = line.rstrip('\n').split(' ')[-1]
-                        if num_phones != 60: phone = phones_dict[str(phone)]
+                        phone = line.rstrip("\n").split(" ")[-1]
+                        if num_phones != 60:
+                            phone = phones_dict[str(phone)]
                         text.append(phone)
 
-                    text = ' '.join(text).replace('h#', 'sil')
+                    text = " ".join(text).replace("h#", "sil")
 
                 recording = Recording.from_file(path=wav_file, recording_id=idx)
                 recordings.append(recording)
@@ -134,9 +146,10 @@ def prepare_timit(
                     start=0.0,
                     duration=recording.duration,
                     channel=0,
-                    language='English',
+                    language="English",
                     speaker=speaker,
-                    text=text.strip())
+                    text=text.strip(),
+                )
 
                 supervisions.append(segment)
 
@@ -145,22 +158,24 @@ def prepare_timit(
                 validate_recordings_and_supervisions(recording_set, supervision_set)
 
                 if output_dir is not None:
-                    supervision_set.to_json(output_dir / f'supervisions_{part}.json')
-                    recording_set.to_json(output_dir / f'recordings_{part}.json')
+                    supervision_set.to_json(output_dir / f"supervisions_{part}.json")
+                    recording_set.to_json(output_dir / f"recordings_{part}.json")
 
                 manifests[part] = {
-                    'recordings': recording_set,
-                    'supervisions': supervision_set}
+                    "recordings": recording_set,
+                    "supervisions": supervision_set,
+                }
 
     return manifests
+
 
 def get_phonemes(num_phones):
     """
     Choose and convert the phones for modeling.
-    :param num_phones: the number of phones for modeling. 
+    :param num_phones: the number of phones for modeling.
     """
     phonemes = {}
-   
+
     if num_phones == int(48):
         logging.debug("Using 48 phones for modeling!")
         # This dictionary is used to convert the 60 phoneme set into the 48 one.
@@ -292,11 +307,12 @@ def get_phonemes(num_phones):
         phonemes["y"] = "y"
         phonemes["z"] = "z"
         phonemes["zh"] = "sh"
-    
+
     else:
         logging.debug("Using 60 phones for modeling!")
 
     return phonemes
+
 
 def get_speakers():
 
