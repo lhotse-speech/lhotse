@@ -40,7 +40,8 @@ def dynamic_lru_cache(method: Callable) -> Callable:
         >>> set_caching_enabled(True)   # enable
         >>> set_caching_enabled(False)  # disable
 
-    Currently it hard-codes the cache size at Python's default (128).
+    Currently it hard-codes the cache size at 512 items
+    (regardless of the array size).
 
     Check :meth:`functools.lru_cache` for more details.
     """
@@ -49,7 +50,7 @@ def dynamic_lru_cache(method: Callable) -> Callable:
     global LHOTSE_CACHED_METHOD_REGISTRY
     name = method.__qualname__  # example: "Recording.load_audio()"
     LHOTSE_CACHED_METHOD_REGISTRY["noncached"][name] = method
-    LHOTSE_CACHED_METHOD_REGISTRY["cached"][name] = lru_cache(method)
+    LHOTSE_CACHED_METHOD_REGISTRY["cached"][name] = lru_cache(maxsize=512)(method)
 
     @wraps(method)
     def wrapper(*args, **kwargs) -> Any:
