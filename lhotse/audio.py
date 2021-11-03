@@ -30,6 +30,7 @@ import numpy as np
 from tqdm.auto import tqdm
 
 from lhotse.augmentation import AudioTransform, Resample, Speed, Tempo, Volume
+from lhotse.caching import dynamic_lru_cache
 from lhotse.serialization import Serializable
 from lhotse.utils import (
     Decibels,
@@ -932,6 +933,7 @@ def audio_energy(audio: np.ndarray) -> float:
 FileObject = Any  # Alias for file-like objects
 
 
+@dynamic_lru_cache
 def read_audio(
     path_or_fd: Union[Pathlike, FileObject],
     offset: Seconds = 0.0,
