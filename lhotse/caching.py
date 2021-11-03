@@ -49,6 +49,12 @@ def dynamic_lru_cache(method: Callable) -> Callable:
     # together with the original, noncached method.
     global LHOTSE_CACHED_METHOD_REGISTRY
     name = method.__qualname__  # example: "Recording.load_audio()"
+    if name in LHOTSE_CACHED_METHOD_REGISTRY["cached"]:
+        raise ValueError(
+            f"Method '{name}' is already cached. "
+            f"We don't support caching different methods which have "
+            f"the same __qualname__ attribute (i.e., class name + method name)."
+        )
     LHOTSE_CACHED_METHOD_REGISTRY["noncached"][name] = method
     LHOTSE_CACHED_METHOD_REGISTRY["cached"][name] = lru_cache(maxsize=512)(method)
 
