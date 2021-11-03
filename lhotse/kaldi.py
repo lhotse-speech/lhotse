@@ -196,9 +196,6 @@ def export_to_kaldi(
         "Kaldi export of Recordings with multiple audio sources "
         "is currently not supported."
     )
-    # assert all(r.num_channels == 1 for r in recordings), (
-    #     "Kaldi export of multi-channel Recordings is currently " "not supported."
-    # )
 
     if map_underscores_to is not None:
         supervisions = supervisions.map(
@@ -215,28 +212,68 @@ def export_to_kaldi(
         recordings=recordings, supervisions=supervisions
     ).trim_to_supervisions()
 
-    # wav.scp
-    save_kaldi_text_mapping(
-        data={
-            f"{recording.id}_{channel}": make_wavscp_channel_string_map(
-                source, sampling_rate=recording.sampling_rate
-            )[channel]
-            for recording in recordings
-            for source in recording.sources
-            for channel in source.channels
-        },
-        path=output_dir / "wav.scp",
-    )
-    # segments
-    save_kaldi_text_mapping(
-        data={
-            cut.supervisions[
-                0
-            ].id: f"{cut.recording_id}_{cut.channel} {cut.start} {cut.end}"
-            for cut in cuts
-        },
-        path=output_dir / "segments",
-    )
+    if all(r.num_channels == 1 for r in recordings):
+        # if all the recordings are single channel, we won't add
+        # the channel id affix to retain back compatibility
+        # and the ability to receive back the same utterances after
+        # importing the exported directory back
+        # wav.scp
+        save_kaldi_text_mapping(
+            data={
+                recording.id: make_wavscp_channel_string_map(
+                    source, sampling_rate=recording.sampling_rate
+                )[0]
+                for recording in recordings
+                for source in recording.sources
+            },
+            path=output_dir / "wav.scp",
+        )
+        # segments
+        save_kaldi_text_mapping(
+            data={
+                cut.supervisions[0].id: f"{cut.recording_id} {cut.start} {cut.end}"
+                for cut in cuts
+            },
+            path=output_dir / "segments",
+        )
+        # reco2dur
+        save_kaldi_text_mapping(
+            data={recording.id: recording.duration for recording in recordings},
+            path=output_dir / "reco2dur",
+        )
+
+    else:
+        # wav.scp
+        save_kaldi_text_mapping(
+            data={
+                f"{recording.id}_{channel}": make_wavscp_channel_string_map(
+                    source, sampling_rate=recording.sampling_rate
+                )[channel]
+                for recording in recordings
+                for source in recording.sources
+                for channel in source.channels
+            },
+            path=output_dir / "wav.scp",
+        )
+        # segments
+        save_kaldi_text_mapping(
+            data={
+                cut.supervisions[
+                    0
+                ].id: f"{cut.recording_id}_{cut.channel} {cut.start} {cut.end}"
+                for cut in cuts
+            },
+            path=output_dir / "segments",
+        )
+        # reco2dur
+        save_kaldi_text_mapping(
+            data={
+                f"{recording.id}_{channel}": recording.duration
+                for recording in recordings
+                for channel in recording.sources[0].channels
+            },
+            path=output_dir / "reco2dur",
+        )
     # text
     save_kaldi_text_mapping(
         data={cut.supervisions[0].id: cut.supervisions[0].text for cut in cuts},
@@ -251,15 +288,6 @@ def export_to_kaldi(
     save_kaldi_text_mapping(
         data={cut.supervisions[0].id: cut.duration for cut in cuts},
         path=output_dir / "utt2dur",
-    )
-    # reco2dur
-    save_kaldi_text_mapping(
-        data={
-            f"{recording.id}_{channel}": recording.duration
-            for recording in recordings
-            for channel in recording.sources[0].channels
-        },
-        path=output_dir / "reco2dur",
     )
     # utt2lang [optional]
     if all(s.language is not None for s in supervisions):
