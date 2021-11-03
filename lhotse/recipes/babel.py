@@ -9,6 +9,7 @@ import logging
 import re
 from collections import defaultdict
 from typing import Dict, Iterable, List, Optional, Union
+from pathlib import Path
 
 from cytoolz import sliding_window
 
@@ -86,6 +87,7 @@ def prepare_single_babel_language(
 
     # Auto-detect the location of the "conversational" directory
     orig_corpus_dir = corpus_dir
+    corpus_dir = Path(corpus_dir)
     corpus_dir = [d for d in corpus_dir.rglob("conversational") if d.is_dir()]
     if not corpus_dir:
         raise ValueError(
@@ -175,13 +177,12 @@ def prepare_single_babel_language(
             recordings, supervisions = remove_missing_recordings_and_supervisions(
                 recordings, supervisions
             )
-            recordings, supervisions = trim_supervisions_to_recordings(
-                recordings, supervisions
-            )
+            supervisions = trim_supervisions_to_recordings(recordings, supervisions)
         validate_recordings_and_supervisions(recordings, supervisions)
 
         manifests[split] = {"recordings": recordings, "supervisions": supervisions}
 
+        output_dir = Path(output_dir)
         if output_dir is not None:
             output_dir.mkdir(parents=True, exist_ok=True)
             language = BABELCODE2LANG[lang_code]
