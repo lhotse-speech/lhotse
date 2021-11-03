@@ -7,6 +7,7 @@ from typing import List, Optional, Type
 import lilcom
 import numpy as np
 
+from lhotse.caching import dynamic_lru_cache
 from lhotse.utils import Pathlike, SmartOpen, is_module_available
 
 
@@ -181,6 +182,7 @@ class LilcomFilesReader(FeaturesReader):
         super().__init__()
         self.storage_path = Path(storage_path)
 
+    @dynamic_lru_cache
     def read(
         self,
         key: str,
@@ -245,6 +247,7 @@ class NumpyFilesReader(FeaturesReader):
         super().__init__()
         self.storage_path = Path(storage_path)
 
+    @dynamic_lru_cache
     def read(
         self,
         key: str,
@@ -336,6 +339,7 @@ class NumpyHdf5Reader(FeaturesReader):
         super().__init__()
         self.hdf = lookup_cache_or_open(storage_path)
 
+    @dynamic_lru_cache
     def read(
         self,
         key: str,
@@ -414,6 +418,7 @@ class LilcomHdf5Reader(FeaturesReader):
         super().__init__()
         self.hdf = lookup_cache_or_open(storage_path)
 
+    @dynamic_lru_cache
     def read(
         self,
         key: str,
@@ -509,6 +514,7 @@ class ChunkedLilcomHdf5Reader(FeaturesReader):
         super().__init__()
         self.hdf = lookup_cache_or_open(storage_path)
 
+    @dynamic_lru_cache
     def read(
         self,
         key: str,
@@ -650,6 +656,7 @@ class LilcomURLReader(FeaturesReader):
         if self.base_url.endswith("/"):
             self.base_url = self.base_url[:-1]
 
+    @dynamic_lru_cache
     def read(
         self,
         key: str,
@@ -732,6 +739,7 @@ class KaldiReader(FeaturesReader):
         self.storage_path = storage_path
         self.storage = kaldiio.load_scp(str(self.storage_path))
 
+    @dynamic_lru_cache
     def read(
         self,
         key: str,

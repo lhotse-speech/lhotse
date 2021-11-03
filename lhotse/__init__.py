@@ -1,5 +1,6 @@
 from .audio import AudioSource, Recording, RecordingSet
 from .augmentation import *
+from .caching import is_caching_enabled, set_caching_enabled
 from .cut import CutSet, MonoCut
 from .features import *
 from .kaldi import load_kaldi_data_dir
