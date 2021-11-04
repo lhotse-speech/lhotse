@@ -477,7 +477,9 @@ def prepare_supervision_ihm(
 def prepare_supervision_other(
     audio: RecordingSet, annotations: Dict[str, List[AmiSegmentAnnotation]]
 ) -> SupervisionSet:
-    annotation_by_id = {(key[0]): annot for key, annot in annotations.items()}
+    annotation_by_id = defaultdict(list)
+    for key, value in annotations.items():
+        annotation_by_id[key[0]].extend(value)
 
     segments = []
     for recording in audio:
@@ -586,6 +588,16 @@ def prepare_ami(
         prepare_supervision_ihm(audio, annotations)
         if mic == "ihm"
         else prepare_supervision_other(audio, annotations)
+    )
+
+    # Some supervision segments exceed the recording bounds, so we remove them here
+    num_supervisions_before = len(supervision)
+    supervision = supervision.filter(
+        lambda s: -1e-3 <= s.start <= s.end <= audio[s.recording_id].duration + 1e-3
+    )
+    num_supervisions_after = len(supervision)
+    logging.warning(
+        f"{num_supervisions_before - num_supervisions_after} supervision segments exceed recording bounds"
     )
 
     manifests = defaultdict(dict)
