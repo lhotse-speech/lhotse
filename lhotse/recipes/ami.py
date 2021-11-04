@@ -33,6 +33,7 @@ import zipfile
 from collections import defaultdict
 from pathlib import Path
 from typing import Dict, List, NamedTuple, Optional, Union
+from lhotse.qa import fix_manifests
 
 from tqdm.auto import tqdm
 
@@ -477,7 +478,9 @@ def prepare_supervision_ihm(
 def prepare_supervision_other(
     audio: RecordingSet, annotations: Dict[str, List[AmiSegmentAnnotation]]
 ) -> SupervisionSet:
-    annotation_by_id = {(key[0]): annot for key, annot in annotations.items()}
+    annotation_by_id = defaultdict(list)
+    for key, value in annotations.items():
+        annotation_by_id[key[0]].extend(value)
 
     segments = []
     for recording in audio:
@@ -603,6 +606,7 @@ def prepare_ami(
             audio_part.to_json(output_dir / f"recordings_{part}.json")
             supervision_part.to_json(output_dir / f"supervisions_{part}.json")
 
+        audio_part, supervision_part = fix_manifests(audio_part, supervision_part)
         validate_recordings_and_supervisions(audio_part, supervision_part)
 
         # Combine all manifests into one dictionary
