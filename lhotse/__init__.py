@@ -1,5 +1,6 @@
 from .audio import AudioSource, Recording, RecordingSet
 from .augmentation import *
+from .caching import is_caching_enabled, set_caching_enabled
 from .cut import CutSet, MonoCut
 from .features import *
 from .kaldi import load_kaldi_data_dir
@@ -17,7 +18,7 @@ except:
     # NOTE: REMEMBER TO UPDATE THE ACTUAL VERSION IN setup.py WHEN RELEASING #
     # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! #
     # Use a default placeholder when the version is unavailable...
-    __version__ = "0.11.0.dev+missing.version.file"
+    __version__ = "0.12.0.dev+missing.version.file"
 
 from . import augmentation
 from . import dataset

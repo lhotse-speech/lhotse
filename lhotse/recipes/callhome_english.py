@@ -191,12 +191,12 @@ def prepare_callhome_english_asr(
                 start = float(start)
                 supervisions.append(
                     SupervisionSegment(
-                        id=f"{recording_id}_{idx}",
                         recording_id=recording_id,
                         start=start,
                         duration=duration,
-                        speaker=f"{recording_id}_{spk}",
                         channel=ord(spk[0]) - ord("A"),
+                        speaker=f"{recording_id}_{spk:0>2s}",
+                        id=f"{recording_id}_{spk:0>2s}_{idx:0>5d}",
                         text=text,
                     )
                 )
