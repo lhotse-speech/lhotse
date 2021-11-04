@@ -33,6 +33,7 @@ import zipfile
 from collections import defaultdict
 from pathlib import Path
 from typing import Dict, List, NamedTuple, Optional, Union
+from lhotse.qa import fix_manifests
 
 from tqdm.auto import tqdm
 
@@ -590,16 +591,6 @@ def prepare_ami(
         else prepare_supervision_other(audio, annotations)
     )
 
-    # Some supervision segments exceed the recording bounds, so we remove them here
-    num_supervisions_before = len(supervision)
-    supervision = supervision.filter(
-        lambda s: -1e-3 <= s.start <= s.end <= audio[s.recording_id].duration + 1e-3
-    )
-    num_supervisions_after = len(supervision)
-    logging.warning(
-        f"{num_supervisions_before - num_supervisions_after} supervision segments exceed recording bounds"
-    )
-
     manifests = defaultdict(dict)
 
     dataset_parts = PARTITIONS[partition]
@@ -615,6 +606,7 @@ def prepare_ami(
             audio_part.to_json(output_dir / f"recordings_{part}.json")
             supervision_part.to_json(output_dir / f"supervisions_{part}.json")
 
+        audio_part, supervision_part = fix_manifests(audio_part, supervision_part)
         validate_recordings_and_supervisions(audio_part, supervision_part)
 
         # Combine all manifests into one dictionary
