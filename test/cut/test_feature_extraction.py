@@ -188,10 +188,15 @@ def test_extract_and_store_features_from_cut_set(
         ),
         pytest.param(
             lambda: LibrosaFbank(LibrosaFbankConfig(sampling_rate=16000)),
-            marks=pytest.mark.skipif(
-                not is_module_available("librosa"),
-                reason="Requires librosa to run.",
-            ),
+            marks=[
+                pytest.mark.skipif(
+                    not is_module_available("librosa"),
+                    reason="Requires librosa to run.",
+                ),
+                pytest.mark.xfail(
+                    reason="Librosa extractors do not work with PyTorch tensors."
+                ),
+            ],
         ),
     ],
 )

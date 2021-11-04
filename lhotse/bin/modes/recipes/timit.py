@@ -9,7 +9,6 @@ __all__ = ["timit"]
 
 @prepare.command(context_settings=dict(show_default=True))
 @click.argument("corpus_dir", type=click.Path(exists=True, dir_okay=True))
-@click.argument("splits_dir", type=click.Path(exists=True, dir_okay=True))
 @click.argument("output_dir", type=click.Path())
 @click.option(
     "-p",
@@ -28,19 +27,16 @@ __all__ = ["timit"]
 )
 def timit(
     corpus_dir: Pathlike,
-    splits_dir: Pathlike,
     output_dir: Pathlike,
     num_phones: int,
     num_jobs: int = 1,
 ):
     """TIMIT data preparation.
     :param corpus_dir: Pathlike, the path of the data dir.
-    :param splits_dir: Pathlike, the path of the txt files for data division (train, dev, tst).
     :param output_dir: Pathlike, the path where to write and save the manifests.
     """
     prepare_timit(
         corpus_dir,
-        splits_dir=splits_dir,
         output_dir=output_dir,
         num_phones=num_phones,
         num_jobs=num_jobs,

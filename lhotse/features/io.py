@@ -7,6 +7,7 @@ from typing import List, Optional, Type
 import lilcom
 import numpy as np
 
+from lhotse.caching import dynamic_lru_cache
 from lhotse.utils import Pathlike, SmartOpen, is_module_available
 
 
@@ -114,7 +115,7 @@ def register_reader(cls):
     """
     Decorator used to add a new ``FeaturesReader`` to Lhotse's registry.
 
-    Example:
+    Example::
 
         @register_reader
         class MyFeatureReader(FeatureReader):
@@ -128,7 +129,7 @@ def register_writer(cls):
     """
     Decorator used to add a new ``FeaturesWriter`` to Lhotse's registry.
 
-    Example:
+    Example::
 
         @register_writer
         class MyFeatureWriter(FeatureWriter):
@@ -181,6 +182,7 @@ class LilcomFilesReader(FeaturesReader):
         super().__init__()
         self.storage_path = Path(storage_path)
 
+    @dynamic_lru_cache
     def read(
         self,
         key: str,
@@ -245,6 +247,7 @@ class NumpyFilesReader(FeaturesReader):
         super().__init__()
         self.storage_path = Path(storage_path)
 
+    @dynamic_lru_cache
     def read(
         self,
         key: str,
@@ -296,7 +299,7 @@ def lookup_cache_or_open(storage_path: str):
     """
     Helper internal function used in HDF5 readers.
     It opens the HDF files and keeps their handles open in a global program cache
-    to avoid excessive amount of syscalls when the *Reader class is instantiated
+    to avoid excessive amount of syscalls when the Reader class is instantiated
     and destroyed in a loop repeatedly (frequent use-case).
 
     The file handles can be freed at any time by calling ``close_cached_file_handles()``.
@@ -336,6 +339,7 @@ class NumpyHdf5Reader(FeaturesReader):
         super().__init__()
         self.hdf = lookup_cache_or_open(storage_path)
 
+    @dynamic_lru_cache
     def read(
         self,
         key: str,
@@ -414,6 +418,7 @@ class LilcomHdf5Reader(FeaturesReader):
         super().__init__()
         self.hdf = lookup_cache_or_open(storage_path)
 
+    @dynamic_lru_cache
     def read(
         self,
         key: str,
@@ -509,6 +514,7 @@ class ChunkedLilcomHdf5Reader(FeaturesReader):
         super().__init__()
         self.hdf = lookup_cache_or_open(storage_path)
 
+    @dynamic_lru_cache
     def read(
         self,
         key: str,
@@ -650,6 +656,7 @@ class LilcomURLReader(FeaturesReader):
         if self.base_url.endswith("/"):
             self.base_url = self.base_url[:-1]
 
+    @dynamic_lru_cache
     def read(
         self,
         key: str,
@@ -732,6 +739,7 @@ class KaldiReader(FeaturesReader):
         self.storage_path = storage_path
         self.storage = kaldiio.load_scp(str(self.storage_path))
 
+    @dynamic_lru_cache
     def read(
         self,
         key: str,
