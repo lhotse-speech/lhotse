@@ -57,15 +57,22 @@ def test_opus_torchaudio_vs_ffmpeg(path):
     ],
 )
 @pytest.mark.parametrize(
-    "force_opus_sampling_rate", [
-        pytest.param(8000, marks=pytest.mark.xfail(reason="Mismatch in shape by one sample.")),
+    "force_opus_sampling_rate",
+    [
+        pytest.param(
+            8000, marks=pytest.mark.xfail(reason="Mismatch in shape by one sample.")
+        ),
         16000,
-        pytest.param(22050, marks=pytest.mark.xfail(reason="Mismatch in shape by one sample.")),
+        pytest.param(
+            22050, marks=pytest.mark.xfail(reason="Mismatch in shape by one sample.")
+        ),
         24000,
-        pytest.param(32000, marks=pytest.mark.xfail(reason="Mismatch in shape by one sample.")),
+        pytest.param(
+            32000, marks=pytest.mark.xfail(reason="Mismatch in shape by one sample.")
+        ),
         44100,
-        48000
-    ]
+        48000,
+    ],
 )
 def test_opus_torchaudio_vs_ffmpeg_with_resampling(path, force_opus_sampling_rate):
     audio_ta, sr_ta = read_opus_torchaudio(

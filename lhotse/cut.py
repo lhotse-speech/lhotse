@@ -61,7 +61,8 @@ from lhotse.utils import (
     overlaps,
     overspans,
     perturb_num_samples,
-    rich_exception_info, split_sequence,
+    rich_exception_info,
+    split_sequence,
     uuid4,
 )
 
