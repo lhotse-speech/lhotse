@@ -46,7 +46,7 @@ from lhotse.utils import (
     ifnone,
     index_by_id_and_check,
     perturb_num_samples,
-    split_sequence,
+    rich_exception_info, split_sequence,
 )
 
 Channels = Union[int, List[int]]
@@ -295,6 +295,7 @@ class Recording:
     def channel_ids(self):
         return sorted(cid for source in self.sources for cid in source.channels)
 
+    @rich_exception_info
     def load_audio(
         self,
         channels: Optional[Channels] = None,

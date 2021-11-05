@@ -61,7 +61,7 @@ from lhotse.utils import (
     overlaps,
     overspans,
     perturb_num_samples,
-    split_sequence,
+    rich_exception_info, split_sequence,
     uuid4,
 )
 
@@ -815,6 +815,7 @@ class MonoCut(Cut):
             else self.recording.sampling_rate
         )
 
+    @rich_exception_info
     def load_features(self) -> Optional[np.ndarray]:
         """
         Load the features from the underlying storage and cut them to the relevant
@@ -833,6 +834,7 @@ class MonoCut(Cut):
             return feats
         return None
 
+    @rich_exception_info
     def load_audio(self) -> Optional[np.ndarray]:
         """
         Load the audio by locating the appropriate recording in the supplied RecordingSet.
@@ -1916,6 +1918,7 @@ class MixedCut(Cut):
             ],
         )
 
+    @rich_exception_info
     def load_features(self, mixed: bool = True) -> Optional[np.ndarray]:
         """
         Loads the features of the source cuts and mixes them on-the-fly.
@@ -1983,6 +1986,7 @@ class MixedCut(Cut):
         else:
             return mixer.unmixed_feats
 
+    @rich_exception_info
     def load_audio(self, mixed: bool = True) -> Optional[np.ndarray]:
         """
         Loads the audios of the source cuts and mix them on-the-fly.
