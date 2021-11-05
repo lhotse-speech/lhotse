@@ -4,12 +4,12 @@ from copy import deepcopy
 from functools import reduce
 from itertools import chain
 from operator import add
-from typing import Any, Callable, Dict, List, Optional, Tuple, Type
+from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple, Type, Union
 
 import numpy as np
 from typing_extensions import Literal
 
-from lhotse import CutSet
+from lhotse import CutSet, Seconds
 from lhotse.cut import Cut
 from lhotse.dataset.sampling.base import CutSampler
 from lhotse.dataset.sampling.single_cut import SingleCutSampler
@@ -387,7 +387,7 @@ def create_buckets_equal_duration(
     :param num_buckets: The number of buckets.
     :return: A list of CutSet buckets (or tuples of CutSet buckets, depending on the input).
     """
-    first_cut_set = cuts[0].sort_by_duration(ascending=True)
+    first_cut_set = cuts[0]
     buckets_per_cutset = [
         _create_buckets_equal_duration_single(first_cut_set, num_buckets=num_buckets)
     ]
@@ -403,14 +403,15 @@ def create_buckets_equal_duration(
 
 
 def _create_buckets_equal_duration_single(
-    cuts: CutSet, num_buckets: int
-) -> List[CutSet]:
+    cuts: CutSet, num_buckets: int, as_cutset: bool = True
+) -> List[Union[CutSet, List[Cut]]]:
     """
     Helper method to partition a single CutSet into buckets that have the same
     cumulative duration.
 
     See also: :meth:`.create_buckets_from_duration_percentiles`.
     """
+    cuts = cuts.sort_by_duration(ascending=True)
     total_duration = np.sum(c.duration for c in cuts)
     bucket_duration = total_duration / num_buckets
     iter_cuts = iter(cuts)
@@ -431,5 +432,64 @@ def _create_buckets_equal_duration_single(
                 iter_cuts = chain([last_cut], iter_cuts)
         except StopIteration:
             assert bucket_idx == num_buckets - 1
-        buckets.append(CutSet.from_cuts(bucket))
+        buckets.append(CutSet.from_cuts(bucket) if as_cutset else bucket)
     return buckets
+
+
+class CutStratifier:
+    def __init__(self, criteria: Sequence[Callable[[Cut], bool]]) -> None:
+        self.criteria = list(criteria)
+        # Create one extra bucket for cuts that don't match anywhere.
+        self.buckets = [[] for _ in range(len(criteria) + 1)]
+
+    @classmethod
+    def from_duration_bounds(cls, durations: Sequence[Seconds]) -> 'CutStratifier':
+        """
+        Construct a :class:`CutStratifier` that groups together cuts of similar duration.
+
+        :param durations: A list of duration boundaries, that will be internally sorted.
+            The cuts are grouped by duration between consecutive elements from this list.
+        """
+        durations = sorted(durations)
+        assert durations[0] >= 0, "Negative durations are undefined."
+        if durations[0] > 0:
+            durations.insert(0, 0)
+        if durations[-1] < float('inf'):
+            durations.append(float('inf'))
+        return cls(
+            criteria=[
+                (lambda cut: left_bound <= cut.duration < right_bound)
+                for left_bound, right_bound in zip(durations, durations[1:])
+            ]
+        )
+
+    def accept(self, cut: Cut) -> None:
+        for idx, criterion in enumerate(self.criteria):
+            if criterion(cut):
+                self.buckets[idx].append(cut)
+                return
+        # Not accepted anywhere -- add to the left-over bucket.
+        self.buckets[-1].append(cut)
+
+
+class StratifiedSampler:
+    def __init__(self, cuts: CutSet, stratifier: CutStratifier) -> None:
+        self.cuts = cuts
+        self.stratifier = stratifier
+
+    def __iter__(self):
+        pass
+
+    def __next__(self):
+        pass
+
+
+def get_bounds_for_buckets_equal_duration(
+    cuts: CutSet, num_buckets: int
+) -> List[float]:
+    buckets = _create_buckets_equal_duration_single(cuts=cuts, num_buckets=num_buckets, as_cutset=False)
+    bounds = []
+    for lhs, rhs in zip(buckets, buckets[1:]):
+        boundary_duration = (lhs[-1].duration + rhs[0].duration) / 2
+        bounds.append(boundary_duration)
+    return bounds
