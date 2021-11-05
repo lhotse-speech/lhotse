@@ -46,7 +46,8 @@ from lhotse.utils import (
     ifnone,
     index_by_id_and_check,
     perturb_num_samples,
-    rich_exception_info, split_sequence,
+    rich_exception_info,
+    split_sequence,
 )
 
 Channels = Union[int, List[int]]
