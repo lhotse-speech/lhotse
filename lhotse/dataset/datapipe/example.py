@@ -203,7 +203,6 @@ def build_pipeline(path: str, num_jobs: int = 2):
         )
     # DataLoader will also handle stop, join and cleanup subprocesses
 
-    # NOTE: this step doesn't work -- somehow it seems to skip the IODataPipe?
     datapipe = dp.Multiplexer(*datapipes)
 
     datapipe = RecombineBatchAfterIO(datapipe)
