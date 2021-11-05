@@ -149,7 +149,8 @@ try:
 
     torch_ver = LooseVersion(torch.__version__)
     if torch_ver >= LooseVersion("1.10.1"):
-        raise NotImplementedError("PyTorch version >= 1.10.1 is not yet supported")
+        #raise NotImplementedError("PyTorch version >= 1.10.1 is not yet supported")
+        pass
     elif torch_ver >= LooseVersion("1.10.0"):
         install_requires.append("torchaudio==0.10.0")
     elif torch_ver >= LooseVersion("1.9.1"):
