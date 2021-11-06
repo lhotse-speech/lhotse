@@ -169,7 +169,7 @@ class FeatureExtractor(metaclass=ABCMeta):
             else:
                 return result[0]
         elif all(item.shape == result[0].shape for item in result[1:]):
-            return np.stack(result, dim=0)
+            return np.stack(result, axis=0)
         else:
             return result
 
