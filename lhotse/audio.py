@@ -1313,20 +1313,24 @@ def read_opus(
 
     :return: a tuple of audio samples and the sampling rate.
     """
-    try:
-        return read_opus_torchaudio(
-            path=path,
-            offset=offset,
-            duration=duration,
-            force_opus_sampling_rate=force_opus_sampling_rate,
-        )
-    except:
-        return read_opus_ffmpeg(
-            path=path,
-            offset=offset,
-            duration=duration,
-            force_opus_sampling_rate=force_opus_sampling_rate,
-        )
+    # TODO: Revisit using torchaudio backend for OPUS
+    #       once it's more thoroughly benchmarked against ffmpeg
+    #       and has a competitive I/O speed.
+    #       See: https://github.com/pytorch/audio/issues/1994
+    # try:
+    #     return read_opus_torchaudio(
+    #         path=path,
+    #         offset=offset,
+    #         duration=duration,
+    #         force_opus_sampling_rate=force_opus_sampling_rate,
+    #     )
+    # except:
+    return read_opus_ffmpeg(
+        path=path,
+        offset=offset,
+        duration=duration,
+        force_opus_sampling_rate=force_opus_sampling_rate,
+    )
 
 
 def read_opus_torchaudio(
