@@ -433,12 +433,12 @@ def test_opus_recording_from_file_force_sampling_rate():
     path = "test/fixtures/mono_c0.opus"
     recording = Recording.from_file(path, force_opus_sampling_rate=8000)
     assert recording.sampling_rate == 8000
-    assert isclose(recording.duration, 0.505375)
+    assert isclose(recording.duration, 0.5055)
     samples = recording.load_audio()
     num_channels, num_samples = samples.shape
     assert num_channels == recording.num_channels
     assert num_samples == recording.num_samples
-    assert num_samples == 4043
+    assert num_samples == 4044
 
 
 @pytest.mark.skipif(
@@ -452,12 +452,12 @@ def test_opus_stereo_recording_from_file_force_sampling_rate():
     path = "test/fixtures/stereo.opus"
     recording = Recording.from_file(path, force_opus_sampling_rate=8000)
     assert recording.sampling_rate == 8000
-    assert isclose(recording.duration, 1.005375)
+    assert isclose(recording.duration, 1.0055)
     samples = recording.load_audio()
     num_channels, num_samples = samples.shape
     assert num_channels == recording.num_channels
     assert num_samples == recording.num_samples
-    assert num_samples == 8043
+    assert num_samples == 8044
 
 
 @pytest.mark.skipif(
@@ -471,7 +471,7 @@ def test_opus_stereo_recording_from_file_force_sampling_rate_read_chunk():
     path = "test/fixtures/stereo.opus"
     recording = Recording.from_file(path, force_opus_sampling_rate=8000)
     assert recording.sampling_rate == 8000
-    assert isclose(recording.duration, 1.005375)
+    assert isclose(recording.duration, 1.0055)
     all_samples = recording.load_audio()
     samples = recording.load_audio(offset=0.5, duration=0.25)
     num_channels, num_samples = samples.shape
