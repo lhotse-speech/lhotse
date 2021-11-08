@@ -24,10 +24,10 @@ class VadDataset(torch.utils.data.Dataset):
     """
 
     def __init__(
-            self,
-            input_strategy: BatchIO = PrecomputedFeatures(),
-            cut_transforms: Sequence[Callable[[CutSet], CutSet]] = None,
-            input_transforms: Sequence[Callable[[torch.Tensor], torch.Tensor]] = None
+        self,
+        input_strategy: BatchIO = PrecomputedFeatures(),
+        cut_transforms: Sequence[Callable[[CutSet], CutSet]] = None,
+        input_transforms: Sequence[Callable[[torch.Tensor], torch.Tensor]] = None,
     ) -> None:
         super().__init__()
         self.input_strategy = input_strategy
@@ -43,8 +43,8 @@ class VadDataset(torch.utils.data.Dataset):
         for tfnm in self.input_transforms:
             inputs = tfnm(inputs)
         return {
-            'inputs': inputs,
-            'input_lens': input_lens,
-            'is_voice': self.input_strategy.supervision_masks(cuts),
-            'cut': cuts
+            "inputs": inputs,
+            "input_lens": input_lens,
+            "is_voice": self.input_strategy.supervision_masks(cuts),
+            "cut": cuts,
         }

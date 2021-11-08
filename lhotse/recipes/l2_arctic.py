@@ -19,8 +19,13 @@ from os import makedirs
 from pathlib import Path
 from typing import Dict, Optional, Union
 
-from lhotse import Recording, RecordingSet, SupervisionSegment, SupervisionSet, \
-    validate_recordings_and_supervisions
+from lhotse import (
+    Recording,
+    RecordingSet,
+    SupervisionSegment,
+    SupervisionSet,
+    validate_recordings_and_supervisions,
+)
 from lhotse.utils import Pathlike
 
 SPEAKER_DESCRIPTION = """
@@ -103,8 +108,8 @@ PHONE_SET_DESCRIPTION = """
 
 
 def prepare_l2_arctic(
-        corpus_dir: Pathlike,
-        output_dir: Optional[Pathlike] = None,
+    corpus_dir: Pathlike,
+    output_dir: Optional[Pathlike] = None,
 ) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet]]]:
     """
     Prepares and returns the L2 Arctic manifests which consist of Recordings and Supervisions.
@@ -115,59 +120,73 @@ def prepare_l2_arctic(
         Each hold another dict of {'recordings': ..., 'supervisions': ...}
     """
     corpus_dir = Path(corpus_dir)
-    assert corpus_dir.is_dir(), f'No such directory: {corpus_dir}'
+    assert corpus_dir.is_dir(), f"No such directory: {corpus_dir}"
 
     speaker_meta = _parse_speaker_description()
 
     recordings = RecordingSet.from_recordings(
         # Example ID: zhaa-arctic_b0126
-        Recording.from_file(wav, recording_id=f'{wav.parent.parent.name.lower()}-{wav.stem}')
-        for wav in corpus_dir.rglob('*.wav')
+        Recording.from_file(
+            wav, recording_id=f"{wav.parent.parent.name.lower()}-{wav.stem}"
+        )
+        for wav in corpus_dir.rglob("*.wav")
     )
     supervisions = []
-    for path in corpus_dir.rglob('*.txt'):
+    for path in corpus_dir.rglob("*.txt"):
         # One utterance (line) per file
         text = path.read_text().strip()
 
-        is_suitcase_corpus = 'suitcase_corpus' in path.parts
+        is_suitcase_corpus = "suitcase_corpus" in path.parts
 
-        speaker = path.parent.parent.name.lower()  # <root>/ABA/transcript/arctic_a0051.txt -> aba
+        speaker = (
+            path.parent.parent.name.lower()
+        )  # <root>/ABA/transcript/arctic_a0051.txt -> aba
         if is_suitcase_corpus:
             speaker = path.stem  # <root>/suitcase_corpus/transcript/aba.txt -> aba
 
-        seg_id = f'suitcase_corpus-{speaker}' if is_suitcase_corpus else f'{speaker}-{path.stem}'
-        supervisions.append(SupervisionSegment(
-            id=seg_id,
-            recording_id=seg_id,
-            start=0,
-            duration=recordings[seg_id].duration,
-            text=text,
-            language='English',
-            speaker=speaker,
-            gender=speaker_meta[speaker]['gender'],
-            custom={'accent': speaker_meta[speaker]['native_lang']}
-        ))
+        seg_id = (
+            f"suitcase_corpus-{speaker}"
+            if is_suitcase_corpus
+            else f"{speaker}-{path.stem}"
+        )
+        supervisions.append(
+            SupervisionSegment(
+                id=seg_id,
+                recording_id=seg_id,
+                start=0,
+                duration=recordings[seg_id].duration,
+                text=text,
+                language="English",
+                speaker=speaker,
+                gender=speaker_meta[speaker]["gender"],
+                custom={"accent": speaker_meta[speaker]["native_lang"]},
+            )
+        )
     supervisions = SupervisionSet.from_segments(supervisions)
 
     validate_recordings_and_supervisions(recordings, supervisions)
 
     splits = {
-        'read': {
-            'recordings': recordings.filter(lambda r: 'suitcase_corpus' not in r.id),
-            'supervisions': supervisions.filter(lambda s: 'suitcase_corpus' not in s.recording_id)
+        "read": {
+            "recordings": recordings.filter(lambda r: "suitcase_corpus" not in r.id),
+            "supervisions": supervisions.filter(
+                lambda s: "suitcase_corpus" not in s.recording_id
+            ),
         },
-        'suitcase': {
-            'recordings': recordings.filter(lambda r: 'suitcase_corpus' in r.id),
-            'supervisions': supervisions.filter(lambda s: 'suitcase_corpus' in s.recording_id)
-        }
+        "suitcase": {
+            "recordings": recordings.filter(lambda r: "suitcase_corpus" in r.id),
+            "supervisions": supervisions.filter(
+                lambda s: "suitcase_corpus" in s.recording_id
+            ),
+        },
     }
 
     if output_dir is not None:
         output_dir = Path(output_dir)
         makedirs(output_dir, exist_ok=True)
         for key, manifests in splits.items():
-            manifests['recordings'].to_json(output_dir / f'recordings-{key}.json')
-            manifests['supervisions'].to_json(output_dir / f'supervisions-{key}.json')
+            manifests["recordings"].to_json(output_dir / f"recordings-{key}.json")
+            manifests["supervisions"].to_json(output_dir / f"supervisions-{key}.json")
 
     return splits
 
@@ -175,6 +194,6 @@ def prepare_l2_arctic(
 def _parse_speaker_description():
     meta = {}
     for line in SPEAKER_DESCRIPTION.splitlines()[3:-1]:
-        _, spk, gender, native_lang, *_ = line.split('|')
-        meta[spk.lower()] = {'gender': gender, 'native_lang': native_lang}
+        _, spk, gender, native_lang, *_ = line.split("|")
+        meta[spk.lower()] = {"gender": gender, "native_lang": native_lang}
     return meta

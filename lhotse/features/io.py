@@ -7,7 +7,8 @@ from typing import List, Optional, Type
 import lilcom
 import numpy as np
 
-from lhotse.utils import Pathlike, is_module_available, SmartOpen
+from lhotse.caching import dynamic_lru_cache
+from lhotse.utils import Pathlike, SmartOpen, is_module_available
 
 
 class FeaturesWriter(metaclass=ABCMeta):
@@ -43,18 +44,23 @@ class FeaturesWriter(metaclass=ABCMeta):
 
     @property
     @abstractmethod
-    def name(self) -> str: ...
+    def name(self) -> str:
+        ...
 
     @property
     @abstractmethod
-    def storage_path(self) -> str: ...
+    def storage_path(self) -> str:
+        ...
 
     @abstractmethod
-    def write(self, key: str, value: np.ndarray) -> str: ...
+    def write(self, key: str, value: np.ndarray) -> str:
+        ...
 
-    def __enter__(self): return self
+    def __enter__(self):
+        return self
 
-    def __exit__(self, *args, **kwargs): ...
+    def __exit__(self, *args, **kwargs):
+        ...
 
 
 class FeaturesReader(metaclass=ABCMeta):
@@ -84,15 +90,17 @@ class FeaturesReader(metaclass=ABCMeta):
 
     @property
     @abstractmethod
-    def name(self) -> str: ...
+    def name(self) -> str:
+        ...
 
     @abstractmethod
     def read(
-            self,
-            key: str,
-            left_offset_frames: int = 0,
-            right_offset_frames: Optional[int] = None
-    ) -> np.ndarray: ...
+        self,
+        key: str,
+        left_offset_frames: int = 0,
+        right_offset_frames: Optional[int] = None,
+    ) -> np.ndarray:
+        ...
 
 
 READER_BACKENDS = {}
@@ -107,7 +115,7 @@ def register_reader(cls):
     """
     Decorator used to add a new ``FeaturesReader`` to Lhotse's registry.
 
-    Example:
+    Example::
 
         @register_reader
         class MyFeatureReader(FeatureReader):
@@ -121,7 +129,7 @@ def register_writer(cls):
     """
     Decorator used to add a new ``FeaturesWriter`` to Lhotse's registry.
 
-    Example:
+    Example::
 
         @register_writer
         class MyFeatureWriter(FeatureWriter):
@@ -167,21 +175,23 @@ class LilcomFilesReader(FeaturesReader):
     ``storage_path`` corresponds to the directory path;
     ``storage_key`` for each utterance is the name of the file in that directory.
     """
-    name = 'lilcom_files'
+
+    name = "lilcom_files"
 
     def __init__(self, storage_path: Pathlike, *args, **kwargs):
         super().__init__()
         self.storage_path = Path(storage_path)
 
+    @dynamic_lru_cache
     def read(
-            self,
-            key: str,
-            left_offset_frames: int = 0,
-            right_offset_frames: Optional[int] = None
+        self,
+        key: str,
+        left_offset_frames: int = 0,
+        right_offset_frames: Optional[int] = None,
     ) -> np.ndarray:
-        with open(self.storage_path / key, 'rb') as f:
+        with open(self.storage_path / key, "rb") as f:
             arr = lilcom.decompress(f.read())
-        return arr[left_offset_frames: right_offset_frames]
+        return arr[left_offset_frames:right_offset_frames]
 
 
 @register_writer
@@ -191,7 +201,8 @@ class LilcomFilesWriter(FeaturesWriter):
     ``storage_path`` corresponds to the directory path;
     ``storage_key`` for each utterance is the name of the file in that directory.
     """
-    name = 'lilcom_files'
+
+    name = "lilcom_files"
 
     def __init__(self, storage_path: Pathlike, tick_power: int = -5, *args, **kwargs):
         super().__init__()
@@ -209,12 +220,12 @@ class LilcomFilesWriter(FeaturesWriter):
         # too many files in a single directory.
         subdir = self.storage_path_ / key[:3]
         subdir.mkdir(exist_ok=True)
-        output_features_path = (subdir / key).with_suffix('.llc')
+        output_features_path = (subdir / key).with_suffix(".llc")
         serialized_feats = lilcom.compress(value, tick_power=self.tick_power)
-        with open(output_features_path, 'wb') as f:
+        with open(output_features_path, "wb") as f:
             f.write(serialized_feats)
         # Include sub-directory in the key, e.g. "abc/abcdef.llc"
-        return '/'.join(output_features_path.parts[-2:])
+        return "/".join(output_features_path.parts[-2:])
 
 
 """
@@ -229,20 +240,22 @@ class NumpyFilesReader(FeaturesReader):
     ``storage_path`` corresponds to the directory path;
     ``storage_key`` for each utterance is the name of the file in that directory.
     """
-    name = 'numpy_files'
+
+    name = "numpy_files"
 
     def __init__(self, storage_path: Pathlike, *args, **kwargs):
         super().__init__()
         self.storage_path = Path(storage_path)
 
+    @dynamic_lru_cache
     def read(
-            self,
-            key: str,
-            left_offset_frames: int = 0,
-            right_offset_frames: Optional[int] = None
+        self,
+        key: str,
+        left_offset_frames: int = 0,
+        right_offset_frames: Optional[int] = None,
     ) -> np.ndarray:
         arr = np.load(self.storage_path / key, allow_pickle=False)
-        return arr[left_offset_frames: right_offset_frames]
+        return arr[left_offset_frames:right_offset_frames]
 
 
 @register_writer
@@ -252,7 +265,8 @@ class NumpyFilesWriter(FeaturesWriter):
     ``storage_path`` corresponds to the directory path;
     ``storage_key`` for each utterance is the name of the file in that directory.
     """
-    name = 'numpy_files'
+
+    name = "numpy_files"
 
     def __init__(self, storage_path: Pathlike, *args, **kwargs):
         super().__init__()
@@ -269,10 +283,10 @@ class NumpyFilesWriter(FeaturesWriter):
         # too many files in a single directory.
         subdir = self.storage_path_ / key[:3]
         subdir.mkdir(exist_ok=True)
-        output_features_path = (subdir / key).with_suffix('.npy')
+        output_features_path = (subdir / key).with_suffix(".npy")
         np.save(output_features_path, value, allow_pickle=False)
         # Include sub-directory in the key, e.g. "abc/abcdef.npy"
-        return '/'.join(output_features_path.parts[-2:])
+        return "/".join(output_features_path.parts[-2:])
 
 
 """
@@ -285,13 +299,14 @@ def lookup_cache_or_open(storage_path: str):
     """
     Helper internal function used in HDF5 readers.
     It opens the HDF files and keeps their handles open in a global program cache
-    to avoid excessive amount of syscalls when the *Reader class is instantiated
+    to avoid excessive amount of syscalls when the Reader class is instantiated
     and destroyed in a loop repeatedly (frequent use-case).
 
     The file handles can be freed at any time by calling ``close_cached_file_handles()``.
     """
     import h5py
-    return h5py.File(storage_path, 'r')
+
+    return h5py.File(storage_path, "r")
 
 
 @lru_cache(maxsize=None)
@@ -317,21 +332,23 @@ class NumpyHdf5Reader(FeaturesReader):
     ``storage_path`` corresponds to the HDF5 file path;
     ``storage_key`` for each utterance is the key corresponding to the array (i.e. HDF5 "Group" name).
     """
-    name = 'numpy_hdf5'
+
+    name = "numpy_hdf5"
 
     def __init__(self, storage_path: Pathlike, *args, **kwargs):
         super().__init__()
         self.hdf = lookup_cache_or_open(storage_path)
 
+    @dynamic_lru_cache
     def read(
-            self,
-            key: str,
-            left_offset_frames: int = 0,
-            right_offset_frames: Optional[int] = None
+        self,
+        key: str,
+        left_offset_frames: int = 0,
+        right_offset_frames: Optional[int] = None,
     ) -> np.ndarray:
         # (pzelasko): If I understand HDF5/h5py correctly, this implementation reads only
         # the requested slice of the array into memory - but don't take my word for it.
-        return self.hdf[key][left_offset_frames: right_offset_frames]
+        return self.hdf[key][left_offset_frames:right_offset_frames]
 
 
 @register_writer
@@ -345,15 +362,10 @@ class NumpyHdf5Writer(FeaturesWriter):
     Internally, this class opens the file lazily so that this object can be passed between processes
     without issues. This simplifies the parallel feature extraction code.
     """
-    name = 'numpy_hdf5'
 
-    def __init__(
-            self,
-            storage_path: Pathlike,
-            mode: str = 'w',
-            *args,
-            **kwargs
-    ):
+    name = "numpy_hdf5"
+
+    def __init__(self, storage_path: Pathlike, mode: str = "w", *args, **kwargs):
         """
         :param storage_path: Path under which we'll create the HDF5 file.
             We will add a ``.h5`` suffix if it is not already in ``storage_path``.
@@ -364,7 +376,8 @@ class NumpyHdf5Writer(FeaturesWriter):
         """
         super().__init__()
         import h5py
-        self.storage_path_ = Path(storage_path).with_suffix('.h5')
+
+        self.storage_path_ = Path(storage_path).with_suffix(".h5")
         self.hdf = h5py.File(self.storage_path, mode=mode)
 
     @property
@@ -398,24 +411,26 @@ class LilcomHdf5Reader(FeaturesReader):
     ``storage_path`` corresponds to the HDF5 file path;
     ``storage_key`` for each utterance is the key corresponding to the array (i.e. HDF5 "Group" name).
     """
-    name = 'lilcom_hdf5'
+
+    name = "lilcom_hdf5"
 
     def __init__(self, storage_path: Pathlike, *args, **kwargs):
         super().__init__()
         self.hdf = lookup_cache_or_open(storage_path)
 
+    @dynamic_lru_cache
     def read(
-            self,
-            key: str,
-            left_offset_frames: int = 0,
-            right_offset_frames: Optional[int] = None
+        self,
+        key: str,
+        left_offset_frames: int = 0,
+        right_offset_frames: Optional[int] = None,
     ) -> np.ndarray:
         # This weird indexing with [()] is a replacement for ".value" attribute,
         # that got deprecated with the following warning:
         # H5pyDeprecationWarning: dataset.value has been deprecated. Use dataset[()] instead.
         #     arr = lilcom.decompress(self.hdf[key].value.tobytes())
         arr = lilcom.decompress(self.hdf[key][()].tobytes())
-        return arr[left_offset_frames: right_offset_frames]
+        return arr[left_offset_frames:right_offset_frames]
 
 
 @register_writer
@@ -426,15 +441,16 @@ class LilcomHdf5Writer(FeaturesWriter):
     ``storage_path`` corresponds to the HDF5 file path;
     ``storage_key`` for each utterance is the key corresponding to the array (i.e. HDF5 "Group" name).
     """
-    name = 'lilcom_hdf5'
+
+    name = "lilcom_hdf5"
 
     def __init__(
-            self,
-            storage_path: Pathlike,
-            tick_power: int = -5,
-            mode: str = 'w',
-            *args,
-            **kwargs
+        self,
+        storage_path: Pathlike,
+        tick_power: int = -5,
+        mode: str = "w",
+        *args,
+        **kwargs,
     ):
         """
         :param storage_path: Path under which we'll create the HDF5 file.
@@ -448,7 +464,8 @@ class LilcomHdf5Writer(FeaturesWriter):
         """
         super().__init__()
         import h5py
-        self.storage_path_ = Path(storage_path).with_suffix('.h5')
+
+        self.storage_path_ = Path(storage_path).with_suffix(".h5")
         self.hdf = h5py.File(self.storage_path, mode=mode)
         self.tick_power = tick_power
 
@@ -477,7 +494,7 @@ They are suitable for storing features for long recordings since they are able t
 retrieve small chunks instead of full matrices.
 """
 
-CHUNK_SIZE_KEY = '__LHOTSE_INTERNAL_CHUNK_SIZE__'
+CHUNK_SIZE_KEY = "__LHOTSE_INTERNAL_CHUNK_SIZE__"
 
 
 @register_reader
@@ -490,17 +507,19 @@ class ChunkedLilcomHdf5Reader(FeaturesReader):
     ``storage_path`` corresponds to the HDF5 file path;
     ``storage_key`` for each utterance is the key corresponding to the array (i.e. HDF5 "Group" name).
     """
-    name = 'chunked_lilcom_hdf5'
+
+    name = "chunked_lilcom_hdf5"
 
     def __init__(self, storage_path: Pathlike, *args, **kwargs):
         super().__init__()
         self.hdf = lookup_cache_or_open(storage_path)
 
+    @dynamic_lru_cache
     def read(
-            self,
-            key: str,
-            left_offset_frames: int = 0,
-            right_offset_frames: Optional[int] = None
+        self,
+        key: str,
+        left_offset_frames: int = 0,
+        right_offset_frames: Optional[int] = None,
     ) -> np.ndarray:
         # First, determine which range of chunks need to be read.
         chunk_size = lookup_chunk_size(self.hdf)
@@ -511,10 +530,13 @@ class ChunkedLilcomHdf5Reader(FeaturesReader):
             right_chunk_idx = None
 
         # Read, decode, concat
-        arr = np.concatenate([
-            lilcom.decompress(data.tobytes())
-            for data in self.hdf[key][left_chunk_idx: right_chunk_idx]
-        ], axis=0)
+        arr = np.concatenate(
+            [
+                lilcom.decompress(data.tobytes())
+                for data in self.hdf[key][left_chunk_idx:right_chunk_idx]
+            ],
+            axis=0,
+        )
 
         # Determine what piece of decoded data should be returned;
         # we offset the input offsets by left_chunk_idx * chunk_size.
@@ -525,7 +547,7 @@ class ChunkedLilcomHdf5Reader(FeaturesReader):
         else:
             right_offset_shift = None
 
-        return arr[left_offset_shift: right_offset_shift]
+        return arr[left_offset_shift:right_offset_shift]
 
 
 @register_writer
@@ -538,16 +560,17 @@ class ChunkedLilcomHdf5Writer(FeaturesWriter):
     ``storage_path`` corresponds to the HDF5 file path;
     ``storage_key`` for each utterance is the key corresponding to the array (i.e. HDF5 "Group" name).
     """
-    name = 'chunked_lilcom_hdf5'
+
+    name = "chunked_lilcom_hdf5"
 
     def __init__(
-            self,
-            storage_path: Pathlike,
-            tick_power: int = -5,
-            chunk_size: int = 100,
-            mode: str = 'w',
-            *args,
-            **kwargs
+        self,
+        storage_path: Pathlike,
+        tick_power: int = -5,
+        chunk_size: int = 100,
+        mode: str = "w",
+        *args,
+        **kwargs,
     ):
         """
         :param storage_path: Path under which we'll create the HDF5 file.
@@ -564,15 +587,17 @@ class ChunkedLilcomHdf5Writer(FeaturesWriter):
         """
         super().__init__()
         import h5py
-        self.storage_path_ = Path(storage_path).with_suffix('.h5')
+
+        self.storage_path_ = Path(storage_path).with_suffix(".h5")
         self.tick_power = tick_power
         self.chunk_size = chunk_size
         self.hdf = h5py.File(self.storage_path, mode=mode)
         if CHUNK_SIZE_KEY in self.hdf:
             retrieved_chunk_size = self.hdf[CHUNK_SIZE_KEY][()]
-            assert retrieved_chunk_size == CHUNK_SIZE_KEY, \
-                f'Error: attempted to write with chunk size {self.chunk_size} to an h5py file that ' \
-                f'was created with chunk size {retrieved_chunk_size}.'
+            assert retrieved_chunk_size == CHUNK_SIZE_KEY, (
+                f"Error: attempted to write with chunk size {self.chunk_size} to an h5py file that "
+                f"was created with chunk size {retrieved_chunk_size}."
+            )
         else:
             self.hdf.create_dataset(CHUNK_SIZE_KEY, data=self.chunk_size)
 
@@ -588,7 +613,9 @@ class ChunkedLilcomHdf5Writer(FeaturesWriter):
             value, tick_power=self.tick_power, chunk_size=self.chunk_size
         )
         dset = self.hdf.create_dataset(
-            key, dtype=h5py.vlen_dtype(np.dtype('uint8')), shape=(len(serialized_feats),)
+            key,
+            dtype=h5py.vlen_dtype(np.dtype("uint8")),
+            shape=(len(serialized_feats),),
         )
         for idx, feat in enumerate(serialized_feats):
             dset[idx] = np.frombuffer(feat, dtype=np.uint8)
@@ -619,32 +646,29 @@ class LilcomURLReader(FeaturesReader):
     .. caution::
         Requires ``smart_open`` to be installed (``pip install smart_open``).
     """
-    name = 'lilcom_url'
 
-    def __init__(
-            self,
-            storage_path: Pathlike,
-            *args,
-            **kwargs
-    ):
+    name = "lilcom_url"
+
+    def __init__(self, storage_path: Pathlike, *args, **kwargs):
         super().__init__()
         self.base_url = str(storage_path)
         # We are manually adding the slash to join the base URL and the key.
-        if self.base_url.endswith('/'):
+        if self.base_url.endswith("/"):
             self.base_url = self.base_url[:-1]
 
+    @dynamic_lru_cache
     def read(
-            self,
-            key: str,
-            left_offset_frames: int = 0,
-            right_offset_frames: Optional[int] = None
+        self,
+        key: str,
+        left_offset_frames: int = 0,
+        right_offset_frames: Optional[int] = None,
     ) -> np.ndarray:
         # We are manually adding the slash to join the base URL and the key.
-        if key.startswith('/'):
+        if key.startswith("/"):
             key = key[1:]
-        with SmartOpen.open(f'{self.base_url}/{key}', 'rb') as f:
+        with SmartOpen.open(f"{self.base_url}/{key}", "rb") as f:
             arr = lilcom.decompress(f.read())
-        return arr[left_offset_frames: right_offset_frames]
+        return arr[left_offset_frames:right_offset_frames]
 
 
 @register_writer
@@ -657,19 +681,14 @@ class LilcomURLWriter(FeaturesWriter):
     .. caution::
         Requires ``smart_open`` to be installed (``pip install smart_open``).
     """
-    name = 'lilcom_url'
 
-    def __init__(
-            self,
-            storage_path: Pathlike,
-            tick_power: int = -5,
-            *args,
-            **kwargs
-    ):
+    name = "lilcom_url"
+
+    def __init__(self, storage_path: Pathlike, tick_power: int = -5, *args, **kwargs):
         super().__init__()
         self.base_url = str(storage_path)
         # We are manually adding the slash to join the base URL and the key.
-        if self.base_url.endswith('/'):
+        if self.base_url.endswith("/"):
             self.base_url = self.base_url[:-1]
         self.tick_power = tick_power
 
@@ -679,14 +698,14 @@ class LilcomURLWriter(FeaturesWriter):
 
     def write(self, key: str, value: np.ndarray) -> str:
         # We are manually adding the slash to join the base URL and the key.
-        if key.startswith('/'):
+        if key.startswith("/"):
             key = key[1:]
         # Add lilcom extension.
-        if not key.endswith('.llc'):
-            key = key + '.llc'
-        output_features_url = f'{self.base_url}/{key}'
+        if not key.endswith(".llc"):
+            key = key + ".llc"
+        output_features_url = f"{self.base_url}/{key}"
         serialized_feats = lilcom.compress(value, tick_power=self.tick_power)
-        with SmartOpen.open(output_features_url, 'wb') as f:
+        with SmartOpen.open(output_features_url, "wb") as f:
             f.write(serialized_feats)
         return key
 
@@ -706,26 +725,26 @@ class KaldiReader(FeaturesReader):
     .. caution::
         Requires ``kaldiio`` to be installed (``pip install kaldiio``).
     """
-    name = 'kaldiio'
 
-    def __init__(
-            self,
-            storage_path: Pathlike,
-            *args,
-            **kwargs
-    ):
-        if not is_module_available('kaldiio'):
-            raise ValueError("To read Kaldi feats.scp, please 'pip install kaldiio' first.")
+    name = "kaldiio"
+
+    def __init__(self, storage_path: Pathlike, *args, **kwargs):
+        if not is_module_available("kaldiio"):
+            raise ValueError(
+                "To read Kaldi feats.scp, please 'pip install kaldiio' first."
+            )
         import kaldiio
+
         super().__init__()
         self.storage_path = storage_path
         self.storage = kaldiio.load_scp(str(self.storage_path))
 
+    @dynamic_lru_cache
     def read(
-            self,
-            key: str,
-            left_offset_frames: int = 0,
-            right_offset_frames: Optional[int] = None
+        self,
+        key: str,
+        left_offset_frames: int = 0,
+        right_offset_frames: Optional[int] = None,
     ) -> np.ndarray:
         arr = self.storage[key]
-        return arr[left_offset_frames: right_offset_frames]
+        return arr[left_offset_frames:right_offset_frames]

@@ -1,0 +1,51 @@
+# This workflow will install Python dependencies, run tests and lint with a variety of Python versions
+# For more information see: https://help.github.com/actions/language-and-framework-guides/using-python-with-github-actions
+
+name: unit_tests
+
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+    branches: [ master ]
+
+jobs:
+  unit_tests:
+
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: [ 3.6, 3.7, 3.8, 3.9 ]
+
+      fail-fast: false
+
+    steps:
+    - uses: actions/checkout@v2
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v1
+      with:
+        python-version: ${{ matrix.python-version }}
+    - name: Install libnsdfile and libsox
+      run: |
+        sudo apt update
+        sudo apt install libsndfile1-dev libsndfile1 ffmpeg
+        sudo apt install --fix-missing sox libsox-dev libsox-fmt-all
+    - name: Install Python dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install --no-cache-dir numpy
+        # Force the installation of a CPU-only PyTorch
+        pip install torch==1.9.1+cpu -f https://download.pytorch.org/whl/torch_stable.html
+        pip install --no-cache-dir '.[tests]'
+        pip install smart_open[http]  # for URL audio downloading test
+        pip install kaldifeat  # for running kaldifeat tests
+    - name: Install sph2pipe
+      run: |
+        lhotse install-sph2pipe  # Handle sphere files.
+    - name: Test with pytest and coverage
+      run: |
+        coverage run -m pytest test
+    - name: Generate and upload the coverage report
+      run: |
+        coverage xml
+        bash <(curl -s https://codecov.io/bash)

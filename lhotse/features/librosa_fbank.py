@@ -1,13 +1,15 @@
 from dataclasses import asdict, dataclass
+from typing import Any, Dict
 
 import numpy as np
-from lhotse.features.base import register_extractor, FeatureExtractor
+
+from lhotse.features.base import FeatureExtractor, register_extractor
 from lhotse.utils import (
+    EPSILON,
+    LOG_EPSILON,
     Seconds,
     compute_num_frames,
     is_module_available,
-    LOG_EPSILON,
-    EPSILON,
 )
 
 
@@ -27,6 +29,13 @@ class LibrosaFbankConfig:
     num_mel_bins: int = 80
     fmin: int = 80
     fmax: int = 7600
+
+    def to_dict(self) -> Dict[str, Any]:
+        return asdict(self)
+
+    @staticmethod
+    def from_dict(data: Dict[str, Any]) -> "LibrosaFbankConfig":
+        return LibrosaFbankConfig(**data)
 
 
 def pad_or_truncate_features(
@@ -131,6 +140,7 @@ class LibrosaFbank(FeatureExtractor):
     Differs from Fbank extractor in that it uses librosa backend for stft and mel scale calculations.
     It can be easily configured to be compatible with existing speech-related projects that use librosa features.
     """
+
     name = "librosa-fbank"
     config_type = LibrosaFbankConfig
 

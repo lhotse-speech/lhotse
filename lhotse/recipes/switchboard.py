@@ -15,21 +15,21 @@ from itertools import chain
 from pathlib import Path
 from typing import Dict, Optional, Union
 
-from lhotse import validate_recordings_and_supervisions
+from lhotse import fix_manifests, validate_recordings_and_supervisions
 from lhotse.audio import Recording, RecordingSet
 from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import Pathlike, check_and_rglob, urlretrieve_progress
 
-SWBD_TEXT_URL = 'http://www.isip.piconepress.com/projects/switchboard/releases/switchboard_word_alignments.tar.gz'
+SWBD_TEXT_URL = "http://www.isip.piconepress.com/projects/switchboard/releases/switchboard_word_alignments.tar.gz"
 
 
 def prepare_switchboard(
-        audio_dir: Pathlike,
-        transcripts_dir: Optional[Pathlike] = None,
-        sentiment_dir: Optional[Pathlike] = None,
-        output_dir: Optional[Pathlike] = None,
-        omit_silence: bool = True,
-        absolute_paths: bool = False
+    audio_dir: Pathlike,
+    transcripts_dir: Optional[Pathlike] = None,
+    sentiment_dir: Optional[Pathlike] = None,
+    output_dir: Optional[Pathlike] = None,
+    omit_silence: bool = True,
+    absolute_paths: bool = False,
 ) -> Dict[str, Union[RecordingSet, SupervisionSet]]:
     """
     Prepare manifests for the Switchboard corpus.
@@ -48,30 +48,41 @@ def prepare_switchboard(
     """
     if transcripts_dir is None:
         transcripts_dir = download_and_untar()
-    audio_paths = check_and_rglob(audio_dir, '*.sph')
-    text_paths = check_and_rglob(transcripts_dir, '*trans.text')
+    audio_paths = check_and_rglob(audio_dir, "*.sph")
+    text_paths = check_and_rglob(transcripts_dir, "*trans.text")
 
     groups = []
-    name_to_text = {p.stem.split('-')[0]: p for p in text_paths}
+    name_to_text = {p.stem.split("-")[0]: p for p in text_paths}
     for ap in audio_paths:
-        name = ap.stem.replace('sw0', 'sw')
-        groups.append({'audio': ap, 'text-0': name_to_text[f'{name}A'], 'text-1': name_to_text[f'{name}B']})
+        name = ap.stem.replace("sw0", "sw")
+        groups.append(
+            {
+                "audio": ap,
+                "text-0": name_to_text[f"{name}A"],
+                "text-1": name_to_text[f"{name}B"],
+            }
+        )
 
     recordings = RecordingSet.from_recordings(
-        Recording.from_file(group['audio'], relative_path_depth=None if absolute_paths else 3)
+        Recording.from_file(
+            group["audio"], relative_path_depth=None if absolute_paths else 3
+        )
         for group in groups
     )
-    supervisions = SupervisionSet.from_segments(chain.from_iterable(
-        make_segments(
-            transcript_path=group[f'text-{channel}'],
-            recording=recording,
-            channel=channel,
-            omit_silence=omit_silence
+    supervisions = SupervisionSet.from_segments(
+        chain.from_iterable(
+            make_segments(
+                transcript_path=group[f"text-{channel}"],
+                recording=recording,
+                channel=channel,
+                omit_silence=omit_silence,
+            )
+            for group, recording in zip(groups, recordings)
+            for channel in [0, 1]
         )
-        for group, recording in zip(groups, recordings)
-        for channel in [0, 1]
-    ))
+    )
 
+    recordings, supervisions = fix_manifests(recordings, supervisions)
     validate_recordings_and_supervisions(recordings, supervisions)
 
     if sentiment_dir is not None:
@@ -80,15 +91,14 @@ def prepare_switchboard(
     if output_dir is not None:
         output_dir = Path(output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
-        recordings.to_json(output_dir / 'recordings.json')
-        supervisions.to_json(output_dir / 'supervisions.json')
-    return {
-        'recordings': recordings,
-        'supervisions': supervisions
-    }
+        recordings.to_file(output_dir / "swbd_recordings.jsonl")
+        supervisions.to_file(output_dir / "swbd_supervisions.jsonl")
+    return {"recordings": recordings, "supervisions": supervisions}
 
 
-def make_segments(transcript_path: Path, recording: Recording, channel: int, omit_silence: bool = True):
+def make_segments(
+    transcript_path: Path, recording: Recording, channel: int, omit_silence: bool = True
+):
     lines = transcript_path.read_text().splitlines()
     return [
         SupervisionSegment(
@@ -97,60 +107,63 @@ def make_segments(transcript_path: Path, recording: Recording, channel: int, omi
             start=float(start),
             duration=round(float(end) - float(start), ndigits=8),
             channel=channel,
-            text=' '.join(words),
-            language='English',
-            speaker=f'{recording.id}A'
+            text=" ".join(words),
+            language="English",
+            speaker=f"{recording.id}A",
         )
         for segment_id, start, end, *words in map(str.split, lines)
-        if words[0] != '[silence]' or not omit_silence
+        if words[0] != "[silence]" or not omit_silence
     ]
 
 
 def download_and_untar(
-        target_dir: Pathlike = '.',
-        force_download: bool = False,
-        url: str = SWBD_TEXT_URL
+    target_dir: Pathlike = ".", force_download: bool = False, url: str = SWBD_TEXT_URL
 ) -> Path:
     target_dir = Path(target_dir)
-    transcript_dir = target_dir / 'swb_ms98_transcriptions'
+    transcript_dir = target_dir / "swb_ms98_transcriptions"
     if transcript_dir.is_dir():
         return transcript_dir
     target_dir.mkdir(parents=True, exist_ok=True)
-    tar_name = 'switchboard_word_alignments.tar.gz'
+    tar_name = "switchboard_word_alignments.tar.gz"
     tar_path = target_dir / tar_name
     if force_download or not tar_path.is_file():
-        urlretrieve_progress(url, filename=tar_path, desc=f'Downloading {tar_name}')
+        urlretrieve_progress(url, filename=tar_path, desc=f"Downloading {tar_name}")
     with tarfile.open(tar_path) as tar:
         tar.extractall(path=target_dir)
     return transcript_dir
 
 
-def parse_and_add_sentiment_labels(sentiment_dir: Pathlike, supervisions: SupervisionSet):
+def parse_and_add_sentiment_labels(
+    sentiment_dir: Pathlike, supervisions: SupervisionSet
+):
     """Read 'LDC2020T14' sentiment annotations and add then to the supervision segments."""
     import pandas as pd
+
     # Sanity checks
     sentiment_dir = Path(sentiment_dir)
-    labels = sentiment_dir / 'data' / 'sentiment_labels.tsv'
+    labels = sentiment_dir / "data" / "sentiment_labels.tsv"
     assert sentiment_dir.is_dir() and labels.is_file()
     # Read the TSV as a dataframe
-    df = pd.read_csv(labels, delimiter='\t', names=['id', 'start', 'end', 'sentiment'])
+    df = pd.read_csv(labels, delimiter="\t", names=["id", "start", "end", "sentiment"])
     # We are going to match the segments in LDC2020T14 with the ones we already
     # parsed from ISIP transcripts. We simply look which of the existing segments
     # fall into a sentiment-annotated time span. When doing it this way, we use
     # 51773 out of 52293 available sentiment annotations, which should be okay.
     for _, row in df.iterrows():
-        call_id = row['id'].split('_')[0]
-        matches = list(supervisions.find(
-            recording_id=call_id,
-            start_after=row['start'] - 1e-2,
-            end_before=row['end'] + 1e-2,
-        ))
+        call_id = row["id"].split("_")[0]
+        matches = list(
+            supervisions.find(
+                recording_id=call_id,
+                start_after=row["start"] - 1e-2,
+                end_before=row["end"] + 1e-2,
+            )
+        )
         if not matches:
             continue
-        labels = row['sentiment'].split('#')
+        labels = row["sentiment"].split("#")
         # SupervisionSegments returned from .find() are references to the ones in the
         # SupervisionSet, so we can just modify them. We use the "custom" field
         # to add the sentiment label. Since there were multiple annotators,
         # we add all available labels and leave it up to the user to disambiguate them.
         for segment in matches:
-            segment.custom = {f'sentiment{i}': label for i, label in enumerate(labels)}
+            segment.custom = {f"sentiment{i}": label for i, label in enumerate(labels)}

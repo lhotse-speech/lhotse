@@ -28,20 +28,24 @@ class SourceSeparationDataset(Dataset):
     """
 
     def __init__(
-            self,
-            sources_set: CutSet,
-            mixtures_set: CutSet,
+        self,
+        sources_set: CutSet,
+        mixtures_set: CutSet,
     ):
         super().__init__()
-        warnings.warn("Speech separation datasets are not yet updated to use the new Lhotse's sampling mechanism.")
+        warnings.warn(
+            "Speech separation datasets are not yet updated to use the new Lhotse's sampling mechanism."
+        )
         self.sources_set = sources_set
         self.mixtures_set = mixtures_set
         self.cut_ids = list(self.mixtures_set.ids)
 
     def _obtain_mixture(self, cut_id: str) -> Tuple[Cut, List[MonoCut]]:
-        raise NotImplementedError("You are using SpeechSeparationDataset, which is an abstract base class; instead, "
-                                  "use one of its derived classes that specify whether the mix is pre-computed or "
-                                  "done dynamically (on-the-fly).")
+        raise NotImplementedError(
+            "You are using SpeechSeparationDataset, which is an abstract base class; instead, "
+            "use one of its derived classes that specify whether the mix is pre-computed or "
+            "done dynamically (on-the-fly)."
+        )
 
     def validate(self):
         validate(self.sources_set)
@@ -57,8 +61,11 @@ class SourceSeparationDataset(Dataset):
 
         mixture = torch.from_numpy(mixture_cut.load_features())
         sources = torch.stack(
-            [torch.from_numpy(source_cut.load_features()) for source_cut in source_cuts],
-            dim=0
+            [
+                torch.from_numpy(source_cut.load_features())
+                for source_cut in source_cuts
+            ],
+            dim=0,
         )
 
         # Compute the masks given the source features
@@ -68,10 +75,10 @@ class SourceSeparationDataset(Dataset):
         binary_mask = real_mask.argmax(0)
 
         return {
-            'sources': sources,
-            'mixture': mixture,
-            'real_mask': real_mask,
-            'binary_mask': binary_mask
+            "sources": sources,
+            "mixture": mixture,
+            "real_mask": real_mask,
+            "binary_mask": binary_mask,
         }
 
     def __len__(self):
@@ -104,10 +111,10 @@ class DynamicallyMixedSourceSeparationDataset(SourceSeparationDataset):
     """
 
     def __init__(
-            self,
-            sources_set: CutSet,
-            mixtures_set: CutSet,
-            nonsources_set: Optional[CutSet] = None,
+        self,
+        sources_set: CutSet,
+        mixtures_set: CutSet,
+        nonsources_set: Optional[CutSet] = None,
     ):
         super().__init__(sources_set=sources_set, mixtures_set=mixtures_set)
         self.nonsources_set = nonsources_set
@@ -121,7 +128,8 @@ class DynamicallyMixedSourceSeparationDataset(SourceSeparationDataset):
         source_cuts = [
             track.cut
             for track in mixture_cut.tracks
-            if track.cut.id in self.sources_set  # tracks will be missing in the sources set when they are noise
+            if track.cut.id
+            in self.sources_set  # tracks will be missing in the sources set when they are noise
         ]
         return mixture_cut, source_cuts
 
@@ -146,9 +154,9 @@ class PreMixedSourceSeparationDataset(SourceSeparationDataset):
     """
 
     def __init__(
-            self,
-            sources_set: CutSet,
-            mixtures_set: CutSet,
+        self,
+        sources_set: CutSet,
+        mixtures_set: CutSet,
     ):
         # The following code assumes that the speech separation dataset is created from
         # cuts that span the whole recordings (i.e. one recording == one utterance), so it is safe to assume that
@@ -164,5 +172,7 @@ class PreMixedSourceSeparationDataset(SourceSeparationDataset):
 
     def _obtain_mixture(self, cut_id: str) -> Tuple[Cut, List[MonoCut]]:
         mixture_cut = self.mixtures_set.cuts[cut_id]
-        source_cuts = [self.sources_set.cuts[id] for id in self.mixture_to_source[mixture_cut.id]]
+        source_cuts = [
+            self.sources_set.cuts[id] for id in self.mixture_to_source[mixture_cut.id]
+        ]
         return mixture_cut, source_cuts

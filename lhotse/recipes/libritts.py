@@ -15,19 +15,31 @@ from typing import Dict, Optional, Sequence, Union
 
 from tqdm import tqdm
 
-from lhotse import RecordingSet, SupervisionSegment, SupervisionSet, validate_recordings_and_supervisions
+from lhotse import (
+    RecordingSet,
+    SupervisionSegment,
+    SupervisionSet,
+    validate_recordings_and_supervisions,
+)
 from lhotse.recipes.utils import manifests_exist, read_manifests_if_cached
 from lhotse.utils import Pathlike, urlretrieve_progress
 
-LIBRITTS = ('dev-clean', 'dev-other', 'test-clean', 'test-other',
-            'train-clean-100', 'train-clean-360', 'train-other-500')
+LIBRITTS = (
+    "dev-clean",
+    "dev-other",
+    "test-clean",
+    "test-other",
+    "train-clean-100",
+    "train-clean-360",
+    "train-other-500",
+)
 
 
 def download_libritts(
-        target_dir: Pathlike = '.',
-        dataset_parts: Optional[Union[str, Sequence[str]]] = "all",
-        force_download: Optional[bool] = False,
-        base_url: Optional[str] = 'http://www.openslr.org/resources'
+    target_dir: Pathlike = ".",
+    dataset_parts: Optional[Union[str, Sequence[str]]] = "all",
+    force_download: Optional[bool] = False,
+    base_url: Optional[str] = "http://www.openslr.org/resources",
 ) -> None:
     """
     Download and untar the dataset, supporting both LibriSpeech and MiniLibrispeech
@@ -44,19 +56,21 @@ def download_libritts(
     if dataset_parts == "all":
         dataset_parts = LIBRITTS
 
-    for part in tqdm(dataset_parts, desc='Downloading LibriSpeech parts'):
+    for part in tqdm(dataset_parts, desc="Downloading LibriSpeech parts"):
         if part not in LIBRITTS:
-            logging.warning(f'Skipping invalid dataset part name: {part}')
-        url = f'{base_url}/60'
-        tar_name = f'{part}.tar.gz'
+            logging.warning(f"Skipping invalid dataset part name: {part}")
+        url = f"{base_url}/60"
+        tar_name = f"{part}.tar.gz"
         tar_path = target_dir / tar_name
-        part_dir = target_dir / f'LibriTTS/{part}'
-        completed_detector = part_dir / '.completed'
+        part_dir = target_dir / f"LibriTTS/{part}"
+        completed_detector = part_dir / ".completed"
         if completed_detector.is_file():
-            logging.info(f'Skipping {part} because {completed_detector} exists.')
+            logging.info(f"Skipping {part} because {completed_detector} exists.")
             continue
         if force_download or not tar_path.is_file():
-            urlretrieve_progress(f'{url}/{tar_name}', filename=tar_path, desc=f'Downloading {tar_name}')
+            urlretrieve_progress(
+                f"{url}/{tar_name}", filename=tar_path, desc=f"Downloading {tar_name}"
+            )
         shutil.rmtree(part_dir, ignore_errors=True)
         with tarfile.open(tar_path) as tar:
             tar.extractall(path=target_dir)
@@ -64,10 +78,10 @@ def download_libritts(
 
 
 def prepare_libritts(
-        corpus_dir: Pathlike,
-        dataset_parts: Union[str, Sequence[str]] = 'auto',
-        output_dir: Optional[Pathlike] = None,
-        num_jobs: int = 1
+    corpus_dir: Pathlike,
+    dataset_parts: Union[str, Sequence[str]] = "auto",
+    output_dir: Optional[Pathlike] = None,
+    num_jobs: int = 1,
 ) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet]]]:
     """
     Returns the manifests which consist of the Recordings and Supervisions.
@@ -81,9 +95,9 @@ def prepare_libritts(
     :return: a Dict whose key is the dataset part, and the value is Dicts with the keys 'audio' and 'supervisions'.
     """
     corpus_dir = Path(corpus_dir)
-    assert corpus_dir.is_dir(), f'No such directory: {corpus_dir}'
+    assert corpus_dir.is_dir(), f"No such directory: {corpus_dir}"
 
-    if dataset_parts == 'auto':
+    if dataset_parts == "auto":
         dataset_parts = LIBRITTS
     elif isinstance(dataset_parts, str):
         assert dataset_parts in LIBRITTS
@@ -96,9 +110,7 @@ def prepare_libritts(
         output_dir.mkdir(parents=True, exist_ok=True)
         # Maybe the manifests already exist: we can read them and save a bit of preparation time.
         manifests = read_manifests_if_cached(
-            dataset_parts=dataset_parts,
-            output_dir=output_dir,
-            prefix='libritts'
+            dataset_parts=dataset_parts, output_dir=output_dir, prefix="libritts"
         )
 
     # Contents of the file
@@ -109,23 +121,23 @@ def prepare_libritts(
     spk2gender = {
         spk_id.strip(): gender.strip()
         for spk_id, gender, *_ in (
-            line.split('|')
-            for line in (corpus_dir / 'SPEAKERS.txt').read_text().splitlines()
-            if not line.startswith(';')
+            line.split("|")
+            for line in (corpus_dir / "SPEAKERS.txt").read_text().splitlines()
+            if not line.startswith(";")
         )
     }
 
-    for part in tqdm(dataset_parts, desc='Preparing LibriTTS parts'):
-        if manifests_exist(part=part, output_dir=output_dir, prefix='libritts'):
-            logging.info(f'LibriTTS subset: {part} already prepared - skipping.')
+    for part in tqdm(dataset_parts, desc="Preparing LibriTTS parts"):
+        if manifests_exist(part=part, output_dir=output_dir, prefix="libritts"):
+            logging.info(f"LibriTTS subset: {part} already prepared - skipping.")
             continue
         part_path = corpus_dir / part
-        recordings = RecordingSet.from_dir(part_path, '*.wav', num_jobs=num_jobs)
+        recordings = RecordingSet.from_dir(part_path, "*.wav", num_jobs=num_jobs)
         supervisions = []
         for trans_path in tqdm(
-                part_path.rglob('*.trans.tsv'),
-                desc='Scanning transcript files (progbar per speaker)',
-                leave=False
+            part_path.rglob("*.trans.tsv"),
+            desc="Scanning transcript files (progbar per speaker)",
+            leave=False,
         ):
             # The trans.tsv files contain only the recordings that were kept for LibriTTS.
             # Example path to a file:
@@ -140,12 +152,17 @@ def prepare_libritts(
                 rec_id: float(snr)
                 for rec_id, *_, snr in map(
                     str.split,
-                    (trans_path.parent / trans_path.name.replace('.trans.tsv', '.book.tsv')).read_text().splitlines()
+                    (
+                        trans_path.parent
+                        / trans_path.name.replace(".trans.tsv", ".book.tsv")
+                    )
+                    .read_text()
+                    .splitlines(),
                 )
             }
             for line in trans_path.read_text().splitlines():
-                rec_id, orig_text, norm_text = line.split('\t')
-                spk_id = rec_id.split('_')[0]
+                rec_id, orig_text, norm_text = line.split("\t")
+                spk_id = rec_id.split("_")[0]
                 supervisions.append(
                     SupervisionSegment(
                         id=rec_id,
@@ -154,10 +171,10 @@ def prepare_libritts(
                         duration=recordings[rec_id].duration,
                         channel=0,
                         text=norm_text,
-                        language='English',
+                        language="English",
                         speaker=spk_id,
                         gender=spk2gender[spk_id],
-                        custom={'orig_text': orig_text, 'snr': utt2snr[rec_id]}
+                        custom={"orig_text": orig_text, "snr": utt2snr[rec_id]},
                     )
                 )
 
@@ -165,12 +182,9 @@ def prepare_libritts(
         validate_recordings_and_supervisions(recordings, supervisions)
 
         if output_dir is not None:
-            supervisions.to_json(output_dir / f'libritts_supervisions_{part}.json')
-            recordings.to_json(output_dir / f'libritts_recordings_{part}.json')
+            supervisions.to_json(output_dir / f"libritts_supervisions_{part}.json")
+            recordings.to_json(output_dir / f"libritts_recordings_{part}.json")
 
-        manifests[part] = {
-            'recordings': recordings,
-            'supervisions': supervisions
-        }
+        manifests[part] = {"recordings": recordings, "supervisions": supervisions}
 
     return manifests

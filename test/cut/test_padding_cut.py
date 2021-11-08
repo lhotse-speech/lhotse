@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 
 from lhotse.audio import AudioSource, Recording
-from lhotse.cut import MonoCut, CutSet, PaddingCut
+from lhotse.cut import CutSet, MonoCut, PaddingCut
 from lhotse.features import Features
 from lhotse.utils import EPSILON, LOG_EPSILON, nullcontext as does_not_raise
 
@@ -15,18 +15,18 @@ PADDING_LOG_ENERGY = LOG_EPSILON
 @pytest.fixture
 def padding_cut():
     return PaddingCut(
-        id='padding-1',
+        id="padding-1",
         duration=10.0,
         num_frames=1000,
         num_features=40,
         frame_shift=0.01,
         sampling_rate=16000,
         num_samples=160000,
-        feat_value=PADDING_LOG_ENERGY
+        feat_value=PADDING_LOG_ENERGY,
     )
 
 
-@pytest.mark.parametrize('expected_value', [PADDING_LOG_ENERGY, PADDING_ENERGY])
+@pytest.mark.parametrize("expected_value", [PADDING_LOG_ENERGY, PADDING_ENERGY])
 def test_load_features_log(padding_cut, expected_value):
     padding_cut.feat_value = expected_value
     feats = padding_cut.load_features()
@@ -47,16 +47,29 @@ def test_load_audio(padding_cut):
 
 
 @pytest.mark.parametrize(
-    ['offset', 'duration', 'expected_duration', 'expected_num_frames', 'expected_num_samples'],
+    [
+        "offset",
+        "duration",
+        "expected_duration",
+        "expected_num_frames",
+        "expected_num_samples",
+    ],
     [
         (0.0, None, 10.0, 1000, 160000),
         (0.0, 5.0, 5.0, 500, 80000),
         (5.0, None, 5.0, 500, 80000),
         (5.0, 5.0, 5.0, 500, 80000),
         (5.0, 2.0, 2.0, 200, 32000),
-    ]
+    ],
 )
-def test_truncate(padding_cut, offset, duration, expected_duration, expected_num_frames, expected_num_samples):
+def test_truncate(
+    padding_cut,
+    offset,
+    duration,
+    expected_duration,
+    expected_num_frames,
+    expected_num_samples,
+):
     cut = padding_cut.truncate(offset=offset, duration=duration, preserve_id=True)
     # Invariants
     assert cut.frame_shift == padding_cut.frame_shift
@@ -82,27 +95,28 @@ def libri_cut():
             num_features=40,
             num_frames=1604,
             frame_shift=0.01,
-            recording_id='recording-1',
+            recording_id="recording-1",
             sampling_rate=16000,
             start=0.0,
-            storage_path='test/fixtures/libri/storage',
-            storage_key='30c2440c-93cb-4e83-b382-f2a59b3859b4.llc',
-            storage_type='lilcom_files',
-            type='fbank',
+            storage_path="test/fixtures/libri/storage",
+            storage_key="30c2440c-93cb-4e83-b382-f2a59b3859b4.llc",
+            storage_type="lilcom_files",
+            type="fbank",
         ),
         recording=Recording(
-            id='recording-1',
+            id="recording-1",
             sources=[
                 AudioSource(
-                    type='file',
+                    type="file",
                     channels=[0],
-                    source='test/fixtures/libri/libri-1088-134315-0000.wav',
-                )],
+                    source="test/fixtures/libri/libri-1088-134315-0000.wav",
+                )
+            ],
             sampling_rate=16000,
             num_samples=256640,
             duration=1604,
         ),
-        id='849e13d8-61a2-4d09-a542-dac1aee1b544',
+        id="849e13d8-61a2-4d09-a542-dac1aee1b544",
         start=0.0,
         supervisions=[],
     )
@@ -131,8 +145,12 @@ def test_mix_pad_right(libri_cut, padding_cut):
 
     mixed_feats = mixed.load_features()
     assert mixed_feats.shape == (2000, 40)
-    np.testing.assert_allclose(mixed_feats[1604:, :], PADDING_LOG_ENERGY, atol=0.7)  # Only padding after 16.04s
-    np.testing.assert_array_less(PADDING_LOG_ENERGY, mixed_feats[1603, :])  # Padding didn't start before 16.04s
+    np.testing.assert_allclose(
+        mixed_feats[1604:, :], PADDING_LOG_ENERGY, atol=0.7
+    )  # Only padding after 16.04s
+    np.testing.assert_array_less(
+        PADDING_LOG_ENERGY, mixed_feats[1603, :]
+    )  # Padding didn't start before 16.04s
 
     pre_mixed_feats = libri_cut.load_features()
     np.testing.assert_allclose(pre_mixed_feats, mixed_feats[:1604, :], rtol=1e-2)
@@ -146,8 +164,12 @@ def test_mix_pad_left(libri_cut, padding_cut):
 
     mixed_feats = mixed.load_features()
     assert mixed_feats.shape == (2000, 40)
-    np.testing.assert_allclose(mixed_feats[:396, :], PADDING_LOG_ENERGY, atol=0.7)  # Only padding before 3.96s
-    np.testing.assert_array_less(PADDING_LOG_ENERGY, mixed_feats[396, :])  # No padding after 3.96s
+    np.testing.assert_allclose(
+        mixed_feats[:396, :], PADDING_LOG_ENERGY, atol=0.7
+    )  # Only padding before 3.96s
+    np.testing.assert_array_less(
+        PADDING_LOG_ENERGY, mixed_feats[396, :]
+    )  # No padding after 3.96s
 
     pre_mixed_feats = libri_cut.load_features()
     np.testing.assert_allclose(pre_mixed_feats, mixed_feats[396:, :], rtol=1e-2)
@@ -182,8 +204,12 @@ def test_mix_mixed_cut_with_padding_on_the_right(mixed_libri_cut, padding_cut):
     mixed_feats = mixed.load_features()
     assert mixed_feats.shape == (2000, 40)
 
-    np.testing.assert_allclose(mixed_feats[1604:, :], PADDING_LOG_ENERGY, atol=0.8)  # Only padding after 16.04s
-    np.testing.assert_array_less(PADDING_LOG_ENERGY, mixed_feats[1603, :])  # Padding didn't start before 16.04s
+    np.testing.assert_allclose(
+        mixed_feats[1604:, :], PADDING_LOG_ENERGY, atol=0.8
+    )  # Only padding after 16.04s
+    np.testing.assert_array_less(
+        PADDING_LOG_ENERGY, mixed_feats[1603, :]
+    )  # Padding didn't start before 16.04s
 
     pre_mixed_feats = mixed_libri_cut.load_features()
     np.testing.assert_allclose(pre_mixed_feats, mixed_feats[:1604, :], rtol=1e-1)
@@ -197,8 +223,12 @@ def test_mix_mixed_cut_with_padding_on_the_left(mixed_libri_cut, padding_cut):
 
     mixed_feats = mixed.load_features()
     assert mixed_feats.shape == (2000, 40)
-    np.testing.assert_allclose(mixed_feats[:396, :], PADDING_LOG_ENERGY, atol=0.8)  # Only padding before 3.96s
-    np.testing.assert_array_less(PADDING_LOG_ENERGY, mixed_feats[396, :])  # No padding after 3.96s
+    np.testing.assert_allclose(
+        mixed_feats[:396, :], PADDING_LOG_ENERGY, atol=0.8
+    )  # Only padding before 3.96s
+    np.testing.assert_array_less(
+        PADDING_LOG_ENERGY, mixed_feats[396, :]
+    )  # No padding after 3.96s
 
     pre_mixed_feats = mixed_libri_cut.load_features()
     np.testing.assert_allclose(pre_mixed_feats, mixed_feats[396:, :], rtol=1e-1)
@@ -212,8 +242,12 @@ def test_append(libri_cut, padding_cut):
 
     appended_feats = appended.load_features()
     assert appended_feats.shape == (2604, 40)
-    np.testing.assert_allclose(appended_feats[1604:, :], PADDING_LOG_ENERGY, atol=0.8)  # Only padding after 16.04s
-    np.testing.assert_array_less(PADDING_LOG_ENERGY, appended_feats[1603, :])  # Padding didn't start before 16.04s
+    np.testing.assert_allclose(
+        appended_feats[1604:, :], PADDING_LOG_ENERGY, atol=0.8
+    )  # Only padding after 16.04s
+    np.testing.assert_array_less(
+        PADDING_LOG_ENERGY, appended_feats[1603, :]
+    )  # Padding didn't start before 16.04s
 
     original_feats = libri_cut.load_features()
     np.testing.assert_allclose(original_feats, appended_feats[:1604, :], rtol=1e-2)
@@ -231,23 +265,32 @@ def test_pad_equal_length_does_not_change_cut(libri_cut):
 
 
 @pytest.mark.parametrize(
-    ['duration', 'num_frames', 'num_samples', 'expected_duration', 'expected_num_frames', 'expected_num_samples'],
+    [
+        "duration",
+        "num_frames",
+        "num_samples",
+        "expected_duration",
+        "expected_num_frames",
+        "expected_num_samples",
+    ],
     [
         (20, None, None, 20, 2000, 320000),
         (None, 2000, None, 20, 2000, 320000),
         (None, None, 320000, 20, 2000, 320000),
-    ]
+    ],
 )
 def test_pad_simple_cut(
-        libri_cut,
-        duration,
-        num_frames,
-        num_samples,
-        expected_duration,
-        expected_num_frames,
-        expected_num_samples
+    libri_cut,
+    duration,
+    num_frames,
+    num_samples,
+    expected_duration,
+    expected_num_frames,
+    expected_num_samples,
 ):
-    padded = libri_cut.pad(duration=duration, num_frames=num_frames, num_samples=num_samples)
+    padded = libri_cut.pad(
+        duration=duration, num_frames=num_frames, num_samples=num_samples
+    )
 
     assert padded.duration == expected_duration
     assert padded.num_frames == expected_num_frames
@@ -255,35 +298,48 @@ def test_pad_simple_cut(
 
     mixed_feats = padded.load_features()
     assert mixed_feats.shape == (2000, 40)
-    np.testing.assert_allclose(mixed_feats[1604:, :], PADDING_LOG_ENERGY, atol=0.8)  # Only padding after 16.04s
-    np.testing.assert_array_less(PADDING_LOG_ENERGY, mixed_feats[1603, :])  # Padding didn't start before 16.04s
+    np.testing.assert_allclose(
+        mixed_feats[1604:, :], PADDING_LOG_ENERGY, atol=0.8
+    )  # Only padding after 16.04s
+    np.testing.assert_array_less(
+        PADDING_LOG_ENERGY, mixed_feats[1603, :]
+    )  # Padding didn't start before 16.04s
 
     pre_mixed_feats = libri_cut.load_features()
     np.testing.assert_almost_equal(pre_mixed_feats, mixed_feats[:1604, :], decimal=5)
 
 
 @pytest.mark.parametrize(
-    ['duration', 'num_frames', 'num_samples', 'expected_duration', 'expected_num_frames', 'expected_num_samples',
-     'exception_expectation'],
+    [
+        "duration",
+        "num_frames",
+        "num_samples",
+        "expected_duration",
+        "expected_num_frames",
+        "expected_num_samples",
+        "exception_expectation",
+    ],
     [
         (20, None, None, 20, 2000, 320000, does_not_raise()),
         (None, 2000, None, 20, 2000, 320000, pytest.raises(AssertionError)),
         (None, None, 320000, 20, 2000, 320000, does_not_raise()),
-    ]
+    ],
 )
 def test_pad_simple_cut_audio_only(
-        libri_cut,
-        duration,
-        num_frames,
-        num_samples,
-        expected_duration,
-        expected_num_frames,
-        expected_num_samples,
-        exception_expectation
+    libri_cut,
+    duration,
+    num_frames,
+    num_samples,
+    expected_duration,
+    expected_num_frames,
+    expected_num_samples,
+    exception_expectation,
 ):
     libri_cut.features = None
     with exception_expectation:
-        padded = libri_cut.pad(duration=duration, num_frames=num_frames, num_samples=num_samples)
+        padded = libri_cut.pad(
+            duration=duration, num_frames=num_frames, num_samples=num_samples
+        )
 
         assert padded.duration == expected_duration
         assert padded.num_samples == expected_num_samples
@@ -296,49 +352,67 @@ def test_pad_simple_cut_audio_only(
 
 
 @pytest.mark.parametrize(
-    ['duration', 'num_frames', 'num_samples', 'expected_duration', 'expected_num_frames', 'expected_num_samples',
-     'exception_expectation'],
+    [
+        "duration",
+        "num_frames",
+        "num_samples",
+        "expected_duration",
+        "expected_num_frames",
+        "expected_num_samples",
+        "exception_expectation",
+    ],
     [
         (20, None, None, 20, 2000, 320000, does_not_raise()),
         (None, 2000, None, 20, 2000, 320000, does_not_raise()),
         (None, None, 320000, 20, 2000, 320000, pytest.raises(AssertionError)),
-    ]
+    ],
 )
 def test_pad_simple_cut_features_only(
-        libri_cut,
-        duration,
-        num_frames,
-        num_samples,
-        expected_duration,
-        expected_num_frames,
-        expected_num_samples,
-        exception_expectation
+    libri_cut,
+    duration,
+    num_frames,
+    num_samples,
+    expected_duration,
+    expected_num_frames,
+    expected_num_samples,
+    exception_expectation,
 ):
     libri_cut.recording = None
     with exception_expectation:
-        padded = libri_cut.pad(duration=duration, num_frames=num_frames, num_samples=num_samples)
+        padded = libri_cut.pad(
+            duration=duration, num_frames=num_frames, num_samples=num_samples
+        )
         assert padded.duration == expected_duration
         assert padded.num_frames == expected_num_frames
 
 
 @pytest.mark.parametrize(
-    ['duration', 'num_frames', 'num_samples', 'expected_duration', 'expected_num_frames', 'expected_num_samples'],
+    [
+        "duration",
+        "num_frames",
+        "num_samples",
+        "expected_duration",
+        "expected_num_frames",
+        "expected_num_samples",
+    ],
     [
         (20, None, None, 20, 2000, 320000),
         (None, 2000, None, 20, 2000, 320000),
         (None, None, 320000, 20, 2000, 320000),
-    ]
+    ],
 )
 def test_pad_mixed_cut(
-        mixed_libri_cut,
-        duration,
-        num_frames,
-        num_samples,
-        expected_duration,
-        expected_num_frames,
-        expected_num_samples
+    mixed_libri_cut,
+    duration,
+    num_frames,
+    num_samples,
+    expected_duration,
+    expected_num_frames,
+    expected_num_samples,
 ):
-    padded = mixed_libri_cut.pad(duration=duration, num_frames=num_frames, num_samples=num_samples)
+    padded = mixed_libri_cut.pad(
+        duration=duration, num_frames=num_frames, num_samples=num_samples
+    )
 
     assert padded.duration == expected_duration
     assert padded.num_frames == expected_num_frames
@@ -346,39 +420,50 @@ def test_pad_mixed_cut(
 
     mixed_feats = padded.load_features()
     assert mixed_feats.shape == (2000, 40)
-    np.testing.assert_allclose(mixed_feats[1604:, :], PADDING_LOG_ENERGY, atol=0.8)  # Only padding after 16.04s
-    np.testing.assert_array_less(PADDING_LOG_ENERGY, mixed_feats[1603, :])  # Padding didn't start before 16.04s
+    np.testing.assert_allclose(
+        mixed_feats[1604:, :], PADDING_LOG_ENERGY, atol=0.8
+    )  # Only padding after 16.04s
+    np.testing.assert_array_less(
+        PADDING_LOG_ENERGY, mixed_feats[1603, :]
+    )  # Padding didn't start before 16.04s
 
     pre_mixed_feats = mixed_libri_cut.load_features()
     np.testing.assert_almost_equal(pre_mixed_feats, mixed_feats[:1604, :], decimal=2)
 
 
-@pytest.mark.parametrize('direction', ['left', 'right', 'both'])
+@pytest.mark.parametrize("direction", ["left", "right", "both"])
 @pytest.mark.parametrize(
-    ['duration', 'num_frames', 'num_samples', 'expected_duration', 'expected_num_frames', 'expected_num_samples'],
+    [
+        "duration",
+        "num_frames",
+        "num_samples",
+        "expected_duration",
+        "expected_num_frames",
+        "expected_num_samples",
+    ],
     [
         (None, None, None, 10.0, 1000, 160000),
         (60.1, None, None, 60.1, 6010, 961600),
         (None, 6010, None, 60.1, 6010, 961600),
         (None, None, 961600, 60.1, 6010, 961600),
-    ]
+    ],
 )
 def test_pad_cut_set(
-        cut_set,
-        direction,
-        duration,
-        num_frames,
-        num_samples,
-        expected_duration,
-        expected_num_frames,
-        expected_num_samples
+    cut_set,
+    direction,
+    duration,
+    num_frames,
+    num_samples,
+    expected_duration,
+    expected_num_frames,
+    expected_num_samples,
 ):
     # cut_set fixture is defined in test/cut/conftest.py
     padded_cut_set = cut_set.pad(
         duration=duration,
         num_frames=num_frames,
         num_samples=num_samples,
-        direction=direction
+        direction=direction,
     )
     assert all(cut.duration == expected_duration for cut in padded_cut_set)
     assert all(cut.num_frames == expected_num_frames for cut in padded_cut_set)
@@ -396,12 +481,16 @@ def test_serialize_padded_cut_set(cut_set):
 
 def test_pad_without_mixing(libri_cut):
     cut = libri_cut.pad(20)
-    cut.tracks[0].cut.features.type = 'undefined'  # make Lhotse think that a custom feat extractor is used
+    cut.tracks[
+        0
+    ].cut.features.type = (
+        "undefined"  # make Lhotse think that a custom feat extractor is used
+    )
     cut.load_features()  # does not throw
 
 
 def test_pad_left_regular_cut(libri_cut):
-    cut = libri_cut.pad(30, direction='left')
+    cut = libri_cut.pad(30, direction="left")
 
     assert len(cut.tracks) == 2
 
@@ -415,12 +504,12 @@ def test_pad_left_regular_cut(libri_cut):
 
 
 def test_pad_left_padding_cut(padding_cut):
-    cut = padding_cut.pad(30, direction='left')
+    cut = padding_cut.pad(30, direction="left")
     assert cut.duration == 30.0
 
 
 def test_pad_left_mixed_cut(mixed_libri_cut, libri_cut):
-    cut = mixed_libri_cut.pad(30, direction='left')
+    cut = mixed_libri_cut.pad(30, direction="left")
 
     assert len(cut.tracks) == 3
 
@@ -438,7 +527,7 @@ def test_pad_left_mixed_cut(mixed_libri_cut, libri_cut):
 
 
 def test_pad_both_regular_cut(libri_cut):
-    cut = libri_cut.pad(30, direction='both')
+    cut = libri_cut.pad(30, direction="both")
 
     assert len(cut.tracks) == 3
 
@@ -458,14 +547,14 @@ def test_pad_both_regular_cut(libri_cut):
 
 
 def test_pad_both_padding_cut(padding_cut):
-    cut = padding_cut.pad(30, direction='both')
+    cut = padding_cut.pad(30, direction="both")
     assert cut.duration == 30.0
     assert len(cut.tracks) == 3
     assert all(isinstance(t.cut, PaddingCut) for t in cut.tracks)
 
 
 def test_pad_both_mixed_cut(mixed_libri_cut, libri_cut):
-    cut = mixed_libri_cut.pad(30, direction='both')
+    cut = mixed_libri_cut.pad(30, direction="both")
 
     assert len(cut.tracks) == 4
 

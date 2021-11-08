@@ -2,6 +2,7 @@ import numpy as np
 import pytest
 import torch
 
+from lhotse import FbankConfig
 from lhotse.cut import CutSet
 from lhotse.dataset import UnsupervisedDataset, UnsupervisedWaveformDataset
 from lhotse.dataset.unsupervised import DynamicUnsupervisedDataset
@@ -10,7 +11,7 @@ from lhotse.features import Fbank
 
 @pytest.fixture
 def libri_cut_set():
-    return CutSet.from_json('test/fixtures/libri/cuts.json')
+    return CutSet.from_json("test/fixtures/libri/cuts.json")
 
 
 def test_unsupervised_dataset(libri_cut_set):
@@ -29,7 +30,7 @@ def test_unsupervised_waveform_dataset(libri_cut_set):
 def test_on_the_fly_feature_extraction_unsupervised_dataset(libri_cut_set):
     ref_dataset = UnsupervisedDataset()
     tested_dataset = DynamicUnsupervisedDataset(
-        feature_extractor=Fbank(),
+        feature_extractor=Fbank(FbankConfig(num_mel_bins=40)),
     )
     out = ref_dataset[libri_cut_set]
     ref_feats = out["features"]

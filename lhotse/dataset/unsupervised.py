@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Any, Dict, Optional
 
 import torch
 
@@ -24,12 +24,13 @@ class UnsupervisedDataset(torch.utils.data.Dataset):
     def __init__(self) -> None:
         super().__init__()
 
-    def __getitem__(self, cuts: CutSet) -> torch.Tensor:
+    def __getitem__(self, cuts: CutSet) -> Dict[str, Any]:
         self._validate(cuts)
         features, features_lens = collate_features(cuts)
         return {
-            'features': features,
-            'features_lens': features_lens,
+            "cuts": cuts,
+            "features": features,
+            "features_lens": features_lens,
         }
 
     def _validate(self, cuts: CutSet) -> None:
@@ -53,12 +54,20 @@ class UnsupervisedWaveformDataset(UnsupervisedDataset):
         }
     """
 
-    def __getitem__(self, cuts: CutSet) -> torch.Tensor:
-        audio, audio_lens = collate_audio(cuts)
-        return {
-            'audio': audio,
-            'audio_lens': audio_lens,
-        }
+    def __init__(self, collate: bool = True) -> None:
+        super().__init__()
+        self.collate = collate
+
+    def __getitem__(self, cuts: CutSet) -> Dict[str, Any]:
+        if self.collate:
+            audio, audio_lens = collate_audio(cuts)
+            return {
+                "cuts": cuts,
+                "audio": audio,
+                "audio_lens": audio_lens,
+            }
+        else:
+            return {"cuts": cuts, "audio": [c.load_audio() for c in cuts]}
 
     def _validate(self, cuts: CutSet) -> None:
         validate(cuts)
@@ -76,9 +85,9 @@ class DynamicUnsupervisedDataset(UnsupervisedDataset):
     """
 
     def __init__(
-            self,
-            feature_extractor: FeatureExtractor,
-            augment_fn: Optional[AugmentFn] = None,
+        self,
+        feature_extractor: FeatureExtractor,
+        augment_fn: Optional[AugmentFn] = None,
     ):
         super().__init__()
         self.feature_extractor = feature_extractor
@@ -90,7 +99,8 @@ class DynamicUnsupervisedDataset(UnsupervisedDataset):
             cut.compute_features(
                 extractor=self.feature_extractor,
                 augment_fn=self.augment_fn,
-            ) for cut in cuts
+            )
+            for cut in cuts
         )
         return features
 

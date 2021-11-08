@@ -1,4 +1,45 @@
 # coding=utf-8
+#                `-:/++oooooooooooooooooooooooooooooooooooooooooooooo++/:-.
+#            `-+sssssssssssssssssssssssssssssssssssssssssssssssssssssssssssso:`
+#          .+ssosyyhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhyyosso-
+#         /yosyhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhysos+`
+#       `osoyhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhsoy.
+#       osohhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhsoy`
+#      /h+hhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhoso
+#      yoyhhhhhhhhhhyooyhhhhhysyhhhhyhhhyysyhhhhyhhhhhyyhhysosyhhhysyyyyhhhhhhhhhhh+h`
+#     `h+hhhhhhhhhhhs  +hhhhh.`:hh+.-yy+.```./y/.----..:o:`   -+y+```..-hhhhhhhhhhh+h:
+#     -h+hhhhhhhhhhh+  shhhhy  /yh/  yo..--.` .+//.  /os/  /oosso  -::::hhhhhhhhhhh+h/
+#     -h+hhhhhhhhhhh: `hhhhho  .-:. `y++yhhho  -hh/  yhho` .:/shy  /oosshhhhhhhhhhh+h/
+#     -h+hhhhhhhhhhh. .hhhhh/  .--` `+ `shhhy` .hh- `hhhho:.. `/o  ```./hhhhhhhhhhh+h+
+#     -h+hhhhhhhhhhy` `+sssy:  yhh- `y` ./+/. `ohh. .hhhosyhy- .+  ossssyhhhhhhhhhh+h+
+#     -h+hhhhhhhhhh+   ````o:``hhh:``hs-`` ``-ohhh. .hhhs---.`.o+   ``  ohhhhhhhhhh+h+
+#     -h+hhhhhhhhhhhooosssshysyhhhysyhhhysosyhhhhhsoshhhhyo++oyhyo++++ooyhhhhhhhhhh+h+
+#     -h+hhhhhhhhhhhhhhhhhyhhyhhhhhhhhyyhhhhyhhhyyyhhhhhhhhhhhyhhhhhyhyhhhhhhhhhhhh+h+
+#     -h+hhhhhhhhhhhhhhsyhyyyyyyyyyyhhsyyyyyyyysyyyhhyyyyhhhyyyyyshhsyyyhhhhhhhhhhh+h+
+#     -h+hhhhhhhhhyysyhoyyosyosyosyosyosyosyoyyosyoyysysohhoyyosssyyoyyoyshhhhhhhhh+h+
+#     -h+hhhhhhyyysyosyoososy+ssosyyyyoss+ss+ssossoss/ssoyyoss+so+ss+sooyoyyyhhhhhh+h+
+#     -h+hhhhhhhhhhhhhhsyhsyyyyyshhh:`-ohyyysyyyyyyhhsyyshhhyysyyyhhsyyshhhhhhhhhhh+h+
+#     -h+hhhhhhhhhhhhhhyhhyhhyhhhy/`    /hhhhoshhhyhhhhhhhhhhhyhhyhhyhyhhhhhhhhhhhh+h+
+#     -h+hhhhhhhhhhhhhhhhhhhhhhho` /y/ `:-oo-  +s+yhhhhhy++yhhhhhhhhhhhhhhhhhhhhhhh+h+
+#     -h+hhhhhhhhhhhhhhhhhhhhhy/ `/hhh` .y/.     :::+o/`   `:ohhhhhhhhhhhhhhhhhhhhh+h+
+#     -h+hhhhhhhhhhhhhhhhhys+-` `ohhhy`syos/:.   sho:-.` `--  .yhhhhhhhhhhhhhhhhhhh+h+
+#     -h+hhhhhhhhhhhhhhhhh-   `-shhhhssh+.`s:y- ./yssy--oy/` .s:yhhhhhhhhhhhhhhhhhh+h+
+#     -h+hhhhhhhhhhhhhhhs:  `-yyhhhhhhhy-` ohhyo:syyhosyh/  :yh+.ohhhhhhhhhhhhhhhhh+h+
+#     -h+hhhhhhhhhhhhyo/`   oyhhhhhyso/`   yhh/oyo/`+/.so  :yhy-  .+yhhhhhhhhhhhhhh+h+
+#     -h+hhhhhhhhhhs/`-    .yhhhhhh.`    `:hhhs`sho..-.-``-ss+hys:` .yyyhhhhhhhhhhh+h+
+#     -h+hhhhhhhhy/.-:.  -oyhhhhhhh`     /yhhhy .hhy:. `+o+./yhhhhyo//-`/yhhhhhhhhh+h+
+#     -h+hhhhhhho:/s+-`-oyhhhhhhhhh/     `-hhhy` yhh.  /-` -yhhhhhhhhy+  `+shhhhhhh+h+
+#     -h+hhhhhs++ysososhhyosyhhhhhhy.    :shhhy  shh/  .  `yhhhhhhhhhhy:    -shhhhh+h/
+#     .h+hhhysoyhsyhhhhhho.`./yhhhhhy- -syhhhhh-`hhhy.    -hhhhhhhhhhhhso :o:-/yhhh+h/
+#     `h+hhhyyhhhhhhhhhhhhy+` :yhhhhhs-hhhhhhhh+-hhhh+  `+yhhhhhhhhhhhhhy/yhhysoyhh+h-
+#      soshhhhhhhhhhhhhhhhhhs``-ohhhhhshhhhhhhhyohhhhh+.`-+shhhhhhhhhhhhhhhhhhhhhhh+h`
+#      :h+hhhhhhhhhhhhhhhhhhhsss/ohhhhhhhhhhhhhhyhhhhhho.ohhhhhhhhhhhhhhhhhhhhhhhhoy+
+#       oyohhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhs+yhhhhhhhhhhhhhhhhhhhhhhhhsss`
+#       `+soyhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhyhhhhhhhhhhhhhhhhhhhhhhhhyoss`
+#         :sooyhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhysos/`
+#          `/ssssyyhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhyyssss+.
+#             ./osssssssssssssssssssssssssssssssssssssssssssssssssssssssssss/-`
+#                 .-:://++++++++++++++++++++++++++++++++++++++++++++///:-.`
 import os
 from distutils.version import LooseVersion
 from pathlib import Path
@@ -8,10 +49,13 @@ from setuptools import find_packages, setup
 
 project_root = Path(__file__).parent
 
+# !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! #
+# NOTE: REMEMBER TO UPDATE THE FALLBACK VERSION IN lhotse/__init__.py WHEN RELEASING #
+# !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! #
 MAJOR_VERSION = 0
-MINOR_VERSION = 8
+MINOR_VERSION = 12
 PATCH_VERSION = 0
-IS_DEV_VERSION = False  # False = public release, True = otherwise
+IS_DEV_VERSION = True  # False = public release, True = otherwise
 
 
 def discover_lhotse_version() -> str:
@@ -43,23 +87,23 @@ def discover_lhotse_version() -> str:
                 stdout=PIPE,
                 stderr=DEVNULL,
             )
+            .stdout.decode()
+            .rstrip("\n")
+            .strip()
+        )
+        dirty_commit = (
+            len(
+                run(
+                    ["git", "diff", "--shortstat"],
+                    check=True,
+                    stdout=PIPE,
+                    stderr=DEVNULL,
+                )
                 .stdout.decode()
                 .rstrip("\n")
                 .strip()
-        )
-        dirty_commit = (
-                len(
-                    run(
-                        ["git", "diff", "--shortstat"],
-                        check=True,
-                        stdout=PIPE,
-                        stderr=DEVNULL,
-                    )
-                        .stdout.decode()
-                        .rstrip("\n")
-                        .strip()
-                )
-                > 0
+            )
+            > 0
         )
         git_commit = git_commit + ".dirty" if dirty_commit else git_commit + ".clean"
         source_version = f"+git.{git_commit}"
@@ -73,7 +117,7 @@ def discover_lhotse_version() -> str:
 
 
 def mark_lhotse_version(version: str) -> None:
-    (project_root / 'lhotse' / 'version.py').write_text(f'__version__ = "{version}"')
+    (project_root / "lhotse" / "version.py").write_text(f'__version__ = "{version}"')
 
 
 LHOTSE_VERSION = discover_lhotse_version()
@@ -104,10 +148,16 @@ try:
     import torch
 
     torch_ver = LooseVersion(torch.__version__)
-    if torch_ver >= LooseVersion("1.9.1"):
-        raise NotImplementedError("Not yet supported")
+    if torch_ver >= LooseVersion("1.10.1"):
+        raise NotImplementedError("PyTorch version >= 1.10.1 is not yet supported")
+    elif torch_ver >= LooseVersion("1.10.0"):
+        install_requires.append("torchaudio==0.10.0")
+    elif torch_ver >= LooseVersion("1.9.1"):
+        install_requires.append("torchaudio==0.9.1")
     elif torch_ver >= LooseVersion("1.9.0"):
         install_requires.append("torchaudio==0.9.0")
+    elif torch_ver >= LooseVersion("1.8.2"):
+        install_requires.append("torchaudio==0.8.2")
     elif torch_ver >= LooseVersion("1.8.1"):
         install_requires.append("torchaudio==0.8.1")
     elif torch_ver >= LooseVersion("1.8.0"):
@@ -173,6 +223,7 @@ setup(
         "Programming Language :: Python :: 3.6",
         "Programming Language :: Python :: 3.7",
         "Programming Language :: Python :: 3.8",
+        "Programming Language :: Python :: 3.9",
         "Intended Audience :: Science/Research",
         "Operating System :: POSIX :: Linux",
         "Operating System :: MacOS :: MacOS X",

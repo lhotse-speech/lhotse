@@ -56,11 +56,10 @@ from pathlib import Path
 from typing import Dict, List, Optional, Union
 
 from lhotse import validate_recordings_and_supervisions
-from lhotse.qa import trim_supervisions_to_recordings
 from lhotse.audio import Recording, RecordingSet
+from lhotse.qa import trim_supervisions_to_recordings
 from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import Pathlike, check_and_rglob, is_module_available
-
 
 # Test recordings from Kaldi split
 # https://github.com/kaldi-asr/kaldi/blob/master/egs/gale_arabic/s5d/local/test/test_p2
@@ -79,7 +78,7 @@ TEST = [
 
 
 def check_dependencies():
-    if not is_module_available('pandas'):
+    if not is_module_available("pandas"):
         raise ImportError(
             "Gale Arabic data preparation requires the 'pandas' package to be installed. "
             "Please install it with 'pip install pandas' and try again"
@@ -116,13 +115,13 @@ def prepare_gale_arabic(
                 [
                     check_and_rglob(dir, ext, strict=False)
                     for dir in audio_dirs
-                    for ext in ['*.wav', '*.flac']
+                    for ext in ["*.wav", "*.flac"]
                 ]
             )
         },
     )
     transcript_paths = chain.from_iterable(
-        [check_and_rglob(dir, '*.tdf') for dir in transcript_dirs]
+        [check_and_rglob(dir, "*.tdf") for dir in transcript_dirs]
     )
     transcript_paths = [p for p in transcript_paths]
 
@@ -141,13 +140,13 @@ def prepare_gale_arabic(
     validate_recordings_and_supervisions(recordings, supervisions)
 
     manifests = defaultdict(dict)
-    manifests['test'] = {
-        'recordings': recordings.filter(lambda r: r.id in TEST),
-        'supervisions': supervisions.filter(lambda s: s.recording_id in TEST),
+    manifests["test"] = {
+        "recordings": recordings.filter(lambda r: r.id in TEST),
+        "supervisions": supervisions.filter(lambda s: s.recording_id in TEST),
     }
-    manifests['train'] = {
-        'recordings': recordings.filter(lambda r: r.id not in TEST),
-        'supervisions': supervisions.filter(lambda s: s.recording_id not in TEST),
+    manifests["train"] = {
+        "recordings": recordings.filter(lambda r: r.id not in TEST),
+        "supervisions": supervisions.filter(lambda s: s.recording_id not in TEST),
     }
 
     if output_dir is not None:
@@ -156,10 +155,10 @@ def prepare_gale_arabic(
         output_dir.mkdir(parents=True, exist_ok=True)
         for part in ["train", "test"]:
             manifests[part]["recordings"].to_json(
-                output_dir / f'recordings_{part}.json'
+                output_dir / f"recordings_{part}.json"
             )
             manifests[part]["supervisions"].to_json(
-                output_dir / f'supervisions_{part}.json'
+                output_dir / f"supervisions_{part}.json"
             )
 
     return manifests
@@ -174,31 +173,31 @@ def parse_transcripts(transcript_paths: List[Path]) -> List[SupervisionSegment]:
     for file in transcript_paths:
         df = pd.read_csv(
             file,
-            delimiter='\t',
+            delimiter="\t",
             skiprows=3,
             usecols=range(13),
             names=[
-                'reco_id',
-                'channel',
-                'start',
-                'end',
-                'speaker',
-                'gender',
-                'dialect',
-                'text',
-                'section',
-                'turn',
-                'segment',
-                'section_type',
-                'su_type',
+                "reco_id",
+                "channel",
+                "start",
+                "end",
+                "speaker",
+                "gender",
+                "dialect",
+                "text",
+                "section",
+                "turn",
+                "segment",
+                "section_type",
+                "su_type",
             ],
             dtype={
-                'reco_id': str,
-                'channel': int,
-                'start': float,
-                'end': float,
-                'speaker': str,
-                'text': str,
+                "reco_id": str,
+                "channel": int,
+                "start": float,
+                "end": float,
+                "speaker": str,
+                "text": str,
             },
             skipinitialspace=True,
             error_bad_lines=False,
@@ -208,36 +207,36 @@ def parse_transcripts(transcript_paths: List[Path]) -> List[SupervisionSegment]:
         df = df[df.speaker != "no speaker"]
 
         # some reco_id's end with .sph
-        df['reco_id'] = df['reco_id'].apply(lambda x: x.strip().replace('.sph', ''))
+        df["reco_id"] = df["reco_id"].apply(lambda x: x.strip().replace(".sph", ""))
         # some speaker names have `*` in them
-        df['speaker'] = df['speaker'].apply(
-            lambda x: x.replace('*', '').strip() if not pd.isnull(x) else x
+        df["speaker"] = df["speaker"].apply(
+            lambda x: x.replace("*", "").strip() if not pd.isnull(x) else x
         )
-        df['text'] = df['text'].apply(lambda x: x.strip() if not pd.isnull(x) else x)
+        df["text"] = df["text"].apply(lambda x: x.strip() if not pd.isnull(x) else x)
         for idx, row in df.iterrows():
             supervision_id = f"{row['reco_id']}-{row['speaker']}-{idx}"
-            duration = round(row['end'] - row['start'], ndigits=8)
+            duration = round(row["end"] - row["start"], ndigits=8)
             if supervision_id in supervision_ids or duration <= 0:
                 continue
             supervision_ids.add(supervision_id)
             supervisions.append(
                 SupervisionSegment(
                     id=supervision_id,
-                    recording_id=row['reco_id'],
-                    start=row['start'],
+                    recording_id=row["reco_id"],
+                    start=row["start"],
                     duration=duration,
-                    speaker=row['speaker'],
-                    gender=row['gender'],
-                    language='Arabic',
-                    text=row['text'],
-                    channel=row['channel'],
+                    speaker=row["speaker"],
+                    gender=row["gender"],
+                    language="Arabic",
+                    text=row["text"],
+                    channel=row["channel"],
                     custom={
-                        'dialect': row['dialect'],
-                        'section': row['section'],
-                        'turn': row['turn'],
-                        'segment': row['segment'],
-                        'section_type': row['section_type'],
-                        'su_type': row['su_type'],
+                        "dialect": row["dialect"],
+                        "section": row["section"],
+                        "turn": row["turn"],
+                        "segment": row["segment"],
+                        "section_type": row["section_type"],
+                        "su_type": row["su_type"],
                     },
                 )
             )

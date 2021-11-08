@@ -1,5 +1,5 @@
 from dataclasses import asdict, dataclass
-from typing import Optional
+from typing import Any, Dict, Optional, Union
 
 import numpy as np
 import torch
@@ -17,7 +17,7 @@ class KaldiFbankConfig:
     fft_length: int = 512
     remove_dc_offset: bool = True
     preemph_coeff: float = 0.97
-    window_type: str = 'povey'
+    window_type: str = "povey"
     dither: float = 0.0
     snip_edges: bool = False
     energy_floor: float = EPSILON
@@ -28,6 +28,13 @@ class KaldiFbankConfig:
     high_freq: float = -400.0
     num_filters: int = 80
     norm_filters: bool = False
+
+    def to_dict(self) -> Dict[str, Any]:
+        return asdict(self)
+
+    @staticmethod
+    def from_dict(data: Dict[str, Any]) -> "KaldiFbankConfig":
+        return KaldiFbankConfig(**data)
 
 
 @register_extractor
@@ -46,15 +53,27 @@ class KaldiFbank(FeatureExtractor):
     def feature_dim(self, sampling_rate: int) -> int:
         return self.config.num_filters
 
-    def extract(self, samples: np.ndarray, sampling_rate: int) -> np.ndarray:
-        assert sampling_rate == self.config.sampling_rate, f"KaldiFbank was instantiated for sampling_rate " \
-                                                           f"{self.config.sampling_rate}, but " \
-                                                           f"sampling_rate={sampling_rate} was passed to extract()."
-        return self.extractor(torch.from_numpy(samples))[0].numpy()
+    def extract(
+        self, samples: Union[np.ndarray, torch.Tensor], sampling_rate: int
+    ) -> Union[np.ndarray, torch.Tensor]:
+        assert sampling_rate == self.config.sampling_rate, (
+            f"KaldiFbank was instantiated for sampling_rate "
+            f"{self.config.sampling_rate}, but "
+            f"sampling_rate={sampling_rate} was passed to extract()."
+        )
+        is_numpy = False
+        if not isinstance(samples, torch.Tensor):
+            samples = torch.from_numpy(samples)
+            is_numpy = True
+        feats = self.extractor(samples)[0]
+        if is_numpy:
+            return feats.cpu().numpy()
+        else:
+            return feats
 
     @staticmethod
     def mix(
-            features_a: np.ndarray, features_b: np.ndarray, energy_scaling_factor_b: float
+        features_a: np.ndarray, features_b: np.ndarray, energy_scaling_factor_b: float
     ) -> np.ndarray:
         return np.log(
             np.maximum(
@@ -77,7 +96,7 @@ class KaldiMfccConfig:
     fft_length: int = 512
     remove_dc_offset: bool = True
     preemph_coeff: float = 0.97
-    window_type: str = 'povey'
+    window_type: str = "povey"
     dither: float = 0.0
     snip_edges: bool = False
     energy_floor: float = EPSILON
@@ -90,6 +109,13 @@ class KaldiMfccConfig:
     norm_filters: bool = False
     num_ceps: int = 13
     cepstral_lifter: int = 22
+
+    def to_dict(self) -> Dict[str, Any]:
+        return asdict(self)
+
+    @staticmethod
+    def from_dict(data: Dict[str, Any]) -> "KaldiMfccConfig":
+        return KaldiMfccConfig(**data)
 
 
 @register_extractor
@@ -108,8 +134,20 @@ class KaldiMfcc(FeatureExtractor):
     def feature_dim(self, sampling_rate: int) -> int:
         return self.config.num_ceps
 
-    def extract(self, samples: np.ndarray, sampling_rate: int) -> np.ndarray:
-        assert sampling_rate == self.config.sampling_rate, f"KaldiFbank was instantiated for sampling_rate " \
-                                                           f"{self.config.sampling_rate}, but " \
-                                                           f"sampling_rate={sampling_rate} was passed to extract()."
-        return self.extractor(torch.from_numpy(samples))[0].numpy()
+    def extract(
+        self, samples: Union[np.ndarray, torch.Tensor], sampling_rate: int
+    ) -> Union[np.ndarray, torch.Tensor]:
+        assert sampling_rate == self.config.sampling_rate, (
+            f"KaldiFbank was instantiated for sampling_rate "
+            f"{self.config.sampling_rate}, but "
+            f"sampling_rate={sampling_rate} was passed to extract()."
+        )
+        is_numpy = False
+        if not isinstance(samples, torch.Tensor):
+            samples = torch.from_numpy(samples)
+            is_numpy = True
+        feats = self.extractor(samples)[0]
+        if is_numpy:
+            return feats.cpu().numpy()
+        else:
+            return feats

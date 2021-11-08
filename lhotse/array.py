@@ -8,8 +8,8 @@ from lhotse.utils import Seconds, asdict_nonull
 
 @dataclass
 class Array:
-    """
-    """
+    """ """
+
     shape: List[int]
 
     @property
@@ -34,12 +34,12 @@ class Array:
         return asdict_nonull(self)
 
     @classmethod
-    def from_dict(cls, data: dict) -> 'Array':
+    def from_dict(cls, data: dict) -> "Array":
         return cls(**data)
 
     def load(
-            self,
-            start: Optional[Seconds] = None,
-            duration: Optional[Seconds] = None,
+        self,
+        start: Optional[Seconds] = None,
+        duration: Optional[Seconds] = None,
     ) -> np.ndarray:
         pass

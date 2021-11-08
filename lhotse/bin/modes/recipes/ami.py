@@ -4,37 +4,36 @@ from lhotse.bin.modes import download, prepare
 from lhotse.recipes.ami import download_ami, prepare_ami
 from lhotse.utils import Pathlike
 
-__all__ = ['ami']
+__all__ = ["ami"]
 
 
 @prepare.command(context_settings=dict(show_default=True))
-@click.argument('corpus_dir', type=click.Path(exists=True, dir_okay=True))
-@click.argument('output_dir', type=click.Path())
+@click.argument("corpus_dir", type=click.Path(exists=True, dir_okay=True))
+@click.argument("output_dir", type=click.Path())
 @click.option(
-    '--annotations',
+    "--annotations",
     type=click.Path(),
     default=None,
     help="Provide if annotations are download in a different directory than corpus.",
 )
 @click.option(
-    '--mic',
-    type=click.Choice(['ihm', 'ihm-mix', 'sdm', 'mdm'], case_sensitive=False),
-    default='ihm',
-    help='AMI microphone setting.',
+    "--mic",
+    type=click.Choice(["ihm", "ihm-mix", "sdm", "mdm"], case_sensitive=False),
+    default="ihm",
+    help="AMI microphone setting.",
 )
 @click.option(
-    '--partition',
+    "--partition",
     type=click.Choice(
-        ['scenario-only', 'full-corpus', 'full-corpus-asr'], case_sensitive=False
+        ["scenario-only", "full-corpus", "full-corpus-asr"], case_sensitive=False
     ),
-    default='full-corpus-asr',
-    help='Data partition to use (see http://groups.inf.ed.ac.uk/ami/corpus/datasets.shtml).',
+    default="full-corpus-asr",
+    help="Data partition to use (see http://groups.inf.ed.ac.uk/ami/corpus/datasets.shtml).",
 )
 @click.option(
-    '--max-pause',
-    type=float,
-    default=0.0,
-    help='Max pause allowed between word segments to combine segments.',
+    "--normalize-text",
+    is_flag=True,
+    help="If set, convert all text annotations to upper case (similar to Kaldi)",
 )
 def ami(
     corpus_dir: Pathlike,
@@ -42,7 +41,7 @@ def ami(
     annotations: Pathlike,
     mic: str,
     partition: str,
-    max_pause: float,
+    normalize_text: bool,
 ):
     """AMI data preparation."""
     prepare_ami(
@@ -51,35 +50,35 @@ def ami(
         output_dir=output_dir,
         mic=mic,
         partition=partition,
-        max_pause=max_pause,
+        normalize_text=normalize_text,
     )
 
 
 @download.command(context_settings=dict(show_default=True))
-@click.argument('target_dir', type=click.Path())
+@click.argument("target_dir", type=click.Path())
 @click.option(
-    '--annotations',
+    "--annotations",
     type=click.Path(),
     default=None,
     help="To download annotations in a different directory than corpus.",
 )
 @click.option(
-    '--mic',
-    type=click.Choice(['ihm', 'ihm-mix', 'sdm', 'mdm'], case_sensitive=False),
-    default='ihm',
-    help='AMI microphone setting.',
+    "--mic",
+    type=click.Choice(["ihm", "ihm-mix", "sdm", "mdm"], case_sensitive=False),
+    default="ihm",
+    help="AMI microphone setting.",
 )
 @click.option(
-    '--url',
+    "--url",
     type=str,
-    default='http://groups.inf.ed.ac.uk/ami',
-    help='AMI data downloading URL.',
+    default="http://groups.inf.ed.ac.uk/ami",
+    help="AMI data downloading URL.",
 )
 @click.option(
-    '--force-download',
+    "--force-download",
     type=bool,
     default=False,
-    help='If True, download even if file is present.',
+    help="If True, download even if file is present.",
 )
 def ami(
     target_dir: Pathlike,

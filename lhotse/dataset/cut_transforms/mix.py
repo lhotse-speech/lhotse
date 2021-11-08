@@ -11,11 +11,12 @@ class CutMix:
     """
 
     def __init__(
-            self,
-            cuts: CutSet,
-            snr: Optional[Union[Decibels, Tuple[Decibels, Decibels]]] = (10, 20),
-            prob: float = 0.5,
-            pad_to_longest: bool = True
+        self,
+        cuts: CutSet,
+        snr: Optional[Union[Decibels, Tuple[Decibels, Decibels]]] = (10, 20),
+        prob: float = 0.5,
+        pad_to_longest: bool = True,
+        preserve_id: bool = False,
     ) -> None:
         """
         CutMix's constructor.
@@ -30,17 +31,23 @@ class CutMix:
             Specifies the probability with which we will mix augment the cuts.
         :param pad_to_longest: when `True`, each processed :class:`CutSet` will be padded with noise
             to match the duration of the longest Cut in a batch.
+        :param preserve_id: When ``True``, preserves the IDs the cuts had before augmentation.
+            Otherwise, new random IDs are generated for the augmented cuts (default).
         """
         self.cuts = cuts
         self.snr = snr
         self.prob = prob
         self.pad_to_longest = pad_to_longest
+        self.preserve_id = preserve_id
 
     def __call__(self, cuts: CutSet) -> CutSet:
-        maybe_max_duration = max(c.duration for c in cuts) if self.pad_to_longest else None
+        maybe_max_duration = (
+            max(c.duration for c in cuts) if self.pad_to_longest else None
+        )
         return cuts.mix(
             cuts=self.cuts,
             duration=maybe_max_duration,
             snr=self.snr,
-            mix_prob=self.prob
+            mix_prob=self.prob,
+            preserve_id="left" if self.preserve_id else None,
         )

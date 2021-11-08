@@ -1,6 +1,5 @@
-from dataclasses import dataclass
-
-import torchaudio
+from dataclasses import asdict, dataclass
+from typing import Any, Dict
 
 from lhotse.features.base import TorchaudioFeatureExtractor, register_extractor
 from lhotse.utils import EPSILON, Seconds
@@ -23,7 +22,7 @@ class MfccConfig:
 
     # MFCC-related part
     low_freq: float = 20.0
-    high_freq: float = 0.0
+    high_freq: float = -400.0
     num_mel_bins: int = 23
     use_energy: bool = False
     vtln_low: float = 100.0
@@ -32,13 +31,25 @@ class MfccConfig:
     cepstral_lifter: float = 22.0
     num_ceps: int = 13
 
+    def to_dict(self) -> Dict[str, Any]:
+        return asdict(self)
+
+    @staticmethod
+    def from_dict(data: Dict[str, Any]) -> "MfccConfig":
+        return MfccConfig(**data)
+
 
 @register_extractor
 class Mfcc(TorchaudioFeatureExtractor):
     """MFCC feature extractor based on ``torchaudio.compliance.kaldi.mfcc`` function."""
-    name = 'mfcc'
+
+    name = "mfcc"
     config_type = MfccConfig
-    feature_fn = staticmethod(torchaudio.compliance.kaldi.mfcc)
+
+    def _feature_fn(self, *args, **kwargs):
+        from torchaudio.compliance.kaldi import mfcc
+
+        return mfcc(*args, **kwargs)
 
     def feature_dim(self, sampling_rate: int) -> int:
         return self.config.num_ceps

@@ -12,16 +12,43 @@ from itertools import islice
 from math import ceil, sqrt
 from pathlib import Path
 from subprocess import PIPE, run
-from typing import Any, Callable, Dict, Iterable, List, Mapping, NamedTuple, Optional, Sequence, Tuple, Union
+from typing import (
+    Any,
+    Callable,
+    Dict,
+    Iterable,
+    List,
+    Mapping,
+    NamedTuple,
+    Optional,
+    Sequence,
+    Tuple,
+    Union,
+)
 
 import numpy as np
 from tqdm.auto import tqdm
 
 from lhotse.augmentation import AudioTransform, Resample, Speed, Tempo, Volume
+from lhotse.caching import dynamic_lru_cache
 from lhotse.serialization import Serializable
-from lhotse.utils import (Decibels, NonPositiveEnergyError, Pathlike, Seconds, SetContainingAnything, SmartOpen,
-                          asdict_nonull, compute_num_samples, exactly_one_not_null, fastcopy, ifnone,
-                          index_by_id_and_check, perturb_num_samples, split_sequence)
+from lhotse.utils import (
+    Decibels,
+    NonPositiveEnergyError,
+    Pathlike,
+    Seconds,
+    SetContainingAnything,
+    SmartOpen,
+    asdict_nonull,
+    compute_num_samples,
+    exactly_one_not_null,
+    fastcopy,
+    ifnone,
+    index_by_id_and_check,
+    perturb_num_samples,
+    rich_exception_info,
+    split_sequence,
+)
 
 Channels = Union[int, List[int]]
 
@@ -39,15 +66,16 @@ class AudioSource:
     - 'command' [unix pipe] (must be WAVE, possibly multi-channel)
     - 'url' (any URL type that is supported by "smart_open" library, e.g. http/https/s3/gcp/azure/etc.)
     """
+
     type: str
     channels: List[int]
     source: str
 
     def load_audio(
-            self,
-            offset: Seconds = 0.0,
-            duration: Optional[Seconds] = None,
-            force_opus_sampling_rate: Optional[int] = None,
+        self,
+        offset: Seconds = 0.0,
+        duration: Optional[Seconds] = None,
+        force_opus_sampling_rate: Optional[int] = None,
     ) -> np.ndarray:
         """
         Load the AudioSource (from files, commands, or URLs) with soundfile,
@@ -61,33 +89,41 @@ class AudioSource:
         :param force_opus_sampling_rate: This parameter is only used when we detect an OPUS file.
             It will tell ffmpeg to resample OPUS to this sampling rate.
         """
-        assert self.type in ('file', 'command', 'url')
+        assert self.type in ("file", "command", "url")
 
         # TODO: refactor when another source type is added
         source = self.source
 
-        if self.type == 'command':
+        if self.type == "command":
             if offset != 0.0 or duration is not None:
                 # TODO(pzelasko): How should we support chunking for commands?
                 #                 We risk being very inefficient when reading many chunks from the same file
                 #                 without some caching scheme, because we'll be re-running commands.
-                warnings.warn('You requested a subset of a recording that is read from disk via a bash command. '
-                              'Expect large I/O overhead if you are going to read many chunks like these, '
-                              'since every time we will read the whole file rather than its subset.')
+                warnings.warn(
+                    "You requested a subset of a recording that is read from disk via a bash command. "
+                    "Expect large I/O overhead if you are going to read many chunks like these, "
+                    "since every time we will read the whole file rather than its subset."
+                )
             source = BytesIO(run(self.source, shell=True, stdout=PIPE).stdout)
-            samples, sampling_rate = read_audio(source, offset=offset, duration=duration)
+            samples, sampling_rate = read_audio(
+                source, offset=offset, duration=duration
+            )
 
-        elif self.type == 'url':
+        elif self.type == "url":
             if offset != 0.0 or duration is not None:
                 # TODO(pzelasko): How should we support chunking for URLs?
                 #                 We risk being very inefficient when reading many chunks from the same file
                 #                 without some caching scheme, because we'll be re-running commands.
-                warnings.warn('You requested a subset of a recording that is read from URL. '
-                              'Expect large I/O overhead if you are going to read many chunks like these, '
-                              'since every time we will download the whole file rather than its subset.')
-            with SmartOpen.open(self.source, 'rb') as f:
+                warnings.warn(
+                    "You requested a subset of a recording that is read from URL. "
+                    "Expect large I/O overhead if you are going to read many chunks like these, "
+                    "since every time we will download the whole file rather than its subset."
+                )
+            with SmartOpen.open(self.source, "rb") as f:
                 source = BytesIO(f.read())
-                samples, sampling_rate = read_audio(source, offset=offset, duration=duration)
+                samples, sampling_rate = read_audio(
+                    source, offset=offset, duration=duration
+                )
 
         else:  # self.type == 'file'
             samples, sampling_rate = read_audio(
@@ -99,17 +135,21 @@ class AudioSource:
 
         # explicit sanity check for duration as soundfile does not complain here
         if duration is not None:
-            num_samples = samples.shape[0] if len(samples.shape) == 1 else samples.shape[1]
+            num_samples = (
+                samples.shape[0] if len(samples.shape) == 1 else samples.shape[1]
+            )
             available_duration = num_samples / sampling_rate
-            if available_duration < duration - 1e-3:  # set the allowance as 1ms to avoid float error
+            if (
+                available_duration < duration - 1e-3
+            ):  # set the allowance as 1ms to avoid float error
                 raise ValueError(
-                    f'Requested more audio ({duration}s) than available ({available_duration}s)'
+                    f"Requested more audio ({duration}s) than available ({available_duration}s)"
                 )
 
         return samples.astype(np.float32)
 
-    def with_path_prefix(self, path: Pathlike) -> 'AudioSource':
-        if self.type != 'file':
+    def with_path_prefix(self, path: Pathlike) -> "AudioSource":
+        if self.type != "file":
             return self
         return fastcopy(self, source=str(Path(path) / self.source))
 
@@ -117,7 +157,7 @@ class AudioSource:
         return asdict_nonull(self)
 
     @staticmethod
-    def from_dict(data) -> 'AudioSource':
+    def from_dict(data) -> "AudioSource":
         return AudioSource(**data)
 
 
@@ -191,6 +231,7 @@ class Recording:
             >>> samples2 = recording.load_audio(offset=0.5)
             >>> assert samples2.shape == (1, 8000)
     """
+
     id: str
     sources: List[AudioSource]
     sampling_rate: int
@@ -200,11 +241,11 @@ class Recording:
 
     @staticmethod
     def from_file(
-            path: Pathlike,
-            recording_id: Optional[str] = None,
-            relative_path_depth: Optional[int] = None,
-            force_opus_sampling_rate: Optional[int] = None,
-    ) -> 'Recording':
+        path: Pathlike,
+        recording_id: Optional[str] = None,
+        relative_path_depth: Optional[int] = None,
+        force_opus_sampling_rate: Optional[int] = None,
+    ) -> "Recording":
         """
         Read an audio file's header and create the corresponding ``Recording``.
         Suitable to use when each physical file represents a separate recording session.
@@ -225,38 +266,23 @@ class Recording:
         :return: a new ``Recording`` instance pointing to the audio file.
         """
         path = Path(path)
-        if path.suffix.lower() == '.opus':
-            # We handle OPUS as a special case because we might need to force a certain sampling rate.
-            info = opus_info(path, force_opus_sampling_rate=force_opus_sampling_rate)
-        elif path.suffix.lower() == '.sph':
-            # We handle SPHERE as another special case because some old codecs (i.e. "shorten" codec)
-            # can't be handled by neither pysoundfile nor pyaudioread.
-            info = sph_info(path)
-        else:
-            try:
-                # Try to parse the file using pysoundfile first.
-                import soundfile as sf
-                info = sf.info(str(path))
-            except:
-                # Try to parse the file using audioread as a fallback.
-                info = audioread_info(str(path))
-                # If both fail, then Python 3 will display both exception messages.
+        audio_info = info(path, force_opus_sampling_rate=force_opus_sampling_rate)
         return Recording(
             id=recording_id if recording_id is not None else path.stem,
-            sampling_rate=info.samplerate,
-            num_samples=info.frames,
-            duration=info.duration,
+            sampling_rate=audio_info.samplerate,
+            num_samples=audio_info.frames,
+            duration=audio_info.duration,
             sources=[
                 AudioSource(
-                    type='file',
-                    channels=list(range(info.channels)),
+                    type="file",
+                    channels=list(range(audio_info.channels)),
                     source=(
-                        '/'.join(path.parts[-relative_path_depth:])
+                        "/".join(path.parts[-relative_path_depth:])
                         if relative_path_depth is not None and relative_path_depth > 0
                         else str(path)
-                    )
+                    ),
                 )
-            ]
+            ],
         )
 
     def to_dict(self) -> dict:
@@ -270,11 +296,12 @@ class Recording:
     def channel_ids(self):
         return sorted(cid for source in self.sources for cid in source.channels)
 
+    @rich_exception_info
     def load_audio(
-            self,
-            channels: Optional[Channels] = None,
-            offset: Seconds = 0.0,
-            duration: Optional[Seconds] = None,
+        self,
+        channels: Optional[Channels] = None,
+        offset: Seconds = 0.0,
+        duration: Optional[Seconds] = None,
     ) -> np.ndarray:
         """
         Read the audio samples from the underlying audio source (path, URL, unix pipe/command).
@@ -291,12 +318,16 @@ class Recording:
         else:
             channels = frozenset([channels] if isinstance(channels, int) else channels)
             recording_channels = frozenset(self.channel_ids)
-            assert channels.issubset(recording_channels), "Requested to load audio from a channel " \
-                                                          "that does not exist in the recording: " \
-                                                          f"(recording channels: {recording_channels} -- " \
-                                                          f"requested channels: {channels})"
+            assert channels.issubset(recording_channels), (
+                "Requested to load audio from a channel "
+                "that does not exist in the recording: "
+                f"(recording channels: {recording_channels} -- "
+                f"requested channels: {channels})"
+            )
 
-        transforms = [AudioTransform.from_dict(params) for params in self.transforms or []]
+        transforms = [
+            AudioTransform.from_dict(params) for params in self.transforms or []
+        ]
 
         # Do a "backward pass" over data augmentation transforms to get the
         # offset and duration for loading a piece of the original audio.
@@ -305,7 +336,7 @@ class Recording:
             offset_aug, duration_aug = tfn.reverse_timestamps(
                 offset=offset_aug,
                 duration=duration_aug,
-                sampling_rate=self.sampling_rate
+                sampling_rate=self.sampling_rate,
             )
 
         samples_per_source = []
@@ -322,8 +353,7 @@ class Recording:
             # Case: two-channel audio file but only one channel requested
             #       it might not be optimal to load all channels, but IDK if there's anything we can do about it
             channels_to_remove = [
-                idx for idx, cid in enumerate(source.channels)
-                if cid not in channels
+                idx for idx, cid in enumerate(source.channels) if cid not in channels
             ]
             if channels_to_remove:
                 samples = np.delete(samples, channels_to_remove, axis=0)
@@ -339,24 +369,23 @@ class Recording:
         # Transformation chains can introduce small mismatches in the number of samples:
         # we'll fix them here, or raise an error if they exceeded a tolerance threshold.
         audio = assert_and_maybe_fix_num_samples(
-            audio,
-            offset=offset,
-            duration=duration,
-            recording=self
+            audio, offset=offset, duration=duration, recording=self
         )
 
         return audio
 
-    def _expected_num_samples(self, offset: Seconds, duration: Optional[Seconds]) -> int:
+    def _expected_num_samples(
+        self, offset: Seconds, duration: Optional[Seconds]
+    ) -> int:
         if offset == 0 and duration is None:
             return self.num_samples
         duration = duration if duration is not None else self.duration - offset
         return compute_num_samples(duration, sampling_rate=self.sampling_rate)
 
-    def with_path_prefix(self, path: Pathlike) -> 'Recording':
+    def with_path_prefix(self, path: Pathlike) -> "Recording":
         return fastcopy(self, sources=[s.with_path_prefix(path) for s in self.sources])
 
-    def perturb_speed(self, factor: float, affix_id: bool = True) -> 'Recording':
+    def perturb_speed(self, factor: float, affix_id: bool = True) -> "Recording":
         """
         Return a new ``Recording`` that will lazily perturb the speed while loading audio.
         The ``num_samples`` and ``duration`` fields are updated to reflect the
@@ -373,13 +402,13 @@ class Recording:
         new_duration = new_num_samples / self.sampling_rate
         return fastcopy(
             self,
-            id=f'{self.id}_sp{factor}' if affix_id else self.id,
+            id=f"{self.id}_sp{factor}" if affix_id else self.id,
             num_samples=new_num_samples,
             duration=new_duration,
-            transforms=transforms
+            transforms=transforms,
         )
 
-    def perturb_tempo(self, factor: float, affix_id: bool = True) -> 'Recording':
+    def perturb_tempo(self, factor: float, affix_id: bool = True) -> "Recording":
         """
         Return a new ``Recording`` that will lazily perturb the tempo while loading audio.
 
@@ -398,13 +427,13 @@ class Recording:
         new_duration = new_num_samples / self.sampling_rate
         return fastcopy(
             self,
-            id=f'{self.id}_tp{factor}' if affix_id else self.id,
+            id=f"{self.id}_tp{factor}" if affix_id else self.id,
             num_samples=new_num_samples,
             duration=new_duration,
-            transforms=transforms
+            transforms=transforms,
         )
 
-    def perturb_volume(self, factor: float, affix_id: bool = True) -> 'Recording':
+    def perturb_volume(self, factor: float, affix_id: bool = True) -> "Recording":
         """
         Return a new ``Recording`` that will lazily perturb the volume while loading audio.
 
@@ -417,11 +446,11 @@ class Recording:
         transforms.append(Volume(factor=factor).to_dict())
         return fastcopy(
             self,
-            id=f'{self.id}_vp{factor}' if affix_id else self.id,
-            transforms=transforms
+            id=f"{self.id}_vp{factor}" if affix_id else self.id,
+            transforms=transforms,
         )
 
-    def resample(self, sampling_rate: int) -> 'Recording':
+    def resample(self, sampling_rate: int) -> "Recording":
         """
         Return a new ``Recording`` that will be lazily resampled while loading audio.
         :param sampling_rate: The new sampling rate.
@@ -429,9 +458,14 @@ class Recording:
         """
         transforms = self.transforms.copy() if self.transforms is not None else []
         transforms.append(
-            Resample(source_sampling_rate=self.sampling_rate, target_sampling_rate=sampling_rate).to_dict()
+            Resample(
+                source_sampling_rate=self.sampling_rate,
+                target_sampling_rate=sampling_rate,
+            ).to_dict()
         )
-        new_num_samples = compute_num_samples(self.duration, sampling_rate, rounding=ROUND_HALF_UP)
+        new_num_samples = compute_num_samples(
+            self.duration, sampling_rate, rounding=ROUND_HALF_UP
+        )
         # Duration might need an adjustment when doing a non-trivial resampling
         # (e.g. 16000 -> 22050), where the resulting number of samples cannot
         # correspond to old duration exactly.
@@ -441,13 +475,15 @@ class Recording:
             duration=new_duration,
             num_samples=new_num_samples,
             sampling_rate=sampling_rate,
-            transforms=transforms
+            transforms=transforms,
         )
 
     @staticmethod
-    def from_dict(data: dict) -> 'Recording':
-        raw_sources = data.pop('sources')
-        return Recording(sources=[AudioSource.from_dict(s) for s in raw_sources], **data)
+    def from_dict(data: dict) -> "Recording":
+        raw_sources = data.pop("sources")
+        return Recording(
+            sources=[AudioSource.from_dict(s) for s in raw_sources], **data
+        )
 
 
 class RecordingSet(Serializable, Sequence[Recording]):
@@ -514,7 +550,7 @@ class RecordingSet(Serializable, Sequence[Recording]):
     def __init__(self, recordings: Mapping[str, Recording] = None) -> None:
         self.recordings = ifnone(recordings, {})
 
-    def __eq__(self, other: 'RecordingSet') -> bool:
+    def __eq__(self, other: "RecordingSet") -> bool:
         return self.recordings == other.recordings
 
     @property
@@ -523,6 +559,7 @@ class RecordingSet(Serializable, Sequence[Recording]):
         Indicates whether this manifest was opened in lazy (read-on-the-fly) mode or not.
         """
         from lhotse.serialization import LazyJsonlIterator
+
         return isinstance(self.recordings, LazyJsonlIterator)
 
     @property
@@ -530,15 +567,15 @@ class RecordingSet(Serializable, Sequence[Recording]):
         return self.recordings.keys()
 
     @staticmethod
-    def from_recordings(recordings: Iterable[Recording]) -> 'RecordingSet':
+    def from_recordings(recordings: Iterable[Recording]) -> "RecordingSet":
         return RecordingSet(recordings=index_by_id_and_check(recordings))
 
     @staticmethod
     def from_dir(
-            path: Pathlike,
-            pattern: str,
-            num_jobs: int = 1,
-            force_opus_sampling_rate: Optional[int] = None,
+        path: Pathlike,
+        pattern: str,
+        num_jobs: int = 1,
+        force_opus_sampling_rate: Optional[int] = None,
     ):
         """
         Recursively scan a directory ``path`` for audio files that match the given ``pattern`` and create
@@ -560,34 +597,32 @@ class RecordingSet(Serializable, Sequence[Recording]):
             "under-the-hood". For non-OPUS files this input does nothing.
         :return: a new ``Recording`` instance pointing to the audio file.
         """
-        msg = f'Scanning audio files ({pattern})'
+        msg = f"Scanning audio files ({pattern})"
         fn = Recording.from_file
         if force_opus_sampling_rate is not None:
-            fn = partial(Recording.from_file, force_opus_sampling_rate=force_opus_sampling_rate)
+            fn = partial(
+                Recording.from_file, force_opus_sampling_rate=force_opus_sampling_rate
+            )
         if num_jobs == 1:
             # Avoid spawning process for one job.
             return RecordingSet.from_recordings(
-                tqdm(
-                    map(fn, Path(path).rglob(pattern)),
-                    desc=msg
-                )
+                tqdm(map(fn, Path(path).rglob(pattern)), desc=msg)
             )
         with ProcessPoolExecutor(num_jobs) as ex:
             return RecordingSet.from_recordings(
-                tqdm(
-                    ex.map(fn, Path(path).rglob(pattern)),
-                    desc=msg
-                )
+                tqdm(ex.map(fn, Path(path).rglob(pattern)), desc=msg)
             )
 
     @staticmethod
-    def from_dicts(data: Iterable[dict]) -> 'RecordingSet':
-        return RecordingSet.from_recordings(Recording.from_dict(raw_rec) for raw_rec in data)
+    def from_dicts(data: Iterable[dict]) -> "RecordingSet":
+        return RecordingSet.from_recordings(
+            Recording.from_dict(raw_rec) for raw_rec in data
+        )
 
     def to_dicts(self) -> Iterable[dict]:
         return (r.to_dict() for r in self)
 
-    def filter(self, predicate: Callable[[Recording], bool]) -> 'RecordingSet':
+    def filter(self, predicate: Callable[[Recording], bool]) -> "RecordingSet":
         """
         Return a new RecordingSet with the Recordings that satisfy the `predicate`.
 
@@ -596,7 +631,7 @@ class RecordingSet(Serializable, Sequence[Recording]):
         """
         return RecordingSet.from_recordings(rec for rec in self if predicate(rec))
 
-    def shuffle(self, rng: Optional[random.Random] = None) -> 'RecordingSet':
+    def shuffle(self, rng: Optional[random.Random] = None) -> "RecordingSet":
         """
         Shuffle the recording IDs in the current :class:`.RecordingSet` and return a shuffled copy of self.
 
@@ -609,7 +644,9 @@ class RecordingSet(Serializable, Sequence[Recording]):
         rng.shuffle(ids)
         return RecordingSet(recordings={rid: self[rid] for rid in ids})
 
-    def split(self, num_splits: int, shuffle: bool = False, drop_last: bool = False) -> List['RecordingSet']:
+    def split(
+        self, num_splits: int, shuffle: bool = False, drop_last: bool = False
+    ) -> List["RecordingSet"]:
         """
         Split the :class:`~lhotse.RecordingSet` into ``num_splits`` pieces of equal size.
 
@@ -622,11 +659,15 @@ class RecordingSet(Serializable, Sequence[Recording]):
         :return: A list of :class:`~lhotse.RecordingSet` pieces.
         """
         return [
-            RecordingSet.from_recordings(subset) for subset in
-            split_sequence(self, num_splits=num_splits, shuffle=shuffle, drop_last=drop_last)
+            RecordingSet.from_recordings(subset)
+            for subset in split_sequence(
+                self, num_splits=num_splits, shuffle=shuffle, drop_last=drop_last
+            )
         ]
 
-    def subset(self, first: Optional[int] = None, last: Optional[int] = None) -> 'RecordingSet':
+    def subset(
+        self, first: Optional[int] = None, last: Optional[int] = None
+    ) -> "RecordingSet":
         """
         Return a new ``RecordingSet`` according to the selected subset criterion.
         Only a single argument to ``subset`` is supported at this time.
@@ -635,38 +676,44 @@ class RecordingSet(Serializable, Sequence[Recording]):
         :param last: int, the number of last recordings to keep.
         :return: a new ``RecordingSet`` with the subset results.
         """
-        assert exactly_one_not_null(first, last), "subset() can handle only one non-None arg."
+        assert exactly_one_not_null(
+            first, last
+        ), "subset() can handle only one non-None arg."
 
         if first is not None:
             assert first > 0
             if first > len(self):
-                logging.warning(f'RecordingSet has only {len(self)} items but first {first} required; '
-                                f'not doing anything.')
+                logging.warning(
+                    f"RecordingSet has only {len(self)} items but first {first} required; "
+                    f"not doing anything."
+                )
                 return self
             return RecordingSet.from_recordings(islice(self, first))
 
         if last is not None:
             assert last > 0
             if last > len(self):
-                logging.warning(f'RecordingSet has only {len(self)} items but last {last} required; '
-                                f'not doing anything.')
+                logging.warning(
+                    f"RecordingSet has only {len(self)} items but last {last} required; "
+                    f"not doing anything."
+                )
                 return self
-            return RecordingSet.from_recordings(islice(self, len(self) - last, len(self)))
+            return RecordingSet.from_recordings(
+                islice(self, len(self) - last, len(self))
+            )
 
     def load_audio(
-            self,
-            recording_id: str,
-            channels: Optional[Channels] = None,
-            offset_seconds: float = 0.0,
-            duration_seconds: Optional[float] = None,
+        self,
+        recording_id: str,
+        channels: Optional[Channels] = None,
+        offset_seconds: float = 0.0,
+        duration_seconds: Optional[float] = None,
     ) -> np.ndarray:
         return self.recordings[recording_id].load_audio(
-            channels=channels,
-            offset=offset_seconds,
-            duration=duration_seconds
+            channels=channels, offset=offset_seconds, duration=duration_seconds
         )
 
-    def with_path_prefix(self, path: Pathlike) -> 'RecordingSet':
+    def with_path_prefix(self, path: Pathlike) -> "RecordingSet":
         return RecordingSet.from_recordings(r.with_path_prefix(path) for r in self)
 
     def num_channels(self, recording_id: str) -> int:
@@ -681,7 +728,7 @@ class RecordingSet(Serializable, Sequence[Recording]):
     def duration(self, recording_id: str) -> Seconds:
         return self.recordings[recording_id].duration
 
-    def perturb_speed(self, factor: float, affix_id: bool = True) -> 'RecordingSet':
+    def perturb_speed(self, factor: float, affix_id: bool = True) -> "RecordingSet":
         """
         Return a new ``RecordingSet`` that will lazily perturb the speed while loading audio.
         The ``num_samples`` and ``duration`` fields are updated to reflect the
@@ -692,9 +739,11 @@ class RecordingSet(Serializable, Sequence[Recording]):
             by affixing it with "_sp{factor}".
         :return: a ``RecordingSet`` containing the perturbed ``Recording`` objects.
         """
-        return RecordingSet.from_recordings(r.perturb_speed(factor=factor, affix_id=affix_id) for r in self)
+        return RecordingSet.from_recordings(
+            r.perturb_speed(factor=factor, affix_id=affix_id) for r in self
+        )
 
-    def perturb_tempo(self, factor: float, affix_id: bool = True) -> 'RecordingSet':
+    def perturb_tempo(self, factor: float, affix_id: bool = True) -> "RecordingSet":
         """
         Return a new ``RecordingSet`` that will lazily perturb the tempo while loading audio.
         The ``num_samples`` and ``duration`` fields are updated to reflect the
@@ -705,9 +754,11 @@ class RecordingSet(Serializable, Sequence[Recording]):
             by affixing it with "_sp{factor}".
         :return: a ``RecordingSet`` containing the perturbed ``Recording`` objects.
         """
-        return RecordingSet.from_recordings(r.perturb_tempo(factor=factor, affix_id=affix_id) for r in self)
+        return RecordingSet.from_recordings(
+            r.perturb_tempo(factor=factor, affix_id=affix_id) for r in self
+        )
 
-    def perturb_volume(self, factor: float, affix_id: bool = True) -> 'RecordingSet':
+    def perturb_volume(self, factor: float, affix_id: bool = True) -> "RecordingSet":
         """
         Return a new ``RecordingSet`` that will lazily perturb the volume while loading audio.
 
@@ -716,9 +767,11 @@ class RecordingSet(Serializable, Sequence[Recording]):
             by affixing it with "_sp{factor}".
         :return: a ``RecordingSet`` containing the perturbed ``Recording`` objects.
         """
-        return RecordingSet.from_recordings(r.perturb_volume(factor=factor, affix_id=affix_id) for r in self)
+        return RecordingSet.from_recordings(
+            r.perturb_volume(factor=factor, affix_id=affix_id) for r in self
+        )
 
-    def resample(self, sampling_rate: int) -> 'RecordingSet':
+    def resample(self, sampling_rate: int) -> "RecordingSet":
         """
         Apply resampling to all recordings in the ``RecordingSet`` and return a new ``RecordingSet``.
         :param sampling_rate: The new sampling rate.
@@ -727,7 +780,7 @@ class RecordingSet(Serializable, Sequence[Recording]):
         return RecordingSet.from_recordings(r.resample(sampling_rate) for r in self)
 
     def __repr__(self) -> str:
-        return f'RecordingSet(len={len(self)})'
+        return f"RecordingSet(len={len(self)})"
 
     def __contains__(self, item: Union[str, Recording]) -> bool:
         if isinstance(item, str):
@@ -739,7 +792,11 @@ class RecordingSet(Serializable, Sequence[Recording]):
         if isinstance(recording_id_or_index, str):
             return self.recordings[recording_id_or_index]
         # ~100x faster than list(dict.values())[index] for 100k elements
-        return next(val for idx, val in enumerate(self.recordings.values()) if idx == recording_id_or_index)
+        return next(
+            val
+            for idx, val in enumerate(self.recordings.values())
+            if idx == recording_id_or_index
+        )
 
     def __iter__(self) -> Iterable[Recording]:
         return iter(self.recordings.values())
@@ -747,7 +804,7 @@ class RecordingSet(Serializable, Sequence[Recording]):
     def __len__(self) -> int:
         return len(self.recordings)
 
-    def __add__(self, other: 'RecordingSet') -> 'RecordingSet':
+    def __add__(self, other: "RecordingSet") -> "RecordingSet":
         return RecordingSet(recordings={**self.recordings, **other.recordings})
 
 
@@ -793,10 +850,10 @@ class AudioMixer:
         return np.sum(self.unmixed_audio, axis=0, keepdims=True)
 
     def add_to_mix(
-            self,
-            audio: np.ndarray,
-            snr: Optional[Decibels] = None,
-            offset: Seconds = 0.0,
+        self,
+        audio: np.ndarray,
+        snr: Optional[Decibels] = None,
+        offset: Seconds = 0.0,
     ):
         """
         Add audio (only support mono-channel) of a new track into the mix.
@@ -818,10 +875,9 @@ class AudioMixer:
 
         # When there is an offset, we need to pad before the start of the audio we're adding.
         if offset > 0:
-            audio_to_add = np.hstack([
-                np.zeros((1, num_samples_offset), self.dtype),
-                audio_to_add
-            ])
+            audio_to_add = np.hstack(
+                [np.zeros((1, num_samples_offset), self.dtype), audio_to_add]
+            )
 
         incoming_num_samples = audio_to_add.shape[1]
         mix_num_samples = max(current_num_samples, incoming_num_samples)
@@ -832,10 +888,14 @@ class AudioMixer:
         # we need to pad each of them so that their shape matches when performing the final mix.
         if current_num_samples < mix_num_samples:
             for idx in range(len(self.tracks)):
-                padded_audio = np.hstack([
-                    self.tracks[idx],
-                    np.zeros((1, mix_num_samples - current_num_samples), self.dtype)
-                ])
+                padded_audio = np.hstack(
+                    [
+                        self.tracks[idx],
+                        np.zeros(
+                            (1, mix_num_samples - current_num_samples), self.dtype
+                        ),
+                    ]
+                )
                 self.tracks[idx] = padded_audio
 
         # When the audio we're mixing in are shorter that the anticipated mix length,
@@ -843,10 +903,12 @@ class AudioMixer:
         # Note: we're doing that non-efficiently, as it we potentially re-allocate numpy arrays twice,
         # during this padding and the  offset padding before. If that's a bottleneck, we'll optimize.
         if incoming_num_samples < mix_num_samples:
-            audio_to_add = np.hstack([
-                audio_to_add,
-                np.zeros((1, mix_num_samples - incoming_num_samples), self.dtype)
-            ])
+            audio_to_add = np.hstack(
+                [
+                    audio_to_add,
+                    np.zeros((1, mix_num_samples - incoming_num_samples), self.dtype),
+                ]
+            )
 
         # When SNR is requested, find what gain is needed to satisfy the SNR
         gain = 1.0
@@ -873,40 +935,35 @@ def audio_energy(audio: np.ndarray) -> float:
 FileObject = Any  # Alias for file-like objects
 
 
+@dynamic_lru_cache
 def read_audio(
-        path_or_fd: Union[Pathlike, FileObject],
-        offset: Seconds = 0.0,
-        duration: Optional[Seconds] = None,
-        force_opus_sampling_rate: Optional[int] = None,
+    path_or_fd: Union[Pathlike, FileObject],
+    offset: Seconds = 0.0,
+    duration: Optional[Seconds] = None,
+    force_opus_sampling_rate: Optional[int] = None,
 ) -> Tuple[np.ndarray, int]:
-    if isinstance(path_or_fd, (str, Path)) and str(path_or_fd).lower().endswith('.opus'):
+    # First handle special cases: OPUS and SPHERE (SPHERE may be encoded with shorten,
+    #   which can only be decoded by binaries "shorten" and "sph2pipe").
+    if isinstance(path_or_fd, (str, Path)) and str(path_or_fd).lower().endswith(
+        ".opus"
+    ):
         return read_opus(
             path_or_fd,
             offset=offset,
             duration=duration,
             force_opus_sampling_rate=force_opus_sampling_rate,
         )
-    elif isinstance(path_or_fd, (str, Path)) and str(path_or_fd).lower().endswith('.sph'):
-        return read_sph(
-            path_or_fd,
-            offset=offset,
-            duration=duration
-        )
+    elif isinstance(path_or_fd, (str, Path)) and str(path_or_fd).lower().endswith(
+        ".sph"
+    ):
+        return read_sph(path_or_fd, offset=offset, duration=duration)
     try:
-        import soundfile as sf
-        with sf.SoundFile(path_or_fd) as sf_desc:
-            sampling_rate = sf_desc.samplerate
-            if offset > 0:
-                # Seek to the start of the target read
-                sf_desc.seek(compute_num_samples(offset, sampling_rate))
-            if duration is not None:
-                frame_duration = compute_num_samples(duration, sampling_rate)
-            else:
-                frame_duration = -1
-            # Load the target number of frames, and transpose to match librosa form
-            return sf_desc.read(frames=frame_duration, dtype=np.float32, always_2d=False).T, sampling_rate
+        return torchaudio_load(path_or_fd, offset=offset, duration=duration)
     except:
-        return _audioread_load(path_or_fd, offset=offset, duration=duration)
+        try:
+            return soundfile_load(path_or_fd, offset=offset, duration=duration)
+        except:
+            return audioread_load(path_or_fd, offset=offset, duration=duration)
 
 
 class LibsndfileCompatibleAudioInfo(NamedTuple):
@@ -914,6 +971,132 @@ class LibsndfileCompatibleAudioInfo(NamedTuple):
     frames: int
     samplerate: int
     duration: float
+
+
+def info(
+    path: Pathlike, force_opus_sampling_rate: Optional[int] = None
+) -> LibsndfileCompatibleAudioInfo:
+    if path.suffix.lower() == ".opus":
+        # We handle OPUS as a special case because we might need to force a certain sampling rate.
+        return opus_info(path, force_opus_sampling_rate=force_opus_sampling_rate)
+    elif path.suffix.lower() == ".sph":
+        # We handle SPHERE as another special case because some old codecs (i.e. "shorten" codec)
+        # can't be handled by neither pysoundfile nor pyaudioread.
+        return sph_info(path)
+    try:
+        # Try to parse the file using torchaudio first.
+        return torchaudio_info(path)
+    except:
+        try:
+            # Try to parse the file using pysoundfile as a fallback.
+            import soundfile as sf
+
+            return sf.info(str(path))
+        except:
+            # Try to parse the file using audioread as the last fallback.
+            return audioread_info(str(path))
+            # If both fail, then Python 3 will display both exception messages.
+
+
+def torchaudio_info(path: Pathlike) -> LibsndfileCompatibleAudioInfo:
+    """
+    Return an audio info data structure that's a compatible subset of ``pysoundfile.info()``
+    that we need to create a ``Recording`` manifest.
+    """
+    import torchaudio
+
+    info = torchaudio.info(path)
+    return LibsndfileCompatibleAudioInfo(
+        channels=info.num_channels,
+        frames=info.num_frames,
+        samplerate=info.sample_rate,
+        duration=info.num_frames / info.sample_rate,
+    )
+
+
+def torchaudio_load(
+    path_or_fd: Pathlike, offset: Seconds = 0, duration: Optional[Seconds] = None
+) -> Tuple[np.ndarray, int]:
+    import torch
+    import torchaudio
+
+    if not isinstance(path_or_fd, (str, Path)):
+        # Special case: we are likely dealing with a file descriptor (open file).
+        # If we run torchaudio.info() on it, it will consume some data,
+        # which will cause torchaudio.load() to fail.
+        # We expect offset and duration have default values, otherwise we fail.
+        assert offset == 0 and duration is None, (
+            "Lhotse doesn't support using torchaudio.load() "
+            "with open file objects when offset or duration "
+            "arguments are non-default."
+        )
+        audio, sampling_rate = torchaudio.load(path_or_fd)
+        return audio.numpy(), sampling_rate
+
+    # Need to grab the "info" about sampling rate before reading to compute
+    # the number of samples provided in offset / num_frames.
+    audio_info = torchaudio_info(path_or_fd)
+    frame_offset = 0
+    num_frames = -1
+    if offset > 0:
+        frame_offset = compute_num_samples(offset, audio_info.samplerate)
+    if duration is not None:
+        num_frames = compute_num_samples(duration, audio_info.samplerate)
+    audio, sampling_rate = torchaudio.load(
+        path_or_fd,
+        frame_offset=frame_offset,
+        num_frames=num_frames,
+    )
+
+    # MP3 has weird behaviour sometimes: torchaudio.info() `num_frames` indicates
+    # a different number of samples than data shape from torchaudio.load().
+    # We'll truncate/zero-pad to ensure the shape is the same as from info,
+    # up to some threshold determined heuristically (25ms).
+    THRESHOLD: Seconds = 0.025
+    threshold_samples = THRESHOLD / sampling_rate
+    diff = audio.shape[1] - audio_info.frames
+    if diff < 0:
+        if abs(diff) <= threshold_samples:
+            audio = torch.nn.functional.pad(
+                audio, (0, abs(diff)), mode="constant", value=0
+            )
+        else:
+            raise ValueError(
+                f"Inconsistent audio data for '{path_or_fd}': torchaudio.info() declared "
+                f"{audio_info.frames} samples, but torchaudio.load() returned {audio.shape[1]} samples. "
+                f"Please report an issue in Lhotse or Torchaudio GitHub."
+            )
+    elif diff > 0:
+        if abs(diff) <= threshold_samples:
+            audio = audio[:, :-diff]
+        else:
+            raise ValueError(
+                f"Inconsistent audio data for '{path_or_fd}': torchaudio.info() declared "
+                f"{audio_info.frames} samples, but torchaudio.load() returned {audio.shape[1]} samples. "
+                f"Please report an issue in Lhotse or Torchaudio GitHub."
+            )
+    return audio.numpy(), sampling_rate
+
+
+def soundfile_load(
+    path_or_fd: Pathlike, offset: Seconds = 0, duration: Optional[Seconds] = None
+) -> Tuple[np.ndarray, int]:
+    import soundfile as sf
+
+    with sf.SoundFile(path_or_fd) as sf_desc:
+        sampling_rate = sf_desc.samplerate
+        if offset > 0:
+            # Seek to the start of the target read
+            sf_desc.seek(compute_num_samples(offset, sampling_rate))
+        if duration is not None:
+            frame_duration = compute_num_samples(duration, sampling_rate)
+        else:
+            frame_duration = -1
+        # Load the target number of frames, and transpose to match librosa form
+        return (
+            sf_desc.read(frames=frame_duration, dtype=np.float32, always_2d=False).T,
+            sampling_rate,
+        )
 
 
 def audioread_info(path: Pathlike) -> LibsndfileCompatibleAudioInfo:
@@ -925,8 +1108,10 @@ def audioread_info(path: Pathlike) -> LibsndfileCompatibleAudioInfo:
 
     # We just read the file and compute the number of samples
     # -- no other method seems fully reliable...
-    with audioread.audio_open(path, backends=_available_audioread_backends()) as input_file:
-        shape = _audioread_load(input_file)[0].shape
+    with audioread.audio_open(
+        path, backends=_available_audioread_backends()
+    ) as input_file:
+        shape = audioread_load(input_file)[0].shape
         if len(shape) == 1:
             num_samples = shape[0]
         else:
@@ -935,7 +1120,7 @@ def audioread_info(path: Pathlike) -> LibsndfileCompatibleAudioInfo:
             channels=input_file.channels,
             frames=num_samples,
             samplerate=input_file.samplerate,
-            duration=num_samples / input_file.samplerate
+            duration=num_samples / input_file.samplerate,
         )
 
 
@@ -946,16 +1131,17 @@ def _available_audioread_backends():
     by caching the results of scanning for FFMPEG etc.
     """
     import audioread
+
     backends = audioread.available_backends()
-    logging.info(f'Using audioread. Available backends: {backends}')
+    logging.info(f"Using audioread. Available backends: {backends}")
     return backends
 
 
-def _audioread_load(
-        path_or_file: Union[Pathlike, FileObject],
-        offset: Seconds = 0.0,
-        duration: Seconds = None,
-        dtype=np.float32
+def audioread_load(
+    path_or_file: Union[Pathlike, FileObject],
+    offset: Seconds = 0.0,
+    duration: Seconds = None,
+    dtype=np.float32,
 ):
     """Load an audio buffer using audioread.
     This loads one block at a time, and then concatenates the results.
@@ -968,7 +1154,9 @@ def _audioread_load(
     @contextmanager
     def file_handle():
         if isinstance(path_or_file, (str, Path)):
-            yield audioread.audio_open(path_or_file, backends=_available_audioread_backends())
+            yield audioread.audio_open(
+                path_or_file, backends=_available_audioread_backends()
+            )
         else:
             yield path_or_file
 
@@ -1006,7 +1194,7 @@ def _audioread_load(
 
             if n_prev <= s_start <= n:
                 # beginning is in this frame
-                frame = frame[(s_start - n_prev):]
+                frame = frame[(s_start - n_prev) :]
 
             # tack on the current frame
             y.append(frame)
@@ -1063,10 +1251,10 @@ AUGMENTATION_DURATION_TOLERANCE: Seconds = 0.00025
 
 
 def assert_and_maybe_fix_num_samples(
-        audio: np.ndarray,
-        offset: Seconds,
-        duration: Optional[Seconds],
-        recording: Recording
+    audio: np.ndarray,
+    offset: Seconds,
+    duration: Optional[Seconds],
+    recording: Recording,
 ) -> np.ndarray:
     # When resampling in high sampling rates (48k -> 44.1k)
     # it is difficult to estimate how sox will perform rounding;
@@ -1075,7 +1263,7 @@ def assert_and_maybe_fix_num_samples(
     # This effect is exacerbated by chaining multiple augmentations together.
     expected_num_samples = compute_num_samples(
         duration=duration if duration is not None else recording.duration - offset,
-        sampling_rate=recording.sampling_rate
+        sampling_rate=recording.sampling_rate,
     )
     diff = expected_num_samples - audio.shape[1]
     if diff == 0:
@@ -1089,31 +1277,94 @@ def assert_and_maybe_fix_num_samples(
         audio = audio[:, :diff]
         return audio
     else:
-        raise ValueError("The number of declared samples in the recording diverged from the one obtained "
-                         f"when loading audio (offset={offset}, duration={duration}). "
-                         f"This could be internal Lhotse's error or a faulty transform implementation. "
-                         "Please report this issue in Lhotse and show the "
-                         f"following: diff={diff}, audio.shape={audio.shape}, recording={recording}")
+        raise ValueError(
+            "The number of declared samples in the recording diverged from the one obtained "
+            f"when loading audio (offset={offset}, duration={duration}). "
+            f"This could be internal Lhotse's error or a faulty transform implementation. "
+            "Please report this issue in Lhotse and show the "
+            f"following: diff={diff}, audio.shape={audio.shape}, recording={recording}"
+        )
 
 
 def opus_info(
-        path: Pathlike,
-        force_opus_sampling_rate: Optional[int] = None
+    path: Pathlike, force_opus_sampling_rate: Optional[int] = None
 ) -> LibsndfileCompatibleAudioInfo:
-    samples, sampling_rate = read_opus(path, force_opus_sampling_rate=force_opus_sampling_rate)
+    samples, sampling_rate = read_opus(
+        path, force_opus_sampling_rate=force_opus_sampling_rate
+    )
     return LibsndfileCompatibleAudioInfo(
         channels=samples.shape[0],
         frames=samples.shape[1],
         samplerate=sampling_rate,
-        duration=samples.shape[1] / sampling_rate
+        duration=samples.shape[1] / sampling_rate,
     )
 
 
 def read_opus(
-        path: Pathlike,
-        offset: Seconds = 0.0,
-        duration: Optional[Seconds] = None,
-        force_opus_sampling_rate: Optional[int] = None
+    path: Pathlike,
+    offset: Seconds = 0.0,
+    duration: Optional[Seconds] = None,
+    force_opus_sampling_rate: Optional[int] = None,
+) -> Tuple[np.ndarray, int]:
+    """
+    Reads OPUS files either using torchaudio or ffmpeg.
+    Torchaudio is faster, but if unavailable for some reason,
+    we fallback to a slower ffmpeg-based implemention.
+
+    :return: a tuple of audio samples and the sampling rate.
+    """
+    # TODO: Revisit using torchaudio backend for OPUS
+    #       once it's more thoroughly benchmarked against ffmpeg
+    #       and has a competitive I/O speed.
+    #       See: https://github.com/pytorch/audio/issues/1994
+    # try:
+    #     return read_opus_torchaudio(
+    #         path=path,
+    #         offset=offset,
+    #         duration=duration,
+    #         force_opus_sampling_rate=force_opus_sampling_rate,
+    #     )
+    # except:
+    return read_opus_ffmpeg(
+        path=path,
+        offset=offset,
+        duration=duration,
+        force_opus_sampling_rate=force_opus_sampling_rate,
+    )
+
+
+def read_opus_torchaudio(
+    path: Pathlike,
+    offset: Seconds = 0.0,
+    duration: Optional[Seconds] = None,
+    force_opus_sampling_rate: Optional[int] = None,
+) -> Tuple[np.ndarray, int]:
+    """
+    Reads OPUS files using torchaudio.
+    This is just running ``tochaudio.load()``, but we take care of extra resampling if needed.
+
+    :return: a tuple of audio samples and the sampling rate.
+    """
+    audio, sampling_rate = torchaudio_load(
+        path_or_fd=path, offset=offset, duration=duration
+    )
+
+    if force_opus_sampling_rate is None or force_opus_sampling_rate == sampling_rate:
+        return audio, sampling_rate
+
+    resampler = Resample(
+        source_sampling_rate=sampling_rate,
+        target_sampling_rate=force_opus_sampling_rate,
+    )
+    resampled_audio = resampler(audio)
+    return resampled_audio, force_opus_sampling_rate
+
+
+def read_opus_ffmpeg(
+    path: Pathlike,
+    offset: Seconds = 0.0,
+    duration: Optional[Seconds] = None,
+    force_opus_sampling_rate: Optional[int] = None,
 ) -> Tuple[np.ndarray, int]:
     """
     Reads OPUS files using ffmpeg in a shell subprocess.
@@ -1123,37 +1374,44 @@ def read_opus(
     :return: a tuple of audio samples and the sampling rate.
     """
     # Construct the ffmpeg command depending on the arguments passed.
-    cmd = f'ffmpeg'
+    cmd = f"ffmpeg"
     sampling_rate = 48000
     # Note: we have to add offset and duration options (-ss and -t) BEFORE specifying the input
     #       (-i), otherwise ffmpeg will decode everything and trim afterwards...
     if offset > 0:
-        cmd += f' -ss {offset}'
+        cmd += f" -ss {offset}"
     if duration is not None:
-        cmd += f' -t {duration}'
+        cmd += f" -t {duration}"
     # Add the input specifier after offset and duration.
-    cmd += f' -i {path}'
+    cmd += f" -i {path}"
     # Optionally resample the output.
     if force_opus_sampling_rate is not None:
-        cmd += f' -ar {force_opus_sampling_rate}'
+        cmd += f" -ar {force_opus_sampling_rate}"
         sampling_rate = force_opus_sampling_rate
     # Read audio samples directly as float32.
-    cmd += ' -f f32le pipe:1'
+    cmd += " -f f32le pipe:1"
     # Actual audio reading.
     proc = run(cmd, shell=True, stdout=PIPE, stderr=PIPE)
     raw_audio = proc.stdout
     audio = np.frombuffer(raw_audio, dtype=np.float32)
     # Determine if the recording is mono or stereo and decode accordingly.
-    channel_string = parse_channel_from_ffmpeg_output(proc.stderr)
-    if channel_string == 'stereo':
-        new_audio = np.empty((2, audio.shape[0] // 2), dtype=np.float32)
-        new_audio[0, :] = audio[::2]
-        new_audio[1, :] = audio[1::2]
-        audio = new_audio
-    elif channel_string == 'mono':
-        audio = audio.reshape(1, -1)
-    else:
-        raise NotImplementedError(f'Unknown channel description from ffmpeg: {channel_string}')
+    try:
+        channel_string = parse_channel_from_ffmpeg_output(proc.stderr)
+        if channel_string == "stereo":
+            new_audio = np.empty((2, audio.shape[0] // 2), dtype=np.float32)
+            new_audio[0, :] = audio[::2]
+            new_audio[1, :] = audio[1::2]
+            audio = new_audio
+        elif channel_string == "mono":
+            audio = audio.reshape(1, -1)
+        else:
+            raise NotImplementedError(
+                f"Unknown channel description from ffmpeg: {channel_string}"
+            )
+    except ValueError as e:
+        raise ValueError(
+            f"{e}\nThe ffmpeg command for which the program failed is: '{cmd}'"
+        )
     return audio, sampling_rate
 
 
@@ -1187,14 +1445,12 @@ def sph_info(path: Pathlike) -> LibsndfileCompatibleAudioInfo:
         channels=samples.shape[0],
         frames=samples.shape[1],
         samplerate=sampling_rate,
-        duration=samples.shape[1] / sampling_rate
+        duration=samples.shape[1] / sampling_rate,
     )
 
 
 def read_sph(
-        sph_path: Pathlike,
-        offset: Seconds = 0.0,
-        duration: Optional[Seconds] = None
+    sph_path: Pathlike, offset: Seconds = 0.0, duration: Optional[Seconds] = None
 ) -> Tuple[np.ndarray, int]:
     """
     Reads SPH files using sph2pipe in a shell subprocess.
@@ -1206,17 +1462,18 @@ def read_sph(
     sph_path = Path(sph_path)
 
     # Construct the sph2pipe command depending on the arguments passed.
-    cmd = f'sph2pipe -f wav -p -t {offset}:'
+    cmd = f"sph2pipe -f wav -p -t {offset}:"
 
     if duration is not None:
-        cmd += f'{round(offset + duration, 5)}'
+        cmd += f"{round(offset + duration, 5)}"
     # Add the input specifier after offset and duration.
-    cmd += f' {sph_path}'
+    cmd += f" {sph_path}"
 
     # Actual audio reading.
     proc = BytesIO(run(cmd, shell=True, check=True, stdout=PIPE, stderr=PIPE).stdout)
 
     import soundfile as sf
+
     with sf.SoundFile(proc) as sf_desc:
         audio, sampling_rate = sf_desc.read(dtype=np.float32), sf_desc.samplerate
         audio = audio.reshape(1, -1) if sf_desc.channels == 1 else audio.T

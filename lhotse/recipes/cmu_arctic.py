@@ -28,46 +28,70 @@ from typing import Dict, Optional, Sequence, Union
 
 from tqdm.auto import tqdm
 
-from lhotse import Recording, RecordingSet, SupervisionSegment, SupervisionSet, validate_recordings_and_supervisions
+from lhotse import (
+    Recording,
+    RecordingSet,
+    SupervisionSegment,
+    SupervisionSet,
+    validate_recordings_and_supervisions,
+)
 from lhotse.qa import remove_missing_recordings_and_supervisions
 from lhotse.utils import Pathlike, urlretrieve_progress
 
 BASE_URL = "http://festvox.org/cmu_arctic/packed/"
 
-SPEAKERS = ('aew', 'ahw', 'aup', 'awb', 'axb', 'bdl', 'clb', 'eey', 'fem',
-            'gka', 'jmk', 'ksp', 'ljm', 'lnh', 'rms', 'rxr', 'slp', 'slt')
+SPEAKERS = (
+    "aew",
+    "ahw",
+    "aup",
+    "awb",
+    "axb",
+    "bdl",
+    "clb",
+    "eey",
+    "fem",
+    "gka",
+    "jmk",
+    "ksp",
+    "ljm",
+    "lnh",
+    "rms",
+    "rxr",
+    "slp",
+    "slt",
+)
 
 # Note: some genders and accents are missing, I filled in the metadata that
 #       was easily available for now.
 GENDER_MAP = {
-    'bdl': 'male',
-    'slt': 'female',
-    'clb': 'female',
-    'rms': 'male',
-    'jmk': 'male',
-    'awb': 'male',
-    'ksp': 'male'
+    "bdl": "male",
+    "slt": "female",
+    "clb": "female",
+    "rms": "male",
+    "jmk": "male",
+    "awb": "male",
+    "ksp": "male",
 }
 
 ACCENT_MAP = {
-    'bdl': 'US Midwest',
-    'slt': 'US Midwest',
-    'clb': 'US',
-    'rms': 'US',
-    'jmk': 'Canadian Ontario',
-    'awb': 'Scottish South Eastern',
-    'ksp': 'Indian'
+    "bdl": "US Midwest",
+    "slt": "US Midwest",
+    "clb": "US",
+    "rms": "US",
+    "jmk": "Canadian Ontario",
+    "awb": "Scottish South Eastern",
+    "ksp": "Indian",
 }
 
 
 def download_cmu_arctic(
-        target_dir: Pathlike = '.',
-        speakers: Sequence[str] = SPEAKERS,
-        force_download: Optional[bool] = False,
-        base_url: Optional[str] = BASE_URL
+    target_dir: Pathlike = ".",
+    speakers: Sequence[str] = SPEAKERS,
+    force_download: Optional[bool] = False,
+    base_url: Optional[str] = BASE_URL,
 ) -> None:
     """
-    Download and untar the dataset, supporting both LibriSpeech and MiniLibrispeech
+    Download and untar the CMU Arctic dataset.
 
     :param target_dir: Pathlike, the path of the dir to storage the dataset.
     :param speakers: a list of speakers to download. By default, downloads all.
@@ -77,18 +101,20 @@ def download_cmu_arctic(
     target_dir = Path(target_dir)
     target_dir.mkdir(parents=True, exist_ok=True)
 
-    for spk in tqdm(speakers, desc='Downloading/unpacking CMU Arctic speakers'):
-        name = f'cmu_us_{spk}_arctic'
-        tar_name = f'{name}.tar.bz2'
-        full_url = f'{base_url}{tar_name}'
+    for spk in tqdm(speakers, desc="Downloading/unpacking CMU Arctic speakers"):
+        name = f"cmu_us_{spk}_arctic"
+        tar_name = f"{name}.tar.bz2"
+        full_url = f"{base_url}{tar_name}"
         tar_path = target_dir / tar_name
         part_dir = target_dir / name
-        completed_detector = part_dir / '.completed'
+        completed_detector = part_dir / ".completed"
         if completed_detector.is_file():
-            logging.info(f'Skiping {spk} because {completed_detector} exists.')
+            logging.info(f"Skiping {spk} because {completed_detector} exists.")
             continue
         if force_download or not tar_path.is_file():
-            urlretrieve_progress(full_url, filename=tar_path, desc=f'Downloading {tar_name}')
+            urlretrieve_progress(
+                full_url, filename=tar_path, desc=f"Downloading {tar_name}"
+            )
         shutil.rmtree(part_dir, ignore_errors=True)
         with tarfile.open(tar_path) as tar:
             tar.extractall(path=target_dir)
@@ -96,8 +122,8 @@ def download_cmu_arctic(
 
 
 def prepare_cmu_arctic(
-        corpus_dir: Pathlike,
-        output_dir: Optional[Pathlike] = None,
+    corpus_dir: Pathlike,
+    output_dir: Optional[Pathlike] = None,
 ) -> Dict[str, Union[RecordingSet, SupervisionSet]]:
     """
     Prepares and returns the CMU Arctic manifests,
@@ -108,47 +134,51 @@ def prepare_cmu_arctic(
     :return: a dict of {'recordings': ..., 'supervisions': ...}
     """
     corpus_dir = Path(corpus_dir)
-    assert corpus_dir.is_dir(), f'No such directory: {corpus_dir}'
+    assert corpus_dir.is_dir(), f"No such directory: {corpus_dir}"
 
     recordings = RecordingSet.from_recordings(
         # Example ID: cmu_us_sup_arctic-arctic_a0001
-        Recording.from_file(wav, recording_id=f'{_get_speaker(wav.parent.parent.name)}-{wav.stem}')
-        for wav in corpus_dir.rglob('*.wav')
+        Recording.from_file(
+            wav, recording_id=f"{_get_speaker(wav.parent.parent.name)}-{wav.stem}"
+        )
+        for wav in corpus_dir.rglob("*.wav")
     )
     supervisions = []
-    for path in corpus_dir.rglob('txt.done.data'):
+    for path in corpus_dir.rglob("txt.done.data"):
         lines = path.read_text().splitlines()
         speaker = _get_speaker(path.parent.parent.name)
         for l in lines:
             l = l[2:-2]  # get rid of parentheses and whitespaces on the edges
             seg_id, text = l.split(maxsplit=1)
-            seg_id = f'{speaker}-{seg_id}'
-            supervisions.append(SupervisionSegment(
-                id=seg_id,
-                recording_id=seg_id,
-                start=0,
-                duration=recordings[seg_id].duration,
-                text=text.replace('"', ''),  # get rid of quotation marks,
-                language='English',
-                speaker=speaker,
-                gender=GENDER_MAP.get(speaker),
-                custom={'accent': ACCENT_MAP.get(speaker)}
-            ))
+            seg_id = f"{speaker}-{seg_id}"
+            supervisions.append(
+                SupervisionSegment(
+                    id=seg_id,
+                    recording_id=seg_id,
+                    start=0,
+                    duration=recordings[seg_id].duration,
+                    text=text.replace('"', ""),  # get rid of quotation marks,
+                    language="English",
+                    speaker=speaker,
+                    gender=GENDER_MAP.get(speaker),
+                    custom={"accent": ACCENT_MAP.get(speaker)},
+                )
+            )
     supervisions = SupervisionSet.from_segments(supervisions)
 
     # There seem to be 20 recordings missing; remove the before validation
-    recordings, supervisions = remove_missing_recordings_and_supervisions(recordings, supervisions)
+    recordings, supervisions = remove_missing_recordings_and_supervisions(
+        recordings, supervisions
+    )
     validate_recordings_and_supervisions(recordings, supervisions)
 
     if output_dir is not None:
-        recordings.to_json(output_dir / 'recordings.json')
-        supervisions.to_json(output_dir / 'supervisions.json')
+        output_dir = Path(output_dir)
+        recordings.to_json(output_dir / "cmu_arctic_recordings.json")
+        supervisions.to_json(output_dir / "cmu_arctic_supervisions.json")
 
-    return {
-        'recordings': recordings,
-        'supervisions': supervisions
-    }
+    return {"recordings": recordings, "supervisions": supervisions}
 
 
 def _get_speaker(dirname: str) -> str:
-    return dirname.split('_')[2]
+    return dirname.split("_")[2]

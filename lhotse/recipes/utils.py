@@ -6,15 +6,15 @@ from lhotse.audio import RecordingSet
 from lhotse.supervision import SupervisionSet
 from lhotse.utils import Pathlike
 
-DEFAULT_DETECTED_MANIFEST_TYPES = ('recordings', 'supervisions')
+DEFAULT_DETECTED_MANIFEST_TYPES = ("recordings", "supervisions")
 
 
 def read_manifests_if_cached(
-        dataset_parts: Optional[Sequence[str]],
-        output_dir: Optional[Pathlike],
-        prefix: str = '',
-        suffix: Optional[str] = 'json',
-        types: Iterable[str] = DEFAULT_DETECTED_MANIFEST_TYPES
+    dataset_parts: Optional[Sequence[str]],
+    output_dir: Optional[Pathlike],
+    prefix: str = "",
+    suffix: Optional[str] = "json",
+    types: Iterable[str] = DEFAULT_DETECTED_MANIFEST_TYPES,
 ) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet]]]:
     """
     Loads manifests from the disk, or a subset of them if only some exist.
@@ -31,14 +31,14 @@ def read_manifests_if_cached(
     """
     if output_dir is None:
         return {}
-    if prefix and not prefix.endswith('_'):
-        prefix = f'{prefix}_'
-    if suffix.startswith('.'):
+    if prefix and not prefix.endswith("_"):
+        prefix = f"{prefix}_"
+    if suffix.startswith("."):
         suffix = suffix[1:]
     manifests = defaultdict(dict)
     for part in dataset_parts:
         for manifest in types:
-            path = output_dir / f'{prefix}{manifest}_{part}.{suffix}'
+            path = output_dir / f"{prefix}{manifest}_{part}.{suffix}"
             if not path.is_file():
                 continue
             manifests[part][manifest] = load_manifest(path)
@@ -46,20 +46,20 @@ def read_manifests_if_cached(
 
 
 def manifests_exist(
-        part: str,
-        output_dir: Optional[Pathlike],
-        types: Iterable[str] = DEFAULT_DETECTED_MANIFEST_TYPES,
-        prefix: str = '',
-        suffix: str = 'json'
+    part: str,
+    output_dir: Optional[Pathlike],
+    types: Iterable[str] = DEFAULT_DETECTED_MANIFEST_TYPES,
+    prefix: str = "",
+    suffix: str = "json",
 ) -> bool:
     if output_dir is None:
         return False
-    if prefix and not prefix.endswith('_'):
-        prefix = f'{prefix}_'
-    if suffix.startswith('.'):
+    if prefix and not prefix.endswith("_"):
+        prefix = f"{prefix}_"
+    if suffix.startswith("."):
         suffix = suffix[1:]
     for name in types:
-        path = output_dir / f'{prefix}{name}_{part}.{suffix}'
+        path = output_dir / f"{prefix}{name}_{part}.{suffix}"
         if not path.is_file():
             return False
     return True
