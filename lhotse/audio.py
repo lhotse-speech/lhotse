@@ -46,6 +46,7 @@ from lhotse.utils import (
     ifnone,
     index_by_id_and_check,
     perturb_num_samples,
+    rich_exception_info,
     split_sequence,
 )
 
@@ -295,6 +296,7 @@ class Recording:
     def channel_ids(self):
         return sorted(cid for source in self.sources for cid in source.channels)
 
+    @rich_exception_info
     def load_audio(
         self,
         channels: Optional[Channels] = None,
@@ -1305,6 +1307,66 @@ def read_opus(
     force_opus_sampling_rate: Optional[int] = None,
 ) -> Tuple[np.ndarray, int]:
     """
+    Reads OPUS files either using torchaudio or ffmpeg.
+    Torchaudio is faster, but if unavailable for some reason,
+    we fallback to a slower ffmpeg-based implemention.
+
+    :return: a tuple of audio samples and the sampling rate.
+    """
+    # TODO: Revisit using torchaudio backend for OPUS
+    #       once it's more thoroughly benchmarked against ffmpeg
+    #       and has a competitive I/O speed.
+    #       See: https://github.com/pytorch/audio/issues/1994
+    # try:
+    #     return read_opus_torchaudio(
+    #         path=path,
+    #         offset=offset,
+    #         duration=duration,
+    #         force_opus_sampling_rate=force_opus_sampling_rate,
+    #     )
+    # except:
+    return read_opus_ffmpeg(
+        path=path,
+        offset=offset,
+        duration=duration,
+        force_opus_sampling_rate=force_opus_sampling_rate,
+    )
+
+
+def read_opus_torchaudio(
+    path: Pathlike,
+    offset: Seconds = 0.0,
+    duration: Optional[Seconds] = None,
+    force_opus_sampling_rate: Optional[int] = None,
+) -> Tuple[np.ndarray, int]:
+    """
+    Reads OPUS files using torchaudio.
+    This is just running ``tochaudio.load()``, but we take care of extra resampling if needed.
+
+    :return: a tuple of audio samples and the sampling rate.
+    """
+    audio, sampling_rate = torchaudio_load(
+        path_or_fd=path, offset=offset, duration=duration
+    )
+
+    if force_opus_sampling_rate is None or force_opus_sampling_rate == sampling_rate:
+        return audio, sampling_rate
+
+    resampler = Resample(
+        source_sampling_rate=sampling_rate,
+        target_sampling_rate=force_opus_sampling_rate,
+    )
+    resampled_audio = resampler(audio)
+    return resampled_audio, force_opus_sampling_rate
+
+
+def read_opus_ffmpeg(
+    path: Pathlike,
+    offset: Seconds = 0.0,
+    duration: Optional[Seconds] = None,
+    force_opus_sampling_rate: Optional[int] = None,
+) -> Tuple[np.ndarray, int]:
+    """
     Reads OPUS files using ffmpeg in a shell subprocess.
     Unlike audioread, correctly supports offsets and durations for reading short chunks.
     Optionally, we can force ffmpeg to resample to the true sampling rate (if we know it up-front).
@@ -1333,17 +1395,22 @@ def read_opus(
     raw_audio = proc.stdout
     audio = np.frombuffer(raw_audio, dtype=np.float32)
     # Determine if the recording is mono or stereo and decode accordingly.
-    channel_string = parse_channel_from_ffmpeg_output(proc.stderr)
-    if channel_string == "stereo":
-        new_audio = np.empty((2, audio.shape[0] // 2), dtype=np.float32)
-        new_audio[0, :] = audio[::2]
-        new_audio[1, :] = audio[1::2]
-        audio = new_audio
-    elif channel_string == "mono":
-        audio = audio.reshape(1, -1)
-    else:
-        raise NotImplementedError(
-            f"Unknown channel description from ffmpeg: {channel_string}"
+    try:
+        channel_string = parse_channel_from_ffmpeg_output(proc.stderr)
+        if channel_string == "stereo":
+            new_audio = np.empty((2, audio.shape[0] // 2), dtype=np.float32)
+            new_audio[0, :] = audio[::2]
+            new_audio[1, :] = audio[1::2]
+            audio = new_audio
+        elif channel_string == "mono":
+            audio = audio.reshape(1, -1)
+        else:
+            raise NotImplementedError(
+                f"Unknown channel description from ffmpeg: {channel_string}"
+            )
+    except ValueError as e:
+        raise ValueError(
+            f"{e}\nThe ffmpeg command for which the program failed is: '{cmd}'"
         )
     return audio, sampling_rate
 

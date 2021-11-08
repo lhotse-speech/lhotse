@@ -1,3 +1,4 @@
+import functools
 import logging
 import math
 import random
@@ -573,6 +574,19 @@ def lens_to_mask(lens: torch.IntTensor) -> torch.Tensor:
     for i, num in enumerate(lens):
         mask[i, :num] = 1.0
     return mask
+
+
+def rich_exception_info(fn):
+    @functools.wraps(fn)
+    def wrapper(*args, **kwargs):
+        try:
+            return fn(*args, **kwargs)
+        except Exception as e:
+            raise type(e)(
+                f"{e}\n[extra info] When calling: {fn.__qualname__}(args={args} kwargs={kwargs})"
+            )
+
+    return wrapper
 
 
 class NonPositiveEnergyError(ValueError):
