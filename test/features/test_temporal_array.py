@@ -107,7 +107,7 @@ def test_temporal_array_serialization():
         ),
         temporal_dim=0,
         frame_shift=0.3,
-        start=5.0
+        start=5.0,
     )
     serialized = manifest.to_dict()
     restored = TemporalArray.from_dict(serialized)
@@ -117,7 +117,7 @@ def test_temporal_array_serialization():
 def test_temporal_array_partial_read():
     array = np.arange(30).astype(np.int8)
 
-    with NamedTemporaryFile(suffix='.h5') as f, NumpyHdf5Writer(f.name) as writer:
+    with NamedTemporaryFile(suffix=".h5") as f, NumpyHdf5Writer(f.name) as writer:
         manifest = TemporalArray.store(
             key="utt1",
             value=array,
@@ -144,6 +144,3 @@ def test_temporal_array_partial_read():
         # Read middle 10 frames (5 - 10 seconds)
         mid_10 = manifest.load(start=5, duration=5)
         np.testing.assert_equal(array[10:20], mid_10)
-
-
-

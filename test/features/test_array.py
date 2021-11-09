@@ -1,4 +1,4 @@
-from tempfile import TemporaryDirectory
+from tempfile import NamedTemporaryFile, TemporaryDirectory
 
 import numpy as np
 import pytest
@@ -7,6 +7,7 @@ from lhotse import (
     ChunkedLilcomHdf5Writer,
     LilcomFilesWriter,
     LilcomHdf5Writer,
+    MonoCut,
     NumpyFilesWriter,
     NumpyHdf5Writer,
 )
@@ -78,9 +79,9 @@ def test_array_serialization():
     # Individual items do not support JSON/etc. serialization;
     # instead, the XSet (e.g. CutSet) classes convert them to dicts.
     manifest = Array(
-        storage_type='lilcom_hdf5',
-        storage_path='/tmp/data',
-        storage_key='irrelevant',
+        storage_type="lilcom_hdf5",
+        storage_path="/tmp/data",
+        storage_key="irrelevant",
         shape=[300],
     )
     serialized = manifest.to_dict()

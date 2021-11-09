@@ -101,7 +101,7 @@ class TemporalArray:
 
     @classmethod
     def from_dict(cls, data: dict) -> "TemporalArray":
-        array = Array.from_dict(data.pop('array'))
+        array = Array.from_dict(data.pop("array"))
         return cls(array=array, **data)
 
     @classmethod
@@ -118,7 +118,7 @@ class TemporalArray:
             array=Array.store(key=key, value=value, writer=writer),
             temporal_dim=temporal_dim,
             frame_shift=frame_shift,
-            start=start
+            start=start,
         )
 
     # @rich_exception_info
