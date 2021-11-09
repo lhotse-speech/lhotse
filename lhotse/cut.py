@@ -760,6 +760,47 @@ class MonoCut(Cut):
     # For the cases that the model was trained by raw audio instead of features
     recording: Optional[Recording] = None
 
+    # Store anything else the user might want.
+    custom: Optional[Dict[str, Any]] = None
+
+    def __setattr__(self, key: str, value: Any):
+        if key in self.__dataclass_fields__:
+            super().__setattr__(key, value)
+        else:
+            custom = ifnone(self.custom, {})
+            custom[key] = value
+            self.custom = custom
+
+    def __getattr__(self, item: str) -> Any:
+        """
+        __getattr__ only gets called for attributes that don't already exist.
+        We use it to look up the ``custom`` field: when it's None or empty,
+        we'll just raise AttributeError as usual.
+        If ``item`` is found in ``custom``, we'll return ``custom[item]``.
+        If ``item`` starts with "load_", we'll assume the name of the relevant
+        attribute comes after that, and that value of that field is of type
+        Array or TemporalArray. We'll return it's ``load`` method to call by the user.
+        """
+        from lhotse.array import Array, TemporalArray
+        custom = self.custom
+        if custom is None:
+            raise AttributeError()
+        if item in custom:
+            # Somebody accesses raw [Temporal]Array manifest
+            # or wrote a custom piece of metadata into MonoCut.
+            return self.custom[item]
+        if item.startswith('load_'):
+            value = self.custom[item[5:]]  # strip off 'load_' from beginning
+            if isinstance(value, Array):
+                # We return the method to read Array (it is called in the user's code).
+                return value.load
+            elif isinstance(value, TemporalArray):
+                # TemporalArray supports slicing (note we return the method, without evaluating it).
+                return partial(value.load, start=self.start, duration=self.duration)
+            else:
+                raise ValueError(f"To call {item}, cut needs to have field {item[5:]} defined.")
+        raise AttributeError()
+
     @property
     def recording_id(self) -> str:
         return self.recording.id if self.has_recording else self.features.recording_id
