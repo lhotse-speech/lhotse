@@ -782,6 +782,7 @@ class MonoCut(Cut):
         Array or TemporalArray. We'll return it's ``load`` method to call by the user.
         """
         from lhotse.array import Array, TemporalArray
+
         custom = self.custom
         if custom is None:
             raise AttributeError()
@@ -789,7 +790,7 @@ class MonoCut(Cut):
             # Somebody accesses raw [Temporal]Array manifest
             # or wrote a custom piece of metadata into MonoCut.
             return self.custom[item]
-        if item.startswith('load_'):
+        if item.startswith("load_"):
             value = self.custom[item[5:]]  # strip off 'load_' from beginning
             if isinstance(value, Array):
                 # We return the method to read Array (it is called in the user's code).
@@ -798,7 +799,9 @@ class MonoCut(Cut):
                 # TemporalArray supports slicing (note we return the method, without evaluating it).
                 return partial(value.load, start=self.start, duration=self.duration)
             else:
-                raise ValueError(f"To call {item}, cut needs to have field {item[5:]} defined.")
+                raise ValueError(
+                    f"To call {item}, cut needs to have field {item[5:]} defined."
+                )
         raise AttributeError()
 
     @property
