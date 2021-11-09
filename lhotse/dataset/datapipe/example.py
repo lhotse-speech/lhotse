@@ -4,9 +4,10 @@ import warnings
 from collections import deque, defaultdict
 from functools import partial
 from pathlib import Path
-from typing import Optional
+from typing import Dict, List, Optional
 
 from lhotse import CutSet, load_manifest
+from lhotse.cut import Cut
 from lhotse.utils import Seconds
 from lhotse.recipes import download_librispeech, prepare_librispeech
 
@@ -60,6 +61,7 @@ class DurationBatcher(dp.IterDataPipe):
         from lhotse.dataset.sampling.base import SamplingDiagnostics, TimeConstraint
 
         self.datapipe = datapipe
+        self.datapipe_iter = None
         self.reuse_cuts_buffer = deque()
         self.drop_last = drop_last
         self.max_cuts = max_cuts
@@ -69,9 +71,10 @@ class DurationBatcher(dp.IterDataPipe):
         )
 
     def __iter__(self):
-        self.datapipe = iter(self.datapipe)
+        self.datapipe_iter = iter(self.datapipe)
         while True:
             yield self._collect_batch()
+        self.datapipe_iter = None
 
     def _collect_batch(self):
         self.time_constraint.reset()
@@ -83,7 +86,7 @@ class DurationBatcher(dp.IterDataPipe):
                     next_cut = self.reuse_cuts_buffer.popleft()
                 else:
                     # If this doesn't raise (typical case), it's not the end: keep processing.
-                    next_cut = next(self.datapipe)
+                    next_cut = next(self.datapipe_iter)
             except StopIteration:
                 # No more cuts to sample from: if we have a partial batch,
                 # we may output it, unless the user requested to drop it.
