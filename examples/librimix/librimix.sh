@@ -64,4 +64,4 @@ lhotse cut truncate \
   --preserve-id \
   ${OUTPUT_PATH}/cuts_mix_dynamic_noisy.json.gz ${OUTPUT_PATH}/cuts_mix_dynamic_noisy_${DURATION}s.json.gz
 
-# Processing complete - the resulting YAML mixed cut manifests can be loaded in Python to create a PyTorch dataset.
+# Processing complete - the resulting mixed cut manifests can be loaded in Python to create a PyTorch dataset.
