@@ -16,6 +16,7 @@ jobs:
     strategy:
       matrix:
         python-version: [ 3.8 ]
+        # For LTS versions, look further below for a separate CI job.
         pytorch-version: [ 1.7.1, 1.8.0, 1.8.1, 1.9.0, 1.9.1, 1.10.0 ]
 
       fail-fast: false
@@ -35,7 +36,7 @@ jobs:
         python -m pip install --upgrade pip
         pip install --no-cache-dir numpy
         # Force the installation of a CPU-only PyTorch
-        pip install torch==${{ matrix.pytorch-version }}+cpu -f https://download.pytorch.org/whl/torch_stable.html
+        pip install torch==${{ matrix.pytorch-version }}+cpu torchaudio -f https://download.pytorch.org/whl/torch_stable.html
         pip install --no-cache-dir '.[tests]'
     - name: Try to import torch and torchaudio
       run: |
