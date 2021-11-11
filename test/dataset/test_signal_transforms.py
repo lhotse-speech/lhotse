@@ -45,7 +45,7 @@ def test_global_mvn_from_cuts():
     assert isinstance(stats2, GlobalMVN)
 
 
-def test_specaugment_single():
+def test_specaugment_2d_input_raises_error():
     cuts = CutSet.from_json("test/fixtures/ljspeech/cuts.json")
     feats = torch.from_numpy(cuts[0].load_features())
     tfnm = SpecAugment(p=1.0, time_warp_factor=10)
@@ -56,7 +56,7 @@ def test_specaugment_single():
 
 @pytest.mark.parametrize("num_feature_masks", [0, 1, 2])
 @pytest.mark.parametrize("num_frame_masks", [0, 1, 2])
-def test_specaugment_batch(num_feature_masks, num_frame_masks):
+def test_specaugment_3d_input_works(num_feature_masks, num_frame_masks):
     cuts = CutSet.from_json("test/fixtures/ljspeech/cuts.json")
     feats, feat_lens = collate_features(cuts)
     tfnm = SpecAugment(
