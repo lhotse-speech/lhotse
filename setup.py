@@ -140,102 +140,19 @@ install_requires = [
 ]
 
 try:
-    # A matrix of compatible torch and torchaudio versions.
-    # If the user already installed torch, we'll try to find the compatible
-    # torchaudio version. If they haven't installed torch, we'll just install
-    # the latest torch and torchaudio.
-    # This code is partially borrowed from ESPnet's setup.py.
+    # If the user already installed PyTorch, make sure he has torchaudio too.
+    # Otherwise, we'll just install the latest versions from PyPI for the user.
     import torch
 
-    installed_ver = LooseVersion(torch.__version__)
-    major, minor, patch, *_ = installed_ver.version
-    clean_vstr = f"{major}.{minor}.{patch}"
-    debug_string = f"""(full installed PyTorch version string: '{installed_ver.vstring}', 
-    PyTorch version string used for torchaudio version lookup: '{clean_vstr}')"""
-
-    version_map = {
-        "1.10.0": "0.10.0",
-        "1.9.1": "0.9.1",
-        "1.9.0": "0.9.0",
-        "1.8.2": "0.8.2",
-        "1.8.1": "0.8.1",
-        "1.8.0": "0.8.0",
-        "1.7.1": "0.7.2",
-    }
-
-    lts_versions = ["1.8.2"]
-
-    # Nice error message for PyTorch versions that are too new.
-    latest_supported_ver = LooseVersion(next(iter(version_map)))
-    # HACK: we recreate the LooseVersion of the current installed PyTorch version
-    #       without any version suffixes. This solves the issue that:
-    #
-    #           >>> LooseVersion("1.10.0+cpu") > LooseVersion("1.10.0") == True
-    #
-    #       whereas:
-    #
-    #           >>> LooseVersion("1.10.0") > LooseVersion("1.10.0") == False
-    #
-    installed_ver_nosufix = LooseVersion(clean_vstr)
-    if installed_ver_nosufix > latest_supported_ver:
-        raise NotImplementedError(
-            f"PyTorch version > {latest_supported_ver.vstring} "
-            f"is not yet supported {debug_string}."
-        )
-
-    # Nice error message for PyTorch versions that are too old.
-    earliest_supported_ver = LooseVersion(next(iter(reversed(version_map))))
-    if installed_ver < earliest_supported_ver:
-        raise NotImplementedError(
-            f"PyTorch version < {earliest_supported_ver.vstring} is not supported: "
-            f"please update your PyTorch version {debug_string}."
-        )
-
-    # Nice error message for PyTorch versions that should be supported but we might have missed them?
-    if clean_vstr not in version_map:
+    try:
+        import torchaudio
+    except ImportError:
         raise ValueError(
-            f"Unknown PyTorch version {debug_string}."
-            f"Please set up an issue at https://github.com/lhotse-speech/lhotse/issues"
+            "We detected that you have already installed PyTorch, but haven't installed torchaudio. "
+            "Unfortunately we can't detect the compatible torchaudio version for you; "
+            "you will have to install it manually."
+            "For instructions, please refer to https://pytorch.org/get-started/locally/"
         )
-
-    # Everything worked and we can resolve the right PyTorch version.
-    matching_torchaudio_ver = version_map[clean_vstr]
-
-    # Of course it is not as easy as you thought.
-    # Since PyTorch 1.10.0, unless you specify "+cpu" suffix to torchaudio version,
-    # pip is going to pull a CUDA version even if PyTorch was installed for CPU only.
-    if (
-        installed_ver_nosufix >= LooseVersion("1.10.0")
-        and "+cpu" in installed_ver.vstring
-    ):
-        matching_torchaudio_ver = f"{matching_torchaudio_ver}+cpu"
-
-    install_requires.append(f"torchaudio=={matching_torchaudio_ver}")
-
-    # One last check: if this is an LTS PyTorch version,
-    # it doesn't seem available on PyPI for some reason...
-    # We'll just require the user to install it manually.
-    if clean_vstr in lts_versions:
-        try:
-            import torchaudio
-
-            ta_ver = LooseVersion(torchaudio.__version__)
-            major, minor, patch, *_ = installed_ver.version
-            clean_ta_vstr = f"{major}.{minor}.{patch}"
-            assert clean_ta_vstr == matching_torchaudio_ver, (
-                f"Incorrect torchaudio version installed: expected {matching_torchaudio_ver} "
-                f"(matches PyTorch={clean_vstr}), got {clean_ta_vstr}"
-            )
-        except ImportError:
-            raise ValueError(
-                f"Detected PyTorch LTS without torchaudio installed. "
-                f"We won't be able to install torchaudio for you because the LTS version "
-                f"is not released on PyPI. Please follow instructions on "
-                f"https://pytorch.org/get-started/locally/ to install torchaudio "
-                f"before installing lhotse {debug_string}."
-            )
-
-
 except ImportError:
     install_requires.extend(["torch", "torchaudio"])
 
