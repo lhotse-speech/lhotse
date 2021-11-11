@@ -148,6 +148,10 @@ try:
     import torch
 
     installed_ver = LooseVersion(torch.__version__)
+    major, minor, patch, *_ = installed_ver.version
+    clean_vstr = f"{major}.{minor}.{patch}"
+    debug_string = f"""(full installed PyTorch version string: '{installed_ver.vstring}', 
+    PyTorch version string used for torchaudio version lookup: '{clean_vstr}')"""
 
     version_map = {
         "1.10.0": "0.10.0",
@@ -163,7 +167,8 @@ try:
     latest_supported_ver = LooseVersion(next(iter(version_map)))
     if installed_ver > latest_supported_ver:
         raise NotImplementedError(
-            f"PyTorch version > {latest_supported_ver.vstring} is not yet supported."
+            f"PyTorch version > {latest_supported_ver.vstring} "
+            f"is not yet supported {debug_string}."
         )
 
     # Nice error message for PyTorch versions that are too old.
@@ -171,16 +176,13 @@ try:
     if installed_ver < earliest_supported_ver:
         raise NotImplementedError(
             f"PyTorch version < {earliest_supported_ver.vstring} is not supported: "
-            f"please update your PyTorch version."
+            f"please update your PyTorch version {debug_string}."
         )
 
     # Nice error message for PyTorch versions that should be supported but we might have missed them?
-    major, minor, patch, *_ = installed_ver.version
-    clean_vstr = f"{major}.{minor}.{patch}"
     if clean_vstr not in version_map:
         raise ValueError(
-            f"Unknown PyTorch version (full version string: '{installed_ver.vstring}', "
-            f"version string used for torchaudio version lookup: '{clean_vstr}'). "
+            f"Unknown PyTorch version {debug_string}."
             f"Please set up an issue at https://github.com/lhotse-speech/lhotse/issues"
         )
 
