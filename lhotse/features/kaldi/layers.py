@@ -16,22 +16,11 @@ layers.
 """
 import math
 import warnings
-from typing import List, Optional
+from typing import List, Optional, Tuple, Union
 
 import numpy as np
 import torch
 from torch import nn
-
-try:
-    from torch.fft import rfft as torch_rfft
-
-    _rfft = lambda x: torch_rfft(x, dim=-1)
-    _pow_spectrogram = lambda x: x.abs() ** 2
-    _spectrogram = lambda x: x.abs()
-except ImportError:
-    _rfft = lambda x: torch.rfft(x, 1, normalized=False, onesided=True)
-    _pow_spectrogram = lambda x: x.pow(2).sum(-1)
-    _spectrogram = lambda x: x.pow(2).sum(-1).sqrt()
 
 try:
     from torch.fft import rfft as torch_rfft
@@ -62,6 +51,26 @@ from lhotse.utils import EPSILON, Seconds
 
 
 class Wav2Win(nn.Module):
+    """
+    Apply standard Kaldi preprocessing (dithering, removing DC offset, pre-emphasis, etc.)
+    on the input waveforms and partition them into overlapping frames (of audio samples).
+    Note: no feature extraction happens in here, the output is still a time-domain signal.
+
+    Example::
+
+        >>> x = torch.randn(1, 16000, dtype=torch.float32)
+        >>> x.shape
+        torch.Size([1, 16000])
+        >>> t = Wav2Win()
+        >>> t(x).shape
+        torch.Size([1, 100, 400])
+
+    The input is a tensor of shape ``(batch_size, num_samples)``.
+    The output is a tensor of shape ``(batch_size, num_frames, window_length)``.
+    When ``return_log_energy==True``, returns a tuple where the second element
+    is a log-energy tensor of shape ``(batch_size, num_frames)``.
+    """
+
     def __init__(
         self,
         sampling_rate: int = 16000,
@@ -132,7 +141,9 @@ class Wav2Win(nn.Module):
         )
         return s
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward(
+        self, x: torch.Tensor
+    ) -> Union[torch.Tensor, Tuple[torch.Tensor, torch.Tensor]]:
         # Add dither
         if self.dither != 0.0:
             n = torch.randn(x.shape, device=x.device)
@@ -175,6 +186,25 @@ class Wav2Win(nn.Module):
 
 
 class Wav2FFT(nn.Module):
+    """
+    Apply standard Kaldi preprocessing (dithering, removing DC offset, pre-emphasis, etc.)
+    on the input waveforms and compute their Short-Time Fourier Transform (STFT).
+    The output is a complex-valued tensor.
+
+    Example::
+
+        >>> x = torch.randn(1, 16000, dtype=torch.float32)
+        >>> x.shape
+        torch.Size([1, 16000])
+        >>> t = Wav2FFT()
+        >>> t(x).shape
+        torch.Size([1, 100, 257])
+
+    The input is a tensor of shape ``(batch_size, num_samples)``.
+    The output is a tensor of shape ``(batch_size, num_frames, num_fft_bins)``
+    with dtype ``torch.complex64``.
+    """
+
     def __init__(
         self,
         sampling_rate: int = 16000,
@@ -251,12 +281,30 @@ class Wav2FFT(nn.Module):
         X = _rfft(x_strided)
 
         if self.use_energy:
-            X[:, 0, :, 0] = log_e
+            X[:, :, 0] = log_e
 
         return X
 
 
 class Wav2Spec(Wav2FFT):
+    """
+    Apply standard Kaldi preprocessing (dithering, removing DC offset, pre-emphasis, etc.)
+    on the input waveforms and compute their Short-Time Fourier Transform (STFT).
+    The STFT is transformed either to a magnitude spectrum (``use_fft_mag=True``)
+    or a power spectrum (``use_fft_mag=False``).
+
+    Example::
+
+        >>> x = torch.randn(1, 16000, dtype=torch.float32)
+        >>> x.shape
+        torch.Size([1, 16000])
+        >>> t = Wav2Spec()
+        >>> t(x).shape
+        torch.Size([1, 100, 257])
+
+    The input is a tensor of shape ``(batch_size, num_samples)``.
+    The output is a tensor of shape ``(batch_size, num_frames, num_fft_bins)``.
+    """
     def __init__(
         self,
         sampling_rate: int = 16000,
@@ -302,12 +350,30 @@ class Wav2Spec(Wav2FFT):
         pow_spec = self._to_spec(X)
 
         if self.use_energy:
-            pow_spec[:, 0] = log_e
+            pow_spec[:, :, 0] = log_e
 
         return pow_spec
 
 
 class Wav2LogSpec(Wav2FFT):
+    """
+    Apply standard Kaldi preprocessing (dithering, removing DC offset, pre-emphasis, etc.)
+    on the input waveforms and compute their Short-Time Fourier Transform (STFT).
+    The STFT is transformed either to a log-magnitude spectrum (``use_fft_mag=True``)
+    or a log-power spectrum (``use_fft_mag=False``).
+
+    Example::
+
+        >>> x = torch.randn(1, 16000, dtype=torch.float32)
+        >>> x.shape
+        torch.Size([1, 16000])
+        >>> t = Wav2LogSpec()
+        >>> t(x).shape
+        torch.Size([1, 100, 257])
+
+    The input is a tensor of shape ``(batch_size, num_samples)``.
+    The output is a tensor of shape ``(batch_size, num_frames, num_fft_bins)``.
+    """
     def __init__(
         self,
         sampling_rate: int = 16000,
@@ -355,12 +421,28 @@ class Wav2LogSpec(Wav2FFT):
         pow_spec = (pow_spec + 1e-15).log()
 
         if self.use_energy:
-            pow_spec[:, 0] = log_e
+            pow_spec[:, :, 0] = log_e
 
         return pow_spec
 
 
 class Wav2LogFilterBank(Wav2FFT):
+    """
+    Apply standard Kaldi preprocessing (dithering, removing DC offset, pre-emphasis, etc.)
+    on the input waveforms and compute their log-Mel filter bank energies (also known as "fbank").
+
+    Example::
+
+        >>> x = torch.randn(1, 16000, dtype=torch.float32)
+        >>> x.shape
+        torch.Size([1, 16000])
+        >>> t = Wav2LogFilterBank()
+        >>> t(x).shape
+        torch.Size([1, 100, 80])
+
+    The input is a tensor of shape ``(batch_size, num_samples)``.
+    The output is a tensor of shape ``(batch_size, num_frames, num_filters)``.
+    """
     def __init__(
         self,
         sampling_rate: int = 16000,
@@ -448,6 +530,22 @@ class Wav2LogFilterBank(Wav2FFT):
 
 
 class Wav2MFCC(Wav2FFT):
+    """
+    Apply standard Kaldi preprocessing (dithering, removing DC offset, pre-emphasis, etc.)
+    on the input waveforms and compute their Mel-Frequency Cepstral Coefficients (MFCC).
+
+    Example::
+
+        >>> x = torch.randn(1, 16000, dtype=torch.float32)
+        >>> x.shape
+        torch.Size([1, 16000])
+        >>> t = Wav2MFCC()
+        >>> t(x).shape
+        torch.Size([1, 100, 13])
+
+    The input is a tensor of shape ``(batch_size, num_samples)``.
+    The output is a tensor of shape ``(batch_size, num_frames, num_ceps)``.
+    """
     def __init__(
         self,
         sampling_rate: int = 16000,
@@ -578,10 +676,11 @@ class Wav2MFCC(Wav2FFT):
 
 
 def _get_strided_batch(waveform, window_length, window_shift, snip_edges):
-    r"""Given a waveform (1D tensor of size ``num_samples``), it returns a 2D tensor (m, ``window_size``)
+    r"""Given a waveform (2D tensor of size ``(batch_size, num_samples)``),
+    it returns a 2D tensor ``(batch_size, num_frames, window_length)``
     representing how the window is shifted along the waveform. Each row is a frame.
     Args:
-        waveform (torch.Tensor): Tensor of size ``num_samples``
+        waveform (torch.Tensor): Tensor of size ``(batch_size, num_samples)``
         window_size (int): Frame length
         window_shift (int): Frame shift
         snip_edges (bool): If True, end effects will be handled by outputting only frames that completely fit
