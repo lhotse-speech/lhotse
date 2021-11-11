@@ -16,7 +16,7 @@ jobs:
     strategy:
       matrix:
         python-version: [ 3.8 ]
-        pytorch-version: [ 1.7.2, 1.8.0, 1.8.1, 1.8.2, 1.9.0, 1.9.1, 1.10.0 ]
+        pytorch-version: [ 1.7.1, 1.8.0, 1.8.1, 1.8.2, 1.9.0, 1.9.1, 1.10.0 ]
 
       fail-fast: false
 
@@ -26,6 +26,10 @@ jobs:
       uses: actions/setup-python@v1
       with:
         python-version: ${{ matrix.python-version }}
+    - name: Install libnsdfile
+      run: |
+        sudo apt update
+        sudo apt install libsndfile1
     - name: Install Python dependencies
       run: |
         python -m pip install --upgrade pip

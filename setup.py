@@ -155,6 +155,7 @@ try:
         "1.9.0": "0.9.0",
         "1.8.2": "0.8.2",
         "1.8.1": "0.8.1",
+        "1.8.0": "0.8.0",
         "1.7.1": "0.7.2",
     }
 
@@ -178,7 +179,8 @@ try:
     clean_vstr = f"{major}.{minor}.{patch}"
     if clean_vstr not in version_map:
         raise ValueError(
-            f"Unknown PyTorch version (={installed_ver.vstring}). "
+            f"Unknown PyTorch version (full version string: '{installed_ver.vstring}', "
+            f"version string used for torchaudio version lookup: '{clean_vstr}'). "
             f"Please set up an issue at https://github.com/lhotse-speech/lhotse/issues"
         )
 
