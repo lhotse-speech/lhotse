@@ -200,6 +200,13 @@ try:
 
     # Everything worked and we can resolve the right PyTorch version.
     matching_torchaudio_ver = version_map[clean_vstr]
+
+    # Of course it is not as easy as you thought.
+    # Since PyTorch 1.10.0, unless you specify "+cpu" suffix to torchaudio version,
+    # pip is going to pull a CUDA version even if PyTorch was installed for CPU only.
+    if installed_ver_nosufix >= LooseVersion("1.10.0") and '+cpu' in installed_ver.vstring:
+        matching_torchaudio_ver = f'{matching_torchaudio_ver}+cpu'
+
     install_requires.append(f"torchaudio=={matching_torchaudio_ver}")
 
     # One last check: if this is an LTS PyTorch version,
