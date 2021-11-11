@@ -779,7 +779,7 @@ class MonoCut(Cut):
         If ``item`` is found in ``custom``, we'll return ``custom[item]``.
         If ``item`` starts with "load_", we'll assume the name of the relevant
         attribute comes after that, and that value of that field is of type
-        Array or TemporalArray. We'll return it's ``load`` method to call by the user.
+        Array or TemporalArray. We'll return its ``load`` method to call by the user.
         """
         from lhotse.array import Array, TemporalArray
 
