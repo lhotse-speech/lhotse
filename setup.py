@@ -165,7 +165,17 @@ try:
 
     # Nice error message for PyTorch versions that are too new.
     latest_supported_ver = LooseVersion(next(iter(version_map)))
-    if installed_ver > latest_supported_ver:
+    # HACK: we recreate the LooseVersion of the current installed PyTorch version
+    #       without any version suffixes. This solves the issue that:
+    #
+    #           >>> LooseVersion("1.10.0+cpu") > LooseVersion("1.10.0") == True
+    #
+    #       whereas:
+    #
+    #           >>> LooseVersion("1.10.0") > LooseVersion("1.10.0") == False
+    #
+    installed_ver_nosufix = LooseVersion(clean_vstr)
+    if installed_ver_nosufix > latest_supported_ver:
         raise NotImplementedError(
             f"PyTorch version > {latest_supported_ver.vstring} "
             f"is not yet supported {debug_string}."
