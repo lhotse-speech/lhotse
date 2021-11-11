@@ -147,28 +147,44 @@ try:
     # This code is partially borrowed from ESPnet's setup.py.
     import torch
 
-    torch_ver = LooseVersion(torch.__version__)
-    if torch_ver >= LooseVersion("1.10.1"):
-        raise NotImplementedError("PyTorch version >= 1.10.1 is not yet supported")
-    elif torch_ver >= LooseVersion("1.10.0"):
-        install_requires.append("torchaudio==0.10.0")
-    elif torch_ver >= LooseVersion("1.9.1"):
-        install_requires.append("torchaudio==0.9.1")
-    elif torch_ver >= LooseVersion("1.9.0"):
-        install_requires.append("torchaudio==0.9.0")
-    elif torch_ver >= LooseVersion("1.8.2"):
-        install_requires.append("torchaudio==0.8.2")
-    elif torch_ver >= LooseVersion("1.8.1"):
-        install_requires.append("torchaudio==0.8.1")
-    elif torch_ver >= LooseVersion("1.8.0"):
-        install_requires.append("torchaudio==0.8.0")
-    elif torch_ver >= LooseVersion("1.7.1"):
-        install_requires.append("torchaudio==0.7.2")
-    else:
-        raise ValueError(
-            f"Lhotse requires torch>=1.7.1 and torchaudio>=0.7.2 -- "
-            f"please update your torch (detected version: {torch_ver})."
+    installed_ver = LooseVersion(torch.__version__)
+
+    version_map = {
+        "1.10.0": "0.10.0",
+        "1.9.1": "0.9.1",
+        "1.9.0": "0.9.0",
+        "1.8.2": "0.8.2",
+        "1.8.1": "0.8.1",
+        "1.7.1": "0.7.2",
+    }
+
+    # Nice error message for PyTorch versions that are too new.
+    latest_supported_ver = LooseVersion(next(iter(version_map)))
+    if installed_ver > latest_supported_ver:
+        raise NotImplementedError(
+            f"PyTorch version > {latest_supported_ver.vstring} is not yet supported."
         )
+
+    # Nice error message for PyTorch versions that are too old.
+    earliest_supported_ver = LooseVersion(next(iter(reversed(version_map))))
+    if installed_ver < earliest_supported_ver:
+        raise NotImplementedError(
+            f"PyTorch version < {earliest_supported_ver.vstring} is not supported: "
+            f"please update your PyTorch version."
+        )
+
+    # Nice error message for PyTorch versions that should be supported but we might have missed them?
+    major, minor, patch, *_ = installed_ver.version
+    clean_vstr = f"{major}.{minor}.{patch}"
+    if clean_vstr not in version_map:
+        raise ValueError(
+            f"Unknown PyTorch version (={installed_ver.vstring}). "
+            f"Please set up an issue at https://github.com/lhotse-speech/lhotse/issues"
+        )
+
+    # Everything worked and we can resolve the right PyTorch version.
+    matching_torchaudio_ver = version_map[clean_vstr]
+    install_requires.append(f"torchaudio=={matching_torchaudio_ver}")
 except ImportError:
     install_requires.extend(["torch", "torchaudio"])
 
