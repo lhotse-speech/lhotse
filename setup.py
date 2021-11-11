@@ -163,6 +163,8 @@ try:
         "1.7.1": "0.7.2",
     }
 
+    lts_versions = ["1.8.2"]
+
     # Nice error message for PyTorch versions that are too new.
     latest_supported_ver = LooseVersion(next(iter(version_map)))
     # HACK: we recreate the LooseVersion of the current installed PyTorch version
@@ -199,6 +201,31 @@ try:
     # Everything worked and we can resolve the right PyTorch version.
     matching_torchaudio_ver = version_map[clean_vstr]
     install_requires.append(f"torchaudio=={matching_torchaudio_ver}")
+
+    # One last check: if this is an LTS PyTorch version,
+    # it doesn't seem available on PyPI for some reason...
+    # We'll just require the user to install it manually.
+    if clean_vstr in lts_versions:
+        try:
+            import torchaudio
+
+            ta_ver = LooseVersion(torchaudio.__version__)
+            major, minor, patch, *_ = installed_ver.version
+            clean_ta_vstr = f"{major}.{minor}.{patch}"
+            assert clean_ta_vstr == matching_torchaudio_ver, (
+                f"Incorrect torchaudio version installed: expected {matching_torchaudio_ver} "
+                f"(matches PyTorch={clean_vstr}), got {clean_ta_vstr}"
+            )
+        except ImportError:
+            raise ValueError(
+                f"Detected PyTorch LTS without torchaudio installed. "
+                f"We won't be able to install torchaudio for you because the LTS version "
+                f"is not released on PyPI. Please follow instructions on "
+                f"https://pytorch.org/get-started/locally/ to install torchaudio "
+                f"before installing lhotse {debug_string}."
+            )
+
+
 except ImportError:
     install_requires.extend(["torch", "torchaudio"])
 
