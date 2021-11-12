@@ -1,11 +1,11 @@
 import decimal
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from math import isclose
-from typing import List, Optional
+from typing import List, Optional, Union
 
 import numpy as np
 
-from lhotse.utils import Seconds, asdict_nonull
+from lhotse.utils import Seconds
 
 
 @dataclass
@@ -50,7 +50,7 @@ class Array:
         return len(self.shape)
 
     def to_dict(self) -> dict:
-        return asdict_nonull(self)
+        return asdict(self)
 
     @classmethod
     def from_dict(cls, data: dict) -> "Array":
@@ -130,7 +130,7 @@ class TemporalArray:
         return self.start + self.duration
 
     def to_dict(self) -> dict:
-        return asdict_nonull(self)
+        return asdict(self)
 
     @classmethod
     def from_dict(cls, data: dict) -> "TemporalArray":
@@ -205,3 +205,18 @@ def seconds_to_frames(duration: Seconds, frame_shift: Seconds, max_index: int) -
         ).quantize(0, rounding=decimal.ROUND_HALF_UP)
     )
     return min(index, max_index)
+
+
+def deserialize_array(raw_data: dict) -> Union[Array, TemporalArray]:
+    """
+    Figures out the right manifest type to use for deserialization.
+
+    :param raw_data: The result of calling ``.to_dict`` on :class:`.Array`
+        or :class:`.TemporalArray`.
+    :return an :class:`.Array.` or :class:`.TemporalArray` instance.
+    """
+    if "array" in raw_data:
+        return TemporalArray.from_dict(raw_data)
+    if "shape" in raw_data:
+        return Array.from_dict(raw_data)
+    raise ValueError(f"Cannot deserialize array from: {raw_data}")

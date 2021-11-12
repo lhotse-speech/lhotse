@@ -372,8 +372,11 @@ def deserialize_item(data: dict) -> Any:
     # Figures out what type of manifest is being decoded with some heuristics
     # and returns a Lhotse manifest object rather than a raw dict.
     from lhotse import MonoCut, Features, Recording, SupervisionSegment
+    from lhotse.array import deserialize_array
     from lhotse.cut import MixedCut
 
+    if "shape" in data or "array" in data:
+        return deserialize_array(data)
     if "sources" in data:
         return Recording.from_dict(data)
     if "num_features" in data:
@@ -393,6 +396,36 @@ def deserialize_item(data: dict) -> Any:
     if cut_type == "MixedCut":
         return MixedCut.from_dict(data)
     raise ValueError(f"Unexpected cut type during deserialization: '{cut_type}'")
+
+
+def deserialize_custom_field(data: Optional[dict]) -> Optional[dict]:
+    """
+    Handles deserialization of manifests inside the custom field dictionary
+    (e.g. from :class:`~lhotse.SupervisionSegment` or :class:`~lhotse.MonoCut`).
+
+    Mutates the input in-place, and returns it.
+
+    :param data: the contents of ``manifest.custom`` field.
+    :return: ``custom`` field dict with deserialized manifests (if any),
+        or None when input is None.
+    """
+    if data is None:
+        return None
+
+    from lhotse.array import deserialize_array
+
+    # If any of the values in the input are also dicts,
+    # it indicates that might be a serialized array manifest.
+    # We'll try to deserialize it, and if there is an error,
+    # we'll just leave it as it was.
+    for key, value in data.items():
+        if isinstance(value, dict):
+            try:
+                data[key] = deserialize_array(value)
+            except:
+                pass
+
+    return data
 
 
 def count_newlines_fast(path: Pathlike):

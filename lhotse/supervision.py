@@ -370,16 +370,17 @@ class SupervisionSegment:
 
     @staticmethod
     def from_dict(data: dict) -> "SupervisionSegment":
-        return SupervisionSegment(
-            **{
-                key: (
-                    {k: [AlignmentItem(**x) for x in v] for k, v in value.items()}
-                    if key == "alignment"
-                    else value
-                )
-                for key, value in data.items()
+        from lhotse.serialization import deserialize_custom_field
+
+        if "custom" in data:
+            deserialize_custom_field(data["custom"])
+
+        if "alignment" in data:
+            data["alignment"] = {
+                k: [AlignmentItem(**x) for x in v] for k, v in data["alignment"].items()
             }
-        )
+
+        return SupervisionSegment(**data)
 
 
 class SupervisionSet(Serializable, Sequence[SupervisionSegment]):

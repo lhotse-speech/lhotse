@@ -534,6 +534,7 @@ class Cut:
             channel=0,
             supervisions=self.supervisions,
             recording=recording,
+            custom=self.custom if hasattr(self, "custom") else None,
         )
 
     def speakers_feature_mask(
@@ -785,7 +786,7 @@ class MonoCut(Cut):
 
         custom = self.custom
         if custom is None:
-            raise AttributeError()
+            raise AttributeError(f"No such attribute: {item}")
         if item in custom:
             # Somebody accesses raw [Temporal]Array manifest
             # or wrote a custom piece of metadata into MonoCut.
@@ -802,7 +803,7 @@ class MonoCut(Cut):
                 raise ValueError(
                     f"To call {item}, cut needs to have field {item[5:]} defined."
                 )
-        raise AttributeError()
+        raise AttributeError(f"No such attribute: {item}")
 
     @property
     def recording_id(self) -> str:
@@ -1019,14 +1020,12 @@ class MonoCut(Cut):
                 if olap_ratio > 0.01:
                     supervisions.append(interval.data.with_offset(-offset))
 
-        return MonoCut(
+        return fastcopy(
+            self,
             id=self.id if preserve_id else str(uuid4()),
             start=new_start,
             duration=new_duration,
-            channel=self.channel,
             supervisions=sorted(supervisions, key=lambda s: s.start),
-            features=self.features,
-            recording=self.recording,
         )
 
     def pad(
@@ -1256,6 +1255,8 @@ class MonoCut(Cut):
 
     @staticmethod
     def from_dict(data: dict) -> "MonoCut":
+        from lhotse.serialization import deserialize_custom_field
+
         features = (
             Features.from_dict(data.pop("features")) if "features" in data else None
         )
@@ -1263,6 +1264,10 @@ class MonoCut(Cut):
             Recording.from_dict(data.pop("recording")) if "recording" in data else None
         )
         supervision_infos = data.pop("supervisions") if "supervisions" in data else []
+
+        if "custom" in data:
+            deserialize_custom_field(data["custom"])
+
         return MonoCut(
             **data,
             features=features,
@@ -2163,12 +2168,10 @@ class MixedCut(Cut):
                 channel=0,
                 augment_fn=augment_fn,
             )
-            return MonoCut(
-                id=self.id,
+            return fastcopy(
+                self,
                 start=0,
-                duration=self.duration,
                 channel=0,
-                supervisions=self.supervisions,
                 features=features_info,
                 recording=None,
             )
