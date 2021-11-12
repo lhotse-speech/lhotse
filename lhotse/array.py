@@ -61,6 +61,7 @@ class Array:
         Load the array from the underlying storage.
         """
         from lhotse.features.io import get_reader
+
         # noinspection PyArgumentList
         storage = get_reader(self.storage_type)(self.storage_path)
         # Load and return the array from the storage
@@ -104,12 +105,12 @@ class TemporalArray:
     temporal_dim: int
 
     # The time interval (in seconds, or fraction of a second) between the start timestamps
-    # of consecutive frames. Only defined when ``temporal_axis`` is not ``None``.
+    # of consecutive frames.
     frame_shift: Seconds
 
     # Information about the time range of the features.
     # We only need to specify start, as duration can be computed from
-    # the shape, temporal_axis, and frame_shift.
+    # the shape, temporal_dim, and frame_shift.
     start: Seconds
 
     @property

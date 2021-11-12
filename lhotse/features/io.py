@@ -59,12 +59,12 @@ class FeaturesWriter(metaclass=ABCMeta):
         ...
 
     def store_array(
-            self,
-            key: str,
-            value: np.ndarray,
-            frame_shift: Optional[Seconds] = None,
-            temporal_dim: Optional[int] = None,
-            start: Seconds = 0,
+        self,
+        key: str,
+        value: np.ndarray,
+        frame_shift: Optional[Seconds] = None,
+        temporal_dim: Optional[int] = None,
+        start: Seconds = 0,
     ) -> Union[Array, TemporalArray]:
         """
         Store a numpy array in the underlying storage and return a manifest
