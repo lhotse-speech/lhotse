@@ -18,7 +18,7 @@ except:
     # NOTE: REMEMBER TO UPDATE THE ACTUAL VERSION IN setup.py WHEN RELEASING #
     # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! #
     # Use a default placeholder when the version is unavailable...
-    __version__ = "0.12.0+missing.version.file"
+    __version__ = "1.0.0.dev+missing.version.file"
 
 from . import augmentation
 from . import dataset
