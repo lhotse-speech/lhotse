@@ -305,6 +305,7 @@ class Wav2Spec(Wav2FFT):
     The input is a tensor of shape ``(batch_size, num_samples)``.
     The output is a tensor of shape ``(batch_size, num_frames, num_fft_bins)``.
     """
+
     def __init__(
         self,
         sampling_rate: int = 16000,
@@ -374,6 +375,7 @@ class Wav2LogSpec(Wav2FFT):
     The input is a tensor of shape ``(batch_size, num_samples)``.
     The output is a tensor of shape ``(batch_size, num_frames, num_fft_bins)``.
     """
+
     def __init__(
         self,
         sampling_rate: int = 16000,
@@ -443,6 +445,7 @@ class Wav2LogFilterBank(Wav2FFT):
     The input is a tensor of shape ``(batch_size, num_samples)``.
     The output is a tensor of shape ``(batch_size, num_frames, num_filters)``.
     """
+
     def __init__(
         self,
         sampling_rate: int = 16000,
@@ -546,6 +549,7 @@ class Wav2MFCC(Wav2FFT):
     The input is a tensor of shape ``(batch_size, num_samples)``.
     The output is a tensor of shape ``(batch_size, num_frames, num_ceps)``.
     """
+
     def __init__(
         self,
         sampling_rate: int = 16000,
