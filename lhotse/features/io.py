@@ -2,13 +2,14 @@ from abc import ABCMeta, abstractmethod
 from functools import lru_cache
 from math import ceil, floor
 from pathlib import Path
-from typing import List, Optional, Type
+from typing import List, Optional, Type, Union
 
 import lilcom
 import numpy as np
 
+from lhotse.array import Array, TemporalArray
 from lhotse.caching import dynamic_lru_cache
-from lhotse.utils import Pathlike, SmartOpen, is_module_available
+from lhotse.utils import Pathlike, Seconds, SmartOpen, is_module_available
 
 
 class FeaturesWriter(metaclass=ABCMeta):
@@ -31,15 +32,16 @@ class FeaturesWriter(metaclass=ABCMeta):
         it is stored in the features manifests (metadata) and used to automatically deduce
         the backend when loading the features.
 
-    Each ``FeaturesWriter`` can also be used as a context manager, as some implementations
+    Each :class:`.FeaturesWriter` can also be used as a context manager, as some implementations
     might need to free a resource after the writing is finalized. By default nothing happens
     in the context manager functions, and this can be modified by the inheriting subclasses.
 
-    Example:
-        with MyWriter('some/path') as storage:
-            extractor.extract_from_recording_and_store(recording, storage)
+    Example::
 
-    The features loading must be defined separately in a class inheriting from ``FeaturesReader``.
+        >>> with MyWriter('some/path') as storage:
+        ...     extractor.extract_from_recording_and_store(recording, storage)
+
+    The features loading must be defined separately in a class inheriting from :class:`FeaturesReader`.
     """
 
     @property
@@ -55,6 +57,62 @@ class FeaturesWriter(metaclass=ABCMeta):
     @abstractmethod
     def write(self, key: str, value: np.ndarray) -> str:
         ...
+
+    def store_array(
+            self,
+            key: str,
+            value: np.ndarray,
+            frame_shift: Optional[Seconds] = None,
+            temporal_dim: Optional[int] = None,
+            start: Seconds = 0,
+    ) -> Union[Array, TemporalArray]:
+        """
+        Store a numpy array in the underlying storage and return a manifest
+        describing how to retrieve the data.
+
+        If the array contains a temporal dimension (e.g. it represents the
+        frame-level features, alignment, posteriors, etc. of an utterance)
+        then ``temporal_dim`` and ``frame_shift`` may be specified to enable
+        downstream padding, truncating, and partial reads of the array.
+
+        :param key: An ID that uniquely identifies the array.
+        :param value: The array to be stored.
+        :param frame_shift: Optional float, when the array has a temporal dimension
+            it indicates how much time has passed between the starts of consecutive frames
+            (expressed in seconds).
+        :param temporal_dim: Optional int, when the array has a temporal dimension,
+            it indicates which dim to interpret as temporal.
+        :param start: Float, when the array is temporal, it indicates what is the offset
+            of the array w.r.t. the start of recording. Useful for reading subsets
+            of an array when it represents something computed from long recordings.
+            Ignored for non-temporal arrays.
+        :return: A manifest of type :class:`~lhotse.array.Array` or
+            :class:`~lhotse.array.TemporalArray`, depending on the input arguments.
+        """
+        is_temporal = frame_shift is not None and temporal_dim is not None
+        if not is_temporal:
+            assert all(arg is None for arg in [frame_shift, temporal_dim]), (
+                "frame_shift and temporal_dim have to be both None or both set "
+                f"(got frame_shift={frame_shift}, temporal_dim={temporal_dim})."
+            )
+
+        storage_key = self.write(key, value)
+        array = Array(
+            storage_type=self.name,
+            storage_path=self.storage_path,
+            storage_key=storage_key,
+            shape=list(value.shape),
+        )
+
+        if not is_temporal:
+            return array
+
+        return TemporalArray(
+            array=array,
+            temporal_dim=temporal_dim,
+            frame_shift=frame_shift,
+            start=start,
+        )
 
     def __enter__(self):
         return self

@@ -47,7 +47,7 @@ from lhotse.array import Array
 )
 def test_write_read_array_no_lilcom(array, writer_class):
     with TemporaryDirectory() as d, writer_class(d) as writer:
-        manifest = Array.store(key="utt1", value=array, writer=writer)
+        manifest = writer.store_array(key="utt1", value=array)
         restored = manifest.load()
         assert array.ndim == manifest.ndim
         assert array.shape == restored.shape
@@ -66,7 +66,7 @@ def test_write_read_array_no_lilcom(array, writer_class):
 def test_write_read_array_lilcom(writer_class):
     array = np.arange(20).astype(np.float32)
     with TemporaryDirectory() as d, writer_class(d) as writer:
-        manifest = Array.store(key="utt1", value=array, writer=writer)
+        manifest = writer.store_array(key="utt1", value=array)
         restored = manifest.load()
         assert array.ndim == manifest.ndim
         assert array.shape == restored.shape

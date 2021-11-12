@@ -5,14 +5,30 @@ from typing import List, Optional
 
 import numpy as np
 
-from lhotse import FeaturesWriter
-from lhotse.features.io import get_reader
-from lhotse.utils import Seconds, asdict_nonull, rich_exception_info
+from lhotse.utils import Seconds, asdict_nonull
 
 
 @dataclass
 class Array:
-    """ """
+    """
+    The Array manifest describes a numpy array that is stored somewhere: it might be
+    in an HDF5 file, a compressed numpy file, on disk, in the cloud, etc.
+    Array helps abstract away from the actual storage mechanism and location by
+    providing a method called :meth:`.Array.load`.
+
+    We don't assume anything specific about the array itself: it might be
+    a feature matrix, an embedding, network activations, posteriors, alignment, etc.
+    However, if the array has a temporal component, it is better to use the
+    :class:`.TemporalArray` manifest instead.
+
+    Array manifest can be easily created by calling
+    :meth:`lhotse.features.io.FeaturesWriter.store_array`, for example::
+
+        >>> from lhotse import NumpyHdf5Writer
+        >>> ivector = np.random.rand(300)
+        >>> with NumpyHdf5Writer('ivectors.h5') as writer:
+        ...     manifest = writer.store_array('ivec-1', ivector)
+    """
 
     # Storage type defines which features reader type should be instantiated
     # e.g. 'lilcom_files', 'numpy_files', 'lilcom_hdf5'
@@ -40,29 +56,45 @@ class Array:
     def from_dict(cls, data: dict) -> "Array":
         return cls(**data)
 
-    @classmethod
-    def store(cls, key: str, value: np.ndarray, writer: FeaturesWriter) -> "Array":
-        storage_key = writer.write(key, value)
-        return Array(
-            storage_type=writer.name,
-            storage_path=str(writer.storage_path),
-            storage_key=storage_key,
-            shape=list(value.shape),
-        )
-
-    @rich_exception_info
     def load(self) -> np.ndarray:
-
+        """
+        Load the array from the underlying storage.
+        """
+        from lhotse.features.io import get_reader
         # noinspection PyArgumentList
         storage = get_reader(self.storage_type)(self.storage_path)
-
         # Load and return the array from the storage
         return storage.read(self.storage_key)
 
 
 @dataclass
 class TemporalArray:
-    """ """
+    """
+    The :class:`.TemporalArray` manifest describes a numpy array that is stored somewhere:
+    it might be in an HDF5 file, a compressed numpy file, on disk, in the cloud, etc.
+    Like :class:`.Array`, it helps abstract away from the actual storage mechanism
+    and location by providing a method called :meth:`.TemporalArray.load`.
+
+    Unlike with :class:`.Array`, we assume that the array has a temporal dimension.
+    It allows us to perform partial reads for sub-segments of the data if the underlying
+    ``storage_type`` allows that.
+
+    :class:`.TemporalArray` manifest can be easily created by calling
+    :meth:`lhotse.features.io.FeaturesWriter.store_array` and specifying arguments
+    related to its temporal nature; for example::
+
+        >>> from lhotse import NumpyHdf5Writer
+        >>> alignment = np.random.randint(500, size=131)
+        >>> assert alignment.shape == (131,)
+        >>> with NumpyHdf5Writer('alignments.h5') as writer:
+        ...     manifest = writer.store_array(
+        ...         key='ali-1',
+        ...         value=alignment,
+        ...         frame_shift=0.4,  # e.g., 10ms frames and subsampling_factor=4
+        ...         temporal_dim=0,
+        ...         start=0
+        ...     )
+    """
 
     # Manifest describing the base array.
     array: Array
@@ -81,7 +113,7 @@ class TemporalArray:
     start: Seconds
 
     @property
-    def shape(self):
+    def shape(self) -> List[int]:
         return self.array.shape
 
     @property
@@ -89,11 +121,11 @@ class TemporalArray:
         return len(self.shape)
 
     @property
-    def duration(self) -> Optional[Seconds]:
+    def duration(self) -> Seconds:
         return self.shape[self.temporal_dim] * self.frame_shift
 
     @property
-    def end(self) -> Optional[Seconds]:
+    def end(self) -> Seconds:
         return self.start + self.duration
 
     def to_dict(self) -> dict:
@@ -104,29 +136,22 @@ class TemporalArray:
         array = Array.from_dict(data.pop("array"))
         return cls(array=array, **data)
 
-    @classmethod
-    def store(
-        cls,
-        key: str,
-        value: np.ndarray,
-        writer: FeaturesWriter,
-        frame_shift: Seconds,
-        temporal_dim: int = 0,
-        start: Seconds = 0,
-    ) -> "TemporalArray":
-        return TemporalArray(
-            array=Array.store(key=key, value=value, writer=writer),
-            temporal_dim=temporal_dim,
-            frame_shift=frame_shift,
-            start=start,
-        )
-
-    # @rich_exception_info
     def load(
         self,
         start: Optional[Seconds] = None,
         duration: Optional[Seconds] = None,
     ) -> np.ndarray:
+        """
+        Load the array from the underlying storage.
+        Optionally perform a partial read along the ``temporal_dim``.
+
+        :param start: when specified, we'll offset the read by ``start`` after
+            converting it to a number of frames based on ``self.frame_shift``.
+        :param duration: when specified, we'll limit the read to a number of
+            frames equivalent to ``duration`` under ``self.frame_shift``.
+        :return: A numpy array or a relevant slice of it.
+        """
+        from lhotse.features.io import get_reader
 
         # noinspection PyArgumentList
         storage = get_reader(self.array.storage_type)(self.array.storage_path)
