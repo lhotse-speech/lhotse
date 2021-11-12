@@ -51,10 +51,10 @@ project_root = Path(__file__).parent
 # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! #
 # NOTE: REMEMBER TO UPDATE THE FALLBACK VERSION IN lhotse/__init__.py WHEN RELEASING #
 # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! #
-MAJOR_VERSION = 0
-MINOR_VERSION = 12
+MAJOR_VERSION = 1
+MINOR_VERSION = 0
 PATCH_VERSION = 0
-IS_DEV_VERSION = False  # False = public release, True = otherwise
+IS_DEV_VERSION = True  # False = public release, True = otherwise
 
 
 def discover_lhotse_version() -> str:
@@ -203,7 +203,7 @@ setup(
         "all": all_requires,
     },
     classifiers=[
-        "Development Status :: 3 - Alpha",
+        "Development Status :: 4 - Beta",
         "Programming Language :: Python :: 3.6",
         "Programming Language :: Python :: 3.7",
         "Programming Language :: Python :: 3.8",
