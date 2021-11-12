@@ -134,10 +134,10 @@ class SpecAugment(torch.nn.Module):
             Set to ``None``, or less than ``1``, to disable.
         :param num_feature_masks: how many feature masks should be applied. Set to ``0`` to disable.
         :param features_mask_size: the width of the feature mask (expressed in the number of masked feature bins).
-            This is the ``T`` parameter from the SpecAugment paper.
+            This is the ``F`` parameter from the SpecAugment paper.
         :param num_frame_masks: how many frame (temporal) masks should be applied. Set to ``0`` to disable.
         :param frames_mask_size: the width of the frame (temporal) masks (expressed in the number of masked frames).
-            This is the ``F`` parameter from the SpecAugment paper.
+            This is the ``T`` parameter from the SpecAugment paper.
         :param max_frames_mask_fraction: limits the size of the frame (temporal) mask to this value times the length
             of the utterance (or supervision segment).
             This is the parameter denoted by ``p`` in the SpecAugment paper.
@@ -179,7 +179,7 @@ class SpecAugment(torch.nn.Module):
             The second dimension encoder three kinds of information:
             the sequence index of the corresponding feature matrix in `features`,
             the start frame index, and the number of frames for each segment.
-        :return: a tensor of shape ``(T, F)``, or a batch of them with shape ``(B, T, F)``
+        :return: an augmented tensor of shape ``(B, T, F)``.
         """
         assert len(features.shape) == 3, (
             "SpecAugment only supports batches of " "single-channel feature matrices."

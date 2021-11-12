@@ -29,4 +29,4 @@ for part in ${data_parts}; do
     ${OUTPUT_PATH}/cuts_${part}.json.gz
 done
 
-# Processing complete - the resulting YAML manifests can be loaded in Python to create a PyTorch dataset.
+# Processing complete - the resulting manifests can be loaded in Python to create a PyTorch dataset.

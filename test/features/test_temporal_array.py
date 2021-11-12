@@ -46,10 +46,9 @@ from lhotse.array import Array, TemporalArray
 )
 def test_write_read_temporal_array_no_lilcom(array, writer_class):
     with TemporaryDirectory() as d, writer_class(d) as writer:
-        manifest = TemporalArray.store(
+        manifest = writer.store_array(
             key="utt1",
             value=array,
-            writer=writer,
             temporal_dim=0,
             frame_shift=0.4,
             start=0.0,
@@ -79,10 +78,9 @@ def test_write_read_temporal_array_no_lilcom(array, writer_class):
 )
 def test_write_read_temporal_array_lilcom(array, writer_class):
     with TemporaryDirectory() as d, writer_class(d) as writer:
-        manifest = TemporalArray.store(
+        manifest = writer.store_array(
             key="utt1",
             value=array,
-            writer=writer,
             temporal_dim=0,
             frame_shift=0.4,
             start=0.0,
@@ -118,10 +116,9 @@ def test_temporal_array_partial_read():
     array = np.arange(30).astype(np.int8)
 
     with NamedTemporaryFile(suffix=".h5") as f, NumpyHdf5Writer(f.name) as writer:
-        manifest = TemporalArray.store(
+        manifest = writer.store_array(
             key="utt1",
             value=array,
-            writer=writer,
             temporal_dim=0,
             frame_shift=0.5,
             start=0.0,
