@@ -680,7 +680,7 @@ class Wav2MFCC(Wav2FFT):
 
 
 def _get_strided_batch(waveform, window_length, window_shift, snip_edges):
-    r"""Given a waveform (2D tensor of size ``(batch_size, num_samples)``),
+    r"""Given a waveform (2D tensor of size ``(batch_size, num_samples)``,
     it returns a 2D tensor ``(batch_size, num_frames, window_length)``
     representing how the window is shifted along the waveform. Each row is a frame.
     Args:
