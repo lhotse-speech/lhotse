@@ -1744,7 +1744,7 @@ class MixedCut(Cut):
 
             >>> cut = MonoCut('cut1', start=0, duration=4, channel=0)
             >>> cut.alignment = TemporalArray(...)
-            >>> mixed_cut = cut.pad(10)
+            >>> mixed_cut = cut.pad(10, pad_value_dict={'alignment': -1})
             >>> ali = mixed_cut.load_alignment()
 
         """
