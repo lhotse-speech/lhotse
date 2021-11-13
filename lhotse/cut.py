@@ -1748,6 +1748,11 @@ class MixedCut(Cut):
             >>> ali = mixed_cut.load_alignment()
 
         """
+        if item.startswith('__'):
+            # Python will sometimes try to call undefined magic functions,
+            # just fail for them (e.g. __setstate__ when pickling).
+            raise AttributeError()
+
         # TODO(pzelasko): consider relaxing this condition to
         #                 supporting mixed cuts that are not overlapping
         non_padding_cuts = [
@@ -2264,12 +2269,15 @@ class MixedCut(Cut):
                 channel=0,
                 augment_fn=augment_fn,
             )
-            return fastcopy(
-                self,
+            return MonoCut(
+                id=self.id,
                 start=0,
+                duration=self.duration,
                 channel=0,
+                supervisions=self.supervisions,
                 features=features_info,
                 recording=None,
+                custom=self.custom if hasattr(self, "custom") else None,
             )
         else:  # mix lazily
             new_tracks = [
