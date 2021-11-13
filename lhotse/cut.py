@@ -1,3 +1,4 @@
+import functools
 import logging
 import random
 import warnings
@@ -1036,6 +1037,7 @@ class MonoCut(Cut):
         pad_feat_value: float = LOG_EPSILON,
         direction: str = "right",
         preserve_id: bool = False,
+        pad_value_dict: Optional[Dict[str, Union[int, float]]] = None,
     ) -> Cut:
         """
         Return a new MixedCut, padded with zeros in the recording, and ``pad_feat_value`` in each feature bin.
@@ -1052,6 +1054,8 @@ class MonoCut(Cut):
             the cut.
         :param preserve_id: When ``True``, preserves the cut ID before padding.
             Otherwise, a new random ID is generated for the padded cut (default).
+        :param pad_value_dict: Optional dict that specifies what value should be used
+            for padding arrays in custom attributes.
         :return: a padded MixedCut if duration is greater than this cut's duration, otherwise ``self``.
         """
         return pad(
@@ -1062,6 +1066,7 @@ class MonoCut(Cut):
             pad_feat_value=pad_feat_value,
             direction=direction,
             preserve_id=preserve_id,
+            pad_value_dict=pad_value_dict,
         )
 
     def resample(self, sampling_rate: int, affix_id: bool = False) -> "MonoCut":
@@ -1317,6 +1322,9 @@ class PaddingCut(Cut):
     # For time domain
     num_samples: Optional[int] = None
 
+    # Dict for storing padding values for custom array attributes
+    custom: Optional[dict] = None
+
     @property
     def start(self) -> Seconds:
         return 0
@@ -1393,6 +1401,7 @@ class PaddingCut(Cut):
         pad_feat_value: float = LOG_EPSILON,
         direction: str = "right",
         preserve_id: bool = False,
+        pad_value_dict: Optional[Dict[str, Union[int, float]]] = None,
     ) -> Cut:
         """
         Return a new MixedCut, padded with zeros in the recording, and ``pad_feat_value`` in each feature bin.
@@ -1409,6 +1418,8 @@ class PaddingCut(Cut):
             the cut.
         :param preserve_id: When ``True``, preserves the cut ID from before padding.
             Otherwise, generates a new random ID (default).
+        :param pad_value_dict: Optional dict that specifies what value should be used
+            for padding arrays in custom attributes.
         :return: a padded MixedCut if duration is greater than this cut's duration, otherwise ``self``.
         """
         return pad(
@@ -1419,6 +1430,7 @@ class PaddingCut(Cut):
             pad_feat_value=pad_feat_value,
             direction=direction,
             preserve_id=preserve_id,
+            pad_value_dict=pad_value_dict,
         )
 
     def resample(self, sampling_rate: int, affix_id: bool = False) -> "PaddingCut":
@@ -1713,6 +1725,86 @@ class MixedCut(Cut):
     def features_type(self) -> Optional[str]:
         return self._first_non_padding_cut.features.type if self.has_features else None
 
+    def __getattr__(self, item: str) -> Any:
+        """
+        This magic function is called when the user tries to access an attribute
+        of :class:`.MixedCut` that doesn't exist. It is used for accessing the custom
+        attributes of cuts. We support exactly one scenario for mixed cuts:
+
+        If :attr:`tracks` contains exactly one :class:`.MonoCut` object (and an arbitrary
+        number of :class:`.PaddingCut` objects), we will look up the custom attributes
+        of that cut.
+
+        If one of the custom attributes is of type :class:`~lhotse.array.Array` or
+        :class:`~lhotse.array.TemporalArray` we'll also support loading those arrays
+        (see example below). Additionally, we will incorporate extra padding as
+        dictated by padding cuts.
+
+        Example:
+
+            >>> cut = MonoCut('cut1', start=0, duration=4, channel=0)
+            >>> cut.alignment = TemporalArray(...)
+            >>> mixed_cut = cut.pad(10)
+            >>> ali = mixed_cut.load_alignment()
+
+        """
+        # TODO(pzelasko): consider relaxing this condition to
+        #                 supporting mixed cuts that are not overlapping
+        non_padding_cuts = [
+            (idx, t.cut)
+            for idx, t in enumerate(self.tracks)
+            if isinstance(t.cut, MonoCut)
+        ]
+        if len(non_padding_cuts) != 1:
+            raise AttributeError(
+                f"No such attribute: '{item}' (note: custom attributes are not supported "
+                f"because the mixed cut has {len(non_padding_cuts)} mono cuts; we expected "
+                f"exactly one)."
+            )
+
+        # Retrieve the attribute from the only non-padding cut.
+        non_padding_idx, mono_cut = non_padding_cuts[0]
+        attr = getattr(mono_cut, item)
+
+        # Directly return everything that is not 'load_something' type of attribute.
+        is_special_load_method = callable(attr) and item.startswith("load_")
+        if not is_special_load_method:
+            return attr
+
+        from lhotse.array import TemporalArray
+
+        # Check if the corresponding manifest for 'load_something' is of type
+        # TemporalArray; if it's not, just return the load callable.
+        # This is likely an embedding without a temporal dimension.
+        attr_name = item[5:]
+        manifest = mono_cut.custom[attr_name]
+        if not isinstance(manifest, TemporalArray):
+            return attr
+
+        # This is definitely trying to load an array with a temporal dimension:
+        # wrap the loading method in a closure that will perform the right padding
+        # inside.
+        left_padding = self.tracks[non_padding_idx].offset
+        padded_duration = self.duration
+        pad_value = [t.cut for t in self.tracks if isinstance(t.cut, PaddingCut)][
+            0
+        ].custom[attr_name]
+
+        def load_something_padded():
+            from lhotse.array import pad_array
+
+            array = attr()
+            return pad_array(
+                array,
+                temporal_dim=manifest.temporal_dim,
+                frame_shift=manifest.frame_shift,
+                offset=left_padding,
+                padded_duration=padded_duration,
+                pad_value=pad_value,
+            )
+
+        return load_something_padded
+
     def truncate(
         self,
         *,
@@ -1798,6 +1890,7 @@ class MixedCut(Cut):
         pad_feat_value: float = LOG_EPSILON,
         direction: str = "right",
         preserve_id: bool = False,
+        pad_value_dict: Optional[Dict[str, Union[int, float]]] = None,
     ) -> Cut:
         """
         Return a new MixedCut, padded with zeros in the recording, and ``pad_feat_value`` in each feature bin.
@@ -1814,6 +1907,8 @@ class MixedCut(Cut):
             the cut.
         :param preserve_id: When ``True``, preserves the cut ID from before padding.
             Otherwise, generates a new random ID (default).
+        :param pad_value_dict: Optional dict that specifies what value should be used
+            for padding arrays in custom attributes.
         :return: a padded MixedCut if duration is greater than this cut's duration, otherwise ``self``.
         """
         return pad(
@@ -1824,6 +1919,7 @@ class MixedCut(Cut):
             pad_feat_value=pad_feat_value,
             direction=direction,
             preserve_id=preserve_id,
+            pad_value_dict=pad_value_dict,
         )
 
     def resample(self, sampling_rate: int, affix_id: bool = False) -> "MixedCut":
@@ -2920,6 +3016,7 @@ class CutSet(Serializable, Sequence[Cut]):
         pad_feat_value: float = LOG_EPSILON,
         direction: str = "right",
         preserve_id: bool = False,
+        pad_value_dict: Optional[Dict[str, Union[int, float]]] = None,
     ) -> "CutSet":
         """
         Return a new CutSet with Cuts padded to ``duration``, ``num_frames`` or ``num_samples``.
@@ -2940,6 +3037,8 @@ class CutSet(Serializable, Sequence[Cut]):
             before or after the cut.
         :param preserve_id: When ``True``, preserves the cut ID from before padding.
             Otherwise, generates a new random ID (default).
+        :param pad_value_dict: Optional dict that specifies what value should be used
+            for padding arrays in custom attributes.
         :return: A padded CutSet.
         """
         # When the user does not specify explicit padding duration/num_frames/num_samples,
@@ -2962,6 +3061,7 @@ class CutSet(Serializable, Sequence[Cut]):
                 pad_feat_value=pad_feat_value,
                 direction=direction,
                 preserve_id=preserve_id,
+                pad_value_dict=pad_value_dict,
             )
             for cut in self
         )
@@ -3929,6 +4029,7 @@ def pad(
     pad_feat_value: float = LOG_EPSILON,
     direction: str = "right",
     preserve_id: bool = False,
+    pad_value_dict: Optional[Dict[str, Union[int, float]]] = None,
 ) -> Cut:
     """
     Return a new MixedCut, padded with zeros in the recording, and ``pad_feat_value`` in each feature bin.
@@ -3946,12 +4047,25 @@ def pad(
         the cut.
     :param preserve_id: When ``True``, preserves the cut ID before padding.
         Otherwise, a new random ID is generated for the padded cut (default).
+    :param pad_value_dict: Optional dict that specifies what value should be used
+        for padding arrays in custom attributes.
     :return: a padded MixedCut if duration is greater than this cut's duration, otherwise ``self``.
     """
     assert exactly_one_not_null(duration, num_frames, num_samples), (
         f"Expected only one of (duration, num_frames, num_samples) to be set: "
         f"got ({duration}, {num_frames}, {num_samples})"
     )
+    if hasattr(cut, "custom") and isinstance(cut.custom, dict):
+        from lhotse.array import TemporalArray
+
+        arr_keys = [k for k, v in cut.custom.items() if isinstance(v, TemporalArray)]
+        if len(arr_keys) > 0:
+            assert pad_value_dict is not None and all(
+                k in pad_value_dict for k in arr_keys
+            ), (
+                f"Cut being padded has custom TemporalArray attributes: {arr_keys}. "
+                f"We expected a 'pad_value_dict' argument with padding values for these attributes."
+            )
 
     if duration is not None:
         if duration <= cut.duration:
@@ -4026,6 +4140,7 @@ def pad(
         ),
         frame_shift=cut.frame_shift,
         sampling_rate=cut.sampling_rate,
+        custom=pad_value_dict,
     )
 
     if direction == "right":

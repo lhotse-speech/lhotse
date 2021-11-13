@@ -189,7 +189,9 @@ class TemporalArray:
         )
 
 
-def seconds_to_frames(duration: Seconds, frame_shift: Seconds, max_index: int) -> int:
+def seconds_to_frames(
+    duration: Seconds, frame_shift: Seconds, max_index: Optional[int] = None
+) -> int:
     """
     Convert time quantity in seconds to a frame index.
     It takes the shape of the array into account and limits
@@ -204,7 +206,9 @@ def seconds_to_frames(duration: Seconds, frame_shift: Seconds, max_index: int) -
             round(duration / frame_shift, ndigits=8)
         ).quantize(0, rounding=decimal.ROUND_HALF_UP)
     )
-    return min(index, max_index)
+    if max_index is not None:
+        return min(index, max_index)
+    return index
 
 
 def deserialize_array(raw_data: dict) -> Union[Array, TemporalArray]:
@@ -220,3 +224,53 @@ def deserialize_array(raw_data: dict) -> Union[Array, TemporalArray]:
     if "shape" in raw_data:
         return Array.from_dict(raw_data)
     raise ValueError(f"Cannot deserialize array from: {raw_data}")
+
+
+def pad_array(
+    array: np.ndarray,
+    temporal_dim: int,
+    frame_shift: Seconds,
+    offset: Seconds,
+    padded_duration: Seconds,
+    pad_value: Union[int, float],
+) -> np.ndarray:
+    """
+    Pad a numpy array guided by duration based constraints.
+
+    Example::
+
+        >>> arr = np.array([1, 2, 3])
+        >>> pad_array(arr, temporal_dim=0, frame_shift=0.1,
+        ...           offset=0.1, padded_duration=0.6, pad_value=0)
+        array([0, 1, 2, 3, 0, 0])
+
+    :param array: array to be padded.
+    :param temporal_dim: time dimension index.
+    :param frame_shift: time interval (seconds) between the starts of consecutive frames.
+    :param offset: how much padding goes before the array (seconds).
+    :param padded_duration: expected duration of array after padding (seconds).
+    :param pad_value: value used for padding.
+    :return: a padded array.
+    """
+    array_frames = array.shape[temporal_dim]
+    array_duration = array_frames * frame_shift
+    assert (offset + array_duration - 1e-3) <= padded_duration, (
+        f"Invalid argument values for pad_array: array with shape {array.shape} has "
+        f"duration of {array_duration} (under frame_shift={frame_shift}); "
+        f"combined with offset={offset}, it exceeds padded_duration={padded_duration}."
+    )
+
+    total_frames = seconds_to_frames(padded_duration, frame_shift=frame_shift)
+    left_pad_frames = seconds_to_frames(offset, frame_shift=frame_shift)
+    right_pad_frames = total_frames - (array_frames + left_pad_frames)
+
+    assert right_pad_frames >= 0, "Something went wrong..."
+
+    pad_width = [
+        (left_pad_frames, right_pad_frames) if dim == temporal_dim else (0, 0)
+        for dim, size in enumerate(array.shape)
+    ]
+
+    return np.pad(
+        array, pad_width=pad_width, mode="constant", constant_values=pad_value
+    )

@@ -1,6 +1,7 @@
 from tempfile import NamedTemporaryFile
 
 import numpy as np
+import pytest
 
 from lhotse import LilcomHdf5Writer, MonoCut, NumpyHdf5Writer, Recording
 from lhotse.serialization import deserialize_item
@@ -36,6 +37,7 @@ def test_cut_custom_attr_serialization():
 
 
 def test_cut_custom_nonarray_attr_serialization():
+    """Check that arbitrary custom fields work with Cuts upon (de)serialization."""
     cut = MonoCut(id="x", start=10, duration=8, channel=0, custom={"SNR": 7.3})
 
     data = cut.to_dict()
@@ -47,6 +49,7 @@ def test_cut_custom_nonarray_attr_serialization():
 
 
 def test_cut_load_temporal_array():
+    """Check that we can read a TemporalArray from a cut when their durations match."""
     alignment = np.random.randint(500, size=131)
     with NamedTemporaryFile(suffix=".h5") as f, NumpyHdf5Writer(f.name) as writer:
         manifest = writer.store_array(
@@ -63,6 +66,7 @@ def test_cut_load_temporal_array():
 
 
 def test_cut_load_temporal_array_truncate():
+    """Check the array loaded via TemporalArray is truncated along with the cut."""
     with NamedTemporaryFile(suffix=".h5") as f, NumpyHdf5Writer(f.name) as writer:
         expected_duration = 52.4  # 131 frames x 0.4s frame shift == 52.4s
         cut = MonoCut(id="x", start=0, duration=expected_duration, channel=0)
@@ -78,10 +82,9 @@ def test_cut_load_temporal_array_truncate():
         np.testing.assert_equal(alignment[:13], alignment_piece)
 
 
-def test_cut_load_temporal_array_pad():
-
-    # TODO implement padding TemporalArrays
-
+@pytest.mark.parametrize("pad_value", [-1, 0])
+def test_cut_load_temporal_array_pad(pad_value):
+    """Check the array loaded via TemporalArray is padded along with the cut."""
     with NamedTemporaryFile(suffix=".h5") as f, NumpyHdf5Writer(f.name) as writer:
         cut = MonoCut(
             id="x",
@@ -101,10 +104,9 @@ def test_cut_load_temporal_array_pad():
         cut.alignment = writer.store_array(
             key="utt1", value=alignment, frame_shift=0.4, temporal_dim=0
         )
-        PAD_VALUE = -1
-        cut_pad = cut.pad(duration=60.0, pad_feat_value=PAD_VALUE)
+        cut_pad = cut.pad(duration=60.0, pad_value_dict={"alignment": pad_value})
 
         alignment_pad = cut_pad.load_alignment()
         assert alignment_pad.shape == (150,)  # 60.0 / 0.4 == 150
         np.testing.assert_equal(alignment_pad[:131], alignment)
-        np.testing.assert_equal(alignment_pad[131:], PAD_VALUE)
+        np.testing.assert_equal(alignment_pad[131:], pad_value)
