@@ -5,6 +5,7 @@ import pytest
 
 from lhotse import LilcomHdf5Writer, MonoCut, NumpyHdf5Writer, Recording
 from lhotse.serialization import deserialize_item
+from lhotse.testing.dummies import dummy_recording
 
 
 def test_cut_load_array():
@@ -17,6 +18,34 @@ def test_cut_load_array():
         #       and a "load_ivector()" method.
         #       We are dynamically extending it.
         cut.ivector = manifest
+        restored_ivector = cut.load_ivector()
+        np.testing.assert_equal(ivector, restored_ivector)
+
+
+def test_cut_load_array_truncate():
+    """Check that loading a custom Array works after truncation."""
+    ivector = np.arange(20).astype(np.float32)
+    with NamedTemporaryFile(suffix=".h5") as f, LilcomHdf5Writer(f.name) as writer:
+        cut = MonoCut(id="x", start=0, duration=5, channel=0)
+        cut.ivector = writer.store_array(key="utt1", value=ivector)
+
+        cut = cut.truncate(duration=3)
+
+        restored_ivector = cut.load_ivector()
+        np.testing.assert_equal(ivector, restored_ivector)
+
+
+def test_cut_load_array_pad():
+    """Check that loading a custom Array works after padding."""
+    ivector = np.arange(20).astype(np.float32)
+    with NamedTemporaryFile(suffix=".h5") as f, LilcomHdf5Writer(f.name) as writer:
+        cut = MonoCut(
+            id="x", start=0, duration=5, channel=0, recording=dummy_recording(1)
+        )
+        cut.ivector = writer.store_array(key="utt1", value=ivector)
+
+        cut = cut.pad(duration=7.6)
+
         restored_ivector = cut.load_ivector()
         np.testing.assert_equal(ivector, restored_ivector)
 
@@ -91,13 +120,7 @@ def test_cut_load_temporal_array_pad(pad_value):
             start=0,
             duration=52.4,  # 131 frames x 0.4s frame shift == 52.4s
             channel=0,
-            recording=Recording(
-                id="x",
-                sources=[],
-                sampling_rate=16000,
-                num_samples=1600000,
-                duration=100,
-            ),
+            recording=dummy_recording(1),
         )
 
         alignment = np.random.randint(500, size=131)
