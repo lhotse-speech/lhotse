@@ -109,17 +109,17 @@ def prepare_adept(
         interpretation_map = json.load(f)
 
     for path in (corpus_dir / "txt").rglob("*.txt"):
-        annotation_type, label, utt_id = str(
+        annotation_type, label, prompt_id = str(
             path.relative_to(path.parent.parent.parent)
         )[:-4].split("/")
-        speaker_id = "ADEPT_" + utt_id.split("_")[0]
-        recording_id = "_".join((annotation_type, label, utt_id))
+        speaker_id = "ADEPT_" + prompt_id.split("_")[0]
+        recording_id = "_".join((annotation_type, label, prompt_id))
         interpretation_group = interpretation_map.get(annotation_type)
         interpretation = (
-            interpretation_group[utt_id][label] if interpretation_group else None
+            interpretation_group[prompt_id][label] if interpretation_group else None
         )
         recording = recordings[recording_id]
-        custom = {annotation_type: label}
+        custom = {annotation_type: label, "prompt_id": prompt_id}
         if interpretation:
             # label is "interpretation_1", "interpretation_2", ..., "middle", "end", etc
             # Interpretations' labels meaning is defined by their textual realisation:
