@@ -1,6 +1,6 @@
 import bisect
 import random
-from typing import Optional, Sequence, Tuple, TypeVar, Union
+from typing import Optional, Sequence, Tuple, TypeVar, Union, Dict
 
 import numpy as np
 import torch
@@ -240,6 +240,26 @@ class SpecAugment(torch.nn.Module):
                     axis=1,
                 ).squeeze(0)
         return features
+
+    def state_dict(self) -> Dict:
+        return dict(
+            time_warp_factor=self.time_warp_factor,
+            num_feature_masks=self.num_feature_masks,
+            features_mask_size=self.features_mask_size,
+            num_frame_masks=self.num_frame_masks,
+            frames_mask_size=self.frames_mask_size,
+            max_frames_mask_fraction=self.max_frames_mask_fraction,
+            p=self.p,
+        )
+
+    def load_state_dict(self, state_dict: Dict):
+        self.time_warp_factor = state_dict.get("time_warp_factor", self.time_warp_factor)
+        self.num_feature_masks = state_dict.get("num_feature_masks", self.num_feature_masks)
+        self.features_mask_size = state_dict.get("features_mask_size", self.features_mask_size)
+        self.num_frame_masks = state_dict.get("num_frame_masks", self.num_frame_masks)
+        self.frames_mask_size = state_dict.get("frames_mask_size", self.frames_mask_size)
+        self.max_frames_mask_fraction = state_dict.get("max_frames_mask_fraction", self.max_frames_mask_fraction)
+        self.p = state_dict.get("p", self.p)
 
 
 def time_warp(features: torch.Tensor, factor: int) -> torch.Tensor:
