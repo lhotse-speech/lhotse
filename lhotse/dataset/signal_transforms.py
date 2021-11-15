@@ -253,12 +253,22 @@ class SpecAugment(torch.nn.Module):
         )
 
     def load_state_dict(self, state_dict: Dict):
-        self.time_warp_factor = state_dict.get("time_warp_factor", self.time_warp_factor)
-        self.num_feature_masks = state_dict.get("num_feature_masks", self.num_feature_masks)
-        self.features_mask_size = state_dict.get("features_mask_size", self.features_mask_size)
+        self.time_warp_factor = state_dict.get(
+            "time_warp_factor", self.time_warp_factor
+        )
+        self.num_feature_masks = state_dict.get(
+            "num_feature_masks", self.num_feature_masks
+        )
+        self.features_mask_size = state_dict.get(
+            "features_mask_size", self.features_mask_size
+        )
         self.num_frame_masks = state_dict.get("num_frame_masks", self.num_frame_masks)
-        self.frames_mask_size = state_dict.get("frames_mask_size", self.frames_mask_size)
-        self.max_frames_mask_fraction = state_dict.get("max_frames_mask_fraction", self.max_frames_mask_fraction)
+        self.frames_mask_size = state_dict.get(
+            "frames_mask_size", self.frames_mask_size
+        )
+        self.max_frames_mask_fraction = state_dict.get(
+            "max_frames_mask_fraction", self.max_frames_mask_fraction
+        )
         self.p = state_dict.get("p", self.p)
 
 
