@@ -748,3 +748,52 @@ class KaldiReader(FeaturesReader):
     ) -> np.ndarray:
         arr = self.storage[key]
         return arr[left_offset_frames:right_offset_frames]
+
+
+@register_writer
+class KaldiWriter(FeaturesWriter):
+    """
+    Write data to Kaldi's "feats.scp" and "feats.ark" files using kaldiio.
+    ``storage_path`` corresponds to a directory where we'll create "feats.scp"
+    and "feats.ark" files.
+    ``storage_key`` corresponds to the utterance-id in Kaldi.
+
+    .. caution::
+        Requires ``kaldiio`` to be installed (``pip install kaldiio``).
+    """
+
+    name = "kaldiio"
+
+    def __init__(
+        self, storage_path: Pathlike, compression_method=None, *args, **kwargs
+    ):
+        if not is_module_available("kaldiio"):
+            raise ValueError(
+                "To read Kaldi feats.scp, please 'pip install kaldiio' first."
+            )
+        import kaldiio
+
+        super().__init__()
+        Path(storage_path).mkdir(parents=True, exist_ok=True)
+        self.storage_path_ = str(storage_path)
+        self.storage = kaldiio.WriteHelper(
+            f"ark,scp:{storage_path}/feats.ark,{storage_path}/feats.scp",
+            compression_method=compression_method,
+        )
+
+    @property
+    def storage_path(self) -> str:
+        return self.storage_path_
+
+    def write(self, key: str, value: np.ndarray) -> str:
+        self.storage(key, value)
+        return key
+
+    def close(self) -> None:
+        return self.storage.close()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.close()
