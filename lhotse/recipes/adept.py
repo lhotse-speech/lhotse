@@ -20,6 +20,7 @@ More details can be found in pre-print about the dataset (https://arxiv.org/abs/
 
 Source: https://zenodo.org/record/5117102#.YVsHlS-B3T9
 """
+import json
 import logging
 import shutil
 import zipfile
@@ -79,7 +80,8 @@ def prepare_adept(
     When all the manifests are available in the ``output_dir``, it will simply read and return them.
 
     :param corpus_dir: Pathlike, the path of the data dir.
-    :param dataset_parts: string or sequence of strings representing dataset part names, e.g. 'train-clean-100', 'train-clean-5', 'dev-clean'.
+    :param dataset_parts: string or sequence of strings representing dataset part names,
+        e.g. 'train-clean-100', 'train-clean-5', 'dev-clean'.
         By default we will infer which parts are available in ``corpus_dir``.
     :param output_dir: Pathlike, the path where to write the manifests.
     :return: a Dict whose key is the dataset part, and the value is Dicts with the keys 'audio' and 'supervisions'.
@@ -103,13 +105,26 @@ def prepare_adept(
 
     supervisions = []
 
+    with open(corpus_dir / "adept_prompts.json") as f:
+        interpretation_map = json.load(f)
+
     for path in (corpus_dir / "txt").rglob("*.txt"):
         annotation_type, label, utt_id = str(
             path.relative_to(path.parent.parent.parent)
         )[:-4].split("/")
         speaker_id = "ADEPT_" + utt_id.split("_")[0]
         recording_id = "_".join((annotation_type, label, utt_id))
+        interpretation_group = interpretation_map.get(annotation_type)
+        interpretation = (
+            interpretation_group[utt_id][label] if interpretation_group else None
+        )
         recording = recordings[recording_id]
+        custom = {annotation_type: label}
+        if interpretation:
+            # label is "interpretation_1", "interpretation_2", ..., "middle", "end", etc
+            # Interpretations' labels meaning is defined by their textual realisation:
+            #  {..., "middle": "Galleries are WHAT on Thursdays?", "end": "Galleries are free WHEN?"}
+            custom[label] = interpretation
         supervisions.append(
             SupervisionSegment(
                 id=recording_id,
@@ -120,7 +135,7 @@ def prepare_adept(
                 text=path.read_text(),
                 language="English",
                 speaker=speaker_id,
-                custom={annotation_type: label},
+                custom=custom,
             )
         )
 
@@ -129,7 +144,7 @@ def prepare_adept(
 
     if output_dir is not None:
         output_dir = Path(output_dir)
-        supervisions.to_file(output_dir / f"adept_supervisions.json")
-        recordings.to_file(output_dir / f"adept_recordings.json")
+        supervisions.to_file(output_dir / "adept_supervisions.json")
+        recordings.to_file(output_dir / "adept_recordings.json")
 
     return {"recordings": recordings, "supervisions": supervisions}
