@@ -384,7 +384,7 @@ def _prepare_voxceleb_v2(
                 id=spkid, name="", gender=gender, nationality="", split=split
             )
     # Read the wav files and prepare manifests
-    with ThreadPoolExecutor(num_jobs) as ex:
+    with ProcessPoolExecutor(num_jobs) as ex:
         recordings = []
         supervisions = []
         futures = []
