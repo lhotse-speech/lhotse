@@ -1,3 +1,4 @@
+import logging
 import warnings
 from collections import defaultdict
 from concurrent.futures import ProcessPoolExecutor
@@ -7,6 +8,7 @@ from typing import Any, Dict, Optional, Tuple
 from lhotse import CutSet, FeatureSet, Features, Seconds
 from lhotse.audio import AudioSource, Recording, RecordingSet
 from lhotse.audio import audioread_info
+from lhotse.features.io import KaldiWriter
 from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import (
     Pathlike,
@@ -173,19 +175,30 @@ def export_to_kaldi(
     recordings: RecordingSet,
     supervisions: SupervisionSet,
     output_dir: Pathlike,
+    features: Optional[FeatureSet] = None,
     map_underscores_to: Optional[str] = None,
 ):
     """
-    Export a pair of ``RecordingSet`` and ``SupervisionSet`` to a Kaldi data
-    directory. It even supports recordings that have multiple channels but
-    the recordings will still have to have a single ``AudioSource``.
+    Export a pair of :class:`~lhotse.RecordingSet` and :class:`~lhotse.SupervisionSet`
+    to a Kaldi data directory. It even supports recordings that have multiple channels but
+    the recordings will still have to have a single :class:`lhotse.audio.AudioSource`.
 
-    The ``RecordingSet`` and ``SupervisionSet`` must be compatible, i.e. it must
-    be possible to create a ``CutSet`` out of them.
+    The :class:`~lhotse.RecordingSet` and :class:`~lhotse.SupervisionSet` must be compatible,
+    i.e. it must be possible to create a :class:`~lhotse.CutSet` out of them.
 
-    :param recordings: a ``RecordingSet`` manifest.
-    :param supervisions: a ``SupervisionSet`` manifest.
+    Optionally, you can provide a :class:`~lhotse.FeatureSet`, and we will create ``feats.scp``
+    and ``feats.ark`` files in the data directory.
+
+    .. note:: The feature matrices will be physically copied on disk to an ark file, so that
+        Kaldi can read them. It may take a while for large data.
+
+    .. note:: The feature manifests ``storage_key`` field must be equal to supervision IDs,
+        otherwise Kaldi won't be able to map the features to utterances.
+
+    :param recordings: a :class:`~lhotse.RecordingSet` manifest.
+    :param supervisions: a :class:`~lhotse.SupervisionSet` manifest.
     :param output_dir: path where the Kaldi-style data directory will be created.
+    :param features: an optional :class:`~lhotse.FeatureSet` manifest.
     :param map_underscores_to: optional string with which we will replace all
         underscores. This helps avoid issues with Kaldi data dir sorting.
     """
@@ -209,7 +222,7 @@ def export_to_kaldi(
     # Create a simple CutSet that ties together
     # the recording <-> supervision information.
     cuts = CutSet.from_manifests(
-        recordings=recordings, supervisions=supervisions
+        recordings=recordings, supervisions=supervisions, features=features
     ).trim_to_supervisions()
 
     if all(r.num_channels == 1 for r in recordings):
@@ -301,6 +314,21 @@ def export_to_kaldi(
             data={cut.supervisions[0].id: cut.supervisions[0].gender for cut in cuts},
             path=output_dir / "utt2gender",
         )
+    # feats.scp + feats.ark [optional]
+    if features is not None:
+        skipped = 0
+        with KaldiWriter(output_dir, compression_method=2) as writer:
+            for cut in cuts:
+                if not cut.has_features:
+                    skipped += 1
+                    continue
+                writer.write(cut.supervisions[0].id, cut.load_features())
+        if skipped:
+            logging.warning(
+                f"Skipped {skipped} out of {len(cuts)} segments which had no "
+                f"features (if that looks wrong, your FeatureSet might not match "
+                f"the RecordingSet and SupervisionSet)."
+            )
 
 
 def load_kaldi_text_mapping(

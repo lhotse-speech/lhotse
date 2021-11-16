@@ -18,7 +18,7 @@ from typing import (
     Optional,
     Sequence,
     Set,
-    Type,
+    Tuple, Type,
     TypeVar,
     Union,
 )
@@ -2524,6 +2524,25 @@ class CutSet(Serializable, Sequence[Cut]):
 
     def to_dicts(self) -> Iterable[dict]:
         return (cut.to_dict() for cut in self)
+
+    def decompose(self) -> Tuple[RecordingSet, SupervisionSet, FeatureSet]:
+        """
+        Return all recordings, supervisions, and feature manifests found within cuts in this
+        :class:`.CutSet`. It is only supported for simple cut sets consisting of :class:`.MonoCut`
+        objects.
+        """
+        assert all(isinstance(cut, MonoCut) for cut in self), (
+            "We only support decomposition for MonoCuts (padding / mixing makes it fail)."
+        )
+
+        def iter_uniq_ids():
+            # TODO
+            pass
+
+        recordings = RecordingSet.from_recordings(cut.recording for cut in self if cut.has_recording)
+        supervisions = SupervisionSet.from_segments(set(sup for cut in self for sup in cut.supervisions))
+        features = FeatureSet.from_features(set(cut.features for cut in self if cut.has_features))
+        return recordings, supervisions, features
 
     def describe(self) -> None:
         """
