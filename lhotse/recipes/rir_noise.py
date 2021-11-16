@@ -50,21 +50,19 @@ from collections import defaultdict
 import logging
 import zipfile
 from pathlib import Path
-from typing import Dict, Optional, Sequence
+from typing import Dict, Optional, Sequence, Union
 
-from lhotse import (
-    Recording,
-    RecordingSet,
-)
+from lhotse import Recording, RecordingSet, CutSet
 from lhotse.audio import AudioSource
 from lhotse.utils import Pathlike, urlretrieve_progress
 
 RIR_NOISE_ZIP_URL = "https://www.openslr.org/resources/28/rirs_noises.zip"
 
 PARTS = {
-    "point": "pointsource_noises",
-    "real": "real_rirs_isotropic_noises",
-    "sim": "simulated_rirs",
+    "point_noise": "pointsource_noises",
+    "iso_noise": "real_rirs_isotropic_noises",
+    "real_rir": "real_rirs_isotropic_noises",
+    "sim_rir": "simulated_rirs",
 }
 
 
@@ -100,16 +98,18 @@ def download_rir_noise(
 def prepare_rir_noise(
     corpus_dir: Pathlike,
     output_dir: Optional[Pathlike] = None,
-    parts: Sequence[str] = ("point", "real", "sim"),
-) -> Dict[str, Dict[str, RecordingSet]]:
+    parts: Sequence[str] = ("point_noise", "iso_noise", "real_rir", "sim_rir"),
+) -> Dict[str, Dict[str, Union[RecordingSet, CutSet]]]:
     """
     Prepare the RIR Noise corpus.
 
     :param corpus_dir: Pathlike, the path of the dir to store the dataset.
     :param output_dir: Pathlike, the path of the dir to write the manifests.
-    :param parts: Sequence[str], the parts of the dataset to prepare. See the README in the RIR Noise corpus for details.
+    :param parts: Sequence[str], the parts of the dataset to prepare.
 
-    We only prepare the "recordings" key for each part.
+    The corpus contains 4 things: point-source noises (point_noise), isotropic noises (iso_noise),
+    real RIRs (real_rir), and simulated RIRs (sim_rir). We will prepare these parts
+    in the corresponding dict keys.
     """
     corpus_dir = Path(corpus_dir)
     assert corpus_dir.is_dir(), f"No such directory: {corpus_dir}"
@@ -123,7 +123,7 @@ def prepare_rir_noise(
         logging.info(f"Preparing {part}...")
         audio_dir = corpus_dir / PARTS[part]
         assert audio_dir.is_dir(), f"No such directory: {audio_dir}"
-        if part == "sim":
+        if part == "sim_rir":
             # The "small", "medium", and "large" rooms have the same file names, so
             # we have to handle them separately to avoid duplicating manifests.
             recordings = []
@@ -134,9 +134,21 @@ def prepare_rir_noise(
                     for file in room_dir.rglob("*.wav")
                 ]
             manifests[part]["recordings"] = RecordingSet.from_recordings(recordings)
-        else:
+        elif part == "point_noise":
             manifests[part]["recordings"] = RecordingSet.from_recordings(
                 Recording.from_file(file) for file in audio_dir.rglob("*.wav")
+            )
+        elif part == "iso_noise":
+            manifests[part]["recordings"] = RecordingSet.from_recordings(
+                Recording.from_file(file)
+                for file in audio_dir.rglob("*.wav")
+                if "noise" in file.stem
+            )
+        elif part == "real_rir":
+            manifests[part]["recordings"] = RecordingSet.from_recordings(
+                Recording.from_file(file)
+                for file in audio_dir.rglob("*.wav")
+                if "rir" in file.stem
             )
 
     if output_dir is not None:
@@ -144,6 +156,6 @@ def prepare_rir_noise(
         output_dir.mkdir(parents=True, exist_ok=True)
         for part in manifests:
             for key, manifest in manifests[part].items():
-                manifest.to_file(output_dir / f"{key}_rir_noise_{part}.json")
+                manifest.to_file(output_dir / f"{key}_{part}.json")
 
     return manifests

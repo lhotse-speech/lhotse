@@ -17,7 +17,7 @@ __all__ = ["rir_noise"]
     "-p",
     type=str,
     multiple=True,
-    default=["point", "real", "sim"],
+    default=["point_noise", "iso_noise", "real_rir", "sim_rir"],
     show_default=True,
     help="Parts to prepare.",
 )
