@@ -748,3 +748,78 @@ class KaldiReader(FeaturesReader):
     ) -> np.ndarray:
         arr = self.storage[key]
         return arr[left_offset_frames:right_offset_frames]
+
+
+@register_writer
+class KaldiWriter(FeaturesWriter):
+    """
+    Write data to Kaldi's "feats.scp" and "feats.ark" files using kaldiio.
+    ``storage_path`` corresponds to a directory where we'll create "feats.scp"
+    and "feats.ark" files.
+    ``storage_key`` corresponds to the utterance-id in Kaldi.
+
+    The following ``compression_method`` values are supported by kaldiio::
+
+        kAutomaticMethod = 1
+        kSpeechFeature = 2
+        kTwoByteAuto = 3
+        kTwoByteSignedInteger = 4
+        kOneByteAuto = 5
+        kOneByteUnsignedInteger = 6
+        kOneByteZeroOne = 7
+
+    .. note:: Setting compression_method works only with 2D arrays.
+
+    Example::
+
+        >>> data = np.random.randn(131, 80)
+        >>> with KaldiWriter('featdir') as w:
+        ...     w.write('utt1', data)
+        >>> reader = KaldiReader('featdir/feats.scp')
+        >>> read_data = reader.read('utt1')
+        >>> np.testing.assert_equal(data, read_data)
+
+    .. caution::
+        Requires ``kaldiio`` to be installed (``pip install kaldiio``).
+    """
+
+    name = "kaldiio"
+
+    def __init__(
+        self,
+        storage_path: Pathlike,
+        compression_method: Optional[int] = None,
+        *args,
+        **kwargs,
+    ):
+        if not is_module_available("kaldiio"):
+            raise ValueError(
+                "To read Kaldi feats.scp, please 'pip install kaldiio' first."
+            )
+        import kaldiio
+
+        super().__init__()
+        self.storage_dir = Path(storage_path)
+        self.storage_dir.mkdir(parents=True, exist_ok=True)
+        self.storage_path_ = str(self.storage_dir / "feats.scp")
+        self.storage = kaldiio.WriteHelper(
+            f"ark,scp:{self.storage_dir}/feats.ark,{self.storage_dir}/feats.scp",
+            compression_method=compression_method,
+        )
+
+    @property
+    def storage_path(self) -> str:
+        return self.storage_path_
+
+    def write(self, key: str, value: np.ndarray) -> str:
+        self.storage(key, value)
+        return key
+
+    def close(self) -> None:
+        return self.storage.close()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.close()
