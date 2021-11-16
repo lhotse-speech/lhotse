@@ -119,12 +119,12 @@ def prepare_adept(
             interpretation_group[prompt_id][label] if interpretation_group else None
         )
         recording = recordings[recording_id]
-        custom = {annotation_type: label, "prompt_id": prompt_id}
+        custom = {"type": annotation_type, "label": label, "prompt_id": prompt_id}
         if interpretation:
             # label is "interpretation_1", "interpretation_2", ..., "middle", "end", etc
             # Interpretations' labels meaning is defined by their textual realisation:
             #  {..., "middle": "Galleries are WHAT on Thursdays?", "end": "Galleries are free WHEN?"}
-            custom[label] = interpretation
+            custom["text"] = interpretation
         supervisions.append(
             SupervisionSegment(
                 id=recording_id,
