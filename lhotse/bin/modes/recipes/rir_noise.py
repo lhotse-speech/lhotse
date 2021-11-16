@@ -18,6 +18,7 @@ __all__ = ["rir_noise"]
     type=str,
     multiple=True,
     default=["point", "real", "sim"],
+    show_default=True,
     help="Parts to prepare.",
 )
 def rir_noise(
