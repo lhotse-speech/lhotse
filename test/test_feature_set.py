@@ -121,15 +121,15 @@ def test_compute_global_stats():
 
 
 @pytest.mark.parametrize(
-    "storage",
+    "storage_fn",
     [
-        LilcomFilesWriter(TemporaryDirectory().name),
-        LilcomHdf5Writer(NamedTemporaryFile().name),
-        ChunkedLilcomHdf5Writer(NamedTemporaryFile().name),
-        NumpyFilesWriter(TemporaryDirectory().name),
-        NumpyHdf5Writer(NamedTemporaryFile().name),
+        lambda: LilcomFilesWriter(TemporaryDirectory().name),
+        lambda: LilcomHdf5Writer(NamedTemporaryFile().name),
+        lambda: ChunkedLilcomHdf5Writer(NamedTemporaryFile().name),
+        lambda: NumpyFilesWriter(TemporaryDirectory().name),
+        lambda: NumpyHdf5Writer(NamedTemporaryFile().name),
         pytest.param(
-            KaldiWriter(TemporaryDirectory().name),
+            lambda: KaldiWriter(TemporaryDirectory().name),
             marks=pytest.mark.skipif(
                 not is_module_available("kaldiio"),
                 reason="kaldiio must be installed for scp+ark feature writing",
@@ -137,10 +137,10 @@ def test_compute_global_stats():
         ),
     ],
 )
-def test_feature_set_builder(storage):
+def test_feature_set_builder(storage_fn):
     recordings: RecordingSet = RecordingSet.from_json("test/fixtures/audio.json")
     extractor = Fbank()
-    with storage:
+    with storage_fn() as storage:
         builder = FeatureSetBuilder(
             feature_extractor=extractor,
             storage=storage,
