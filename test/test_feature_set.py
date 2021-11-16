@@ -19,7 +19,8 @@ from lhotse.features import (
 )
 from lhotse.features.io import (
     ChunkedLilcomHdf5Writer,
-    KaldiWriter, LilcomFilesWriter,
+    KaldiWriter,
+    LilcomFilesWriter,
     LilcomHdf5Writer,
     NumpyFilesWriter,
     NumpyHdf5Writer,
@@ -130,10 +131,10 @@ def test_compute_global_stats():
         pytest.param(
             KaldiWriter(TemporaryDirectory().name),
             marks=pytest.mark.skipif(
-                not is_module_available('kaldiio'),
-                reason='kaldiio must be installed for scp+ark feature writing'
-            )
-        )
+                not is_module_available("kaldiio"),
+                reason="kaldiio must be installed for scp+ark feature writing",
+            ),
+        ),
     ],
 )
 def test_feature_set_builder(storage):
