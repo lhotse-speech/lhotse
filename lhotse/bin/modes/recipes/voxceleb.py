@@ -1,10 +1,26 @@
 import click
 
-from lhotse.bin.modes import prepare
-from lhotse.recipes import prepare_voxceleb
+from lhotse.bin.modes import download, prepare
+from lhotse.recipes import download_voxceleb1, download_voxceleb2, prepare_voxceleb
 from lhotse.utils import Pathlike
 
 from typing import Optional
+
+
+@download.command()
+@click.argument("target_dir", type=click.Path())
+@click.option("--force-download", is_flag=True, default=False, help="Force download")
+def voxceleb1(target_dir: Pathlike, force_download: Optional[bool] = False):
+    """VoxCeleb1 download."""
+    download_voxceleb1(target_dir, force_download=force_download)
+
+
+@download.command()
+@click.argument("target_dir", type=click.Path())
+@click.option("--force-download", is_flag=True, default=False, help="Force download")
+def voxceleb2(target_dir: Pathlike, force_download: Optional[bool] = False):
+    """VoxCeleb2 download."""
+    download_voxceleb2(target_dir, force_download=force_download)
 
 
 @prepare.command(context_settings=dict(show_default=True))
@@ -26,8 +42,8 @@ from typing import Optional
 @click.option("--num-jobs", "-j", type=int, default=1, help="Number of parallel jobs.")
 def voxceleb(
     output_dir: Pathlike,
-    voxceleb1_root: Optional[Pathlike],
-    voxceleb2_root: Optional[Pathlike],
+    voxceleb1: Optional[Pathlike],
+    voxceleb2: Optional[Pathlike],
     num_jobs: int = 1,
 ):
     """
@@ -39,8 +55,8 @@ def voxceleb(
     7000+ speakers and 1 million utterances.
     """
     prepare_voxceleb(
-        voxceleb1_root=voxceleb1_root,
-        voxceleb2_root=voxceleb2_root,
+        voxceleb1_root=voxceleb1,
+        voxceleb2_root=voxceleb2,
         output_dir=output_dir,
         num_jobs=num_jobs,
     )

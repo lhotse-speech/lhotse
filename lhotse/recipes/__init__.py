@@ -35,5 +35,5 @@ from .switchboard import prepare_switchboard
 from .tedlium import download_tedlium, prepare_tedlium
 from .timit import download_timit, prepare_timit
 from .vctk import download_vctk, prepare_vctk
-from .voxceleb import prepare_voxceleb
+from .voxceleb import download_voxceleb1, download_voxceleb2, prepare_voxceleb
 from .yesno import download_yesno, prepare_yesno

@@ -29,11 +29,14 @@ the original owners of the video.
 This Lhotse recipe prepares the VoxCeleb1 and VoxCeleb2 datasets.
 """
 import logging
+import zipfile
+import shutil
 from pathlib import Path
 from typing import Dict, Optional, Tuple, Union
 from collections import defaultdict, namedtuple
 
-from concurrent.futures.thread import ThreadPoolExecutor
+from concurrent.futures.process import ProcessPoolExecutor
+from concurrent.futures import as_completed
 from tqdm.auto import tqdm
 
 from lhotse import (
@@ -48,11 +51,107 @@ from lhotse.utils import Pathlike, urlretrieve_progress
 from lhotse.qa import validate_recordings_and_supervisions
 from lhotse.manipulation import combine
 
+VOXCELEB1_PARTS_URL = [
+    "https://thor.robots.ox.ac.uk/~vgg/data/voxceleb/vox1a/vox1_dev_wav_partaa",
+    "https://thor.robots.ox.ac.uk/~vgg/data/voxceleb/vox1a/vox1_dev_wav_partab",
+    "https://thor.robots.ox.ac.uk/~vgg/data/voxceleb/vox1a/vox1_dev_wav_partac",
+    "https://thor.robots.ox.ac.uk/~vgg/data/voxceleb/vox1a/vox1_dev_wav_partad",
+    "https://thor.robots.ox.ac.uk/~vgg/data/voxceleb/vox1a/vox1_test_wav.zip",
+]
+
+VOXCELEB2_PARTS_URL = [
+    "https://thor.robots.ox.ac.uk/~vgg/data/voxceleb/vox1a/vox2_dev_aac_partaa",
+    "https://thor.robots.ox.ac.uk/~vgg/data/voxceleb/vox1a/vox2_dev_aac_partab",
+    "https://thor.robots.ox.ac.uk/~vgg/data/voxceleb/vox1a/vox2_dev_aac_partac",
+    "https://thor.robots.ox.ac.uk/~vgg/data/voxceleb/vox1a/vox2_dev_aac_partad",
+    "https://thor.robots.ox.ac.uk/~vgg/data/voxceleb/vox1a/vox2_dev_aac_partae",
+    "https://thor.robots.ox.ac.uk/~vgg/data/voxceleb/vox1a/vox2_dev_aac_partaf",
+    "https://thor.robots.ox.ac.uk/~vgg/data/voxceleb/vox1a/vox2_dev_aac_partag",
+    "https://thor.robots.ox.ac.uk/~vgg/data/voxceleb/vox1a/vox2_dev_aac_partah",
+    "https://thor.robots.ox.ac.uk/~vgg/data/voxceleb/vox1a/vox2_test_aac.zip",
+]
+
 VOXCELEB1_TRIALS_URL = "http://www.openslr.org/resources/49/voxceleb1_test_v2.txt"
 
 SpeakerMetadata = namedtuple(
     "SpeakerMetadata", ["id", "name", "gender", "nationality", "split"]
 )
+
+
+def download_voxceleb1(
+    target_dir: Pathlike = ".",
+    force_download: Optional[bool] = False,
+) -> None:
+    """
+    Download and unzip the VoxCeleb1 data.
+
+    :param target_dir: Pathlike, the path of the dir to store the dataset.
+    :param force_download: bool, if True, download the archive even if it already exists.
+
+    NOTE: A "connection refused" error may occur if you are downloading without a password.
+    """
+    target_dir = Path(target_dir)
+    target_dir.mkdir(parents=True, exist_ok=True)
+
+    zip_name = "vox1_dev_wav.zip"
+    zip_path = target_dir / zip_name
+    if zip_path.exists() and not force_download:
+        logging.info(f"Skipping {zip_name} because file exists.")
+    else:
+        # Download the data in parts
+        for url in VOXCELEB1_PARTS_URL:
+            urlretrieve_progress(
+                url, desc=f"Downloading VoxCeleb1 {url.split('/')[-1]}"
+            )
+        # Combine the parts for dev set
+        with open(zip_name, "wb") as outFile:
+            for file in target_dir.glob("vox1_dev_wav_part*"):
+                with open(file, "rb") as inFile:
+                    shutil.copyfileobj(inFile, outFile)
+    logging.info(f"Unzipping dev...")
+    with zipfile.ZipFile(zip_path) as zf:
+        zf.extractall(target_dir)
+    logging.info(f"Unzipping test...")
+    with zipfile.ZipFile(target_dir / "vox1_test_wav.zip") as zf:
+        zf.extractall(target_dir)
+
+
+def download_voxceleb2(
+    target_dir: Pathlike = ".",
+    force_download: Optional[bool] = False,
+) -> None:
+    """
+    Download and unzip the VoxCeleb2 data.
+
+    :param target_dir: Pathlike, the path of the dir to store the dataset.
+    :param force_download: bool, if True, download the archive even if it already exists.
+
+    NOTE: A "connection refused" error may occur if you are downloading without a password.
+    """
+    target_dir = Path(target_dir)
+    target_dir.mkdir(parents=True, exist_ok=True)
+
+    zip_name = "vox2_aac.zip"
+    zip_path = target_dir / zip_name
+    if zip_path.exists() and not force_download:
+        logging.info(f"Skipping {zip_name} because file exists.")
+    else:
+        # Download the data in parts
+        for url in VOXCELEB2_PARTS_URL:
+            urlretrieve_progress(
+                url, desc=f"Downloading VoxCeleb2 {url.split('/')[-1]}"
+            )
+        # Combine the parts for dev set
+        with open(zip_name, "wb") as outFile:
+            for file in target_dir.glob("vox2_dev_aac_part*"):
+                with open(file, "rb") as inFile:
+                    shutil.copyfileobj(inFile, outFile)
+    logging.info(f"Unzipping dev...")
+    with zipfile.ZipFile(zip_path) as zf:
+        zf.extractall(target_dir)
+    logging.info(f"Unzipping test...")
+    with zipfile.ZipFile(target_dir / "vox2_test_aac.zip") as zf:
+        zf.extractall(target_dir)
 
 
 def prepare_voxceleb(
@@ -80,18 +179,21 @@ def prepare_voxceleb(
     VoxCeleb1 is not provided, no "test" split is created in the output manifests.
 
     Example usage:
-    >>> from lhotse.recipes.voxceleb import prepare_voxceleb
-    >>> manifests = prepare_voxceleb(voxceleb_v1_root='/path/to/voxceleb1',
-    ...                               voxceleb_v2_root='/path/to/voxceleb2',
-    ...                               output_dir='/path/to/output',
-    ...                               num_jobs=4)
+
+    .. code-block:: python
+
+        >>> from lhotse.recipes.voxceleb import prepare_voxceleb
+        >>> manifests = prepare_voxceleb(voxceleb_v1_root='/path/to/voxceleb1',
+        ...                               voxceleb_v2_root='/path/to/voxceleb2',
+        ...                               output_dir='/path/to/output',
+        ...                               num_jobs=4)
 
     NOTE: If VoxCeleb1 is provided, we also prepare the trials file using the list provided
     in http://www.openslr.org/resources/49/voxceleb1_test_v2.txt. This file is used in the
     Kaldi recipes for VoxCeleb speaker verification. This is prepared as 2 tuples of the form
     (CutSet, CutSet) with identical id's, one for each of positive pairs and negative pairs.
     These are stored in the dict under keys 'pos_trials' and 'neg_trials', respectively.
-    For evaluation purpose, the :func:`<lhotse.dataset.sampling.CutPairsSampler>`
+    For evaluation purpose, the :class:`lhotse.dataset.sampling.CutPairsSampler`
     can be used to sample from this tuple.
     """
     voxceleb1_root = Path(voxceleb1_root) if voxceleb1_root else None
@@ -127,17 +229,17 @@ def prepare_voxceleb(
         supervisions = manifests[split]["supervisions"]
         validate_recordings_and_supervisions(recordings, supervisions)
         if output_dir is not None:
-            recordings.to_json(output_dir / f"voxceleb_recordings_{split}.jsonl.gz")
-            supervisions.to_json(output_dir / f"voxceleb_supervisions_{split}.jsonl.gz")
+            recordings.to_file(output_dir / f"voxceleb_recordings_{split}.jsonl.gz")
+            supervisions.to_file(output_dir / f"voxceleb_supervisions_{split}.jsonl.gz")
 
     # Write the trials cut sets to the output directory
     if output_dir is not None:
         if "pos_trials" in manifests:
             for i, cuts in enumerate(manifests["pos_trials"]):
-                cuts.to_json(output_dir / f"voxceleb_pos_trials_utt{i+1}.jsonl.gz")
+                cuts.to_file(output_dir / f"voxceleb_pos_trials_utt{i+1}.jsonl.gz")
         if "neg_trials" in manifests:
             for i, cuts in enumerate(manifests["neg_trials"]):
-                cuts.to_json(output_dir / f"voxceleb_neg_trials_utt{i+1}.jsonl.gz")
+                cuts.to_file(output_dir / f"voxceleb_neg_trials_utt{i+1}.jsonl.gz")
 
     return manifests
 
@@ -158,14 +260,17 @@ def _prepare_voxceleb_v1(
             speaker_metadata[spkid] = SpeakerMetadata(
                 id=spkid, name=name, gender=gender, nationality=nationality, split=split
             )
-    with ThreadPoolExecutor(num_jobs) as ex:
+    with ProcessPoolExecutor(num_jobs) as ex:
         recordings = []
         supervisions = []
         futures = []
         for p in (corpus_path / "wav").rglob("*.wav"):
             futures.append(ex.submit(_process_file, p, speaker_metadata))
         for future in tqdm(
-            futures, total=len(futures), desc="Processing VoxCeleb1", leave=False
+            as_completed(futures),
+            total=len(futures),
+            desc="Processing VoxCeleb1",
+            leave=False,
         ):
             recording, supervision = future.result()
             recordings.append(recording)
