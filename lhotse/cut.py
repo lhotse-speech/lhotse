@@ -19,6 +19,7 @@ from typing import (
     Optional,
     Sequence,
     Set,
+    Tuple,
     Type,
     TypeVar,
     Union,
@@ -766,6 +767,11 @@ class MonoCut(Cut):
     custom: Optional[Dict[str, Any]] = None
 
     def __setattr__(self, key: str, value: Any):
+        """
+        This magic function is called when the user tries to set an attribute.
+        We use it as syntactic sugar to store custom attributes in ``self.custom``
+        field, so that they can be (de)serialized later.
+        """
         if key in self.__dataclass_fields__:
             super().__setattr__(key, value)
         else:
@@ -773,38 +779,67 @@ class MonoCut(Cut):
             custom[key] = value
             self.custom = custom
 
-    def __getattr__(self, item: str) -> Any:
+    def __getattr__(self, name: str) -> Any:
         """
-        __getattr__ only gets called for attributes that don't already exist.
+        This magic function is called when the user tries to access an attribute
+        of :class:`.MonoCut` that doesn't exist. It is used for accessing the custom
+        attributes of cuts.
+
         We use it to look up the ``custom`` field: when it's None or empty,
         we'll just raise AttributeError as usual.
         If ``item`` is found in ``custom``, we'll return ``custom[item]``.
         If ``item`` starts with "load_", we'll assume the name of the relevant
         attribute comes after that, and that value of that field is of type
-        Array or TemporalArray. We'll return its ``load`` method to call by the user.
+        :class:`~lhotse.array.Array` or :class:`~lhotse.array.TemporalArray`.
+        We'll return its ``load`` method to call by the user.
+
+        Example of attaching and reading an alignment as TemporalArray::
+
+            >>> cut = MonoCut('cut1', start=0, duration=4, channel=0)
+            >>> cut.alignment = TemporalArray(...)
+            >>> ali = cut.load_alignment()
+
+        """
+        custom = self.custom
+        if custom is None:
+            raise AttributeError(f"No such attribute: {name}")
+        if name in custom:
+            # Somebody accesses raw [Temporal]Array manifest
+            # or wrote a custom piece of metadata into MonoCut.
+            return self.custom[name]
+        elif name.startswith("load_"):
+            # Return the method for loading [Temporal]Arrays,
+            # to be invoked by the user.
+            attr_name = name[5:]
+            return partial(self.load_custom, attr_name)
+        raise AttributeError(f"No such attribute: {name}")
+
+    def load_custom(self, name: str) -> np.ndarray:
+        """
+        Load custom data as numpy array. The custom data is expected to have
+        been stored in cuts ``custom`` field as an :class:`~lhotse.array.Array` or
+        :class:`~lhotse.array.TemporalArray` manifest.
+
+        .. note:: It works with Array manifests stored via attribute assignments,
+            e.g.: ``cut.my_custom_data = Array(...)``.
+
+        :param name: name of the custom attribute.
+        :return: a numpy array with the data.
         """
         from lhotse.array import Array, TemporalArray
 
-        custom = self.custom
-        if custom is None:
-            raise AttributeError(f"No such attribute: {item}")
-        if item in custom:
-            # Somebody accesses raw [Temporal]Array manifest
-            # or wrote a custom piece of metadata into MonoCut.
-            return self.custom[item]
-        if item.startswith("load_"):
-            value = self.custom[item[5:]]  # strip off 'load_' from beginning
-            if isinstance(value, Array):
-                # We return the method to read Array (it is called in the user's code).
-                return value.load
-            elif isinstance(value, TemporalArray):
-                # TemporalArray supports slicing (note we return the method, without evaluating it).
-                return partial(value.load, start=self.start, duration=self.duration)
-            else:
-                raise ValueError(
-                    f"To call {item}, cut needs to have field {item[5:]} defined."
-                )
-        raise AttributeError(f"No such attribute: {item}")
+        value = self.custom.get(name)
+        if isinstance(value, Array):
+            # We return the method to read Array (it is called in the user's code).
+            return value.load()
+        elif isinstance(value, TemporalArray):
+            # TemporalArray supports slicing (note we return the method, without evaluating it).
+            return value.load(start=self.start, duration=self.duration)
+        else:
+            raise ValueError(
+                f"To load {name}, the cut needs to have field {name} (or cut.custom['{name}']) "
+                f"defined, and its value has to be a manifest of type Array or TemporalArray."
+            )
 
     @property
     def recording_id(self) -> str:
@@ -1725,7 +1760,7 @@ class MixedCut(Cut):
     def features_type(self) -> Optional[str]:
         return self._first_non_padding_cut.features.type if self.has_features else None
 
-    def __getattr__(self, item: str) -> Any:
+    def __getattr__(self, name: str) -> Any:
         """
         This magic function is called when the user tries to access an attribute
         of :class:`.MixedCut` that doesn't exist. It is used for accessing the custom
@@ -1748,11 +1783,86 @@ class MixedCut(Cut):
             >>> ali = mixed_cut.load_alignment()
 
         """
-        if item.startswith("__"):
-            # Python will sometimes try to call undefined magic functions,
-            # just fail for them (e.g. __setstate__ when pickling).
+        # Python will sometimes try to call undefined magic functions,
+        # just fail for them (e.g. __setstate__ when pickling).
+        if name.startswith("__"):
             raise AttributeError()
 
+        # Loading a custom array attribute + performing padding.
+        if name.startswith("load_"):
+            attr_name = name[5:]
+            return partial(self.load_custom, attr_name)
+
+        # Returning the contents of "mono_cut.custom[name]",
+        # or raising AttributeError.
+        try:
+            (
+                non_padding_idx,
+                mono_cut,
+            ) = self._assert_mono_cut_with_padding_and_return_it_with_track_index()
+            return getattr(mono_cut, name)
+        except AssertionError:
+            raise AttributeError(
+                f"No such attribute: '{name}' (note: custom attributes are not supported "
+                f"when the mixed cut has a different number of MonoCut tracks than one)."
+            )
+
+    def load_custom(self, name: str) -> np.ndarray:
+        """
+        Load custom data as numpy array. The custom data is expected to have
+        been stored in cuts ``custom`` field as an :class:`~lhotse.array.Array` or
+        :class:`~lhotse.array.TemporalArray` manifest.
+
+        .. note:: It works with Array manifests stored via attribute assignments,
+            e.g.: ``cut.my_custom_data = Array(...)``.
+
+        .. warning:: For :class:`.MixedCut`, this will only work if the mixed cut
+            consists of a single :class:`.MonoCut` and an arbitrary number of
+            :class:`.PaddingCuts`. This is because it is generally undefined how to
+            mix arbitrary arrays.
+
+        :param name: name of the custom attribute.
+        :return: a numpy array with the data (after padding).
+        """
+
+        from lhotse.array import Array, pad_array
+
+        (
+            non_padding_idx,
+            mono_cut,
+        ) = self._assert_mono_cut_with_padding_and_return_it_with_track_index()
+
+        # Load the array and retrieve the manifest from the only non-padding cut.
+        # Use getattr to propagate AttributeError if "name" is not defined.
+        array = mono_cut.load_custom(name)
+        manifest = getattr(mono_cut, name)
+
+        # Check if the corresponding manifest for 'load_something' is of type
+        # Array; if yes, just return the loaded data.
+        # This is likely an embedding without a temporal dimension.
+        if isinstance(manifest, Array):
+            return array
+
+        # We are loading an array with a temporal dimension:
+        # We need to pad it.
+        left_padding = self.tracks[non_padding_idx].offset
+        padded_duration = self.duration
+        pad_value = [t.cut for t in self.tracks if isinstance(t.cut, PaddingCut)][
+            0
+        ].custom[name]
+
+        return pad_array(
+            array,
+            temporal_dim=manifest.temporal_dim,
+            frame_shift=manifest.frame_shift,
+            offset=left_padding,
+            padded_duration=padded_duration,
+            pad_value=pad_value,
+        )
+
+    def _assert_mono_cut_with_padding_and_return_it_with_track_index(
+        self,
+    ) -> Tuple[int, MonoCut]:
         # TODO(pzelasko): consider relaxing this condition to
         #                 supporting mixed cuts that are not overlapping
         non_padding_cuts = [
@@ -1760,55 +1870,11 @@ class MixedCut(Cut):
             for idx, t in enumerate(self.tracks)
             if isinstance(t.cut, MonoCut)
         ]
-        if len(non_padding_cuts) != 1:
-            raise AttributeError(
-                f"No such attribute: '{item}' (note: custom attributes are not supported "
-                f"because the mixed cut has {len(non_padding_cuts)} mono cuts; we expected "
-                f"exactly one)."
-            )
-
-        # Retrieve the attribute from the only non-padding cut.
+        assert (
+            len(non_padding_cuts) == 1
+        ), f"The cut has {len(non_padding_cuts)} (expected exactly one)"
         non_padding_idx, mono_cut = non_padding_cuts[0]
-        attr = getattr(mono_cut, item)
-
-        # Directly return everything that is not 'load_something' type of attribute.
-        is_special_load_method = callable(attr) and item.startswith("load_")
-        if not is_special_load_method:
-            return attr
-
-        from lhotse.array import TemporalArray
-
-        # Check if the corresponding manifest for 'load_something' is of type
-        # TemporalArray; if it's not, just return the load callable.
-        # This is likely an embedding without a temporal dimension.
-        attr_name = item[5:]
-        manifest = mono_cut.custom[attr_name]
-        if not isinstance(manifest, TemporalArray):
-            return attr
-
-        # This is definitely trying to load an array with a temporal dimension:
-        # wrap the loading method in a closure that will perform the right padding
-        # inside.
-        left_padding = self.tracks[non_padding_idx].offset
-        padded_duration = self.duration
-        pad_value = [t.cut for t in self.tracks if isinstance(t.cut, PaddingCut)][
-            0
-        ].custom[attr_name]
-
-        def load_something_padded():
-            from lhotse.array import pad_array
-
-            array = attr()
-            return pad_array(
-                array,
-                temporal_dim=manifest.temporal_dim,
-                frame_shift=manifest.frame_shift,
-                offset=left_padding,
-                padded_duration=padded_duration,
-                pad_value=pad_value,
-            )
-
-        return load_something_padded
+        return non_padding_idx, mono_cut
 
     def truncate(
         self,

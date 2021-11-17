@@ -4,8 +4,15 @@ import numpy as np
 import pytest
 
 from lhotse import LilcomHdf5Writer, MonoCut, NumpyHdf5Writer, Recording
+from lhotse.cut import MixTrack, MixedCut
 from lhotse.serialization import deserialize_item
-from lhotse.testing.dummies import dummy_recording
+from lhotse.testing.dummies import dummy_cut, dummy_recording
+
+
+@pytest.mark.parametrize("cut", [dummy_cut(1), dummy_cut(2).pad(300)])
+def test_cut_nonexistent_attribute(cut):
+    with pytest.raises(AttributeError):
+        cut.nonexistent_attribute
 
 
 def test_cut_load_array():
