@@ -253,16 +253,27 @@ def pad_array(
     :return: a padded array.
     """
     array_frames = array.shape[temporal_dim]
-    array_duration = array_frames * frame_shift
-    assert (offset + array_duration - 1e-3) <= padded_duration, (
-        f"Invalid argument values for pad_array: array with shape {array.shape} has "
-        f"duration of {array_duration} (under frame_shift={frame_shift}); "
-        f"combined with offset={offset}, it exceeds padded_duration={padded_duration}."
+    total_frames = seconds_to_frames(padded_duration, frame_shift=frame_shift)
+    total_padding_frames = total_frames - array_frames
+    assert total_padding_frames >= 0, (
+        f"Invalid argument values for pad_array: array with shape {array.shape} cannot be "
+        f"padded to padded_duration of {padded_duration} as it results in smaller temporal_dim "
+        f"of {total_frames} frames (under frame_shift={frame_shift})."
     )
 
-    total_frames = seconds_to_frames(padded_duration, frame_shift=frame_shift)
+    if total_padding_frames == 0:
+        return array
+
     left_pad_frames = seconds_to_frames(offset, frame_shift=frame_shift)
-    right_pad_frames = total_frames - (array_frames + left_pad_frames)
+    right_pad_frames = total_padding_frames - left_pad_frames
+
+    # Automatically fix edge cases where we're off by one padding frame.
+    # This usually happens when duration of padding is a bit more than
+    # padding_num_frames * frame_shift, but the duration of unpadded cut
+    # is a bit less than cut_num_frames * frame_shift.
+    if right_pad_frames == -1:
+        right_pad_frames = 0
+        left_pad_frames -= 1
 
     assert right_pad_frames >= 0, "Something went wrong..."
 
