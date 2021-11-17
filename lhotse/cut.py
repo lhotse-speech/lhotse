@@ -1748,7 +1748,7 @@ class MixedCut(Cut):
             >>> ali = mixed_cut.load_alignment()
 
         """
-        if item.startswith('__'):
+        if item.startswith("__"):
             # Python will sometimes try to call undefined magic functions,
             # just fail for them (e.g. __setstate__ when pickling).
             raise AttributeError()
