@@ -91,7 +91,7 @@ class TemporalArray:
         ...     manifest = writer.store_array(
         ...         key='ali-1',
         ...         value=alignment,
-        ...         frame_shift=0.4,  # e.g., 10ms frames and subsampling_factor=4
+        ...         frame_shift=0.04,  # e.g., 10ms frames and subsampling_factor=4
         ...         temporal_dim=0,
         ...         start=0
         ...     )
