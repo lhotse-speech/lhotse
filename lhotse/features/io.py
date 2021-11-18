@@ -270,7 +270,7 @@ class LilcomFilesWriter(FeaturesWriter):
 
     @property
     def storage_path(self) -> str:
-        return self.storage_path_
+        return str(self.storage_path_)
 
     def write(self, key: str, value: np.ndarray) -> str:
         # Introduce a sub-directory that starts with the first 3 characters of the key, that is typically
@@ -333,7 +333,7 @@ class NumpyFilesWriter(FeaturesWriter):
 
     @property
     def storage_path(self) -> str:
-        return self.storage_path_
+        return str(self.storage_path_)
 
     def write(self, key: str, value: np.ndarray) -> str:
         # Introduce a sub-directory that starts with the first 3 characters of the key, that is typically
@@ -440,7 +440,7 @@ class NumpyHdf5Writer(FeaturesWriter):
 
     @property
     def storage_path(self) -> str:
-        return self.storage_path_
+        return str(self.storage_path_)
 
     def write(self, key: str, value: np.ndarray) -> str:
         self.hdf.create_dataset(key, data=value)
