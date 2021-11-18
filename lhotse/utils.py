@@ -591,3 +591,6 @@ def rich_exception_info(fn):
 
 class NonPositiveEnergyError(ValueError):
     pass
+
+
+DEFAULT_PADDING_VALUE = 0

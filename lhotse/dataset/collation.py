@@ -1,3 +1,4 @@
+import warnings
 from concurrent.futures import Executor
 from typing import Dict, Iterable, List, Optional, Tuple, Union
 
@@ -7,6 +8,7 @@ from torch.nn import CrossEntropyLoss
 
 from lhotse import CutSet
 from lhotse.cut import Cut, MixedCut
+from lhotse.utils import DEFAULT_PADDING_VALUE
 
 
 class TokenCollater:
@@ -212,9 +214,12 @@ def collate_custom_field(
     elif isinstance(first_manifest, TemporalArray):
         # Expected data type: variable-sized tensors (along only one dimension).
         # Pad across that dimension, then stack at dimension 0.
-        assert (
-            pad_value is not None
-        ), "You need to pass 'pad_value' arg to collate TemporalArray manifests."
+        if pad_value is None:
+            warnings.warn(
+                f"Argument 'pad_value' not passed -- we will pad field '{field}' "
+                f"with {DEFAULT_PADDING_VALUE}."
+            )
+            pad_value = 0
         temporal_dim = first_manifest.temporal_dim
         arr_lens = torch.tensor(
             [getattr(c, field).shape[temporal_dim] for c in cuts], dtype=torch.int32

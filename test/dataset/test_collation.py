@@ -106,13 +106,10 @@ def test_collate_custom_numbers():
 
 
 @pytest.mark.parametrize(
-    ["pad_value", "exception_expectation"],
-    [
-        (0.0, does_not_raise()),
-        (None, pytest.raises(AssertionError)),  # user forgot to specify pad_value
-    ],
+    "pad_value",
+    [0.0, None],  # user forgot to specify pad_value
 )
-def test_collate_custom_temporal_array_floats(pad_value, exception_expectation):
+def test_collate_custom_temporal_array_floats(pad_value):
     VOCAB_SIZE = 500
 
     cuts = CutSet.from_json("test/fixtures/ljspeech/cuts.json")
@@ -131,37 +128,33 @@ def test_collate_custom_temporal_array_floats(pad_value, exception_expectation):
                 temporal_dim=0,
             )
 
-        with exception_expectation:
+        posteriors, posterior_lens = collate_custom_field(
+            cuts, "posterior", pad_value=pad_value
+        )
 
-            posteriors, posterior_lens = collate_custom_field(
-                cuts, "posterior", pad_value=pad_value
+        assert isinstance(posterior_lens, torch.Tensor)
+        assert posterior_lens.dtype == torch.int32
+        assert posterior_lens.shape == (len(cuts),)
+        assert posterior_lens.tolist() == [c.num_frames for c in cuts]
+
+        assert isinstance(posteriors, torch.Tensor)
+        assert posteriors.dtype == torch.float32
+        assert posteriors.shape == (len(cuts), max_num_frames, VOCAB_SIZE)
+        for idx, post in enumerate(expected_posteriors):
+            exp_len = post.shape[0]
+            torch.testing.assert_allclose(posteriors[idx, :exp_len], post)
+            expected_pad_value = 0 if pad_value is None else pad_value
+            torch.testing.assert_allclose(
+                posteriors[idx, exp_len:],
+                expected_pad_value * torch.ones_like(posteriors[idx, exp_len:]),
             )
-
-            assert isinstance(posterior_lens, torch.Tensor)
-            assert posterior_lens.dtype == torch.int32
-            assert posterior_lens.shape == (len(cuts),)
-            assert posterior_lens.tolist() == [c.num_frames for c in cuts]
-
-            assert isinstance(posteriors, torch.Tensor)
-            assert posteriors.dtype == torch.float32
-            assert posteriors.shape == (len(cuts), max_num_frames, VOCAB_SIZE)
-            for idx, post in enumerate(expected_posteriors):
-                exp_len = post.shape[0]
-                torch.testing.assert_allclose(posteriors[idx, :exp_len], post)
-                torch.testing.assert_allclose(
-                    posteriors[idx, exp_len:],
-                    pad_value * torch.ones_like(posteriors[idx, exp_len:]),
-                )
 
 
 @pytest.mark.parametrize(
-    ["pad_value", "exception_expectation"],
-    [
-        (-100, does_not_raise()),
-        (None, pytest.raises(AssertionError)),  # user forgot to specify pad_value
-    ],
+    "pad_value",
+    [-100, None],  # None means user forgot to specify pad_value
 )
-def test_collate_custom_temporal_array_ints(pad_value, exception_expectation):
+def test_collate_custom_temporal_array_ints(pad_value):
     CODEBOOK_SIZE = 512
     FRAME_SHIFT = 0.4
 
@@ -183,29 +176,28 @@ def test_collate_custom_temporal_array_ints(pad_value, exception_expectation):
                 temporal_dim=0,
             )
 
-        with exception_expectation:
+        codebook_indices, codebook_indices_lens = collate_custom_field(
+            cuts, "codebook_indices", pad_value=pad_value
+        )
 
-            codebook_indices, codebook_indices_lens = collate_custom_field(
-                cuts, "codebook_indices", pad_value=pad_value
+        assert isinstance(codebook_indices_lens, torch.Tensor)
+        assert codebook_indices_lens.dtype == torch.int32
+        assert codebook_indices_lens.shape == (len(cuts),)
+        assert codebook_indices_lens.tolist() == [
+            seconds_to_frames(c.duration, FRAME_SHIFT) for c in cuts
+        ]
+
+        assert isinstance(codebook_indices, torch.Tensor)
+        assert codebook_indices.dtype == torch.int16
+        assert codebook_indices.shape == (len(cuts), max_num_frames)
+        for idx, cbidxs in enumerate(expected_codebook_indices):
+            exp_len = cbidxs.shape[0]
+            # PyTorch < 1.9.0 doesn't have an assert_equal function.
+            np.testing.assert_equal(codebook_indices[idx, :exp_len].numpy(), cbidxs)
+            expected_pad_value = 0 if pad_value is None else pad_value
+            np.testing.assert_equal(
+                codebook_indices[idx, exp_len:].numpy(), expected_pad_value
             )
-
-            assert isinstance(codebook_indices_lens, torch.Tensor)
-            assert codebook_indices_lens.dtype == torch.int32
-            assert codebook_indices_lens.shape == (len(cuts),)
-            assert codebook_indices_lens.tolist() == [
-                seconds_to_frames(c.duration, FRAME_SHIFT) for c in cuts
-            ]
-
-            assert isinstance(codebook_indices, torch.Tensor)
-            assert codebook_indices.dtype == torch.int16
-            assert codebook_indices.shape == (len(cuts), max_num_frames)
-            for idx, cbidxs in enumerate(expected_codebook_indices):
-                exp_len = cbidxs.shape[0]
-                # PyTorch < 1.9.0 doesn't have an assert_equal function.
-                np.testing.assert_equal(codebook_indices[idx, :exp_len].numpy(), cbidxs)
-                np.testing.assert_equal(
-                    codebook_indices[idx, exp_len:].numpy(), pad_value
-                )
 
 
 def test_collate_custom_attribute_missing():
