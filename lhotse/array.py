@@ -1,11 +1,11 @@
 import decimal
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from math import isclose
-from typing import List, Optional
+from typing import List, Optional, Union
 
 import numpy as np
 
-from lhotse.utils import Seconds, asdict_nonull
+from lhotse.utils import Seconds
 
 
 @dataclass
@@ -50,7 +50,7 @@ class Array:
         return len(self.shape)
 
     def to_dict(self) -> dict:
-        return asdict_nonull(self)
+        return asdict(self)
 
     @classmethod
     def from_dict(cls, data: dict) -> "Array":
@@ -130,7 +130,7 @@ class TemporalArray:
         return self.start + self.duration
 
     def to_dict(self) -> dict:
-        return asdict_nonull(self)
+        return asdict(self)
 
     @classmethod
     def from_dict(cls, data: dict) -> "TemporalArray":
@@ -189,7 +189,9 @@ class TemporalArray:
         )
 
 
-def seconds_to_frames(duration: Seconds, frame_shift: Seconds, max_index: int) -> int:
+def seconds_to_frames(
+    duration: Seconds, frame_shift: Seconds, max_index: Optional[int] = None
+) -> int:
     """
     Convert time quantity in seconds to a frame index.
     It takes the shape of the array into account and limits
@@ -204,4 +206,82 @@ def seconds_to_frames(duration: Seconds, frame_shift: Seconds, max_index: int) -
             round(duration / frame_shift, ndigits=8)
         ).quantize(0, rounding=decimal.ROUND_HALF_UP)
     )
-    return min(index, max_index)
+    if max_index is not None:
+        return min(index, max_index)
+    return index
+
+
+def deserialize_array(raw_data: dict) -> Union[Array, TemporalArray]:
+    """
+    Figures out the right manifest type to use for deserialization.
+
+    :param raw_data: The result of calling ``.to_dict`` on :class:`.Array`
+        or :class:`.TemporalArray`.
+    :return an :class:`.Array.` or :class:`.TemporalArray` instance.
+    """
+    if "array" in raw_data:
+        return TemporalArray.from_dict(raw_data)
+    if "shape" in raw_data:
+        return Array.from_dict(raw_data)
+    raise ValueError(f"Cannot deserialize array from: {raw_data}")
+
+
+def pad_array(
+    array: np.ndarray,
+    temporal_dim: int,
+    frame_shift: Seconds,
+    offset: Seconds,
+    padded_duration: Seconds,
+    pad_value: Union[int, float],
+) -> np.ndarray:
+    """
+    Pad a numpy array guided by duration based constraints.
+
+    Example::
+
+        >>> arr = np.array([1, 2, 3])
+        >>> pad_array(arr, temporal_dim=0, frame_shift=0.1,
+        ...           offset=0.1, padded_duration=0.6, pad_value=0)
+        array([0, 1, 2, 3, 0, 0])
+
+    :param array: array to be padded.
+    :param temporal_dim: time dimension index.
+    :param frame_shift: time interval (seconds) between the starts of consecutive frames.
+    :param offset: how much padding goes before the array (seconds).
+    :param padded_duration: expected duration of array after padding (seconds).
+    :param pad_value: value used for padding.
+    :return: a padded array.
+    """
+    array_frames = array.shape[temporal_dim]
+    total_frames = seconds_to_frames(padded_duration, frame_shift=frame_shift)
+    total_padding_frames = total_frames - array_frames
+    assert total_padding_frames >= 0, (
+        f"Invalid argument values for pad_array: array with shape {array.shape} cannot be "
+        f"padded to padded_duration of {padded_duration} as it results in smaller temporal_dim "
+        f"of {total_frames} frames (under frame_shift={frame_shift})."
+    )
+
+    if total_padding_frames == 0:
+        return array
+
+    left_pad_frames = seconds_to_frames(offset, frame_shift=frame_shift)
+    right_pad_frames = total_padding_frames - left_pad_frames
+
+    # Automatically fix edge cases where we're off by one padding frame.
+    # This usually happens when duration of padding is a bit more than
+    # padding_num_frames * frame_shift, but the duration of unpadded cut
+    # is a bit less than cut_num_frames * frame_shift.
+    if right_pad_frames == -1:
+        right_pad_frames = 0
+        left_pad_frames -= 1
+
+    assert right_pad_frames >= 0, "Something went wrong..."
+
+    pad_width = [
+        (left_pad_frames, right_pad_frames) if dim == temporal_dim else (0, 0)
+        for dim, size in enumerate(array.shape)
+    ]
+
+    return np.pad(
+        array, pad_width=pad_width, mode="constant", constant_values=pad_value
+    )
