@@ -35,6 +35,8 @@ Decibels = float
 INT16MAX = 32768
 EPSILON = 1e-10
 LOG_EPSILON = math.log(EPSILON)
+DEFAULT_PADDING_VALUE = 0  # used for custom attrs
+
 
 # This is a utility that generates uuid4's and is set when the user calls
 # the ``fix_random_seed`` function.
@@ -591,6 +593,3 @@ def rich_exception_info(fn):
 
 class NonPositiveEnergyError(ValueError):
     pass
-
-
-DEFAULT_PADDING_VALUE = 0
