@@ -195,7 +195,7 @@ def collate_custom_field(
     :param pad_value: value to be used for padding the temporal arrays.
         Ignored for non-temporal array and non-array attributes.
     :param pad_direction: where to apply the padding (``right``, ``left``, or ``both``).
-    :return: a tuple of tensors ``(features, features_lens)``.
+    :return: a collated data tensor, or a tuple of tensors ``(collated_data, sequence_lens)``.
     """
     from lhotse.array import Array, TemporalArray
 

@@ -201,10 +201,8 @@ def test_collate_custom_temporal_array_ints(pad_value, exception_expectation):
             assert codebook_indices.shape == (len(cuts), max_num_frames)
             for idx, cbidxs in enumerate(expected_codebook_indices):
                 exp_len = cbidxs.shape[0]
-                torch.testing.assert_equal(
-                    codebook_indices[idx, :exp_len], torch.from_numpy(cbidxs)
-                )
-                torch.testing.assert_equal(
-                    codebook_indices[idx, exp_len:],
-                    pad_value * torch.ones_like(codebook_indices[idx, exp_len:]),
+                # PyTorch < 1.9.0 doesn't have an assert_equal function.
+                np.testing.assert_equal(codebook_indices[idx, :exp_len].numpy(), cbidxs)
+                np.testing.assert_equal(
+                    codebook_indices[idx, exp_len:].numpy(), pad_value
                 )
