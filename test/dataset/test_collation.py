@@ -206,3 +206,9 @@ def test_collate_custom_temporal_array_ints(pad_value, exception_expectation):
                 np.testing.assert_equal(
                     codebook_indices[idx, exp_len:].numpy(), pad_value
                 )
+
+
+def test_collate_custom_attribute_missing():
+    cuts = CutSet.from_json("test/fixtures/ljspeech/cuts.json")
+    with pytest.raises(AttributeError):
+        collate_custom_field(cuts, "nonexistent_attribute")
