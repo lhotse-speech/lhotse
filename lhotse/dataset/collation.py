@@ -1,5 +1,6 @@
+import warnings
 from concurrent.futures import Executor
-from typing import Iterable, List, Optional, Tuple, Union
+from typing import Dict, Iterable, List, Optional, Tuple, Union
 
 import numpy as np
 import torch
@@ -7,6 +8,7 @@ from torch.nn import CrossEntropyLoss
 
 from lhotse import CutSet
 from lhotse.cut import Cut, MixedCut
+from lhotse.utils import DEFAULT_PADDING_VALUE
 
 
 class TokenCollater:
@@ -166,6 +168,69 @@ def collate_audio(
         for idx, example_audio in enumerate(executor.map(_read_audio, cuts)):
             audio[idx] = example_audio
     return audio, audio_lens
+
+
+def collate_custom_field(
+    cuts: CutSet,
+    field: str,
+    pad_value: Union[None, int, float] = None,
+    pad_direction: str = "right",
+) -> Union[torch.Tensor, Tuple[torch.Tensor, torch.IntTensor]]:
+    """
+    Load custom arrays for all the cuts and return them as a batch in a torch tensor.
+    The output shapes are:
+
+        - ``(batch, d0, d1, d2, ...)`` for :class:`lhotse.array.Array` of shape ``(d0, d1, d2, ...)``.
+            Note: all arrays have to be of the same shape, as we expect these represent fixed-size
+            embeddings.
+
+        - ``(batch, d0, pad_dt, d1, ...)`` for :class:`lhotse.array.TemporalArray` of shape
+            ``(d0, dt, d1, ...)`` where ``dt`` indicates temporal dimension (variable-sized),
+            and ``pad_dt`` indicates temporal dimension after padding (equal-sized for all cuts).
+            We expect these represent temporal data, such as alignments, posteriors, features, etc.
+
+        - ``(batch, )`` for anything else, such as int or float: we will simply stack them into
+            a list and tensorize it.
+
+    :param cuts: a :class:`CutSet` used to load the features.
+    :param field: name of the custom field to be retrieved.
+    :param pad_value: value to be used for padding the temporal arrays.
+        Ignored for non-temporal array and non-array attributes.
+    :param pad_direction: where to apply the padding (``right``, ``left``, or ``both``).
+    :return: a collated data tensor, or a tuple of tensors ``(collated_data, sequence_lens)``.
+    """
+    from lhotse.array import Array, TemporalArray
+
+    first_manifest = getattr(cuts[0], field)
+    if isinstance(first_manifest, Array):
+        # Expected data type: fixed-size embeddings.
+        # Simply stack across a new dimension inserted at 0.
+        assert all(getattr(c, field).shape == first_manifest.shape for c in cuts), (
+            "Cannot collate manifests of type Array with different shapes, "
+            "because we don't know which dimension must be padded. "
+            "Use TemporalArray manifests and try again."
+        )
+        return torch.stack([torch.from_numpy(c.load_custom(field)) for c in cuts])
+    elif isinstance(first_manifest, TemporalArray):
+        # Expected data type: variable-sized tensors (along only one dimension).
+        # Pad across that dimension, then stack at dimension 0.
+        if pad_value is None:
+            warnings.warn(
+                f"Argument 'pad_value' not passed -- we will pad field '{field}' "
+                f"with {DEFAULT_PADDING_VALUE}."
+            )
+            pad_value = 0
+        temporal_dim = first_manifest.temporal_dim
+        arr_lens = torch.tensor(
+            [getattr(c, field).shape[temporal_dim] for c in cuts], dtype=torch.int32
+        )
+        cuts = cuts.pad(direction=pad_direction, pad_value_dict={field: pad_value})
+        tensors = torch.stack([torch.from_numpy(c.load_custom(field)) for c in cuts])
+        return tensors, arr_lens
+    else:
+        # Expected data type: int, float, string, etc.
+        # Get a list of them and convert to a tensor.
+        return torch.tensor([getattr(c, field) for c in cuts])
 
 
 def collate_multi_channel_features(cuts: CutSet) -> torch.Tensor:

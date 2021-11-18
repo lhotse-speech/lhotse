@@ -1,4 +1,3 @@
-import functools
 import logging
 import random
 import warnings
@@ -44,6 +43,7 @@ from lhotse.features.io import FeaturesWriter, LilcomFilesWriter, LilcomHdf5Writ
 from lhotse.serialization import Serializable
 from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import (
+    DEFAULT_PADDING_VALUE,
     Decibels,
     LOG_EPSILON,
     NonPositiveEnergyError,
@@ -4134,12 +4134,16 @@ def pad(
 
         arr_keys = [k for k, v in cut.custom.items() if isinstance(v, TemporalArray)]
         if len(arr_keys) > 0:
-            assert pad_value_dict is not None and all(
-                k in pad_value_dict for k in arr_keys
-            ), (
-                f"Cut being padded has custom TemporalArray attributes: {arr_keys}. "
-                f"We expected a 'pad_value_dict' argument with padding values for these attributes."
+            padding_values_specified = (
+                pad_value_dict is not None
+                and all(k in pad_value_dict for k in arr_keys),
             )
+            if not padding_values_specified:
+                warnings.warn(
+                    f"Cut being padded has custom TemporalArray attributes: {arr_keys}. "
+                    f"We expected a 'pad_value_dict' argument with padding values for these attributes. "
+                    f"We will proceed and use the default padding value (={DEFAULT_PADDING_VALUE})."
+                )
 
     if duration is not None:
         if duration <= cut.duration:
