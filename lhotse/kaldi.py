@@ -335,7 +335,14 @@ def make_wavscp_channel_string_map(
             )
         return f"{source.source} |"
     elif source.type == "file":
-        if Path(source.source).suffix == ".sph":
+        if Path(source.source).suffix == ".wav" and len(source.channels) == 1:
+            # Note: for single-channel waves, we don't need to invoke ffmpeg; but
+            #       for multi-channel waves, Kaldi is going to complain.
+            audios = dict()
+            for channel in source.channels:
+                audios[channel] = source.source
+            return audios
+        elif Path(source.source).suffix == ".sph":
             # we will do this specifically using the sph2pipe because
             # ffmpeg does not support shorten compression, which is sometimes
             # used in the sph files
@@ -347,6 +354,7 @@ def make_wavscp_channel_string_map(
 
             return audios
         else:
+            # Handles non-WAVE audio formats and multi-channel WAVEs.
             audios = dict()
             for channel in source.channels:
                 audios[
