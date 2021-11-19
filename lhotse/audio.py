@@ -29,7 +29,14 @@ from typing import (
 import numpy as np
 from tqdm.auto import tqdm
 
-from lhotse.augmentation import AudioTransform, Resample, Speed, Tempo, Volume
+from lhotse.augmentation import (
+    AudioTransform,
+    Resample,
+    Speed,
+    Tempo,
+    Volume,
+    ReverbWithImpulseResponse,
+)
 from lhotse.caching import dynamic_lru_cache
 from lhotse.serialization import Serializable
 from lhotse.utils import (
@@ -450,6 +457,38 @@ class Recording:
             transforms=transforms,
         )
 
+    def reverb_rir(
+        self,
+        rir_recording: "Recording",
+        shift_output: bool = True,
+        normalize_output: bool = True,
+        affix_id: bool = True,
+    ) -> "Recording":
+        """
+        Return a new ``Recording`` that will lazily apply reverberation based on provided
+        impulse response while loading audio.
+
+        :param rir_recording: The impulse response to be used.
+        :param shift_output: When true, output will be of same length as input.
+        :param normalize_output: When true, output will be normalized to have energy as input.
+        :param affix_id: When true, we will modify the ``Recording.id`` field
+            by affixing it with "_rvb".
+        :return: the perturbed ``Recording``.
+        """
+        transforms = self.transforms.copy() if self.transforms is not None else []
+        transforms.append(
+            ReverbWithImpulseResponse(
+                rir_recording,
+                shift_output=shift_output,
+                normalize_output=normalize_output,
+            ).to_dict()
+        )
+        return fastcopy(
+            self,
+            id=f"{self.id}_rvb" if affix_id else self.id,
+            transforms=transforms,
+        )
+
     def resample(self, sampling_rate: int) -> "Recording":
         """
         Return a new ``Recording`` that will be lazily resampled while loading audio.
@@ -544,6 +583,7 @@ class RecordingSet(Serializable, Sequence[Recording]):
 
             >>> recs_sp = recs.perturb_speed(factor=1.1)
             >>> recs_vp = recs.perturb_volume(factor=2.)
+            >>> recs_rvb = recs.reverb_rir(rir_cuts)
             >>> recs_24k = recs.resample(24000)
     """
 
@@ -665,6 +705,22 @@ class RecordingSet(Serializable, Sequence[Recording]):
             )
         ]
 
+    def sample(self, n_recordings: int = 1) -> Union[Recording, "RecordingSet"]:
+        """
+        Randomly sample this ``RecordingSet`` and return ``n_recordings`` recordings.
+        When ``n_recordings`` is 1, will return a single recording instance; otherwise will return a ``RecordingSet``.
+        """
+        assert n_recordings > 0
+        # TODO: We might want to make this more efficient in the future
+        #  by holding a cached list of recording ids as a member of RecordingSet...
+        recording_indices = [
+            random.randint(0, len(self) - 1) for _ in range(n_recordings)
+        ]
+        recordings = [self[idx] for idx in recording_indices]
+        if n_recordings == 1:
+            return recordings[0]
+        return RecordingSet.from_recordings(recordings)
+
     def subset(
         self, first: Optional[int] = None, last: Optional[int] = None
     ) -> "RecordingSet":
@@ -769,6 +825,34 @@ class RecordingSet(Serializable, Sequence[Recording]):
         """
         return RecordingSet.from_recordings(
             r.perturb_volume(factor=factor, affix_id=affix_id) for r in self
+        )
+
+    def reverb_rir(
+        self,
+        rir_recordings: "RecordingSet",
+        shift_output: bool = True,
+        normalize_output: bool = True,
+        affix_id: bool = True,
+    ) -> "RecordingSet":
+        """
+        Return a new ``RecordingSet`` that will lazily apply reverberation based on provided
+        impulse responses while loading audio.
+
+        :param rir_recordings: The impulse responses to be used.
+        :param shift_output: When true, output will be of same length as input.
+        :param normalize_output: When true, output will be normalized to have energy as input.
+        :param affix_id: When true, we will modify the ``Recording.id`` field
+            by affixing it with "_sp{factor}".
+        :return: a ``RecordingSet`` containing the perturbed ``Recording`` objects.
+        """
+        return RecordingSet.from_recordings(
+            r.reverb_rir(
+                rir_recording=rir_recordings.sample(n_recordings=1),
+                shift_output=shift_output,
+                normalize_output=normalize_output,
+                affix_id=affix_id,
+            )
+            for r in self
         )
 
     def resample(self, sampling_rate: int) -> "RecordingSet":

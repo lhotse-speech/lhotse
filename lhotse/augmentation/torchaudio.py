@@ -1,4 +1,5 @@
 import warnings
+import copy
 from dataclasses import asdict, dataclass
 from decimal import ROUND_HALF_UP
 from typing import List, Optional, Tuple, Union
@@ -12,6 +13,7 @@ from lhotse.utils import (
     during_docs_build,
     perturb_num_samples,
 )
+from lhotse.augmentation.utils import convolve1d
 
 
 @dataclass
@@ -364,6 +366,92 @@ class Volume(AudioTransform):
         """
 
         return offset, duration
+
+
+@dataclass
+class ReverbWithImpulseResponse(AudioTransform):
+    """
+    Reverberation effect by convolving with a room impulse response.
+    This code is based on Kaldi's wav-reverberate utility:
+    https://github.com/kaldi-asr/kaldi/blob/master/src/featbin/wav-reverberate.cc
+
+    The impulse response can possibly be multi-channel, in which case the reverberated audio
+    will be multi-channel as well.
+    """
+
+    rir: dict
+    shift_output: bool = True
+    normalize_output: bool = True
+
+    RIR_SCALING_FACTOR: float = 0.5 ** 15
+
+    def __call__(
+        self,
+        samples: np.ndarray,
+        sampling_rate: int,
+    ) -> np.ndarray:
+        """
+        :param samples: The audio samples to reverberate (must be single-channel).
+        :param sampling_rate: The sampling rate of the audio samples.
+        """
+        assert samples.shape[0] == 1, "The input audio must be single-channel."
+        sampling_rate = int(sampling_rate)  # paranoia mode
+
+        from lhotse import Recording
+
+        rir_ = Recording.from_dict(copy.deepcopy(self.rir)).load_audio()
+
+        # Determine output length.
+        _, N_in = samples.shape
+        D, N_rir = rir_.shape
+        N_out = N_in if self.shift_output else N_in + N_rir - 1
+
+        self.rir_samples = N_rir
+
+        # Initialize output matrix with the specified input channel.
+        augmented = np.zeros((D, N_out), dtype=samples.dtype)
+        power_before_reverb = np.sum(np.abs(samples) ** 2) / samples.shape[1]
+
+        for d in range(D):
+            augmented[d, :N_in] = samples
+            rir_d = rir_[d, :] * self.RIR_SCALING_FACTOR
+
+            # Convolve the signal with impulse response.
+            aug_d = convolve1d(
+                torch.from_numpy(samples[0]), torch.from_numpy(rir_d)
+            ).numpy()
+            shift_index = np.argmax(rir_d) if self.shift_output else 0
+            augmented[d, :] = aug_d[shift_index : shift_index + N_out]
+
+            if self.normalize_output:
+                power_after_reverb = (
+                    np.sum(np.abs(augmented[d, :]) ** 2) / augmented.shape[1]
+                )
+                augmented[d, :] *= np.sqrt(power_before_reverb / power_after_reverb)
+
+        return augmented
+
+    def reverse_timestamps(
+        self,
+        offset: Seconds,
+        duration: Optional[Seconds],
+        sampling_rate: Optional[int],  # Not used, made for compatibility purposes
+    ) -> Tuple[Seconds, Optional[Seconds]]:
+        """
+        This method helps estimate the original offset and duration for a recording
+        before reverberation with impulse response was applied.
+        We need this estimate to know how much audio to actually load from disk during the
+        call to ``load_audio()``.
+        """
+        if self.shift_output:
+            return offset, duration
+        else:
+            return (
+                offset,
+                duration
+                if duration is not None
+                else (duration - (self.rir_samples / sampling_rate) + 1),
+            )
 
 
 def speed(sampling_rate: int) -> List[List[str]]:
