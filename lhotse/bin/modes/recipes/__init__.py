@@ -29,8 +29,10 @@ from .mls import *
 from .mtedx import *
 from .musan import *
 from .nsc import *
+from .rir_noise import *
 from .switchboard import *
 from .tedlium import *
 from .timit import *
 from .vctk import *
+from .voxceleb import *
 from .yesno import *
