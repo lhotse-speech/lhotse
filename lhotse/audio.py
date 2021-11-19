@@ -1374,7 +1374,7 @@ def read_opus_ffmpeg(
     :return: a tuple of audio samples and the sampling rate.
     """
     # Construct the ffmpeg command depending on the arguments passed.
-    cmd = f"ffmpeg"
+    cmd = f"ffmpeg -threads 1"
     sampling_rate = 48000
     # Note: we have to add offset and duration options (-ss and -t) BEFORE specifying the input
     #       (-i), otherwise ffmpeg will decode everything and trim afterwards...
