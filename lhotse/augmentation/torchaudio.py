@@ -380,7 +380,7 @@ class ReverbWithImpulseResponse(AudioTransform):
     which means that the output length will be equal to the input length.
     """
 
-    rir: Union[dict, "Recording"]
+    rir: dict
     normalize_output: bool = True
 
     RIR_SCALING_FACTOR: float = 0.5 ** 15
