@@ -380,7 +380,7 @@ class ReverbWithImpulseResponse(AudioTransform):
     which means that the output length will be equal to the input length.
     """
 
-    rir: dict
+    rir: Union[dict, "Recording"]
     normalize_output: bool = True
 
     RIR_SCALING_FACTOR: float = 0.5 ** 15
@@ -397,10 +397,13 @@ class ReverbWithImpulseResponse(AudioTransform):
         assert samples.shape[0] == 1, "The input audio must be single-channel."
         sampling_rate = int(sampling_rate)  # paranoia mode
 
-        from lhotse import Recording
+        if isinstance(self.rir, dict):
+            from lhotse import Recording
 
-        # Pass a shallow copy of the RIR dict since `from_dict()` pops the `sources` key.
-        rir_ = Recording.from_dict(self.rir.copy()).load_audio()
+            # Pass a shallow copy of the RIR dict since `from_dict()` pops the `sources` key.
+            rir_ = Recording.from_dict(self.rir.copy()).load_audio()
+        else:
+            rir_ = self.rir.load_audio()
 
         # Determine output length.
         _, N_in = samples.shape
