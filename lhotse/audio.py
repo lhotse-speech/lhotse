@@ -702,22 +702,6 @@ class RecordingSet(Serializable, Sequence[Recording]):
             )
         ]
 
-    def sample(self, n_recordings: int = 1) -> Union[Recording, "RecordingSet"]:
-        """
-        Randomly sample this ``RecordingSet`` and return ``n_recordings`` recordings.
-        When ``n_recordings`` is 1, will return a single recording instance; otherwise will return a ``RecordingSet``.
-        """
-        assert n_recordings > 0
-        # TODO: We might want to make this more efficient in the future
-        #  by holding a cached list of recording ids as a member of RecordingSet...
-        recording_indices = [
-            random.randint(0, len(self) - 1) for _ in range(n_recordings)
-        ]
-        recordings = [self[idx] for idx in recording_indices]
-        if n_recordings == 1:
-            return recordings[0]
-        return RecordingSet.from_recordings(recordings)
-
     def subset(
         self, first: Optional[int] = None, last: Optional[int] = None
     ) -> "RecordingSet":
