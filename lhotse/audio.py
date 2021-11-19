@@ -583,7 +583,7 @@ class RecordingSet(Serializable, Sequence[Recording]):
 
             >>> recs_sp = recs.perturb_speed(factor=1.1)
             >>> recs_vp = recs.perturb_volume(factor=2.)
-            >>> recs_rvb = recs.reverb_rir(rir_cuts)
+            >>> recs_rvb = recs.reverb_rir(rir_recs)
             >>> recs_24k = recs.resample(24000)
     """
 

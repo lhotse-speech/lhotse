@@ -26,7 +26,6 @@ from typing import (
 
 import numpy as np
 from intervaltree import Interval, IntervalTree
-from torch.functional import norm
 from tqdm.auto import tqdm
 from typing_extensions import Literal
 

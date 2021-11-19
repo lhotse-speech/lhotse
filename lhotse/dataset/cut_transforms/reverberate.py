@@ -14,11 +14,15 @@ class ReverbWithImpulseResponse:
         self,
         rir_cuts: CutSet,
         p: float,
+        shift_output: bool = True,
+        normalize_output: bool = True,
         randgen: random.Random = None,
         preserve_id: bool = False,
     ) -> None:
         self.rir_cuts = rir_cuts
         self.p = p
+        self.shift_output = shift_output
+        self.normalize_output = normalize_output
         self.random = randgen
         self.preserve_id = preserve_id
 
@@ -26,8 +30,11 @@ class ReverbWithImpulseResponse:
         if self.random is None:
             self.random = random
         return CutSet.from_cuts(
-            cut.perturb_volume(
-                rir_cut=self.rir_cuts.sample(n_cuts=1), affix_id=not self.preserve_id
+            cut.reverb_rir(
+                rir_cut=self.rir_cuts.sample(n_cuts=1),
+                shift_output=self.shift_output,
+                normalize_output=self.normalize_output,
+                affix_id=not self.preserve_id,
             )
             if self.random.random() >= self.p
             else cut
