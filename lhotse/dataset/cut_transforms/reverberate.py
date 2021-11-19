@@ -1,6 +1,6 @@
 import random
 
-from lhotse import CutSet
+from lhotse import RecordingSet, CutSet
 
 
 class ReverbWithImpulseResponse:
@@ -12,16 +12,14 @@ class ReverbWithImpulseResponse:
 
     def __init__(
         self,
-        rir_cuts: CutSet,
+        rir_recordings: RecordingSet,
         p: float,
-        shift_output: bool = True,
         normalize_output: bool = True,
         randgen: random.Random = None,
         preserve_id: bool = False,
     ) -> None:
-        self.rir_cuts = rir_cuts
+        self.rir_recordings = list(rir_recordings)
         self.p = p
-        self.shift_output = shift_output
         self.normalize_output = normalize_output
         self.random = randgen
         self.preserve_id = preserve_id
@@ -31,8 +29,7 @@ class ReverbWithImpulseResponse:
             self.random = random
         return CutSet.from_cuts(
             cut.reverb_rir(
-                rir_cut=self.rir_cuts.sample(n_cuts=1),
-                shift_output=self.shift_output,
+                rir_recording=self.random.choice(self.rir_recordings),
                 normalize_output=self.normalize_output,
                 affix_id=not self.preserve_id,
             )

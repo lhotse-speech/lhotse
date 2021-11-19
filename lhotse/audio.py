@@ -821,7 +821,7 @@ class RecordingSet(Serializable, Sequence[Recording]):
         :param rir_recordings: The impulse responses to be used.
         :param normalize_output: When true, output will be normalized to have energy as input.
         :param affix_id: When true, we will modify the ``Recording.id`` field
-            by affixing it with "_sp{factor}".
+            by affixing it with "_rvb".
         :return: a ``RecordingSet`` containing the perturbed ``Recording`` objects.
         """
         rir_recordings = list(rir_recordings)
