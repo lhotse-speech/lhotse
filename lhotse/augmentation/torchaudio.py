@@ -1,5 +1,4 @@
 import warnings
-import copy
 from dataclasses import asdict, dataclass
 from decimal import ROUND_HALF_UP
 from typing import List, Optional, Tuple, Union
@@ -377,10 +376,11 @@ class ReverbWithImpulseResponse(AudioTransform):
 
     The impulse response can possibly be multi-channel, in which case the reverberated audio
     will be multi-channel as well.
+    Note that we enforce the --shift-output option in Kaldi's wav-reverberate utility,
+    which means that the output length will be equal to the input length.
     """
 
     rir: dict
-    shift_output: bool = True
     normalize_output: bool = True
 
     RIR_SCALING_FACTOR: float = 0.5 ** 15
@@ -399,14 +399,13 @@ class ReverbWithImpulseResponse(AudioTransform):
 
         from lhotse import Recording
 
-        rir_ = Recording.from_dict(copy.deepcopy(self.rir)).load_audio()
+        # Pass a shallow copy of the RIR dict since `from_dict()` pops the `sources` key.
+        rir_ = Recording.from_dict(self.rir.copy()).load_audio()
 
         # Determine output length.
         _, N_in = samples.shape
         D, N_rir = rir_.shape
-        N_out = N_in if self.shift_output else N_in + N_rir - 1
-
-        self.rir_samples = N_rir
+        N_out = N_in  # Enforce shift output
 
         # Initialize output matrix with the specified input channel.
         augmented = np.zeros((D, N_out), dtype=samples.dtype)
@@ -420,7 +419,7 @@ class ReverbWithImpulseResponse(AudioTransform):
             aug_d = convolve1d(
                 torch.from_numpy(samples[0]), torch.from_numpy(rir_d)
             ).numpy()
-            shift_index = np.argmax(rir_d) if self.shift_output else 0
+            shift_index = np.argmax(rir_d)
             augmented[d, :] = aug_d[shift_index : shift_index + N_out]
 
             if self.normalize_output:
@@ -438,20 +437,11 @@ class ReverbWithImpulseResponse(AudioTransform):
         sampling_rate: Optional[int],  # Not used, made for compatibility purposes
     ) -> Tuple[Seconds, Optional[Seconds]]:
         """
-        This method helps estimate the original offset and duration for a recording
-        before reverberation with impulse response was applied.
-        We need this estimate to know how much audio to actually load from disk during the
-        call to ``load_audio()``.
+        This method just returns the original offset and duration since we have
+        implemented output shifting which preserves these properties.
         """
-        if self.shift_output:
-            return offset, duration
-        else:
-            return (
-                offset,
-                duration
-                if duration is not None
-                else (duration - (self.rir_samples / sampling_rate) + 1),
-            )
+
+        return offset, duration
 
 
 def speed(sampling_rate: int) -> List[List[str]]:

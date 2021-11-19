@@ -160,7 +160,7 @@ class Cut:
         >>> cut_24k = cut.resample(24000)
         >>> cut_sp = cut.perturb_speed(1.1)
         >>> cut_vp = cut.perturb_volume(2.)
-        >>> cut_rvb = cut.reverb_rir(rir_cut)
+        >>> cut_rvb = cut.reverb_rir(rir_recording)
 
     .. note::
         All cut transformations are performed lazily, on-the-fly, upon calling ``load_audio`` or ``load_features``.
@@ -1264,16 +1264,14 @@ class MonoCut(Cut):
 
     def reverb_rir(
         self,
-        rir_cut: "MonoCut",
-        shift_output: bool = True,
+        rir_recording: "Recording",
         normalize_output: bool = True,
         affix_id: bool = True,
     ) -> "MonoCut":
         """
         Return a new ``MonoCut`` that will convolve the audio with the provided impulse response.
 
-        :param rir_cut: The impulse response to use for convolving.
-        :param shift_output: When true, output will be of same length as input.
+        :param rir_recording: The impulse response to use for convolving.
         :param normalize_output: When true, output will be normalized to have energy as input.
         :param affix_id: When true, we will modify the ``MonoCut.id`` field
             by affixing it with "_rvb".
@@ -1292,8 +1290,7 @@ class MonoCut(Cut):
             self.features = None
         # Actual reverberation.
         recording_rvb = self.recording.reverb_rir(
-            rir_recording=rir_cut.recording,
-            shift_output=shift_output,
+            rir_recording=rir_recording,
             normalize_output=normalize_output,
             affix_id=affix_id,
         )
@@ -1630,8 +1627,7 @@ class PaddingCut(Cut):
 
     def reverb_rir(
         self,
-        rir_cut: "MonoCut",
-        shift_output: bool = True,
+        rir_recording: "Recording",
         normalize_output: bool = True,
         affix_id: bool = True,
     ) -> "PaddingCut":
@@ -1639,8 +1635,7 @@ class PaddingCut(Cut):
         Return a new ``PaddingCut`` that will "mimic" the effect of reverberation with impulse response
         on original samples.
 
-        :param rir_cut: The impulse response to use for convolving.
-        :param shift_output: When true, output will be of same length as input.
+        :param rir_recording: The impulse response to use for convolving.
         :param normalize_output: When true, output will be normalized to have energy as input.
         :param affix_id: When true, we will modify the ``PaddingCut.id`` field
             by affixing it with "_rvb".
@@ -2210,16 +2205,14 @@ class MixedCut(Cut):
 
     def reverb_rir(
         self,
-        rir_cut: "MonoCut",
-        shift_output: bool = True,
+        rir_recording: "Recording",
         normalize_output: bool = True,
         affix_id: bool = True,
     ) -> "MixedCut":
         """
         Return a new ``MixedCut`` that will convolve the audio with the provided impulse response.
 
-        :param rir_cut: The impulse response to use for convolving.
-        :param shift_output: When true, output will be of same length as input.
+        :param rir_recording: The impulse response to use for convolving.
         :param normalize_output: When true, output will be normalized to have energy as input.
         :param affix_id: When true, we will modify the ``MixedCut.id`` field
             by affixing it with "_rvb".
@@ -2232,25 +2225,22 @@ class MixedCut(Cut):
         if self.has_features:
             logging.warning(
                 "Attempting to reverberate a MixedCut that references pre-computed features. "
-                "The feature manifest will be detached, as we do not support feature-domain "
+                "The feature manifest(s) will be detached, as we do not support feature-domain "
                 "reverberation."
             )
-            self.features = None
-        # Actual reverberation.
-        recording_rvb = self.recording.reverb_rir(
-            rir_recording=rir_cut.recording,
-            shift_output=shift_output,
-            normalize_output=normalize_output,
-            affix_id=affix_id,
-        )
-        # Match the supervision's id (and it's underlying recording id).
-        supervisions_rvb = [s.reverb_rir(affix_id=affix_id) for s in self.supervisions]
-
-        return fastcopy(
-            self,
+        return MixedCut(
             id=f"{self.id}_rvb" if affix_id else self.id,
-            recording=recording_rvb,
-            supervisions=supervisions_rvb,
+            tracks=[
+                fastcopy(
+                    track,
+                    cut=track.cut.reverb_rir(
+                        rir_recording=rir_recording,
+                        normalize_output=normalize_output,
+                        affix_id=affix_id,
+                    ),
+                )
+                for track in self.tracks
+            ],
         )
 
     @rich_exception_info
@@ -2694,7 +2684,7 @@ class CutSet(Serializable, Sequence[Cut]):
         >>> cuts_sp = cuts.perturb_speed(factor=1.1)
         >>> cuts_vp = cuts.perturb_volume(factor=2.)
         >>> cuts_24k = cuts.resample(24000)
-        >>> cuts_rvb = cuts.reverb_rir(rir_cuts)
+        >>> cuts_rvb = cuts.reverb_rir(rir_recordings)
 
     .. caution::
         If the :class:`.CutSet` contained :class:`~lhotse.features.base.Features` manifests, they will be
@@ -3428,31 +3418,32 @@ class CutSet(Serializable, Sequence[Cut]):
 
     def reverb_rir(
         self,
-        rir_cuts: "CutSet",
-        shift_output: bool = True,
+        rir_recordings: "RecordingSet",
         normalize_output: bool = True,
         affix_id: bool = True,
     ) -> "CutSet":
         """
         Return a new :class:`~lhotse.cut.CutSet` that contains original cuts convolved with
-        randomly chosen impulse responses from `rir_cuts`. It requires the recording manifests to be present.
+        randomly chosen impulse responses from `rir_recordings`. It requires the recording manifests to be present.
         If the feature manifests are attached, they are dropped.
         The supervision manifests remain the same.
 
-        :param rir_cuts: CutSet containing the room impulse responses.
-        :param shift_output: When true, output will be of same length as input.
+        :param rir_recordings: RecordingSet containing the room impulse responses.
         :param normalize_output: When true, output will be normalized to have energy as input.
         :param affix_id: Should we modify the ID (useful if both versions of the same
             cut are going to be present in a single manifest).
         :return: a modified copy of the ``CutSet``.
         """
-        return self.map(
-            lambda cut: cut.reverb_rir(
-                rir_cut=rir_cuts.sample(n_cuts=1),
-                shift_output=shift_output,
-                normalize_output=normalize_output,
-                affix_id=affix_id,
-            )
+        rir_recordings = list(rir_recordings)
+        return CutSet.from_cuts(
+            [
+                cut.reverb_rir(
+                    rir_recording=random.choice(rir_recordings),
+                    normalize_output=normalize_output,
+                    affix_id=affix_id,
+                )
+                for cut in self
+            ]
         )
 
     def mix(

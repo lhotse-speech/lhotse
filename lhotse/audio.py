@@ -460,7 +460,6 @@ class Recording:
     def reverb_rir(
         self,
         rir_recording: "Recording",
-        shift_output: bool = True,
         normalize_output: bool = True,
         affix_id: bool = True,
     ) -> "Recording":
@@ -469,7 +468,6 @@ class Recording:
         impulse response while loading audio.
 
         :param rir_recording: The impulse response to be used.
-        :param shift_output: When true, output will be of same length as input.
         :param normalize_output: When true, output will be normalized to have energy as input.
         :param affix_id: When true, we will modify the ``Recording.id`` field
             by affixing it with "_rvb".
@@ -479,7 +477,6 @@ class Recording:
         transforms.append(
             ReverbWithImpulseResponse(
                 rir_recording,
-                shift_output=shift_output,
                 normalize_output=normalize_output,
             ).to_dict()
         )
@@ -830,7 +827,6 @@ class RecordingSet(Serializable, Sequence[Recording]):
     def reverb_rir(
         self,
         rir_recordings: "RecordingSet",
-        shift_output: bool = True,
         normalize_output: bool = True,
         affix_id: bool = True,
     ) -> "RecordingSet":
@@ -839,16 +835,15 @@ class RecordingSet(Serializable, Sequence[Recording]):
         impulse responses while loading audio.
 
         :param rir_recordings: The impulse responses to be used.
-        :param shift_output: When true, output will be of same length as input.
         :param normalize_output: When true, output will be normalized to have energy as input.
         :param affix_id: When true, we will modify the ``Recording.id`` field
             by affixing it with "_sp{factor}".
         :return: a ``RecordingSet`` containing the perturbed ``Recording`` objects.
         """
+        rir_recordings = list(rir_recordings)
         return RecordingSet.from_recordings(
             r.reverb_rir(
-                rir_recording=rir_recordings.sample(n_recordings=1),
-                shift_output=shift_output,
+                rir_recording=random.choice(rir_recordings),
                 normalize_output=normalize_output,
                 affix_id=affix_id,
             )
