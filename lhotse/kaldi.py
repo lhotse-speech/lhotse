@@ -335,7 +335,9 @@ def make_wavscp_channel_string_map(
             )
         return f"{source.source} |"
     elif source.type == "file":
-        if Path(source.source).suffix == ".wav":
+        if Path(source.source).suffix == ".wav" and len(source.channels) == 1:
+            # Note: for single-channel waves, we don't need to invoke ffmpeg; but
+            #       for multi-channel waves, Kaldi is going to complain.
             audios = dict()
             for channel in source.channels:
                 audios[channel] = source.source
@@ -352,6 +354,7 @@ def make_wavscp_channel_string_map(
 
             return audios
         else:
+            # Handles non-WAVE audio formats and multi-channel WAVEs.
             audios = dict()
             for channel in source.channels:
                 audios[
