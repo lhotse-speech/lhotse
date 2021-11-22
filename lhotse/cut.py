@@ -18,6 +18,7 @@ from typing import (
     Optional,
     Sequence,
     Set,
+    Tuple,
     Type,
     TypeVar,
     Union,
@@ -42,6 +43,7 @@ from lhotse.features.io import FeaturesWriter, LilcomFilesWriter, LilcomHdf5Writ
 from lhotse.serialization import Serializable
 from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import (
+    DEFAULT_PADDING_VALUE,
     Decibels,
     LOG_EPSILON,
     NonPositiveEnergyError,
@@ -534,6 +536,7 @@ class Cut:
             channel=0,
             supervisions=self.supervisions,
             recording=recording,
+            custom=self.custom if hasattr(self, "custom") else None,
         )
 
     def speakers_feature_mask(
@@ -760,6 +763,84 @@ class MonoCut(Cut):
     # For the cases that the model was trained by raw audio instead of features
     recording: Optional[Recording] = None
 
+    # Store anything else the user might want.
+    custom: Optional[Dict[str, Any]] = None
+
+    def __setattr__(self, key: str, value: Any):
+        """
+        This magic function is called when the user tries to set an attribute.
+        We use it as syntactic sugar to store custom attributes in ``self.custom``
+        field, so that they can be (de)serialized later.
+        """
+        if key in self.__dataclass_fields__:
+            super().__setattr__(key, value)
+        else:
+            custom = ifnone(self.custom, {})
+            custom[key] = value
+            self.custom = custom
+
+    def __getattr__(self, name: str) -> Any:
+        """
+        This magic function is called when the user tries to access an attribute
+        of :class:`.MonoCut` that doesn't exist. It is used for accessing the custom
+        attributes of cuts.
+
+        We use it to look up the ``custom`` field: when it's None or empty,
+        we'll just raise AttributeError as usual.
+        If ``item`` is found in ``custom``, we'll return ``custom[item]``.
+        If ``item`` starts with "load_", we'll assume the name of the relevant
+        attribute comes after that, and that value of that field is of type
+        :class:`~lhotse.array.Array` or :class:`~lhotse.array.TemporalArray`.
+        We'll return its ``load`` method to call by the user.
+
+        Example of attaching and reading an alignment as TemporalArray::
+
+            >>> cut = MonoCut('cut1', start=0, duration=4, channel=0)
+            >>> cut.alignment = TemporalArray(...)
+            >>> ali = cut.load_alignment()
+
+        """
+        custom = self.custom
+        if custom is None:
+            raise AttributeError(f"No such attribute: {name}")
+        if name in custom:
+            # Somebody accesses raw [Temporal]Array manifest
+            # or wrote a custom piece of metadata into MonoCut.
+            return self.custom[name]
+        elif name.startswith("load_"):
+            # Return the method for loading [Temporal]Arrays,
+            # to be invoked by the user.
+            attr_name = name[5:]
+            return partial(self.load_custom, attr_name)
+        raise AttributeError(f"No such attribute: {name}")
+
+    def load_custom(self, name: str) -> np.ndarray:
+        """
+        Load custom data as numpy array. The custom data is expected to have
+        been stored in cuts ``custom`` field as an :class:`~lhotse.array.Array` or
+        :class:`~lhotse.array.TemporalArray` manifest.
+
+        .. note:: It works with Array manifests stored via attribute assignments,
+            e.g.: ``cut.my_custom_data = Array(...)``.
+
+        :param name: name of the custom attribute.
+        :return: a numpy array with the data.
+        """
+        from lhotse.array import Array, TemporalArray
+
+        value = self.custom.get(name)
+        if isinstance(value, Array):
+            # We return the method to read Array (it is called in the user's code).
+            return value.load()
+        elif isinstance(value, TemporalArray):
+            # TemporalArray supports slicing (note we return the method, without evaluating it).
+            return value.load(start=self.start, duration=self.duration)
+        else:
+            raise ValueError(
+                f"To load {name}, the cut needs to have field {name} (or cut.custom['{name}']) "
+                f"defined, and its value has to be a manifest of type Array or TemporalArray."
+            )
+
     @property
     def recording_id(self) -> str:
         return self.recording.id if self.has_recording else self.features.recording_id
@@ -975,14 +1056,12 @@ class MonoCut(Cut):
                 if olap_ratio > 0.01:
                     supervisions.append(interval.data.with_offset(-offset))
 
-        return MonoCut(
+        return fastcopy(
+            self,
             id=self.id if preserve_id else str(uuid4()),
             start=new_start,
             duration=new_duration,
-            channel=self.channel,
             supervisions=sorted(supervisions, key=lambda s: s.start),
-            features=self.features,
-            recording=self.recording,
         )
 
     def pad(
@@ -993,6 +1072,7 @@ class MonoCut(Cut):
         pad_feat_value: float = LOG_EPSILON,
         direction: str = "right",
         preserve_id: bool = False,
+        pad_value_dict: Optional[Dict[str, Union[int, float]]] = None,
     ) -> Cut:
         """
         Return a new MixedCut, padded with zeros in the recording, and ``pad_feat_value`` in each feature bin.
@@ -1009,6 +1089,8 @@ class MonoCut(Cut):
             the cut.
         :param preserve_id: When ``True``, preserves the cut ID before padding.
             Otherwise, a new random ID is generated for the padded cut (default).
+        :param pad_value_dict: Optional dict that specifies what value should be used
+            for padding arrays in custom attributes.
         :return: a padded MixedCut if duration is greater than this cut's duration, otherwise ``self``.
         """
         return pad(
@@ -1019,6 +1101,7 @@ class MonoCut(Cut):
             pad_feat_value=pad_feat_value,
             direction=direction,
             preserve_id=preserve_id,
+            pad_value_dict=pad_value_dict,
         )
 
     def resample(self, sampling_rate: int, affix_id: bool = False) -> "MonoCut":
@@ -1212,6 +1295,8 @@ class MonoCut(Cut):
 
     @staticmethod
     def from_dict(data: dict) -> "MonoCut":
+        from lhotse.serialization import deserialize_custom_field
+
         features = (
             Features.from_dict(data.pop("features")) if "features" in data else None
         )
@@ -1219,6 +1304,10 @@ class MonoCut(Cut):
             Recording.from_dict(data.pop("recording")) if "recording" in data else None
         )
         supervision_infos = data.pop("supervisions") if "supervisions" in data else []
+
+        if "custom" in data:
+            deserialize_custom_field(data["custom"])
+
         return MonoCut(
             **data,
             features=features,
@@ -1267,6 +1356,9 @@ class PaddingCut(Cut):
 
     # For time domain
     num_samples: Optional[int] = None
+
+    # Dict for storing padding values for custom array attributes
+    custom: Optional[dict] = None
 
     @property
     def start(self) -> Seconds:
@@ -1344,6 +1436,7 @@ class PaddingCut(Cut):
         pad_feat_value: float = LOG_EPSILON,
         direction: str = "right",
         preserve_id: bool = False,
+        pad_value_dict: Optional[Dict[str, Union[int, float]]] = None,
     ) -> Cut:
         """
         Return a new MixedCut, padded with zeros in the recording, and ``pad_feat_value`` in each feature bin.
@@ -1360,6 +1453,8 @@ class PaddingCut(Cut):
             the cut.
         :param preserve_id: When ``True``, preserves the cut ID from before padding.
             Otherwise, generates a new random ID (default).
+        :param pad_value_dict: Optional dict that specifies what value should be used
+            for padding arrays in custom attributes.
         :return: a padded MixedCut if duration is greater than this cut's duration, otherwise ``self``.
         """
         return pad(
@@ -1370,6 +1465,7 @@ class PaddingCut(Cut):
             pad_feat_value=pad_feat_value,
             direction=direction,
             preserve_id=preserve_id,
+            pad_value_dict=pad_value_dict,
         )
 
     def resample(self, sampling_rate: int, affix_id: bool = False) -> "PaddingCut":
@@ -1664,6 +1760,122 @@ class MixedCut(Cut):
     def features_type(self) -> Optional[str]:
         return self._first_non_padding_cut.features.type if self.has_features else None
 
+    def __getattr__(self, name: str) -> Any:
+        """
+        This magic function is called when the user tries to access an attribute
+        of :class:`.MixedCut` that doesn't exist. It is used for accessing the custom
+        attributes of cuts. We support exactly one scenario for mixed cuts:
+
+        If :attr:`tracks` contains exactly one :class:`.MonoCut` object (and an arbitrary
+        number of :class:`.PaddingCut` objects), we will look up the custom attributes
+        of that cut.
+
+        If one of the custom attributes is of type :class:`~lhotse.array.Array` or
+        :class:`~lhotse.array.TemporalArray` we'll also support loading those arrays
+        (see example below). Additionally, we will incorporate extra padding as
+        dictated by padding cuts.
+
+        Example:
+
+            >>> cut = MonoCut('cut1', start=0, duration=4, channel=0)
+            >>> cut.alignment = TemporalArray(...)
+            >>> mixed_cut = cut.pad(10, pad_value_dict={'alignment': -1})
+            >>> ali = mixed_cut.load_alignment()
+
+        """
+        # Python will sometimes try to call undefined magic functions,
+        # just fail for them (e.g. __setstate__ when pickling).
+        if name.startswith("__"):
+            raise AttributeError()
+
+        # Loading a custom array attribute + performing padding.
+        if name.startswith("load_"):
+            attr_name = name[5:]
+            return partial(self.load_custom, attr_name)
+
+        # Returning the contents of "mono_cut.custom[name]",
+        # or raising AttributeError.
+        try:
+            (
+                non_padding_idx,
+                mono_cut,
+            ) = self._assert_mono_cut_with_padding_and_return_it_with_track_index()
+            return getattr(mono_cut, name)
+        except AssertionError:
+            raise AttributeError(
+                f"No such attribute: '{name}' (note: custom attributes are not supported "
+                f"when the mixed cut has a different number of MonoCut tracks than one)."
+            )
+
+    def load_custom(self, name: str) -> np.ndarray:
+        """
+        Load custom data as numpy array. The custom data is expected to have
+        been stored in cuts ``custom`` field as an :class:`~lhotse.array.Array` or
+        :class:`~lhotse.array.TemporalArray` manifest.
+
+        .. note:: It works with Array manifests stored via attribute assignments,
+            e.g.: ``cut.my_custom_data = Array(...)``.
+
+        .. warning:: For :class:`.MixedCut`, this will only work if the mixed cut
+            consists of a single :class:`.MonoCut` and an arbitrary number of
+            :class:`.PaddingCuts`. This is because it is generally undefined how to
+            mix arbitrary arrays.
+
+        :param name: name of the custom attribute.
+        :return: a numpy array with the data (after padding).
+        """
+
+        from lhotse.array import Array, pad_array
+
+        (
+            non_padding_idx,
+            mono_cut,
+        ) = self._assert_mono_cut_with_padding_and_return_it_with_track_index()
+
+        # Load the array and retrieve the manifest from the only non-padding cut.
+        # Use getattr to propagate AttributeError if "name" is not defined.
+        array = mono_cut.load_custom(name)
+        manifest = getattr(mono_cut, name)
+
+        # Check if the corresponding manifest for 'load_something' is of type
+        # Array; if yes, just return the loaded data.
+        # This is likely an embedding without a temporal dimension.
+        if isinstance(manifest, Array):
+            return array
+
+        # We are loading an array with a temporal dimension:
+        # We need to pad it.
+        left_padding = self.tracks[non_padding_idx].offset
+        padded_duration = self.duration
+        pad_value = [t.cut for t in self.tracks if isinstance(t.cut, PaddingCut)][
+            0
+        ].custom[name]
+
+        return pad_array(
+            array,
+            temporal_dim=manifest.temporal_dim,
+            frame_shift=manifest.frame_shift,
+            offset=left_padding,
+            padded_duration=padded_duration,
+            pad_value=pad_value,
+        )
+
+    def _assert_mono_cut_with_padding_and_return_it_with_track_index(
+        self,
+    ) -> Tuple[int, MonoCut]:
+        # TODO(pzelasko): consider relaxing this condition to
+        #                 supporting mixed cuts that are not overlapping
+        non_padding_cuts = [
+            (idx, t.cut)
+            for idx, t in enumerate(self.tracks)
+            if isinstance(t.cut, MonoCut)
+        ]
+        assert (
+            len(non_padding_cuts) == 1
+        ), f"The cut has {len(non_padding_cuts)} (expected exactly one)"
+        non_padding_idx, mono_cut = non_padding_cuts[0]
+        return non_padding_idx, mono_cut
+
     def truncate(
         self,
         *,
@@ -1749,6 +1961,7 @@ class MixedCut(Cut):
         pad_feat_value: float = LOG_EPSILON,
         direction: str = "right",
         preserve_id: bool = False,
+        pad_value_dict: Optional[Dict[str, Union[int, float]]] = None,
     ) -> Cut:
         """
         Return a new MixedCut, padded with zeros in the recording, and ``pad_feat_value`` in each feature bin.
@@ -1765,6 +1978,8 @@ class MixedCut(Cut):
             the cut.
         :param preserve_id: When ``True``, preserves the cut ID from before padding.
             Otherwise, generates a new random ID (default).
+        :param pad_value_dict: Optional dict that specifies what value should be used
+            for padding arrays in custom attributes.
         :return: a padded MixedCut if duration is greater than this cut's duration, otherwise ``self``.
         """
         return pad(
@@ -1775,6 +1990,7 @@ class MixedCut(Cut):
             pad_feat_value=pad_feat_value,
             direction=direction,
             preserve_id=preserve_id,
+            pad_value_dict=pad_value_dict,
         )
 
     def resample(self, sampling_rate: int, affix_id: bool = False) -> "MixedCut":
@@ -2127,6 +2343,7 @@ class MixedCut(Cut):
                 supervisions=self.supervisions,
                 features=features_info,
                 recording=None,
+                custom=self.custom if hasattr(self, "custom") else None,
             )
         else:  # mix lazily
             new_tracks = [
@@ -2873,6 +3090,7 @@ class CutSet(Serializable, Sequence[Cut]):
         pad_feat_value: float = LOG_EPSILON,
         direction: str = "right",
         preserve_id: bool = False,
+        pad_value_dict: Optional[Dict[str, Union[int, float]]] = None,
     ) -> "CutSet":
         """
         Return a new CutSet with Cuts padded to ``duration``, ``num_frames`` or ``num_samples``.
@@ -2893,6 +3111,8 @@ class CutSet(Serializable, Sequence[Cut]):
             before or after the cut.
         :param preserve_id: When ``True``, preserves the cut ID from before padding.
             Otherwise, generates a new random ID (default).
+        :param pad_value_dict: Optional dict that specifies what value should be used
+            for padding arrays in custom attributes.
         :return: A padded CutSet.
         """
         # When the user does not specify explicit padding duration/num_frames/num_samples,
@@ -2915,6 +3135,7 @@ class CutSet(Serializable, Sequence[Cut]):
                 pad_feat_value=pad_feat_value,
                 direction=direction,
                 preserve_id=preserve_id,
+                pad_value_dict=pad_value_dict,
             )
             for cut in self
         )
@@ -3882,6 +4103,7 @@ def pad(
     pad_feat_value: float = LOG_EPSILON,
     direction: str = "right",
     preserve_id: bool = False,
+    pad_value_dict: Optional[Dict[str, Union[int, float]]] = None,
 ) -> Cut:
     """
     Return a new MixedCut, padded with zeros in the recording, and ``pad_feat_value`` in each feature bin.
@@ -3899,12 +4121,29 @@ def pad(
         the cut.
     :param preserve_id: When ``True``, preserves the cut ID before padding.
         Otherwise, a new random ID is generated for the padded cut (default).
+    :param pad_value_dict: Optional dict that specifies what value should be used
+        for padding arrays in custom attributes.
     :return: a padded MixedCut if duration is greater than this cut's duration, otherwise ``self``.
     """
     assert exactly_one_not_null(duration, num_frames, num_samples), (
         f"Expected only one of (duration, num_frames, num_samples) to be set: "
         f"got ({duration}, {num_frames}, {num_samples})"
     )
+    if hasattr(cut, "custom") and isinstance(cut.custom, dict):
+        from lhotse.array import TemporalArray
+
+        arr_keys = [k for k, v in cut.custom.items() if isinstance(v, TemporalArray)]
+        if len(arr_keys) > 0:
+            padding_values_specified = (
+                pad_value_dict is not None
+                and all(k in pad_value_dict for k in arr_keys),
+            )
+            if not padding_values_specified:
+                warnings.warn(
+                    f"Cut being padded has custom TemporalArray attributes: {arr_keys}. "
+                    f"We expected a 'pad_value_dict' argument with padding values for these attributes. "
+                    f"We will proceed and use the default padding value (={DEFAULT_PADDING_VALUE})."
+                )
 
     if duration is not None:
         if duration <= cut.duration:
@@ -3979,6 +4218,7 @@ def pad(
         ),
         frame_shift=cut.frame_shift,
         sampling_rate=cut.sampling_rate,
+        custom=pad_value_dict,
     )
 
     if direction == "right":

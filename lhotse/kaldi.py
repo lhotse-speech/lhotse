@@ -335,7 +335,9 @@ def make_wavscp_channel_string_map(
             )
         return f"{source.source} |"
     elif source.type == "file":
-        if Path(source.source).suffix == ".wav":
+        if Path(source.source).suffix == ".wav" and len(source.channels) == 1:
+            # Note: for single-channel waves, we don't need to invoke ffmpeg; but
+            #       for multi-channel waves, Kaldi is going to complain.
             audios = dict()
             for channel in source.channels:
                 audios[channel] = source.source
@@ -348,15 +350,16 @@ def make_wavscp_channel_string_map(
             for channel in source.channels:
                 audios[
                     channel
-                ] = f"sph2pipe {source.source} -f wav -c {channel+1} -p | ffmpeg -i pipe:0 -ar {sampling_rate} -f wav  pipe:1 |"
+                ] = f"sph2pipe {source.source} -f wav -c {channel+1} -p | ffmpeg -threads 1 -i pipe:0 -ar {sampling_rate} -f wav -threads 1 pipe:1 |"
 
             return audios
         else:
+            # Handles non-WAVE audio formats and multi-channel WAVEs.
             audios = dict()
             for channel in source.channels:
                 audios[
                     channel
-                ] = f"ffmpeg -i {source.source} -ar {sampling_rate} -map_channel 0.0.{channel}  -f wav pipe:1 |"
+                ] = f"ffmpeg -threads 1 -i {source.source} -ar {sampling_rate} -map_channel 0.0.{channel}  -f wav -threads 1 pipe:1 |"
             return audios
 
     else:

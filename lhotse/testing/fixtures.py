@@ -10,10 +10,13 @@ from lhotse import (
     Fbank,
     FbankConfig,
     LilcomFilesWriter,
+    LilcomHdf5Writer,
     MonoCut,
+    NumpyHdf5Writer,
     Recording,
     SupervisionSegment,
 )
+from lhotse.array import seconds_to_frames
 from lhotse.supervision import AlignmentItem
 from lhotse.utils import Seconds, uuid4
 
@@ -76,6 +79,7 @@ class RandomCutTestCase:
         features: bool = True,
         supervision: bool = False,
         alignment: bool = False,
+        custom_field: bool = False,
         frame_shift: Seconds = 0.01,
     ) -> MonoCut:
         duration = num_samples / sampling_rate
@@ -103,13 +107,15 @@ class RandomCutTestCase:
                     else None,
                 )
             )
+        if custom_field:
+            self._with_custom_temporal_array(cut=cut, frame_shift=frame_shift)
         return cut
 
     def _with_features(self, cut: MonoCut, frame_shift: Seconds) -> MonoCut:
         d = TemporaryDirectory()
         self.dirs.append(d)
         extractor = Fbank(config=FbankConfig(frame_shift=frame_shift))
-        with LilcomFilesWriter(d.name) as storage:
+        with LilcomHdf5Writer(d.name) as storage:
             return cut.compute_and_store_features(extractor, storage=storage)
 
     def _with_alignment(
@@ -124,3 +130,13 @@ class RandomCutTestCase:
             for i, sub in enumerate(subwords)
         ]
         return {"subword": alignment}
+
+    def _with_custom_temporal_array(self, cut: MonoCut, frame_shift: Seconds) -> None:
+        d = TemporaryDirectory()
+        self.dirs.append(d)
+        num_frames = seconds_to_frames(cut.duration, frame_shift=frame_shift)
+        array = np.random.randint(256, size=(num_frames,))
+        with NumpyHdf5Writer(d.name) as storage:
+            cut.codebook_indices = storage.store_array(
+                key="ali1", value=array, frame_shift=frame_shift, temporal_dim=0
+            )

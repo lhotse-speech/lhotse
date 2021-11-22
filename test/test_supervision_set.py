@@ -79,6 +79,38 @@ def test_create_supervision_segment_with_minimum_metadata():
     SupervisionSegment(id="X", recording_id="X", start=0.0, duration=0.1)
 
 
+def test_supervision_custom_attributes():
+    sup = SupervisionSegment(id="X", recording_id="X", start=0.0, duration=0.1)
+    sup.eye_color = "green"
+    sup.wer = 0.41
+
+    assert sup.eye_color == "green"
+    assert sup.custom["eye_color"] == "green"
+
+    assert sup.wer == 0.41
+    assert sup.custom["wer"] == 0.41
+
+    with pytest.raises(AttributeError):
+        sup.nonexistent_attr
+
+
+def test_supervision_custom_attributes_serialization():
+    sup = SupervisionSegment(id="X", recording_id="X", start=0.0, duration=0.1)
+    sup.eye_color = "green"
+    sup.wer = 0.41
+
+    sup2 = SupervisionSegment.from_dict(sup.to_dict())
+
+    assert sup2.eye_color == "green"
+    assert sup2.custom["eye_color"] == "green"
+
+    assert sup2.wer == 0.41
+    assert sup2.custom["wer"] == 0.41
+
+    with pytest.raises(AttributeError):
+        sup.nonexistent_attr
+
+
 def test_create_supervision_segment_with_all_metadata():
     SupervisionSegment(
         id="X",
