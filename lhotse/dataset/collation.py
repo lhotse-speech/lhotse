@@ -241,15 +241,17 @@ def collate_custom_field(
             alen = a.shape[temporal_dim]
             # Construct and index expression such as tensors[:, :alen, :, :] programmatically;
             # All indices are set to ':', besides temporal dim which is determined on pad_direction.
-            if pad_direction == 'right':
+            if pad_direction == "right":
                 temporal_slice = slice(0, alen)
-            elif pad_direction == 'left':
+            elif pad_direction == "left":
                 temporal_slice = slice(maxlen - alen, maxlen)
-            elif pad_direction == 'both':
+            elif pad_direction == "both":
                 half = (maxlen - alen) // 2
                 temporal_slice = slice(half, maxlen - half)
             else:
-                raise ValueError(f"Unexpected pad_direction argument: '{pad_direction}'")
+                raise ValueError(
+                    f"Unexpected pad_direction argument: '{pad_direction}'"
+                )
             indices = (aidx,) + tuple(
                 temporal_slice if i == temporal_dim else slice(None, None, None)
                 for i in range(len(a.shape))
