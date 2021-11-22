@@ -490,7 +490,9 @@ class Cut:
                     )
         return indexed
 
-    @deprecated("Please use save_audio() instead.")
+    @deprecated(
+        "Cut.compute_and_store_recording will be removed in a future release. Please use save_audio() instead."
+    )
     def compute_and_store_recording(
         self,
         storage_path: Pathlike,
@@ -507,41 +509,7 @@ class Cut:
             E.g. for speed perturbation, use ``CutSet.perturb_speed()`` instead.
         :return: a new MonoCut instance.
         """
-        storage_path = Path(storage_path)
-        samples = self.load_audio()
-        if augment_fn is not None:
-            samples = augment_fn(samples, self.sampling_rate)
-        # Store audio as FLAC
-        import soundfile as sf
-
-        sf.write(
-            file=str(storage_path),
-            data=samples.transpose(),
-            samplerate=self.sampling_rate,
-            format="FLAC",
-        )
-        recording = Recording(
-            id=storage_path.stem,
-            sampling_rate=self.sampling_rate,
-            num_samples=samples.shape[1],
-            duration=samples.shape[1] / self.sampling_rate,
-            sources=[
-                AudioSource(
-                    type="file",
-                    channels=[0],
-                    source=str(storage_path),
-                )
-            ],
-        )
-        return MonoCut(
-            id=self.id,
-            start=0,
-            duration=recording.duration,
-            channel=0,
-            supervisions=self.supervisions,
-            recording=recording,
-            custom=self.custom if hasattr(self, "custom") else None,
-        )
+        return self.save_audio(storage_path=storage_path, augment_fn=augment_fn)
 
     def save_audio(
         self,
@@ -3921,7 +3889,9 @@ class CutSet(Serializable, Sequence[Cut]):
 
         return CutSet.from_cuts(cuts_with_feats)
 
-    @deprecated("Please use save_audios() instead.")
+    @deprecated(
+        "CutSet.compute_and_store_recordings will be removed in a future release. Please use save_audios() instead."
+    )
     def compute_and_store_recordings(
         self,
         storage_path: Pathlike,
@@ -3953,76 +3923,13 @@ class CutSet(Serializable, Sequence[Cut]):
             for parallel computation).
         :return: Returns a new ``CutSet``.
         """
-        from lhotse.manipulation import combine
-        from cytoolz import identity
-
-        # Pre-conditions and args setup
-        progress = (
-            identity  # does nothing, unless we overwrite it with an actual prog bar
+        return self.save_audios(
+            storage_path,
+            num_jobs=num_jobs,
+            executor=executor,
+            augment_fn=augment_fn,
+            progress_bar=progress_bar,
         )
-        if num_jobs is None:
-            num_jobs = 1
-        if num_jobs == 1 and executor is not None:
-            logging.warning(
-                "Executor argument was passed but num_jobs set to 1: "
-                "we will ignore the executor and use non-parallel execution."
-            )
-            executor = None
-
-        def file_storage_path(cut: Cut, storage_path: Pathlike) -> Path:
-            # Introduce a sub-directory that starts with the first 3 characters of the cut's ID.
-            # This allows to avoid filesystem performance problems related to storing
-            # too many files in a single directory.
-            subdir = Path(storage_path) / cut.id[:3]
-            subdir.mkdir(exist_ok=True, parents=True)
-            return (subdir / cut.id).with_suffix(".flac")
-
-        # Non-parallel execution
-        if executor is None and num_jobs == 1:
-            if progress_bar:
-                progress = partial(
-                    tqdm, desc="Storing audio recordings", total=len(self)
-                )
-            return CutSet.from_cuts(
-                progress(
-                    cut.compute_and_store_recording(
-                        storage_path=file_storage_path(cut, storage_path),
-                        augment_fn=augment_fn,
-                    )
-                    for cut in self
-                )
-            )
-
-        # Parallel execution: prepare the CutSet splits
-        cut_sets = self.split(num_jobs, shuffle=True)
-
-        # Initialize the default executor if None was given
-        if executor is None:
-            executor = ProcessPoolExecutor(num_jobs)
-
-        # Submit the chunked tasks to parallel workers.
-        # Each worker runs the non-parallel version of this function inside.
-        futures = [
-            executor.submit(
-                CutSet.compute_and_store_recordings,
-                cs,
-                storage_path=storage_path,
-                augment_fn=augment_fn,
-                # Disable individual workers progress bars for readability
-                progress_bar=False,
-            )
-            for i, cs in enumerate(cut_sets)
-        ]
-
-        if progress_bar:
-            progress = partial(
-                tqdm,
-                desc="Storing audio recordings (chunks progress)",
-                total=len(futures),
-            )
-
-        cuts = combine(progress(f.result() for f in futures))
-        return cuts
 
     def save_audios(
         self,

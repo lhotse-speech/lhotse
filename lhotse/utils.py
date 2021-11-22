@@ -603,10 +603,10 @@ class DeprecatedWarning(UserWarning):
     pass
 
 
-def deprecated(instructions):
+def deprecated(message):
     """Flags a method as deprecated.
     Args:
-        instructions: A human-friendly string of instructions, such
+        message: A human-friendly string of instructions, such
             as: 'Please migrate to add_proxy() ASAP.'
     """
 
@@ -617,9 +617,6 @@ def deprecated(instructions):
 
         @functools.wraps(func)
         def wrapper(*args, **kwargs):
-            message = "Call to deprecated function {}. {}".format(
-                func.__name__, instructions
-            )
 
             frame = inspect.currentframe().f_back
 
