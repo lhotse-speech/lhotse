@@ -350,7 +350,7 @@ def make_wavscp_channel_string_map(
             for channel in source.channels:
                 audios[
                     channel
-                ] = f"sph2pipe {source.source} -f wav -c {channel+1} -p | ffmpeg -i pipe:0 -ar {sampling_rate} -f wav  pipe:1 |"
+                ] = f"sph2pipe {source.source} -f wav -c {channel+1} -p | ffmpeg -threads 1 -i pipe:0 -ar {sampling_rate} -f wav -threads 1 pipe:1 |"
 
             return audios
         else:
@@ -359,7 +359,7 @@ def make_wavscp_channel_string_map(
             for channel in source.channels:
                 audios[
                     channel
-                ] = f"ffmpeg -i {source.source} -ar {sampling_rate} -map_channel 0.0.{channel}  -f wav pipe:1 |"
+                ] = f"ffmpeg -threads 1 -i {source.source} -ar {sampling_rate} -map_channel 0.0.{channel}  -f wav -threads 1 pipe:1 |"
             return audios
 
     else:
