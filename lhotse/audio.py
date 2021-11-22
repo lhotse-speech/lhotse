@@ -1389,7 +1389,7 @@ def read_opus_ffmpeg(
         cmd += f" -ar {force_opus_sampling_rate}"
         sampling_rate = force_opus_sampling_rate
     # Read audio samples directly as float32.
-    cmd += " -f f32le pipe:1"
+    cmd += " -f f32le -threads 1 pipe:1"
     # Actual audio reading.
     proc = run(cmd, shell=True, stdout=PIPE, stderr=PIPE)
     raw_audio = proc.stdout
