@@ -66,6 +66,7 @@ from lhotse.utils import (
     rich_exception_info,
     split_sequence,
     uuid4,
+    deprecated,
 )
 
 # One of the design principles for Cuts is a maximally "lazy" implementation, e.g. when mixing Cuts,
@@ -489,7 +490,28 @@ class Cut:
                     )
         return indexed
 
+    @deprecated(
+        "Cut.compute_and_store_recording will be removed in a future release. Please use save_audio() instead."
+    )
     def compute_and_store_recording(
+        self,
+        storage_path: Pathlike,
+        augment_fn: Optional[AugmentFn] = None,
+    ) -> "MonoCut":
+        """
+        Store this cut's waveform as audio recording to disk.
+
+        :param storage_path: The path to location where we will store the audio recordings.
+        :param augment_fn: an optional callable used for audio augmentation.
+            Be careful with the types of augmentations used: if they modify
+            the start/end/duration times of the cut and its supervisions,
+            you will end up with incorrect supervision information when using this API.
+            E.g. for speed perturbation, use ``CutSet.perturb_speed()`` instead.
+        :return: a new MonoCut instance.
+        """
+        return self.save_audio(storage_path=storage_path, augment_fn=augment_fn)
+
+    def save_audio(
         self,
         storage_path: Pathlike,
         augment_fn: Optional[AugmentFn] = None,
@@ -3867,7 +3889,49 @@ class CutSet(Serializable, Sequence[Cut]):
 
         return CutSet.from_cuts(cuts_with_feats)
 
+    @deprecated(
+        "CutSet.compute_and_store_recordings will be removed in a future release. Please use save_audios() instead."
+    )
     def compute_and_store_recordings(
+        self,
+        storage_path: Pathlike,
+        num_jobs: Optional[int] = None,
+        executor: Optional[Executor] = None,
+        augment_fn: Optional[AugmentFn] = None,
+        progress_bar: bool = True,
+    ) -> "CutSet":
+        """
+        Store waveforms of all cuts as audio recordings to disk.
+
+        :param storage_path: The path to location where we will store the audio recordings.
+            For each cut, a sub-directory will be created that starts with the first 3
+            characters of the cut's ID. The audio recording is then stored in the sub-directory
+            using the cut ID as filename and '.flac' as suffix.
+        :param num_jobs: The number of parallel processes used to store the audio recordings.
+            We will internally split the CutSet into this many chunks
+            and process each chunk in parallel.
+        :param augment_fn: an optional callable used for audio augmentation.
+            Be careful with the types of augmentations used: if they modify
+            the start/end/duration times of the cut and its supervisions,
+            you will end up with incorrect supervision information when using this API.
+            E.g. for speed perturbation, use ``CutSet.perturb_speed()`` instead.
+        :param executor: when provided, will be used to parallelize the process.
+            By default, we will instantiate a ProcessPoolExecutor.
+            Learn more about the ``Executor`` API at
+            https://lhotse.readthedocs.io/en/latest/parallelism.html
+        :param progress_bar: Should a progress bar be displayed (automatically turned off
+            for parallel computation).
+        :return: Returns a new ``CutSet``.
+        """
+        return self.save_audios(
+            storage_path,
+            num_jobs=num_jobs,
+            executor=executor,
+            augment_fn=augment_fn,
+            progress_bar=progress_bar,
+        )
+
+    def save_audios(
         self,
         storage_path: Pathlike,
         num_jobs: Optional[int] = None,
@@ -3930,7 +3994,7 @@ class CutSet(Serializable, Sequence[Cut]):
                 )
             return CutSet.from_cuts(
                 progress(
-                    cut.compute_and_store_recording(
+                    cut.save_audio(
                         storage_path=file_storage_path(cut, storage_path),
                         augment_fn=augment_fn,
                     )
@@ -3949,7 +4013,7 @@ class CutSet(Serializable, Sequence[Cut]):
         # Each worker runs the non-parallel version of this function inside.
         futures = [
             executor.submit(
-                CutSet.compute_and_store_recordings,
+                CutSet.save_audios,
                 cs,
                 storage_path=storage_path,
                 augment_fn=augment_fn,
