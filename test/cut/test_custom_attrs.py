@@ -1,11 +1,9 @@
-from math import isclose
 from tempfile import NamedTemporaryFile
 
 import numpy as np
 import pytest
 
-from lhotse import CutSet, LilcomHdf5Writer, MonoCut, NumpyHdf5Writer
-from lhotse.cut import MixedCut, PaddingCut
+from lhotse import LilcomHdf5Writer, MonoCut, NumpyHdf5Writer
 from lhotse.serialization import deserialize_item
 from lhotse.testing.dummies import dummy_cut, dummy_recording
 
@@ -141,56 +139,3 @@ def test_cut_load_temporal_array_pad(pad_value):
         assert alignment_pad.shape == (150,)  # 60.0 / 0.4 == 150
         np.testing.assert_equal(alignment_pad[:131], alignment)
         np.testing.assert_equal(alignment_pad[131:], pad_value)
-
-
-def test_padding_issue_478():
-    """
-    https://github.com/lhotse-speech/lhotse/issues/478
-    """
-    with NamedTemporaryFile(suffix=".h5") as f, NumpyHdf5Writer(f.name) as writer:
-
-        # Prepare data for cut 1.
-        cut1 = MonoCut(
-            "c1", start=0, duration=4.9, channel=0, recording=dummy_recording(1)
-        )
-        ali1 = np.random.randint(500, size=(121,))
-        fs1 = cut1.duration / ali1.shape[0]
-        cut1.label_alignment = writer.store_array(
-            "c1", ali1, frame_shift=fs1, temporal_dim=0
-        )
-
-        # We expected frame shift to be 0.04, but it is actually larger than that!
-        assert isclose(fs1, 0.04049586776859505)
-
-        # Prepare data for cut 2.
-        cut2 = MonoCut(
-            "c2", start=0, duration=4.895, channel=0, recording=dummy_recording(2)
-        )
-        ali2 = np.random.randint(500, size=(121,))
-        fs2 = cut2.duration / ali2.shape[0]
-        cut2.label_alignment = writer.store_array(
-            "c2", ali2, frame_shift=fs2, temporal_dim=0
-        )
-
-        # Note that this frame shift is actually different than in the other cut,
-        # i.e. technically, each frame represents a slightly shorter chunk of
-        # the recording in cut2 than in cut1. This is because the durations are
-        # different, but the number of frames are the same.
-        assert isclose(fs2, 0.04045454545454545)
-
-        # Pad them. Cut 2 will have a PaddingCut.
-        cuts = CutSet.from_cuts([cut1, cut2])
-        cuts = cuts.pad()
-
-        cut1_pad = cuts[0]
-        assert isinstance(cut1_pad, MonoCut)
-        cut2_pad = cuts[1]
-        assert isinstance(cut2_pad, MixedCut)
-        assert isinstance(cut2_pad.tracks[1].cut, PaddingCut)
-        assert cut2_pad.tracks[1].cut.duration == 0.005
-
-        arr1 = cuts[0].load_label_alignment()
-        np.testing.assert_equal(arr1, ali1)
-
-        arr2 = cuts[1].load_label_alignment()
-        np.testing.assert_equal(arr2, ali2)
