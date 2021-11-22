@@ -219,7 +219,7 @@ def collate_custom_field(
                 f"Argument 'pad_value' not passed -- we will pad field '{field}' "
                 f"with {DEFAULT_PADDING_VALUE}."
             )
-            pad_value = 0
+            pad_value = DEFAULT_PADDING_VALUE
         temporal_dim = first_manifest.temporal_dim
         arr_lens = torch.tensor(
             [getattr(c, field).shape[temporal_dim] for c in cuts], dtype=torch.int32
@@ -239,7 +239,7 @@ def collate_custom_field(
         tensors = pad_value * torch.ones(collated_shape, dtype=largest_arr.dtype)
         for aidx, a in enumerate(arrs):
             alen = a.shape[temporal_dim]
-            # Construct and index expression such as tensors[:, :alen, :, :] programmatically;
+            # Construct an index expression such as tensors[:, :alen, :, :] programmatically;
             # All indices are set to ':', besides temporal dim which is determined on pad_direction.
             if pad_direction == "right":
                 temporal_slice = slice(0, alen)
