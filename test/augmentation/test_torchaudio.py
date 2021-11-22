@@ -149,9 +149,7 @@ def test_serialize_deserialize_transform_reverb(audio, rir, recording_to_dict):
     reverb_orig = ReverbWithImpulseResponse(rir=rir)
     data_reverb = reverb_orig.to_dict()
     reverb = ReverbWithImpulseResponse.from_dict(data_reverb)
-    rvb_audio = reverb(audio, SAMPLING_RATE)
-
-    assert rvb_audio.shape == audio.shape
+    assert reverb_orig == reverb
 
 
 @pytest.mark.parametrize("sampling_rate", [8000, 16000, 22050, 32000, 44100, 48000])
