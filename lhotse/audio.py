@@ -29,7 +29,14 @@ from typing import (
 import numpy as np
 from tqdm.auto import tqdm
 
-from lhotse.augmentation import AudioTransform, Resample, Speed, Tempo, Volume
+from lhotse.augmentation import (
+    AudioTransform,
+    Resample,
+    Speed,
+    Tempo,
+    Volume,
+    ReverbWithImpulseResponse,
+)
 from lhotse.caching import dynamic_lru_cache
 from lhotse.serialization import Serializable
 from lhotse.utils import (
@@ -450,6 +457,35 @@ class Recording:
             transforms=transforms,
         )
 
+    def reverb_rir(
+        self,
+        rir_recording: "Recording",
+        normalize_output: bool = True,
+        affix_id: bool = True,
+    ) -> "Recording":
+        """
+        Return a new ``Recording`` that will lazily apply reverberation based on provided
+        impulse response while loading audio.
+
+        :param rir_recording: The impulse response to be used.
+        :param normalize_output: When true, output will be normalized to have energy as input.
+        :param affix_id: When true, we will modify the ``Recording.id`` field
+            by affixing it with "_rvb".
+        :return: the perturbed ``Recording``.
+        """
+        transforms = self.transforms.copy() if self.transforms is not None else []
+        transforms.append(
+            ReverbWithImpulseResponse(
+                rir_recording,
+                normalize_output=normalize_output,
+            ).to_dict()
+        )
+        return fastcopy(
+            self,
+            id=f"{self.id}_rvb" if affix_id else self.id,
+            transforms=transforms,
+        )
+
     def resample(self, sampling_rate: int) -> "Recording":
         """
         Return a new ``Recording`` that will be lazily resampled while loading audio.
@@ -544,6 +580,7 @@ class RecordingSet(Serializable, Sequence[Recording]):
 
             >>> recs_sp = recs.perturb_speed(factor=1.1)
             >>> recs_vp = recs.perturb_volume(factor=2.)
+            >>> recs_rvb = recs.reverb_rir(rir_recs)
             >>> recs_24k = recs.resample(24000)
     """
 
@@ -769,6 +806,32 @@ class RecordingSet(Serializable, Sequence[Recording]):
         """
         return RecordingSet.from_recordings(
             r.perturb_volume(factor=factor, affix_id=affix_id) for r in self
+        )
+
+    def reverb_rir(
+        self,
+        rir_recordings: "RecordingSet",
+        normalize_output: bool = True,
+        affix_id: bool = True,
+    ) -> "RecordingSet":
+        """
+        Return a new ``RecordingSet`` that will lazily apply reverberation based on provided
+        impulse responses while loading audio.
+
+        :param rir_recordings: The impulse responses to be used.
+        :param normalize_output: When true, output will be normalized to have energy as input.
+        :param affix_id: When true, we will modify the ``Recording.id`` field
+            by affixing it with "_rvb".
+        :return: a ``RecordingSet`` containing the perturbed ``Recording`` objects.
+        """
+        rir_recordings = list(rir_recordings)
+        return RecordingSet.from_recordings(
+            r.reverb_rir(
+                rir_recording=random.choice(rir_recordings),
+                normalize_output=normalize_output,
+                affix_id=affix_id,
+            )
+            for r in self
         )
 
     def resample(self, sampling_rate: int) -> "RecordingSet":
@@ -1374,7 +1437,7 @@ def read_opus_ffmpeg(
     :return: a tuple of audio samples and the sampling rate.
     """
     # Construct the ffmpeg command depending on the arguments passed.
-    cmd = f"ffmpeg"
+    cmd = f"ffmpeg -threads 1"
     sampling_rate = 48000
     # Note: we have to add offset and duration options (-ss and -t) BEFORE specifying the input
     #       (-i), otherwise ffmpeg will decode everything and trim afterwards...
@@ -1389,7 +1452,7 @@ def read_opus_ffmpeg(
         cmd += f" -ar {force_opus_sampling_rate}"
         sampling_rate = force_opus_sampling_rate
     # Read audio samples directly as float32.
-    cmd += " -f f32le pipe:1"
+    cmd += " -f f32le -threads 1 pipe:1"
     # Actual audio reading.
     proc = run(cmd, shell=True, stdout=PIPE, stderr=PIPE)
     raw_audio = proc.stdout
