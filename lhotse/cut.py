@@ -160,6 +160,7 @@ class Cut:
         >>> cut_24k = cut.resample(24000)
         >>> cut_sp = cut.perturb_speed(1.1)
         >>> cut_vp = cut.perturb_volume(2.)
+        >>> cut_rvb = cut.reverb_rir(rir_recording)
 
     .. note::
         All cut transformations are performed lazily, on-the-fly, upon calling ``load_audio`` or ``load_features``.
@@ -223,6 +224,7 @@ class Cut:
     perturb_speed: Callable
     perturb_tempo: Callable
     perturb_volume: Callable
+    reverb_rir: Callable
     map_supervisions: Callable
     filter_supervisions: Callable
     with_features_path_prefix: Callable
@@ -1260,6 +1262,53 @@ class MonoCut(Cut):
             supervisions=supervisions_vp,
         )
 
+    def reverb_rir(
+        self,
+        rir_recording: "Recording",
+        normalize_output: bool = True,
+        affix_id: bool = True,
+    ) -> "MonoCut":
+        """
+        Return a new ``MonoCut`` that will convolve the audio with the provided impulse response.
+
+        :param rir_recording: The impulse response to use for convolving.
+        :param normalize_output: When true, output will be normalized to have energy as input.
+        :param affix_id: When true, we will modify the ``MonoCut.id`` field
+            by affixing it with "_rvb".
+        :return: a modified copy of the current ``MonoCut``.
+        """
+        # Pre-conditions
+        assert (
+            self.has_recording
+        ), "Cannot apply reverberation on a MonoCut without Recording."
+        if self.has_features:
+            logging.warning(
+                "Attempting to reverberate a MonoCut that references pre-computed features. "
+                "The feature manifest will be detached, as we do not support feature-domain "
+                "reverberation."
+            )
+            self.features = None
+        # Actual reverberation.
+        recording_rvb = self.recording.reverb_rir(
+            rir_recording=rir_recording,
+            normalize_output=normalize_output,
+            affix_id=affix_id,
+        )
+        # Match the supervision's id (and it's underlying recording id).
+        supervisions_rvb = [
+            s.reverb_rir(
+                affix_id=affix_id,
+            )
+            for s in self.supervisions
+        ]
+
+        return fastcopy(
+            self,
+            id=f"{self.id}_rvb" if affix_id else self.id,
+            recording=recording_rvb,
+            supervisions=supervisions_rvb,
+        )
+
     def map_supervisions(
         self, transform_fn: Callable[[SupervisionSegment], SupervisionSegment]
     ) -> Cut:
@@ -1575,6 +1624,25 @@ class PaddingCut(Cut):
         """
 
         return fastcopy(self, id=f"{self.id}_vp{factor}" if affix_id else self.id)
+
+    def reverb_rir(
+        self,
+        rir_recording: "Recording",
+        normalize_output: bool = True,
+        affix_id: bool = True,
+    ) -> "PaddingCut":
+        """
+        Return a new ``PaddingCut`` that will "mimic" the effect of reverberation with impulse response
+        on original samples.
+
+        :param rir_recording: The impulse response to use for convolving.
+        :param normalize_output: When true, output will be normalized to have energy as input.
+        :param affix_id: When true, we will modify the ``PaddingCut.id`` field
+            by affixing it with "_rvb".
+        :return: a modified copy of the current ``PaddingCut``.
+        """
+
+        return fastcopy(self, id=f"{self.id}_rvb" if affix_id else self.id)
 
     def drop_features(self) -> "PaddingCut":
         """Return a copy of the current :class:`.PaddingCut`, detached from ``features``."""
@@ -2135,6 +2203,46 @@ class MixedCut(Cut):
             ],
         )
 
+    def reverb_rir(
+        self,
+        rir_recording: "Recording",
+        normalize_output: bool = True,
+        affix_id: bool = True,
+    ) -> "MixedCut":
+        """
+        Return a new ``MixedCut`` that will convolve the audio with the provided impulse response.
+
+        :param rir_recording: The impulse response to use for convolving.
+        :param normalize_output: When true, output will be normalized to have energy as input.
+        :param affix_id: When true, we will modify the ``MixedCut.id`` field
+            by affixing it with "_rvb".
+        :return: a modified copy of the current ``MixedCut``.
+        """
+        # Pre-conditions
+        assert (
+            self.has_recording
+        ), "Cannot apply reverberation on a MixedCut without Recording."
+        if self.has_features:
+            logging.warning(
+                "Attempting to reverberate a MixedCut that references pre-computed features. "
+                "The feature manifest(s) will be detached, as we do not support feature-domain "
+                "reverberation."
+            )
+        return MixedCut(
+            id=f"{self.id}_rvb" if affix_id else self.id,
+            tracks=[
+                fastcopy(
+                    track,
+                    cut=track.cut.reverb_rir(
+                        rir_recording=rir_recording,
+                        normalize_output=normalize_output,
+                        affix_id=affix_id,
+                    ),
+                )
+                for track in self.tracks
+            ],
+        )
+
     @rich_exception_info
     def load_features(self, mixed: bool = True) -> Optional[np.ndarray]:
         """
@@ -2576,10 +2684,12 @@ class CutSet(Serializable, Sequence[Cut]):
         >>> cuts_sp = cuts.perturb_speed(factor=1.1)
         >>> cuts_vp = cuts.perturb_volume(factor=2.)
         >>> cuts_24k = cuts.resample(24000)
+        >>> cuts_rvb = cuts.reverb_rir(rir_recordings)
 
     .. caution::
         If the :class:`.CutSet` contained :class:`~lhotse.features.base.Features` manifests, they will be
-        detached after performing audio augmentations such as :meth:`.CutSet.perturb_speed` or :meth:`.CutSet.resample` or :meth:`.CutSet.perturb_volume`.
+        detached after performing audio augmentations such as :meth:`.CutSet.perturb_speed`,
+        :meth:`.CutSet.resample`, :meth:`.CutSet.perturb_volume`, or :meth:`.CutSet.reverb_rir`.
 
     :class:`~lhotse.cut.CutSet` offers parallel feature extraction capabilities
     (see `meth`:.CutSet.compute_and_store_features: for details),
@@ -3304,6 +3414,36 @@ class CutSet(Serializable, Sequence[Cut]):
         """
         return self.map(
             lambda cut: cut.perturb_volume(factor=factor, affix_id=affix_id)
+        )
+
+    def reverb_rir(
+        self,
+        rir_recordings: "RecordingSet",
+        normalize_output: bool = True,
+        affix_id: bool = True,
+    ) -> "CutSet":
+        """
+        Return a new :class:`~lhotse.cut.CutSet` that contains original cuts convolved with
+        randomly chosen impulse responses from `rir_recordings`. It requires the recording manifests to be present.
+        If the feature manifests are attached, they are dropped.
+        The supervision manifests remain the same.
+
+        :param rir_recordings: RecordingSet containing the room impulse responses.
+        :param normalize_output: When true, output will be normalized to have energy as input.
+        :param affix_id: Should we modify the ID (useful if both versions of the same
+            cut are going to be present in a single manifest).
+        :return: a modified copy of the ``CutSet``.
+        """
+        rir_recordings = list(rir_recordings)
+        return CutSet.from_cuts(
+            [
+                cut.reverb_rir(
+                    rir_recording=random.choice(rir_recordings),
+                    normalize_output=normalize_output,
+                    affix_id=affix_id,
+                )
+                for cut in self
+            ]
         )
 
     def mix(
