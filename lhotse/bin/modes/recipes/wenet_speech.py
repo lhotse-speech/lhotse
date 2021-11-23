@@ -16,7 +16,7 @@ from typing import Sequence
     default=["all"],
     multiple=True,
     help="List of dataset parts to prepare. To prepare multiple parts,"
-         "pass each with `-p` Example: `-p M -p TEST_NET`",
+    "pass each with `-p` Example: `-p M -p TEST_NET`",
 )
 @click.option(
     "-j",
