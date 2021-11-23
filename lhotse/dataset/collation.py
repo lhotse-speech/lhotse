@@ -192,6 +192,11 @@ def collate_custom_field(
         - ``(batch, )`` for anything else, such as int or float: we will simply stack them into
             a list and tensorize it.
 
+    .. note:: This function disregards the ``frame_shift`` attribute of
+        :class:`lhotse.array.TemporalArray` when padding; it simply pads all the arrays
+        to the longest one found in the mini-batch. Because of that, the function
+        will work correctly even if the user supplied inconsistent meta-data.
+
     :param cuts: a :class:`CutSet` used to load the features.
     :param field: name of the custom field to be retrieved.
     :param pad_value: value to be used for padding the temporal arrays.
