@@ -56,18 +56,18 @@ def prepare_wenet_speech(
         output_dir = Path(output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
 
-    raw_manifests_path = corpus_dir / "wenet_speech_untar/WenetSpeech.json"
-    assert raw_manifests_path.is_file(), f"No such file : {raw_manifests_path}"
-    raw_manifests = json.load(open(raw_manifests_path, "r", encoding="utf8"))
-
     subsets = WETNET_SPEECH_PARTS if dataset_parts == "all" else dataset_parts
 
     manifests = defaultdict(dict)
     for sub in subsets:
         if sub not in WETNET_SPEECH_PARTS:
-            logging.warn(f"No such part dataset in WenetSpeech : {sub}")
-            continue
+            raise ValueError(f"No such part of dataset in WenetSpeech : {sub}")
         manifests[sub] = {"recordings": [], "supervisions": []}
+
+    raw_manifests_path = corpus_dir / "wenet_speech_untar/WenetSpeech.json"
+    assert raw_manifests_path.is_file(), f"No such file : {raw_manifests_path}"
+    logging.info(f"Loading raw manifests from : {raw_manifests_path}")
+    raw_manifests = json.load(open(raw_manifests_path, "r", encoding="utf8"))
 
     with ProcessPoolExecutor(num_jobs) as ex:
         for recording, segments in tqdm(
