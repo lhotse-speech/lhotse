@@ -64,7 +64,7 @@ def prepare_wenet_speech(
             raise ValueError(f"No such part of dataset in WenetSpeech : {sub}")
         manifests[sub] = {"recordings": [], "supervisions": []}
 
-    raw_manifests_path = corpus_dir / "wenet_speech_untar/WenetSpeech.json"
+    raw_manifests_path = corpus_dir / "WenetSpeech.json"
     assert raw_manifests_path.is_file(), f"No such file : {raw_manifests_path}"
     logging.info(f"Loading raw manifests from : {raw_manifests_path}")
     raw_manifests = json.load(open(raw_manifests_path, "r", encoding="utf8"))
@@ -85,12 +85,8 @@ def prepare_wenet_speech(
 
     for sub in subsets:
         recordings, supervisions = fix_manifests(
-            recordings=RecordingSet.from_recordings(
-                manifests[sub]["recordings"]
-            ),
-            supervisions=SupervisionSet.from_segments(
-                manifests[sub]["supervisions"]
-            ),
+            recordings=RecordingSet.from_recordings(manifests[sub]["recordings"]),
+            supervisions=SupervisionSet.from_segments(manifests[sub]["supervisions"]),
         )
         validate_recordings_and_supervisions(
             recordings=recordings, supervisions=supervisions
@@ -118,7 +114,7 @@ def parse_utterance(
             AudioSource(
                 type="file",
                 channels=[0],
-                source=str(root_path / "wenet_speech_untar" / audio["path"]),
+                source=str(root_path / audio["path"]),
             )
         ],
         num_samples=compute_num_samples(
