@@ -122,8 +122,12 @@ class TemporalArray:
         return len(self.shape)
 
     @property
+    def num_frames(self) -> int:
+        return self.shape[self.temporal_dim]
+
+    @property
     def duration(self) -> Seconds:
-        return self.shape[self.temporal_dim] * self.frame_shift
+        return self.num_frames * self.frame_shift
 
     @property
     def end(self) -> Seconds:
