@@ -66,6 +66,7 @@ from lhotse.utils import (
     rich_exception_info,
     split_sequence,
     uuid4,
+    deprecated,
 )
 
 # One of the design principles for Cuts is a maximally "lazy" implementation, e.g. when mixing Cuts,
@@ -160,6 +161,7 @@ class Cut:
         >>> cut_24k = cut.resample(24000)
         >>> cut_sp = cut.perturb_speed(1.1)
         >>> cut_vp = cut.perturb_volume(2.)
+        >>> cut_rvb = cut.reverb_rir(rir_recording)
 
     .. note::
         All cut transformations are performed lazily, on-the-fly, upon calling ``load_audio`` or ``load_features``.
@@ -223,6 +225,7 @@ class Cut:
     perturb_speed: Callable
     perturb_tempo: Callable
     perturb_volume: Callable
+    reverb_rir: Callable
     map_supervisions: Callable
     filter_supervisions: Callable
     with_features_path_prefix: Callable
@@ -487,7 +490,28 @@ class Cut:
                     )
         return indexed
 
+    @deprecated(
+        "Cut.compute_and_store_recording will be removed in a future release. Please use save_audio() instead."
+    )
     def compute_and_store_recording(
+        self,
+        storage_path: Pathlike,
+        augment_fn: Optional[AugmentFn] = None,
+    ) -> "MonoCut":
+        """
+        Store this cut's waveform as audio recording to disk.
+
+        :param storage_path: The path to location where we will store the audio recordings.
+        :param augment_fn: an optional callable used for audio augmentation.
+            Be careful with the types of augmentations used: if they modify
+            the start/end/duration times of the cut and its supervisions,
+            you will end up with incorrect supervision information when using this API.
+            E.g. for speed perturbation, use ``CutSet.perturb_speed()`` instead.
+        :return: a new MonoCut instance.
+        """
+        return self.save_audio(storage_path=storage_path, augment_fn=augment_fn)
+
+    def save_audio(
         self,
         storage_path: Pathlike,
         augment_fn: Optional[AugmentFn] = None,
@@ -1260,6 +1284,53 @@ class MonoCut(Cut):
             supervisions=supervisions_vp,
         )
 
+    def reverb_rir(
+        self,
+        rir_recording: "Recording",
+        normalize_output: bool = True,
+        affix_id: bool = True,
+    ) -> "MonoCut":
+        """
+        Return a new ``MonoCut`` that will convolve the audio with the provided impulse response.
+
+        :param rir_recording: The impulse response to use for convolving.
+        :param normalize_output: When true, output will be normalized to have energy as input.
+        :param affix_id: When true, we will modify the ``MonoCut.id`` field
+            by affixing it with "_rvb".
+        :return: a modified copy of the current ``MonoCut``.
+        """
+        # Pre-conditions
+        assert (
+            self.has_recording
+        ), "Cannot apply reverberation on a MonoCut without Recording."
+        if self.has_features:
+            logging.warning(
+                "Attempting to reverberate a MonoCut that references pre-computed features. "
+                "The feature manifest will be detached, as we do not support feature-domain "
+                "reverberation."
+            )
+            self.features = None
+        # Actual reverberation.
+        recording_rvb = self.recording.reverb_rir(
+            rir_recording=rir_recording,
+            normalize_output=normalize_output,
+            affix_id=affix_id,
+        )
+        # Match the supervision's id (and it's underlying recording id).
+        supervisions_rvb = [
+            s.reverb_rir(
+                affix_id=affix_id,
+            )
+            for s in self.supervisions
+        ]
+
+        return fastcopy(
+            self,
+            id=f"{self.id}_rvb" if affix_id else self.id,
+            recording=recording_rvb,
+            supervisions=supervisions_rvb,
+        )
+
     def map_supervisions(
         self, transform_fn: Callable[[SupervisionSegment], SupervisionSegment]
     ) -> Cut:
@@ -1575,6 +1646,25 @@ class PaddingCut(Cut):
         """
 
         return fastcopy(self, id=f"{self.id}_vp{factor}" if affix_id else self.id)
+
+    def reverb_rir(
+        self,
+        rir_recording: "Recording",
+        normalize_output: bool = True,
+        affix_id: bool = True,
+    ) -> "PaddingCut":
+        """
+        Return a new ``PaddingCut`` that will "mimic" the effect of reverberation with impulse response
+        on original samples.
+
+        :param rir_recording: The impulse response to use for convolving.
+        :param normalize_output: When true, output will be normalized to have energy as input.
+        :param affix_id: When true, we will modify the ``PaddingCut.id`` field
+            by affixing it with "_rvb".
+        :return: a modified copy of the current ``PaddingCut``.
+        """
+
+        return fastcopy(self, id=f"{self.id}_rvb" if affix_id else self.id)
 
     def drop_features(self) -> "PaddingCut":
         """Return a copy of the current :class:`.PaddingCut`, detached from ``features``."""
@@ -2135,6 +2225,46 @@ class MixedCut(Cut):
             ],
         )
 
+    def reverb_rir(
+        self,
+        rir_recording: "Recording",
+        normalize_output: bool = True,
+        affix_id: bool = True,
+    ) -> "MixedCut":
+        """
+        Return a new ``MixedCut`` that will convolve the audio with the provided impulse response.
+
+        :param rir_recording: The impulse response to use for convolving.
+        :param normalize_output: When true, output will be normalized to have energy as input.
+        :param affix_id: When true, we will modify the ``MixedCut.id`` field
+            by affixing it with "_rvb".
+        :return: a modified copy of the current ``MixedCut``.
+        """
+        # Pre-conditions
+        assert (
+            self.has_recording
+        ), "Cannot apply reverberation on a MixedCut without Recording."
+        if self.has_features:
+            logging.warning(
+                "Attempting to reverberate a MixedCut that references pre-computed features. "
+                "The feature manifest(s) will be detached, as we do not support feature-domain "
+                "reverberation."
+            )
+        return MixedCut(
+            id=f"{self.id}_rvb" if affix_id else self.id,
+            tracks=[
+                fastcopy(
+                    track,
+                    cut=track.cut.reverb_rir(
+                        rir_recording=rir_recording,
+                        normalize_output=normalize_output,
+                        affix_id=affix_id,
+                    ),
+                )
+                for track in self.tracks
+            ],
+        )
+
     @rich_exception_info
     def load_features(self, mixed: bool = True) -> Optional[np.ndarray]:
         """
@@ -2576,10 +2706,12 @@ class CutSet(Serializable, Sequence[Cut]):
         >>> cuts_sp = cuts.perturb_speed(factor=1.1)
         >>> cuts_vp = cuts.perturb_volume(factor=2.)
         >>> cuts_24k = cuts.resample(24000)
+        >>> cuts_rvb = cuts.reverb_rir(rir_recordings)
 
     .. caution::
         If the :class:`.CutSet` contained :class:`~lhotse.features.base.Features` manifests, they will be
-        detached after performing audio augmentations such as :meth:`.CutSet.perturb_speed` or :meth:`.CutSet.resample` or :meth:`.CutSet.perturb_volume`.
+        detached after performing audio augmentations such as :meth:`.CutSet.perturb_speed`,
+        :meth:`.CutSet.resample`, :meth:`.CutSet.perturb_volume`, or :meth:`.CutSet.reverb_rir`.
 
     :class:`~lhotse.cut.CutSet` offers parallel feature extraction capabilities
     (see `meth`:.CutSet.compute_and_store_features: for details),
@@ -3306,6 +3438,36 @@ class CutSet(Serializable, Sequence[Cut]):
             lambda cut: cut.perturb_volume(factor=factor, affix_id=affix_id)
         )
 
+    def reverb_rir(
+        self,
+        rir_recordings: "RecordingSet",
+        normalize_output: bool = True,
+        affix_id: bool = True,
+    ) -> "CutSet":
+        """
+        Return a new :class:`~lhotse.cut.CutSet` that contains original cuts convolved with
+        randomly chosen impulse responses from `rir_recordings`. It requires the recording manifests to be present.
+        If the feature manifests are attached, they are dropped.
+        The supervision manifests remain the same.
+
+        :param rir_recordings: RecordingSet containing the room impulse responses.
+        :param normalize_output: When true, output will be normalized to have energy as input.
+        :param affix_id: Should we modify the ID (useful if both versions of the same
+            cut are going to be present in a single manifest).
+        :return: a modified copy of the ``CutSet``.
+        """
+        rir_recordings = list(rir_recordings)
+        return CutSet.from_cuts(
+            [
+                cut.reverb_rir(
+                    rir_recording=random.choice(rir_recordings),
+                    normalize_output=normalize_output,
+                    affix_id=affix_id,
+                )
+                for cut in self
+            ]
+        )
+
     def mix(
         self,
         cuts: "CutSet",
@@ -3727,7 +3889,49 @@ class CutSet(Serializable, Sequence[Cut]):
 
         return CutSet.from_cuts(cuts_with_feats)
 
+    @deprecated(
+        "CutSet.compute_and_store_recordings will be removed in a future release. Please use save_audios() instead."
+    )
     def compute_and_store_recordings(
+        self,
+        storage_path: Pathlike,
+        num_jobs: Optional[int] = None,
+        executor: Optional[Executor] = None,
+        augment_fn: Optional[AugmentFn] = None,
+        progress_bar: bool = True,
+    ) -> "CutSet":
+        """
+        Store waveforms of all cuts as audio recordings to disk.
+
+        :param storage_path: The path to location where we will store the audio recordings.
+            For each cut, a sub-directory will be created that starts with the first 3
+            characters of the cut's ID. The audio recording is then stored in the sub-directory
+            using the cut ID as filename and '.flac' as suffix.
+        :param num_jobs: The number of parallel processes used to store the audio recordings.
+            We will internally split the CutSet into this many chunks
+            and process each chunk in parallel.
+        :param augment_fn: an optional callable used for audio augmentation.
+            Be careful with the types of augmentations used: if they modify
+            the start/end/duration times of the cut and its supervisions,
+            you will end up with incorrect supervision information when using this API.
+            E.g. for speed perturbation, use ``CutSet.perturb_speed()`` instead.
+        :param executor: when provided, will be used to parallelize the process.
+            By default, we will instantiate a ProcessPoolExecutor.
+            Learn more about the ``Executor`` API at
+            https://lhotse.readthedocs.io/en/latest/parallelism.html
+        :param progress_bar: Should a progress bar be displayed (automatically turned off
+            for parallel computation).
+        :return: Returns a new ``CutSet``.
+        """
+        return self.save_audios(
+            storage_path,
+            num_jobs=num_jobs,
+            executor=executor,
+            augment_fn=augment_fn,
+            progress_bar=progress_bar,
+        )
+
+    def save_audios(
         self,
         storage_path: Pathlike,
         num_jobs: Optional[int] = None,
@@ -3790,7 +3994,7 @@ class CutSet(Serializable, Sequence[Cut]):
                 )
             return CutSet.from_cuts(
                 progress(
-                    cut.compute_and_store_recording(
+                    cut.save_audio(
                         storage_path=file_storage_path(cut, storage_path),
                         augment_fn=augment_fn,
                     )
@@ -3809,7 +4013,7 @@ class CutSet(Serializable, Sequence[Cut]):
         # Each worker runs the non-parallel version of this function inside.
         futures = [
             executor.submit(
-                CutSet.compute_and_store_recordings,
+                CutSet.save_audios,
                 cs,
                 storage_path=storage_path,
                 augment_fn=augment_fn,
