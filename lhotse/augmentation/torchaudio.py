@@ -385,6 +385,13 @@ class ReverbWithImpulseResponse(AudioTransform):
 
     RIR_SCALING_FACTOR: float = 0.5 ** 15
 
+    def __post_init__(self):
+        if isinstance(self.rir, dict):
+            from lhotse import Recording
+
+            # Pass a shallow copy of the RIR dict since `from_dict()` pops the `sources` key.
+            self.rir = Recording.from_dict(self.rir.copy())
+
     def __call__(
         self,
         samples: np.ndarray,
@@ -397,13 +404,7 @@ class ReverbWithImpulseResponse(AudioTransform):
         assert samples.shape[0] == 1, "The input audio must be single-channel."
         sampling_rate = int(sampling_rate)  # paranoia mode
 
-        if isinstance(self.rir, dict):
-            from lhotse import Recording
-
-            # Pass a shallow copy of the RIR dict since `from_dict()` pops the `sources` key.
-            rir_ = Recording.from_dict(self.rir.copy()).load_audio()
-        else:
-            rir_ = self.rir.load_audio()
+        rir_ = self.rir.load_audio()
 
         # Determine output length.
         _, N_in = samples.shape
