@@ -4,6 +4,7 @@ from typing import Any, Callable, Dict, Optional, Tuple, Union
 
 import numpy as np
 
+from lhotse.array import Array, TemporalArray
 from lhotse.audio import Recording, RecordingSet
 from lhotse.cut import Cut, CutSet, MixedCut, PaddingCut
 from lhotse.features import FeatureSet, Features
@@ -212,10 +213,30 @@ def validate_recording(r: Recording, read_data: bool = False) -> None:
 
 
 @register_validator
-def validate_supervision(s: SupervisionSegment, **kwargs) -> None:
+def validate_supervision(
+    s: SupervisionSegment, read_data: bool = False, **kwargs
+) -> None:
     assert (
         s.duration > 0
     ), f"Supervision {s.id}: duration has to be greater than 0 (is {s.duration})"
+
+    # Conditions related to custom fields
+    if s.custom is not None:
+        assert isinstance(
+            s.custom, dict
+        ), f"SupervisionSegment {s.id}: custom field has to be set to a dict or None."
+        for key, value in s.custom.items():
+            if isinstance(value, Array):
+                validate_array(value, read_data=read_data)
+            elif isinstance(value, TemporalArray):
+                validate_temporal_array(value, read_data=read_data)
+                if not isclose(s.duration, value.duration):
+                    logging.warning(
+                        f"SupervisionSegment {s.id}: possibly mismatched "
+                        f"duration between supervision ({s.duration}s) and temporal array "
+                        f"in custom field '{key}' (num_frames={value.num_frames} * "
+                        f"frame_shift={value.frame_shift} == duration={value.duration})."
+                    )
 
 
 @register_validator
@@ -264,6 +285,27 @@ def validate_features(
         assert (
             f.num_features == n_ft
         ), f"Features: expected num_features: {f.num_features}, actual: {n_ft}"
+
+
+@register_validator
+def validate_array(arr: Array, read_data: bool = False) -> None:
+    if read_data:
+        data = arr.load()
+        assert data.shape == arr.shape
+
+
+@register_validator
+def validate_temporal_array(arr: TemporalArray, read_data: bool = False) -> None:
+    assert arr.temporal_dim >= 0, "TemporalArray: temporal_dim cannot be negative."
+    assert arr.temporal_dim < arr.ndim, (
+        f"TemporalArray: temporal_dim {arr.temporal_dim} "
+        f"canot be greater than ndim {arr.ndim}."
+    )
+    assert arr.frame_shift > 0, "TemporalArray: frame_shift must be positive."
+    assert arr.start >= 0, "TemporalArray: start must be non-negative."
+    if read_data:
+        data = arr.load()
+        assert data.shape == arr.shape
 
 
 @register_validator
@@ -335,6 +377,24 @@ def validate_cut(c: Cut, read_data: bool = False) -> None:
             f"MonoCut {c.id}: supervision {s.id} has a mismatched channel "
             f"(expected {c.channel}, supervision has {s.channel})"
         )
+
+    # Conditions related to custom fields
+    if c.custom is not None:
+        assert isinstance(
+            c.custom, dict
+        ), f"MonoCut {c.id}: custom field has to be set to a dict or None."
+        for key, value in c.custom.items():
+            if isinstance(value, Array):
+                validate_array(value, read_data=read_data)
+            elif isinstance(value, TemporalArray):
+                validate_temporal_array(value, read_data=read_data)
+                if not isclose(c.duration, value.duration):
+                    logging.warning(
+                        f"MonoCut {c.id}: possibly mismatched "
+                        f"duration between cut ({c.duration}s) and temporal array "
+                        f"in custom field '{key}' (num_frames={value.num_frames} * "
+                        f"frame_shift={value.frame_shift} == duration={value.duration})."
+                    )
 
 
 @register_validator
