@@ -56,7 +56,7 @@ def prepare_wenet_speech(
         output_dir = Path(output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
 
-    subsets = WETNET_SPEECH_PARTS if dataset_parts == "all" else dataset_parts
+    subsets = WETNET_SPEECH_PARTS if "all" in dataset_parts else dataset_parts
 
     manifests = defaultdict(dict)
     for sub in subsets:
