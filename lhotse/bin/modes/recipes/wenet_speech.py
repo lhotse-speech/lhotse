@@ -31,6 +31,9 @@ def wenet_speech(
     dataset_parts: Sequence[str],
     num_jobs: int,
 ):
+    """
+    The WenetSpeech corpus preparation.
+    """
     prepare_wenet_speech(
         corpus_dir,
         output_dir=output_dir,
