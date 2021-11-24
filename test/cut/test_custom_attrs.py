@@ -1,10 +1,10 @@
+import logging
 from tempfile import NamedTemporaryFile
 
 import numpy as np
 import pytest
 
-from lhotse import LilcomHdf5Writer, MonoCut, NumpyHdf5Writer, Recording
-from lhotse.cut import MixTrack, MixedCut
+from lhotse import LilcomHdf5Writer, MonoCut, NumpyHdf5Writer, validate
 from lhotse.serialization import deserialize_item
 from lhotse.testing.dummies import dummy_cut, dummy_recording
 
@@ -140,3 +140,27 @@ def test_cut_load_temporal_array_pad(pad_value):
         assert alignment_pad.shape == (150,)  # 60.0 / 0.4 == 150
         np.testing.assert_equal(alignment_pad[:131], alignment)
         np.testing.assert_equal(alignment_pad[131:], pad_value)
+
+
+def test_validate_cut_with_temporal_array(caplog):
+    # Note: "caplog" is a special variable in pytest that captures logs.
+    caplog.set_level(logging.WARNING)
+    with NamedTemporaryFile(suffix=".h5") as f, NumpyHdf5Writer(f.name) as writer:
+        cut = MonoCut(
+            id="cut1",
+            start=0,
+            duration=4.9,
+            channel=0,
+            recording=dummy_recording(1),
+        )
+        alignment = np.random.randint(500, size=131)
+        cut.alignment = writer.store_array(
+            key="utt1", value=alignment, frame_shift=0.4, temporal_dim=0
+        )
+        validate(cut)
+
+    assert (
+        "MonoCut cut1: possibly mismatched duration between cut (4.9s) "
+        "and temporal array in custom field 'alignment' (num_frames=131 "
+        "* frame_shift=0.4 == duration=52.400000000000006)" in caplog.text
+    )

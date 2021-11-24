@@ -192,6 +192,11 @@ def collate_custom_field(
         - ``(batch, )`` for anything else, such as int or float: we will simply stack them into
             a list and tensorize it.
 
+    .. note:: This function disregards the ``frame_shift`` attribute of
+        :class:`lhotse.array.TemporalArray` when padding; it simply pads all the arrays
+        to the longest one found in the mini-batch. Because of that, the function
+        will work correctly even if the user supplied inconsistent meta-data.
+
     :param cuts: a :class:`CutSet` used to load the features.
     :param field: name of the custom field to be retrieved.
     :param pad_value: value to be used for padding the temporal arrays.
@@ -219,13 +224,45 @@ def collate_custom_field(
                 f"Argument 'pad_value' not passed -- we will pad field '{field}' "
                 f"with {DEFAULT_PADDING_VALUE}."
             )
-            pad_value = 0
+            pad_value = DEFAULT_PADDING_VALUE
         temporal_dim = first_manifest.temporal_dim
         arr_lens = torch.tensor(
             [getattr(c, field).shape[temporal_dim] for c in cuts], dtype=torch.int32
         )
-        cuts = cuts.pad(direction=pad_direction, pad_value_dict={field: pad_value})
-        tensors = torch.stack([torch.from_numpy(c.load_custom(field)) for c in cuts])
+
+        # We avoid cuts.pad() because the users might be defining frame_shift differently
+        # that we typically do in Lhotse. This may result in extra padding where they
+        # expected none to happen. See: https://github.com/lhotse-speech/lhotse/issues/478
+        #   cuts = cuts.pad(direction=pad_direction, pad_value_dict={field: pad_value})
+        #   tensors = torch.stack([torch.from_numpy(c.load_custom(field)) for c in cuts])
+
+        # Instead, we're going to load everything and pad to the longest sequence.
+        arrs = [torch.from_numpy(c.load_custom(field)) for c in cuts]
+        largest_arr = max(arrs, key=torch.numel)
+        maxlen = largest_arr.shape[temporal_dim]
+        collated_shape = (len(arrs), *largest_arr.shape)
+        tensors = pad_value * torch.ones(collated_shape, dtype=largest_arr.dtype)
+        for aidx, a in enumerate(arrs):
+            alen = a.shape[temporal_dim]
+            # Construct an index expression such as tensors[:, :alen, :, :] programmatically;
+            # All indices are set to ':', besides temporal dim which is determined on pad_direction.
+            if pad_direction == "right":
+                temporal_slice = slice(0, alen)
+            elif pad_direction == "left":
+                temporal_slice = slice(maxlen - alen, maxlen)
+            elif pad_direction == "both":
+                half = (maxlen - alen) // 2
+                temporal_slice = slice(half, maxlen - half)
+            else:
+                raise ValueError(
+                    f"Unexpected pad_direction argument: '{pad_direction}'"
+                )
+            indices = (aidx,) + tuple(
+                temporal_slice if i == temporal_dim else slice(None, None, None)
+                for i in range(len(a.shape))
+            )
+            tensors[indices] = a
+
         return tensors, arr_lens
     else:
         # Expected data type: int, float, string, etc.

@@ -6,7 +6,7 @@ import pytest
 import torch
 import numpy as np
 
-from lhotse import CutSet, NumpyHdf5Writer
+from lhotse import CutSet, MonoCut, NumpyHdf5Writer
 from lhotse.array import seconds_to_frames
 from lhotse.dataset.collation import (
     TokenCollater,
@@ -14,7 +14,7 @@ from lhotse.dataset.collation import (
     collate_custom_field,
     collate_features,
 )
-from lhotse.testing.dummies import dummy_cut, dummy_supervision
+from lhotse.testing.dummies import dummy_cut, dummy_recording, dummy_supervision
 from lhotse.utils import nullcontext as does_not_raise
 
 
@@ -156,7 +156,7 @@ def test_collate_custom_temporal_array_floats(pad_value):
 )
 def test_collate_custom_temporal_array_ints(pad_value):
     CODEBOOK_SIZE = 512
-    FRAME_SHIFT = 0.4
+    FRAME_SHIFT = 0.04
 
     cuts = CutSet.from_json("test/fixtures/ljspeech/cuts.json")
     max_num_frames = max(seconds_to_frames(cut.duration, FRAME_SHIFT) for cut in cuts)
@@ -200,7 +200,113 @@ def test_collate_custom_temporal_array_ints(pad_value):
             )
 
 
+@pytest.mark.parametrize(
+    "pad_direction",
+    ["right", "left", "both"],
+)
+def test_collate_custom_temporal_array_ints(pad_direction):
+    CODEBOOK_SIZE = 512
+    FRAME_SHIFT = 0.04
+    EXPECTED_PAD_VALUE = 0
+
+    cuts = CutSet.from_json("test/fixtures/ljspeech/cuts.json")
+    max_num_frames = max(seconds_to_frames(cut.duration, FRAME_SHIFT) for cut in cuts)
+
+    with NamedTemporaryFile(suffix=".h5") as f, NumpyHdf5Writer(f.name) as writer:
+        expected_codebook_indices = []
+        for cut in cuts:
+            expected_codebook_indices.append(
+                np.random.randint(
+                    CODEBOOK_SIZE, size=(seconds_to_frames(cut.duration, FRAME_SHIFT),)
+                ).astype(np.int16)
+            )
+            cut.codebook_indices = writer.store_array(
+                cut.id,
+                expected_codebook_indices[-1],
+                frame_shift=FRAME_SHIFT,
+                temporal_dim=0,
+            )
+
+        codebook_indices, codebook_indices_lens = collate_custom_field(
+            cuts, "codebook_indices", pad_direction=pad_direction
+        )
+
+        assert isinstance(codebook_indices_lens, torch.Tensor)
+        assert codebook_indices_lens.dtype == torch.int32
+        assert codebook_indices_lens.shape == (len(cuts),)
+        assert codebook_indices_lens.tolist() == [
+            seconds_to_frames(c.duration, FRAME_SHIFT) for c in cuts
+        ]
+
+        assert isinstance(codebook_indices, torch.Tensor)
+        assert codebook_indices.dtype == torch.int16
+        assert codebook_indices.shape == (len(cuts), max_num_frames)
+        for idx, cbidxs in enumerate(expected_codebook_indices):
+            exp_len = cbidxs.shape[0]
+            # PyTorch < 1.9.0 doesn't have an assert_equal function.
+            if pad_direction == "right":
+                np.testing.assert_equal(codebook_indices[idx, :exp_len].numpy(), cbidxs)
+                np.testing.assert_equal(
+                    codebook_indices[idx, exp_len:].numpy(), EXPECTED_PAD_VALUE
+                )
+            if pad_direction == "left":
+                np.testing.assert_equal(
+                    codebook_indices[idx, -exp_len:].numpy(), cbidxs
+                )
+                np.testing.assert_equal(
+                    codebook_indices[idx, :-exp_len].numpy(), EXPECTED_PAD_VALUE
+                )
+            if pad_direction == "both":
+                half = (max_num_frames - exp_len) // 2
+                np.testing.assert_equal(
+                    codebook_indices[idx, :half].numpy(), EXPECTED_PAD_VALUE
+                )
+                np.testing.assert_equal(
+                    codebook_indices[idx, half : half + exp_len].numpy(), cbidxs
+                )
+                if half > 0:
+                    # indexing like [idx, -0:] would return the whole array rather
+                    # than an empty slice.
+                    np.testing.assert_equal(
+                        codebook_indices[idx, -half:].numpy(), EXPECTED_PAD_VALUE
+                    )
+
+
 def test_collate_custom_attribute_missing():
     cuts = CutSet.from_json("test/fixtures/ljspeech/cuts.json")
     with pytest.raises(AttributeError):
         collate_custom_field(cuts, "nonexistent_attribute")
+
+
+def test_padding_issue_478():
+    """
+    https://github.com/lhotse-speech/lhotse/issues/478
+    """
+    with NamedTemporaryFile(suffix=".h5") as f, NumpyHdf5Writer(f.name) as writer:
+
+        # Prepare data for cut 1.
+        cut1 = MonoCut(
+            "c1", start=0, duration=4.9, channel=0, recording=dummy_recording(1)
+        )
+        ali1 = np.random.randint(500, size=(121,))
+        cut1.label_alignment = writer.store_array(
+            "c1", ali1, frame_shift=0.04, temporal_dim=0
+        )
+
+        # Prepare data for cut 2.
+        cut2 = MonoCut(
+            "c2", start=0, duration=4.895, channel=0, recording=dummy_recording(2)
+        )
+        ali2 = np.random.randint(500, size=(121,))
+        cut2.label_alignment = writer.store_array(
+            "c2", ali2, frame_shift=0.04, temporal_dim=0
+        )
+
+        # Test collation behavior on this cutset.
+        cuts = CutSet.from_cuts([cut1, cut2])
+        label_alignments, label_alignment_lens = collate_custom_field(
+            cuts, "label_alignment"
+        )
+
+        np.testing.assert_equal(label_alignments[0].numpy(), ali1)
+        np.testing.assert_equal(label_alignments[1].numpy(), ali2)

@@ -1937,9 +1937,13 @@ class MixedCut(Cut):
         # We need to pad it.
         left_padding = self.tracks[non_padding_idx].offset
         padded_duration = self.duration
-        pad_value = [t.cut for t in self.tracks if isinstance(t.cut, PaddingCut)][
+        pad_value_dict = [t.cut for t in self.tracks if isinstance(t.cut, PaddingCut)][
             0
-        ].custom[name]
+        ].custom
+        if pad_value_dict is not None and name in pad_value_dict:
+            pad_value = pad_value_dict[name]
+        else:
+            pad_value = DEFAULT_PADDING_VALUE
 
         return pad_array(
             array,
