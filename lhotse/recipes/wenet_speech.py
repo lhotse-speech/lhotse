@@ -29,7 +29,7 @@ from lhotse import (
 )
 from lhotse.audio import AudioSource, Recording, RecordingSet
 from lhotse.supervision import SupervisionSegment, SupervisionSet
-from lhotse.utils import Pathlike
+from lhotse.utils import Pathlike, add_durations
 
 WETNET_SPEECH_PARTS = ("L", "M", "S", "DEV", "TEST_NET", "TEST_MEETING")
 
@@ -93,8 +93,8 @@ def prepare_wenet_speech(
         )
 
         if output_dir is not None:
-            supervisions.to_json(output_dir / f"supervisions_{sub}.json")
-            recordings.to_json(output_dir / f"recordings_{sub}.json")
+            supervisions.to_file(output_dir / f"supervisions_{sub}.jsonl.gz")
+            recordings.to_file(output_dir / f"recordings_{sub}.jsonl.gz")
 
         manifests[sub] = {
             "recordings": recordings,
@@ -131,7 +131,7 @@ def parse_utterance(
             id=seg["sid"],
             recording_id=audio["aid"],
             start=seg["begin_time"],
-            duration=seg["end_time"] - seg["begin_time"],
+            duration=add_durations(seg["end_time"], -seg["begin_time"], sampling_rate),
             language="Chinese",
             text=seg["text"].strip(),
         )
