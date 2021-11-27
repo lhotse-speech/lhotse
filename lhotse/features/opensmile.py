@@ -4,7 +4,7 @@ from typing import Any, Dict, List, Union, Optional, Sequence
 import numpy as np
 
 from lhotse.features.base import FeatureExtractor, register_extractor
-from lhotse.utils import is_module_available, Seconds
+from lhotse.utils import is_module_available, Seconds, compute_num_frames
 
 @dataclass
 class OpenSmileConfig:
@@ -45,7 +45,8 @@ class OpenSmileConfig:
         """
         Returns list of strings with names of pretrained FeatureSets available in opensmile.
         """
-        assert is_module_available("opensmile"), 'To use opensmile extractors, please "pip install opensmile" first.'
+        assert is_module_available("opensmile"), \
+         'To use opensmile extractors, please "pip install opensmile" first.'
         import opensmile
         return list(opensmile.FeatureSet.__members__)
 
@@ -64,9 +65,14 @@ class OpenSmileWrapper(FeatureExtractor):
             "opensmile"
         ), 'To use opensmile extractors, please "pip install opensmile" first.'
         import opensmile
+        if isinstance(self.config.feature_set, str):
+            self.feature_set = opensmile.FeatureSet[self.config.feature_set]
+        else:
+            self.feature_set = self.config.feature_set
+        self.feature_level = opensmile.FeatureLevel(self.config.feature_level)
         self.smileExtractor = opensmile.Smile(
-            feature_set=self.config.feature_set,
-            feature_level=self.config.feature_level,
+            feature_set=self.feature_set,
+            feature_level=self.feature_level,
             sampling_rate=self.config.sampling_rate,
             options=self.config.options,
             loglevel=self.config.loglevel,
@@ -77,22 +83,51 @@ class OpenSmileWrapper(FeatureExtractor):
             num_workers=self.config.num_workers,
             verbose=self.config.verbose
         )  
+    @property        
+    def feature_names(self) -> List[str]:
+        return self.smileExtractor.feature_names
         
+    def is_lld_or_lld_de(self)->bool:
+        from opensmile import FeatureLevel
+        return self.feature_level is FeatureLevel.LowLevelDescriptors or \
+               self.feature_level is FeatureLevel.LowLevelDescriptors_Deltas
+           
+    
     @property
     def frame_shift(self) -> Seconds:
-    # TODO: (Parse the config)
-        return 0
-
+        import opensmile
+        if self.is_lld_or_lld_de() and \
+           self.feature_set in opensmile.FeatureSet.__members__.values():
+            # For all deafult opensmile configs frameshift is equal to 10 ms 
+            return 0.01
+        else:
+            raise NotImplementedError(
+                'frame_shift is not defined for Functionals \
+                feature level or for non default feature set. \
+                Defined featureset: {}'.format(self.config.feature_set))                
+                
     def feature_dim(self, sampling_rate: int) -> int:
-    # TODO (Parse the config)
-        return 0
+        return len(self.feature_names)
         
     def feature_names(self) -> List[str]:
         return self.smileExtractor.feature_names()
 
     def extract(self, samples: np.ndarray, sampling_rate: int) -> np.ndarray:    
         assert sampling_rate == self.config.sampling_rate
-        return self.smileExtractor.process_signal(samples, sampling_rate=sampling_rate).to_numpy()    
+        import opensmile
+        
+        feats = self.smileExtractor.process_signal(samples, sampling_rate=sampling_rate).to_numpy()
+        # Add last diff frames to the end of feats matrix to fit lhotse.utils.compute_num_frames
+        if self.is_lld_or_lld_de():
+            duration = np.shape(samples)[1]/sampling_rate
+            diff = compute_num_frames(duration, self.frame_shift, sampling_rate) - np.shape(feats)[0]
+            if diff>0:                           
+                feats = np.append(feats, feats[-diff:,:], axis=0)
+            elif diff<0:
+                feats = feats[:-diff,:]
+        return feats.copy()
+        
+            
     
 
 #    @staticmethod
