@@ -82,6 +82,7 @@ def prepare_gigaspeech(
             output_dir=output_dir,
             prefix="gigaspeech",
             suffix="jsonl.gz",
+            lazy=True,
         )
 
     with ProcessPoolExecutor(num_jobs) as ex:
