@@ -43,8 +43,10 @@ def read_manifests_if_cached(
         prefix = f"{prefix}_"
     if suffix.startswith("."):
         suffix = suffix[1:]
-    if lazy and not suffix.startswith('jsonl'):
-        raise ValueError(f"Only JSONL manifests can be opened lazily (got suffix: '{suffix}')")
+    if lazy and not suffix.startswith("jsonl"):
+        raise ValueError(
+            f"Only JSONL manifests can be opened lazily (got suffix: '{suffix}')"
+        )
     manifests = defaultdict(dict)
     for part in dataset_parts:
         for manifest in types:
@@ -52,7 +54,9 @@ def read_manifests_if_cached(
             if not path.is_file():
                 continue
             if lazy:
-                manifests[part][manifest] = TYPES_TO_CLASSES[manifest].from_jsonl_lazy(path)
+                manifests[part][manifest] = TYPES_TO_CLASSES[manifest].from_jsonl_lazy(
+                    path
+                )
             else:
                 manifests[part][manifest] = load_manifest(path)
     return dict(manifests)
