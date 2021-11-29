@@ -68,7 +68,7 @@ LHOTSE_AUDIO_DURATION_MISMATCH_TOLERANCE: Seconds = (
 
 def set_audio_duration_mismatch_tolerance(delta: Seconds) -> None:
     """
-    Override Lhotse's global threshold for allowed audio mismatched between the
+    Override Lhotse's global threshold for allowed audio duration mismatch between the
     manifest and the actual data.
 
     Some scenarios when a mismatch can happen:
