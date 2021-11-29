@@ -1,18 +1,16 @@
 import threading
 import queue
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
-from typing import Any, Callable, Generator, TypeVar
-
-T = TypeVar("T")
+from typing import Callable, Generator, Iterable
 
 
 def parallel_map(
-    fn: Callable[[Any, ...], T],
-    *iterables,
+    fn: Callable,
+    *iterables: Iterable,
     num_jobs: int = 1,
     queue_size: int = 5000,
     threads: bool = False,
-) -> Generator[T, None, None]:
+) -> Generator:
     """
     Works like Python's ``map``, but parallelizes the execution of ``fn`` over ``num_jobs``
     subprocesses or threads.
