@@ -21,6 +21,7 @@ from lhotse import (
     validate_recordings_and_supervisions,
 )
 from lhotse.audio import AudioSource, Recording, RecordingSet
+from lhotse.parallel import parallel_map
 from lhotse.recipes.utils import manifests_exist, read_manifests_if_cached
 from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import Pathlike, Seconds, is_module_available
@@ -82,54 +83,54 @@ def prepare_gigaspeech(
         lazy=True,
     )
 
-    with ProcessPoolExecutor(num_jobs) as ex:
-        for part in subsets:
-            logging.info(f"Processing GigaSpeech subset: {part}")
-            if manifests_exist(
-                part=part, output_dir=output_dir, prefix="gigaspeech", suffix="jsonl.gz"
+    for part in subsets:
+        logging.info(f"Processing GigaSpeech subset: {part}")
+        if manifests_exist(
+            part=part, output_dir=output_dir, prefix="gigaspeech", suffix="jsonl.gz"
+        ):
+            logging.info(f"GigaSpeech subset: {part} already prepared - skipping.")
+            continue
+
+        with RecordingSet.open_writer(
+            output_dir / f"gigaspeech_recordings_{part}.jsonl.gz"
+        ) as rec_writer, SupervisionSet.open_writer(
+            output_dir / f"gigaspeech_supervisions_{part}.jsonl.gz"
+        ) as sup_writer, CutSet.open_writer(
+            output_dir / f"gigaspeech_cuts_{part}.jsonl.gz"
+        ) as cut_writer:
+            for recording, segments in tqdm(
+                parallel_map(
+                    parse_utterance,
+                    gigaspeech.audios("{" + part + "}"),
+                    repeat(gigaspeech.gigaspeech_dataset_dir),
+                    num_jobs=num_jobs,
+                ),
+                desc="Processing GigaSpeech JSON entries",
             ):
-                logging.info(f"GigaSpeech subset: {part} already prepared - skipping.")
-                continue
+                # Fix and validate the recording + supervisions
+                recordings, segments = fix_manifests(
+                    recordings=RecordingSet.from_recordings([recording]),
+                    supervisions=SupervisionSet.from_segments(segments),
+                )
+                validate_recordings_and_supervisions(
+                    recordings=recordings, supervisions=segments
+                )
+                # Create the cut since most users will need it anyway.
+                # There will be exactly one cut since there's exactly one recording.
+                cuts = CutSet.from_manifests(
+                    recordings=recordings, supervisions=segments
+                )
+                # Write the manifests
+                rec_writer.write(recordings[0])
+                for s in segments:
+                    sup_writer.write(s)
+                cut_writer.write(cuts[0])
 
-            with RecordingSet.open_writer(
-                output_dir / f"gigaspeech_recordings_{part}.jsonl.gz"
-            ) as rec_writer, SupervisionSet.open_writer(
-                output_dir / f"gigaspeech_supervisions_{part}.jsonl.gz"
-            ) as sup_writer, CutSet.open_writer(
-                output_dir / f"gigaspeech_cuts_{part}.jsonl.gz"
-            ) as cut_writer:
-                for recording, segments in tqdm(
-                    ex.map(
-                        parse_utterance,
-                        gigaspeech.audios("{" + part + "}"),
-                        repeat(gigaspeech.gigaspeech_dataset_dir),
-                    ),
-                    desc="Processing GigaSpeech JSON entries",
-                ):
-                    # Fix and validate the recording + supervisions
-                    recordings, segments = fix_manifests(
-                        recordings=RecordingSet.from_recordings([recording]),
-                        supervisions=SupervisionSet.from_segments(segments),
-                    )
-                    validate_recordings_and_supervisions(
-                        recordings=recordings, supervisions=segments
-                    )
-                    # Create the cut since most users will need it anyway.
-                    # There will be exactly one cut since there's exactly one recording.
-                    cuts = CutSet.from_manifests(
-                        recordings=recordings, supervisions=segments
-                    )
-                    # Write the manifests
-                    rec_writer.write(recordings[0])
-                    for s in segments:
-                        sup_writer.write(s)
-                    cut_writer.write(cuts[0])
-
-            manifests[part] = {
-                "recordings": RecordingSet.from_jsonl_lazy(rec_writer.path),
-                "supervisions": SupervisionSet.from_jsonl_lazy(sup_writer.path),
-                "cuts": CutSet.from_jsonl_lazy(cut_writer.path),
-            }
+        manifests[part] = {
+            "recordings": RecordingSet.from_jsonl_lazy(rec_writer.path),
+            "supervisions": SupervisionSet.from_jsonl_lazy(sup_writer.path),
+            "cuts": CutSet.from_jsonl_lazy(cut_writer.path),
+        }
 
     return dict(manifests)
 
