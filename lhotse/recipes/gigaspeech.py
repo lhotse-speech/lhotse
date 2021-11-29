@@ -71,19 +71,16 @@ def prepare_gigaspeech(
     corpus_dir = Path(corpus_dir)
     gigaspeech = GigaSpeech(corpus_dir)
 
-    manifests = defaultdict(dict)
-
-    if output_dir is not None:
-        output_dir = Path(output_dir)
-        output_dir.mkdir(parents=True, exist_ok=True)
-        # Maybe some manifests already exist: we can read them and save a bit of preparation time.
-        manifests = read_manifests_if_cached(
-            dataset_parts=dataset_parts,
-            output_dir=output_dir,
-            prefix="gigaspeech",
-            suffix="jsonl.gz",
-            lazy=True,
-        )
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    # Maybe some manifests already exist: we can read them and save a bit of preparation time.
+    manifests = read_manifests_if_cached(
+        dataset_parts=dataset_parts,
+        output_dir=output_dir,
+        prefix="gigaspeech",
+        suffix="jsonl.gz",
+        lazy=True,
+    )
 
     with ProcessPoolExecutor(num_jobs) as ex:
         for part in subsets:
