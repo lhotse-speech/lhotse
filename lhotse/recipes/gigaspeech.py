@@ -15,7 +15,8 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
 from tqdm.auto import tqdm
 
 from lhotse import (
-    CutSet, compute_num_samples,
+    CutSet,
+    compute_num_samples,
     fix_manifests,
     validate_recordings_and_supervisions,
 )
@@ -117,7 +118,9 @@ def prepare_gigaspeech(
                     )
                     # Create the cut since most users will need it anyway.
                     # There will be exactly one cut since there's exactly one recording.
-                    cuts = CutSet.from_manifests(recordings=recordings, supervisions=segments)
+                    cuts = CutSet.from_manifests(
+                        recordings=recordings, supervisions=segments
+                    )
                     # Write the manifests
                     rec_writer.write(recordings[0])
                     for s in segments:
