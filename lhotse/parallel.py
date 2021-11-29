@@ -33,7 +33,9 @@ def parallel_map(
     :param threads: whether to use threads instead of processes for producers (false by default).
     :return: a generator over results from ``fn`` applied to each item of ``iterables``.
     """
-    thread = SubmitterThread(fn, *iterables, num_jobs=num_jobs, queue_size=queue_size, threads=threads)
+    thread = SubmitterThread(
+        fn, *iterables, num_jobs=num_jobs, queue_size=queue_size, threads=threads
+    )
     thread.start()
     q = thread.queue
 
