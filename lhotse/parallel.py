@@ -1,10 +1,36 @@
 import threading
 import queue
-from concurrent.futures import ProcessPoolExecutor
+from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
+from typing import Any, Callable, Generator, TypeVar
+
+T = TypeVar("T")
 
 
-def parallel_map(fn, *iterables, num_jobs: int = 1, queue_size: int = 5000):
-    thread = SubmitterThread(fn, *iterables, num_jobs=num_jobs, queue_size=queue_size)
+def parallel_map(
+    fn: Callable[[Any, ...], T],
+    *iterables,
+    num_jobs: int = 1,
+    queue_size: int = 5000,
+    threads: bool = False,
+) -> Generator[T, None, None]:
+    """
+    Works like Python's ``map``, but parallelizes the execution of ``fn`` over ``num_jobs``
+    subprocesses or threads.
+
+    Under the hood, it spawns ``num_jobs`` producer jobs that put their results on a queue.
+    The current thread becomes a consumer thread and this generator yields items from the queue
+    to the caller, as they become available.
+
+    :param fn: function/callable to execute on each element.
+    :param iterables: one of more iterables (one for each parameter of ``fn``).
+    :param num_jobs: the number of parallel jobs.
+    :param queue_size: max number of result items stored in memory.
+        Decreasing this number might save more memory when the downstream processing is slower than
+        the producer jobs.
+    :param threads: whether to use threads instead of processes for producers (false by default).
+    :return: a generator over results from ``fn`` applied to each item of ``iterables``.
+    """
+    thread = SubmitterThread(fn, *iterables, num_jobs=num_jobs, queue_size=queue_size, threads=threads)
     thread.start()
     q = thread.queue
 
@@ -22,36 +48,23 @@ def parallel_map(fn, *iterables, num_jobs: int = 1, queue_size: int = 5000):
 
 class SubmitterThread(threading.Thread):
     def __init__(
-        self, fn, *iterables, num_jobs: int = 1, queue_size: int = 5000
+        self,
+        fn: Callable,
+        *iterables,
+        num_jobs: int = 1,
+        queue_size: int = 10000,
+        threads: bool = False,
     ) -> None:
         super().__init__()
         self.fn = fn
         self.num_jobs = num_jobs
         self.iterables = iterables
         self.queue = queue.Queue(maxsize=queue_size)
+        self.use_threads = threads
 
     def run(self) -> None:
-        with ProcessPoolExecutor(self.num_jobs) as ex:
+        executor = ProcessPoolExecutor if self.use_threads else ThreadPoolExecutor
+        with executor(self.num_jobs) as ex:
             for args in zip(*self.iterables):
                 future = ex.submit(self.fn, *args)
                 self.queue.put(future, block=True)
-
-
-def foo(*iz):
-    ret = "item"
-    for i in iz:
-        ret = ret + f'_{i}'
-    return ret
-
-
-def it():
-    from time import sleep
-
-    for i in range(100):
-        yield i
-        sleep(0.01)
-
-
-if __name__ == "__main__":
-    for x in parallel_map(foo, it(), it(), num_jobs=3):
-        print(x)
