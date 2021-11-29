@@ -19,6 +19,11 @@ def parallel_map(
     The current thread becomes a consumer thread and this generator yields items from the queue
     to the caller, as they become available.
 
+    Example::
+
+        >>> for root in parallel_map(math.sqrt, range(1000), num_jobs=4):
+        ...     print(root)
+
     :param fn: function/callable to execute on each element.
     :param iterables: one of more iterables (one for each parameter of ``fn``).
     :param num_jobs: the number of parallel jobs.
