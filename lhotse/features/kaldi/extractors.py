@@ -140,9 +140,8 @@ class KaldiMfcc(FeatureExtractor):
     def feature_dim(self, sampling_rate: int) -> int:
         return self.config.num_ceps
 
-
     def extract(
-            self, samples: Union[np.ndarray, torch.Tensor], sampling_rate: int
+        self, samples: Union[np.ndarray, torch.Tensor], sampling_rate: int
     ) -> Union[np.ndarray, torch.Tensor]:
         assert sampling_rate == self.config.sampling_rate, (
             f"KaldiMfcc was instantiated for sampling_rate "
@@ -164,4 +163,3 @@ class KaldiMfcc(FeatureExtractor):
             return feats.cpu().numpy()
         else:
             return feats
-
