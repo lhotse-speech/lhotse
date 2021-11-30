@@ -513,6 +513,15 @@ class FeatureSet(Serializable, Sequence[Features]):
     def __eq__(self, other: "FeatureSet") -> bool:
         return self.features == other.features
 
+    @property
+    def is_lazy(self) -> bool:
+        """
+        Indicates whether this manifest was opened in lazy (read-on-the-fly) mode or not.
+        """
+        from lhotse.serialization import LazyJsonlIterator
+
+        return isinstance(self.features, LazyJsonlIterator)
+
     @staticmethod
     def from_features(features: Iterable[Features]) -> "FeatureSet":
         return FeatureSet(list(features))  # just for consistency with other *Sets
