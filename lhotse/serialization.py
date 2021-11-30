@@ -367,6 +367,44 @@ class LazyJsonlIterator:
     def __len__(self) -> int:
         return count_newlines_fast(self.path)
 
+    def __add__(self, other) -> "LazyIteratorChain":
+        return LazyIteratorChain(self, other)
+
+
+class LazyIteratorChain:
+    """
+    A thin wrapper over multiple iterators that enables to combine lazy manifests
+    in Lhotse. It iterates all underlying iterables sequentially.
+    """
+
+    def __init__(self, *iterators: Iterable) -> None:
+        self.iterators = []
+        for it in iterators:
+            # Auto-flatten LazyIteratorChain instances if any are passed
+            if isinstance(it, LazyIteratorChain):
+                for sub_it in it.iterators:
+                    self.iterators.append(sub_it)
+            else:
+                self.iterators.append(it)
+
+    def __iter__(self):
+        return (item for it in self.iterators for item in it)
+
+    def values(self):
+        yield from self
+
+    def keys(self):
+        return (item.id for item in self)
+
+    def items(self):
+        return ((item.id, item) for item in self)
+
+    def __len__(self) -> int:
+        return sum(len(it) for it in self.iterators)
+
+    def __add__(self, other) -> "LazyIteratorChain":
+        return LazyIteratorChain(self, other)
+
 
 def deserialize_item(data: dict) -> Any:
     # Figures out what type of manifest is being decoded with some heuristics

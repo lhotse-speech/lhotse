@@ -765,4 +765,18 @@ class SupervisionSet(Serializable, Sequence[SupervisionSegment]):
         return len(self.segments)
 
     def __add__(self, other: "SupervisionSet") -> "SupervisionSet":
-        return SupervisionSet(segments={**self.segments, **other.segments})
+        if self.is_lazy or other.is_lazy:
+            # Lazy manifests are specially combined
+            from lhotse.serialization import LazyIteratorChain
+
+            return SupervisionSet(
+                segments=LazyIteratorChain(self.segments, other.segments)
+            )
+
+        # Eager manifests are just merged like standard dicts.
+        merged = {**self.segments, **other.segments}
+        assert len(merged) == len(self.segments) + len(other.segments), (
+            f"Conflicting IDs when concatenating SupervisionSets! "
+            f"Failed check: {len(merged)} == {len(self.segments)} + {len(other.segments)}"
+        )
+        return SupervisionSet(segments=merged)

@@ -1,3 +1,5 @@
+import contextlib
+from tempfile import NamedTemporaryFile
 from typing import Dict, List, Optional, Type
 
 from lhotse import AudioSource
@@ -7,6 +9,18 @@ from lhotse.features import FeatureSet, Features
 from lhotse.manipulation import Manifest
 from lhotse.supervision import AlignmentItem, SupervisionSegment, SupervisionSet
 from lhotse.utils import fastcopy
+
+
+@contextlib.contextmanager
+def as_lazy(manifest):
+    """
+    Context manager for converting eager manifests to lazy manifests.
+    Intended for testing.
+    """
+    with NamedTemporaryFile(suffix='.jsonl.gz') as f:
+        manifest.to_file(f.name)
+        f.flush()
+        yield type(manifest).from_jsonl_lazy(f.name)
 
 
 # noinspection PyPep8Naming
