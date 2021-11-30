@@ -175,6 +175,67 @@ class SequentialJsonlWriter:
             pass
         print(json.dumps(manifest.to_dict()), file=self.file)
 
+    def open_manifest(self) -> Manifest:
+        """
+        Opens the manifest that this writer has been writing to.
+        The manifest is opened in a lazy mode.
+        """
+        if not self.path.exists():
+            raise ValueError(
+                f"No such path: {self.path}; did you forget to write anything first?"
+            )
+        if not self.file.closed:
+            # If the user hasn't finished writing, make sure the latest
+            # changes are propagated.
+            self.file.flush()
+        return load_manifest_lazy(self.path)
+
+
+class InMemoryWriter:
+    """
+    Mimics :class:`.SequentialJsonlWriter` API but doesn't actually perform any I/O.
+    It is used internally to create manifest sets without writing them to disk.
+    """
+
+    def __init__(self):
+        self.items = []
+        self.ignore_ids = set()
+
+    def __enter__(self) -> "InMemoryWriter":
+        return self
+
+    def __exit__(self, *args, **kwargs) -> None:
+        pass
+
+    def __contains__(self, item) -> bool:
+        if isinstance(item, str):
+            return item in self.ignore_ids
+        try:
+            return item.id in self.ignore_ids
+        except AttributeError:
+            # The only case when this happens is for the FeatureSet -- Features do not have IDs.
+            # In that case we can't know if they are already written or not.
+            return False
+
+    def contains(self, item: Union[str, Any]) -> bool:
+        return item in self
+
+    def write(self, manifest) -> None:
+        self.items.append(manifest)
+        if hasattr(manifest, "id"):
+            self.ignore_ids.add(manifest.id)
+
+    def open_manifest(self) -> Manifest:
+        """
+        Return a manifest set. Resolves the proper manifest set class by itself.
+        """
+        if not self.items:
+            raise ValueError(
+                f"The list of manifests is empty; did you forget to write anything first?"
+            )
+        cls = resolve_manifest_set_class(self.items[0])
+        return cls.from_items(self.items)
+
 
 class JsonlMixin:
     def to_jsonl(self, path: Pathlike) -> None:
@@ -187,13 +248,17 @@ class JsonlMixin:
 
     @classmethod
     def open_writer(
-        cls, path: Pathlike, overwrite: bool = True
-    ) -> SequentialJsonlWriter:
+        cls, path: Union[Pathlike, None], overwrite: bool = True
+    ) -> Union[SequentialJsonlWriter, InMemoryWriter]:
         """
         Open a sequential writer that allows to store the manifests one by one,
         without the necessity of storing the whole manifest set in-memory.
         Supports writing to JSONL format (``.jsonl``), with optional gzip
         compression (``.jsonl.gz``).
+
+        .. note:: when ``path`` is ``None``, we will return a :class:`.InMemoryWriter`
+            instead has the same API but stores the manifests in memory.
+            It is convenient when you want to make disk saving optional.
 
         Example:
 
@@ -222,6 +287,8 @@ class JsonlMixin:
             ...         recording = Recording.from_file(path, recording_id=recording_id)
             ...         writer.write(recording)
         """
+        if path is None:
+            return InMemoryWriter()
         return SequentialJsonlWriter(path, overwrite=overwrite)
 
 
@@ -290,6 +357,54 @@ def load_manifest(path: Pathlike, manifest_cls: Optional[Type] = None) -> Manife
     if data_set is None:
         raise ValueError(f"Unknown type of manifest: {path}")
     return data_set
+
+
+def load_manifest_lazy(path: Pathlike) -> Manifest:
+    """Generic utility for reading an arbitrary manifest from a JSONL file."""
+    path = Path(path)
+    assert extension_contains(".jsonl", path)
+    raw_data = iter(load_jsonl(path))
+    first = next(raw_data)
+    item = deserialize_item(first)
+    cls = resolve_manifest_set_class(item)
+    return cls.from_jsonl_lazy(path)
+
+
+def load_manifest_lazy_or_eager(path: Pathlike) -> Manifest:
+    """
+    Generic utility for reading an arbitrary manifest.
+    If possible, opens the manifest lazily, otherwise reads everything into memory.
+    """
+    path = Path(path)
+    if extension_contains(".jsonl", path):
+        return load_manifest_lazy(path)
+    else:
+        return load_manifest(path)
+
+
+def resolve_manifest_set_class(item):
+    """Returns the right *Set class for a manifest, e.g. Recording -> RecordingSet."""
+    from lhotse import (
+        Features,
+        FeatureSet,
+        Recording,
+        RecordingSet,
+        SupervisionSegment,
+        SupervisionSet,
+    )
+    from lhotse.cut import Cut, CutSet
+
+    if isinstance(item, Recording):
+        return RecordingSet
+    if isinstance(item, SupervisionSegment):
+        return SupervisionSet
+    if isinstance(item, Cut):
+        return CutSet
+    if isinstance(item, Features):
+        return FeatureSet
+    raise ValueError(
+        f"No corresponding 'Set' class is known for item of type: {type(item)}"
+    )
 
 
 def store_manifest(manifest: Manifest, path: Pathlike) -> None:

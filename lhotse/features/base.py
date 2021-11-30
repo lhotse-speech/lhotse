@@ -526,6 +526,8 @@ class FeatureSet(Serializable, Sequence[Features]):
     def from_features(features: Iterable[Features]) -> "FeatureSet":
         return FeatureSet(list(features))  # just for consistency with other *Sets
 
+    from_items = from_features
+
     @staticmethod
     def from_dicts(data: Iterable[dict]) -> "FeatureSet":
         return FeatureSet(

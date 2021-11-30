@@ -1,9 +1,11 @@
+from pathlib import Path
 from typing import List, Optional, Tuple
 
 import click
 
 from lhotse.bin.modes.cli_base import cli
 from lhotse.cut import CutSet, append_cuts, make_windowed_cuts_from_features, mix_cuts
+from lhotse.serialization import load_manifest_lazy_or_eager
 from lhotse.utils import Pathlike
 
 
@@ -290,3 +292,25 @@ def pad(
     cut_set = CutSet.from_file(cut_manifest)
     padded_cut_set = cut_set.pad(desired_duration=duration)
     padded_cut_set.to_file(output_cut_manifest)
+
+
+@cut.command()
+@click.argument("cutset", type=click.Path(exists=True, dir_okay=False))
+@click.argument("output", type=click.Path())
+def decompose(cutset, output):
+    """
+    \b
+    Decompose CUTSET into:
+        * recording set (recordings.jsonl.gz)
+        * feature set (features.jsonl.gz)
+        * supervision set (supervisions.jsonl.gz)
+
+    If any of these are not preset in any of the cuts,
+    the corresponding file for them will be empty.
+    """
+    cuts = load_manifest_lazy_or_eager(cutset)
+    assert isinstance(
+        cuts, CutSet
+    ), f"Only CutSet can be decomposed (got: {type(cuts)} from '{cutset}')"
+    output = Path(output)
+    cuts.decompose(output_dir=output, verbose=True)

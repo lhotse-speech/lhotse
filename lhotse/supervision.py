@@ -503,6 +503,8 @@ class SupervisionSet(Serializable, Sequence[SupervisionSegment]):
     def from_segments(segments: Iterable[SupervisionSegment]) -> "SupervisionSet":
         return SupervisionSet(segments=index_by_id_and_check(segments))
 
+    from_items = from_segments
+
     @staticmethod
     def from_dicts(data: Iterable[Dict]) -> "SupervisionSet":
         return SupervisionSet.from_segments(
