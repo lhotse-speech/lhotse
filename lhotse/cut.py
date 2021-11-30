@@ -2847,17 +2847,18 @@ class CutSet(Serializable, Sequence[Cut]):
 
     def decompose(
         self, output_dir: Optional[Pathlike] = None, verbose: bool = False
-    ) -> Tuple[RecordingSet, SupervisionSet, FeatureSet]:
+    ) -> Tuple[Optional[RecordingSet], Optional[SupervisionSet], Optional[FeatureSet]]:
         """
         Return a 3-tuple of unique (recordings, supervisions, features) found in
-        this :class:`CutSet`. Each of these manifest sets may be empty (e.g.,
-        if not features were extracted).
+        this :class:`CutSet`. Some manifest sets may also be ``None``, e.g.,
+        if features were not extracted.
 
         .. note:: :class:`.MixedCut` is iterated over its track cuts.
 
         :param output_dir: directory where the manifests will be saved.
             The following files will be created: 'recordings.jsonl.gz',
             'supervisions.jsonl.gz', 'features.jsonl.gz'.
+        :param verbose: when ``True``, shows a progress bar.
         """
         if output_dir is not None:
             output_dir = Path(output_dir)

@@ -179,11 +179,10 @@ class SequentialJsonlWriter:
         """
         Opens the manifest that this writer has been writing to.
         The manifest is opened in a lazy mode.
+        Returns ``None`` when the manifest is empty.
         """
         if not self.path.exists():
-            raise ValueError(
-                f"No such path: {self.path}; did you forget to write anything first?"
-            )
+            return None
         if not self.file.closed:
             # If the user hasn't finished writing, make sure the latest
             # changes are propagated.
@@ -225,14 +224,13 @@ class InMemoryWriter:
         if hasattr(manifest, "id"):
             self.ignore_ids.add(manifest.id)
 
-    def open_manifest(self) -> Manifest:
+    def open_manifest(self) -> Optional[Manifest]:
         """
         Return a manifest set. Resolves the proper manifest set class by itself.
+        Returns ``None`` when the manifest is empty.
         """
         if not self.items:
-            raise ValueError(
-                f"The list of manifests is empty; did you forget to write anything first?"
-            )
+            return None
         cls = resolve_manifest_set_class(self.items[0])
         return cls.from_items(self.items)
 
@@ -359,18 +357,24 @@ def load_manifest(path: Pathlike, manifest_cls: Optional[Type] = None) -> Manife
     return data_set
 
 
-def load_manifest_lazy(path: Pathlike) -> Manifest:
-    """Generic utility for reading an arbitrary manifest from a JSONL file."""
+def load_manifest_lazy(path: Pathlike) -> Optional[Manifest]:
+    """
+    Generic utility for reading an arbitrary manifest from a JSONL file.
+    Returns None when the manifest is empty.
+    """
     path = Path(path)
     assert extension_contains(".jsonl", path)
     raw_data = iter(load_jsonl(path))
-    first = next(raw_data)
+    try:
+        first = next(raw_data)
+    except StopIteration:
+        return None  # empty manifest
     item = deserialize_item(first)
     cls = resolve_manifest_set_class(item)
     return cls.from_jsonl_lazy(path)
 
 
-def load_manifest_lazy_or_eager(path: Pathlike) -> Manifest:
+def load_manifest_lazy_or_eager(path: Pathlike) -> Optional[Manifest]:
     """
     Generic utility for reading an arbitrary manifest.
     If possible, opens the manifest lazily, otherwise reads everything into memory.

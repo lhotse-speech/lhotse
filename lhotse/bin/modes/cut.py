@@ -297,7 +297,7 @@ def pad(
 @cut.command()
 @click.argument("cutset", type=click.Path(exists=True, dir_okay=False))
 @click.argument("output", type=click.Path())
-def decompose(cutset, output):
+def decompose(cutset: Pathlike, output: Pathlike):
     """
     \b
     Decompose CUTSET into:
