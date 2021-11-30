@@ -15,11 +15,13 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
 from tqdm.auto import tqdm
 
 from lhotse import (
+    CutSet,
     compute_num_samples,
     fix_manifests,
     validate_recordings_and_supervisions,
 )
 from lhotse.audio import AudioSource, Recording, RecordingSet
+from lhotse.parallel import parallel_map
 from lhotse.recipes.utils import manifests_exist, read_manifests_if_cached
 from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import Pathlike, Seconds, is_module_available
@@ -53,8 +55,8 @@ def download_gigaspeech(
 
 def prepare_gigaspeech(
     corpus_dir: Pathlike,
+    output_dir: Optional[Pathlike],
     dataset_parts: Union[str, Sequence[str]] = "auto",
-    output_dir: Optional[Pathlike] = None,
     num_jobs: int = 1,
 ) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet]]]:
     if is_module_available("speechcolab"):
@@ -70,57 +72,65 @@ def prepare_gigaspeech(
     corpus_dir = Path(corpus_dir)
     gigaspeech = GigaSpeech(corpus_dir)
 
-    manifests = defaultdict(dict)
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    # Maybe some manifests already exist: we can read them and save a bit of preparation time.
+    manifests = read_manifests_if_cached(
+        dataset_parts=dataset_parts,
+        output_dir=output_dir,
+        prefix="gigaspeech",
+        suffix="jsonl.gz",
+        lazy=True,
+    )
 
-    if output_dir is not None:
-        output_dir = Path(output_dir)
-        output_dir.mkdir(parents=True, exist_ok=True)
-        # Maybe some manifests already exist: we can read them and save a bit of preparation time.
-        manifests = read_manifests_if_cached(
-            dataset_parts=dataset_parts,
-            output_dir=output_dir,
-            prefix="gigaspeech",
-            suffix="jsonl.gz",
-        )
+    for part in subsets:
+        logging.info(f"Processing GigaSpeech subset: {part}")
+        if manifests_exist(
+            part=part, output_dir=output_dir, prefix="gigaspeech", suffix="jsonl.gz"
+        ):
+            logging.info(f"GigaSpeech subset: {part} already prepared - skipping.")
+            continue
 
-    with ProcessPoolExecutor(num_jobs) as ex:
-        for part in subsets:
-            logging.info(f"Processing GigaSpeech subset: {part}")
-            if manifests_exist(
-                part=part, output_dir=output_dir, prefix="gigaspeech", suffix="jsonl.gz"
-            ):
-                logging.info(f"GigaSpeech subset: {part} already prepared - skipping.")
-                continue
-
-            recordings = []
-            supervisions = []
+        with RecordingSet.open_writer(
+            output_dir / f"gigaspeech_recordings_{part}.jsonl.gz"
+        ) as rec_writer, SupervisionSet.open_writer(
+            output_dir / f"gigaspeech_supervisions_{part}.jsonl.gz"
+        ) as sup_writer, CutSet.open_writer(
+            output_dir / f"gigaspeech_cuts_{part}.jsonl.gz"
+        ) as cut_writer:
             for recording, segments in tqdm(
-                ex.map(
+                parallel_map(
                     parse_utterance,
                     gigaspeech.audios("{" + part + "}"),
                     repeat(gigaspeech.gigaspeech_dataset_dir),
+                    num_jobs=num_jobs,
                 ),
                 desc="Processing GigaSpeech JSON entries",
             ):
-                recordings.append(recording)
-                supervisions.extend(segments)
-
-            recordings, supervisions = fix_manifests(
-                recordings=RecordingSet.from_recordings(recordings),
-                supervisions=SupervisionSet.from_segments(supervisions),
-            )
-            validate_recordings_and_supervisions(
-                recordings=recordings, supervisions=supervisions
-            )
-            manifests[part] = {"recordings": recordings, "supervisions": supervisions}
-
-            if output_dir is not None:
-                manifests[part]["recordings"].to_file(
-                    output_dir / f"gigaspeech_recordings_{part}.jsonl.gz"
+                # Fix and validate the recording + supervisions
+                recordings, segments = fix_manifests(
+                    recordings=RecordingSet.from_recordings([recording]),
+                    supervisions=SupervisionSet.from_segments(segments),
                 )
-                manifests[part]["supervisions"].to_file(
-                    output_dir / f"gigaspeech_supervisions_{part}.jsonl.gz"
+                validate_recordings_and_supervisions(
+                    recordings=recordings, supervisions=segments
                 )
+                # Create the cut since most users will need it anyway.
+                # There will be exactly one cut since there's exactly one recording.
+                cuts = CutSet.from_manifests(
+                    recordings=recordings, supervisions=segments
+                )
+                # Write the manifests
+                rec_writer.write(recordings[0])
+                for s in segments:
+                    sup_writer.write(s)
+                cut_writer.write(cuts[0])
+
+        manifests[part] = {
+            "recordings": RecordingSet.from_jsonl_lazy(rec_writer.path),
+            "supervisions": SupervisionSet.from_jsonl_lazy(sup_writer.path),
+            "cuts": CutSet.from_jsonl_lazy(cut_writer.path),
+        }
 
     return dict(manifests)
 
