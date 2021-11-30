@@ -60,6 +60,53 @@ from lhotse.utils import (
 Channels = Union[int, List[int]]
 
 
+_DEFAULT_LHOTSE_AUDIO_DURATION_MISMATCH_TOLERANCE: Seconds = 1e-3
+LHOTSE_AUDIO_DURATION_MISMATCH_TOLERANCE: Seconds = (
+    _DEFAULT_LHOTSE_AUDIO_DURATION_MISMATCH_TOLERANCE
+)
+
+
+def set_audio_duration_mismatch_tolerance(delta: Seconds) -> None:
+    """
+    Override Lhotse's global threshold for allowed audio duration mismatch between the
+    manifest and the actual data.
+
+    Some scenarios when a mismatch can happen:
+
+        - the :class:`.Recording` manifest duration is rounded off too much
+            (i.e., bad user input, but too inconvenient to go back and fix the manifests)
+
+        - data augmentation changes the number of samples a bit in a difficult to predict way
+
+    When there is a mismatch, Lhotse will either trim or replicate the diff to match
+    the value found in the :class:`.Recording` manifest.
+
+    .. note:: We don't recommend setting this lower than the default value, as it could
+        break some data augmentation transforms.
+
+    Example::
+
+        >>> import lhotse
+        >>> lhotse.set_audio_duration_mismatch_tolerance(0.01)  # 10ms tolerance
+
+    :param delta: New tolerance in seconds.
+    """
+    global LHOTSE_AUDIO_DURATION_MISMATCH_TOLERANCE
+    logging.info(
+        "The user overrided tolerance for audio duration mismatch "
+        "between the values in the manifest and the actual data. "
+        f"Old threshold: {LHOTSE_AUDIO_DURATION_MISMATCH_TOLERANCE}s. "
+        f"New threshold: {delta}s."
+    )
+    if delta < _DEFAULT_LHOTSE_AUDIO_DURATION_MISMATCH_TOLERANCE:
+        warnings.warn(
+            "The audio duration mismatch tolerance has been set to a value lower than "
+            f"default ({_DEFAULT_LHOTSE_AUDIO_DURATION_MISMATCH_TOLERANCE}s). "
+            f"We don't recommend this as it might break some data augmentation transforms."
+        )
+    LHOTSE_AUDIO_DURATION_MISMATCH_TOLERANCE = delta
+
+
 # TODO: document the dataclasses like this:
 # https://stackoverflow.com/a/3051356/5285891
 
@@ -147,7 +194,7 @@ class AudioSource:
             )
             available_duration = num_samples / sampling_rate
             if (
-                available_duration < duration - 1e-3
+                available_duration < duration - LHOTSE_AUDIO_DURATION_MISMATCH_TOLERANCE
             ):  # set the allowance as 1ms to avoid float error
                 raise ValueError(
                     f"Requested more audio ({duration}s) than available ({available_duration}s)"
@@ -1304,15 +1351,6 @@ def _buf_to_float(x, n_bytes=2, dtype=np.float32):
     return scale * np.frombuffer(x, fmt).astype(dtype)
 
 
-# This constant defines by how much our estimation can be mismatched with
-# the actual number of samples after applying audio augmentation.
-# Chains of augmentation effects (such as resampling, speed perturb) can cause
-# difficult to predict roundings and return a few samples more/less than we estimate.
-# The default tolerance is a quarter of a millisecond
-# (the actual number of samples is computed based on the sampling rate).
-AUGMENTATION_DURATION_TOLERANCE: Seconds = 0.00025
-
-
 def assert_and_maybe_fix_num_samples(
     audio: np.ndarray,
     offset: Seconds,
@@ -1331,7 +1369,9 @@ def assert_and_maybe_fix_num_samples(
     diff = expected_num_samples - audio.shape[1]
     if diff == 0:
         return audio  # this is normal condition
-    allowed_diff = int(ceil(AUGMENTATION_DURATION_TOLERANCE * recording.sampling_rate))
+    allowed_diff = int(
+        ceil(LHOTSE_AUDIO_DURATION_MISMATCH_TOLERANCE * recording.sampling_rate)
+    )
     if 0 < diff <= allowed_diff:
         # note the extra colon in -1:, which preserves the shape
         audio = np.append(audio, audio[:, -diff:], axis=1)
