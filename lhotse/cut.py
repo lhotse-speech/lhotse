@@ -2864,6 +2864,9 @@ class CutSet(Serializable, Sequence[Cut]):
             output_dir = Path(output_dir)
             output_dir.mkdir(parents=True, exist_ok=True)
 
+        stored_rids = set()
+        stored_sids = set()
+
         with RecordingSet.open_writer(
             output_dir / "recordings.jsonl.gz" if output_dir is not None else None
         ) as rw, SupervisionSet.open_writer(
@@ -2873,17 +2876,19 @@ class CutSet(Serializable, Sequence[Cut]):
         ) as fw:
 
             def save(mono_cut: MonoCut):
-                if mono_cut.has_recording and mono_cut.recording not in rw:
+                if mono_cut.has_recording and mono_cut.recording_id not in stored_rids:
                     rw.write(mono_cut.recording)
+                    stored_rids.add(mono_cut.recording_id)
                 if mono_cut.has_features:
                     # Note: we have no way of saying if features are unique,
                     #       so we will always write them.
                     fw.write(mono_cut.features)
                 for sup in mono_cut.supervisions:
-                    if sup not in sw:
+                    if sup.id not in stored_sids:
                         # Supervisions inside cuts are relative to cuts start,
                         # so we correct the offset.
                         sw.write(sup.with_offset(mono_cut.start))
+                        stored_sids.add(sup.id)
 
             for cut in tqdm(self, desc="Decomposing cuts") if verbose else self:
                 if isinstance(cut, MonoCut):

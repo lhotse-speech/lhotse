@@ -16,6 +16,7 @@ from lhotse import (
 )
 from lhotse.audio import AudioSource
 from lhotse.cut import CutSet, MixTrack, MixedCut, MonoCut
+from lhotse.serialization import load_jsonl
 from lhotse.testing.dummies import (
     DummyManifest,
     dummy_cut,
@@ -441,7 +442,7 @@ def test_cut_set_filter_supervisions(cut_set):
     train_ids = all_ids[:-1]
     test_ids = all_ids[-1:]
 
-    # filter based on sueprvision ids
+    # filter based on supervision ids
     train_set = cut_set.filter_supervisions(lambda s: s.id in train_ids)
     test_set = cut_set.filter_supervisions(lambda s: s.id in test_ids)
 
@@ -542,6 +543,26 @@ def test_cut_set_decompose():
     assert len(feats) == 1
 
 
+def test_cut_set_decompose_doesnt_duplicate_recording():
+    c = dummy_cut(0)
+    c2 = dummy_cut(0)
+    c2.id = 'dummy-cut-0001'  # override cut ID, retain identical recording ID as `c`
+    cuts = CutSet.from_cuts([c, c2])
+
+    recs, sups, feats = cuts.decompose()
+
+    assert isinstance(recs, RecordingSet)
+    # deduplicated recording
+    assert len(recs) == 1
+    assert recs[0].id == "dummy-recording-0000"
+
+    assert sups is None
+
+    assert isinstance(feats, FeatureSet)
+    # not deduplicated features
+    assert len(feats) == 2
+
+
 def test_cut_set_decompose_output_dir():
     c = dummy_cut(
         0,
@@ -559,3 +580,23 @@ def test_cut_set_decompose_output_dir():
         assert list(recs) == list(load_manifest(td / "recordings.jsonl.gz"))
         assert list(sups) == list(load_manifest(td / "supervisions.jsonl.gz"))
         assert list(feats) == list(load_manifest(td / "features.jsonl.gz"))
+
+
+def test_cut_set_decompose_output_dir_doesnt_duplicate_recording():
+    c = dummy_cut(0)
+    c2 = dummy_cut(0)
+    c2.id = 'dummy-cut-0001'  # override cut ID, retain identical recording ID as `c`
+    cuts = CutSet.from_cuts([c, c2])
+
+    with TemporaryDirectory() as td:
+        td = Path(td)
+        cuts.decompose(output_dir=td)
+
+        text = load_jsonl(td / 'recordings.jsonl.gz')
+        print(list(text))
+
+        recs = load_manifest(td / 'recordings.jsonl.gz')
+        assert isinstance(recs, RecordingSet)
+        # deduplicated recording
+        assert len(recs) == 1
+        assert recs[0].id == "dummy-recording-0000"

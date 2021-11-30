@@ -198,7 +198,6 @@ class InMemoryWriter:
 
     def __init__(self):
         self.items = []
-        self.ignore_ids = set()
 
     def __enter__(self) -> "InMemoryWriter":
         return self
@@ -207,22 +206,13 @@ class InMemoryWriter:
         pass
 
     def __contains__(self, item) -> bool:
-        if isinstance(item, str):
-            return item in self.ignore_ids
-        try:
-            return item.id in self.ignore_ids
-        except AttributeError:
-            # The only case when this happens is for the FeatureSet -- Features do not have IDs.
-            # In that case we can't know if they are already written or not.
-            return False
+        return False
 
     def contains(self, item: Union[str, Any]) -> bool:
         return item in self
 
     def write(self, manifest) -> None:
         self.items.append(manifest)
-        if hasattr(manifest, "id"):
-            self.ignore_ids.add(manifest.id)
 
     def open_manifest(self) -> Optional[Manifest]:
         """
