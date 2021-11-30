@@ -4116,12 +4116,19 @@ class CutSet(Serializable, Sequence[Cut]):
         return iter(self.cuts.values())
 
     def __add__(self, other: "CutSet") -> "CutSet":
-        merged_cuts = {**self.cuts, **other.cuts}
-        assert len(merged_cuts) == len(self.cuts) + len(other.cuts), (
+        if self.is_lazy or other.is_lazy:
+            # Lazy manifests are specially combined
+            from lhotse.serialization import LazyIteratorChain
+
+            return CutSet(cuts=LazyIteratorChain(self.cuts, other.cuts))
+
+        # Eager manifests are just merged like standard dicts.
+        merged = {**self.cuts, **other.cuts}
+        assert len(merged) == len(self.cuts) + len(other.cuts), (
             f"Conflicting IDs when concatenating CutSets! "
-            f"Failed check: {len(merged_cuts)} == {len(self.cuts)} + {len(other.cuts)}"
+            f"Failed check: {len(merged)} == {len(self.cuts)} + {len(other.cuts)}"
         )
-        return CutSet(cuts={**self.cuts, **other.cuts})
+        return CutSet(cuts=merged)
 
 
 def make_windowed_cuts_from_features(

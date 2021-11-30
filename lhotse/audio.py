@@ -915,7 +915,21 @@ class RecordingSet(Serializable, Sequence[Recording]):
         return len(self.recordings)
 
     def __add__(self, other: "RecordingSet") -> "RecordingSet":
-        return RecordingSet(recordings={**self.recordings, **other.recordings})
+        if self.is_lazy or other.is_lazy:
+            # Lazy manifests are specially combined
+            from lhotse.serialization import LazyIteratorChain
+
+            return RecordingSet(
+                recordings=LazyIteratorChain(self.recordings, other.recordings)
+            )
+
+        # Eager manifests are just merged like standard dicts.
+        merged = {**self.recordings, **other.recordings}
+        assert len(merged) == len(self.recordings) + len(other.recordings), (
+            f"Conflicting IDs when concatenating RecordingSets! "
+            f"Failed check: {len(merged)} == {len(self.recordings)} + {len(other.recordings)}"
+        )
+        return RecordingSet(recordings=merged)
 
 
 class AudioMixer:
