@@ -1,4 +1,9 @@
-from .audio import AudioSource, Recording, RecordingSet
+from .audio import (
+    AudioSource,
+    Recording,
+    RecordingSet,
+    set_audio_duration_mismatch_tolerance,
+)
 from .augmentation import *
 from .caching import is_caching_enabled, set_caching_enabled
 from .cut import CutSet, MonoCut, create_cut_set_eager, create_cut_set_lazy
