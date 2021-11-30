@@ -6,6 +6,7 @@ from tempfile import NamedTemporaryFile, TemporaryDirectory
 from unittest.mock import Mock
 
 import pytest
+import torch
 
 from lhotse import (
     CutSet,
@@ -193,9 +194,6 @@ def test_extract_and_store_features_from_cut_set(
                     not is_module_available("librosa"),
                     reason="Requires librosa to run.",
                 ),
-                pytest.mark.xfail(
-                    reason="Librosa extractors do not work with PyTorch tensors."
-                ),
             ],
         ),
     ],
@@ -210,3 +208,45 @@ def test_cut_set_batch_feature_extraction(cut_set, extractor_type):
             num_workers=0,
         )
         validate(cut_set_with_feats, read_data=True)
+
+
+@pytest.mark.parametrize(
+    "extractor_type",
+    [
+        Fbank,
+        Mfcc,
+        KaldiFbank,
+        KaldiMfcc,
+        pytest.param(
+            KaldifeatFbank,
+            marks=pytest.mark.skipif(
+                not is_module_available("kaldifeat"),
+                reason="Requires kaldifeat to run.",
+            ),
+        ),
+        pytest.param(
+            KaldifeatMfcc,
+            marks=pytest.mark.skipif(
+                not is_module_available("kaldifeat"),
+                reason="Requires kaldifeat to run.",
+            ),
+        ),
+        pytest.param(
+            lambda: LibrosaFbank(LibrosaFbankConfig(sampling_rate=16000)),
+            marks=[
+                pytest.mark.skipif(
+                    not is_module_available("librosa"),
+                    reason="Requires librosa to run.",
+                ),
+            ],
+        ),
+    ],
+)
+def test_on_the_fly_batch_feature_extraction(cut_set, extractor_type):
+    from lhotse.dataset import OnTheFlyFeatures
+
+    extractor = OnTheFlyFeatures(extractor=extractor_type())
+    cut_set = cut_set.resample(16000)
+    feats, feat_lens = extractor(cut_set)  # does not crash
+    assert isinstance(feats, torch.Tensor)
+    assert isinstance(feat_lens, torch.Tensor)
