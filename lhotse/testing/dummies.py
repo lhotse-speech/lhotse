@@ -17,7 +17,7 @@ def as_lazy(manifest):
     Context manager for converting eager manifests to lazy manifests.
     Intended for testing.
     """
-    with NamedTemporaryFile(suffix='.jsonl.gz') as f:
+    with NamedTemporaryFile(suffix=".jsonl.gz") as f:
         manifest.to_file(f.name)
         f.flush()
         yield type(manifest).from_jsonl_lazy(f.name)
