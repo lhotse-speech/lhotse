@@ -546,7 +546,7 @@ def test_cut_set_decompose():
 def test_cut_set_decompose_doesnt_duplicate_recording():
     c = dummy_cut(0)
     c2 = dummy_cut(0)
-    c2.id = 'dummy-cut-0001'  # override cut ID, retain identical recording ID as `c`
+    c2.id = "dummy-cut-0001"  # override cut ID, retain identical recording ID as `c`
     cuts = CutSet.from_cuts([c, c2])
 
     recs, sups, feats = cuts.decompose()
@@ -585,17 +585,17 @@ def test_cut_set_decompose_output_dir():
 def test_cut_set_decompose_output_dir_doesnt_duplicate_recording():
     c = dummy_cut(0)
     c2 = dummy_cut(0)
-    c2.id = 'dummy-cut-0001'  # override cut ID, retain identical recording ID as `c`
+    c2.id = "dummy-cut-0001"  # override cut ID, retain identical recording ID as `c`
     cuts = CutSet.from_cuts([c, c2])
 
     with TemporaryDirectory() as td:
         td = Path(td)
         cuts.decompose(output_dir=td)
 
-        text = load_jsonl(td / 'recordings.jsonl.gz')
+        text = load_jsonl(td / "recordings.jsonl.gz")
         print(list(text))
 
-        recs = load_manifest(td / 'recordings.jsonl.gz')
+        recs = load_manifest(td / "recordings.jsonl.gz")
         assert isinstance(recs, RecordingSet)
         # deduplicated recording
         assert len(recs) == 1
