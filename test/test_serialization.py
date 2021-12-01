@@ -15,6 +15,7 @@ from lhotse import (
     load_manifest,
     store_manifest,
 )
+from lhotse.serialization import load_manifest_lazy
 from lhotse.supervision import AlignmentItem
 from lhotse.testing.dummies import DummyManifest
 from lhotse.utils import fastcopy, nullcontext as does_not_raise
@@ -34,6 +35,28 @@ from lhotse.utils import fastcopy, nullcontext as does_not_raise
 def test_load_any_lhotse_manifest(path, exception_expectation):
     with exception_expectation:
         load_manifest(path)
+
+
+@pytest.mark.parametrize(
+    ["path", "exception_expectation"],
+    [
+        ("test/fixtures/audio.json", does_not_raise()),
+        ("test/fixtures/supervision.json", does_not_raise()),
+        ("test/fixtures/dummy_feats/feature_manifest.json", does_not_raise()),
+        ("test/fixtures/libri/cuts.json", does_not_raise()),
+        ("test/fixtures/feature_config.yml", pytest.raises(ValueError)),
+        ("no/such/path.xd", pytest.raises(AssertionError)),
+    ],
+)
+def test_load_any_lhotse_manifest_lazy(path, exception_expectation):
+    with exception_expectation:
+        me = load_manifest(path)
+        # some temporary files are needed to convert JSON to JSONL
+        with NamedTemporaryFile(suffix=".jsonl.gz") as f:
+            me.to_file(f.name)
+            f.flush()
+            ml = load_manifest_lazy(f.name)
+            assert list(me) == list(ml)  # equal under iteration
 
 
 @pytest.fixture
@@ -316,7 +339,7 @@ def test_generic_serialization(manifests, manifest_type, format, compressed):
 
 
 @pytest.mark.parametrize(
-    "manifest_type", ["recording_set", "supervision_set", "cut_set"]
+    "manifest_type", ["recording_set", "supervision_set", "cut_set", "feature_set"]
 )
 @pytest.mark.parametrize(
     ["format", "compressed"],
@@ -333,8 +356,23 @@ def test_sequential_jsonl_writer(manifests, manifest_type, format, compressed):
         with manifest.open_writer(jsonl_f.name) as writer:
             for item in manifest:
                 writer.write(item)
-        restored = manifest.from_file(jsonl_f.name)
-        assert manifest == restored
+        restored = writer.open_manifest()
+        # Same manifest type
+        assert type(manifest) == type(restored)
+        # Equal under iteration
+        assert list(manifest) == list(restored)
+
+
+@pytest.mark.parametrize(
+    "manifest_type", ["recording_set", "supervision_set", "cut_set", "feature_set"]
+)
+def test_in_memory_writer(manifests, manifest_type):
+    manifest = manifests[manifest_type]
+    with manifest.open_writer(None) as writer:
+        for item in manifest:
+            writer.write(item)
+    restored = writer.open_manifest()
+    assert manifest == restored
 
 
 @pytest.mark.parametrize("overwrite", [True, False])

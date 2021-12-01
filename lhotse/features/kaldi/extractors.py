@@ -61,11 +61,17 @@ class KaldiFbank(FeatureExtractor):
             f"{self.config.sampling_rate}, but "
             f"sampling_rate={sampling_rate} was passed to extract()."
         )
+
         is_numpy = False
         if not isinstance(samples, torch.Tensor):
             samples = torch.from_numpy(samples)
             is_numpy = True
+
+        if samples.ndim == 1:
+            samples = samples.unsqueeze(0)
+
         feats = self.extractor(samples)[0]
+
         if is_numpy:
             return feats.cpu().numpy()
         else:
@@ -138,15 +144,21 @@ class KaldiMfcc(FeatureExtractor):
         self, samples: Union[np.ndarray, torch.Tensor], sampling_rate: int
     ) -> Union[np.ndarray, torch.Tensor]:
         assert sampling_rate == self.config.sampling_rate, (
-            f"KaldiFbank was instantiated for sampling_rate "
+            f"KaldiMfcc was instantiated for sampling_rate "
             f"{self.config.sampling_rate}, but "
             f"sampling_rate={sampling_rate} was passed to extract()."
         )
+
         is_numpy = False
         if not isinstance(samples, torch.Tensor):
             samples = torch.from_numpy(samples)
             is_numpy = True
+
+        if samples.ndim == 1:
+            samples = samples.unsqueeze(0)
+
         feats = self.extractor(samples)[0]
+
         if is_numpy:
             return feats.cpu().numpy()
         else:

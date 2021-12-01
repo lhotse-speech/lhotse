@@ -487,3 +487,212 @@ def test_cut_filter_supervisions(dummy_cut_with_supervisions):
         set(s.id for s in cut_first_three.supervisions)
         | set(s.id for s in cut_last_three.supervisions)
     ) == set(s.id for s in cut.supervisions)
+
+
+@pytest.fixture
+def dummy_recording_set_lazy():
+    with NamedTemporaryFile(suffix=".jsonl.gz") as f:
+        recs = RecordingSet.from_recordings(
+            [
+                Recording(
+                    id="rec1",
+                    sampling_rate=16000,
+                    num_samples=160000,
+                    duration=10,
+                    sources=[
+                        AudioSource(type="file", channels=[0], source="dummy.wav")
+                    ],
+                )
+            ]
+        )
+        recs.to_file(f.name)
+        f.flush()
+        yield RecordingSet.from_jsonl_lazy(f.name)
+
+
+@pytest.fixture
+def dummy_supervision_set_lazy():
+    with NamedTemporaryFile(suffix=".jsonl.gz") as f:
+        sups = SupervisionSet.from_segments(
+            [
+                SupervisionSegment(
+                    id="sup1",
+                    recording_id="rec1",
+                    start=3,
+                    duration=4,
+                    channel=0,
+                    text="dummy text",
+                ),
+                SupervisionSegment(
+                    id="sup2",
+                    recording_id="rec1",
+                    start=7,
+                    duration=2,
+                    channel=0,
+                    text="dummy text",
+                ),
+            ]
+        )
+        sups.to_file(f.name)
+        f.flush()
+        yield SupervisionSet.from_jsonl_lazy(f.name)
+
+
+@pytest.fixture
+def dummy_feature_set_lazy():
+    with NamedTemporaryFile(suffix=".jsonl.gz") as f:
+        feats = FeatureSet.from_features(
+            [
+                Features(
+                    recording_id="rec1",
+                    channels=0,
+                    start=0,
+                    duration=10,
+                    type="fbank",
+                    num_frames=1000,
+                    num_features=23,
+                    sampling_rate=16000,
+                    storage_type="lilcom_files",
+                    storage_path="feats",
+                    storage_key="dummy.llc",
+                    frame_shift=0.01,
+                )
+            ]
+        )
+        feats.to_file(f.name)
+        f.flush()
+        yield FeatureSet.from_jsonl_lazy(f.name)
+
+
+class TestCreateCutSetLazy:
+    def test_make_cuts_from_recordings_supervisions(
+        self, dummy_recording_set_lazy, dummy_supervision_set_lazy
+    ):
+        with NamedTemporaryFile(suffix=".jsonl.gz") as f:
+            cut_set = CutSet.from_manifests(
+                recordings=dummy_recording_set_lazy,
+                supervisions=dummy_supervision_set_lazy,
+                lazy=True,
+                output_path=f.name,
+            )
+            f.flush()
+            cut1 = cut_set[0]
+            assert cut1.start == 0
+            assert cut1.duration == 10.0
+            assert cut1.end == 10.0
+            assert cut1.channel == 0
+
+            assert len(cut1.supervisions) == 2
+            assert cut1.supervisions[0].id == "sup1"
+            assert cut1.supervisions[0].recording_id == "rec1"
+            assert cut1.supervisions[0].start == 3.0
+            assert cut1.supervisions[0].end == 7.0
+            assert cut1.supervisions[0].channel == 0
+            assert cut1.supervisions[0].text == "dummy text"
+            assert cut1.supervisions[1].id == "sup2"
+            assert cut1.supervisions[1].recording_id == "rec1"
+            assert cut1.supervisions[1].start == 7.0
+            assert cut1.supervisions[1].end == 9.0
+            assert cut1.supervisions[1].channel == 0
+            assert cut1.supervisions[1].text == "dummy text"
+
+            assert cut1.has_recording
+            assert cut1.sampling_rate == 16000
+            assert cut1.recording_id == "rec1"
+            assert cut1.num_samples == 160000
+
+            assert not cut1.has_features
+            assert cut1.features is None
+            assert cut1.frame_shift is None
+            assert cut1.num_frames is None
+            assert cut1.num_features is None
+            assert cut1.features_type is None
+
+    def test_make_cuts_from_features_supervisions(
+        self, dummy_feature_set_lazy, dummy_supervision_set_lazy
+    ):
+        with NamedTemporaryFile(suffix=".jsonl.gz") as f:
+            cut_set = CutSet.from_manifests(
+                supervisions=dummy_supervision_set_lazy,
+                features=dummy_feature_set_lazy,
+                lazy=True,
+                output_path=f.name,
+            )
+            f.flush()
+            cut1 = cut_set[0]
+            assert cut1.start == 0
+            assert cut1.duration == 10.0
+            assert cut1.end == 10.0
+            assert cut1.channel == 0
+
+            assert len(cut1.supervisions) == 2
+            assert cut1.supervisions[0].id == "sup1"
+            assert cut1.supervisions[0].recording_id == "rec1"
+            assert cut1.supervisions[0].start == 3.0
+            assert cut1.supervisions[0].end == 7.0
+            assert cut1.supervisions[0].channel == 0
+            assert cut1.supervisions[0].text == "dummy text"
+            assert cut1.supervisions[1].id == "sup2"
+            assert cut1.supervisions[1].recording_id == "rec1"
+            assert cut1.supervisions[1].start == 7.0
+            assert cut1.supervisions[1].end == 9.0
+            assert cut1.supervisions[1].channel == 0
+            assert cut1.supervisions[1].text == "dummy text"
+
+            assert not cut1.has_recording
+            assert cut1.recording is None
+            assert cut1.sampling_rate == 16000
+            assert cut1.recording_id == "rec1"
+            assert cut1.num_samples is None
+
+            assert cut1.has_features
+            assert cut1.frame_shift == 0.01
+            assert cut1.num_frames == 1000
+            assert cut1.num_features == 23
+            assert cut1.features_type == "fbank"
+
+    def test_make_cuts_from_recordings_features_supervisions(
+        self,
+        dummy_recording_set_lazy,
+        dummy_feature_set_lazy,
+        dummy_supervision_set_lazy,
+    ):
+        with NamedTemporaryFile(suffix=".jsonl.gz") as f:
+            cut_set = CutSet.from_manifests(
+                recordings=dummy_recording_set_lazy,
+                supervisions=dummy_supervision_set_lazy,
+                features=dummy_feature_set_lazy,
+                lazy=True,
+                output_path=f.name,
+            )
+            f.flush()
+            cut1 = cut_set[0]
+            assert cut1.start == 0
+            assert cut1.duration == 10.0
+            assert cut1.end == 10.0
+            assert cut1.channel == 0
+
+            assert len(cut1.supervisions) == 2
+            assert cut1.supervisions[0].id == "sup1"
+            assert cut1.supervisions[0].recording_id == "rec1"
+            assert cut1.supervisions[0].start == 3.0
+            assert cut1.supervisions[0].end == 7.0
+            assert cut1.supervisions[0].channel == 0
+            assert cut1.supervisions[0].text == "dummy text"
+            assert cut1.supervisions[1].id == "sup2"
+            assert cut1.supervisions[1].recording_id == "rec1"
+            assert cut1.supervisions[1].start == 7.0
+            assert cut1.supervisions[1].end == 9.0
+            assert cut1.supervisions[1].channel == 0
+            assert cut1.supervisions[1].text == "dummy text"
+
+            assert cut1.has_recording
+            assert cut1.sampling_rate == 16000
+            assert cut1.recording_id == "rec1"
+            assert cut1.num_samples == 160000
+
+            assert cut1.has_features
+            assert cut1.frame_shift == 0.01
+            assert cut1.num_frames == 1000
+            assert cut1.num_features == 23
+            assert cut1.features_type == "fbank"

@@ -132,8 +132,12 @@ class FeatureExtractor(metaclass=ABCMeta):
         )
 
     def extract_batch(
-        self, samples: Union[np.ndarray, Sequence[np.ndarray]], sampling_rate: int
-    ) -> Union[np.ndarray, List[np.ndarray]]:
+        self,
+        samples: Union[
+            np.ndarray, torch.Tensor, Sequence[np.ndarray], Sequence[torch.Tensor]
+        ],
+        sampling_rate: int,
+    ) -> Union[np.ndarray, torch.Tensor, List[np.ndarray], List[torch.Tensor]]:
         """
         Performs batch extraction. It is not guaranteed to be faster
         than :meth:`FeatureExtractor.extract` -- it depends on whether
@@ -148,6 +152,7 @@ class FeatureExtractor(metaclass=ABCMeta):
             This method *should* support variable length inputs.
         """
         input_is_list = False
+        input_is_torch = False
 
         if isinstance(samples, list):
             input_is_list = True
@@ -158,9 +163,16 @@ class FeatureExtractor(metaclass=ABCMeta):
             # The user passed an array/tensor of shape (num_samples,)
             samples = [samples.reshape(1, -1)]
 
+        if any(isinstance(x, torch.Tensor) for x in samples):
+            samples = [x.numpy() for x in samples]
+            input_is_torch = True
+
         result = []
         for item in samples:
             result.append(self.extract(item, sampling_rate=sampling_rate))
+
+        if input_is_torch:
+            result = [torch.from_numpy(x) for x in result]
 
         # If all items are of the same shape, concatenate
         if len(result) == 1:
@@ -169,7 +181,10 @@ class FeatureExtractor(metaclass=ABCMeta):
             else:
                 return result[0]
         elif all(item.shape == result[0].shape for item in result[1:]):
-            return np.stack(result, axis=0)
+            if input_is_torch:
+                return torch.stack(result, dim=0)
+            else:
+                return np.stack(result, axis=0)
         else:
             return result
 
@@ -498,9 +513,20 @@ class FeatureSet(Serializable, Sequence[Features]):
     def __eq__(self, other: "FeatureSet") -> bool:
         return self.features == other.features
 
+    @property
+    def is_lazy(self) -> bool:
+        """
+        Indicates whether this manifest was opened in lazy (read-on-the-fly) mode or not.
+        """
+        from lhotse.serialization import LazyJsonlIterator
+
+        return isinstance(self.features, LazyJsonlIterator)
+
     @staticmethod
     def from_features(features: Iterable[Features]) -> "FeatureSet":
         return FeatureSet(list(features))  # just for consistency with other *Sets
+
+    from_items = from_features
 
     @staticmethod
     def from_dicts(data: Iterable[dict]) -> "FeatureSet":

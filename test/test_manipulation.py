@@ -8,7 +8,7 @@ from lhotse.audio import RecordingSet
 from lhotse.features import FeatureSet
 from lhotse.manipulation import combine
 from lhotse.supervision import SupervisionSet
-from lhotse.testing.dummies import DummyManifest
+from lhotse.testing.dummies import DummyManifest, as_lazy
 
 
 @mark.parametrize("manifest_type", [RecordingSet, SupervisionSet, FeatureSet, CutSet])
@@ -112,6 +112,19 @@ def test_combine(manifest_type):
         ]
     )
     assert combined_iterable == expected
+
+
+@mark.parametrize("manifest_type", [RecordingSet, SupervisionSet, FeatureSet, CutSet])
+def test_combine_lazy(manifest_type):
+    expected = DummyManifest(manifest_type, begin_id=0, end_id=200)
+    with as_lazy(DummyManifest(manifest_type, begin_id=0, end_id=68)) as part1, as_lazy(
+        DummyManifest(manifest_type, begin_id=68, end_id=136)
+    ) as part2, as_lazy(
+        DummyManifest(manifest_type, begin_id=136, end_id=200)
+    ) as part3:
+        combined = combine(part1, part2, part3)
+        # Equivalent under iteration
+        assert list(combined) == list(expected)
 
 
 @mark.parametrize("manifest_type", [RecordingSet, SupervisionSet, FeatureSet, CutSet])

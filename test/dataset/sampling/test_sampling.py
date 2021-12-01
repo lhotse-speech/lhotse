@@ -15,7 +15,7 @@ from lhotse.dataset.sampling import (
     ZipSampler,
     streaming_shuffle,
 )
-from lhotse.testing.dummies import DummyManifest, dummy_cut
+from lhotse.testing.dummies import DummyManifest, as_lazy, dummy_cut
 from lhotse.utils import fastcopy, nullcontext as does_not_raise
 
 
@@ -685,6 +685,39 @@ def test_single_cut_sampler_with_lazy_cuts(sampler_cls):
 
         # Invariant 1: we receive the same amount of items in a dataloader epoch as there we in the CutSet
         assert len(sampled_cuts) == len(cut_set)
+        # Invariant 2: the items are not duplicated
+        assert len(set(c.id for c in sampled_cuts)) == len(sampled_cuts)
+
+
+@pytest.mark.parametrize(
+    "sampler_cls",
+    [
+        SingleCutSampler,
+        BucketingSampler,
+    ],
+)
+def test_single_cut_sampler_with_lazy_cuts(sampler_cls):
+    # The dummy cuts have a duration of 1 second each
+    eager1 = DummyManifest(CutSet, begin_id=0, end_id=100)
+    eager2 = DummyManifest(CutSet, begin_id=1000, end_id=1100)
+    eager_cuts = eager1 + eager2
+    with as_lazy(eager1) as lazy1, as_lazy(eager2) as lazy2:
+        lazy_cuts = lazy1 + lazy2
+
+        sampler = sampler_cls(
+            lazy_cuts,
+            shuffle=False,
+            # Set an effective batch size of 10 cuts, as all have 1s duration == 100 frames
+            # This way we're testing that it works okay when returning multiple batches in
+            # a full epoch.
+            max_frames=1000,
+        )
+        sampled_cuts = []
+        for batch in sampler:
+            sampled_cuts.extend(batch)
+
+        # Invariant 1: we receive the same amount of items in a dataloader epoch as there we in the CutSet
+        assert len(sampled_cuts) == len(eager_cuts)
         # Invariant 2: the items are not duplicated
         assert len(set(c.id for c in sampled_cuts)) == len(sampled_cuts)
 
