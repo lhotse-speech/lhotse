@@ -2773,6 +2773,8 @@ class CutSet(Serializable, Sequence[Cut]):
     def from_cuts(cuts: Iterable[Cut]) -> "CutSet":
         return CutSet(cuts=index_by_id_and_check(cuts))
 
+    from_items = from_cuts
+
     @staticmethod
     def from_manifests(
         recordings: Optional[RecordingSet] = None,
@@ -2842,6 +2844,61 @@ class CutSet(Serializable, Sequence[Cut]):
 
     def to_dicts(self) -> Iterable[dict]:
         return (cut.to_dict() for cut in self)
+
+    def decompose(
+        self, output_dir: Optional[Pathlike] = None, verbose: bool = False
+    ) -> Tuple[Optional[RecordingSet], Optional[SupervisionSet], Optional[FeatureSet]]:
+        """
+        Return a 3-tuple of unique (recordings, supervisions, features) found in
+        this :class:`CutSet`. Some manifest sets may also be ``None``, e.g.,
+        if features were not extracted.
+
+        .. note:: :class:`.MixedCut` is iterated over its track cuts.
+
+        :param output_dir: directory where the manifests will be saved.
+            The following files will be created: 'recordings.jsonl.gz',
+            'supervisions.jsonl.gz', 'features.jsonl.gz'.
+        :param verbose: when ``True``, shows a progress bar.
+        """
+        if output_dir is not None:
+            output_dir = Path(output_dir)
+            output_dir.mkdir(parents=True, exist_ok=True)
+
+        stored_rids = set()
+        stored_sids = set()
+
+        with RecordingSet.open_writer(
+            output_dir / "recordings.jsonl.gz" if output_dir is not None else None
+        ) as rw, SupervisionSet.open_writer(
+            output_dir / "supervisions.jsonl.gz" if output_dir is not None else None
+        ) as sw, FeatureSet.open_writer(
+            output_dir / "features.jsonl.gz" if output_dir is not None else None
+        ) as fw:
+
+            def save(mono_cut: MonoCut):
+                if mono_cut.has_recording and mono_cut.recording_id not in stored_rids:
+                    rw.write(mono_cut.recording)
+                    stored_rids.add(mono_cut.recording_id)
+                if mono_cut.has_features:
+                    # Note: we have no way of saying if features are unique,
+                    #       so we will always write them.
+                    fw.write(mono_cut.features)
+                for sup in mono_cut.supervisions:
+                    if sup.id not in stored_sids:
+                        # Supervisions inside cuts are relative to cuts start,
+                        # so we correct the offset.
+                        sw.write(sup.with_offset(mono_cut.start))
+                        stored_sids.add(sup.id)
+
+            for cut in tqdm(self, desc="Decomposing cuts") if verbose else self:
+                if isinstance(cut, MonoCut):
+                    save(cut)
+                elif isinstance(cut, MixedCut):
+                    for track in cut.tracks:
+                        if isinstance(track.cut, MonoCut):
+                            save(track.cut)
+
+        return rw.open_manifest(), sw.open_manifest(), fw.open_manifest()
 
     def describe(self) -> None:
         """

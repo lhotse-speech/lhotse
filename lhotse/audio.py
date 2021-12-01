@@ -654,6 +654,8 @@ class RecordingSet(Serializable, Sequence[Recording]):
     def from_recordings(recordings: Iterable[Recording]) -> "RecordingSet":
         return RecordingSet(recordings=index_by_id_and_check(recordings))
 
+    from_items = from_recordings
+
     @staticmethod
     def from_dir(
         path: Pathlike,
