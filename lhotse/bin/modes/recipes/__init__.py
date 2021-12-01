@@ -35,4 +35,5 @@ from .tedlium import *
 from .timit import *
 from .vctk import *
 from .voxceleb import *
+from .wenet_speech import *
 from .yesno import *
