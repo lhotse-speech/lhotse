@@ -155,7 +155,7 @@ class KaldifeatFbankConfig:
     # This is an extra setting compared to kaldifeat FbankOptions:
     # by default, we'll ask kaldifeat to compute the feats in chunks
     # to avoid excessive memory usage.
-    chunk_size: Optional[int] = 100 * 60 * 20 # 20 minutes (assuming 100 frame/s)
+    chunk_size: Optional[int] = 100 * 60 * 20  # 20 minutes (assuming 100 frame/s)
 
     def to_dict(self) -> Dict[str, Any]:
         d = asdict(self)
