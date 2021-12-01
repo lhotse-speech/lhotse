@@ -1,11 +1,12 @@
 import decimal
 from dataclasses import asdict, dataclass
 from math import isclose
+from pathlib import Path
 from typing import List, Optional, Union
 
 import numpy as np
 
-from lhotse.utils import Seconds
+from lhotse.utils import Pathlike, Seconds, fastcopy
 
 
 @dataclass
@@ -66,6 +67,13 @@ class Array:
         storage = get_reader(self.storage_type)(self.storage_path)
         # Load and return the array from the storage
         return storage.read(self.storage_key)
+
+    def with_path_prefix(self, path: Pathlike) -> "Array":
+        """
+        Return a copy of the array with ``path`` added as a prefix
+        to the ``storage_path`` member.
+        """
+        return fastcopy(self, storage_path=str(Path(path) / self.storage_path))
 
 
 @dataclass
@@ -191,6 +199,13 @@ class TemporalArray:
             left_offset_frames=left_offset_frames,
             right_offset_frames=right_offset_frames,
         )
+
+    def with_path_prefix(self, path: Pathlike) -> "TemporalArray":
+        """
+        Return a copy of the array with ``path`` added as a prefix
+        to the ``storage_path`` member.
+        """
+        return fastcopy(self, array=self.array.with_path_prefix(path))
 
 
 def seconds_to_frames(

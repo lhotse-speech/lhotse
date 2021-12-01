@@ -87,3 +87,17 @@ def test_array_serialization():
     serialized = manifest.to_dict()
     restored = Array.from_dict(serialized)
     assert manifest == restored
+
+
+def test_array_set_prefix_path():
+    arr = Array(
+        storage_type="lilcom_hdf5",
+        storage_path="data/train",
+        storage_key="irrelevant",
+        shape=[300],
+    )
+    arr1 = arr.with_path_prefix("/newhome")
+    assert arr1.storage_path == "/newhome/data/train"
+    assert arr1.storage_type == arr.storage_type
+    assert arr1.storage_key == arr.storage_key
+    assert arr1.shape == arr.shape
