@@ -112,6 +112,28 @@ def test_temporal_array_serialization():
     assert manifest == restored
 
 
+def test_temporal_array_set_prefix_path():
+    arr = TemporalArray(
+        array=Array(
+            storage_type="lilcom_hdf5",
+            storage_path="data/train",
+            storage_key="irrelevant",
+            shape=[300],
+        ),
+        temporal_dim=0,
+        frame_shift=0.3,
+        start=5.0,
+    )
+    arr1 = arr.with_path_prefix("/newhome")
+    assert arr1.array.storage_path == "/newhome/data/train"
+    assert arr1.array.storage_type == arr.array.storage_type
+    assert arr1.array.storage_key == arr.array.storage_key
+    assert arr1.shape == arr.shape
+    assert arr1.temporal_dim == arr.temporal_dim
+    assert arr1.frame_shift == arr.frame_shift
+    assert arr1.start == arr.start
+
+
 def test_temporal_array_partial_read():
     array = np.arange(30).astype(np.int8)
 
