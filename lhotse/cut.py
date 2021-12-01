@@ -3793,9 +3793,6 @@ class CutSet(Serializable, Sequence[Cut]):
                         augment_fn(w, c.sampling_rate) for c, w in zip(cuts, waves)
                     ]
 
-                # Move the audio data to the right device.
-                waves = [w.to(extractor.device) for w in waves]
-
                 # The actual extraction is here.
                 with torch.no_grad():
                     # Note: chunk_size option limits the memory consumption
