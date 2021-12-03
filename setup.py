@@ -41,7 +41,6 @@
 #             ./osssssssssssssssssssssssssssssssssssssssssssssssssssssssssss/-`
 #                 .-:://++++++++++++++++++++++++++++++++++++++++++++///:-.`
 import os
-from distutils.version import LooseVersion
 from pathlib import Path
 from subprocess import DEVNULL, PIPE, run
 
@@ -52,8 +51,8 @@ project_root = Path(__file__).parent
 # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! #
 # NOTE: REMEMBER TO UPDATE THE FALLBACK VERSION IN lhotse/__init__.py WHEN RELEASING #
 # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! #
-MAJOR_VERSION = 0
-MINOR_VERSION = 12
+MAJOR_VERSION = 1
+MINOR_VERSION = 0
 PATCH_VERSION = 0
 IS_DEV_VERSION = True  # False = public release, True = otherwise
 
@@ -140,34 +139,19 @@ install_requires = [
 ]
 
 try:
-    # A matrix of compatible torch and torchaudio versions.
-    # If the user already installed torch, we'll try to find the compatible
-    # torchaudio version. If they haven't installed torch, we'll just install
-    # the latest torch and torchaudio.
-    # This code is partially borrowed from ESPnet's setup.py.
+    # If the user already installed PyTorch, make sure he has torchaudio too.
+    # Otherwise, we'll just install the latest versions from PyPI for the user.
     import torch
 
-    torch_ver = LooseVersion(torch.__version__)
-    if torch_ver >= LooseVersion("1.10.1"):
-        raise NotImplementedError("PyTorch version >= 1.10.1 is not yet supported")
-    elif torch_ver >= LooseVersion("1.10.0"):
-        install_requires.append("torchaudio==0.10.0")
-    elif torch_ver >= LooseVersion("1.9.1"):
-        install_requires.append("torchaudio==0.9.1")
-    elif torch_ver >= LooseVersion("1.9.0"):
-        install_requires.append("torchaudio==0.9.0")
-    elif torch_ver >= LooseVersion("1.8.2"):
-        install_requires.append("torchaudio==0.8.2")
-    elif torch_ver >= LooseVersion("1.8.1"):
-        install_requires.append("torchaudio==0.8.1")
-    elif torch_ver >= LooseVersion("1.8.0"):
-        install_requires.append("torchaudio==0.8.0")
-    elif torch_ver >= LooseVersion("1.7.1"):
-        install_requires.append("torchaudio==0.7.2")
-    else:
+    try:
+        import torchaudio
+    except ImportError:
         raise ValueError(
-            f"Lhotse requires torch>=1.7.1 and torchaudio>=0.7.2 -- "
-            f"please update your torch (detected version: {torch_ver})."
+            "We detected that you have already installed PyTorch, but haven't installed torchaudio. "
+            "Unfortunately we can't detect the compatible torchaudio version for you; "
+            "you will have to install it manually. "
+            "For instructions, please refer either to https://pytorch.org/get-started/locally/ "
+            "or https://github.com/pytorch/audio#dependencies"
         )
 except ImportError:
     install_requires.extend(["torch", "torchaudio"])
@@ -219,7 +203,7 @@ setup(
         "all": all_requires,
     },
     classifiers=[
-        "Development Status :: 3 - Alpha",
+        "Development Status :: 4 - Beta",
         "Programming Language :: Python :: 3.6",
         "Programming Language :: Python :: 3.7",
         "Programming Language :: Python :: 3.8",

@@ -1,12 +1,19 @@
 from collections import defaultdict
 from typing import Dict, Iterable, Optional, Sequence, Union
 
-from lhotse import load_manifest
+from lhotse import CutSet, FeatureSet, load_manifest
 from lhotse.audio import RecordingSet
 from lhotse.supervision import SupervisionSet
 from lhotse.utils import Pathlike
 
 DEFAULT_DETECTED_MANIFEST_TYPES = ("recordings", "supervisions")
+
+TYPES_TO_CLASSES = {
+    "recordings": RecordingSet,
+    "supervisions": SupervisionSet,
+    "features": FeatureSet,
+    "cuts": CutSet,
+}
 
 
 def read_manifests_if_cached(
@@ -15,6 +22,7 @@ def read_manifests_if_cached(
     prefix: str = "",
     suffix: Optional[str] = "json",
     types: Iterable[str] = DEFAULT_DETECTED_MANIFEST_TYPES,
+    lazy: bool = False,
 ) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet]]]:
     """
     Loads manifests from the disk, or a subset of them if only some exist.
@@ -35,13 +43,22 @@ def read_manifests_if_cached(
         prefix = f"{prefix}_"
     if suffix.startswith("."):
         suffix = suffix[1:]
+    if lazy and not suffix.startswith("jsonl"):
+        raise ValueError(
+            f"Only JSONL manifests can be opened lazily (got suffix: '{suffix}')"
+        )
     manifests = defaultdict(dict)
     for part in dataset_parts:
         for manifest in types:
             path = output_dir / f"{prefix}{manifest}_{part}.{suffix}"
             if not path.is_file():
                 continue
-            manifests[part][manifest] = load_manifest(path)
+            if lazy:
+                manifests[part][manifest] = TYPES_TO_CLASSES[manifest].from_jsonl_lazy(
+                    path
+                )
+            else:
+                manifests[part][manifest] = load_manifest(path)
     return dict(manifests)
 
 

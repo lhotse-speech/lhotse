@@ -2,13 +2,14 @@ from abc import ABCMeta, abstractmethod
 from functools import lru_cache
 from math import ceil, floor
 from pathlib import Path
-from typing import List, Optional, Type
+from typing import List, Optional, Type, Union
 
 import lilcom
 import numpy as np
 
+from lhotse.array import Array, TemporalArray
 from lhotse.caching import dynamic_lru_cache
-from lhotse.utils import Pathlike, SmartOpen, is_module_available
+from lhotse.utils import Pathlike, Seconds, SmartOpen, is_module_available
 
 
 class FeaturesWriter(metaclass=ABCMeta):
@@ -31,15 +32,16 @@ class FeaturesWriter(metaclass=ABCMeta):
         it is stored in the features manifests (metadata) and used to automatically deduce
         the backend when loading the features.
 
-    Each ``FeaturesWriter`` can also be used as a context manager, as some implementations
+    Each :class:`.FeaturesWriter` can also be used as a context manager, as some implementations
     might need to free a resource after the writing is finalized. By default nothing happens
     in the context manager functions, and this can be modified by the inheriting subclasses.
 
-    Example:
-        with MyWriter('some/path') as storage:
-            extractor.extract_from_recording_and_store(recording, storage)
+    Example::
 
-    The features loading must be defined separately in a class inheriting from ``FeaturesReader``.
+        >>> with MyWriter('some/path') as storage:
+        ...     extractor.extract_from_recording_and_store(recording, storage)
+
+    The features loading must be defined separately in a class inheriting from :class:`FeaturesReader`.
     """
 
     @property
@@ -55,6 +57,62 @@ class FeaturesWriter(metaclass=ABCMeta):
     @abstractmethod
     def write(self, key: str, value: np.ndarray) -> str:
         ...
+
+    def store_array(
+        self,
+        key: str,
+        value: np.ndarray,
+        frame_shift: Optional[Seconds] = None,
+        temporal_dim: Optional[int] = None,
+        start: Seconds = 0,
+    ) -> Union[Array, TemporalArray]:
+        """
+        Store a numpy array in the underlying storage and return a manifest
+        describing how to retrieve the data.
+
+        If the array contains a temporal dimension (e.g. it represents the
+        frame-level features, alignment, posteriors, etc. of an utterance)
+        then ``temporal_dim`` and ``frame_shift`` may be specified to enable
+        downstream padding, truncating, and partial reads of the array.
+
+        :param key: An ID that uniquely identifies the array.
+        :param value: The array to be stored.
+        :param frame_shift: Optional float, when the array has a temporal dimension
+            it indicates how much time has passed between the starts of consecutive frames
+            (expressed in seconds).
+        :param temporal_dim: Optional int, when the array has a temporal dimension,
+            it indicates which dim to interpret as temporal.
+        :param start: Float, when the array is temporal, it indicates what is the offset
+            of the array w.r.t. the start of recording. Useful for reading subsets
+            of an array when it represents something computed from long recordings.
+            Ignored for non-temporal arrays.
+        :return: A manifest of type :class:`~lhotse.array.Array` or
+            :class:`~lhotse.array.TemporalArray`, depending on the input arguments.
+        """
+        is_temporal = frame_shift is not None and temporal_dim is not None
+        if not is_temporal:
+            assert all(arg is None for arg in [frame_shift, temporal_dim]), (
+                "frame_shift and temporal_dim have to be both None or both set "
+                f"(got frame_shift={frame_shift}, temporal_dim={temporal_dim})."
+            )
+
+        storage_key = self.write(key, value)
+        array = Array(
+            storage_type=self.name,
+            storage_path=self.storage_path,
+            storage_key=storage_key,
+            shape=list(value.shape),
+        )
+
+        if not is_temporal:
+            return array
+
+        return TemporalArray(
+            array=array,
+            temporal_dim=temporal_dim,
+            frame_shift=frame_shift,
+            start=start,
+        )
 
     def __enter__(self):
         return self
@@ -212,7 +270,7 @@ class LilcomFilesWriter(FeaturesWriter):
 
     @property
     def storage_path(self) -> str:
-        return self.storage_path_
+        return str(self.storage_path_)
 
     def write(self, key: str, value: np.ndarray) -> str:
         # Introduce a sub-directory that starts with the first 3 characters of the key, that is typically
@@ -275,7 +333,7 @@ class NumpyFilesWriter(FeaturesWriter):
 
     @property
     def storage_path(self) -> str:
-        return self.storage_path_
+        return str(self.storage_path_)
 
     def write(self, key: str, value: np.ndarray) -> str:
         # Introduce a sub-directory that starts with the first 3 characters of the key, that is typically
@@ -382,7 +440,7 @@ class NumpyHdf5Writer(FeaturesWriter):
 
     @property
     def storage_path(self) -> str:
-        return self.storage_path_
+        return str(self.storage_path_)
 
     def write(self, key: str, value: np.ndarray) -> str:
         self.hdf.create_dataset(key, data=value)
@@ -748,3 +806,78 @@ class KaldiReader(FeaturesReader):
     ) -> np.ndarray:
         arr = self.storage[key]
         return arr[left_offset_frames:right_offset_frames]
+
+
+@register_writer
+class KaldiWriter(FeaturesWriter):
+    """
+    Write data to Kaldi's "feats.scp" and "feats.ark" files using kaldiio.
+    ``storage_path`` corresponds to a directory where we'll create "feats.scp"
+    and "feats.ark" files.
+    ``storage_key`` corresponds to the utterance-id in Kaldi.
+
+    The following ``compression_method`` values are supported by kaldiio::
+
+        kAutomaticMethod = 1
+        kSpeechFeature = 2
+        kTwoByteAuto = 3
+        kTwoByteSignedInteger = 4
+        kOneByteAuto = 5
+        kOneByteUnsignedInteger = 6
+        kOneByteZeroOne = 7
+
+    .. note:: Setting compression_method works only with 2D arrays.
+
+    Example::
+
+        >>> data = np.random.randn(131, 80)
+        >>> with KaldiWriter('featdir') as w:
+        ...     w.write('utt1', data)
+        >>> reader = KaldiReader('featdir/feats.scp')
+        >>> read_data = reader.read('utt1')
+        >>> np.testing.assert_equal(data, read_data)
+
+    .. caution::
+        Requires ``kaldiio`` to be installed (``pip install kaldiio``).
+    """
+
+    name = "kaldiio"
+
+    def __init__(
+        self,
+        storage_path: Pathlike,
+        compression_method: Optional[int] = None,
+        *args,
+        **kwargs,
+    ):
+        if not is_module_available("kaldiio"):
+            raise ValueError(
+                "To read Kaldi feats.scp, please 'pip install kaldiio' first."
+            )
+        import kaldiio
+
+        super().__init__()
+        self.storage_dir = Path(storage_path)
+        self.storage_dir.mkdir(parents=True, exist_ok=True)
+        self.storage_path_ = str(self.storage_dir / "feats.scp")
+        self.storage = kaldiio.WriteHelper(
+            f"ark,scp:{self.storage_dir}/feats.ark,{self.storage_dir}/feats.scp",
+            compression_method=compression_method,
+        )
+
+    @property
+    def storage_path(self) -> str:
+        return self.storage_path_
+
+    def write(self, key: str, value: np.ndarray) -> str:
+        self.storage(key, value)
+        return key
+
+    def close(self) -> None:
+        return self.storage.close()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.close()

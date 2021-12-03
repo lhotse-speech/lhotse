@@ -107,6 +107,8 @@ a CLI tool that create the manifests given a corpus directory.
     - :func:`lhotse.recipes.prepare_musan`
   * - National Speech Corpus (Singaporean English)
     - :func:`lhotse.recipes.prepare_nsc`
+  * - RIRs and Noises Corpus (OpenSLR 28)
+    - :func:`lhotse.recipes.prepare_rir_noise`
   * - Switchboard
     - :func:`lhotse.recipes.prepare_switchboard`
   * - TED-LIUM v3
@@ -115,6 +117,10 @@ a CLI tool that create the manifests given a corpus directory.
     - :func:`lhotse.recipes.prepare_timit`
   * - VCTK
     - :func:`lhotse.recipes.prepare_vctk`
+  * - VoxCeleb
+    - :func:`lhotse.recipes.prepare_voxceleb`
+  * - WenetSpeech
+    - :func:`lhotse.recipes.prepare_wenet_speech`
   * - YesNo
     - :func:`lhotse.recipes.prepare_yesno`
 

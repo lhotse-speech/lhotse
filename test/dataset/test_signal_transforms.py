@@ -45,7 +45,7 @@ def test_global_mvn_from_cuts():
     assert isinstance(stats2, GlobalMVN)
 
 
-def test_specaugment_single():
+def test_specaugment_2d_input_raises_error():
     cuts = CutSet.from_json("test/fixtures/ljspeech/cuts.json")
     feats = torch.from_numpy(cuts[0].load_features())
     tfnm = SpecAugment(p=1.0, time_warp_factor=10)
@@ -56,7 +56,7 @@ def test_specaugment_single():
 
 @pytest.mark.parametrize("num_feature_masks", [0, 1, 2])
 @pytest.mark.parametrize("num_frame_masks", [0, 1, 2])
-def test_specaugment_batch(num_feature_masks, num_frame_masks):
+def test_specaugment_3d_input_works(num_feature_masks, num_frame_masks):
     cuts = CutSet.from_json("test/fixtures/ljspeech/cuts.json")
     feats, feat_lens = collate_features(cuts)
     tfnm = SpecAugment(
@@ -69,6 +69,42 @@ def test_specaugment_batch(num_feature_masks, num_frame_masks):
     )
     augmented = tfnm(feats)
     assert (feats != augmented).any()
+
+
+def test_specaugment_state_dict():
+    # all values default
+    config = dict(
+        time_warp_factor=80,
+        num_feature_masks=1,
+        features_mask_size=13,
+        num_frame_masks=1,
+        frames_mask_size=70,
+        max_frames_mask_fraction=0.2,
+        p=0.5,
+    )
+    specaug = SpecAugment(**config)
+    state_dict = specaug.state_dict()
+
+    for key, value in config.items():
+        assert state_dict[key] == value
+
+
+def test_specaugment_load_state_dict():
+    # all values non-default
+    config = dict(
+        time_warp_factor=85,
+        num_feature_masks=2,
+        features_mask_size=12,
+        num_frame_masks=2,
+        frames_mask_size=71,
+        max_frames_mask_fraction=0.25,
+        p=0.6,
+    )
+    specaug = SpecAugment()
+    specaug.load_state_dict(config)
+
+    for key, value in config.items():
+        assert getattr(specaug, key) == value
 
 
 @pytest.mark.parametrize("sample_sigma", [True, False])

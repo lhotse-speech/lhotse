@@ -1,6 +1,6 @@
 import bisect
 import random
-from typing import Optional, Sequence, Tuple, TypeVar, Union
+from typing import Optional, Sequence, Tuple, TypeVar, Union, Dict
 
 import numpy as np
 import torch
@@ -134,10 +134,10 @@ class SpecAugment(torch.nn.Module):
             Set to ``None``, or less than ``1``, to disable.
         :param num_feature_masks: how many feature masks should be applied. Set to ``0`` to disable.
         :param features_mask_size: the width of the feature mask (expressed in the number of masked feature bins).
-            This is the ``T`` parameter from the SpecAugment paper.
+            This is the ``F`` parameter from the SpecAugment paper.
         :param num_frame_masks: how many frame (temporal) masks should be applied. Set to ``0`` to disable.
         :param frames_mask_size: the width of the frame (temporal) masks (expressed in the number of masked frames).
-            This is the ``F`` parameter from the SpecAugment paper.
+            This is the ``T`` parameter from the SpecAugment paper.
         :param max_frames_mask_fraction: limits the size of the frame (temporal) mask to this value times the length
             of the utterance (or supervision segment).
             This is the parameter denoted by ``p`` in the SpecAugment paper.
@@ -179,7 +179,7 @@ class SpecAugment(torch.nn.Module):
             The second dimension encoder three kinds of information:
             the sequence index of the corresponding feature matrix in `features`,
             the start frame index, and the number of frames for each segment.
-        :return: a tensor of shape ``(T, F)``, or a batch of them with shape ``(B, T, F)``
+        :return: an augmented tensor of shape ``(B, T, F)``.
         """
         assert len(features.shape) == 3, (
             "SpecAugment only supports batches of " "single-channel feature matrices."
@@ -240,6 +240,36 @@ class SpecAugment(torch.nn.Module):
                     axis=1,
                 ).squeeze(0)
         return features
+
+    def state_dict(self) -> Dict:
+        return dict(
+            time_warp_factor=self.time_warp_factor,
+            num_feature_masks=self.num_feature_masks,
+            features_mask_size=self.features_mask_size,
+            num_frame_masks=self.num_frame_masks,
+            frames_mask_size=self.frames_mask_size,
+            max_frames_mask_fraction=self.max_frames_mask_fraction,
+            p=self.p,
+        )
+
+    def load_state_dict(self, state_dict: Dict):
+        self.time_warp_factor = state_dict.get(
+            "time_warp_factor", self.time_warp_factor
+        )
+        self.num_feature_masks = state_dict.get(
+            "num_feature_masks", self.num_feature_masks
+        )
+        self.features_mask_size = state_dict.get(
+            "features_mask_size", self.features_mask_size
+        )
+        self.num_frame_masks = state_dict.get("num_frame_masks", self.num_frame_masks)
+        self.frames_mask_size = state_dict.get(
+            "frames_mask_size", self.frames_mask_size
+        )
+        self.max_frames_mask_fraction = state_dict.get(
+            "max_frames_mask_fraction", self.max_frames_mask_fraction
+        )
+        self.p = state_dict.get("p", self.p)
 
 
 def time_warp(features: torch.Tensor, factor: int) -> torch.Tensor:

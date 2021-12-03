@@ -29,7 +29,14 @@ from typing import (
 import numpy as np
 from tqdm.auto import tqdm
 
-from lhotse.augmentation import AudioTransform, Resample, Speed, Tempo, Volume
+from lhotse.augmentation import (
+    AudioTransform,
+    Resample,
+    Speed,
+    Tempo,
+    Volume,
+    ReverbWithImpulseResponse,
+)
 from lhotse.caching import dynamic_lru_cache
 from lhotse.serialization import Serializable
 from lhotse.utils import (
@@ -46,10 +53,58 @@ from lhotse.utils import (
     ifnone,
     index_by_id_and_check,
     perturb_num_samples,
+    rich_exception_info,
     split_sequence,
 )
 
 Channels = Union[int, List[int]]
+
+
+_DEFAULT_LHOTSE_AUDIO_DURATION_MISMATCH_TOLERANCE: Seconds = 1e-3
+LHOTSE_AUDIO_DURATION_MISMATCH_TOLERANCE: Seconds = (
+    _DEFAULT_LHOTSE_AUDIO_DURATION_MISMATCH_TOLERANCE
+)
+
+
+def set_audio_duration_mismatch_tolerance(delta: Seconds) -> None:
+    """
+    Override Lhotse's global threshold for allowed audio duration mismatch between the
+    manifest and the actual data.
+
+    Some scenarios when a mismatch can happen:
+
+        - the :class:`.Recording` manifest duration is rounded off too much
+            (i.e., bad user input, but too inconvenient to go back and fix the manifests)
+
+        - data augmentation changes the number of samples a bit in a difficult to predict way
+
+    When there is a mismatch, Lhotse will either trim or replicate the diff to match
+    the value found in the :class:`.Recording` manifest.
+
+    .. note:: We don't recommend setting this lower than the default value, as it could
+        break some data augmentation transforms.
+
+    Example::
+
+        >>> import lhotse
+        >>> lhotse.set_audio_duration_mismatch_tolerance(0.01)  # 10ms tolerance
+
+    :param delta: New tolerance in seconds.
+    """
+    global LHOTSE_AUDIO_DURATION_MISMATCH_TOLERANCE
+    logging.info(
+        "The user overrided tolerance for audio duration mismatch "
+        "between the values in the manifest and the actual data. "
+        f"Old threshold: {LHOTSE_AUDIO_DURATION_MISMATCH_TOLERANCE}s. "
+        f"New threshold: {delta}s."
+    )
+    if delta < _DEFAULT_LHOTSE_AUDIO_DURATION_MISMATCH_TOLERANCE:
+        warnings.warn(
+            "The audio duration mismatch tolerance has been set to a value lower than "
+            f"default ({_DEFAULT_LHOTSE_AUDIO_DURATION_MISMATCH_TOLERANCE}s). "
+            f"We don't recommend this as it might break some data augmentation transforms."
+        )
+    LHOTSE_AUDIO_DURATION_MISMATCH_TOLERANCE = delta
 
 
 # TODO: document the dataclasses like this:
@@ -139,7 +194,7 @@ class AudioSource:
             )
             available_duration = num_samples / sampling_rate
             if (
-                available_duration < duration - 1e-3
+                available_duration < duration - LHOTSE_AUDIO_DURATION_MISMATCH_TOLERANCE
             ):  # set the allowance as 1ms to avoid float error
                 raise ValueError(
                     f"Requested more audio ({duration}s) than available ({available_duration}s)"
@@ -295,6 +350,7 @@ class Recording:
     def channel_ids(self):
         return sorted(cid for source in self.sources for cid in source.channels)
 
+    @rich_exception_info
     def load_audio(
         self,
         channels: Optional[Channels] = None,
@@ -448,6 +504,35 @@ class Recording:
             transforms=transforms,
         )
 
+    def reverb_rir(
+        self,
+        rir_recording: "Recording",
+        normalize_output: bool = True,
+        affix_id: bool = True,
+    ) -> "Recording":
+        """
+        Return a new ``Recording`` that will lazily apply reverberation based on provided
+        impulse response while loading audio.
+
+        :param rir_recording: The impulse response to be used.
+        :param normalize_output: When true, output will be normalized to have energy as input.
+        :param affix_id: When true, we will modify the ``Recording.id`` field
+            by affixing it with "_rvb".
+        :return: the perturbed ``Recording``.
+        """
+        transforms = self.transforms.copy() if self.transforms is not None else []
+        transforms.append(
+            ReverbWithImpulseResponse(
+                rir_recording,
+                normalize_output=normalize_output,
+            ).to_dict()
+        )
+        return fastcopy(
+            self,
+            id=f"{self.id}_rvb" if affix_id else self.id,
+            transforms=transforms,
+        )
+
     def resample(self, sampling_rate: int) -> "Recording":
         """
         Return a new ``Recording`` that will be lazily resampled while loading audio.
@@ -542,6 +627,7 @@ class RecordingSet(Serializable, Sequence[Recording]):
 
             >>> recs_sp = recs.perturb_speed(factor=1.1)
             >>> recs_vp = recs.perturb_volume(factor=2.)
+            >>> recs_rvb = recs.reverb_rir(rir_recs)
             >>> recs_24k = recs.resample(24000)
     """
 
@@ -567,6 +653,8 @@ class RecordingSet(Serializable, Sequence[Recording]):
     @staticmethod
     def from_recordings(recordings: Iterable[Recording]) -> "RecordingSet":
         return RecordingSet(recordings=index_by_id_and_check(recordings))
+
+    from_items = from_recordings
 
     @staticmethod
     def from_dir(
@@ -769,6 +857,32 @@ class RecordingSet(Serializable, Sequence[Recording]):
             r.perturb_volume(factor=factor, affix_id=affix_id) for r in self
         )
 
+    def reverb_rir(
+        self,
+        rir_recordings: "RecordingSet",
+        normalize_output: bool = True,
+        affix_id: bool = True,
+    ) -> "RecordingSet":
+        """
+        Return a new ``RecordingSet`` that will lazily apply reverberation based on provided
+        impulse responses while loading audio.
+
+        :param rir_recordings: The impulse responses to be used.
+        :param normalize_output: When true, output will be normalized to have energy as input.
+        :param affix_id: When true, we will modify the ``Recording.id`` field
+            by affixing it with "_rvb".
+        :return: a ``RecordingSet`` containing the perturbed ``Recording`` objects.
+        """
+        rir_recordings = list(rir_recordings)
+        return RecordingSet.from_recordings(
+            r.reverb_rir(
+                rir_recording=random.choice(rir_recordings),
+                normalize_output=normalize_output,
+                affix_id=affix_id,
+            )
+            for r in self
+        )
+
     def resample(self, sampling_rate: int) -> "RecordingSet":
         """
         Apply resampling to all recordings in the ``RecordingSet`` and return a new ``RecordingSet``.
@@ -803,7 +917,21 @@ class RecordingSet(Serializable, Sequence[Recording]):
         return len(self.recordings)
 
     def __add__(self, other: "RecordingSet") -> "RecordingSet":
-        return RecordingSet(recordings={**self.recordings, **other.recordings})
+        if self.is_lazy or other.is_lazy:
+            # Lazy manifests are specially combined
+            from lhotse.serialization import LazyIteratorChain
+
+            return RecordingSet(
+                recordings=LazyIteratorChain(self.recordings, other.recordings)
+            )
+
+        # Eager manifests are just merged like standard dicts.
+        merged = {**self.recordings, **other.recordings}
+        assert len(merged) == len(self.recordings) + len(other.recordings), (
+            f"Conflicting IDs when concatenating RecordingSets! "
+            f"Failed check: {len(merged)} == {len(self.recordings)} + {len(other.recordings)}"
+        )
+        return RecordingSet(recordings=merged)
 
 
 class AudioMixer:
@@ -1239,15 +1367,6 @@ def _buf_to_float(x, n_bytes=2, dtype=np.float32):
     return scale * np.frombuffer(x, fmt).astype(dtype)
 
 
-# This constant defines by how much our estimation can be mismatched with
-# the actual number of samples after applying audio augmentation.
-# Chains of augmentation effects (such as resampling, speed perturb) can cause
-# difficult to predict roundings and return a few samples more/less than we estimate.
-# The default tolerance is a quarter of a millisecond
-# (the actual number of samples is computed based on the sampling rate).
-AUGMENTATION_DURATION_TOLERANCE: Seconds = 0.00025
-
-
 def assert_and_maybe_fix_num_samples(
     audio: np.ndarray,
     offset: Seconds,
@@ -1266,7 +1385,9 @@ def assert_and_maybe_fix_num_samples(
     diff = expected_num_samples - audio.shape[1]
     if diff == 0:
         return audio  # this is normal condition
-    allowed_diff = int(ceil(AUGMENTATION_DURATION_TOLERANCE * recording.sampling_rate))
+    allowed_diff = int(
+        ceil(LHOTSE_AUDIO_DURATION_MISMATCH_TOLERANCE * recording.sampling_rate)
+    )
     if 0 < diff <= allowed_diff:
         # note the extra colon in -1:, which preserves the shape
         audio = np.append(audio, audio[:, -diff:], axis=1)
@@ -1305,6 +1426,66 @@ def read_opus(
     force_opus_sampling_rate: Optional[int] = None,
 ) -> Tuple[np.ndarray, int]:
     """
+    Reads OPUS files either using torchaudio or ffmpeg.
+    Torchaudio is faster, but if unavailable for some reason,
+    we fallback to a slower ffmpeg-based implemention.
+
+    :return: a tuple of audio samples and the sampling rate.
+    """
+    # TODO: Revisit using torchaudio backend for OPUS
+    #       once it's more thoroughly benchmarked against ffmpeg
+    #       and has a competitive I/O speed.
+    #       See: https://github.com/pytorch/audio/issues/1994
+    # try:
+    #     return read_opus_torchaudio(
+    #         path=path,
+    #         offset=offset,
+    #         duration=duration,
+    #         force_opus_sampling_rate=force_opus_sampling_rate,
+    #     )
+    # except:
+    return read_opus_ffmpeg(
+        path=path,
+        offset=offset,
+        duration=duration,
+        force_opus_sampling_rate=force_opus_sampling_rate,
+    )
+
+
+def read_opus_torchaudio(
+    path: Pathlike,
+    offset: Seconds = 0.0,
+    duration: Optional[Seconds] = None,
+    force_opus_sampling_rate: Optional[int] = None,
+) -> Tuple[np.ndarray, int]:
+    """
+    Reads OPUS files using torchaudio.
+    This is just running ``tochaudio.load()``, but we take care of extra resampling if needed.
+
+    :return: a tuple of audio samples and the sampling rate.
+    """
+    audio, sampling_rate = torchaudio_load(
+        path_or_fd=path, offset=offset, duration=duration
+    )
+
+    if force_opus_sampling_rate is None or force_opus_sampling_rate == sampling_rate:
+        return audio, sampling_rate
+
+    resampler = Resample(
+        source_sampling_rate=sampling_rate,
+        target_sampling_rate=force_opus_sampling_rate,
+    )
+    resampled_audio = resampler(audio)
+    return resampled_audio, force_opus_sampling_rate
+
+
+def read_opus_ffmpeg(
+    path: Pathlike,
+    offset: Seconds = 0.0,
+    duration: Optional[Seconds] = None,
+    force_opus_sampling_rate: Optional[int] = None,
+) -> Tuple[np.ndarray, int]:
+    """
     Reads OPUS files using ffmpeg in a shell subprocess.
     Unlike audioread, correctly supports offsets and durations for reading short chunks.
     Optionally, we can force ffmpeg to resample to the true sampling rate (if we know it up-front).
@@ -1312,7 +1493,7 @@ def read_opus(
     :return: a tuple of audio samples and the sampling rate.
     """
     # Construct the ffmpeg command depending on the arguments passed.
-    cmd = f"ffmpeg"
+    cmd = f"ffmpeg -threads 1"
     sampling_rate = 48000
     # Note: we have to add offset and duration options (-ss and -t) BEFORE specifying the input
     #       (-i), otherwise ffmpeg will decode everything and trim afterwards...
@@ -1327,23 +1508,28 @@ def read_opus(
         cmd += f" -ar {force_opus_sampling_rate}"
         sampling_rate = force_opus_sampling_rate
     # Read audio samples directly as float32.
-    cmd += " -f f32le pipe:1"
+    cmd += " -f f32le -threads 1 pipe:1"
     # Actual audio reading.
     proc = run(cmd, shell=True, stdout=PIPE, stderr=PIPE)
     raw_audio = proc.stdout
     audio = np.frombuffer(raw_audio, dtype=np.float32)
     # Determine if the recording is mono or stereo and decode accordingly.
-    channel_string = parse_channel_from_ffmpeg_output(proc.stderr)
-    if channel_string == "stereo":
-        new_audio = np.empty((2, audio.shape[0] // 2), dtype=np.float32)
-        new_audio[0, :] = audio[::2]
-        new_audio[1, :] = audio[1::2]
-        audio = new_audio
-    elif channel_string == "mono":
-        audio = audio.reshape(1, -1)
-    else:
-        raise NotImplementedError(
-            f"Unknown channel description from ffmpeg: {channel_string}"
+    try:
+        channel_string = parse_channel_from_ffmpeg_output(proc.stderr)
+        if channel_string == "stereo":
+            new_audio = np.empty((2, audio.shape[0] // 2), dtype=np.float32)
+            new_audio[0, :] = audio[::2]
+            new_audio[1, :] = audio[1::2]
+            audio = new_audio
+        elif channel_string == "mono":
+            audio = audio.reshape(1, -1)
+        else:
+            raise NotImplementedError(
+                f"Unknown channel description from ffmpeg: {channel_string}"
+            )
+    except ValueError as e:
+        raise ValueError(
+            f"{e}\nThe ffmpeg command for which the program failed is: '{cmd}'"
         )
     return audio, sampling_rate
 

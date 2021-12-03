@@ -1,4 +1,7 @@
+import functools
 import logging
+import inspect
+import warnings
 import math
 import random
 import uuid
@@ -34,6 +37,8 @@ Decibels = float
 INT16MAX = 32768
 EPSILON = 1e-10
 LOG_EPSILON = math.log(EPSILON)
+DEFAULT_PADDING_VALUE = 0  # used for custom attrs
+
 
 # This is a utility that generates uuid4's and is set when the user calls
 # the ``fix_random_seed`` function.
@@ -575,5 +580,55 @@ def lens_to_mask(lens: torch.IntTensor) -> torch.Tensor:
     return mask
 
 
+def rich_exception_info(fn):
+    @functools.wraps(fn)
+    def wrapper(*args, **kwargs):
+        try:
+            return fn(*args, **kwargs)
+        except Exception as e:
+            raise type(e)(
+                f"{e}\n[extra info] When calling: {fn.__qualname__}(args={args} kwargs={kwargs})"
+            )
+
+    return wrapper
+
+
 class NonPositiveEnergyError(ValueError):
     pass
+
+
+# Helper functions to mark a function as deprecated. The following is taken from:
+# https://gist.github.com/kgriffs/8202106
+class DeprecatedWarning(UserWarning):
+    pass
+
+
+def deprecated(message):
+    """Flags a method as deprecated.
+    Args:
+        message: A human-friendly string of instructions, such
+            as: 'Please migrate to add_proxy() ASAP.'
+    """
+
+    def decorator(func):
+        """This is a decorator which can be used to mark functions
+        as deprecated. It will result in a warning being emitted
+        when the function is used."""
+
+        @functools.wraps(func)
+        def wrapper(*args, **kwargs):
+
+            frame = inspect.currentframe().f_back
+
+            warnings.warn_explicit(
+                message,
+                category=DeprecatedWarning,
+                filename=inspect.getfile(frame.f_code),
+                lineno=frame.f_lineno,
+            )
+
+            return func(*args, **kwargs)
+
+        return wrapper
+
+    return decorator

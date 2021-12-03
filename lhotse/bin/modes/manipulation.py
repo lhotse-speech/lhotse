@@ -49,8 +49,10 @@ def split(num_splits: int, manifest: Pathlike, output_dir: Pathlike, shuffle: bo
     any_set = load_manifest(manifest)
     parts = any_set.split(num_splits=num_splits, shuffle=shuffle)
     output_dir.mkdir(parents=True, exist_ok=True)
+    num_digits = len(str(num_splits))
     for idx, part in enumerate(parts):
-        part.to_file((output_dir / manifest.stem).with_suffix(f".{idx + 1}{suffix}"))
+        idx = f"{idx + 1}".zfill(num_digits)
+        part.to_file((output_dir / manifest.stem).with_suffix(f".{idx}{suffix}"))
 
 
 @cli.command()

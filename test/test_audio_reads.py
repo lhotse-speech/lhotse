@@ -7,6 +7,7 @@ import torchaudio
 
 import lhotse
 from lhotse import Recording
+from lhotse.audio import read_opus_ffmpeg, read_opus_torchaudio
 
 
 @pytest.mark.parametrize(
@@ -27,6 +28,68 @@ def test_info_and_read_audio_consistency(path):
     recording = Recording.from_file(path)
     audio = recording.load_audio()
     assert audio.shape[1] == recording.num_samples
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "test/fixtures/mono_c0.opus",
+        "test/fixtures/stereo.opus",
+    ],
+)
+def test_opus_torchaudio_vs_ffmpeg(path):
+    audio_ta, sr_ta = read_opus_torchaudio(path)
+    audio_ff, sr_ff = read_opus_ffmpeg(path)
+    assert sr_ta == sr_ff
+    assert audio_ta.shape == audio_ff.shape
+    # Apparently FFMPEG and SOX (torchaudio) apply different decoders
+    # and/or resampling algorithms for reading OPUS, so they yield
+    # different results up to 3rd decimal place (for 16bit PCM,
+    # this is affecting around 6 least significant bits)
+    np.testing.assert_almost_equal(audio_ta, audio_ff, decimal=3)
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "test/fixtures/mono_c0.opus",
+        "test/fixtures/stereo.opus",
+    ],
+)
+@pytest.mark.parametrize(
+    "force_opus_sampling_rate",
+    [
+        pytest.param(
+            8000, marks=pytest.mark.xfail(reason="Mismatch in shape by one sample.")
+        ),
+        16000,
+        pytest.param(
+            22050, marks=pytest.mark.xfail(reason="Mismatch in shape by one sample.")
+        ),
+        24000,
+        pytest.param(
+            32000, marks=pytest.mark.xfail(reason="Mismatch in shape by one sample.")
+        ),
+        44100,
+        48000,
+    ],
+)
+def test_opus_torchaudio_vs_ffmpeg_with_resampling(path, force_opus_sampling_rate):
+    audio_ta, sr_ta = read_opus_torchaudio(
+        path, force_opus_sampling_rate=force_opus_sampling_rate
+    )
+    audio_ff, sr_ff = read_opus_ffmpeg(
+        path, force_opus_sampling_rate=force_opus_sampling_rate
+    )
+    assert sr_ta == sr_ff
+    # Note: for some resampling rates, there will be mismatch by one
+    # sample. Recording.load_audio() will fix these cases.
+    assert audio_ta.shape == audio_ff.shape
+    # Note: when we resample, for a very small number of samples,
+    # there are typically discrepancies up to second decimal place
+    # between the two implementations.
+    # I won't fight the audio codec world -- it is what it is.
+    np.testing.assert_almost_equal(audio_ta, audio_ff, decimal=1)
 
 
 def test_audio_caching_enabled_works():

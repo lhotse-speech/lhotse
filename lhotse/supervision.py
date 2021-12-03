@@ -290,6 +290,21 @@ class SupervisionSegment:
             else self.recording_id,
         )
 
+    def reverb_rir(self, affix_id: bool = True) -> "SupervisionSegment":
+        """
+        Return a ``SupervisionSegment`` with modified ids.
+
+        :param affix_id: When true, we will modify the ``id`` and ``recording_id`` fields
+            by affixing it with "_rvb".
+        :return: a modified copy of the current ``SupervisionSegment``.
+        """
+
+        return fastcopy(
+            self,
+            id=f"{self.id}_rvb" if affix_id else self.id,
+            recording_id=f"{self.recording_id}_rvb" if affix_id else self.recording_id,
+        )
+
     def trim(self, end: Seconds, start: Seconds = 0) -> "SupervisionSegment":
         """
         Return an identical ``SupervisionSegment``, but ensure that ``self.start`` is not negative (in which case
@@ -370,16 +385,53 @@ class SupervisionSegment:
 
     @staticmethod
     def from_dict(data: dict) -> "SupervisionSegment":
-        return SupervisionSegment(
-            **{
-                key: (
-                    {k: [AlignmentItem(**x) for x in v] for k, v in value.items()}
-                    if key == "alignment"
-                    else value
-                )
-                for key, value in data.items()
+        from lhotse.serialization import deserialize_custom_field
+
+        if "custom" in data:
+            deserialize_custom_field(data["custom"])
+
+        if "alignment" in data:
+            data["alignment"] = {
+                k: [AlignmentItem(**x) for x in v] for k, v in data["alignment"].items()
             }
-        )
+
+        return SupervisionSegment(**data)
+
+    def __setattr__(self, key: str, value: Any):
+        """
+        This magic function is called when the user tries to set an attribute.
+        We use it as syntactic sugar to store custom attributes in ``self.custom``
+        field, so that they can be (de)serialized later.
+        """
+        if key in self.__dataclass_fields__:
+            super().__setattr__(key, value)
+        else:
+            custom = ifnone(self.custom, {})
+            custom[key] = value
+            self.custom = custom
+
+    def __getattr__(self, name: str) -> Any:
+        """
+        This magic function is called when the user tries to access an attribute
+        of :class:`.SupervisionSegment` that doesn't exist.
+        It is used as syntactic sugar for accessing the custom supervision attributes.
+
+        We use it to look up the ``custom`` field: when it's None or empty,
+        we'll just raise AttributeError as usual.
+        If ``item`` is found in ``custom``, we'll return ``self.custom[item]``.
+
+        Example of adding custom metadata and retrieving it as an attribute::
+
+            >>> sup = SupervisionSegment('utt1', recording_id='rec1', start=0,
+            ...                          duration=1, channel=0, text='Yummy.')
+            >>> sup.gps_coordinates = "34.1021097,-79.1553182"
+            >>> coordinates = sup.gps_coordinates
+
+        """
+        try:
+            return self.custom[name]
+        except:
+            raise AttributeError(f"No such attribute: {name}")
 
 
 class SupervisionSet(Serializable, Sequence[SupervisionSegment]):
@@ -450,6 +502,8 @@ class SupervisionSet(Serializable, Sequence[SupervisionSegment]):
     @staticmethod
     def from_segments(segments: Iterable[SupervisionSegment]) -> "SupervisionSet":
         return SupervisionSet(segments=index_by_id_and_check(segments))
+
+    from_items = from_segments
 
     @staticmethod
     def from_dicts(data: Iterable[Dict]) -> "SupervisionSet":
@@ -713,4 +767,18 @@ class SupervisionSet(Serializable, Sequence[SupervisionSegment]):
         return len(self.segments)
 
     def __add__(self, other: "SupervisionSet") -> "SupervisionSet":
-        return SupervisionSet(segments={**self.segments, **other.segments})
+        if self.is_lazy or other.is_lazy:
+            # Lazy manifests are specially combined
+            from lhotse.serialization import LazyIteratorChain
+
+            return SupervisionSet(
+                segments=LazyIteratorChain(self.segments, other.segments)
+            )
+
+        # Eager manifests are just merged like standard dicts.
+        merged = {**self.segments, **other.segments}
+        assert len(merged) == len(self.segments) + len(other.segments), (
+            f"Conflicting IDs when concatenating SupervisionSets! "
+            f"Failed check: {len(merged)} == {len(self.segments)} + {len(other.segments)}"
+        )
+        return SupervisionSet(segments=merged)
