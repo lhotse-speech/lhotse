@@ -43,7 +43,7 @@ def test_mono_cut_merge_supervisions_identity():
 
 
 def test_padding_cut_merge_supervisions():
-    cut = PaddingCut('x', 1, 16000, 0)
+    cut = PaddingCut("x", 1, 16000, 0)
     mcut = cut.merge_supervisions()
     assert cut == mcut
 

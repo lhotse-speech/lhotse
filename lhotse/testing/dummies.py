@@ -85,12 +85,10 @@ def dummy_supervision(
         start=start,
         duration=duration,
         text=text,
-        speaker='irrelevant',
-        language='irrelevant',
-        gender='irrelevant',
-        custom={
-            'custom_field': 'irrelevant'
-        },
+        speaker="irrelevant",
+        language="irrelevant",
+        gender="irrelevant",
+        custom={"custom_field": "irrelevant"},
         alignment=alignment,
     )
 
