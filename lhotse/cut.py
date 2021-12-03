@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 from functools import partial, reduce
 from itertools import chain, islice
 from math import ceil, floor
+from operator import add
 from pathlib import Path
 from typing import (
     Any,
@@ -1430,13 +1431,13 @@ class MonoCut(Cut):
             },
             alignment={
                 # Concatenate the lists of alignment units.
-                k: sum(
+                k: reduce(
+                    add,
                     (
                         s.alignment[k]
                         for s in sups
                         if s.alignment is not None and k in s.alignment
                     ),
-                    start=[],
                 )
                 for k in alignment_keys
             },
@@ -2677,13 +2678,13 @@ class MixedCut(Cut):
             },
             alignment={
                 # Concatenate the lists of alignment units.
-                k: sum(
+                k: reduce(
+                    add,
                     (
                         s.alignment[k]
                         for s in sups
                         if s.alignment is not None and k in s.alignment
                     ),
-                    start=[],
                 )
                 for k in alignment_keys
             },
