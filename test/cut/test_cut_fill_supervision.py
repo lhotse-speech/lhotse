@@ -126,4 +126,3 @@ def test_mixed_cut_fill_supervision_raises_on_two_supervisions():
     cut = cut.pad(duration=10)
     with pytest.raises(AssertionError):
         fcut = cut.fill_supervision()
-

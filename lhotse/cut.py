@@ -2604,7 +2604,7 @@ class MixedCut(Cut):
             ]
         else:
             assert (
-                    n_sups == 1
+                n_sups == 1
             ), f"Cannot expand more than one supervision (found {len(self.supervisions)}."
             new_tracks = []
             for t in self.tracks:
