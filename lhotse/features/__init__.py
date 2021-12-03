@@ -33,7 +33,7 @@ from .kaldifeat import (
     KaldifeatMfccConfig,
 )
 from .librosa_fbank import LibrosaFbank, LibrosaFbankConfig
-from .opensmile import OpenSmileWrapper, OpenSmileConfig
+from .opensmile import OpenSmileExtractor, OpenSmileConfig
 from .mfcc import Mfcc, MfccConfig
 from .mixer import FeatureMixer
 from .spectrogram import Spectrogram, SpectrogramConfig
