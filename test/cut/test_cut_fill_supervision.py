@@ -3,6 +3,9 @@ import pytest
 from lhotse.testing.dummies import dummy_cut, dummy_supervision
 
 
+# Note: dummy_cut and dummy_supervision have a duration of 1.0 by default.
+
+
 def test_mono_cut_fill_supervision_identity():
     cut = dummy_cut(0, supervisions=[dummy_supervision(0)])
     fcut = cut.fill_supervision()
