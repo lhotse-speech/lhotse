@@ -26,11 +26,13 @@ class OpenSmileConfig:
     feature_set: Union[str, Any] = "ComParE_2016"  # default feature set or
     # string with set name
     feature_level: Union[str, Any] = "lld"  # default feature level or level name
-    options: dict = None  # dictionary with optional script parameters
+    options: Optional[dict] = None  # dictionary with optional script parameters
     loglevel: int = 2  # log level (0-5), the higher the number the more log
     # messages are given
-    logfile: str = None  # if not ``None`` log messages will be stored to this file
-    sampling_rate: int = None  # If ``None`` it will call ``process_func`` with the actual sampling rate of the signal.
+    logfile: Optional[str] = None  # if not ``None`` log messages will be
+    # stored to this file
+    sampling_rate: Optional[int] = None  # If ``None`` it will call ``process_func``
+    # with the actual sampling rate of the signal.
     channels: Union[int, Sequence[int]] = 0
     mixdown: bool = False  # apply mono mix-down on selection
     resample: bool = False  # if ``True`` enforces given sampling rate by resampling
@@ -159,22 +161,3 @@ class OpenSmileExtractor(FeatureExtractor):
         elif diff < 0:
             feats = feats[:-diff, :]
         return feats
-
-
-#    @staticmethod
-#    def mix(
-#        features_a: np.ndarray, features_b: np.ndarray, energy_scaling_factor_b: float
-#    ) -> np.ndarray:
-#        # Torchaudio returns log-power spectrum, hence the need for logsumexp
-#        return np.log(
-#            np.maximum(
-#                # protection against log(0); max with EPSILON is adequate since these are energies (always >= 0)
-#                EPSILON,
-#                np.exp(features_a) + energy_scaling_factor_b * np.exp(features_b),
-#            )
-#        )
-#
-#    @staticmethod
-#    def compute_energy(features: np.ndarray) -> float:
-#        # Torchaudio returns log-power spectrum, hence the need for exp before the sum
-#        return float(np.sum(np.exp(features)))
