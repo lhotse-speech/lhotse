@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 from functools import partial, reduce
 from itertools import chain, islice
 from math import ceil, floor, isclose
+from operator import add
 from pathlib import Path
 from typing import (
     Any,
@@ -52,6 +53,7 @@ from lhotse.utils import (
     Seconds,
     SetContainingAnything,
     TimeSpan,
+    add_durations,
     asdict_nonull,
     compute_num_frames,
     compute_num_samples,
@@ -228,6 +230,7 @@ class Cut:
     perturb_volume: Callable
     reverb_rir: Callable
     map_supervisions: Callable
+    merge_supervisions: Callable
     filter_supervisions: Callable
     fill_supervision: Callable
     with_features_path_prefix: Callable
@@ -1386,9 +1389,9 @@ class MonoCut(Cut):
 
     def map_supervisions(
         self, transform_fn: Callable[[SupervisionSegment], SupervisionSegment]
-    ) -> Cut:
+    ) -> "MonoCut":
         """
-        Modify the SupervisionSegments by `transform_fn` of this MonoCut.
+        Return a copy of the cut that has its supervisions transformed by ``transform_fn``.
 
         :param transform_fn: a function that modifies a supervision as an argument.
         :return: a modified MonoCut.
@@ -1400,11 +1403,12 @@ class MonoCut(Cut):
 
     def filter_supervisions(
         self, predicate: Callable[[SupervisionSegment], bool]
-    ) -> Cut:
+    ) -> "MonoCut":
         """
-        Modify cut to store only supervisions accepted by `predicate`
+        Return a copy of the cut that only has supervisions accepted by ``predicate``.
 
-        Example:
+        Example::
+
             >>> cut = cut.filter_supervisions(lambda s: s.id in supervision_ids)
             >>> cut = cut.filter_supervisions(lambda s: s.duration < 5.0)
             >>> cut = cut.filter_supervisions(lambda s: s.text is not None)
@@ -1416,6 +1420,29 @@ class MonoCut(Cut):
             self, supervisions=[s for s in self.supervisions if predicate(s)]
         )
         return new_cut
+
+    def merge_supervisions(
+        self, custom_merge_fn: Optional[Callable[[str, Iterable[Any]], Any]] = None
+    ) -> "MonoCut":
+        """
+        Return a copy of the cut that has all of its supervisions merged into
+        a single segment.
+
+        The new start is the start of the earliest superivion, and the new duration
+        is a minimum spanning duration for all the supervisions.
+
+        The text fields are concatenated with a whitespace, and all other string fields
+        (including IDs) are prefixed with "cat#" and concatenated with a hash symbol "#".
+        This is also applied to ``custom`` fields. Fields with a ``None`` value are omitted.
+
+        :param custom_merge_fn: a function that will be called to merge custom fields values.
+            We expect ``custom_merge_fn`` to handle all possible custom keys.
+            When not provided, we will treat all custom values as strings.
+            It will be called roughly like:
+            ``custom_merge_fn(custom_key, [s.custom[custom_key] for s in sups])``
+        """
+        # "m" stands for merged in variable names below
+        return merge_supervisions(self, custom_merge_fn=custom_merge_fn)
 
     @staticmethod
     def from_dict(data: dict) -> "MonoCut":
@@ -1503,6 +1530,10 @@ class PaddingCut(Cut):
     @property
     def has_recording(self) -> bool:
         return self.num_samples is not None
+
+    @property
+    def recording_id(self) -> str:
+        return "PAD"
 
     # noinspection PyUnusedLocal
     def load_features(self, *args, **kwargs) -> Optional[np.ndarray]:
@@ -1761,20 +1792,28 @@ class PaddingCut(Cut):
         """
         return self
 
-    def map_supervisions(self, transform_fn: Callable[[Any], Any]) -> Cut:
+    def map_supervisions(self, transform_fn: Callable[[Any], Any]) -> "PaddingCut":
         """
-        Just for consistency with `MonoCut` and `MixedCut`.
+        Just for consistency with :class:`.MonoCut` and :class:`.MixedCut`.
 
         :param transform_fn: a dummy function that would be never called actually.
         :return: the PaddingCut itself.
         """
         return self
 
+    def merge_supervisions(self, *args, **kwargs) -> "PaddingCut":
+        """
+        Just for consistency with :class:`.MonoCut` and :class:`.MixedCut`.
+
+        :return: the PaddingCut itself.
+        """
+        return self
+
     def filter_supervisions(
         self, predicate: Callable[[SupervisionSegment], bool]
-    ) -> Cut:
+    ) -> "PaddingCut":
         """
-        Just for consistency with `MonoCut` and `MixedCut`.
+        Just for consistency with :class:`.MonoCut` and :class:`.MixedCut`.
 
         :param predicate: A callable that accepts `SupervisionSegment` and returns bool
         :return: a modified MonoCut
@@ -2654,6 +2693,32 @@ class MixedCut(Cut):
             ]
         return new_mixed_cut
 
+    def merge_supervisions(
+        self, custom_merge_fn: Optional[Callable[[str, Iterable[Any]], Any]] = None
+    ) -> "MixedCut":
+        """
+        Return a copy of the cut that has all of its supervisions merged into
+        a single segment.
+
+        The new start is the start of the earliest superivion, and the new duration
+        is a minimum spanning duration for all the supervisions.
+
+        The text fields are concatenated with a whitespace, and all other string fields
+        (including IDs) are prefixed with "cat#" and concatenated with a hash symbol "#".
+        This is also applied to ``custom`` fields. Fields with a ``None`` value are omitted.
+
+        .. note:: If you're using individual tracks of a mixed cut, note that this transform
+             drops all the supervisions in individual tracks and assigns the merged supervision
+             in the first :class:`.MonoCut` found in ``self.tracks``.
+
+        :param custom_merge_fn: a function that will be called to merge custom fields values.
+            We expect ``custom_merge_fn`` to handle all possible custom keys.
+            When not provided, we will treat all custom values as strings.
+            It will be called roughly like:
+            ``custom_merge_fn(custom_key, [s.custom[custom_key] for s in sups])``
+        """
+        return merge_supervisions(self, custom_merge_fn=custom_merge_fn)
+
     def filter_supervisions(
         self, predicate: Callable[[SupervisionSegment], bool]
     ) -> Cut:
@@ -3203,6 +3268,30 @@ class CutSet(Serializable, Sequence[Cut]):
         :return: a CutSet with filtered supervisions
         """
         return CutSet.from_cuts(cut.filter_supervisions(predicate) for cut in self)
+
+    def merge_supervisions(
+        self, custom_merge_fn: Optional[Callable[[str, Iterable[Any]], Any]] = None
+    ) -> "CutSet":
+        """
+        Return a copy of the cut that has all of its supervisions merged into
+        a single segment.
+
+        The new start is the start of the earliest superivion, and the new duration
+        is a minimum spanning duration for all the supervisions.
+
+        The text fields are concatenated with a whitespace, and all other string fields
+        (including IDs) are prefixed with "cat#" and concatenated with a hash symbol "#".
+        This is also applied to ``custom`` fields. Fields with a ``None`` value are omitted.
+
+        :param custom_merge_fn: a function that will be called to merge custom fields values.
+            We expect ``custom_merge_fn`` to handle all possible custom keys.
+            When not provided, we will treat all custom values as strings.
+            It will be called roughly like:
+            ``custom_merge_fn(custom_key, [s.custom[custom_key] for s in sups])``
+        """
+        return CutSet.from_cuts(
+            c.merge_supervisions(custom_merge_fn=custom_merge_fn) for c in self
+        )
 
     def filter(self, predicate: Callable[[Cut], bool]) -> "CutSet":
         """
@@ -4950,3 +5039,122 @@ def create_cut_set_lazy(
                 writer.write(cut)
 
     return CutSet.from_jsonl_lazy(output_path)
+
+
+def merge_supervisions(
+    cut: Cut, custom_merge_fn: Optional[Callable[[str, Iterable[Any]], Any]] = None
+) -> Cut:
+    """
+    Return a copy of the cut that has all of its supervisions merged into
+    a single segment.
+
+    The new start is the start of the earliest superivion, and the new duration
+    is a minimum spanning duration for all the supervisions.
+
+    The text fields are concatenated with a whitespace, and all other string fields
+    (including IDs) are prefixed with "cat#" and concatenated with a hash symbol "#".
+    This is also applied to ``custom`` fields. Fields with a ``None`` value are omitted.
+
+    .. note:: If you're using individual tracks of a :class:`MixedCut`, note that this transform
+         drops all the supervisions in individual tracks and assigns the merged supervision
+         in the first :class:`.MonoCut` found in ``self.tracks``.
+
+    :param custom_merge_fn: a function that will be called to merge custom fields values.
+        We expect ``custom_merge_fn`` to handle all possible custom keys.
+        When not provided, we will treat all custom values as strings.
+        It will be called roughly like:
+        ``custom_merge_fn(custom_key, [s.custom[custom_key] for s in sups])``
+    """
+    # "m" stands for merged in variable names below
+
+    def merge(values: Iterable[str]) -> Optional[str]:
+        # e.g.
+        # values = ["1125-76840-0001", "1125-53670-0003"]
+        # return "cat#1125-76840-0001#1125-53670-0003"
+        values = list(values)
+        if len(values) == 0:
+            return None
+        if len(values) == 1:
+            return values[0]
+        return "#".join(chain(["cat"], values))
+
+    if custom_merge_fn is not None:
+        # Merge custom fields with the user-provided function.
+        merge_custom = custom_merge_fn
+    else:
+        # Merge the string representations of custom fields.
+        merge_custom = lambda k, vs: merge(map(str, vs))
+
+    if isinstance(cut, PaddingCut):
+        return cut
+
+    sups = sorted(cut.supervisions, key=lambda s: s.start)
+
+    if len(sups) <= 1:
+        return cut
+
+    # the sampling rate is arbitrary, ensures there are no float precision errors
+    mstart = sups[0].start
+    mend = sups[-1].end
+    mduration = add_durations(mend, -mstart, sampling_rate=cut.sampling_rate)
+
+    custom_keys = set(k for s in sups if s.custom is not None for k in s.custom.keys())
+    alignment_keys = set(
+        k for s in sups if s.alignment is not None for k in s.alignment.keys()
+    )
+
+    if any(overlaps(s1, s2) for s1, s2 in zip(sups, sups[1:])) and any(
+        s.text is not None for s in sups
+    ):
+        warnings.warn(
+            "You are merging overlapping supervisions that have text transcripts. "
+            "The result is likely to be unusable if you are going to train speech "
+            f"recognition models (cut id: {cut.id})."
+        )
+
+    is_mixed = isinstance(cut, MixedCut)
+
+    msup = SupervisionSegment(
+        id=merge(s.id for s in sups),
+        # For MixedCut, make merged recording_id is a mix of recording_ids.
+        # For MonoCut, the recording_id is always the same.
+        recording_id=merge(s.recording_id for s in sups)
+        if is_mixed
+        else sups[0].recording_id,
+        start=mstart,
+        duration=mduration,
+        # For MixedCut, hardcode -1 to indicate no specific channel,
+        # as the supervisions might have come from different channels
+        # in their original recordings.
+        # For MonoCut, the channel is always the same.
+        channel=-1 if is_mixed else sups[0].channel,
+        text=" ".join(s.text for s in sups if s.text),
+        speaker=merge(s.speaker for s in sups if s.speaker),
+        language=merge(s.language for s in sups if s.language),
+        gender=merge(s.gender for s in sups if s.gender),
+        custom={
+            k: merge_custom(
+                k, (s.custom[k] for s in sups if s.custom is not None and k in s.custom)
+            )
+            for k in custom_keys
+        },
+        alignment={
+            # Concatenate the lists of alignment units.
+            k: reduce(
+                add,
+                (
+                    s.alignment[k]
+                    for s in sups
+                    if s.alignment is not None and k in s.alignment
+                ),
+            )
+            for k in alignment_keys
+        },
+    )
+
+    if is_mixed:
+        new_cut = cut.drop_supervisions()
+        new_cut._first_non_padding_cut.supervisions = [msup]
+        return new_cut
+    else:
+        return fastcopy(cut, supervisions=[msup])
