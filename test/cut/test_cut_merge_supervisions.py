@@ -42,6 +42,44 @@ def test_mono_cut_merge_supervisions_identity():
     assert cut == mcut
 
 
+def test_mono_cut_merge_supervisions_no_supervisions():
+    cut = dummy_cut(0, supervisions=[])
+    mcut = cut.merge_supervisions()
+    assert cut == mcut
+
+
+def test_mono_cut_merge_supervisions_empty_fields():
+    cut = dummy_cut(
+        0,
+        duration=2,
+        supervisions=[dummy_supervision(0), dummy_supervision(1, start=1)],
+    )
+    # set the fields to None to check if the merged spvn also has None
+    cut.supervisions[0].speaker = None
+    cut.supervisions[1].speaker = None
+    mcut = cut.merge_supervisions()
+    assert mcut.supervisions[0].speaker is None
+
+
+def test_mono_cut_merge_supervisions_custom_merge_fn():
+    cut = dummy_cut(
+        0,
+        duration=2,
+        supervisions=[dummy_supervision(0), dummy_supervision(1, start=1)],
+    )
+    # Note: in tests, by default there exists one custom field called "custom_field"
+    #       we add custom field "a" and define a different merging behavior for it.
+    cut.supervisions[0].custom["a"] = 20
+    cut.supervisions[1].custom["a"] = -13
+    mcut = cut.merge_supervisions(
+        custom_merge_fn=lambda k, vs: sum(vs) if k == "a" else None
+    )
+    assert isinstance(mcut.supervisions[0].custom, dict)
+    assert mcut.supervisions[0].custom["a"] == 7
+    # "dummy_supervision" object has a "custom_field" set by default
+    assert mcut.supervisions[0].custom["custom_field"] is None
+
+
 def test_padding_cut_merge_supervisions():
     cut = PaddingCut("x", 1, 16000, 0)
     mcut = cut.merge_supervisions()
