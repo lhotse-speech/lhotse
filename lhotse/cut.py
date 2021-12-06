@@ -6,7 +6,7 @@ from concurrent.futures import Executor, ProcessPoolExecutor
 from dataclasses import dataclass, field
 from functools import partial, reduce
 from itertools import chain, islice
-from math import ceil, floor
+from math import ceil, floor, isclose
 from operator import add
 from pathlib import Path
 from typing import (
@@ -232,6 +232,7 @@ class Cut:
     map_supervisions: Callable
     merge_supervisions: Callable
     filter_supervisions: Callable
+    fill_supervision: Callable
     with_features_path_prefix: Callable
     with_recording_path_prefix: Callable
 
@@ -977,6 +978,57 @@ class MonoCut(Cut):
     def drop_supervisions(self) -> "MonoCut":
         """Return a copy of the current :class:`.MonoCut`, detached from ``supervisions``."""
         return fastcopy(self, supervisions=[])
+
+    def fill_supervision(
+        self, add_empty: bool = True, shrink_ok: bool = False
+    ) -> "MonoCut":
+        """
+        Fills the whole duration of a cut with a supervision segment.
+
+        If the cut has one supervision, its start is set to 0 and duration is set to ``cut.duration``.
+        Note: this may either expand a supervision that was shorter than a cut, or shrink a supervision
+        that exceeds the cut.
+
+        If there are no supervisions, we will add an empty one when ``add_empty==True``, otherwise
+        we won't change anything.
+
+        If there are two or more supervisions, we will raise an exception.
+
+        :param add_empty: should we add an empty supervision with identical time bounds as the cut.
+        :param shrink_ok: should we raise an error if a supervision would be shrank as a result
+            of calling this method.
+        """
+        if len(self.supervisions) == 0:
+            if not add_empty:
+                return self
+            sups = [
+                SupervisionSegment(
+                    id=self.id,
+                    recording_id=self.recording_id,
+                    start=0,
+                    duration=self.duration,
+                    channel=self.channel,
+                )
+            ]
+        else:
+            assert (
+                len(self.supervisions) == 1
+            ), f"Cannot expand more than one supervision (found {len(self.supervisions)}."
+            old_sup = self.supervisions[0]
+            if isclose(old_sup.start, 0) and isclose(old_sup.duration, self.duration):
+                return self
+            if old_sup.start < 0 or old_sup.end > self.end and not shrink_ok:
+                raise ValueError(
+                    f"Cannot shrink supervision (start={old_sup.start}, end={old_sup.end}) to cut "
+                    f"(start=0, duration={self.duration}) because the argument `shrink_ok` is `False`. "
+                    f"Note: this check prevents accidental data loss for speech recognition, "
+                    f"as supervision exceeding a cut indicates there might be some spoken content "
+                    f"beyond cuts start or end (an ASR model would be trained to predict more text than "
+                    f"spoken in the audio). If this is okay, set `shrink_ok` to `True`."
+                )
+            sups = [fastcopy(old_sup, start=0, duration=self.duration)]
+
+        return fastcopy(self, supervisions=sups)
 
     def compute_and_store_features(
         self,
@@ -1787,6 +1839,12 @@ class PaddingCut(Cut):
             frame_shift=extractor.frame_shift,
         )
 
+    def fill_supervision(self, *args, **kwargs) -> "PaddingCut":
+        """
+        Just for consistency with :class`.MonoCut` and :class:`.MixedCut`.
+        """
+        return self
+
     def map_supervisions(self, transform_fn: Callable[[Any], Any]) -> "PaddingCut":
         """
         Just for consistency with :class:`.MonoCut` and :class:`.MixedCut`.
@@ -2586,6 +2644,91 @@ class MixedCut(Cut):
                 for track in self.tracks
             ]
             return MixedCut(id=self.id, tracks=new_tracks)
+
+    def fill_supervision(
+        self, add_empty: bool = True, shrink_ok: bool = False
+    ) -> "MixedCut":
+        """
+        Fills the whole duration of a cut with a supervision segment.
+
+        If the cut has one supervision, its start is set to 0 and duration is set to ``cut.duration``.
+        Note: this may either expand a supervision that was shorter than a cut, or shrink a supervision
+        that exceeds the cut.
+
+        If there are no supervisions, we will add an empty one when ``add_empty==True``, otherwise
+        we won't change anything.
+
+        If there are two or more supervisions, we will raise an exception.
+
+        .. note:: For :class:`.MixedCut`, we expect that only one track contains a supervision.
+            That supervision will be expanded to cover the full MixedCut's duration.
+
+        :param add_empty: should we add an empty supervision with identical time bounds as the cut.
+        :param shrink_ok: should we raise an error if a supervision would be shrank as a result
+            of calling this method.
+        """
+        n_sups = len(self.supervisions)
+        if n_sups == 0:
+            if not add_empty:
+                return self
+            first_non_padding_idx = [
+                idx for idx, t in enumerate(self.tracks) if isinstance(t.cut, MonoCut)
+            ][0]
+            new_tracks = [
+                fastcopy(
+                    t,
+                    cut=fastcopy(
+                        t.cut,
+                        supervisions=[
+                            SupervisionSegment(
+                                id=self.id,
+                                recording_id=t.cut.recording_id,
+                                start=-t.offset,
+                                duration=self.duration,
+                                channel=-1,
+                            )
+                        ],
+                    ),
+                )
+                if idx == first_non_padding_idx
+                else t
+                for idx, t in enumerate(self.tracks)
+            ]
+        else:
+            assert (
+                n_sups == 1
+            ), f"Cannot expand more than one supervision (found {len(self.supervisions)}."
+            new_tracks = []
+            for t in self.tracks:
+                if len(t.cut.supervisions) == 0:
+                    new_tracks.append(t)
+                else:
+                    sup = t.cut.supervisions[0]
+                    if not shrink_ok and (
+                        sup.start < -t.offset or sup.end > self.duration
+                    ):
+                        raise ValueError(
+                            f"Cannot shrink supervision (start={sup.start}, end={sup.end}) to cut "
+                            f"(start=0, duration={t.cut.duration}) because the argument `shrink_ok` is `False`. "
+                            f"Note: this check prevents accidental data loss for speech recognition, "
+                            f"as supervision exceeding a cut indicates there might be some spoken content "
+                            f"beyond cuts start or end (an ASR model would be trained to predict more text than "
+                            f"spoken in the audio). If this is okay, set `shrink_ok` to `True`."
+                        )
+                    new_tracks.append(
+                        fastcopy(
+                            t,
+                            cut=fastcopy(
+                                t.cut,
+                                supervisions=[
+                                    fastcopy(
+                                        sup, start=-t.offset, duration=self.duration
+                                    )
+                                ],
+                            ),
+                        )
+                    )
+        return fastcopy(self, tracks=new_tracks)
 
     def map_supervisions(
         self, transform_fn: Callable[[SupervisionSegment], SupervisionSegment]
@@ -4322,6 +4465,30 @@ class CutSet(Serializable, Sequence[Cut]):
         :return: a new ``CutSet`` with cuts with modified IDs.
         """
         return CutSet.from_cuts(c.with_id(transform_fn(c.id)) for c in self)
+
+    def fill_supervisions(
+        self, add_empty: bool = True, shrink_ok: bool = False
+    ) -> "CutSet":
+        """
+        Fills the whole duration of each cut in a :class:`.CutSet` with a supervision segment.
+
+        If the cut has one supervision, its start is set to 0 and duration is set to ``cut.duration``.
+        Note: this may either expand a supervision that was shorter than a cut, or shrink a supervision
+        that exceeds the cut.
+
+        If there are no supervisions, we will add an empty one when ``add_empty==True``, otherwise
+        we won't change anything.
+
+        If there are two or more supervisions, we will raise an exception.
+
+        :param add_empty: should we add an empty supervision with identical time bounds as the cut.
+        :param shrink_ok: should we raise an error if a supervision would be shrank as a result
+            of calling this method.
+        """
+        return CutSet.from_cuts(
+            cut.fill_supervision(add_empty=add_empty, shrink_ok=shrink_ok)
+            for cut in self
+        )
 
     def map_supervisions(
         self, transform_fn: Callable[[SupervisionSegment], SupervisionSegment]
