@@ -4010,6 +4010,7 @@ class CutSet(Serializable, Sequence[Cut]):
         num_workers: int = 4,
         augment_fn: Optional[AugmentFn] = None,
         storage_type: Type[FW] = LilcomHdf5Writer,
+        overwrite: bool = False,
     ) -> "CutSet":
         """
         Extract features for all cuts in batches.
@@ -4056,6 +4057,8 @@ class CutSet(Serializable, Sequence[Cut]):
         :param storage_type: a ``FeaturesWriter`` subclass type.
             It determines how the features are stored to disk,
             e.g. separate file per array, HDF5 files with multiple arrays, etc.
+        :param overwrite: should we overwrite the manifest, HDF5 files, etc.
+            By default, this method will append to these files if they exist.
         :return: Returns a new ``CutSet`` with ``Features`` manifests attached to the cuts.
         """
         import torch
@@ -4069,7 +4072,7 @@ class CutSet(Serializable, Sequence[Cut]):
         # operation. It scans the input JSONL file for cut IDs that should be ignored.
         # Note: this only works when ``manifest_path`` argument was specified, otherwise
         # we hold everything in memory and start from scratch.
-        cuts_writer = CutSet.open_writer(manifest_path, overwrite=False)
+        cuts_writer = CutSet.open_writer(manifest_path, overwrite=overwrite)
 
         # We tell the sampler to ignore cuts that were already processed.
         # It will avoid I/O for reading them in the DataLoader.
@@ -4080,7 +4083,9 @@ class CutSet(Serializable, Sequence[Cut]):
             dataset, batch_size=None, sampler=sampler, num_workers=num_workers
         )
 
-        with cuts_writer, storage_type(storage_path) as feats_writer, tqdm(
+        with cuts_writer, storage_type(
+            storage_path, mode="w" if overwrite else "a"
+        ) as feats_writer, tqdm(
             desc="Computing features in batches", total=sampler.num_cuts
         ) as progress:
             # Display progress bar correctly.
