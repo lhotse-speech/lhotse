@@ -239,7 +239,9 @@ def test_collate_custom_temporal_array_ints(pad_direction):
         ]
 
         assert isinstance(codebook_indices, torch.Tensor)
-        assert codebook_indices.dtype == torch.int16
+        assert (
+            codebook_indices.dtype == torch.int64
+        )  # the dtype got promoted by default
         assert codebook_indices.shape == (len(cuts), max_num_frames)
         for idx, cbidxs in enumerate(expected_codebook_indices):
             exp_len = cbidxs.shape[0]
