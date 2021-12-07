@@ -129,7 +129,11 @@ class SequentialJsonlWriter:
 
     def __init__(self, path: Pathlike, overwrite: bool = True) -> None:
         self.path = Path(path)
-        assert extension_contains(".jsonl", self.path)
+        if not extension_contains(".jsonl", self.path):
+            raise InvalidPathExtension(
+                f"SequentialJsonlWriter supports only JSONL format (one JSON item per line), "
+                f"but path='{path}'."
+            )
         self.compressed = extension_contains(".gz", self.path)
         self._open = gzip.open if self.compressed else open
         self.mode = "wt" if self.compressed else "w"
@@ -190,6 +194,10 @@ class SequentialJsonlWriter:
         return load_manifest_lazy(self.path)
 
 
+class InvalidPathExtension(ValueError):
+    pass
+
+
 class InMemoryWriter:
     """
     Mimics :class:`.SequentialJsonlWriter` API but doesn't actually perform any I/O.
@@ -198,6 +206,8 @@ class InMemoryWriter:
 
     def __init__(self):
         self.items = []
+        # for compatibility with SequentialJsonlWriter
+        self.ignore_ids = frozenset()
 
     def __enter__(self) -> "InMemoryWriter":
         return self

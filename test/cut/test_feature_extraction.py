@@ -26,7 +26,9 @@ from lhotse import (
 from lhotse.audio import AudioSource
 from lhotse.cut import MixedCut
 from lhotse.features.io import LilcomFilesWriter
+from lhotse.serialization import InvalidPathExtension
 from lhotse.utils import is_module_available
+from lhotse.utils import nullcontext as does_not_raise
 
 
 @pytest.fixture
@@ -208,6 +210,31 @@ def test_cut_set_batch_feature_extraction(cut_set, extractor_type):
             num_workers=0,
         )
         validate(cut_set_with_feats, read_data=True)
+
+
+@pytest.mark.parametrize(
+    ["suffix", "exception_expectation"],
+    [
+        (".jsonl", does_not_raise()),
+        (".json", pytest.raises(InvalidPathExtension)),
+    ],
+)
+def test_cut_set_batch_feature_extraction_manifest_path(
+    cut_set, suffix, exception_expectation
+):
+    extractor = Fbank()
+    cut_set = cut_set.resample(16000)
+    with NamedTemporaryFile() as feat_f, NamedTemporaryFile(
+        suffix=suffix
+    ) as manifest_f:
+        with exception_expectation:
+            cut_set_with_feats = cut_set.compute_and_store_features_batch(
+                extractor=extractor,
+                storage_path=feat_f.name,
+                manifest_path=manifest_f.name,
+                num_workers=0,
+            )
+            validate(cut_set_with_feats, read_data=True)
 
 
 @pytest.mark.parametrize(
