@@ -540,12 +540,21 @@ class Recording:
         :return: A resampled ``Recording``.
         """
         transforms = self.transforms.copy() if self.transforms is not None else []
-        transforms.append(
-            Resample(
-                source_sampling_rate=self.sampling_rate,
-                target_sampling_rate=sampling_rate,
-            ).to_dict()
-        )
+
+        if not any(s.source.endswith(".opus") for s in self.sources):
+            # OPUS is a special case for resampling.
+            # Normally, we use Torchaudio SoX bindings for resampling,
+            # but in case of OPUS we ask FFMPEG to resample it during
+            # decoding as its faster.
+            # Because of that, we have to skip adding a transform
+            # for OPUS files and only update the metadata in the manifest.
+            transforms.append(
+                Resample(
+                    source_sampling_rate=self.sampling_rate,
+                    target_sampling_rate=sampling_rate,
+                ).to_dict()
+            )
+
         new_num_samples = compute_num_samples(
             self.duration, sampling_rate, rounding=ROUND_HALF_UP
         )
