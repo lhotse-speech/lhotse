@@ -49,6 +49,15 @@ def test_opus_torchaudio_vs_ffmpeg(path):
     np.testing.assert_almost_equal(audio_ta, audio_ff, decimal=3)
 
 
+def test_resample_opus():
+    # Test that reading OPUS files after resampling
+    # does not raise an exception.
+    r = Recording.from_file("test/fixtures/mono_c0.opus")
+    r.load_audio()
+    r1 = r.resample(24000)
+    r1.load_audio()
+
+
 @pytest.mark.parametrize(
     "path",
     [
