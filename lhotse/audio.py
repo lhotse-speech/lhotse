@@ -541,7 +541,7 @@ class Recording:
         """
         transforms = self.transforms.copy() if self.transforms is not None else []
 
-        if not any(s.source.endswith('.opus') for s in self.sources):
+        if not any(s.source.endswith(".opus") for s in self.sources):
             # OPUS is a special case for resampling.
             # Normally, we use Torchaudio SoX bindings for resampling,
             # but in case of OPUS we ask FFMPEG to resample it during
