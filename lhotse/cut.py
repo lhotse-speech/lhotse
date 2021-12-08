@@ -4158,7 +4158,7 @@ class CutSet(Serializable, Sequence[Cut]):
                             features=feat_manifest,
                             recording=None,
                         )
-                    cuts_writer.write(cut)
+                    cuts_writer.write(cut, flush=True)
 
                 progress.update(len(cuts))
 

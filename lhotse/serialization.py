@@ -167,10 +167,14 @@ class SequentialJsonlWriter:
     def contains(self, item: Union[str, Any]) -> bool:
         return item in self
 
-    def write(self, manifest) -> None:
+    def write(self, manifest: Any, flush: bool = False) -> None:
         """
         Serializes a manifest item (e.g. :class:`~lhotse.audio.Recording`,
         :class:`~lhotse.cut.Cut`, etc.) to JSON and stores it in a JSONL file.
+
+        :param manifest: the manifest to be written.
+        :param flush: should we flush the file after writing (ensures the changes
+            are synced with the disk and not just buffered for later writing).
         """
         try:
             if manifest.id in self.ignore_ids:
@@ -178,6 +182,8 @@ class SequentialJsonlWriter:
         except AttributeError:
             pass
         print(json.dumps(manifest.to_dict()), file=self.file)
+        if flush:
+            self.file.flush()
 
     def open_manifest(self) -> Manifest:
         """
