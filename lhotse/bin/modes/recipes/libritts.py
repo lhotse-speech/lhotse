@@ -17,9 +17,29 @@ __all__ = ["libritts"]
     default=1,
     help="How many jobs to use (can give good speed-ups with slow disks).",
 )
-def libritts(corpus_dir: Pathlike, output_dir: Pathlike, num_jobs: int):
+@click.option(
+    "--link-previous-utterance/--no-previous-utterance",
+    default=False,
+    help=(
+        "If true adds previous utterance id to supervisions. "
+        "Useful for reconstructing chains of utterances as they were read from LibriVox books. "
+        "If previous utterance was skipped from LibriTTS datasets previous_utt label is None. "
+        "66% of utterances have previous utterance."
+    ),
+)
+def libritts(
+    corpus_dir: Pathlike,
+    output_dir: Pathlike,
+    num_jobs: int,
+    link_previous_utterance: bool,
+):
     """LibriTTs data preparation."""
-    prepare_libritts(corpus_dir, output_dir=output_dir, num_jobs=num_jobs)
+    prepare_libritts(
+        corpus_dir,
+        output_dir=output_dir,
+        num_jobs=num_jobs,
+        link_previous_utt=link_previous_utterance,
+    )
 
 
 @download.command(context_settings=dict(show_default=True))
