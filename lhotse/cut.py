@@ -4005,10 +4005,12 @@ class CutSet(Serializable, Sequence[Cut]):
         self,
         extractor: FeatureExtractor,
         storage_path: Pathlike,
+        manifest_path: Optional[Pathlike] = None,
         batch_duration: Seconds = 600.0,
         num_workers: int = 4,
         augment_fn: Optional[AugmentFn] = None,
         storage_type: Type[FW] = LilcomHdf5Writer,
+        overwrite: bool = False,
     ) -> "CutSet":
         """
         Extract features for all cuts in batches.
@@ -4040,6 +4042,9 @@ class CutSet(Serializable, Sequence[Cut]):
         :param storage_path: The path to location where we will store the features.
             The exact type and layout of stored files will be dictated by the
             ``storage_type`` argument.
+        :param manifest_path: Optional path where to write the CutSet manifest
+            with attached feature manifests. If not specified, we will be keeping
+            all manifests in memory.
         :param batch_duration: The maximum number of audio seconds in a batch.
             Determines batch size dynamically.
         :param num_workers: How many background dataloading workers should be used
@@ -4052,6 +4057,8 @@ class CutSet(Serializable, Sequence[Cut]):
         :param storage_type: a ``FeaturesWriter`` subclass type.
             It determines how the features are stored to disk,
             e.g. separate file per array, HDF5 files with multiple arrays, etc.
+        :param overwrite: should we overwrite the manifest, HDF5 files, etc.
+            By default, this method will append to these files if they exist.
         :return: Returns a new ``CutSet`` with ``Features`` manifests attached to the cuts.
         """
         import torch
@@ -4060,16 +4067,29 @@ class CutSet(Serializable, Sequence[Cut]):
         from lhotse.qa import validate_features
 
         frame_shift = extractor.frame_shift
-        dataset = UnsupervisedWaveformDataset(collate=False)
+
+        # We're opening a sequential cuts writer that can resume previously interrupted
+        # operation. It scans the input JSONL file for cut IDs that should be ignored.
+        # Note: this only works when ``manifest_path`` argument was specified, otherwise
+        # we hold everything in memory and start from scratch.
+        cuts_writer = CutSet.open_writer(manifest_path, overwrite=overwrite)
+
+        # We tell the sampler to ignore cuts that were already processed.
+        # It will avoid I/O for reading them in the DataLoader.
         sampler = SingleCutSampler(self, max_duration=batch_duration)
+        sampler.filter(lambda cut: cut.id not in cuts_writer.ignore_ids)
+        dataset = UnsupervisedWaveformDataset(collate=False)
         dloader = DataLoader(
             dataset, batch_size=None, sampler=sampler, num_workers=num_workers
         )
 
-        cuts_with_feats = []
-        with storage_type(storage_path) as writer, tqdm(
+        with cuts_writer, storage_type(
+            storage_path, mode="w" if overwrite else "a"
+        ) as feats_writer, tqdm(
             desc="Computing features in batches", total=sampler.num_cuts
         ) as progress:
+            # Display progress bar correctly.
+            progress.update(len(cuts_writer.ignore_ids))
             for batch in dloader:
                 cuts = batch["cuts"]
                 waves = batch["audio"]
@@ -4094,7 +4114,7 @@ class CutSet(Serializable, Sequence[Cut]):
                     if isinstance(cut, PaddingCut):
                         # For padding cuts, just fill out the fields in the manfiest
                         # and don't store anything.
-                        cuts_with_feats.append(
+                        cuts_writer.write(
                             fastcopy(
                                 cut,
                                 num_frames=feat_mtx.shape[0],
@@ -4106,7 +4126,7 @@ class CutSet(Serializable, Sequence[Cut]):
                     # Store the computed features and describe them in a manifest.
                     if isinstance(feat_mtx, torch.Tensor):
                         feat_mtx = feat_mtx.cpu().numpy()
-                    storage_key = writer.write(cut.id, feat_mtx)
+                    storage_key = feats_writer.write(cut.id, feat_mtx)
                     feat_manifest = Features(
                         start=cut.start,
                         duration=cut.duration,
@@ -4116,8 +4136,8 @@ class CutSet(Serializable, Sequence[Cut]):
                         frame_shift=frame_shift,
                         sampling_rate=cut.sampling_rate,
                         channels=0,
-                        storage_type=writer.name,
-                        storage_path=str(writer.storage_path),
+                        storage_type=feats_writer.name,
+                        storage_path=str(feats_writer.storage_path),
                         storage_key=storage_key,
                     )
                     validate_features(feat_manifest, feats_data=feat_mtx)
@@ -4138,11 +4158,13 @@ class CutSet(Serializable, Sequence[Cut]):
                             features=feat_manifest,
                             recording=None,
                         )
-                    cuts_with_feats.append(cut)
+                    cuts_writer.write(cut, flush=True)
 
                 progress.update(len(cuts))
 
-        return CutSet.from_cuts(cuts_with_feats)
+        # If ``manifest_path`` was provided, this is a lazy manifest;
+        # otherwise everything is in memory.
+        return cuts_writer.open_manifest()
 
     @deprecated(
         "CutSet.compute_and_store_recordings will be removed in a future release. Please use save_audios() instead."

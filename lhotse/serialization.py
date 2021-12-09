@@ -129,7 +129,11 @@ class SequentialJsonlWriter:
 
     def __init__(self, path: Pathlike, overwrite: bool = True) -> None:
         self.path = Path(path)
-        assert extension_contains(".jsonl", self.path)
+        if not extension_contains(".jsonl", self.path):
+            raise InvalidPathExtension(
+                f"SequentialJsonlWriter supports only JSONL format (one JSON item per line), "
+                f"but path='{path}'."
+            )
         self.compressed = extension_contains(".gz", self.path)
         self._open = gzip.open if self.compressed else open
         self.mode = "wt" if self.compressed else "w"
@@ -163,10 +167,14 @@ class SequentialJsonlWriter:
     def contains(self, item: Union[str, Any]) -> bool:
         return item in self
 
-    def write(self, manifest) -> None:
+    def write(self, manifest: Any, flush: bool = False) -> None:
         """
         Serializes a manifest item (e.g. :class:`~lhotse.audio.Recording`,
         :class:`~lhotse.cut.Cut`, etc.) to JSON and stores it in a JSONL file.
+
+        :param manifest: the manifest to be written.
+        :param flush: should we flush the file after writing (ensures the changes
+            are synced with the disk and not just buffered for later writing).
         """
         try:
             if manifest.id in self.ignore_ids:
@@ -174,6 +182,8 @@ class SequentialJsonlWriter:
         except AttributeError:
             pass
         print(json.dumps(manifest.to_dict()), file=self.file)
+        if flush:
+            self.file.flush()
 
     def open_manifest(self) -> Manifest:
         """
@@ -190,6 +200,10 @@ class SequentialJsonlWriter:
         return load_manifest_lazy(self.path)
 
 
+class InvalidPathExtension(ValueError):
+    pass
+
+
 class InMemoryWriter:
     """
     Mimics :class:`.SequentialJsonlWriter` API but doesn't actually perform any I/O.
@@ -198,6 +212,8 @@ class InMemoryWriter:
 
     def __init__(self):
         self.items = []
+        # for compatibility with SequentialJsonlWriter
+        self.ignore_ids = frozenset()
 
     def __enter__(self) -> "InMemoryWriter":
         return self
@@ -211,7 +227,7 @@ class InMemoryWriter:
     def contains(self, item: Union[str, Any]) -> bool:
         return item in self
 
-    def write(self, manifest) -> None:
+    def write(self, manifest, flush: bool = False) -> None:
         self.items.append(manifest)
 
     def open_manifest(self) -> Optional[Manifest]:

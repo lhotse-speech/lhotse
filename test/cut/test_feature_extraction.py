@@ -8,6 +8,7 @@ from unittest.mock import Mock
 import pytest
 import torch
 
+import lhotse
 from lhotse import (
     CutSet,
     Fbank,
@@ -21,12 +22,15 @@ from lhotse import (
     Mfcc,
     MonoCut,
     Recording,
+    load_manifest,
     validate,
 )
 from lhotse.audio import AudioSource
 from lhotse.cut import MixedCut
 from lhotse.features.io import LilcomFilesWriter
+from lhotse.serialization import InvalidPathExtension
 from lhotse.utils import is_module_available
+from lhotse.utils import nullcontext as does_not_raise
 
 
 @pytest.fixture
@@ -208,6 +212,65 @@ def test_cut_set_batch_feature_extraction(cut_set, extractor_type):
             num_workers=0,
         )
         validate(cut_set_with_feats, read_data=True)
+
+
+@pytest.mark.parametrize(
+    ["suffix", "exception_expectation"],
+    [
+        (".jsonl", does_not_raise()),
+        (".json", pytest.raises(InvalidPathExtension)),
+    ],
+)
+def test_cut_set_batch_feature_extraction_manifest_path(
+    cut_set, suffix, exception_expectation
+):
+    extractor = Fbank()
+    cut_set = cut_set.resample(16000)
+    with NamedTemporaryFile() as feat_f, NamedTemporaryFile(
+        suffix=suffix
+    ) as manifest_f:
+        with exception_expectation:
+            cut_set_with_feats = cut_set.compute_and_store_features_batch(
+                extractor=extractor,
+                storage_path=feat_f.name,
+                manifest_path=manifest_f.name,
+                num_workers=0,
+            )
+            validate(cut_set_with_feats, read_data=True)
+
+
+@pytest.mark.parametrize("overwrite", [False, True])
+def test_cut_set_batch_feature_extraction_resume(cut_set, overwrite):
+    # This test checks that we can keep writing to the same file
+    # and the previously written results are not lost.
+    # Since we don't have an easy way to interrupt the execution in a test,
+    # we just write another CutSet to the same file.
+    # The effect is the same.
+    extractor = Fbank()
+    cut_set = cut_set.resample(16000)
+    subsets = cut_set.split(num_splits=2)
+    processed = []
+    with NamedTemporaryFile() as feat_f, NamedTemporaryFile(
+        suffix=".jsonl.gz"
+    ) as manifest_f:
+        for cuts in subsets:
+            processed.append(
+                cuts.compute_and_store_features_batch(
+                    extractor=extractor,
+                    storage_path=feat_f.name,
+                    manifest_path=manifest_f.name,
+                    num_workers=0,
+                    overwrite=overwrite,
+                )
+            )
+        feat_f.flush()
+        manifest_f.flush()
+        merged = load_manifest(manifest_f.name)
+        if overwrite:
+            assert list(merged.ids) == list(subsets[-1].ids)
+        else:
+            assert list(merged.ids) == list(cut_set.ids)
+        validate(merged, read_data=True)
 
 
 @pytest.mark.parametrize(
