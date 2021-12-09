@@ -82,6 +82,7 @@ def prepare_libritts(
     dataset_parts: Union[str, Sequence[str]] = "auto",
     output_dir: Optional[Pathlike] = None,
     num_jobs: int = 1,
+    link_previous_utt: bool = False,
 ) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet]]]:
     """
     Returns the manifests which consist of the Recordings and Supervisions.
@@ -92,6 +93,9 @@ def prepare_libritts(
         By default we will infer which parts are available in ``corpus_dir``.
     :param output_dir: Pathlike, the path where to write the manifests.
     :param num_jobs: the number of parallel workers parsing the data.
+    :param link_previous_utt: If true adds previous utterance id to supervisions.
+        Useful for reconstructing chains of utterances as they were read.
+        If previous utterance was skipped from LibriTTS datasets previous_utt label is None.
     :return: a Dict whose key is the dataset part, and the value is Dicts with the keys 'audio' and 'supervisions'.
     """
     corpus_dir = Path(corpus_dir)
@@ -148,8 +152,8 @@ def prepare_libritts(
             #   84_121123_000008_000000 Villefort rose, half ashamed of being surprised in such a paroxysm of grief.    Villefort rose, half ashamed of being surprised in such a paroxysm of grief.
 
             # book.tsv contains additional metadata
-            utt2snr = {
-                rec_id: float(snr)
+            utt2snr = [
+                (rec_id, float(snr))
                 for rec_id, *_, snr in map(
                     str.split,
                     (
@@ -159,10 +163,29 @@ def prepare_libritts(
                     .read_text()
                     .splitlines(),
                 )
-            }
+            ]
+            # keeps the order of uttids as they appear in book.tsv
+            uttids = [r for r, _ in utt2snr]
+            utt2snr = dict(utt2snr)
+
+            if link_previous_utt:
+                # Using the property of sorted keys to find previous utterance
+                # The keys has structure speaker_book_x_y e.g. 1089_134691_000004_000001
+                utt2prevutt = dict(zip(uttids + [None], [None] + uttids))
+
+            prev_rec_id = None
             for line in trans_path.read_text().splitlines():
                 rec_id, orig_text, norm_text = line.split("\t")
                 spk_id = rec_id.split("_")[0]
+                customd = {"orig_text": orig_text, "snr": utt2snr[rec_id]}
+                if link_previous_utt:
+                    # all recordings ids should be in the book.csv
+                    # but they are some missing e.g. 446_123502_000030_000003
+                    prev_utt = utt2prevutt.get(rec_id, None)
+                    # previous utterance has to be present in trans.csv - otherwise it was skipped
+                    prev_utt = prev_utt if prev_utt == prev_rec_id else None
+                    customd["prev_utt"] = prev_utt
+                    prev_rec_id = rec_id
                 supervisions.append(
                     SupervisionSegment(
                         id=rec_id,
@@ -174,7 +197,7 @@ def prepare_libritts(
                         language="English",
                         speaker=spk_id,
                         gender=spk2gender[spk_id],
-                        custom={"orig_text": orig_text, "snr": utt2snr[rec_id]},
+                        custom=customd,
                     )
                 )
 
