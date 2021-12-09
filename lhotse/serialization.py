@@ -227,7 +227,7 @@ class InMemoryWriter:
     def contains(self, item: Union[str, Any]) -> bool:
         return item in self
 
-    def write(self, manifest) -> None:
+    def write(self, manifest, flush: bool = False) -> None:
         self.items.append(manifest)
 
     def open_manifest(self) -> Optional[Manifest]:
