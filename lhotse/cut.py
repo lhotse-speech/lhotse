@@ -1088,6 +1088,9 @@ class MonoCut(Cut):
         # Note: technically, truncate's code can be used for "expanding" the cut as well:
         #       In that case, we must ensure that the start of MonoCut is not before the start
         #       of the actual Recording, hence max(..., 0).
+        assert (
+            offset >= 0
+        ), f"Offset for truncate must be non-negative (provided {offset})."
         new_start = max(self.start + offset, 0)
         until = offset + (duration if duration is not None else self.duration)
         new_duration = self.duration - new_start if duration is None else until - offset
@@ -2093,6 +2096,9 @@ class MixedCut(Cut):
         :return: a new MixedCut instance.
         """
 
+        assert (
+            offset >= 0
+        ), f"Offset for truncate must be non-negative (provided {offset})."
         new_tracks = []
         old_duration = self.duration
         new_mix_end = old_duration - offset if duration is None else offset + duration
