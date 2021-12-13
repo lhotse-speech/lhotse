@@ -632,3 +632,11 @@ def deprecated(message):
         return wrapper
 
     return decorator
+
+
+class AudioLoadingError(Exception):
+    pass
+
+
+class DurationMismatchError(Exception):
+    pass

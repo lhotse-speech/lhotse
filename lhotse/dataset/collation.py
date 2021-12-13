@@ -8,7 +8,7 @@ from torch.nn import CrossEntropyLoss
 
 from lhotse import CutSet
 from lhotse.cut import Cut, MixedCut
-from lhotse.utils import DEFAULT_PADDING_VALUE
+from lhotse.utils import AudioLoadingError, DEFAULT_PADDING_VALUE, DurationMismatchError
 
 
 class TokenCollater:
@@ -163,7 +163,18 @@ def collate_audio(
     audio = torch.empty(len(cuts), first_cut.num_samples)
     if executor is None:
         for idx, cut in enumerate(cuts):
-            audio[idx] = _read_audio(cut)
+            try:
+                audio[idx] = _read_audio(cut)
+            except AudioLoadingError as e:
+                warnings.warn(
+                    f"AudioLoadingError for {cut} \nError messages: {e} \nSkipping this cut."
+                )
+                continue
+            except DurationMismatchError as e:
+                warnings.warn(
+                    f"DurationMismatchError for {cut} \nError messages: {e} \nSkipping this cut."
+                )
+                continue
     else:
         for idx, example_audio in enumerate(executor.map(_read_audio, cuts)):
             audio[idx] = example_audio

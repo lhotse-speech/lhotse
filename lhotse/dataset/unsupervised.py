@@ -1,3 +1,4 @@
+import warnings
 from typing import Any, Dict, Optional
 
 import torch
@@ -7,6 +8,7 @@ from lhotse.augmentation import AugmentFn
 from lhotse.cut import CutSet
 from lhotse.dataset.collation import collate_audio, collate_features, collate_matrices
 from lhotse.features import FeatureExtractor
+from lhotse.utils import AudioLoadingError, DurationMismatchError
 
 
 class UnsupervisedDataset(torch.utils.data.Dataset):
@@ -20,7 +22,6 @@ class UnsupervisedDataset(torch.utils.data.Dataset):
             'features_lens': (B, ) tensor
         }
     """
-
     def __init__(self) -> None:
         super().__init__()
 
@@ -53,7 +54,6 @@ class UnsupervisedWaveformDataset(UnsupervisedDataset):
             'audio_lens': (B, ) int tensor
         }
     """
-
     def __init__(self, collate: bool = True) -> None:
         super().__init__()
         self.collate = collate
@@ -67,7 +67,26 @@ class UnsupervisedWaveformDataset(UnsupervisedDataset):
                 "audio_lens": audio_lens,
             }
         else:
-            return {"cuts": cuts, "audio": [c.load_audio() for c in cuts]}
+            remain_cuts = []
+            remain_audios = []
+            for c in cuts:
+                try:
+                    remain_audios.append(c.load_audio())
+                    remain_cuts.append(c)
+                except AudioLoadingError as e:
+                    warnings.warn(
+                        f"AudioLoadingError for {c} \nError messages: {e} \nSkipping this cut."
+                    )
+                    continue
+                except DurationMismatchError as e:
+                    warnings.warn(
+                        f"DurationMismatchError for {c} \nError messages: {e} \nSkipping this cut."
+                    )
+                    continue
+            return {
+                "cuts": CutSet.from_cuts(remain_cuts),
+                "audio": remain_audios
+            }
 
     def _validate(self, cuts: CutSet) -> None:
         validate(cuts)
@@ -83,7 +102,6 @@ class DynamicUnsupervisedDataset(UnsupervisedDataset):
     and ``UnsupervisedDataset`` does that in the feature domain.
     Cuts that are not mixed will yield identical results in both dataset classes.
     """
-
     def __init__(
         self,
         feature_extractor: FeatureExtractor,
@@ -95,13 +113,26 @@ class DynamicUnsupervisedDataset(UnsupervisedDataset):
 
     def __getitem__(self, cuts: CutSet) -> torch.Tensor:
         self._validate(cuts)
-        features = collate_matrices(
-            cut.compute_features(
-                extractor=self.feature_extractor,
-                augment_fn=self.augment_fn,
-            )
-            for cut in cuts
-        )
+
+        def generate_cut(cuts: CutSet):
+            for cut in cuts:
+                try:
+                    yield cut.compute_features(
+                        extractor=self.feature_extractor,
+                        augment_fn=self.augment_fn,
+                    )
+                except AudioLoadingError as e:
+                    warnings.warn(
+                        f"AudioLoadingError for {cut} \nError messages: {e} \nSkipping this cut."
+                    )
+                    continue
+                except DurationMismatchError as e:
+                    warnings.warn(
+                        f"DurationMismatchError for {cut} \nError messages: {e} \nSkipping this cut."
+                    )
+                    continue
+
+        features = collate_matrices(generate_cut(cuts))
         return features
 
     def _validate(self, cuts: CutSet) -> None:

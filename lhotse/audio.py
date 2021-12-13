@@ -40,7 +40,9 @@ from lhotse.augmentation import (
 from lhotse.caching import dynamic_lru_cache
 from lhotse.serialization import Serializable
 from lhotse.utils import (
+    AudioLoadingError,
     Decibels,
+    DurationMismatchError,
     NonPositiveEnergyError,
     Pathlike,
     Seconds,
@@ -196,7 +198,7 @@ class AudioSource:
             if (
                 available_duration < duration - LHOTSE_AUDIO_DURATION_MISMATCH_TOLERANCE
             ):  # set the allowance as 1ms to avoid float error
-                raise ValueError(
+                raise DurationMismatchError(
                     f"Requested more audio ({duration}s) than available ({available_duration}s)"
                 )
 
@@ -1526,8 +1528,8 @@ def read_opus_ffmpeg(
                 f"Unknown channel description from ffmpeg: {channel_string}"
             )
     except ValueError as e:
-        raise ValueError(
-            f"{e}\nThe ffmpeg command for which the program failed is: '{cmd}'"
+        raise AudioLoadingError(
+            f"{e}\nThe ffmpeg command for which the program failed is: '{cmd}', error code: {proc.returncode}"
         )
     return audio, sampling_rate
 
