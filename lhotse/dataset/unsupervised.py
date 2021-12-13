@@ -22,6 +22,7 @@ class UnsupervisedDataset(torch.utils.data.Dataset):
             'features_lens': (B, ) tensor
         }
     """
+
     def __init__(self) -> None:
         super().__init__()
 
@@ -54,6 +55,7 @@ class UnsupervisedWaveformDataset(UnsupervisedDataset):
             'audio_lens': (B, ) int tensor
         }
     """
+
     def __init__(self, collate: bool = True) -> None:
         super().__init__()
         self.collate = collate
@@ -83,10 +85,7 @@ class UnsupervisedWaveformDataset(UnsupervisedDataset):
                         f"DurationMismatchError for {c} \nError messages: {e} \nSkipping this cut."
                     )
                     continue
-            return {
-                "cuts": CutSet.from_cuts(remain_cuts),
-                "audio": remain_audios
-            }
+            return {"cuts": CutSet.from_cuts(remain_cuts), "audio": remain_audios}
 
     def _validate(self, cuts: CutSet) -> None:
         validate(cuts)
@@ -102,6 +101,7 @@ class DynamicUnsupervisedDataset(UnsupervisedDataset):
     and ``UnsupervisedDataset`` does that in the feature domain.
     Cuts that are not mixed will yield identical results in both dataset classes.
     """
+
     def __init__(
         self,
         feature_extractor: FeatureExtractor,
