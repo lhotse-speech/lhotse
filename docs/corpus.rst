@@ -119,6 +119,8 @@ a CLI tool that create the manifests given a corpus directory.
     - :func:`lhotse.recipes.prepare_vctk`
   * - VoxCeleb
     - :func:`lhotse.recipes.prepare_voxceleb`
+  * - WenetSpeech
+    - :func:`lhotse.recipes.prepare_wenet_speech`
   * - YesNo
     - :func:`lhotse.recipes.prepare_yesno`
 

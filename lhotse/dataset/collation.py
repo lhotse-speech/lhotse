@@ -208,6 +208,9 @@ def collate_custom_field(
         to the longest one found in the mini-batch. Because of that, the function
         will work correctly even if the user supplied inconsistent meta-data.
 
+    .. note:: Temporal arrays of integer type that are smaller than torch.int64,
+        will be automatically promoted to torch.int64.
+
     :param cuts: a :class:`CutSet` used to load the features.
     :param field: name of the custom field to be retrieved.
     :param pad_value: value to be used for padding the temporal arrays.
@@ -252,7 +255,10 @@ def collate_custom_field(
         largest_arr = max(arrs, key=torch.numel)
         maxlen = largest_arr.shape[temporal_dim]
         collated_shape = (len(arrs), *largest_arr.shape)
-        tensors = pad_value * torch.ones(collated_shape, dtype=largest_arr.dtype)
+        dtype = largest_arr.dtype
+        if any(d == dtype for d in (torch.uint8, torch.int8, torch.int16, torch.int32)):
+            dtype = torch.int64
+        tensors = pad_value * torch.ones(collated_shape, dtype=dtype)
         for aidx, a in enumerate(arrs):
             alen = a.shape[temporal_dim]
             # Construct an index expression such as tensors[:, :alen, :, :] programmatically;

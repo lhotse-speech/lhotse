@@ -6,7 +6,8 @@ from concurrent.futures import Executor, ProcessPoolExecutor
 from dataclasses import dataclass, field
 from functools import partial, reduce
 from itertools import chain, islice
-from math import ceil, floor
+from math import ceil, floor, isclose
+from operator import add
 from pathlib import Path
 from typing import (
     Any,
@@ -52,6 +53,7 @@ from lhotse.utils import (
     Seconds,
     SetContainingAnything,
     TimeSpan,
+    add_durations,
     asdict_nonull,
     compute_num_frames,
     compute_num_samples,
@@ -228,7 +230,9 @@ class Cut:
     perturb_volume: Callable
     reverb_rir: Callable
     map_supervisions: Callable
+    merge_supervisions: Callable
     filter_supervisions: Callable
+    fill_supervision: Callable
     with_features_path_prefix: Callable
     with_recording_path_prefix: Callable
 
@@ -975,6 +979,57 @@ class MonoCut(Cut):
         """Return a copy of the current :class:`.MonoCut`, detached from ``supervisions``."""
         return fastcopy(self, supervisions=[])
 
+    def fill_supervision(
+        self, add_empty: bool = True, shrink_ok: bool = False
+    ) -> "MonoCut":
+        """
+        Fills the whole duration of a cut with a supervision segment.
+
+        If the cut has one supervision, its start is set to 0 and duration is set to ``cut.duration``.
+        Note: this may either expand a supervision that was shorter than a cut, or shrink a supervision
+        that exceeds the cut.
+
+        If there are no supervisions, we will add an empty one when ``add_empty==True``, otherwise
+        we won't change anything.
+
+        If there are two or more supervisions, we will raise an exception.
+
+        :param add_empty: should we add an empty supervision with identical time bounds as the cut.
+        :param shrink_ok: should we raise an error if a supervision would be shrank as a result
+            of calling this method.
+        """
+        if len(self.supervisions) == 0:
+            if not add_empty:
+                return self
+            sups = [
+                SupervisionSegment(
+                    id=self.id,
+                    recording_id=self.recording_id,
+                    start=0,
+                    duration=self.duration,
+                    channel=self.channel,
+                )
+            ]
+        else:
+            assert (
+                len(self.supervisions) == 1
+            ), f"Cannot expand more than one supervision (found {len(self.supervisions)}."
+            old_sup = self.supervisions[0]
+            if isclose(old_sup.start, 0) and isclose(old_sup.duration, self.duration):
+                return self
+            if old_sup.start < 0 or old_sup.end > self.end and not shrink_ok:
+                raise ValueError(
+                    f"Cannot shrink supervision (start={old_sup.start}, end={old_sup.end}) to cut "
+                    f"(start=0, duration={self.duration}) because the argument `shrink_ok` is `False`. "
+                    f"Note: this check prevents accidental data loss for speech recognition, "
+                    f"as supervision exceeding a cut indicates there might be some spoken content "
+                    f"beyond cuts start or end (an ASR model would be trained to predict more text than "
+                    f"spoken in the audio). If this is okay, set `shrink_ok` to `True`."
+                )
+            sups = [fastcopy(old_sup, start=0, duration=self.duration)]
+
+        return fastcopy(self, supervisions=sups)
+
     def compute_and_store_features(
         self,
         extractor: FeatureExtractor,
@@ -1033,6 +1088,9 @@ class MonoCut(Cut):
         # Note: technically, truncate's code can be used for "expanding" the cut as well:
         #       In that case, we must ensure that the start of MonoCut is not before the start
         #       of the actual Recording, hence max(..., 0).
+        assert (
+            offset >= 0
+        ), f"Offset for truncate must be non-negative (provided {offset})."
         new_start = max(self.start + offset, 0)
         until = offset + (duration if duration is not None else self.duration)
         new_duration = self.duration - new_start if duration is None else until - offset
@@ -1334,9 +1392,9 @@ class MonoCut(Cut):
 
     def map_supervisions(
         self, transform_fn: Callable[[SupervisionSegment], SupervisionSegment]
-    ) -> Cut:
+    ) -> "MonoCut":
         """
-        Modify the SupervisionSegments by `transform_fn` of this MonoCut.
+        Return a copy of the cut that has its supervisions transformed by ``transform_fn``.
 
         :param transform_fn: a function that modifies a supervision as an argument.
         :return: a modified MonoCut.
@@ -1348,11 +1406,12 @@ class MonoCut(Cut):
 
     def filter_supervisions(
         self, predicate: Callable[[SupervisionSegment], bool]
-    ) -> Cut:
+    ) -> "MonoCut":
         """
-        Modify cut to store only supervisions accepted by `predicate`
+        Return a copy of the cut that only has supervisions accepted by ``predicate``.
 
-        Example:
+        Example::
+
             >>> cut = cut.filter_supervisions(lambda s: s.id in supervision_ids)
             >>> cut = cut.filter_supervisions(lambda s: s.duration < 5.0)
             >>> cut = cut.filter_supervisions(lambda s: s.text is not None)
@@ -1364,6 +1423,29 @@ class MonoCut(Cut):
             self, supervisions=[s for s in self.supervisions if predicate(s)]
         )
         return new_cut
+
+    def merge_supervisions(
+        self, custom_merge_fn: Optional[Callable[[str, Iterable[Any]], Any]] = None
+    ) -> "MonoCut":
+        """
+        Return a copy of the cut that has all of its supervisions merged into
+        a single segment.
+
+        The new start is the start of the earliest superivion, and the new duration
+        is a minimum spanning duration for all the supervisions.
+
+        The text fields are concatenated with a whitespace, and all other string fields
+        (including IDs) are prefixed with "cat#" and concatenated with a hash symbol "#".
+        This is also applied to ``custom`` fields. Fields with a ``None`` value are omitted.
+
+        :param custom_merge_fn: a function that will be called to merge custom fields values.
+            We expect ``custom_merge_fn`` to handle all possible custom keys.
+            When not provided, we will treat all custom values as strings.
+            It will be called roughly like:
+            ``custom_merge_fn(custom_key, [s.custom[custom_key] for s in sups])``
+        """
+        # "m" stands for merged in variable names below
+        return merge_supervisions(self, custom_merge_fn=custom_merge_fn)
 
     @staticmethod
     def from_dict(data: dict) -> "MonoCut":
@@ -1451,6 +1533,10 @@ class PaddingCut(Cut):
     @property
     def has_recording(self) -> bool:
         return self.num_samples is not None
+
+    @property
+    def recording_id(self) -> str:
+        return "PAD"
 
     # noinspection PyUnusedLocal
     def load_features(self, *args, **kwargs) -> Optional[np.ndarray]:
@@ -1703,20 +1789,34 @@ class PaddingCut(Cut):
             frame_shift=extractor.frame_shift,
         )
 
-    def map_supervisions(self, transform_fn: Callable[[Any], Any]) -> Cut:
+    def fill_supervision(self, *args, **kwargs) -> "PaddingCut":
         """
-        Just for consistency with `MonoCut` and `MixedCut`.
+        Just for consistency with :class`.MonoCut` and :class:`.MixedCut`.
+        """
+        return self
+
+    def map_supervisions(self, transform_fn: Callable[[Any], Any]) -> "PaddingCut":
+        """
+        Just for consistency with :class:`.MonoCut` and :class:`.MixedCut`.
 
         :param transform_fn: a dummy function that would be never called actually.
         :return: the PaddingCut itself.
         """
         return self
 
+    def merge_supervisions(self, *args, **kwargs) -> "PaddingCut":
+        """
+        Just for consistency with :class:`.MonoCut` and :class:`.MixedCut`.
+
+        :return: the PaddingCut itself.
+        """
+        return self
+
     def filter_supervisions(
         self, predicate: Callable[[SupervisionSegment], bool]
-    ) -> Cut:
+    ) -> "PaddingCut":
         """
-        Just for consistency with `MonoCut` and `MixedCut`.
+        Just for consistency with :class:`.MonoCut` and :class:`.MixedCut`.
 
         :param predicate: A callable that accepts `SupervisionSegment` and returns bool
         :return: a modified MonoCut
@@ -1996,6 +2096,9 @@ class MixedCut(Cut):
         :return: a new MixedCut instance.
         """
 
+        assert (
+            offset >= 0
+        ), f"Offset for truncate must be non-negative (provided {offset})."
         new_tracks = []
         old_duration = self.duration
         new_mix_end = old_duration - offset if duration is None else offset + duration
@@ -2495,6 +2598,91 @@ class MixedCut(Cut):
             ]
             return MixedCut(id=self.id, tracks=new_tracks)
 
+    def fill_supervision(
+        self, add_empty: bool = True, shrink_ok: bool = False
+    ) -> "MixedCut":
+        """
+        Fills the whole duration of a cut with a supervision segment.
+
+        If the cut has one supervision, its start is set to 0 and duration is set to ``cut.duration``.
+        Note: this may either expand a supervision that was shorter than a cut, or shrink a supervision
+        that exceeds the cut.
+
+        If there are no supervisions, we will add an empty one when ``add_empty==True``, otherwise
+        we won't change anything.
+
+        If there are two or more supervisions, we will raise an exception.
+
+        .. note:: For :class:`.MixedCut`, we expect that only one track contains a supervision.
+            That supervision will be expanded to cover the full MixedCut's duration.
+
+        :param add_empty: should we add an empty supervision with identical time bounds as the cut.
+        :param shrink_ok: should we raise an error if a supervision would be shrank as a result
+            of calling this method.
+        """
+        n_sups = len(self.supervisions)
+        if n_sups == 0:
+            if not add_empty:
+                return self
+            first_non_padding_idx = [
+                idx for idx, t in enumerate(self.tracks) if isinstance(t.cut, MonoCut)
+            ][0]
+            new_tracks = [
+                fastcopy(
+                    t,
+                    cut=fastcopy(
+                        t.cut,
+                        supervisions=[
+                            SupervisionSegment(
+                                id=self.id,
+                                recording_id=t.cut.recording_id,
+                                start=-t.offset,
+                                duration=self.duration,
+                                channel=-1,
+                            )
+                        ],
+                    ),
+                )
+                if idx == first_non_padding_idx
+                else t
+                for idx, t in enumerate(self.tracks)
+            ]
+        else:
+            assert (
+                n_sups == 1
+            ), f"Cannot expand more than one supervision (found {len(self.supervisions)}."
+            new_tracks = []
+            for t in self.tracks:
+                if len(t.cut.supervisions) == 0:
+                    new_tracks.append(t)
+                else:
+                    sup = t.cut.supervisions[0]
+                    if not shrink_ok and (
+                        sup.start < -t.offset or sup.end > self.duration
+                    ):
+                        raise ValueError(
+                            f"Cannot shrink supervision (start={sup.start}, end={sup.end}) to cut "
+                            f"(start=0, duration={t.cut.duration}) because the argument `shrink_ok` is `False`. "
+                            f"Note: this check prevents accidental data loss for speech recognition, "
+                            f"as supervision exceeding a cut indicates there might be some spoken content "
+                            f"beyond cuts start or end (an ASR model would be trained to predict more text than "
+                            f"spoken in the audio). If this is okay, set `shrink_ok` to `True`."
+                        )
+                    new_tracks.append(
+                        fastcopy(
+                            t,
+                            cut=fastcopy(
+                                t.cut,
+                                supervisions=[
+                                    fastcopy(
+                                        sup, start=-t.offset, duration=self.duration
+                                    )
+                                ],
+                            ),
+                        )
+                    )
+        return fastcopy(self, tracks=new_tracks)
+
     def map_supervisions(
         self, transform_fn: Callable[[SupervisionSegment], SupervisionSegment]
     ) -> Cut:
@@ -2510,6 +2698,32 @@ class MixedCut(Cut):
                 segment.map(transform_fn) for segment in track.cut.supervisions
             ]
         return new_mixed_cut
+
+    def merge_supervisions(
+        self, custom_merge_fn: Optional[Callable[[str, Iterable[Any]], Any]] = None
+    ) -> "MixedCut":
+        """
+        Return a copy of the cut that has all of its supervisions merged into
+        a single segment.
+
+        The new start is the start of the earliest superivion, and the new duration
+        is a minimum spanning duration for all the supervisions.
+
+        The text fields are concatenated with a whitespace, and all other string fields
+        (including IDs) are prefixed with "cat#" and concatenated with a hash symbol "#".
+        This is also applied to ``custom`` fields. Fields with a ``None`` value are omitted.
+
+        .. note:: If you're using individual tracks of a mixed cut, note that this transform
+             drops all the supervisions in individual tracks and assigns the merged supervision
+             in the first :class:`.MonoCut` found in ``self.tracks``.
+
+        :param custom_merge_fn: a function that will be called to merge custom fields values.
+            We expect ``custom_merge_fn`` to handle all possible custom keys.
+            When not provided, we will treat all custom values as strings.
+            It will be called roughly like:
+            ``custom_merge_fn(custom_key, [s.custom[custom_key] for s in sups])``
+        """
+        return merge_supervisions(self, custom_merge_fn=custom_merge_fn)
 
     def filter_supervisions(
         self, predicate: Callable[[SupervisionSegment], bool]
@@ -2773,6 +2987,8 @@ class CutSet(Serializable, Sequence[Cut]):
     def from_cuts(cuts: Iterable[Cut]) -> "CutSet":
         return CutSet(cuts=index_by_id_and_check(cuts))
 
+    from_items = from_cuts
+
     @staticmethod
     def from_manifests(
         recordings: Optional[RecordingSet] = None,
@@ -2842,6 +3058,61 @@ class CutSet(Serializable, Sequence[Cut]):
 
     def to_dicts(self) -> Iterable[dict]:
         return (cut.to_dict() for cut in self)
+
+    def decompose(
+        self, output_dir: Optional[Pathlike] = None, verbose: bool = False
+    ) -> Tuple[Optional[RecordingSet], Optional[SupervisionSet], Optional[FeatureSet]]:
+        """
+        Return a 3-tuple of unique (recordings, supervisions, features) found in
+        this :class:`CutSet`. Some manifest sets may also be ``None``, e.g.,
+        if features were not extracted.
+
+        .. note:: :class:`.MixedCut` is iterated over its track cuts.
+
+        :param output_dir: directory where the manifests will be saved.
+            The following files will be created: 'recordings.jsonl.gz',
+            'supervisions.jsonl.gz', 'features.jsonl.gz'.
+        :param verbose: when ``True``, shows a progress bar.
+        """
+        if output_dir is not None:
+            output_dir = Path(output_dir)
+            output_dir.mkdir(parents=True, exist_ok=True)
+
+        stored_rids = set()
+        stored_sids = set()
+
+        with RecordingSet.open_writer(
+            output_dir / "recordings.jsonl.gz" if output_dir is not None else None
+        ) as rw, SupervisionSet.open_writer(
+            output_dir / "supervisions.jsonl.gz" if output_dir is not None else None
+        ) as sw, FeatureSet.open_writer(
+            output_dir / "features.jsonl.gz" if output_dir is not None else None
+        ) as fw:
+
+            def save(mono_cut: MonoCut):
+                if mono_cut.has_recording and mono_cut.recording_id not in stored_rids:
+                    rw.write(mono_cut.recording)
+                    stored_rids.add(mono_cut.recording_id)
+                if mono_cut.has_features:
+                    # Note: we have no way of saying if features are unique,
+                    #       so we will always write them.
+                    fw.write(mono_cut.features)
+                for sup in mono_cut.supervisions:
+                    if sup.id not in stored_sids:
+                        # Supervisions inside cuts are relative to cuts start,
+                        # so we correct the offset.
+                        sw.write(sup.with_offset(mono_cut.start))
+                        stored_sids.add(sup.id)
+
+            for cut in tqdm(self, desc="Decomposing cuts") if verbose else self:
+                if isinstance(cut, MonoCut):
+                    save(cut)
+                elif isinstance(cut, MixedCut):
+                    for track in cut.tracks:
+                        if isinstance(track.cut, MonoCut):
+                            save(track.cut)
+
+        return rw.open_manifest(), sw.open_manifest(), fw.open_manifest()
 
     def describe(self) -> None:
         """
@@ -3003,6 +3274,30 @@ class CutSet(Serializable, Sequence[Cut]):
         :return: a CutSet with filtered supervisions
         """
         return CutSet.from_cuts(cut.filter_supervisions(predicate) for cut in self)
+
+    def merge_supervisions(
+        self, custom_merge_fn: Optional[Callable[[str, Iterable[Any]], Any]] = None
+    ) -> "CutSet":
+        """
+        Return a copy of the cut that has all of its supervisions merged into
+        a single segment.
+
+        The new start is the start of the earliest superivion, and the new duration
+        is a minimum spanning duration for all the supervisions.
+
+        The text fields are concatenated with a whitespace, and all other string fields
+        (including IDs) are prefixed with "cat#" and concatenated with a hash symbol "#".
+        This is also applied to ``custom`` fields. Fields with a ``None`` value are omitted.
+
+        :param custom_merge_fn: a function that will be called to merge custom fields values.
+            We expect ``custom_merge_fn`` to handle all possible custom keys.
+            When not provided, we will treat all custom values as strings.
+            It will be called roughly like:
+            ``custom_merge_fn(custom_key, [s.custom[custom_key] for s in sups])``
+        """
+        return CutSet.from_cuts(
+            c.merge_supervisions(custom_merge_fn=custom_merge_fn) for c in self
+        )
 
     def filter(self, predicate: Callable[[Cut], bool]) -> "CutSet":
         """
@@ -3716,10 +4011,12 @@ class CutSet(Serializable, Sequence[Cut]):
         self,
         extractor: FeatureExtractor,
         storage_path: Pathlike,
+        manifest_path: Optional[Pathlike] = None,
         batch_duration: Seconds = 600.0,
         num_workers: int = 4,
         augment_fn: Optional[AugmentFn] = None,
         storage_type: Type[FW] = LilcomHdf5Writer,
+        overwrite: bool = False,
     ) -> "CutSet":
         """
         Extract features for all cuts in batches.
@@ -3751,6 +4048,9 @@ class CutSet(Serializable, Sequence[Cut]):
         :param storage_path: The path to location where we will store the features.
             The exact type and layout of stored files will be dictated by the
             ``storage_type`` argument.
+        :param manifest_path: Optional path where to write the CutSet manifest
+            with attached feature manifests. If not specified, we will be keeping
+            all manifests in memory.
         :param batch_duration: The maximum number of audio seconds in a batch.
             Determines batch size dynamically.
         :param num_workers: How many background dataloading workers should be used
@@ -3763,6 +4063,8 @@ class CutSet(Serializable, Sequence[Cut]):
         :param storage_type: a ``FeaturesWriter`` subclass type.
             It determines how the features are stored to disk,
             e.g. separate file per array, HDF5 files with multiple arrays, etc.
+        :param overwrite: should we overwrite the manifest, HDF5 files, etc.
+            By default, this method will append to these files if they exist.
         :return: Returns a new ``CutSet`` with ``Features`` manifests attached to the cuts.
         """
         import torch
@@ -3771,16 +4073,29 @@ class CutSet(Serializable, Sequence[Cut]):
         from lhotse.qa import validate_features
 
         frame_shift = extractor.frame_shift
-        dataset = UnsupervisedWaveformDataset(collate=False)
+
+        # We're opening a sequential cuts writer that can resume previously interrupted
+        # operation. It scans the input JSONL file for cut IDs that should be ignored.
+        # Note: this only works when ``manifest_path`` argument was specified, otherwise
+        # we hold everything in memory and start from scratch.
+        cuts_writer = CutSet.open_writer(manifest_path, overwrite=overwrite)
+
+        # We tell the sampler to ignore cuts that were already processed.
+        # It will avoid I/O for reading them in the DataLoader.
         sampler = SingleCutSampler(self, max_duration=batch_duration)
+        sampler.filter(lambda cut: cut.id not in cuts_writer.ignore_ids)
+        dataset = UnsupervisedWaveformDataset(collate=False)
         dloader = DataLoader(
             dataset, batch_size=None, sampler=sampler, num_workers=num_workers
         )
 
-        cuts_with_feats = []
-        with storage_type(storage_path) as writer, tqdm(
+        with cuts_writer, storage_type(
+            storage_path, mode="w" if overwrite else "a"
+        ) as feats_writer, tqdm(
             desc="Computing features in batches", total=sampler.num_cuts
         ) as progress:
+            # Display progress bar correctly.
+            progress.update(len(cuts_writer.ignore_ids))
             for batch in dloader:
                 cuts = batch["cuts"]
                 waves = batch["audio"]
@@ -3792,9 +4107,6 @@ class CutSet(Serializable, Sequence[Cut]):
                     waves = [
                         augment_fn(w, c.sampling_rate) for c, w in zip(cuts, waves)
                     ]
-
-                # Move the audio data to the right device.
-                waves = [w.to(extractor.device) for w in waves]
 
                 # The actual extraction is here.
                 with torch.no_grad():
@@ -3808,7 +4120,7 @@ class CutSet(Serializable, Sequence[Cut]):
                     if isinstance(cut, PaddingCut):
                         # For padding cuts, just fill out the fields in the manfiest
                         # and don't store anything.
-                        cuts_with_feats.append(
+                        cuts_writer.write(
                             fastcopy(
                                 cut,
                                 num_frames=feat_mtx.shape[0],
@@ -3820,7 +4132,7 @@ class CutSet(Serializable, Sequence[Cut]):
                     # Store the computed features and describe them in a manifest.
                     if isinstance(feat_mtx, torch.Tensor):
                         feat_mtx = feat_mtx.cpu().numpy()
-                    storage_key = writer.write(cut.id, feat_mtx)
+                    storage_key = feats_writer.write(cut.id, feat_mtx)
                     feat_manifest = Features(
                         start=cut.start,
                         duration=cut.duration,
@@ -3830,8 +4142,8 @@ class CutSet(Serializable, Sequence[Cut]):
                         frame_shift=frame_shift,
                         sampling_rate=cut.sampling_rate,
                         channels=0,
-                        storage_type=writer.name,
-                        storage_path=str(writer.storage_path),
+                        storage_type=feats_writer.name,
+                        storage_path=str(feats_writer.storage_path),
                         storage_key=storage_key,
                     )
                     validate_features(feat_manifest, feats_data=feat_mtx)
@@ -3852,11 +4164,13 @@ class CutSet(Serializable, Sequence[Cut]):
                             features=feat_manifest,
                             recording=None,
                         )
-                    cuts_with_feats.append(cut)
+                    cuts_writer.write(cut, flush=True)
 
                 progress.update(len(cuts))
 
-        return CutSet.from_cuts(cuts_with_feats)
+        # If ``manifest_path`` was provided, this is a lazy manifest;
+        # otherwise everything is in memory.
+        return cuts_writer.open_manifest()
 
     @deprecated(
         "CutSet.compute_and_store_recordings will be removed in a future release. Please use save_audios() instead."
@@ -4070,6 +4384,30 @@ class CutSet(Serializable, Sequence[Cut]):
         :return: a new ``CutSet`` with cuts with modified IDs.
         """
         return CutSet.from_cuts(c.with_id(transform_fn(c.id)) for c in self)
+
+    def fill_supervisions(
+        self, add_empty: bool = True, shrink_ok: bool = False
+    ) -> "CutSet":
+        """
+        Fills the whole duration of each cut in a :class:`.CutSet` with a supervision segment.
+
+        If the cut has one supervision, its start is set to 0 and duration is set to ``cut.duration``.
+        Note: this may either expand a supervision that was shorter than a cut, or shrink a supervision
+        that exceeds the cut.
+
+        If there are no supervisions, we will add an empty one when ``add_empty==True``, otherwise
+        we won't change anything.
+
+        If there are two or more supervisions, we will raise an exception.
+
+        :param add_empty: should we add an empty supervision with identical time bounds as the cut.
+        :param shrink_ok: should we raise an error if a supervision would be shrank as a result
+            of calling this method.
+        """
+        return CutSet.from_cuts(
+            cut.fill_supervision(add_empty=add_empty, shrink_ok=shrink_ok)
+            for cut in self
+        )
 
     def map_supervisions(
         self, transform_fn: Callable[[SupervisionSegment], SupervisionSegment]
@@ -4729,3 +5067,122 @@ def create_cut_set_lazy(
                 writer.write(cut)
 
     return CutSet.from_jsonl_lazy(output_path)
+
+
+def merge_supervisions(
+    cut: Cut, custom_merge_fn: Optional[Callable[[str, Iterable[Any]], Any]] = None
+) -> Cut:
+    """
+    Return a copy of the cut that has all of its supervisions merged into
+    a single segment.
+
+    The new start is the start of the earliest superivion, and the new duration
+    is a minimum spanning duration for all the supervisions.
+
+    The text fields are concatenated with a whitespace, and all other string fields
+    (including IDs) are prefixed with "cat#" and concatenated with a hash symbol "#".
+    This is also applied to ``custom`` fields. Fields with a ``None`` value are omitted.
+
+    .. note:: If you're using individual tracks of a :class:`MixedCut`, note that this transform
+         drops all the supervisions in individual tracks and assigns the merged supervision
+         in the first :class:`.MonoCut` found in ``self.tracks``.
+
+    :param custom_merge_fn: a function that will be called to merge custom fields values.
+        We expect ``custom_merge_fn`` to handle all possible custom keys.
+        When not provided, we will treat all custom values as strings.
+        It will be called roughly like:
+        ``custom_merge_fn(custom_key, [s.custom[custom_key] for s in sups])``
+    """
+    # "m" stands for merged in variable names below
+
+    def merge(values: Iterable[str]) -> Optional[str]:
+        # e.g.
+        # values = ["1125-76840-0001", "1125-53670-0003"]
+        # return "cat#1125-76840-0001#1125-53670-0003"
+        values = list(values)
+        if len(values) == 0:
+            return None
+        if len(values) == 1:
+            return values[0]
+        return "#".join(chain(["cat"], values))
+
+    if custom_merge_fn is not None:
+        # Merge custom fields with the user-provided function.
+        merge_custom = custom_merge_fn
+    else:
+        # Merge the string representations of custom fields.
+        merge_custom = lambda k, vs: merge(map(str, vs))
+
+    if isinstance(cut, PaddingCut):
+        return cut
+
+    sups = sorted(cut.supervisions, key=lambda s: s.start)
+
+    if len(sups) <= 1:
+        return cut
+
+    # the sampling rate is arbitrary, ensures there are no float precision errors
+    mstart = sups[0].start
+    mend = sups[-1].end
+    mduration = add_durations(mend, -mstart, sampling_rate=cut.sampling_rate)
+
+    custom_keys = set(k for s in sups if s.custom is not None for k in s.custom.keys())
+    alignment_keys = set(
+        k for s in sups if s.alignment is not None for k in s.alignment.keys()
+    )
+
+    if any(overlaps(s1, s2) for s1, s2 in zip(sups, sups[1:])) and any(
+        s.text is not None for s in sups
+    ):
+        warnings.warn(
+            "You are merging overlapping supervisions that have text transcripts. "
+            "The result is likely to be unusable if you are going to train speech "
+            f"recognition models (cut id: {cut.id})."
+        )
+
+    is_mixed = isinstance(cut, MixedCut)
+
+    msup = SupervisionSegment(
+        id=merge(s.id for s in sups),
+        # For MixedCut, make merged recording_id is a mix of recording_ids.
+        # For MonoCut, the recording_id is always the same.
+        recording_id=merge(s.recording_id for s in sups)
+        if is_mixed
+        else sups[0].recording_id,
+        start=mstart,
+        duration=mduration,
+        # For MixedCut, hardcode -1 to indicate no specific channel,
+        # as the supervisions might have come from different channels
+        # in their original recordings.
+        # For MonoCut, the channel is always the same.
+        channel=-1 if is_mixed else sups[0].channel,
+        text=" ".join(s.text for s in sups if s.text),
+        speaker=merge(s.speaker for s in sups if s.speaker),
+        language=merge(s.language for s in sups if s.language),
+        gender=merge(s.gender for s in sups if s.gender),
+        custom={
+            k: merge_custom(
+                k, (s.custom[k] for s in sups if s.custom is not None and k in s.custom)
+            )
+            for k in custom_keys
+        },
+        alignment={
+            # Concatenate the lists of alignment units.
+            k: reduce(
+                add,
+                (
+                    s.alignment[k]
+                    for s in sups
+                    if s.alignment is not None and k in s.alignment
+                ),
+            )
+            for k in alignment_keys
+        },
+    )
+
+    if is_mixed:
+        new_cut = cut.drop_supervisions()
+        new_cut._first_non_padding_cut.supervisions = [msup]
+        return new_cut
+    else:
+        return fastcopy(cut, supervisions=[msup])

@@ -430,7 +430,8 @@ class ReverbWithImpulseResponse(AudioTransform):
                 power_after_reverb = (
                     np.sum(np.abs(augmented[d, :]) ** 2) / augmented.shape[1]
                 )
-                augmented[d, :] *= np.sqrt(power_before_reverb / power_after_reverb)
+                if power_after_reverb > 0:
+                    augmented[d, :] *= np.sqrt(power_before_reverb / power_after_reverb)
 
         return augmented
 

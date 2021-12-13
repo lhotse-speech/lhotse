@@ -1,13 +1,28 @@
 import pickle
+from pathlib import Path
 from tempfile import NamedTemporaryFile, TemporaryDirectory
 
 import numpy as np
 import pytest
 
-from lhotse import Features, Recording, SupervisionSegment
+from lhotse import (
+    FeatureSet,
+    Features,
+    Recording,
+    RecordingSet,
+    SupervisionSegment,
+    SupervisionSet,
+    load_manifest,
+)
 from lhotse.audio import AudioSource
 from lhotse.cut import CutSet, MixTrack, MixedCut, MonoCut
-from lhotse.testing.dummies import DummyManifest, remove_spaces_from_segment_text
+from lhotse.serialization import load_jsonl
+from lhotse.testing.dummies import (
+    DummyManifest,
+    dummy_cut,
+    dummy_supervision,
+    remove_spaces_from_segment_text,
+)
 from lhotse.utils import is_module_available
 
 
@@ -427,7 +442,7 @@ def test_cut_set_filter_supervisions(cut_set):
     train_ids = all_ids[:-1]
     test_ids = all_ids[-1:]
 
-    # filter based on sueprvision ids
+    # filter based on supervision ids
     train_set = cut_set.filter_supervisions(lambda s: s.id in train_ids)
     test_set = cut_set.filter_supervisions(lambda s: s.id in test_ids)
 
@@ -496,3 +511,92 @@ def test_cut_set_subset_cut_ids_preserves_order_with_lazy_manifest():
         assert cut1.id == "dummy-cut-0010"
         assert cut2.id == "dummy-cut-0171"
         assert cut3.id == "dummy-cut-0009"
+
+
+def test_cut_set_decompose():
+    c = dummy_cut(
+        0,
+        start=5.0,
+        duration=10.0,
+        supervisions=[dummy_supervision(0, start=0.0), dummy_supervision(1, start=6.5)],
+    )
+    assert c.start == 5.0
+    assert c.end == 15.0
+    cuts = CutSet.from_cuts([c])
+
+    recs, sups, feats = cuts.decompose()
+
+    assert isinstance(recs, RecordingSet)
+    assert len(recs) == 1
+    assert recs[0].id == "dummy-recording-0000"
+
+    assert isinstance(sups, SupervisionSet)
+    assert len(sups) == 2
+    assert sups[0].id == "dummy-segment-0000"
+    assert sups[0].start == 5.0
+    assert sups[0].end == 6.0
+    assert sups[1].id == "dummy-segment-0001"
+    assert sups[1].start == 11.5
+    assert sups[1].end == 12.5
+
+    assert isinstance(feats, FeatureSet)
+    assert len(feats) == 1
+
+
+def test_cut_set_decompose_doesnt_duplicate_recording():
+    c = dummy_cut(0)
+    c2 = dummy_cut(0)
+    c2.id = "dummy-cut-0001"  # override cut ID, retain identical recording ID as `c`
+    cuts = CutSet.from_cuts([c, c2])
+
+    recs, sups, feats = cuts.decompose()
+
+    assert isinstance(recs, RecordingSet)
+    # deduplicated recording
+    assert len(recs) == 1
+    assert recs[0].id == "dummy-recording-0000"
+
+    assert sups is None
+
+    assert isinstance(feats, FeatureSet)
+    # not deduplicated features
+    assert len(feats) == 2
+
+
+def test_cut_set_decompose_output_dir():
+    c = dummy_cut(
+        0,
+        start=5.0,
+        duration=10.0,
+        supervisions=[dummy_supervision(0, start=0.0), dummy_supervision(1, start=6.5)],
+    )
+    assert c.start == 5.0
+    assert c.end == 15.0
+    cuts = CutSet.from_cuts([c])
+
+    with TemporaryDirectory() as td:
+        td = Path(td)
+        recs, sups, feats = cuts.decompose(output_dir=td)
+        assert list(recs) == list(load_manifest(td / "recordings.jsonl.gz"))
+        assert list(sups) == list(load_manifest(td / "supervisions.jsonl.gz"))
+        assert list(feats) == list(load_manifest(td / "features.jsonl.gz"))
+
+
+def test_cut_set_decompose_output_dir_doesnt_duplicate_recording():
+    c = dummy_cut(0)
+    c2 = dummy_cut(0)
+    c2.id = "dummy-cut-0001"  # override cut ID, retain identical recording ID as `c`
+    cuts = CutSet.from_cuts([c, c2])
+
+    with TemporaryDirectory() as td:
+        td = Path(td)
+        cuts.decompose(output_dir=td)
+
+        text = load_jsonl(td / "recordings.jsonl.gz")
+        print(list(text))
+
+        recs = load_manifest(td / "recordings.jsonl.gz")
+        assert isinstance(recs, RecordingSet)
+        # deduplicated recording
+        assert len(recs) == 1
+        assert recs[0].id == "dummy-recording-0000"
