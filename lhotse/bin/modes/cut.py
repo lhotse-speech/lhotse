@@ -91,8 +91,8 @@ def simple(
             random uniformly samples a value between "left" and "right".""",
 )
 def trim_to_supervisions(
-    output_cuts: Pathlike,
     cuts: Pathlike,
+    output_cuts: Pathlike,
     keep_overlapping: bool,
     min_duration: Optional[float],
     context_direction: str,
