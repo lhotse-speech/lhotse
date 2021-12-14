@@ -61,6 +61,86 @@ def simple(
 
 
 @cut.command()
+@click.argument("cuts", type=click.Path(exists=True, dir_okay=False))
+@click.argument("output_cuts", type=click.Path())
+@click.option(
+    "--keep-overlapping/--discard-overlapping",
+    type=bool,
+    default=True,
+    help="""when `False`, it will discard parts of other supervisions that overlap with the
+            main supervision. In the illustration, it would discard `Sup2` in `Cut1` and `Sup1` in `Cut2`.""",
+)
+@click.option(
+    "-d",
+    "--min-duration",
+    type=float,
+    default=None,
+    help="""An optional duration in seconds; specifying this argument will extend the cuts
+            that would have been shorter than `min_duration` with actual acoustic context in the recording/features.
+            If there are supervisions present in the context, they are kept when `keep_overlapping` is true.
+            If there is not enough context, the returned cut will be shorter than `min_duration`.
+            If the supervision segment is longer than `min_duration`, the return cut will be longer.""",
+)
+@click.option(
+    "-c",
+    "--context-direction",
+    type=click.Choice(["center", "left", "right", "random"]),
+    default="center",
+    help="""Which direction should the cut be expanded towards to include context.
+            The value of "center" implies equal expansion to left and right;
+            random uniformly samples a value between "left" and "right".""",
+)
+def trim_to_supervisions(
+    cuts: Pathlike,
+    output_cuts: Pathlike,
+    keep_overlapping: bool,
+    min_duration: Optional[float],
+    context_direction: str,
+):
+    """
+    Splits each input cut into as many cuts as there are supervisions.
+    These cuts have identical start times and durations as the supervisions.
+    When there are overlapping supervisions, they can be kept or discarded with options.
+
+    \b
+    For example, the following cut:
+                Cut
+        |-----------------|
+         Sup1
+        |----|  Sup2
+           |-----------|
+
+    \b
+    is transformed into two cuts:
+         Cut1
+        |----|
+         Sup1
+        |----|
+           Sup2
+           |-|
+                Cut2
+           |-----------|
+           Sup1
+           |-|
+                Sup2
+           |-----------|
+    """
+    from lhotse.serialization import load_manifest_lazy_or_eager
+
+    cuts = load_manifest_lazy_or_eager(cuts)
+
+    with CutSet.open_writer(output_cuts) as writer:
+        for c in cuts:
+            subcuts = c.trim_to_supervisions(
+                keep_overlapping=keep_overlapping,
+                min_duration=min_duration,
+                context_direction=context_direction,
+            )
+            for sc in subcuts:
+                writer.write(sc)
+
+
+@cut.command()
 @click.argument("feature_manifest", type=click.Path(exists=True, dir_okay=False))
 @click.argument("output_cut_manifest", type=click.Path())
 @click.option(
