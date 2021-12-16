@@ -40,9 +40,7 @@ from lhotse.augmentation import (
 from lhotse.caching import dynamic_lru_cache
 from lhotse.serialization import Serializable
 from lhotse.utils import (
-    AudioLoadingError,
     Decibels,
-    DurationMismatchError,
     NonPositiveEnergyError,
     Pathlike,
     Seconds,
@@ -60,7 +58,6 @@ from lhotse.utils import (
 )
 
 Channels = Union[int, List[int]]
-
 
 _DEFAULT_LHOTSE_AUDIO_DURATION_MISMATCH_TOLERANCE: Seconds = 1e-3
 LHOTSE_AUDIO_DURATION_MISMATCH_TOLERANCE: Seconds = (
@@ -1609,3 +1606,11 @@ def read_sph(
         audio = audio.reshape(1, -1) if sf_desc.channels == 1 else audio.T
 
     return audio, sampling_rate
+
+
+class AudioLoadingError(Exception):
+    pass
+
+
+class DurationMismatchError(Exception):
+    pass

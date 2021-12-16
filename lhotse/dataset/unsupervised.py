@@ -4,11 +4,12 @@ from typing import Any, Dict, Optional
 import torch
 
 from lhotse import validate
+from lhotse.audio import AudioLoadingError, DurationMismatchError
 from lhotse.augmentation import AugmentFn
 from lhotse.cut import CutSet
 from lhotse.dataset.collation import collate_audio, collate_features, collate_matrices
 from lhotse.features import FeatureExtractor
-from lhotse.utils import AudioLoadingError, DurationMismatchError
+from lhotse.utils import suppress_and_warn
 
 
 class UnsupervisedDataset(torch.utils.data.Dataset):
@@ -72,19 +73,9 @@ class UnsupervisedWaveformDataset(UnsupervisedDataset):
             remain_cuts = []
             remain_audios = []
             for c in cuts:
-                try:
+                with suppress_and_warn(AudioLoadingError, DurationMismatchError):
                     remain_audios.append(c.load_audio())
                     remain_cuts.append(c)
-                except AudioLoadingError as e:
-                    warnings.warn(
-                        f"AudioLoadingError for {c} \nError messages: {e} \nSkipping this cut."
-                    )
-                    continue
-                except DurationMismatchError as e:
-                    warnings.warn(
-                        f"DurationMismatchError for {c} \nError messages: {e} \nSkipping this cut."
-                    )
-                    continue
             return {"cuts": CutSet.from_cuts(remain_cuts), "audio": remain_audios}
 
     def _validate(self, cuts: CutSet) -> None:
@@ -116,21 +107,11 @@ class DynamicUnsupervisedDataset(UnsupervisedDataset):
 
         def generate_cut(cuts: CutSet):
             for cut in cuts:
-                try:
+                with suppress_and_warn(AudioLoadingError, DurationMismatchError):
                     yield cut.compute_features(
                         extractor=self.feature_extractor,
                         augment_fn=self.augment_fn,
                     )
-                except AudioLoadingError as e:
-                    warnings.warn(
-                        f"AudioLoadingError for {cut} \nError messages: {e} \nSkipping this cut."
-                    )
-                    continue
-                except DurationMismatchError as e:
-                    warnings.warn(
-                        f"DurationMismatchError for {cut} \nError messages: {e} \nSkipping this cut."
-                    )
-                    continue
 
         features = collate_matrices(generate_cut(cuts))
         return features

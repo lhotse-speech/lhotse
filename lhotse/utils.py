@@ -39,7 +39,6 @@ EPSILON = 1e-10
 LOG_EPSILON = math.log(EPSILON)
 DEFAULT_PADDING_VALUE = 0  # used for custom attrs
 
-
 # This is a utility that generates uuid4's and is set when the user calls
 # the ``fix_random_seed`` function.
 # Python's uuid module is not affected by the ``random.seed(value)`` call,
@@ -634,9 +633,29 @@ def deprecated(message):
     return decorator
 
 
-class AudioLoadingError(Exception):
-    pass
+class suppress_and_warn:
+    """Context manager to suppress specified exceptions that logs the error message.
 
+    After the exception is suppressed, execution proceeds with the next
+    statement following the with statement.
 
-class DurationMismatchError(Exception):
-    pass
+         with warn_and_suppress(FileNotFoundError):
+             os.remove(somefile)
+         # Execution still resumes here if the file was already removed
+    """
+
+    def __init__(self, *exceptions):
+        self._exceptions = exceptions
+
+    def __enter__(self):
+        pass
+
+    def __exit__(self, exctype, excinst, exctb):
+        # Returning True from __exit__ in a context manager tells Python
+        # to suppress an exception.
+        should_suppress = exctype is not None and issubclass(exctype, self._exceptions)
+        if should_suppress:
+            logging.warning(
+                f"[Suppressed {exctype.__qualname__}] Error message: {excinst}"
+            )
+        return should_suppress

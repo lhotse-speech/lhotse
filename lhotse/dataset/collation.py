@@ -7,8 +7,9 @@ import torch
 from torch.nn import CrossEntropyLoss
 
 from lhotse import CutSet
+from lhotse.audio import AudioLoadingError, DurationMismatchError
 from lhotse.cut import Cut, MixedCut
-from lhotse.utils import AudioLoadingError, DEFAULT_PADDING_VALUE, DurationMismatchError
+from lhotse.utils import DEFAULT_PADDING_VALUE, suppress_and_warn
 
 
 class TokenCollater:
@@ -157,28 +158,22 @@ def collate_audio(
     :return: a tuple of tensors ``(audio, audio_lens)``.
     """
     assert all(cut.has_recording for cut in cuts)
-    audio_lens = torch.tensor([cut.num_samples for cut in cuts], dtype=torch.int32)
+
+    audio_lens = []
+    for cut in cuts:
+        cut.original_num_samples = cut.num_samples
+        audio_lens.append(cut.num_samples)
+    audio_lens = torch.tensor(audio_lens, dtype=torch.int32)
+
     cuts = maybe_pad(cuts, num_samples=max(audio_lens).item(), direction=pad_direction)
-    first_cut = next(iter(cuts))
-    audio = torch.empty(len(cuts), first_cut.num_samples)
-    if executor is None:
-        for idx, cut in enumerate(cuts):
-            try:
-                audio[idx] = _read_audio(cut)
-            except AudioLoadingError as e:
-                warnings.warn(
-                    f"AudioLoadingError for {cut} \nError messages: {e} \nSkipping this cut."
-                )
-                continue
-            except DurationMismatchError as e:
-                warnings.warn(
-                    f"DurationMismatchError for {cut} \nError messages: {e} \nSkipping this cut."
-                )
-                continue
-    else:
-        for idx, example_audio in enumerate(executor.map(_read_audio, cuts)):
-            audio[idx] = example_audio
-    return audio, audio_lens
+
+    audios = read_audio_from_cuts(cuts, executor)
+
+    audios = torch.stack(audios)
+    audio_lens = torch.tensor(
+        [cut.original_num_samples for cut in cuts], dtype=torch.int32
+    )
+    return audios, audio_lens
 
 
 def collate_custom_field(
@@ -415,7 +410,14 @@ def read_audio_from_cuts(
     cuts: Iterable[Cut], executor: Optional[Executor] = None
 ) -> List[torch.Tensor]:
     map_fn = map if executor is None else executor.map
-    return list(map_fn(_read_audio, cuts))
+    audios = []
+    for idx, audio_or_none in enumerate(map_fn(_read_audio, cuts)):
+        if audio_or_none is None:
+            del cuts[cuts[idx].id]  # delete the problematic cut
+            continue
+        else:
+            audios.append(audio_or_none)
+    return audios
 
 
 def read_features_from_cuts(
@@ -425,8 +427,9 @@ def read_features_from_cuts(
     return list(map_fn(_read_features, cuts))
 
 
-def _read_audio(cut: Cut) -> torch.Tensor:
-    return torch.from_numpy(cut.load_audio()[0])
+def _read_audio(cut: Cut) -> Union[torch.Tensor, None]:
+    with suppress_and_warn(AudioLoadingError, DurationMismatchError):
+        return torch.from_numpy(cut.load_audio()[0])
 
 
 def _read_features(cut: Cut) -> torch.Tensor:
