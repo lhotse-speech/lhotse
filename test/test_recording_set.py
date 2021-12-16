@@ -6,7 +6,13 @@ import numpy as np
 import pytest
 from pytest import mark, raises
 
-from lhotse.audio import AudioMixer, AudioSource, Recording, RecordingSet
+from lhotse.audio import (
+    AudioMixer,
+    AudioSource,
+    Recording,
+    RecordingSet,
+    DurationMismatchError,
+)
 from lhotse.testing.dummies import DummyManifest
 from lhotse.utils import INT16MAX
 from lhotse.utils import fastcopy, nullcontext as does_not_raise
@@ -111,7 +117,7 @@ def test_get_audio_multichannel(
             10.0,
             "irrelevant",
             "irrelevant",
-            raises(ValueError),
+            raises(DurationMismatchError),
         ),  # requested more audio than available
     ],
 )
