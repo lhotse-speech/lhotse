@@ -415,6 +415,19 @@ def validate_supervision_set(supervisions: SupervisionSet, **kwargs) -> None:
     for s in supervisions:
         validate_supervision(s)
 
+    # Catch errors in data preparation:
+    # - more than one supervision for a given recording starts at 0
+    supervisions._index_by_recording_id_and_cache()
+    for rid, sups in supervisions._segments_by_recording_id.items():
+        cntr = 0
+        for s in sups:
+            cntr += int(s.start == 0)
+        if cntr > 1:
+            logging.warning(
+                f"SupervisionSet contains {cntr} supervisions that start at 0 for recording {rid}."
+                f"Did you forget to set supervision start times?"
+            )
+
 
 @register_validator
 def validate_feature_set(features: FeatureSet, read_data: bool = False) -> None:
