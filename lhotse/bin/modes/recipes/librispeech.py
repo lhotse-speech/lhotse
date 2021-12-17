@@ -54,4 +54,6 @@ def librispeech(
 )
 def librispeech(target_dir: Pathlike, full: bool):
     """(Mini) Librispeech download."""
-    download_librispeech(target_dir, dataset_parts="librispeech" if full else "mini_librispeech")
+    download_librispeech(
+        target_dir, dataset_parts="librispeech" if full else "mini_librispeech"
+    )
