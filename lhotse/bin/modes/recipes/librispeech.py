@@ -35,8 +35,8 @@ def librispeech(
     num_jobs: int,
 ):
     """(Mini) Librispeech ASR data preparation."""
-    if len(dataset_parts)==1:
-        dataset_parts=dataset_parts[0]
+    if len(dataset_parts) == 1:
+        dataset_parts = dataset_parts[0]
     prepare_librispeech(
         corpus_dir,
         output_dir=output_dir,
@@ -54,6 +54,4 @@ def librispeech(
 )
 def librispeech(target_dir: Pathlike, full: bool):
     """(Mini) Librispeech download."""
-    download_librispeech(
-        target_dir, dataset_parts="librispeech" if full else "mini_librispeech"
-    )
+    download_librispeech(target_dir, dataset_parts="librispeech" if full else "mini_librispeech")
