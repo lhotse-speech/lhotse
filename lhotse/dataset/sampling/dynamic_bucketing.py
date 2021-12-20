@@ -2,13 +2,75 @@ import random
 import warnings
 from bisect import bisect_right
 from collections import deque
-from typing import Deque, Generator, Iterable, List, Optional
+from itertools import islice
+from typing import Callable, Deque, Generator, Iterable, List, Optional
 
 import numpy as np
 
 from lhotse import CutSet, Seconds
 from lhotse.cut import Cut
-from lhotse.dataset.sampling.base import TimeConstraint
+from lhotse.dataset import streaming_shuffle
+from lhotse.dataset.sampling.base import CutSampler, TimeConstraint
+
+
+class DynamicBucketingSampler(CutSampler):
+    def __init__(
+        self,
+        cuts: CutSet,
+        max_duration: float,
+        num_buckets: int = 10,
+        shuffle: bool = False,
+        drop_last: bool = False,
+        **kwargs,
+    ):
+        super().__init__(**kwargs)
+        if not cuts.is_lazy:
+            warnings.warn(
+                "You are using DynamicBucketingSampler with eagerly read CutSet. "
+                "You won't see any benefits with that setup. "
+                "Either use 'CutSet.from_jsonl_lazy' to read the CutSet lazily, or use BucketingSampler instead."
+            )
+        self.cuts = cuts
+        self.max_duration = max_duration
+        self.shuffle = shuffle
+        self.drop_last = drop_last
+        self.rng = None
+
+        if self.shuffle:
+            cuts_for_bins_estimate = streaming_shuffle(cuts, rng=random.Random(seed))
+        else:
+            cuts_for_bins_estimate = cuts
+        self.duration_bins = estimate_duration_buckets(
+            islice(cuts_for_bins_estimate, 10000), num_buckets=num_buckets
+        )
+
+    def __iter__(self):
+        self.rng = random.Random(self.seed + self.epoch)
+        self.cuts_iter = dynamic_bucketing(
+            cuts=self.cuts,
+            duration_bins=self.duration_bins,
+            max_duration=self.max_duration,
+            drop_last=self.drop_last,
+            buffer_size=10000,
+            rng=self.rng,
+            filter_fn=self._filter_fn,
+        )
+        return self
+
+    def _next_batch(self):
+        return next(self.cuts_iter)
+
+    @property
+    def remaining_duration(self) -> Optional[float]:
+        return None
+
+    @property
+    def remaining_cuts(self) -> Optional[int]:
+        return None
+
+    @property
+    def num_cuts(self) -> Optional[int]:
+        return None
 
 
 def estimate_duration_buckets(cuts: Iterable[Cut], num_buckets: int) -> List[Seconds]:
@@ -53,6 +115,7 @@ def dynamic_bucketing(
     drop_last: bool = False,
     buffer_size: int = 10000,
     rng: random.Random = None,
+    filter_fn: Callable[[Cut], bool] = lambda x: True,
 ) -> Generator[CutSet, None, None]:
 
     if rng is None:
@@ -80,6 +143,7 @@ def dynamic_bucketing(
     cuts_iter = iter(cuts)
 
     def collect_cuts_in_buckets(n_cuts: int):
+        # TODO: support filter_fn here
         try:
             for _ in range(n_cuts):
                 cut = next(cuts_iter)
