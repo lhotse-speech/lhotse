@@ -2,7 +2,8 @@ import random
 
 from lhotse import CutSet
 from lhotse.dataset.sampling.dynamic_bucketing import (
-    DynamicBucketingSampler, estimate_duration_buckets,
+    DynamicBucketingSampler,
+    estimate_duration_buckets,
     dynamic_bucketing,
 )
 from lhotse.testing.dummies import DummyManifest
@@ -140,4 +141,3 @@ def test_dynamic_bucketing_sampler():
 
     assert len(batches[3]) == 1
     assert sum(c.duration for c in batches[3]) == 2
-

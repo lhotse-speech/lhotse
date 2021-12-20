@@ -37,7 +37,9 @@ class DynamicBucketingSampler(CutSampler):
         self.rng = None
 
         if self.shuffle:
-            cuts_for_bins_estimate = streaming_shuffle(cuts, rng=random.Random(seed))
+            cuts_for_bins_estimate = streaming_shuffle(
+                cuts, rng=random.Random(self.seed)
+            )
         else:
             cuts_for_bins_estimate = cuts
         self.duration_bins = estimate_duration_buckets(
