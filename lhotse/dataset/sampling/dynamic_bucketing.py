@@ -48,9 +48,14 @@ class DynamicBucketingSampler(CutSampler):
 
     def __iter__(self):
         self.rng = random.Random(self.seed + self.epoch)
+        # Initiate iteration
         self.cuts_iter = iter(self.cuts)
+        # Optionally shuffle
         if self.shuffle:
             self.cuts_iter = streaming_shuffle(self.cuts_iter, rng=self.rng)
+        # Apply filter predicate
+        self.cuts_iter = filter(self._filter_fn, self.cuts_iter)
+        # Convert Iterable[Cut] -> Iterable[CutSet]
         self.cuts_iter = dynamic_bucketing(
             cuts=self.cuts_iter,
             duration_bins=self.duration_bins,
@@ -58,7 +63,6 @@ class DynamicBucketingSampler(CutSampler):
             drop_last=self.drop_last,
             buffer_size=10000,
             rng=self.rng,
-            filter_fn=self._filter_fn,
         )
         return self
 
@@ -120,7 +124,6 @@ def dynamic_bucketing(
     drop_last: bool = False,
     buffer_size: int = 10000,
     rng: random.Random = None,
-    filter_fn: Callable[[Cut], bool] = lambda x: True,
 ) -> Generator[CutSet, None, None]:
 
     if rng is None:
@@ -148,7 +151,6 @@ def dynamic_bucketing(
     cuts_iter = iter(cuts)
 
     def collect_cuts_in_buckets(n_cuts: int):
-        # TODO: support filter_fn here
         try:
             for _ in range(n_cuts):
                 cut = next(cuts_iter)
