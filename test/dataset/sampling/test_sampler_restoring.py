@@ -9,6 +9,7 @@ from lhotse import CutSet
 from lhotse.dataset import (
     BucketingSampler,
     CutPairsSampler,
+    DynamicBucketingSampler,
     SingleCutSampler,
     ZipSampler,
 )
@@ -61,6 +62,17 @@ SAMPLERS_TO_TEST = [
         BucketingSampler(CUTS, max_duration=10.0, shuffle=True, drop_last=True, num_buckets=2),
         BucketingSampler(CUTS, num_buckets=2),
     ),
+    # Differently initialized BucketingSampler (using CutPairsSampler) with the same CUTS
+    (
+        BucketingSampler(CUTS, CUTS, max_source_duration=10.0, shuffle=True, drop_last=True, num_buckets=2,
+                         sampler_type=CutPairsSampler),
+        BucketingSampler(CUTS, CUTS, num_buckets=2, sampler_type=CutPairsSampler),
+    ),
+    pytest.param(
+        DynamicBucketingSampler(CUTS, max_duration=10.0, shuffle=True, drop_last=True, num_buckets=2),
+        DynamicBucketingSampler(CUTS, max_duration=10.0, num_buckets=2),
+        marks=pytest.mark.xfail(reason='DynamicBucketingSampler does not support resumption yet.')
+    )
 ]
 # fmt: on
 

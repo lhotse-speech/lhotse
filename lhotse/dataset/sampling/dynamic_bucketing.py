@@ -3,14 +3,14 @@ import warnings
 from bisect import bisect_right
 from collections import deque
 from itertools import islice
-from typing import Callable, Deque, Generator, Iterable, List, Optional
+from typing import Deque, Generator, Iterable, List, Optional
 
 import numpy as np
 
 from lhotse import CutSet, Seconds
 from lhotse.cut import Cut
-from lhotse.dataset import streaming_shuffle
-from lhotse.dataset.sampling.base import CutSampler, TimeConstraint
+from lhotse.dataset.sampling import streaming_shuffle
+from lhotse.dataset.sampling.base import CutSampler, SamplingDiagnostics, TimeConstraint
 
 
 class DynamicBucketingSampler(CutSampler):
@@ -22,7 +22,7 @@ class DynamicBucketingSampler(CutSampler):
         shuffle: bool = False,
         drop_last: bool = False,
         **kwargs,
-    ):
+    ) -> None:
         super().__init__(**kwargs)
         if not cuts.is_lazy:
             warnings.warn(
@@ -46,7 +46,7 @@ class DynamicBucketingSampler(CutSampler):
             islice(cuts_for_bins_estimate, 10000), num_buckets=num_buckets
         )
 
-    def __iter__(self):
+    def __iter__(self) -> "DynamicBucketingSampler":
         self.rng = random.Random(self.seed + self.epoch)
         # Initiate iteration
         self.cuts_iter = iter(self.cuts)
@@ -56,7 +56,7 @@ class DynamicBucketingSampler(CutSampler):
         # Apply filter predicate
         self.cuts_iter = filter(self._filter_fn, self.cuts_iter)
         # Convert Iterable[Cut] -> Iterable[CutSet]
-        self.cuts_iter = dynamic_bucketing(
+        self.cuts_iter = DynamicBucketer(
             cuts=self.cuts_iter,
             duration_bins=self.duration_bins,
             max_duration=self.max_duration,
@@ -64,9 +64,10 @@ class DynamicBucketingSampler(CutSampler):
             buffer_size=10000,
             rng=self.rng,
         )
+        self.cuts_iter = iter(self.cuts_iter)
         return self
 
-    def _next_batch(self):
+    def _next_batch(self) -> CutSet:
         return next(self.cuts_iter)
 
     @property
@@ -117,90 +118,102 @@ def estimate_duration_buckets(cuts: Iterable[Cut], num_buckets: int) -> List[Sec
     return bins
 
 
-def dynamic_bucketing(
-    cuts: Iterable[Cut],
-    duration_bins: List[Seconds],
-    max_duration: float,
-    drop_last: bool = False,
-    buffer_size: int = 10000,
-    rng: random.Random = None,
-) -> Generator[CutSet, None, None]:
+class DynamicBucketer:
+    def __init__(
+        self,
+        cuts: Iterable[Cut],
+        duration_bins: List[Seconds],
+        max_duration: float,
+        drop_last: bool = False,
+        buffer_size: int = 10000,
+        rng: random.Random = None,
+    ) -> None:
+        self.cuts = cuts
+        self.duration_bins = duration_bins
+        self.max_duration = max_duration
+        self.drop_last = drop_last
+        self.buffer_size = buffer_size
+        if rng is None:
+            rng = random.Random()
+        self.rng = rng
 
-    if rng is None:
-        rng = random.Random()
-
-    assert duration_bins == sorted(duration_bins), (
-        f"Argument list for 'duration_bins' is expected to be in "
-        f"sorted order (got: {duration_bins})."
-    )
-
-    # A heuristic diagnostic first, for finding the right settings.
-    mean_duration = np.mean(duration_bins)
-    expected_buffer_duration = buffer_size * mean_duration
-    expected_bucket_duration = expected_buffer_duration / (len(duration_bins) + 1)
-    if expected_bucket_duration < max_duration:
-        warnings.warn(
-            f"Your 'buffer_size' setting of {buffer_size} might be too low to satisfy "
-            f"a 'max_duration' of {max_duration} (given our best guess)."
+        assert duration_bins == sorted(duration_bins), (
+            f"Argument list for 'duration_bins' is expected to be in "
+            f"sorted order (got: {duration_bins})."
         )
 
-    # Init: create empty buckets (note: `num_buckets = len(duration_bins) + 1`).
-    buckets = [deque() for _ in range(len(duration_bins) + 1)]
+        # A heuristic diagnostic first, for finding the right settings.
+        mean_duration = np.mean(duration_bins)
+        expected_buffer_duration = buffer_size * mean_duration
+        expected_bucket_duration = expected_buffer_duration / (len(duration_bins) + 1)
+        if expected_bucket_duration < max_duration:
+            warnings.warn(
+                f"Your 'buffer_size' setting of {buffer_size} might be too low to satisfy "
+                f"a 'max_duration' of {max_duration} (given our best guess)."
+            )
 
-    # Init: sample `buffer_size` cuts and assign them to the right buckets.
-    cuts_iter = iter(cuts)
+        # Init: create empty buckets (note: `num_buckets = len(duration_bins) + 1`).
+        self.buckets = [deque() for _ in range(len(duration_bins) + 1)]
 
-    def collect_cuts_in_buckets(n_cuts: int):
+    def __iter__(self) -> Generator[CutSet, None, None]:
+        # Init: sample `buffer_size` cuts and assign them to the right buckets.
+        self.cuts_iter = iter(self.cuts)
+        self._collect_cuts_in_buckets(self.buffer_size)
+
+        # Init: determine which buckets are "ready"
+        def is_ready(bucket: Deque[Cut]):
+            tot = TimeConstraint(max_duration=self.max_duration)
+            for c in bucket:
+                tot.add(c)
+                if tot.close_to_exceeding():
+                    return True
+            return False
+
+        assert any(is_ready(bucket) for bucket in self.buckets)
+
+        # The iteration code starts here.
+        # On each step we're sampling a new batch.
         try:
-            for _ in range(n_cuts):
-                cut = next(cuts_iter)
-                bucket_idx = bisect_right(duration_bins, cut.duration)
-                buckets[bucket_idx].append(cut)
+            while True:
+                ready_buckets = [b for b in self.buckets if is_ready(b)]
+                if not ready_buckets:
+                    # No bucket has enough data to yield for the last full batch.
+                    non_empty_buckets = [b for b in self.buckets if b]
+                    if self.drop_last or len(non_empty_buckets) == 0:
+                        # Either the user requested only full batches, or we have nothing left.
+                        raise StopIteration()
+                    else:
+                        # Sample from partial batches that are left.
+                        ready_buckets = non_empty_buckets
+                # Choose a bucket to sample from.
+                # We'll only select from the buckets that have a full batch available.
+                sampling_bucket = self.rng.choice(ready_buckets)
+                # Sample one batch from that bucket and yield it to the caller.
+                batcher = DurationBatcher(
+                    sampling_bucket, max_duration=self.max_duration
+                )
+                batch = next(iter(batcher))
+                batch_size = len(batch)
+                yield batch
+                # Remove sampled cuts from the bucket.
+                for _ in range(batch_size):
+                    sampling_bucket.popleft()
+                # Fetch new cuts and add them to appropriate buckets.
+                self._collect_cuts_in_buckets(batch_size)
         except StopIteration:
             pass
 
-    collect_cuts_in_buckets(buffer_size)
+        # Cleanup.
+        self.cuts_iter = None
 
-    # Init: determine which buckets are "ready"
-    def is_ready(bucket: Deque[Cut]):
-        tot = TimeConstraint(max_duration=max_duration)
-        for c in bucket:
-            tot.add(c)
-            if tot.close_to_exceeding():
-                return True
-        return False
-
-    assert any(is_ready(bucket) for bucket in buckets)
-
-    # The iteration code starts here.
-    # On each step we're sampling a new batch.
-    try:
-        while True:
-            ready_buckets = [b for b in buckets if is_ready(b)]
-            if not ready_buckets:
-                # No bucket has enough data to yield for the last full batch.
-                non_empty_buckets = [b for b in buckets if b]
-                if drop_last or len(non_empty_buckets) == 0:
-                    # Either the user requested only full batches, or we have nothing left.
-                    raise StopIteration()
-                else:
-                    # Sample from partial batches that are left.
-                    ready_buckets = non_empty_buckets
-            # Choose a bucket to sample from.
-            # We'll only select from the buckets that have a full batch available.
-            sampling_bucket = rng.choice(ready_buckets)
-            # Sample one batch from that bucket and yield it to the caller.
-            batcher = DurationBatcher(sampling_bucket, max_duration=max_duration)
-            batch = next(iter(batcher))
-            batch_size = len(batch)
-            yield batch
-            # Remove sampled cuts from the bucket.
-            for _ in range(batch_size):
-                sampling_bucket.popleft()
-            # Fetch new cuts and add them to appropriate buckets.
-            collect_cuts_in_buckets(batch_size)
-    except StopIteration:
-        pass
+    def _collect_cuts_in_buckets(self, n_cuts: int):
+        try:
+            for _ in range(n_cuts):
+                cut = next(self.cuts_iter)
+                bucket_idx = bisect_right(self.duration_bins, cut.duration)
+                self.buckets[bucket_idx].append(cut)
+        except StopIteration:
+            pass
 
 
 # Note: this class is a subset of SingleCutSampler and is "datapipes" ready.
@@ -213,9 +226,7 @@ class DurationBatcher:
         max_duration: Seconds = None,
         max_cuts: Optional[int] = None,
         drop_last: bool = False,
-    ):
-        from lhotse.dataset.sampling.base import SamplingDiagnostics, TimeConstraint
-
+    ) -> None:
         self.datapipe = datapipe
         self.reuse_cuts_buffer = deque()
         self.drop_last = drop_last
@@ -225,7 +236,7 @@ class DurationBatcher:
             max_duration=max_duration, max_frames=max_frames, max_samples=max_samples
         )
 
-    def __iter__(self):
+    def __iter__(self) -> Generator[CutSet, None, None]:
         self.cuts_iter = iter(self.datapipe)
         try:
             while True:
@@ -234,7 +245,7 @@ class DurationBatcher:
             pass
         self.cuts_iter = None
 
-    def _collect_batch(self):
+    def _collect_batch(self) -> CutSet:
         self.time_constraint.reset()
         cuts = []
         while True:
