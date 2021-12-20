@@ -38,7 +38,7 @@ class DynamicBucketingSampler(CutSampler):
 
         if self.shuffle:
             cuts_for_bins_estimate = streaming_shuffle(
-                cuts, rng=random.Random(self.seed)
+                iter(cuts), rng=random.Random(self.seed)
             )
         else:
             cuts_for_bins_estimate = cuts
@@ -48,8 +48,11 @@ class DynamicBucketingSampler(CutSampler):
 
     def __iter__(self):
         self.rng = random.Random(self.seed + self.epoch)
+        self.cuts_iter = iter(self.cuts)
+        if self.shuffle:
+            self.cuts_iter = streaming_shuffle(self.cuts_iter, rng=self.rng)
         self.cuts_iter = dynamic_bucketing(
-            cuts=self.cuts,
+            cuts=self.cuts_iter,
             duration_bins=self.duration_bins,
             max_duration=self.max_duration,
             drop_last=self.drop_last,
