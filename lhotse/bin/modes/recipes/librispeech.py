@@ -35,6 +35,8 @@ def librispeech(
     num_jobs: int,
 ):
     """(Mini) Librispeech ASR data preparation."""
+    if len(dataset_parts) == 1:
+        dataset_parts = dataset_parts[0]
     prepare_librispeech(
         corpus_dir,
         output_dir=output_dir,
