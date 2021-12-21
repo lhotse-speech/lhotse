@@ -350,7 +350,9 @@ def test_dynamic_bucketing_sampler_cut_triplets():
         else:
             c.duration = 2
 
-    sampler = DynamicBucketingSampler(cuts, cuts, cuts, max_duration=5, num_buckets=2, seed=0)
+    sampler = DynamicBucketingSampler(
+        cuts, cuts, cuts, max_duration=5, num_buckets=2, seed=0
+    )
     batches = [b for b in sampler]
     sampled_cut_triplets = [cut_triplet for b in batches for cut_triplet in zip(*b)]
     cuts1 = [c1 for c1, c2, c3 in sampled_cut_triplets]
