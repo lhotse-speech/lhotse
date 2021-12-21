@@ -132,7 +132,7 @@ class SequentialJsonlWriter:
     """
 
     def __init__(self, path: Pathlike, overwrite: bool = True) -> None:
-        self.path = Path(path)
+        self.path = path
         if not extension_contains(".jsonl", self.path):
             raise InvalidPathExtension(
                 f"SequentialJsonlWriter supports only JSONL format (one JSON item per line), "
@@ -140,7 +140,7 @@ class SequentialJsonlWriter:
             )
         self.mode = "w"
         self.ignore_ids = set()
-        if self.path.is_file() and not overwrite:
+        if Path(self.path).is_file() and not overwrite:
             self.mode = "a"
             with open_best(self.path) as f:
                 self.ignore_ids = {
@@ -193,7 +193,7 @@ class SequentialJsonlWriter:
         The manifest is opened in a lazy mode.
         Returns ``None`` when the manifest is empty.
         """
-        if not self.path.exists():
+        if not Path(self.path).exists():
             return None
         if not self.file.closed:
             # If the user hasn't finished writing, make sure the latest
@@ -321,8 +321,8 @@ def grouper(n, iterable):
         yield chunk
 
 
-def extension_contains(ext: str, path: Path) -> bool:
-    return any(ext == sfx for sfx in path.suffixes)
+def extension_contains(ext: str, path: Pathlike) -> bool:
+    return any(ext == sfx for sfx in Path(path).suffixes)
 
 
 def load_manifest(path: Pathlike, manifest_cls: Optional[Type] = None) -> Manifest:
@@ -330,8 +330,6 @@ def load_manifest(path: Pathlike, manifest_cls: Optional[Type] = None) -> Manife
     from lhotse import CutSet, FeatureSet, RecordingSet, SupervisionSet
 
     # Determine the serialization format and read the raw data.
-    path = Path(path)
-    assert path.is_file(), f"No such path: {path}"
     if extension_contains(".jsonl", path):
         raw_data = load_jsonl(path)
         if manifest_cls is None:
@@ -345,7 +343,7 @@ def load_manifest(path: Pathlike, manifest_cls: Optional[Type] = None) -> Manife
     elif extension_contains(".yaml", path):
         raw_data = load_yaml(path)
     else:
-        raise ValueError(f"Not a valid manifest: {path}")
+        raise ValueError(f"Not a valid manifest (does the path exist?): {path}")
     data_set = None
 
     # The parse the raw data into Lhotse's data structures.
@@ -370,7 +368,6 @@ def load_manifest_lazy(path: Pathlike) -> Optional[Manifest]:
     Generic utility for reading an arbitrary manifest from a JSONL file.
     Returns None when the manifest is empty.
     """
-    path = Path(path)
     assert extension_contains(".jsonl", path)
     raw_data = iter(load_jsonl(path))
     try:
@@ -387,7 +384,6 @@ def load_manifest_lazy_or_eager(path: Pathlike) -> Optional[Manifest]:
     Generic utility for reading an arbitrary manifest.
     If possible, opens the manifest lazily, otherwise reads everything into memory.
     """
-    path = Path(path)
     if extension_contains(".jsonl", path):
         return load_manifest_lazy(path)
     else:
@@ -420,7 +416,6 @@ def resolve_manifest_set_class(item):
 
 
 def store_manifest(manifest: Manifest, path: Pathlike) -> None:
-    path = Path(path)
     if extension_contains(".jsonl", path):
         manifest.to_jsonl(path)
     elif extension_contains(".json", path):
@@ -452,7 +447,7 @@ class LazyJsonlIterator:
     """
 
     def __init__(self, path: Pathlike) -> None:
-        self.path = Path(path)
+        self.path = path
         assert extension_contains(".jsonl", self.path)
 
     def _reset(self) -> None:
@@ -606,7 +601,6 @@ def count_newlines_fast(path: Pathlike):
             yield b
             b = reader(2 ** 16)
 
-    path = Path(path)
     with open_best(path, "rb") as f:
         count = sum(buf.count(b"\n") for buf in _make_gen(f.read))
     return count
