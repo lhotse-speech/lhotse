@@ -79,6 +79,7 @@ class DynamicBucketingSampler(CutSampler):
         """
         :param cuts: one or more CutSets (when more than one, will yield tuples of CutSets as mini-batches)
         :param max_duration: The maximum total recording duration from ``cuts``.
+            Note: with multiple CutSets, ``max_duration`` constraint applies only to the first CutSet.
         :param num_buckets: how many buckets to create.
         :param shuffle: When ``True``, the cuts will be shuffled dynamically with
             a reservoir-sampling-based algorithm.
