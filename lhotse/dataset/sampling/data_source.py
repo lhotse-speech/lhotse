@@ -1,6 +1,6 @@
 import random
 from collections import deque
-from typing import Generator, Iterable, Optional
+from typing import Generator, Iterable, Optional, TypeVar
 
 from lhotse import CutSet
 from lhotse.cut import Cut
@@ -103,11 +103,14 @@ class DataSource:
         return len(self._shuffled_items)
 
 
+T = TypeVar("T")
+
+
 def streaming_shuffle(
-    data: Iterable[Cut],
+    data: Iterable[T],
     bufsize: int = 10000,
     rng: random.Random = random,
-) -> Generator[Cut, None, None]:
+) -> Generator[T, None, None]:
     """
     Shuffle the data in the stream.
 

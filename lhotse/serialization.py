@@ -7,18 +7,31 @@ from typing import Any, Dict, Generator, Iterable, Optional, Type, Union
 
 import yaml
 
-from lhotse.utils import Pathlike
+from lhotse.utils import Pathlike, is_module_available
 
 # TODO: figure out how to use some sort of typing stubs
 #  so that linters/static checkers don't complain
 Manifest = Any  # Union['RecordingSet', 'SupervisionSet', 'FeatureSet', 'CutSet']
 
 
+def open_best(path: Pathlike, mode: str = "r"):
+    if is_module_available("smart_open"):
+        from smart_open import smart_open
+
+        # This will work with JSONL anywhere that smart_open supports, e.g. cloud storage.
+        open_fn = smart_open
+    else:
+        compressed = str(path).endswith(".gz")
+        if compressed and "t" not in mode and "b" not in mode:
+            # Opening as bytes not requested explicitly, use "t" to tell gzip to handle unicode.
+            mode = mode + "t"
+        open_fn = gzip.open if compressed else open
+
+    return open_fn(path, mode)
+
+
 def save_to_yaml(data: Any, path: Pathlike) -> None:
-    compressed = str(path).endswith(".gz")
-    opener = gzip.open if compressed else open
-    mode = "wt" if compressed else "w"
-    with opener(path, mode) as f:
+    with open_best(path, "w") as f:
         try:
             # When pyyaml is installed with C extensions, it can speed up the (de)serialization noticeably
             yaml.dump(data, stream=f, Dumper=yaml.CSafeDumper)
@@ -27,8 +40,7 @@ def save_to_yaml(data: Any, path: Pathlike) -> None:
 
 
 def load_yaml(path: Pathlike) -> dict:
-    opener = gzip.open if str(path).endswith(".gz") else open
-    with opener(path) as f:
+    with open_best(path) as f:
         try:
             # When pyyaml is installed with C extensions, it can speed up the (de)serialization noticeably
             return yaml.load(stream=f, Loader=yaml.CSafeLoader)
@@ -48,17 +60,13 @@ class YamlMixin:
 
 def save_to_json(data: Any, path: Pathlike) -> None:
     """Save the data to a JSON file. Will use GZip to compress it if the path ends with a ``.gz`` extension."""
-    compressed = str(path).endswith(".gz")
-    opener = gzip.open if compressed else open
-    mode = "wt" if compressed else "w"
-    with opener(path, mode) as f:
+    with open_best(path, "w") as f:
         json.dump(data, f, indent=2)
 
 
 def load_json(path: Pathlike) -> Union[dict, list]:
     """Load a JSON file. Also supports compressed JSON with a ``.gz`` extension."""
-    opener = gzip.open if str(path).endswith(".gz") else open
-    with opener(path) as f:
+    with open_best(path) as f:
         return json.load(f)
 
 
@@ -74,18 +82,14 @@ class JsonMixin:
 
 def save_to_jsonl(data: Iterable[Dict[str, Any]], path: Pathlike) -> None:
     """Save the data to a JSON file. Will use GZip to compress it if the path ends with a ``.gz`` extension."""
-    compressed = str(path).endswith(".gz")
-    opener = gzip.open if compressed else open
-    mode = "wt" if compressed else "w"
-    with opener(path, mode) as f:
+    with open_best(path, "w") as f:
         for item in data:
             print(json.dumps(item), file=f)
 
 
 def load_jsonl(path: Pathlike) -> Generator[Dict[str, Any], None, None]:
     """Load a JSON file. Also supports compressed JSON with a ``.gz`` extension."""
-    opener = gzip.open if str(path).endswith(".gz") else open
-    with opener(path) as f:
+    with open_best(path) as f:
         for line in f:
             # The temporary variable helps fail fast
             ret = json.loads(line)
@@ -128,19 +132,17 @@ class SequentialJsonlWriter:
     """
 
     def __init__(self, path: Pathlike, overwrite: bool = True) -> None:
-        self.path = Path(path)
+        self.path = path
         if not extension_contains(".jsonl", self.path):
             raise InvalidPathExtension(
                 f"SequentialJsonlWriter supports only JSONL format (one JSON item per line), "
                 f"but path='{path}'."
             )
-        self.compressed = extension_contains(".gz", self.path)
-        self._open = gzip.open if self.compressed else open
-        self.mode = "wt" if self.compressed else "w"
+        self.mode = "w"
         self.ignore_ids = set()
-        if self.path.is_file() and not overwrite:
-            self.mode = "at" if self.compressed else "a"
-            with self._open(self.path) as f:
+        if Path(self.path).is_file() and not overwrite:
+            self.mode = "a"
+            with open_best(self.path) as f:
                 self.ignore_ids = {
                     data["id"]
                     for data in (json.loads(line) for line in f)
@@ -148,7 +150,7 @@ class SequentialJsonlWriter:
                 }
 
     def __enter__(self) -> "SequentialJsonlWriter":
-        self.file = self._open(self.path, self.mode)
+        self.file = open_best(self.path, self.mode)
         return self
 
     def __exit__(self, *args, **kwargs) -> None:
@@ -191,7 +193,7 @@ class SequentialJsonlWriter:
         The manifest is opened in a lazy mode.
         Returns ``None`` when the manifest is empty.
         """
-        if not self.path.exists():
+        if not Path(self.path).exists():
             return None
         if not self.file.closed:
             # If the user hasn't finished writing, make sure the latest
@@ -319,8 +321,8 @@ def grouper(n, iterable):
         yield chunk
 
 
-def extension_contains(ext: str, path: Path) -> bool:
-    return any(ext == sfx for sfx in path.suffixes)
+def extension_contains(ext: str, path: Pathlike) -> bool:
+    return any(ext == sfx for sfx in Path(path).suffixes)
 
 
 def load_manifest(path: Pathlike, manifest_cls: Optional[Type] = None) -> Manifest:
@@ -328,8 +330,6 @@ def load_manifest(path: Pathlike, manifest_cls: Optional[Type] = None) -> Manife
     from lhotse import CutSet, FeatureSet, RecordingSet, SupervisionSet
 
     # Determine the serialization format and read the raw data.
-    path = Path(path)
-    assert path.is_file(), f"No such path: {path}"
     if extension_contains(".jsonl", path):
         raw_data = load_jsonl(path)
         if manifest_cls is None:
@@ -343,7 +343,7 @@ def load_manifest(path: Pathlike, manifest_cls: Optional[Type] = None) -> Manife
     elif extension_contains(".yaml", path):
         raw_data = load_yaml(path)
     else:
-        raise ValueError(f"Not a valid manifest: {path}")
+        raise ValueError(f"Not a valid manifest (does the path exist?): {path}")
     data_set = None
 
     # The parse the raw data into Lhotse's data structures.
@@ -368,7 +368,6 @@ def load_manifest_lazy(path: Pathlike) -> Optional[Manifest]:
     Generic utility for reading an arbitrary manifest from a JSONL file.
     Returns None when the manifest is empty.
     """
-    path = Path(path)
     assert extension_contains(".jsonl", path)
     raw_data = iter(load_jsonl(path))
     try:
@@ -385,7 +384,6 @@ def load_manifest_lazy_or_eager(path: Pathlike) -> Optional[Manifest]:
     Generic utility for reading an arbitrary manifest.
     If possible, opens the manifest lazily, otherwise reads everything into memory.
     """
-    path = Path(path)
     if extension_contains(".jsonl", path):
         return load_manifest_lazy(path)
     else:
@@ -418,7 +416,6 @@ def resolve_manifest_set_class(item):
 
 
 def store_manifest(manifest: Manifest, path: Pathlike) -> None:
-    path = Path(path)
     if extension_contains(".jsonl", path):
         manifest.to_jsonl(path)
     elif extension_contains(".json", path):
@@ -450,12 +447,11 @@ class LazyJsonlIterator:
     """
 
     def __init__(self, path: Pathlike) -> None:
-        self.path = Path(path)
+        self.path = path
         assert extension_contains(".jsonl", self.path)
 
     def _reset(self) -> None:
-        opener = gzip.open if str(self.path).endswith(".gz") else open
-        self._file = opener(self.path)
+        self._file = open_best(self.path)
 
     def __getstate__(self):
         """
@@ -605,8 +601,6 @@ def count_newlines_fast(path: Pathlike):
             yield b
             b = reader(2 ** 16)
 
-    path = Path(path)
-    opener = gzip.open if str(path).endswith(".gz") else open
-    with opener(path, "rb") as f:
+    with open_best(path, "rb") as f:
         count = sum(buf.count(b"\n") for buf in _make_gen(f.read))
     return count
