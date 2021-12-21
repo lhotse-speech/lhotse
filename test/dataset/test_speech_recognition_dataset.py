@@ -1,5 +1,3 @@
-from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
-
 import pytest
 import torch
 from torch import tensor
