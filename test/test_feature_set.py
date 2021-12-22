@@ -20,7 +20,8 @@ from lhotse.features import (
 from lhotse.features.io import (
     ChunkedLilcomHdf5Writer,
     KaldiWriter,
-    LilcomFastWriter, LilcomFilesWriter,
+    LilcomChunkyWriter,
+    LilcomFilesWriter,
     LilcomHdf5Writer,
     NumpyFilesWriter,
     NumpyHdf5Writer,
@@ -126,7 +127,7 @@ def test_compute_global_stats():
         lambda: LilcomFilesWriter(TemporaryDirectory().name),
         lambda: LilcomHdf5Writer(NamedTemporaryFile().name),
         lambda: ChunkedLilcomHdf5Writer(NamedTemporaryFile().name),
-        lambda: LilcomFastWriter(NamedTemporaryFile().name),
+        lambda: LilcomChunkyWriter(NamedTemporaryFile().name),
         lambda: NumpyFilesWriter(TemporaryDirectory().name),
         lambda: NumpyHdf5Writer(NamedTemporaryFile().name),
         pytest.param(

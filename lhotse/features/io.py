@@ -1,3 +1,4 @@
+import threading
 from abc import ABCMeta, abstractmethod
 from functools import lru_cache
 from math import ceil, floor
@@ -710,26 +711,31 @@ They are suitable for storing features for long recordings since they are able t
 retrieve small chunks instead of full matrices.
 """
 
-FASTFORMAT_CHUNK_SIZE = 100  # constant
+CHUNKY_FORMAT_CHUNK_SIZE = 500  # constant
 
 
 @register_reader
-class LilcomFastReader(FeaturesReader):
+class LilcomChunkyReader(FeaturesReader):
     """
-    Reads lilcom-compressed numpy arrays from a HDF5 file with chunked lilcom storage.
+    Reads lilcom-compressed numpy arrays from a binary file with chunked lilcom storage.
     Each feature matrix is stored in an array of chunks - binary data compressed with lilcom.
     Upon reading, we check how many chunks need to be retrieved to avoid excessive I/O.
 
-    ``storage_path`` corresponds to the HDF5 file path;
-    ``storage_key`` for each utterance is the key corresponding to the array (i.e. HDF5 "Group" name).
+    ``storage_path`` corresponds to the binary file path.
+
+    ``storage_key`` for each utterance is a comma separated list of offsets in the file.
+    The first number is the offset for the whole array,
+    and the following numbers are relative offsets for each chunk.
+    These offsets are relative to the previous chunk start.
     """
 
-    name = "lilcom_fast"
-    CHUNK_SIZE = FASTFORMAT_CHUNK_SIZE
+    name = "lilcom_chunky"
+    CHUNK_SIZE = CHUNKY_FORMAT_CHUNK_SIZE
 
     def __init__(self, storage_path: Pathlike, *args, **kwargs):
         super().__init__()
         self.file = lookup_cache_or_open_regular_file(storage_path)
+        self.lock = threading.Lock()
 
     @dynamic_lru_cache
     def read(
@@ -752,8 +758,11 @@ class LilcomFastReader(FeaturesReader):
 
         chunk_data = []
         for offset, end in pairwise(chunk_offsets):
-            self.file.seek(offset)
-            chunk_data.append(self.file.read(end - offset))
+            # We need to use locks to avoid race conditions between seek
+            # and read in multi-threaded reads.
+            with self.lock:
+                self.file.seek(offset)
+                chunk_data.append(self.file.read(end - offset))
 
         # Read, decode, concat
         arr = np.concatenate(
@@ -774,18 +783,22 @@ class LilcomFastReader(FeaturesReader):
 
 
 @register_writer
-class LilcomFastWriter(FeaturesWriter):
+class LilcomChunkyWriter(FeaturesWriter):
     """
-    Writes lilcom-compressed numpy arrays to a HDF5 file with chunked lilcom storage.
+    Writes lilcom-compressed numpy arrays to a binary file with chunked lilcom storage.
     Each feature matrix is stored in an array of chunks - binary data compressed with lilcom.
     Upon reading, we check how many chunks need to be retrieved to avoid excessive I/O.
 
-    ``storage_path`` corresponds to the HDF5 file path;
-    ``storage_key`` for each utterance is the key corresponding to the array (i.e. HDF5 "Group" name).
+    ``storage_path`` corresponds to the binary file path.
+
+    ``storage_key`` for each utterance is a comma separated list of offsets in the file.
+    The first number is the offset for the whole array,
+    and the following numbers are relative offsets for each chunk.
+    These offsets are relative to the previous chunk start.
     """
 
-    name = "lilcom_fast"
-    CHUNK_SIZE = FASTFORMAT_CHUNK_SIZE
+    name = "lilcom_chunky"
+    CHUNK_SIZE = CHUNKY_FORMAT_CHUNK_SIZE
 
     def __init__(
         self,
