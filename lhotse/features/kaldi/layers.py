@@ -143,9 +143,7 @@ class Wav2Win(nn.Module):
         )
         return s
 
-    def forward(
-        self, x: torch.Tensor
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
+    def forward(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
         # Add dither
         if self.dither != 0.0:
             n = torch.randn(x.shape, device=x.device)
@@ -182,7 +180,10 @@ class Wav2Win(nn.Module):
             pad = self.pad_length - self._length
             x_strided = torch.nn.functional.pad(
                 # torchscript expects pad to be list of int
-                x_strided.unsqueeze(1), [0, int(pad.item())], mode="constant", value=0.0
+                x_strided.unsqueeze(1),
+                [0, int(pad.item())],
+                mode="constant",
+                value=0.0,
             ).squeeze(1)
 
         return x_strided, log_energy
