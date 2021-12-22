@@ -1,3 +1,4 @@
+import mmap
 from abc import ABCMeta, abstractmethod
 from functools import lru_cache
 from math import ceil, floor
@@ -368,6 +369,21 @@ def lookup_cache_or_open(storage_path: str):
 
 
 @lru_cache(maxsize=None)
+def lookup_cache_or_open_fastformat(storage_path: str):
+    """
+    Helper internal function used in "fast" file readers.
+    It opens regular files and keeps their handles open in a global program cache
+    to avoid excessive amount of syscalls when the Reader class is instantiated
+    and destroyed in a loop repeatedly (frequent use-case).
+
+    The file handles can be freed at any time by calling ``close_cached_file_handles()``.
+    """
+    f = open(storage_path, "rb")
+    m = mmap.mmap(f.fileno(), 0, prot=mmap.PROT_READ)
+    return m, f
+
+
+@lru_cache(maxsize=None)
 def lookup_chunk_size(h5_file_handle) -> int:
     """
     Helper internal function to retrieve the chunk size from an HDF5 file.
@@ -378,6 +394,7 @@ def lookup_chunk_size(h5_file_handle) -> int:
 
 def close_cached_file_handles() -> None:
     """Closes the cached file handles in ``lookup_cache_or_open`` (see its docs for more details)."""
+    lookup_cache_or_open_fastformat.cache_clear()
     lookup_cache_or_open.cache_clear()
     lookup_chunk_size.cache_clear()
 
@@ -690,6 +707,155 @@ class ChunkedLilcomHdf5Writer(FeaturesWriter):
 
 
 """
+Lilcom-compressed numpy arrays, stored in my own custom format file, that store chunked features.
+They are suitable for storing features for long recordings since they are able to
+retrieve small chunks instead of full matrices.
+"""
+
+FASTFORMAT_CHUNK_SIZE = 100  # constant
+
+
+@register_reader
+class LilcomFastReader(FeaturesReader):
+    """
+    Reads lilcom-compressed numpy arrays from a HDF5 file with chunked lilcom storage.
+    Each feature matrix is stored in an array of chunks - binary data compressed with lilcom.
+    Upon reading, we check how many chunks need to be retrieved to avoid excessive I/O.
+
+    ``storage_path`` corresponds to the HDF5 file path;
+    ``storage_key`` for each utterance is the key corresponding to the array (i.e. HDF5 "Group" name).
+    """
+
+    name = "lilcom_fast"
+    CHUNK_SIZE = FASTFORMAT_CHUNK_SIZE
+
+    def __init__(self, storage_path: Pathlike, *args, **kwargs):
+        super().__init__()
+        self.mmap, self.file = lookup_cache_or_open_fastformat(storage_path)
+
+    @dynamic_lru_cache
+    def read(
+        self,
+        key: str,
+        left_offset_frames: int = 0,
+        right_offset_frames: Optional[int] = None,
+    ) -> np.ndarray:
+        # First, determine which range of chunks need to be read.
+        left_chunk_idx = floor(left_offset_frames / self.CHUNK_SIZE)
+        if right_offset_frames is not None:
+            # Note: +1 is to include the end of the last chunk
+            right_chunk_idx = ceil(right_offset_frames / self.CHUNK_SIZE) + 1
+        else:
+            right_chunk_idx = None
+
+        chunk_offsets = list(map(int, key.split(",")))
+        chunk_offsets = chunk_offsets[left_chunk_idx:right_chunk_idx]
+
+        chunk_data = []
+        for offset, end in pairwise(chunk_offsets):
+            self.mmap.seek(offset)
+            chunk_data.append(self.mmap.read(end - offset))
+
+        # Read, decode, concat
+        arr = np.concatenate(
+            [lilcom.decompress(data) for data in chunk_data],
+            axis=0,
+        )
+
+        # Determine what piece of decoded data should be returned;
+        # we offset the input offsets by left_chunk_idx * chunk_size.
+        shift_frames = self.CHUNK_SIZE * left_chunk_idx
+        left_offset_shift = left_offset_frames - shift_frames
+        if right_offset_frames is not None:
+            right_offset_shift = right_offset_frames - shift_frames
+        else:
+            right_offset_shift = None
+
+        return arr[left_offset_shift:right_offset_shift]
+
+
+@register_writer
+class LilcomFastWriter(FeaturesWriter):
+    """
+    Writes lilcom-compressed numpy arrays to a HDF5 file with chunked lilcom storage.
+    Each feature matrix is stored in an array of chunks - binary data compressed with lilcom.
+    Upon reading, we check how many chunks need to be retrieved to avoid excessive I/O.
+
+    ``storage_path`` corresponds to the HDF5 file path;
+    ``storage_key`` for each utterance is the key corresponding to the array (i.e. HDF5 "Group" name).
+    """
+
+    name = "lilcom_fast"
+    CHUNK_SIZE = FASTFORMAT_CHUNK_SIZE
+
+    def __init__(
+        self,
+        storage_path: Pathlike,
+        tick_power: int = -5,
+        mode: str = "wb",
+        *args,
+        **kwargs,
+    ):
+        """
+        :param storage_path: Path under which we'll create the HDF5 file.
+            We will add a ``.h5`` suffix if it is not already in ``storage_path``.
+        :param tick_power: Determines the lilcom compression accuracy;
+            the input will be compressed to integer multiples of 2^tick_power.
+        :param chunk_size: How many frames to store per chunk.
+            Too low a number will require many reads for long feature matrices,
+            too high a number will require to read more redundant data.
+        :param mode: Modes, one of: "wb"
+        """
+        super().__init__()
+
+        assert mode == "wb"
+
+        self.storage_path_ = Path(storage_path).with_suffix(".lf")
+        self.tick_power = tick_power
+        self.file = open(self.storage_path, mode=mode)
+        self.curr_offset = 0
+        # if CHUNK_SIZE_KEY in self.hdf:
+        #     retrieved_chunk_size = self.hdf[CHUNK_SIZE_KEY][()]
+        #     assert retrieved_chunk_size == CHUNK_SIZE_KEY, (
+        #         f"Error: attempted to write with chunk size {self.chunk_size} to an h5py file that "
+        #         f"was created with chunk size {retrieved_chunk_size}."
+        #     )
+        # else:
+        #     self.hdf.create_dataset(CHUNK_SIZE_KEY, data=self.chunk_size)
+
+    @property
+    def storage_path(self) -> str:
+        return str(self.storage_path_)
+
+    def write(self, key: str, value: np.ndarray) -> str:
+        from lhotse.features.compression import lilcom_compress_chunked
+
+        serialized_feats = lilcom_compress_chunked(
+            value, tick_power=self.tick_power, chunk_size=self.CHUNK_SIZE
+        )
+        offsets = []
+        for idx, feat in enumerate(serialized_feats):
+            nbytes = self.file.write(feat)
+            offsets.append(self.curr_offset)
+            self.curr_offset += nbytes
+
+        # final offset indicates the end of feature array
+        offsets.append(self.curr_offset)
+
+        # Returns keys like: "146,294,321" which indicate the offset of each chunk.
+        return ",".join(map(str, offsets))
+
+    def close(self) -> None:
+        self.file.close()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.close()
+
+
+"""
 Lilcom-compressed URL writers
 """
 
@@ -881,3 +1047,12 @@ class KaldiWriter(FeaturesWriter):
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.close()
+
+
+def pairwise(iterable):
+    "s -> (s0,s1), (s1,s2), (s2, s3), ..."
+    from itertools import tee
+
+    a, b = tee(iterable)
+    next(b, None)
+    return zip(a, b)
