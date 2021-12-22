@@ -747,6 +747,7 @@ class LilcomFastReader(FeaturesReader):
             right_chunk_idx = None
 
         chunk_offsets = list(map(int, key.split(",")))
+        chunk_offsets = np.cumsum(chunk_offsets)
         chunk_offsets = chunk_offsets[left_chunk_idx:right_chunk_idx]
 
         chunk_data = []
@@ -812,14 +813,6 @@ class LilcomFastWriter(FeaturesWriter):
         self.tick_power = tick_power
         self.file = open(self.storage_path, mode=mode)
         self.curr_offset = 0
-        # if CHUNK_SIZE_KEY in self.hdf:
-        #     retrieved_chunk_size = self.hdf[CHUNK_SIZE_KEY][()]
-        #     assert retrieved_chunk_size == CHUNK_SIZE_KEY, (
-        #         f"Error: attempted to write with chunk size {self.chunk_size} to an h5py file that "
-        #         f"was created with chunk size {retrieved_chunk_size}."
-        #     )
-        # else:
-        #     self.hdf.create_dataset(CHUNK_SIZE_KEY, data=self.chunk_size)
 
     @property
     def storage_path(self) -> str:
@@ -831,16 +824,16 @@ class LilcomFastWriter(FeaturesWriter):
         serialized_feats = lilcom_compress_chunked(
             value, tick_power=self.tick_power, chunk_size=self.CHUNK_SIZE
         )
-        offsets = []
+        offsets = [self.curr_offset]
         for idx, feat in enumerate(serialized_feats):
             nbytes = self.file.write(feat)
-            offsets.append(self.curr_offset)
+            offsets.append(nbytes)
             self.curr_offset += nbytes
 
-        # final offset indicates the end of feature array
-        offsets.append(self.curr_offset)
-
-        # Returns keys like: "146,294,321" which indicate the offset of each chunk.
+        # Returns keys like: "14601,31,23,42".
+        # The first number is the offset for the whole array,
+        # and the following numbers are relative offsets for each chunk.
+        # These offsets are relative to the previous chunk start.
         return ",".join(map(str, offsets))
 
     def close(self) -> None:
