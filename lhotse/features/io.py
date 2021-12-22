@@ -1,4 +1,3 @@
-import mmap
 from abc import ABCMeta, abstractmethod
 from functools import lru_cache
 from math import ceil, floor
@@ -369,7 +368,7 @@ def lookup_cache_or_open(storage_path: str):
 
 
 @lru_cache(maxsize=None)
-def lookup_cache_or_open_fastformat(storage_path: str):
+def lookup_cache_or_open_regular_file(storage_path: str):
     """
     Helper internal function used in "fast" file readers.
     It opens regular files and keeps their handles open in a global program cache
@@ -379,8 +378,7 @@ def lookup_cache_or_open_fastformat(storage_path: str):
     The file handles can be freed at any time by calling ``close_cached_file_handles()``.
     """
     f = open(storage_path, "rb")
-    m = mmap.mmap(f.fileno(), 0, prot=mmap.PROT_READ)
-    return m, f
+    return f
 
 
 @lru_cache(maxsize=None)
@@ -394,7 +392,7 @@ def lookup_chunk_size(h5_file_handle) -> int:
 
 def close_cached_file_handles() -> None:
     """Closes the cached file handles in ``lookup_cache_or_open`` (see its docs for more details)."""
-    lookup_cache_or_open_fastformat.cache_clear()
+    lookup_cache_or_open_regular_file.cache_clear()
     lookup_cache_or_open.cache_clear()
     lookup_chunk_size.cache_clear()
 
@@ -731,7 +729,7 @@ class LilcomFastReader(FeaturesReader):
 
     def __init__(self, storage_path: Pathlike, *args, **kwargs):
         super().__init__()
-        self.mmap, self.file = lookup_cache_or_open_fastformat(storage_path)
+        self.file = lookup_cache_or_open_regular_file(storage_path)
 
     @dynamic_lru_cache
     def read(
@@ -753,8 +751,8 @@ class LilcomFastReader(FeaturesReader):
 
         chunk_data = []
         for offset, end in pairwise(chunk_offsets):
-            self.mmap.seek(offset)
-            chunk_data.append(self.mmap.read(end - offset))
+            self.file.seek(offset)
+            chunk_data.append(self.file.read(end - offset))
 
         # Read, decode, concat
         arr = np.concatenate(
