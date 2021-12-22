@@ -60,7 +60,7 @@ from lhotse.utils import (
 Channels = Union[int, List[int]]
 
 
-_DEFAULT_LHOTSE_AUDIO_DURATION_MISMATCH_TOLERANCE: Seconds = 1e-3
+_DEFAULT_LHOTSE_AUDIO_DURATION_MISMATCH_TOLERANCE: Seconds = 1e-2
 LHOTSE_AUDIO_DURATION_MISMATCH_TOLERANCE: Seconds = (
     _DEFAULT_LHOTSE_AUDIO_DURATION_MISMATCH_TOLERANCE
 )
@@ -1398,8 +1398,7 @@ def assert_and_maybe_fix_num_samples(
         ceil(LHOTSE_AUDIO_DURATION_MISMATCH_TOLERANCE * recording.sampling_rate)
     )
     if 0 < diff <= allowed_diff:
-        # note the extra colon in -1:, which preserves the shape
-        audio = np.append(audio, audio[:, -diff:], axis=1)
+        audio = np.pad(audio, ((0, 0), (0, diff)), mode="reflect")
         return audio
     elif -allowed_diff <= diff < 0:
         audio = audio[:, :diff]
