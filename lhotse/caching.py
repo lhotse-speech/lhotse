@@ -1,7 +1,7 @@
 from functools import lru_cache, wraps
 from typing import Any, Callable
 
-LHOTSE_CACHING_ENABLED = True
+LHOTSE_CACHING_ENABLED = False
 
 # This dict is holding two variants for each registered method:
 # the cached variant, that uses it's own LRU cache,
