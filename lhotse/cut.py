@@ -4373,6 +4373,42 @@ class CutSet(Serializable, Sequence[Cut]):
 
         return CutSet.from_cuts(verified(transform_fn(c)) for c in self)
 
+    def copy_feats(
+        self, writer: FeaturesWriter, output_path: Optional[Pathlike] = None
+    ) -> "CutSet":
+        """
+        Save a copy of every feature matrix found in this CutSet using ``writer``
+        and return a new manifest with cuts referring to the new feature locations.
+
+        :param writer: a :class:`lhotse.features.io.FeaturesWriter` instance.
+        :param output_path: optional path where the new manifest should be stored.
+            It's used to write the manifest incrementally and return a lazy manifest,
+            otherwise the copy is stored in memory.
+        :return: a copy of the manifest.
+        """
+        with CutSet.open_writer(output_path) as manifest_writer:
+            for item in self:
+                if not item.has_features or isinstance(item, PaddingCut):
+                    manifest_writer.write(item)
+                    continue
+
+                if isinstance(item, MixedCut):
+                    cpy = fastcopy(item)
+                    for t in cpy.tracks:
+                        if isinstance(t.cut, MonoCut):
+                            t.cut.features = t.cut.features.copy_feats(writer=writer)
+                    manifest_writer.write(cpy)
+
+                elif isinstance(item, MonoCut):
+                    cpy = fastcopy(item)
+                    cpy.features = cpy.features.copy_feats(writer=writer)
+                    manifest_writer.write(cpy)
+
+                else:
+                    manifest_writer.write(item)
+
+        return manifest_writer.open_manifest()
+
     def modify_ids(self, transform_fn: Callable[[str], str]) -> "CutSet":
         """
         Modify the IDs of cuts in this ``CutSet``.

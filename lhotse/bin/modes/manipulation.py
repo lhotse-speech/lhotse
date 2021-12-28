@@ -1,13 +1,18 @@
+import json
+import os
 from pathlib import Path
 from typing import Optional
-import os
-import json
 
 import click
 
+from lhotse import (
+    FeatureSet,
+    available_storage_backends,
+)
 from lhotse.bin.modes.cli_base import cli
-from lhotse.utils import Pathlike
 from lhotse.cut import CutSet
+from lhotse.features.io import get_writer
+from lhotse.utils import Pathlike
 
 __all__ = ["split", "combine", "subset", "filter"]
 
@@ -25,6 +30,46 @@ def copy(input_manifest, output_manifest):
 
     data = load_manifest(input_manifest)
     data.to_file(output_manifest)
+
+
+@cli.command()
+@click.argument("input_manifest", type=click.Path(exists=True, dir_okay=False))
+@click.argument("output_manifest", type=click.Path())
+@click.argument("storage_path", type=str)
+@click.option(
+    "-t",
+    "--storage-type",
+    type=click.Choice(available_storage_backends()),
+    default="lilcom_chunky",
+    help="Which storage backend should we use for writing the copied features.",
+)
+def copy_feats(
+    input_manifest: Pathlike,
+    output_manifest: Pathlike,
+    storage_path: str,
+    storage_type: str,
+) -> None:
+    """
+    Load INPUT_MANIFEST of type :class:`lhotse.FeatureSet` or `lhotse.CutSet`,
+    read every feature matrix using ``features.load()`` or ``cut.load_features()``,
+    save them in STORAGE_PATH and save the updated manifest to OUTPUT_MANIFEST.
+    """
+    from lhotse.serialization import load_manifest_lazy_or_eager
+
+    manifests = load_manifest_lazy_or_eager(input_manifest)
+    if isinstance(manifests, FeatureSet):
+        with get_writer(storage_type)(storage_path) as w:
+            # FeatureSet is copied in-memory and written (TODO: make it incremental if needed)
+            manifests = manifests.copy_feats(writer=w)
+            manifests.to_file(output_manifest)
+    elif isinstance(manifests, CutSet):
+        with get_writer(storage_type)(storage_path) as w:
+            # CutSet has an incremental reading API
+            manifests.copy_feats(writer=w, output_path=output_manifest)
+    else:
+        raise ValueError(
+            f"Unsupported manifest type ({type(manifests)}) at: {input_manifest}"
+        )
 
 
 @cli.command()
