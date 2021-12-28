@@ -816,16 +816,19 @@ class LilcomChunkyWriter(FeaturesWriter):
         :param chunk_size: How many frames to store per chunk.
             Too low a number will require many reads for long feature matrices,
             too high a number will require to read more redundant data.
-        :param mode: Modes, one of: "wb"
+        :param mode: Modes, one of: "w" (write) or "a" (append); can be "wb" and "ab", "b" is implicit
         """
         super().__init__()
 
-        assert mode == "wb"
+        if "b" not in mode:
+            mode = mode + "b"
+        assert mode == "wb" or "ab"
 
-        self.storage_path_ = Path(storage_path).with_suffix(".lf")
+        # ".lca" -> "lilcom chunky archive"
+        self.storage_path_ = Path(storage_path).with_suffix(".lca")
         self.tick_power = tick_power
         self.file = open(self.storage_path, mode=mode)
-        self.curr_offset = 0
+        self.curr_offset = self.file.tell()
 
     @property
     def storage_path(self) -> str:
