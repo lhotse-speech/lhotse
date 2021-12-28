@@ -17,11 +17,11 @@ def test_writer_overwrite(cuts):
     with TemporaryDirectory() as d:
 
         with LilcomChunkyWriter(d) as w:
-            key1 = w.write('key1', data)
+            key1 = w.write("key1", data)
             storage_path = w.storage_path
 
         with LilcomChunkyWriter(storage_path) as w:
-            key2 = w.write('key2', dataplus1)
+            key2 = w.write("key2", dataplus1)
 
         r = LilcomChunkyReader(storage_path)
 
@@ -46,11 +46,11 @@ def test_writer_append(cuts):
     with TemporaryDirectory() as d:
 
         with LilcomChunkyWriter(d) as w:
-            key1 = w.write('key1', data)
+            key1 = w.write("key1", data)
             storage_path = w.storage_path
 
-        with LilcomChunkyWriter(storage_path, mode='ab') as w:
-            key2 = w.write('key2', dataplus1)
+        with LilcomChunkyWriter(storage_path, mode="ab") as w:
+            key2 = w.write("key2", dataplus1)
 
         r = LilcomChunkyReader(storage_path)
 
@@ -73,5 +73,3 @@ def test_writer_append(cuts):
         # E           Max absolute difference: 0.015625
         # E           Max relative difference: 54.764027
         np.testing.assert_almost_equal(restored, dataplus1, decimal=1)
-
-

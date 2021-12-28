@@ -482,7 +482,7 @@ class Features:
     def to_dict(self) -> dict:
         return asdict_nonull(self)
 
-    def copy_feats(self, writer: FeaturesWriter) -> 'Features':
+    def copy_feats(self, writer: FeaturesWriter) -> "Features":
         """
         Read the referenced feature array and save it using ``writer``.
         Returns a copy of the manifest with updated fields related to the feature storage.
@@ -698,7 +698,7 @@ class FeatureSet(Serializable, Sequence[Features]):
         features = feature_info.load(start=start, duration=duration)
         return features
 
-    def copy_feats(self, writer: FeaturesWriter) -> 'FeatureSet':
+    def copy_feats(self, writer: FeaturesWriter) -> "FeatureSet":
         """
         For each manifest in this FeatureSet,
         read the referenced feature array and save it using ``writer``.
