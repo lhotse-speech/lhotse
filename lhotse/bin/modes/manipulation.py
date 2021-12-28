@@ -1,5 +1,7 @@
 import json
 import os
+from concurrent.futures import ProcessPoolExecutor, as_completed
+from itertools import groupby
 from pathlib import Path
 from typing import Optional
 
@@ -43,11 +45,22 @@ def copy(input_manifest, output_manifest):
     default="lilcom_chunky",
     help="Which storage backend should we use for writing the copied features.",
 )
+@click.option(
+    "-j",
+    "--max-jobs",
+    default=-1,
+    type=int,
+    help="Maximum number of parallel copying processes. "
+    "By default, one process is spawned for every existing feature file in the "
+    "INPUT_MANIFEST (e.g., if the features were extracted with 20 jobs, "
+    "there will typically be 20 files).",
+)
 def copy_feats(
     input_manifest: Pathlike,
     output_manifest: Pathlike,
     storage_path: str,
     storage_type: str,
+    max_jobs: int,
 ) -> None:
     """
     Load INPUT_MANIFEST of type :class:`lhotse.FeatureSet` or `lhotse.CutSet`,
@@ -55,21 +68,63 @@ def copy_feats(
     save them in STORAGE_PATH and save the updated manifest to OUTPUT_MANIFEST.
     """
     from lhotse.serialization import load_manifest_lazy_or_eager
+    from lhotse.manipulation import combine as combine_manifests
 
     manifests = load_manifest_lazy_or_eager(input_manifest)
+
     if isinstance(manifests, FeatureSet):
         with get_writer(storage_type)(storage_path) as w:
             # FeatureSet is copied in-memory and written (TODO: make it incremental if needed)
             manifests = manifests.copy_feats(writer=w)
             manifests.to_file(output_manifest)
+
     elif isinstance(manifests, CutSet):
-        with get_writer(storage_type)(storage_path) as w:
-            # CutSet has an incremental reading API
-            manifests.copy_feats(writer=w, output_path=output_manifest)
+        # Group cuts by their underlying feature files.
+        manifests = sorted(manifests, key=lambda cut: cut.features.storage_path)
+        subsets = groupby(manifests, lambda cut: cut.features.storage_path)
+        unique_storage_paths, subsets = zip(
+            *[(k, CutSet.from_cuts(grp)) for k, grp in subsets]
+        )
+
+        # Create paths for new feature files and subset cutsets.
+        tot_items = len(unique_storage_paths)
+        new_storage_paths = [f"{storage_path}/feats-{i}" for i in range(tot_items)]
+        partial_manifest_paths = [
+            f"{storage_path}/cuts-{i}.jsonl.gz" for i in range(tot_items)
+        ]
+
+        num_jobs = len(unique_storage_paths)
+        if max_jobs > 0:
+            num_jobs = min(num_jobs, max_jobs)
+
+        # Create directory if needed (storage_path might be an URL)
+        if Path(storage_path).parent.is_dir():
+            Path(storage_path).mkdir(exist_ok=True)
+
+        # Copy each partition in parallel and combine lazily opened manifests.
+        with ProcessPoolExecutor(num_jobs) as ex:
+            futures = []
+            for cs, nsp, pmp in zip(subsets, new_storage_paths, partial_manifest_paths):
+                futures.append(ex.submit(copy_feats_worker, cs, nsp, storage_type, pmp))
+
+            all_cuts = combine_manifests((f.result() for f in as_completed(futures)))
+
+        # Combine and save subset cutsets into the final file.
+        with CutSet.open_writer(output_manifest) as w:
+            for c in all_cuts:
+                w.write(c)
     else:
         raise ValueError(
             f"Unsupported manifest type ({type(manifests)}) at: {input_manifest}"
         )
+
+
+def copy_feats_worker(
+    cuts: CutSet, storage_path: Pathlike, storage_type: str, output_manifest: Path
+) -> CutSet:
+    with get_writer(storage_type)(storage_path) as w:
+        # CutSet has an incremental reading API
+        return cuts.copy_feats(writer=w, output_path=output_manifest)
 
 
 @cli.command()
