@@ -37,3 +37,4 @@ from .vctk import *
 from .voxceleb import *
 from .wenet_speech import *
 from .yesno import *
+from .vcc2018 import *

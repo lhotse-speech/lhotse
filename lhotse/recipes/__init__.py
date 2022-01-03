@@ -38,3 +38,4 @@ from .vctk import download_vctk, prepare_vctk
 from .voxceleb import download_voxceleb1, download_voxceleb2, prepare_voxceleb
 from .wenet_speech import prepare_wenet_speech
 from .yesno import download_yesno, prepare_yesno
+from .vcc2018 import download_vcc2018mos, prepare_vcc2018mos
