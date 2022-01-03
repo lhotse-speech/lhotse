@@ -232,6 +232,9 @@ def prepare_vcc2018mos(
 def prepare_mos_supervisions(
     mos_results_path, recordings: RecordingSet, id2trn: Dict[str, str]
 ) -> SupervisionSet:
+    # TODO very slow -> make it faster it takes ~8min 170it/s
+    # Use sort & group by instead of O(n*n) select
+
     mos = load_vcc_results(mos_results_path)[
         [
             "test_id",
@@ -245,18 +248,24 @@ def prepare_mos_supervisions(
             "left_audio",
         ]
     ]
+    recording_ids = set(mos["left_audio"].tolist())
     supervisions = []
-    for idx, row in mos.iterrows():
-        annotator_id = row["user_id"]
-        tgt_spk = row["tgt_spk"]
-
-        recording_id = row["left_audio"].rstrip(".wav")
-        # prompt_id from recording_id example:
+    for recording_id_wav in tqdm(recording_ids, desc="Supervision creation"):
+        recording_id = recording_id_wav.rstrip(".wav")
         # N17_VCC2TF1_VCC2SM3_30004_SPO -> 30004
         prompt_id = recording_id.split("_")[-2]
 
+        rows = mos[mos["left_audio"] == recording_id_wav]
+        mos_dict = {}
+        for r in rows.itertuples(index=False):
+            annotation_id = f"{r.user_id}_{r.set_id}_{r.set_idx}"
+            mos_dict[annotation_id] = r.MOS
+        # all rows should have the same properties as the first row if we use row
+        row = next(rows.itertuples(index=False))
+        tgt_spk = row.tgt_spk
+
         s = SupervisionSegment(
-            id=f"{annotator_id}_{row['set_id']}_{row['set_idx']}_{recording_id}",
+            id=f"{recording_id}",
             recording_id=recording_id,
             start=0,
             duration=recordings[recording_id].duration,
@@ -264,10 +273,10 @@ def prepare_mos_supervisions(
             speaker=tgt_spk,
             gender=tgt_spk[-2],  # F/M extracted e.g. from e.g. VCC2TF2
             custom={
-                "annotator": row["user_id"],
-                "MOS": row["MOS"],
-                "src_spk": row["src_spk"],
-                "system": row["system1_id"],
+                "annotator": row.user_id,
+                "MOS": mos_dict,
+                "src_spk": row.src_spk,
+                "system": row.system1_id,
                 "prompt": prompt_id,
             },
         )
