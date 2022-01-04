@@ -273,7 +273,6 @@ def prepare_mos_supervisions(
             speaker=tgt_spk,
             gender=tgt_spk[-2],  # F/M extracted e.g. from e.g. VCC2TF2
             custom={
-                "annotator": row.user_id,
                 "MOS": mos_dict,
                 "src_spk": row.src_spk,
                 "system": row.system1_id,
