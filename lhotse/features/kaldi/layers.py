@@ -680,7 +680,10 @@ def _get_strided_batch(waveform, window_length, window_shift, snip_edges):
         npad_right = npad - npad_left
         # waveform = nn.functional.pad(waveform, (npad_left, npad_right), mode='reflect')
         pad_left = torch.flip(waveform[:, 1 : npad_left + 1], (1,))
-        pad_right = torch.flip(waveform[:, -npad_right - 1 : -1], (1,))
+        if npad_right >= 0:
+            pad_right = torch.flip(waveform[:, -npad_right - 1 : -1], (1,))
+        else:
+            pad_right = torch.tensor([], dtype=waveform.dtype)
         waveform = torch.cat((pad_left, waveform, pad_right), dim=1)
 
     strides = (
