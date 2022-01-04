@@ -40,7 +40,11 @@ class GlobalMVN(torch.nn.Module):
     def to_file(self, stats_file: Pathlike):
         torch.save(self.state_dict(), stats_file)
 
-    def forward(self, features: torch.Tensor, supervision_segments: Optional[torch.IntTensor] = None) -> torch.Tensor:
+    def forward(
+        self,
+        features: torch.Tensor,
+        supervision_segments: Optional[torch.IntTensor] = None,
+    ) -> torch.Tensor:
         return (features - self.norm_means) / self.norm_stds
 
     def inverse(self, features: torch.Tensor) -> torch.Tensor:
