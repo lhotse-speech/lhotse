@@ -149,23 +149,18 @@ class Wav2Win(nn.Module):
         )
         return s
 
-    def forward(self, x: torch.Tensor) -> Tuple[torch.Tensor, Optional[torch.Tensor]]:
-        # Add dither
-        if self.dither != 0.0:
-            n = torch.randn(x.shape, device=x.device)
-            x = x + self.dither * n
-
-        x_strided = _get_strided_batch(x, self._length, self._shift, self.snip_edges)
-
-        log_energy: Optional[torch.Tensor] = None
-        if self.return_log_energy and self.raw_energy:
-            # Compute the log energy of each frame
-            log_energy = _get_log_energy(x_strided, self.energy_floor)  # size (m)
-
+    def _forward_strided(
+        self, x_strided: torch.Tensor
+    ) -> Tuple[torch.Tensor, Optional[torch.Tensor]]:
         # remove offset
         if self.remove_dc_offset:
             mu = torch.mean(x_strided, dim=2, keepdim=True)
             x_strided = x_strided - mu
+
+        # Compute the log energy of each frame
+        log_energy: Optional[torch.Tensor] = None
+        if self.return_log_energy and self.raw_energy:
+            log_energy = _get_log_energy(x_strided, self.energy_floor)  # size (m)
 
         # preemphasis
         if self.preemph_coeff != 0.0:
@@ -186,7 +181,21 @@ class Wav2Win(nn.Module):
                 value=0.0,
             ).squeeze(1)
 
+        if self.return_log_energy and not self.raw_energy:
+            # This energy is computed after preemphasis, window, etc.
+            log_energy = _get_log_energy(x_strided, self.energy_floor)  # size (m)
+
         return x_strided, log_energy
+
+    def forward(self, x: torch.Tensor) -> Tuple[torch.Tensor, Optional[torch.Tensor]]:
+        # Add dither
+        if self.dither != 0.0:
+            n = torch.randn(x.shape, device=x.device)
+            x = x + self.dither * n
+
+        x_strided = _get_strided_batch(x, self._length, self._shift, self.snip_edges)
+
+        return self._forward_strided(x_strided)
 
     @torch.jit.export
     def online_inference(
@@ -201,6 +210,11 @@ class Wav2Win(nn.Module):
             not self.snip_edges
         ), "Unsupported operation: snip_edges == True is not supported for online inference."
 
+        # Add dither
+        if self.dither != 0.0:
+            n = torch.randn(x.shape, device=x.device)
+            x = x + self.dither * n
+
         x_strided, remainder = _get_strided_batch_streaming(
             x,
             window_length=self._length,
@@ -208,34 +222,7 @@ class Wav2Win(nn.Module):
             prev_remainder=context,
         )
 
-        log_energy: Optional[torch.Tensor] = None
-        if self.return_log_energy and self.raw_energy:
-            # Compute the log energy of each frame
-            log_energy = _get_log_energy(x_strided, self.energy_floor)  # size (m)
-
-        # remove offset
-        if self.remove_dc_offset:
-            mu = torch.mean(x_strided, dim=2, keepdim=True)
-            x_strided = x_strided - mu
-
-        # preemphasis
-        if self.preemph_coeff != 0.0:
-            x_offset = torch.nn.functional.pad(x_strided, (0, 1), mode="replicate")
-            x_strided = x_strided - self.preemph_coeff * x_offset[:, :, :-1]
-
-        # Apply window_function to each frame
-        x_strided = x_strided * self._window
-
-        # Pad columns with zero until we reach size (batch, num_frames, pad_length)
-        if self.pad_length != self._length:
-            pad = self.pad_length - self._length
-            x_strided = torch.nn.functional.pad(
-                # torchscript expects pad to be list of int
-                x_strided.unsqueeze(1),
-                [0, pad],
-                mode="constant",
-                value=0.0,
-            ).squeeze(1)
+        x_strided, log_energy = self._forward_strided(x_strided)
 
         return (x_strided, log_energy), remainder
 
