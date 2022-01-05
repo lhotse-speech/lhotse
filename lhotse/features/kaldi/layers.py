@@ -13,10 +13,17 @@ confirmed by Jesus.
 
 This implementation works well with autograd and batching, and can be used neural network
 layers.
+
+Update January 2022:
+These modules now expose a new API function called "online_inference" that
+may be used to compute the features when the audio is streaming.
+The implementation is stateless, and passes the waveform remainders
+back to the user to feed them to the modules once new data becomes available.
+The implementation is compatible with JIT scripting via TorchScript.
 """
 import math
 import warnings
-from typing import List, Optional, Tuple, Union
+from typing import List, Optional, Tuple
 
 import numpy as np
 import torch
@@ -95,7 +102,7 @@ class Wav2Win(nn.Module):
         self.window_type = window_type
         self.dither = dither
         # torchscript expects it to be a tensor
-        self.snip_edges = torch.tensor(snip_edges)
+        self.snip_edges = snip_edges
         self.energy_floor = energy_floor
         self.raw_energy = raw_energy
         self.return_log_energy = return_log_energy
@@ -106,9 +113,8 @@ class Wav2Win(nn.Module):
             )
 
         N = int(math.floor(frame_length * sampling_rate))
-        # torchscript expects it to be a tensor
-        self._length = torch.tensor(N)
-        self._shift = torch.tensor(int(math.floor(frame_shift * sampling_rate)))
+        self._length = N
+        self._shift = int(math.floor(frame_shift * sampling_rate))
 
         self._window = nn.Parameter(
             create_frame_window(N, window_type=window_type), requires_grad=False
@@ -149,27 +155,22 @@ class Wav2Win(nn.Module):
             n = torch.randn(x.shape, device=x.device)
             x = x + self.dither * n
 
-        # remove offset
-        if self.remove_dc_offset:
-            mu = torch.mean(x, dim=1, keepdim=True)
-            x = x - mu
+        x_strided = _get_strided_batch(x, self._length, self._shift, self.snip_edges)
 
         log_energy: Optional[torch.Tensor] = None
-
         if self.return_log_energy and self.raw_energy:
             # Compute the log energy of each frame
-            x_strided = _get_strided_batch(
-                x, self._length, self._shift, self.snip_edges
-            )
             log_energy = _get_log_energy(x_strided, self.energy_floor)  # size (m)
 
-        if self.preemph_coeff != 0.0:
-            x_offset = torch.nn.functional.pad(
-                x.unsqueeze(1), (1, 0), mode="replicate"
-            ).squeeze(1)
-            x = x - self.preemph_coeff * x_offset[:, :-1]
+        # remove offset
+        if self.remove_dc_offset:
+            mu = torch.mean(x_strided, dim=2, keepdim=True)
+            x_strided = x_strided - mu
 
-        x_strided = _get_strided_batch(x, self._length, self._shift, self.snip_edges)
+        # preemphasis
+        if self.preemph_coeff != 0.0:
+            x_offset = torch.nn.functional.pad(x_strided, (0, 1), mode="replicate")
+            x_strided = x_strided - self.preemph_coeff * x_offset[:, :, :-1]
 
         # Apply window_function to each frame
         x_strided = x_strided * self._window
@@ -180,12 +181,63 @@ class Wav2Win(nn.Module):
             x_strided = torch.nn.functional.pad(
                 # torchscript expects pad to be list of int
                 x_strided.unsqueeze(1),
-                [0, int(pad.item())],
+                [0, pad],
                 mode="constant",
                 value=0.0,
             ).squeeze(1)
 
         return x_strided, log_energy
+
+    @torch.jit.export
+    def online_inference(
+        self, x: torch.Tensor, context: Optional[torch.Tensor] = None
+    ) -> Tuple[Tuple[torch.Tensor, Optional[torch.Tensor]], torch.Tensor]:
+        """
+        The same as the ``forward()`` method, except it accepts an extra argument with the
+        remainder waveform from the previous call of ``online_inference()``, and returns
+        a tuple of ``((frames, log_energy), remainder)``.
+        """
+        assert (
+            not self.snip_edges
+        ), "Unsupported operation: snip_edges == True is not supported for online inference."
+
+        x_strided, remainder = _get_strided_batch_streaming(
+            x,
+            window_length=self._length,
+            window_shift=self._shift,
+            prev_remainder=context,
+        )
+
+        log_energy: Optional[torch.Tensor] = None
+        if self.return_log_energy and self.raw_energy:
+            # Compute the log energy of each frame
+            log_energy = _get_log_energy(x_strided, self.energy_floor)  # size (m)
+
+        # remove offset
+        if self.remove_dc_offset:
+            mu = torch.mean(x_strided, dim=2, keepdim=True)
+            x_strided = x_strided - mu
+
+        # preemphasis
+        if self.preemph_coeff != 0.0:
+            x_offset = torch.nn.functional.pad(x_strided, (0, 1), mode="replicate")
+            x_strided = x_strided - self.preemph_coeff * x_offset[:, :, :-1]
+
+        # Apply window_function to each frame
+        x_strided = x_strided * self._window
+
+        # Pad columns with zero until we reach size (batch, num_frames, pad_length)
+        if self.pad_length != self._length:
+            pad = self.pad_length - self._length
+            x_strided = torch.nn.functional.pad(
+                # torchscript expects pad to be list of int
+                x_strided.unsqueeze(1),
+                [0, pad],
+                mode="constant",
+                value=0.0,
+            ).squeeze(1)
+
+        return (x_strided, log_energy), remainder
 
 
 class Wav2FFT(nn.Module):
@@ -276,8 +328,11 @@ class Wav2FFT(nn.Module):
     def dither(self) -> float:
         return self.wav2win.dither
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        x_strided, log_e = self.wav2win(x)
+    def _forward_strided(
+        self, x_strided: torch.Tensor, log_e: Optional[torch.Tensor]
+    ) -> torch.Tensor:
+        # Note: subclasses of this module can override ``_forward_strided()`` and get a working
+        # implementation of ``forward()`` and ``online_inference()`` for free.
         X = _rfft(x_strided)
 
         # log_e is not None is needed by torchscript
@@ -285,6 +340,19 @@ class Wav2FFT(nn.Module):
             X[:, :, 0] = log_e
 
         return X
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        x_strided, log_e = self.wav2win(x)
+        return self._forward_strided(x_strided=x_strided, log_e=log_e)
+
+    @torch.jit.export
+    def online_inference(
+        self, x: torch.Tensor, context: Optional[torch.Tensor] = None
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        (x_strided, log_e), remainder = self.wav2win.online_inference(
+            x, context=context
+        )
+        return self._forward_strided(x_strided=x_strided, log_e=log_e), remainder
 
 
 class Wav2Spec(Wav2FFT):
@@ -343,8 +411,9 @@ class Wav2Spec(Wav2FFT):
         else:
             self._to_spec = _pow_spectrogram
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        x_strided, log_e = self.wav2win(x)
+    def _forward_strided(
+        self, x_strided: torch.Tensor, log_e: Optional[torch.Tensor]
+    ) -> torch.Tensor:
         X = _rfft(x_strided)
         pow_spec = self._to_spec(X)
 
@@ -411,8 +480,9 @@ class Wav2LogSpec(Wav2FFT):
         else:
             self._to_spec = _pow_spectrogram
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        x_strided, log_e = self.wav2win(x)
+    def _forward_strided(
+        self, x_strided: torch.Tensor, log_e: Optional[torch.Tensor]
+    ) -> torch.Tensor:
         X = _rfft(x_strided)
         pow_spec = self._to_spec(X)
 
@@ -502,8 +572,9 @@ class Wav2LogFilterBank(Wav2FFT):
             torch.tensor(fb, dtype=torch.get_default_dtype()), requires_grad=False
         )
 
-    def forward(self, x):
-        x_strided, log_e = self.wav2win(x)
+    def _forward_strided(
+        self, x_strided: torch.Tensor, log_e: Optional[torch.Tensor]
+    ) -> torch.Tensor:
         X = _rfft(x_strided)
         pow_spec = self._to_spec(X)
 
@@ -631,8 +702,9 @@ class Wav2MFCC(Wav2FFT):
         dct *= math.sqrt(2.0 / float(num_filters))
         return dct
 
-    def forward(self, x):
-        x_strided, log_e = self.wav2win(x)
+    def _forward_strided(
+        self, x_strided: torch.Tensor, log_e: Optional[torch.Tensor]
+    ) -> torch.Tensor:
         X = _rfft(x_strided)
         pow_spec = self._to_spec(X)
         pow_spec = torch.matmul(pow_spec.float(), self._fb.float())
@@ -649,7 +721,9 @@ class Wav2MFCC(Wav2FFT):
         return mfcc
 
 
-def _get_strided_batch(waveform, window_length, window_shift, snip_edges):
+def _get_strided_batch(
+    waveform: torch.Tensor, window_length: int, window_shift: int, snip_edges: bool
+) -> torch.Tensor:
     r"""Given a waveform (2D tensor of size ``(batch_size, num_samples)``,
     it returns a 2D tensor ``(batch_size, num_frames, window_length)``
     representing how the window is shifted along the waveform. Each row is a frame.
@@ -688,13 +762,87 @@ def _get_strided_batch(waveform, window_length, window_shift, snip_edges):
 
     strides = (
         waveform.stride(0),
-        # required by torchscript
-        int((window_shift * waveform.stride(1)).item()),
+        window_shift * waveform.stride(1),
         waveform.stride(1),
     )
-    # torchscript expects List[int]
-    sizes = [batch_size, int(num_frames.item()), int(window_length.item())]
+    sizes = [batch_size, num_frames, window_length]
     return waveform.as_strided(sizes, strides)
+
+
+def _get_strided_batch_streaming(
+    waveform: torch.Tensor,
+    window_shift: int,
+    window_length: int,
+    prev_remainder: Optional[torch.Tensor] = None,
+) -> Tuple[torch.Tensor, torch.Tensor]:
+    """
+    A variant of _get_strided_batch that creates short frames of a batch of audio signals
+    in a way suitable for streaming. It accepts a waveform, window size parameters, and
+    an optional buffer of previously unused samples. It returns a pair of waveform windows tensor,
+    and unused part of the waveform to be passed as ``prev_remainder`` in the next call to this
+    function.
+
+    Example usage::
+
+        >>> # get the first buffer of audio and make frames
+        >>> waveform = get_incoming_audio_from_mic()
+        >>> frames, remainder = _get_strided_batch_streaming(
+        ...     waveform,
+        ...     window_shift=160,
+        ...     window_length=200,
+        ... )
+        >>>
+        >>> process(frames)  # do sth with the frames
+        >>>
+        >>> # get the next buffer and use previous remainder to make frames
+        >>> waveform = get_incoming_audio_from_mic()
+        >>> frames, remainder = _get_strided_batch_streaming(
+        ...     waveform,
+        ...     window_shift=160,
+        ...     window_length=200,
+        ...     prev_remainder=prev_remainder,
+        ... )
+
+    .. caution:: This windowing mechanism only supports ``snip_edges=False``.
+
+    :param waveform: A waveform tensor of shape ``(batch_size, num_samples)``.
+    :param window_shift: The shift between frames measured in the number of samples.
+    :param window_length: The number of samples in each window (frame).
+    :param prev_remainder: An optional waveform tensor of shape ``(batch_size, num_samples)``.
+        Can be ``None`` which indicates the start of a recording.
+    :return: a pair of tensors with shapes ``(batch_size, num_frames, window_length)`` and
+        ``(batch_size, remainder_len)``.
+    """
+
+    assert window_shift <= window_length
+    assert waveform.dim() == 2
+    batch_size = waveform.size(0)
+
+    if prev_remainder is None:
+        npad_left = int((window_length - window_shift) // 2)
+        pad_left = torch.flip(waveform[:, 1 : npad_left + 1], (1,))
+        waveform = torch.cat((pad_left, waveform), dim=1)
+    else:
+        assert prev_remainder.dim() == 2
+        assert prev_remainder.size(0) == batch_size
+        waveform = torch.cat((prev_remainder, waveform), dim=1)
+
+    num_samples = waveform.size(-1)
+
+    window_remainder = window_length - window_shift
+    num_frames = (num_samples - (window_remainder)) // window_shift
+
+    remainder = waveform[:, num_frames * window_shift :]
+
+    strides = (
+        waveform.stride(0),
+        window_shift * waveform.stride(1),
+        waveform.stride(1),
+    )
+
+    sizes = [batch_size, num_frames, window_length]
+
+    return waveform.as_strided(sizes, strides), remainder
 
 
 def _get_log_energy(x: torch.Tensor, energy_floor: float) -> torch.Tensor:
