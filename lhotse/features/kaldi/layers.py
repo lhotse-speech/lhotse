@@ -164,7 +164,7 @@ class Wav2Win(nn.Module):
 
         # preemphasis
         if self.preemph_coeff != 0.0:
-            x_offset = torch.nn.functional.pad(x_strided, (0, 1), mode="replicate")
+            x_offset = torch.nn.functional.pad(x_strided, (1, 0), mode="replicate")
             x_strided = x_strided - self.preemph_coeff * x_offset[:, :, :-1]
 
         # Apply window_function to each frame
