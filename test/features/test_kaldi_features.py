@@ -1,6 +1,7 @@
 import pytest
 import torch
 
+from lhotse import Fbank, Mfcc
 from lhotse.audio import Recording
 from lhotse.features.kaldi.extractors import KaldiFbank, KaldiMfcc
 from lhotse.features.kaldi.layers import Wav2LogFilterBank, Wav2MFCC
@@ -59,7 +60,25 @@ def test_kaldi_fbank_extractor(recording):
     assert feats.shape == (1604, 80)
 
 
+def test_kaldi_fbank_extractor_vs_torchaudio(recording):
+    audio = recording.load_audio()
+    fbank = KaldiFbank()
+    fbank_ta = Fbank()
+    feats = fbank.extract(audio, recording.sampling_rate)
+    feats_ta = fbank_ta.extract(audio, recording.sampling_rate)
+    torch.testing.assert_allclose(feats, feats_ta)
+
+
 def test_kaldi_mfcc_extractor(recording):
     mfcc = KaldiMfcc()
     feats = mfcc.extract(recording.load_audio(), recording.sampling_rate)
     assert feats.shape == (1604, 13)
+
+
+def test_kaldi_mfcc_extractor_vs_torchaudio(recording):
+    audio = recording.load_audio()
+    fbank = KaldiMfcc()
+    fbank_ta = Mfcc()
+    feats = fbank.extract(audio, recording.sampling_rate)
+    feats_ta = fbank_ta.extract(audio, recording.sampling_rate)
+    torch.testing.assert_allclose(feats, feats_ta)
