@@ -94,7 +94,8 @@ class Wav2Win(nn.Module):
         self.preemph_coeff = preemph_coeff
         self.window_type = window_type
         self.dither = dither
-        self.snip_edges = snip_edges
+        # torchscript expects it to be a tensor
+        self.snip_edges = torch.tensor(snip_edges)
         self.energy_floor = energy_floor
         self.raw_energy = raw_energy
         self.return_log_energy = return_log_energy
@@ -105,8 +106,9 @@ class Wav2Win(nn.Module):
             )
 
         N = int(math.floor(frame_length * sampling_rate))
-        self._length = N
-        self._shift = int(math.floor(frame_shift * sampling_rate))
+        # torchscript expects it to be a tensor
+        self._length = torch.tensor(N)
+        self._shift = torch.tensor(int(math.floor(frame_shift * sampling_rate)))
 
         self._window = nn.Parameter(
             create_frame_window(N, window_type=window_type), requires_grad=False
@@ -141,9 +143,7 @@ class Wav2Win(nn.Module):
         )
         return s
 
-    def forward(
-        self, x: torch.Tensor
-    ) -> Union[torch.Tensor, Tuple[torch.Tensor, torch.Tensor]]:
+    def forward(self, x: torch.Tensor) -> Tuple[torch.Tensor, Optional[torch.Tensor]]:
         # Add dither
         if self.dither != 0.0:
             n = torch.randn(x.shape, device=x.device)
@@ -153,6 +153,8 @@ class Wav2Win(nn.Module):
         if self.remove_dc_offset:
             mu = torch.mean(x, dim=1, keepdim=True)
             x = x - mu
+
+        log_energy: Optional[torch.Tensor] = None
 
         if self.return_log_energy and self.raw_energy:
             # Compute the log energy of each frame
@@ -176,13 +178,14 @@ class Wav2Win(nn.Module):
         if self.pad_length != self._length:
             pad = self.pad_length - self._length
             x_strided = torch.nn.functional.pad(
-                x_strided.unsqueeze(1), (0, pad), mode="constant", value=0
+                # torchscript expects pad to be list of int
+                x_strided.unsqueeze(1),
+                [0, int(pad.item())],
+                mode="constant",
+                value=0.0,
             ).squeeze(1)
 
-        if self.return_log_energy:
-            return x_strided, log_energy
-
-        return x_strided
+        return x_strided, log_energy
 
 
 class Wav2FFT(nn.Module):
@@ -274,13 +277,11 @@ class Wav2FFT(nn.Module):
         return self.wav2win.dither
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        x_strided = self.wav2win(x)
-        if self.use_energy:
-            x_strided, log_e = x_strided
-
+        x_strided, log_e = self.wav2win(x)
         X = _rfft(x_strided)
 
-        if self.use_energy:
+        # log_e is not None is needed by torchscript
+        if self.use_energy and log_e is not None:
             X[:, :, 0] = log_e
 
         return X
@@ -343,14 +344,12 @@ class Wav2Spec(Wav2FFT):
             self._to_spec = _pow_spectrogram
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        x_strided = self.wav2win(x)
-        if self.use_energy:
-            x_strided, log_e = x_strided
-
+        x_strided, log_e = self.wav2win(x)
         X = _rfft(x_strided)
         pow_spec = self._to_spec(X)
 
-        if self.use_energy:
+        # log_e is not None is needed by torchscript
+        if self.use_energy and log_e is not None:
             pow_spec[:, :, 0] = log_e
 
         return pow_spec
@@ -413,16 +412,14 @@ class Wav2LogSpec(Wav2FFT):
             self._to_spec = _pow_spectrogram
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        x_strided = self.wav2win(x)
-        if self.use_energy:
-            x_strided, log_e = x_strided
-
+        x_strided, log_e = self.wav2win(x)
         X = _rfft(x_strided)
         pow_spec = self._to_spec(X)
 
         pow_spec = (pow_spec + 1e-15).log()
 
-        if self.use_energy:
+        # log_e is not None is needed by torchscript
+        if self.use_energy and log_e is not None:
             pow_spec[:, :, 0] = log_e
 
         return pow_spec
@@ -506,27 +503,15 @@ class Wav2LogFilterBank(Wav2FFT):
         )
 
     def forward(self, x):
-        x_strided = self.wav2win(x)
-        if self.use_energy:
-            x_strided, log_e = x_strided
-
+        x_strided, log_e = self.wav2win(x)
         X = _rfft(x_strided)
         pow_spec = self._to_spec(X)
 
-        try:
-            from torch.cuda.amp import autocast
-        except ImportError:
-            warnings.warn(
-                "Could not import torch.cuda.amp.autocast -- "
-                "when using mixed precision with another package such as apex, "
-                "you might experience numerical stability issues."
-            )
-            pow_spec = torch.matmul(pow_spec.float(), self._fb.float())
-        else:
-            with autocast(enabled=False):
-                pow_spec = torch.matmul(pow_spec.float(), self._fb.float())
+        pow_spec = torch.matmul(pow_spec.float(), self._fb.float())
         pow_spec = (pow_spec + 1e-10).log()
-        if self.use_energy:
+
+        # log_e is not None is needed by torchscript
+        if self.use_energy and log_e is not None:
             pow_spec = torch.cat((log_e.unsqueeze(-1), pow_spec), dim=-1)
 
         return pow_spec
@@ -647,33 +632,18 @@ class Wav2MFCC(Wav2FFT):
         return dct
 
     def forward(self, x):
-        x_strided = self.wav2win(x)
-        if self.use_energy:
-            x_strided, log_e = x_strided
-
+        x_strided, log_e = self.wav2win(x)
         X = _rfft(x_strided)
         pow_spec = self._to_spec(X)
-
-        try:
-            from torch.cuda.amp import autocast
-        except ImportError:
-            warnings.warn(
-                "Could not import torch.cuda.amp.autocast -- "
-                "when using mixed precision with another package such as apex, "
-                "you might experience numerical stability issues."
-            )
-            pow_spec = torch.matmul(pow_spec.float(), self._fb.float())
-        else:
-            with autocast(enabled=False):
-                pow_spec = torch.matmul(pow_spec.float(), self._fb.float())
-
+        pow_spec = torch.matmul(pow_spec.float(), self._fb.float())
         pow_spec = (pow_spec + 1e-10).log()
 
         mfcc = torch.matmul(pow_spec, self._dct)
         if self.cepstral_lifter > 0:
             mfcc *= self._lifter
 
-        if self.use_energy:
+        # log_e is not None is needed by torchscript
+        if self.use_energy and log_e is not None:
             mfcc[:, 0] = log_e
 
         return mfcc
@@ -715,10 +685,12 @@ def _get_strided_batch(waveform, window_length, window_shift, snip_edges):
 
     strides = (
         waveform.stride(0),
-        window_shift * waveform.stride(1),
+        # required by torchscript
+        int((window_shift * waveform.stride(1)).item()),
         waveform.stride(1),
     )
-    sizes = (batch_size, num_frames, window_length)
+    # torchscript expects List[int]
+    sizes = [batch_size, int(num_frames.item()), int(window_length.item())]
     return waveform.as_strided(sizes, strides)
 
 
@@ -730,7 +702,7 @@ def _get_log_energy(x: torch.Tensor, energy_floor: float) -> torch.Tensor:
     if energy_floor > 0.0:
         log_energy = torch.max(
             log_energy,
-            torch.tensor(math.log(energy_floor), dtype=torch.get_default_dtype()),
+            torch.tensor(math.log(energy_floor), dtype=log_energy.dtype),
         )
 
     return log_energy

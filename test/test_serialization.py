@@ -29,7 +29,7 @@ from lhotse.utils import fastcopy, nullcontext as does_not_raise
         ("test/fixtures/dummy_feats/feature_manifest.json", does_not_raise()),
         ("test/fixtures/libri/cuts.json", does_not_raise()),
         ("test/fixtures/feature_config.yml", pytest.raises(ValueError)),
-        ("no/such/path.xd", pytest.raises(AssertionError)),
+        ("no/such/path.xd", pytest.raises(ValueError)),
     ],
 )
 def test_load_any_lhotse_manifest(path, exception_expectation):
@@ -45,7 +45,7 @@ def test_load_any_lhotse_manifest(path, exception_expectation):
         ("test/fixtures/dummy_feats/feature_manifest.json", does_not_raise()),
         ("test/fixtures/libri/cuts.json", does_not_raise()),
         ("test/fixtures/feature_config.yml", pytest.raises(ValueError)),
-        ("no/such/path.xd", pytest.raises(AssertionError)),
+        ("no/such/path.xd", pytest.raises(ValueError)),
     ],
 )
 def test_load_any_lhotse_manifest_lazy(path, exception_expectation):

@@ -22,6 +22,29 @@ def validate_(manifest: Pathlike, read_data: bool):
     validate(data, read_data=read_data)
 
 
+@cli.command(name="validate-pair")
+@click.argument("recordings", type=click.Path(exists=True, dir_okay=False))
+@click.argument("supervisions", type=click.Path(exists=True, dir_okay=False))
+@click.option(
+    "--read-data/--dont-read-data",
+    default=False,
+    help="Should the audio/features data be read from disk to perform additional checks "
+    "(could be extremely slow for large manifests).",
+)
+def validate_(recordings: Pathlike, supervisions: Pathlike, read_data: bool):
+    """
+    Validate a pair of Lhotse RECORDINGS and SUPERVISIONS manifest files.
+    Checks whether the two manifests are consistent with each other.
+    """
+    from lhotse import load_manifest, validate_recordings_and_supervisions
+
+    recs = load_manifest(recordings)
+    sups = load_manifest(supervisions)
+    validate_recordings_and_supervisions(
+        recordings=recs, supervisions=sups, read_data=read_data
+    )
+
+
 @cli.command(name="fix")
 @click.argument("recordings", type=click.Path(exists=True, dir_okay=False))
 @click.argument("supervisions", type=click.Path(exists=True, dir_okay=False))
