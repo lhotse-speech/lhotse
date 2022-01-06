@@ -76,16 +76,20 @@ def test_volume_does_not_change_num_samples(audio):
         assert augmented_audio != audio
 
 
-def test_reverb_does_not_change_num_samples(audio, rir):
-    augment_fn = ReverbWithImpulseResponse(rir=rir)
+@pytest.mark.parametrize("early_only", [True, False])
+def test_reverb_does_not_change_num_samples(audio, rir, early_only):
+    augment_fn = ReverbWithImpulseResponse(rir=rir, early_only=early_only)
     for _ in range(10):
         augmented_audio = augment_fn(audio, sampling_rate=SAMPLING_RATE)
         assert augmented_audio.shape == (1, 16000)
 
 
 @pytest.mark.parametrize("normalize_output", [True, False])
-def test_reverb_normalize_output(audio, rir, normalize_output):
-    augment_fn = ReverbWithImpulseResponse(rir=rir, normalize_output=normalize_output)
+@pytest.mark.parametrize("early_only", [True, False])
+def test_reverb_normalize_output(audio, rir, normalize_output, early_only):
+    augment_fn = ReverbWithImpulseResponse(
+        rir=rir, normalize_output=normalize_output, early_only=early_only
+    )
     orig_energy = np.sum(np.abs(audio) ** 2) / audio.shape[1]
     for _ in range(10):
         augmented_audio = augment_fn(audio, sampling_rate=SAMPLING_RATE)

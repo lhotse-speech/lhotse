@@ -1347,6 +1347,7 @@ class MonoCut(Cut):
         self,
         rir_recording: "Recording",
         normalize_output: bool = True,
+        early_only: bool = False,
         affix_id: bool = True,
     ) -> "MonoCut":
         """
@@ -1354,6 +1355,7 @@ class MonoCut(Cut):
 
         :param rir_recording: The impulse response to use for convolving.
         :param normalize_output: When true, output will be normalized to have energy as input.
+        :param early_only: When true, only the early reflections (first 50 ms) will be used.
         :param affix_id: When true, we will modify the ``MonoCut.id`` field
             by affixing it with "_rvb".
         :return: a modified copy of the current ``MonoCut``.
@@ -1373,6 +1375,7 @@ class MonoCut(Cut):
         recording_rvb = self.recording.reverb_rir(
             rir_recording=rir_recording,
             normalize_output=normalize_output,
+            early_only=early_only,
             affix_id=affix_id,
         )
         # Match the supervision's id (and it's underlying recording id).
@@ -1738,6 +1741,7 @@ class PaddingCut(Cut):
         self,
         rir_recording: "Recording",
         normalize_output: bool = True,
+        early_only: bool = False,
         affix_id: bool = True,
     ) -> "PaddingCut":
         """
@@ -1746,6 +1750,7 @@ class PaddingCut(Cut):
 
         :param rir_recording: The impulse response to use for convolving.
         :param normalize_output: When true, output will be normalized to have energy as input.
+        :param early_only: When true, only the early reflections (first 50 ms) will be used.
         :param affix_id: When true, we will modify the ``PaddingCut.id`` field
             by affixing it with "_rvb".
         :return: a modified copy of the current ``PaddingCut``.
@@ -2337,6 +2342,7 @@ class MixedCut(Cut):
         self,
         rir_recording: "Recording",
         normalize_output: bool = True,
+        early_only: bool = False,
         affix_id: bool = True,
     ) -> "MixedCut":
         """
@@ -2344,6 +2350,7 @@ class MixedCut(Cut):
 
         :param rir_recording: The impulse response to use for convolving.
         :param normalize_output: When true, output will be normalized to have energy as input.
+        :param early_only: When true, only the early reflections (first 50 ms) will be used.
         :param affix_id: When true, we will modify the ``MixedCut.id`` field
             by affixing it with "_rvb".
         :return: a modified copy of the current ``MixedCut``.
@@ -2366,6 +2373,7 @@ class MixedCut(Cut):
                     cut=track.cut.reverb_rir(
                         rir_recording=rir_recording,
                         normalize_output=normalize_output,
+                        early_only=early_only,
                         affix_id=affix_id,
                     ),
                 )
@@ -3706,6 +3714,7 @@ class CutSet(Serializable, Sequence[Cut]):
         self,
         rir_recordings: "RecordingSet",
         normalize_output: bool = True,
+        early_only: bool = False,
         affix_id: bool = True,
     ) -> "CutSet":
         """
@@ -3716,6 +3725,7 @@ class CutSet(Serializable, Sequence[Cut]):
 
         :param rir_recordings: RecordingSet containing the room impulse responses.
         :param normalize_output: When true, output will be normalized to have energy as input.
+        :param early_only: When true, only the early reflections (first 50 ms) will be used.
         :param affix_id: Should we modify the ID (useful if both versions of the same
             cut are going to be present in a single manifest).
         :return: a modified copy of the ``CutSet``.
@@ -3726,6 +3736,7 @@ class CutSet(Serializable, Sequence[Cut]):
                 cut.reverb_rir(
                     rir_recording=random.choice(rir_recordings),
                     normalize_output=normalize_output,
+                    early_only=early_only,
                     affix_id=affix_id,
                 )
                 for cut in self
