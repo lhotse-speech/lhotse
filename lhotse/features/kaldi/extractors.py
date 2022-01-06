@@ -53,7 +53,7 @@ class Fbank(FeatureExtractor):
 
     def __init__(self, config: Optional[FbankConfig] = None):
         super().__init__(config=config)
-        self.extractor = Wav2LogFilterBank(**self.config.to_dict())
+        self.extractor = Wav2LogFilterBank(**self.config.to_dict()).eval()
 
     @property
     def frame_shift(self) -> Seconds:
@@ -148,7 +148,7 @@ class Mfcc(FeatureExtractor):
 
     def __init__(self, config: Optional[MfccConfig] = None):
         super().__init__(config=config)
-        self.extractor = torch.jit.script(Wav2MFCC(**self.config.to_dict()))
+        self.extractor = Wav2MFCC(**self.config.to_dict()).eval()
 
     @property
     def frame_shift(self) -> Seconds:
