@@ -382,6 +382,7 @@ class ReverbWithImpulseResponse(AudioTransform):
 
     rir: dict
     normalize_output: bool = True
+    early_only: bool = False
 
     RIR_SCALING_FACTOR: float = 0.5 ** 15
 
@@ -404,7 +405,11 @@ class ReverbWithImpulseResponse(AudioTransform):
         assert samples.shape[0] == 1, "The input audio must be single-channel."
         sampling_rate = int(sampling_rate)  # paranoia mode
 
-        rir_ = self.rir.load_audio()
+        rir_ = (
+            self.rir.load_audio()
+            if not self.early_only
+            else self.rir.load_audio(duration=0.05)
+        )
 
         # Determine output length.
         _, N_in = samples.shape
