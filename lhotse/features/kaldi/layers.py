@@ -542,7 +542,9 @@ class Wav2LogFilterBank(Wav2FFT):
         self.high_freq = high_freq
         self.num_filters = num_filters
         self.norm_filters = norm_filters
-        self.torchaudio_compatible_mel_scale = torchaudio_compatible_mel_scale
+        self._eps = nn.Parameter(
+            torch.tensor(torch.finfo(torch.float).eps), requires_grad=False
+        )
 
         if use_fft_mag:
             self._to_spec = _spectrogram
@@ -565,7 +567,7 @@ class Wav2LogFilterBank(Wav2FFT):
                 vtln_low=100.0,
                 vtln_high=-500.0,
             )
-            fb = torch.nn.functional.pad(fb, (0, 1), mode='constant', value=0).T
+            fb = torch.nn.functional.pad(fb, (0, 1), mode="constant", value=0).T
         else:
             fb = create_mel_scale(
                 num_filters=num_filters,
@@ -586,7 +588,7 @@ class Wav2LogFilterBank(Wav2FFT):
         pow_spec = self._to_spec(X)
 
         pow_spec = torch.matmul(pow_spec, self._fb)
-        pow_spec = torch.max(pow_spec, torch.tensor(1e-10)).log()
+        pow_spec = torch.max(pow_spec, self._eps).log()
 
         # log_e is not None is needed by torchscript
         if self.use_energy and log_e is not None:
@@ -659,6 +661,9 @@ class Wav2MFCC(Wav2FFT):
         self.norm_filters = norm_filters
         self.num_ceps = num_ceps
         self.cepstral_lifter = cepstral_lifter
+        self._eps = nn.Parameter(
+            torch.tensor(torch.finfo(torch.float).eps), requires_grad=False
+        )
 
         if use_fft_mag:
             self._to_spec = _spectrogram
@@ -675,8 +680,13 @@ class Wav2MFCC(Wav2FFT):
                 sample_freq=sampling_rate,
                 low_freq=low_freq,
                 high_freq=high_freq,
+                # VTLN args are hardcoded to torchaudio default values;
+                # they are not used anyway with wapr_factor == 1.0
+                vtln_warp_factor=1.0,
+                vtln_low=100.0,
+                vtln_high=-500.0,
             )
-            fb = torch.nn.functional.pad(fb, (0, 1), mode='constant', value=0)
+            fb = torch.nn.functional.pad(fb, (0, 1), mode="constant", value=0).T
         else:
             fb = create_mel_scale(
                 num_filters=num_filters,
@@ -729,8 +739,8 @@ class Wav2MFCC(Wav2FFT):
     ) -> torch.Tensor:
         X = _rfft(x_strided)
         pow_spec = self._to_spec(X)
-        pow_spec = torch.matmul(pow_spec.float(), self._fb.float())
-        pow_spec = (pow_spec + 1e-10).log()
+        pow_spec = torch.matmul(pow_spec, self._fb)
+        pow_spec = torch.max(pow_spec, self._eps).log()
 
         mfcc = torch.matmul(pow_spec, self._dct)
         if self.cepstral_lifter > 0:
