@@ -519,6 +519,7 @@ class Wav2LogFilterBank(Wav2FFT):
         high_freq: float = -400.0,
         num_filters: int = 80,
         norm_filters: bool = False,
+        torchaudio_compatible_mel_scale: bool = True,
     ):
 
         super().__init__(
@@ -541,20 +542,39 @@ class Wav2LogFilterBank(Wav2FFT):
         self.high_freq = high_freq
         self.num_filters = num_filters
         self.norm_filters = norm_filters
+        self.torchaudio_compatible_mel_scale = torchaudio_compatible_mel_scale
 
         if use_fft_mag:
             self._to_spec = _spectrogram
         else:
             self._to_spec = _pow_spectrogram
 
-        fb = create_mel_scale(
-            num_filters=num_filters,
-            fft_length=fft_length,
-            sampling_rate=sampling_rate,
-            low_freq=low_freq,
-            high_freq=high_freq,
-            norm_filters=norm_filters,
-        )
+        if torchaudio_compatible_mel_scale:
+            from torchaudio.compliance.kaldi import get_mel_banks
+
+            # see torchaudio.compliance.kaldi.fbank, lines #581-587 for the original usage
+            fb, _ = get_mel_banks(
+                num_bins=num_filters,
+                window_length_padded=fft_length,
+                sample_freq=sampling_rate,
+                low_freq=low_freq,
+                high_freq=high_freq,
+                # VTLN args are hardcoded to torchaudio default values;
+                # they are not used anyway with wapr_factor == 1.0
+                vtln_warp_factor=1.0,
+                vtln_low=100.0,
+                vtln_high=-500.0,
+            )
+            fb = torch.nn.functional.pad(fb, (0, 1), mode='constant', value=0).T
+        else:
+            fb = create_mel_scale(
+                num_filters=num_filters,
+                fft_length=fft_length,
+                sampling_rate=sampling_rate,
+                low_freq=low_freq,
+                high_freq=high_freq,
+                norm_filters=norm_filters,
+            )
         self._fb = nn.Parameter(
             torch.tensor(fb, dtype=torch.get_default_dtype()), requires_grad=False
         )
@@ -565,8 +585,8 @@ class Wav2LogFilterBank(Wav2FFT):
         X = _rfft(x_strided)
         pow_spec = self._to_spec(X)
 
-        pow_spec = torch.matmul(pow_spec.float(), self._fb.float())
-        pow_spec = (pow_spec + 1e-10).log()
+        pow_spec = torch.matmul(pow_spec, self._fb)
+        pow_spec = torch.max(pow_spec, torch.tensor(1e-10)).log()
 
         # log_e is not None is needed by torchscript
         if self.use_energy and log_e is not None:
@@ -614,6 +634,7 @@ class Wav2MFCC(Wav2FFT):
         norm_filters: bool = False,
         num_ceps: int = 13,
         cepstral_lifter: int = 22,
+        torchaudio_compatible_mel_scale: bool = True,
     ):
 
         super().__init__(
@@ -644,17 +665,31 @@ class Wav2MFCC(Wav2FFT):
         else:
             self._to_spec = _pow_spectrogram
 
-        fb = create_mel_scale(
-            num_filters=num_filters,
-            fft_length=fft_length,
-            sampling_rate=sampling_rate,
-            low_freq=low_freq,
-            high_freq=high_freq,
-            norm_filters=norm_filters,
-        )
+        if torchaudio_compatible_mel_scale:
+            from torchaudio.compliance.kaldi import get_mel_banks
+
+            # see torchaudio.compliance.kaldi.fbank, lines #581-587 for the original usage
+            fb, _ = get_mel_banks(
+                num_bins=num_filters,
+                window_length_padded=fft_length,
+                sample_freq=sampling_rate,
+                low_freq=low_freq,
+                high_freq=high_freq,
+            )
+            fb = torch.nn.functional.pad(fb, (0, 1), mode='constant', value=0)
+        else:
+            fb = create_mel_scale(
+                num_filters=num_filters,
+                fft_length=fft_length,
+                sampling_rate=sampling_rate,
+                low_freq=low_freq,
+                high_freq=high_freq,
+                norm_filters=norm_filters,
+            )
         self._fb = nn.Parameter(
             torch.tensor(fb, dtype=torch.get_default_dtype()), requires_grad=False
         )
+
         self._dct = nn.Parameter(
             self.make_dct_matrix(self.num_ceps, self.num_filters), requires_grad=False
         )
