@@ -93,7 +93,9 @@ class RandomCutTestCase:
             ),
         )
         if features:
-            cut = self._with_features(cut, frame_shift=frame_shift)
+            cut = self._with_features(
+                cut, frame_shift=frame_shift, sampling_rate=sampling_rate
+            )
         if supervision:
             cut.supervisions.append(
                 SupervisionSegment(
@@ -111,10 +113,14 @@ class RandomCutTestCase:
             self._with_custom_temporal_array(cut=cut, frame_shift=frame_shift)
         return cut
 
-    def _with_features(self, cut: MonoCut, frame_shift: Seconds) -> MonoCut:
+    def _with_features(
+        self, cut: MonoCut, frame_shift: Seconds, sampling_rate: int
+    ) -> MonoCut:
         d = TemporaryDirectory()
         self.dirs.append(d)
-        extractor = Fbank(config=FbankConfig(frame_shift=frame_shift))
+        extractor = Fbank(
+            config=FbankConfig(sampling_rate=sampling_rate, frame_shift=frame_shift)
+        )
         with LilcomHdf5Writer(d.name) as storage:
             return cut.compute_and_store_features(extractor, storage=storage)
 
