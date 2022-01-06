@@ -141,7 +141,7 @@ def test_strided_waveform_batch_streaming():
 
     # one last extra iteration to pump out the frames that the offline version gets due to padding
     # note that our implementation will flip the last N samples so we do the same for identical results
-    x_chunk = torch.flip(x[:, -(window_shift + 1) : -1], dims=(1,))
+    x_chunk = torch.flip(x[:, -window_shift:], dims=(1,))
     y_chunk, remainder = _get_strided_batch_streaming(
         x_chunk,
         window_length=window_length,
@@ -180,7 +180,7 @@ def test_wav2win_streaming():
         frames.append(y_chunk)
 
     # one last extra iteration to pump out the frames that the offline version gets due to padding
-    x_chunk = torch.flip(x[:, -(window_shift + 1) : -1], dims=(1,))
+    x_chunk = torch.flip(x[:, -window_shift:], dims=(1,))
     (y_chunk, _), remainder = t.online_inference(x_chunk, context=remainder)
     frames.append(y_chunk)
 
@@ -224,7 +224,7 @@ def test_wav2logfilterbank_streaming(layer_type, feat_dim):
         frames.append(y_chunk)
 
     # one last extra iteration to pump out the frames that the offline version gets due to padding
-    x_chunk = torch.flip(x[:, -(window_shift + 1) : -1], dims=(1,))
+    x_chunk = torch.flip(x[:, -window_shift:], dims=(1,))
     y_chunk, remainder = t.online_inference(x_chunk, context=remainder)
     frames.append(y_chunk)
 

@@ -740,9 +740,9 @@ def _get_strided_batch(
         npad_left = int((window_length - window_shift) // 2)
         npad_right = npad - npad_left
         # waveform = nn.functional.pad(waveform, (npad_left, npad_right), mode='reflect')
-        pad_left = torch.flip(waveform[:, 1 : npad_left + 1], (1,))
+        pad_left = torch.flip(waveform[:, :npad_left], (1,))
         if npad_right >= 0:
-            pad_right = torch.flip(waveform[:, -npad_right - 1 : -1], (1,))
+            pad_right = torch.flip(waveform[:, -npad_right:], (1,))
         else:
             pad_right = torch.tensor([], dtype=waveform.dtype)
         waveform = torch.cat((pad_left, waveform, pad_right), dim=1)
@@ -807,7 +807,7 @@ def _get_strided_batch_streaming(
 
     if prev_remainder is None:
         npad_left = int((window_length - window_shift) // 2)
-        pad_left = torch.flip(waveform[:, 1 : npad_left + 1], (1,))
+        pad_left = torch.flip(waveform[:, :npad_left], (1,))
         waveform = torch.cat((pad_left, waveform), dim=1)
     else:
         assert prev_remainder.dim() == 2
@@ -897,13 +897,11 @@ BLACKMAN = "blackman"
 def create_frame_window(window_size, window_type: str = "povey", blackman_coeff=0.42):
     r"""Returns a window function with the given type and size"""
     if window_type == HANNING:
-        return torch.hann_window(window_size, periodic=True)
+        return torch.hann_window(window_size, periodic=False)
     elif window_type == HAMMING:
-        return torch.hamming_window(window_size, periodic=True, alpha=0.54, beta=0.46)
+        return torch.hamming_window(window_size, periodic=False, alpha=0.54, beta=0.46)
     elif window_type == POVEY:
-        a = 2 * math.pi / window_size
-        window_function = torch.arange(window_size, dtype=torch.get_default_dtype())
-        return (0.5 - 0.5 * torch.cos(a * window_function)).pow(0.85)
+        return torch.hann_window(window_size, periodic=False).pow(0.85)
     elif window_type == RECTANGULAR:
         return torch.ones(window_size, dtype=torch.get_default_dtype())
     elif window_type == BLACKMAN:
