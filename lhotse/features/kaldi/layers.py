@@ -817,7 +817,7 @@ def _get_strided_batch_streaming(
     num_samples = waveform.size(-1)
 
     window_remainder = window_length - window_shift
-    num_frames = (num_samples - (window_remainder)) // window_shift
+    num_frames = (num_samples - window_remainder) // window_shift
 
     remainder = waveform[:, num_frames * window_shift :]
 
