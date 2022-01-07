@@ -517,7 +517,7 @@ class Recording:
 
         :param rir_recording: The impulse response to be used.
         :param normalize_output: When true, output will be normalized to have energy as input.
-        :param early_only: When true, only the early reflections will be used.
+        :param early_only: When true, only the early reflections (first 50 ms) will be used.
         :param affix_id: When true, we will modify the ``Recording.id`` field
             by affixing it with "_rvb".
         :return: the perturbed ``Recording``.
@@ -882,7 +882,7 @@ class RecordingSet(Serializable, Sequence[Recording]):
 
         :param rir_recordings: The impulse responses to be used.
         :param normalize_output: When true, output will be normalized to have energy as input.
-        :param early_only: When true, only the early reflections will be used.
+        :param early_only: When true, only the early reflections (first 50 ms) will be used.
         :param affix_id: When true, we will modify the ``Recording.id`` field
             by affixing it with "_rvb".
         :return: a ``RecordingSet`` containing the perturbed ``Recording`` objects.
