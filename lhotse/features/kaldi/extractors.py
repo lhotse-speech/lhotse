@@ -1,5 +1,4 @@
-import warnings
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from typing import Any, Dict, Optional, Union
 
 import numpy as np
@@ -66,7 +65,7 @@ class Fbank(FeatureExtractor):
         self, samples: Union[np.ndarray, torch.Tensor], sampling_rate: int
     ) -> Union[np.ndarray, torch.Tensor]:
         assert sampling_rate == self.config.sampling_rate, (
-            f"KaldiFbank was instantiated for sampling_rate "
+            f"Fbank was instantiated for sampling_rate "
             f"{self.config.sampling_rate}, but "
             f"sampling_rate={sampling_rate} was passed to extract()."
         )
@@ -161,7 +160,7 @@ class Mfcc(FeatureExtractor):
         self, samples: Union[np.ndarray, torch.Tensor], sampling_rate: int
     ) -> Union[np.ndarray, torch.Tensor]:
         assert sampling_rate == self.config.sampling_rate, (
-            f"KaldiMfcc was instantiated for sampling_rate "
+            f"Mfcc was instantiated for sampling_rate "
             f"{self.config.sampling_rate}, but "
             f"sampling_rate={sampling_rate} was passed to extract()."
         )
