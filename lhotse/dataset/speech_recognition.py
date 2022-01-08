@@ -90,7 +90,7 @@ class K2SpeechRecognitionDataset(torch.utils.data.Dataset):
         Return a new batch, with the batch size automatically determined using the constraints
         of max_frames and max_cuts.
         """
-        validate_for_asr(cuts)
+        #validate_for_asr(cuts)
 
         # Sort the cuts by duration so that the first one determines the batch time dimensions.
         cuts = cuts.sort_by_duration(ascending=False)
