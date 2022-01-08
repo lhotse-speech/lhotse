@@ -8,14 +8,10 @@ recorded at International Computer Science Institute (ICSI), Berkley.
 Speech is captured using the set of parallel microphones, including close-talk headsets,
 and several distant independent microhones (i.e. mics that do not form any explicitly 
 known geometry, see below for an example layout). Recordings are sampled at 16kHz.
+ 
+The correponding paper describing the ICSI corpora is [1]
 
-See [1] for more details on ICSI, or [2,3] to access the data. 
-The correponding paper describing the ICSI corpora is [4]
-
-[1] http://www1.icsi.berkeley.edu/Speech/mr/
-[2] LDC: LDC2004S02 for audio, and LDC2004T04 for transcripts (used in this recipe)
-[3] http://groups.inf.ed.ac.uk/ami/icsi/ (free access, but for now only ihm data is available for download)
-[4] A Janin, D Baron, J Edwards, D Ellis, D Gelbart, N Morgan, B Peskin,
+[1] A Janin, D Baron, J Edwards, D Ellis, D Gelbart, N Morgan, B Peskin,
     T Pfau, E Shriberg, A Stolcke, and C Wooters, The ICSI meeting corpus. 
     in Proc IEEE ICASSP, 2003, pp. 364-367
 
@@ -26,10 +22,10 @@ data (as a part of this corpora) can be found in, for example, NIST RT04 amd RT0
 
 This recipe, however, to be self-contained factors out training (67.5 hours), development (2.2 hours 
 and evaluation (2.8 hours) sets in a way to minimise the speaker-overlap between different partitions, 
-and to avoid known issues with available recordings during evaluation. This recipe follows [5] where 
+and to avoid known issues with available recordings during evaluation. This recipe follows [2] where 
 dev and eval sets are making use of {Bmr021, Bns00} and {Bmr013, Bmr018, Bro021} meetings, respectively.
 
-[5] S Renals and P Swietojanski, Neural networks for distant speech recognition. 
+[2] S Renals and P Swietojanski, Neural networks for distant speech recognition. 
     in Proc IEEE HSCMA 2014 pp. 172-176. DOI:10.1109/HSCMA.2014.6843274
 
 Below description is (mostly) copied from ICSI documentation for convenience.
@@ -84,9 +80,21 @@ or (optionally) skip this speaker's segments entirely from processing.
 This is not the case for eval set, where all the channels come with the 
 expected recordings, and split is the same for all conditions (thus allowing 
 for direct comparisons between IHM, SDM and MDM settings).
+
+NOTE on data: The ICSI data is freely available from the website (see `download` below)
+and also as LDC corpora. The annotations that we download below are same as 
+LDC2004T04, but there are some differences in the audio data, specifically in the
+session names. Some sessions (Bns...) are named (bns...) in the LDC corpus, and the
+Mix-Headset wav files are not available from the LDC corpus. So we recommend downloading
+the public version even if you have an LDC subscription. The public data also includes
+annotations of roles, dialog, summary etc. but we have not included them in this recipe.
 """
 
 import logging
+import itertools
+import zipfile
+import urllib
+import ssl
 import xml.etree.ElementTree as ET
 from collections import defaultdict
 from pathlib import Path
@@ -103,21 +111,26 @@ from lhotse.utils import Pathlike, Seconds, urlretrieve_progress
 # fmt:off
 PARTITIONS = {
     'train': [
-        "bdb001", "bed002", "bed003", "bed004", "bed005", "bed006", "bed008", "bed009", 
-        "bed010", "bed011", "bed012", "bed013", "bed014", "bed015", "bed016", "bed017", 
-        "bmr001", "bmr002", "bmr003", "bmr005", "bmr006", "bmr007", "bmr008", "bmr009", 
-        "bmr010", "bmr011", "bmr012", "bmr014", "bmr015", "bmr016", "bmr019", "bmr020", 
-        "bmr022", "bmr023", "bmr024", "bmr025", "bmr026", "bmr027", "bmr028", "bmr029", 
-        "bmr030", "bmr031", "bns002", "bns003", "bro003", "bro004", "bro005", "bro007", 
-        "bro008", "bro010", "bro011", "bro012", "bro013", "bro014", "bro015", "bro016", 
-        "bro017", "bro018", "bro019", "bro022", "bro023", "bro024", "bro025", "bro026", 
-        "bro027", "bro028", "bsr001", "btr001", "btr002", "buw001",
+        "Bdb001", "Bed002", "Bed003", "Bed004", "Bed005", "Bed006", "Bed008", "Bed009", 
+        "Bed010", "Bed011", "Bed012", "Bed013", "Bed014", "Bed015", "Bed016", "Bed017", 
+        "Bmr001", "Bmr002", "Bmr003", "Bmr005", "Bmr006", "Bmr007", "Bmr008", "Bmr009", 
+        "Bmr010", "Bmr011", "Bmr012", "Bmr014", "Bmr015", "Bmr016", "Bmr019", "Bmr020", 
+        "Bmr022", "Bmr023", "Bmr024", "Bmr025", "Bmr026", "Bmr027", "Bmr028", "Bmr029", 
+        "Bmr030", "Bmr031", "Bns002", "Bns003", "Bro003", "Bro004", "Bro005", "Bro007", 
+        "Bro008", "Bro010", "Bro011", "Bro012", "Bro013", "Bro014", "Bro015", "Bro016", 
+        "Bro017", "Bro018", "Bro019", "Bro022", "Bro023", "Bro024", "Bro025", "Bro026", 
+        "Bro027", "Bro028", "Bsr001", "Btr001", "Btr002", "Buw001",
     ],
-    'dev': ["bmr021", "bns001"],
-    'test': ["bmr013", "bmr018", "bro021"]
+    'dev': ["Bmr021", "Bns001"],
+    'test': ["Bmr013", "Bmr018", "Bro021"]
 }
 
-MICS = ["ihm", "sdm", "mdm"]  # See AMI recipe for description of mic types
+MIC_TO_CHANNELS = {
+    "ihm": [1, 2, 3, 4, 5, 6, 8, 9], # we include 6 since it is used as back-off from some speakers for which no headset-mic exists
+    "sdm": [6],
+    "mdm": ["E", "F", 6, 7],
+    "ihm-mix": [],
+}
 # fmt:on
 
 
@@ -128,6 +141,85 @@ class IcsiSegmentAnnotation(NamedTuple):
     gender: str
     start_time: Seconds
     end_time: Seconds
+
+
+def download_audio(
+    target_dir: Path,
+    force_download: Optional[bool] = False,
+    url: Optional[str] = "http://https://groups.inf.ed.ac.uk/ami",
+    mic: Optional[str] = "ihm",
+) -> None:
+    # Audios
+    for item in tqdm(
+        itertools.chain.from_iterable(PARTITIONS.values()),
+        desc="Downloading ICSI meetings",
+    ):
+        if mic in ["ihm", "sdm", "mdm"]:
+            for channel in MIC_TO_CHANNELS[mic]:
+                wav_url = f"{url}/ICSIsignals/SPH/{item}/chan{channel}.sph"
+                wav_dir = target_dir / "speech" / item
+                wav_dir.mkdir(parents=True, exist_ok=True)
+                wav_path = wav_dir / f"chan{channel}.sph"
+                if force_download or not wav_path.is_file():
+                    urlretrieve_progress(
+                        wav_url,
+                        filename=wav_path,
+                        desc=f"Downloading {item} chan{channel}.sph",
+                    )
+        else:
+            wav_url = f"{url}/ICSIsignals/NXT/{item}.interaction.wav"
+            wav_dir = target_dir / "speech" / item
+            wav_dir.mkdir(parents=True, exist_ok=True)
+            wav_path = wav_dir / f"Mix-Headset.wav"
+            if force_download or not wav_path.is_file():
+                urlretrieve_progress(
+                    wav_url,
+                    filename=wav_path,
+                    desc=f"Downloading {item} Mix-Headset.wav",
+                )
+
+
+def download_icsi(
+    audio_dir: Pathlike = ".",
+    transcripts_dir: Optional[Pathlike] = None,
+    force_download: Optional[bool] = False,
+    url: Optional[str] = "http://groups.inf.ed.ac.uk/ami",
+    mic: Optional[str] = "ihm",
+) -> None:
+    """
+    Download ICSI audio and annotations for provided microphone setting.
+    :param audio_dir: Pathlike, the path to store the audio data.
+    :param transcripts_dir: Pathlike (default = None), path to save annotations zip file
+    :param force_download: bool (default = False), if True, download even if file is present.
+    :param url: str (default = 'http://groups.inf.ed.ac.uk/ami'), download URL.
+    :param mic: str {'ihm','ihm-mix','sdm','mdm'}, type of mic setting.
+    """
+    audio_dir = Path(audio_dir)
+    transcripts_dir = Path(transcripts_dir) if transcripts_dir else audio_dir
+
+    # Audio
+    download_audio(audio_dir, force_download, url, mic)
+
+    # Annotations
+    logging.info("Downloading AMI annotations")
+
+    if transcripts_dir.exists() and not force_download:
+        logging.info(
+            f"Skip downloading transcripts as they exist in: {transcripts_dir}"
+        )
+        return
+    annotations_url = f"{url}/ICSICorpusAnnotations/ICSI_original_transcripts.zip"
+
+    # The following is analogous to `wget --no-check-certificate``
+    context = ssl._create_unverified_context()
+    urllib.request.urlretrieve(
+        annotations_url,
+        filename=transcripts_dir / "ICSI_original_transcripts.zip",
+        context=context,
+    )
+    # Unzip annotations zip file
+    with zipfile.ZipFile(transcripts_dir / "ICSI_original_transcripts.zip") as z:
+        z.extractall(transcripts_dir)
 
 
 def parse_icsi_annotations(
@@ -146,7 +238,7 @@ def parse_icsi_annotations(
         if meeting_file.stem == "preambles":
             continue
         with open(meeting_file) as f:
-            meeting_id = meeting_file.stem.lower()
+            meeting_id = meeting_file.stem
             root = ET.parse(f).getroot()  # <Meeting>
             for child in root:
                 if child.tag == "Preamble":
@@ -205,7 +297,7 @@ def prepare_audio_grouped(
     # We will use that to create a Recording with multiple sources (channels).
     from cytoolz import groupby
 
-    channel_wavs = groupby(lambda p: p.parts[-2].lower(), audio_paths)
+    channel_wavs = groupby(lambda p: p.parts[-2], audio_paths)
 
     if channel_to_idx_map is None:
         channel_to_idx_map = defaultdict(dict)
@@ -239,7 +331,7 @@ def prepare_audio_grouped(
     return RecordingSet.from_recordings(recordings)
 
 
-# SDM setting does not require any grouping
+# SDM and IHM-Mix settings do not require any grouping
 
 
 def prepare_audio_single(
@@ -249,21 +341,28 @@ def prepare_audio_single(
 
     recordings = []
     for audio_path in tqdm(audio_paths, desc="Preparing audio"):
-        session_name = audio_path.parts[-2].lower()
-        audio_sf, samplerate = read_sph(audio_path)
+        session_name = audio_path.parts[-2]
+        if audio_path.suffix == ".wav":
+            audio_sf = sf.SoundFile(str(audio_path))
+            num_frames = audio_sf.frames
+            num_channels = audio_sf.channels
+            samplerate = audio_sf.samplerate
+        else:
+            audio_sf, samplerate = read_sph(audio_path)
+            num_channels, num_frames = audio_sf.shape
         recordings.append(
             Recording(
                 id=session_name,
                 sources=[
                     AudioSource(
                         type="file",
-                        channels=list(range(audio_sf.shape[0])),
+                        channels=list(range(num_channels)),
                         source=str(audio_path),
                     )
                 ],
                 sampling_rate=samplerate,
-                num_samples=audio_sf.shape[1],
-                duration=audio_sf.shape[1] / samplerate,
+                num_samples=num_frames,
+                duration=num_frames / samplerate,
             )
         )
     return RecordingSet.from_recordings(recordings)
@@ -377,7 +476,7 @@ def prepare_icsi(
     :param data_dir: Pathlike, the path of the audio dir (LDC2004S02).
     :param transcripts_dir: Pathlike, the path of the transcripts dir (LDC2004T04).
     :param output_dir: Pathlike, the path where to write the manifests.
-    :param mic: str {'ihm','sdm','mdm'}, type of mic to use.
+    :param mic: str {'ihm','ihm-mix','sdm','mdm'}, type of mic to use.
     :param normalize_text: bool, whether to normalize text to uppercase
     :return: a Dict whose key is ('train', 'dev', 'test'), and the values are dicts of manifests under keys
         'recordings' and 'supervisions'.
@@ -386,7 +485,7 @@ def prepare_icsi(
     transcripts_dir = Path(transcripts_dir)
     assert audio_dir.is_dir(), f"No such directory: {audio_dir}"
     assert transcripts_dir.is_dir(), f"No such directory: {transcripts_dir}"
-    assert mic in MICS, f"Mic {mic} not supported"
+    assert mic in MIC_TO_CHANNELS.keys(), f"Mic {mic} not supported"
 
     if output_dir is not None:
         output_dir = Path(output_dir)
@@ -400,14 +499,18 @@ def prepare_icsi(
     # Audio
     logging.info("Preparing recording manifests")
 
-    if mic == "ihm":
-        audio_paths = audio_dir.rglob("chan[1-9].sph")
-        audio = prepare_audio_grouped(list(audio_paths), channel_to_idx_map)
-    elif mic == "mdm":
-        audio_paths = audio_dir.rglob("chan[EF67].sph")
-        audio = prepare_audio_grouped(list(audio_paths))
-    else:
-        audio_paths = audio_dir.rglob("chan6.sph")
+    channels = "".join(MIC_TO_CHANNELS[mic])
+    if mic == "ihm" or mic == "mdm":
+        audio_paths = audio_dir.rglob(f"chan[{channels}].sph")
+        audio = prepare_audio_grouped(
+            list(audio_paths), channel_to_idx_map if mic == "ihm" else None
+        )
+    elif mic == "sdm" or mic == "ihm-mix":
+        audio_paths = (
+            audio_dir.rglob(f"chan[{channels}].sph")
+            if len(channels)
+            else audio_dir.rglob("*.wav")
+        )
         audio = prepare_audio_single(list(audio_paths))
 
     # Supervisions
