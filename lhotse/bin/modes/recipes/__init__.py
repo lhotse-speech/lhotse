@@ -2,6 +2,7 @@ from .adept import *
 from .aishell import *
 from .aishell4 import *
 from .ami import *
+from .aspire import *
 from .babel import *
 from .broadcast_news import *
 from .callhome_egyptian import *
