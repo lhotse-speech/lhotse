@@ -508,6 +508,7 @@ class Recording:
         self,
         rir_recording: "Recording",
         normalize_output: bool = True,
+        early_only: bool = False,
         affix_id: bool = True,
     ) -> "Recording":
         """
@@ -516,6 +517,7 @@ class Recording:
 
         :param rir_recording: The impulse response to be used.
         :param normalize_output: When true, output will be normalized to have energy as input.
+        :param early_only: When true, only the early reflections (first 50 ms) will be used.
         :param affix_id: When true, we will modify the ``Recording.id`` field
             by affixing it with "_rvb".
         :return: the perturbed ``Recording``.
@@ -525,6 +527,7 @@ class Recording:
             ReverbWithImpulseResponse(
                 rir_recording,
                 normalize_output=normalize_output,
+                early_only=early_only,
             ).to_dict()
         )
         return fastcopy(
@@ -870,6 +873,7 @@ class RecordingSet(Serializable, Sequence[Recording]):
         self,
         rir_recordings: "RecordingSet",
         normalize_output: bool = True,
+        early_only: bool = False,
         affix_id: bool = True,
     ) -> "RecordingSet":
         """
@@ -878,6 +882,7 @@ class RecordingSet(Serializable, Sequence[Recording]):
 
         :param rir_recordings: The impulse responses to be used.
         :param normalize_output: When true, output will be normalized to have energy as input.
+        :param early_only: When true, only the early reflections (first 50 ms) will be used.
         :param affix_id: When true, we will modify the ``Recording.id`` field
             by affixing it with "_rvb".
         :return: a ``RecordingSet`` containing the perturbed ``Recording`` objects.
@@ -887,6 +892,7 @@ class RecordingSet(Serializable, Sequence[Recording]):
             r.reverb_rir(
                 rir_recording=random.choice(rir_recordings),
                 normalize_output=normalize_output,
+                early_only=early_only,
                 affix_id=affix_id,
             )
             for r in self

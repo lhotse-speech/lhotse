@@ -1,4 +1,4 @@
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from typing import Any, Dict, Optional, Union
 
 import numpy as np
@@ -6,15 +6,15 @@ import torch
 
 from lhotse.features.base import FeatureExtractor, register_extractor
 from lhotse.features.kaldi.layers import Wav2LogFilterBank, Wav2MFCC
-from lhotse.utils import EPSILON, Seconds
+from lhotse.utils import EPSILON, Seconds, asdict_nonull
 
 
 @dataclass
-class KaldiFbankConfig:
+class FbankConfig:
     sampling_rate: int = 16000
     frame_length: Seconds = 0.025
     frame_shift: Seconds = 0.01
-    fft_length: int = 512
+    round_to_power_of_two: bool = True
     remove_dc_offset: bool = True
     preemph_coeff: float = 0.97
     window_type: str = "povey"
@@ -27,24 +27,32 @@ class KaldiFbankConfig:
     low_freq: float = 20.0
     high_freq: float = -400.0
     num_filters: int = 80
+    num_mel_bins: Optional[int] = None  # do not use
     norm_filters: bool = False
 
+    def __post_init__(self):
+        # This is to help users transition to a different Fbank implementation
+        # from torchaudio.compliance.kaldi.fbank(), where the arg had a different name.
+        if self.num_mel_bins is not None:
+            self.num_filters = self.num_mel_bins
+            self.num_mel_bins = None
+
     def to_dict(self) -> Dict[str, Any]:
-        return asdict(self)
+        return asdict_nonull(self)
 
     @staticmethod
-    def from_dict(data: Dict[str, Any]) -> "KaldiFbankConfig":
-        return KaldiFbankConfig(**data)
+    def from_dict(data: Dict[str, Any]) -> "FbankConfig":
+        return FbankConfig(**data)
 
 
 @register_extractor
-class KaldiFbank(FeatureExtractor):
+class Fbank(FeatureExtractor):
     name = "kaldi-fbank"
-    config_type = KaldiFbankConfig
+    config_type = FbankConfig
 
-    def __init__(self, config: Optional[KaldiFbankConfig] = None):
+    def __init__(self, config: Optional[FbankConfig] = None):
         super().__init__(config=config)
-        self.extractor = Wav2LogFilterBank(**asdict(self.config))
+        self.extractor = Wav2LogFilterBank(**self.config.to_dict()).eval()
 
     @property
     def frame_shift(self) -> Seconds:
@@ -57,7 +65,7 @@ class KaldiFbank(FeatureExtractor):
         self, samples: Union[np.ndarray, torch.Tensor], sampling_rate: int
     ) -> Union[np.ndarray, torch.Tensor]:
         assert sampling_rate == self.config.sampling_rate, (
-            f"KaldiFbank was instantiated for sampling_rate "
+            f"Fbank was instantiated for sampling_rate "
             f"{self.config.sampling_rate}, but "
             f"sampling_rate={sampling_rate} was passed to extract()."
         )
@@ -95,11 +103,11 @@ class KaldiFbank(FeatureExtractor):
 
 
 @dataclass
-class KaldiMfccConfig:
+class MfccConfig:
     sampling_rate: int = 16000
     frame_length: Seconds = 0.025
     frame_shift: Seconds = 0.01
-    fft_length: int = 512
+    round_to_power_of_two: bool = True
     remove_dc_offset: bool = True
     preemph_coeff: float = 0.97
     window_type: str = "povey"
@@ -112,26 +120,34 @@ class KaldiMfccConfig:
     low_freq: float = 20.0
     high_freq: float = -400.0
     num_filters: int = 23
+    num_mel_bins: Optional[int] = None  # do not use
     norm_filters: bool = False
     num_ceps: int = 13
     cepstral_lifter: int = 22
 
+    def __post_init__(self):
+        # This is to help users transition to a different Mfcc implementation
+        # from torchaudio.compliance.kaldi.fbank(), where the arg had a different name.
+        if self.num_mel_bins is not None:
+            self.num_filters = self.num_mel_bins
+            self.num_mel_bins = None
+
     def to_dict(self) -> Dict[str, Any]:
-        return asdict(self)
+        return asdict_nonull(self)
 
     @staticmethod
-    def from_dict(data: Dict[str, Any]) -> "KaldiMfccConfig":
-        return KaldiMfccConfig(**data)
+    def from_dict(data: Dict[str, Any]) -> "MfccConfig":
+        return MfccConfig(**data)
 
 
 @register_extractor
-class KaldiMfcc(FeatureExtractor):
+class Mfcc(FeatureExtractor):
     name = "kaldi-mfcc"
-    config_type = KaldiMfccConfig
+    config_type = MfccConfig
 
-    def __init__(self, config: Optional[KaldiMfccConfig] = None):
+    def __init__(self, config: Optional[MfccConfig] = None):
         super().__init__(config=config)
-        self.extractor = Wav2MFCC(**asdict(self.config))
+        self.extractor = Wav2MFCC(**self.config.to_dict()).eval()
 
     @property
     def frame_shift(self) -> Seconds:
@@ -144,7 +160,7 @@ class KaldiMfcc(FeatureExtractor):
         self, samples: Union[np.ndarray, torch.Tensor], sampling_rate: int
     ) -> Union[np.ndarray, torch.Tensor]:
         assert sampling_rate == self.config.sampling_rate, (
-            f"KaldiMfcc was instantiated for sampling_rate "
+            f"Mfcc was instantiated for sampling_rate "
             f"{self.config.sampling_rate}, but "
             f"sampling_rate={sampling_rate} was passed to extract()."
         )
