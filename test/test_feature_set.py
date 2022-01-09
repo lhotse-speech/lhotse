@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 from pytest import mark, raises
 
-from lhotse import FbankConfig
+from lhotse import FbankConfig, MfccConfig
 from lhotse.audio import RecordingSet
 from lhotse.features import (
     Fbank,
@@ -139,7 +139,7 @@ def test_compute_global_stats():
 )
 def test_feature_set_builder(storage_fn):
     recordings: RecordingSet = RecordingSet.from_json("test/fixtures/audio.json")
-    extractor = Fbank()
+    extractor = Fbank(FbankConfig(sampling_rate=8000))
     with storage_fn() as storage:
         builder = FeatureSetBuilder(
             feature_extractor=extractor,
@@ -154,11 +154,11 @@ def test_feature_set_builder(storage_fn):
     # Assert the properties shared by all features
     for features in feature_infos:
         # assert that fbank is the default feature type
-        assert features.type == "fbank"
+        assert features.type == "kaldi-fbank"
         # assert that duration is always a multiple of frame_shift
         assert features.num_frames == round(features.duration / features.frame_shift)
         # assert that num_features is preserved
-        assert features.num_features == builder.feature_extractor.config.num_mel_bins
+        assert features.num_features == builder.feature_extractor.config.num_filters
         # assert that the storage type metadata matches
         assert features.storage_type == storage.name
         # assert that the metadata is consistent with the data shapes
@@ -217,9 +217,9 @@ def test_add_feature_sets():
 @pytest.mark.parametrize(
     ["feature_extractor", "decimal", "exception_expectation"],
     [
-        (Fbank(FbankConfig(num_mel_bins=40)), 0, does_not_raise()),
+        (Fbank(FbankConfig(num_filters=40, sampling_rate=8000)), 0, does_not_raise()),
         (Spectrogram(), -1, does_not_raise()),
-        (Mfcc(), None, raises(ValueError)),
+        (Mfcc(MfccConfig(sampling_rate=8000)), None, raises(ValueError)),
     ],
 )
 def test_mixer(feature_extractor, decimal, exception_expectation):

@@ -6,7 +6,7 @@ from lhotse.utils import EPSILON, Seconds
 
 
 @dataclass
-class MfccConfig:
+class TorchaudioMfccConfig:
     # Spectogram-related part
     dither: float = 0.0
     window_type: str = "povey"
@@ -35,16 +35,16 @@ class MfccConfig:
         return asdict(self)
 
     @staticmethod
-    def from_dict(data: Dict[str, Any]) -> "MfccConfig":
-        return MfccConfig(**data)
+    def from_dict(data: Dict[str, Any]) -> "TorchaudioMfccConfig":
+        return TorchaudioMfccConfig(**data)
 
 
 @register_extractor
-class Mfcc(TorchaudioFeatureExtractor):
+class TorchaudioMfcc(TorchaudioFeatureExtractor):
     """MFCC feature extractor based on ``torchaudio.compliance.kaldi.mfcc`` function."""
 
     name = "mfcc"
-    config_type = MfccConfig
+    config_type = TorchaudioMfccConfig
 
     def _feature_fn(self, *args, **kwargs):
         from torchaudio.compliance.kaldi import mfcc
