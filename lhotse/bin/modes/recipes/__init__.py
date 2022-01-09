@@ -19,6 +19,7 @@ from .gale_mandarin import *
 from .gigaspeech import *
 from .heroico import *
 from .hifitts import *
+from .icsi import *
 from .l2_arctic import *
 from .libricss import *
 from .librimix import *
