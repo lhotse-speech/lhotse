@@ -52,13 +52,15 @@ def icsi(
 
 @prepare.command(context_settings=dict(show_default=True))
 @click.argument("audio_dir", type=click.Path(exists=True, dir_okay=True))
-@click.argument("transcript_dir", type=click.Path(exists=True, dir_okay=True))
 @click.argument("output_dir", type=click.Path())
 @click.option(
+    "--transcripts-dir", type=click.Path(exists=True, dir_okay=True), default=None
+)
+@click.option(
     "--mic",
-    type=click.Choice(["ihm", "sdm", "mdm"], case_sensitive=False),
+    type=click.Choice(["ihm", "ihm-mix", "sdm", "mdm"], case_sensitive=False),
     default="ihm",
-    help="AMI microphone setting.",
+    help="ICSI microphone setting.",
 )
 @click.option(
     "--normalize-text",

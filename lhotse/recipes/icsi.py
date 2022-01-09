@@ -161,11 +161,14 @@ def download_audio(
                 wav_dir.mkdir(parents=True, exist_ok=True)
                 wav_path = wav_dir / f"chan{channel}.sph"
                 if force_download or not wav_path.is_file():
-                    urlretrieve_progress(
-                        wav_url,
-                        filename=wav_path,
-                        desc=f"Downloading {item} chan{channel}.sph",
-                    )
+                    try:
+                        urlretrieve_progress(
+                            wav_url,
+                            filename=wav_path,
+                            desc=f"Downloading {item} chan{channel}.sph",
+                        )
+                    except urllib.error.HTTPError as e:
+                        pass
         else:
             wav_url = f"{url}/ICSIsignals/NXT/{item}.interaction.wav"
             wav_dir = target_dir / "speech" / item
@@ -203,7 +206,7 @@ def download_icsi(
     # Annotations
     logging.info("Downloading AMI annotations")
 
-    if transcripts_dir.exists() and not force_download:
+    if (transcripts_dir / "transcripts").exists() and not force_download:
         logging.info(
             f"Skip downloading transcripts as they exist in: {transcripts_dir}"
         )
@@ -213,9 +216,7 @@ def download_icsi(
     # The following is analogous to `wget --no-check-certificate``
     context = ssl._create_unverified_context()
     urllib.request.urlretrieve(
-        annotations_url,
-        filename=transcripts_dir / "ICSI_original_transcripts.zip",
-        context=context,
+        annotations_url, filename=transcripts_dir / "ICSI_original_transcripts.zip"
     )
     # Unzip annotations zip file
     with zipfile.ZipFile(transcripts_dir / "ICSI_original_transcripts.zip") as z:
@@ -466,7 +467,7 @@ def prepare_supervision_other(
 
 def prepare_icsi(
     audio_dir: Pathlike,
-    transcripts_dir: Pathlike,
+    transcripts_dir: Optional[Pathlike] = None,
     output_dir: Optional[Pathlike] = None,
     mic: Optional[str] = "ihm",
     normalize_text: bool = True,
@@ -482,7 +483,7 @@ def prepare_icsi(
         'recordings' and 'supervisions'.
     """
     audio_dir = Path(audio_dir)
-    transcripts_dir = Path(transcripts_dir)
+    transcripts_dir = Path(transcripts_dir) if transcripts_dir else audio_dir
     assert audio_dir.is_dir(), f"No such directory: {audio_dir}"
     assert transcripts_dir.is_dir(), f"No such directory: {transcripts_dir}"
     assert mic in MIC_TO_CHANNELS.keys(), f"Mic {mic} not supported"
