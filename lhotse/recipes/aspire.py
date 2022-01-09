@@ -157,6 +157,7 @@ def prepare_aspire(
                     duration=round(seg.end - seg.start, 4),
                     speaker=speaker,
                     text=seg.text,
+                    language="English"
                 )
                 for i, seg in enumerate(segs)
             ]
