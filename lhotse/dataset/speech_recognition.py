@@ -3,10 +3,11 @@ from typing import Callable, Dict, List, Union
 import torch
 from torch.utils.data.dataloader import DataLoader, default_collate
 
-from lhotse import close_cached_file_handles, validate
+from lhotse import validate
 from lhotse.cut import CutSet
 from lhotse.dataset.input_strategies import BatchIO, PrecomputedFeatures
 from lhotse.utils import compute_num_frames, ifnone
+from lhotse.workarounds import Hdf5MemoryIssueFix
 
 
 class K2SpeechRecognitionDataset(torch.utils.data.Dataset):
@@ -84,7 +85,11 @@ class K2SpeechRecognitionDataset(torch.utils.data.Dataset):
         self.cut_transforms = ifnone(cut_transforms, [])
         self.input_transforms = ifnone(input_transforms, [])
         self.input_strategy = input_strategy
-        self.batch_counter = 0
+
+        # This attribute is a workaround to constantly growing HDF5 memory
+        # throughout the epoch. It regularly closes open file handles to
+        # reset the internal HDF5 caches.
+        self.hdf5_fix = Hdf5MemoryIssueFix(reset_interval=100)
 
     def __getitem__(self, cuts: CutSet) -> Dict[str, Union[torch.Tensor, List[str]]]:
         """
@@ -93,9 +98,7 @@ class K2SpeechRecognitionDataset(torch.utils.data.Dataset):
         """
         validate_for_asr(cuts)
 
-        if self.batch_counter > 0 and self.batch_counter % 100 == 0:
-            close_cached_file_handles()
-        self.batch_counter += 1
+        self.hdf5_fix.update()
 
         # Sort the cuts by duration so that the first one determines the batch time dimensions.
         cuts = cuts.sort_by_duration(ascending=False)
