@@ -5,7 +5,7 @@ class Hdf5MemoryIssueFix:
     """
     Use this class to limit the growing memory use when reading from HDF5 files.
 
-    It should be instantiated withing the dataloading worker, i.e., the best place
+    It should be instantiated within the dataloading worker, i.e., the best place
     is likely inside the PyTorch Dataset class.
 
     Every time a new batch/example is returned, call ``.update()``.
