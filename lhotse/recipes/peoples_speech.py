@@ -30,12 +30,12 @@ def prepare_peoples_speech(
 ) -> Dict[str, Union[RecordingSet, SupervisionSet]]:
     """
     Prepare :class:`~lhotse.RecordingSet` and :class:`~lhotse.SupervisionSet` manifests
-    for The People's Speech. 
+    for The People's Speech.
 
     The metadata is read lazily and written to manifests in a stream to minimize
     the CPU RAM usage. If you want to convert this data to a :class:`~lhotse.CutSet`
-    without using excessive memory, we suggest to call it like:: 
-    
+    without using excessive memory, we suggest to call it like::
+
         >>> peoples_speech = prepare_peoples_speech(corpus_dir=..., output_dir=...)
         >>> cuts = CutSet.from_manifests(
         ...     recordings=peoples_speech["recordings"],
@@ -65,9 +65,7 @@ def prepare_peoples_speech(
     exist = 0
     tot = 0
     err = 0
-    with RecordingSet.open_writer(
-        recs_path,
-    ) as rec_writer, SupervisionSet.open_writer(
+    with RecordingSet.open_writer(recs_path,) as rec_writer, SupervisionSet.open_writer(
         sups_path,
     ) as sup_writer:
         for item in tqdm(

@@ -41,7 +41,6 @@ try:
     def _spectrogram(x: torch.Tensor) -> torch.Tensor:
         return x.abs()
 
-
 except ImportError:
 
     def _rfft(x: torch.Tensor) -> torch.Tensor:
