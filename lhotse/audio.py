@@ -299,6 +299,7 @@ class Recording:
         recording_id: Optional[str] = None,
         relative_path_depth: Optional[int] = None,
         force_opus_sampling_rate: Optional[int] = None,
+        force_read_audio: bool = False,
     ) -> "Recording":
         """
         Read an audio file's header and create the corresponding ``Recording``.
@@ -317,10 +318,16 @@ class Recording:
             instead of the one we read from the manifest. This is useful for OPUS files that always
             have 48kHz rate and need to be resampled to the real one -- we will perform that operation
             "under-the-hood". For non-OPUS files this input is undefined.
+        :param force_read_audio: Set it to ``True`` for audio files that do not have any metadata
+            in their headers (e.g., "The People's Speech" FLAC files).
         :return: a new ``Recording`` instance pointing to the audio file.
         """
         path = Path(path)
-        audio_info = info(path, force_opus_sampling_rate=force_opus_sampling_rate)
+        audio_info = info(
+            path,
+            force_opus_sampling_rate=force_opus_sampling_rate,
+            force_read_audio=force_read_audio,
+        )
         return Recording(
             id=recording_id if recording_id is not None else path.stem,
             sampling_rate=audio_info.samplerate,
@@ -1115,15 +1122,27 @@ class LibsndfileCompatibleAudioInfo(NamedTuple):
 
 
 def info(
-    path: Pathlike, force_opus_sampling_rate: Optional[int] = None
+    path: Pathlike,
+    force_opus_sampling_rate: Optional[int] = None,
+    force_read_audio: bool = False,
 ) -> LibsndfileCompatibleAudioInfo:
+
+    if force_read_audio:
+        # This is a reliable fallback for situations when the user knows that audio files do not
+        # have duration metadata in their headers.
+        # We will use "audioread" backend that spawns an ffmpeg process, reads the audio,
+        # and computes the duration.
+        return audioread_info(str(path))
+
     if path.suffix.lower() == ".opus":
         # We handle OPUS as a special case because we might need to force a certain sampling rate.
         return opus_info(path, force_opus_sampling_rate=force_opus_sampling_rate)
+
     elif path.suffix.lower() == ".sph":
         # We handle SPHERE as another special case because some old codecs (i.e. "shorten" codec)
         # can't be handled by neither pysoundfile nor pyaudioread.
         return sph_info(path)
+
     try:
         # Try to parse the file using torchaudio first.
         return torchaudio_info(path)
