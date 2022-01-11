@@ -3144,7 +3144,7 @@ class CutSet(Serializable, Sequence[Cut]):
         """
         durations = np.array([c.duration for c in self])
         speech_durations = np.array(
-            [s.trim(c.duration).duration for c in self for s in c.supervisions]
+            [s.duration for c in self for s in c.trimmed_supervisions]
         )
         total_sum = durations.sum()
         speech_sum = speech_durations.sum()
@@ -5050,11 +5050,10 @@ def create_cut_set_lazy(
                     f"Mismatched recording_id: Features.recording_id == {feats.recording_id}, "
                     f"but Recording.id == '{rec.id}'"
                 )
-                sups = SupervisionSet.from_segments(
-                    itertools.takewhile(
-                        lambda s: s.recording_id == feats.recording_id, supervisions
-                    )
+                sups, supervisions = _takewhile(
+                    supervisions, lambda s: s.recording_id == feats.recording_id
                 )
+                sups = SupervisionSet.from_segments(sups)
                 cut = MonoCut(
                     id=str(uuid4())
                     if random_ids
@@ -5091,11 +5090,11 @@ def create_cut_set_lazy(
             # note that if the supervisions are not sorted, we can't fail here,
             # because there might simply be no supervisions with that ID.
             # It's up to the user to make sure it's sorted properly.
-            sups = SupervisionSet.from_segments(
-                itertools.takewhile(
-                    lambda s: s.recording_id == recording.id, supervisions
-                )
+            sups, supervisions = _takewhile(
+                supervisions, lambda s: s.recording_id == recording.id
             )
+            sups = SupervisionSet.from_segments(sups)
+
             # A single cut always represents a single channel. When a recording has multiple channels,
             # we create a new cut for each channel separately.
             for cidx, channel in enumerate(recording.channel_ids):
@@ -5114,6 +5113,33 @@ def create_cut_set_lazy(
                 writer.write(cut)
 
     return CutSet.from_jsonl_lazy(output_path)
+
+
+T = TypeVar("T")
+
+
+def _takewhile(
+    iterable: Iterable[T], predicate: Callable[[T], bool]
+) -> Tuple[List[T], Iterable[T]]:
+    """
+    Collects items from ``iterable`` as long as they satisfy the ``predicate``.
+    Returns a tuple of ``(collected_items, iterable)``, where ``iterable`` may
+    continue yielding items starting from the first one that did not satisfy
+    ``predicate`` (unlike ``itertools.takewhile``).
+    """
+    collected = []
+    try:
+        while True:
+            item = next(iterable)
+            if predicate(item):
+                collected.append(item)
+            else:
+                iterable = chain([item], iterable)
+                break
+
+    except StopIteration:
+        pass
+    return collected, iterable
 
 
 def merge_supervisions(
