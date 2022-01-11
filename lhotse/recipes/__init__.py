@@ -2,6 +2,7 @@ from .adept import download_adept, prepare_adept
 from .aishell import download_aishell, prepare_aishell
 from .aishell4 import download_aishell4, prepare_aishell4
 from .ami import download_ami, prepare_ami
+from .aspire import prepare_aspire
 from .babel import prepare_single_babel_language
 from .broadcast_news import prepare_broadcast_news
 from .callhome_egyptian import prepare_callhome_egyptian
@@ -19,6 +20,7 @@ from .gale_mandarin import prepare_gale_mandarin
 from .gigaspeech import prepare_gigaspeech
 from .heroico import download_heroico, prepare_heroico
 from .hifitts import download_hifitts, prepare_hifitts
+from .icsi import download_icsi, prepare_icsi
 from .l2_arctic import prepare_l2_arctic
 from .libricss import download_libricss, prepare_libricss
 from .librimix import download_librimix, prepare_librimix
@@ -30,6 +32,7 @@ from .mobvoihotwords import download_mobvoihotwords, prepare_mobvoihotwords
 from .mtedx import download_mtedx, prepare_mtedx
 from .musan import download_musan, prepare_musan
 from .nsc import prepare_nsc
+from .peoples_speech import prepare_peoples_speech
 from .rir_noise import download_rir_noise, prepare_rir_noise
 from .switchboard import prepare_switchboard
 from .tedlium import download_tedlium, prepare_tedlium

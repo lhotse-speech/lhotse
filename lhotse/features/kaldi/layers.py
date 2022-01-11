@@ -252,7 +252,7 @@ class Wav2FFT(nn.Module):
         sampling_rate: int = 16000,
         frame_length: Seconds = 0.025,
         frame_shift: Seconds = 0.01,
-        fft_length: int = 512,
+        round_to_power_of_two: bool = True,
         remove_dc_offset: bool = True,
         preemph_coeff: float = 0.97,
         window_type: str = "povey",
@@ -263,17 +263,14 @@ class Wav2FFT(nn.Module):
         use_energy: bool = True,
     ) -> None:
         super().__init__()
-
+        self.use_energy = use_energy
         N = int(math.floor(frame_length * sampling_rate))
-        if N > fft_length:
-            k = math.ceil(math.log(N) / math.log(2))
-            self.fft_length = int(2 ** k)
-
+        self.fft_length = next_power_of_2(N) if round_to_power_of_two else N
         self.wav2win = Wav2Win(
             sampling_rate,
             frame_length,
             frame_shift,
-            pad_length=fft_length,
+            pad_length=self.fft_length,
             remove_dc_offset=remove_dc_offset,
             preemph_coeff=preemph_coeff,
             window_type=window_type,
@@ -283,9 +280,6 @@ class Wav2FFT(nn.Module):
             raw_energy=raw_energy,
             return_log_energy=use_energy,
         )
-
-        self.fft_length = fft_length
-        self.use_energy = use_energy
 
     @property
     def sampling_rate(self) -> int:
@@ -367,7 +361,7 @@ class Wav2Spec(Wav2FFT):
         sampling_rate: int = 16000,
         frame_length: Seconds = 0.025,
         frame_shift: Seconds = 0.01,
-        fft_length: int = 512,
+        round_to_power_of_two: bool = True,
         remove_dc_offset: bool = True,
         preemph_coeff: float = 0.97,
         window_type: str = "povey",
@@ -382,7 +376,7 @@ class Wav2Spec(Wav2FFT):
             sampling_rate,
             frame_length,
             frame_shift,
-            fft_length,
+            round_to_power_of_two=round_to_power_of_two,
             remove_dc_offset=remove_dc_offset,
             preemph_coeff=preemph_coeff,
             window_type=window_type,
@@ -436,7 +430,7 @@ class Wav2LogSpec(Wav2FFT):
         sampling_rate: int = 16000,
         frame_length: Seconds = 0.025,
         frame_shift: Seconds = 0.01,
-        fft_length: int = 512,
+        round_to_power_of_two: bool = True,
         remove_dc_offset: bool = True,
         preemph_coeff: float = 0.97,
         window_type: str = "povey",
@@ -451,7 +445,7 @@ class Wav2LogSpec(Wav2FFT):
             sampling_rate,
             frame_length,
             frame_shift,
-            fft_length,
+            round_to_power_of_two=round_to_power_of_two,
             remove_dc_offset=remove_dc_offset,
             preemph_coeff=preemph_coeff,
             window_type=window_type,
@@ -505,7 +499,7 @@ class Wav2LogFilterBank(Wav2FFT):
         sampling_rate: int = 16000,
         frame_length: Seconds = 0.025,
         frame_shift: Seconds = 0.01,
-        fft_length: int = 512,
+        round_to_power_of_two: bool = True,
         remove_dc_offset: bool = True,
         preemph_coeff: float = 0.97,
         window_type: str = "povey",
@@ -526,7 +520,7 @@ class Wav2LogFilterBank(Wav2FFT):
             sampling_rate,
             frame_length,
             frame_shift,
-            fft_length,
+            round_to_power_of_two=round_to_power_of_two,
             remove_dc_offset=remove_dc_offset,
             preemph_coeff=preemph_coeff,
             window_type=window_type,
@@ -557,7 +551,7 @@ class Wav2LogFilterBank(Wav2FFT):
             # see torchaudio.compliance.kaldi.fbank, lines #581-587 for the original usage
             fb, _ = get_mel_banks(
                 num_bins=num_filters,
-                window_length_padded=fft_length,
+                window_length_padded=self.fft_length,
                 sample_freq=sampling_rate,
                 low_freq=low_freq,
                 high_freq=high_freq,
@@ -571,15 +565,13 @@ class Wav2LogFilterBank(Wav2FFT):
         else:
             fb = create_mel_scale(
                 num_filters=num_filters,
-                fft_length=fft_length,
+                fft_length=self.fft_length,
                 sampling_rate=sampling_rate,
                 low_freq=low_freq,
                 high_freq=high_freq,
                 norm_filters=norm_filters,
             )
-        self._fb = nn.Parameter(
-            torch.tensor(fb, dtype=torch.get_default_dtype()), requires_grad=False
-        )
+        self._fb = nn.Parameter(fb, requires_grad=False)
 
     def _forward_strided(
         self, x_strided: torch.Tensor, log_e: Optional[torch.Tensor]
@@ -620,7 +612,7 @@ class Wav2MFCC(Wav2FFT):
         sampling_rate: int = 16000,
         frame_length: Seconds = 0.025,
         frame_shift: Seconds = 0.01,
-        fft_length: int = 512,
+        round_to_power_of_two: bool = True,
         remove_dc_offset: bool = True,
         preemph_coeff: float = 0.97,
         window_type: str = "povey",
@@ -643,7 +635,7 @@ class Wav2MFCC(Wav2FFT):
             sampling_rate,
             frame_length,
             frame_shift,
-            fft_length,
+            round_to_power_of_two=round_to_power_of_two,
             remove_dc_offset=remove_dc_offset,
             preemph_coeff=preemph_coeff,
             window_type=window_type,
@@ -676,7 +668,7 @@ class Wav2MFCC(Wav2FFT):
             # see torchaudio.compliance.kaldi.fbank, lines #581-587 for the original usage
             fb, _ = get_mel_banks(
                 num_bins=num_filters,
-                window_length_padded=fft_length,
+                window_length_padded=self.fft_length,
                 sample_freq=sampling_rate,
                 low_freq=low_freq,
                 high_freq=high_freq,
@@ -690,15 +682,13 @@ class Wav2MFCC(Wav2FFT):
         else:
             fb = create_mel_scale(
                 num_filters=num_filters,
-                fft_length=fft_length,
+                fft_length=self.fft_length,
                 sampling_rate=sampling_rate,
                 low_freq=low_freq,
                 high_freq=high_freq,
                 norm_filters=norm_filters,
             )
-        self._fb = nn.Parameter(
-            torch.tensor(fb, dtype=torch.get_default_dtype()), requires_grad=False
-        )
+        self._fb = nn.Parameter(fb, requires_grad=False)
 
         self._dct = nn.Parameter(
             self.make_dct_matrix(self.num_ceps, self.num_filters), requires_grad=False
@@ -789,7 +779,7 @@ def _get_strided_batch(
         if npad_right >= 0:
             pad_right = torch.flip(waveform[:, -npad_right:], (1,))
         else:
-            pad_right = torch.tensor([], dtype=waveform.dtype)
+            pad_right = torch.zeros(0, dtype=waveform.dtype)
         waveform = torch.cat((pad_left, waveform, pad_right), dim=1)
 
     strides = (
@@ -898,7 +888,7 @@ def create_mel_scale(
     low_freq: float = 0,
     high_freq: Optional[float] = None,
     norm_filters: bool = True,
-):
+) -> torch.Tensor:
     if high_freq is None or high_freq == 0:
         high_freq = sampling_rate / 2
     if high_freq < 0:
@@ -925,7 +915,7 @@ def create_mel_scale(
     if norm_filters:
         B = B / np.sum(B, axis=0, keepdims=True)
 
-    return B
+    return torch.from_numpy(B)
 
 
 def available_windows() -> List[str]:
@@ -967,3 +957,12 @@ def lin2mel(x):
 
 def mel2lin(x):
     return 700 * (np.exp(x / 1127.0) - 1)
+
+
+def next_power_of_2(x: int) -> int:
+    """
+    Returns the smallest power of 2 that is greater than x.
+
+    Original source: TorchAudio (torchaudio/compliance/kaldi.py)
+    """
+    return 1 if x == 0 else 2 ** (x - 1).bit_length()

@@ -12,8 +12,9 @@ import lhotse
 from lhotse import (
     CutSet,
     Fbank,
-    KaldiFbank,
-    KaldiMfcc,
+    FbankConfig,
+    TorchaudioFbank,
+    TorchaudioMfcc,
     KaldifeatFbank,
     KaldifeatMfcc,
     LibrosaFbank,
@@ -52,14 +53,14 @@ def cut(recording):
 
 
 def test_extract_features(cut):
-    extractor = Fbank()
+    extractor = Fbank(FbankConfig(sampling_rate=8000))
     arr = cut.compute_features(extractor=extractor)
     assert arr.shape[0] == 100
     assert arr.shape[1] == extractor.feature_dim(cut.sampling_rate)
 
 
 def test_extract_and_store_features(cut):
-    extractor = Fbank()
+    extractor = Fbank(FbankConfig(sampling_rate=8000))
     with TemporaryDirectory() as tmpdir, LilcomFilesWriter(tmpdir) as storage:
         cut_with_feats = cut.compute_and_store_features(
             extractor=extractor, storage=storage
@@ -72,7 +73,7 @@ def test_extract_and_store_features(cut):
 @pytest.mark.parametrize("mix_eagerly", [False, True])
 def test_extract_and_store_features_from_mixed_cut(cut, mix_eagerly):
     mixed_cut = cut.append(cut)
-    extractor = Fbank()
+    extractor = Fbank(FbankConfig(sampling_rate=8000))
     with TemporaryDirectory() as tmpdir, LilcomFilesWriter(tmpdir) as storage:
         cut_with_feats = mixed_cut.compute_and_store_features(
             extractor=extractor, storage=storage, mix_eagerly=mix_eagerly
@@ -136,7 +137,7 @@ def is_dask_availabe():
 def test_extract_and_store_features_from_cut_set(
     cut_set, executor, num_jobs, storage_type, mix_eagerly
 ):
-    extractor = Fbank()
+    extractor = Fbank(FbankConfig(sampling_rate=8000))
     with TemporaryDirectory() as tmpdir:
         cut_set_with_feats = cut_set.compute_and_store_features(
             extractor=extractor,
@@ -175,8 +176,8 @@ def test_extract_and_store_features_from_cut_set(
     [
         Fbank,
         Mfcc,
-        KaldiFbank,
-        KaldiMfcc,
+        TorchaudioFbank,
+        TorchaudioMfcc,
         pytest.param(
             KaldifeatFbank,
             marks=pytest.mark.skipif(
@@ -278,8 +279,8 @@ def test_cut_set_batch_feature_extraction_resume(cut_set, overwrite):
     [
         Fbank,
         Mfcc,
-        KaldiFbank,
-        KaldiMfcc,
+        TorchaudioFbank,
+        TorchaudioMfcc,
         pytest.param(
             KaldifeatFbank,
             marks=pytest.mark.skipif(
