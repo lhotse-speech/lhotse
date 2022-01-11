@@ -1,6 +1,7 @@
 from .adept import download_adept, prepare_adept
 from .aishell import download_aishell, prepare_aishell
 from .aishell4 import download_aishell4, prepare_aishell4
+from .ali_meeting import prepare_ali_meeting
 from .ami import download_ami, prepare_ami
 from .aspire import prepare_aspire
 from .babel import prepare_single_babel_language
@@ -27,6 +28,7 @@ from .librimix import download_librimix, prepare_librimix
 from .librispeech import download_librispeech, prepare_librispeech
 from .libritts import download_libritts, prepare_libritts
 from .ljspeech import download_ljspeech, prepare_ljspeech
+from .mixer6 import prepare_mixer6
 from .mls import prepare_mls
 from .mobvoihotwords import download_mobvoihotwords, prepare_mobvoihotwords
 from .mtedx import download_mtedx, prepare_mtedx

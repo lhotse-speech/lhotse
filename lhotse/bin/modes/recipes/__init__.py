@@ -1,6 +1,7 @@
 from .adept import *
 from .aishell import *
 from .aishell4 import *
+from .ali_meeting import *
 from .ami import *
 from .aspire import *
 from .babel import *
@@ -27,6 +28,7 @@ from .librimix import *
 from .librispeech import *
 from .libritts import *
 from .ljspeech import *
+from .mixer6 import *
 from .mls import *
 from .mtedx import *
 from .musan import *
