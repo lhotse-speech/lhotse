@@ -41,7 +41,7 @@ from lhotse.features import (
     create_default_feature_extractor,
 )
 from lhotse.features.base import compute_global_stats
-from lhotse.features.io import FeaturesWriter, LilcomFilesWriter, LilcomHdf5Writer
+from lhotse.features.io import FeaturesWriter, LilcomChunkyWriter, LilcomFilesWriter
 from lhotse.serialization import Serializable
 from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import (
@@ -147,8 +147,8 @@ class Cut:
     It is also possible to use a :class:`~lhotse.features.io.FeaturesWriter` to store the features and attach
     their manifest to a copy of the cut::
 
-        >>> from lhotse import LilcomHdf5Writer
-        >>> with LilcomHdf5Writer('feats.h5') as storage:
+        >>> from lhotse import LilcomChunkyWriter
+        >>> with LilcomChunkyWriter('feats.lca') as storage:
         ...     cut_with_feats = cut.compute_and_store_features(
         ...         extractor=Fbank(),
         ...         storage=storage
@@ -3847,7 +3847,7 @@ class CutSet(Serializable, Sequence[Cut]):
         storage_path: Pathlike,
         num_jobs: Optional[int] = None,
         augment_fn: Optional[AugmentFn] = None,
-        storage_type: Type[FW] = LilcomHdf5Writer,
+        storage_type: Type[FW] = LilcomChunkyWriter,
         executor: Optional[Executor] = None,
         mix_eagerly: bool = True,
         progress_bar: bool = True,
@@ -3859,7 +3859,7 @@ class CutSet(Serializable, Sequence[Cut]):
         Examples:
 
             Extract fbank features on one machine using 8 processes,
-            store arrays partitioned in 8 HDF5 files with lilcom compression:
+            store arrays partitioned in 8 archive files with lilcom compression:
 
             >>> cuts = CutSet(...)
             ... cuts.compute_and_store_features(
@@ -3881,7 +3881,7 @@ class CutSet(Serializable, Sequence[Cut]):
 
             Extract fbank features on multiple machines using a Dask cluster
             with 80 jobs,
-            store arrays partitioned in 80 HDF5 files with lilcom compression:
+            store arrays partitioned in 80 archive files with lilcom compression:
 
             >>> from distributed import Client
             ... cuts = CutSet(...)
@@ -4026,7 +4026,7 @@ class CutSet(Serializable, Sequence[Cut]):
         batch_duration: Seconds = 600.0,
         num_workers: int = 4,
         augment_fn: Optional[AugmentFn] = None,
-        storage_type: Type[FW] = LilcomHdf5Writer,
+        storage_type: Type[FW] = LilcomChunkyWriter,
         overwrite: bool = False,
     ) -> "CutSet":
         """
@@ -4041,7 +4041,7 @@ class CutSet(Serializable, Sequence[Cut]):
         Otherwise, the speed will be comparable to single-threaded extraction.
 
         Example: extract fbank features on one GPU, using 4 dataloading workers
-        for reading audio, and store the arrays in an HDF5 file with
+        for reading audio, and store the arrays in an archive file with
         lilcom compression::
 
             >>> from lhotse import KaldifeatFbank, KaldifeatFbankConfig
@@ -4383,6 +4383,42 @@ class CutSet(Serializable, Sequence[Cut]):
             return mapped
 
         return CutSet.from_cuts(verified(transform_fn(c)) for c in self)
+
+    def copy_feats(
+        self, writer: FeaturesWriter, output_path: Optional[Pathlike] = None
+    ) -> "CutSet":
+        """
+        Save a copy of every feature matrix found in this CutSet using ``writer``
+        and return a new manifest with cuts referring to the new feature locations.
+
+        :param writer: a :class:`lhotse.features.io.FeaturesWriter` instance.
+        :param output_path: optional path where the new manifest should be stored.
+            It's used to write the manifest incrementally and return a lazy manifest,
+            otherwise the copy is stored in memory.
+        :return: a copy of the manifest.
+        """
+        with CutSet.open_writer(output_path) as manifest_writer:
+            for item in self:
+                if not item.has_features or isinstance(item, PaddingCut):
+                    manifest_writer.write(item)
+                    continue
+
+                if isinstance(item, MixedCut):
+                    cpy = fastcopy(item)
+                    for t in cpy.tracks:
+                        if isinstance(t.cut, MonoCut):
+                            t.cut.features = t.cut.features.copy_feats(writer=writer)
+                    manifest_writer.write(cpy)
+
+                elif isinstance(item, MonoCut):
+                    cpy = fastcopy(item)
+                    cpy.features = cpy.features.copy_feats(writer=writer)
+                    manifest_writer.write(cpy)
+
+                else:
+                    manifest_writer.write(item)
+
+        return manifest_writer.open_manifest()
 
     def modify_ids(self, transform_fn: Callable[[str], str]) -> "CutSet":
         """

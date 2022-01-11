@@ -482,6 +482,21 @@ class Features:
     def to_dict(self) -> dict:
         return asdict_nonull(self)
 
+    def copy_feats(self, writer: FeaturesWriter) -> "Features":
+        """
+        Read the referenced feature array and save it using ``writer``.
+        Returns a copy of the manifest with updated fields related to the feature storage.
+        """
+        feats = self.load()
+        new_key = writer.write(self.storage_key, feats)
+        item = fastcopy(
+            self,
+            storage_type=writer.name,
+            storage_path=writer.storage_path,
+            storage_key=new_key,
+        )
+        return item
+
     @staticmethod
     def from_dict(data: dict) -> "Features":
         # The "storage_type" check is to ensure that the "data" dict actually contains
@@ -682,6 +697,14 @@ class FeatureSet(Serializable, Sequence[Features]):
         )
         features = feature_info.load(start=start, duration=duration)
         return features
+
+    def copy_feats(self, writer: FeaturesWriter) -> "FeatureSet":
+        """
+        For each manifest in this FeatureSet,
+        read the referenced feature array and save it using ``writer``.
+        Returns a copy of the manifest with updated fields related to the feature storage.
+        """
+        return FeatureSet.from_features(f.copy_feats(writer=writer) for f in self)
 
     def compute_global_stats(
         self, storage_path: Optional[Pathlike] = None
