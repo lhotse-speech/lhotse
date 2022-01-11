@@ -1614,10 +1614,10 @@ def read_sph(
     sph_path = Path(sph_path)
 
     # Construct the sph2pipe command depending on the arguments passed.
-    cmd = f"sph2pipe -f wav -p -t {offset}:"
+    cmd = f"sph2pipe -f wav -p -t {offset}"
 
     if duration is not None:
-        cmd += f"{round(offset + duration, 5)}"
+        cmd += f":{round(offset + duration, 5)}"
     # Add the input specifier after offset and duration.
     cmd += f" {sph_path}"
 

@@ -104,7 +104,7 @@ def walk_dirs_parallel(
 
 
 def prepare_fisher_english(
-    corpus_path: Pathlike,
+    corpus_dir: Pathlike,
     audio_dirs: List[str] = FISHER_AUDIO_DIRS,
     transcript_dirs: List[str] = FISHER_TRANSCRIPT_DIRS,
     output_dir: Optional[Pathlike] = None,
@@ -124,18 +124,18 @@ def prepare_fisher_english(
     :return: A dict with manifests. The keys are: ``{'recordings', 'supervisions'}``.
     """
 
-    corpus_path = Path(corpus_path)
+    corpus_dir = Path(corpus_dir)
 
     for workdir in audio_dirs + transcript_dirs:
-        workdir_path = corpus_path / workdir
+        workdir_path = corpus_dir / workdir
         if not workdir_path.is_dir():
             raise ValueError(
-                f"Could not find '{workdir}' directory inside '{corpus_path}'."
+                f"Could not find '{workdir}' directory inside '{corpus_dir}'."
             )
 
     audio_subdir_paths = []
     for audio_dir in audio_dirs:
-        audio_dir_path = corpus_path / audio_dir
+        audio_dir_path = corpus_dir / audio_dir
         for audio_partition_dir in audio_dir_path.iterdir():
             audio_partition_dir_path = audio_dir_path / audio_partition_dir / "audio"
             audio_subdir_paths += [
@@ -145,7 +145,7 @@ def prepare_fisher_english(
 
     transcript_subdir_paths = []
     for transcript_dir in transcript_dirs:
-        transcript_dir_path = corpus_path / transcript_dir / "data" / "trans"
+        transcript_dir_path = corpus_dir / transcript_dir / "data" / "trans"
         transcript_subdir_paths += [
             transcript_dir_path / transcript_subdir
             for transcript_subdir in transcript_dir_path.iterdir()
@@ -161,7 +161,7 @@ def prepare_fisher_english(
     sessions = {}
     for transcript_dir in transcript_dirs:
         sessions_data_path = check_and_rglob(
-            corpus_path / transcript_dir / "doc", "*_calldata.tbl"
+            corpus_dir / transcript_dir / "doc", "*_calldata.tbl"
         )[0]
         with codecs.open(sessions_data_path, "r", "utf8") as sessions_data_f:
             tmp_sessions = [
