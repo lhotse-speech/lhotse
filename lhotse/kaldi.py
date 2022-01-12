@@ -206,12 +206,6 @@ def export_to_kaldi(
             )
         )
 
-    ## Create a simple CutSet that ties together
-    ## the recording <-> supervision information.
-    #cuts = CutSet.from_manifests(
-    #    recordings=recordings, supervisions=supervisions
-    #).trim_to_supervisions()
-
     if all(r.num_channels == 1 for r in recordings):
         # if all the recordings are single channel, we won't add
         # the channel id affix to retain back compatibility
