@@ -96,7 +96,7 @@ class K2SpeechRecognitionDataset(torch.utils.data.Dataset):
         Return a new batch, with the batch size automatically determined using the constraints
         of max_frames and max_cuts.
         """
-        #validate_for_asr(cuts)
+        validate_for_asr(cuts)
 
         self.hdf5_fix.update()
 
