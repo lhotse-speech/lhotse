@@ -206,11 +206,11 @@ def export_to_kaldi(
             )
         )
 
-    # Create a simple CutSet that ties together
-    # the recording <-> supervision information.
-    cuts = CutSet.from_manifests(
-        recordings=recordings, supervisions=supervisions
-    ).trim_to_supervisions()
+    ## Create a simple CutSet that ties together
+    ## the recording <-> supervision information.
+    #cuts = CutSet.from_manifests(
+    #    recordings=recordings, supervisions=supervisions
+    #).trim_to_supervisions()
 
     if all(r.num_channels == 1 for r in recordings):
         # if all the recordings are single channel, we won't add
@@ -231,8 +231,8 @@ def export_to_kaldi(
         # segments
         save_kaldi_text_mapping(
             data={
-                cut.supervisions[0].id: f"{cut.recording_id} {cut.start} {cut.end}"
-                for cut in cuts
+                sup.id: f"{sup.recording_id} {sup.start} {sup.start + sup.duration}"
+                for sup in supervisions
             },
             path=output_dir / "segments",
         )
@@ -258,10 +258,8 @@ def export_to_kaldi(
         # segments
         save_kaldi_text_mapping(
             data={
-                cut.supervisions[
-                    0
-                ].id: f"{cut.recording_id}_{cut.channel} {cut.start} {cut.end}"
-                for cut in cuts
+                sup.id: f"{sup.recording_id} {sup.start} {sup.start + sup.duration}"
+                for sup in supervisions
             },
             path=output_dir / "segments",
         )
@@ -276,29 +274,29 @@ def export_to_kaldi(
         )
     # text
     save_kaldi_text_mapping(
-        data={cut.supervisions[0].id: cut.supervisions[0].text for cut in cuts},
+        data={sup.id: sup.text for sup in supervisions},
         path=output_dir / "text",
     )
     # utt2spk
     save_kaldi_text_mapping(
-        data={cut.supervisions[0].id: cut.supervisions[0].speaker for cut in cuts},
+        data={sup.id: sup.speaker for sup in supervisions},
         path=output_dir / "utt2spk",
     )
     # utt2dur
     save_kaldi_text_mapping(
-        data={cut.supervisions[0].id: cut.duration for cut in cuts},
+        data={sup.id: sup.duration for sup in supervisions},
         path=output_dir / "utt2dur",
     )
     # utt2lang [optional]
     if all(s.language is not None for s in supervisions):
         save_kaldi_text_mapping(
-            data={cut.supervisions[0].id: cut.supervisions[0].language for cut in cuts},
+            data={sup.id: sup.language for sup in supervisions},
             path=output_dir / "utt2lang",
         )
     # utt2gender [optional]
     if all(s.gender is not None for s in supervisions):
         save_kaldi_text_mapping(
-            data={cut.supervisions[0].id: cut.supervisions[0].gender for cut in cuts},
+            data={sup.id: sup.gender for sup in supervisions},
             path=output_dir / "utt2gender",
         )
 
