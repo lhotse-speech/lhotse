@@ -265,7 +265,7 @@ class AmiSegmentAnnotation(NamedTuple):
 
 
 def parse_ami_annotations(
-    annotations_dir: Pathlike, normalize_text: bool = True
+    annotations_dir: Pathlike, normalize: str = "upper"
 ) -> Dict[str, List[SupervisionSegment]]:
     annotations = defaultdict(dict)
 
@@ -298,9 +298,7 @@ def parse_ami_annotations(
             for word in tree.getroot():
                 if word.tag != "w" or "punc" in word.attrib:
                     continue
-                wid_to_word[word.attrib["{http://nite.sourceforge.net/}id"]] = (
-                    word.text.upper() if normalize_text else word.text
-                )
+                wid_to_word[word.attrib["{http://nite.sourceforge.net/}id"]] = word.text
 
     def _parse_href(href, wid_to_word):
         # The href argument is originally a string of the form "ES2002b.B.words.xml#id(ES2002b.B.words0)..id(ES2002b.B.words4)".
@@ -343,17 +341,41 @@ def parse_ami_annotations(
                 seg_child = seg.getchildren()[0]
                 if "href" in seg_child.attrib:
                     text = _parse_href(seg_child.attrib["href"], wid_to_word)
-                annotations[key].append(
-                    AmiSegmentAnnotation(
-                        text=text.upper() if normalize_text else text,
-                        speaker=spk,
-                        gender=spk[0],
-                        start_time=start_time,
-                        end_time=end_time,
+                    text = normalize_text(text, normalize)
+                if len(text) > 0:
+                    annotations[key].append(
+                        AmiSegmentAnnotation(
+                            text=normalize_text(text, normalize=normalize),
+                            speaker=spk,
+                            gender=spk[0],
+                            start_time=start_time,
+                            end_time=end_time,
+                        )
                     )
-                )
 
     return annotations
+
+
+def normalize_text(text: str, normalize: str = "upper") -> str:
+    if normalize == "none":
+        return text
+    elif normalize == "upper":
+        return text.upper()
+    elif normalize == "kaldi":
+        # Kaldi style text normalization
+        import re
+
+        # convert text to uppercase
+        text = text.upper()
+        # remove punctuations
+        text = re.sub(r"[^A-Z0-9']+", " ", text)
+        # remove multiple spaces
+        text = re.sub(r"\s+", " ", text)
+        # apply few exception for dashed phrases, Mm-Hmm, Uh-Huh, etc. those are frequent in AMI
+        # and will be added to dictionary
+        text = re.sub(r"MM HMM", "MM-HMM", text)
+        text = re.sub(r"UH HUH", "UH-HUH", text)
+        return text
 
 
 # IHM and MDM audio requires grouping multiple channels of AudioSource into
@@ -523,7 +545,7 @@ def prepare_ami(
     output_dir: Optional[Pathlike] = None,
     mic: Optional[str] = "ihm",
     partition: Optional[str] = "full-corpus",
-    normalize_text: bool = True,
+    normalize_text: str = "kaldi",
 ) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet]]]:
     """
     Returns the manifests which consist of the Recordings and Supervisions
@@ -532,7 +554,7 @@ def prepare_ami(
     :param output_dir: Pathlike, the path where to write the manifests.
     :param mic: str {'ihm','ihm-mix','sdm','mdm'}, type of mic to use.
     :param partition: str {'full-corpus','full-corpus-asr','scenario-only'}, AMI official data split
-    :param normalize_text: bool, whether to normalize text to uppercase
+    :param normalize_text: str {'none', 'upper', 'kaldi'} normalization of text
     :return: a Dict whose key is ('train', 'dev', 'eval'), and the values are dicts of manifests under keys
         'recordings' and 'supervisions'.
 
@@ -562,7 +584,7 @@ def prepare_ami(
                 f"No annotations directory specified and no zip file found in {data_dir}"
             )
     # Prepare annotations which is a list of segment-level transcriptions
-    annotations = parse_ami_annotations(annotations_dir, normalize_text)
+    annotations = parse_ami_annotations(annotations_dir, normalize=normalize_text)
 
     # Audio
     logging.info("Preparing recording manifests")
@@ -603,8 +625,8 @@ def prepare_ami(
 
         # Write to output directory if a path is provided
         if output_dir is not None:
-            audio_part.to_json(output_dir / f"recordings_{part}.json")
-            supervision_part.to_json(output_dir / f"supervisions_{part}.json")
+            audio_part.to_file(output_dir / f"recordings_{part}.jsonl")
+            supervision_part.to_file(output_dir / f"supervisions_{part}.jsonl")
 
         audio_part, supervision_part = fix_manifests(audio_part, supervision_part)
         validate_recordings_and_supervisions(audio_part, supervision_part)
