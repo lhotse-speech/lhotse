@@ -5,7 +5,7 @@ import torch
 from lhotse import validate
 from lhotse.augmentation import AugmentFn
 from lhotse.cut import CutSet
-from lhotse.dataset.collation import collate_audio, collate_features, collate_matrices
+from lhotse.dataset.collation import collate_audio, collate_features, collate_matrices, collate_multi_channel_audio_rmpad
 from lhotse.features import FeatureExtractor
 
 
@@ -72,6 +72,41 @@ class UnsupervisedWaveformDataset(UnsupervisedDataset):
     def _validate(self, cuts: CutSet) -> None:
         validate(cuts)
         assert all(cut.has_recording for cut in cuts)
+
+
+class UnsupervisedMultiChanWaveformDataset(UnsupervisedDataset):
+    """
+    A variant of UnsupervisedDataset that provides waveform samples instead of features.
+    The output is a tensor of shape (C, T), with C being the number of channels and T the number of audio samples.
+    In this implementation, there will always be a single channel.
+    Returns:
+    .. code-block::
+        {
+            'audio': (B x NumSamples) float tensor
+            'audio_lens': (B, ) int tensor
+        }
+    """
+
+    def __init__(self, collate: bool = True) -> None:
+        super().__init__()
+        self.collate = collate
+
+    def __getitem__(self, cuts: CutSet) -> Dict[str, Any]:
+        if self.collate:
+            audio = collate_multi_channel_audio_rmpad(cuts)
+            audio_lens = 0 # TODO
+            return {
+                "cuts": cuts,
+                "audio": audio,
+                "audio_lens": audio_lens,
+            }
+        else:
+            return {"cuts": cuts, "audio": [c.load_audio(mixed=False) for c in cuts]}
+
+    def _validate(self, cuts: CutSet) -> None:
+        validate(cuts)
+        assert all(cut.has_recording for cut in cuts)
+
 
 
 class DynamicUnsupervisedDataset(UnsupervisedDataset):

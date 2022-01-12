@@ -7,7 +7,7 @@ import torch
 from torch.nn import CrossEntropyLoss
 
 from lhotse import CutSet
-from lhotse.cut import Cut, MixedCut
+from lhotse.cut import Cut, MixedCut, PaddingCut
 from lhotse.utils import DEFAULT_PADDING_VALUE
 
 
@@ -312,6 +312,44 @@ def collate_multi_channel_audio(cuts: CutSet) -> torch.Tensor:
     audio = torch.empty(len(cuts), len(first_cut.tracks), first_cut.num_samples)
     for idx, cut in enumerate(cuts):
         audio[idx] = torch.from_numpy(cut.load_audio())
+    return audio
+
+
+def remove_pad_tracks(cuts):
+    for cut in cuts:
+        tracks = cut.tracks
+        tracks_nopad = [t for t in tracks if not isinstance(t.cut, PaddingCut)]
+        cut.tracks = tracks_nopad
+    return cuts
+
+
+def collate_multi_channel_audio_rmpad(cuts: CutSet) -> torch.Tensor:
+    """
+    Load audio samples for all the cuts and return them as a batch in a torch tensor.
+    The cuts have to be of type ``MixedCut`` and their tracks will be interpreted as individual channels.
+    The output shape is ``(batch, channel, time)``.
+    The cuts will be padded with silence if necessary.
+    """
+    assert all(cut.has_recording for cut in cuts)
+    assert all(isinstance(cut, MixedCut) for cut in cuts)
+    
+    # TODO: how to ensure that each track is synced across batches?  i.e. dim=1 is the track index
+    #  and should correspond to the same mic across batches 
+
+    cuts = maybe_pad(cuts)
+    cuts = remove_pad_tracks(cuts)
+    
+    # NOTE: what to do when the # of tracks is not the same across cuts, right now
+    #  this is zero-padding but that seems bad ...
+    max_ntrack = max(len(cut.tracks) for cut in cuts)
+    max_nsamp = max(cut.num_samples for cut in cuts)
+
+    # NOTE: this ends up zero-padding! is that appropriate?
+    audio = torch.zeros(len(cuts), max_ntrack, max_nsamp) 
+    for idx, cut in enumerate(cuts):
+        ntrack = len(cut.tracks)
+        nsamp = cut.num_samples
+        audio[idx, 0:ntrack, 0:nsamp] = torch.from_numpy(cut.load_audio(mixed=False))
     return audio
 
 
