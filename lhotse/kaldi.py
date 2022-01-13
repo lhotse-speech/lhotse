@@ -231,7 +231,7 @@ def export_to_kaldi(
         # segments
         save_kaldi_text_mapping(
             data={
-                sup.id: f"{sup.recording_id} {sup.start} {sup.start + sup.duration}"
+                sup.id: f"{sup.recording_id} {sup.start} {sup.end}"
                 for sup in supervisions
             },
             path=output_dir / "segments",
@@ -258,7 +258,7 @@ def export_to_kaldi(
         # segments
         save_kaldi_text_mapping(
             data={
-                sup.id: f"{sup.recording_id} {sup.start} {sup.start + sup.duration}"
+                sup.id: f"{sup.recording_id} {sup.start} {sup.end}"
                 for sup in supervisions
             },
             path=output_dir / "segments",
