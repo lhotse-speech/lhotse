@@ -196,7 +196,7 @@ class AudioSource:
             if (
                 available_duration < duration - LHOTSE_AUDIO_DURATION_MISMATCH_TOLERANCE
             ):  # set the allowance as 1ms to avoid float error
-                raise ValueError(
+                raise DurationMismatchError(
                     f"Requested more audio ({duration}s) than available ({available_duration}s)"
                 )
 
@@ -1561,8 +1561,8 @@ def read_opus_ffmpeg(
                 f"Unknown channel description from ffmpeg: {channel_string}"
             )
     except ValueError as e:
-        raise ValueError(
-            f"{e}\nThe ffmpeg command for which the program failed is: '{cmd}'"
+        raise AudioLoadingError(
+            f"{e}\nThe ffmpeg command for which the program failed is: '{cmd}', error code: {proc.returncode}"
         )
     return audio, sampling_rate
 
@@ -1631,3 +1631,11 @@ def read_sph(
         audio = audio.reshape(1, -1) if sf_desc.channels == 1 else audio.T
 
     return audio, sampling_rate
+
+
+class AudioLoadingError(Exception):
+    pass
+
+
+class DurationMismatchError(Exception):
+    pass

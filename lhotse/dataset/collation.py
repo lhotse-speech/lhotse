@@ -1,14 +1,16 @@
 import warnings
 from concurrent.futures import Executor
-from typing import Dict, Iterable, List, Optional, Tuple, Union
+from functools import partial
+from typing import Iterable, List, Optional, Tuple, Union
 
 import numpy as np
 import torch
 from torch.nn import CrossEntropyLoss
 
 from lhotse import CutSet
+from lhotse.audio import AudioLoadingError, DurationMismatchError
 from lhotse.cut import Cut, MixedCut
-from lhotse.utils import DEFAULT_PADDING_VALUE
+from lhotse.utils import DEFAULT_PADDING_VALUE, suppress_and_warn
 
 
 class TokenCollater:
@@ -112,7 +114,7 @@ def collate_features(
     cuts: CutSet,
     pad_direction: str = "right",
     executor: Optional[Executor] = None,
-) -> Tuple[torch.Tensor, torch.IntTensor]:
+) -> Tuple[torch.Tensor, torch.Tensor]:
     """
     Load features for all the cuts and return them as a batch in a torch tensor.
     The output shape is ``(batch, time, features)``.
@@ -144,7 +146,10 @@ def collate_audio(
     cuts: CutSet,
     pad_direction: str = "right",
     executor: Optional[Executor] = None,
-) -> Tuple[torch.Tensor, torch.IntTensor]:
+    fault_tolerant: bool = False,
+) -> Union[
+    Tuple[torch.Tensor, torch.Tensor], Tuple[torch.Tensor, torch.Tensor, CutSet]
+]:
     """
     Load audio samples for all the cuts and return them as a batch in a torch tensor.
     The output shape is ``(batch, time)``.
@@ -154,20 +159,33 @@ def collate_audio(
     :param pad_direction: where to apply the padding (``right``, ``left``, or ``both``).
     :param executor: an instance of ThreadPoolExecutor or ProcessPoolExecutor; when provided,
         we will use it to read audio concurrently.
-    :return: a tuple of tensors ``(audio, audio_lens)``.
+    :param fault_tolerant: when ``True``, the cuts for which audio loading failed
+        will be skipped. Setting this parameter will cause the function to return a 3-tuple,
+        where the third element is a CutSet for which the audio data were sucessfully read.
+    :return: a tuple of tensors ``(audio, audio_lens)``, or ``(audio, audio_lens, cuts)``.
     """
     assert all(cut.has_recording for cut in cuts)
-    audio_lens = torch.tensor([cut.num_samples for cut in cuts], dtype=torch.int32)
+
+    audio_lens = []
+    for cut in cuts:
+        cut.original_num_samples = cut.num_samples
+        audio_lens.append(cut.num_samples)
+    audio_lens = torch.tensor(audio_lens, dtype=torch.int32)
+
     cuts = maybe_pad(cuts, num_samples=max(audio_lens).item(), direction=pad_direction)
-    first_cut = next(iter(cuts))
-    audio = torch.empty(len(cuts), first_cut.num_samples)
-    if executor is None:
-        for idx, cut in enumerate(cuts):
-            audio[idx] = _read_audio(cut)
+
+    # Note: returned "cuts" may be a subset of the original "cuts" if fault_tolerant=True.
+    audios, cuts = read_audio_from_cuts(cuts, executor, suppress_errors=fault_tolerant)
+
+    audios = torch.stack(audios)
+    audio_lens = torch.tensor(
+        [cut.original_num_samples for cut in cuts], dtype=torch.int32
+    )
+
+    if fault_tolerant:
+        return audios, audio_lens, cuts
     else:
-        for idx, example_audio in enumerate(executor.map(_read_audio, cuts)):
-            audio[idx] = example_audio
-    return audio, audio_lens
+        return audios, audio_lens
 
 
 def collate_custom_field(
@@ -175,7 +193,7 @@ def collate_custom_field(
     field: str,
     pad_value: Union[None, int, float] = None,
     pad_direction: str = "right",
-) -> Union[torch.Tensor, Tuple[torch.Tensor, torch.IntTensor]]:
+) -> Union[torch.Tensor, Tuple[torch.Tensor, torch.Tensor]]:
     """
     Load custom arrays for all the cuts and return them as a batch in a torch tensor.
     The output shapes are:
@@ -401,10 +419,34 @@ Helper functions to dispatch jobs to the concurrent executors.
 
 
 def read_audio_from_cuts(
-    cuts: Iterable[Cut], executor: Optional[Executor] = None
-) -> List[torch.Tensor]:
+    cuts: Iterable[Cut],
+    executor: Optional[Executor] = None,
+    suppress_errors: bool = False,
+) -> Tuple[List[torch.Tensor], CutSet]:
+    """
+    Loads audio data from an iterable of cuts.
+
+    :param cuts: a CutSet or iterable of cuts.
+    :param executor: optional Executor (e.g., ThreadPoolExecutor or ProcessPoolExecutor)
+        to perform the audio reads in parallel.
+    :param suppress_errors: when set to ``True``, will enable fault-tolerant data reads;
+        we will skip the cuts and audio data for the instances that failed (and emit a warning).
+        When ``False`` (default), the errors will not be suppressed.
+    :return: a tuple of two items: a list of audio tensors (with different shapes),
+        and a list of cuts for which we read the data successfully.
+    """
     map_fn = map if executor is None else executor.map
-    return list(map_fn(_read_audio, cuts))
+    audios = []
+    ok_cuts = []
+    for idx, (cut, maybe_audio) in enumerate(
+        zip(cuts, map_fn(partial(_read_audio, suppress_errors=suppress_errors), cuts))
+    ):
+        if maybe_audio is None:
+            continue
+        else:
+            audios.append(maybe_audio)
+            ok_cuts.append(cut)
+    return audios, CutSet.from_cuts(ok_cuts)
 
 
 def read_features_from_cuts(
@@ -414,8 +456,15 @@ def read_features_from_cuts(
     return list(map_fn(_read_features, cuts))
 
 
-def _read_audio(cut: Cut) -> torch.Tensor:
-    return torch.from_numpy(cut.load_audio()[0])
+def _read_audio(cut: Cut, suppress_errors: bool = False) -> Optional[torch.Tensor]:
+    """
+    Loads audio data from cut, or returns None if there was an error
+    and ``suppress_errors`` was set to ``True``.
+    """
+    with suppress_and_warn(
+        AudioLoadingError, DurationMismatchError, enabled=suppress_errors
+    ):
+        return torch.from_numpy(cut.load_audio()[0])
 
 
 def _read_features(cut: Cut) -> torch.Tensor:
