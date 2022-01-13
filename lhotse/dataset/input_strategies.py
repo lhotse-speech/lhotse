@@ -103,7 +103,10 @@ class PrecomputedFeatures(BatchIO):
     :class:`InputStrategy` that reads pre-computed features, whose manifests
     are attached to cuts, from disk.
 
-    It pads the feature matrices, if needed.
+    It automatically pads the feature matrices so that every example has the same number
+    of frames as the longest cut in a mini-batch.
+    This is needed to put all examples into a single tensor.
+    The padding value is a low log-energy, around log(1e-10).
 
     .. automethod:: __call__
     """
@@ -175,7 +178,9 @@ class AudioSamples(BatchIO):
     :class:`InputStrategy` that reads single-channel recordings, whose manifests
     are attached to cuts, from disk (or other audio source).
 
-    It pads the recordings, if needed.
+    It automatically zero-pads the recordings so that every example has the same number
+    of audio samples as the longest cut in a mini-batch.
+    This is needed to put all examples into a single tensor.
 
     .. automethod:: __call__
     """
@@ -276,7 +281,10 @@ class OnTheFlyFeatures(BatchIO):
     are attached to cuts, from disk (or other audio source).
     Then, it uses a :class:`FeatureExtractor` to compute their features on-the-fly.
 
-    It pads the recordings, if needed.
+    It automatically pads the feature matrices so that every example has the same number
+    of frames as the longest cut in a mini-batch.
+    This is needed to put all examples into a single tensor.
+    The padding value is a low log-energy, around log(1e-10).
 
     .. note:
         The batch feature extraction performed here is not as efficient as it could be,
