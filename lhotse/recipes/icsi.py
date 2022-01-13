@@ -107,6 +107,7 @@ from lhotse import validate_recordings_and_supervisions
 from lhotse.audio import AudioSource, Recording, RecordingSet, read_sph
 from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import Pathlike, Seconds, urlretrieve_progress
+from lhotse.recipes.ami import normalize_text
 
 # fmt:off
 PARTITIONS = {
@@ -224,7 +225,7 @@ def download_icsi(
 
 
 def parse_icsi_annotations(
-    transcripts_dir: Pathlike, normalize_text: bool = True
+    transcripts_dir: Pathlike, normalize: str = "upper"
 ) -> Tuple[Dict[str, List[SupervisionSegment]], Dict[str, Dict[str, int]]]:
 
     annotations = defaultdict(list)
@@ -267,10 +268,8 @@ def parse_icsi_annotations(
                             end_time = float(segment.attrib["EndTime"])
                             speaker = segment.attrib["Participant"]
                             channel = spk_to_channel_map[meeting_id][speaker]
-                            text = (
-                                segment.text.strip().upper()
-                                if normalize_text
-                                else segment.text.strip()
+                            text = normalize_text(
+                                segment.text.strip(), normalize=normalize
                             )
                             annotations[(meeting_id, speaker, channel)].append(
                                 IcsiSegmentAnnotation(
@@ -470,7 +469,7 @@ def prepare_icsi(
     transcripts_dir: Optional[Pathlike] = None,
     output_dir: Optional[Pathlike] = None,
     mic: Optional[str] = "ihm",
-    normalize_text: bool = True,
+    normalize_text: str = "kaldi",
 ) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet]]]:
     """
     Returns the manifests which consist of the Recordings and Supervisions
@@ -478,7 +477,7 @@ def prepare_icsi(
     :param transcripts_dir: Pathlike, the path of the transcripts dir (LDC2004T04).
     :param output_dir: Pathlike, the path where to write the manifests.
     :param mic: str {'ihm','ihm-mix','sdm','mdm'}, type of mic to use.
-    :param normalize_text: bool, whether to normalize text to uppercase
+    :param normalize_text: str {'none', 'upper', 'kaldi'} normalization of text
     :return: a Dict whose key is ('train', 'dev', 'test'), and the values are dicts of manifests under keys
         'recordings' and 'supervisions'.
     """
@@ -494,7 +493,7 @@ def prepare_icsi(
 
     logging.info("Parsing ICSI transcripts")
     annotations, channel_to_idx_map = parse_icsi_annotations(
-        transcripts_dir, normalize_text
+        transcripts_dir, normalize=normalize_text
     )
 
     # Audio
