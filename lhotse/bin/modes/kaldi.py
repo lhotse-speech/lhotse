@@ -83,11 +83,21 @@ def import_(
         "This helps avoid issues with Kaldi data dir sorting."
     ),
 )
+@click.option(
+    "-p",
+    "--prefix-spk-id",
+    is_flag=True,
+    help=(
+        "Prefix utterance ids with speaker ids."
+        "This helps avoid issues with Kaldi data dir sorting."
+    ),
+)
 def export(
     recordings: Pathlike,
     supervisions: Pathlike,
     output_dir: Pathlike,
     map_underscores_to: Optional[str],
+    prefix_spk_id: Optional[bool] = False,
 ):
     """
     Convert a pair of ``RecordingSet`` and ``SupervisionSet`` manifests into a Kaldi-style data directory.
@@ -101,6 +111,7 @@ def export(
         supervisions=load_manifest(supervisions),
         output_dir=output_dir,
         map_underscores_to=map_underscores_to,
+        prefix_spk_id=prefix_spk_id,
     )
     click.secho(
         "Export completed! You likely need to run the following Kaldi commands:",

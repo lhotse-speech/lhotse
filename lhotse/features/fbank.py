@@ -8,7 +8,7 @@ from lhotse.utils import EPSILON, Seconds
 
 
 @dataclass
-class FbankConfig:
+class TorchaudioFbankConfig:
     # Spectogram-related part
     dither: float = 0.0
     window_type: str = "povey"
@@ -35,16 +35,16 @@ class FbankConfig:
         return asdict(self)
 
     @staticmethod
-    def from_dict(data: Dict[str, Any]) -> "FbankConfig":
-        return FbankConfig(**data)
+    def from_dict(data: Dict[str, Any]) -> "TorchaudioFbankConfig":
+        return TorchaudioFbankConfig(**data)
 
 
 @register_extractor
-class Fbank(TorchaudioFeatureExtractor):
+class TorchaudioFbank(TorchaudioFeatureExtractor):
     """Log Mel energy filter bank feature extractor based on ``torchaudio.compliance.kaldi.fbank`` function."""
 
     name = "fbank"
-    config_type = FbankConfig
+    config_type = TorchaudioFbankConfig
 
     def _feature_fn(self, *args, **kwargs):
         from torchaudio.compliance.kaldi import fbank

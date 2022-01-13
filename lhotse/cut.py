@@ -41,7 +41,7 @@ from lhotse.features import (
     create_default_feature_extractor,
 )
 from lhotse.features.base import compute_global_stats
-from lhotse.features.io import FeaturesWriter, LilcomFilesWriter, LilcomHdf5Writer
+from lhotse.features.io import FeaturesWriter, LilcomChunkyWriter, LilcomFilesWriter
 from lhotse.serialization import Serializable
 from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import (
@@ -147,8 +147,8 @@ class Cut:
     It is also possible to use a :class:`~lhotse.features.io.FeaturesWriter` to store the features and attach
     their manifest to a copy of the cut::
 
-        >>> from lhotse import LilcomHdf5Writer
-        >>> with LilcomHdf5Writer('feats.h5') as storage:
+        >>> from lhotse import LilcomChunkyWriter
+        >>> with LilcomChunkyWriter('feats.lca') as storage:
         ...     cut_with_feats = cut.compute_and_store_features(
         ...         extractor=Fbank(),
         ...         storage=storage
@@ -1347,6 +1347,7 @@ class MonoCut(Cut):
         self,
         rir_recording: "Recording",
         normalize_output: bool = True,
+        early_only: bool = False,
         affix_id: bool = True,
     ) -> "MonoCut":
         """
@@ -1354,6 +1355,7 @@ class MonoCut(Cut):
 
         :param rir_recording: The impulse response to use for convolving.
         :param normalize_output: When true, output will be normalized to have energy as input.
+        :param early_only: When true, only the early reflections (first 50 ms) will be used.
         :param affix_id: When true, we will modify the ``MonoCut.id`` field
             by affixing it with "_rvb".
         :return: a modified copy of the current ``MonoCut``.
@@ -1373,6 +1375,7 @@ class MonoCut(Cut):
         recording_rvb = self.recording.reverb_rir(
             rir_recording=rir_recording,
             normalize_output=normalize_output,
+            early_only=early_only,
             affix_id=affix_id,
         )
         # Match the supervision's id (and it's underlying recording id).
@@ -1738,6 +1741,7 @@ class PaddingCut(Cut):
         self,
         rir_recording: "Recording",
         normalize_output: bool = True,
+        early_only: bool = False,
         affix_id: bool = True,
     ) -> "PaddingCut":
         """
@@ -1746,6 +1750,7 @@ class PaddingCut(Cut):
 
         :param rir_recording: The impulse response to use for convolving.
         :param normalize_output: When true, output will be normalized to have energy as input.
+        :param early_only: When true, only the early reflections (first 50 ms) will be used.
         :param affix_id: When true, we will modify the ``PaddingCut.id`` field
             by affixing it with "_rvb".
         :return: a modified copy of the current ``PaddingCut``.
@@ -2337,6 +2342,7 @@ class MixedCut(Cut):
         self,
         rir_recording: "Recording",
         normalize_output: bool = True,
+        early_only: bool = False,
         affix_id: bool = True,
     ) -> "MixedCut":
         """
@@ -2344,6 +2350,7 @@ class MixedCut(Cut):
 
         :param rir_recording: The impulse response to use for convolving.
         :param normalize_output: When true, output will be normalized to have energy as input.
+        :param early_only: When true, only the early reflections (first 50 ms) will be used.
         :param affix_id: When true, we will modify the ``MixedCut.id`` field
             by affixing it with "_rvb".
         :return: a modified copy of the current ``MixedCut``.
@@ -2366,6 +2373,7 @@ class MixedCut(Cut):
                     cut=track.cut.reverb_rir(
                         rir_recording=rir_recording,
                         normalize_output=normalize_output,
+                        early_only=early_only,
                         affix_id=affix_id,
                     ),
                 )
@@ -3136,7 +3144,7 @@ class CutSet(Serializable, Sequence[Cut]):
         """
         durations = np.array([c.duration for c in self])
         speech_durations = np.array(
-            [s.trim(c.duration).duration for c in self for s in c.supervisions]
+            [s.duration for c in self for s in c.trimmed_supervisions]
         )
         total_sum = durations.sum()
         speech_sum = speech_durations.sum()
@@ -3706,6 +3714,7 @@ class CutSet(Serializable, Sequence[Cut]):
         self,
         rir_recordings: "RecordingSet",
         normalize_output: bool = True,
+        early_only: bool = False,
         affix_id: bool = True,
     ) -> "CutSet":
         """
@@ -3716,6 +3725,7 @@ class CutSet(Serializable, Sequence[Cut]):
 
         :param rir_recordings: RecordingSet containing the room impulse responses.
         :param normalize_output: When true, output will be normalized to have energy as input.
+        :param early_only: When true, only the early reflections (first 50 ms) will be used.
         :param affix_id: Should we modify the ID (useful if both versions of the same
             cut are going to be present in a single manifest).
         :return: a modified copy of the ``CutSet``.
@@ -3726,6 +3736,7 @@ class CutSet(Serializable, Sequence[Cut]):
                 cut.reverb_rir(
                     rir_recording=random.choice(rir_recordings),
                     normalize_output=normalize_output,
+                    early_only=early_only,
                     affix_id=affix_id,
                 )
                 for cut in self
@@ -3836,7 +3847,7 @@ class CutSet(Serializable, Sequence[Cut]):
         storage_path: Pathlike,
         num_jobs: Optional[int] = None,
         augment_fn: Optional[AugmentFn] = None,
-        storage_type: Type[FW] = LilcomHdf5Writer,
+        storage_type: Type[FW] = LilcomChunkyWriter,
         executor: Optional[Executor] = None,
         mix_eagerly: bool = True,
         progress_bar: bool = True,
@@ -3848,7 +3859,7 @@ class CutSet(Serializable, Sequence[Cut]):
         Examples:
 
             Extract fbank features on one machine using 8 processes,
-            store arrays partitioned in 8 HDF5 files with lilcom compression:
+            store arrays partitioned in 8 archive files with lilcom compression:
 
             >>> cuts = CutSet(...)
             ... cuts.compute_and_store_features(
@@ -3870,7 +3881,7 @@ class CutSet(Serializable, Sequence[Cut]):
 
             Extract fbank features on multiple machines using a Dask cluster
             with 80 jobs,
-            store arrays partitioned in 80 HDF5 files with lilcom compression:
+            store arrays partitioned in 80 archive files with lilcom compression:
 
             >>> from distributed import Client
             ... cuts = CutSet(...)
@@ -4015,7 +4026,7 @@ class CutSet(Serializable, Sequence[Cut]):
         batch_duration: Seconds = 600.0,
         num_workers: int = 4,
         augment_fn: Optional[AugmentFn] = None,
-        storage_type: Type[FW] = LilcomHdf5Writer,
+        storage_type: Type[FW] = LilcomChunkyWriter,
         overwrite: bool = False,
     ) -> "CutSet":
         """
@@ -4030,7 +4041,7 @@ class CutSet(Serializable, Sequence[Cut]):
         Otherwise, the speed will be comparable to single-threaded extraction.
 
         Example: extract fbank features on one GPU, using 4 dataloading workers
-        for reading audio, and store the arrays in an HDF5 file with
+        for reading audio, and store the arrays in an archive file with
         lilcom compression::
 
             >>> from lhotse import KaldifeatFbank, KaldifeatFbankConfig
@@ -4372,6 +4383,42 @@ class CutSet(Serializable, Sequence[Cut]):
             return mapped
 
         return CutSet.from_cuts(verified(transform_fn(c)) for c in self)
+
+    def copy_feats(
+        self, writer: FeaturesWriter, output_path: Optional[Pathlike] = None
+    ) -> "CutSet":
+        """
+        Save a copy of every feature matrix found in this CutSet using ``writer``
+        and return a new manifest with cuts referring to the new feature locations.
+
+        :param writer: a :class:`lhotse.features.io.FeaturesWriter` instance.
+        :param output_path: optional path where the new manifest should be stored.
+            It's used to write the manifest incrementally and return a lazy manifest,
+            otherwise the copy is stored in memory.
+        :return: a copy of the manifest.
+        """
+        with CutSet.open_writer(output_path) as manifest_writer:
+            for item in self:
+                if not item.has_features or isinstance(item, PaddingCut):
+                    manifest_writer.write(item)
+                    continue
+
+                if isinstance(item, MixedCut):
+                    cpy = fastcopy(item)
+                    for t in cpy.tracks:
+                        if isinstance(t.cut, MonoCut):
+                            t.cut.features = t.cut.features.copy_feats(writer=writer)
+                    manifest_writer.write(cpy)
+
+                elif isinstance(item, MonoCut):
+                    cpy = fastcopy(item)
+                    cpy.features = cpy.features.copy_feats(writer=writer)
+                    manifest_writer.write(cpy)
+
+                else:
+                    manifest_writer.write(item)
+
+        return manifest_writer.open_manifest()
 
     def modify_ids(self, transform_fn: Callable[[str], str]) -> "CutSet":
         """
@@ -5003,11 +5050,10 @@ def create_cut_set_lazy(
                     f"Mismatched recording_id: Features.recording_id == {feats.recording_id}, "
                     f"but Recording.id == '{rec.id}'"
                 )
-                sups = SupervisionSet.from_segments(
-                    itertools.takewhile(
-                        lambda s: s.recording_id == feats.recording_id, supervisions
-                    )
+                sups, supervisions = _takewhile(
+                    supervisions, lambda s: s.recording_id == feats.recording_id
                 )
+                sups = SupervisionSet.from_segments(sups)
                 cut = MonoCut(
                     id=str(uuid4())
                     if random_ids
@@ -5044,11 +5090,11 @@ def create_cut_set_lazy(
             # note that if the supervisions are not sorted, we can't fail here,
             # because there might simply be no supervisions with that ID.
             # It's up to the user to make sure it's sorted properly.
-            sups = SupervisionSet.from_segments(
-                itertools.takewhile(
-                    lambda s: s.recording_id == recording.id, supervisions
-                )
+            sups, supervisions = _takewhile(
+                supervisions, lambda s: s.recording_id == recording.id
             )
+            sups = SupervisionSet.from_segments(sups)
+
             # A single cut always represents a single channel. When a recording has multiple channels,
             # we create a new cut for each channel separately.
             for cidx, channel in enumerate(recording.channel_ids):
@@ -5067,6 +5113,33 @@ def create_cut_set_lazy(
                 writer.write(cut)
 
     return CutSet.from_jsonl_lazy(output_path)
+
+
+T = TypeVar("T")
+
+
+def _takewhile(
+    iterable: Iterable[T], predicate: Callable[[T], bool]
+) -> Tuple[List[T], Iterable[T]]:
+    """
+    Collects items from ``iterable`` as long as they satisfy the ``predicate``.
+    Returns a tuple of ``(collected_items, iterable)``, where ``iterable`` may
+    continue yielding items starting from the first one that did not satisfy
+    ``predicate`` (unlike ``itertools.takewhile``).
+    """
+    collected = []
+    try:
+        while True:
+            item = next(iterable)
+            if predicate(item):
+                collected.append(item)
+            else:
+                iterable = chain([item], iterable)
+                break
+
+    except StopIteration:
+        pass
+    return collected, iterable
 
 
 def merge_supervisions(

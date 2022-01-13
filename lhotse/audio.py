@@ -59,7 +59,8 @@ from lhotse.utils import (
 
 Channels = Union[int, List[int]]
 
-_DEFAULT_LHOTSE_AUDIO_DURATION_MISMATCH_TOLERANCE: Seconds = 1e-3
+
+_DEFAULT_LHOTSE_AUDIO_DURATION_MISMATCH_TOLERANCE: Seconds = 1e-2
 LHOTSE_AUDIO_DURATION_MISMATCH_TOLERANCE: Seconds = (
     _DEFAULT_LHOTSE_AUDIO_DURATION_MISMATCH_TOLERANCE
 )
@@ -298,6 +299,7 @@ class Recording:
         recording_id: Optional[str] = None,
         relative_path_depth: Optional[int] = None,
         force_opus_sampling_rate: Optional[int] = None,
+        force_read_audio: bool = False,
     ) -> "Recording":
         """
         Read an audio file's header and create the corresponding ``Recording``.
@@ -316,10 +318,16 @@ class Recording:
             instead of the one we read from the manifest. This is useful for OPUS files that always
             have 48kHz rate and need to be resampled to the real one -- we will perform that operation
             "under-the-hood". For non-OPUS files this input is undefined.
+        :param force_read_audio: Set it to ``True`` for audio files that do not have any metadata
+            in their headers (e.g., "The People's Speech" FLAC files).
         :return: a new ``Recording`` instance pointing to the audio file.
         """
         path = Path(path)
-        audio_info = info(path, force_opus_sampling_rate=force_opus_sampling_rate)
+        audio_info = info(
+            path,
+            force_opus_sampling_rate=force_opus_sampling_rate,
+            force_read_audio=force_read_audio,
+        )
         return Recording(
             id=recording_id if recording_id is not None else path.stem,
             sampling_rate=audio_info.samplerate,
@@ -507,6 +515,7 @@ class Recording:
         self,
         rir_recording: "Recording",
         normalize_output: bool = True,
+        early_only: bool = False,
         affix_id: bool = True,
     ) -> "Recording":
         """
@@ -515,6 +524,7 @@ class Recording:
 
         :param rir_recording: The impulse response to be used.
         :param normalize_output: When true, output will be normalized to have energy as input.
+        :param early_only: When true, only the early reflections (first 50 ms) will be used.
         :param affix_id: When true, we will modify the ``Recording.id`` field
             by affixing it with "_rvb".
         :return: the perturbed ``Recording``.
@@ -524,6 +534,7 @@ class Recording:
             ReverbWithImpulseResponse(
                 rir_recording,
                 normalize_output=normalize_output,
+                early_only=early_only,
             ).to_dict()
         )
         return fastcopy(
@@ -869,6 +880,7 @@ class RecordingSet(Serializable, Sequence[Recording]):
         self,
         rir_recordings: "RecordingSet",
         normalize_output: bool = True,
+        early_only: bool = False,
         affix_id: bool = True,
     ) -> "RecordingSet":
         """
@@ -877,6 +889,7 @@ class RecordingSet(Serializable, Sequence[Recording]):
 
         :param rir_recordings: The impulse responses to be used.
         :param normalize_output: When true, output will be normalized to have energy as input.
+        :param early_only: When true, only the early reflections (first 50 ms) will be used.
         :param affix_id: When true, we will modify the ``Recording.id`` field
             by affixing it with "_rvb".
         :return: a ``RecordingSet`` containing the perturbed ``Recording`` objects.
@@ -886,6 +899,7 @@ class RecordingSet(Serializable, Sequence[Recording]):
             r.reverb_rir(
                 rir_recording=random.choice(rir_recordings),
                 normalize_output=normalize_output,
+                early_only=early_only,
                 affix_id=affix_id,
             )
             for r in self
@@ -1108,15 +1122,27 @@ class LibsndfileCompatibleAudioInfo(NamedTuple):
 
 
 def info(
-    path: Pathlike, force_opus_sampling_rate: Optional[int] = None
+    path: Pathlike,
+    force_opus_sampling_rate: Optional[int] = None,
+    force_read_audio: bool = False,
 ) -> LibsndfileCompatibleAudioInfo:
+
+    if force_read_audio:
+        # This is a reliable fallback for situations when the user knows that audio files do not
+        # have duration metadata in their headers.
+        # We will use "audioread" backend that spawns an ffmpeg process, reads the audio,
+        # and computes the duration.
+        return audioread_info(str(path))
+
     if path.suffix.lower() == ".opus":
         # We handle OPUS as a special case because we might need to force a certain sampling rate.
         return opus_info(path, force_opus_sampling_rate=force_opus_sampling_rate)
+
     elif path.suffix.lower() == ".sph":
         # We handle SPHERE as another special case because some old codecs (i.e. "shorten" codec)
         # can't be handled by neither pysoundfile nor pyaudioread.
         return sph_info(path)
+
     try:
         # Try to parse the file using torchaudio first.
         return torchaudio_info(path)
@@ -1397,8 +1423,7 @@ def assert_and_maybe_fix_num_samples(
         ceil(LHOTSE_AUDIO_DURATION_MISMATCH_TOLERANCE * recording.sampling_rate)
     )
     if 0 < diff <= allowed_diff:
-        # note the extra colon in -1:, which preserves the shape
-        audio = np.append(audio, audio[:, -diff:], axis=1)
+        audio = np.pad(audio, ((0, 0), (0, diff)), mode="reflect")
         return audio
     elif -allowed_diff <= diff < 0:
         audio = audio[:, :diff]

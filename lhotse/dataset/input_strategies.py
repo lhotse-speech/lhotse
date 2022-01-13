@@ -1,7 +1,7 @@
 import logging
-from concurrent.futures import ProcessPoolExecutor
+from concurrent.futures import Executor, ThreadPoolExecutor
 from functools import lru_cache
-from typing import Callable, Dict, List, Optional, Tuple
+from typing import Callable, Dict, List, Optional, Tuple, Type, TypeVar
 
 import torch
 
@@ -22,6 +22,8 @@ from lhotse.utils import (
     supervision_to_samples,
 )
 
+ExecutorType = TypeVar("ExecutorType", bound=Executor)
+
 
 class BatchIO:
     """
@@ -40,8 +42,13 @@ class BatchIO:
     .. automethod:: __call__
     """
 
-    def __init__(self, num_workers: int = 0) -> None:
+    def __init__(
+        self,
+        num_workers: int = 0,
+        executor_type: Type[ExecutorType] = ThreadPoolExecutor,
+    ) -> None:
         self.num_workers = num_workers
+        self._executor_type = executor_type
 
     def __call__(self, cuts: CutSet) -> Tuple[torch.Tensor, torch.IntTensor]:
         """Returns a tensor with collated input signals, and a tensor of length of each signal before padding."""
@@ -107,7 +114,10 @@ class PrecomputedFeatures(BatchIO):
         The returned shape is ``(B, T, F) => (batch_size, num_frames, num_features)``.
 
         :return: a tensor with collated features, and a tensor of ``num_frames`` of each cut before padding."""
-        return collate_features(cuts, executor=_get_executor(self.num_workers))
+        return collate_features(
+            cuts,
+            executor=_get_executor(self.num_workers, executor_type=self._executor_type),
+        )
 
     def supervision_intervals(self, cuts: CutSet) -> Dict[str, torch.Tensor]:
         """
@@ -177,7 +187,10 @@ class AudioSamples(BatchIO):
 
         :return: a tensor with collated audio samples, and a tensor of ``num_samples`` of each cut before padding.
         """
-        return collate_audio(cuts, executor=_get_executor(self.num_workers))
+        return collate_audio(
+            cuts,
+            executor=_get_executor(self.num_workers, executor_type=self._executor_type),
+        )
 
     def supervision_intervals(self, cuts: CutSet) -> Dict[str, torch.Tensor]:
         """
@@ -251,6 +264,7 @@ class OnTheFlyFeatures(BatchIO):
         wave_transforms: List[Callable[[torch.Tensor], torch.Tensor]] = None,
         num_workers: int = 0,
         use_batch_extract: bool = True,
+        executor_type: Type[ExecutorType] = ThreadPoolExecutor,
     ) -> None:
         """
         OnTheFlyFeatures' constructor.
@@ -263,7 +277,7 @@ class OnTheFlyFeatures(BatchIO):
             as it is possibly faster. It has a restriction that all cuts must have the same
             sampling rate. If that is not the case, set this to ``False``.
         """
-        super().__init__(num_workers=num_workers)
+        super().__init__(num_workers=num_workers, executor_type=executor_type)
         self.extractor = extractor
         self.wave_transforms = ifnone(wave_transforms, [])
         self.use_batch_extract = use_batch_extract
@@ -276,7 +290,10 @@ class OnTheFlyFeatures(BatchIO):
 
         :return: a tensor with collated features, and a tensor of ``num_frames`` of each cut before padding.
         """
-        audios = read_audio_from_cuts(cuts, executor=_get_executor(self.num_workers))
+        audios = read_audio_from_cuts(
+            cuts,
+            executor=_get_executor(self.num_workers, executor_type=self._executor_type),
+        )
 
         for tfnm in self.wave_transforms:
             for idx in range(len(audios)):
@@ -371,9 +388,11 @@ class OnTheFlyFeatures(BatchIO):
 
 
 @lru_cache(maxsize=1)
-def _get_executor(max_workers: int = 0) -> Optional[ProcessPoolExecutor]:
+def _get_executor(
+    max_workers: int = 0, executor_type: Type[ExecutorType] = ThreadPoolExecutor
+) -> Optional[Executor]:
     """
-    This function caches a process pool in the global state of a given process.
+    This function caches a thread/process pool in the global state of a given process.
     It's useful for keeping a process pool alive across different invocations within the
     same process for efficiency.
     We intend it to be used for efficient data reads withing a task executed in a
@@ -381,4 +400,4 @@ def _get_executor(max_workers: int = 0) -> Optional[ProcessPoolExecutor]:
     """
     if max_workers <= 0:
         return None
-    return ProcessPoolExecutor(max_workers=max_workers)
+    return executor_type(max_workers=max_workers)
