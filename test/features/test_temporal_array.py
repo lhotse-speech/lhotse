@@ -1,10 +1,11 @@
-from tempfile import TemporaryDirectory, NamedTemporaryFile
+from tempfile import NamedTemporaryFile, TemporaryDirectory
 
 import numpy as np
 import pytest
 
 from lhotse import (
     ChunkedLilcomHdf5Writer,
+    LilcomChunkyWriter,
     LilcomFilesWriter,
     LilcomHdf5Writer,
     NumpyFilesWriter,
@@ -42,6 +43,12 @@ from lhotse.array import Array, TemporalArray
                 reason="Lilcom changes dtype to float32 (and Chunked variant works only with shape 2)"
             ),
         ),
+        pytest.param(
+            LilcomChunkyWriter,
+            marks=pytest.mark.xfail(
+                reason="Lilcom changes dtype to float32 (and Chunked variant works only with shape 2)"
+            ),
+        ),
     ],
 )
 def test_write_read_temporal_array_no_lilcom(array, writer_class):
@@ -72,19 +79,21 @@ def test_write_read_temporal_array_no_lilcom(array, writer_class):
 @pytest.mark.parametrize(
     "writer_class",
     [
+        LilcomChunkyWriter,
         LilcomFilesWriter,
         LilcomHdf5Writer,
     ],
 )
 def test_write_read_temporal_array_lilcom(array, writer_class):
-    with TemporaryDirectory() as d, writer_class(d) as writer:
-        manifest = writer.store_array(
-            key="utt1",
-            value=array,
-            temporal_dim=0,
-            frame_shift=0.4,
-            start=0.0,
-        )
+    with TemporaryDirectory() as d:
+        with writer_class(d) as writer:
+            manifest = writer.store_array(
+                key="utt1",
+                value=array,
+                temporal_dim=0,
+                frame_shift=0.4,
+                start=0.0,
+            )
         restored = manifest.load()
         assert array.ndim == manifest.ndim
         assert array.shape == restored.shape

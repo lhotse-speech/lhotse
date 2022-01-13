@@ -33,6 +33,7 @@ from .mls import *
 from .mtedx import *
 from .musan import *
 from .nsc import *
+from .peoples_speech import *
 from .rir_noise import *
 from .switchboard import *
 from .tedlium import *

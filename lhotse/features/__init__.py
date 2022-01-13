@@ -12,6 +12,8 @@ from .io import (
     FeaturesReader,
     FeaturesWriter,
     KaldiReader,
+    LilcomChunkyReader,
+    LilcomChunkyWriter,
     LilcomFilesReader,
     LilcomFilesWriter,
     LilcomHdf5Reader,
@@ -33,7 +35,7 @@ from .kaldifeat import (
     KaldifeatMfccConfig,
 )
 from .librosa_fbank import LibrosaFbank, LibrosaFbankConfig
-from .opensmile import OpenSmileExtractor, OpenSmileConfig
 from .mfcc import TorchaudioMfcc, TorchaudioMfccConfig
 from .mixer import FeatureMixer
+from .opensmile import OpenSmileConfig, OpenSmileExtractor
 from .spectrogram import Spectrogram, SpectrogramConfig
