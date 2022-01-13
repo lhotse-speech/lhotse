@@ -61,6 +61,18 @@ def test_collate_audio_padding():
     assert max(audio_lens).item() == correct_pad
 
 
+def test_collate_audio_padding_fault_tolerant_return_vals():
+    cuts = CutSet.from_json("test/fixtures/ljspeech/cuts.json")
+    assert len(set(cut.num_samples for cut in cuts)) > 1
+
+    correct_pad = max(cut.num_samples for cut in cuts)
+    audio, audio_lens, cuts_ok = collate_audio(cuts, fault_tolerant=True)
+
+    assert len(cuts) == len(cuts_ok)
+    assert audio.shape[-1] == correct_pad
+    assert max(audio_lens).item() == correct_pad
+
+
 def test_collate_feature_padding():
     cuts = CutSet.from_json("test/fixtures/ljspeech/cuts.json")
     assert len(set(cut.num_frames for cut in cuts)) > 1
