@@ -174,6 +174,7 @@ def export_to_kaldi(
     supervisions: SupervisionSet,
     output_dir: Pathlike,
     map_underscores_to: Optional[str] = None,
+    prefix_spk_id: Optional[bool] = False,
 ):
     """
     Export a pair of ``RecordingSet`` and ``SupervisionSet`` to a Kaldi data
@@ -188,6 +189,8 @@ def export_to_kaldi(
     :param output_dir: path where the Kaldi-style data directory will be created.
     :param map_underscores_to: optional string with which we will replace all
         underscores. This helps avoid issues with Kaldi data dir sorting.
+    :param prefix_spk_id: add speaker_id as a prefix of utterance_id (this is to
+        ensure correct sorting inside files which is required by Kaldi)
     """
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -205,6 +208,9 @@ def export_to_kaldi(
                 speaker=s.speaker.replace("_", map_underscores_to),
             )
         )
+
+    if prefix_spk_id:
+        supervisions = supervisions.map(lambda s: fastcopy(s, id=f"{s.speaker}-{s.id}"))
 
     if all(r.num_channels == 1 for r in recordings):
         # if all the recordings are single channel, we won't add
