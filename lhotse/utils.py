@@ -639,18 +639,21 @@ class suppress_and_warn:
     After the exception is suppressed, execution proceeds with the next
     statement following the with statement.
 
-         with warn_and_suppress(FileNotFoundError):
-             os.remove(somefile)
-         # Execution still resumes here if the file was already removed
+         >>> with suppress_and_warn(FileNotFoundError):
+         ...     os.remove(somefile)
+         >>> # Execution still resumes here if the file was already removed
     """
 
-    def __init__(self, *exceptions):
+    def __init__(self, *exceptions, enabled: bool = True):
+        self._enabled = enabled
         self._exceptions = exceptions
 
     def __enter__(self):
         pass
 
     def __exit__(self, exctype, excinst, exctb):
+        if not self._enabled:
+            return
         # Returning True from __exit__ in a context manager tells Python
         # to suppress an exception.
         should_suppress = exctype is not None and issubclass(exctype, self._exceptions)

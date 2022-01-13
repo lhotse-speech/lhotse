@@ -1,7 +1,7 @@
 import logging
 from concurrent.futures import Executor, ThreadPoolExecutor
 from functools import lru_cache
-from typing import Callable, Dict, List, Optional, Tuple, Type, TypeVar
+from typing import Callable, Dict, List, Optional, Tuple, Type, TypeVar, Union
 
 import torch
 
@@ -108,7 +108,7 @@ class PrecomputedFeatures(BatchIO):
     .. automethod:: __call__
     """
 
-    def __call__(self, cuts: CutSet) -> Tuple[torch.Tensor, torch.IntTensor]:
+    def __call__(self, cuts: CutSet) -> Tuple[torch.Tensor, torch.Tensor]:
         """
         Reads the pre-computed features from disk/other storage.
         The returned shape is ``(B, T, F) => (batch_size, num_frames, num_features)``.
@@ -180,7 +180,34 @@ class AudioSamples(BatchIO):
     .. automethod:: __call__
     """
 
-    def __call__(self, cuts: CutSet) -> Tuple[torch.Tensor, torch.IntTensor]:
+    def __init__(
+        self,
+        num_workers: int = 0,
+        fault_tolerant: bool = False,
+        executor_type: Type[ExecutorType] = ThreadPoolExecutor,
+    ) -> None:
+        """
+        AudioSamples constructor.
+
+        :param num_workers: when larger than 0, we will spawn an executor (of type specified
+            by ``executor_type``) to read the audio data in parallel.
+            Thread executor can be used with PyTorch's DataLoader, whereas Process executor
+            would fail (but could be faster for other applications).
+        :param fault_tolerant: when ``True``, the cuts for which audio loading failed
+            will be skipped. It will make ``__call__`` return an additional item,
+            which is the CutSet for which we successfully read the audio.
+            It may be a subset of the input CutSet.
+        :param executor_type: the type of executor used for parallel audio reads
+            (only relevant when ``num_workers>0``).
+        """
+        super().__init__(num_workers=num_workers, executor_type=executor_type)
+        self.fault_tolerant = fault_tolerant
+
+    def __call__(
+        self, cuts: CutSet
+    ) -> Union[
+        Tuple[torch.Tensor, torch.Tensor], Tuple[torch.Tensor, torch.Tensor, CutSet]
+    ]:
         """
         Reads the audio samples from recordings on disk/other storage.
         The returned shape is ``(B, T) => (batch_size, num_samples)``.
@@ -190,6 +217,7 @@ class AudioSamples(BatchIO):
         return collate_audio(
             cuts,
             executor=_get_executor(self.num_workers, executor_type=self._executor_type),
+            fault_tolerant=self.fault_tolerant,
         )
 
     def supervision_intervals(self, cuts: CutSet) -> Dict[str, torch.Tensor]:
@@ -264,6 +292,7 @@ class OnTheFlyFeatures(BatchIO):
         wave_transforms: List[Callable[[torch.Tensor], torch.Tensor]] = None,
         num_workers: int = 0,
         use_batch_extract: bool = True,
+        fault_tolerant: bool = False,
         executor_type: Type[ExecutorType] = ThreadPoolExecutor,
     ) -> None:
         """
@@ -272,17 +301,32 @@ class OnTheFlyFeatures(BatchIO):
         :param extractor: the feature extractor used on-the-fly (individually on each waveform).
         :param wave_transforms: an optional list of transforms applied on the batch of audio
             waveforms collated into a single tensor, right before the feature extraction.
+        :param num_workers: when larger than 0, we will spawn an executor (of type specified
+            by ``executor_type``) to read the audio data in parallel.
+            Thread executor can be used with PyTorch's DataLoader, whereas Process executor
+            would fail (but could be faster for other applications).
         :param use_batch_extract: when ``True``, we will call
             :meth:`~lhotse.features.base.FeatureExtractor.extract_batch` to compute the features
             as it is possibly faster. It has a restriction that all cuts must have the same
             sampling rate. If that is not the case, set this to ``False``.
+        :param fault_tolerant: when ``True``, the cuts for which audio loading failed
+            will be skipped. It will make ``__call__`` return an additional item,
+            which is the CutSet for which we successfully read the audio.
+            It may be a subset of the input CutSet.
+        :param executor_type: the type of executor used for parallel audio reads
+            (only relevant when ``num_workers>0``).
         """
         super().__init__(num_workers=num_workers, executor_type=executor_type)
         self.extractor = extractor
         self.wave_transforms = ifnone(wave_transforms, [])
         self.use_batch_extract = use_batch_extract
+        self.fault_tolerant = fault_tolerant
 
-    def __call__(self, cuts: CutSet) -> Tuple[torch.Tensor, torch.IntTensor]:
+    def __call__(
+        self, cuts: CutSet
+    ) -> Union[
+        Tuple[torch.Tensor, torch.Tensor], Tuple[torch.Tensor, torch.Tensor, CutSet]
+    ]:
         """
         Reads the audio samples from recordings on disk/other storage
         and computes their features.
@@ -290,9 +334,10 @@ class OnTheFlyFeatures(BatchIO):
 
         :return: a tensor with collated features, and a tensor of ``num_frames`` of each cut before padding.
         """
-        audios = read_audio_from_cuts(
+        audios, cuts = read_audio_from_cuts(
             cuts,
             executor=_get_executor(self.num_workers, executor_type=self._executor_type),
+            suppress_errors=self.fault_tolerant,
         )
 
         for tfnm in self.wave_transforms:
@@ -332,7 +377,10 @@ class OnTheFlyFeatures(BatchIO):
             dtype=torch.int32,
         )
 
-        return features_batch, feature_lens
+        if self.fault_tolerant:
+            return features_batch, feature_lens, cuts
+        else:
+            return features_batch, feature_lens
 
     def supervision_intervals(self, cuts: CutSet) -> Dict[str, torch.Tensor]:
         """
