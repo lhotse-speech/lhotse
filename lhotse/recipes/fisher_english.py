@@ -12,13 +12,15 @@ import itertools as it
 import os
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+from subprocess import CalledProcessError
 from typing import Dict, List, Optional, Tuple, Union
+import warnings
 
 from tqdm.auto import tqdm
 
 from lhotse.audio import Recording, RecordingSet
 from lhotse.qa import (
-    trim_supervisions_to_recordings,
+    fix_manifests,
     validate_recordings_and_supervisions,
 )
 from lhotse.supervision import SupervisionSegment, SupervisionSet
@@ -34,9 +36,12 @@ def get_paths(fold_path_and_pattern: Tuple[Pathlike, str]) -> List[Path]:
 
 def create_recording(
     audio_path_and_rel_path_depth: Tuple[Pathlike, Union[int, None]]
-) -> Recording:
+) -> Optional[Recording]:
     audio_path, rel_path_depth = audio_path_and_rel_path_depth
-    return Recording.from_file(audio_path, relative_path_depth=rel_path_depth)
+    try:
+        return Recording.from_file(audio_path, relative_path_depth=rel_path_depth)
+    except CalledProcessError:
+        return None
 
 
 def create_supervision(
@@ -45,6 +50,8 @@ def create_supervision(
 
     sessions, transcript_path = sessions_and_transcript_path
     transcript_path = Path(transcript_path)
+    if not transcript_path.is_file():
+        return []
     channel_to_int = {"A": 0, "B": 1}
     session_id = transcript_path.stem.split("_")[2]
     with codecs.open(transcript_path, "r", "utf8") as trans_f:
@@ -126,6 +133,10 @@ def prepare_fisher_english(
 
     corpus_dir = Path(corpus_dir)
 
+    if output_dir is not None:
+        output_dir = Path(output_dir)
+        output_dir.mkdir(parents=True, exist_ok=True)
+
     for workdir in audio_dirs + transcript_dirs:
         workdir_path = corpus_dir / workdir
         if not workdir_path.is_dir():
@@ -172,40 +183,51 @@ def prepare_fisher_english(
     assert len(transcript_paths) == len(sessions) == len(audio_paths)
 
     create_recordings_input = [(p, None if absolute_paths else 5) for p in audio_paths]
-    recordings = [None] * len(audio_paths)
+    recordings = []
+    err_recos = 0
     with ThreadPoolExecutor(os.cpu_count() * 4) as executor:
         with tqdm(
             total=len(create_recordings_input), desc="Collect recordings"
         ) as pbar:
-            for i, reco in enumerate(
-                executor.map(create_recording, create_recordings_input)
-            ):
-                recordings[i] = reco
+            for reco in executor.map(create_recording, create_recordings_input[:100]):
+                if reco is not None:
+                    recordings.append(reco)
+                else:
+                    err_recos += 1
                 pbar.update()
-
+    if err_recos:
+        warnings.warn(
+            f"Out of {len(create_recordings_input)} recordings, "
+            f"{err_recos} had errors and were omitted."
+        )
     recordings = RecordingSet.from_recordings(recordings)
+    if output_dir is not None:
+        recordings.to_file(output_dir / "recordings.jsonl.gz")
 
     create_supervisions_input = [(sessions, p) for p in transcript_paths]
-    supervisions = [None] * len(create_supervisions_input)
+    supervisions = []
+    err_sups = 0
     with ThreadPoolExecutor(os.cpu_count() * 4) as executor:
         with tqdm(
             total=len(create_supervisions_input), desc="Create supervisions"
         ) as pbar:
-            for i, tmp_supervisions in enumerate(
-                executor.map(create_supervision, create_supervisions_input)
+            for tmp_supervisions in executor.map(
+                create_supervision, create_supervisions_input[:100]
             ):
-                supervisions[i] = tmp_supervisions
+                if not tmp_supervisions:
+                    err_sups += 1
+                supervisions.extend(tmp_supervisions)
                 pbar.update()
-    supervisions = list(it.chain.from_iterable(supervisions))
     supervisions = SupervisionSet.from_segments(supervisions)
-
-    supervisions = trim_supervisions_to_recordings(recordings, supervisions)
-    validate_recordings_and_supervisions(recordings, supervisions)
-
+    if err_recos:
+        warnings.warn(
+            f"Out of {len(create_supervisions_input)} transcript files, "
+            f"{err_sups} had errors and were omitted."
+        )
     if output_dir is not None:
-        output_dir = Path(output_dir)
-        output_dir.mkdir(parents=True, exist_ok=True)
-        recordings.to_file(output_dir / "recordings.jsonl.gz")
         supervisions.to_file(output_dir / "supervisions.jsonl.gz")
+
+    recordings, supervisions = fix_manifests(recordings, supervisions)
+    validate_recordings_and_supervisions(recordings, supervisions)
 
     return {"recordings": recordings, "supervisions": supervisions}
