@@ -339,8 +339,8 @@ def parse_ami_annotations(
                     continue
                 start_time = float(seg.attrib["transcriber_start"])
                 end_time = float(seg.attrib["transcriber_end"])
-                assert len(seg.getchildren()) == 1, "Multiple child segments found"
-                seg_child = seg.getchildren()[0]
+                assert len(list(seg)) == 1, "Multiple child segments found"
+                seg_child = list(seg)[0]
                 if "href" in seg_child.attrib:
                     text = _parse_href(seg_child.attrib["href"], wid_to_word)
                 annotations[key].append(
