@@ -87,6 +87,12 @@ def validate_recordings_and_supervisions(
         recordings = RecordingSet.from_recordings([recordings])
     if isinstance(supervisions, SupervisionSegment):
         supervisions = SupervisionSet.from_segments([supervisions])
+
+    if recordings.is_lazy:
+        recordings = RecordingSet.from_recordings(iter(recordings))
+    if supervisions.is_lazy:
+        supervisions = SupervisionSet.from_segments(iter(supervisions))
+
     validate(recordings, read_data=read_data)
     validate(supervisions)
     # Errors
@@ -155,6 +161,9 @@ def trim_supervisions_to_recordings(
     Return a new :class:`~lhotse.supervision.SupervisionSet` with supervisions that are
     not exceeding the duration of their corresponding :class:`~lhotse.audio.Recording`.
     """
+    if recordings.is_lazy:
+        recordings = RecordingSet.from_recordings(iter(recordings))
+
     sups = []
     removed = 0
     trimmed = 0

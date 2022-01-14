@@ -9,6 +9,7 @@ About the Fisher English Part 1,2 corpus
 
 import codecs
 import itertools as it
+import logging
 import os
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -39,7 +40,10 @@ def create_recording(
 ) -> Optional[Recording]:
     audio_path, rel_path_depth = audio_path_and_rel_path_depth
     try:
-        return Recording.from_file(audio_path, relative_path_depth=rel_path_depth)
+        return Recording.from_file(
+            audio_path,
+            relative_path_depth=rel_path_depth,
+        )
     except CalledProcessError:
         return None
 
@@ -112,9 +116,9 @@ def walk_dirs_parallel(
 
 def prepare_fisher_english(
     corpus_dir: Pathlike,
+    output_dir: Pathlike,
     audio_dirs: List[str] = FISHER_AUDIO_DIRS,
     transcript_dirs: List[str] = FISHER_TRANSCRIPT_DIRS,
-    output_dir: Optional[Pathlike] = None,
     absolute_paths: bool = False,
 ) -> Dict[str, Union[RecordingSet, SupervisionSet]]:
 
@@ -132,10 +136,8 @@ def prepare_fisher_english(
     """
 
     corpus_dir = Path(corpus_dir)
-
-    if output_dir is not None:
-        output_dir = Path(output_dir)
-        output_dir.mkdir(parents=True, exist_ok=True)
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
 
     for workdir in audio_dirs + transcript_dirs:
         workdir_path = corpus_dir / workdir
@@ -180,54 +182,73 @@ def prepare_fisher_english(
             ][1:]
             sessions.update({l[0]: {"A": l[5], "B": l[10]} for l in tmp_sessions})
 
-    assert len(transcript_paths) == len(sessions) == len(audio_paths)
+    assert len(transcript_paths) == len(
+        audio_paths
+    ), f"{len(transcript_paths)} == {len(audio_paths)}"
 
-    create_recordings_input = [(p, None if absolute_paths else 5) for p in audio_paths]
-    recordings = []
-    err_recos = 0
-    with ThreadPoolExecutor(os.cpu_count() * 4) as executor:
-        with tqdm(
-            total=len(create_recordings_input), desc="Collect recordings"
-        ) as pbar:
-            for reco in executor.map(create_recording, create_recordings_input[:100]):
-                if reco is not None:
-                    recordings.append(reco)
-                else:
-                    err_recos += 1
-                pbar.update()
-    if err_recos:
-        warnings.warn(
-            f"Out of {len(create_recordings_input)} recordings, "
-            f"{err_recos} had errors and were omitted."
-        )
-    recordings = RecordingSet.from_recordings(recordings)
-    if output_dir is not None:
-        recordings.to_file(output_dir / "recordings.jsonl.gz")
+    recs_path = output_dir / "recordings.jsonl.gz"
+    if recs_path.is_file():
+        logging.info(f"Using existing recording manifest at {recs_path}")
+        recordings = RecordingSet.from_jsonl_lazy(recs_path)
+    else:
+        logging.info(f"Building fresh recording manifest")
+        create_recordings_input = [
+            (p, None if absolute_paths else 5) for p in audio_paths
+        ]
+        err_recos = 0
+        with ThreadPoolExecutor(
+            os.cpu_count() * 4
+        ) as executor, RecordingSet.open_writer(recs_path) as writer:
+            with tqdm(
+                total=len(create_recordings_input), desc="Collect recordings"
+            ) as pbar:
+                for reco in executor.map(create_recording, create_recordings_input):
+                    if reco is not None:
+                        writer.write(reco, flush=True)
+                    else:
+                        err_recos += 1
+                    pbar.update()
+        if err_recos:
+            warnings.warn(
+                f"Out of {len(create_recordings_input)} recordings, "
+                f"{err_recos} had errors and were omitted."
+            )
+        recordings = writer.open_manifest()
 
-    create_supervisions_input = [(sessions, p) for p in transcript_paths]
-    supervisions = []
-    err_sups = 0
-    with ThreadPoolExecutor(os.cpu_count() * 4) as executor:
-        with tqdm(
-            total=len(create_supervisions_input), desc="Create supervisions"
-        ) as pbar:
-            for tmp_supervisions in executor.map(
-                create_supervision, create_supervisions_input[:100]
-            ):
-                if not tmp_supervisions:
-                    err_sups += 1
-                supervisions.extend(tmp_supervisions)
-                pbar.update()
-    supervisions = SupervisionSet.from_segments(supervisions)
-    if err_recos:
-        warnings.warn(
-            f"Out of {len(create_supervisions_input)} transcript files, "
-            f"{err_sups} had errors and were omitted."
-        )
-    if output_dir is not None:
-        supervisions.to_file(output_dir / "supervisions.jsonl.gz")
+    sups_path = output_dir / "supervisions.jsonl.gz"
+    if sups_path.is_file():
+        logging.info(f"Using existing supervision manifest at {recs_path}")
+        supervisions = SupervisionSet.from_jsonl_lazy(sups_path)
+    else:
+        logging.info(f"Building fresh supervision manifest")
+        create_supervisions_input = [(sessions, p) for p in transcript_paths]
+        err_sups = 0
+        with ThreadPoolExecutor(
+            os.cpu_count() * 4
+        ) as executor, SupervisionSet.open_writer(sups_path) as writer:
+            with tqdm(
+                total=len(create_supervisions_input), desc="Create supervisions"
+            ) as pbar:
+                for tmp_supervisions in executor.map(
+                    create_supervision, create_supervisions_input
+                ):
+                    if not tmp_supervisions:
+                        err_sups += 1
+                    for s in tmp_supervisions:
+                        writer.write(s)
+                    pbar.update()
+        supervisions = writer.open_manifest()
+        if err_recos:
+            warnings.warn(
+                f"Out of {len(create_supervisions_input)} transcript files, "
+                f"{err_sups} had errors and were omitted."
+            )
 
     recordings, supervisions = fix_manifests(recordings, supervisions)
     validate_recordings_and_supervisions(recordings, supervisions)
+
+    # Overwrite with the fixed and validated version
+    recordings.to_file(recs_path)
+    supervisions.to_file(sups_path)
 
     return {"recordings": recordings, "supervisions": supervisions}
