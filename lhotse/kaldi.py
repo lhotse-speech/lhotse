@@ -331,7 +331,7 @@ def make_wavscp_channel_string_map(
             raise ValueError(
                 "Command audio multichannel sources are not supported yet."
             )
-        return f"{source.source} |"
+        return [f"{source.source} |"]
     elif source.type == "file":
         if Path(source.source).suffix == ".wav" and len(source.channels) == 1:
             # Note: for single-channel waves, we don't need to invoke ffmpeg; but
