@@ -174,6 +174,7 @@ def export_to_kaldi(
     supervisions: SupervisionSet,
     output_dir: Pathlike,
     map_underscores_to: Optional[str] = None,
+    prefix_spk_id: Optional[bool] = False,
 ):
     """
     Export a pair of ``RecordingSet`` and ``SupervisionSet`` to a Kaldi data
@@ -188,6 +189,8 @@ def export_to_kaldi(
     :param output_dir: path where the Kaldi-style data directory will be created.
     :param map_underscores_to: optional string with which we will replace all
         underscores. This helps avoid issues with Kaldi data dir sorting.
+    :param prefix_spk_id: add speaker_id as a prefix of utterance_id (this is to
+        ensure correct sorting inside files which is required by Kaldi)
     """
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -206,11 +209,8 @@ def export_to_kaldi(
             )
         )
 
-    # Create a simple CutSet that ties together
-    # the recording <-> supervision information.
-    cuts = CutSet.from_manifests(
-        recordings=recordings, supervisions=supervisions
-    ).trim_to_supervisions()
+    if prefix_spk_id:
+        supervisions = supervisions.map(lambda s: fastcopy(s, id=f"{s.speaker}-{s.id}"))
 
     if all(r.num_channels == 1 for r in recordings):
         # if all the recordings are single channel, we won't add
@@ -231,8 +231,8 @@ def export_to_kaldi(
         # segments
         save_kaldi_text_mapping(
             data={
-                cut.supervisions[0].id: f"{cut.recording_id} {cut.start} {cut.end}"
-                for cut in cuts
+                sup.id: f"{sup.recording_id} {sup.start} {sup.end}"
+                for sup in supervisions
             },
             path=output_dir / "segments",
         )
@@ -258,10 +258,8 @@ def export_to_kaldi(
         # segments
         save_kaldi_text_mapping(
             data={
-                cut.supervisions[
-                    0
-                ].id: f"{cut.recording_id}_{cut.channel} {cut.start} {cut.end}"
-                for cut in cuts
+                sup.id: f"{sup.recording_id} {sup.start} {sup.end}"
+                for sup in supervisions
             },
             path=output_dir / "segments",
         )
@@ -276,29 +274,29 @@ def export_to_kaldi(
         )
     # text
     save_kaldi_text_mapping(
-        data={cut.supervisions[0].id: cut.supervisions[0].text for cut in cuts},
+        data={sup.id: sup.text for sup in supervisions},
         path=output_dir / "text",
     )
     # utt2spk
     save_kaldi_text_mapping(
-        data={cut.supervisions[0].id: cut.supervisions[0].speaker for cut in cuts},
+        data={sup.id: sup.speaker for sup in supervisions},
         path=output_dir / "utt2spk",
     )
     # utt2dur
     save_kaldi_text_mapping(
-        data={cut.supervisions[0].id: cut.duration for cut in cuts},
+        data={sup.id: sup.duration for sup in supervisions},
         path=output_dir / "utt2dur",
     )
     # utt2lang [optional]
     if all(s.language is not None for s in supervisions):
         save_kaldi_text_mapping(
-            data={cut.supervisions[0].id: cut.supervisions[0].language for cut in cuts},
+            data={sup.id: sup.language for sup in supervisions},
             path=output_dir / "utt2lang",
         )
     # utt2gender [optional]
     if all(s.gender is not None for s in supervisions):
         save_kaldi_text_mapping(
-            data={cut.supervisions[0].id: cut.supervisions[0].gender for cut in cuts},
+            data={sup.id: sup.gender for sup in supervisions},
             path=output_dir / "utt2gender",
         )
 
@@ -333,7 +331,7 @@ def make_wavscp_channel_string_map(
             raise ValueError(
                 "Command audio multichannel sources are not supported yet."
             )
-        return f"{source.source} |"
+        return {0: f"{source.source} |"}
     elif source.type == "file":
         if Path(source.source).suffix == ".wav" and len(source.channels) == 1:
             # Note: for single-channel waves, we don't need to invoke ffmpeg; but

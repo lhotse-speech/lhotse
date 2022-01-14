@@ -1,12 +1,15 @@
+import warnings
 from typing import Any, Dict, Optional
 
 import torch
 
 from lhotse import validate
+from lhotse.audio import AudioLoadingError, DurationMismatchError
 from lhotse.augmentation import AugmentFn
 from lhotse.cut import CutSet
 from lhotse.dataset.collation import collate_audio, collate_features, collate_matrices
 from lhotse.features import FeatureExtractor
+from lhotse.utils import suppress_and_warn
 
 
 class UnsupervisedDataset(torch.utils.data.Dataset):
@@ -67,7 +70,13 @@ class UnsupervisedWaveformDataset(UnsupervisedDataset):
                 "audio_lens": audio_lens,
             }
         else:
-            return {"cuts": cuts, "audio": [c.load_audio() for c in cuts]}
+            remain_cuts = []
+            remain_audios = []
+            for c in cuts:
+                with suppress_and_warn(AudioLoadingError, DurationMismatchError):
+                    remain_audios.append(c.load_audio())
+                    remain_cuts.append(c)
+            return {"cuts": CutSet.from_cuts(remain_cuts), "audio": remain_audios}
 
     def _validate(self, cuts: CutSet) -> None:
         validate(cuts)
@@ -95,13 +104,16 @@ class DynamicUnsupervisedDataset(UnsupervisedDataset):
 
     def __getitem__(self, cuts: CutSet) -> torch.Tensor:
         self._validate(cuts)
-        features = collate_matrices(
-            cut.compute_features(
-                extractor=self.feature_extractor,
-                augment_fn=self.augment_fn,
-            )
-            for cut in cuts
-        )
+
+        def generate_cut(cuts: CutSet):
+            for cut in cuts:
+                with suppress_and_warn(AudioLoadingError, DurationMismatchError):
+                    yield cut.compute_features(
+                        extractor=self.feature_extractor,
+                        augment_fn=self.augment_fn,
+                    )
+
+        features = collate_matrices(generate_cut(cuts))
         return features
 
     def _validate(self, cuts: CutSet) -> None:
