@@ -371,10 +371,11 @@ def normalize_text(text: str, normalize: str = "upper") -> str:
         text = re.sub(r"[^A-Z0-9']+", " ", text)
         # remove multiple spaces
         text = re.sub(r"\s+", " ", text)
-        # apply few exception for dashed phrases, Mm-Hmm, Uh-Huh, etc. those are frequent in AMI
+        # apply few exception for dashed phrases, Mm-Hmm, Uh-Huh, OK etc. those are frequent in AMI
         # and will be added to dictionary
         text = re.sub(r"MM HMM", "MM-HMM", text)
         text = re.sub(r"UH HUH", "UH-HUH", text)
+        text = re.sub(r"(\b)O K(\b)", "\g<1>OK\g<2>", text)
         return text
 
 
@@ -394,16 +395,32 @@ def prepare_audio_grouped(
     channel_wavs = groupby(lambda p: p.parts[-3], audio_paths)
 
     recordings = []
-    for session_name, channel_paths in channel_wavs.items():
+    for session_name, channel_paths in tqdm(
+        channel_wavs.items(), desc="Processing audio files"
+    ):
         audio_sf = sf.SoundFile(str(channel_paths[0]))
+
+        sources = []
+        all_mono = True
+        for idx, audio_path in enumerate(sorted(channel_paths)):
+            audio = sf.SoundFile(str(audio_path))
+            if audio.channels > 1:
+                logging.warning(
+                    f"Skipping recording {session_name} since it has a stereo channel"
+                )
+                all_mono = False
+                break
+            sources.append(
+                AudioSource(type="file", channels=[idx], source=str(audio_path))
+            )
+
+        if not all_mono:
+            continue
 
         recordings.append(
             Recording(
                 id=session_name,
-                sources=[
-                    AudioSource(type="file", channels=[idx], source=str(audio_path))
-                    for idx, audio_path in enumerate(sorted(channel_paths))
-                ],
+                sources=sources,
                 sampling_rate=audio_sf.samplerate,
                 num_samples=audio_sf.frames,
                 duration=audio_sf.frames / audio_sf.samplerate,
@@ -421,7 +438,7 @@ def prepare_audio_single(
     import soundfile as sf
 
     recordings = []
-    for audio_path in audio_paths:
+    for audio_path in tqdm(audio_paths, desc="Processing audio files"):
         session_name = audio_path.parts[-3]
         audio_sf = sf.SoundFile(str(audio_path))
         recordings.append(
@@ -456,7 +473,7 @@ def prepare_supervision_ihm(
     }
 
     segments = []
-    for recording in audio:
+    for recording in tqdm(audio, desc="Preparing supervisions"):
         # AMI IHM can have multiple audio sources for each recording
         for source in recording.sources:
             # For each source, "channels" will always be a one-element list
@@ -505,20 +522,20 @@ def prepare_supervision_other(
         annotation_by_id[key[0]].extend(value)
 
     segments = []
-    for recording in audio:
+    for recording in tqdm(audio, desc="Preparing supervisions"):
         annotation = annotation_by_id.get(recording.id)
         # In these mic settings, all sources (1 for ihm-mix and sdm and 16 for mdm)
         # will share supervision.
-        source = recording.sources[0]
         if annotation is None:
             logging.warning(f"No annotation found for recording {recording.id}")
             continue
 
-        if len(source.channels) > 1:
+        if any(len(source.channels) > 1 for source in recording.sources):
             logging.warning(
                 f"More than 1 channels in recording {recording.id}. "
-                f"Creating supervision for channel 0 only."
+                f"Skipping this recording."
             )
+            continue
 
         for seg_idx, seg_info in enumerate(annotation):
             duration = seg_info.end_time - seg_info.start_time

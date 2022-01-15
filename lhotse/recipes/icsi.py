@@ -127,9 +127,9 @@ PARTITIONS = {
 }
 
 MIC_TO_CHANNELS = {
-    "ihm": [1, 2, 3, 4, 5, 6, 8, 9], # we include 6 since it is used as back-off from some speakers for which no headset-mic exists
-    "sdm": [6],
-    "mdm": ["E", "F", 6, 7],
+    "ihm": ["1", "2", "3", "4", "5", "6", "8", "9"], # we include 6 since it is used as back-off from some speakers for which no headset-mic exists
+    "sdm": ["6"],
+    "mdm": ["E", "F", "6", "7"],
     "ihm-mix": [],
 }
 # fmt:on
@@ -442,8 +442,9 @@ def prepare_supervision_other(
         if len(source.channels) > 1:
             logging.warning(
                 f"More than 1 channels in recording {recording.id}. "
-                f"Creating supervision for channel 0 only."
+                f"Skipping this recording."
             )
+            continue
 
         for seg_idx, seg_info in enumerate(annotation):
             duration = seg_info.end_time - seg_info.start_time
