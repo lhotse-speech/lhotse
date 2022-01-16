@@ -15,8 +15,8 @@ from lhotse.utils import Pathlike
     "--audio-dirs",
     type=str,
     multiple=True,
-    default=["LDC2004T19", "LDC2005T19"],
-    help="Audio dirs, e.g., `LDC2004T19 LDC2005T19`. Multiple corpora can be provided by repeating `-ad`.",
+    default=["LDC2004S13", "LDC2005S13"],
+    help="Audio dirs, e.g., `LDC2004S13 LDC2005S13`. Multiple corpora can be provided by repeating `-ad`.",
 )
 @click.option(
     "-td",

@@ -11,7 +11,7 @@ from io import BytesIO
 from itertools import islice
 from math import ceil, sqrt
 from pathlib import Path
-from subprocess import PIPE, run
+from subprocess import PIPE, CalledProcessError, run
 from typing import (
     Any,
     Callable,
@@ -1622,7 +1622,18 @@ def read_sph(
     cmd += f" {sph_path}"
 
     # Actual audio reading.
-    proc = BytesIO(run(cmd, shell=True, check=True, stdout=PIPE, stderr=PIPE).stdout)
+    try:
+        proc = BytesIO(
+            run(cmd, shell=True, check=True, stdout=PIPE, stderr=PIPE).stdout
+        )
+    except CalledProcessError as e:
+        if e.returncode == 127:
+            raise ValueError(
+                "It seems that 'sph2pipe' binary is not installed; "
+                "did you run 'lhotse install-sph2pipe'?"
+            )
+        else:
+            raise
 
     import soundfile as sf
 
