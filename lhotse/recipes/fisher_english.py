@@ -192,7 +192,7 @@ def prepare_fisher_english(
             f"but our scanning of audio and transcript files indicates there are only {len(transcript_paths)}."
         )
 
-    recs_path = output_dir / "recordings.jsonl.gz"
+    recs_path = output_dir / "recordings_notfixed.jsonl.gz"
     if recs_path.is_file():
         logging.info(f"Using existing recording manifest at {recs_path}")
         recordings = RecordingSet.from_jsonl_lazy(recs_path)
@@ -221,7 +221,7 @@ def prepare_fisher_english(
             )
         recordings = writer.open_manifest()
 
-    sups_path = output_dir / "supervisions.jsonl.gz"
+    sups_path = output_dir / "supervisions_notfixed.jsonl.gz"
     if sups_path.is_file():
         logging.info(f"Using existing supervision manifest at {recs_path}")
         supervisions = SupervisionSet.from_jsonl_lazy(sups_path)
@@ -254,7 +254,7 @@ def prepare_fisher_english(
     validate_recordings_and_supervisions(recordings, supervisions)
 
     # Overwrite with the fixed and validated version
-    recordings.to_file(recs_path)
-    supervisions.to_file(sups_path)
+    recordings.to_file(recs_path.parent / "recordings.jsonl.gz")
+    supervisions.to_file(sups_path.parent / "supervisions.jsonl.gz")
 
     return {"recordings": recordings, "supervisions": supervisions}
