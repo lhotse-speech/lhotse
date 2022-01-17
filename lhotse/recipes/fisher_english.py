@@ -253,7 +253,7 @@ def prepare_fisher_english(
     recordings, supervisions = fix_manifests(recordings, supervisions)
     validate_recordings_and_supervisions(recordings, supervisions)
 
-    # Overwrite with the fixed and validated version
+    # Write the fixed and validated version to files with standard names.
     recordings.to_file(recs_path.parent / "recordings.jsonl.gz")
     supervisions.to_file(sups_path.parent / "supervisions.jsonl.gz")
 
