@@ -31,12 +31,20 @@ from lhotse.utils import Pathlike
     default=False,
     help="Whether to return absolute or relative (to the corpus dir) paths for recordings.",
 )
+@click.option(
+    "-j",
+    "--num-jobs",
+    default=1,
+    type=int,
+    help="Number of concurrent processes scanning the audio files.",
+)
 def fisher_english(
     corpus_dir: Pathlike,
     audio_dirs: List[str],
     transcript_dirs: List[str],
     output_dir: Pathlike,
     absolute_paths: bool,
+    num_jobs: int,
 ):
     """
     The Fisher English Part 1, 2 corpus preparation.
@@ -53,4 +61,5 @@ def fisher_english(
         transcript_dirs=transcript_dirs,
         output_dir=output_dir,
         absolute_paths=absolute_paths,
+        num_jobs=num_jobs,
     )

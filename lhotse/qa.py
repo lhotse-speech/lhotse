@@ -1,3 +1,4 @@
+from collections import defaultdict
 import logging
 from math import isclose
 from typing import Any, Callable, Dict, Optional, Tuple, Union
@@ -145,11 +146,14 @@ def remove_missing_recordings_and_supervisions(
         )
     only_in_supervisions = recording_ids_in_sups - recording_ids
     if only_in_supervisions:
+        n_orig_sups = len(supervisions)
         supervisions = supervisions.filter(
             lambda s: s.recording_id not in only_in_supervisions
         )
+        n_removed_sups = n_orig_sups - len(supervisions)
         logging.warning(
-            f"Removed {len(only_in_supervisions)} supervisions with no corresponding recordings."
+            f"Removed {n_removed_sups} supervisions with no corresponding recordings "
+            f"(for a total of {len(only_in_supervisions)} recording IDs)."
         )
     return recordings, supervisions
 
@@ -425,17 +429,18 @@ def validate_supervision_set(supervisions: SupervisionSet, **kwargs) -> None:
         validate_supervision(s)
 
     # Catch errors in data preparation:
-    # - more than one supervision for a given recording starts at 0
+    # - more than one supervision for a given recording starts at 0 (in a given channel)
     supervisions._index_by_recording_id_and_cache()
     for rid, sups in supervisions._segments_by_recording_id.items():
-        cntr = 0
+        cntr_per_channel = defaultdict(int)
         for s in sups:
-            cntr += int(s.start == 0)
-        if cntr > 1:
-            logging.warning(
-                f"SupervisionSet contains {cntr} supervisions that start at 0 for recording {rid}."
-                f"Did you forget to set supervision start times?"
-            )
+            cntr_per_channel[s.channel] += int(s.start == 0)
+        for channel, count in cntr_per_channel.items():
+            if count > 1:
+                logging.warning(
+                    f"SupervisionSet contains {count} supervisions that start at 0 for recording {rid} "
+                    f"(channel {channel}). Did you forget to set supervision start times?"
+                )
 
 
 @register_validator

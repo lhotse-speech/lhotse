@@ -11,7 +11,7 @@ import codecs
 import itertools as it
 import logging
 import os
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
 from pathlib import Path
 from subprocess import CalledProcessError
 from typing import Dict, List, Optional, Tuple, Union
@@ -120,6 +120,7 @@ def prepare_fisher_english(
     audio_dirs: List[str] = FISHER_AUDIO_DIRS,
     transcript_dirs: List[str] = FISHER_TRANSCRIPT_DIRS,
     absolute_paths: bool = False,
+    num_jobs: int = 1,
 ) -> Dict[str, Union[RecordingSet, SupervisionSet]]:
 
     """
@@ -185,8 +186,13 @@ def prepare_fisher_english(
     assert len(transcript_paths) == len(
         audio_paths
     ), f"{len(transcript_paths)} == {len(audio_paths)}"
+    if len(transcript_paths) != len(sessions):
+        warnings.warn(
+            f"Fisher's *_calldata.tbl files indicate there should be {len(sessions)} sessions, "
+            f"but our scanning of audio and transcript files indicates there are only {len(transcript_paths)}."
+        )
 
-    recs_path = output_dir / "recordings.jsonl.gz"
+    recs_path = output_dir / "recordings_notfixed.jsonl.gz"
     if recs_path.is_file():
         logging.info(f"Using existing recording manifest at {recs_path}")
         recordings = RecordingSet.from_jsonl_lazy(recs_path)
@@ -196,9 +202,9 @@ def prepare_fisher_english(
             (p, None if absolute_paths else 5) for p in audio_paths
         ]
         err_recos = 0
-        with ThreadPoolExecutor(
-            os.cpu_count() * 4
-        ) as executor, RecordingSet.open_writer(recs_path) as writer:
+        with ProcessPoolExecutor(num_jobs) as executor, RecordingSet.open_writer(
+            recs_path
+        ) as writer:
             with tqdm(
                 total=len(create_recordings_input), desc="Collect recordings"
             ) as pbar:
@@ -215,7 +221,7 @@ def prepare_fisher_english(
             )
         recordings = writer.open_manifest()
 
-    sups_path = output_dir / "supervisions.jsonl.gz"
+    sups_path = output_dir / "supervisions_notfixed.jsonl.gz"
     if sups_path.is_file():
         logging.info(f"Using existing supervision manifest at {recs_path}")
         supervisions = SupervisionSet.from_jsonl_lazy(sups_path)
@@ -247,8 +253,8 @@ def prepare_fisher_english(
     recordings, supervisions = fix_manifests(recordings, supervisions)
     validate_recordings_and_supervisions(recordings, supervisions)
 
-    # Overwrite with the fixed and validated version
-    recordings.to_file(recs_path)
-    supervisions.to_file(sups_path)
+    # Write the fixed and validated version to files with standard names.
+    recordings.to_file(recs_path.parent / "recordings.jsonl.gz")
+    supervisions.to_file(sups_path.parent / "supervisions.jsonl.gz")
 
     return {"recordings": recordings, "supervisions": supervisions}
