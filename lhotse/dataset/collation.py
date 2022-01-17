@@ -166,20 +166,24 @@ def collate_audio(
     """
     assert all(cut.has_recording for cut in cuts)
 
-    audio_lens = []
+    # Remember how many samples were there in each cut (later, we might remove cuts that fail to load).
+    cut_id2num_samples = {}
     for cut in cuts:
-        cut.original_num_samples = cut.num_samples
-        audio_lens.append(cut.num_samples)
-    audio_lens = torch.tensor(audio_lens, dtype=torch.int32)
+        cut_id2num_samples[cut.id] = cut.num_samples
 
-    cuts = maybe_pad(cuts, num_samples=max(audio_lens).item(), direction=pad_direction)
+    cuts = maybe_pad(
+        cuts,
+        num_samples=max(c.num_samples for c in cuts),
+        direction=pad_direction,
+        preserve_id=True,
+    )
 
     # Note: returned "cuts" may be a subset of the original "cuts" if fault_tolerant=True.
     audios, cuts = read_audio_from_cuts(cuts, executor, suppress_errors=fault_tolerant)
 
     audios = torch.stack(audios)
     audio_lens = torch.tensor(
-        [cut.original_num_samples for cut in cuts], dtype=torch.int32
+        [cut_id2num_samples[cut.id] for cut in cuts], dtype=torch.int32
     )
 
     if fault_tolerant:
@@ -399,6 +403,7 @@ def maybe_pad(
     num_frames: int = None,
     num_samples: int = None,
     direction: str = "right",
+    preserve_id: bool = False,
 ) -> CutSet:
     """Check if all cuts' durations are equal and pad them to match the longest cut otherwise."""
     if len(set(c.duration for c in cuts)) == 1:
@@ -410,6 +415,7 @@ def maybe_pad(
         num_frames=num_frames,
         num_samples=num_samples,
         direction=direction,
+        preserve_id=preserve_id,
     )
 
 
