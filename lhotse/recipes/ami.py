@@ -345,7 +345,7 @@ def parse_ami_annotations(
                 if len(text) > 0:
                     annotations[key].append(
                         AmiSegmentAnnotation(
-                            text=normalize_text(text, normalize=normalize),
+                            text=text,
                             speaker=spk,
                             gender=spk[0],
                             start_time=start_time,
