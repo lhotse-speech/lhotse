@@ -78,7 +78,7 @@ class CutSampler(Sampler):
 
         self._maybe_init_distributed(world_size=world_size, rank=rank)
         # By default, self._filter_fn passes every Cut through.
-        self._filter_fn: Callable[[Cut], bool] = lambda cut: True
+        self._filter_fn: Callable[[Cut], bool] = _filter_nothing
         self.diagnostics = SamplingDiagnostics()
 
     def _maybe_init_distributed(self, world_size: Optional[int], rank: Optional[int]):
@@ -457,3 +457,7 @@ class SamplingDiagnostics:
             num_discarded_batches=self.num_discarded_batches
             + other.num_discarded_batches,
         )
+
+
+def _filter_nothing(cut: Cut) -> bool:
+    return True
