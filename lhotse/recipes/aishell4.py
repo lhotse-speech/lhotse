@@ -129,8 +129,8 @@ def prepare_aishell4(
         validate_recordings_and_supervisions(recording_set, supervision_set)
 
         if output_dir is not None:
-            supervision_set.to_json(output_dir / f"supervisions_{part}.json")
-            recording_set.to_json(output_dir / f"recordings_{part}.json")
+            supervision_set.to_file(output_dir / f"supervisions_{part}.jsonl")
+            recording_set.to_file(output_dir / f"recordings_{part}.jsonl")
 
         manifests[part] = {"recordings": recording_set, "supervisions": supervision_set}
 
