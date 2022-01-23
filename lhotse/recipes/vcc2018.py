@@ -99,10 +99,10 @@ from lhotse import (
 )
 
 
-VCC2018_SUBMITTED_SPEECH_URL = "https://datashare.is.ed.ac.uk/bitstream/handle/10283/3061/vcc2018_submitted_systems_converted_speech.tar.gz?sequence=10&isAllowed=y"  # noqa
-VCC2018_MOS_SCORE_URL = "https://datashare.is.ed.ac.uk/bitstream/handle/10283/3257/vcc2018_listening_test_scores.zip?sequence=1&isAllowed=y"  # noqa
-VCC2018_TARGET_REFERENCE_SPEECH_URL = "https://datashare.ed.ac.uk/bitstream/handle/10283/3061/vcc2018_database_reference.zip?sequence=5&isAllowed=y"  # noqa
-VCC2018_TARGET_SPEECH_TRN_URL = "https://datashare.ed.ac.uk/bitstream/handle/10283/3061/vcc2018_database_evaluation_transcriptions.tar.gz?sequence=4&isAllowed=y"  # noqa
+VCC2018_SUBMITTED_SPEECH_URL = "https://datashare.is.ed.ac.uk/bitstream/handle/10283/3061/vcc2018_submitted_systems_converted_speech.tar.gz"  # noqa
+VCC2018_MOS_SCORE_URL = "https://datashare.is.ed.ac.uk/bitstream/handle/10283/3257/vcc2018_listening_test_scores.zip"  # noqa
+VCC2018_TARGET_REFERENCE_SPEECH_URL = "https://datashare.ed.ac.uk/bitstream/handle/10283/3061/vcc2018_database_reference.zip"  # noqa
+VCC2018_TARGET_SPEECH_TRN_URL = "https://datashare.ed.ac.uk/bitstream/handle/10283/3061/vcc2018_database_evaluation_transcriptions.tar.gz"  # noqa
 
 
 def download_vcc2018mos(
@@ -131,22 +131,17 @@ def download_vcc2018mos(
     ]:
         archive_name = url.split("/")[-1]
         archive_path = target_dir / archive_name
-        part_dir = target_dir / archive_name.replace(".zip", "").replace(".tar.gz", "")
-        completed_detector = part_dir / ".completed"
-        if completed_detector.is_file():
-            logging.info(
-                f"Skipping {archive_name} because {completed_detector} exists."
-            )
-            return
         if force_download or not archive_path.is_file():
             urlretrieve_progress(
                 url, filename=archive_path, desc=f"Downloading {archive_name}"
             )
-        shutil.rmtree(part_dir, ignore_errors=True)
+        else:
+            logging.info(
+                f"Skipping {archive_name} because it already exists."
+            )
         opener = zipfile.ZipFile if archive_name.endswith(".zip") else tarfile.open
         with opener(archive_path) as archive:
             archive.extractall(path=target_dir)
-        completed_detector.touch()
 
 
 def prepare_vcc2018mos(
