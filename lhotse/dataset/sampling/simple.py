@@ -253,5 +253,5 @@ class SingleCutSampler(SimpleCutSampler):
             "SingleCutSampler was renamed to SimpleCutSampler in Lhotse v1.0 to avoid confusion "
             "(the previous name suggested it sampled a single cut rather than a batch of cuts). "
             "The alias 'SingleCutSampler' is deprecated and will be removed in Lhotse v1.1",
-            category=DeprecationWarning
+            category=DeprecationWarning,
         )
