@@ -5,7 +5,7 @@ from torch.utils.data import DataLoader
 from lhotse import CutSet
 from lhotse.dataset import K2SpeechRecognitionDataset
 from lhotse.dataset.cut_transforms import CutConcatenate
-from lhotse.dataset.sampling import SingleCutSampler
+from lhotse.dataset.sampling import SimpleCutSampler
 from lhotse.testing.fixtures import RandomCutTestCase
 
 
@@ -57,7 +57,7 @@ class TestCollationRandomized(RandomCutTestCase):
             return_cuts=True,
             cut_transforms=[CutConcatenate(duration_factor=3.0)],
         )
-        sampler = SingleCutSampler(
+        sampler = SimpleCutSampler(
             mixed_cuts,
             shuffle=False,
         )

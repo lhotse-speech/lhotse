@@ -7,7 +7,7 @@ from lhotse.dataset.sampling.data_source import DataSource
 from lhotse.utils import is_none_or_gt
 
 
-class SingleCutSampler(CutSampler):
+class SimpleCutSampler(CutSampler):
     """
     Samples cuts from a CutSet to satisfy the input constraints.
     It behaves like an iterable that yields lists of strings (cut IDs).
@@ -20,7 +20,7 @@ class SingleCutSampler(CutSampler):
     Example usage::
 
         >>> dataset = K2SpeechRecognitionDataset(cuts)
-        >>> sampler = SingleCutSampler(cuts, shuffle=True)
+        >>> sampler = SimpleCutSampler(cuts, shuffle=True)
         >>> loader = DataLoader(dataset, sampler=sampler, batch_size=None)
         >>> for epoch in range(start_epoch, n_epochs):
         ...     sampler.set_epoch(epoch)
@@ -42,7 +42,7 @@ class SingleCutSampler(CutSampler):
         seed: int = 0,
     ):
         """
-        SingleCutSampler's constructor.
+        SimpleCutSampler's constructor.
 
         :param cuts: the ``CutSet`` to sample data from.
         :param max_frames: The maximum total number of feature frames from ``cuts``.
@@ -142,7 +142,7 @@ class SingleCutSampler(CutSampler):
         time_constraint = TimeConstraint(**state_dict.pop("time_constraint"))
         if self.time_constraint != time_constraint:
             warnings.warn(
-                "SingleCutSampler.load_state_dict(): Inconsistent time_constraint:\n"
+                "SimpleCutSampler.load_state_dict(): Inconsistent time_constraint:\n"
                 f"expected {self.time_constraint}\n"
                 f"received {time_constraint}\n"
                 f"We will overwrite the settings with the received state_dict."
@@ -152,7 +152,7 @@ class SingleCutSampler(CutSampler):
         max_cuts = state_dict.pop("max_cuts")
         if self.max_cuts != max_cuts:
             warnings.warn(
-                "SingleCutSampler.load_state_dict(): Inconsistent max_cuts:\n"
+                "SimpleCutSampler.load_state_dict(): Inconsistent max_cuts:\n"
                 f"expected {self.max_cuts}\n"
                 f"received {max_cuts}\n"
                 f"We will overwrite the settings with the received state_dict."
@@ -166,7 +166,7 @@ class SingleCutSampler(CutSampler):
             self.data_source.shuffle(self.seed + self.epoch)
         self.data_source.fast_forward(self.diagnostics.total_cuts)
 
-    def __iter__(self) -> "SingleCutSampler":
+    def __iter__(self) -> "SimpleCutSampler":
         """
         Prepare the dataset for iterating over a new epoch. Will shuffle the data if requested.
         """
@@ -244,3 +244,14 @@ class SingleCutSampler(CutSampler):
 
         self.diagnostics.keep(cuts)
         return CutSet.from_cuts(cuts)
+
+
+class SingleCutSampler(SimpleCutSampler):
+    def __init__(self, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        warnings.warn(
+            "SingleCutSampler was renamed to SimpleCutSampler in Lhotse v1.0 to avoid confusion "
+            "(the previous name suggested it sampled a single cut rather than a batch of cuts). "
+            "The alias 'SingleCutSampler' is deprecated and will be removed in Lhotse v1.1",
+            category=DeprecationWarning
+        )

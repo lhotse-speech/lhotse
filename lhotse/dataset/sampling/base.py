@@ -33,7 +33,7 @@ class CutSampler(Sampler):
     Example usage::
 
         >>> dataset = K2SpeechRecognitionDataset(cuts)
-        >>> sampler = SingleCutSampler(cuts, max_duration=200, shuffle=True)
+        >>> sampler = SimpleCutSampler(cuts, max_duration=200, shuffle=True)
         >>> loader = DataLoader(dataset, sampler=sampler, batch_size=None)
         >>> for epoch in range(start_epoch, n_epochs):
         ...     sampler.set_epoch(epoch)
@@ -117,7 +117,7 @@ class CutSampler(Sampler):
 
         Example:
             >>> cuts = CutSet(...)
-            ... sampler = SingleCutSampler(cuts, max_duration=100.0)
+            ... sampler = SimpleCutSampler(cuts, max_duration=100.0)
             ... # Retain only the cuts that have at least 1s and at most 20s duration.
             ... sampler.filter(lambda cut: 1.0 <= cut.duration <= 20.0)
         """
