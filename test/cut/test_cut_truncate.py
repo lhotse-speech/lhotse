@@ -2,10 +2,11 @@ from math import isclose
 
 import pytest
 
-from lhotse.cut import MixTrack, MixedCut, MonoCut
+from lhotse import RecordingSet
+from lhotse.cut import CutSet, MixTrack, MixedCut, MonoCut
 from lhotse.features import Features
-from lhotse.supervision import SupervisionSegment
-from lhotse.testing.dummies import dummy_cut
+from lhotse.supervision import SupervisionSegment, SupervisionSet
+from lhotse.testing.dummies import dummy_cut, dummy_recording
 
 
 @pytest.fixture
@@ -253,3 +254,56 @@ def test_cut_set_windows_even_split_keep_supervisions(cut_set, num_jobs):
     assert len(cut4.supervisions) == 1
     assert cut4.supervisions[0].start == -2.0
     assert cut4.supervisions[0].duration == 2.5
+
+
+def test_known_issue_with_overlap():
+    r = dummy_recording(0)
+    rec = RecordingSet.from_recordings([r])
+
+    # Make two segments. The first segment is 1s long. The segment segment
+    # is 0.3 seconds long and lies entirely within the first. Both have the
+    # same recording_id as the single entry in rec.
+    sup = SupervisionSet.from_segments(
+        [
+            SupervisionSegment(
+                id="utt1",
+                recording_id=r.id,
+                start=0.0,
+                duration=1.0,
+                channel=0,
+                text="Hello",
+            ),
+            SupervisionSegment(
+                id="utt2",
+                recording_id=r.id,
+                start=0.2,
+                duration=0.5,
+                channel=0,
+                text="World",
+            ),
+        ]
+    )
+
+    cuts = CutSet.from_manifests(recordings=rec, supervisions=sup)
+    assert len(cuts) == 1
+
+    cuts_trim = cuts.trim_to_supervisions(keep_overlapping=False)
+    assert len(cuts_trim) == 2
+
+    cut = cuts_trim[0]
+    assert cut.start == 0
+    assert cut.duration == 1
+    assert len(cut.supervisions) == 1
+    sup = cut.supervisions[0]
+    assert sup.start == 0
+    assert sup.duration == 1
+    assert sup.text == "Hello"
+
+    cut = cuts_trim[1]
+    assert cut.start == 0.2
+    assert cut.duration == 0.5
+    assert len(cut.supervisions) == 1
+    sup = cut.supervisions[0]
+    assert sup.start == 0
+    assert sup.duration == 0.5
+    assert sup.text == "World"

@@ -428,6 +428,7 @@ class Cut:
 
         :param keep_overlapping: when ``False``, it will discard parts of other supervisions that overlap with the
             main supervision. In the illustration above, it would discard ``Sup2`` in ``Cut1`` and ``Sup1`` in ``Cut2``.
+            In this mode, we guarantee that there will always be exactly one supervision per cut.
         :param min_duration: An optional duration in seconds; specifying this argument will extend the cuts
             that would have been shorter than ``min_duration`` with actual acoustic context in the recording/features.
             If there are supervisions present in the context, they are kept when ``keep_overlapping`` is true.
@@ -452,14 +453,16 @@ class Cut:
                     new_duration=min_duration,
                     direction=context_direction,
                 )
-            cuts.append(
-                self.truncate(
-                    offset=new_start,
-                    duration=new_duration,
-                    keep_excessive_supervisions=keep_overlapping,
-                    _supervisions_index=supervisions_index,
-                )
+            trimmed = self.truncate(
+                offset=new_start,
+                duration=new_duration,
+                keep_excessive_supervisions=keep_overlapping,
+                _supervisions_index=supervisions_index,
             )
+            if not keep_overlapping:
+                # Ensure that there is exactly one supervision per cut.
+                trimmed = trimmed.filter_supervisions(lambda s: s.id == segment.id)
+            cuts.append(trimmed)
         return cuts
 
     def index_supervisions(
@@ -3351,6 +3354,7 @@ class CutSet(Serializable, Sequence[Cut]):
 
         :param keep_overlapping: when ``False``, it will discard parts of other supervisions that overlap with the
             main supervision. In the illustration above, it would discard ``Sup2`` in ``Cut1`` and ``Sup1`` in ``Cut2``.
+            In this mode, we guarantee that there will always be exactly one supervision per cut.
         :param min_duration: An optional duration in seconds; specifying this argument will extend the cuts
             that would have been shorter than ``min_duration`` with actual acoustic context in the recording/features.
             If there are supervisions present in the context, they are kept when ``keep_overlapping`` is true.
