@@ -86,7 +86,7 @@ A short snippet to show how Lhotse can make audio data preparation quick and eas
 
     from torch.utils.data import DataLoader
     from lhotse import CutSet, Fbank
-    from lhotse.dataset import VadDataset, SingleCutSampler
+    from lhotse.dataset import VadDataset, SimpleCutSampler
     from lhotse.recipes import prepare_switchboard
 
     # Prepare data manifests from a raw corpus distribution.
@@ -115,8 +115,8 @@ A short snippet to show how Lhotse can make audio data preparation quick and eas
     ).pad(duration=5.0)
 
     # Construct a Pytorch Dataset class for Voice Activity Detection task:
-    dataset = VadDataset(cuts)
-    sampler = SingleCutSampler(cuts)
+    dataset = VadDataset()
+    sampler = SimpleCutSampler(cuts, max_duration=300)
     dataloader = DataLoader(dataset, sampler=sampler, batch_size=None)
     batch = next(iter(dataloader))
 
