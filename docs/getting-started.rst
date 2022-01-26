@@ -115,7 +115,7 @@ A short snippet to show how Lhotse can make audio data preparation quick and eas
     ).pad(duration=5.0)
 
     # Construct a Pytorch Dataset class for Voice Activity Detection task:
-    dataset = VadDataset(cuts)
+    dataset = VadDataset()
     sampler = SimpleCutSampler(cuts, max_duration=300)
     dataloader = DataLoader(dataset, sampler=sampler, batch_size=None)
     batch = next(iter(dataloader))
