@@ -1,8 +1,9 @@
 from math import isclose
 
+import numpy as np
 import pytest
 
-from lhotse.cut import CutSet, MixedCut
+from lhotse.cut import CutSet, MixedCut, MonoCut
 from lhotse.supervision import SupervisionSegment
 from lhotse.testing.dummies import remove_spaces_from_segment_text
 from lhotse.utils import nullcontext as does_not_raise
@@ -107,3 +108,99 @@ def test_mixed_cut_load_audio_mixed(mixed_audio_cut):
 def test_mixed_cut_load_audio_unmixed(mixed_audio_cut):
     audio = mixed_audio_cut.load_audio(mixed=False)
     assert audio.shape == (2, 230400)
+
+
+@pytest.fixture
+def libri_cut_set():
+    return CutSet.from_json("test/fixtures/libri/cuts.json")
+
+
+@pytest.fixture
+def libri_cut(libri_cut_set) -> MonoCut:
+    return libri_cut_set["e3e70682-c209-4cac-629f-6fbed82c07cd"]
+
+
+def E(x):
+    if x.shape[0] == 1:
+        # audio
+        return np.sum(x ** 2)
+    # fbank
+    return np.sum(np.exp(x))
+
+
+def test_mix_cut_snr(libri_cut):
+    mixed = libri_cut.pad(duration=20).mix(libri_cut, offset_other_by=10)
+    mixed_snr = libri_cut.pad(duration=20).mix(libri_cut, offset_other_by=10, snr=10)
+
+    assert len(mixed.tracks) == 3
+    assert len(mixed_snr.tracks) == 3
+
+    audio = mixed.load_audio()
+    audio_snr = mixed_snr.load_audio()
+    feats = mixed.load_features()
+    feats_snr = mixed_snr.load_features()
+
+    for item in (audio, audio_snr, feats, feats_snr):
+        assert E(item) > 0
+
+    # Cuts mixed without SNR specified should have a higher energy in feature and audio domains.
+    assert E(audio) > E(audio_snr)
+    assert E(feats) > E(feats_snr)
+
+
+def test_mix_cut_snr_truncate_snr_reference(libri_cut):
+    mixed = libri_cut.pad(duration=20).mix(libri_cut, offset_other_by=10)
+    mixed_snr = libri_cut.pad(duration=20).mix(libri_cut, offset_other_by=10, snr=10)
+
+    # truncate enough to remove the first cut
+    mixed = mixed.truncate(offset=18)
+    mixed_snr = mixed_snr.truncate(offset=18)
+
+    assert len(mixed.tracks) == 2
+    assert len(mixed_snr.tracks) == 2
+
+    audio = mixed.load_audio()
+    audio_snr = mixed_snr.load_audio()
+    feats = mixed.load_features()
+    feats_snr = mixed_snr.load_features()
+
+    for item in (audio, audio_snr, feats, feats_snr):
+        assert E(item) > 0
+
+    # Both cuts with have identical energies, as the SNR reference was removed in `mixed_snr`,
+    # and the only remaining non-padding cut is the one that was mixed in.
+    assert E(audio) == E(audio_snr)
+    assert E(feats) == E(feats_snr)
+
+
+def test_mix_cut_snr_pad_both(libri_cut):
+    # Pad from both sides, then mix in some "noise" at the beginning.
+    # The SNR should refer to the original cut, and not to the mixed in noise.
+    padded = libri_cut.pad(duration=20, direction="both")
+    mixed = padded.mix(libri_cut)
+    mixed_snr = padded.mix(libri_cut, snr=10)
+
+    assert isinstance(padded, MixedCut)
+    assert len(padded.tracks) == 3
+    assert len(mixed.tracks) == 4
+    assert len(mixed_snr.tracks) == 4
+
+    audio = padded.load_audio()
+    audio_nosnr = mixed.load_audio()
+    audio_snr = mixed_snr.load_audio()
+    feats = padded.load_features()
+    feats_nosnr = mixed.load_features()
+    feats_snr = mixed_snr.load_features()
+
+    for item in (audio, audio_nosnr, audio_snr, feats, feats_nosnr, feats_snr):
+        assert E(item) > 0
+
+    # Cuts mixed without SNR specified should have a higher energy in feature and audio domains.
+    # Note: if any of those are equal, it means some operation had no effect
+    #       (a bug this test is preventing against).
+    assert E(audio_snr) > E(audio)
+    assert E(audio_nosnr) > E(audio)
+    assert E(audio_nosnr) > E(audio_snr)
+    assert E(feats_snr) > E(feats)
+    assert E(feats_nosnr) > E(feats)
+    assert E(feats_nosnr) > E(feats_snr)
