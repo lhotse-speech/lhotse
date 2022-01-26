@@ -32,8 +32,9 @@ __all__ = ["ami"]
 )
 @click.option(
     "--normalize-text",
-    is_flag=True,
-    help="If set, convert all text annotations to upper case (similar to Kaldi)",
+    type=click.Choice(["none", "upper", "kaldi"], case_sensitive=False),
+    default="kaldi",
+    help="Type of text normalization to apply (kaldi style, by default)",
 )
 def ami(
     corpus_dir: Pathlike,
