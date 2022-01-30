@@ -324,7 +324,7 @@ class DynamicBucketer:
             pass
 
 
-# Note: this class is a subset of SingleCutSampler and is "datapipes" ready.
+# Note: this class is a subset of SimpleCutSampler and is "datapipes" ready.
 class DurationBatcher:
     def __init__(
         self,

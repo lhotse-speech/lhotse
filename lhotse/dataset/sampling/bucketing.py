@@ -12,13 +12,13 @@ from typing_extensions import Literal
 from lhotse import CutSet
 from lhotse.cut import Cut
 from lhotse.dataset.sampling.base import CutSampler
-from lhotse.dataset.sampling.single_cut import SingleCutSampler
+from lhotse.dataset.sampling.simple import SimpleCutSampler
 
 
 class BucketingSampler(CutSampler):
     """
     Sorts the cuts in a :class:`CutSet` by their duration and puts them into similar duration buckets.
-    For each bucket, it instantiates a simpler sampler instance, e.g. :class:`SingleCutSampler`.
+    For each bucket, it instantiates a simpler sampler instance, e.g. :class:`SimpleCutSampler`.
 
     It behaves like an iterable that yields lists of strings (cut IDs).
     During iteration, it randomly selects one of the buckets to yield the batch from,
@@ -31,8 +31,8 @@ class BucketingSampler(CutSampler):
         >>> sampler = BucketingSampler(
         ...    cuts,
         ...    # BucketingSampler specific args
-        ...    sampler_type=SingleCutSampler, num_buckets=20,
-        ...    # Args passed into SingleCutSampler
+        ...    sampler_type=SimpleCutSampler, num_buckets=20,
+        ...    # Args passed into SimpleCutSampler
         ...    max_frames=20000
         ... )
 
@@ -50,7 +50,7 @@ class BucketingSampler(CutSampler):
     def __init__(
         self,
         *cuts: CutSet,
-        sampler_type: Type = SingleCutSampler,
+        sampler_type: Type = SimpleCutSampler,
         num_buckets: int = 10,
         bucket_method: Literal["equal_len", "equal_duration"] = "equal_len",
         drop_last: bool = False,
@@ -190,7 +190,7 @@ class BucketingSampler(CutSampler):
 
         Example:
             >>> cuts = CutSet(...)
-            ... sampler = SingleCutSampler(cuts, max_duration=100.0)
+            ... sampler = SimpleCutSampler(cuts, max_duration=100.0)
             ... # Retain only the cuts that have at least 1s and at most 20s duration.
             ... sampler.filter(lambda cut: 1.0 <= cut.duration <= 20.0)
         """

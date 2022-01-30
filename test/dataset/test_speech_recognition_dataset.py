@@ -9,7 +9,7 @@ from lhotse.dataset import RandomizedSmoothing
 from lhotse.dataset.cut_transforms import CutConcatenate, CutMix
 from lhotse.dataset.cut_transforms.extra_padding import ExtraPadding
 from lhotse.dataset.input_strategies import AudioSamples, OnTheFlyFeatures
-from lhotse.dataset.sampling import SingleCutSampler
+from lhotse.dataset.sampling import SimpleCutSampler
 from lhotse.dataset.speech_recognition import K2SpeechRecognitionDataset
 from lhotse.testing.dummies import DummyManifest
 
@@ -35,7 +35,7 @@ def k2_cut_set(libri_cut_set):
 @pytest.mark.parametrize("num_workers", [0, 1])
 def test_k2_speech_recognition_iterable_dataset(k2_cut_set, num_workers):
     dataset = K2SpeechRecognitionDataset(cut_transforms=[CutConcatenate()])
-    sampler = SingleCutSampler(k2_cut_set, shuffle=False)
+    sampler = SimpleCutSampler(k2_cut_set, shuffle=False)
     # Note: "batch_size=None" disables the automatic batching mechanism,
     #       which is required when Dataset takes care of the collation itself.
     dloader = DataLoader(
@@ -59,7 +59,7 @@ def test_k2_speech_recognition_iterable_dataset_multiple_workers(
 ):
     k2_cut_set = k2_cut_set.pad()
     dataset = K2SpeechRecognitionDataset(cut_transforms=[CutConcatenate()])
-    sampler = SingleCutSampler(k2_cut_set, shuffle=False)
+    sampler = SimpleCutSampler(k2_cut_set, shuffle=False)
     dloader = DataLoader(
         dataset, batch_size=None, sampler=sampler, num_workers=num_workers
     )
@@ -94,7 +94,7 @@ def test_k2_speech_recognition_iterable_dataset_shuffling():
             CutConcatenate(),
         ],
     )
-    sampler = SingleCutSampler(
+    sampler = SimpleCutSampler(
         cut_set,
         shuffle=True,
         # Set an effective batch size of 10 cuts, as all have 1s duration == 100 frames
@@ -119,7 +119,7 @@ def test_k2_speech_recognition_iterable_dataset_shuffling():
 
 def test_k2_speech_recognition_iterable_dataset_low_max_frames(k2_cut_set):
     dataset = K2SpeechRecognitionDataset()
-    sampler = SingleCutSampler(k2_cut_set, shuffle=False, max_frames=2)
+    sampler = SimpleCutSampler(k2_cut_set, shuffle=False, max_frames=2)
     dloader = DataLoader(dataset, sampler=sampler, batch_size=None)
     # Check that it does not crash
     for batch in dloader:
@@ -142,7 +142,7 @@ def test_k2_speech_recognition_augmentation(k2_cut_set, k2_noise_cut_set):
     dataset = K2SpeechRecognitionDataset(
         cut_transforms=[CutConcatenate(), CutMix(k2_noise_cut_set)]
     )
-    sampler = SingleCutSampler(k2_cut_set, shuffle=False)
+    sampler = SimpleCutSampler(k2_cut_set, shuffle=False)
     dloader = DataLoader(dataset, sampler=sampler, batch_size=None)
     # Check that it does not crash by just running all dataloader iterations
     batches = [item for item in dloader]
@@ -174,7 +174,7 @@ def test_k2_speech_recognition_on_the_fly_feature_extraction(
             fault_tolerant=fault_tolerant,
         )
     )
-    sampler = SingleCutSampler(k2_cut_set, shuffle=False, max_cuts=1)
+    sampler = SimpleCutSampler(k2_cut_set, shuffle=False, max_cuts=1)
     for cut_ids in sampler:
         batch_pc = precomputed_dataset[cut_ids]
         batch_otf = on_the_fly_dataset[cut_ids]
@@ -212,7 +212,7 @@ def test_k2_speech_recognition_on_the_fly_feature_extraction_with_randomized_smo
             wave_transforms=[RandomizedSmoothing(sigma=0.5, p=1.0)],
         )
     )
-    sampler = SingleCutSampler(k2_cut_set, shuffle=False, max_cuts=1)
+    sampler = SimpleCutSampler(k2_cut_set, shuffle=False, max_cuts=1)
     for cut_ids in sampler:
         batch = dataset[cut_ids]
         rs_batch = rs_dataset[cut_ids]
@@ -225,7 +225,7 @@ def test_k2_speech_recognition_audio_inputs(k2_cut_set):
         input_strategy=AudioSamples(),
     )
     # all cuts in one batch
-    sampler = SingleCutSampler(k2_cut_set, shuffle=False, max_frames=10000000)
+    sampler = SimpleCutSampler(k2_cut_set, shuffle=False, max_frames=10000000)
     cut_ids = next(iter(sampler))
     batch = on_the_fly_dataset[cut_ids]
     assert batch["inputs"].shape == (4, 320000)
@@ -244,7 +244,7 @@ def test_k2_speech_recognition_audio_inputs_with_workers_in_input_strategy(k2_cu
         input_strategy=AudioSamples(num_workers=2),
     )
     # all cuts in one batch
-    sampler = SingleCutSampler(k2_cut_set, shuffle=False, max_duration=100000.0)
+    sampler = SimpleCutSampler(k2_cut_set, shuffle=False, max_duration=100000.0)
     dloader = DataLoader(
         on_the_fly_dataset,
         batch_size=None,

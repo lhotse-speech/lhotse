@@ -31,7 +31,7 @@ from intervaltree import Interval, IntervalTree
 from tqdm.auto import tqdm
 from typing_extensions import Literal
 
-from lhotse.audio import AudioMixer, AudioSource, Recording, RecordingSet
+from lhotse.audio import AudioMixer, AudioSource, Recording, RecordingSet, audio_energy
 from lhotse.augmentation import AugmentFn
 from lhotse.features import (
     FeatureExtractor,
@@ -58,6 +58,7 @@ from lhotse.utils import (
     compute_num_frames,
     compute_num_samples,
     compute_start_duration_for_extended_cut,
+    deprecated,
     exactly_one_not_null,
     fastcopy,
     ifnone,
@@ -69,7 +70,6 @@ from lhotse.utils import (
     rich_exception_info,
     split_sequence,
     uuid4,
-    deprecated,
 )
 
 # One of the design principles for Cuts is a maximally "lazy" implementation, e.g. when mixing Cuts,
@@ -428,6 +428,7 @@ class Cut:
 
         :param keep_overlapping: when ``False``, it will discard parts of other supervisions that overlap with the
             main supervision. In the illustration above, it would discard ``Sup2`` in ``Cut1`` and ``Sup1`` in ``Cut2``.
+            In this mode, we guarantee that there will always be exactly one supervision per cut.
         :param min_duration: An optional duration in seconds; specifying this argument will extend the cuts
             that would have been shorter than ``min_duration`` with actual acoustic context in the recording/features.
             If there are supervisions present in the context, they are kept when ``keep_overlapping`` is true.
@@ -452,14 +453,16 @@ class Cut:
                     new_duration=min_duration,
                     direction=context_direction,
                 )
-            cuts.append(
-                self.truncate(
-                    offset=new_start,
-                    duration=new_duration,
-                    keep_excessive_supervisions=keep_overlapping,
-                    _supervisions_index=supervisions_index,
-                )
+            trimmed = self.truncate(
+                offset=new_start,
+                duration=new_duration,
+                keep_excessive_supervisions=keep_overlapping,
+                _supervisions_index=supervisions_index,
             )
+            if not keep_overlapping:
+                # Ensure that there is exactly one supervision per cut.
+                trimmed = trimmed.filter_supervisions(lambda s: s.id == segment.id)
+            cuts.append(trimmed)
         return cuts
 
     def index_supervisions(
@@ -2072,7 +2075,7 @@ class MixedCut(Cut):
         ]
         assert (
             len(non_padding_cuts) == 1
-        ), f"The cut has {len(non_padding_cuts)} (expected exactly one)"
+        ), f"The cut has {len(non_padding_cuts)} non-padding cuts (expected exactly one)"
         non_padding_idx, mono_cut = non_padding_cuts[0]
         return non_padding_idx, mono_cut
 
@@ -2154,7 +2157,30 @@ class MixedCut(Cut):
         if len(new_tracks) == 1:
             # The truncation resulted in just a single cut - simply return it.
             return new_tracks[0].cut
-        return MixedCut(id=self.id if preserve_id else str(uuid4()), tracks=new_tracks)
+
+        new_cut = MixedCut(
+            id=self.id if preserve_id else str(uuid4()), tracks=new_tracks
+        )
+
+        # Final edge-case check. Scenario:
+        # - some of the original MixedCut tracks had specified an SNR
+        # - we truncated away the track that served as an SNR reference
+        # - we are left only with PaddingCuts and MonoCuts that have specified SNR
+        # Solution:
+        # - find first non padding cut and reset its SNR to None (make it the new reference)
+        if all(
+            t.snr is not None or isinstance(t.cut, PaddingCut) for t in new_cut.tracks
+        ):
+            first_non_padding_track_idx = [
+                idx
+                for idx, t in enumerate(new_cut.tracks)
+                if not isinstance(t.cut, PaddingCut)
+            ][0]
+            new_cut.tracks[first_non_padding_track_idx] = fastcopy(
+                new_cut.tracks[first_non_padding_track_idx], snr=None
+            )
+
+        return new_cut
 
     def pad(
         self,
@@ -2394,6 +2420,7 @@ class MixedCut(Cut):
         if not self.has_features:
             return None
         first_cut = self.tracks[0].cut
+
         # First, check for a simple scenario: just a single cut with padding.
         # When that is the case, we don't have to instantiate a feature extractor,
         # because we are not performing any actual mixing.
@@ -2404,18 +2431,42 @@ class MixedCut(Cut):
             feats = np.ones((self.num_frames, self.num_features)) * padding_val
             feats[: first_cut.num_frames, :] = first_cut.load_features()
             return feats
+
         # When there is more than one "regular" cut, we will perform an actual mix.
+
+        # First, we have to make sure that the reference energy levels are appropriate.
+        # They might not be if the first track is a padding track.
+        reference_feats = None
+        reference_energy = None
+        reference_pos, reference_cut = [
+            (idx, t.cut)
+            for idx, t in enumerate(self.tracks)
+            if not isinstance(t.cut, PaddingCut) and t.snr is None
+        ][0]
+        feature_extractor = create_default_feature_extractor(
+            reference_cut.features.type
+        )
+        if first_cut.id != reference_cut.id:
+            reference_feats = reference_cut.load_features()
+            reference_energy = feature_extractor.compute_energy(reference_feats)
+
+        # The mix itself.
         mixer = FeatureMixer(
             feature_extractor=create_default_feature_extractor(
                 self._first_non_padding_cut.features.type
             ),
             base_feats=first_cut.load_features(),
             frame_shift=first_cut.frame_shift,
+            reference_energy=reference_energy,
         )
-        for track in self.tracks[1:]:
+        for pos, track in enumerate(self.tracks[1:], start=1):
             try:
+                if pos == reference_pos and reference_feats is not None:
+                    feats = reference_feats  # manual caching to avoid duplicated I/O
+                else:
+                    feats = track.cut.load_features()
                 mixer.add_to_mix(
-                    feats=track.cut.load_features(),
+                    feats=feats,
                     snr=track.snr,
                     offset=track.offset,
                     sampling_rate=track.cut.sampling_rate,
@@ -2424,7 +2475,9 @@ class MixedCut(Cut):
                 logging.warning(
                     str(e) + f' MonoCut with id "{track.cut.id}" will not be mixed in.'
                 )
+
         if mixed:
+            # Checking for some edge cases below.
             feats = mixer.mixed_feats
             # Note: The slicing below is a work-around for an edge-case
             #  when two cuts have durations that ended with 0.005 (e.g. 10.125 and 5.715)
@@ -2460,14 +2513,34 @@ class MixedCut(Cut):
         """
         if not self.has_recording:
             return None
+        first_cut = self.tracks[0].cut
+
+        # First, we have to make sure that the reference energy levels are appropriate.
+        # They might not be if the first track is a padding track.
+        reference_audio = None
+        reference_energy = None
+        reference_pos, reference_cut = [
+            (idx, t.cut)
+            for idx, t in enumerate(self.tracks)
+            if not isinstance(t.cut, PaddingCut) and t.snr is None
+        ][0]
+        if first_cut.id != reference_cut.id:
+            reference_audio = reference_cut.load_audio()
+            reference_energy = audio_energy(reference_audio)
+
         mixer = AudioMixer(
             self.tracks[0].cut.load_audio(),
             sampling_rate=self.tracks[0].cut.sampling_rate,
+            reference_energy=reference_energy,
         )
-        for track in self.tracks[1:]:
+        for pos, track in enumerate(self.tracks[1:], start=1):
             try:
+                if pos == reference_pos and reference_audio is not None:
+                    audio = reference_audio  # manual caching to avoid duplicated I/O
+                else:
+                    audio = track.cut.load_audio()
                 mixer.add_to_mix(
-                    audio=track.cut.load_audio(),
+                    audio=audio,
                     snr=track.snr,
                     offset=track.offset,
                 )
@@ -2475,6 +2548,7 @@ class MixedCut(Cut):
                 logging.warning(
                     str(e) + f' MonoCut with id "{track.cut.id}" will not be mixed in.'
                 )
+
         if mixed:
             # Off-by-one errors can happen during mixing due to imperfect float arithmetic and rounding;
             # we will fix them on-the-fly so that the manifest does not lie about the num_samples.
@@ -2490,6 +2564,7 @@ class MixedCut(Cut):
             )
         else:
             audio = mixer.unmixed_audio
+
         return audio
 
     def plot_tracks_features(self):
@@ -2787,7 +2862,11 @@ class MixedCut(Cut):
 
     @property
     def _first_non_padding_cut(self) -> MonoCut:
-        return [t.cut for t in self.tracks if not isinstance(t.cut, PaddingCut)][0]
+        return self._first_non_padding_track.cut
+
+    @property
+    def _first_non_padding_track(self) -> MixTrack:
+        return [t for t in self.tracks if not isinstance(t.cut, PaddingCut)][0]
 
 
 class CutSet(Serializable, Sequence[Cut]):
@@ -3351,6 +3430,7 @@ class CutSet(Serializable, Sequence[Cut]):
 
         :param keep_overlapping: when ``False``, it will discard parts of other supervisions that overlap with the
             main supervision. In the illustration above, it would discard ``Sup2`` in ``Cut1`` and ``Sup1`` in ``Cut2``.
+            In this mode, we guarantee that there will always be exactly one supervision per cut.
         :param min_duration: An optional duration in seconds; specifying this argument will extend the cuts
             that would have been shorter than ``min_duration`` with actual acoustic context in the recording/features.
             If there are supervisions present in the context, they are kept when ``keep_overlapping`` is true.
@@ -4586,6 +4666,8 @@ def mix(
         of the left- or right-hand side argument. otherwise, a new random id is generated.
     :return: A :class:`~MixedCut` instance.
     """
+
+    # Start with a series of sanity checks
     if (
         any(isinstance(cut, PaddingCut) for cut in (reference_cut, mixed_in_cut))
         and snr is not None
@@ -4598,9 +4680,9 @@ def mix(
         snr = None
 
     if reference_cut.num_features is not None:
-        assert reference_cut.num_features == mixed_in_cut.num_features, (
-            "Cannot mix cuts with different feature " "dimensions. "
-        )
+        assert (
+            reference_cut.num_features == mixed_in_cut.num_features
+        ), "Cannot mix cuts with different feature dimensions."
     assert offset <= reference_cut.duration, (
         f"Cannot mix cut '{mixed_in_cut.id}' with offset {offset},"
         f" which is greater than cuts {reference_cut.id} duration"
@@ -4612,6 +4694,7 @@ def mix(
         f"{mixed_in_cut.sampling_rate}). "
         f"Please resample the recordings first."
     )
+
     # Determine the ID of the result.
     if preserve_id is None:
         mixed_cut_id = str(uuid4())
@@ -4624,16 +4707,19 @@ def mix(
             "Unexpected value for 'preserve_id' argument: "
             f"got '{preserve_id}', expected one of (None, 'left', 'right')."
         )
+
     # When the left_cut is a MixedCut, take its existing tracks, otherwise create a new track.
-    old_tracks = (
-        reference_cut.tracks
-        if isinstance(reference_cut, MixedCut)
-        else [MixTrack(cut=reference_cut)]
-    )
+    if isinstance(reference_cut, MixedCut):
+        old_tracks = reference_cut.tracks
+    elif isinstance(reference_cut, (MonoCut, PaddingCut)):
+        old_tracks = [MixTrack(cut=reference_cut)]
+    else:
+        raise ValueError(f"Unsupported type of cut in mix(): {type(reference_cut)}")
+
     # When the right_cut is a MixedCut, adapt its existing tracks with the new offset and snr,
     # otherwise create a new track.
-    new_tracks = (
-        [
+    if isinstance(mixed_in_cut, MixedCut):
+        new_tracks = [
             MixTrack(
                 cut=track.cut,
                 offset=round(track.offset + offset, ndigits=8),
@@ -4654,9 +4740,11 @@ def mix(
             )
             for track in mixed_in_cut.tracks
         ]
-        if isinstance(mixed_in_cut, MixedCut)
-        else [MixTrack(cut=mixed_in_cut, offset=offset, snr=snr)]
-    )
+    elif isinstance(mixed_in_cut, (MonoCut, PaddingCut)):
+        new_tracks = [MixTrack(cut=mixed_in_cut, offset=offset, snr=snr)]
+    else:
+        raise ValueError(f"Unsupported type of cut in mix(): {type(reference_cut)}")
+
     return MixedCut(id=mixed_cut_id, tracks=old_tracks + new_tracks)
 
 

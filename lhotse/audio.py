@@ -11,7 +11,7 @@ from io import BytesIO
 from itertools import islice
 from math import ceil, sqrt
 from pathlib import Path
-from subprocess import PIPE, CalledProcessError, run
+from subprocess import CalledProcessError, PIPE, run
 from typing import (
     Any,
     Callable,
@@ -32,10 +32,10 @@ from tqdm.auto import tqdm
 from lhotse.augmentation import (
     AudioTransform,
     Resample,
+    ReverbWithImpulseResponse,
     Speed,
     Tempo,
     Volume,
-    ReverbWithImpulseResponse,
 )
 from lhotse.caching import dynamic_lru_cache
 from lhotse.serialization import Serializable
@@ -970,16 +970,34 @@ class AudioMixer:
     The SNR is relative to the energy of the signal used to initialize the ``AudioMixer``.
     """
 
-    def __init__(self, base_audio: np.ndarray, sampling_rate: int):
+    def __init__(
+        self,
+        base_audio: np.ndarray,
+        sampling_rate: int,
+        reference_energy: Optional[float] = None,
+    ):
         """
+        AudioMixer's constructor.
+
         :param base_audio: A numpy array with the audio samples for the base signal
             (all the other signals will be mixed to it).
         :param sampling_rate: Sampling rate of the audio.
+        :param reference_energy: Optionally pass a reference energy value to compute SNRs against.
+            This might be required when ``base_audio`` corresponds to zero-padding.
         """
         self.tracks = [base_audio]
         self.sampling_rate = sampling_rate
-        self.reference_energy = audio_energy(base_audio)
         self.dtype = self.tracks[0].dtype
+
+        # Keep a pre-computed energy value of the audio that we initialize the Mixer with;
+        # it is required to compute gain ratios that satisfy SNR during the mix.
+        if reference_energy is None:
+            self.reference_energy = audio_energy(base_audio)
+        else:
+            self.reference_energy = reference_energy
+        assert (
+            self.reference_energy > 0.0
+        ), f"To perform mix, energy must be non-zero and non-negative (got {self.reference_energy})"
 
     @property
     def unmixed_audio(self) -> np.ndarray:

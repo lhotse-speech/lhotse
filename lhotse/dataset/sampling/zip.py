@@ -22,8 +22,8 @@ class ZipSampler(CutSampler):
     Example::
 
         >>> sampler = ZipSampler(
-        ...     SingleCutSampler(cuts_corpusA, max_duration=250, shuffle=True),
-        ...     SingleCutSampler(cuts_corpusB, max_duration=100, shuffle=True),
+        ...     SimpleCutSampler(cuts_corpusA, max_duration=250, shuffle=True),
+        ...     SimpleCutSampler(cuts_corpusB, max_duration=100, shuffle=True),
         ... )
         >>> for cut in sampler:
         ...     pass  # profit
@@ -146,7 +146,7 @@ class ZipSampler(CutSampler):
             # different sources of cuts in any different way.
             #
             # Note: merging batches is tricky because the samplers can be either
-            # SingleCutSampler or CutPairsSampler, and we need to handle them differently.
+            # SimpleCutSampler or CutPairsSampler, and we need to handle them differently.
             cuts: List[Union[CutSet, Tuple[CutSet]]] = []
             for sampler in self.samplers:
                 batch = next(sampler)
@@ -195,7 +195,7 @@ class ZipSampler(CutSampler):
 
         Example:
             >>> cuts = CutSet(...)
-            ... sampler = SingleCutSampler(cuts, max_duration=100.0)
+            ... sampler = SimpleCutSampler(cuts, max_duration=100.0)
             ... # Retain only the cuts that have at least 1s and at most 20s duration.
             ... sampler.filter(lambda cut: 1.0 <= cut.duration <= 20.0)
         """

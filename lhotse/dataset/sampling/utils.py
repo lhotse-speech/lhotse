@@ -25,7 +25,7 @@ def find_pessimistic_batches(
     Example of how this function can be used with a PyTorch model
     and a :class:`~lhotse.dataset.K2SpeechRecognitionDataset`::
 
-        sampler = SingleCutSampler(cuts, max_duration=300)
+        sampler = SimpleCutSampler(cuts, max_duration=300)
         dataset = K2SpeechRecognitionDataset()
         batches, scores = find_pessimistic_batches(sampler)
         for reason, cuts in batches.items():

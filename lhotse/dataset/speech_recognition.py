@@ -18,7 +18,7 @@ class K2SpeechRecognitionDataset(torch.utils.data.Dataset):
     for which it loads features and automatically collates/batches them.
 
     To use it with a PyTorch DataLoader, set ``batch_size=None``
-    and provide a :class:`SingleCutSampler` sampler.
+    and provide a :class:`SimpleCutSampler` sampler.
 
     Each item in this dataset is a dict of:
 
