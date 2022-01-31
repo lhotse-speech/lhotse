@@ -3630,7 +3630,7 @@ class CutSet(Serializable, Sequence[Cut]):
         offset_type: str,
         keep_excessive_supervisions: bool = True,
         preserve_id: bool = False,
-        rng: Optional[random.Random] = None
+        rng: Optional[random.Random] = None,
     ) -> "CutSet":
         """
         Return a new CutSet with the Cuts truncated so that their durations are at most `max_duration`.
