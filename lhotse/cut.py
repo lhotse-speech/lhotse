@@ -3630,6 +3630,7 @@ class CutSet(Serializable, Sequence[Cut]):
         offset_type: str,
         keep_excessive_supervisions: bool = True,
         preserve_id: bool = False,
+        rng: Optional[random.Random] = None,
     ) -> "CutSet":
         """
         Return a new CutSet with the Cuts truncated so that their durations are at most `max_duration`.
@@ -3642,6 +3643,7 @@ class CutSet(Serializable, Sequence[Cut]):
         :param keep_excessive_supervisions: bool. When a cut is truncated in the middle of a supervision segment,
         should the supervision be kept.
         :param preserve_id: bool. Should the truncated cut keep the same ID or get a new, random one.
+        :param rng: optional random number generator to be used with a 'random' ``offset_type``.
         :return: a new CutSet instance with truncated cuts.
         """
         truncated_cuts = []
@@ -3657,7 +3659,10 @@ class CutSet(Serializable, Sequence[Cut]):
                 if offset_type == "end":
                     return last_offset
                 if offset_type == "random":
-                    return random.uniform(0.0, last_offset)
+                    if rng is None:
+                        return random.uniform(0.0, last_offset)
+                    else:
+                        return rng.uniform(0.0, last_offset)
                 raise ValueError(f"Unknown 'offset_type' option: {offset_type}")
 
             truncated_cuts.append(

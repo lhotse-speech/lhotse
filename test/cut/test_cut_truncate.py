@@ -1,3 +1,4 @@
+import random
 from math import isclose
 
 import pytest
@@ -6,7 +7,7 @@ from lhotse import RecordingSet
 from lhotse.cut import CutSet, MixTrack, MixedCut, MonoCut
 from lhotse.features import Features
 from lhotse.supervision import SupervisionSegment, SupervisionSet
-from lhotse.testing.dummies import dummy_cut, dummy_recording
+from lhotse.testing.dummies import DummyManifest, dummy_cut, dummy_recording
 
 
 @pytest.fixture
@@ -227,6 +228,40 @@ def test_truncate_cut_set_offset_random(cut_set):
     # Check that start and end is not the same in every cut
     assert len(set(cut.start for cut in truncated_cut_set)) > 1
     assert len(set(cut.end for cut in truncated_cut_set)) > 1
+
+
+@pytest.mark.parametrize("use_rng", [False, True])
+def test_truncate_cut_set_offset_random_rng(use_rng):
+    cuts1 = DummyManifest(CutSet, begin_id=0, end_id=30)
+    cuts2 = DummyManifest(CutSet, begin_id=0, end_id=30)
+
+    rng = None
+    state = None
+    if use_rng:
+        rng = random.Random(10)
+        state = rng.getstate()
+
+    trunc1 = cuts1.truncate(
+        max_duration=0.3, offset_type="random", rng=rng, preserve_id=True
+    )
+
+    if use_rng:
+        rng.setstate(state)
+
+    trunc2 = cuts2.truncate(
+        max_duration=0.3, offset_type="random", rng=rng, preserve_id=True
+    )
+
+    # IDs were not changed or changed identically.
+    assert list(trunc1.ids) == list(trunc2.ids)
+
+    # Offsets are identical with the use of RNG + state set/reset.
+    offsets1 = [c.start for c in trunc1]
+    offsets2 = [c.start for c in trunc2]
+    if use_rng:
+        assert offsets1 == offsets2
+    else:
+        assert offsets1 != offsets2
 
 
 @pytest.mark.parametrize("num_jobs", [1, 2])
