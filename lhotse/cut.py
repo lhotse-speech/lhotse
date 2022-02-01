@@ -68,6 +68,7 @@ from lhotse.utils import (
     overspans,
     perturb_num_samples,
     rich_exception_info,
+    split_manifest_lazy,
     split_sequence,
     uuid4,
 )
@@ -3275,6 +3276,25 @@ class CutSet(Serializable, Sequence[Cut]):
                 self, num_splits=num_splits, shuffle=shuffle, drop_last=drop_last
             )
         ]
+
+    def split_lazy(self, output_dir: Pathlike, chunk_size: int) -> List["CutSet"]:
+        """
+        Splits a manifest (either lazily or eagerly opened) into chunks, each
+        with ``chunk_size`` items (except for the last one, typically).
+
+        In order to be memory efficient, this implementation saves each chunk
+        to disk in a ``.jsonl.gz`` format as the input manifest is sampled.
+
+        .. note:: For lowest memory usage, use ``load_manifest_lazy`` to open the
+            input manifest for this method.
+
+        :param it: any iterable of Lhotse manifests.
+        :param output_dir: directory where the split manifests are saved.
+            Each manifest is saved at: ``{output_dir}/{split_idx}.jsonl.gz``
+        :param chunk_size: the number of items in each chunk.
+        :return: a list of lazily opened chunk manifests.
+        """
+        return split_manifest_lazy(self, output_dir=output_dir, chunk_size=chunk_size)
 
     def subset(
         self,
