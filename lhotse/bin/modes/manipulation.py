@@ -140,19 +140,41 @@ def copy_feats_worker(
 def split(num_splits: int, manifest: Pathlike, output_dir: Pathlike, shuffle: bool):
     """
     Load MANIFEST, split it into NUM_SPLITS equal parts and save as separate manifests in OUTPUT_DIR.
+
+    When your manifests are very large, prefer to use "lhotse split-lazy" instead.
     """
-    from lhotse import load_manifest
+    from lhotse.serialization import load_manifest_lazy_or_eager
 
     output_dir = Path(output_dir)
     manifest = Path(manifest)
     suffix = "".join(manifest.suffixes)
-    any_set = load_manifest(manifest)
+    any_set = load_manifest_lazy_or_eager(manifest)
     parts = any_set.split(num_splits=num_splits, shuffle=shuffle)
     output_dir.mkdir(parents=True, exist_ok=True)
     num_digits = len(str(num_splits))
     for idx, part in enumerate(parts):
         idx = f"{idx + 1}".zfill(num_digits)
         part.to_file((output_dir / manifest.stem).with_suffix(f".{idx}{suffix}"))
+
+
+@cli.command()
+@click.argument("manifest", type=click.Path(exists=True, dir_okay=False))
+@click.argument("output_dir", type=click.Path())
+@click.argument("chunk_size", type=int)
+def split_lazy(manifest: Pathlike, output_dir: Pathlike, chunk_size: int):
+    """
+    Load MANIFEST (lazily if in JSONL format) and split it into parts,
+    each with CHUNK_SIZE items.
+    The parts are saved to separate files with pattern "{output_dir}/{chunk_idx}.jsonl.gz".
+
+    Prefer this to "lhotse split" when your manifests are very large.
+    """
+    from lhotse.serialization import load_manifest_lazy_or_eager
+
+    output_dir = Path(output_dir)
+    manifest = Path(manifest)
+    any_set = load_manifest_lazy_or_eager(manifest)
+    any_set.split_lazy(output_dir=output_dir, chunk_size=chunk_size)
 
 
 @cli.command()
@@ -207,10 +229,10 @@ def subset(
 @click.argument("output_manifest", type=click.Path())
 def combine(manifests: Pathlike, output_manifest: Pathlike):
     """Load MANIFESTS, combine them into a single one, and write it to OUTPUT_MANIFEST."""
-    from lhotse import load_manifest
+    from lhotse.serialization import load_manifest_lazy_or_eager
     from lhotse.manipulation import combine as combine_manifests
 
-    data_set = combine_manifests(*[load_manifest(m) for m in manifests])
+    data_set = combine_manifests(*[load_manifest_lazy_or_eager(m) for m in manifests])
     data_set.to_file(output_manifest)
 
 
