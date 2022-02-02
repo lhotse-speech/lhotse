@@ -229,10 +229,10 @@ def subset(
 @click.argument("output_manifest", type=click.Path())
 def combine(manifests: Pathlike, output_manifest: Pathlike):
     """Load MANIFESTS, combine them into a single one, and write it to OUTPUT_MANIFEST."""
-    from lhotse import load_manifest
+    from lhotse.serialization import load_manifest_lazy_or_eager
     from lhotse.manipulation import combine as combine_manifests
 
-    data_set = combine_manifests(*[load_manifest(m) for m in manifests])
+    data_set = combine_manifests(*[load_manifest_lazy_or_eager(m) for m in manifests])
     data_set.to_file(output_manifest)
 
 
