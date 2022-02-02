@@ -139,7 +139,7 @@ class DynamicBucketingSampler(CutSampler):
             self.cuts_iter = [
                 # Important -- every shuffler has a copy of RNG seeded in the same way,
                 # so that they are reproducible.
-                streaming_shuffle(cs, rng=random.Random(self.seed))
+                streaming_shuffle(cs, rng=random.Random(self.seed + self.epoch))
                 for cs in self.cuts_iter
             ]
         # Apply filter predicate
