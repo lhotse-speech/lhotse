@@ -4059,7 +4059,7 @@ class CutSet(Serializable, Sequence[Cut]):
         if num_jobs > 1 and torch.get_num_threads() > 1:
             logging.warning(
                 "num_jobs is > 1 and torch's number of threads is > 1 as well: "
-                "This might result in a never ending computation. "
+                "For certain configs this can result in a never ending computation. "
                 "If this happens, use torch.set_num_threads(1) to circumvent this."
             )
 
