@@ -159,5 +159,5 @@ def report_padding_ratio_estimate(sampler: CutSampler, n_samples: int = 1000) ->
 
     return f"""An average CUT has {m_supervised:.1f}s (std={np.std(supervised):.1f}s) of supervisions vs. {m_total:.1f}s (std={np.std(total):.1f}s) of total duration. Average padding is {m_gaps:.1f}s (std={np.std(gaps):.1f}s), i.e. {m_gaps / m_total:.1%}.
 An average BATCH has {m_batch_supervised:.1f}s (std={np.std(batch_supervised):.1f}s) of combined supervised duration vs. {m_batch_total:.1f}s (std={np.std(batch_total):.1f}s) of combined total duration. Average padding is {m_batch_gaps:.1f}s (std={np.std(batch_gaps):.1f}s), i.e. {m_batch_gaps / m_batch_total:.1%}.
-Expected variability of cut durations within a single batch is +/-{np.mean(mean_dur_diffs):.1%} (min={np.mean(min_dur_diffs):.1%} max={np.mean(max_dur_diffs):.1%}).
+Expected variability of cut durations within a single batch is +/-{np.mean(mean_dur_diffs):.1%} (two closest cuts: {np.mean(min_dur_diffs):.1%}, two most distant cuts: {np.mean(max_dur_diffs):.1%}).
     """
