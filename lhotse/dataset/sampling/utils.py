@@ -109,7 +109,11 @@ def report_padding_ratio_estimate(sampler: CutSampler, n_samples: int = 1000) ->
             break
 
         if not isinstance(batch, CutSet):
-            raise NotImplemented
+            warnings.warn(
+                "The sampler returned a mini-batch with multiple CutSets: "
+                "we will only report the padding estimate for the first CutSet in each mini-batch."
+            )
+            batch = batch[0]
 
         batch = batch.sort_by_duration(ascending=False)
 
