@@ -1,4 +1,3 @@
-import gzip
 import itertools
 import json
 import warnings
@@ -8,6 +7,7 @@ from typing import Any, Dict, Generator, Iterable, Optional, Type, Union
 import yaml
 
 from lhotse.utils import Pathlike, is_module_available
+from lhotse.workarounds import gzip_open_robust
 
 # TODO: figure out how to use some sort of typing stubs
 #  so that linters/static checkers don't complain
@@ -25,7 +25,7 @@ def open_best(path: Pathlike, mode: str = "r"):
         if compressed and "t" not in mode and "b" not in mode:
             # Opening as bytes not requested explicitly, use "t" to tell gzip to handle unicode.
             mode = mode + "t"
-        open_fn = gzip.open if compressed else open
+        open_fn = gzip_open_robust if compressed else open
 
     return open_fn(path, mode)
 
