@@ -544,9 +544,11 @@ class LazyIteratorMultiplexer:
         self,
         *iterators: Iterable,
         weights: Optional[List[Union[int, float]]] = None,
-        rng: Optional[random.Random] = None,
+        seed: int = 0
     ) -> None:
         self.iterators = list(iterators)
+        self.seed = seed
+
         assert (
             len(self.iterators) > 1
         ), "There have to be at least two iterables to multiplex."
@@ -558,12 +560,8 @@ class LazyIteratorMultiplexer:
 
         assert len(self.iterators) == len(self.weights)
 
-        if rng is None:
-            self.rng = random.Random()
-        else:
-            self.rng = rng
-
     def __iter__(self):
+        rng = random.Random(self.seed)
         iters = [iter(it) for it in self.iterators]
         exhausted = [False for _ in range(len(iters))]
         while not all(exhausted):
@@ -574,7 +572,7 @@ class LazyIteratorMultiplexer:
                     if not is_exhausted
                 ]
             )
-            idx = self.rng.choices(active_indexes, weights=active_weights, k=1)[0]
+            idx = rng.choices(active_indexes, weights=active_weights, k=1)[0]
             selected = iters[idx]
             try:
                 item = next(selected)
