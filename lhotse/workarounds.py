@@ -65,7 +65,7 @@ class AltGzipFile(gzip.GzipFile):
 def gzip_open_robust(
     filename,
     mode="rb",
-    compresslevel=gzip._COMPRESS_LEVEL_BEST,
+    compresslevel=9,  # compat with Py 3.6
     encoding=None,
     errors=None,
     newline=None,
