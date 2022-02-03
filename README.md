@@ -64,7 +64,9 @@ Lhotse is available on PyPI:
 To install the latest, unreleased version, do:
 
     pip install git+https://github.com/lhotse-speech/lhotse
-    
+
+_Hint: for up to 50% faster reading of JSONL manifests, use: `pip install lhotse[orjson]` to leverage the [orjson](https://pypi.org/project/orjson/) library._
+
 ### Development installation
 
 For development installation, you can fork/clone the GitHub repo and install with pip:

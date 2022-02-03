@@ -92,7 +92,7 @@ def load_jsonl(path: Pathlike) -> Generator[Dict[str, Any], None, None]:
     with open_best(path) as f:
         for line in f:
             # The temporary variable helps fail fast
-            ret = json.loads(line)
+            ret = decode_json_line(line)
             yield ret
 
 
@@ -145,7 +145,7 @@ class SequentialJsonlWriter:
             with open_best(self.path) as f:
                 self.ignore_ids = {
                     data["id"]
-                    for data in (json.loads(line) for line in f)
+                    for data in (decode_json_line(line) for line in f)
                     if "id" in data
                 }
 
@@ -472,7 +472,7 @@ class LazyJsonlIterator:
 
     def __next__(self):
         line = next(self._file)
-        data = json.loads(line)
+        data = decode_json_line(line)
         item = deserialize_item(data)
         return item
 
@@ -604,3 +604,10 @@ def count_newlines_fast(path: Pathlike):
     with open_best(path, "rb") as f:
         count = sum(buf.count(b"\n") for buf in _make_gen(f.read))
     return count
+
+
+if is_module_available("orjson"):
+    import orjson
+    decode_json_line = orjson.loads
+else:
+    decode_json_line = json.loads
