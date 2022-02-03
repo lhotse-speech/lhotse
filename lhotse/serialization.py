@@ -1,8 +1,9 @@
 import itertools
 import json
+import random
 import warnings
 from pathlib import Path
-from typing import Any, Dict, Generator, Iterable, Optional, Type, Union
+from typing import Any, Dict, Generator, Iterable, List, Optional, Type, Union
 
 import yaml
 
@@ -510,6 +511,75 @@ class LazyIteratorChain:
 
     def __iter__(self):
         return (item for it in self.iterators for item in it)
+
+    def values(self):
+        yield from self
+
+    def keys(self):
+        return (item.id for item in self)
+
+    def items(self):
+        return ((item.id, item) for item in self)
+
+    def __len__(self) -> int:
+        return sum(len(it) for it in self.iterators)
+
+    def __add__(self, other) -> "LazyIteratorChain":
+        return LazyIteratorChain(self, other)
+
+
+class LazyIteratorMultiplexer:
+    """
+    A wrapper over multiple iterators that enables to combine lazy manifests in Lhotse.
+    During iteration, unlike :class:`.LazyIteratorChain`, :class:`.LazyIteratorMultiplexer`
+    at each step randomly selects the iterable used to yield an item.
+
+    Since the iterables might be of different length, we provide a ``weights`` parameter
+    to let the user decide which iterables should be sampled more frequently than others.
+    When an iterable is exhausted, we will keep sampling from the other iterables, until
+    we exhaust them all.
+    """
+
+    def __init__(
+        self,
+        *iterators: Iterable,
+        weights: Optional[List[Union[int, float]]] = None,
+        seed: int = 0,
+    ) -> None:
+        self.iterators = list(iterators)
+        self.seed = seed
+
+        assert (
+            len(self.iterators) > 1
+        ), "There have to be at least two iterables to multiplex."
+
+        if weights is None:
+            self.weights = [1] * len(self.iterators)
+        else:
+            self.weights = weights
+
+        assert len(self.iterators) == len(self.weights)
+
+    def __iter__(self):
+        rng = random.Random(self.seed)
+        iters = [iter(it) for it in self.iterators]
+        exhausted = [False for _ in range(len(iters))]
+        while not all(exhausted):
+            active_indexes, active_weights = zip(
+                *[
+                    (i, w)
+                    for i, (is_exhausted, w) in enumerate(zip(exhausted, self.weights))
+                    if not is_exhausted
+                ]
+            )
+            idx = rng.choices(active_indexes, weights=active_weights, k=1)[0]
+            selected = iters[idx]
+            try:
+                item = next(selected)
+                yield item
+            except StopIteration:
+                exhausted[idx] = True
+                continue
 
     def values(self):
         yield from self

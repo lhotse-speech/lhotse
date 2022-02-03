@@ -4628,6 +4628,28 @@ class CutSet(Serializable, Sequence[Cut]):
         )
         return CutSet(cuts=merged)
 
+    @classmethod
+    def mux(
+        cls,
+        *cut_sets: "CutSet",
+        weights: Optional[List[Union[int, float]]] = None,
+        seed: int = 0,
+    ) -> "CutSet":
+        """
+        Merges multiple CutSets into a new CutSet by lazily multiplexing them during iteration time.
+        If one of the CutSets is exhausted before the others, we will keep iterating until all CutSets
+        are exhausted.
+
+        :param cut_sets: cut sets to be multiplexed.
+            They can be either lazy or eager, but the resulting manifest will always be lazy.
+        :param weights: an optional weight for each CutSet, affects the probability of it being sampled.
+            The weights are uniform by default.
+        :param seed: the random seed, ensures deterministic order across multiple iterations.
+        """
+        from lhotse.serialization import LazyIteratorMultiplexer
+
+        return cls(cuts=LazyIteratorMultiplexer(*cut_sets, weights=weights, seed=seed))
+
 
 def make_windowed_cuts_from_features(
     feature_set: FeatureSet,
