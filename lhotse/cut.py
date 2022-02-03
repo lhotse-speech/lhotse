@@ -27,6 +27,7 @@ from typing import (
 )
 
 import numpy as np
+import torch
 from intervaltree import Interval, IntervalTree
 from tqdm.auto import tqdm
 from typing_extensions import Literal
@@ -4054,6 +4055,13 @@ class CutSet(Serializable, Sequence[Cut]):
                 "we will ignore the executor and use non-parallel execution."
             )
             executor = None
+
+        if num_jobs > 1 and torch.get_num_threads() > 1:
+            logging.warning(
+                "num_jobs is > 1 and torch's number of threads is > 1 as well: "
+                "For certain configs this can result in a never ending computation. "
+                "If this happens, use torch.set_num_threads(1) to circumvent this."
+            )
 
         # Non-parallel execution
         if executor is None and num_jobs == 1:

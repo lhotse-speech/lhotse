@@ -57,6 +57,8 @@ To install the latest, unreleased version, do::
 
     pip install git+https://github.com/lhotse-speech/lhotse
 
+*Hint: for up to 50% faster reading of JSONL manifests, use:* ``pip install lhotse[orjson]`` *to leverage the* `orjson`_ *library.*
+
 Development installation
 ************************
 
@@ -129,3 +131,4 @@ the speech starts roughly at the first second (100 frames):
 .. _k2: https://github.com/kaldi-asr/kaldi
 .. _Kaldi: https://github.com/kaldi-asr/kaldi
 .. _Icefall recipes: https://github.com/k2-fsa/icefall
+.. _orjson: https://pypi.org/project/orjson/
