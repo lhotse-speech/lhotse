@@ -608,6 +608,7 @@ def count_newlines_fast(path: Pathlike):
 
 if is_module_available("orjson"):
     import orjson
+
     decode_json_line = orjson.loads
 else:
     decode_json_line = json.loads
