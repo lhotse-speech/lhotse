@@ -544,7 +544,7 @@ class LazyIteratorMultiplexer:
         self,
         *iterators: Iterable,
         weights: Optional[List[Union[int, float]]] = None,
-        seed: int = 0
+        seed: int = 0,
     ) -> None:
         self.iterators = list(iterators)
         self.seed = seed
