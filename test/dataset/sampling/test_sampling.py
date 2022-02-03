@@ -7,6 +7,7 @@ from tempfile import NamedTemporaryFile
 import pytest
 
 from lhotse import CutSet
+from lhotse.dataset import report_padding_ratio_estimate
 from lhotse.dataset.cut_transforms import concat_cuts
 from lhotse.dataset.sampling import (
     BucketingSampler,
@@ -1054,3 +1055,8 @@ def test_sampler_properties(sampler):
     assert sampler.remaining_cuts == 0
     assert isclose(sampler.remaining_duration, 0.0)
     assert sampler.num_cuts == 10
+
+
+def test_report_padding_ratio_estimate():
+    s = SingleCutSampler(DummyManifest(CutSet, begin_id=0, end_id=1000))
+    report_padding_ratio_estimate(s)  # just test that it runs
