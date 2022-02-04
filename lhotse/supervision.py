@@ -518,7 +518,35 @@ class SupervisionSet(Serializable, Sequence[SupervisionSegment]):
         Read an RTTM file located at ``path`` and create a :class:`.SupervisionSet` manifest for them.
         Can be used to create supervisions from custom RTTM files (see, for example, :class:`lhotse.dataset.DiarizationDataset`).
 
-        Use the :meth:`.from_rttms` method if you want to read multiple RTTM files at once.
+        .. hint::
+
+            Use the :meth:`.from_rttms` method if you want to read multiple RTTM files at once.
+
+        The following description is taken from the [dscore](https://github.com/nryant/dscore#rttm) toolkit:
+
+        Rich Transcription Time Marked (RTTM) files are space-delimited text files
+        containing one turn per line, each line containing ten fields:
+
+        - ``Type``  --  segment type; should always by ``SPEAKER``
+        - ``File ID``  --  file name; basename of the recording minus extension (e.g.,
+        ``rec1_a``)
+        - ``Channel ID``  --  channel (1-indexed) that turn is on; should always be
+        ``1``
+        - ``Turn Onset``  --  onset of turn in seconds from beginning of recording
+        - ``Turn Duration``  -- duration of turn in seconds
+        - ``Orthography Field`` --  should always by ``<NA>``
+        - ``Speaker Type``  --  should always be ``<NA>``
+        - ``Speaker Name``  --  name of speaker of turn; should be unique within scope
+        of each file
+        - ``Confidence Score``  --  system confidence (probability) that information
+        is correct; should always be ``<NA>``
+        - ``Signal Lookahead Time``  --  should always be ``<NA>``
+
+        For instance:
+
+            SPEAKER CMU_20020319-1400_d01_NONE 1 130.430000 2.350 <NA> <NA> juliet <NA> <NA>
+            SPEAKER CMU_20020319-1400_d01_NONE 1 157.610000 3.060 <NA> <NA> tbc <NA> <NA>
+            SPEAKER CMU_20020319-1400_d01_NONE 1 130.490000 0.450 <NA> <NA> chek <NA> <NA>
 
         :param path: Path to RTTM file.
         :return: a new ``SupervisionSet`` instance containing segments from the RTTM file.
@@ -542,14 +570,25 @@ class SupervisionSet(Serializable, Sequence[SupervisionSegment]):
         return SupervisionSet.from_segments(segments)
 
     @staticmethod
-    def from_rttms(paths: Iterable[Pathlike]) -> "SupervisionSet":
+    def from_rttms(paths: Union[Pathlike, Iterable[Pathlike]]) -> "SupervisionSet":
         """
         Read multiple RTTM files located at ``paths`` and create a :class:`.SupervisionSet` manifest for them.
-        Can be used to create supervisions from custom RTTM files (see, for example, :class:`lhotse.dataset.DiarizationDataset`).
 
-        :param paths: Paths to RTTM files.
+        .. code:: python
+
+            >>> from lhotse import SupervisionSet
+            >>> sup1 = SupervisionSet.from_rttms(Path('/path/to/rttm_dir'))
+            >>> sup2 = SupervisionSet.from_rttms(Path('/path/to/rttm_dir').rglob('ref_*'))
+
+        .. hint::
+
+            For creating a SupervisionSet from a single RTTM file, use the :meth:`.from_rttm` method.
+
+        :param paths: Path to RTTM files (can be path to a directory or an iterable of paths to RTTM files).
         :return: a new ``SupervisionSet`` instance containing segments from the RTTM files.
         """
+        if isinstance(paths, Pathlike):
+            paths = paths.rglob("*.rttm")
         return SupervisionSet.from_segments(
             chain.from_iterable(
                 SupervisionSet.from_rttm(p).segments.values() for p in paths
