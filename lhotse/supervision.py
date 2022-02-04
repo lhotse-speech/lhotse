@@ -15,8 +15,6 @@ from typing import (
     Union,
 )
 
-from numpy import record
-
 from lhotse.serialization import Serializable
 from lhotse.utils import (
     Pathlike,
@@ -535,9 +533,9 @@ class SupervisionSet(Serializable, Sequence[SupervisionSegment]):
                     SupervisionSegment(
                         id=f"{recording_id}-{idx:06d}",
                         recording_id=recording_id,
+                        channel=int(parts[2]),
                         start=float(parts[3]),
                         duration=float(parts[4]),
-                        channel=int(parts[2]),
                         speaker=parts[7],
                     )
                 )
