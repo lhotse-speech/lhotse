@@ -5,7 +5,7 @@ import pytest
 
 from lhotse.supervision import AlignmentItem, SupervisionSegment, SupervisionSet
 from lhotse.testing.dummies import DummyManifest, remove_spaces_from_segment_text
-from lhotse.utils import fastcopy
+from lhotse.utils import fastcopy, Pathlike
 
 
 @pytest.fixture
@@ -13,6 +13,11 @@ def external_supervision_set() -> SupervisionSet:
     return SupervisionSet.from_json(
         "test/fixtures/supervision.json"
     ).with_alignment_from_ctm("test/fixtures/supervision.ctm")
+
+
+@pytest.fixture
+def rttm_paths() -> Pathlike:
+    return Path("test/fixtures").rglob("*.rttm")
 
 
 @pytest.fixture
@@ -129,6 +134,11 @@ def test_create_supervision_segment_with_all_metadata():
             ]
         },
     )
+
+
+def test_supervision_set_from_rttms(rttm_paths):
+    supervision_set = SupervisionSet.from_rttms(rttm_paths)
+    assert len(supervision_set) == 3
 
 
 def test_supervision_set_with_alignment_from_ctm(
