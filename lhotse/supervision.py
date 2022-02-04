@@ -2,7 +2,7 @@ import logging
 import random
 from collections import defaultdict
 from dataclasses import dataclass
-from itertools import chain, groupby, islice
+from itertools import groupby, islice
 from typing import (
     Any,
     Callable,
@@ -514,14 +514,16 @@ class SupervisionSet(Serializable, Sequence[SupervisionSegment]):
         )
 
     @staticmethod
-    def from_rttm(path: Pathlike) -> "SupervisionSet":
+    def from_rttm(path: Union[Pathlike, Iterable[Pathlike]]) -> "SupervisionSet":
         """
-        Read an RTTM file located at ``path`` and create a :class:`.SupervisionSet` manifest for them.
+        Read an RTTM file located at ``path`` (or an iterator) and create a :class:`.SupervisionSet` manifest for them.
         Can be used to create supervisions from custom RTTM files (see, for example, :class:`lhotse.dataset.DiarizationDataset`).
 
-        .. hint::
+        .. code:: python
 
-            Use the :meth:`.from_rttms` method if you want to read multiple RTTM files at once.
+            >>> from lhotse import SupervisionSet
+            >>> sup1 = SupervisionSet.from_rttm('/path/to/rttm_file')
+            >>> sup2 = SupervisionSet.from_rttm(Path('/path/to/rttm_dir').rglob('ref_*'))
 
         The following description is taken from the [dscore](https://github.com/nryant/dscore#rttm) toolkit:
 
@@ -549,52 +551,31 @@ class SupervisionSet(Serializable, Sequence[SupervisionSegment]):
             SPEAKER CMU_20020319-1400_d01_NONE 1 157.610000 3.060 <NA> <NA> tbc <NA> <NA>
             SPEAKER CMU_20020319-1400_d01_NONE 1 130.490000 0.450 <NA> <NA> chek <NA> <NA>
 
-        :param path: Path to RTTM file.
+        :param path: Path to RTTM file or an iterator of paths to RTTM files.
         :return: a new ``SupervisionSet`` instance containing segments from the RTTM file.
         """
+        from pathlib import Path
+
+        path = [path] if isinstance(path, (Path, str)) else path
+
         segments = []
-        with open(path, "r") as f:
-            for idx, line in enumerate(f):
-                parts = line.strip().split()
-                assert len(parts) == 10, f"Invalid RTTM line: {line}"
-                recording_id = parts[1]
-                segments.append(
-                    SupervisionSegment(
-                        id=f"{recording_id}-{idx:06d}",
-                        recording_id=recording_id,
-                        channel=int(parts[2]),
-                        start=float(parts[3]),
-                        duration=float(parts[4]),
-                        speaker=parts[7],
+        for file in path:
+            with open(file, "r") as f:
+                for idx, line in enumerate(f):
+                    parts = line.strip().split()
+                    assert len(parts) == 10, f"Invalid RTTM line in file {file}: {line}"
+                    recording_id = parts[1]
+                    segments.append(
+                        SupervisionSegment(
+                            id=f"{recording_id}-{idx:06d}",
+                            recording_id=recording_id,
+                            channel=int(parts[2]),
+                            start=float(parts[3]),
+                            duration=float(parts[4]),
+                            speaker=parts[7],
+                        )
                     )
-                )
         return SupervisionSet.from_segments(segments)
-
-    @staticmethod
-    def from_rttms(paths: Union[Pathlike, Iterable[Pathlike]]) -> "SupervisionSet":
-        """
-        Read multiple RTTM files located at ``paths`` and create a :class:`.SupervisionSet` manifest for them.
-
-        .. code:: python
-
-            >>> from lhotse import SupervisionSet
-            >>> sup1 = SupervisionSet.from_rttms(Path('/path/to/rttm_dir'))
-            >>> sup2 = SupervisionSet.from_rttms(Path('/path/to/rttm_dir').rglob('ref_*'))
-
-        .. hint::
-
-            For creating a SupervisionSet from a single RTTM file, use the :meth:`.from_rttm` method.
-
-        :param paths: Path to RTTM files (can be path to a directory or an iterable of paths to RTTM files).
-        :return: a new ``SupervisionSet`` instance containing segments from the RTTM files.
-        """
-        if isinstance(paths, Pathlike.__args__):
-            paths = check_and_rglob(paths, "*.rttm")
-        return SupervisionSet.from_segments(
-            chain.from_iterable(
-                SupervisionSet.from_rttm(p).segments.values() for p in paths
-            )
-        )
 
     def with_alignment_from_ctm(
         self, ctm_file: Pathlike, type: str = "word", match_channel: bool = False

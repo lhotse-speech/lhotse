@@ -131,7 +131,7 @@ def test_create_supervision_segment_with_all_metadata():
     )
 
 
-def test_supervision_set_from_rttms(tmpdir):
+def test_supervision_set_from_rttm(tmpdir):
     rttm_str = """SPEAKER reco1 1 130.430000 2.350 <NA> <NA> juliet <NA> <NA>
                   SPEAKER reco1 1 157.610000 3.060 <NA> <NA> tbc <NA> <NA>
                   SPEAKER reco2 1 130.490000 0.450 <NA> <NA> chek <NA> <NA>"""
@@ -141,7 +141,7 @@ def test_supervision_set_from_rttms(tmpdir):
     rttm_file = rttm_dir / "example.rttm"
     rttm_file.write_text(rttm_str)
 
-    supervision_set = SupervisionSet.from_rttms(rttm_dir)
+    supervision_set = SupervisionSet.from_rttm(rttm_file)
     assert len(supervision_set) == 3
 
 
