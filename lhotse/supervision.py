@@ -2,7 +2,7 @@ import logging
 import random
 from collections import defaultdict
 from dataclasses import dataclass
-from itertools import groupby, islice
+from itertools import chain, groupby, islice
 from typing import (
     Any,
     Callable,
@@ -14,6 +14,8 @@ from typing import (
     Sequence,
     Union,
 )
+
+from numpy import record
 
 from lhotse.serialization import Serializable
 from lhotse.utils import (
@@ -510,6 +512,50 @@ class SupervisionSet(Serializable, Sequence[SupervisionSegment]):
     def from_dicts(data: Iterable[Dict]) -> "SupervisionSet":
         return SupervisionSet.from_segments(
             SupervisionSegment.from_dict(s) for s in data
+        )
+
+    @staticmethod
+    def from_rttm(path: Pathlike) -> "SupervisionSet":
+        """
+        Read an RTTM file located at ``path`` and create a :class:`.SupervisionSet` manifest for them.
+        Can be used to create supervisions from custom RTTM files (see, for example, :class:`lhotse.dataset.DiarizationDataset`).
+
+        Use the :meth:`.from_rttms` method if you want to read multiple RTTM files at once.
+
+        :param path: Path to RTTM file.
+        :return: a new ``SupervisionSet`` instance containing segments from the RTTM file.
+        """
+        segments = []
+        with open(path, "r") as f:
+            for idx, line in enumerate(f):
+                parts = line.strip().split()
+                assert len(parts) == 10, f"Invalid RTTM line: {line}"
+                recording_id = parts[1]
+                segments.append(
+                    SupervisionSegment(
+                        id=f"{recording_id}-{idx:06d}",
+                        recording_id=recording_id,
+                        start=float(parts[3]),
+                        duration=float(parts[4]),
+                        channel=int(parts[2]),
+                        speaker=parts[7],
+                    )
+                )
+        return SupervisionSet.from_segments(segments)
+
+    @staticmethod
+    def from_rttms(paths: Iterable[Pathlike]) -> "SupervisionSet":
+        """
+        Read multiple RTTM files located at ``paths`` and create a :class:`.SupervisionSet` manifest for them.
+        Can be used to create supervisions from custom RTTM files (see, for example, :class:`lhotse.dataset.DiarizationDataset`).
+
+        :param paths: Paths to RTTM files.
+        :return: a new ``SupervisionSet`` instance containing segments from the RTTM files.
+        """
+        return SupervisionSet.from_segments(
+            chain.from_iterable(
+                SupervisionSet.from_rttm(p).segments.values() for p in paths
+            )
         )
 
     def with_alignment_from_ctm(
