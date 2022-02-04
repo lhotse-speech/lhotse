@@ -16,11 +16,6 @@ def external_supervision_set() -> SupervisionSet:
 
 
 @pytest.fixture
-def rttm_paths() -> Pathlike:
-    return Path("test/fixtures").rglob("*.rttm")
-
-
-@pytest.fixture
 def external_alignment() -> Dict[str, List[AlignmentItem]]:
     return {
         "word": [
@@ -136,8 +131,17 @@ def test_create_supervision_segment_with_all_metadata():
     )
 
 
-def test_supervision_set_from_rttms(rttm_paths):
-    supervision_set = SupervisionSet.from_rttms(rttm_paths)
+def test_supervision_set_from_rttms(tmpdir):
+    rttm_str = """SPEAKER reco1 1 130.430000 2.350 <NA> <NA> juliet <NA> <NA>
+                  SPEAKER reco1 1 157.610000 3.060 <NA> <NA> tbc <NA> <NA>
+                  SPEAKER reco2 1 130.490000 0.450 <NA> <NA> chek <NA> <NA>"""
+    tmpdir = Path(tmpdir)
+    rttm_dir = tmpdir / "rttm"
+    rttm_dir.mkdir()
+    rttm_file = rttm_dir / "example.rttm"
+    rttm_file.write_text(rttm_str)
+
+    supervision_set = SupervisionSet.from_rttms(rttm_dir)
     assert len(supervision_set) == 3
 
 
