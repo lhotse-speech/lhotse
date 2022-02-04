@@ -5,7 +5,7 @@ import pytest
 
 from lhotse.supervision import AlignmentItem, SupervisionSegment, SupervisionSet
 from lhotse.testing.dummies import DummyManifest, remove_spaces_from_segment_text
-from lhotse.utils import fastcopy, Pathlike
+from lhotse.utils import fastcopy
 
 
 @pytest.fixture
