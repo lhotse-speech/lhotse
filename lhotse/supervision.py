@@ -21,6 +21,7 @@ from lhotse.utils import (
     Seconds,
     TimeSpan,
     asdict_nonull,
+    check_and_rglob,
     compute_num_samples,
     exactly_one_not_null,
     fastcopy,
@@ -587,8 +588,8 @@ class SupervisionSet(Serializable, Sequence[SupervisionSegment]):
         :param paths: Path to RTTM files (can be path to a directory or an iterable of paths to RTTM files).
         :return: a new ``SupervisionSet`` instance containing segments from the RTTM files.
         """
-        if isinstance(paths, Pathlike):
-            paths = paths.rglob("*.rttm")
+        if isinstance(paths, Pathlike.__args__):
+            paths = check_and_rglob(paths, "*.rttm")
         return SupervisionSet.from_segments(
             chain.from_iterable(
                 SupervisionSet.from_rttm(p).segments.values() for p in paths
