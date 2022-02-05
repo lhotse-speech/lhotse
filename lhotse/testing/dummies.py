@@ -46,7 +46,7 @@ def DummyManifest(type_: Type, *, begin_id: int, end_id: int) -> Manifest:
         )
 
 
-def dummy_recording(unique_id: int) -> Recording:
+def dummy_recording(unique_id: int, duration: float = 1.0) -> Recording:
     return Recording(
         id=f"dummy-recording-{unique_id:04d}",
         sources=[
@@ -54,7 +54,7 @@ def dummy_recording(unique_id: int) -> Recording:
         ],
         sampling_rate=16000,
         num_samples=16000,
-        duration=1.0,
+        duration=duration,
     )
 
 
@@ -93,12 +93,14 @@ def dummy_supervision(
     )
 
 
-def dummy_features(unique_id: int) -> Features:
+def dummy_features(
+    unique_id: int, start: float = 0.0, duration: float = 1.0
+) -> Features:
     return Features(
         recording_id=f"dummy-recording-{unique_id:04d}",
         channels=0,
-        start=0.0,
-        duration=1.0,
+        start=start,
+        duration=duration,
         type="fbank",
         num_frames=100,
         num_features=23,
@@ -111,15 +113,20 @@ def dummy_features(unique_id: int) -> Features:
 
 
 def dummy_cut(
-    unique_id: int, start: float = 0.0, duration: float = 1.0, supervisions=None
+    unique_id: int,
+    start: float = 0.0,
+    duration: float = 1.0,
+    recording: Recording = None,
+    features: Features = None,
+    supervisions=None,
 ):
     return MonoCut(
         id=f"dummy-cut-{unique_id:04d}",
         start=start,
         duration=duration,
         channel=0,
-        recording=dummy_recording(unique_id),
-        features=dummy_features(unique_id),
+        recording=recording if recording else dummy_recording(unique_id),
+        features=features if features else dummy_features(unique_id),
         supervisions=supervisions if supervisions is not None else [],
     )
 
