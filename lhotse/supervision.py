@@ -21,6 +21,7 @@ from lhotse.utils import (
     Seconds,
     TimeSpan,
     asdict_nonull,
+    check_and_rglob,
     compute_num_samples,
     exactly_one_not_null,
     fastcopy,
@@ -511,6 +512,70 @@ class SupervisionSet(Serializable, Sequence[SupervisionSegment]):
         return SupervisionSet.from_segments(
             SupervisionSegment.from_dict(s) for s in data
         )
+
+    @staticmethod
+    def from_rttm(path: Union[Pathlike, Iterable[Pathlike]]) -> "SupervisionSet":
+        """
+        Read an RTTM file located at ``path`` (or an iterator) and create a :class:`.SupervisionSet` manifest for them.
+        Can be used to create supervisions from custom RTTM files (see, for example, :class:`lhotse.dataset.DiarizationDataset`).
+
+        .. code:: python
+
+            >>> from lhotse import SupervisionSet
+            >>> sup1 = SupervisionSet.from_rttm('/path/to/rttm_file')
+            >>> sup2 = SupervisionSet.from_rttm(Path('/path/to/rttm_dir').rglob('ref_*'))
+
+        The following description is taken from the [dscore](https://github.com/nryant/dscore#rttm) toolkit:
+
+        Rich Transcription Time Marked (RTTM) files are space-delimited text files
+        containing one turn per line, each line containing ten fields:
+
+        - ``Type``  --  segment type; should always by ``SPEAKER``
+        - ``File ID``  --  file name; basename of the recording minus extension (e.g.,
+        ``rec1_a``)
+        - ``Channel ID``  --  channel (1-indexed) that turn is on; should always be
+        ``1``
+        - ``Turn Onset``  --  onset of turn in seconds from beginning of recording
+        - ``Turn Duration``  -- duration of turn in seconds
+        - ``Orthography Field`` --  should always by ``<NA>``
+        - ``Speaker Type``  --  should always be ``<NA>``
+        - ``Speaker Name``  --  name of speaker of turn; should be unique within scope
+        of each file
+        - ``Confidence Score``  --  system confidence (probability) that information
+        is correct; should always be ``<NA>``
+        - ``Signal Lookahead Time``  --  should always be ``<NA>``
+
+        For instance:
+
+            SPEAKER CMU_20020319-1400_d01_NONE 1 130.430000 2.350 <NA> <NA> juliet <NA> <NA>
+            SPEAKER CMU_20020319-1400_d01_NONE 1 157.610000 3.060 <NA> <NA> tbc <NA> <NA>
+            SPEAKER CMU_20020319-1400_d01_NONE 1 130.490000 0.450 <NA> <NA> chek <NA> <NA>
+
+        :param path: Path to RTTM file or an iterator of paths to RTTM files.
+        :return: a new ``SupervisionSet`` instance containing segments from the RTTM file.
+        """
+        from pathlib import Path
+
+        path = [path] if isinstance(path, (Path, str)) else path
+
+        segments = []
+        for file in path:
+            with open(file, "r") as f:
+                for idx, line in enumerate(f):
+                    parts = line.strip().split()
+                    assert len(parts) == 10, f"Invalid RTTM line in file {file}: {line}"
+                    recording_id = parts[1]
+                    segments.append(
+                        SupervisionSegment(
+                            id=f"{recording_id}-{idx:06d}",
+                            recording_id=recording_id,
+                            channel=int(parts[2]),
+                            start=float(parts[3]),
+                            duration=float(parts[4]),
+                            speaker=parts[7],
+                        )
+                    )
+        return SupervisionSet.from_segments(segments)
 
     def with_alignment_from_ctm(
         self, ctm_file: Pathlike, type: str = "word", match_channel: bool = False
