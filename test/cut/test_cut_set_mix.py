@@ -26,7 +26,8 @@ def test_cut_set_mixing_default(speech_cuts, noise_cuts):
 def test_cut_set_mixing_with_duration(speech_cuts, noise_cuts, duration):
     mixed_cuts = speech_cuts.mix(noise_cuts, duration=duration)
     for orig_cut, mix_cut in zip(speech_cuts, mixed_cuts):
-        assert mix_cut.duration == duration
+        # approximately equals, because CutSet.mix has a tolerance of 50ms
+        assert mix_cut.duration == pytest.approx(duration, 0.05)
 
 
 @pytest.mark.parametrize("snr", [17.5, None])

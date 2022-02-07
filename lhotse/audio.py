@@ -1050,6 +1050,9 @@ class AudioMixer:
         the start with low energy values.
         :return:
         """
+        if len(audio) == 0:
+            return  # do nothing for empty arrays
+
         assert audio.shape[0] == 1  # TODO: support multi-channels
         assert offset >= 0.0, "Negative offset in mixing is not supported."
 
