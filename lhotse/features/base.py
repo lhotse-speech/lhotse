@@ -286,7 +286,7 @@ class FeatureExtractor(metaclass=ABCMeta):
             channels=channels if channels is not None else recording.channel_ids,
             # The start is relative to the beginning of the recording.
             start=offset,
-            duration=recording.duration,
+            duration=recording.duration if duration is not None else recording.duration,
             type=self.name,
             num_frames=feats.shape[0],
             num_features=feats.shape[1],
