@@ -1,5 +1,4 @@
 from math import isclose
-from pyexpat import features
 
 import pytest
 

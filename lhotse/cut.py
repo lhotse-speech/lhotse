@@ -1,6 +1,5 @@
 import itertools
 import logging
-from pyexpat import features
 import random
 import warnings
 from concurrent.futures import Executor, ProcessPoolExecutor
@@ -228,7 +227,7 @@ class Cut:
     drop_supervisions: Callable
     truncate: Callable
     pad: Callable
-    extend: Callable
+    extend_by: Callable
     resample: Callable
     perturb_speed: Callable
     perturb_tempo: Callable
@@ -1088,7 +1087,7 @@ class MonoCut(Cut):
 
         .. hint::
 
-            To extend a cut by a fixed duration, use the :meth:`MonoCut.extend` method.
+            To extend a cut by a fixed duration, use the :meth:`MonoCut.extend_by` method.
 
         :param offset: float (seconds), controls the start of the new cut relative to the current MonoCut's start.
             E.g., if the current MonoCut starts at 10.0, and offset is 2.0, the new start is 12.0.
