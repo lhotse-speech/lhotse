@@ -1214,7 +1214,7 @@ class MonoCut(Cut):
             segment.with_offset(self.start - new_start) for segment in self.supervisions
         )
 
-        extra_kwargs = {}
+        feature_kwargs = {}
         if self.has_features:
             # We compare in terms of frames, not seconds, to avoid rounding errors.
             # We also allow a tolerance of 1 frame on either side.
@@ -1236,13 +1236,12 @@ class MonoCut(Cut):
                     "Attempting to extend a MonoCut that exceeds the range of pre-computed features. "
                     "The feature manifest will be detached."
                 )
-                extra_kwargs["features"] = None
-                extra_kwargs["frame_shift"] = None
-                extra_kwargs["num_frames"] = None
+                feature_kwargs["features"] = None
 
+        custom_kwargs = {}
         if self.custom is not None:
-            extra_kwargs["custom"] = self.custom.copy()
             for name, array in self.custom.items():
+                custom_kwargs[name] = fastcopy(array)
                 if isinstance(array, TemporalArray):
                     # We compare in terms of frames, not seconds, to avoid rounding errors.
                     # We also allow a tolerance of 1 frame on either side.
@@ -1264,7 +1263,7 @@ class MonoCut(Cut):
                             f"Attempting to extend a MonoCut that exceeds the range of pre-computed custom data '{name}'. "
                             "The custom data will be detached."
                         )
-                        extra_kwargs["custom"][name] = None
+                        custom_kwargs[name] = None
 
         return fastcopy(
             self,
@@ -1272,7 +1271,8 @@ class MonoCut(Cut):
             start=new_start,
             duration=new_duration,
             supervisions=sorted(new_supervisions, key=lambda s: s.start),
-            **extra_kwargs,
+            **feature_kwargs,
+            custom=custom_kwargs,
         )
 
     def pad(

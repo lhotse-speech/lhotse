@@ -3,6 +3,7 @@ from tempfile import NamedTemporaryFile
 from typing import Dict, List, Optional, Type
 
 from lhotse import AudioSource
+from lhotse.array import Array, TemporalArray
 from lhotse.audio import Recording, RecordingSet
 from lhotse.cut import CutSet, MonoCut
 from lhotse.features import FeatureSet, Features
@@ -109,6 +110,20 @@ def dummy_features(
         storage_type="lilcom_files",
         storage_path="test/fixtures/dummy_feats/storage",
         storage_key="dbf9a0ec-f79d-4eb8-ae83-143a6d5de64d.llc",
+    )
+
+
+def dummy_temporal_array(start: float = 0.0) -> TemporalArray:
+    return TemporalArray(
+        array=Array(
+            storage_type="lilcom_files",
+            storage_path="test/fixtures/dummy_feats/storage",
+            storage_key="dbf9a0ec-f79d-4eb8-ae83-143a6d5de64d.llc",
+            shape=[100, 23],
+        ),
+        temporal_dim=0,
+        start=start,
+        frame_shift=0.01,
     )
 
 
