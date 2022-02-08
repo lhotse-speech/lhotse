@@ -136,9 +136,7 @@ def download_vcc2018mos(
                 url, filename=archive_path, desc=f"Downloading {archive_name}"
             )
         else:
-            logging.info(
-                f"Skipping {archive_name} because it already exists."
-            )
+            logging.info(f"Skipping {archive_name} because it already exists.")
         opener = zipfile.ZipFile if archive_name.endswith(".zip") else tarfile.open
         with opener(archive_path) as archive:
             archive.extractall(path=target_dir)
@@ -272,6 +270,7 @@ def prepare_mos_supervisions(
                 "src_spk": row.src_spk,
                 "system": row.system1_id,
                 "prompt": prompt_id,
+                "reference_path": f"vcc2018mos/vcc2018_reference/{tgt_spk}/{prompt_id}.wav",
             },
         )
         supervisions.append(s)
