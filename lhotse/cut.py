@@ -4101,7 +4101,9 @@ class CutSet(Serializable, Sequence[Cut]):
             if duration is not None:
                 mixed_in_duration = to_mix.duration
                 # Keep sampling until we mixed in a "duration" amount of noise.
-                while mixed_in_duration < duration:
+                # Note: we subtract 0.05s (50ms) from the target duration to avoid edge cases
+                #       where we mix in some noise cut that effectively has 0 frames of features.
+                while mixed_in_duration < (duration - 0.05):
                     to_mix = cuts.sample()
                     # Keep the SNR constant for each cut from "self".
                     mixed = mixed.mix(
