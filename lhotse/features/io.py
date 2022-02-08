@@ -604,13 +604,14 @@ class ChunkedLilcomHdf5Reader(FeaturesReader):
             right_chunk_idx = None
 
         # Read, decode, concat
-        arr = np.concatenate(
-            [
-                lilcom.decompress(data.tobytes())
-                for data in self.hdf[key][left_chunk_idx:right_chunk_idx]
-            ],
-            axis=0,
-        )
+        decompressed_chunks = [
+            lilcom.decompress(data.tobytes())
+            for data in self.hdf[key][left_chunk_idx:right_chunk_idx]
+        ]
+        if decompressed_chunks:
+            arr = np.concatenate(decompressed_chunks, axis=0)
+        else:
+            arr = np.array([])
 
         # Determine what piece of decoded data should be returned;
         # we offset the input offsets by left_chunk_idx * chunk_size.
@@ -765,10 +766,11 @@ class LilcomChunkyReader(FeaturesReader):
                 chunk_data.append(self.file.read(end - offset))
 
         # Read, decode, concat
-        arr = np.concatenate(
-            [lilcom.decompress(data) for data in chunk_data],
-            axis=0,
-        )
+        decompressed_chunks = [lilcom.decompress(data) for data in chunk_data]
+        if decompressed_chunks:
+            arr = np.concatenate(decompressed_chunks, axis=0)
+        else:
+            arr = np.array([])
 
         # Determine what piece of decoded data should be returned;
         # we offset the input offsets by left_chunk_idx * chunk_size.
