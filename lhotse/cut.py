@@ -1180,6 +1180,7 @@ class MonoCut(Cut):
             the "real" content of the recording that the cut is part of. For example, a MonoCut spanning
             the region from 2s to 5s in a recording, when extended by 2s to the right, will now span
             the region from 2s to 7s in the same recording (provided the recording length exceeds 7s).
+            If the recording is shorter, the cut will only be extended up to the duration of the recording.
             To "expand" a cut by padding, use :meth:`MonoCut.pad`. To "truncate" a cut, use :meth:`MonoCut.truncate`.
 
         .. hint::
@@ -1213,24 +1214,26 @@ class MonoCut(Cut):
             segment.with_offset(self.start - new_start) for segment in self.supervisions
         )
 
-        feature_kwargs = {}
-        if self.has_features:
+        def _this_exceeds_duration(attribute: Union[Features, TemporalArray]) -> bool:
             # We compare in terms of frames, not seconds, to avoid rounding errors.
             # We also allow a tolerance of 1 frame on either side.
             new_start_frames = compute_num_frames(
-                new_start, self.features.frame_shift, self.sampling_rate
+                new_start, attribute.frame_shift, self.sampling_rate
             )
             new_end_frames = compute_num_frames(
-                new_end, self.features.frame_shift, self.sampling_rate
+                new_end, attribute.frame_shift, self.sampling_rate
             )
-            features_start = compute_num_frames(
-                self.features.start, self.features.frame_shift, self.sampling_rate
+            attribute_start = compute_num_frames(
+                attribute.start, attribute.frame_shift, self.sampling_rate
             )
-            features_end = features_start + self.features.num_frames
-            if (
-                new_start_frames < features_start - 1
-                or new_end_frames > features_end + 1
-            ):
+            attribute_end = attribute_start + attribute.num_frames
+            return (new_start_frames < attribute_start - 1) or (
+                new_end_frames > attribute_end + 1
+            )
+
+        feature_kwargs = {}
+        if self.has_features:
+            if _this_exceeds_duration(self.features):
                 logging.warning(
                     "Attempting to extend a MonoCut that exceeds the range of pre-computed features. "
                     "The feature manifest will be detached."
@@ -1242,22 +1245,7 @@ class MonoCut(Cut):
             for name, array in self.custom.items():
                 custom_kwargs[name] = array
                 if isinstance(array, TemporalArray):
-                    # We compare in terms of frames, not seconds, to avoid rounding errors.
-                    # We also allow a tolerance of 1 frame on either side.
-                    new_start_frames = compute_num_frames(
-                        new_start, array.frame_shift, self.sampling_rate
-                    )
-                    new_end_frames = compute_num_frames(
-                        new_end, array.frame_shift, self.sampling_rate
-                    )
-                    array_start = compute_num_frames(
-                        array.start, array.frame_shift, self.sampling_rate
-                    )
-                    array_end = array_start + array.num_frames
-                    if (
-                        new_start_frames < array_start - 1
-                        or new_end_frames > array_end + 1
-                    ):
+                    if _this_exceeds_duration(array):
                         logging.warning(
                             f"Attempting to extend a MonoCut that exceeds the range of pre-computed custom data '{name}'. "
                             "The custom data will be detached."
@@ -1723,8 +1711,18 @@ class PaddingCut(Cut):
         duration: Seconds,
         direction: str = "both",
         preserve_id: bool = False,
-        **kwargs,
     ) -> "PaddingCut":
+        """
+        Return a new PaddingCut with region extended by the specified duration.
+
+        :param duration: The duration by which to extend the cut.
+        :param direction: string, 'left', 'right' or 'both'. Determines whether the cut should
+            be extended to the left, right or both sides. By default, the cut is extended by
+            the specified duration on both sides.
+        :param preserve_id: When ``True``, preserves the cut ID from before padding.
+            Otherwise, generates a new random ID (default).
+        :return: an extended PaddingCut.
+        """
         new_duration = self.duration + duration
         if direction == "both":
             new_duration += duration
@@ -2351,7 +2349,7 @@ class MixedCut(Cut):
         :param duration: float (seconds), duration (in seconds) to extend the MixedCut.
         :param direction: string, 'left', 'right' or 'both'. Determines whether to extend on the left,
             right, or both sides. If 'both', extend on both sides by the duration specified in `duration`.
-        :param preserve_id: bool. Should the truncated cut keep the same ID or get a new, random one.
+        :param preserve_id: bool. Should the extended cut keep the same ID or get a new, random one.
         :return: a new MixedCut instance.
         """
         raise ValueError("The extend_by() method is not defined for a MixedCut.")

@@ -3,7 +3,8 @@ from math import isclose
 import pytest
 
 from lhotse import CutSet, SupervisionSegment, SupervisionSet
-from lhotse.utils import uuid4
+from lhotse.cut import MixedCut, PaddingCut
+from lhotse.utils import LOG_EPSILON, uuid4
 from lhotse.testing.dummies import (
     dummy_features,
     dummy_cut,
@@ -188,3 +189,55 @@ def test_cut_set_extend_by():
     assert isclose(extended_cut_set[cut1.id].end, 0.8)
     assert isclose(extended_cut_set[cut2.id].start, 0.0)
     assert isclose(extended_cut_set[cut2.id].end, 0.9)
+
+
+# `cut1` and `cut2` parameters are standard Pytest fixtures located in test/cut/conftest.py
+def test_mixed_cut_extend_by(cut1, cut2):
+    mixed_cut = cut1.mix(cut2, offset_other_by=1.0)
+    assert isinstance(mixed_cut, MixedCut)
+    with pytest.raises(ValueError):
+        mixed_cut.extend_by(duration=0.3, direction="both", preserve_id=True)
+
+
+@pytest.fixture
+def padding_cut():
+    return PaddingCut(
+        id="padding-1",
+        duration=10.0,
+        num_frames=1000,
+        num_features=40,
+        frame_shift=0.01,
+        sampling_rate=16000,
+        num_samples=160000,
+        feat_value=LOG_EPSILON,
+    )
+
+
+@pytest.mark.parametrize(
+    [
+        "extend_duration",
+        "extend_direction",
+        "expected_duration",
+        "expected_num_frames",
+    ],
+    [(0.3, "right", 10.3, 1030), (0.5, "both", 11.0, 1100)],
+)
+def test_padding_cut_extend_by(
+    padding_cut,
+    extend_duration,
+    extend_direction,
+    expected_duration,
+    expected_num_frames,
+):
+    padding_cut_extended = padding_cut.extend_by(
+        duration=extend_duration, direction=extend_direction
+    )
+    assert isinstance(padding_cut_extended, PaddingCut)
+    # Invariants
+    assert padding_cut.frame_shift == padding_cut_extended.frame_shift
+    assert padding_cut.num_features == padding_cut_extended.num_features
+    assert padding_cut.sampling_rate == padding_cut_extended.sampling_rate
+    assert padding_cut.feat_value == padding_cut_extended.feat_value
+    # Variants
+    assert padding_cut_extended.duration == expected_duration
+    assert padding_cut_extended.num_frames == expected_num_frames
