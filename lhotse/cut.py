@@ -1240,7 +1240,7 @@ class MonoCut(Cut):
         custom_kwargs = {}
         if self.custom is not None:
             for name, array in self.custom.items():
-                custom_kwargs[name] = fastcopy(array)
+                custom_kwargs[name] = array
                 if isinstance(array, TemporalArray):
                     # We compare in terms of frames, not seconds, to avoid rounding errors.
                     # We also allow a tolerance of 1 frame on either side.
