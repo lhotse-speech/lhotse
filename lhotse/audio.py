@@ -120,11 +120,12 @@ class AudioSource:
     - 'file' (formats supported by soundfile, possibly multi-channel)
     - 'command' [unix pipe] (must be WAVE, possibly multi-channel)
     - 'url' (any URL type that is supported by "smart_open" library, e.g. http/https/s3/gcp/azure/etc.)
+    - 'memory' (any format, read from a binary string attached to 'source' member of AudioSource)
     """
 
     type: str
     channels: List[int]
-    source: str
+    source: Union[str, bytes]
 
     def load_audio(
         self,
@@ -144,7 +145,7 @@ class AudioSource:
         :param force_opus_sampling_rate: This parameter is only used when we detect an OPUS file.
             It will tell ffmpeg to resample OPUS to this sampling rate.
         """
-        assert self.type in ("file", "command", "url")
+        assert self.type in ("file", "command", "url", "memory")
 
         # TODO: refactor when another source type is added
         source = self.source
@@ -179,6 +180,16 @@ class AudioSource:
                 samples, sampling_rate = read_audio(
                     source, offset=offset, duration=duration
                 )
+
+        elif self.type == "memory":
+            assert isinstance(self.source, bytes), (
+                "Corrupted manifest: specified AudioSource type is 'memory', "
+                "but 'self.source' attribute is not of type 'bytes'."
+            )
+            source = BytesIO(self.source)
+            samples, sampling_rate = read_audio(
+                source, offset=offset, duration=duration
+            )
 
         else:  # self.type == 'file'
             samples, sampling_rate = read_audio(
@@ -343,6 +354,45 @@ class Recording:
                         if relative_path_depth is not None and relative_path_depth > 0
                         else str(path)
                     ),
+                )
+            ],
+        )
+
+    @staticmethod
+    def from_bytes(
+            data: bytes,
+            recording_id: str,
+    ) -> "Recording":
+        """
+        Like :meth:`.Recording.from_file`, but creates a manifest for a byte string with
+        raw encoded audio data. This data is first decoded to obtain info such as the
+        sampling rate, number of channels, etc. Then, the binary data is attached to the
+        manifest. Calling :meth:`.Recording.load_audio` does not perform any I/O and
+        instead decodes the byte string contents in memory.
+
+        .. note:: Intended use of this method is for packing Recordings into archives
+            where metadata and data should be available together
+            (e.g., in WebDataset style tarballs).
+
+        .. caution:: Manifest created with this method cannot be stored as JSON
+            because JSON doesn't allow serializing binary data.
+
+        :param data: bytes, byte string containing encoded audio contents.
+        :param recording_id: recording id, unique string identifier.
+        :return: a new ``Recording`` instance that owns the byte string data.
+        """
+        stream = BytesIO(data)
+        audio_info = torchaudio_info(stream)
+        return Recording(
+            id=recording_id,
+            sampling_rate=audio_info.samplerate,
+            num_samples=audio_info.frames,
+            duration=audio_info.duration,
+            sources=[
+                AudioSource(
+                    type="memory",
+                    channels=list(range(audio_info.channels)),
+                    source=data,
                 )
             ],
         )

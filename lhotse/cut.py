@@ -958,6 +958,13 @@ class MonoCut(Cut):
 
         :return: a numpy ndarray with audio samples, with shape (1 <channel>, N <samples>)
         """
+        if self.custom is not None and "_audio_data" in self.custom:
+            from lhotse.audio import torchaudio_load, BytesIO
+
+            data = self._audio_data
+            assert isinstance(data, bytes)
+            arr, sr = torchaudio_load(BytesIO(data))
+            return arr
         if self.has_recording:
             return self.recording.load_audio(
                 channels=self.channel,
@@ -965,6 +972,16 @@ class MonoCut(Cut):
                 duration=self.duration,
             )
         return None
+
+    def with_memory_audio(self, data: bytes) -> "MonoCut":
+        """
+        Attach raw encoded audio as bytes to a copy of this MonoCut instance.
+        When :meth:`.MonoCut.load_audio` is called, this data will be read instead of
+        calling :meth:`Recording.load_audio` on the underlying ``recording``.
+        """
+        cut = fastcopy(self, custom=self.custom.copy() if self.custom is not None else {})
+        cut._audio_data = data
+        return cut
 
     def drop_features(self) -> "MonoCut":
         """Return a copy of the current :class:`.MonoCut`, detached from ``features``."""

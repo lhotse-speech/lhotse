@@ -517,3 +517,36 @@ def test_opus_stereo_recording_from_file_force_sampling_rate_read_chunk():
     assert num_channels == recording.num_channels
     assert num_samples == 2000
     np.testing.assert_almost_equal(samples, all_samples[:, 4000:6000], decimal=5)
+
+
+def test_audio_source_memory_type(recording):
+    memory_sources = [
+        AudioSource(
+            type="memory",
+            channels=old_source.channels,
+            source=open(old_source.source, "rb").read(),
+        )
+        for old_source in recording.sources
+    ]
+    memory_recording = fastcopy(recording, sources=memory_sources)
+
+    np.testing.assert_equal(memory_recording.load_audio(), recording.load_audio())
+
+
+def test_recording_from_bytes():
+    path = "test/fixtures/mono_c0.wav"
+    recording = Recording.from_file(path)
+    memory_recording = Recording.from_bytes(
+        data=open(path, "rb").read(),
+        recording_id=recording.id,
+    )
+    np.testing.assert_equal(memory_recording.load_audio(), recording.load_audio())
+
+
+def test_memory_recording_dict_serialization():
+    path = "test/fixtures/mono_c0.wav"
+    rec = Recording.from_bytes(data=open(path, "rb").read(), recording_id="testrec")
+    data = rec.to_dict()
+    rec_reconstructed = Recording.from_dict(data)
+    assert rec == rec_reconstructed
+    np.testing.assert_equal(rec_reconstructed.load_audio(), rec.load_audio())
