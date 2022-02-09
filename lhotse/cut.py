@@ -1487,6 +1487,9 @@ class MonoCut(Cut):
         if "custom" in data:
             deserialize_custom_field(data["custom"])
 
+        if "type" in data:
+            data.pop("type")
+
         return MonoCut(
             **data,
             features=features,
@@ -1852,6 +1855,8 @@ class PaddingCut(Cut):
 
     @staticmethod
     def from_dict(data: dict) -> "PaddingCut":
+        if "type" in data:
+            data.pop("type")
         return PaddingCut(**data)
 
     def with_features_path_prefix(self, path: Pathlike) -> "PaddingCut":
@@ -2852,6 +2857,8 @@ class MixedCut(Cut):
 
     @staticmethod
     def from_dict(data: dict) -> "MixedCut":
+        if "type" in data:
+            data.pop("type")
         return MixedCut(
             id=data["id"],
             tracks=[MixTrack.from_dict(track) for track in data["tracks"]],
