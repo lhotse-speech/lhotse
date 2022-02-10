@@ -489,7 +489,9 @@ class SupervisionSet(Serializable, Sequence[SupervisionSegment]):
         return self.segments == other.segments
 
     @property
-    def data(self) -> Union[Dict[str, SupervisionSegment], Iterable[SupervisionSegment]]:
+    def data(
+        self,
+    ) -> Union[Dict[str, SupervisionSegment], Iterable[SupervisionSegment]]:
         """Alias property for ``self.segments``"""
         return self.segments
 

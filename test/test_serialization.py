@@ -401,7 +401,7 @@ def test_manifest_is_lazy(manifests, manifest_type):
     assert not eager.is_lazy
 
     # Save the manifest to JSONL and open it lazily
-    with NamedTemporaryFile(suffix='.jsonl') as f, cls.open_writer(f.name) as writer:
+    with NamedTemporaryFile(suffix=".jsonl") as f, cls.open_writer(f.name) as writer:
         for item in eager:
             writer.write(item)
         f.flush()
@@ -442,4 +442,3 @@ def test_manifest_is_lazy(manifests, manifest_type):
         # Muxing of eager + lazy manifests is lazy
         lazy_lazy_mux = cls.mux(lazy, lazy)
         assert lazy_lazy_mux.is_lazy
-
