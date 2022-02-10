@@ -300,6 +300,22 @@ class JsonlMixin:
 
 
 class LazyMixin:
+    @property
+    def data(self) -> Union[Dict[str, Any], Iterable[Any]]:
+        """
+        Property to be implemented by every sub-class of this mixin.
+        It can either be a regular Python dict holding manifests for eager mode,
+        or a special iterator class for lazy mode.
+        """
+        raise NotImplemented
+
+    @property
+    def is_lazy(self) -> bool:
+        """
+        Indicates whether this manifest was opened in lazy (read-on-the-fly) mode or not.
+        """
+        return not isinstance(self.data, (dict, list, tuple))
+
     @classmethod
     def from_jsonl_lazy(cls, path: Pathlike) -> Manifest:
         """
@@ -310,6 +326,26 @@ class LazyMixin:
             rely on random access to fail.
         """
         return cls(LazyJsonlIterator(path))
+
+    @classmethod
+    def mux(
+        cls,
+        *manifests: Manifest,
+        weights: Optional[List[Union[int, float]]] = None,
+        seed: int = 0,
+    ) -> Manifest:
+        """
+        Merges multiple CutSets into a new CutSet by lazily multiplexing them during iteration time.
+        If one of the CutSets is exhausted before the others, we will keep iterating until all CutSets
+        are exhausted.
+
+        :param cut_sets: cut sets to be multiplexed.
+            They can be either lazy or eager, but the resulting manifest will always be lazy.
+        :param weights: an optional weight for each CutSet, affects the probability of it being sampled.
+            The weights are uniform by default.
+        :param seed: the random seed, ensures deterministic order across multiple iterations.
+        """
+        return cls(LazyIteratorMultiplexer(*manifests, weights=weights, seed=seed))
 
 
 def grouper(n, iterable):
