@@ -658,13 +658,9 @@ class RecordingSet(Serializable, Sequence[Recording]):
         return self.recordings == other.recordings
 
     @property
-    def is_lazy(self) -> bool:
-        """
-        Indicates whether this manifest was opened in lazy (read-on-the-fly) mode or not.
-        """
-        from lhotse.serialization import LazyJsonlIterator
-
-        return isinstance(self.recordings, LazyJsonlIterator)
+    def data(self) -> Union[Dict[str, Recording], Iterable[Recording]]:
+        """Alias property for ``self.recordings``"""
+        return self.recordings
 
     @property
     def ids(self) -> Iterable[str]:
