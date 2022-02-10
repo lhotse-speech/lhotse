@@ -257,6 +257,9 @@ def prepare_mos_supervisions(
         row = next(rows.itertuples(index=False))
         tgt_spk = row.tgt_spk
 
+        # TODO hack assume CWD
+        reference_path = f"vcc2018mos/vcc2018_reference/{tgt_spk}/{prompt_id}.wav"
+        reference_path = reference_path if Path(reference_path).exists() else ""
         s = SupervisionSegment(
             id=f"{recording_id}",
             recording_id=recording_id,
@@ -270,7 +273,7 @@ def prepare_mos_supervisions(
                 "src_spk": row.src_spk,
                 "system": row.system1_id,
                 "prompt": prompt_id,
-                "reference_path": f"vcc2018mos/vcc2018_reference/{tgt_spk}/{prompt_id}.wav",
+                "reference_path": reference_path,
             },
         )
         supervisions.append(s)
