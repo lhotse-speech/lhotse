@@ -520,15 +520,7 @@ def test_opus_stereo_recording_from_file_force_sampling_rate_read_chunk():
 
 
 def test_audio_source_memory_type(recording):
-    memory_sources = [
-        AudioSource(
-            type="memory",
-            channels=old_source.channels,
-            source=open(old_source.source, "rb").read(),
-        )
-        for old_source in recording.sources
-    ]
-    memory_recording = fastcopy(recording, sources=memory_sources)
+    memory_recording = recording.to_in_memory()
 
     np.testing.assert_equal(memory_recording.load_audio(), recording.load_audio())
 

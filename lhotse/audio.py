@@ -397,6 +397,22 @@ class Recording:
             ],
         )
 
+    def to_in_memory(self) -> "Recording":
+        """
+        Read audio data (without decoding) and return a copy of the manifest
+        with that data attached.
+        Calling :meth:`.Recording.load_audio` on that copy will not trigger I/O.
+        """
+        memory_sources = [
+            AudioSource(
+                type="memory",
+                channels=old_source.channels,
+                source=open(old_source.source, "rb").read(),
+            )
+            for old_source in self.sources
+        ]
+        return fastcopy(self, sources=memory_sources)
+
     def to_dict(self) -> dict:
         return asdict_nonull(self)
 

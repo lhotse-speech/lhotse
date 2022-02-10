@@ -983,6 +983,20 @@ class MonoCut(Cut):
         cut._audio_data = data
         return cut
 
+    def to_in_memory(self, format: str = "flac") -> "MonoCut":
+        """
+
+        """
+        # TODO features
+        # TODO arrays / temporal arrays
+        audio = torch.from_numpy(self.load_audio())
+        from io import BytesIO
+        stream = BytesIO()
+        import torchaudio
+        torchaudio.save(stream, audio, self.sampling_rate, format=format)
+        cut = self.with_memory_audio(stream.getvalue())
+        return cut
+
     def drop_features(self) -> "MonoCut":
         """Return a copy of the current :class:`.MonoCut`, detached from ``features``."""
         assert (
@@ -3168,6 +3182,12 @@ class CutSet(Serializable, Sequence[Cut]):
             )
 
         return CutSet.from_cuts(deserialize_one(cut) for cut in data)
+
+    @staticmethod
+    def from_webdataset(path: Pathlike) -> "CutSet":
+        from lhotse.dataset.webdataset import LazyWebdatasetIterator
+
+        return CutSet(cuts=LazyWebdatasetIterator(path))
 
     def to_dicts(self) -> Iterable[dict]:
         return (cut.to_dict() for cut in self)
