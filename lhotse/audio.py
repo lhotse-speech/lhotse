@@ -11,7 +11,7 @@ from io import BytesIO
 from itertools import islice
 from math import ceil, sqrt
 from pathlib import Path
-from subprocess import PIPE, CalledProcessError, run
+from subprocess import CalledProcessError, PIPE, run
 from typing import (
     Any,
     Callable,
@@ -32,10 +32,10 @@ from tqdm.auto import tqdm
 from lhotse.augmentation import (
     AudioTransform,
     Resample,
+    ReverbWithImpulseResponse,
     Speed,
     Tempo,
     Volume,
-    ReverbWithImpulseResponse,
 )
 from lhotse.caching import dynamic_lru_cache
 from lhotse.serialization import Serializable
@@ -54,6 +54,7 @@ from lhotse.utils import (
     index_by_id_and_check,
     perturb_num_samples,
     rich_exception_info,
+    split_manifest_lazy,
     split_sequence,
 )
 
@@ -657,13 +658,9 @@ class RecordingSet(Serializable, Sequence[Recording]):
         return self.recordings == other.recordings
 
     @property
-    def is_lazy(self) -> bool:
-        """
-        Indicates whether this manifest was opened in lazy (read-on-the-fly) mode or not.
-        """
-        from lhotse.serialization import LazyJsonlIterator
-
-        return isinstance(self.recordings, LazyJsonlIterator)
+    def data(self) -> Union[Dict[str, Recording], Iterable[Recording]]:
+        """Alias property for ``self.recordings``"""
+        return self.recordings
 
     @property
     def ids(self) -> Iterable[str]:
@@ -769,6 +766,25 @@ class RecordingSet(Serializable, Sequence[Recording]):
                 self, num_splits=num_splits, shuffle=shuffle, drop_last=drop_last
             )
         ]
+
+    def split_lazy(self, output_dir: Pathlike, chunk_size: int) -> List["RecordingSet"]:
+        """
+        Splits a manifest (either lazily or eagerly opened) into chunks, each
+        with ``chunk_size`` items (except for the last one, typically).
+
+        In order to be memory efficient, this implementation saves each chunk
+        to disk in a ``.jsonl.gz`` format as the input manifest is sampled.
+
+        .. note:: For lowest memory usage, use ``load_manifest_lazy`` to open the
+            input manifest for this method.
+
+        :param it: any iterable of Lhotse manifests.
+        :param output_dir: directory where the split manifests are saved.
+            Each manifest is saved at: ``{output_dir}/{split_idx}.jsonl.gz``
+        :param chunk_size: the number of items in each chunk.
+        :return: a list of lazily opened chunk manifests.
+        """
+        return split_manifest_lazy(self, output_dir=output_dir, chunk_size=chunk_size)
 
     def subset(
         self, first: Optional[int] = None, last: Optional[int] = None
@@ -970,16 +986,34 @@ class AudioMixer:
     The SNR is relative to the energy of the signal used to initialize the ``AudioMixer``.
     """
 
-    def __init__(self, base_audio: np.ndarray, sampling_rate: int):
+    def __init__(
+        self,
+        base_audio: np.ndarray,
+        sampling_rate: int,
+        reference_energy: Optional[float] = None,
+    ):
         """
+        AudioMixer's constructor.
+
         :param base_audio: A numpy array with the audio samples for the base signal
             (all the other signals will be mixed to it).
         :param sampling_rate: Sampling rate of the audio.
+        :param reference_energy: Optionally pass a reference energy value to compute SNRs against.
+            This might be required when ``base_audio`` corresponds to zero-padding.
         """
         self.tracks = [base_audio]
         self.sampling_rate = sampling_rate
-        self.reference_energy = audio_energy(base_audio)
         self.dtype = self.tracks[0].dtype
+
+        # Keep a pre-computed energy value of the audio that we initialize the Mixer with;
+        # it is required to compute gain ratios that satisfy SNR during the mix.
+        if reference_energy is None:
+            self.reference_energy = audio_energy(base_audio)
+        else:
+            self.reference_energy = reference_energy
+        assert (
+            self.reference_energy > 0.0
+        ), f"To perform mix, energy must be non-zero and non-negative (got {self.reference_energy})"
 
     @property
     def unmixed_audio(self) -> np.ndarray:
@@ -1012,6 +1046,9 @@ class AudioMixer:
         the start with low energy values.
         :return:
         """
+        if len(audio) == 0:
+            return  # do nothing for empty arrays
+
         assert audio.shape[0] == 1  # TODO: support multi-channels
         assert offset >= 0.0, "Negative offset in mixing is not supported."
 

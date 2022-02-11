@@ -29,8 +29,11 @@ class FeatureMixer:
         base_feats: np.ndarray,
         frame_shift: Seconds,
         padding_value: float = -1000.0,
+        reference_energy: Optional[float] = None,
     ):
         """
+        FeatureMixer's constructor.
+
         :param feature_extractor: The ``FeatureExtractor`` instance that specifies how to mix the features.
         :param base_feats: The features used to initialize the ``FeatureMixer`` are a point of reference
             in terms of energy and offset for all features mixed into them.
@@ -38,19 +41,25 @@ class FeatureMixer:
         :param padding_value: The value used to pad the shorter features during the mix.
             This value is adequate only for log space features. For non-log space features,
             e.g. energies, use either 0 or a small positive value like 1e-5.
+        :param reference_energy: Optionally pass a reference energy value to compute SNRs against.
+            This might be required when ``base_feats`` correspond to padding energies.
         """
         self.feature_extractor = feature_extractor
         self.tracks = [base_feats]
         self.gains = []
+        self.frame_shift = frame_shift
+        self.padding_value = padding_value
+        self.dtype = self.tracks[0].dtype
+
         # Keep a pre-computed energy value of the features that we initialize the Mixer with;
         # it is required to compute gain ratios that satisfy SNR during the mix.
-        self.frame_shift = frame_shift
-        self.reference_energy = feature_extractor.compute_energy(base_feats)
+        if reference_energy is None:
+            self.reference_energy = feature_extractor.compute_energy(base_feats)
+        else:
+            self.reference_energy = reference_energy
         assert (
             self.reference_energy > 0.0
         ), f"To perform mix, energy must be non-zero and non-negative (got {self.reference_energy})"
-        self.padding_value = padding_value
-        self.dtype = self.tracks[0].dtype
 
     @property
     def num_features(self):
@@ -93,6 +102,9 @@ class FeatureMixer:
         :param offset: How many seconds to shift ``feats`` in time. For mixing, the signal will be padded before
         the start with low energy values.
         """
+        if len(feats) == 0:
+            return  # do nothing for empty arrays
+
         assert offset >= 0.0, "Negative offset in mixing is not supported."
 
         reference_feats = self.tracks[0]

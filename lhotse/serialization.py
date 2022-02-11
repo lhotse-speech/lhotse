@@ -1,13 +1,14 @@
-import gzip
 import itertools
 import json
+import random
 import warnings
 from pathlib import Path
-from typing import Any, Dict, Generator, Iterable, Optional, Type, Union
+from typing import Any, Dict, Generator, Iterable, List, Optional, Type, Union
 
 import yaml
 
 from lhotse.utils import Pathlike, is_module_available
+from lhotse.workarounds import gzip_open_robust
 
 # TODO: figure out how to use some sort of typing stubs
 #  so that linters/static checkers don't complain
@@ -25,7 +26,7 @@ def open_best(path: Pathlike, mode: str = "r"):
         if compressed and "t" not in mode and "b" not in mode:
             # Opening as bytes not requested explicitly, use "t" to tell gzip to handle unicode.
             mode = mode + "t"
-        open_fn = gzip.open if compressed else open
+        open_fn = gzip_open_robust if compressed else open
 
     return open_fn(path, mode)
 
@@ -92,7 +93,7 @@ def load_jsonl(path: Pathlike) -> Generator[Dict[str, Any], None, None]:
     with open_best(path) as f:
         for line in f:
             # The temporary variable helps fail fast
-            ret = json.loads(line)
+            ret = decode_json_line(line)
             yield ret
 
 
@@ -145,7 +146,7 @@ class SequentialJsonlWriter:
             with open_best(self.path) as f:
                 self.ignore_ids = {
                     data["id"]
-                    for data in (json.loads(line) for line in f)
+                    for data in (decode_json_line(line) for line in f)
                     if "id" in data
                 }
 
@@ -299,6 +300,22 @@ class JsonlMixin:
 
 
 class LazyMixin:
+    @property
+    def data(self) -> Union[Dict[str, Any], Iterable[Any]]:
+        """
+        Property to be implemented by every sub-class of this mixin.
+        It can either be a regular Python dict holding manifests for eager mode,
+        or a special iterator class for lazy mode.
+        """
+        raise NotImplemented
+
+    @property
+    def is_lazy(self) -> bool:
+        """
+        Indicates whether this manifest was opened in lazy (read-on-the-fly) mode or not.
+        """
+        return not isinstance(self.data, (dict, list, tuple))
+
     @classmethod
     def from_jsonl_lazy(cls, path: Pathlike) -> Manifest:
         """
@@ -309,6 +326,26 @@ class LazyMixin:
             rely on random access to fail.
         """
         return cls(LazyJsonlIterator(path))
+
+    @classmethod
+    def mux(
+        cls,
+        *manifests: Manifest,
+        weights: Optional[List[Union[int, float]]] = None,
+        seed: int = 0,
+    ) -> Manifest:
+        """
+        Merges multiple CutSets into a new CutSet by lazily multiplexing them during iteration time.
+        If one of the CutSets is exhausted before the others, we will keep iterating until all CutSets
+        are exhausted.
+
+        :param cut_sets: cut sets to be multiplexed.
+            They can be either lazy or eager, but the resulting manifest will always be lazy.
+        :param weights: an optional weight for each CutSet, affects the probability of it being sampled.
+            The weights are uniform by default.
+        :param seed: the random seed, ensures deterministic order across multiple iterations.
+        """
+        return cls(LazyIteratorMultiplexer(*manifests, weights=weights, seed=seed))
 
 
 def grouper(n, iterable):
@@ -355,6 +392,8 @@ def load_manifest(path: Pathlike, manifest_cls: Optional[Type] = None) -> Manife
     for manifest_type in candidates:
         try:
             data_set = manifest_type.from_dicts(raw_data)
+            if len(data_set) == 0:
+                raise RuntimeError()
             break
         except Exception:
             pass
@@ -472,7 +511,7 @@ class LazyJsonlIterator:
 
     def __next__(self):
         line = next(self._file)
-        data = json.loads(line)
+        data = decode_json_line(line)
         item = deserialize_item(data)
         return item
 
@@ -510,6 +549,75 @@ class LazyIteratorChain:
 
     def __iter__(self):
         return (item for it in self.iterators for item in it)
+
+    def values(self):
+        yield from self
+
+    def keys(self):
+        return (item.id for item in self)
+
+    def items(self):
+        return ((item.id, item) for item in self)
+
+    def __len__(self) -> int:
+        return sum(len(it) for it in self.iterators)
+
+    def __add__(self, other) -> "LazyIteratorChain":
+        return LazyIteratorChain(self, other)
+
+
+class LazyIteratorMultiplexer:
+    """
+    A wrapper over multiple iterators that enables to combine lazy manifests in Lhotse.
+    During iteration, unlike :class:`.LazyIteratorChain`, :class:`.LazyIteratorMultiplexer`
+    at each step randomly selects the iterable used to yield an item.
+
+    Since the iterables might be of different length, we provide a ``weights`` parameter
+    to let the user decide which iterables should be sampled more frequently than others.
+    When an iterable is exhausted, we will keep sampling from the other iterables, until
+    we exhaust them all.
+    """
+
+    def __init__(
+        self,
+        *iterators: Iterable,
+        weights: Optional[List[Union[int, float]]] = None,
+        seed: int = 0,
+    ) -> None:
+        self.iterators = list(iterators)
+        self.seed = seed
+
+        assert (
+            len(self.iterators) > 1
+        ), "There have to be at least two iterables to multiplex."
+
+        if weights is None:
+            self.weights = [1] * len(self.iterators)
+        else:
+            self.weights = weights
+
+        assert len(self.iterators) == len(self.weights)
+
+    def __iter__(self):
+        rng = random.Random(self.seed)
+        iters = [iter(it) for it in self.iterators]
+        exhausted = [False for _ in range(len(iters))]
+        while not all(exhausted):
+            active_indexes, active_weights = zip(
+                *[
+                    (i, w)
+                    for i, (is_exhausted, w) in enumerate(zip(exhausted, self.weights))
+                    if not is_exhausted
+                ]
+            )
+            idx = rng.choices(active_indexes, weights=active_weights, k=1)[0]
+            selected = iters[idx]
+            try:
+                item = next(selected)
+                yield item
+            except StopIteration:
+                exhausted[idx] = True
+                continue
 
     def values(self):
         yield from self
@@ -604,3 +712,11 @@ def count_newlines_fast(path: Pathlike):
     with open_best(path, "rb") as f:
         count = sum(buf.count(b"\n") for buf in _make_gen(f.read))
     return count
+
+
+if is_module_available("orjson"):
+    import orjson
+
+    decode_json_line = orjson.loads
+else:
+    decode_json_line = json.loads

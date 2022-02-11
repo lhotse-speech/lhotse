@@ -1,11 +1,13 @@
+import random
 from math import isclose
 
 import pytest
 
-from lhotse.cut import MixTrack, MixedCut, MonoCut
+from lhotse import RecordingSet
+from lhotse.cut import CutSet, MixTrack, MixedCut, MonoCut
 from lhotse.features import Features
-from lhotse.supervision import SupervisionSegment
-from lhotse.testing.dummies import dummy_cut
+from lhotse.supervision import SupervisionSegment, SupervisionSet
+from lhotse.testing.dummies import DummyManifest, dummy_cut, dummy_recording
 
 
 @pytest.fixture
@@ -228,6 +230,40 @@ def test_truncate_cut_set_offset_random(cut_set):
     assert len(set(cut.end for cut in truncated_cut_set)) > 1
 
 
+@pytest.mark.parametrize("use_rng", [False, True])
+def test_truncate_cut_set_offset_random_rng(use_rng):
+    cuts1 = DummyManifest(CutSet, begin_id=0, end_id=30)
+    cuts2 = DummyManifest(CutSet, begin_id=0, end_id=30)
+
+    rng = None
+    state = None
+    if use_rng:
+        rng = random.Random(10)
+        state = rng.getstate()
+
+    trunc1 = cuts1.truncate(
+        max_duration=0.3, offset_type="random", rng=rng, preserve_id=True
+    )
+
+    if use_rng:
+        rng.setstate(state)
+
+    trunc2 = cuts2.truncate(
+        max_duration=0.3, offset_type="random", rng=rng, preserve_id=True
+    )
+
+    # IDs were not changed or changed identically.
+    assert list(trunc1.ids) == list(trunc2.ids)
+
+    # Offsets are identical with the use of RNG + state set/reset.
+    offsets1 = [c.start for c in trunc1]
+    offsets2 = [c.start for c in trunc2]
+    if use_rng:
+        assert offsets1 == offsets2
+    else:
+        assert offsets1 != offsets2
+
+
 @pytest.mark.parametrize("num_jobs", [1, 2])
 def test_cut_set_windows_even_split_keep_supervisions(cut_set, num_jobs):
     windows_cut_set = cut_set.cut_into_windows(duration=5.0, num_jobs=num_jobs)
@@ -253,3 +289,56 @@ def test_cut_set_windows_even_split_keep_supervisions(cut_set, num_jobs):
     assert len(cut4.supervisions) == 1
     assert cut4.supervisions[0].start == -2.0
     assert cut4.supervisions[0].duration == 2.5
+
+
+def test_known_issue_with_overlap():
+    r = dummy_recording(0)
+    rec = RecordingSet.from_recordings([r])
+
+    # Make two segments. The first segment is 1s long. The segment segment
+    # is 0.3 seconds long and lies entirely within the first. Both have the
+    # same recording_id as the single entry in rec.
+    sup = SupervisionSet.from_segments(
+        [
+            SupervisionSegment(
+                id="utt1",
+                recording_id=r.id,
+                start=0.0,
+                duration=1.0,
+                channel=0,
+                text="Hello",
+            ),
+            SupervisionSegment(
+                id="utt2",
+                recording_id=r.id,
+                start=0.2,
+                duration=0.5,
+                channel=0,
+                text="World",
+            ),
+        ]
+    )
+
+    cuts = CutSet.from_manifests(recordings=rec, supervisions=sup)
+    assert len(cuts) == 1
+
+    cuts_trim = cuts.trim_to_supervisions(keep_overlapping=False)
+    assert len(cuts_trim) == 2
+
+    cut = cuts_trim[0]
+    assert cut.start == 0
+    assert cut.duration == 1
+    assert len(cut.supervisions) == 1
+    sup = cut.supervisions[0]
+    assert sup.start == 0
+    assert sup.duration == 1
+    assert sup.text == "Hello"
+
+    cut = cuts_trim[1]
+    assert cut.start == 0.2
+    assert cut.duration == 0.5
+    assert len(cut.supervisions) == 1
+    sup = cut.supervisions[0]
+    assert sup.start == 0
+    assert sup.duration == 0.5
+    assert sup.text == "World"

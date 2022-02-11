@@ -23,7 +23,7 @@ data (as a part of this corpora) can be found in, for example, NIST RT04 amd RT0
 This recipe, however, to be self-contained factors out training (67.5 hours), development (2.2 hours 
 and evaluation (2.8 hours) sets in a way to minimise the speaker-overlap between different partitions, 
 and to avoid known issues with available recordings during evaluation. This recipe follows [2] where 
-dev and eval sets are making use of {Bmr021, Bns00} and {Bmr013, Bmr018, Bro021} meetings, respectively.
+dev and eval sets are making use of {Bmr021, Bns001} and {Bmr013, Bmr018, Bro021} meetings, respectively.
 
 [2] S Renals and P Swietojanski, Neural networks for distant speech recognition. 
     in Proc IEEE HSCMA 2014 pp. 172-176. DOI:10.1109/HSCMA.2014.6843274
@@ -107,6 +107,7 @@ from lhotse import validate_recordings_and_supervisions
 from lhotse.audio import AudioSource, Recording, RecordingSet, read_sph
 from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import Pathlike, Seconds, urlretrieve_progress
+from lhotse.recipes.ami import normalize_text
 
 # fmt:off
 PARTITIONS = {
@@ -126,9 +127,9 @@ PARTITIONS = {
 }
 
 MIC_TO_CHANNELS = {
-    "ihm": [1, 2, 3, 4, 5, 6, 8, 9], # we include 6 since it is used as back-off from some speakers for which no headset-mic exists
-    "sdm": [6],
-    "mdm": ["E", "F", 6, 7],
+    "ihm": ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "A", "B"], 
+    "sdm": ["6"],
+    "mdm": ["E", "F", "6", "7"],
     "ihm-mix": [],
 }
 # fmt:on
@@ -224,7 +225,7 @@ def download_icsi(
 
 
 def parse_icsi_annotations(
-    transcripts_dir: Pathlike, normalize_text: bool = True
+    transcripts_dir: Pathlike, normalize: str = "upper"
 ) -> Tuple[Dict[str, List[SupervisionSegment]], Dict[str, Dict[str, int]]]:
 
     annotations = defaultdict(list)
@@ -267,10 +268,8 @@ def parse_icsi_annotations(
                             end_time = float(segment.attrib["EndTime"])
                             speaker = segment.attrib["Participant"]
                             channel = spk_to_channel_map[meeting_id][speaker]
-                            text = (
-                                segment.text.strip().upper()
-                                if normalize_text
-                                else segment.text.strip()
+                            text = normalize_text(
+                                segment.text.strip(), normalize=normalize
                             )
                             annotations[(meeting_id, speaker, channel)].append(
                                 IcsiSegmentAnnotation(
@@ -443,8 +442,9 @@ def prepare_supervision_other(
         if len(source.channels) > 1:
             logging.warning(
                 f"More than 1 channels in recording {recording.id}. "
-                f"Creating supervision for channel 0 only."
+                f"Skipping this recording."
             )
+            continue
 
         for seg_idx, seg_info in enumerate(annotation):
             duration = seg_info.end_time - seg_info.start_time
@@ -470,7 +470,7 @@ def prepare_icsi(
     transcripts_dir: Optional[Pathlike] = None,
     output_dir: Optional[Pathlike] = None,
     mic: Optional[str] = "ihm",
-    normalize_text: bool = True,
+    normalize_text: str = "kaldi",
 ) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet]]]:
     """
     Returns the manifests which consist of the Recordings and Supervisions
@@ -478,7 +478,7 @@ def prepare_icsi(
     :param transcripts_dir: Pathlike, the path of the transcripts dir (LDC2004T04).
     :param output_dir: Pathlike, the path where to write the manifests.
     :param mic: str {'ihm','ihm-mix','sdm','mdm'}, type of mic to use.
-    :param normalize_text: bool, whether to normalize text to uppercase
+    :param normalize_text: str {'none', 'upper', 'kaldi'} normalization of text
     :return: a Dict whose key is ('train', 'dev', 'test'), and the values are dicts of manifests under keys
         'recordings' and 'supervisions'.
     """
@@ -494,7 +494,7 @@ def prepare_icsi(
 
     logging.info("Parsing ICSI transcripts")
     annotations, channel_to_idx_map = parse_icsi_annotations(
-        transcripts_dir, normalize_text
+        transcripts_dir, normalize=normalize_text
     )
 
     # Audio

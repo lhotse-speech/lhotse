@@ -21,6 +21,7 @@ from lhotse.utils import (
     Seconds,
     TimeSpan,
     asdict_nonull,
+    check_and_rglob,
     compute_num_samples,
     exactly_one_not_null,
     fastcopy,
@@ -28,6 +29,7 @@ from lhotse.utils import (
     index_by_id_and_check,
     overspans,
     perturb_num_samples,
+    split_manifest_lazy,
     split_sequence,
 )
 
@@ -487,13 +489,11 @@ class SupervisionSet(Serializable, Sequence[SupervisionSegment]):
         return self.segments == other.segments
 
     @property
-    def is_lazy(self) -> bool:
-        """
-        Indicates whether this manifest was opened in lazy (read-on-the-fly) mode or not.
-        """
-        from lhotse.serialization import LazyJsonlIterator
-
-        return isinstance(self.segments, LazyJsonlIterator)
+    def data(
+        self,
+    ) -> Union[Dict[str, SupervisionSegment], Iterable[SupervisionSegment]]:
+        """Alias property for ``self.segments``"""
+        return self.segments
 
     @property
     def ids(self) -> Iterable[str]:
@@ -510,6 +510,70 @@ class SupervisionSet(Serializable, Sequence[SupervisionSegment]):
         return SupervisionSet.from_segments(
             SupervisionSegment.from_dict(s) for s in data
         )
+
+    @staticmethod
+    def from_rttm(path: Union[Pathlike, Iterable[Pathlike]]) -> "SupervisionSet":
+        """
+        Read an RTTM file located at ``path`` (or an iterator) and create a :class:`.SupervisionSet` manifest for them.
+        Can be used to create supervisions from custom RTTM files (see, for example, :class:`lhotse.dataset.DiarizationDataset`).
+
+        .. code:: python
+
+            >>> from lhotse import SupervisionSet
+            >>> sup1 = SupervisionSet.from_rttm('/path/to/rttm_file')
+            >>> sup2 = SupervisionSet.from_rttm(Path('/path/to/rttm_dir').rglob('ref_*'))
+
+        The following description is taken from the [dscore](https://github.com/nryant/dscore#rttm) toolkit:
+
+        Rich Transcription Time Marked (RTTM) files are space-delimited text files
+        containing one turn per line, each line containing ten fields:
+
+        - ``Type``  --  segment type; should always by ``SPEAKER``
+        - ``File ID``  --  file name; basename of the recording minus extension (e.g.,
+        ``rec1_a``)
+        - ``Channel ID``  --  channel (1-indexed) that turn is on; should always be
+        ``1``
+        - ``Turn Onset``  --  onset of turn in seconds from beginning of recording
+        - ``Turn Duration``  -- duration of turn in seconds
+        - ``Orthography Field`` --  should always by ``<NA>``
+        - ``Speaker Type``  --  should always be ``<NA>``
+        - ``Speaker Name``  --  name of speaker of turn; should be unique within scope
+        of each file
+        - ``Confidence Score``  --  system confidence (probability) that information
+        is correct; should always be ``<NA>``
+        - ``Signal Lookahead Time``  --  should always be ``<NA>``
+
+        For instance:
+
+            SPEAKER CMU_20020319-1400_d01_NONE 1 130.430000 2.350 <NA> <NA> juliet <NA> <NA>
+            SPEAKER CMU_20020319-1400_d01_NONE 1 157.610000 3.060 <NA> <NA> tbc <NA> <NA>
+            SPEAKER CMU_20020319-1400_d01_NONE 1 130.490000 0.450 <NA> <NA> chek <NA> <NA>
+
+        :param path: Path to RTTM file or an iterator of paths to RTTM files.
+        :return: a new ``SupervisionSet`` instance containing segments from the RTTM file.
+        """
+        from pathlib import Path
+
+        path = [path] if isinstance(path, (Path, str)) else path
+
+        segments = []
+        for file in path:
+            with open(file, "r") as f:
+                for idx, line in enumerate(f):
+                    parts = line.strip().split()
+                    assert len(parts) == 10, f"Invalid RTTM line in file {file}: {line}"
+                    recording_id = parts[1]
+                    segments.append(
+                        SupervisionSegment(
+                            id=f"{recording_id}-{idx:06d}",
+                            recording_id=recording_id,
+                            channel=int(parts[2]),
+                            start=float(parts[3]),
+                            duration=float(parts[4]),
+                            speaker=parts[7],
+                        )
+                    )
+        return SupervisionSet.from_segments(segments)
 
     def with_alignment_from_ctm(
         self, ctm_file: Pathlike, type: str = "word", match_channel: bool = False
@@ -606,6 +670,27 @@ class SupervisionSet(Serializable, Sequence[SupervisionSegment]):
                 self, num_splits=num_splits, shuffle=shuffle, drop_last=drop_last
             )
         ]
+
+    def split_lazy(
+        self, output_dir: Pathlike, chunk_size: int
+    ) -> List["SupervisionSet"]:
+        """
+        Splits a manifest (either lazily or eagerly opened) into chunks, each
+        with ``chunk_size`` items (except for the last one, typically).
+
+        In order to be memory efficient, this implementation saves each chunk
+        to disk in a ``.jsonl.gz`` format as the input manifest is sampled.
+
+        .. note:: For lowest memory usage, use ``load_manifest_lazy`` to open the
+            input manifest for this method.
+
+        :param it: any iterable of Lhotse manifests.
+        :param output_dir: directory where the split manifests are saved.
+            Each manifest is saved at: ``{output_dir}/{split_idx}.jsonl.gz``
+        :param chunk_size: the number of items in each chunk.
+        :return: a list of lazily opened chunk manifests.
+        """
+        return split_manifest_lazy(self, output_dir=output_dir, chunk_size=chunk_size)
 
     def subset(
         self, first: Optional[int] = None, last: Optional[int] = None
