@@ -7,7 +7,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from decimal import ROUND_HALF_UP
 from functools import lru_cache, partial
-from io import BytesIO
+from io import BytesIO, IOBase
 from itertools import islice
 from math import ceil, sqrt
 from pathlib import Path
@@ -1325,19 +1325,6 @@ def torchaudio_load(
     import torch
     import torchaudio
 
-    if not isinstance(path_or_fd, (str, Path)):
-        # Special case: we are likely dealing with a file descriptor (open file).
-        # If we run torchaudio.info() on it, it will consume some data,
-        # which will cause torchaudio.load() to fail.
-        # We expect offset and duration have default values, otherwise we fail.
-        assert offset == 0 and duration is None, (
-            "Lhotse doesn't support using torchaudio.load() "
-            "with open file objects when offset or duration "
-            "arguments are non-default."
-        )
-        audio, sampling_rate = torchaudio.load(path_or_fd)
-        return audio.numpy(), sampling_rate
-
     # Need to grab the "info" about sampling rate before reading to compute
     # the number of samples provided in offset / num_frames.
     audio_info = torchaudio_info(path_or_fd)
@@ -1347,6 +1334,10 @@ def torchaudio_load(
         frame_offset = compute_num_samples(offset, audio_info.samplerate)
     if duration is not None:
         num_frames = compute_num_samples(duration, audio_info.samplerate)
+    if isinstance(path_or_fd, IOBase):
+        # Set seek pointer to the beginning of the file as torchaudio.info
+        # might have left it at the end of the header
+        path_or_fd.seek(0)
     audio, sampling_rate = torchaudio.load(
         path_or_fd,
         frame_offset=frame_offset,
