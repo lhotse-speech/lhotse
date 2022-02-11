@@ -260,7 +260,9 @@ def collate_custom_field(
 
         # Instead, we're going to load everything and pad to the longest sequence.
         arrs = [torch.from_numpy(c.load_custom(field)) for c in cuts]
-        arr_lens = torch.tensor([a.shape[temporal_dim] for a in arrs], dtype=torch.int32)
+        arr_lens = torch.tensor(
+            [a.shape[temporal_dim] for a in arrs], dtype=torch.int32
+        )
         largest_arr = max(arrs, key=torch.numel)
         maxlen = largest_arr.shape[temporal_dim]
         collated_shape = (len(arrs), *largest_arr.shape)

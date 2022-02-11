@@ -238,7 +238,9 @@ def test_collate_custom_temporal_array_ints_with_truncate(pad_value):
             )
 
         cuts = cuts.truncate(max_duration=1, offset_type="start")
-        max_num_frames = max(seconds_to_frames(cut.duration, FRAME_SHIFT) for cut in cuts)
+        max_num_frames = max(
+            seconds_to_frames(cut.duration, FRAME_SHIFT) for cut in cuts
+        )
 
         codebook_indices, codebook_indices_lens = collate_custom_field(
             cuts, "codebook_indices", pad_value=pad_value
@@ -256,7 +258,9 @@ def test_collate_custom_temporal_array_ints_with_truncate(pad_value):
         assert codebook_indices.shape == (len(cuts), max_num_frames)
         for idx, cbidxs in enumerate(expected_codebook_indices):
             # PyTorch < 1.9.0 doesn't have an assert_equal function.
-            np.testing.assert_equal(codebook_indices[idx, :max_num_frames].numpy(), cbidxs[:max_num_frames])
+            np.testing.assert_equal(
+                codebook_indices[idx, :max_num_frames].numpy(), cbidxs[:max_num_frames]
+            )
 
 
 @pytest.mark.parametrize(
