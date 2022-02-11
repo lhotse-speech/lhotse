@@ -13,6 +13,7 @@ from lhotse.dataset import (
     SingleCutSampler,
     ZipSampler,
 )
+from lhotse.dataset.sampling.dynamic import DynamicCutSampler
 from lhotse.testing.dummies import DummyManifest
 
 CUTS = DummyManifest(CutSet, begin_id=0, end_id=100)
@@ -72,6 +73,11 @@ SAMPLERS_TO_TEST = [
         DynamicBucketingSampler(CUTS, max_duration=10.0, shuffle=True, drop_last=True, num_buckets=2),
         DynamicBucketingSampler(CUTS, max_duration=10.0, num_buckets=2),
         marks=pytest.mark.xfail(reason='DynamicBucketingSampler does not support resumption yet.')
+    ),
+    pytest.param(
+        DynamicCutSampler(CUTS, max_duration=10.0, shuffle=True, drop_last=True),
+        DynamicCutSampler(CUTS, max_duration=10.0),
+        marks=pytest.mark.xfail(reason='DynamicCutSampler does not support resumption yet.')
     )
 ]
 # fmt: on
