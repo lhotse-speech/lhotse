@@ -985,22 +985,25 @@ class MonoCut(Cut):
         When :meth:`.MonoCut.load_audio` is called, this data will be read instead of
         calling :meth:`Recording.load_audio` on the underlying ``recording``.
         """
-        cut = fastcopy(self, custom=self.custom.copy() if self.custom is not None else {})
+        cut = fastcopy(
+            self, custom=self.custom.copy() if self.custom is not None else {}
+        )
         cut._audio_data = data
         return cut
 
-    def to_in_memory(self, format: str = "flac") -> "MonoCut":
-        """
-
-        """
+    def move_to_memory(self, format: str = "flac") -> "MonoCut":
+        """ """
         # TODO features
         # TODO arrays / temporal arrays
-        audio = torch.from_numpy(self.load_audio())
-        from io import BytesIO
-        stream = BytesIO()
-        import torchaudio
-        torchaudio.save(stream, audio, self.sampling_rate, format=format)
-        cut = self.with_memory_audio(stream.getvalue())
+        cut = fastcopy(
+            self,
+            recording=self.recording.move_to_memory(
+                channels=self.channel,
+                offset=self.start,
+                duration=self.duration,
+                format=format,
+            ),
+        )
         return cut
 
     def drop_features(self) -> "MonoCut":

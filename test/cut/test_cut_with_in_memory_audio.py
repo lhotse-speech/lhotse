@@ -26,7 +26,7 @@ def test_cut_to_in_memory():
     cut = dummy_cut(0, duration=0.5).drop_recording()
     cut.recording = Recording.from_file(path)
 
-    memory_cut = cut.to_in_memory()
+    memory_cut = cut.move_to_memory()
 
     np.testing.assert_equal(
         memory_cut.load_audio(), cut.load_audio()

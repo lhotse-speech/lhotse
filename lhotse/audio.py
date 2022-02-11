@@ -27,6 +27,7 @@ from typing import (
 )
 
 import numpy as np
+import torch
 from tqdm.auto import tqdm
 
 from lhotse.augmentation import (
@@ -360,8 +361,8 @@ class Recording:
 
     @staticmethod
     def from_bytes(
-            data: bytes,
-            recording_id: str,
+        data: bytes,
+        recording_id: str,
     ) -> "Recording":
         """
         Like :meth:`.Recording.from_file`, but creates a manifest for a byte string with
@@ -397,21 +398,62 @@ class Recording:
             ],
         )
 
-    def to_in_memory(self) -> "Recording":
+    def move_to_memory(
+        self,
+        channels: Optional[Channels] = None,
+        offset: Seconds = None,
+        duration: Optional[Seconds] = None,
+        format: Optional[str] = None,
+    ) -> "Recording":
         """
-        Read audio data (without decoding) and return a copy of the manifest
-        with that data attached.
+        Read audio data and return a copy of the manifest with binary data attached.
         Calling :meth:`.Recording.load_audio` on that copy will not trigger I/O.
+
+        If all arguments are left as defaults, we won't decode the audio and attach
+        the bytes we read from disk/other source as-is.
+        If ``channels``, ``duration``, or ``offset`` are specified, we'll decode the
+        audio and re-encode it into ``format`` before attaching.
+        The default format is FLAC, other formats compatible with torchaudio.save are
+        also accepted.
         """
-        memory_sources = [
-            AudioSource(
-                type="memory",
-                channels=old_source.channels,
-                source=open(old_source.source, "rb").read(),
-            )
-            for old_source in self.sources
-        ]
-        return fastcopy(self, sources=memory_sources)
+
+        # Case #1: no opts specified, read audio without decoding and move it in memory.
+        if all(opt is None for opt in (channels, offset, duration)):
+            memory_sources = [
+                AudioSource(
+                    type="memory",
+                    channels=old_source.channels,
+                    source=open(old_source.source, "rb").read(),
+                )
+                for old_source in self.sources
+            ]
+            return fastcopy(self, sources=memory_sources)
+
+        # Case #2: user specified some subset of the recording, decode audio,
+        #          subset it, and encode it again but save in memory.
+        import torchaudio
+
+        audio = self.load_audio(
+            channels=channels, offset=ifnone(offset, 0), duration=duration
+        )
+        stream = BytesIO()
+        torchaudio.save(stream, torch.from_numpy(audio), self.sampling_rate, format=format)
+        channels = ifnone(channels, self.channel_ids),
+        if isinstance(channels, int):
+            channels = [channels]
+        return Recording(
+            id=self.id,
+            sources=[
+                AudioSource(
+                    type="memory",
+                    channels=channels,
+                    source=stream.getvalue(),
+                )
+            ],
+            sampling_rate=self.sampling_rate,
+            num_samples=audio.shape[1],
+            duration=ifnone(duration, self.duration),
+        )
 
     def to_dict(self) -> dict:
         return asdict_nonull(self)
