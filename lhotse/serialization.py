@@ -392,6 +392,8 @@ def load_manifest(path: Pathlike, manifest_cls: Optional[Type] = None) -> Manife
     for manifest_type in candidates:
         try:
             data_set = manifest_type.from_dicts(raw_data)
+            if len(data_set) == 0:
+                raise RuntimeError()
             break
         except Exception:
             pass
