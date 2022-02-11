@@ -161,6 +161,7 @@ class Cut:
 
         >>> cut_2_to_4s = cut.truncate(offset=2, duration=2)
         >>> cut_padded = cut.pad(duration=10.0)
+        >>> cut_extended = cut.extend_by(duration=5.0, direction='both')
         >>> cut_mixed = cut.mix(other_cut, offset_other_by=5.0, snr=20)
         >>> cut_append = cut.append(other_cut)
         >>> cut_24k = cut.resample(24000)
@@ -226,6 +227,7 @@ class Cut:
     drop_supervisions: Callable
     truncate: Callable
     pad: Callable
+    extend_by: Callable
     resample: Callable
     perturb_speed: Callable
     perturb_tempo: Callable
@@ -680,23 +682,27 @@ class Cut:
                 and use_alignment_if_exists in supervision.alignment
             ):
                 for ali in supervision.alignment[use_alignment_if_exists]:
-                    st = round(ali.start * self.sampling_rate) if ali.start > 0 else 0
+                    st = (
+                        compute_num_samples(ali.start, self.sampling_rate)
+                        if ali.start > 0
+                        else 0
+                    )
                     et = (
-                        round(ali.end * self.sampling_rate)
+                        compute_num_samples(ali.end, self.sampling_rate)
                         if ali.end < self.duration
-                        else self.duration * self.sampling_rate
+                        else compute_num_samples(self.duration, self.sampling_rate)
                     )
                     mask[speaker_idx, st:et] = 1
             else:
                 st = (
-                    round(supervision.start * self.sampling_rate)
+                    compute_num_samples(supervision.start, self.sampling_rate)
                     if supervision.start > 0
                     else 0
                 )
                 et = (
-                    round(supervision.end * self.sampling_rate)
+                    compute_num_samples(supervision.end, self.sampling_rate)
                     if supervision.end < self.duration
-                    else self.duration * self.sampling_rate
+                    else compute_num_samples(self.duration, self.sampling_rate)
                 )
                 mask[speaker_idx, st:et] = 1
         return mask
@@ -1110,6 +1116,10 @@ class MonoCut(Cut):
         it's only during the call to :meth:`MonoCut.load_features` / :meth:`MonoCut.load_audio`
         when the actual changes happen (a subset of features/audio is loaded).
 
+        .. hint::
+
+            To extend a cut by a fixed duration, use the :meth:`MonoCut.extend_by` method.
+
         :param offset: float (seconds), controls the start of the new cut relative to the current MonoCut's start.
             E.g., if the current MonoCut starts at 10.0, and offset is 2.0, the new start is 12.0.
         :param duration: optional float (seconds), controls the duration of the resulting MonoCut.
@@ -1121,9 +1131,6 @@ class MonoCut(Cut):
             large number of supervisions. Intended as an internal parameter.
         :return: a new MonoCut instance. If the current MonoCut is shorter than the duration, return None.
         """
-        # Note: technically, truncate's code can be used for "expanding" the cut as well:
-        #       In that case, we must ensure that the start of MonoCut is not before the start
-        #       of the actual Recording, hence max(..., 0).
         assert (
             offset >= 0
         ), f"Offset for truncate must be non-negative (provided {offset})."
@@ -1181,6 +1188,109 @@ class MonoCut(Cut):
             start=new_start,
             duration=new_duration,
             supervisions=sorted(supervisions, key=lambda s: s.start),
+        )
+
+    def extend_by(
+        self,
+        *,
+        duration: Seconds,
+        direction: str = "both",
+        preserve_id: bool = False,
+    ) -> "MonoCut":
+        """
+        Returns a new MonoCut that is an extended region of the current MonoCut by extending
+        the cut by a fixed duration in the specified direction.
+
+        Note that no operation is done on the actual features or recording -
+        it's only during the call to :meth:`MonoCut.load_features` / :meth:`MonoCut.load_audio`
+        when the actual changes happen (an extended version of features/audio is loaded).
+
+        .. hint::
+
+            This method extends a cut by a given duration, either to the left or to the right (or both), using
+            the "real" content of the recording that the cut is part of. For example, a MonoCut spanning
+            the region from 2s to 5s in a recording, when extended by 2s to the right, will now span
+            the region from 2s to 7s in the same recording (provided the recording length exceeds 7s).
+            If the recording is shorter, the cut will only be extended up to the duration of the recording.
+            To "expand" a cut by padding, use :meth:`MonoCut.pad`. To "truncate" a cut, use :meth:`MonoCut.truncate`.
+
+        .. hint::
+
+            If `direction` is "both", the resulting cut will be extended by the specified duration in
+            both directions. This is different from the usage in :meth:`MonoCut.pad` where a padding
+            equal to 0.5*duration is added to both sides.
+
+        :param duration: float (seconds), specifies the duration by which the cut should be extended.
+        :param direction: string, 'left', 'right' or 'both'. Determines whether to extend on the left,
+            right, or both sides. If 'both', extend on both sides by the duration specified in `duration`.
+        :param preserve_id: bool. Should the extended cut keep the same ID or get a new, random one.
+        :return: a new MonoCut instance.
+        """
+        from lhotse.array import TemporalArray
+
+        assert duration >= 0, f"Duration must be non-negative (provided {duration})."
+
+        new_start, new_end = self.start, self.end
+        if direction == "left" or direction == "both":
+            new_start = max(self.start - duration, 0)
+        if direction == "right" or direction == "both":
+            new_end = min(self.end + duration, self.recording.duration)
+
+        new_duration = new_end - new_start
+        # Round the duration to avoid the possible loss of a single audio sample due to floating point
+        # additions and subtractions.
+        new_duration = round(new_duration, ndigits=8)
+
+        new_supervisions = (
+            segment.with_offset(self.start - new_start) for segment in self.supervisions
+        )
+
+        def _this_exceeds_duration(attribute: Union[Features, TemporalArray]) -> bool:
+            # We compare in terms of frames, not seconds, to avoid rounding errors.
+            # We also allow a tolerance of 1 frame on either side.
+            new_start_frames = compute_num_frames(
+                new_start, attribute.frame_shift, self.sampling_rate
+            )
+            new_end_frames = compute_num_frames(
+                new_end, attribute.frame_shift, self.sampling_rate
+            )
+            attribute_start = compute_num_frames(
+                attribute.start, attribute.frame_shift, self.sampling_rate
+            )
+            attribute_end = attribute_start + attribute.num_frames
+            return (new_start_frames < attribute_start - 1) or (
+                new_end_frames > attribute_end + 1
+            )
+
+        feature_kwargs = {}
+        if self.has_features:
+            if _this_exceeds_duration(self.features):
+                logging.warning(
+                    "Attempting to extend a MonoCut that exceeds the range of pre-computed features. "
+                    "The feature manifest will be detached."
+                )
+                feature_kwargs["features"] = None
+
+        custom_kwargs = {}
+        if self.custom is not None:
+            for name, array in self.custom.items():
+                custom_kwargs[name] = array
+                if isinstance(array, TemporalArray):
+                    if _this_exceeds_duration(array):
+                        logging.warning(
+                            f"Attempting to extend a MonoCut that exceeds the range of pre-computed custom data '{name}'. "
+                            "The custom data will be detached."
+                        )
+                        custom_kwargs[name] = None
+
+        return fastcopy(
+            self,
+            id=self.id if preserve_id else str(uuid4()),
+            start=new_start,
+            duration=new_duration,
+            supervisions=sorted(new_supervisions, key=lambda s: s.start),
+            **feature_kwargs,
+            custom=custom_kwargs,
         )
 
     def pad(
@@ -1608,6 +1718,48 @@ class PaddingCut(Cut):
         **kwargs,
     ) -> "PaddingCut":
         new_duration = self.duration - offset if duration is None else duration
+        assert new_duration > 0.0
+        return fastcopy(
+            self,
+            id=self.id if preserve_id else str(uuid4()),
+            duration=new_duration,
+            feat_value=self.feat_value,
+            num_frames=compute_num_frames(
+                duration=new_duration,
+                frame_shift=self.frame_shift,
+                sampling_rate=self.sampling_rate,
+            )
+            if self.num_frames is not None
+            else None,
+            num_samples=compute_num_samples(
+                duration=new_duration, sampling_rate=self.sampling_rate
+            )
+            if self.num_samples is not None
+            else None,
+        )
+
+    # noinspection PyUnusedLocal
+    def extend_by(
+        self,
+        *,
+        duration: Seconds,
+        direction: str = "both",
+        preserve_id: bool = False,
+    ) -> "PaddingCut":
+        """
+        Return a new PaddingCut with region extended by the specified duration.
+
+        :param duration: The duration by which to extend the cut.
+        :param direction: string, 'left', 'right' or 'both'. Determines whether the cut should
+            be extended to the left, right or both sides. By default, the cut is extended by
+            the specified duration on both sides.
+        :param preserve_id: When ``True``, preserves the cut ID from before padding.
+            Otherwise, generates a new random ID (default).
+        :return: an extended PaddingCut.
+        """
+        new_duration = self.duration + duration
+        if direction == "both":
+            new_duration += duration
         assert new_duration > 0.0
         return fastcopy(
             self,
@@ -2219,6 +2371,24 @@ class MixedCut(Cut):
             )
 
         return new_cut
+
+    def extend_by(
+        self,
+        *,
+        duration: Seconds,
+        direction: str = "both",
+        preserve_id: bool = False,
+    ) -> "MixedCut":
+        """
+        This raises a ValueError since extending a MixedCut is not defined.
+
+        :param duration: float (seconds), duration (in seconds) to extend the MixedCut.
+        :param direction: string, 'left', 'right' or 'both'. Determines whether to extend on the left,
+            right, or both sides. If 'both', extend on both sides by the duration specified in `duration`.
+        :param preserve_id: bool. Should the extended cut keep the same ID or get a new, random one.
+        :return: a new MixedCut instance.
+        """
+        raise ValueError("The extend_by() method is not defined for a MixedCut.")
 
     def pad(
         self,
@@ -3084,13 +3254,9 @@ class CutSet(Serializable, Sequence[Cut]):
         return self.cuts == other.cuts
 
     @property
-    def is_lazy(self) -> bool:
-        """
-        Indicates whether this manifest was opened in lazy (read-on-the-fly) mode or not.
-        """
-        from lhotse.serialization import LazyJsonlIterator
-
-        return isinstance(self.cuts, LazyJsonlIterator)
+    def data(self) -> Union[Dict[str, Cut], Iterable[Cut]]:
+        """Alias property for ``self.cuts``"""
+        return self.cuts
 
     @property
     def mixed_cuts(self) -> Dict[str, MixedCut]:
@@ -3739,6 +3905,28 @@ class CutSet(Serializable, Sequence[Cut]):
                 )
             )
         return CutSet.from_cuts(truncated_cuts)
+
+    def extend_by(
+        self,
+        duration: Seconds,
+        direction: str = "both",
+        preserve_id: bool = False,
+    ) -> "CutSet":
+        """
+        Returns a new CutSet with cuts extended by `duration` amount.
+
+        :param duration: float (seconds), specifies the duration by which the CutSet is extended.
+        :param direction: string, 'left', 'right' or 'both'. Determines whether to extend on the left,
+            right, or both sides. If 'both', extend on both sides by the same duration (equal to `duration`).
+        :param preserve_id: bool. Should the extended cut keep the same ID or get a new, random one.
+        :return: a new CutSet instance.
+        """
+        return CutSet.from_cuts(
+            cut.extend_by(
+                duration=duration, direction=direction, preserve_id=preserve_id
+            )
+            for cut in self
+        )
 
     def cut_into_windows(
         self,
@@ -4673,28 +4861,6 @@ class CutSet(Serializable, Sequence[Cut]):
             f"Failed check: {len(merged)} == {len(self.cuts)} + {len(other.cuts)}"
         )
         return CutSet(cuts=merged)
-
-    @classmethod
-    def mux(
-        cls,
-        *cut_sets: "CutSet",
-        weights: Optional[List[Union[int, float]]] = None,
-        seed: int = 0,
-    ) -> "CutSet":
-        """
-        Merges multiple CutSets into a new CutSet by lazily multiplexing them during iteration time.
-        If one of the CutSets is exhausted before the others, we will keep iterating until all CutSets
-        are exhausted.
-
-        :param cut_sets: cut sets to be multiplexed.
-            They can be either lazy or eager, but the resulting manifest will always be lazy.
-        :param weights: an optional weight for each CutSet, affects the probability of it being sampled.
-            The weights are uniform by default.
-        :param seed: the random seed, ensures deterministic order across multiple iterations.
-        """
-        from lhotse.serialization import LazyIteratorMultiplexer
-
-        return cls(cuts=LazyIteratorMultiplexer(*cut_sets, weights=weights, seed=seed))
 
 
 def make_windowed_cuts_from_features(
