@@ -213,6 +213,53 @@ def test_collate_custom_temporal_array_ints(pad_value):
 
 
 @pytest.mark.parametrize(
+    "pad_value",
+    [-100, None],  # None means user forgot to specify pad_value
+)
+def test_collate_custom_temporal_array_ints_with_truncate(pad_value):
+    CODEBOOK_SIZE = 512
+    FRAME_SHIFT = 0.04
+
+    cuts = CutSet.from_json("test/fixtures/ljspeech/cuts.json")
+
+    with NamedTemporaryFile(suffix=".h5") as f, NumpyHdf5Writer(f.name) as writer:
+        expected_codebook_indices = []
+        for cut in cuts:
+            expected_codebook_indices.append(
+                np.random.randint(
+                    CODEBOOK_SIZE, size=(seconds_to_frames(cut.duration, FRAME_SHIFT),)
+                ).astype(np.int16)
+            )
+            cut.codebook_indices = writer.store_array(
+                cut.id,
+                expected_codebook_indices[-1],
+                frame_shift=FRAME_SHIFT,
+                temporal_dim=0,
+            )
+
+        cuts = cuts.truncate(max_duration=1, offset_type="start")
+        max_num_frames = max(seconds_to_frames(cut.duration, FRAME_SHIFT) for cut in cuts)
+
+        codebook_indices, codebook_indices_lens = collate_custom_field(
+            cuts, "codebook_indices", pad_value=pad_value
+        )
+
+        assert isinstance(codebook_indices_lens, torch.Tensor)
+        assert codebook_indices_lens.dtype == torch.int32
+        assert codebook_indices_lens.shape == (len(cuts),)
+        assert codebook_indices_lens.tolist() == [
+            seconds_to_frames(c.duration, FRAME_SHIFT) for c in cuts
+        ]
+
+        assert isinstance(codebook_indices, torch.Tensor)
+        assert codebook_indices.dtype == torch.int64
+        assert codebook_indices.shape == (len(cuts), max_num_frames)
+        for idx, cbidxs in enumerate(expected_codebook_indices):
+            # PyTorch < 1.9.0 doesn't have an assert_equal function.
+            np.testing.assert_equal(codebook_indices[idx, :max_num_frames].numpy(), cbidxs[:max_num_frames])
+
+
+@pytest.mark.parametrize(
     "pad_direction",
     ["right", "left", "both"],
 )
