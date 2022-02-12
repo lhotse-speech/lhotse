@@ -9,7 +9,7 @@ from lhotse import CutSet
 from lhotse.utils import Pathlike, is_module_available
 
 
-def export_to_webdataset(cuts: CutSet, output_path: Pathlike, verbose: bool = True) -> None:
+def export_to_webdataset(cuts: CutSet, output_path: Pathlike, verbose: bool = True, format: str = "flac") -> None:
     if not is_module_available("webdataset"):
         raise ImportError("Please 'pip install webdataset' first.")
     import webdataset as wds
@@ -18,7 +18,7 @@ def export_to_webdataset(cuts: CutSet, output_path: Pathlike, verbose: bool = Tr
 
     with wds.TarWriter(str(output_path)) as sink:
         for idx, cut in tqdm(enumerate(cuts), desc="Creating WDS tarball", disable=not verbose):
-            cut = cut.move_to_memory()
+            cut = cut.move_to_memory(format=format)
             data = pickle.dumps(cut.to_dict())
             sink.write({"__key__": cut.id, "data": data})
 
