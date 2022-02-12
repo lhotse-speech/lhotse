@@ -425,9 +425,10 @@ class Features:
     # to a directory holding files with feature matrices (exact semantics depend on storage_type).
     storage_path: str
 
-    # Storage key is either the key used to retrieve a feautre matrix from an archive like HDF5,
+    # Storage key is either the key used to retrieve a feature matrix from an archive like HDF5,
     # or the name of the file in a directory (exact semantics depend on the storage_type).
-    storage_key: str
+    # It can also be raw bytes for compressed arrays held in-memory.
+    storage_key: Union[str, bytes]
 
     # Information which recording and channels were used to extract the features.
     # When ``recording_id`` and ``channels`` are ``None``, it means that the
@@ -475,6 +476,27 @@ class Features:
             self.storage_key,
             left_offset_frames=left_offset_frames,
             right_offset_frames=right_offset_frames,
+        )
+
+    def move_to_memory(
+        self,
+        start: Seconds = 0,
+        duration: Optional[Seconds] = None,
+        format: str = "memory_lilcom",
+    ):
+        from lhotse.features.io import get_memory_writer
+
+        writer = get_memory_writer(format)()
+        arr = self.load(start=start, duration=duration)
+        data = writer.write("", arr)  # key is ignored by in memory writers
+        return fastcopy(
+            self,
+            start=start if not isclose(start, 0) else self.start,
+            duration=ifnone(duration, self.duration),
+            num_frames=arr.shape[0],
+            storage_type=format,
+            storage_key=data,
+            storage_path="",
         )
 
     def with_path_prefix(self, path: Pathlike) -> "Features":

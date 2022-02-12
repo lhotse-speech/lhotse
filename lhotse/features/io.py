@@ -1058,6 +1058,62 @@ class KaldiWriter(FeaturesWriter):
         self.close()
 
 
+"""
+In-memory reader/writer
+"""
+
+
+def get_memory_writer(name: str):
+    assert "memory" in name
+    return get_writer(name)
+
+
+@register_reader
+class MemoryLilcomReader(FeaturesReader):
+    """ """
+
+    name = "memory_lilcom"
+
+    def __init__(self, *args, **kwargs):
+        pass
+
+    @dynamic_lru_cache
+    def read(
+        self,
+        raw_data: bytes,
+        left_offset_frames: int = 0,
+        right_offset_frames: Optional[int] = None,
+    ) -> np.ndarray:
+        arr = lilcom.decompress(raw_data)
+        return arr[left_offset_frames:right_offset_frames]
+
+
+@register_writer
+class MemoryLilcomWriter(FeaturesWriter):
+    """ """
+
+    name = "memory_lilcom"
+
+    def __init__(self, *args, **kwargs):
+        pass
+
+    @property
+    def storage_path(self) -> None:
+        return None
+
+    def write(self, key: str, value: np.ndarray) -> str:
+        return lilcom.compress(value)
+
+    def close(self) -> None:
+        pass
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        pass
+
+
 def pairwise(iterable):
     "s -> (s0,s1), (s1,s2), (s2, s3), ..."
     from itertools import tee

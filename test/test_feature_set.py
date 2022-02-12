@@ -23,7 +23,7 @@ from lhotse.features.io import (
     LilcomChunkyWriter,
     LilcomFilesWriter,
     LilcomHdf5Writer,
-    NumpyFilesWriter,
+    MemoryLilcomWriter, NumpyFilesWriter,
     NumpyHdf5Writer,
 )
 from lhotse.testing.dummies import DummyManifest
@@ -130,6 +130,7 @@ def test_compute_global_stats():
         lambda: LilcomChunkyWriter(NamedTemporaryFile().name),
         lambda: NumpyFilesWriter(TemporaryDirectory().name),
         lambda: NumpyHdf5Writer(NamedTemporaryFile().name),
+        lambda: MemoryLilcomWriter(),
         pytest.param(
             lambda: KaldiWriter(TemporaryDirectory().name),
             marks=pytest.mark.skipif(

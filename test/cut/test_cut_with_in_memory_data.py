@@ -1,7 +1,22 @@
 import numpy as np
 
-from lhotse import Recording, MonoCut
+from lhotse import CutSet, Recording, MonoCut
 from lhotse.testing.dummies import dummy_cut
+
+
+def test_features_move_to_memory():
+    path = "test/fixtures/libri/cuts.json"
+    cut = CutSet.from_file(path)[0]
+    feats = cut.features
+    assert feats is not None
+
+    arr = feats.load()
+
+    feats_mem = feats.move_to_memory()
+
+    arr_mem = feats_mem.load()
+
+    np.testing.assert_equal(arr, arr_mem)
 
 
 def test_cut_move_to_memory():
@@ -11,9 +26,7 @@ def test_cut_move_to_memory():
 
     memory_cut = cut.move_to_memory()
 
-    np.testing.assert_equal(
-        memory_cut.load_audio(), cut.load_audio()
-    )
+    np.testing.assert_equal(memory_cut.load_audio(), cut.load_audio())
 
 
 def test_cut_move_to_memory_audio_serialization():
@@ -28,6 +41,4 @@ def test_cut_move_to_memory_audio_serialization():
     data = cut_with_audio.to_dict()
     cut_deserialized = MonoCut.from_dict(data)
 
-    np.testing.assert_equal(
-        cut_deserialized.load_audio(), cut_with_audio.load_audio()
-    )
+    np.testing.assert_equal(cut_deserialized.load_audio(), cut_with_audio.load_audio())

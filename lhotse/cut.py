@@ -974,8 +974,6 @@ class MonoCut(Cut):
 
     def move_to_memory(self, format: str = "flac") -> "MonoCut":
         """ """
-        # TODO features
-        # TODO arrays / temporal arrays
         cut = fastcopy(
             self,
             recording=self.recording.move_to_memory(
@@ -983,7 +981,9 @@ class MonoCut(Cut):
                 offset=self.start,
                 duration=self.duration,
                 format=format,
-            ),
+            ) if self.has_recording else None,
+            features=self.features.move_to_memory() if self.has_features else None,
+            custom=self.custom,  # TODO: arrays / temporal arrays
         )
         return cut
 
