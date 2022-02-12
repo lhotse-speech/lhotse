@@ -1,0 +1,16 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+authors:
+- family-names: "Żelasko"
+  given-names: "Piotr"
+  orcid: "https://orcid.org/0000-0002-8245-0413"
+- family-names: "Povey"
+  given-names: "Daniel"
+- family-names: "Trmal"
+  given-names: "Jan"
+- family-names: "Khudanpur"
+  given-names: "Sanjeev"
+title: "Lhotse: a speech data representation library for the modern deep learning ecosystem"
+version: 1.0
+date-released: 2020-04-24
+url: "https://github.com/lhotse-speech/lhotse"
