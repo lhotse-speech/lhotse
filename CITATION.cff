@@ -6,11 +6,30 @@ authors:
   orcid: "https://orcid.org/0000-0002-8245-0413"
 - family-names: "Povey"
   given-names: "Daniel"
+  orcid: "https://orcid.org/0000-0002-0611-3634"
 - family-names: "Trmal"
   given-names: "Jan"
 - family-names: "Khudanpur"
   given-names: "Sanjeev"
+license: Apache-2.0 License
 title: "Lhotse: a speech data representation library for the modern deep learning ecosystem"
-version: 1.0
 date-released: 2020-04-24
 url: "https://github.com/lhotse-speech/lhotse"
+preferred-citation:
+  type: proceedings
+  authors:
+  - family-names: "Żelasko"
+    given-names: "Piotr"
+    orcid: "https://orcid.org/0000-0002-8245-0413"
+  - family-names: "Povey"
+    given-names: "Daniel"
+    orcid: "https://orcid.org/0000-0002-0611-3634"
+  - family-names: "Trmal"
+    given-names: "Jan"
+  - family-names: "Khudanpur"
+    given-names: "Sanjeev"
+  conference:
+    name: "NeurIPS Data-Centric AI Workshop"
+  title: "Lhotse: a speech data representation library for the modern deep learning ecosystem"
+  url: "https://arxiv.org/abs/2110.12561"
+  year: 2021
