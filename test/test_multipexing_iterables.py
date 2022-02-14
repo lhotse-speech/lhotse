@@ -52,6 +52,21 @@ def test_cut_set_mux():
     assert sorted([c.id for c in cuts_mux]) != [c.id for c in cuts_mux]
 
 
+def test_cut_set_mux_stop_early():
+    cuts1 = DummyManifest(CutSet, begin_id=0, end_id=10)
+    cuts2 = DummyManifest(CutSet, begin_id=1000, end_id=1005)
+
+    cuts_mux = CutSet.mux(cuts1, cuts2, seed=0, stop_early=True)
+
+    def cid(i: int) -> str:
+        return f"dummy-cut-{i:04d}"
+
+    assert sorted([c.id for c in cuts_mux]) == [
+        cid(i) for i in (0, 1, 2, 3, 4, 1000, 1001, 1002, 1003, 1004)
+    ]
+    assert sorted([c.id for c in cuts_mux]) != [c.id for c in cuts_mux]
+
+
 def test_multiplexer_pickling():
     mux = LazyIteratorMultiplexer(
         list(range(100)), list(range(10)), weights=[2, 3], seed=0
