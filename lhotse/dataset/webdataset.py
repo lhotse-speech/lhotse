@@ -72,7 +72,7 @@ class LazyWebdatasetIterator:
     """
 
     def __init__(self, path: Pathlike, **wds_kwargs) -> None:
-        self.path = path
+        self.path = str(path)
         self.wds_kwargs = wds_kwargs
 
     def _reset(self) -> None:
@@ -83,6 +83,10 @@ class LazyWebdatasetIterator:
         path = Path(self.path)
         if path.is_dir():
             path = sorted(map(str, path.glob("shard-*.tar")))
+        elif path.is_file():
+            path = str(path)
+        else:
+            raise ValueError(f"No such path: {path}")
 
         self._ds = wds.WebDataset(path, **self.wds_kwargs)
         self._ds_iter = iter(self._ds)
