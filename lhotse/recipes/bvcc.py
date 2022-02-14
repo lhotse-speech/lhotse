@@ -242,7 +242,7 @@ def segment_from_run(infos, recordings):
 
     for uttid, sysid, rating, listenerd in infos:
         listenerid = listenerd.pop("id")
-        MOSd[listenerid] = rating
+        MOSd[listenerid] = int(rating)
         LISTENERsd[listenerid] = listenerid
 
         if uttidA is None:
