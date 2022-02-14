@@ -27,11 +27,12 @@ from typing import (
 )
 
 import numpy as np
+import torch
 from intervaltree import Interval, IntervalTree
 from tqdm.auto import tqdm
 from typing_extensions import Literal
 
-from lhotse.audio import AudioMixer, AudioSource, Recording, RecordingSet
+from lhotse.audio import AudioMixer, AudioSource, Recording, RecordingSet, audio_energy
 from lhotse.augmentation import AugmentFn
 from lhotse.features import (
     FeatureExtractor,
@@ -41,7 +42,7 @@ from lhotse.features import (
     create_default_feature_extractor,
 )
 from lhotse.features.base import compute_global_stats
-from lhotse.features.io import FeaturesWriter, LilcomFilesWriter, LilcomHdf5Writer
+from lhotse.features.io import FeaturesWriter, LilcomChunkyWriter, LilcomFilesWriter
 from lhotse.serialization import Serializable
 from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import (
@@ -58,6 +59,7 @@ from lhotse.utils import (
     compute_num_frames,
     compute_num_samples,
     compute_start_duration_for_extended_cut,
+    deprecated,
     exactly_one_not_null,
     fastcopy,
     ifnone,
@@ -67,9 +69,9 @@ from lhotse.utils import (
     overspans,
     perturb_num_samples,
     rich_exception_info,
+    split_manifest_lazy,
     split_sequence,
     uuid4,
-    deprecated,
 )
 
 # One of the design principles for Cuts is a maximally "lazy" implementation, e.g. when mixing Cuts,
@@ -147,8 +149,8 @@ class Cut:
     It is also possible to use a :class:`~lhotse.features.io.FeaturesWriter` to store the features and attach
     their manifest to a copy of the cut::
 
-        >>> from lhotse import LilcomHdf5Writer
-        >>> with LilcomHdf5Writer('feats.h5') as storage:
+        >>> from lhotse import LilcomChunkyWriter
+        >>> with LilcomChunkyWriter('feats.lca') as storage:
         ...     cut_with_feats = cut.compute_and_store_features(
         ...         extractor=Fbank(),
         ...         storage=storage
@@ -159,6 +161,7 @@ class Cut:
 
         >>> cut_2_to_4s = cut.truncate(offset=2, duration=2)
         >>> cut_padded = cut.pad(duration=10.0)
+        >>> cut_extended = cut.extend_by(duration=5.0, direction='both')
         >>> cut_mixed = cut.mix(other_cut, offset_other_by=5.0, snr=20)
         >>> cut_append = cut.append(other_cut)
         >>> cut_24k = cut.resample(24000)
@@ -224,6 +227,7 @@ class Cut:
     drop_supervisions: Callable
     truncate: Callable
     pad: Callable
+    extend_by: Callable
     resample: Callable
     perturb_speed: Callable
     perturb_tempo: Callable
@@ -428,6 +432,7 @@ class Cut:
 
         :param keep_overlapping: when ``False``, it will discard parts of other supervisions that overlap with the
             main supervision. In the illustration above, it would discard ``Sup2`` in ``Cut1`` and ``Sup1`` in ``Cut2``.
+            In this mode, we guarantee that there will always be exactly one supervision per cut.
         :param min_duration: An optional duration in seconds; specifying this argument will extend the cuts
             that would have been shorter than ``min_duration`` with actual acoustic context in the recording/features.
             If there are supervisions present in the context, they are kept when ``keep_overlapping`` is true.
@@ -452,14 +457,16 @@ class Cut:
                     new_duration=min_duration,
                     direction=context_direction,
                 )
-            cuts.append(
-                self.truncate(
-                    offset=new_start,
-                    duration=new_duration,
-                    keep_excessive_supervisions=keep_overlapping,
-                    _supervisions_index=supervisions_index,
-                )
+            trimmed = self.truncate(
+                offset=new_start,
+                duration=new_duration,
+                keep_excessive_supervisions=keep_overlapping,
+                _supervisions_index=supervisions_index,
             )
+            if not keep_overlapping:
+                # Ensure that there is exactly one supervision per cut.
+                trimmed = trimmed.filter_supervisions(lambda s: s.id == segment.id)
+            cuts.append(trimmed)
         return cuts
 
     def index_supervisions(
@@ -675,23 +682,27 @@ class Cut:
                 and use_alignment_if_exists in supervision.alignment
             ):
                 for ali in supervision.alignment[use_alignment_if_exists]:
-                    st = round(ali.start * self.sampling_rate) if ali.start > 0 else 0
+                    st = (
+                        compute_num_samples(ali.start, self.sampling_rate)
+                        if ali.start > 0
+                        else 0
+                    )
                     et = (
-                        round(ali.end * self.sampling_rate)
+                        compute_num_samples(ali.end, self.sampling_rate)
                         if ali.end < self.duration
-                        else self.duration * self.sampling_rate
+                        else compute_num_samples(self.duration, self.sampling_rate)
                     )
                     mask[speaker_idx, st:et] = 1
             else:
                 st = (
-                    round(supervision.start * self.sampling_rate)
+                    compute_num_samples(supervision.start, self.sampling_rate)
                     if supervision.start > 0
                     else 0
                 )
                 et = (
-                    round(supervision.end * self.sampling_rate)
+                    compute_num_samples(supervision.end, self.sampling_rate)
                     if supervision.end < self.duration
-                    else self.duration * self.sampling_rate
+                    else compute_num_samples(self.duration, self.sampling_rate)
                 )
                 mask[speaker_idx, st:et] = 1
         return mask
@@ -1074,6 +1085,10 @@ class MonoCut(Cut):
         it's only during the call to :meth:`MonoCut.load_features` / :meth:`MonoCut.load_audio`
         when the actual changes happen (a subset of features/audio is loaded).
 
+        .. hint::
+
+            To extend a cut by a fixed duration, use the :meth:`MonoCut.extend_by` method.
+
         :param offset: float (seconds), controls the start of the new cut relative to the current MonoCut's start.
             E.g., if the current MonoCut starts at 10.0, and offset is 2.0, the new start is 12.0.
         :param duration: optional float (seconds), controls the duration of the resulting MonoCut.
@@ -1085,9 +1100,6 @@ class MonoCut(Cut):
             large number of supervisions. Intended as an internal parameter.
         :return: a new MonoCut instance. If the current MonoCut is shorter than the duration, return None.
         """
-        # Note: technically, truncate's code can be used for "expanding" the cut as well:
-        #       In that case, we must ensure that the start of MonoCut is not before the start
-        #       of the actual Recording, hence max(..., 0).
         assert (
             offset >= 0
         ), f"Offset for truncate must be non-negative (provided {offset})."
@@ -1145,6 +1157,109 @@ class MonoCut(Cut):
             start=new_start,
             duration=new_duration,
             supervisions=sorted(supervisions, key=lambda s: s.start),
+        )
+
+    def extend_by(
+        self,
+        *,
+        duration: Seconds,
+        direction: str = "both",
+        preserve_id: bool = False,
+    ) -> "MonoCut":
+        """
+        Returns a new MonoCut that is an extended region of the current MonoCut by extending
+        the cut by a fixed duration in the specified direction.
+
+        Note that no operation is done on the actual features or recording -
+        it's only during the call to :meth:`MonoCut.load_features` / :meth:`MonoCut.load_audio`
+        when the actual changes happen (an extended version of features/audio is loaded).
+
+        .. hint::
+
+            This method extends a cut by a given duration, either to the left or to the right (or both), using
+            the "real" content of the recording that the cut is part of. For example, a MonoCut spanning
+            the region from 2s to 5s in a recording, when extended by 2s to the right, will now span
+            the region from 2s to 7s in the same recording (provided the recording length exceeds 7s).
+            If the recording is shorter, the cut will only be extended up to the duration of the recording.
+            To "expand" a cut by padding, use :meth:`MonoCut.pad`. To "truncate" a cut, use :meth:`MonoCut.truncate`.
+
+        .. hint::
+
+            If `direction` is "both", the resulting cut will be extended by the specified duration in
+            both directions. This is different from the usage in :meth:`MonoCut.pad` where a padding
+            equal to 0.5*duration is added to both sides.
+
+        :param duration: float (seconds), specifies the duration by which the cut should be extended.
+        :param direction: string, 'left', 'right' or 'both'. Determines whether to extend on the left,
+            right, or both sides. If 'both', extend on both sides by the duration specified in `duration`.
+        :param preserve_id: bool. Should the extended cut keep the same ID or get a new, random one.
+        :return: a new MonoCut instance.
+        """
+        from lhotse.array import TemporalArray
+
+        assert duration >= 0, f"Duration must be non-negative (provided {duration})."
+
+        new_start, new_end = self.start, self.end
+        if direction == "left" or direction == "both":
+            new_start = max(self.start - duration, 0)
+        if direction == "right" or direction == "both":
+            new_end = min(self.end + duration, self.recording.duration)
+
+        new_duration = new_end - new_start
+        # Round the duration to avoid the possible loss of a single audio sample due to floating point
+        # additions and subtractions.
+        new_duration = round(new_duration, ndigits=8)
+
+        new_supervisions = (
+            segment.with_offset(self.start - new_start) for segment in self.supervisions
+        )
+
+        def _this_exceeds_duration(attribute: Union[Features, TemporalArray]) -> bool:
+            # We compare in terms of frames, not seconds, to avoid rounding errors.
+            # We also allow a tolerance of 1 frame on either side.
+            new_start_frames = compute_num_frames(
+                new_start, attribute.frame_shift, self.sampling_rate
+            )
+            new_end_frames = compute_num_frames(
+                new_end, attribute.frame_shift, self.sampling_rate
+            )
+            attribute_start = compute_num_frames(
+                attribute.start, attribute.frame_shift, self.sampling_rate
+            )
+            attribute_end = attribute_start + attribute.num_frames
+            return (new_start_frames < attribute_start - 1) or (
+                new_end_frames > attribute_end + 1
+            )
+
+        feature_kwargs = {}
+        if self.has_features:
+            if _this_exceeds_duration(self.features):
+                logging.warning(
+                    "Attempting to extend a MonoCut that exceeds the range of pre-computed features. "
+                    "The feature manifest will be detached."
+                )
+                feature_kwargs["features"] = None
+
+        custom_kwargs = {}
+        if self.custom is not None:
+            for name, array in self.custom.items():
+                custom_kwargs[name] = array
+                if isinstance(array, TemporalArray):
+                    if _this_exceeds_duration(array):
+                        logging.warning(
+                            f"Attempting to extend a MonoCut that exceeds the range of pre-computed custom data '{name}'. "
+                            "The custom data will be detached."
+                        )
+                        custom_kwargs[name] = None
+
+        return fastcopy(
+            self,
+            id=self.id if preserve_id else str(uuid4()),
+            start=new_start,
+            duration=new_duration,
+            supervisions=sorted(new_supervisions, key=lambda s: s.start),
+            **feature_kwargs,
+            custom=custom_kwargs,
         )
 
     def pad(
@@ -1347,6 +1462,7 @@ class MonoCut(Cut):
         self,
         rir_recording: "Recording",
         normalize_output: bool = True,
+        early_only: bool = False,
         affix_id: bool = True,
     ) -> "MonoCut":
         """
@@ -1354,6 +1470,7 @@ class MonoCut(Cut):
 
         :param rir_recording: The impulse response to use for convolving.
         :param normalize_output: When true, output will be normalized to have energy as input.
+        :param early_only: When true, only the early reflections (first 50 ms) will be used.
         :param affix_id: When true, we will modify the ``MonoCut.id`` field
             by affixing it with "_rvb".
         :return: a modified copy of the current ``MonoCut``.
@@ -1373,6 +1490,7 @@ class MonoCut(Cut):
         recording_rvb = self.recording.reverb_rir(
             rir_recording=rir_recording,
             normalize_output=normalize_output,
+            early_only=early_only,
             affix_id=affix_id,
         )
         # Match the supervision's id (and it's underlying recording id).
@@ -1586,6 +1704,48 @@ class PaddingCut(Cut):
             else None,
         )
 
+    # noinspection PyUnusedLocal
+    def extend_by(
+        self,
+        *,
+        duration: Seconds,
+        direction: str = "both",
+        preserve_id: bool = False,
+    ) -> "PaddingCut":
+        """
+        Return a new PaddingCut with region extended by the specified duration.
+
+        :param duration: The duration by which to extend the cut.
+        :param direction: string, 'left', 'right' or 'both'. Determines whether the cut should
+            be extended to the left, right or both sides. By default, the cut is extended by
+            the specified duration on both sides.
+        :param preserve_id: When ``True``, preserves the cut ID from before padding.
+            Otherwise, generates a new random ID (default).
+        :return: an extended PaddingCut.
+        """
+        new_duration = self.duration + duration
+        if direction == "both":
+            new_duration += duration
+        assert new_duration > 0.0
+        return fastcopy(
+            self,
+            id=self.id if preserve_id else str(uuid4()),
+            duration=new_duration,
+            feat_value=self.feat_value,
+            num_frames=compute_num_frames(
+                duration=new_duration,
+                frame_shift=self.frame_shift,
+                sampling_rate=self.sampling_rate,
+            )
+            if self.num_frames is not None
+            else None,
+            num_samples=compute_num_samples(
+                duration=new_duration, sampling_rate=self.sampling_rate
+            )
+            if self.num_samples is not None
+            else None,
+        )
+
     def pad(
         self,
         duration: Seconds = None,
@@ -1738,6 +1898,7 @@ class PaddingCut(Cut):
         self,
         rir_recording: "Recording",
         normalize_output: bool = True,
+        early_only: bool = False,
         affix_id: bool = True,
     ) -> "PaddingCut":
         """
@@ -1746,6 +1907,7 @@ class PaddingCut(Cut):
 
         :param rir_recording: The impulse response to use for convolving.
         :param normalize_output: When true, output will be normalized to have energy as input.
+        :param early_only: When true, only the early reflections (first 50 ms) will be used.
         :param affix_id: When true, we will modify the ``PaddingCut.id`` field
             by affixing it with "_rvb".
         :return: a modified copy of the current ``PaddingCut``.
@@ -2067,7 +2229,7 @@ class MixedCut(Cut):
         ]
         assert (
             len(non_padding_cuts) == 1
-        ), f"The cut has {len(non_padding_cuts)} (expected exactly one)"
+        ), f"The cut has {len(non_padding_cuts)} non-padding cuts (expected exactly one)"
         non_padding_idx, mono_cut = non_padding_cuts[0]
         return non_padding_idx, mono_cut
 
@@ -2149,7 +2311,48 @@ class MixedCut(Cut):
         if len(new_tracks) == 1:
             # The truncation resulted in just a single cut - simply return it.
             return new_tracks[0].cut
-        return MixedCut(id=self.id if preserve_id else str(uuid4()), tracks=new_tracks)
+
+        new_cut = MixedCut(
+            id=self.id if preserve_id else str(uuid4()), tracks=new_tracks
+        )
+
+        # Final edge-case check. Scenario:
+        # - some of the original MixedCut tracks had specified an SNR
+        # - we truncated away the track that served as an SNR reference
+        # - we are left only with PaddingCuts and MonoCuts that have specified SNR
+        # Solution:
+        # - find first non padding cut and reset its SNR to None (make it the new reference)
+        if all(
+            t.snr is not None or isinstance(t.cut, PaddingCut) for t in new_cut.tracks
+        ):
+            first_non_padding_track_idx = [
+                idx
+                for idx, t in enumerate(new_cut.tracks)
+                if not isinstance(t.cut, PaddingCut)
+            ][0]
+            new_cut.tracks[first_non_padding_track_idx] = fastcopy(
+                new_cut.tracks[first_non_padding_track_idx], snr=None
+            )
+
+        return new_cut
+
+    def extend_by(
+        self,
+        *,
+        duration: Seconds,
+        direction: str = "both",
+        preserve_id: bool = False,
+    ) -> "MixedCut":
+        """
+        This raises a ValueError since extending a MixedCut is not defined.
+
+        :param duration: float (seconds), duration (in seconds) to extend the MixedCut.
+        :param direction: string, 'left', 'right' or 'both'. Determines whether to extend on the left,
+            right, or both sides. If 'both', extend on both sides by the duration specified in `duration`.
+        :param preserve_id: bool. Should the extended cut keep the same ID or get a new, random one.
+        :return: a new MixedCut instance.
+        """
+        raise ValueError("The extend_by() method is not defined for a MixedCut.")
 
     def pad(
         self,
@@ -2337,6 +2540,7 @@ class MixedCut(Cut):
         self,
         rir_recording: "Recording",
         normalize_output: bool = True,
+        early_only: bool = False,
         affix_id: bool = True,
     ) -> "MixedCut":
         """
@@ -2344,6 +2548,7 @@ class MixedCut(Cut):
 
         :param rir_recording: The impulse response to use for convolving.
         :param normalize_output: When true, output will be normalized to have energy as input.
+        :param early_only: When true, only the early reflections (first 50 ms) will be used.
         :param affix_id: When true, we will modify the ``MixedCut.id`` field
             by affixing it with "_rvb".
         :return: a modified copy of the current ``MixedCut``.
@@ -2366,6 +2571,7 @@ class MixedCut(Cut):
                     cut=track.cut.reverb_rir(
                         rir_recording=rir_recording,
                         normalize_output=normalize_output,
+                        early_only=early_only,
                         affix_id=affix_id,
                     ),
                 )
@@ -2386,6 +2592,7 @@ class MixedCut(Cut):
         if not self.has_features:
             return None
         first_cut = self.tracks[0].cut
+
         # First, check for a simple scenario: just a single cut with padding.
         # When that is the case, we don't have to instantiate a feature extractor,
         # because we are not performing any actual mixing.
@@ -2396,18 +2603,42 @@ class MixedCut(Cut):
             feats = np.ones((self.num_frames, self.num_features)) * padding_val
             feats[: first_cut.num_frames, :] = first_cut.load_features()
             return feats
+
         # When there is more than one "regular" cut, we will perform an actual mix.
+
+        # First, we have to make sure that the reference energy levels are appropriate.
+        # They might not be if the first track is a padding track.
+        reference_feats = None
+        reference_energy = None
+        reference_pos, reference_cut = [
+            (idx, t.cut)
+            for idx, t in enumerate(self.tracks)
+            if not isinstance(t.cut, PaddingCut) and t.snr is None
+        ][0]
+        feature_extractor = create_default_feature_extractor(
+            reference_cut.features.type
+        )
+        if first_cut.id != reference_cut.id:
+            reference_feats = reference_cut.load_features()
+            reference_energy = feature_extractor.compute_energy(reference_feats)
+
+        # The mix itself.
         mixer = FeatureMixer(
             feature_extractor=create_default_feature_extractor(
                 self._first_non_padding_cut.features.type
             ),
             base_feats=first_cut.load_features(),
             frame_shift=first_cut.frame_shift,
+            reference_energy=reference_energy,
         )
-        for track in self.tracks[1:]:
+        for pos, track in enumerate(self.tracks[1:], start=1):
             try:
+                if pos == reference_pos and reference_feats is not None:
+                    feats = reference_feats  # manual caching to avoid duplicated I/O
+                else:
+                    feats = track.cut.load_features()
                 mixer.add_to_mix(
-                    feats=track.cut.load_features(),
+                    feats=feats,
                     snr=track.snr,
                     offset=track.offset,
                     sampling_rate=track.cut.sampling_rate,
@@ -2416,7 +2647,9 @@ class MixedCut(Cut):
                 logging.warning(
                     str(e) + f' MonoCut with id "{track.cut.id}" will not be mixed in.'
                 )
+
         if mixed:
+            # Checking for some edge cases below.
             feats = mixer.mixed_feats
             # Note: The slicing below is a work-around for an edge-case
             #  when two cuts have durations that ended with 0.005 (e.g. 10.125 and 5.715)
@@ -2452,14 +2685,34 @@ class MixedCut(Cut):
         """
         if not self.has_recording:
             return None
+        first_cut = self.tracks[0].cut
+
+        # First, we have to make sure that the reference energy levels are appropriate.
+        # They might not be if the first track is a padding track.
+        reference_audio = None
+        reference_energy = None
+        reference_pos, reference_cut = [
+            (idx, t.cut)
+            for idx, t in enumerate(self.tracks)
+            if not isinstance(t.cut, PaddingCut) and t.snr is None
+        ][0]
+        if first_cut.id != reference_cut.id:
+            reference_audio = reference_cut.load_audio()
+            reference_energy = audio_energy(reference_audio)
+
         mixer = AudioMixer(
             self.tracks[0].cut.load_audio(),
             sampling_rate=self.tracks[0].cut.sampling_rate,
+            reference_energy=reference_energy,
         )
-        for track in self.tracks[1:]:
+        for pos, track in enumerate(self.tracks[1:], start=1):
             try:
+                if pos == reference_pos and reference_audio is not None:
+                    audio = reference_audio  # manual caching to avoid duplicated I/O
+                else:
+                    audio = track.cut.load_audio()
                 mixer.add_to_mix(
-                    audio=track.cut.load_audio(),
+                    audio=audio,
                     snr=track.snr,
                     offset=track.offset,
                 )
@@ -2467,6 +2720,7 @@ class MixedCut(Cut):
                 logging.warning(
                     str(e) + f' MonoCut with id "{track.cut.id}" will not be mixed in.'
                 )
+
         if mixed:
             # Off-by-one errors can happen during mixing due to imperfect float arithmetic and rounding;
             # we will fix them on-the-fly so that the manifest does not lie about the num_samples.
@@ -2482,6 +2736,7 @@ class MixedCut(Cut):
             )
         else:
             audio = mixer.unmixed_audio
+
         return audio
 
     def plot_tracks_features(self):
@@ -2779,7 +3034,11 @@ class MixedCut(Cut):
 
     @property
     def _first_non_padding_cut(self) -> MonoCut:
-        return [t.cut for t in self.tracks if not isinstance(t.cut, PaddingCut)][0]
+        return self._first_non_padding_track.cut
+
+    @property
+    def _first_non_padding_track(self) -> MixTrack:
+        return [t for t in self.tracks if not isinstance(t.cut, PaddingCut)][0]
 
 
 class CutSet(Serializable, Sequence[Cut]):
@@ -3136,7 +3395,7 @@ class CutSet(Serializable, Sequence[Cut]):
         """
         durations = np.array([c.duration for c in self])
         speech_durations = np.array(
-            [s.trim(c.duration).duration for c in self for s in c.supervisions]
+            [s.duration for c in self for s in c.trimmed_supervisions]
         )
         total_sum = durations.sum()
         speech_sum = speech_durations.sum()
@@ -3188,6 +3447,25 @@ class CutSet(Serializable, Sequence[Cut]):
                 self, num_splits=num_splits, shuffle=shuffle, drop_last=drop_last
             )
         ]
+
+    def split_lazy(self, output_dir: Pathlike, chunk_size: int) -> List["CutSet"]:
+        """
+        Splits a manifest (either lazily or eagerly opened) into chunks, each
+        with ``chunk_size`` items (except for the last one, typically).
+
+        In order to be memory efficient, this implementation saves each chunk
+        to disk in a ``.jsonl.gz`` format as the input manifest is sampled.
+
+        .. note:: For lowest memory usage, use ``load_manifest_lazy`` to open the
+            input manifest for this method.
+
+        :param it: any iterable of Lhotse manifests.
+        :param output_dir: directory where the split manifests are saved.
+            Each manifest is saved at: ``{output_dir}/{split_idx}.jsonl.gz``
+        :param chunk_size: the number of items in each chunk.
+        :return: a list of lazily opened chunk manifests.
+        """
+        return split_manifest_lazy(self, output_dir=output_dir, chunk_size=chunk_size)
 
     def subset(
         self,
@@ -3343,6 +3621,7 @@ class CutSet(Serializable, Sequence[Cut]):
 
         :param keep_overlapping: when ``False``, it will discard parts of other supervisions that overlap with the
             main supervision. In the illustration above, it would discard ``Sup2`` in ``Cut1`` and ``Sup1`` in ``Cut2``.
+            In this mode, we guarantee that there will always be exactly one supervision per cut.
         :param min_duration: An optional duration in seconds; specifying this argument will extend the cuts
             that would have been shorter than ``min_duration`` with actual acoustic context in the recording/features.
             If there are supervisions present in the context, they are kept when ``keep_overlapping`` is true.
@@ -3542,6 +3821,7 @@ class CutSet(Serializable, Sequence[Cut]):
         offset_type: str,
         keep_excessive_supervisions: bool = True,
         preserve_id: bool = False,
+        rng: Optional[random.Random] = None,
     ) -> "CutSet":
         """
         Return a new CutSet with the Cuts truncated so that their durations are at most `max_duration`.
@@ -3554,6 +3834,7 @@ class CutSet(Serializable, Sequence[Cut]):
         :param keep_excessive_supervisions: bool. When a cut is truncated in the middle of a supervision segment,
         should the supervision be kept.
         :param preserve_id: bool. Should the truncated cut keep the same ID or get a new, random one.
+        :param rng: optional random number generator to be used with a 'random' ``offset_type``.
         :return: a new CutSet instance with truncated cuts.
         """
         truncated_cuts = []
@@ -3569,7 +3850,10 @@ class CutSet(Serializable, Sequence[Cut]):
                 if offset_type == "end":
                     return last_offset
                 if offset_type == "random":
-                    return random.uniform(0.0, last_offset)
+                    if rng is None:
+                        return random.uniform(0.0, last_offset)
+                    else:
+                        return rng.uniform(0.0, last_offset)
                 raise ValueError(f"Unknown 'offset_type' option: {offset_type}")
 
             truncated_cuts.append(
@@ -3581,6 +3865,28 @@ class CutSet(Serializable, Sequence[Cut]):
                 )
             )
         return CutSet.from_cuts(truncated_cuts)
+
+    def extend_by(
+        self,
+        duration: Seconds,
+        direction: str = "both",
+        preserve_id: bool = False,
+    ) -> "CutSet":
+        """
+        Returns a new CutSet with cuts extended by `duration` amount.
+
+        :param duration: float (seconds), specifies the duration by which the CutSet is extended.
+        :param direction: string, 'left', 'right' or 'both'. Determines whether to extend on the left,
+            right, or both sides. If 'both', extend on both sides by the same duration (equal to `duration`).
+        :param preserve_id: bool. Should the extended cut keep the same ID or get a new, random one.
+        :return: a new CutSet instance.
+        """
+        return CutSet.from_cuts(
+            cut.extend_by(
+                duration=duration, direction=direction, preserve_id=preserve_id
+            )
+            for cut in self
+        )
 
     def cut_into_windows(
         self,
@@ -3706,6 +4012,7 @@ class CutSet(Serializable, Sequence[Cut]):
         self,
         rir_recordings: "RecordingSet",
         normalize_output: bool = True,
+        early_only: bool = False,
         affix_id: bool = True,
     ) -> "CutSet":
         """
@@ -3716,6 +4023,7 @@ class CutSet(Serializable, Sequence[Cut]):
 
         :param rir_recordings: RecordingSet containing the room impulse responses.
         :param normalize_output: When true, output will be normalized to have energy as input.
+        :param early_only: When true, only the early reflections (first 50 ms) will be used.
         :param affix_id: Should we modify the ID (useful if both versions of the same
             cut are going to be present in a single manifest).
         :return: a modified copy of the ``CutSet``.
@@ -3726,6 +4034,7 @@ class CutSet(Serializable, Sequence[Cut]):
                 cut.reverb_rir(
                     rir_recording=random.choice(rir_recordings),
                     normalize_output=normalize_output,
+                    early_only=early_only,
                     affix_id=affix_id,
                 )
                 for cut in self
@@ -3790,7 +4099,9 @@ class CutSet(Serializable, Sequence[Cut]):
             if duration is not None:
                 mixed_in_duration = to_mix.duration
                 # Keep sampling until we mixed in a "duration" amount of noise.
-                while mixed_in_duration < duration:
+                # Note: we subtract 0.05s (50ms) from the target duration to avoid edge cases
+                #       where we mix in some noise cut that effectively has 0 frames of features.
+                while mixed_in_duration < (duration - 0.05):
                     to_mix = cuts.sample()
                     # Keep the SNR constant for each cut from "self".
                     mixed = mixed.mix(
@@ -3836,7 +4147,7 @@ class CutSet(Serializable, Sequence[Cut]):
         storage_path: Pathlike,
         num_jobs: Optional[int] = None,
         augment_fn: Optional[AugmentFn] = None,
-        storage_type: Type[FW] = LilcomHdf5Writer,
+        storage_type: Type[FW] = LilcomChunkyWriter,
         executor: Optional[Executor] = None,
         mix_eagerly: bool = True,
         progress_bar: bool = True,
@@ -3848,7 +4159,7 @@ class CutSet(Serializable, Sequence[Cut]):
         Examples:
 
             Extract fbank features on one machine using 8 processes,
-            store arrays partitioned in 8 HDF5 files with lilcom compression:
+            store arrays partitioned in 8 archive files with lilcom compression:
 
             >>> cuts = CutSet(...)
             ... cuts.compute_and_store_features(
@@ -3870,7 +4181,7 @@ class CutSet(Serializable, Sequence[Cut]):
 
             Extract fbank features on multiple machines using a Dask cluster
             with 80 jobs,
-            store arrays partitioned in 80 HDF5 files with lilcom compression:
+            store arrays partitioned in 80 archive files with lilcom compression:
 
             >>> from distributed import Client
             ... cuts = CutSet(...)
@@ -3938,6 +4249,13 @@ class CutSet(Serializable, Sequence[Cut]):
                 "we will ignore the executor and use non-parallel execution."
             )
             executor = None
+
+        if num_jobs > 1 and torch.get_num_threads() > 1:
+            logging.warning(
+                "num_jobs is > 1 and torch's number of threads is > 1 as well: "
+                "For certain configs this can result in a never ending computation. "
+                "If this happens, use torch.set_num_threads(1) to circumvent this."
+            )
 
         # Non-parallel execution
         if executor is None and num_jobs == 1:
@@ -4015,7 +4333,7 @@ class CutSet(Serializable, Sequence[Cut]):
         batch_duration: Seconds = 600.0,
         num_workers: int = 4,
         augment_fn: Optional[AugmentFn] = None,
-        storage_type: Type[FW] = LilcomHdf5Writer,
+        storage_type: Type[FW] = LilcomChunkyWriter,
         overwrite: bool = False,
     ) -> "CutSet":
         """
@@ -4030,7 +4348,7 @@ class CutSet(Serializable, Sequence[Cut]):
         Otherwise, the speed will be comparable to single-threaded extraction.
 
         Example: extract fbank features on one GPU, using 4 dataloading workers
-        for reading audio, and store the arrays in an HDF5 file with
+        for reading audio, and store the arrays in an archive file with
         lilcom compression::
 
             >>> from lhotse import KaldifeatFbank, KaldifeatFbankConfig
@@ -4373,6 +4691,42 @@ class CutSet(Serializable, Sequence[Cut]):
 
         return CutSet.from_cuts(verified(transform_fn(c)) for c in self)
 
+    def copy_feats(
+        self, writer: FeaturesWriter, output_path: Optional[Pathlike] = None
+    ) -> "CutSet":
+        """
+        Save a copy of every feature matrix found in this CutSet using ``writer``
+        and return a new manifest with cuts referring to the new feature locations.
+
+        :param writer: a :class:`lhotse.features.io.FeaturesWriter` instance.
+        :param output_path: optional path where the new manifest should be stored.
+            It's used to write the manifest incrementally and return a lazy manifest,
+            otherwise the copy is stored in memory.
+        :return: a copy of the manifest.
+        """
+        with CutSet.open_writer(output_path) as manifest_writer:
+            for item in self:
+                if not item.has_features or isinstance(item, PaddingCut):
+                    manifest_writer.write(item)
+                    continue
+
+                if isinstance(item, MixedCut):
+                    cpy = fastcopy(item)
+                    for t in cpy.tracks:
+                        if isinstance(t.cut, MonoCut):
+                            t.cut.features = t.cut.features.copy_feats(writer=writer)
+                    manifest_writer.write(cpy)
+
+                elif isinstance(item, MonoCut):
+                    cpy = fastcopy(item)
+                    cpy.features = cpy.features.copy_feats(writer=writer)
+                    manifest_writer.write(cpy)
+
+                else:
+                    manifest_writer.write(item)
+
+        return manifest_writer.open_manifest()
+
     def modify_ids(self, transform_fn: Callable[[str], str]) -> "CutSet":
         """
         Modify the IDs of cuts in this ``CutSet``.
@@ -4468,6 +4822,28 @@ class CutSet(Serializable, Sequence[Cut]):
         )
         return CutSet(cuts=merged)
 
+    @classmethod
+    def mux(
+        cls,
+        *cut_sets: "CutSet",
+        weights: Optional[List[Union[int, float]]] = None,
+        seed: int = 0,
+    ) -> "CutSet":
+        """
+        Merges multiple CutSets into a new CutSet by lazily multiplexing them during iteration time.
+        If one of the CutSets is exhausted before the others, we will keep iterating until all CutSets
+        are exhausted.
+
+        :param cut_sets: cut sets to be multiplexed.
+            They can be either lazy or eager, but the resulting manifest will always be lazy.
+        :param weights: an optional weight for each CutSet, affects the probability of it being sampled.
+            The weights are uniform by default.
+        :param seed: the random seed, ensures deterministic order across multiple iterations.
+        """
+        from lhotse.serialization import LazyIteratorMultiplexer
+
+        return cls(cuts=LazyIteratorMultiplexer(*cut_sets, weights=weights, seed=seed))
+
 
 def make_windowed_cuts_from_features(
     feature_set: FeatureSet,
@@ -4539,6 +4915,8 @@ def mix(
         of the left- or right-hand side argument. otherwise, a new random id is generated.
     :return: A :class:`~MixedCut` instance.
     """
+
+    # Start with a series of sanity checks
     if (
         any(isinstance(cut, PaddingCut) for cut in (reference_cut, mixed_in_cut))
         and snr is not None
@@ -4551,9 +4929,9 @@ def mix(
         snr = None
 
     if reference_cut.num_features is not None:
-        assert reference_cut.num_features == mixed_in_cut.num_features, (
-            "Cannot mix cuts with different feature " "dimensions. "
-        )
+        assert (
+            reference_cut.num_features == mixed_in_cut.num_features
+        ), "Cannot mix cuts with different feature dimensions."
     assert offset <= reference_cut.duration, (
         f"Cannot mix cut '{mixed_in_cut.id}' with offset {offset},"
         f" which is greater than cuts {reference_cut.id} duration"
@@ -4565,6 +4943,7 @@ def mix(
         f"{mixed_in_cut.sampling_rate}). "
         f"Please resample the recordings first."
     )
+
     # Determine the ID of the result.
     if preserve_id is None:
         mixed_cut_id = str(uuid4())
@@ -4577,16 +4956,19 @@ def mix(
             "Unexpected value for 'preserve_id' argument: "
             f"got '{preserve_id}', expected one of (None, 'left', 'right')."
         )
+
     # When the left_cut is a MixedCut, take its existing tracks, otherwise create a new track.
-    old_tracks = (
-        reference_cut.tracks
-        if isinstance(reference_cut, MixedCut)
-        else [MixTrack(cut=reference_cut)]
-    )
+    if isinstance(reference_cut, MixedCut):
+        old_tracks = reference_cut.tracks
+    elif isinstance(reference_cut, (MonoCut, PaddingCut)):
+        old_tracks = [MixTrack(cut=reference_cut)]
+    else:
+        raise ValueError(f"Unsupported type of cut in mix(): {type(reference_cut)}")
+
     # When the right_cut is a MixedCut, adapt its existing tracks with the new offset and snr,
     # otherwise create a new track.
-    new_tracks = (
-        [
+    if isinstance(mixed_in_cut, MixedCut):
+        new_tracks = [
             MixTrack(
                 cut=track.cut,
                 offset=round(track.offset + offset, ndigits=8),
@@ -4607,9 +4989,11 @@ def mix(
             )
             for track in mixed_in_cut.tracks
         ]
-        if isinstance(mixed_in_cut, MixedCut)
-        else [MixTrack(cut=mixed_in_cut, offset=offset, snr=snr)]
-    )
+    elif isinstance(mixed_in_cut, (MonoCut, PaddingCut)):
+        new_tracks = [MixTrack(cut=mixed_in_cut, offset=offset, snr=snr)]
+    else:
+        raise ValueError(f"Unsupported type of cut in mix(): {type(reference_cut)}")
+
     return MixedCut(id=mixed_cut_id, tracks=old_tracks + new_tracks)
 
 
@@ -5003,11 +5387,10 @@ def create_cut_set_lazy(
                     f"Mismatched recording_id: Features.recording_id == {feats.recording_id}, "
                     f"but Recording.id == '{rec.id}'"
                 )
-                sups = SupervisionSet.from_segments(
-                    itertools.takewhile(
-                        lambda s: s.recording_id == feats.recording_id, supervisions
-                    )
+                sups, supervisions = _takewhile(
+                    supervisions, lambda s: s.recording_id == feats.recording_id
                 )
+                sups = SupervisionSet.from_segments(sups)
                 cut = MonoCut(
                     id=str(uuid4())
                     if random_ids
@@ -5044,11 +5427,11 @@ def create_cut_set_lazy(
             # note that if the supervisions are not sorted, we can't fail here,
             # because there might simply be no supervisions with that ID.
             # It's up to the user to make sure it's sorted properly.
-            sups = SupervisionSet.from_segments(
-                itertools.takewhile(
-                    lambda s: s.recording_id == recording.id, supervisions
-                )
+            sups, supervisions = _takewhile(
+                supervisions, lambda s: s.recording_id == recording.id
             )
+            sups = SupervisionSet.from_segments(sups)
+
             # A single cut always represents a single channel. When a recording has multiple channels,
             # we create a new cut for each channel separately.
             for cidx, channel in enumerate(recording.channel_ids):
@@ -5067,6 +5450,33 @@ def create_cut_set_lazy(
                 writer.write(cut)
 
     return CutSet.from_jsonl_lazy(output_path)
+
+
+T = TypeVar("T")
+
+
+def _takewhile(
+    iterable: Iterable[T], predicate: Callable[[T], bool]
+) -> Tuple[List[T], Iterable[T]]:
+    """
+    Collects items from ``iterable`` as long as they satisfy the ``predicate``.
+    Returns a tuple of ``(collected_items, iterable)``, where ``iterable`` may
+    continue yielding items starting from the first one that did not satisfy
+    ``predicate`` (unlike ``itertools.takewhile``).
+    """
+    collected = []
+    try:
+        while True:
+            item = next(iterable)
+            if predicate(item):
+                collected.append(item)
+            else:
+                iterable = chain([item], iterable)
+                break
+
+    except StopIteration:
+        pass
+    return collected, iterable
 
 
 def merge_supervisions(

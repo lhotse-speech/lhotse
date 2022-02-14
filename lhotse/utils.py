@@ -1,10 +1,10 @@
 import functools
-import logging
 import inspect
-import warnings
+import logging
 import math
 import random
 import uuid
+import warnings
 from contextlib import AbstractContextManager, contextmanager
 from dataclasses import asdict, dataclass
 from decimal import Decimal, ROUND_HALF_DOWN, ROUND_HALF_UP
@@ -38,7 +38,6 @@ INT16MAX = 32768
 EPSILON = 1e-10
 LOG_EPSILON = math.log(EPSILON)
 DEFAULT_PADDING_VALUE = 0  # used for custom attrs
-
 
 # This is a utility that generates uuid4's and is set when the user calls
 # the ``fix_random_seed`` function.
@@ -265,6 +264,50 @@ def fastcopy(dataclass_obj: T, **kwargs) -> T:
         >>> ts2 = fastcopy(ts1, end=12)
     """
     return type(dataclass_obj)(**{**dataclass_obj.__dict__, **kwargs})
+
+
+def split_manifest_lazy(
+    it: Iterable[Any], output_dir: Pathlike, chunk_size: int
+) -> List:
+    """
+    Splits a manifest (either lazily or eagerly opened) into chunks, each
+    with ``chunk_size`` items (except for the last one, typically).
+
+    In order to be memory efficient, this implementation saves each chunk
+    to disk in a ``.jsonl.gz`` format as the input manifest is sampled.
+
+    .. note:: For lowest memory usage, use ``load_manifest_lazy`` to open the
+        input manifest for this method.
+
+    :param it: any iterable of Lhotse manifests.
+    :param output_dir: directory where the split manifests are saved.
+        Each manifest is saved at: ``{output_dir}/{split_idx}.jsonl.gz``
+    :param chunk_size: the number of items in each chunk.
+    :return: a list of lazily opened chunk manifests.
+    """
+    from lhotse.serialization import SequentialJsonlWriter
+
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    items = iter(it)
+    split_idx = 0
+    splits = []
+    while True:
+        try:
+            written = 0
+            with SequentialJsonlWriter(output_dir / f"{split_idx}.jsonl.gz") as writer:
+                while written < chunk_size:
+                    item = next(items)
+                    writer.write(item)
+                    written += 1
+            split_idx += 1
+        except StopIteration:
+            break
+        finally:
+            splits.append(writer.open_manifest())
+
+    return splits
 
 
 def split_sequence(
@@ -632,3 +675,34 @@ def deprecated(message):
         return wrapper
 
     return decorator
+
+
+class suppress_and_warn:
+    """Context manager to suppress specified exceptions that logs the error message.
+
+    After the exception is suppressed, execution proceeds with the next
+    statement following the with statement.
+
+         >>> with suppress_and_warn(FileNotFoundError):
+         ...     os.remove(somefile)
+         >>> # Execution still resumes here if the file was already removed
+    """
+
+    def __init__(self, *exceptions, enabled: bool = True):
+        self._enabled = enabled
+        self._exceptions = exceptions
+
+    def __enter__(self):
+        pass
+
+    def __exit__(self, exctype, excinst, exctb):
+        if not self._enabled:
+            return
+        # Returning True from __exit__ in a context manager tells Python
+        # to suppress an exception.
+        should_suppress = exctype is not None and issubclass(exctype, self._exceptions)
+        if should_suppress:
+            logging.warning(
+                f"[Suppressed {exctype.__qualname__}] Error message: {excinst}"
+            )
+        return should_suppress

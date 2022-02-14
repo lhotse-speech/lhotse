@@ -64,7 +64,9 @@ Lhotse is available on PyPI:
 To install the latest, unreleased version, do:
 
     pip install git+https://github.com/lhotse-speech/lhotse
-    
+
+_Hint: for up to 50% faster reading of JSONL manifests, use: `pip install lhotse[orjson]` to leverage the [orjson](https://pypi.org/project/orjson/) library._
+
 ### Development installation
 
 For development installation, you can fork/clone the GitHub repo and install with pip:
@@ -103,7 +105,7 @@ A short snippet to show how Lhotse can make audio data prepartion quick and easy
 ```python
 from torch.utils.data import DataLoader
 from lhotse import CutSet, Fbank
-from lhotse.dataset import VadDataset, SingleCutSampler
+from lhotse.dataset import VadDataset, SimpleCutSampler
 from lhotse.recipes import prepare_switchboard
 
 # Prepare data manifests from a raw corpus distribution.
@@ -132,8 +134,8 @@ cuts = cuts.compute_and_store_features(
 ).pad(duration=5.0)
 
 # Construct a Pytorch Dataset class for Voice Activity Detection task:
-dataset = VadDataset(cuts)
-sampler = SingleCutSampler(cuts)
+dataset = VadDataset()
+sampler = SimpleCutSampler(cuts, max_duration=300)
 dataloader = DataLoader(dataset, sampler=sampler, batch_size=None)
 batch = next(iter(dataloader))
 ```

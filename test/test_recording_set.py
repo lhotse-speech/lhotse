@@ -6,7 +6,13 @@ import numpy as np
 import pytest
 from pytest import mark, raises
 
-from lhotse.audio import AudioMixer, AudioSource, Recording, RecordingSet
+from lhotse.audio import (
+    AudioMixer,
+    AudioSource,
+    Recording,
+    RecordingSet,
+    DurationMismatchError,
+)
 from lhotse.testing.dummies import DummyManifest
 from lhotse.utils import INT16MAX
 from lhotse.utils import fastcopy, nullcontext as does_not_raise
@@ -111,7 +117,7 @@ def test_get_audio_multichannel(
             10.0,
             "irrelevant",
             "irrelevant",
-            raises(ValueError),
+            raises(DurationMismatchError),
         ),  # requested more audio than available
     ],
 )
@@ -398,6 +404,39 @@ class TestAudioMixer:
         np.testing.assert_almost_equal(mixed[0, 4000:8000], 1.31622776)
         np.testing.assert_almost_equal(mixed[0, 8000:], 0.31622776)
         assert mixed.dtype == np.float32
+
+    def test_audio_mixer_handles_empty_array(self):
+        # Treat it more like a test of "it runs" rather than "it works"
+        sr = 16000
+        t = np.linspace(0, 1, sr, dtype=np.float32)
+        x1 = np.sin(440.0 * t).reshape(1, -1)
+
+        mixer = AudioMixer(
+            base_audio=x1,
+            sampling_rate=sr,
+        )
+        mixer.add_to_mix(np.array([]))
+
+        xmix = mixer.mixed_audio
+        np.testing.assert_equal(xmix, x1)
+
+    def test_audio_mixer_handles_empty_array_with_offset(self):
+        # Treat it more like a test of "it runs" rather than "it works"
+        sr = 16000
+        t = np.linspace(0, 1, sr, dtype=np.float32)
+        x1 = np.sin(440.0 * t).reshape(1, -1)
+
+        mixer = AudioMixer(
+            base_audio=x1,
+            sampling_rate=sr,
+        )
+        mixer.add_to_mix(np.array([]), offset=0.5)
+
+        xmix = mixer.mixed_audio
+        # 0s - 1s: identical
+        np.testing.assert_equal(xmix[:sr], x1)
+        # 1s - 1.5s: padding
+        np.testing.assert_equal(xmix[sr:], 0)
 
 
 @pytest.mark.skipif(

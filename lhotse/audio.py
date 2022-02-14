@@ -11,7 +11,7 @@ from io import BytesIO
 from itertools import islice
 from math import ceil, sqrt
 from pathlib import Path
-from subprocess import PIPE, run
+from subprocess import CalledProcessError, PIPE, run
 from typing import (
     Any,
     Callable,
@@ -32,10 +32,10 @@ from tqdm.auto import tqdm
 from lhotse.augmentation import (
     AudioTransform,
     Resample,
+    ReverbWithImpulseResponse,
     Speed,
     Tempo,
     Volume,
-    ReverbWithImpulseResponse,
 )
 from lhotse.caching import dynamic_lru_cache
 from lhotse.serialization import Serializable
@@ -54,6 +54,7 @@ from lhotse.utils import (
     index_by_id_and_check,
     perturb_num_samples,
     rich_exception_info,
+    split_manifest_lazy,
     split_sequence,
 )
 
@@ -196,7 +197,7 @@ class AudioSource:
             if (
                 available_duration < duration - LHOTSE_AUDIO_DURATION_MISMATCH_TOLERANCE
             ):  # set the allowance as 1ms to avoid float error
-                raise ValueError(
+                raise DurationMismatchError(
                     f"Requested more audio ({duration}s) than available ({available_duration}s)"
                 )
 
@@ -299,6 +300,7 @@ class Recording:
         recording_id: Optional[str] = None,
         relative_path_depth: Optional[int] = None,
         force_opus_sampling_rate: Optional[int] = None,
+        force_read_audio: bool = False,
     ) -> "Recording":
         """
         Read an audio file's header and create the corresponding ``Recording``.
@@ -317,10 +319,16 @@ class Recording:
             instead of the one we read from the manifest. This is useful for OPUS files that always
             have 48kHz rate and need to be resampled to the real one -- we will perform that operation
             "under-the-hood". For non-OPUS files this input is undefined.
+        :param force_read_audio: Set it to ``True`` for audio files that do not have any metadata
+            in their headers (e.g., "The People's Speech" FLAC files).
         :return: a new ``Recording`` instance pointing to the audio file.
         """
         path = Path(path)
-        audio_info = info(path, force_opus_sampling_rate=force_opus_sampling_rate)
+        audio_info = info(
+            path,
+            force_opus_sampling_rate=force_opus_sampling_rate,
+            force_read_audio=force_read_audio,
+        )
         return Recording(
             id=recording_id if recording_id is not None else path.stem,
             sampling_rate=audio_info.samplerate,
@@ -508,6 +516,7 @@ class Recording:
         self,
         rir_recording: "Recording",
         normalize_output: bool = True,
+        early_only: bool = False,
         affix_id: bool = True,
     ) -> "Recording":
         """
@@ -516,6 +525,7 @@ class Recording:
 
         :param rir_recording: The impulse response to be used.
         :param normalize_output: When true, output will be normalized to have energy as input.
+        :param early_only: When true, only the early reflections (first 50 ms) will be used.
         :param affix_id: When true, we will modify the ``Recording.id`` field
             by affixing it with "_rvb".
         :return: the perturbed ``Recording``.
@@ -525,6 +535,7 @@ class Recording:
             ReverbWithImpulseResponse(
                 rir_recording,
                 normalize_output=normalize_output,
+                early_only=early_only,
             ).to_dict()
         )
         return fastcopy(
@@ -760,6 +771,25 @@ class RecordingSet(Serializable, Sequence[Recording]):
             )
         ]
 
+    def split_lazy(self, output_dir: Pathlike, chunk_size: int) -> List["RecordingSet"]:
+        """
+        Splits a manifest (either lazily or eagerly opened) into chunks, each
+        with ``chunk_size`` items (except for the last one, typically).
+
+        In order to be memory efficient, this implementation saves each chunk
+        to disk in a ``.jsonl.gz`` format as the input manifest is sampled.
+
+        .. note:: For lowest memory usage, use ``load_manifest_lazy`` to open the
+            input manifest for this method.
+
+        :param it: any iterable of Lhotse manifests.
+        :param output_dir: directory where the split manifests are saved.
+            Each manifest is saved at: ``{output_dir}/{split_idx}.jsonl.gz``
+        :param chunk_size: the number of items in each chunk.
+        :return: a list of lazily opened chunk manifests.
+        """
+        return split_manifest_lazy(self, output_dir=output_dir, chunk_size=chunk_size)
+
     def subset(
         self, first: Optional[int] = None, last: Optional[int] = None
     ) -> "RecordingSet":
@@ -870,6 +900,7 @@ class RecordingSet(Serializable, Sequence[Recording]):
         self,
         rir_recordings: "RecordingSet",
         normalize_output: bool = True,
+        early_only: bool = False,
         affix_id: bool = True,
     ) -> "RecordingSet":
         """
@@ -878,6 +909,7 @@ class RecordingSet(Serializable, Sequence[Recording]):
 
         :param rir_recordings: The impulse responses to be used.
         :param normalize_output: When true, output will be normalized to have energy as input.
+        :param early_only: When true, only the early reflections (first 50 ms) will be used.
         :param affix_id: When true, we will modify the ``Recording.id`` field
             by affixing it with "_rvb".
         :return: a ``RecordingSet`` containing the perturbed ``Recording`` objects.
@@ -887,6 +919,7 @@ class RecordingSet(Serializable, Sequence[Recording]):
             r.reverb_rir(
                 rir_recording=random.choice(rir_recordings),
                 normalize_output=normalize_output,
+                early_only=early_only,
                 affix_id=affix_id,
             )
             for r in self
@@ -957,16 +990,34 @@ class AudioMixer:
     The SNR is relative to the energy of the signal used to initialize the ``AudioMixer``.
     """
 
-    def __init__(self, base_audio: np.ndarray, sampling_rate: int):
+    def __init__(
+        self,
+        base_audio: np.ndarray,
+        sampling_rate: int,
+        reference_energy: Optional[float] = None,
+    ):
         """
+        AudioMixer's constructor.
+
         :param base_audio: A numpy array with the audio samples for the base signal
             (all the other signals will be mixed to it).
         :param sampling_rate: Sampling rate of the audio.
+        :param reference_energy: Optionally pass a reference energy value to compute SNRs against.
+            This might be required when ``base_audio`` corresponds to zero-padding.
         """
         self.tracks = [base_audio]
         self.sampling_rate = sampling_rate
-        self.reference_energy = audio_energy(base_audio)
         self.dtype = self.tracks[0].dtype
+
+        # Keep a pre-computed energy value of the audio that we initialize the Mixer with;
+        # it is required to compute gain ratios that satisfy SNR during the mix.
+        if reference_energy is None:
+            self.reference_energy = audio_energy(base_audio)
+        else:
+            self.reference_energy = reference_energy
+        assert (
+            self.reference_energy > 0.0
+        ), f"To perform mix, energy must be non-zero and non-negative (got {self.reference_energy})"
 
     @property
     def unmixed_audio(self) -> np.ndarray:
@@ -999,6 +1050,9 @@ class AudioMixer:
         the start with low energy values.
         :return:
         """
+        if len(audio) == 0:
+            return  # do nothing for empty arrays
+
         assert audio.shape[0] == 1  # TODO: support multi-channels
         assert offset >= 0.0, "Negative offset in mixing is not supported."
 
@@ -1109,15 +1163,27 @@ class LibsndfileCompatibleAudioInfo(NamedTuple):
 
 
 def info(
-    path: Pathlike, force_opus_sampling_rate: Optional[int] = None
+    path: Pathlike,
+    force_opus_sampling_rate: Optional[int] = None,
+    force_read_audio: bool = False,
 ) -> LibsndfileCompatibleAudioInfo:
+
+    if force_read_audio:
+        # This is a reliable fallback for situations when the user knows that audio files do not
+        # have duration metadata in their headers.
+        # We will use "audioread" backend that spawns an ffmpeg process, reads the audio,
+        # and computes the duration.
+        return audioread_info(str(path))
+
     if path.suffix.lower() == ".opus":
         # We handle OPUS as a special case because we might need to force a certain sampling rate.
         return opus_info(path, force_opus_sampling_rate=force_opus_sampling_rate)
+
     elif path.suffix.lower() == ".sph":
         # We handle SPHERE as another special case because some old codecs (i.e. "shorten" codec)
         # can't be handled by neither pysoundfile nor pyaudioread.
         return sph_info(path)
+
     try:
         # Try to parse the file using torchaudio first.
         return torchaudio_info(path)
@@ -1536,8 +1602,8 @@ def read_opus_ffmpeg(
                 f"Unknown channel description from ffmpeg: {channel_string}"
             )
     except ValueError as e:
-        raise ValueError(
-            f"{e}\nThe ffmpeg command for which the program failed is: '{cmd}'"
+        raise AudioLoadingError(
+            f"{e}\nThe ffmpeg command for which the program failed is: '{cmd}', error code: {proc.returncode}"
         )
     return audio, sampling_rate
 
@@ -1597,7 +1663,18 @@ def read_sph(
     cmd += f" {sph_path}"
 
     # Actual audio reading.
-    proc = BytesIO(run(cmd, shell=True, check=True, stdout=PIPE, stderr=PIPE).stdout)
+    try:
+        proc = BytesIO(
+            run(cmd, shell=True, check=True, stdout=PIPE, stderr=PIPE).stdout
+        )
+    except CalledProcessError as e:
+        if e.returncode == 127:
+            raise ValueError(
+                "It seems that 'sph2pipe' binary is not installed; "
+                "did you run 'lhotse install-sph2pipe'?"
+            )
+        else:
+            raise
 
     import soundfile as sf
 
@@ -1606,3 +1683,11 @@ def read_sph(
         audio = audio.reshape(1, -1) if sf_desc.channels == 1 else audio.T
 
     return audio, sampling_rate
+
+
+class AudioLoadingError(Exception):
+    pass
+
+
+class DurationMismatchError(Exception):
+    pass

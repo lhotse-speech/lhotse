@@ -33,7 +33,7 @@ class CutSampler(Sampler):
     Example usage::
 
         >>> dataset = K2SpeechRecognitionDataset(cuts)
-        >>> sampler = SingleCutSampler(cuts, max_duration=200, shuffle=True)
+        >>> sampler = SimpleCutSampler(cuts, max_duration=200, shuffle=True)
         >>> loader = DataLoader(dataset, sampler=sampler, batch_size=None)
         >>> for epoch in range(start_epoch, n_epochs):
         ...     sampler.set_epoch(epoch)
@@ -78,7 +78,7 @@ class CutSampler(Sampler):
 
         self._maybe_init_distributed(world_size=world_size, rank=rank)
         # By default, self._filter_fn passes every Cut through.
-        self._filter_fn: Callable[[Cut], bool] = lambda cut: True
+        self._filter_fn: Callable[[Cut], bool] = _filter_nothing
         self.diagnostics = SamplingDiagnostics()
 
     def _maybe_init_distributed(self, world_size: Optional[int], rank: Optional[int]):
@@ -117,7 +117,7 @@ class CutSampler(Sampler):
 
         Example:
             >>> cuts = CutSet(...)
-            ... sampler = SingleCutSampler(cuts, max_duration=100.0)
+            ... sampler = SimpleCutSampler(cuts, max_duration=100.0)
             ... # Retain only the cuts that have at least 1s and at most 20s duration.
             ... sampler.filter(lambda cut: 1.0 <= cut.duration <= 20.0)
         """
@@ -457,3 +457,7 @@ class SamplingDiagnostics:
             num_discarded_batches=self.num_discarded_batches
             + other.num_discarded_batches,
         )
+
+
+def _filter_nothing(cut: Cut) -> bool:
+    return True

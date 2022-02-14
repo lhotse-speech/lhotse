@@ -14,7 +14,7 @@ from lhotse.utils import Pathlike
     default=False,
     help="Whether to return absolute or relative (to the corpus dir) paths for recordings.",
 )
-def fisher_english(
+def fisher_spanish(
     audio_dir: Pathlike,
     transcript_dir: Pathlike,
     output_dir: Pathlike,

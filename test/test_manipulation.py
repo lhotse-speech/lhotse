@@ -1,4 +1,5 @@
 import random
+from tempfile import TemporaryDirectory
 
 import pytest
 from pytest import mark
@@ -93,6 +94,23 @@ def test_cannot_split_to_more_chunks_than_items(manifest_type):
     manifest = DummyManifest(manifest_type, begin_id=0, end_id=1)
     with pytest.raises(ValueError):
         manifest.split(num_splits=10)
+
+
+@mark.parametrize("manifest_type", [RecordingSet, SupervisionSet, FeatureSet, CutSet])
+def test_split_lazy_even(manifest_type):
+    with TemporaryDirectory() as d:
+        manifest = DummyManifest(manifest_type, begin_id=0, end_id=100)
+        manifest_subsets = manifest.split_lazy(output_dir=d, chunk_size=49)
+        assert len(manifest_subsets) == 3
+        assert list(manifest_subsets[0]) == list(
+            DummyManifest(manifest_type, begin_id=0, end_id=49)
+        )
+        assert list(manifest_subsets[1]) == list(
+            DummyManifest(manifest_type, begin_id=49, end_id=98)
+        )
+        assert list(manifest_subsets[2]) == list(
+            DummyManifest(manifest_type, begin_id=98, end_id=100)
+        )
 
 
 @mark.parametrize("manifest_type", [RecordingSet, SupervisionSet, FeatureSet, CutSet])

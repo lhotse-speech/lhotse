@@ -7,6 +7,7 @@ from lhotse import validate
 from lhotse.cut import CutSet
 from lhotse.dataset.input_strategies import BatchIO, PrecomputedFeatures
 from lhotse.utils import compute_num_frames, ifnone
+from lhotse.workarounds import Hdf5MemoryIssueFix
 
 
 class K2SpeechRecognitionDataset(torch.utils.data.Dataset):
@@ -17,7 +18,7 @@ class K2SpeechRecognitionDataset(torch.utils.data.Dataset):
     for which it loads features and automatically collates/batches them.
 
     To use it with a PyTorch DataLoader, set ``batch_size=None``
-    and provide a :class:`SingleCutSampler` sampler.
+    and provide a :class:`SimpleCutSampler` sampler.
 
     Each item in this dataset is a dict of:
 
@@ -85,12 +86,19 @@ class K2SpeechRecognitionDataset(torch.utils.data.Dataset):
         self.input_transforms = ifnone(input_transforms, [])
         self.input_strategy = input_strategy
 
+        # This attribute is a workaround to constantly growing HDF5 memory
+        # throughout the epoch. It regularly closes open file handles to
+        # reset the internal HDF5 caches.
+        self.hdf5_fix = Hdf5MemoryIssueFix(reset_interval=100)
+
     def __getitem__(self, cuts: CutSet) -> Dict[str, Union[torch.Tensor, List[str]]]:
         """
         Return a new batch, with the batch size automatically determined using the constraints
         of max_frames and max_cuts.
         """
         validate_for_asr(cuts)
+
+        self.hdf5_fix.update()
 
         # Sort the cuts by duration so that the first one determines the batch time dimensions.
         cuts = cuts.sort_by_duration(ascending=False)
@@ -102,7 +110,14 @@ class K2SpeechRecognitionDataset(torch.utils.data.Dataset):
 
         # Get a tensor with batched feature matrices, shape (B, T, F)
         # Collation performs auto-padding, if necessary.
-        inputs, _ = self.input_strategy(cuts)
+        input_tpl = self.input_strategy(cuts)
+        if len(input_tpl) == 3:
+            # An input strategy with fault tolerant audio reading mode.
+            # "cuts" may be a subset of the original "cuts" variable,
+            # that only has cuts for which we succesfully read the audio.
+            inputs, _, cuts = input_tpl
+        else:
+            inputs, _ = input_tpl
 
         # Get a dict of tensors that encode the positional information about supervisions
         # in the batch of feature matrices. The tensors are named "sequence_idx",

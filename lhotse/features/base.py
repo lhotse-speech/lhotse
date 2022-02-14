@@ -26,6 +26,7 @@ from lhotse.utils import (
     exactly_one_not_null,
     fastcopy,
     ifnone,
+    split_manifest_lazy,
     split_sequence,
     uuid4,
 )
@@ -285,7 +286,7 @@ class FeatureExtractor(metaclass=ABCMeta):
             channels=channels if channels is not None else recording.channel_ids,
             # The start is relative to the beginning of the recording.
             start=offset,
-            duration=recording.duration,
+            duration=recording.duration if duration is not None else recording.duration,
             type=self.name,
             num_frames=feats.shape[0],
             num_features=feats.shape[1],
@@ -482,6 +483,21 @@ class Features:
     def to_dict(self) -> dict:
         return asdict_nonull(self)
 
+    def copy_feats(self, writer: FeaturesWriter) -> "Features":
+        """
+        Read the referenced feature array and save it using ``writer``.
+        Returns a copy of the manifest with updated fields related to the feature storage.
+        """
+        feats = self.load()
+        new_key = writer.write(self.storage_key, feats)
+        item = fastcopy(
+            self,
+            storage_type=writer.name,
+            storage_path=writer.storage_path,
+            storage_key=new_key,
+        )
+        return item
+
     @staticmethod
     def from_dict(data: dict) -> "Features":
         # The "storage_type" check is to ensure that the "data" dict actually contains
@@ -560,6 +576,25 @@ class FeatureSet(Serializable, Sequence[Features]):
                 self, num_splits=num_splits, shuffle=shuffle, drop_last=drop_last
             )
         ]
+
+    def split_lazy(self, output_dir: Pathlike, chunk_size: int) -> List["FeatureSet"]:
+        """
+        Splits a manifest (either lazily or eagerly opened) into chunks, each
+        with ``chunk_size`` items (except for the last one, typically).
+
+        In order to be memory efficient, this implementation saves each chunk
+        to disk in a ``.jsonl.gz`` format as the input manifest is sampled.
+
+        .. note:: For lowest memory usage, use ``load_manifest_lazy`` to open the
+            input manifest for this method.
+
+        :param it: any iterable of Lhotse manifests.
+        :param output_dir: directory where the split manifests are saved.
+            Each manifest is saved at: ``{output_dir}/{split_idx}.jsonl.gz``
+        :param chunk_size: the number of items in each chunk.
+        :return: a list of lazily opened chunk manifests.
+        """
+        return split_manifest_lazy(self, output_dir=output_dir, chunk_size=chunk_size)
 
     def subset(
         self, first: Optional[int] = None, last: Optional[int] = None
@@ -682,6 +717,14 @@ class FeatureSet(Serializable, Sequence[Features]):
         )
         features = feature_info.load(start=start, duration=duration)
         return features
+
+    def copy_feats(self, writer: FeaturesWriter) -> "FeatureSet":
+        """
+        For each manifest in this FeatureSet,
+        read the referenced feature array and save it using ``writer``.
+        Returns a copy of the manifest with updated fields related to the feature storage.
+        """
+        return FeatureSet.from_features(f.copy_feats(writer=writer) for f in self)
 
     def compute_global_stats(
         self, storage_path: Optional[Pathlike] = None

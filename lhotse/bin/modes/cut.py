@@ -394,3 +394,16 @@ def decompose(cutset: Pathlike, output: Pathlike):
     ), f"Only CutSet can be decomposed (got: {type(cuts)} from '{cutset}')"
     output = Path(output)
     cuts.decompose(output_dir=output, verbose=True)
+
+
+@cut.command()
+@click.argument("cutset", type=click.Path(exists=True, dir_okay=False))
+def describe(cutset: Pathlike):
+    """
+    Describe some statistics of CUTSET, such as the total speech and audio duration.
+    """
+    cuts = load_manifest_lazy_or_eager(cutset)
+    assert isinstance(
+        cuts, CutSet
+    ), f"Only CutSet can be described (got: {type(cuts)} from '{cutset}')"
+    cuts.describe()
