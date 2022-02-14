@@ -524,19 +524,17 @@ class FeatureSet(Serializable, Sequence[Features]):
     """
 
     def __init__(self, features: List[Features] = None) -> None:
-        self.features = sorted(ifnone(features, []))
+        self.features = ifnone(features, [])
+        if isinstance(self.features, list):
+            self.features = sorted(self.features)
 
     def __eq__(self, other: "FeatureSet") -> bool:
         return self.features == other.features
 
     @property
-    def is_lazy(self) -> bool:
-        """
-        Indicates whether this manifest was opened in lazy (read-on-the-fly) mode or not.
-        """
-        from lhotse.serialization import LazyJsonlIterator
-
-        return isinstance(self.features, LazyJsonlIterator)
+    def data(self) -> Union[Dict[str, Features], Iterable[Features]]:
+        """Alias property for ``self.features``"""
+        return self.features
 
     @staticmethod
     def from_features(features: Iterable[Features]) -> "FeatureSet":
@@ -755,6 +753,10 @@ class FeatureSet(Serializable, Sequence[Features]):
         return len(self.features)
 
     def __add__(self, other: "FeatureSet") -> "FeatureSet":
+        from lhotse.serialization import LazyIteratorChain
+
+        if self.is_lazy or other.is_lazy:
+            return FeatureSet(LazyIteratorChain(self.features, other.features))
         return FeatureSet(features=self.features + other.features)
 
 

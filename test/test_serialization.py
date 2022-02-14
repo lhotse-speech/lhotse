@@ -389,3 +389,59 @@ def test_sequential_jsonl_writer_overwrite(overwrite):
                 assert all(not writer.contains(id_) for id_ in half.ids)
             else:
                 assert all(writer.contains(id_) for id_ in half.ids)
+
+
+@pytest.mark.parametrize(
+    "manifest_type", ["recording_set", "supervision_set", "cut_set", "feature_set"]
+)
+def test_manifest_is_lazy(manifests, manifest_type):
+    # Eager manifest is not lazy
+    eager = manifests[manifest_type]
+    cls = type(eager)
+    assert not eager.is_lazy
+
+    # Save the manifest to JSONL and open it lazily
+    with NamedTemporaryFile(suffix=".jsonl") as f, cls.open_writer(f.name) as writer:
+        for item in eager:
+            writer.write(item)
+        f.flush()
+
+        lazy = writer.open_manifest()
+
+        # Lazy manifest is lazy
+        assert lazy.is_lazy
+
+        # Concatenation of eager + eager manifests is eager
+        # (we have to modify ids to concatenate because of sanity checks)
+        eager_eager_cat = eager + cls.from_items(
+            fastcopy(it, id=it.id + "_cpy") if hasattr(it, "id") else it for it in eager
+        )
+        assert not eager_eager_cat.is_lazy
+
+        # Concatenation of lazy + eager manifests is lazy
+        lazy_eager_cat = lazy + eager
+        assert lazy_eager_cat.is_lazy
+
+        # Concatenation of eager + lazy manifests is lazy
+        eager_lazy_cat = eager + lazy
+        assert eager_lazy_cat.is_lazy
+
+        # Concatenation of eager + lazy manifests is lazy
+        lazy_lazy_cat = eager + lazy
+        assert lazy_lazy_cat.is_lazy
+
+        # Muxing of eager + eager manifests is lazy
+        eager_eager_mux = cls.mux(eager, eager)
+        assert eager_eager_mux.is_lazy
+
+        # Muxing of lazy + eager manifests is lazy
+        lazy_eager_mux = cls.mux(lazy, eager)
+        assert lazy_eager_mux.is_lazy
+
+        # Muxing of eager + lazy manifests is lazy
+        eager_lazy_mux = cls.mux(eager, lazy)
+        assert eager_lazy_mux.is_lazy
+
+        # Muxing of eager + lazy manifests is lazy
+        lazy_lazy_mux = cls.mux(lazy, lazy)
+        assert lazy_lazy_mux.is_lazy
