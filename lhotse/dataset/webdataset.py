@@ -72,6 +72,9 @@ class LazyWebdatasetIterator:
     """
 
     def __init__(self, path: Pathlike, **wds_kwargs) -> None:
+        if not is_module_available("webdataset"):
+            raise ImportError("Please 'pip install webdataset' first.")
+
         self.path = str(path)
         self.wds_kwargs = wds_kwargs
 
@@ -80,13 +83,21 @@ class LazyWebdatasetIterator:
             raise ImportError("Please 'pip install webdataset' first.")
         import webdataset as wds
 
-        path = Path(self.path)
-        if path.is_dir():
-            path = sorted(map(str, path.glob("shard-*.tar")))
-        elif path.is_file():
-            path = str(path)
+        if str(self.path).startswith("pipe:"):
+            path = self.path
+        elif any(symbol in str(self.path) for symbol in "{}"):
+            # Skip validation for expressions with braces, WebDataset
+            # will expand them internally.
+            pass
         else:
-            raise ValueError(f"No such path: {path}")
+            path = Path(self.path)
+            if path.is_dir():
+                path = sorted(map(str, path.glob("shard-*.tar")))
+                assert len(path) > 0, f"No tarfiles found in directory: {path}"
+            elif path.is_file():
+                path = str(path)
+            else:
+                raise ValueError(f"No such path: {path}")
 
         self._ds = wds.WebDataset(path, **self.wds_kwargs)
         self._ds_iter = iter(self._ds)
