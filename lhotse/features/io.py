@@ -1,3 +1,4 @@
+import pickle
 import threading
 from abc import ABCMeta, abstractmethod
 from functools import lru_cache
@@ -1101,8 +1102,54 @@ class MemoryLilcomWriter(FeaturesWriter):
     def storage_path(self) -> None:
         return None
 
-    def write(self, key: str, value: np.ndarray) -> str:
+    def write(self, key: str, value: np.ndarray) -> bytes:
         return lilcom.compress(value)
+
+    def close(self) -> None:
+        pass
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        pass
+
+
+@register_reader
+class MemoryRawReader(FeaturesReader):
+    """ """
+
+    name = "memory_raw"
+
+    def __init__(self, *args, **kwargs):
+        pass
+
+    @dynamic_lru_cache
+    def read(
+            self,
+            raw_data: bytes,
+            left_offset_frames: int = 0,
+            right_offset_frames: Optional[int] = None,
+    ) -> np.ndarray:
+        arr = pickle.loads(raw_data)
+        return arr[left_offset_frames:right_offset_frames]
+
+
+@register_writer
+class MemoryRawWriter(FeaturesWriter):
+    """ """
+
+    name = "memory_raw"
+
+    def __init__(self, *args, **kwargs):
+        pass
+
+    @property
+    def storage_path(self) -> None:
+        return None
+
+    def write(self, key: str, value: np.ndarray) -> bytes:
+        return pickle.dumps(value)
 
     def close(self) -> None:
         pass

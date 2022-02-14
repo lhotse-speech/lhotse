@@ -1,7 +1,10 @@
+from tempfile import NamedTemporaryFile
+
 import numpy as np
 
-from lhotse import CutSet, Recording, MonoCut
+from lhotse import CutSet, NumpyHdf5Writer, Recording, MonoCut
 from lhotse.testing.dummies import dummy_cut
+from lhotse.utils import compute_num_frames
 
 
 def test_features_move_to_memory():
@@ -19,7 +22,20 @@ def test_features_move_to_memory():
     np.testing.assert_equal(arr, arr_mem)
 
 
-def test_cut_move_to_memory():
+def test_cut_with_features_move_to_memory():
+    path = "test/fixtures/libri/cuts.json"
+    cut = CutSet.from_file(path)[0]
+
+    arr = cut.load_features()
+    assert arr is not None
+
+    cut_mem = cut.move_to_memory()
+    arr_mem = cut_mem.load_features()
+
+    np.testing.assert_almost_equal(arr, arr_mem, decimal=2)
+
+
+def test_cut_with_audio_move_to_memory():
     path = "test/fixtures/mono_c0.wav"
     cut = dummy_cut(0, duration=0.5).drop_recording()
     cut.recording = Recording.from_file(path)
@@ -27,6 +43,40 @@ def test_cut_move_to_memory():
     memory_cut = cut.move_to_memory()
 
     np.testing.assert_equal(memory_cut.load_audio(), cut.load_audio())
+
+
+def test_cut_with_array_move_to_memory():
+    path = "test/fixtures/libri/cuts.json"
+    cut = CutSet.from_file(path)[0]
+    with NamedTemporaryFile(suffix=".h5") as f, NumpyHdf5Writer(f.name) as w:
+        arr = np.array([0, 1, 2, 3])
+        cut.custom_array = w.store_array(key="dummy-key", value=arr)
+
+        cut_mem = cut.move_to_memory()
+        arr_mem = cut_mem.load_custom_array()
+
+        assert arr.dtype == arr_mem.dtype
+        np.testing.assert_equal(arr, arr_mem)
+
+
+def test_cut_with_temporal_array_move_to_memory():
+    path = "test/fixtures/libri/cuts.json"
+    cut = CutSet.from_file(path)[0]
+    with NamedTemporaryFile(suffix=".h5") as f, NumpyHdf5Writer(f.name) as w:
+        arr = np.array(np.arange(compute_num_frames(cut.duration, frame_shift=0.01, sampling_rate=16000)))
+        cut.custom_array = w.store_array(key="dummy-key", value=arr, frame_shift=0.01, temporal_dim=0, start=0)
+
+        cut_mem = cut.move_to_memory()
+        arr_mem = cut_mem.load_custom_array()
+
+        assert arr.dtype == arr_mem.dtype
+        np.testing.assert_equal(arr, arr_mem)
+
+        arr_trunc = cut.truncate(duration=0.5).load_custom_array()
+        arr_mem_trunc = cut_mem.truncate(duration=0.5).load_custom_array()
+
+        assert arr_trunc.dtype == arr_mem_trunc.dtype
+        np.testing.assert_equal(arr_trunc, arr_mem_trunc)
 
 
 def test_cut_move_to_memory_audio_serialization():

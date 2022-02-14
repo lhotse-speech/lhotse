@@ -972,18 +972,41 @@ class MonoCut(Cut):
             )
         return None
 
-    def move_to_memory(self, format: str = "flac") -> "MonoCut":
+    def move_to_memory(self, audio_format: str = "flac") -> "MonoCut":
         """ """
+
+        if self.custom is None:
+            custom = None
+        else:
+            from lhotse.array import Array, TemporalArray
+
+            custom = {
+                # Case 1: Array
+                k: v.move_to_memory() if isinstance(v, Array)
+                # Case 2: TemporalArray
+                else v.move_to_memory(start=self.start, duration=self.duration)
+                if isinstance(v, TemporalArray)
+                # Case 3: anything else
+                else v
+                for k, v in self.custom.items()
+            }
+
         cut = fastcopy(
             self,
             recording=self.recording.move_to_memory(
                 channels=self.channel,
                 offset=self.start,
                 duration=self.duration,
-                format=format,
-            ) if self.has_recording else None,
-            features=self.features.move_to_memory() if self.has_features else None,
-            custom=self.custom,  # TODO: arrays / temporal arrays
+                format=audio_format,
+            )
+            if self.has_recording
+            else None,
+            features=self.features.move_to_memory(
+                start=self.start, duration=self.duration
+            )
+            if self.has_features
+            else None,
+            custom=custom,
         )
         return cut
 
@@ -3334,10 +3357,21 @@ class CutSet(Serializable, Sequence[Cut]):
         return CutSet.from_cuts(deserialize_one(cut) for cut in data)
 
     @staticmethod
-    def from_webdataset(path: Pathlike) -> "CutSet":
+    def from_webdataset(path: Pathlike, **wds_kwargs) -> "CutSet":
+        """
+        Provides the ability to read Lhotse objects from a WebDataset tarball (or a
+        collection of them, i.e., shards) on-the-fly, without reading the full contents
+        into memory.
+
+        Since this mode does not support random access reads, some methods of these classes
+        might not work properly.
+
+        The behaviour of the underlying ``WebDataset`` instance can be customized by
+        providing its kwargs directly to the constructor of this class.
+        """
         from lhotse.dataset.webdataset import LazyWebdatasetIterator
 
-        return CutSet(cuts=LazyWebdatasetIterator(path))
+        return CutSet(cuts=LazyWebdatasetIterator(path, **wds_kwargs))
 
     def to_dicts(self) -> Iterable[dict]:
         return (cut.to_dict() for cut in self)

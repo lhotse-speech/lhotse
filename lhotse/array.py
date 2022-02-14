@@ -6,7 +6,7 @@ from typing import List, Optional, Union
 
 import numpy as np
 
-from lhotse.utils import Pathlike, Seconds, fastcopy
+from lhotse.utils import Pathlike, Seconds, fastcopy, ifnone
 
 
 @dataclass
@@ -74,6 +74,22 @@ class Array:
         to the ``storage_path`` member.
         """
         return fastcopy(self, storage_path=str(Path(path) / self.storage_path))
+
+    def move_to_memory(self) -> "Array":
+        from lhotse.features.io import get_memory_writer
+
+        arr = self.load()
+        if issubclass(arr.dtype.type, np.float):
+            writer = get_memory_writer("memory_lilcom")()
+        else:
+            writer = get_memory_writer("memory_raw")()
+        data = writer.write("", arr)  # key is ignored by in memory writers
+        return Array(
+            storage_type=writer.name,
+            storage_key=data,
+            storage_path="",
+            shape=self.shape,
+        )
 
 
 @dataclass
@@ -206,6 +222,31 @@ class TemporalArray:
         to the ``storage_path`` member.
         """
         return fastcopy(self, array=self.array.with_path_prefix(path))
+
+    def move_to_memory(
+        self,
+        start: Seconds = 0,
+        duration: Optional[Seconds] = None,
+    ) -> "TemporalArray":
+        from lhotse.features.io import get_memory_writer
+
+        arr = self.load(start=start, duration=duration)
+        if issubclass(arr.dtype.type, np.float):
+            writer = get_memory_writer("memory_lilcom")()
+        else:
+            writer = get_memory_writer("memory_raw")()
+        data = writer.write("", arr)  # key is ignored by in memory writers
+        return TemporalArray(
+            array=Array(
+                storage_type=writer.name,
+                storage_key=data,
+                storage_path="",
+                shape=list(arr.shape),
+            ),
+            temporal_dim=self.temporal_dim,
+            frame_shift=self.frame_shift,
+            start=start if not isclose(start, 0) else self.start,
+        )
 
 
 def seconds_to_frames(

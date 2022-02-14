@@ -482,19 +482,21 @@ class Features:
         self,
         start: Seconds = 0,
         duration: Optional[Seconds] = None,
-        format: str = "memory_lilcom",
-    ):
+    ) -> "Features":
         from lhotse.features.io import get_memory_writer
 
-        writer = get_memory_writer(format)()
         arr = self.load(start=start, duration=duration)
+        if issubclass(arr.dtype.type, np.floating):
+            writer = get_memory_writer("memory_lilcom")()
+        else:
+            writer = get_memory_writer("memory_raw")()
         data = writer.write("", arr)  # key is ignored by in memory writers
         return fastcopy(
             self,
             start=start if not isclose(start, 0) else self.start,
             duration=ifnone(duration, self.duration),
             num_frames=arr.shape[0],
-            storage_type=format,
+            storage_type=writer.name,
             storage_key=data,
             storage_path="",
         )

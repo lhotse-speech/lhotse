@@ -1,5 +1,5 @@
 import pickle
-from tempfile import NamedTemporaryFile
+from tempfile import NamedTemporaryFile, TemporaryDirectory
 
 import numpy as np
 
@@ -49,3 +49,25 @@ def test_cutset_from_webdataset():
 
         for c, cds in zip(cuts, cuts_ds):
             np.testing.assert_equal(c.load_audio(), cds.load_audio())
+            np.testing.assert_almost_equal(c.load_features(), cds.load_features(), decimal=2)
+
+
+def test_cutset_from_webdataset_sharded():
+    cuts = CutSet.from_file("test/fixtures/libri/cuts.json")
+    cut = cuts[0]
+    cuts = []
+    for i in range(10):
+        cuts.append(fastcopy(cut, id=cut.id + "-" + str(i)))
+    cuts = CutSet.from_cuts(cuts)
+
+    with TemporaryDirectory() as dir_path:
+        export_to_webdataset(cuts, output_path=dir_path, shard_size=2)
+
+        # disabling shardshuffle for testing purposes here
+        cuts_ds = CutSet.from_webdataset(dir_path, shardshuffle=False)
+
+        assert list(cuts.ids) == list(cuts_ds.ids)
+
+        for c, cds in zip(cuts, cuts_ds):
+            np.testing.assert_equal(c.load_audio(), cds.load_audio())
+            np.testing.assert_almost_equal(c.load_features(), cds.load_features(), decimal=2)
