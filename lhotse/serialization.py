@@ -347,7 +347,11 @@ class LazyMixin:
             The weights are uniform by default.
         :param seed: the random seed, ensures deterministic order across multiple iterations.
         """
-        return cls(LazyIteratorMultiplexer(*manifests, stop_early=stop_early, weights=weights, seed=seed))
+        return cls(
+            LazyIteratorMultiplexer(
+                *manifests, stop_early=stop_early, weights=weights, seed=seed
+            )
+        )
 
 
 def grouper(n, iterable):
