@@ -1126,10 +1126,10 @@ class MemoryRawReader(FeaturesReader):
 
     @dynamic_lru_cache
     def read(
-            self,
-            raw_data: bytes,
-            left_offset_frames: int = 0,
-            right_offset_frames: Optional[int] = None,
+        self,
+        raw_data: bytes,
+        left_offset_frames: int = 0,
+        right_offset_frames: Optional[int] = None,
     ) -> np.ndarray:
         arr = pickle.loads(raw_data)
         return arr[left_offset_frames:right_offset_frames]

@@ -437,8 +437,10 @@ class Recording:
             channels=channels, offset=ifnone(offset, 0), duration=duration
         )
         stream = BytesIO()
-        torchaudio.save(stream, torch.from_numpy(audio), self.sampling_rate, format=format)
-        channels = ifnone(channels, self.channel_ids),
+        torchaudio.save(
+            stream, torch.from_numpy(audio), self.sampling_rate, format=format
+        )
+        channels = (ifnone(channels, self.channel_ids),)
         if isinstance(channels, int):
             channels = [channels]
         return Recording(

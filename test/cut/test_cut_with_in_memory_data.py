@@ -63,8 +63,14 @@ def test_cut_with_temporal_array_move_to_memory():
     path = "test/fixtures/libri/cuts.json"
     cut = CutSet.from_file(path)[0]
     with NamedTemporaryFile(suffix=".h5") as f, NumpyHdf5Writer(f.name) as w:
-        arr = np.array(np.arange(compute_num_frames(cut.duration, frame_shift=0.01, sampling_rate=16000)))
-        cut.custom_array = w.store_array(key="dummy-key", value=arr, frame_shift=0.01, temporal_dim=0, start=0)
+        arr = np.array(
+            np.arange(
+                compute_num_frames(cut.duration, frame_shift=0.01, sampling_rate=16000)
+            )
+        )
+        cut.custom_array = w.store_array(
+            key="dummy-key", value=arr, frame_shift=0.01, temporal_dim=0, start=0
+        )
 
         cut_mem = cut.move_to_memory()
         arr_mem = cut_mem.load_custom_array()

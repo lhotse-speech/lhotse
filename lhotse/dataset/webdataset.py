@@ -5,6 +5,7 @@ from typing import Dict, Optional
 from tqdm.auto import tqdm
 
 from lhotse import CutSet
+from lhotse.serialization import LazyIteratorChain
 from lhotse.utils import Pathlike, is_module_available
 
 
@@ -136,7 +137,5 @@ class LazyWebdatasetIterator:
     def items(self):
         return ((item.id, item) for item in self)
 
-    def __add__(self, other) -> "LazyIteratorChain":
-        from lhotse.serialization import LazyIteratorChain
-
+    def __add__(self, other) -> LazyIteratorChain:
         return LazyIteratorChain(self, other)

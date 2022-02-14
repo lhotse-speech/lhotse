@@ -23,7 +23,8 @@ from lhotse.features.io import (
     LilcomChunkyWriter,
     LilcomFilesWriter,
     LilcomHdf5Writer,
-    MemoryLilcomWriter, NumpyFilesWriter,
+    MemoryLilcomWriter,
+    NumpyFilesWriter,
     NumpyHdf5Writer,
 )
 from lhotse.testing.dummies import DummyManifest
