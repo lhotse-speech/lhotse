@@ -28,19 +28,15 @@ def get_duration(
     """
     path = str(path)
     if path.strip().endswith("|"):
-        if not is_module_available("kaldiio"):
+        if not is_module_available("kaldi_native_io"):
             raise ValueError(
                 "To read Kaldi's data dir where wav.scp has 'pipe' inputs, "
-                "please 'pip install kaldiio' first."
+                "please 'pip install kaldi_native_io' first."
             )
-        from kaldiio import load_mat
+        wave_info = kaldi_native_io.read_wave_info(path)
+        assert wave_info.num_channels == 1, wave_info.num_channels
 
-        # Note: kaldiio.load_mat returns
-        # (sampling_rate: int, samples: 1-D np.array[int])
-        sampling_rate, samples = load_mat(path)
-        assert len(samples.shape) == 1
-        duration = samples.shape[0] / sampling_rate
-        return duration
+        return wave_info.duration
     try:
         # Try to parse the file using pysoundfile first.
         import soundfile
@@ -135,14 +131,14 @@ def load_kaldi_data_dir(
 
     feature_set = None
     feats_scp = path / "feats.scp"
-    if feats_scp.exists() and is_module_available("kaldiio"):
+    if feats_scp.exists() and is_module_available("kaldi_native_io"):
         if frame_shift is not None:
-            import kaldiio
+            import kaldi_native_io
             from lhotse.features.io import KaldiReader
 
             feature_set = FeatureSet.from_features(
                 Features(
-                    type="kaldiio",
+                    type="kaldi_native_io",
                     num_frames=mat.shape[0],
                     num_features=mat.shape[1],
                     frame_shift=frame_shift,
@@ -157,7 +153,7 @@ def load_kaldi_data_dir(
                     else utt_id,
                     channels=0,
                 )
-                for utt_id, mat in kaldiio.load_scp_sequential(str(feats_scp))
+                for utt_id, mat in kaldi_native_io.SequentialFloatMatrixReader(f'scp:{feats_scp}')
             )
         else:
             warnings.warn(

@@ -951,26 +951,28 @@ Kaldi-compatible feature reader
 @register_reader
 class KaldiReader(FeaturesReader):
     """
-    Reads Kaldi's "feats.scp" file using kaldiio.
+    Reads Kaldi's "feats.scp" file using kaldi_native_io.
     ``storage_path`` corresponds to the path to ``feats.scp``.
     ``storage_key`` corresponds to the utterance-id in Kaldi.
 
     .. caution::
-        Requires ``kaldiio`` to be installed (``pip install kaldiio``).
+        Requires ``kaldi_native_io`` to be installed (``pip install kaldi_native_io``).
     """
 
-    name = "kaldiio"
+    name = "kaldi_native_io"
 
     def __init__(self, storage_path: Pathlike, *args, **kwargs):
-        if not is_module_available("kaldiio"):
+        if not is_module_available("kaldi_native_io"):
             raise ValueError(
-                "To read Kaldi feats.scp, please 'pip install kaldiio' first."
+                "To read Kaldi feats.scp, please 'pip install kaldi_native_io' first."
             )
-        import kaldiio
+        import kaldi_native_io
 
         super().__init__()
         self.storage_path = storage_path
-        self.storage = kaldiio.load_scp(str(self.storage_path))
+        self.storage = kaldi_native_io.RandomAccessFloatMatrixReader(
+            f"scp:{self.storage_path}"
+        )
 
     @dynamic_lru_cache
     def read(
@@ -979,19 +981,19 @@ class KaldiReader(FeaturesReader):
         left_offset_frames: int = 0,
         right_offset_frames: Optional[int] = None,
     ) -> np.ndarray:
-        arr = self.storage[key]
+        arr = np.copy(self.storage[key])
         return arr[left_offset_frames:right_offset_frames]
 
 
 @register_writer
 class KaldiWriter(FeaturesWriter):
     """
-    Write data to Kaldi's "feats.scp" and "feats.ark" files using kaldiio.
+    Write data to Kaldi's "feats.scp" and "feats.ark" files using kaldi_native_io.
     ``storage_path`` corresponds to a directory where we'll create "feats.scp"
     and "feats.ark" files.
     ``storage_key`` corresponds to the utterance-id in Kaldi.
 
-    The following ``compression_method`` values are supported by kaldiio::
+    The following ``compression_method`` values are supported by kaldi_native_io::
 
         kAutomaticMethod = 1
         kSpeechFeature = 2
@@ -1013,39 +1015,39 @@ class KaldiWriter(FeaturesWriter):
         >>> np.testing.assert_equal(data, read_data)
 
     .. caution::
-        Requires ``kaldiio`` to be installed (``pip install kaldiio``).
+        Requires ``kaldi_native_io`` to be installed (``pip install kaldi_native_io``).
     """
 
-    name = "kaldiio"
+    name = "kaldi_native_io"
 
     def __init__(
         self,
         storage_path: Pathlike,
-        compression_method: Optional[int] = None,
+        compression_method: int = 1,
         *args,
         **kwargs,
     ):
-        if not is_module_available("kaldiio"):
+        if not is_module_available("kaldi_native_io"):
             raise ValueError(
-                "To read Kaldi feats.scp, please 'pip install kaldiio' first."
+                "To read Kaldi feats.scp, please 'pip install kaldi_native_io' first."
             )
-        import kaldiio
+        import kaldi_native_io
 
         super().__init__()
         self.storage_dir = Path(storage_path)
         self.storage_dir.mkdir(parents=True, exist_ok=True)
         self.storage_path_ = str(self.storage_dir / "feats.scp")
-        self.storage = kaldiio.WriteHelper(
-            f"ark,scp:{self.storage_dir}/feats.ark,{self.storage_dir}/feats.scp",
-            compression_method=compression_method,
+        self.storage = kaldi_native_io.CompressedMatrixWriter(
+            f"ark,scp:{self.storage_dir}/feats.ark,{self.storage_dir}/feats.scp"
         )
+        self.compression_method = kaldi_native_io.CompressionMethod(compression_method)
 
     @property
     def storage_path(self) -> str:
         return self.storage_path_
 
     def write(self, key: str, value: np.ndarray) -> str:
-        self.storage(key, value)
+        self.storage.write(key, value, self.compression_method)
         return key
 
     def close(self) -> None:
