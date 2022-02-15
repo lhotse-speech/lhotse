@@ -47,7 +47,11 @@ def export_to_webdataset(
         if shard_size is None:
             sink = wds.TarWriter(output_path)
         else:
-            sink = wds.ShardWriter(str(output_path / SHARD_PATTERN), maxcount=shard_size)
+            if isinstance(str, output_path) and all(s in output_path for s in "{}"):
+                wspecifier = output_path
+            else:
+                wspecifier = str(output_path / SHARD_PATTERN)
+            sink = wds.ShardWriter(wspecifier, maxcount=shard_size)
 
     with sink:
         for idx, cut in tqdm(
