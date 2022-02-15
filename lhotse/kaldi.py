@@ -4,7 +4,7 @@ from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 
-from lhotse import CutSet, FeatureSet, Features, Seconds
+from lhotse import FeatureSet, Features, Seconds
 from lhotse.audio import AudioSource, Recording, RecordingSet
 from lhotse.audio import audioread_info
 from lhotse.supervision import SupervisionSegment, SupervisionSet
@@ -33,6 +33,8 @@ def get_duration(
                 "To read Kaldi's data dir where wav.scp has 'pipe' inputs, "
                 "please 'pip install kaldi_native_io' first."
             )
+        import kaldi_native_io
+
         wave_info = kaldi_native_io.read_wave_info(path)
         assert wave_info.num_channels == 1, wave_info.num_channels
 
@@ -42,7 +44,7 @@ def get_duration(
         import soundfile
 
         info = soundfile.info(path)
-    except:
+    except ImportError:
         # Try to parse the file using audioread as a fallback.
         info = audioread_info(path)
     return info.duration
