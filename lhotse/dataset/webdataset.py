@@ -149,7 +149,9 @@ class LazyWebdatasetIterator:
         return LazyIteratorChain(self, other)
 
 
-def mini_webdataset(urls, repeat=False, shuffle=False, split_by_worker=False, split_by_node=False):
+def mini_webdataset(
+    urls, repeat=False, shuffle=False, split_by_worker=False, split_by_node=False
+):
     """
     Return a pipeline for WebDataset-style data files.
 
@@ -176,9 +178,19 @@ def mini_webdataset(urls, repeat=False, shuffle=False, split_by_worker=False, sp
     from webdataset import tariterators
 
     if isinstance(urls, str):
-        result = PytorchShardList(urls, shuffle=shuffle, split_by_worker=split_by_worker, split_by_node=split_by_node)
+        result = PytorchShardList(
+            urls,
+            shuffle=shuffle,
+            split_by_worker=split_by_worker,
+            split_by_node=split_by_node,
+        )
     elif isinstance(urls, list):
-        result = PytorchShardList(urls, shuffle=shuffle, split_by_worker=split_by_worker, split_by_node=split_by_node)
+        result = PytorchShardList(
+            urls,
+            shuffle=shuffle,
+            split_by_worker=split_by_worker,
+            split_by_node=split_by_node,
+        )
 
     result = result.then(tariterators.url_opener, handler=reraise_exception)
     result = result.then(tariterators.tar_file_expander, handler=reraise_exception)
