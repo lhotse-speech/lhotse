@@ -44,7 +44,7 @@ def get_duration(
         import soundfile
 
         info = soundfile.info(path)
-    except ImportError:
+    except:
         # Try to parse the file using audioread as a fallback.
         info = audioread_info(path)
     return info.duration
