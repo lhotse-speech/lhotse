@@ -73,6 +73,7 @@ class DynamicBucketingSampler(CutSampler):
         consistent_ids: bool = True,
         num_cuts_for_bins_estimate: int = 10000,
         buffer_size: int = 10000,
+        shuffle_buffer_size: int = 1000,
         world_size: Optional[int] = None,
         rank: Optional[int] = None,
         seed: int = 0,
@@ -100,6 +101,9 @@ class DynamicBucketingSampler(CutSampler):
             of the buckets.
             Increasing ``max_duration`` (batch_size) or ``num_buckets`` might require increasing this number.
             It will result in larger memory usage.
+        :param shuffle_buffer_size: How many cuts (or cut pairs, triplets) are being held in memory
+            a buffer used for streaming shuffling. Larger number means better randomness at the cost
+            of higher memory usage.
         :param world_size: Total number of distributed nodes. We will try to infer it by default.
         :param rank: Index of distributed node. We will try to infer it by default.
         :param seed: Random seed used to consistently shuffle the dataset across different processes.
@@ -118,11 +122,14 @@ class DynamicBucketingSampler(CutSampler):
         self.consistent_ids = consistent_ids
         self.num_cuts_for_bins_estimate = num_cuts_for_bins_estimate
         self.buffer_size = buffer_size
+        self.shuffle_buffer_size = shuffle_buffer_size
         self.rng = None
 
         if self.shuffle:
             cuts_for_bins_estimate = streaming_shuffle(
-                iter(self.cuts[0]), rng=random.Random(self.seed)
+                iter(self.cuts[0]),
+                rng=random.Random(self.seed),
+                bufsize=self.shuffle_buffer_size,
             )
         else:
             cuts_for_bins_estimate = self.cuts[0]
@@ -140,7 +147,11 @@ class DynamicBucketingSampler(CutSampler):
             self.cuts_iter = [
                 # Important -- every shuffler has a copy of RNG seeded in the same way,
                 # so that they are reproducible.
-                streaming_shuffle(cs, rng=random.Random(self.seed + self.epoch))
+                streaming_shuffle(
+                    cs,
+                    rng=random.Random(self.seed + self.epoch),
+                    bufsize=self.shuffle_buffer_size,
+                )
                 for cs in self.cuts_iter
             ]
         # Apply filter predicate
