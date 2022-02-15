@@ -38,12 +38,16 @@ def export_to_webdataset(
         raise ImportError("Please 'pip install webdataset' first.")
     import webdataset as wds
 
-    output_path = Path(output_path)
-    if shard_size is None:
-        output_path = output_path.with_suffix(".tar")
-        sink = wds.TarWriter(str(output_path))
+    if isinstance(output_path, str) and output_path.startswith("s3://"):
+        from lhotse.utils import SmartOpen
+
+        output_path = SmartOpen.open(output_path, mode="wb")
+        sink = wds.TarWriter(output_path)
     else:
-        sink = wds.ShardWriter(str(output_path / SHARD_PATTERN), maxcount=shard_size)
+        if shard_size is None:
+            sink = wds.TarWriter(output_path)
+        else:
+            sink = wds.ShardWriter(str(output_path / SHARD_PATTERN), maxcount=shard_size)
 
     with sink:
         for idx, cut in tqdm(
@@ -84,7 +88,7 @@ class LazyWebdatasetIterator:
             raise ImportError("Please 'pip install webdataset' first.")
         import webdataset as wds
 
-        if str(self.path).startswith("pipe:"):
+        if self.path.startswith("pipe:"):
             path = self.path
         elif any(symbol in str(self.path) for symbol in "{}"):
             # Skip validation for expressions with braces, WebDataset
