@@ -194,14 +194,14 @@ def download_icsi(
     """
     Download ICSI audio and annotations for provided microphone setting.
     :param target_dir: Pathlike, the path in which audio and transcripts dir are created by default.
-    :param audio_dir: Pathlike (default = None), the path to store the audio data.
-    :param transcripts_dir: Pathlike (default = None), path to store the transcripts data
+    :param audio_dir: Pathlike (default = '<target_dir>/audio'), the path to store the audio data.
+    :param transcripts_dir: Pathlike (default = '<target_dir>/transcripts'), path to store the transcripts data
     :param force_download: bool (default = False), if True, download even if file is present.
     :param url: str (default = 'http://groups.inf.ed.ac.uk/ami'), download URL.
     :param mic: str {'ihm','ihm-mix','sdm','mdm'}, type of mic setting.
     """
     target_dir = Path(target_dir)
-    audio_dir = Path(audio_dir) if audio_dir else target_dir / "audio"
+    audio_dir = Path(audio_dir) if audio_dir else target_dir / "speech"
     transcripts_dir = (
         Path(transcripts_dir) if transcripts_dir else target_dir / "transcripts"
     )
