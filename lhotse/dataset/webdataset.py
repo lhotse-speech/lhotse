@@ -104,7 +104,7 @@ class LazyWebdatasetIterator:
             else:
                 raise ValueError(f"No such path: {path}")
 
-        self._ds = wds.WebDataset(path, **self.wds_kwargs)
+        self._ds = mini_webdataset(path, **self.wds_kwargs)
         self._ds_iter = iter(self._ds)
 
     def __getstate__(self):
@@ -143,3 +143,42 @@ class LazyWebdatasetIterator:
 
     def __add__(self, other) -> LazyIteratorChain:
         return LazyIteratorChain(self, other)
+
+
+def mini_webdataset(urls, repeat=False, shuffle=False, split_by_worker=False, split_by_node=False):
+    """
+    Return a pipeline for WebDataset-style data files.
+
+    This is a convenience function for constructing a partial pipeline
+    that reads from a set of sharded tar files, extracts the individual
+    files, and groups them together into samples (dictionaries).
+
+    You can use all the methods from `Composable` (`then`, `compose`) and
+    from `Shorthands` (`batched`, `unbatched`, `decode`, `shuffle`, etc.)
+    on the result.
+
+    .. note: This is a reduced version of ``webdataset.WebDataset`` function,
+        that only uses the functionalities relevant to Lhotse, and makes it
+        possible to disable the node/worker splitting.
+
+    :param urls: the source URLs: a string or a list
+    :param repeat: repeat infinitely if True
+    :param split_by_worker: if True, shards are split per DataLoader worker subprocesses,
+        otherwise each dataloader worker will yield the same data.
+    :param split_by_node: if True, shards are split per node in DDP training,
+        otherwise on each node we'll yield the same data.
+    """
+    from webdataset import PytorchShardList, reraise_exception
+    from webdataset import tariterators
+
+    if isinstance(urls, str):
+        result = PytorchShardList(urls, shuffle=shuffle, split_by_worker=split_by_worker, split_by_node=split_by_node)
+    elif isinstance(urls, list):
+        result = PytorchShardList(urls, shuffle=shuffle, split_by_worker=split_by_worker, split_by_node=split_by_node)
+
+    result = result.then(tariterators.url_opener, handler=reraise_exception)
+    result = result.then(tariterators.tar_file_expander, handler=reraise_exception)
+    result = result.then(tariterators.group_by_keys)
+    if repeat:
+        result = result.repeat()
+    return result
