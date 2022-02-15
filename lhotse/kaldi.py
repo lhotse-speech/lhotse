@@ -153,7 +153,9 @@ def load_kaldi_data_dir(
                     else utt_id,
                     channels=0,
                 )
-                for utt_id, mat in kaldi_native_io.SequentialFloatMatrixReader(f'scp:{feats_scp}')
+                for utt_id, mat in kaldi_native_io.SequentialFloatMatrixReader(
+                    f"scp:{feats_scp}"
+                )
             )
         else:
             warnings.warn(

@@ -959,7 +959,7 @@ class KaldiReader(FeaturesReader):
         Requires ``kaldi_native_io`` to be installed (``pip install kaldi_native_io``).
     """
 
-    name = "kaldi_native_io"
+    name = "kaldiio"
 
     def __init__(self, storage_path: Pathlike, *args, **kwargs):
         if not is_module_available("kaldi_native_io"):
@@ -1018,7 +1018,7 @@ class KaldiWriter(FeaturesWriter):
         Requires ``kaldi_native_io`` to be installed (``pip install kaldi_native_io``).
     """
 
-    name = "kaldi_native_io"
+    name = "kaldiio"
 
     def __init__(
         self,
