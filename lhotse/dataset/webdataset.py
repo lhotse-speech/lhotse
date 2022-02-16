@@ -1,6 +1,6 @@
 import pickle
 from pathlib import Path
-from typing import Dict, Optional
+from typing import Dict, Optional, Sequence, Union
 
 from tqdm.auto import tqdm
 
@@ -80,19 +80,20 @@ class LazyWebdatasetIterator:
     providing its kwargs directly to the constructor of this class.
     """
 
-    def __init__(self, path: Pathlike, **wds_kwargs) -> None:
+    def __init__(self, path: Union[Pathlike, Sequence[Pathlike]], **wds_kwargs) -> None:
         if not is_module_available("webdataset"):
             raise ImportError("Please 'pip install webdataset' first.")
 
-        self.path = str(path)
+        self.path = path
         self.wds_kwargs = wds_kwargs
 
     def _reset(self) -> None:
         if not is_module_available("webdataset"):
             raise ImportError("Please 'pip install webdataset' first.")
-        import webdataset as wds
 
-        if self.path.startswith("pipe:"):
+        if isinstance(self.path, (list, tuple, set)):
+            path = self.path
+        elif self.path.startswith("pipe:"):
             path = self.path
         elif any(symbol in str(self.path) for symbol in "{}"):
             # Skip validation for expressions with braces, WebDataset
@@ -177,21 +178,12 @@ def mini_webdataset(
     from webdataset import PytorchShardList, reraise_exception
     from webdataset import tariterators
 
-    if isinstance(urls, str):
-        result = PytorchShardList(
-            urls,
-            shuffle=shuffle,
-            split_by_worker=split_by_worker,
-            split_by_node=split_by_node,
-        )
-    elif isinstance(urls, list):
-        result = PytorchShardList(
-            urls,
-            shuffle=shuffle,
-            split_by_worker=split_by_worker,
-            split_by_node=split_by_node,
-        )
-
+    result = PytorchShardList(
+        urls,
+        shuffle=shuffle,
+        split_by_worker=split_by_worker,
+        split_by_node=split_by_node,
+    )
     result = result.then(tariterators.url_opener, handler=reraise_exception)
     result = result.then(tariterators.tar_file_expander, handler=reraise_exception)
     result = result.then(tariterators.group_by_keys)
