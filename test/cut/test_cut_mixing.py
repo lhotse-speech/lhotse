@@ -32,20 +32,21 @@ def test_append_cut_duration_and_supervisions(cut1, cut2):
 
 
 @pytest.mark.parametrize(
-    ["offset", "expected_duration", "exception_expectation"],
+    ["offset", "allow_padding", "expected_duration", "exception_expectation"],
     [
-        (0, 10.0, does_not_raise()),
-        (1, 11.0, does_not_raise()),
-        (5, 15.0, does_not_raise()),
-        (10, 20.0, does_not_raise()),
-        (100, "irrelevant", pytest.raises(AssertionError)),
+        (0, False, 10.0, does_not_raise()),
+        (1, False, 11.0, does_not_raise()),
+        (5, False, 15.0, does_not_raise()),
+        (10, False, 20.0, does_not_raise()),
+        (100, False, "irrelevant", pytest.raises(AssertionError)),
+        (100, True, 110.0, does_not_raise()),
     ],
 )
 def test_overlay_cut_duration_and_supervisions(
-    offset, expected_duration, exception_expectation, cut1, cut2
+    offset, allow_padding, expected_duration, exception_expectation, cut1, cut2
 ):
     with exception_expectation:
-        mixed_cut = cut1.mix(cut2, offset_other_by=offset)
+        mixed_cut = cut1.mix(cut2, offset_other_by=offset, allow_padding=allow_padding)
 
         assert isinstance(mixed_cut, MixedCut)
         assert mixed_cut.duration == expected_duration
@@ -123,7 +124,7 @@ def libri_cut(libri_cut_set) -> MonoCut:
 def E(x):
     if x.shape[0] == 1:
         # audio
-        return np.sum(x ** 2)
+        return np.sum(x**2)
     # fbank
     return np.sum(np.exp(x))
 
