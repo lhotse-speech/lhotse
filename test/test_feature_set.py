@@ -133,8 +133,8 @@ def test_compute_global_stats():
         pytest.param(
             lambda: KaldiWriter(TemporaryDirectory().name),
             marks=pytest.mark.skipif(
-                not is_module_available("kaldiio"),
-                reason="kaldiio must be installed for scp+ark feature writing",
+                not is_module_available("kaldi_native_io"),
+                reason="kaldi_native_io must be installed for scp+ark feature writing",
             ),
         ),
     ],
