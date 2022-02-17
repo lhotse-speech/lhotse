@@ -1575,6 +1575,9 @@ class MonoCut(Cut):
     def from_dict(data: dict) -> "MonoCut":
         from lhotse.serialization import deserialize_custom_field
 
+        # Remove "type" field if exists.
+        data.pop("type", None)
+
         features = (
             Features.from_dict(data.pop("features")) if "features" in data else None
         )
@@ -1993,6 +1996,8 @@ class PaddingCut(Cut):
 
     @staticmethod
     def from_dict(data: dict) -> "PaddingCut":
+        # Remove "type" field if exists
+        data.pop("type", None)
         return PaddingCut(**data)
 
     def with_features_path_prefix(self, path: Pathlike) -> "PaddingCut":
