@@ -8,7 +8,7 @@ We support importing Kaldi data directories that contain at least the ``wav.scp`
 required to create the :class:`~lhotse.audio.RecordingSet`.
 Other files, such as ``segments``, ``utt2spk``, etc. are used to create the :class:`~lhotse.supervision.SupervisionSet`.
 We also support converting ``feats.scp`` to :class:`~lhotse.features.base.FeatureSet`, and reading features
-directly from Kaldi's scp/ark files via `kaldiio`_ library (which is an optional Lhotse's dependency).
+directly from Kaldi's scp/ark files via `kaldi_native_io`_ library (which is an optional Lhotse's dependency).
 
 We also allow to export a pair of :class:`~lhotse.audio.RecordingSet` and :class:`~lhotse.supervision.SupervisionSet`
 to a Kaldi data directory.
@@ -55,4 +55,4 @@ to a directory with Lhotse manifests called ``train_manifests``:
         data/train
 
 
-.. _kaldiio: https://pypi.org/project/kaldiio/
+.. _kaldi_native_io: https://pypi.org/project/kaldi_native_io/
