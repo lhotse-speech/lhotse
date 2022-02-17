@@ -124,7 +124,7 @@ def libri_cut(libri_cut_set) -> MonoCut:
 def E(x):
     if x.shape[0] == 1:
         # audio
-        return np.sum(x**2)
+        return np.sum(x ** 2)
     # fbank
     return np.sum(np.exp(x))
 
