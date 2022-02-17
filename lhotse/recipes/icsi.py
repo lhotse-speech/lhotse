@@ -226,11 +226,13 @@ def download_icsi(
     )
 
     # Unzip annotations zip file
-    with zipfile.ZipFile("ICSI_original_transcripts.zip") as z:
-        z.extractall()  # unzips to a dir called 'transcripts'
+    with zipfile.ZipFile(target_dir / "ICSI_original_transcripts.zip") as z:
+        # Unzips transcripts to <target_dir>/'transcripts'
+        # zip file also contains some documentation which will be unzipped to <target_dir>
+        z.extractall(target_dir)
         # If custom dir is passed, rename 'transcripts' dir accordingly
         if transcripts_dir:
-            Path("transcripts").rename(transcripts_dir)
+            Path(target_dir / "transcripts").rename(transcripts_dir)
 
 
 def parse_icsi_annotations(
