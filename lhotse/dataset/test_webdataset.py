@@ -63,10 +63,11 @@ def test_cutset_from_webdataset_sharded():
     cuts = CutSet.from_cuts(cuts)
 
     with TemporaryDirectory() as dir_path:
-        export_to_webdataset(cuts, output_path=dir_path, shard_size=2)
+        tar_pattern = f"{dir_path}/shard-%06d.tar"
+        export_to_webdataset(cuts, output_path=tar_pattern, shard_size=2)
 
-        # disabling shardshuffle for testing purposes here
-        cuts_ds = CutSet.from_webdataset(dir_path, shardshuffle=False)
+        # disabling shard shuffling for testing purposes here
+        cuts_ds = CutSet.from_webdataset(dir_path + "/shard-{000000..000004}.tar", shuffle_shards=False)
 
         assert list(cuts.ids) == list(cuts_ds.ids)
 

@@ -1,15 +1,11 @@
 import pickle
-from pathlib import Path
-from typing import Dict, Optional
+from typing import Dict, Optional, Sequence, Union
 
 from tqdm.auto import tqdm
 
 from lhotse import CutSet
 from lhotse.serialization import LazyIteratorChain
 from lhotse.utils import Pathlike, is_module_available
-
-
-SHARD_PATTERN = "shard-%06d.tar"
 
 
 def export_to_webdataset(
@@ -32,26 +28,19 @@ def export_to_webdataset(
     ``torchaudio.save`` function with ``sox_io`` backend.
 
     If ``shard_size`` is specified, we will leverage WebDataset's ``ShardWriter`` to
-    create multiple tarballs with ``shard_size`` items per shard.
+    create multiple tarballs with ``shard_size`` items per shard. In that mode, we expect
+    that ``output_path`` contains a pattern like "/path/to/shard-%06d.tar", which will
+    be internally expanded with the shard index.
     """
     if not is_module_available("webdataset"):
         raise ImportError("Please 'pip install webdataset' first.")
     import webdataset as wds
 
-    if isinstance(output_path, str) and output_path.startswith("s3://"):
-        from lhotse.utils import SmartOpen
-
-        output_path = SmartOpen.open(output_path, mode="wb")
-        sink = wds.TarWriter(output_path)
+    if shard_size is not None:
+        assert shard_size > 0
+        sink = wds.ShardWriter(output_path, maxcount=shard_size)
     else:
-        if shard_size is None:
-            sink = wds.TarWriter(output_path)
-        else:
-            if isinstance(str, output_path) and all(s in output_path for s in "{}"):
-                wspecifier = output_path
-            else:
-                wspecifier = str(output_path / SHARD_PATTERN)
-            sink = wds.ShardWriter(wspecifier, maxcount=shard_size)
+        sink = wds.TarWriter(output_path)
 
     with sink:
         for idx, cut in tqdm(
@@ -80,35 +69,20 @@ class LazyWebdatasetIterator:
     providing its kwargs directly to the constructor of this class.
     """
 
-    def __init__(self, path: Pathlike, **wds_kwargs) -> None:
+    def __init__(
+        self, source: Union[Pathlike, Sequence[Pathlike]], **wds_kwargs
+    ) -> None:
         if not is_module_available("webdataset"):
             raise ImportError("Please 'pip install webdataset' first.")
 
-        self.path = str(path)
+        self.source = source
         self.wds_kwargs = wds_kwargs
 
     def _reset(self) -> None:
         if not is_module_available("webdataset"):
             raise ImportError("Please 'pip install webdataset' first.")
-        import webdataset as wds
 
-        if self.path.startswith("pipe:"):
-            path = self.path
-        elif any(symbol in str(self.path) for symbol in "{}"):
-            # Skip validation for expressions with braces, WebDataset
-            # will expand them internally.
-            pass
-        else:
-            path = Path(self.path)
-            if path.is_dir():
-                path = sorted(map(str, path.glob("shard-*.tar")))
-                assert len(path) > 0, f"No tarfiles found in directory: {path}"
-            elif path.is_file():
-                path = str(path)
-            else:
-                raise ValueError(f"No such path: {path}")
-
-        self._ds = mini_webdataset(path, **self.wds_kwargs)
+        self._ds = mini_webdataset(self.source, **self.wds_kwargs)
         self._ds_iter = iter(self._ds)
 
     def __getstate__(self):
@@ -117,7 +91,7 @@ class LazyWebdatasetIterator:
         this iterator when unpickled. This is necessary to transfer this object across processes
         for PyTorch's DataLoader workers.
         """
-        state = {"path": self.path, "wds_kwargs": self.wds_kwargs}
+        state = {"source": self.source, "wds_kwargs": self.wds_kwargs}
         return state
 
     def __setstate__(self, state: Dict):
@@ -150,7 +124,13 @@ class LazyWebdatasetIterator:
 
 
 def mini_webdataset(
-    urls, repeat=False, shuffle=False, split_by_worker=False, split_by_node=False
+    urls,
+    repeat: bool = False,
+    shuffle_shards: bool = False,
+    shuffle: bool = False,
+    split_by_worker: bool = False,
+    split_by_node: bool = False,
+    shuffle_bufsize: int = 1000,
 ):
     """
     Return a pipeline for WebDataset-style data files.
@@ -167,34 +147,37 @@ def mini_webdataset(
         that only uses the functionalities relevant to Lhotse, and makes it
         possible to disable the node/worker splitting.
 
-    :param urls: the source URLs: a string or a list
-    :param repeat: repeat infinitely if True
+    :param urls: the source URLs: a string or a list.
+    :param repeat: repeat infinitely if True.
+    :param shuffle: shuffle the items if True (after shuffling the shards, if enabled).
+    :param shuffle_shards: shuffle the shards if True.
+        Only takes effect when ``urls`` is a list of shard paths/urls.
     :param split_by_worker: if True, shards are split per DataLoader worker subprocesses,
         otherwise each dataloader worker will yield the same data.
+        Only takes effect when ``urls`` is a list of shard paths/urls.
     :param split_by_node: if True, shards are split per node in DDP training,
         otherwise on each node we'll yield the same data.
+        Only takes effect when ``urls`` is a list of shard paths/urls.
+    :param shuffle_bufsize: Buffer size for the ``shuffle`` argument.
+        Larger bufsize means more memory usage but potentially improved randomness.
     """
+    if not is_module_available("webdataset"):
+        raise ImportError("Please 'pip install webdataset' first.")
+
     from webdataset import PytorchShardList, reraise_exception
     from webdataset import tariterators
 
-    if isinstance(urls, str):
-        result = PytorchShardList(
-            urls,
-            shuffle=shuffle,
-            split_by_worker=split_by_worker,
-            split_by_node=split_by_node,
-        )
-    elif isinstance(urls, list):
-        result = PytorchShardList(
-            urls,
-            shuffle=shuffle,
-            split_by_worker=split_by_worker,
-            split_by_node=split_by_node,
-        )
-
+    result = PytorchShardList(
+        urls,
+        shuffle=shuffle_shards,
+        split_by_worker=split_by_worker,
+        split_by_node=split_by_node,
+    )
     result = result.then(tariterators.url_opener, handler=reraise_exception)
     result = result.then(tariterators.tar_file_expander, handler=reraise_exception)
     result = result.then(tariterators.group_by_keys)
     if repeat:
         result = result.repeat()
+    if shuffle:
+        result = result.shuffle(shuffle_bufsize)
     return result
