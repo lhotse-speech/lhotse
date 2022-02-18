@@ -2,10 +2,15 @@ import pickle
 from tempfile import NamedTemporaryFile, TemporaryDirectory
 
 import numpy as np
+import pytest
 
 from lhotse import CutSet
 from lhotse.utils import fastcopy
 from lhotse.dataset.webdataset import export_to_webdataset
+
+webdataset = pytest.importorskip(
+    "webdataset", reason="These tests require webdataset package to run."
+)
 
 
 def test_export_to_webdataset():
@@ -20,9 +25,7 @@ def test_export_to_webdataset():
         export_to_webdataset(cuts, output_path=f.name)
         f.flush()
 
-        import webdataset as wds
-
-        ds = wds.WebDataset(f.name)
+        ds = webdataset.WebDataset(f.name)
 
         dicts = (pickle.loads(data["data"]) for data in ds)
 
