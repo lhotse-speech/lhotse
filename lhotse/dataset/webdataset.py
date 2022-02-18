@@ -14,8 +14,9 @@ def export_to_webdataset(
     shard_size: Optional[int] = None,
     verbose: bool = True,
     audio_format: str = "flac",
-    drop_audio: bool = False,
-    drop_features: bool = False,
+    load_audio: bool = True,
+    load_features: bool = True,
+    load_custom: bool = True,
 ) -> None:
     """
     Saves the CutSet metadata along with audio/features data into a WebDataset archive.
@@ -46,11 +47,12 @@ def export_to_webdataset(
         for idx, cut in tqdm(
             enumerate(cuts), desc="Creating WebDataset tarball(s)", disable=not verbose
         ):
-            if drop_audio:
-                cut = cut.drop_recording()
-            if drop_features:
-                cut = cut.drop_features()
-            cut = cut.move_to_memory(audio_format=audio_format)
+            cut = cut.move_to_memory(
+                audio_format=audio_format,
+                load_audio=load_audio,
+                load_features=load_features,
+                load_custom=load_custom,
+            )
             data = pickle.dumps(cut.to_dict())
             sink.write({"__key__": cut.id, "data": data})
 
@@ -78,6 +80,9 @@ class LazyWebdatasetIterator:
         self.source = source
         self.wds_kwargs = wds_kwargs
 
+    def set_epoch(self, epoch: int) -> None:
+        self.wds_kwargs["epoch"] = epoch
+
     def _reset(self) -> None:
         if not is_module_available("webdataset"):
             raise ImportError("Please 'pip install webdataset' first.")
@@ -85,7 +90,7 @@ class LazyWebdatasetIterator:
         self._ds = mini_webdataset(self.source, **self.wds_kwargs)
         self._ds_iter = iter(self._ds)
 
-    def __getstate__(self):
+    def __getstate__(self) -> dict:
         """
         Store the state for pickling -- we'll only store the path + kwargs, and re-initialize
         this iterator when unpickled. This is necessary to transfer this object across processes
@@ -94,11 +99,11 @@ class LazyWebdatasetIterator:
         state = {"source": self.source, "wds_kwargs": self.wds_kwargs}
         return state
 
-    def __setstate__(self, state: Dict):
+    def __setstate__(self, state: Dict) -> None:
         """Restore the state when unpickled."""
         self.__dict__.update(state)
 
-    def __iter__(self):
+    def __iter__(self) -> "LazyWebdatasetIterator":
         self._reset()
         return self
 
@@ -113,7 +118,7 @@ class LazyWebdatasetIterator:
     def values(self):
         yield from self
 
-    def keys(self):
+    def keys(self) -> str:
         return (item.id for item in self)
 
     def items(self):
@@ -125,6 +130,7 @@ class LazyWebdatasetIterator:
 
 def mini_webdataset(
     urls,
+    epoch: int = 0,
     repeat: bool = False,
     shuffle_shards: bool = False,
     shuffle: bool = False,
@@ -148,6 +154,7 @@ def mini_webdataset(
         possible to disable the node/worker splitting.
 
     :param urls: the source URLs: a string or a list.
+    :param epoch: epoch number (used only when shuffling is enabled).
     :param repeat: repeat infinitely if True.
     :param shuffle: shuffle the items if True (after shuffling the shards, if enabled).
     :param shuffle_shards: shuffle the shards if True.
@@ -173,6 +180,7 @@ def mini_webdataset(
         split_by_worker=split_by_worker,
         split_by_node=split_by_node,
     )
+    result.set_epoch(epoch)
     result = result.then(tariterators.url_opener, handler=reraise_exception)
     result = result.then(tariterators.tar_file_expander, handler=reraise_exception)
     result = result.then(tariterators.group_by_keys)
