@@ -3423,38 +3423,6 @@ class CutSet(Serializable, Sequence[Cut]):
             ...     shuffle_shards=True,
             ... )
 
-        Export cuts with audio, features, and all custom data to a directory with shards
-        counting 10000 cuts each, converting audio to SPHERE (sph)::
-
-            >>> cuts = CutSet.from_jsonl_lazy("data/cuts-train.jsonl")
-            >>> n_shards = export_to_webdataset(
-            ...     cuts=cuts,
-            ...     output_path="data/cuts-train-wds/shard-%06d.tar",
-            ...     shard_size=10000,
-            ...     audio_format="sph",
-            ... )
-
-        The same, but export cuts with only the features being read into memory
-        (recording and custom data still refers to external storage)::
-
-            >>> cuts = CutSet.from_jsonl_lazy("data/cuts-train.jsonl")
-            >>> n_shards = export_to_webdataset(
-            ...     cuts=cuts,
-            ...     output_path="data/cuts-train-wds/shard-%06d.tar",
-            ...     shard_size=10000,
-            ...     load_features=False,
-            ...     load_custom=False,
-            ... )
-
-        Export cuts to sharded tarballs stored in the cloud
-        (in this example AWS S3, using AWS CLI)::
-
-            >>> cuts = CutSet.from_jsonl_lazy("data/cuts-train.jsonl")
-            >>> n_shards = export_to_webdataset(
-            ...     cuts=cuts,
-            ...     output_path="pipe:aws s3 cp - s3://my-bucket/data/shard-%06d.tar",
-            ...     shard_size=10000,
-            ... )
         """
         from lhotse.dataset.webdataset import LazyWebdatasetIterator
 
