@@ -1,5 +1,6 @@
 import pickle
-from typing import Dict, Optional, Sequence, Union
+import random
+from typing import Callable, Dict, Optional, Sequence, Union
 
 from tqdm.auto import tqdm
 
@@ -39,7 +40,8 @@ def export_to_webdataset(
 
     if shard_size is not None:
         assert shard_size > 0
-        sink = wds.ShardWriter(output_path, maxcount=shard_size)
+        # Note: this ShardWriter is not from webdataset, but defined below in this file.
+        sink = ShardWriter(output_path, maxcount=shard_size)
     else:
         sink = wds.TarWriter(output_path)
 
@@ -157,6 +159,7 @@ def mini_webdataset(
     :param epoch: epoch number (used only when shuffling is enabled).
     :param repeat: repeat infinitely if True.
     :param shuffle: shuffle the items if True (after shuffling the shards, if enabled).
+        Note: ``shuffle`` is seeded with PID and time, making it non-reproducible across processes.
     :param shuffle_shards: shuffle the shards if True.
         Only takes effect when ``urls`` is a list of shard paths/urls.
     :param split_by_worker: if True, shards are split per DataLoader worker subprocesses,
@@ -189,3 +192,107 @@ def mini_webdataset(
     if shuffle:
         result = result.shuffle(shuffle_bufsize)
     return result
+
+
+class ShardWriter:
+    """
+    Like ``webdataset.TarWriter`` but splits into multiple shards.
+
+    Note: this implementation is copied from webdataset and adapted to
+    allow shard writing using the "pipe:" notation. E.g., this is possible::
+
+        >>> writer = ShardWriter("pipe:gzip -c > data/shard-%06d.tar.gz")
+
+    Source:
+    https://github.com/webdataset/webdataset/blob/ccfe88086cdb21a0dc23a6454ce3e3723b6b8033/webdataset/writer.py#L359
+    """
+
+    def __init__(
+            self,
+            pattern: str,
+            maxcount: int = 100000,
+            maxsize: float = 3e9,
+            post: Optional[Callable] = None,
+            start_shard: int = 0,
+            **kw,
+    ):
+        """Create a ShardWriter.
+
+        :param pattern: output file pattern
+        :param maxcount: maximum number of records per shard (Default value = 100000)
+        :param maxsize: maximum size of each shard (Default value = 3e9)
+        :param kw: other options passed to TarWriter
+        """
+        if not is_module_available("webdataset"):
+            raise ImportError("Please 'pip install webdataset' first.")
+
+        self.verbose = 1
+        self.kw = kw
+        self.maxcount = maxcount
+        self.maxsize = maxsize
+        self.post = post
+
+        self.tarstream = None
+        self.shard = start_shard
+        self.pattern = pattern
+        self.total = 0
+        self.count = 0
+        self.size = 0
+        self.fname = None
+        self.next_stream()
+
+    def next_stream(self):
+        """Close the current stream and move to the next."""
+        from webdataset.writer import TarWriter
+
+        self.finish()
+        self.fname = self.pattern % self.shard
+        if self.verbose:
+            print(
+                "# writing",
+                self.fname,
+                self.count,
+                "%.1f GB" % (self.size / 1e9),
+                self.total,
+                )
+        self.shard += 1
+        self.tarstream = TarWriter(self.fname, **self.kw)
+        self.count = 0
+        self.size = 0
+
+    def write(self, obj):
+        """Write a sample.
+
+        :param obj: sample to be written
+        """
+        if self.tarstream is None or self.count >= self.maxcount or self.size >= self.maxsize:
+            self.next_stream()
+        size = self.tarstream.write(obj)
+        self.count += 1
+        self.total += 1
+        self.size += size
+
+    def finish(self):
+        """Finish all writing (use close instead)."""
+        if self.tarstream is not None:
+            self.tarstream.close()
+            assert self.fname is not None
+            if callable(self.post):
+                self.post(self.fname)
+            self.tarstream = None
+
+    def close(self):
+        """Close the stream."""
+        self.finish()
+        del self.tarstream
+        del self.shard
+        del self.count
+        del self.size
+
+    def __enter__(self):
+        """Enter context."""
+        return self
+
+    def __exit__(self, *args, **kw):
+        """Exit context."""
+        self.close()
