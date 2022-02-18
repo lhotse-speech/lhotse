@@ -66,7 +66,7 @@ def export_to_webdataset(
         ...     cuts=cuts,
         ...     output_path="data/cuts-train-wds/shard-%06d.tar",
         ...     shard_size=10000,
-        ...     load_features=False,
+        ...     load_audio=False,
         ...     load_custom=False,
         ... )
 
