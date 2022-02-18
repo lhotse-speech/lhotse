@@ -3,6 +3,7 @@ from tempfile import NamedTemporaryFile
 import numpy as np
 
 from lhotse import CutSet, NumpyHdf5Writer, Recording, MonoCut
+from lhotse.array import Array
 from lhotse.testing.dummies import dummy_cut
 from lhotse.utils import compute_num_frames
 
@@ -33,6 +34,36 @@ def test_cut_with_features_move_to_memory():
     arr_mem = cut_mem.load_features()
 
     np.testing.assert_almost_equal(arr, arr_mem, decimal=2)
+
+
+def test_cut_move_to_memory_load_features_false():
+    path = "test/fixtures/libri/cuts.json"
+    cut = CutSet.from_file(path)[0]
+    assert cut.has_features
+
+    cut_mem = cut.move_to_memory(load_features=False)
+
+    assert cut.features == cut_mem.features  # nothing was copied
+
+
+def test_cut_move_to_memory_load_audio_false():
+    path = "test/fixtures/libri/cuts.json"
+    cut = CutSet.from_file(path)[0]
+    assert cut.has_recording
+
+    cut_mem = cut.move_to_memory(load_audio=False)
+
+    assert cut.recording == cut_mem.recording  # nothing was copied
+
+
+def test_cut_move_to_memory_load_custom_false():
+    path = "test/fixtures/libri/cuts.json"
+    cut = CutSet.from_file(path)[0]
+    cut.custom_array = Array("irrelevant", "irrelevant", "irrelevant", [10])
+
+    cut_mem = cut.move_to_memory(load_custom=False)
+
+    assert cut.custom_array == cut_mem.custom_array  # nothing was copied
 
 
 def test_cut_with_audio_move_to_memory():

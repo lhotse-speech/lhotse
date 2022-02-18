@@ -972,11 +972,44 @@ class MonoCut(Cut):
             )
         return None
 
-    def move_to_memory(self, audio_format: str = "flac") -> "MonoCut":
-        """ """
+    def move_to_memory(
+        self,
+        audio_format: str = "flac",
+        load_audio: bool = True,
+        load_features: bool = True,
+        load_custom: bool = True,
+    ) -> "MonoCut":
+        """
+        Load data (audio, features, or custom arrays) into memory and attach them
+        to a copy of the manifest. This is useful when you want to store cuts together
+        with the actual data in some binary format that enables sequential data reads.
 
-        if self.custom is None:
-            custom = None
+        Audio is encoded with ``audio_format`` (compatible with ``torchaudio.save``),
+        floating point features are encoded with lilcom, and other arrays are pickled.
+        """
+
+        # Handle moving audio to memory.
+        if not load_audio or not self.has_recording:
+            recording = self.recording
+        else:
+            recording = self.recording.move_to_memory(
+                channels=self.channel,
+                offset=self.start,
+                duration=self.duration,
+                format=audio_format,
+            )
+
+        # Handle moving features to memory.
+        if not load_features or not self.has_features:
+            features = self.features
+        else:
+            features = self.features.move_to_memory(
+                start=self.start, duration=self.duration
+            )
+
+        # Handle moving custom arrays to memory.
+        if not load_custom or self.custom is None:
+            custom = self.custom
         else:
             from lhotse.array import Array, TemporalArray
 
@@ -993,19 +1026,8 @@ class MonoCut(Cut):
 
         cut = fastcopy(
             self,
-            recording=self.recording.move_to_memory(
-                channels=self.channel,
-                offset=self.start,
-                duration=self.duration,
-                format=audio_format,
-            )
-            if self.has_recording
-            else None,
-            features=self.features.move_to_memory(
-                start=self.start, duration=self.duration
-            )
-            if self.has_features
-            else None,
+            recording=recording,
+            features=features,
             custom=custom,
         )
         return cut
@@ -4843,7 +4865,10 @@ class CutSet(Serializable, Sequence[Cut]):
         return self.map_supervisions(lambda s: s.transform_text(transform_fn))
 
     def __repr__(self) -> str:
-        return f"CutSet(len={len(self)})"
+        return (
+            f"CutSet(len={len(self) if hasattr(self.data, 'len') else '<unknown>'}) "
+            f"[underlying data type: {type(self.data)}]"
+        )
 
     def __contains__(self, item: Union[str, Cut]) -> bool:
         if isinstance(item, str):

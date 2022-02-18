@@ -1,5 +1,6 @@
 import pickle
-from typing import Dict, Optional, Sequence, Union
+import random
+from typing import Callable, Dict, Optional, Sequence, Union
 
 from tqdm.auto import tqdm
 
@@ -14,8 +15,9 @@ def export_to_webdataset(
     shard_size: Optional[int] = None,
     verbose: bool = True,
     audio_format: str = "flac",
-    drop_audio: bool = False,
-    drop_features: bool = False,
+    load_audio: bool = True,
+    load_features: bool = True,
+    load_custom: bool = True,
 ) -> int:
     """
     Saves the CutSet metadata along with audio/features data into a WebDataset archive.
@@ -36,28 +38,30 @@ def export_to_webdataset(
     """
     if not is_module_available("webdataset"):
         raise ImportError("Please 'pip install webdataset' first.")
-    import webdataset as wds
+    from wds import TarWriter
 
     if shard_size is not None:
         assert shard_size > 0
-        sink = wds.ShardWriter(output_path, maxcount=shard_size)
+        # Note: this ShardWriter is not from webdataset, but defined below in this file.
+        sink = ShardWriter(output_path, maxcount=shard_size)
     else:
-        sink = wds.TarWriter(output_path)
+        sink = TarWriter(output_path)
 
     num_shards_written = 0
     with sink:
         for idx, cut in tqdm(
             enumerate(cuts), desc="Creating WebDataset tarball(s)", disable=not verbose
         ):
-            if drop_audio:
-                cut = cut.drop_recording()
-            if drop_features:
-                cut = cut.drop_features()
-            cut = cut.move_to_memory(audio_format=audio_format)
+            cut = cut.move_to_memory(
+                audio_format=audio_format,
+                load_audio=load_audio,
+                load_features=load_features,
+                load_custom=load_custom,
+            )
             data = pickle.dumps(cut.to_dict())
             sink.write({"__key__": cut.id, "data": data})
 
-        if isinstance(sink, wds.ShardWriter):
+        if isinstance(sink, ShardWriter):
             num_shards_written = sink.shard
 
     return num_shards_written
@@ -86,6 +90,9 @@ class LazyWebdatasetIterator:
         self.source = source
         self.wds_kwargs = wds_kwargs
 
+    def set_epoch(self, epoch: int) -> None:
+        self.wds_kwargs["epoch"] = epoch
+
     def _reset(self) -> None:
         if not is_module_available("webdataset"):
             raise ImportError("Please 'pip install webdataset' first.")
@@ -93,7 +100,7 @@ class LazyWebdatasetIterator:
         self._ds = mini_webdataset(self.source, **self.wds_kwargs)
         self._ds_iter = iter(self._ds)
 
-    def __getstate__(self):
+    def __getstate__(self) -> dict:
         """
         Store the state for pickling -- we'll only store the path + kwargs, and re-initialize
         this iterator when unpickled. This is necessary to transfer this object across processes
@@ -102,11 +109,11 @@ class LazyWebdatasetIterator:
         state = {"source": self.source, "wds_kwargs": self.wds_kwargs}
         return state
 
-    def __setstate__(self, state: Dict):
+    def __setstate__(self, state: Dict) -> None:
         """Restore the state when unpickled."""
         self.__dict__.update(state)
 
-    def __iter__(self):
+    def __iter__(self) -> "LazyWebdatasetIterator":
         self._reset()
         return self
 
@@ -121,7 +128,7 @@ class LazyWebdatasetIterator:
     def values(self):
         yield from self
 
-    def keys(self):
+    def keys(self) -> str:
         return (item.id for item in self)
 
     def items(self):
@@ -133,6 +140,7 @@ class LazyWebdatasetIterator:
 
 def mini_webdataset(
     urls,
+    epoch: int = 0,
     repeat: bool = False,
     shuffle_shards: bool = False,
     shuffle: bool = False,
@@ -156,8 +164,10 @@ def mini_webdataset(
         possible to disable the node/worker splitting.
 
     :param urls: the source URLs: a string or a list.
+    :param epoch: epoch number (used only when shuffling is enabled).
     :param repeat: repeat infinitely if True.
     :param shuffle: shuffle the items if True (after shuffling the shards, if enabled).
+        Note: ``shuffle`` is seeded with PID and time, making it non-reproducible across processes.
     :param shuffle_shards: shuffle the shards if True.
         Only takes effect when ``urls`` is a list of shard paths/urls.
     :param split_by_worker: if True, shards are split per DataLoader worker subprocesses,
@@ -181,6 +191,7 @@ def mini_webdataset(
         split_by_worker=split_by_worker,
         split_by_node=split_by_node,
     )
+    result.set_epoch(epoch)
     result = result.then(tariterators.url_opener, handler=reraise_exception)
     result = result.then(tariterators.tar_file_expander, handler=reraise_exception)
     result = result.then(tariterators.group_by_keys)
@@ -189,3 +200,107 @@ def mini_webdataset(
     if shuffle:
         result = result.shuffle(shuffle_bufsize)
     return result
+
+
+class ShardWriter:
+    """
+    Like ``webdataset.TarWriter`` but splits into multiple shards.
+
+    Note: this implementation is copied from webdataset and adapted to
+    allow shard writing using the "pipe:" notation. E.g., this is possible::
+
+        >>> writer = ShardWriter("pipe:gzip -c > data/shard-%06d.tar.gz")
+
+    Source:
+    https://github.com/webdataset/webdataset/blob/ccfe88086cdb21a0dc23a6454ce3e3723b6b8033/webdataset/writer.py#L359
+    """
+
+    def __init__(
+            self,
+            pattern: str,
+            maxcount: int = 100000,
+            maxsize: float = 3e9,
+            post: Optional[Callable] = None,
+            start_shard: int = 0,
+            **kw,
+    ):
+        """Create a ShardWriter.
+
+        :param pattern: output file pattern
+        :param maxcount: maximum number of records per shard (Default value = 100000)
+        :param maxsize: maximum size of each shard (Default value = 3e9)
+        :param kw: other options passed to TarWriter
+        """
+        if not is_module_available("webdataset"):
+            raise ImportError("Please 'pip install webdataset' first.")
+
+        self.verbose = 1
+        self.kw = kw
+        self.maxcount = maxcount
+        self.maxsize = maxsize
+        self.post = post
+
+        self.tarstream = None
+        self.shard = start_shard
+        self.pattern = pattern
+        self.total = 0
+        self.count = 0
+        self.size = 0
+        self.fname = None
+        self.next_stream()
+
+    def next_stream(self):
+        """Close the current stream and move to the next."""
+        from webdataset.writer import TarWriter
+
+        self.finish()
+        self.fname = self.pattern % self.shard
+        if self.verbose:
+            print(
+                "# writing",
+                self.fname,
+                self.count,
+                "%.1f GB" % (self.size / 1e9),
+                self.total,
+                )
+        self.shard += 1
+        self.tarstream = TarWriter(self.fname, **self.kw)
+        self.count = 0
+        self.size = 0
+
+    def write(self, obj):
+        """Write a sample.
+
+        :param obj: sample to be written
+        """
+        if self.tarstream is None or self.count >= self.maxcount or self.size >= self.maxsize:
+            self.next_stream()
+        size = self.tarstream.write(obj)
+        self.count += 1
+        self.total += 1
+        self.size += size
+
+    def finish(self):
+        """Finish all writing (use close instead)."""
+        if self.tarstream is not None:
+            self.tarstream.close()
+            assert self.fname is not None
+            if callable(self.post):
+                self.post(self.fname)
+            self.tarstream = None
+
+    def close(self):
+        """Close the stream."""
+        self.finish()
+        del self.tarstream
+        del self.shard
+        del self.count
+        del self.size
+
+    def __enter__(self):
+        """Enter context."""
+        return self
+
+    def __exit__(self, *args, **kw):
+        """Exit context."""
+        self.close()
