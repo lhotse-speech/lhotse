@@ -1,5 +1,4 @@
 import pickle
-import random
 from typing import Callable, Dict, Optional, Sequence, Union
 
 from tqdm.auto import tqdm
@@ -35,10 +34,55 @@ def export_to_webdataset(
     be internally expanded with the shard index.
 
     Returns number of written shards if sharding is enabled, otherwise 0.
+
+    **Examples**
+
+    Export cuts with audio, features, and all custom data to a single tarball,
+    converting audio to FLACs::
+
+        >>> cuts = CutSet.from_jsonl_lazy("data/cuts-train.jsonl")
+        >>> n_shards = export_to_webdataset(
+        ...     cuts=cuts,
+        ...     output_path="data/cuts-train.tar",
+        ...     audio_format="flac",
+        ... )
+
+    Export cuts with audio, features, and all custom data to a directory with shards
+    counting 10000 cuts each, converting audio to SPHERE (sph)::
+
+        >>> cuts = CutSet.from_jsonl_lazy("data/cuts-train.jsonl")
+        >>> n_shards = export_to_webdataset(
+        ...     cuts=cuts,
+        ...     output_path="data/cuts-train-wds/shard-%06d.tar",
+        ...     shard_size=10000,
+        ...     audio_format="sph",
+        ... )
+
+    The same, but export cuts with only the features being read into memory
+    (recording and custom data still refers to external storage)::
+
+        >>> cuts = CutSet.from_jsonl_lazy("data/cuts-train.jsonl")
+        >>> n_shards = export_to_webdataset(
+        ...     cuts=cuts,
+        ...     output_path="data/cuts-train-wds/shard-%06d.tar",
+        ...     shard_size=10000,
+        ...     load_features=False,
+        ...     load_custom=False,
+        ... )
+
+    Export cuts to sharded tarballs stored in the cloud
+    (in this example AWS S3, using AWS CLI)::
+
+        >>> cuts = CutSet.from_jsonl_lazy("data/cuts-train.jsonl")
+        >>> n_shards = export_to_webdataset(
+        ...     cuts=cuts,
+        ...     output_path="pipe:aws s3 cp - s3://my-bucket/data/shard-%06d.tar",
+        ...     shard_size=10000,
+        ... )
     """
     if not is_module_available("webdataset"):
         raise ImportError("Please 'pip install webdataset' first.")
-    from wds import TarWriter
+    from webdataset import TarWriter
 
     if shard_size is not None:
         assert shard_size > 0
