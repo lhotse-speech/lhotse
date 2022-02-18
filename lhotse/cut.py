@@ -266,12 +266,18 @@ class Cut:
         self,
         other: "Cut",
         offset_other_by: Seconds = 0.0,
+        allow_padding: bool = False,
         snr: Optional[Decibels] = None,
         preserve_id: Optional[str] = None,
     ) -> "MixedCut":
         """Refer to :function:`~lhotse.cut.mix` documentation."""
         return mix(
-            self, other, offset=offset_other_by, snr=snr, preserve_id=preserve_id
+            self,
+            other,
+            offset=offset_other_by,
+            allow_padding=allow_padding,
+            snr=snr,
+            preserve_id=preserve_id,
         )
 
     def append(
@@ -1629,6 +1635,9 @@ class MonoCut(Cut):
     def from_dict(data: dict) -> "MonoCut":
         from lhotse.serialization import deserialize_custom_field
 
+        # Remove "type" field if exists.
+        data.pop("type", None)
+
         features = (
             Features.from_dict(data.pop("features")) if "features" in data else None
         )
@@ -2050,8 +2059,8 @@ class PaddingCut(Cut):
 
     @staticmethod
     def from_dict(data: dict) -> "PaddingCut":
-        if "type" in data:
-            data.pop("type")
+        # Remove "type" field if exists
+        data.pop("type", None)
         return PaddingCut(**data)
 
     def with_features_path_prefix(self, path: Pathlike) -> "PaddingCut":
@@ -4053,7 +4062,7 @@ class CutSet(Serializable, Sequence[Cut]):
         assert n_cuts > 0
         # TODO: We might want to make this more efficient in the future
         #  by holding a cached list of cut ids as a member of CutSet...
-        cut_indices = [random.randint(0, len(self) - 1) for _ in range(n_cuts)]
+        cut_indices = random.sample(range(len(self)), min(n_cuts, len(self)))
         cuts = [self[idx] for idx in cut_indices]
         if n_cuts == 1:
             return cuts[0]
@@ -4158,6 +4167,7 @@ class CutSet(Serializable, Sequence[Cut]):
         self,
         cuts: "CutSet",
         duration: Optional[Seconds] = None,
+        allow_padding: bool = False,
         snr: Optional[Union[Decibels, Sequence[Decibels]]] = 20,
         preserve_id: Optional[str] = None,
         mix_prob: float = 1.0,
@@ -4172,6 +4182,9 @@ class CutSet(Serializable, Sequence[Cut]):
             (i.e. we'll truncate the mix if it exceeded the original duration).
             Otherwise, we will keep sampling cuts to mix in until we reach the specified
             ``duration`` (and truncate to that value, should it be exceeded).
+        :param allow_padding: an optional bool.
+            When it is ``True``, we will allow the offset to be larger than the reference
+            cut by padding the reference cut.
         :param snr: an optional float, or pair (range) of floats, in decibels.
             When it's a single float, we will mix all cuts with this SNR level
             (where cuts in ``self`` are treated as signals, and cuts in ``cuts`` are treated as noise).
@@ -4221,6 +4234,7 @@ class CutSet(Serializable, Sequence[Cut]):
                         other=to_mix,
                         snr=snr,
                         offset_other_by=mixed_in_duration,
+                        allow_padding=allow_padding,
                         preserve_id=preserve_id,
                     )
                     # Since we're adding floats, we can be off by an epsilon and trigger
@@ -4992,6 +5006,7 @@ def mix(
     reference_cut: Cut,
     mixed_in_cut: Cut,
     offset: Seconds = 0,
+    allow_padding: bool = False,
     snr: Optional[Decibels] = None,
     preserve_id: Optional[str] = None,
 ) -> MixedCut:
@@ -5004,6 +5019,7 @@ def mix(
     :param reference_cut: The reference cut for the mix - offset and snr are specified w.r.t this cut.
     :param mixed_in_cut: The mixed-in cut - it will be offset and rescaled to match the offset and snr parameters.
     :param offset: How many seconds to shift the ``mixed_in_cut`` w.r.t. the ``reference_cut``.
+    :param allow_padding: If the offset is larger than the cut duration, allow the cut to be padded.
     :param snr: Desired SNR of the ``right_cut`` w.r.t. the ``left_cut`` in the mix.
     :param preserve_id: optional string ("left", "right"). when specified, append will preserve the cut id
         of the left- or right-hand side argument. otherwise, a new random id is generated.
@@ -5026,10 +5042,10 @@ def mix(
         assert (
             reference_cut.num_features == mixed_in_cut.num_features
         ), "Cannot mix cuts with different feature dimensions."
-    assert offset <= reference_cut.duration, (
+    assert offset <= reference_cut.duration or allow_padding, (
         f"Cannot mix cut '{mixed_in_cut.id}' with offset {offset},"
         f" which is greater than cuts {reference_cut.id} duration"
-        f" of {reference_cut.duration}"
+        f" of {reference_cut.duration}. Set `allow_padding=True` to allow padding."
     )
     assert reference_cut.sampling_rate == mixed_in_cut.sampling_rate, (
         f"Cannot mix cuts with different sampling rates "
@@ -5050,6 +5066,10 @@ def mix(
             "Unexpected value for 'preserve_id' argument: "
             f"got '{preserve_id}', expected one of (None, 'left', 'right')."
         )
+
+    # If the offset is larger than the left_cut duration, pad it.
+    if offset > reference_cut.duration:
+        reference_cut = reference_cut.pad(duration=offset)
 
     # When the left_cut is a MixedCut, take its existing tracks, otherwise create a new track.
     if isinstance(reference_cut, MixedCut):
