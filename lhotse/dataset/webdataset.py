@@ -16,7 +16,7 @@ def export_to_webdataset(
     audio_format: str = "flac",
     drop_audio: bool = False,
     drop_features: bool = False,
-) -> None:
+) -> int:
     """
     Saves the CutSet metadata along with audio/features data into a WebDataset archive.
     The audio and feature data is read, decoded, and encoded into ``audio_format`` for audio,
@@ -31,6 +31,8 @@ def export_to_webdataset(
     create multiple tarballs with ``shard_size`` items per shard. In that mode, we expect
     that ``output_path`` contains a pattern like "/path/to/shard-%06d.tar", which will
     be internally expanded with the shard index.
+
+    Returns number of written shards if sharding is enabled, otherwise 0.
     """
     if not is_module_available("webdataset"):
         raise ImportError("Please 'pip install webdataset' first.")
@@ -42,6 +44,7 @@ def export_to_webdataset(
     else:
         sink = wds.TarWriter(output_path)
 
+    num_shards_written = 0
     with sink:
         for idx, cut in tqdm(
             enumerate(cuts), desc="Creating WebDataset tarball(s)", disable=not verbose
@@ -53,6 +56,11 @@ def export_to_webdataset(
             cut = cut.move_to_memory(audio_format=audio_format)
             data = pickle.dumps(cut.to_dict())
             sink.write({"__key__": cut.id, "data": data})
+
+        if isinstance(sink, wds.ShardWriter):
+            num_shards_written = sink.shard
+
+    return num_shards_written
 
 
 class LazyWebdatasetIterator:
