@@ -3379,17 +3379,82 @@ class CutSet(Serializable, Sequence[Cut]):
         return CutSet.from_cuts(deserialize_one(cut) for cut in data)
 
     @staticmethod
-    def from_webdataset(path: Pathlike, **wds_kwargs) -> "CutSet":
+    def from_webdataset(
+        path: Union[Pathlike, Sequence[Pathlike]], **wds_kwargs
+    ) -> "CutSet":
         """
         Provides the ability to read Lhotse objects from a WebDataset tarball (or a
-        collection of them, i.e., shards) on-the-fly, without reading the full contents
-        into memory.
+        collection of them, i.e., shards) sequentially, without reading the full contents
+        into memory. It also supports passing a list of paths, or WebDataset-style pipes.
 
-        Since this mode does not support random access reads, some methods of these classes
-        might not work properly.
+        CutSets stored in this format are potentially much faster to read from due to
+        sequential I/O (we observed speedups of 50-100x vs random-read mechanisms).
+
+        Since this mode does not support random access reads, some methods of CutSet
+        might not work properly (e.g. ``len()``).
 
         The behaviour of the underlying ``WebDataset`` instance can be customized by
-        providing its kwargs directly to the constructor of this class.
+        providing its kwargs directly to the constructor of this class. For details,
+        see :func:`lhotse.dataset.webdataset.mini_webdataset` documentation.
+
+        **Examples**
+
+        Read manifests and data from a single tarball::
+
+            >>> cuts = CutSet.from_webdataset("data/cuts-train.tar")
+
+        Read manifests and data from a multiple tarball shards::
+
+            >>> cuts = CutSet.from_webdataset("data/shard-{000000..004126}.tar")
+            >>> # alternatively
+            >>> cuts = CutSet.from_webdataset(["data/shard-000000.tar", "data/shard-000001.tar", ...])
+
+        Read manifests and data from shards in cloud storage (here AWS S3 via AWS CLI)::
+
+            >>> cuts = CutSet.from_webdataset("pipe:aws s3 cp data/shard-{000000..004126}.tar -")
+
+        Read manifests and data from shards which are split between PyTorch DistributeDataParallel
+        nodes and dataloading workers, with shard-level shuffling enabled::
+
+            >>> cuts = CutSet.from_webdataset(
+            ...     "data/shard-{000000..004126}.tar",
+            ...     split_by_worker=True,
+            ...     split_by_node=True,
+            ...     shuffle_shards=True,
+            ... )
+
+        Export cuts with audio, features, and all custom data to a directory with shards
+        counting 10000 cuts each, converting audio to SPHERE (sph)::
+
+            >>> cuts = CutSet.from_jsonl_lazy("data/cuts-train.jsonl")
+            >>> n_shards = export_to_webdataset(
+            ...     cuts=cuts,
+            ...     output_path="data/cuts-train-wds/shard-%06d.tar",
+            ...     shard_size=10000,
+            ...     audio_format="sph",
+            ... )
+
+        The same, but export cuts with only the features being read into memory
+        (recording and custom data still refers to external storage)::
+
+            >>> cuts = CutSet.from_jsonl_lazy("data/cuts-train.jsonl")
+            >>> n_shards = export_to_webdataset(
+            ...     cuts=cuts,
+            ...     output_path="data/cuts-train-wds/shard-%06d.tar",
+            ...     shard_size=10000,
+            ...     load_features=False,
+            ...     load_custom=False,
+            ... )
+
+        Export cuts to sharded tarballs stored in the cloud
+        (in this example AWS S3, using AWS CLI)::
+
+            >>> cuts = CutSet.from_jsonl_lazy("data/cuts-train.jsonl")
+            >>> n_shards = export_to_webdataset(
+            ...     cuts=cuts,
+            ...     output_path="pipe:aws s3 cp - s3://my-bucket/data/shard-%06d.tar",
+            ...     shard_size=10000,
+            ... )
         """
         from lhotse.dataset.webdataset import LazyWebdatasetIterator
 
