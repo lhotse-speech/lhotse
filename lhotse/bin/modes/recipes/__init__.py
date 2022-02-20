@@ -1,4 +1,5 @@
 from .adept import *
+from .aidatatang_200zh import *
 from .aishell import *
 from .aishell4 import *
 from .ami import *
