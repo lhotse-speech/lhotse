@@ -9,12 +9,10 @@ Barcelona, Spain, 2020
 """
 import logging
 import subprocess
-import soundfile as sf
 
 from pathlib import Path
 from typing import Dict, Union
-from lhotse import audio
-from lhotse.audio import AudioSource, Recording
+from lhotse.audio import Recording
 
 from lhotse import (
     RecordingSet,
@@ -22,7 +20,7 @@ from lhotse import (
     SupervisionSet,
     validate_recordings_and_supervisions,
 )
-from lhotse.utils import Pathlike, check_and_rglob
+from lhotse.utils import Pathlike
 
 
 # fmt: off
