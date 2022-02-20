@@ -45,6 +45,8 @@ a CLI tool that create the manifests given a corpus directory.
     - Function
   * - ADEPT
     - :func:`lhotse.recipes.prepare_adept`
+  * - Aidatatang_200zh
+    - :func:`lhotse.recipes.prepare_aidatatang_200zh`
   * - Aishell
     - :func:`lhotse.recipes.prepare_aishell`
   * - AISHELL-4
