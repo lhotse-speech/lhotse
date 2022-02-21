@@ -191,6 +191,7 @@ def mini_webdataset(
     split_by_worker: bool = False,
     split_by_node: bool = False,
     shuffle_bufsize: int = 1000,
+    ignore_error_shards: bool = True,
 ):
     """
     Return a pipeline for WebDataset-style data files.
@@ -222,12 +223,16 @@ def mini_webdataset(
         Only takes effect when ``urls`` is a list of shard paths/urls.
     :param shuffle_bufsize: Buffer size for the ``shuffle`` argument.
         Larger bufsize means more memory usage but potentially improved randomness.
+    :param ignore_error_shards: when ``True``, we tell WebDataset to ignore shards that
+        failed during loading and emit a warning. When ``False``, we won't catch the exceptions.
     """
     if not is_module_available("webdataset"):
         raise ImportError("Please 'pip install webdataset' first.")
 
-    from webdataset import PytorchShardList, reraise_exception
+    from webdataset import PytorchShardList, reraise_exception, warn_and_continue
     from webdataset import tariterators
+
+    handler = warn_and_continue if ignore_error_shards else reraise_exception
 
     result = PytorchShardList(
         urls,
@@ -236,9 +241,9 @@ def mini_webdataset(
         split_by_node=split_by_node,
     )
     result.set_epoch(epoch)
-    result = result.then(tariterators.url_opener, handler=reraise_exception)
-    result = result.then(tariterators.tar_file_expander, handler=reraise_exception)
-    result = result.then(tariterators.group_by_keys)
+    result = result.then(tariterators.url_opener, handler=handler)
+    result = result.then(tariterators.tar_file_expander, handler=handler)
+    result = result.then(tariterators.group_by_keys, handler=handler)
     if repeat:
         result = result.repeat()
     if shuffle:
