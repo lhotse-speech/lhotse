@@ -41,6 +41,7 @@ jobs:
         pip install kaldifeat  # for running kaldifeat tests
         pip install opensmile  # for running opensmile tests
         pip install kaldi_native_io  # for running kaldi_native_io tests
+        pip install webdataset==0.1.103 # for running webdataset tests
     - name: Install sph2pipe
       run: |
         lhotse install-sph2pipe  # Handle sphere files.

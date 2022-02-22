@@ -978,6 +978,66 @@ class MonoCut(Cut):
             )
         return None
 
+    def move_to_memory(
+        self,
+        audio_format: str = "flac",
+        load_audio: bool = True,
+        load_features: bool = True,
+        load_custom: bool = True,
+    ) -> "MonoCut":
+        """
+        Load data (audio, features, or custom arrays) into memory and attach them
+        to a copy of the manifest. This is useful when you want to store cuts together
+        with the actual data in some binary format that enables sequential data reads.
+
+        Audio is encoded with ``audio_format`` (compatible with ``torchaudio.save``),
+        floating point features are encoded with lilcom, and other arrays are pickled.
+        """
+
+        # Handle moving audio to memory.
+        if not load_audio or not self.has_recording:
+            recording = self.recording
+        else:
+            recording = self.recording.move_to_memory(
+                channels=self.channel,
+                offset=self.start,
+                duration=self.duration,
+                format=audio_format,
+            )
+
+        # Handle moving features to memory.
+        if not load_features or not self.has_features:
+            features = self.features
+        else:
+            features = self.features.move_to_memory(
+                start=self.start, duration=self.duration
+            )
+
+        # Handle moving custom arrays to memory.
+        if not load_custom or self.custom is None:
+            custom = self.custom
+        else:
+            from lhotse.array import Array, TemporalArray
+
+            custom = {
+                # Case 1: Array
+                k: v.move_to_memory() if isinstance(v, Array)
+                # Case 2: TemporalArray
+                else v.move_to_memory(start=self.start, duration=self.duration)
+                if isinstance(v, TemporalArray)
+                # Case 3: anything else
+                else v
+                for k, v in self.custom.items()
+            }
+
+        cut = fastcopy(
+            self,
+            recording=recording,
+            features=features,
+            custom=custom,
+        )
+        return cut
+
     def drop_features(self) -> "MonoCut":
         """Return a copy of the current :class:`.MonoCut`, detached from ``features``."""
         assert (
@@ -1588,6 +1648,9 @@ class MonoCut(Cut):
 
         if "custom" in data:
             deserialize_custom_field(data["custom"])
+
+        if "type" in data:
+            data.pop("type")
 
         return MonoCut(
             **data,
@@ -3016,6 +3079,8 @@ class MixedCut(Cut):
 
     @staticmethod
     def from_dict(data: dict) -> "MixedCut":
+        if "type" in data:
+            data.pop("type")
         return MixedCut(
             id=data["id"],
             tracks=[MixTrack.from_dict(track) for track in data["tracks"]],
@@ -3321,6 +3386,56 @@ class CutSet(Serializable, Sequence[Cut]):
             )
 
         return CutSet.from_cuts(deserialize_one(cut) for cut in data)
+
+    @staticmethod
+    def from_webdataset(
+        path: Union[Pathlike, Sequence[Pathlike]], **wds_kwargs
+    ) -> "CutSet":
+        """
+        Provides the ability to read Lhotse objects from a WebDataset tarball (or a
+        collection of them, i.e., shards) sequentially, without reading the full contents
+        into memory. It also supports passing a list of paths, or WebDataset-style pipes.
+
+        CutSets stored in this format are potentially much faster to read from due to
+        sequential I/O (we observed speedups of 50-100x vs random-read mechanisms).
+
+        Since this mode does not support random access reads, some methods of CutSet
+        might not work properly (e.g. ``len()``).
+
+        The behaviour of the underlying ``WebDataset`` instance can be customized by
+        providing its kwargs directly to the constructor of this class. For details,
+        see :func:`lhotse.dataset.webdataset.mini_webdataset` documentation.
+
+        **Examples**
+
+        Read manifests and data from a single tarball::
+
+            >>> cuts = CutSet.from_webdataset("data/cuts-train.tar")
+
+        Read manifests and data from a multiple tarball shards::
+
+            >>> cuts = CutSet.from_webdataset("data/shard-{000000..004126}.tar")
+            >>> # alternatively
+            >>> cuts = CutSet.from_webdataset(["data/shard-000000.tar", "data/shard-000001.tar", ...])
+
+        Read manifests and data from shards in cloud storage (here AWS S3 via AWS CLI)::
+
+            >>> cuts = CutSet.from_webdataset("pipe:aws s3 cp data/shard-{000000..004126}.tar -")
+
+        Read manifests and data from shards which are split between PyTorch DistributeDataParallel
+        nodes and dataloading workers, with shard-level shuffling enabled::
+
+            >>> cuts = CutSet.from_webdataset(
+            ...     "data/shard-{000000..004126}.tar",
+            ...     split_by_worker=True,
+            ...     split_by_node=True,
+            ...     shuffle_shards=True,
+            ... )
+
+        """
+        from lhotse.dataset.webdataset import LazyWebdatasetIterator
+
+        return CutSet(cuts=LazyWebdatasetIterator(path, **wds_kwargs))
 
     def to_dicts(self) -> Iterable[dict]:
         return (cut.to_dict() for cut in self)
@@ -4797,7 +4912,10 @@ class CutSet(Serializable, Sequence[Cut]):
         return self.map_supervisions(lambda s: s.transform_text(transform_fn))
 
     def __repr__(self) -> str:
-        return f"CutSet(len={len(self)})"
+        return (
+            f"CutSet(len={len(self) if hasattr(self.data, 'len') else '<unknown>'}) "
+            f"[underlying data type: {type(self.data)}]"
+        )
 
     def __contains__(self, item: Union[str, Cut]) -> bool:
         if isinstance(item, str):
