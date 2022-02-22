@@ -142,7 +142,11 @@ def test_cut_with_temporal_array_move_to_memory_large_offset():
             )
         )
         cut.custom_array = w.store_array(
-            key="dummy-key", value=arr, frame_shift=0.01, temporal_dim=0, start=cut.start
+            key="dummy-key",
+            value=arr,
+            frame_shift=0.01,
+            temporal_dim=0,
+            start=cut.start,
         )
 
         cut_mem = cut.move_to_memory()
