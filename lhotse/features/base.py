@@ -493,7 +493,12 @@ class Features:
         data = writer.write("", arr)  # key is ignored by in memory writers
         return fastcopy(
             self,
-            start=start if not isclose(start, 0) else self.start,
+            # note: to understand why start is set to zero here, consider two cases:
+            # 1) this method moves the whole array to memory => the start was 0 anyway
+            # 2) this method moves a subset of the array to memory => the manifest is
+            #    now relative to the start of that subset, and since it describes the
+            #    whole subset, start=0 and duration=self.duration
+            start=0.0,
             duration=ifnone(duration, self.duration),
             num_frames=arr.shape[0],
             storage_type=writer.name,

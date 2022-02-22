@@ -1,3 +1,4 @@
+from math import isclose
 from tempfile import NamedTemporaryFile
 
 import numpy as np
@@ -76,6 +77,18 @@ def test_cut_with_audio_move_to_memory():
     np.testing.assert_equal(memory_cut.load_audio(), cut.load_audio())
 
 
+def test_cut_with_audio_move_to_memory_large_offset():
+    path = "test/fixtures/mono_c0.wav"
+    cut = dummy_cut(0, duration=0.1).drop_recording()
+    cut.recording = Recording.from_file(path)
+    cut.start = 0.4
+    assert isclose(cut.end, 0.5)
+
+    memory_cut = cut.move_to_memory()
+
+    np.testing.assert_equal(memory_cut.load_audio(), cut.load_audio())
+
+
 def test_cut_with_array_move_to_memory():
     path = "test/fixtures/libri/cuts.json"
     cut = CutSet.from_file(path)[0]
@@ -101,6 +114,35 @@ def test_cut_with_temporal_array_move_to_memory():
         )
         cut.custom_array = w.store_array(
             key="dummy-key", value=arr, frame_shift=0.01, temporal_dim=0, start=0
+        )
+
+        cut_mem = cut.move_to_memory()
+        arr_mem = cut_mem.load_custom_array()
+
+        assert arr.dtype == arr_mem.dtype
+        np.testing.assert_equal(arr, arr_mem)
+
+        arr_trunc = cut.truncate(duration=0.5).load_custom_array()
+        arr_mem_trunc = cut_mem.truncate(duration=0.5).load_custom_array()
+
+        assert arr_trunc.dtype == arr_mem_trunc.dtype
+        np.testing.assert_equal(arr_trunc, arr_mem_trunc)
+
+
+def test_cut_with_temporal_array_move_to_memory_large_offset():
+    path = "test/fixtures/libri/cuts.json"
+    cut = CutSet.from_file(path)[0]
+    cut.start = 10.0
+    cut.duration = 1.5
+
+    with NamedTemporaryFile(suffix=".h5") as f, NumpyHdf5Writer(f.name) as w:
+        arr = np.array(
+            np.arange(
+                compute_num_frames(cut.duration, frame_shift=0.01, sampling_rate=16000)
+            )
+        )
+        cut.custom_array = w.store_array(
+            key="dummy-key", value=arr, frame_shift=0.01, temporal_dim=0, start=cut.start
         )
 
         cut_mem = cut.move_to_memory()
