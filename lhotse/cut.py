@@ -2774,11 +2774,18 @@ class MixedCut(Cut):
             reference_audio = reference_cut.load_audio()
             reference_energy = audio_energy(reference_audio)
 
-        mixer = AudioMixer(
-            self.tracks[0].cut.load_audio(),
-            sampling_rate=self.tracks[0].cut.sampling_rate,
-            reference_energy=reference_energy,
-        )
+        try:
+            mixer = AudioMixer(
+                self.tracks[0].cut.load_audio(),
+                sampling_rate=self.tracks[0].cut.sampling_rate,
+                reference_energy=reference_energy,
+            )
+        except NonPositiveEnergyError as e:
+            logging.warning(
+                f'{e} Cannot mix audios to the reference audio "{self.tracks[0].cut.id}"'
+            )
+            return self.tracks[0].cut.load_audio()
+
         for pos, track in enumerate(self.tracks[1:], start=1):
             try:
                 if pos == reference_pos and reference_audio is not None:
@@ -2792,7 +2799,7 @@ class MixedCut(Cut):
                 )
             except NonPositiveEnergyError as e:
                 logging.warning(
-                    str(e) + f' MonoCut with id "{track.cut.id}" will not be mixed in.'
+                    f'{e} MonoCut with id "{track.cut.id}" will not be mixed in.'
                 )
 
         if mixed:
