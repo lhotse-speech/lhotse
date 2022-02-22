@@ -538,6 +538,24 @@ class Features:
             )
         return Features(**data)
 
+    def __repr__(self):
+        return (
+            f"Features("
+            f"type={self.type}, "
+            f"num_frames={self.num_frames}, "
+            f"num_features={self.num_features}, "
+            f"frame_shift={self.frame_shift}, "
+            f"sampling_rate={self.sampling_rate}, "
+            f"start={self.start}, "
+            f"duration={self.duration}, "
+            f"storage_type={self.storage_type}, "
+            f"storage_path={self.storage_path}, "
+            f"storage_key={self.storage_key if isinstance(self.storage_key, str) else '<binary-data>'}, "
+            f"recording_id={self.recording_id}, "
+            f"channels={self.channels}"
+            f")"
+        )
+
 
 class FeatureSet(Serializable, Sequence[Features]):
     """
