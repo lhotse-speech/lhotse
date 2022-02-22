@@ -91,6 +91,16 @@ class Array:
             shape=self.shape,
         )
 
+    def __repr__(self):
+        return (
+            f"Array("
+            f"storage_type={self.storage_type}, "
+            f"storage_path={self.storage_path}, "
+            f"storage_key={self.storage_key if isinstance(self.storage_key, str) else '<binary-data>'}, "
+            f"shape={self.shape}"
+            f")"
+        )
+
 
 @dataclass
 class TemporalArray:

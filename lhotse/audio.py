@@ -227,6 +227,12 @@ class AudioSource:
     def from_dict(data) -> "AudioSource":
         return AudioSource(**data)
 
+    def __repr__(self):
+        return (
+            f"AudioSource(type={self.type}, channels={self.channels}, "
+            f"source={self.source if isinstance(self.source, str) else '<binary-data>'})"
+        )
+
 
 @dataclass
 class Recording:
