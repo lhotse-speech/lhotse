@@ -409,7 +409,7 @@ def describe(cutset: Pathlike):
     cuts.describe()
 
 
-@cut.command()
+@cut.command(context_settings=dict(show_default=True))
 @click.argument("cutset", type=click.Path(exists=True, dir_okay=False))
 @click.argument("output_path_or_url", type=str)
 @click.option(
