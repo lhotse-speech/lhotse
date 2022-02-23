@@ -491,6 +491,12 @@ class Recording:
         :param duration: seconds, indicates the total audio time to read (starting from ``offset``).
         :return: a numpy array of audio samples with shape ``(num_channels, num_samples)``.
         """
+
+        assert offset <= self.duration, (
+            f"Cannot load audio because the Recording's duration {self.duration}s "
+            f"is smaller than the requested offset {offset}s."
+        )
+
         if channels is None:
             channels = SetContainingAnything()
         else:

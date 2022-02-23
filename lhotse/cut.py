@@ -1032,6 +1032,10 @@ class MonoCut(Cut):
 
         cut = fastcopy(
             self,
+            # note: cut's start is relative to the start of the recording/features;
+            # since we moved to memory only a subset of recording/features that
+            # corresponds to this cut, the start is always 0.
+            start=0.0,
             recording=recording,
             features=features,
             custom=custom,
