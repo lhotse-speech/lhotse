@@ -29,7 +29,7 @@ def spgispeech(
     """SPGISpeech ASR data preparation."""
     prepare_spgispeech(
         corpus_dir,
-        output_dir=output_dir,
+        output_dir,
         num_jobs=num_jobs,
         normalize_text=normalize_text,
     )
@@ -37,6 +37,6 @@ def spgispeech(
 
 @download.command(context_settings=dict(show_default=True))
 @click.argument("target_dir", type=click.Path())
-def spgispeech(target_dir: Pathlike, full: bool):
+def spgispeech(target_dir: Pathlike):
     """SPGISpeech download."""
     download_spgispeech(target_dir)
