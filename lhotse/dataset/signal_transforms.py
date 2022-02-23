@@ -236,7 +236,7 @@ class SpecAugment(torch.nn.Module):
 
             _max_tot_mask_frames = self.max_frames_mask_fraction * features.size(0)
             num_frame_masks = min(
-                self.num_feature_masks,
+                self.num_frame_masks,
                 math.ceil(_max_tot_mask_frames / self.frames_mask_size),
             )
             max_mask_frames = min(
