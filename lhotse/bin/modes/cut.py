@@ -411,7 +411,7 @@ def describe(cutset: Pathlike):
 
 @cut.command(context_settings=dict(show_default=True))
 @click.argument("cutset", type=click.Path(exists=True, dir_okay=False))
-@click.argument("output_path_or_url", type=str)
+@click.argument("wspecifier", type=str)
 @click.option(
     "-s",
     "--shard-size",
@@ -457,7 +457,13 @@ def export_to_webdataset(
 ):
     """
     Export CUTS into a WebDataset tarfile, or a collection of tarfile shards, as specified by
-    WSPECIFIER. WSPECIFIER can be a regular path or a "pipe:" expression (e.g., "pipe:gzip -c").
+    WSPECIFIER.
+
+    \b
+    WSPECIFIER can be:
+    - a regular path (e.g., "data/cuts.tar"),
+    - a path template for sharding (e.g., "data/shard-06%d.tar"), or
+    - a "pipe:" expression (e.g., "pipe:gzip -c > data/shard-06%d.tar.gz").
 
     The resulting CutSet contains audio/feature data in addition to metadata, and can be read in
     Python using 'CutSet.from_webdataset' API.
