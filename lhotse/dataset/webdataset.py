@@ -1,3 +1,4 @@
+import logging
 import pickle
 from typing import Callable, Dict, Optional, Sequence, Union
 
@@ -5,7 +6,7 @@ from tqdm.auto import tqdm
 
 from lhotse import CutSet
 from lhotse.serialization import LazyIteratorChain
-from lhotse.utils import Pathlike, is_module_available
+from lhotse.utils import Pathlike, is_module_available, suppress_and_warn
 
 
 def export_to_webdataset(
@@ -17,6 +18,7 @@ def export_to_webdataset(
     load_audio: bool = True,
     load_features: bool = True,
     load_custom: bool = True,
+    fault_tolerant: bool = True,
 ) -> int:
     """
     Saves the CutSet metadata along with audio/features data into a WebDataset archive.
@@ -34,6 +36,9 @@ def export_to_webdataset(
     be internally expanded with the shard index.
 
     Returns number of written shards if sharding is enabled, otherwise 0.
+
+    .. note: By default, we'll skip cuts which failed to load for any reason and proceed
+        with exporting. To raise an exception and stop, set ``fault_tolerant=False``.
 
     **Examples**
 
@@ -92,21 +97,31 @@ def export_to_webdataset(
         sink = TarWriter(output_path)
 
     num_shards_written = 0
+    total = 0
+    ok = 0
     with sink:
         for idx, cut in tqdm(
             enumerate(cuts), desc="Creating WebDataset tarball(s)", disable=not verbose
         ):
-            cut = cut.move_to_memory(
-                audio_format=audio_format,
-                load_audio=load_audio,
-                load_features=load_features,
-                load_custom=load_custom,
-            )
-            data = pickle.dumps(cut.to_dict())
-            sink.write({"__key__": cut.id, "data": data})
+            total += 1
+            with suppress_and_warn(Exception, enabled=fault_tolerant):
+                cut = cut.move_to_memory(
+                    audio_format=audio_format,
+                    load_audio=load_audio,
+                    load_features=load_features,
+                    load_custom=load_custom,
+                )
+                data = pickle.dumps(cut.to_dict())
+                sink.write({"__key__": cut.id, "data": data})
+                ok += 1
 
         if isinstance(sink, ShardWriter):
             num_shards_written = sink.shard
+
+    logging.info(
+        f"Exported {ok} cuts out of {total} total into {num_shards_written} shards "
+        f"(there were {total - ok} cuts with errors)."
+    )
 
     return num_shards_written
 
