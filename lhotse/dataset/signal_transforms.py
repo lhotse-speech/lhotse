@@ -137,10 +137,10 @@ class SpecAugment(torch.nn.Module):
 
         :param time_warp_factor: parameter for the time warping; larger values mean more warping.
             Set to ``None``, or less than ``1``, to disable.
-        :param num_feature_masks: the number of masking regions for utterances. Set to ``0`` to disable.
+        :param num_feature_masks: how many feature masks should be applied. Set to ``0`` to disable.
         :param features_mask_size: the width of the feature mask (expressed in the number of masked feature bins).
             This is the ``F`` parameter from the SpecAugment paper.
-        :param num_frame_masks: how many frame (temporal) masks should be applied. Set to ``0`` to disable.
+        :param num_frame_masks: the number of masking regions for utterances. Set to ``0`` to disable.
         :param frames_mask_size: the width of the frame (temporal) masks (expressed in the number of masked frames).
             This is the ``T`` parameter from the SpecAugment paper.
         :param max_frames_mask_fraction: limits the size of the frame (temporal) mask to this value times the length
