@@ -7,7 +7,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from decimal import ROUND_HALF_UP
 from functools import lru_cache, partial
-from io import BytesIO
+from io import BytesIO, IOBase
 from itertools import islice
 from math import ceil, sqrt
 from pathlib import Path
@@ -27,6 +27,7 @@ from typing import (
 )
 
 import numpy as np
+import torch
 from tqdm.auto import tqdm
 
 from lhotse.augmentation import (
@@ -120,11 +121,12 @@ class AudioSource:
     - 'file' (formats supported by soundfile, possibly multi-channel)
     - 'command' [unix pipe] (must be WAVE, possibly multi-channel)
     - 'url' (any URL type that is supported by "smart_open" library, e.g. http/https/s3/gcp/azure/etc.)
+    - 'memory' (any format, read from a binary string attached to 'source' member of AudioSource)
     """
 
     type: str
     channels: List[int]
-    source: str
+    source: Union[str, bytes]
 
     def load_audio(
         self,
@@ -144,7 +146,7 @@ class AudioSource:
         :param force_opus_sampling_rate: This parameter is only used when we detect an OPUS file.
             It will tell ffmpeg to resample OPUS to this sampling rate.
         """
-        assert self.type in ("file", "command", "url")
+        assert self.type in ("file", "command", "url", "memory")
 
         # TODO: refactor when another source type is added
         source = self.source
@@ -180,6 +182,16 @@ class AudioSource:
                     source, offset=offset, duration=duration
                 )
 
+        elif self.type == "memory":
+            assert isinstance(self.source, bytes), (
+                "Corrupted manifest: specified AudioSource type is 'memory', "
+                "but 'self.source' attribute is not of type 'bytes'."
+            )
+            source = BytesIO(self.source)
+            samples, sampling_rate = read_audio(
+                source, offset=offset, duration=duration
+            )
+
         else:  # self.type == 'file'
             samples, sampling_rate = read_audio(
                 source,
@@ -214,6 +226,12 @@ class AudioSource:
     @staticmethod
     def from_dict(data) -> "AudioSource":
         return AudioSource(**data)
+
+    def __repr__(self):
+        return (
+            f"AudioSource(type={self.type}, channels={self.channels}, "
+            f"source={self.source if isinstance(self.source, str) else '<binary-data>'})"
+        )
 
 
 @dataclass
@@ -355,6 +373,104 @@ class Recording:
             ],
         )
 
+    @staticmethod
+    def from_bytes(
+        data: bytes,
+        recording_id: str,
+    ) -> "Recording":
+        """
+        Like :meth:`.Recording.from_file`, but creates a manifest for a byte string with
+        raw encoded audio data. This data is first decoded to obtain info such as the
+        sampling rate, number of channels, etc. Then, the binary data is attached to the
+        manifest. Calling :meth:`.Recording.load_audio` does not perform any I/O and
+        instead decodes the byte string contents in memory.
+
+        .. note:: Intended use of this method is for packing Recordings into archives
+            where metadata and data should be available together
+            (e.g., in WebDataset style tarballs).
+
+        .. caution:: Manifest created with this method cannot be stored as JSON
+            because JSON doesn't allow serializing binary data.
+
+        :param data: bytes, byte string containing encoded audio contents.
+        :param recording_id: recording id, unique string identifier.
+        :return: a new ``Recording`` instance that owns the byte string data.
+        """
+        stream = BytesIO(data)
+        audio_info = torchaudio_info(stream)
+        return Recording(
+            id=recording_id,
+            sampling_rate=audio_info.samplerate,
+            num_samples=audio_info.frames,
+            duration=audio_info.duration,
+            sources=[
+                AudioSource(
+                    type="memory",
+                    channels=list(range(audio_info.channels)),
+                    source=data,
+                )
+            ],
+        )
+
+    def move_to_memory(
+        self,
+        channels: Optional[Channels] = None,
+        offset: Seconds = None,
+        duration: Optional[Seconds] = None,
+        format: Optional[str] = None,
+    ) -> "Recording":
+        """
+        Read audio data and return a copy of the manifest with binary data attached.
+        Calling :meth:`.Recording.load_audio` on that copy will not trigger I/O.
+
+        If all arguments are left as defaults, we won't decode the audio and attach
+        the bytes we read from disk/other source as-is.
+        If ``channels``, ``duration``, or ``offset`` are specified, we'll decode the
+        audio and re-encode it into ``format`` before attaching.
+        The default format is FLAC, other formats compatible with torchaudio.save are
+        also accepted.
+        """
+
+        # Case #1: no opts specified, read audio without decoding and move it in memory.
+        if all(opt is None for opt in (channels, offset, duration)):
+            memory_sources = [
+                AudioSource(
+                    type="memory",
+                    channels=old_source.channels,
+                    source=open(old_source.source, "rb").read(),
+                )
+                for old_source in self.sources
+            ]
+            return fastcopy(self, sources=memory_sources)
+
+        # Case #2: user specified some subset of the recording, decode audio,
+        #          subset it, and encode it again but save in memory.
+        import torchaudio
+
+        audio = self.load_audio(
+            channels=channels, offset=ifnone(offset, 0), duration=duration
+        )
+        stream = BytesIO()
+        torchaudio.save(
+            stream, torch.from_numpy(audio), self.sampling_rate, format=format
+        )
+        channels = (ifnone(channels, self.channel_ids),)
+        if isinstance(channels, int):
+            channels = [channels]
+        return Recording(
+            id=self.id,
+            sources=[
+                AudioSource(
+                    type="memory",
+                    channels=channels,
+                    source=stream.getvalue(),
+                )
+            ],
+            sampling_rate=self.sampling_rate,
+            num_samples=audio.shape[1],
+            duration=ifnone(duration, self.duration),
+        )
+
     def to_dict(self) -> dict:
         return asdict_nonull(self)
 
@@ -383,6 +499,12 @@ class Recording:
         :param duration: seconds, indicates the total audio time to read (starting from ``offset``).
         :return: a numpy array of audio samples with shape ``(num_channels, num_samples)``.
         """
+
+        assert offset <= self.duration, (
+            f"Cannot load audio because the Recording's duration {self.duration}s "
+            f"is smaller than the requested offset {offset}s."
+        )
+
         if channels is None:
             channels = SetContainingAnything()
         else:
@@ -1236,19 +1358,6 @@ def torchaudio_load(
     import torch
     import torchaudio
 
-    if not isinstance(path_or_fd, (str, Path)):
-        # Special case: we are likely dealing with a file descriptor (open file).
-        # If we run torchaudio.info() on it, it will consume some data,
-        # which will cause torchaudio.load() to fail.
-        # We expect offset and duration have default values, otherwise we fail.
-        assert offset == 0 and duration is None, (
-            "Lhotse doesn't support using torchaudio.load() "
-            "with open file objects when offset or duration "
-            "arguments are non-default."
-        )
-        audio, sampling_rate = torchaudio.load(path_or_fd)
-        return audio.numpy(), sampling_rate
-
     # Need to grab the "info" about sampling rate before reading to compute
     # the number of samples provided in offset / num_frames.
     audio_info = torchaudio_info(path_or_fd)
@@ -1258,6 +1367,10 @@ def torchaudio_load(
         frame_offset = compute_num_samples(offset, audio_info.samplerate)
     if duration is not None:
         num_frames = compute_num_samples(duration, audio_info.samplerate)
+    if isinstance(path_or_fd, IOBase):
+        # Set seek pointer to the beginning of the file as torchaudio.info
+        # might have left it at the end of the header
+        path_or_fd.seek(0)
     audio, sampling_rate = torchaudio.load(
         path_or_fd,
         frame_offset=frame_offset,

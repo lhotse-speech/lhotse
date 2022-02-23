@@ -226,11 +226,13 @@ def download_icsi(
     )
 
     # Unzip annotations zip file
-    with zipfile.ZipFile("ICSI_original_transcripts.zip") as z:
-        z.extractall()  # unzips to a dir called 'transcripts'
+    with zipfile.ZipFile(target_dir / "ICSI_original_transcripts.zip") as z:
+        # Unzips transcripts to <target_dir>/'transcripts'
+        # zip file also contains some documentation which will be unzipped to <target_dir>
+        z.extractall(target_dir)
         # If custom dir is passed, rename 'transcripts' dir accordingly
         if transcripts_dir:
-            Path("transcripts").rename(transcripts_dir)
+            Path(target_dir / "transcripts").rename(transcripts_dir)
 
 
 def parse_icsi_annotations(
@@ -244,7 +246,7 @@ def parse_icsi_annotations(
 
     # First we get global speaker ids and channels
     for meeting_file in tqdm(
-        transcripts_dir.rglob("transcripts/*.mrt"), desc="Parsing ICSI mrt files"
+        transcripts_dir.rglob("./*.mrt"), desc="Parsing ICSI mrt files"
     ):
         if meeting_file.stem == "preambles":
             continue
@@ -476,23 +478,24 @@ def prepare_supervision_other(
 
 def prepare_icsi(
     audio_dir: Pathlike,
-    transcripts_dir: Optional[Pathlike] = None,
+    transcripts_dir: Pathlike,
     output_dir: Optional[Pathlike] = None,
     mic: Optional[str] = "ihm",
     normalize_text: str = "kaldi",
 ) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet]]]:
     """
     Returns the manifests which consist of the Recordings and Supervisions
-    :param data_dir: Pathlike, the path of the audio dir (LDC2004S02).
-    :param transcripts_dir: Pathlike, the path of the transcripts dir (LDC2004T04).
-    :param output_dir: Pathlike, the path where to write the manifests.
+    :param audio_dir: Pathlike, the path which holds the audio data
+    :param transcripts_dir: Pathlike, the path which holds the transcripts data
+    :param output_dir: Pathlike, the path where to write the manifests - `None` means manifests aren't stored on disk.
     :param mic: str {'ihm','ihm-mix','sdm','mdm'}, type of mic to use.
     :param normalize_text: str {'none', 'upper', 'kaldi'} normalization of text
     :return: a Dict whose key is ('train', 'dev', 'test'), and the values are dicts of manifests under keys
         'recordings' and 'supervisions'.
     """
     audio_dir = Path(audio_dir)
-    transcripts_dir = Path(transcripts_dir) if transcripts_dir else audio_dir
+    transcripts_dir = Path(transcripts_dir)
+
     assert audio_dir.is_dir(), f"No such directory: {audio_dir}"
     assert transcripts_dir.is_dir(), f"No such directory: {transcripts_dir}"
     assert mic in MIC_TO_CHANNELS.keys(), f"Mic {mic} not supported"
