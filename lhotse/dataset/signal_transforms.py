@@ -125,9 +125,9 @@ class SpecAugment(torch.nn.Module):
     def __init__(
         self,
         time_warp_factor: Optional[int] = 80,
-        num_feature_masks: int = 10,
+        num_feature_masks: int = 2,
         features_mask_size: int = 27,
-        num_frame_masks: int = 2,
+        num_frame_masks: int = 10,
         frames_mask_size: int = 100,
         max_frames_mask_fraction: float = 0.15,
         p=0.9,
