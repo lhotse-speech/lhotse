@@ -407,3 +407,80 @@ def describe(cutset: Pathlike):
         cuts, CutSet
     ), f"Only CutSet can be described (got: {type(cuts)} from '{cutset}')"
     cuts.describe()
+
+
+@cut.command()
+@click.argument("cutset", type=click.Path(exists=True, dir_okay=False))
+@click.argument("output_path_or_url", type=str)
+@click.option(
+    "-s",
+    "--shard-size",
+    type=int,
+    help="Number of cuts per shard (sharding disabled if not defined).",
+)
+@click.option(
+    "-f",
+    "--audio-format",
+    type=str,
+    default="flac",
+    help="Format in which the audio is encoded (uses torchaudio available formats).",
+)
+@click.option(
+    "--audio/--no-audio",
+    default=True,
+    help="Should we load and add audio data.",
+)
+@click.option(
+    "--features/--no-features",
+    default=True,
+    help="Should we load and add feature data.",
+)
+@click.option(
+    "--custom/--no-custom",
+    default=True,
+    help="Should we load and add custom data.",
+)
+@click.option(
+    "--fault-tolerant/--stop-on-fail",
+    default=True,
+    help="Should we omit the cuts for which loading data failed, or stop the execution.",
+)
+def export_to_webdataset(
+    cutset: Pathlike,
+    wspecifier: str,
+    shard_size: Optional[int],
+    audio_format: str,
+    audio: bool,
+    features: bool,
+    custom: bool,
+    fault_tolerant: bool,
+):
+    """
+    Export CUTS into a WebDataset tarfile, or a collection of tarfile shards, as specified by
+    WSPECIFIER. WSPECIFIER can be a regular path or a "pipe:" expression (e.g., "pipe:gzip -c").
+
+    The resulting CutSet contains audio/feature data in addition to metadata, and can be read in
+    Python using 'CutSet.from_webdataset' API.
+
+    This function is useful for I/O intensive applications where random reads are too slow, and
+    a one-time lengthy export step that enables fast sequential reading is preferable.
+
+    See the WebDataset project for more information: https://github.com/webdataset/webdataset
+    """
+    from lhotse.dataset.webdataset import export_to_webdataset
+
+    cuts = load_manifest_lazy_or_eager(cutset)
+    assert isinstance(
+        cuts, CutSet
+    ), f"Only CutSet can be exported to WebDataset format (got: {type(cuts)} from '{cutset}')"
+
+    export_to_webdataset(
+        cuts=cuts,
+        output_path=wspecifier,
+        shard_size=shard_size,
+        audio_format=audio_format,
+        load_audio=audio,
+        load_features=features,
+        load_custom=custom,
+        fault_tolerant=fault_tolerant,
+    )
