@@ -10,8 +10,8 @@ from lhotse.utils import Pathlike
 @click.argument("output_dir", type=click.Path())
 @click.option(
     "--type",
-    type=click.Choice(["replay", "mix"]),
-    default="replay",
+    type=click.Choice(["ihm", "ihm-mix", "mdm"]),
+    default="mdm",
     help="Type of the corpus to prepare",
 )
 def libricss(corpus_dir: Pathlike, output_dir: Pathlike, type: str = "replay"):

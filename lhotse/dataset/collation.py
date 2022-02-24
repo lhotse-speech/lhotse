@@ -251,9 +251,6 @@ def collate_custom_field(
             )
             pad_value = DEFAULT_PADDING_VALUE
         temporal_dim = first_manifest.temporal_dim
-        arr_lens = torch.tensor(
-            [getattr(c, field).shape[temporal_dim] for c in cuts], dtype=torch.int32
-        )
 
         # We avoid cuts.pad() because the users might be defining frame_shift differently
         # that we typically do in Lhotse. This may result in extra padding where they
@@ -263,6 +260,9 @@ def collate_custom_field(
 
         # Instead, we're going to load everything and pad to the longest sequence.
         arrs = [torch.from_numpy(c.load_custom(field)) for c in cuts]
+        arr_lens = torch.tensor(
+            [a.shape[temporal_dim] for a in arrs], dtype=torch.int32
+        )
         largest_arr = max(arrs, key=torch.numel)
         maxlen = largest_arr.shape[temporal_dim]
         collated_shape = (len(arrs), *largest_arr.shape)

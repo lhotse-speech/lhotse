@@ -23,6 +23,7 @@ from lhotse.features.io import (
     LilcomChunkyWriter,
     LilcomFilesWriter,
     LilcomHdf5Writer,
+    MemoryLilcomWriter,
     NumpyFilesWriter,
     NumpyHdf5Writer,
 )
@@ -130,11 +131,12 @@ def test_compute_global_stats():
         lambda: LilcomChunkyWriter(NamedTemporaryFile().name),
         lambda: NumpyFilesWriter(TemporaryDirectory().name),
         lambda: NumpyHdf5Writer(NamedTemporaryFile().name),
+        lambda: MemoryLilcomWriter(),
         pytest.param(
             lambda: KaldiWriter(TemporaryDirectory().name),
             marks=pytest.mark.skipif(
-                not is_module_available("kaldiio"),
-                reason="kaldiio must be installed for scp+ark feature writing",
+                not is_module_available("kaldi_native_io"),
+                reason="kaldi_native_io must be installed for scp+ark feature writing",
             ),
         ),
     ],
@@ -251,6 +253,47 @@ def test_mixer(feature_extractor, decimal, exception_expectation):
             100,
             feature_extractor.feature_dim(sampling_rate=sr),
         )
+
+
+def test_feature_mixer_handles_empty_array():
+    # Treat it more like a test of "it runs" rather than "it works"
+    sr = 16000
+    t = np.linspace(0, 1, sr, dtype=np.float32)
+    x1 = np.sin(440.0 * t).reshape(1, -1)
+
+    fe = Fbank()
+    f1 = fe.extract(x1, sr)
+    mixer = FeatureMixer(
+        feature_extractor=fe,
+        base_feats=f1,
+        frame_shift=fe.frame_shift,
+    )
+    mixer.add_to_mix(np.array([]), sampling_rate=sr)
+
+    fmix_feat = mixer.mixed_feats
+    np.testing.assert_equal(fmix_feat, f1)
+
+
+def test_feature_mixer_handles_empty_array_with_offset():
+    # Treat it more like a test of "it runs" rather than "it works"
+    sr = 16000
+    t = np.linspace(0, 1, sr, dtype=np.float32)
+    x1 = np.sin(440.0 * t).reshape(1, -1)
+
+    fe = Fbank()
+    f1 = fe.extract(x1, sr)
+    mixer = FeatureMixer(
+        feature_extractor=fe,
+        base_feats=f1,
+        frame_shift=fe.frame_shift,
+    )
+    mixer.add_to_mix(np.array([]), sampling_rate=sr, offset=0.5)
+
+    fmix_feat = mixer.mixed_feats
+    # time 0s - 1s: identical values
+    np.testing.assert_equal(fmix_feat[:100], f1)
+    # time 1s - 1.5s: padding
+    np.testing.assert_equal(fmix_feat[100:], -1000)
 
 
 def test_feature_set_prefix_path():

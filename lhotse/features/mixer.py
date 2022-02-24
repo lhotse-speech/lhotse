@@ -102,6 +102,9 @@ class FeatureMixer:
         :param offset: How many seconds to shift ``feats`` in time. For mixing, the signal will be padded before
         the start with low energy values.
         """
+        if len(feats) == 0:
+            return  # do nothing for empty arrays
+
         assert offset >= 0.0, "Negative offset in mixing is not supported."
 
         reference_feats = self.tracks[0]

@@ -45,6 +45,8 @@ a CLI tool that create the manifests given a corpus directory.
     - Function
   * - ADEPT
     - :func:`lhotse.recipes.prepare_adept`
+  * - Aidatatang_200zh
+    - :func:`lhotse.recipes.prepare_aidatatang_200zh`
   * - Aishell
     - :func:`lhotse.recipes.prepare_aishell`
   * - AISHELL-4
@@ -55,6 +57,8 @@ a CLI tool that create the manifests given a corpus directory.
     - :func:`lhotse.recipes.prepare_aspire`
   * - BABEL
     - :func:`lhotse.recipes.prepare_single_babel_language`
+  * - BVCC / VoiceMOS Challenge
+    - :func:`lhotse.recipes.bvcc`
   * - CallHome Egyptian
     - :func:`lhotse.recipes.prepare_callhome_egyptian`
   * - CallHome English
