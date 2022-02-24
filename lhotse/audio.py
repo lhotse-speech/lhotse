@@ -297,7 +297,7 @@ class Recording:
     @staticmethod
     def from_file(
         path: Pathlike,
-        recording_id: Optional[Union[str, Callable[[Pathlike], str]]] = None,
+        recording_id: Optional[Union[str, Callable[[Path], str]]] = None,
         relative_path_depth: Optional[int] = None,
         force_opus_sampling_rate: Optional[int] = None,
         force_read_audio: bool = False,
@@ -712,14 +712,11 @@ class RecordingSet(Serializable, Sequence[Recording]):
         """
         msg = f"Scanning audio files ({pattern})"
 
-        global file_read_worker
-
-        def file_read_worker(p: Path):
-            return Recording.from_file(
-                p,
-                force_opus_sampling_rate=force_opus_sampling_rate,
-                recording_id=recording_id,
-            )
+        file_read_worker = partial(
+            Recording.from_file,
+            force_opus_sampling_rate=force_opus_sampling_rate,
+            recording_id=recording_id,
+        )
 
         if num_jobs == 1:
             # Avoid spawning process for one job.
