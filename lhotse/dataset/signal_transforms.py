@@ -152,7 +152,7 @@ class SpecAugment(torch.nn.Module):
         super().__init__()
         assert 0 <= p <= 1
         assert num_feature_masks >= 0
-        assert num_frame_masks >= 0
+        assert num_frame_masks > 0
         assert features_mask_size > 0
         assert frames_mask_size > 0
         self.time_warp_factor = time_warp_factor
