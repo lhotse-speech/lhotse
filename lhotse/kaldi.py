@@ -169,6 +169,40 @@ def load_kaldi_data_dir(
     return recording_set, supervision_set, feature_set
 
 
+def create_fake_single_channel_sets(
+    recordings: RecordingSet, supervisions: SupervisionSet
+):
+    import copy
+
+    new_recordings_dict = {}
+    for r in recordings:
+        for s in r.sources:
+            assert len(s.channels) == 1, (
+                "This code supports only single channel files"
+                "in the multiple audio sources Recordings"
+            )
+            r_new = copy.copy(r)
+            r_new.id = r.id + ("-c%02d" % s.channels[0])
+            r_new.sources = [s]
+            r_new.sources[0].channels = [0]
+            new_recordings_dict[r_new.id] = r_new
+
+    new_supervisions_dict = {}
+    for s in supervisions:
+        s_new = copy.copy(s)
+        s_new.id = s.id + ("-c%02d" % s.channel)
+        s_new.recording_id = s.recording_id + ("-c%02d" % s.channel)
+        s_new.channel = 0
+        new_supervisions_dict[s_new.id] = s_new
+
+    new_recordings = RecordingSet(new_recordings_dict)
+    new_supervisions = SupervisionSet(new_supervisions_dict)
+    new_supervisions.to_json("pokus.json")
+    # print(recordings, new_recordings)
+    # print(supervisions, new_supervisions)
+    return new_recordings, new_supervisions
+
+
 def export_to_kaldi(
     recordings: RecordingSet,
     supervisions: SupervisionSet,
@@ -195,10 +229,15 @@ def export_to_kaldi(
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    assert all(len(r.sources) == 1 for r in recordings), (
-        "Kaldi export of Recordings with multiple audio sources "
-        "is currently not supported."
-    )
+    # assert all(len(r.sources) == 1 for r in recordings), (
+    #    "Kaldi export of Recordings with multiple audio sources "
+    #    "is currently not supported."
+    # )
+
+    if any(len(r.sources) != 1 for r in recordings):
+        recordings, supervisions = create_fake_single_channel_sets(
+            recordings, supervisions
+        )
 
     if map_underscores_to is not None:
         supervisions = supervisions.map(
