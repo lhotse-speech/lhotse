@@ -87,7 +87,7 @@ def export_to_webdataset(
         ... )
     """
 
-    writer = WebDatasetWriter(
+    writer = WebdatasetWriter(
         path_or_url=output_path,
         shard_size=shard_size,
         audio_format=audio_format,
@@ -117,7 +117,7 @@ def export_to_webdataset(
     return num_shards_written
 
 
-class WebDatasetWriter:
+class WebdatasetWriter:
     """
     Saves the CutSet metadata along with audio/features data into a WebDataset archive.
     The audio and feature data is read, decoded, and encoded into ``audio_format`` for audio,
@@ -144,7 +144,7 @@ class WebDatasetWriter:
     cuts each::
 
         >>> cuts = CutSet.from_jsonl_lazy("data/cuts-train.jsonl")
-        >>> with WebDatasetWriter("data/tars/shard-%06d.tar", shard_size=500) as writer:
+        >>> with WebdatasetWriter("data/tars/shard-%06d.tar", shard_size=500) as writer:
         ...     for cut in cuts:
         ...         writer.write(cut)
         >>> output_paths = writer.output_manifest_paths()
@@ -204,12 +204,10 @@ class WebDatasetWriter:
 
     def write(self, manifest: MonoCut) -> bool:
         """
-        Serializes a manifest item (e.g. :class:`~lhotse.audio.Recording`,
-        :class:`~lhotse.cut.Cut`, etc.) to JSON and stores it in a JSONL file.
+        Converts a Cut to a dict, pickles it, and then stores into a tarfile.
 
         :param manifest: the manifest to be written.
-        :param flush: should we flush the file after writing (ensures the changes
-            are synced with the disk and not just buffered for later writing).
+        :return: bool indicating whether the writing was successful.
         """
         with suppress_and_warn(Exception, enabled=self.fault_tolerant):
             cut = manifest.move_to_memory(
@@ -225,6 +223,12 @@ class WebDatasetWriter:
         return False
 
     def output_manifest_paths(self) -> List[str]:
+        """
+        Return the a list of paths/urls where the data was written.
+        The list can be used directly to initialize :class:`.LazyWebdatasetIterator`
+        or :meth:`lhotse.cut.CutSet.from_webdataset`.
+        Useful when writing into shards with a specified pattern.
+        """
         if self.finished is None:
             raise ValueError("The writer has not written anything yet.")
         if not self.finished:
