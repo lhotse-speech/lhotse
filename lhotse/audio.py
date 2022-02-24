@@ -315,7 +315,7 @@ class Recording:
     @staticmethod
     def from_file(
         path: Pathlike,
-        recording_id: Optional[str] = None,
+        recording_id: Optional[Union[str, Callable[[Path], str]]] = None,
         relative_path_depth: Optional[int] = None,
         force_opus_sampling_rate: Optional[int] = None,
         force_read_audio: bool = False,
@@ -331,6 +331,7 @@ class Recording:
 
         :param path: Path to an audio file supported by libsoundfile (pysoundfile).
         :param recording_id: recording id, when not specified ream the filename's stem ("x.wav" -> "x").
+            It can be specified as a string or a function that takes the recording path and returns a string.
         :param relative_path_depth: optional int specifying how many last parts of the file path
             should be retained in the ``AudioSource``. By default writes the path as is.
         :param force_opus_sampling_rate: when specified, this value will be used as the sampling rate
@@ -342,13 +343,20 @@ class Recording:
         :return: a new ``Recording`` instance pointing to the audio file.
         """
         path = Path(path)
+        recording_id = (
+            path.stem
+            if recording_id is None
+            else recording_id(path)
+            if callable(recording_id)
+            else recording_id
+        )
         audio_info = info(
             path,
             force_opus_sampling_rate=force_opus_sampling_rate,
             force_read_audio=force_read_audio,
         )
         return Recording(
-            id=recording_id if recording_id is not None else path.stem,
+            id=recording_id,
             sampling_rate=audio_info.samplerate,
             num_samples=audio_info.frames,
             duration=audio_info.duration,
@@ -800,6 +808,7 @@ class RecordingSet(Serializable, Sequence[Recording]):
         pattern: str,
         num_jobs: int = 1,
         force_opus_sampling_rate: Optional[int] = None,
+        recording_id: Optional[Callable[[Path], str]] = None,
     ):
         """
         Recursively scan a directory ``path`` for audio files that match the given ``pattern`` and create
@@ -819,22 +828,29 @@ class RecordingSet(Serializable, Sequence[Recording]):
             instead of the one we read from the manifest. This is useful for OPUS files that always
             have 48kHz rate and need to be resampled to the real one -- we will perform that operation
             "under-the-hood". For non-OPUS files this input does nothing.
+        :param recording_id: A function which takes the audio file path and returns the recording ID. If not
+            specified, the filename will be used as the recording ID.
         :return: a new ``Recording`` instance pointing to the audio file.
         """
         msg = f"Scanning audio files ({pattern})"
-        fn = Recording.from_file
-        if force_opus_sampling_rate is not None:
-            fn = partial(
-                Recording.from_file, force_opus_sampling_rate=force_opus_sampling_rate
-            )
+
+        file_read_worker = partial(
+            Recording.from_file,
+            force_opus_sampling_rate=force_opus_sampling_rate,
+            recording_id=recording_id,
+        )
+
         if num_jobs == 1:
             # Avoid spawning process for one job.
             return RecordingSet.from_recordings(
-                tqdm(map(fn, Path(path).rglob(pattern)), desc=msg)
+                tqdm(map(file_read_worker, Path(path).rglob(pattern)), desc=msg)
             )
         with ProcessPoolExecutor(num_jobs) as ex:
             return RecordingSet.from_recordings(
-                tqdm(ex.map(fn, Path(path).rglob(pattern)), desc=msg)
+                tqdm(
+                    ex.map(file_read_worker, Path(path).rglob(pattern)),
+                    desc=msg,
+                )
             )
 
     @staticmethod
