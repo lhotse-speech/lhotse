@@ -79,6 +79,10 @@ def prepare_spgispeech(
     .. note::
         Unlike other recipes, output_dir is not Optional here because we write the manifests
         to the output directory while processing to avoid OOM issues, since it is a large dataset.
+
+    .. caution::
+        The `normalize_text` option removes all punctuation and converts all upper case to lower case.
+        This includes removing possibly important punctuations such as dashes and apostrophes.
     """
     corpus_dir = Path(corpus_dir)
     assert corpus_dir.is_dir(), f"No such directory: {corpus_dir}"
