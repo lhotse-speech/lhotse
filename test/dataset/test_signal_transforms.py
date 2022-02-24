@@ -55,7 +55,7 @@ def test_specaugment_2d_input_raises_error():
 
 
 @pytest.mark.parametrize("num_feature_masks", [0, 1, 2])
-@pytest.mark.parametrize("num_frame_masks", [0, 1, 2])
+@pytest.mark.parametrize("num_frame_masks", [1, 2, 3])
 def test_specaugment_3d_input_works(num_feature_masks, num_frame_masks):
     cuts = CutSet.from_json("test/fixtures/ljspeech/cuts.json")
     feats, feat_lens = collate_features(cuts)

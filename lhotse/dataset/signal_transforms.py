@@ -1,4 +1,5 @@
 import bisect
+import math
 import random
 from typing import Optional, Sequence, Tuple, TypeVar, Union, Dict
 
@@ -124,12 +125,12 @@ class SpecAugment(torch.nn.Module):
     def __init__(
         self,
         time_warp_factor: Optional[int] = 80,
-        num_feature_masks: int = 1,
-        features_mask_size: int = 13,
-        num_frame_masks: int = 1,
-        frames_mask_size: int = 70,
-        max_frames_mask_fraction: float = 0.2,
-        p=0.5,
+        num_feature_masks: int = 2,
+        features_mask_size: int = 27,
+        num_frame_masks: int = 10,
+        frames_mask_size: int = 100,
+        max_frames_mask_fraction: float = 0.15,
+        p=0.9,
     ):
         """
         SpecAugment's constructor.
@@ -139,7 +140,7 @@ class SpecAugment(torch.nn.Module):
         :param num_feature_masks: how many feature masks should be applied. Set to ``0`` to disable.
         :param features_mask_size: the width of the feature mask (expressed in the number of masked feature bins).
             This is the ``F`` parameter from the SpecAugment paper.
-        :param num_frame_masks: how many frame (temporal) masks should be applied. Set to ``0`` to disable.
+        :param num_frame_masks: the number of masking regions for utterances. Set to ``0`` to disable.
         :param frames_mask_size: the width of the frame (temporal) masks (expressed in the number of masked frames).
             This is the ``T`` parameter from the SpecAugment paper.
         :param max_frames_mask_fraction: limits the size of the frame (temporal) mask to this value times the length
@@ -151,7 +152,7 @@ class SpecAugment(torch.nn.Module):
         super().__init__()
         assert 0 <= p <= 1
         assert num_feature_masks >= 0
-        assert num_frame_masks >= 0
+        assert num_frame_masks > 0
         assert features_mask_size > 0
         assert frames_mask_size > 0
         self.time_warp_factor = time_warp_factor
@@ -232,11 +233,17 @@ class SpecAugment(torch.nn.Module):
                     mask_value=mean,
                     axis=2,
                 ).squeeze(0)
-            for _ in range(self.num_frame_masks):
-                max_mask_frames = min(
-                    self.frames_mask_size,
-                    self.max_frames_mask_fraction * features.size(0),
-                )
+
+            _max_tot_mask_frames = self.max_frames_mask_fraction * features.size(0)
+            num_frame_masks = min(
+                self.num_frame_masks,
+                math.ceil(_max_tot_mask_frames / self.frames_mask_size),
+            )
+            max_mask_frames = min(
+                self.frames_mask_size, _max_tot_mask_frames // num_frame_masks
+            )
+
+            for _ in range(num_frame_masks):
                 features = mask_along_axis(
                     features.unsqueeze(0),
                     mask_param=max_mask_frames,
