@@ -188,7 +188,7 @@ class WebdatasetWriter:
         self.num_shards_written = None
         self.finished = None
 
-    def __enter__(self) -> "WebDatasetWriter":
+    def __enter__(self) -> "WebdatasetWriter":
         self.writer = self.writer_init_fn()
         self.finished = False
         return self
