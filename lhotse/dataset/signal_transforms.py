@@ -243,13 +243,23 @@ class SpecAugment(torch.nn.Module):
                 self.frames_mask_size, _max_tot_mask_frames // num_frame_masks
             )
 
-            for _ in range(num_frame_masks):
-                features = mask_along_axis(
-                    features.unsqueeze(0),
-                    mask_param=max_mask_frames,
-                    mask_value=mean,
-                    axis=1,
-                ).squeeze(0)
+            features = features.unsqueeze(0)
+            features = features.reshape([-1] + list(features.size()[-2:]))
+            values = [torch.rand(1) * max_mask_frames for _ in range(num_frame_masks)]
+            min_values = [
+                torch.rand(1) * (features.size(1) - value) for value in values
+            ]
+
+            mask_starts = [(min_value.long()).squeeze() for min_value in min_values]
+            mask_ends = [
+                (min_value.long() + value.long()).squeeze()
+                for (min_value, value) in zip(min_values, values)
+            ]
+
+            for (mask_start, mask_end) in zip(mask_starts, mask_ends):
+                features[:, :, mask_start:mask_end] = mean
+            features = features.squeeze(0)
+            
         return features
 
     def state_dict(self) -> Dict:
