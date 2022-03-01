@@ -259,7 +259,7 @@ class SpecAugment(torch.nn.Module):
             for (mask_start, mask_end) in zip(mask_starts, mask_ends):
                 features[:, :, mask_start:mask_end] = mean
             features = features.squeeze(0)
-            
+
         return features
 
     def state_dict(self) -> Dict:
