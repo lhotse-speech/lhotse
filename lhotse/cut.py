@@ -3516,6 +3516,9 @@ class CutSet(Serializable, Sequence[Cut]):
             25%     1523.0
             50%     2157.0
             75%     2423.0
+            99%     2500.0
+            99.5%   2523.0
+            99.9%   2601.0
             max     5415.0
             dtype: float64
         """
@@ -3538,6 +3541,9 @@ class CutSet(Serializable, Sequence[Cut]):
         print(f"25%\t{np.percentile(durations, 25):.1f}")
         print(f"50%\t{np.median(durations):.1f}")
         print(f"75%\t{np.percentile(durations, 75):.1f}")
+        print(f"99%\t{np.percentile(durations, 99):.1f}")
+        print(f"99.5%\t{np.percentile(durations, 99.5):.1f}")
+        print(f"99.9%\t{np.percentile(durations, 99.9):.1f}")
         print(f"max\t{np.max(durations):.1f}")
 
     def shuffle(self, rng: Optional[random.Random] = None) -> "CutSet":
