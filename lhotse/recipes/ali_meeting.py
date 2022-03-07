@@ -8,6 +8,7 @@ available for CLSP use at /export/c01/corpora6/AliMeeting, courtesy of Hang Lv.
 """
 
 import logging
+import tarfile
 from collections import defaultdict
 from pathlib import Path
 from typing import Dict, Optional, Union
@@ -17,7 +18,39 @@ from tqdm import tqdm
 from lhotse import validate_recordings_and_supervisions, fix_manifests
 from lhotse.audio import AudioSource, Recording, RecordingSet
 from lhotse.supervision import SupervisionSegment, SupervisionSet
-from lhotse.utils import Pathlike, is_module_available
+from lhotse.utils import Pathlike, is_module_available, urlretrieve_progress
+
+
+def download_ali_meeting(
+    target_dir: Pathlike = ".",
+    force_download: Optional[bool] = False,
+    base_url: Optional[
+        str
+    ] = "https://speech-lab-share-data.oss-cn-shanghai.aliyuncs.com/",
+) -> None:
+    """
+    Downdload and untar the dataset
+    :param target_dir: Pathlike, the path of the dir to storage the dataset.
+    :param force_download: Bool, if True, download the tars no matter if the tars exist.
+    :param base_url: str, the url of the OpenSLR resources.
+    """
+    url = f"{base_url}/AliMeeting/openlr/"
+    target_dir = Path(target_dir)
+    target_dir.mkdir(parents=True, exist_ok=True)
+    dataset_tar_names = [
+        "Train_Ali_far.tar.gz",
+        "Train_Ali_near.tar.gz",
+        "Eval_Ali.tar.gz",
+        "Test_Ali.tar.gz",
+    ]
+    for tar_name in dataset_tar_names:
+        tar_path = target_dir / tar_name
+        if force_download or not tar_path.is_file():
+            urlretrieve_progress(
+                f"{url}/{tar_name}", filename=tar_path, desc=f"Downloading {tar_name}"
+            )
+        with tarfile.open(tar_path) as tar:
+            tar.extractall(path=target_dir)
 
 
 def prepare_ali_meeting(
@@ -49,6 +82,13 @@ def prepare_ali_meeting(
     for part in ["Train", "Eval", "Test"]:
         recordings = []
         supervisions = []
+        # Eval and Test may further be inside another folder (since the "far" and "near" are grouped together)
+        if part == "Eval" or part == "Test":
+            corpus_dir = (
+                corpus_dir / f"{part}_Ali"
+                if (corpus_dir / f"{part}_Ali").is_dir()
+                else corpus_dir
+            )
         wav_paths = corpus_dir / f"{part}_Ali_{mic}" / "audio_dir"
         text_paths = corpus_dir / f"{part}_Ali_{mic}" / "textgrid_dir"
 
