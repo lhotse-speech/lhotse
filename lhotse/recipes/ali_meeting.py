@@ -1,10 +1,19 @@
 """
-This recipe prepares the AliMeeting corpus. It consists of 120 hours of real recorded 
-Mandarin meeting data, including far-field data collected by an 8-channel microphone 
-array as well as near-field data collected by each participant's headset microphone.
+The AliMeeting Mandarin corpus, originally designed for ICASSP 2022 Multi-channel 
+Multi-party Meeting Transcription Challenge (M2MeT), is recorded from real meetings, 
+including far-field speech collected by an 8-channel microphone array as well as 
+near-field speech collected by each participants' headset microphone. The dataset 
+contains 118.75 hours of speech data in total, divided into 104.75 hours for training 
+(Train), 4 hours for evaluation (Eval) and 10 hours as test set (Test), according to 
+M2MeT challenge arrangement. Specifically, the Train, Eval and Test sets contain 212, 
+8 and 20 meeting sessions respectively, and each session consists of a 15 to 30-minute 
+discussion by 2-4 participants. AliMeeting covers a variety of aspects in real-world 
+meetings, including diverse meeting rooms, various number of meeting participants and 
+different speaker overlap ratios. High-quality transcriptions are provided as well. 
+The dataset can be used for tasks in meeting rich transcriptions, including speaker 
+diarization and multi-speaker automatic speech recognition.
 
-This corpus isn't publicly released yet. A pre-release version has been made
-available for CLSP use at /export/c01/corpora6/AliMeeting, courtesy of Hang Lv.
+More details and download link: https://openslr.org/119/
 """
 
 import logging
