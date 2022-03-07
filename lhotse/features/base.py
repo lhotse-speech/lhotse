@@ -425,9 +425,10 @@ class Features:
     # to a directory holding files with feature matrices (exact semantics depend on storage_type).
     storage_path: str
 
-    # Storage key is either the key used to retrieve a feautre matrix from an archive like HDF5,
+    # Storage key is either the key used to retrieve a feature matrix from an archive like HDF5,
     # or the name of the file in a directory (exact semantics depend on the storage_type).
-    storage_key: str
+    # It can also be raw bytes for compressed arrays held in-memory.
+    storage_key: Union[str, bytes]
 
     # Information which recording and channels were used to extract the features.
     # When ``recording_id`` and ``channels`` are ``None``, it means that the
@@ -477,6 +478,34 @@ class Features:
             right_offset_frames=right_offset_frames,
         )
 
+    def move_to_memory(
+        self,
+        start: Seconds = 0,
+        duration: Optional[Seconds] = None,
+    ) -> "Features":
+        from lhotse.features.io import get_memory_writer
+
+        arr = self.load(start=start, duration=duration)
+        if issubclass(arr.dtype.type, np.floating):
+            writer = get_memory_writer("memory_lilcom")()
+        else:
+            writer = get_memory_writer("memory_raw")()
+        data = writer.write("", arr)  # key is ignored by in memory writers
+        return fastcopy(
+            self,
+            # note: to understand why start is set to zero here, consider two cases:
+            # 1) this method moves the whole array to memory => the start was 0 anyway
+            # 2) this method moves a subset of the array to memory => the manifest is
+            #    now relative to the start of that subset, and since it describes the
+            #    whole subset, start=0 and duration=self.duration
+            start=0.0,
+            duration=ifnone(duration, self.duration),
+            num_frames=arr.shape[0],
+            storage_type=writer.name,
+            storage_key=data,
+            storage_path="",
+        )
+
     def with_path_prefix(self, path: Pathlike) -> "Features":
         return fastcopy(self, storage_path=str(Path(path) / self.storage_path))
 
@@ -513,6 +542,24 @@ class Features:
                 data["duration"] / data["num_frames"], ndigits=3
             )
         return Features(**data)
+
+    def __repr__(self):
+        return (
+            f"Features("
+            f"type={self.type}, "
+            f"num_frames={self.num_frames}, "
+            f"num_features={self.num_features}, "
+            f"frame_shift={self.frame_shift}, "
+            f"sampling_rate={self.sampling_rate}, "
+            f"start={self.start}, "
+            f"duration={self.duration}, "
+            f"storage_type={self.storage_type}, "
+            f"storage_path={self.storage_path}, "
+            f"storage_key={self.storage_key if isinstance(self.storage_key, str) else '<binary-data>'}, "
+            f"recording_id={self.recording_id}, "
+            f"channels={self.channels}"
+            f")"
+        )
 
 
 class FeatureSet(Serializable, Sequence[Features]):

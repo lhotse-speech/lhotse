@@ -162,6 +162,7 @@ tests_require = [
     "flake8==3.8.3",
     "coverage==5.1",
     "hypothesis==5.41.2",
+    "black==21.10b0",
 ]
 dev_requires = sorted(
     docs_require + tests_require + ["jupyterlab", "matplotlib", "isort"]

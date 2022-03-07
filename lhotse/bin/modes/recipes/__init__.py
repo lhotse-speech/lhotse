@@ -1,4 +1,5 @@
 from .adept import *
+from .aidatatang_200zh import *
 from .aishell import *
 from .aishell4 import *
 from .ali_meeting import *
@@ -35,6 +36,7 @@ from .musan import *
 from .nsc import *
 from .peoples_speech import *
 from .rir_noise import *
+from .spgispeech import *
 from .switchboard import *
 from .tedlium import *
 from .timit import *
