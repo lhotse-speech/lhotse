@@ -2,6 +2,7 @@ from .adept import *
 from .aidatatang_200zh import *
 from .aishell import *
 from .aishell4 import *
+from .ali_meeting import *
 from .ami import *
 from .aspire import *
 from .babel import *
