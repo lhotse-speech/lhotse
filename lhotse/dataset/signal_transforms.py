@@ -223,33 +223,32 @@ class SpecAugment(torch.nn.Module):
             if self.time_warp_factor is not None and self.time_warp_factor >= 1:
                 features = time_warp(features, factor=self.time_warp_factor)
         if mask:
-            from torchaudio.functional import mask_along_axis
-
             mean = features.mean()
-            for _ in range(self.num_feature_masks):
-                features = mask_along_axis(
-                    features.unsqueeze(0),
-                    mask_param=self.features_mask_size,
-                    mask_value=mean,
-                    axis=2,
-                ).squeeze(0)
-
-            _max_tot_mask_frames = self.max_frames_mask_fraction * features.size(0)
+            # Frequency masking
+            features = mask_along_axis_optimized(
+                features,
+                mask_size=self.features_mask_size,
+                mask_times=self.num_feature_masks,
+                mask_value=mean,
+                axis=2,
+            )
+            # Time masking
+            max_tot_mask_frames = self.max_frames_mask_fraction * features.size(0)
             num_frame_masks = min(
                 self.num_frame_masks,
-                math.ceil(_max_tot_mask_frames / self.frames_mask_size),
+                math.ceil(max_tot_mask_frames / self.frames_mask_size),
             )
             max_mask_frames = min(
-                self.frames_mask_size, _max_tot_mask_frames // num_frame_masks
+                self.frames_mask_size, max_tot_mask_frames // num_frame_masks
+            )
+            features = mask_along_axis_optimized(
+                features,
+                mask_size=max_mask_frames,
+                mask_times=num_frame_masks,
+                mask_value=mean,
+                axis=1,
             )
 
-            for _ in range(num_frame_masks):
-                features = mask_along_axis(
-                    features.unsqueeze(0),
-                    mask_param=max_mask_frames,
-                    mask_value=mean,
-                    axis=1,
-                ).squeeze(0)
         return features
 
     def state_dict(self) -> Dict:
@@ -281,6 +280,51 @@ class SpecAugment(torch.nn.Module):
             "max_frames_mask_fraction", self.max_frames_mask_fraction
         )
         self.p = state_dict.get("p", self.p)
+
+
+def mask_along_axis_optimized(
+    features: torch.Tensor,
+    mask_size: int,
+    mask_times: int,
+    mask_value: float,
+    axis: int,
+) -> torch.Tensor:
+    """
+    Apply Frequency and Time masking along axis.
+    Frequency and Time masking as described in the SpecAugment paper.
+
+    :param features: input tensor of shape ``(T, F)``
+    :mask_size: the width size for masking.
+    :mask_times: the number of masking regions.
+    :mask_value: Value to assign to the masked regions.
+    :axis: Axis to apply masking on (1 -> time, 2 -> frequency)
+    """
+    if axis not in [1, 2]:
+        raise ValueError("Only Frequency and Time masking are supported!")
+
+    features = features.unsqueeze(0)
+    features = features.reshape([-1] + list(features.size()[-2:]))
+
+    values = torch.randint(int(0), int(mask_size), (1, mask_times))
+    min_values = torch.rand(1, mask_times) * (features.size(axis) - values)
+    mask_starts = (min_values.long()).squeeze()
+    mask_ends = (min_values.long() + values.long()).squeeze()
+
+    if axis == 1:
+        if mask_times == 1:
+            features[:, mask_starts:mask_ends] = mask_value
+            return features.squeeze(0)
+        for (mask_start, mask_end) in zip(mask_starts, mask_ends):
+            features[:, mask_start:mask_end] = mask_value
+    else:
+        if mask_times == 1:
+            features[:, :, mask_starts:mask_ends] = mask_value
+            return features.squeeze(0)
+        for (mask_start, mask_end) in zip(mask_starts, mask_ends):
+            features[:, :, mask_start:mask_end] = mask_value
+
+    features = features.squeeze(0)
+    return features
 
 
 def time_warp(features: torch.Tensor, factor: int) -> torch.Tensor:
