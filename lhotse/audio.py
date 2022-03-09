@@ -682,7 +682,10 @@ class Recording:
         """
         transforms = self.transforms.copy() if self.transforms is not None else []
 
-        if not any(s.source.endswith(".opus") for s in self.sources):
+        if not any(
+            isinstance(s.source, str) and s.source.endswith(".opus")
+            for s in self.sources
+        ):
             # OPUS is a special case for resampling.
             # Normally, we use Torchaudio SoX bindings for resampling,
             # but in case of OPUS we ask FFMPEG to resample it during
@@ -1692,7 +1695,7 @@ def read_opus_ffmpeg(
     :return: a tuple of audio samples and the sampling rate.
     """
     # Construct the ffmpeg command depending on the arguments passed.
-    cmd = f"ffmpeg -threads 1"
+    cmd = "ffmpeg -threads 1"
     sampling_rate = 48000
     # Note: we have to add offset and duration options (-ss and -t) BEFORE specifying the input
     #       (-i), otherwise ffmpeg will decode everything and trim afterwards...
