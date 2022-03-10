@@ -355,7 +355,7 @@ Non-compressed numpy arrays, stored in HDF5 file.
 
 
 @lru_cache(maxsize=None)
-def lookup_cache_or_open(storage_path: str):
+def lookup_cache_or_open_hdf5(storage_path: str):
     """
     Helper internal function used in HDF5 readers.
     It opens the HDF files and keeps their handles open in a global program cache
@@ -370,7 +370,7 @@ def lookup_cache_or_open(storage_path: str):
 
 
 @lru_cache(maxsize=None)
-def lookup_cache_or_open_regular_file(storage_path: str):
+def lookup_cache_or_open_chunky(storage_path: str):
     """
     Helper internal function used in "fast" file readers.
     It opens regular files and keeps their handles open in a global program cache
@@ -384,6 +384,24 @@ def lookup_cache_or_open_regular_file(storage_path: str):
 
 
 @lru_cache(maxsize=None)
+def lookup_cache_or_open_kaldi_native_io(storage_path: str):
+    """
+    Helper internal function used in ``kaldi_native_io`` readers.
+    It instantiates a RandomAccessFloatMatrixReader which reads the SCP files
+    contents into memory. It avoids duplicated reads of the SCP files when
+    multiple readers are repeatedly created (typical use-case in Lhotse).
+    """
+    if not is_module_available("kaldi_native_io"):
+        raise ValueError("Please run 'pip install kaldi_native_io' first.")
+
+    import kaldi_native_io
+
+    return kaldi_native_io.RandomAccessFloatMatrixReader(
+        f"scp:{storage_path}"
+    )
+
+
+@lru_cache(maxsize=None)
 def lookup_chunk_size(h5_file_handle) -> int:
     """
     Helper internal function to retrieve the chunk size from an HDF5 file.
@@ -394,8 +412,8 @@ def lookup_chunk_size(h5_file_handle) -> int:
 
 def close_cached_file_handles() -> None:
     """Closes the cached file handles in ``lookup_cache_or_open`` (see its docs for more details)."""
-    lookup_cache_or_open_regular_file.cache_clear()
-    lookup_cache_or_open.cache_clear()
+    lookup_cache_or_open_chunky.cache_clear()
+    lookup_cache_or_open_hdf5.cache_clear()
     lookup_chunk_size.cache_clear()
 
 
@@ -412,7 +430,7 @@ class NumpyHdf5Reader(FeaturesReader):
 
     def __init__(self, storage_path: Pathlike, *args, **kwargs):
         super().__init__()
-        self.hdf = lookup_cache_or_open(storage_path)
+        self.hdf = lookup_cache_or_open_hdf5(storage_path)
 
     @dynamic_lru_cache
     def read(
@@ -491,7 +509,7 @@ class LilcomHdf5Reader(FeaturesReader):
 
     def __init__(self, storage_path: Pathlike, *args, **kwargs):
         super().__init__()
-        self.hdf = lookup_cache_or_open(storage_path)
+        self.hdf = lookup_cache_or_open_hdf5(storage_path)
 
     @dynamic_lru_cache
     def read(
@@ -587,7 +605,7 @@ class ChunkedLilcomHdf5Reader(FeaturesReader):
 
     def __init__(self, storage_path: Pathlike, *args, **kwargs):
         super().__init__()
-        self.hdf = lookup_cache_or_open(storage_path)
+        self.hdf = lookup_cache_or_open_hdf5(storage_path)
 
     @dynamic_lru_cache
     def read(
@@ -736,7 +754,7 @@ class LilcomChunkyReader(FeaturesReader):
 
     def __init__(self, storage_path: Pathlike, *args, **kwargs):
         super().__init__()
-        self.file = lookup_cache_or_open_regular_file(storage_path)
+        self.file = lookup_cache_or_open_chunky(storage_path)
         self.lock = threading.Lock()
 
     @dynamic_lru_cache
@@ -963,17 +981,8 @@ class KaldiReader(FeaturesReader):
     name = "kaldiio"
 
     def __init__(self, storage_path: Pathlike, *args, **kwargs):
-        if not is_module_available("kaldi_native_io"):
-            raise ValueError(
-                "To read Kaldi feats.scp, please 'pip install kaldi_native_io' first."
-            )
-        import kaldi_native_io
-
         super().__init__()
-        self.storage_path = storage_path
-        self.storage = kaldi_native_io.RandomAccessFloatMatrixReader(
-            f"scp:{self.storage_path}"
-        )
+        self.storage = lookup_cache_or_open_kaldi_native_io(storage_path)
 
     @dynamic_lru_cache
     def read(
