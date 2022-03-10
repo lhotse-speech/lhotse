@@ -62,7 +62,7 @@ from lhotse.utils import (
 Channels = Union[int, List[int]]
 
 
-_DEFAULT_LHOTSE_AUDIO_DURATION_MISMATCH_TOLERANCE: Seconds = 1e-2
+_DEFAULT_LHOTSE_AUDIO_DURATION_MISMATCH_TOLERANCE: Seconds = 0.025
 LHOTSE_AUDIO_DURATION_MISMATCH_TOLERANCE: Seconds = (
     _DEFAULT_LHOTSE_AUDIO_DURATION_MISMATCH_TOLERANCE
 )
@@ -1376,34 +1376,6 @@ def torchaudio_load(
         frame_offset=frame_offset,
         num_frames=num_frames,
     )
-
-    # MP3 has weird behaviour sometimes: torchaudio.info() `num_frames` indicates
-    # a different number of samples than data shape from torchaudio.load().
-    # We'll truncate/zero-pad to ensure the shape is the same as from info,
-    # up to some threshold determined heuristically (25ms).
-    THRESHOLD: Seconds = 0.025
-    threshold_samples = THRESHOLD / sampling_rate
-    diff = audio.shape[1] - audio_info.frames
-    if diff < 0:
-        if abs(diff) <= threshold_samples:
-            audio = torch.nn.functional.pad(
-                audio, (0, abs(diff)), mode="constant", value=0
-            )
-        else:
-            raise ValueError(
-                f"Inconsistent audio data for '{path_or_fd}': torchaudio.info() declared "
-                f"{audio_info.frames} samples, but torchaudio.load() returned {audio.shape[1]} samples. "
-                f"Please report an issue in Lhotse or Torchaudio GitHub."
-            )
-    elif diff > 0:
-        if abs(diff) <= threshold_samples:
-            audio = audio[:, :-diff]
-        else:
-            raise ValueError(
-                f"Inconsistent audio data for '{path_or_fd}': torchaudio.info() declared "
-                f"{audio_info.frames} samples, but torchaudio.load() returned {audio.shape[1]} samples. "
-                f"Please report an issue in Lhotse or Torchaudio GitHub."
-            )
     return audio.numpy(), sampling_rate
 
 
