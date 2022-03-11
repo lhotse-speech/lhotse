@@ -722,7 +722,7 @@ class Recording:
         )
 
 
-class RecordingSet(Serializable, Sequence[Recording]):
+class RecordingSet(Serializable):
     """
     :class:`~lhotse.audio.RecordingSet` represents a collection of recordings, indexed by recording IDs.
     It does not contain any annotation such as the transcript or the speaker identity --
