@@ -3121,7 +3121,7 @@ class MixedCut(Cut):
         return [t for t in self.tracks if not isinstance(t.cut, PaddingCut)][0]
 
 
-class CutSet(Serializable, Sequence[Cut]):
+class CutSet(Serializable):
     """
     :class:`~lhotse.cut.CutSet` represents a collection of cuts, indexed by cut IDs.
     CutSet ties together all types of data -- audio, features and supervisions, and is suitable to represent

@@ -562,7 +562,7 @@ class Features:
         )
 
 
-class FeatureSet(Serializable, Sequence[Features]):
+class FeatureSet(Serializable):
     """
     Represents a feature manifest, and allows to read features for given recordings
     within particular channels and time ranges.
