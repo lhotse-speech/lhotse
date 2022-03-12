@@ -2786,9 +2786,10 @@ class MixedCut(Cut):
             )
         except NonPositiveEnergyError as e:
             logging.warning(
-                f'{e} Cannot mix audios to the reference audio "{self.tracks[0].cut.id}"'
+                f"{e}\nNote: we cannot mix signal with a given SNR to the reference audio with zero energy. "
+                f'Cut ID: "{self.tracks[0].cut.id}"'
             )
-            return self.tracks[0].cut.load_audio()
+            raise
 
         for pos, track in enumerate(self.tracks[1:], start=1):
             try:

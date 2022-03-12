@@ -1257,7 +1257,7 @@ class AudioMixer:
 
 
 def audio_energy(audio: np.ndarray) -> float:
-    return float(np.average(audio**2))
+    return float(np.average(audio ** 2))
 
 
 FileObject = Any  # Alias for file-like objects
