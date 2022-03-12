@@ -436,7 +436,7 @@ class SupervisionSegment:
             raise AttributeError(f"No such attribute: {name}")
 
 
-class SupervisionSet(Serializable, Sequence[SupervisionSegment]):
+class SupervisionSet(Serializable):
     """
     :class:`~lhotse.supervision.SupervisionSet` represents a collection of segments containing some
     supervision information (see :class:`~lhotse.supervision.SupervisionSegment`),

@@ -51,6 +51,8 @@ a CLI tool that create the manifests given a corpus directory.
     - :func:`lhotse.recipes.prepare_aishell`
   * - AISHELL-4
     - :func:`lhotse.recipes.prepare_aishell4`
+  * - AliMeeting
+    - :func:`lhotse.recipes.prepare_alimeeting`
   * - AMI
     - :func:`lhotse.recipes.prepare_ami`
   * - ASpIRE
@@ -119,6 +121,8 @@ a CLI tool that create the manifests given a corpus directory.
     - :func:`lhotse.recipes.prepare_peoples_speech`
   * - RIRs and Noises Corpus (OpenSLR 28)
     - :func:`lhotse.recipes.prepare_rir_noise`
+  * - SPGISpeech
+    - :func:`lhotse.recipes.prepare_spgispeech`
   * - Switchboard
     - :func:`lhotse.recipes.prepare_switchboard`
   * - TED-LIUM v3

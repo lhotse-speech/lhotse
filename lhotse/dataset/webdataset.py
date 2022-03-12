@@ -1,11 +1,13 @@
+import logging
 import pickle
-from typing import Callable, Dict, Optional, Sequence, Union
+from functools import partial
+from typing import Callable, Dict, List, Optional, Sequence, Union
 
 from tqdm.auto import tqdm
 
-from lhotse import CutSet
+from lhotse import CutSet, MonoCut
 from lhotse.serialization import LazyIteratorChain
-from lhotse.utils import Pathlike, is_module_available
+from lhotse.utils import Pathlike, is_module_available, suppress_and_warn
 
 
 def export_to_webdataset(
@@ -17,6 +19,7 @@ def export_to_webdataset(
     load_audio: bool = True,
     load_features: bool = True,
     load_custom: bool = True,
+    fault_tolerant: bool = True,
 ) -> int:
     """
     Saves the CutSet metadata along with audio/features data into a WebDataset archive.
@@ -34,6 +37,9 @@ def export_to_webdataset(
     be internally expanded with the shard index.
 
     Returns number of written shards if sharding is enabled, otherwise 0.
+
+    .. note: By default, we'll skip cuts which failed to load for any reason and proceed
+        with exporting. To raise an exception and stop, set ``fault_tolerant=False``.
 
     **Examples**
 
@@ -80,35 +86,158 @@ def export_to_webdataset(
         ...     shard_size=10000,
         ... )
     """
-    if not is_module_available("webdataset"):
-        raise ImportError("Please 'pip install webdataset' first.")
-    from webdataset import TarWriter
 
-    if shard_size is not None:
-        assert shard_size > 0
-        # Note: this ShardWriter is not from webdataset, but defined below in this file.
-        sink = ShardWriter(output_path, maxcount=shard_size)
-    else:
-        sink = TarWriter(output_path)
+    writer = WebdatasetWriter(
+        path_or_url=output_path,
+        shard_size=shard_size,
+        audio_format=audio_format,
+        load_audio=load_audio,
+        load_features=load_features,
+        load_custom=load_custom,
+        fault_tolerant=fault_tolerant,
+    )
 
-    num_shards_written = 0
-    with sink:
-        for idx, cut in tqdm(
-            enumerate(cuts), desc="Creating WebDataset tarball(s)", disable=not verbose
+    total = 0
+    ok = 0
+    with writer:
+        for cut in tqdm(
+            cuts, desc="Creating WebDataset tarball(s)", disable=not verbose
         ):
-            cut = cut.move_to_memory(
-                audio_format=audio_format,
-                load_audio=load_audio,
-                load_features=load_features,
-                load_custom=load_custom,
-            )
-            data = pickle.dumps(cut.to_dict())
-            sink.write({"__key__": cut.id, "data": data})
+            total += 1
+            success = writer.write(cut)
+            ok += int(success)
 
-        if isinstance(sink, ShardWriter):
-            num_shards_written = sink.shard
+    num_shards_written = writer.num_shards_written
+
+    logging.info(
+        f"Exported {ok} cuts out of {total} total into {num_shards_written} shards "
+        f"(there were {total - ok} cuts with errors)."
+    )
 
     return num_shards_written
+
+
+class WebdatasetWriter:
+    """
+    Saves the CutSet metadata along with audio/features data into a WebDataset archive.
+    The audio and feature data is read, decoded, and encoded into ``audio_format`` for audio,
+    lilcom for features and arrays with floating point type, and pickle for all other dtypes.
+    The intended use of this function is to speed up the I/O in training data pipelines by
+    converting random access reads to sequential access reads.
+
+    Supported values for ``audio_format`` are the same as for the ``format`` argument in
+    ``torchaudio.save`` function with ``sox_io`` backend.
+
+    If ``shard_size`` is specified, we will leverage WebDataset's ``ShardWriter`` to
+    create multiple tarballs with ``shard_size`` items per shard. In that mode, we expect
+    that ``output_path`` contains a pattern like "/path/to/shard-%06d.tar", which will
+    be internally expanded with the shard index.
+
+    Returns number of written shards if sharding is enabled, otherwise 0.
+
+    .. note: By default, we'll skip cuts which failed to load for any reason and proceed
+        with exporting. To raise an exception and stop, set ``fault_tolerant=False``.
+
+    **Example**
+
+    Export cuts with audio, features, and all custom data to a tarball shards with 500
+    cuts each::
+
+        >>> cuts = CutSet.from_jsonl_lazy("data/cuts-train.jsonl")
+        >>> with WebdatasetWriter("data/tars/shard-%06d.tar", shard_size=500) as writer:
+        ...     for cut in cuts:
+        ...         writer.write(cut)
+        >>> output_paths = writer.output_manifest_paths()
+
+    See also: :func`.export_to_webdataset`
+    """
+
+    def __init__(
+        self,
+        path_or_url: Pathlike,
+        shard_size: Optional[int] = None,
+        audio_format: str = "flac",
+        load_audio: bool = True,
+        load_features: bool = True,
+        load_custom: bool = True,
+        fault_tolerant: bool = True,
+    ) -> None:
+        if not is_module_available("webdataset"):
+            raise ImportError("Please 'pip install webdataset' first.")
+
+        from webdataset import TarWriter
+
+        self.path_or_url = path_or_url
+        self.shard_size = shard_size
+        self.audio_format = audio_format
+        self.load_audio = load_audio
+        self.load_features = load_features
+        self.load_custom = load_custom
+        self.fault_tolerant = fault_tolerant
+
+        if self.shard_size is not None:
+            assert self.shard_size > 0
+            # Note: this ShardWriter is not from webdataset, but defined below in this file.
+            self.writer_init_fn = partial(
+                ShardWriter, self.path_or_url, maxcount=self.shard_size
+            )
+        else:
+            self.writer_init_fn = partial(TarWriter, self.path_or_url)
+
+        self.writer = None
+        self.num_shards_written = None
+        self.finished = None
+
+    def __enter__(self) -> "WebdatasetWriter":
+        self.writer = self.writer_init_fn()
+        self.finished = False
+        return self
+
+    def __exit__(self, *args, **kwargs) -> None:
+        self.close()
+
+    def close(self) -> None:
+        if isinstance(self.writer, ShardWriter):
+            self.num_shards_written = self.writer.shard
+        self.writer.close()
+        self.finished = True
+
+    def write(self, manifest: MonoCut) -> bool:
+        """
+        Converts a Cut to a dict, pickles it, and then stores into a tarfile.
+
+        :param manifest: the manifest to be written.
+        :return: bool indicating whether the writing was successful.
+        """
+        with suppress_and_warn(Exception, enabled=self.fault_tolerant):
+            cut = manifest.move_to_memory(
+                audio_format=self.audio_format,
+                load_audio=self.load_audio,
+                load_features=self.load_features,
+                load_custom=self.load_custom,
+            )
+            data = pickle.dumps(cut.to_dict())
+            self.writer.write({"__key__": cut.id, "data": data})
+            return True
+        # Will get here if an exception happened.
+        return False
+
+    def output_manifest_paths(self) -> List[str]:
+        """
+        Return the a list of paths/urls where the data was written.
+        The list can be used directly to initialize :class:`.LazyWebdatasetIterator`
+        or :meth:`lhotse.cut.CutSet.from_webdataset`.
+        Useful when writing into shards with a specified pattern.
+        """
+        if self.finished is None:
+            raise ValueError("The writer has not written anything yet.")
+        if not self.finished:
+            raise ValueError(
+                "The writer was not closed -- call writer.close() first, or use it as a context manager."
+            )
+        if self.num_shards_written is None:
+            return [self.path_or_url]
+        return [self.path_or_url % i for i in range(self.num_shards_written)]
 
 
 class LazyWebdatasetIterator:

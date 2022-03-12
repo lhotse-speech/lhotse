@@ -493,7 +493,12 @@ class Features:
         data = writer.write("", arr)  # key is ignored by in memory writers
         return fastcopy(
             self,
-            start=start if not isclose(start, 0) else self.start,
+            # note: to understand why start is set to zero here, consider two cases:
+            # 1) this method moves the whole array to memory => the start was 0 anyway
+            # 2) this method moves a subset of the array to memory => the manifest is
+            #    now relative to the start of that subset, and since it describes the
+            #    whole subset, start=0 and duration=self.duration
+            start=0.0,
             duration=ifnone(duration, self.duration),
             num_frames=arr.shape[0],
             storage_type=writer.name,
@@ -538,8 +543,26 @@ class Features:
             )
         return Features(**data)
 
+    def __repr__(self):
+        return (
+            f"Features("
+            f"type={self.type}, "
+            f"num_frames={self.num_frames}, "
+            f"num_features={self.num_features}, "
+            f"frame_shift={self.frame_shift}, "
+            f"sampling_rate={self.sampling_rate}, "
+            f"start={self.start}, "
+            f"duration={self.duration}, "
+            f"storage_type={self.storage_type}, "
+            f"storage_path={self.storage_path}, "
+            f"storage_key={self.storage_key if isinstance(self.storage_key, str) else '<binary-data>'}, "
+            f"recording_id={self.recording_id}, "
+            f"channels={self.channels}"
+            f")"
+        )
 
-class FeatureSet(Serializable, Sequence[Features]):
+
+class FeatureSet(Serializable):
     """
     Represents a feature manifest, and allows to read features for given recordings
     within particular channels and time ranges.

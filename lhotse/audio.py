@@ -62,7 +62,7 @@ from lhotse.utils import (
 Channels = Union[int, List[int]]
 
 
-_DEFAULT_LHOTSE_AUDIO_DURATION_MISMATCH_TOLERANCE: Seconds = 1e-2
+_DEFAULT_LHOTSE_AUDIO_DURATION_MISMATCH_TOLERANCE: Seconds = 0.025
 LHOTSE_AUDIO_DURATION_MISMATCH_TOLERANCE: Seconds = (
     _DEFAULT_LHOTSE_AUDIO_DURATION_MISMATCH_TOLERANCE
 )
@@ -227,6 +227,12 @@ class AudioSource:
     def from_dict(data) -> "AudioSource":
         return AudioSource(**data)
 
+    def __repr__(self):
+        return (
+            f"AudioSource(type={self.type}, channels={self.channels}, "
+            f"source={self.source if isinstance(self.source, str) else '<binary-data>'})"
+        )
+
 
 @dataclass
 class Recording:
@@ -309,7 +315,7 @@ class Recording:
     @staticmethod
     def from_file(
         path: Pathlike,
-        recording_id: Optional[str] = None,
+        recording_id: Optional[Union[str, Callable[[Path], str]]] = None,
         relative_path_depth: Optional[int] = None,
         force_opus_sampling_rate: Optional[int] = None,
         force_read_audio: bool = False,
@@ -325,6 +331,7 @@ class Recording:
 
         :param path: Path to an audio file supported by libsoundfile (pysoundfile).
         :param recording_id: recording id, when not specified ream the filename's stem ("x.wav" -> "x").
+            It can be specified as a string or a function that takes the recording path and returns a string.
         :param relative_path_depth: optional int specifying how many last parts of the file path
             should be retained in the ``AudioSource``. By default writes the path as is.
         :param force_opus_sampling_rate: when specified, this value will be used as the sampling rate
@@ -336,13 +343,20 @@ class Recording:
         :return: a new ``Recording`` instance pointing to the audio file.
         """
         path = Path(path)
+        recording_id = (
+            path.stem
+            if recording_id is None
+            else recording_id(path)
+            if callable(recording_id)
+            else recording_id
+        )
         audio_info = info(
             path,
             force_opus_sampling_rate=force_opus_sampling_rate,
             force_read_audio=force_read_audio,
         )
         return Recording(
-            id=recording_id if recording_id is not None else path.stem,
+            id=recording_id,
             sampling_rate=audio_info.samplerate,
             num_samples=audio_info.frames,
             duration=audio_info.duration,
@@ -485,6 +499,12 @@ class Recording:
         :param duration: seconds, indicates the total audio time to read (starting from ``offset``).
         :return: a numpy array of audio samples with shape ``(num_channels, num_samples)``.
         """
+
+        assert offset <= self.duration, (
+            f"Cannot load audio because the Recording's duration {self.duration}s "
+            f"is smaller than the requested offset {offset}s."
+        )
+
         if channels is None:
             channels = SetContainingAnything()
         else:
@@ -662,7 +682,10 @@ class Recording:
         """
         transforms = self.transforms.copy() if self.transforms is not None else []
 
-        if not any(s.source.endswith(".opus") for s in self.sources):
+        if not any(
+            isinstance(s.source, str) and s.source.endswith(".opus")
+            for s in self.sources
+        ):
             # OPUS is a special case for resampling.
             # Normally, we use Torchaudio SoX bindings for resampling,
             # but in case of OPUS we ask FFMPEG to resample it during
@@ -699,7 +722,7 @@ class Recording:
         )
 
 
-class RecordingSet(Serializable, Sequence[Recording]):
+class RecordingSet(Serializable):
     """
     :class:`~lhotse.audio.RecordingSet` represents a collection of recordings, indexed by recording IDs.
     It does not contain any annotation such as the transcript or the speaker identity --
@@ -788,6 +811,7 @@ class RecordingSet(Serializable, Sequence[Recording]):
         pattern: str,
         num_jobs: int = 1,
         force_opus_sampling_rate: Optional[int] = None,
+        recording_id: Optional[Callable[[Path], str]] = None,
     ):
         """
         Recursively scan a directory ``path`` for audio files that match the given ``pattern`` and create
@@ -807,22 +831,29 @@ class RecordingSet(Serializable, Sequence[Recording]):
             instead of the one we read from the manifest. This is useful for OPUS files that always
             have 48kHz rate and need to be resampled to the real one -- we will perform that operation
             "under-the-hood". For non-OPUS files this input does nothing.
+        :param recording_id: A function which takes the audio file path and returns the recording ID. If not
+            specified, the filename will be used as the recording ID.
         :return: a new ``Recording`` instance pointing to the audio file.
         """
         msg = f"Scanning audio files ({pattern})"
-        fn = Recording.from_file
-        if force_opus_sampling_rate is not None:
-            fn = partial(
-                Recording.from_file, force_opus_sampling_rate=force_opus_sampling_rate
-            )
+
+        file_read_worker = partial(
+            Recording.from_file,
+            force_opus_sampling_rate=force_opus_sampling_rate,
+            recording_id=recording_id,
+        )
+
         if num_jobs == 1:
             # Avoid spawning process for one job.
             return RecordingSet.from_recordings(
-                tqdm(map(fn, Path(path).rglob(pattern)), desc=msg)
+                tqdm(map(file_read_worker, Path(path).rglob(pattern)), desc=msg)
             )
         with ProcessPoolExecutor(num_jobs) as ex:
             return RecordingSet.from_recordings(
-                tqdm(ex.map(fn, Path(path).rglob(pattern)), desc=msg)
+                tqdm(
+                    ex.map(file_read_worker, Path(path).rglob(pattern)),
+                    desc=msg,
+                )
             )
 
     @staticmethod
@@ -1347,34 +1378,6 @@ def torchaudio_load(
         frame_offset=frame_offset,
         num_frames=num_frames,
     )
-
-    # MP3 has weird behaviour sometimes: torchaudio.info() `num_frames` indicates
-    # a different number of samples than data shape from torchaudio.load().
-    # We'll truncate/zero-pad to ensure the shape is the same as from info,
-    # up to some threshold determined heuristically (25ms).
-    THRESHOLD: Seconds = 0.025
-    threshold_samples = THRESHOLD / sampling_rate
-    diff = audio.shape[1] - audio_info.frames
-    if diff < 0:
-        if abs(diff) <= threshold_samples:
-            audio = torch.nn.functional.pad(
-                audio, (0, abs(diff)), mode="constant", value=0
-            )
-        else:
-            raise ValueError(
-                f"Inconsistent audio data for '{path_or_fd}': torchaudio.info() declared "
-                f"{audio_info.frames} samples, but torchaudio.load() returned {audio.shape[1]} samples. "
-                f"Please report an issue in Lhotse or Torchaudio GitHub."
-            )
-    elif diff > 0:
-        if abs(diff) <= threshold_samples:
-            audio = audio[:, :-diff]
-        else:
-            raise ValueError(
-                f"Inconsistent audio data for '{path_or_fd}': torchaudio.info() declared "
-                f"{audio_info.frames} samples, but torchaudio.load() returned {audio.shape[1]} samples. "
-                f"Please report an issue in Lhotse or Torchaudio GitHub."
-            )
     return audio.numpy(), sampling_rate
 
 
@@ -1666,7 +1669,7 @@ def read_opus_ffmpeg(
     :return: a tuple of audio samples and the sampling rate.
     """
     # Construct the ffmpeg command depending on the arguments passed.
-    cmd = f"ffmpeg -threads 1"
+    cmd = "ffmpeg -threads 1"
     sampling_rate = 48000
     # Note: we have to add offset and duration options (-ss and -t) BEFORE specifying the input
     #       (-i), otherwise ffmpeg will decode everything and trim afterwards...

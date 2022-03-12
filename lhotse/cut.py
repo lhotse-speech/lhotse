@@ -1032,6 +1032,10 @@ class MonoCut(Cut):
 
         cut = fastcopy(
             self,
+            # note: cut's start is relative to the start of the recording/features;
+            # since we moved to memory only a subset of recording/features that
+            # corresponds to this cut, the start is always 0.
+            start=0.0,
             recording=recording,
             features=features,
             custom=custom,
@@ -3124,7 +3128,7 @@ class MixedCut(Cut):
         return [t for t in self.tracks if not isinstance(t.cut, PaddingCut)][0]
 
 
-class CutSet(Serializable, Sequence[Cut]):
+class CutSet(Serializable):
     """
     :class:`~lhotse.cut.CutSet` represents a collection of cuts, indexed by cut IDs.
     CutSet ties together all types of data -- audio, features and supervisions, and is suitable to represent
@@ -3519,6 +3523,9 @@ class CutSet(Serializable, Sequence[Cut]):
             25%     1523.0
             50%     2157.0
             75%     2423.0
+            99%     2500.0
+            99.5%   2523.0
+            99.9%   2601.0
             max     5415.0
             dtype: float64
         """
@@ -3541,6 +3548,9 @@ class CutSet(Serializable, Sequence[Cut]):
         print(f"25%\t{np.percentile(durations, 25):.1f}")
         print(f"50%\t{np.median(durations):.1f}")
         print(f"75%\t{np.percentile(durations, 75):.1f}")
+        print(f"99%\t{np.percentile(durations, 99):.1f}")
+        print(f"99.5%\t{np.percentile(durations, 99.5):.1f}")
+        print(f"99.9%\t{np.percentile(durations, 99.9):.1f}")
         print(f"max\t{np.max(durations):.1f}")
 
     def shuffle(self, rng: Optional[random.Random] = None) -> "CutSet":

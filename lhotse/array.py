@@ -91,6 +91,16 @@ class Array:
             shape=self.shape,
         )
 
+    def __repr__(self):
+        return (
+            f"Array("
+            f"storage_type={self.storage_type}, "
+            f"storage_path={self.storage_path}, "
+            f"storage_key={self.storage_key if isinstance(self.storage_key, str) else '<binary-data>'}, "
+            f"shape={self.shape}"
+            f")"
+        )
+
 
 @dataclass
 class TemporalArray:
@@ -245,7 +255,12 @@ class TemporalArray:
             ),
             temporal_dim=self.temporal_dim,
             frame_shift=self.frame_shift,
-            start=start if not isclose(start, 0) else self.start,
+            # note: to understand why start is set to zero here, consider two cases:
+            # 1) this method moves the whole array to memory => the start was 0 anyway
+            # 2) this method moves a subset of the array to memory => the manifest is
+            #    now relative to the start of that subset, and since it describes the
+            #    whole subset, start=0 and duration=self.duration
+            start=0.0,
         )
 
 
