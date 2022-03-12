@@ -10,7 +10,9 @@ class TestMixZeroEnergyCuts(RandomCutTestCase):
     @pytest.mark.parametrize("snr", [None, 10])
     def test_mix_zero_energy_cut_raises(self, snr):
         sr = 16000
-        zero_cut = self.with_cut(sampling_rate=sr, num_samples=sr, features=False, use_zeroes=True)
+        zero_cut = self.with_cut(
+            sampling_rate=sr, num_samples=sr, features=False, use_zeroes=True
+        )
         rand_cut = self.with_cut(sampling_rate=sr, num_samples=sr, features=False)
 
         mixed = zero_cut.mix(rand_cut, snr=snr)
@@ -21,7 +23,9 @@ class TestMixZeroEnergyCuts(RandomCutTestCase):
     @pytest.mark.parametrize("snr", [None, 10])
     def test_fault_tolerant_loading_skips_cut(self, snr):
         sr = 16000
-        zero_cut = self.with_cut(sampling_rate=sr, num_samples=sr, features=False, use_zeroes=True)
+        zero_cut = self.with_cut(
+            sampling_rate=sr, num_samples=sr, features=False, use_zeroes=True
+        )
         rand_cut = self.with_cut(sampling_rate=sr, num_samples=sr, features=False)
 
         zero_mixed = zero_cut.mix(rand_cut, snr=snr)
