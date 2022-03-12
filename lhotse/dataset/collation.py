@@ -10,7 +10,11 @@ from torch.nn import CrossEntropyLoss
 from lhotse import CutSet
 from lhotse.audio import AudioLoadingError, DurationMismatchError
 from lhotse.cut import Cut, MixedCut
-from lhotse.utils import DEFAULT_PADDING_VALUE, suppress_and_warn
+from lhotse.utils import (
+    DEFAULT_PADDING_VALUE,
+    NonPositiveEnergyError,
+    suppress_and_warn,
+)
 
 
 class TokenCollater:
@@ -468,7 +472,10 @@ def _read_audio(cut: Cut, suppress_errors: bool = False) -> Optional[torch.Tenso
     and ``suppress_errors`` was set to ``True``.
     """
     with suppress_and_warn(
-        AudioLoadingError, DurationMismatchError, enabled=suppress_errors
+        AudioLoadingError,
+        DurationMismatchError,
+        NonPositiveEnergyError,
+        enabled=suppress_errors,
     ):
         return torch.from_numpy(cut.load_audio()[0])
 

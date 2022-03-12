@@ -1,8 +1,10 @@
+import os
 import random
 from tempfile import NamedTemporaryFile, TemporaryDirectory
 from typing import Dict, List
 
 import numpy as np
+import torch
 
 from lhotse import (
     AudioSource,
@@ -56,14 +58,21 @@ class RandomCutTestCase:
             d.cleanup()
         self.dirs = []
 
-    def with_recording(self, sampling_rate: int, num_samples: int) -> Recording:
-        import soundfile
+    def with_recording(
+        self, sampling_rate: int, num_samples: int, use_zeros: bool = False
+    ) -> Recording:
+        import torchaudio  # torchaudio does not have issues on M1 macs unlike soundfile
 
         f = NamedTemporaryFile("wb", suffix=".wav")
         self.files.append(f)
         duration = num_samples / sampling_rate
-        samples = np.random.rand(num_samples)
-        soundfile.write(f.name, samples, samplerate=sampling_rate)
+        if use_zeros:
+            samples = torch.zeros((1, num_samples))
+        else:
+            samples = torch.rand((1, num_samples))
+        torchaudio.save(f.name, samples, sample_rate=sampling_rate)
+        f.flush()
+        os.fsync(f)
         return Recording(
             id=str(uuid4()),
             sources=[AudioSource(type="file", channels=[0], source=f.name)],
@@ -81,6 +90,7 @@ class RandomCutTestCase:
         alignment: bool = False,
         custom_field: bool = False,
         frame_shift: Seconds = 0.01,
+        use_zeroes: bool = False,
     ) -> MonoCut:
         duration = num_samples / sampling_rate
         cut = MonoCut(
@@ -89,7 +99,9 @@ class RandomCutTestCase:
             duration=duration,
             channel=0,
             recording=self.with_recording(
-                sampling_rate=sampling_rate, num_samples=num_samples
+                sampling_rate=sampling_rate,
+                num_samples=num_samples,
+                use_zeros=use_zeroes,
             ),
         )
         if features:

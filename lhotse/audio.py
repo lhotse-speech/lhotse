@@ -1152,9 +1152,11 @@ class AudioMixer:
             self.reference_energy = audio_energy(base_audio)
         else:
             self.reference_energy = reference_energy
-        assert (
-            self.reference_energy > 0.0
-        ), f"To perform mix, energy must be non-zero and non-negative (got {self.reference_energy})"
+
+        if self.reference_energy <= 0.0:
+            raise NonPositiveEnergyError(
+                f"To perform mix, energy must be non-zero and non-negative (got {self.reference_energy})"
+            )
 
     @property
     def unmixed_audio(self) -> np.ndarray:
