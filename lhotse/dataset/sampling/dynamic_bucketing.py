@@ -73,7 +73,7 @@ class DynamicBucketingSampler(CutSampler):
         consistent_ids: bool = True,
         num_cuts_for_bins_estimate: int = 10000,
         buffer_size: int = 10000,
-        shuffle_buffer_size: int = 1000,
+        shuffle_buffer_size: int = 20000,
         world_size: Optional[int] = None,
         rank: Optional[int] = None,
         seed: int = 0,

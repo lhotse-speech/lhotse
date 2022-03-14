@@ -1,3 +1,4 @@
+import warnings
 from typing import Optional, Tuple, Union
 
 from lhotse import CutSet
@@ -14,7 +15,8 @@ class CutMix:
         self,
         cuts: CutSet,
         snr: Optional[Union[Decibels, Tuple[Decibels, Decibels]]] = (10, 20),
-        prob: float = 0.5,
+        p: float = 0.5,
+        prob: Optional[float] = None,
         pad_to_longest: bool = True,
         preserve_id: bool = False,
     ) -> None:
@@ -35,12 +37,25 @@ class CutMix:
             Otherwise, new random IDs are generated for the augmented cuts (default).
         """
         self.cuts = cuts
+        if len(self.cuts) == 0:
+            warnings.warn("Empty CutSet in CutMix transform: it'll act as an identity transform.")
         self.snr = snr
-        self.prob = prob
+        self.p = p
+        if prob is not None:
+            warnings.warn(
+                "CutMix: 'prob' argument is deprecated as of Lhotse v1.0. Please use 'p' instead.",
+                category=DeprecationWarning,
+            )
+            self.p = prob
         self.pad_to_longest = pad_to_longest
         self.preserve_id = preserve_id
 
     def __call__(self, cuts: CutSet) -> CutSet:
+
+        # Dummy transform - return
+        if len(self.cuts) == 0:
+            return cuts
+
         maybe_max_duration = (
             max(c.duration for c in cuts) if self.pad_to_longest else None
         )
@@ -48,6 +63,6 @@ class CutMix:
             cuts=self.cuts,
             duration=maybe_max_duration,
             snr=self.snr,
-            mix_prob=self.prob,
+            mix_prob=self.p,
             preserve_id="left" if self.preserve_id else None,
         )

@@ -42,12 +42,13 @@ def download_aishell4(
     target_dir: Pathlike = ".",
     force_download: Optional[bool] = False,
     base_url: Optional[str] = "http://www.openslr.org/resources",
-) -> None:
+) -> Path:
     """
     Downdload and untar the dataset
     :param target_dir: Pathlike, the path of the dir to storage the dataset.
     :param force_download: Bool, if True, download the tars no matter if the tars exist.
     :param base_url: str, the url of the OpenSLR resources.
+    :return: the path to downloaded and extracted directory with data.
     """
     url = f"{base_url}/111"
     target_dir = Path(target_dir)
@@ -66,6 +67,8 @@ def download_aishell4(
             )
         with tarfile.open(tar_path) as tar:
             tar.extractall(path=target_dir)
+
+    return target_dir
 
 
 def prepare_aishell4(

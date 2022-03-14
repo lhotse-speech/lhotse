@@ -190,7 +190,7 @@ def download_icsi(
     force_download: Optional[bool] = False,
     url: Optional[str] = "http://groups.inf.ed.ac.uk/ami",
     mic: Optional[str] = "ihm",
-) -> None:
+) -> Path:
     """
     Download ICSI audio and annotations for provided microphone setting.
     :param target_dir: Pathlike, the path in which audio and transcripts dir are created by default.
@@ -199,6 +199,7 @@ def download_icsi(
     :param force_download: bool (default = False), if True, download even if file is present.
     :param url: str (default = 'http://groups.inf.ed.ac.uk/ami'), download URL.
     :param mic: str {'ihm','ihm-mix','sdm','mdm'}, type of mic setting.
+    :return: the path to downloaded and extracted directory with data.
     """
     target_dir = Path(target_dir)
     audio_dir = Path(audio_dir) if audio_dir else target_dir / "speech"
@@ -216,7 +217,7 @@ def download_icsi(
         logging.info(
             f"Skip downloading transcripts as they exist in: {transcripts_dir}"
         )
-        return
+        return target_dir
     annotations_url = f"{url}/ICSICorpusAnnotations/ICSI_original_transcripts.zip"
 
     # The following is analogous to `wget --no-check-certificate``
@@ -233,6 +234,8 @@ def download_icsi(
         # If custom dir is passed, rename 'transcripts' dir accordingly
         if transcripts_dir:
             Path(target_dir / "transcripts").rename(transcripts_dir)
+
+    return target_dir
 
 
 def parse_icsi_annotations(

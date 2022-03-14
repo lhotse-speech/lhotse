@@ -1,4 +1,5 @@
 import random
+import warnings
 
 from lhotse import RecordingSet, CutSet
 
@@ -21,6 +22,10 @@ class ReverbWithImpulseResponse:
         early_only: bool = False,
     ) -> None:
         self.rir_recordings = list(rir_recordings)
+        if len(self.rir_recordings) == 0:
+            warnings.warn(
+                "Empty recording list in ReverbWithImpulseResponse: it will act as an identity transform."
+            )
         self.p = p
         self.normalize_output = normalize_output
         self.random = randgen
@@ -28,6 +33,8 @@ class ReverbWithImpulseResponse:
         self.early_only = early_only
 
     def __call__(self, cuts: CutSet) -> CutSet:
+        if len(self.rir_recordings) == 0:
+            return cuts
         if self.random is None:
             self.random = random
         return CutSet.from_cuts(

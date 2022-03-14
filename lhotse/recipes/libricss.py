@@ -95,11 +95,12 @@ OVERLAP_RATIOS = ["0L", "0S", "OV10", "OV20", "OV30", "OV40"]
 # fmt: on
 
 
-def download_libricss(target_dir: Pathlike, force_download: bool = False):
+def download_libricss(target_dir: Pathlike, force_download: bool = False) -> Path:
     """
     Downloads the LibriCSS data from the Google Drive and extracts it.
     :param target_dir: the directory where the LibriCSS data will be saved.
     :param force_download: if True, it will download the LibriCSS data even if it is already present.
+    :return: the path to downloaded and extracted directory with data.
     """
     # Download command (taken from https://github.com/chenzhuo1011/libri_css/blob/9e3b7b0c9bffd8ef6da19f7056f3a2f2c2484ffa/dataprep/scripts/dataprep.sh#L27)
     command = """wget --load-cookies /tmp/cookies.txt "https://docs.google.com/uc?export=download&confirm=$(wget --quiet --save-cookies /tmp/cookies.txt --keep-session-cookies --no-check-certificate 'https://docs.google.com/uc?export=download&id=1Piioxd5G_85K9Bhcr8ebdhXx0CnaHy7l' -O- | sed -rn 's/.*confirm=([0-9A-Za-z_]+).*/\1\n/p')&id=1Piioxd5G_85K9Bhcr8ebdhXx0CnaHy7l" -O for_release.zip && rm -rf /tmp/cookies.txt"""
@@ -115,9 +116,11 @@ def download_libricss(target_dir: Pathlike, force_download: bool = False):
         subprocess.run(command, shell=True, cwd=target_dir)
 
     # Extract the zipped file
-    if not (corpus_dir).exists() or force_download:
+    if not corpus_dir.exists() or force_download:
         logging.info(f"Extracting {corpus_zip} to {target_dir}")
         corpus_zip.unzip(target_dir)
+
+    return target_dir
 
 
 def prepare_libricss(

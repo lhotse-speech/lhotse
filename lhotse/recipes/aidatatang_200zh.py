@@ -26,12 +26,13 @@ def download_aidatatang_200zh(
     target_dir: Pathlike = ".",
     force_download: Optional[bool] = False,
     base_url: Optional[str] = "http://www.openslr.org/resources",
-) -> None:
+) -> Path:
     """
     Downdload and untar the dataset
     :param target_dir: Pathlike, the path of the dir to store the dataset.
     :param force_download: Bool, if True, download the tars no matter if the tars exist.
     :param base_url: str, the url of the OpenSLR resources.
+    :return: the path to downloaded and extracted directory with data.
     """
     url = f"{base_url}/62"
     target_dir = Path(target_dir)
@@ -43,7 +44,7 @@ def download_aidatatang_200zh(
     completed_detector = extracted_dir / ".completed"
     if completed_detector.is_file():
         logging.info(f"Skipping because {completed_detector} exists.")
-        return
+        return corpus_dir
     if force_download or not tar_path.is_file():
         urlretrieve_progress(
             f"{url}/{tar_name}", filename=tar_path, desc=f"Downloading {tar_name}"
@@ -60,6 +61,8 @@ def download_aidatatang_200zh(
             with tarfile.open(d / sub_tar_name) as tar:
                 tar.extractall(path=d)
     completed_detector.touch()
+
+    return corpus_dir
 
 
 def prepare_aidatatang_200zh(

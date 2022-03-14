@@ -58,7 +58,7 @@ class DynamicCutSampler(CutSampler):
         shuffle: bool = False,
         drop_last: bool = False,
         consistent_ids: bool = True,
-        shuffle_buffer_size: int = 1000,
+        shuffle_buffer_size: int = 20000,
         world_size: Optional[int] = None,
         rank: Optional[int] = None,
         seed: int = 0,

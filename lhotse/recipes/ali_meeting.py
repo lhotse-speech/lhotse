@@ -36,12 +36,13 @@ def download_ali_meeting(
     base_url: Optional[
         str
     ] = "https://speech-lab-share-data.oss-cn-shanghai.aliyuncs.com/",
-) -> None:
+) -> Path:
     """
     Downdload and untar the dataset
     :param target_dir: Pathlike, the path of the dir to storage the dataset.
     :param force_download: Bool, if True, download the tars no matter if the tars exist.
     :param base_url: str, the url of the OpenSLR resources.
+    :return: the path to downloaded and extracted directory with data.
     """
     url = f"{base_url}/AliMeeting/openlr/"
     target_dir = Path(target_dir)
@@ -60,6 +61,8 @@ def download_ali_meeting(
             )
         with tarfile.open(tar_path) as tar:
             tar.extractall(path=target_dir)
+
+    return target_dir
 
 
 def prepare_ali_meeting(

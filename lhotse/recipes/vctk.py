@@ -105,13 +105,14 @@ def download_vctk(
     target_dir: Pathlike = ".",
     force_download: Optional[bool] = False,
     url: Optional[str] = CREST_VCTK_URL,
-) -> None:
+) -> Path:
     """
     Download and untar/unzip the VCTK dataset.
 
     :param target_dir: Pathlike, the path of the dir to storage the dataset.
     :param force_download: Bool, if True, download the tars no matter if the tars exist.
     :param url: str, the url of tarred/zipped VCTK corpus.
+    :return: the path to downloaded and extracted directory with data.
     """
     target_dir = Path(target_dir)
     target_dir.mkdir(parents=True, exist_ok=True)
@@ -122,7 +123,7 @@ def download_vctk(
     completed_detector = part_dir / ".completed"
     if completed_detector.is_file():
         logging.info(f"Skipping {archive_name} because {completed_detector} exists.")
-        return
+        return part_dir
     if force_download or not archive_path.is_file():
         urlretrieve_progress(
             url, filename=archive_path, desc=f"Downloading {archive_name}"
@@ -132,6 +133,7 @@ def download_vctk(
     with opener(archive_path) as archive:
         archive.extractall(path=target_dir)
     completed_detector.touch()
+    return part_dir
 
 
 def prepare_vctk(
