@@ -121,6 +121,14 @@ def prepare_rir_noise(
     manifests = defaultdict(dict)
     for part in parts:
         logging.info(f"Preparing {part}...")
+        if part == "real_rir":
+            logging.warning(
+                "Several RIRs in the `real_rir` set may contain multi-channel impulse responses."
+                "Applying these will result in a multi-channel MixedCut. If you want to keep "
+                "only single-channel RIRs, please specify `parts='sim_rir'`, filter the multi-channel "
+                "RIRs using `RecordingSet.filter(lambda r: r.num_channels == 1)`, or specify `keep_mono=True` "
+                "in :meth:`lhotse.cut.CutSet.reverb_rir` or :class:`lhotse.augmentation.ReverbWithImpulseResponse`."
+            )
         audio_dir = corpus_dir / PARTS[part]
         assert audio_dir.is_dir(), f"No such directory: {audio_dir}"
         if part == "sim_rir":

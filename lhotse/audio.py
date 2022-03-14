@@ -648,6 +648,7 @@ class Recording:
         normalize_output: bool = True,
         early_only: bool = False,
         affix_id: bool = True,
+        rir_channels: Optional[List[int]] = None,
     ) -> "Recording":
         """
         Return a new ``Recording`` that will lazily apply reverberation based on provided
@@ -658,6 +659,8 @@ class Recording:
         :param early_only: When true, only the early reflections (first 50 ms) will be used.
         :param affix_id: When true, we will modify the ``Recording.id`` field
             by affixing it with "_rvb".
+        :param rir_channels: The channels of the impulse response to be used (in case of multi-channel
+            impulse responses).
         :return: the perturbed ``Recording``.
         """
         transforms = self.transforms.copy() if self.transforms is not None else []
@@ -666,6 +669,7 @@ class Recording:
                 rir_recording,
                 normalize_output=normalize_output,
                 early_only=early_only,
+                rir_channels=rir_channels,
             ).to_dict()
         )
         return fastcopy(
@@ -1039,6 +1043,7 @@ class RecordingSet(Serializable):
         normalize_output: bool = True,
         early_only: bool = False,
         affix_id: bool = True,
+        rir_channels: Optional[List[int]] = None,
     ) -> "RecordingSet":
         """
         Return a new ``RecordingSet`` that will lazily apply reverberation based on provided
@@ -1049,6 +1054,8 @@ class RecordingSet(Serializable):
         :param early_only: When true, only the early reflections (first 50 ms) will be used.
         :param affix_id: When true, we will modify the ``Recording.id`` field
             by affixing it with "_rvb".
+        :param rir_channels: The channels to be used for the RIRs (if multi-channel). Uses all
+            channels by default.
         :return: a ``RecordingSet`` containing the perturbed ``Recording`` objects.
         """
         rir_recordings = list(rir_recordings)
@@ -1058,6 +1065,7 @@ class RecordingSet(Serializable):
                 normalize_output=normalize_output,
                 early_only=early_only,
                 affix_id=affix_id,
+                rir_channels=rir_channels,
             )
             for r in self
         )

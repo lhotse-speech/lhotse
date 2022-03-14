@@ -375,7 +375,7 @@ class ReverbWithImpulseResponse(AudioTransform):
     https://github.com/kaldi-asr/kaldi/blob/master/src/featbin/wav-reverberate.cc
 
     The impulse response can possibly be multi-channel, in which case the reverberated audio
-    will be multi-channel as well.
+    will be multi-channel as well. This can be changed by setting `rir_channels=[0]`.
     Note that we enforce the --shift-output option in Kaldi's wav-reverberate utility,
     which means that the output length will be equal to the input length.
     """
@@ -383,6 +383,7 @@ class ReverbWithImpulseResponse(AudioTransform):
     rir: dict
     normalize_output: bool = True
     early_only: bool = False
+    rir_channels: Optional[List[int]] = None
 
     RIR_SCALING_FACTOR: float = 0.5 ** 15
 
@@ -405,8 +406,13 @@ class ReverbWithImpulseResponse(AudioTransform):
         assert samples.shape[0] == 1, "The input audio must be single-channel."
         sampling_rate = int(sampling_rate)  # paranoia mode
 
+        channels = (
+            [c for c in range(self.rir.num_channels) if c in self.rir_channels]
+            if self.rir_channels
+            else range(self.rir.num_channels)
+        )
         rir_ = (
-            self.rir.load_audio()
+            self.rir.load_audio(channels=channels)
             if not self.early_only
             else self.rir.load_audio(duration=0.05)
         )
