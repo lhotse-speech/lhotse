@@ -59,7 +59,11 @@ def test_perturb_tempo(preserve_id: bool):
 @pytest.mark.parametrize("preserve_id", [False, True])
 def test_perturb_volume(preserve_id: bool):
     tfnm = PerturbVolume(
-        scale_low=0.125, scale_high=2.0, p=0.5, randgen=random.Random(42), preserve_id=preserve_id
+        scale_low=0.125,
+        scale_high=2.0,
+        p=0.5,
+        randgen=random.Random(42),
+        preserve_id=preserve_id,
     )
     cuts = DummyManifest(CutSet, begin_id=0, end_id=10)
     cuts_vp = tfnm(cuts)
