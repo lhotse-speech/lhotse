@@ -334,11 +334,21 @@ def collate_multi_channel_audio(cuts: CutSet) -> torch.Tensor:
     assert all(cut.has_recording for cut in cuts)
     assert all(isinstance(cut, MixedCut) for cut in cuts)
     cuts = maybe_pad(cuts)
+
+    # Remember how many samples were there in each cut (later, we might remove cuts that fail to load).
+    cut_id2num_samples = {}
+    for cut in cuts:
+        cut_id2num_samples[cut.id] = cut.num_samples
+
     first_cut = next(iter(cuts))
     audio = torch.empty(len(cuts), len(first_cut.tracks), first_cut.num_samples)
     for idx, cut in enumerate(cuts):
         audio[idx] = torch.from_numpy(cut.load_audio())
-    return audio
+
+    audio_lens = torch.tensor(
+        [cut_id2num_samples[cut.id] for cut in cuts], dtype=torch.int32
+    )
+    return audio, audio_lens
 
 
 def collate_vectors(
