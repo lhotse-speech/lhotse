@@ -73,7 +73,7 @@ class DynamicBucketingSampler(CutSampler):
         consistent_ids: bool = True,
         num_cuts_for_bins_estimate: int = 10000,
         buffer_size: int = 10000,
-        shuffle_buffer_size: int = 1000,
+        shuffle_buffer_size: int = 20000,
         world_size: Optional[int] = None,
         rank: Optional[int] = None,
         seed: int = 0,
@@ -109,7 +109,7 @@ class DynamicBucketingSampler(CutSampler):
         :param seed: Random seed used to consistently shuffle the dataset across different processes.
         """
         super().__init__(world_size=world_size, rank=rank, seed=seed)
-        if not all(cs.is_lazy for cs in cuts):
+        if not all(cs.is_lazy for cs in cuts if isinstance(cs, CutSet)):
             warnings.warn(
                 "You are using DynamicBucketingSampler with an eagerly read CutSet. "
                 "You won't see any memory/speed benefits with that setup. "

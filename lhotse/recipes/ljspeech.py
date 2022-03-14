@@ -26,7 +26,7 @@ from lhotse.utils import Pathlike, fastcopy, urlretrieve_progress
 
 def download_ljspeech(
     target_dir: Pathlike = ".", force_download: Optional[bool] = False
-) -> None:
+) -> Path:
     target_dir = Path(target_dir)
     target_dir.mkdir(parents=True, exist_ok=True)
     dataset_name = "LJSpeech-1.1"
@@ -35,7 +35,7 @@ def download_ljspeech(
     completed_detector = corpus_dir / ".completed"
     if completed_detector.is_file():
         logging.info(f"Skipping {dataset_name} because {completed_detector} exists.")
-        return
+        return corpus_dir
     if force_download or not tar_path.is_file():
         urlretrieve_progress(
             f"http://data.keithito.com/data/speech/{dataset_name}.tar.bz2",
@@ -46,6 +46,8 @@ def download_ljspeech(
     with tarfile.open(tar_path) as tar:
         tar.extractall(path=target_dir)
     completed_detector.touch()
+
+    return corpus_dir
 
 
 def prepare_ljspeech(

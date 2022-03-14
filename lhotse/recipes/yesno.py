@@ -42,13 +42,14 @@ def download_yesno(
     target_dir: Pathlike = ".",
     force_download: Optional[bool] = False,
     url: Optional[str] = _DEFAULT_URL,
-):
+) -> Path:
     """Download and untar the dataset.
     :param target_dir: Pathlike, the path of the dir to store the dataset.
         The extracted files are saved to target_dir/waves_yesno/*.wav
     :param force_download: Bool, if True, download the tar file no matter
         whether it exists or not.
     :param url: str, the url to download the dataset.
+    :return: the path to downloaded and extracted directory with data.
     """
     target_dir = Path(target_dir)
     target_dir.mkdir(parents=True, exist_ok=True)
@@ -59,7 +60,7 @@ def download_yesno(
     completed_detector = extracted_dir / ".completed"
     if completed_detector.is_file():
         logging.info(f"Skipping - {completed_detector} exists.")
-        return
+        return extracted_dir
 
     if force_download or not tar_path.is_file():
         urlretrieve_progress(
@@ -72,6 +73,8 @@ def download_yesno(
         tar.extractall(path=target_dir)
 
     completed_detector.touch()
+
+    return extracted_dir
 
 
 def _prepare_dataset(

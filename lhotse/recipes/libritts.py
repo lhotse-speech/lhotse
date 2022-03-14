@@ -40,7 +40,7 @@ def download_libritts(
     dataset_parts: Optional[Union[str, Sequence[str]]] = "all",
     force_download: Optional[bool] = False,
     base_url: Optional[str] = "http://www.openslr.org/resources",
-) -> None:
+) -> Path:
     """
     Download and untar the dataset, supporting both LibriSpeech and MiniLibrispeech
 
@@ -49,6 +49,7 @@ def download_libritts(
         or a list of splits (e.g. "dev-clean") to download.
     :param force_download: Bool, if True, download the tars no matter if the tars exist.
     :param base_url: str, the url of the OpenSLR resources.
+    :return: the path to downloaded and extracted directory with data.
     """
     target_dir = Path(target_dir)
     target_dir.mkdir(parents=True, exist_ok=True)
@@ -75,6 +76,8 @@ def download_libritts(
         with tarfile.open(tar_path) as tar:
             tar.extractall(path=target_dir)
         completed_detector.touch()
+
+    return target_dir
 
 
 def prepare_libritts(

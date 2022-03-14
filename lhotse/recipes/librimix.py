@@ -15,7 +15,7 @@ def download_librimix(
     target_dir: Pathlike = ".",
     force_download: Optional[bool] = False,
     url: Optional[str] = "https://zenodo.org/record/3871592/files/MiniLibriMix.zip",
-) -> None:
+) -> Path:
     target_dir = Path(target_dir)
     target_dir.mkdir(parents=True, exist_ok=True)
     zip_path = target_dir / "MiniLibriMix.zip"
@@ -23,13 +23,14 @@ def download_librimix(
     completed_detector = unzipped_dir / ".completed"
     if completed_detector.is_file():
         logging.info(f"Skipping {zip_path} because {completed_detector} exists.")
-        return
+        return unzipped_dir
     if force_download or not zip_path.is_file():
         urlretrieve_progress(url, filename=zip_path, desc="Downloading MiniLibriMix")
     shutil.rmtree(unzipped_dir, ignore_errors=True)
     with ZipFile(zip_path) as zf:
         zf.extractall(path=target_dir)
     completed_detector.touch()
+    return unzipped_dir
 
 
 def prepare_librimix(

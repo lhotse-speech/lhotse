@@ -4995,10 +4995,11 @@ class CutSet(Serializable):
         return self.map_supervisions(lambda s: s.transform_text(transform_fn))
 
     def __repr__(self) -> str:
-        return (
-            f"CutSet(len={len(self) if hasattr(self.data, 'len') else '<unknown>'}) "
-            f"[underlying data type: {type(self.data)}]"
-        )
+        try:
+            len_val = len(self)
+        except:
+            len_val = "<unknown>"
+        return f"CutSet(len={len_val}) [underlying data type: {type(self.data)}]"
 
     def __contains__(self, item: Union[str, Cut]) -> bool:
         if isinstance(item, str):

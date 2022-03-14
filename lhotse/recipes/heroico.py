@@ -22,7 +22,7 @@ def download_heroico(
     target_dir: Pathlike = ".",
     force_download: Optional[bool] = False,
     url: Optional[str] = "http://www.openslr.org/resources/39",
-) -> None:
+) -> Path:
     target_dir = Path(target_dir)
     target_dir.mkdir(parents=True, exist_ok=True)
     tar_name = f"LDC2006S37.tar.gz"
@@ -38,6 +38,8 @@ def download_heroico(
     with tarfile.open(tar_path) as tar:
         tar.extractall(path=target_dir)
     completed_detector.touch()
+
+    return target_dir
 
 
 class HeroicoMetaData(NamedTuple):
