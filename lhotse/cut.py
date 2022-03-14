@@ -4934,9 +4934,7 @@ class CutSet(Serializable):
             len_val = len(self)
         except:
             len_val = "<unknown>"
-        return (
-            f"CutSet(len={len_val}) [underlying data type: {type(self.data)}]"
-        )
+        return f"CutSet(len={len_val}) [underlying data type: {type(self.data)}]"
 
     def __contains__(self, item: Union[str, Cut]) -> bool:
         if isinstance(item, str):

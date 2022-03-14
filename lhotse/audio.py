@@ -484,6 +484,7 @@ class Recording:
         The implementation of the multi-channel case may change in the future...
         """
         from lhotse.cut import MonoCut, MixedCut, MixTrack
+
         if self.num_channels == 1:
             return MonoCut(
                 id=self.id,
@@ -507,7 +508,7 @@ class Recording:
                         )
                     )
                     for cidx in self.channel_ids
-                ]
+                ],
             )
 
     @property

@@ -38,7 +38,9 @@ class CutMix:
         """
         self.cuts = cuts
         if len(self.cuts) == 0:
-            warnings.warn("Empty CutSet in CutMix transform: it'll act as an identity transform.")
+            warnings.warn(
+                "Empty CutSet in CutMix transform: it'll act as an identity transform."
+            )
         self.snr = snr
         self.p = p
         if prob is not None:
