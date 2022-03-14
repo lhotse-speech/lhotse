@@ -541,6 +541,8 @@ class LazyIteratorChain:
     """
     A thin wrapper over multiple iterators that enables to combine lazy manifests
     in Lhotse. It iterates all underlying iterables sequentially.
+
+    .. note:: if any of the input iterables is a dict, we'll iterate only its values.
     """
 
     def __init__(self, *iterators: Iterable) -> None:
@@ -554,7 +556,10 @@ class LazyIteratorChain:
                 self.iterators.append(it)
 
     def __iter__(self):
-        return (item for it in self.iterators for item in it)
+        for it in self.iterators:
+            if isinstance(it, dict):
+                it = it.values()
+            yield from it
 
     def values(self):
         yield from self
