@@ -221,20 +221,22 @@ def download_ami(
     force_download: Optional[bool] = False,
     url: Optional[str] = "http://groups.inf.ed.ac.uk/ami",
     mic: Optional[str] = "ihm",
-) -> None:
+) -> Path:
     """
     Download AMI audio and annotations for provided microphone setting.
-    :param target_dir: Pathlike, the path to store the data.
-    :param annotations: Pathlike (default = None), path to save annotations zip file
-    :param force_download: bool (default = False), if True, download even if file is present.
-    :param url: str (default = 'http://groups.inf.ed.ac.uk/ami'), AMI download URL.
-    :param mic: str {'ihm','ihm-mix','sdm','mdm'}, type of mic setting.
 
     Example usage:
     1. Download AMI data for IHM mic setting:
     >>> download_ami(mic='ihm')
     2. Download AMI data for IHM-mix mic setting, and use existing annotations:
     >>> download_ami(mic='ihm-mix', annotations='/path/to/existing/annotations.zip')
+
+    :param target_dir: Pathlike, the path to store the data.
+    :param annotations: Pathlike (default = None), path to save annotations zip file
+    :param force_download: bool (default = False), if True, download even if file is present.
+    :param url: str (default = 'http://groups.inf.ed.ac.uk/ami'), AMI download URL.
+    :param mic: str {'ihm','ihm-mix','sdm','mdm'}, type of mic setting.
+    :return: the path to downloaded and extracted directory with data.
     """
     target_dir = Path(target_dir)
 
@@ -250,10 +252,12 @@ def download_ami(
 
     if annotations.exists():
         logging.info(f"Skip downloading annotations as they exist in: {annotations}")
-        return
+        return target_dir
     annotations_url = f"{url}/AMICorpusAnnotations/ami_public_manual_1.6.2.zip"
     if force_download or not annotations.is_file():
         urllib.request.urlretrieve(annotations_url, filename=annotations)
+
+    return target_dir
 
 
 class AmiSegmentAnnotation(NamedTuple):

@@ -70,7 +70,7 @@ def download_rir_noise(
     target_dir: Pathlike = ".",
     url: Optional[str] = RIR_NOISE_ZIP_URL,
     force_download: Optional[bool] = False,
-) -> None:
+) -> Path:
     """
     Download and untar the RIR Noise corpus.
 
@@ -93,6 +93,7 @@ def download_rir_noise(
         logging.info(f"Unzipping {zip_name}.")
         with zipfile.ZipFile(zip_path) as zf:
             zf.extractall(target_dir)
+    return zip_dir
 
 
 def prepare_rir_noise(

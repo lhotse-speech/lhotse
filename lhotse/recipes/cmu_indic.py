@@ -86,7 +86,7 @@ def download_cmu_indic(
     speakers: Sequence[str] = SPEAKERS,
     force_download: Optional[bool] = False,
     base_url: Optional[str] = BASE_URL,
-) -> None:
+) -> Path:
     """
     Download and untar the CMU Indic dataset.
 
@@ -94,6 +94,7 @@ def download_cmu_indic(
     :param speakers: a list of speakers to download. By default, downloads all.
     :param force_download: Bool, if True, download the tars no matter if the tars exist.
     :param base_url: str, the url of CMU Arctic download site.
+    :return: the path to downloaded and extracted directory with data.
     """
     target_dir = Path(target_dir)
     target_dir.mkdir(parents=True, exist_ok=True)
@@ -116,6 +117,8 @@ def download_cmu_indic(
         with tarfile.open(tar_path) as tar:
             tar.extractall(path=target_dir)
         completed_detector.touch()
+
+    return target_dir
 
 
 def prepare_cmu_indic(

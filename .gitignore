@@ -1,6 +1,7 @@
 # Custom
 deps/
-examples/*/data/
+examples/data
+examples/tmp
 
 # IDEs / editors
 .idea/

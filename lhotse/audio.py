@@ -229,8 +229,8 @@ class AudioSource:
 
     def __repr__(self):
         return (
-            f"AudioSource(type={self.type}, channels={self.channels}, "
-            f"source={self.source if isinstance(self.source, str) else '<binary-data>'})"
+            f"AudioSource(type='{self.type}', channels={self.channels}, "
+            f"source='{self.source if isinstance(self.source, str) else '<binary-data>'}')"
         )
 
 
@@ -473,6 +473,43 @@ class Recording:
 
     def to_dict(self) -> dict:
         return asdict_nonull(self)
+
+    def to_cut(self):
+        """
+        Create a Cut out of this recording.
+
+        For single-channel recordings, we return a :class:`MonoCut`.
+        For multi-channel recordings, we return a :class:`MixedCut` with as
+        many tracks as the number of channels.
+        The implementation of the multi-channel case may change in the future...
+        """
+        from lhotse.cut import MonoCut, MixedCut, MixTrack
+
+        if self.num_channels == 1:
+            return MonoCut(
+                id=self.id,
+                start=0.0,
+                duration=self.duration,
+                channel=self.channel_ids[0],
+                recording=self,
+            )
+        else:
+            # TODO: if we ever have "MultiCut" we may replace this implementation
+            return MixedCut(
+                id=self.id,
+                tracks=[
+                    MixTrack(
+                        cut=MonoCut(
+                            id=f"{self.id}_ch{cidx}",
+                            start=0.0,
+                            duration=self.duration,
+                            channel=cidx,
+                            recording=self,
+                        )
+                    )
+                    for cidx in self.channel_ids
+                ],
+            )
 
     @property
     def num_channels(self):

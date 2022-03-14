@@ -42,12 +42,13 @@ ADEPT_URL = "https://zenodo.org/record/5117102/files/ADEPT.zip"
 def download_adept(
     target_dir: Pathlike = ".",
     force_download: bool = False,
-) -> None:
+) -> Path:
     """
     Download and untar the ADEPT dataset.
 
     :param target_dir: Pathlike, the path of the dir to storage the dataset.
     :param force_download: Bool, if True, download the tars no matter if the tars exist.
+    :return: the path to downloaded and extracted directory with data.
     """
     target_dir = Path(target_dir)
     target_dir.mkdir(parents=True, exist_ok=True)
@@ -56,7 +57,7 @@ def download_adept(
     completed_detector = corpus_dir / ".completed"
     if completed_detector.is_file():
         logging.info(f"Skipping downloading ADEPT because {completed_detector} exists.")
-        return
+        return corpus_dir
     # Maybe-download the archive.
     zip_name = "ADEPT.zip"
     zip_path = target_dir / zip_name
@@ -69,6 +70,8 @@ def download_adept(
     with zipfile.ZipFile(zip_path) as zip_f:
         zip_f.extractall(path=corpus_dir)
     completed_detector.touch()
+
+    return corpus_dir
 
 
 def prepare_adept(
