@@ -1,4 +1,5 @@
 import decimal
+import warnings
 from dataclasses import asdict, dataclass
 from math import isclose
 from pathlib import Path
@@ -246,7 +247,7 @@ class TemporalArray:
         else:
             writer = get_memory_writer("memory_raw")()
         data = writer.write("", arr)  # key is ignored by in memory writers
-        return TemporalArray(
+        out = TemporalArray(
             array=Array(
                 storage_type=writer.name,
                 storage_key=data,
@@ -262,6 +263,16 @@ class TemporalArray:
             #    whole subset, start=0 and duration=self.duration
             start=0.0,
         )
+
+        # Sanity check -- can help detect issues with start/offset in long-recording data.
+        if out.shape == [0]:
+            warnings.warn(
+                "A TemporalArray with shape [0] encountered. If this is not expected and "
+                "you're working with long-recording data, make sure you did set the 'start' "
+                "attribute properly."
+            )
+
+        return out
 
 
 def seconds_to_frames(
