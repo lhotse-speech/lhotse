@@ -242,7 +242,9 @@ class Cut:
 
     @property
     def end(self) -> Seconds:
-        return add_durations(self.start, self.duration, sampling_rate=self.sampling_rate)
+        return add_durations(
+            self.start, self.duration, sampling_rate=self.sampling_rate
+        )
 
     def to_dict(self) -> dict:
         d = asdict_nonull(self)
