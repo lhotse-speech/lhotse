@@ -412,7 +412,7 @@ def validate_cut(c: Cut, read_data: bool = False) -> None:
                     f"MonoCut {c.id}: TemporalArray at custom field '{key}' "
                     "seems to have incorrect start time (the array with time span "
                     f"[{value.start}s - {value.end}s] does not overlap with cut "
-                    f"with time span [{c.start}s - {c.end}s]"
+                    f"with time span [{c.start}s - {c.end}s])."
                 )
 
 
