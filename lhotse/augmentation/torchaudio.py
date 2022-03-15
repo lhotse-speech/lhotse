@@ -1,5 +1,5 @@
 import warnings
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from decimal import ROUND_HALF_UP
 from typing import List, Optional, Tuple, Union
 
@@ -374,8 +374,10 @@ class ReverbWithImpulseResponse(AudioTransform):
     This code is based on Kaldi's wav-reverberate utility:
     https://github.com/kaldi-asr/kaldi/blob/master/src/featbin/wav-reverberate.cc
 
-    The impulse response can possibly be multi-channel, in which case the reverberated audio
-    will be multi-channel as well.
+    The impulse response can possibly be multi-channel, in which case multi-channel reverberated
+    audio can be obtained by appropriately setting `rir_channels`. For example, `rir_channels=[0,1]`
+    will convolve using the first two channels of the impulse response, generating a stereo
+    reverberated audio.
     Note that we enforce the --shift-output option in Kaldi's wav-reverberate utility,
     which means that the output length will be equal to the input length.
     """
@@ -383,6 +385,7 @@ class ReverbWithImpulseResponse(AudioTransform):
     rir: dict
     normalize_output: bool = True
     early_only: bool = False
+    rir_channels: List[int] = field(default_factory=lambda: [0])
 
     RIR_SCALING_FACTOR: float = 0.5 ** 15
 
@@ -392,6 +395,9 @@ class ReverbWithImpulseResponse(AudioTransform):
 
             # Pass a shallow copy of the RIR dict since `from_dict()` pops the `sources` key.
             self.rir = Recording.from_dict(self.rir.copy())
+        assert all(
+            c < self.rir.num_channels for c in self.rir_channels
+        ), "Invalid channel index in `rir_channels`"
 
     def __call__(
         self,
@@ -406,7 +412,7 @@ class ReverbWithImpulseResponse(AudioTransform):
         sampling_rate = int(sampling_rate)  # paranoia mode
 
         rir_ = (
-            self.rir.load_audio()
+            self.rir.load_audio(channels=self.rir_channels)
             if not self.early_only
             else self.rir.load_audio(duration=0.05)
         )

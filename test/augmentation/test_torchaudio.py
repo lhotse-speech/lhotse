@@ -45,7 +45,12 @@ def audio_volume():
 
 @pytest.fixture(scope="module")
 def rir():
-    return Recording.from_file("test/fixtures/rir/Room001-00031.wav")
+    return Recording.from_file("test/fixtures/rir/sim_1ch.wav")
+
+
+@pytest.fixture(scope="module")
+def multi_channel_rir():
+    return Recording.from_file("test/fixtures/rir/real_8ch.wav")
 
 
 @pytest.mark.parametrize("effect", [reverb, pitch, speed, volume])
@@ -82,6 +87,26 @@ def test_reverb_does_not_change_num_samples(audio, rir, early_only):
     for _ in range(10):
         augmented_audio = augment_fn(audio, sampling_rate=SAMPLING_RATE)
         assert augmented_audio.shape == (1, 16000)
+
+
+@pytest.mark.parametrize(
+    "rir_channels, expected_num_channels", [([0], 1), ([9], None), ([0, 4], 2)]
+)
+def test_reverb_with_multi_channel_impulse_response(
+    audio, multi_channel_rir, rir_channels, expected_num_channels
+):
+    if expected_num_channels is not None:
+        augment_fn = ReverbWithImpulseResponse(
+            rir=multi_channel_rir, rir_channels=rir_channels
+        )
+        for _ in range(10):
+            augmented_audio = augment_fn(audio, sampling_rate=SAMPLING_RATE)
+            assert augmented_audio.shape == (expected_num_channels, 16000)
+    else:
+        with pytest.raises(AssertionError):
+            augment_fn = ReverbWithImpulseResponse(
+                rir=multi_channel_rir, rir_channels=rir_channels
+            )
 
 
 @pytest.mark.parametrize("normalize_output", [True, False])
