@@ -685,7 +685,7 @@ class Recording:
         normalize_output: bool = True,
         early_only: bool = False,
         affix_id: bool = True,
-        rir_channels: Optional[List[int]] = None,
+        rir_channels: List[int] = [0],
     ) -> "Recording":
         """
         Return a new ``Recording`` that will lazily apply reverberation based on provided
@@ -1080,7 +1080,7 @@ class RecordingSet(Serializable):
         normalize_output: bool = True,
         early_only: bool = False,
         affix_id: bool = True,
-        rir_channels: Optional[List[int]] = None,
+        rir_channels: List[int] = [0],
     ) -> "RecordingSet":
         """
         Return a new ``RecordingSet`` that will lazily apply reverberation based on provided
@@ -1091,8 +1091,8 @@ class RecordingSet(Serializable):
         :param early_only: When true, only the early reflections (first 50 ms) will be used.
         :param affix_id: When true, we will modify the ``Recording.id`` field
             by affixing it with "_rvb".
-        :param rir_channels: The channels to be used for the RIRs (if multi-channel). Uses all
-            channels by default.
+        :param rir_channels: The channels to be used for the RIRs (if multi-channel). Uses first
+            channel by default.
         :return: a ``RecordingSet`` containing the perturbed ``Recording`` objects.
         """
         rir_recordings = list(rir_recordings)

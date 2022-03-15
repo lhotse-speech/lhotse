@@ -1,6 +1,6 @@
 import random
 import warnings
-from typing import List, Optional
+from typing import List
 
 from lhotse import RecordingSet, CutSet
 
@@ -12,7 +12,6 @@ class ReverbWithImpulseResponse:
     The impulse response is chosen randomly from a specified CutSet of RIRs :attr:`rir_cuts`.
     If `early_only` is set to True, convolution is performed only with the first 50ms of
         the impulse response.
-    Set `rir_channels=[0]` to use only first channel of (possibly) multi-channel RIRs.
     """
 
     def __init__(
@@ -23,7 +22,7 @@ class ReverbWithImpulseResponse:
         randgen: random.Random = None,
         preserve_id: bool = False,
         early_only: bool = False,
-        rir_channels: Optional[List[int]] = None,
+        rir_channels: List[int] = [0],
     ) -> None:
         self.rir_recordings = list(rir_recordings)
         if len(self.rir_recordings) == 0:

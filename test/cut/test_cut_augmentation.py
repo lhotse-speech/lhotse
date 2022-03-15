@@ -396,7 +396,7 @@ def test_mixed_cut_start01_reverb_rir(cut_with_supervision_start01, rir):
 
 @pytest.mark.parametrize(
     "rir_channels, expected_num_tracks",
-    [(None, 2), ([0], 2), ([0, 1], 2), ([0, 1, 2], None)],
+    [([0], 2), ([0, 1], 2), ([0, 1, 2], None)],
 )
 def test_mixed_cut_start01_reverb_rir_multi_channel(
     cut_with_supervision_start01, multi_channel_rir, rir_channels, expected_num_tracks
@@ -537,7 +537,6 @@ def test_cut_reverb_rir(libri_cut_with_supervision, libri_recording_rvb, rir):
 @pytest.mark.parametrize(
     "rir_channels, expected_type, expected_num_tracks",
     [
-        (None, "MixedCut", 8),
         ([0], "MonoCut", 1),
         ([1], "MonoCut", 1),
         ([0, 1], "MixedCut", 2),

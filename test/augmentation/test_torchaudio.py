@@ -90,17 +90,23 @@ def test_reverb_does_not_change_num_samples(audio, rir, early_only):
 
 
 @pytest.mark.parametrize(
-    "rir_channels, expected_num_channels", [(None, 8), ([0], 1), ([2], 1), ([0, 4], 2)]
+    "rir_channels, expected_num_channels", [([0], 1), ([9], None), ([0, 4], 2)]
 )
 def test_reverb_with_multi_channel_impulse_response(
     audio, multi_channel_rir, rir_channels, expected_num_channels
 ):
-    augment_fn = ReverbWithImpulseResponse(
-        rir=multi_channel_rir, rir_channels=rir_channels
-    )
-    for _ in range(10):
-        augmented_audio = augment_fn(audio, sampling_rate=SAMPLING_RATE)
-        assert augmented_audio.shape == (expected_num_channels, 16000)
+    if expected_num_channels is not None:
+        augment_fn = ReverbWithImpulseResponse(
+            rir=multi_channel_rir, rir_channels=rir_channels
+        )
+        for _ in range(10):
+            augmented_audio = augment_fn(audio, sampling_rate=SAMPLING_RATE)
+            assert augmented_audio.shape == (expected_num_channels, 16000)
+    else:
+        with pytest.raises(AssertionError):
+            augment_fn = ReverbWithImpulseResponse(
+                rir=multi_channel_rir, rir_channels=rir_channels
+            )
 
 
 @pytest.mark.parametrize("normalize_output", [True, False])

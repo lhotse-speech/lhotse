@@ -1534,20 +1534,20 @@ class MonoCut(Cut):
         normalize_output: bool = True,
         early_only: bool = False,
         affix_id: bool = True,
-        rir_channels: Optional[List[int]] = None,
+        rir_channels: List[int] = [0],
     ) -> Union["MonoCut", "MixedCut"]:
         """
         Return a new ``MonoCut`` that will convolve the audio with the provided impulse response.
-        If the `rir_recording` is multi-channel and `keep_mono` is False (default), the output will be
-        a MixedCut.
+        If the `rir_recording` is multi-channel, the `rir_channels` argument determines which channels
+        will be used. By default, we use the first channel and return a MonoCut.
 
         :param rir_recording: The impulse response to use for convolving.
         :param normalize_output: When true, output will be normalized to have energy as input.
         :param early_only: When true, only the early reflections (first 50 ms) will be used.
         :param affix_id: When true, we will modify the ``MonoCut.id`` field
             by affixing it with "_rvb".
-        :param rir_channels: The channels of the impulse response to use. If None, all channels will be used.
-            If the RIR is multi-channel, this will produce a MixedCut instead of a MonoCut.
+        :param rir_channels: The channels of the impulse response to use. First channel is used by default.
+            If multiple channels are specified, this will produce a MixedCut instead of a MonoCut.
         :return: a modified copy of the current ``MonoCut``.
         """
         # Pre-conditions
@@ -1562,9 +1562,9 @@ class MonoCut(Cut):
             )
             self.features = None
 
-        if rir_channels is None:
-            rir_channels = list(range(rir_recording.num_channels))
-
+        assert all(
+            c < rir_recording.num_channels for c in rir_channels
+        ), "Invalid channel index in `rir_channels`."
         if rir_recording.num_channels == 1 or len(rir_channels) == 1:
             # reverberation will return a MonoCut
             recording_rvb = self.recording.reverb_rir(
@@ -2015,7 +2015,7 @@ class PaddingCut(Cut):
         normalize_output: bool = True,
         early_only: bool = False,
         affix_id: bool = True,
-        keep_mono: bool = False,
+        rir_channels: List[int] = [0],
     ) -> "PaddingCut":
         """
         Return a new ``PaddingCut`` that will "mimic" the effect of reverberation with impulse response
@@ -2026,7 +2026,7 @@ class PaddingCut(Cut):
         :param early_only: When true, only the early reflections (first 50 ms) will be used.
         :param affix_id: When true, we will modify the ``PaddingCut.id`` field
             by affixing it with "_rvb".
-        :param keep_mono: When true, only use first channel if RIR is multi-channel.
+        :param rir_channels: The channels of the impulse response to use.
         :return: a modified copy of the current ``PaddingCut``.
         """
 
@@ -2661,7 +2661,7 @@ class MixedCut(Cut):
         normalize_output: bool = True,
         early_only: bool = False,
         affix_id: bool = True,
-        rir_channels: Optional[List[int]] = None,
+        rir_channels: List[int] = [0],
     ) -> "MixedCut":
         """
         Return a new ``MixedCut`` that will convolve the audio with the provided impulse response.
@@ -2671,9 +2671,10 @@ class MixedCut(Cut):
         :param early_only: When true, only the early reflections (first 50 ms) will be used.
         :param affix_id: When true, we will modify the ``MixedCut.id`` field
             by affixing it with "_rvb".
-        :param rir_channels: The channels of the impulse response to use. If None, first channel is used.
+        :param rir_channels: The channels of the impulse response to use. By default, first channel is used.
             If only one channel is specified, all tracks will be convolved with this channel. If a list
-            is provided, it must contain as many channels as there are tracks.
+            is provided, it must contain as many channels as there are tracks such that each track will
+            be convolved with one of the specified channels.
         :return: a modified copy of the current ``MixedCut``.
         """
         # Pre-conditions
@@ -2687,11 +2688,13 @@ class MixedCut(Cut):
                 "reverberation."
             )
 
-        rir_channels = [0] if rir_channels is None else rir_channels
-        rir_channels = [
-            c for c in range(rir_recording.num_channels) if c in rir_channels
-        ]
-        assert len(rir_channels) == 1 or len(rir_channels) == len(self.tracks)
+        assert all(
+            c < rir_recording.num_channels for c in rir_channels
+        ), "Invalid channel index in `rir_channels`."
+        assert len(rir_channels) == 1 or len(rir_channels) == len(
+            self.tracks
+        ), "Invalid number of channels in `rir_channels`. Must be 1 or equal to number of tracks."
+
         if len(rir_channels) == 1:
             rir_channels = rir_channels * len(self.tracks)
 
@@ -4209,7 +4212,7 @@ class CutSet(Serializable):
         normalize_output: bool = True,
         early_only: bool = False,
         affix_id: bool = True,
-        rir_channels: Optional[List[int]] = None,
+        rir_channels: List[int] = [0],
     ) -> "CutSet":
         """
         Return a new :class:`~lhotse.cut.CutSet` that contains original cuts convolved with
@@ -4222,15 +4225,9 @@ class CutSet(Serializable):
         :param early_only: When true, only the early reflections (first 50 ms) will be used.
         :param affix_id: Should we modify the ID (useful if both versions of the same
             cut are going to be present in a single manifest).
-        :param rir_channels: The channels of the impulse response to use. If None, all channels will be used.
+        :param rir_channels: The channels of the impulse response to use. By default, first channel will be used.
             If it is a multi-channel RIR, applying RIR will produce MixedCut.
         :return: a modified copy of the ``CutSet``.
-
-        .. note::
-            It is recommended to ensure that all the RIRs contain the same number of channels. If this
-            cannot be ensured, provide `rir_channels` to ensure that a common subset of these is used,
-            otherwise the resulting CutSet can contain a combination of MonoCut and MixedCut, which is
-            not supported.
         """
         rir_recordings = list(rir_recordings)
         return CutSet.from_cuts(
