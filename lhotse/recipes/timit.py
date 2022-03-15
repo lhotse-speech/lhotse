@@ -23,12 +23,13 @@ def download_timit(
     target_dir: Pathlike = ".",
     force_download: bool = False,
     base_url: Optional[str] = "https://data.deepai.org/timit.zip",
-) -> None:
+) -> Path:
     """
     Download and unzip the dataset TIMIT.
     :param target_dir: Pathlike, the path of the dir to store the dataset.
     :param force_download: bool, if True, download the zips no matter if the zips exists.
     :param base_url: str, the URL of the TIMIT dataset to download.
+    :return: the path to downloaded and extracted directory with data.
     """
     target_dir = Path(target_dir)
     target_dir.mkdir(parents=True, exist_ok=True)
@@ -38,7 +39,7 @@ def download_timit(
     completed_detector = corpus_dir / ".completed"
     if completed_detector.is_file():
         logging.info(f"Skipping {zip_name} because {completed_detector} exists.")
-        return
+        return corpus_dir
     if force_download or not zip_path.is_file():
         urlretrieve_progress(
             base_url, filename=zip_path, desc=f"Downloading {zip_name}"
@@ -48,6 +49,7 @@ def download_timit(
         corpus_dir.mkdir(parents=True, exist_ok=True)
         for names in zip_file.namelist():
             zip_file.extract(names, str(corpus_dir))
+    return corpus_dir
 
 
 def prepare_timit(

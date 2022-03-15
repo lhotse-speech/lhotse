@@ -81,14 +81,15 @@ SpeakerMetadata = namedtuple(
 def download_voxceleb1(
     target_dir: Pathlike = ".",
     force_download: Optional[bool] = False,
-) -> None:
+) -> Path:
     """
     Download and unzip the VoxCeleb1 data.
 
+    .. note:: A "connection refused" error may occur if you are downloading without a password.
+
     :param target_dir: Pathlike, the path of the dir to store the dataset.
     :param force_download: bool, if True, download the archive even if it already exists.
-
-    NOTE: A "connection refused" error may occur if you are downloading without a password.
+    :return: the path to downloaded and extracted directory with data.
     """
     target_dir = Path(target_dir)
     target_dir.mkdir(parents=True, exist_ok=True)
@@ -115,18 +116,21 @@ def download_voxceleb1(
     with zipfile.ZipFile(target_dir / "vox1_test_wav.zip") as zf:
         zf.extractall(target_dir)
 
+    return target_dir
+
 
 def download_voxceleb2(
     target_dir: Pathlike = ".",
     force_download: Optional[bool] = False,
-) -> None:
+) -> Path:
     """
     Download and unzip the VoxCeleb2 data.
 
+    .. note:: A "connection refused" error may occur if you are downloading without a password.
+
     :param target_dir: Pathlike, the path of the dir to store the dataset.
     :param force_download: bool, if True, download the archive even if it already exists.
-
-    NOTE: A "connection refused" error may occur if you are downloading without a password.
+    :return: the path to downloaded and extracted directory with data.
     """
     target_dir = Path(target_dir)
     target_dir.mkdir(parents=True, exist_ok=True)
@@ -152,6 +156,8 @@ def download_voxceleb2(
     logging.info(f"Unzipping test...")
     with zipfile.ZipFile(target_dir / "vox2_test_aac.zip") as zf:
         zf.extractall(target_dir)
+
+    return target_dir
 
 
 def prepare_voxceleb(

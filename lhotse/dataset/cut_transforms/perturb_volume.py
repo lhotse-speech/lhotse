@@ -15,13 +15,15 @@ class PerturbVolume:
 
     def __init__(
         self,
-        factors: Union[float, Sequence[float]],
         p: float,
+        scale_low: float = 0.125,
+        scale_high: float = 2.0,
         randgen: random.Random = None,
         preserve_id: bool = False,
     ) -> None:
-        self.factors = factors if isinstance(factors, Sequence) else [factors]
         self.p = p
+        self.scale_low = scale_low
+        self.scale_high = scale_high
         self.random = randgen
         self.preserve_id = preserve_id
 
@@ -30,7 +32,8 @@ class PerturbVolume:
             self.random = random
         return CutSet.from_cuts(
             cut.perturb_volume(
-                factor=self.random.choice(self.factors), affix_id=not self.preserve_id
+                factor=self.random.uniform(self.scale_low, self.scale_high),
+                affix_id=not self.preserve_id,
             )
             if self.random.random() >= self.p
             else cut

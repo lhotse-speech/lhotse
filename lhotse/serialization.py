@@ -300,6 +300,22 @@ class JsonlMixin:
 
 
 class LazyMixin:
+    @property
+    def data(self) -> Union[Dict[str, Any], Iterable[Any]]:
+        """
+        Property to be implemented by every sub-class of this mixin.
+        It can either be a regular Python dict holding manifests for eager mode,
+        or a special iterator class for lazy mode.
+        """
+        raise NotImplemented
+
+    @property
+    def is_lazy(self) -> bool:
+        """
+        Indicates whether this manifest was opened in lazy (read-on-the-fly) mode or not.
+        """
+        return not isinstance(self.data, (dict, list, tuple))
+
     @classmethod
     def from_jsonl_lazy(cls, path: Pathlike) -> Manifest:
         """
@@ -310,6 +326,32 @@ class LazyMixin:
             rely on random access to fail.
         """
         return cls(LazyJsonlIterator(path))
+
+    @classmethod
+    def mux(
+        cls,
+        *manifests: Manifest,
+        stop_early: bool = False,
+        weights: Optional[List[Union[int, float]]] = None,
+        seed: int = 0,
+    ) -> Manifest:
+        """
+        Merges multiple CutSets into a new CutSet by lazily multiplexing them during iteration time.
+        If one of the CutSets is exhausted before the others, we will keep iterating until all CutSets
+        are exhausted. This behavior can be changed with ``stop_early`` parameter.
+
+        :param cut_sets: cut sets to be multiplexed.
+            They can be either lazy or eager, but the resulting manifest will always be lazy.
+        :param stop_early: should we stop the iteration as soon as we exhaust one of the manifests.
+        :param weights: an optional weight for each CutSet, affects the probability of it being sampled.
+            The weights are uniform by default.
+        :param seed: the random seed, ensures deterministic order across multiple iterations.
+        """
+        return cls(
+            LazyIteratorMultiplexer(
+                *manifests, stop_early=stop_early, weights=weights, seed=seed
+            )
+        )
 
 
 def grouper(n, iterable):
@@ -356,6 +398,8 @@ def load_manifest(path: Pathlike, manifest_cls: Optional[Type] = None) -> Manife
     for manifest_type in candidates:
         try:
             data_set = manifest_type.from_dicts(raw_data)
+            if len(data_set) == 0:
+                raise RuntimeError()
             break
         except Exception:
             pass
@@ -497,6 +541,8 @@ class LazyIteratorChain:
     """
     A thin wrapper over multiple iterators that enables to combine lazy manifests
     in Lhotse. It iterates all underlying iterables sequentially.
+
+    .. note:: if any of the input iterables is a dict, we'll iterate only its values.
     """
 
     def __init__(self, *iterators: Iterable) -> None:
@@ -510,7 +556,10 @@ class LazyIteratorChain:
                 self.iterators.append(it)
 
     def __iter__(self):
-        return (item for it in self.iterators for item in it)
+        for it in self.iterators:
+            if isinstance(it, dict):
+                it = it.values()
+            yield from it
 
     def values(self):
         yield from self
@@ -537,16 +586,18 @@ class LazyIteratorMultiplexer:
     Since the iterables might be of different length, we provide a ``weights`` parameter
     to let the user decide which iterables should be sampled more frequently than others.
     When an iterable is exhausted, we will keep sampling from the other iterables, until
-    we exhaust them all.
+    we exhaust them all, unless ``stop_early`` is set to ``True``.
     """
 
     def __init__(
         self,
         *iterators: Iterable,
+        stop_early: bool = False,
         weights: Optional[List[Union[int, float]]] = None,
         seed: int = 0,
     ) -> None:
         self.iterators = list(iterators)
+        self.stop_early = stop_early
         self.seed = seed
 
         assert (
@@ -564,7 +615,14 @@ class LazyIteratorMultiplexer:
         rng = random.Random(self.seed)
         iters = [iter(it) for it in self.iterators]
         exhausted = [False for _ in range(len(iters))]
-        while not all(exhausted):
+
+        def should_continue():
+            if self.stop_early:
+                return not any(exhausted)
+            else:
+                return not all(exhausted)
+
+        while should_continue():
             active_indexes, active_weights = zip(
                 *[
                     (i, w)

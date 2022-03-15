@@ -17,6 +17,7 @@ from lhotse.dataset.sampling import (
     ZipSampler,
     streaming_shuffle,
 )
+from lhotse.dataset.sampling.dynamic import DynamicCutSampler
 from lhotse.testing.dummies import DummyManifest, as_lazy, dummy_cut
 from lhotse.utils import fastcopy, nullcontext as does_not_raise
 
@@ -30,7 +31,9 @@ def libri_cut_set():
 
 
 # Tests both aliases of SimpleCutSampler
-@pytest.mark.parametrize("sampler_cls", [SimpleCutSampler, SingleCutSampler])
+@pytest.mark.parametrize(
+    "sampler_cls", [SimpleCutSampler, SingleCutSampler, DynamicCutSampler]
+)
 def test_single_cut_sampler_shuffling(sampler_cls):
     # The dummy cuts have a duration of 1 second each
     cut_set = DummyManifest(CutSet, begin_id=0, end_id=100)
@@ -41,7 +44,7 @@ def test_single_cut_sampler_shuffling(sampler_cls):
         # Set an effective batch size of 10 cuts, as all have 1s duration == 100 frames
         # This way we're testing that it works okay when returning multiple batches in
         # a full epoch.
-        max_frames=1000,
+        max_duration=10.0,
     )
     sampled_cuts = []
     for batch in sampler:
@@ -102,32 +105,34 @@ def test_single_cut_sampler_time_constraints(
         assert [c.id for c in sampler_cut_ids] != [c.id for c in cut_set]
 
 
-def test_single_cut_sampler_order_is_deterministic_given_epoch():
+@pytest.mark.parametrize("sampler_cls", [SimpleCutSampler, DynamicCutSampler])
+def test_single_cut_sampler_order_is_deterministic_given_epoch(sampler_cls):
     cut_set = DummyManifest(CutSet, begin_id=0, end_id=100)
 
-    sampler = SimpleCutSampler(
+    sampler = sampler_cls(
         cut_set,
         shuffle=True,
         # Set an effective batch size of 10 cuts, as all have 1s duration == 100 frames
         # This way we're testing that it works okay when returning multiple batches in
         # a full epoch.
-        max_frames=1000,
+        max_duration=10.0,
     )
     sampler.set_epoch(42)
     # calling the sampler twice without epoch update gives identical ordering
     assert [item for item in sampler] == [item for item in sampler]
 
 
-def test_single_cut_sampler_order_differs_between_epochs():
+@pytest.mark.parametrize("sampler_cls", [SimpleCutSampler, DynamicCutSampler])
+def test_single_cut_sampler_order_differs_between_epochs(sampler_cls):
     cut_set = DummyManifest(CutSet, begin_id=0, end_id=100)
 
-    sampler = SimpleCutSampler(
+    sampler = sampler_cls(
         cut_set,
         shuffle=True,
         # Set an effective batch size of 10 cuts, as all have 1s duration == 100 frames
         # This way we're testing that it works okay when returning multiple batches in
         # a full epoch.
-        max_frames=1000,
+        max_duration=10.0,
     )
     last_order = [item for item in sampler]
     for epoch in range(1, 6):
@@ -155,8 +160,9 @@ def test_single_cut_sampler_len():
         assert sampler_len == num_batches
 
 
-def test_single_cut_sampler_low_max_frames(libri_cut_set):
-    sampler = SimpleCutSampler(libri_cut_set, shuffle=False, max_frames=2)
+@pytest.mark.parametrize("sampler_cls", [SimpleCutSampler, DynamicCutSampler])
+def test_single_cut_sampler_low_max_frames(libri_cut_set, sampler_cls):
+    sampler = sampler_cls(libri_cut_set, shuffle=False, max_duration=0.02)
     # Check that it does not crash
     for batch in sampler:
         # There will be only a single item in each batch as we're exceeding the limit each time.
@@ -176,6 +182,33 @@ def test_cut_pairs_sampler():
         # a full epoch.
         max_source_frames=1000,
         max_target_frames=500,
+    )
+    source_cuts, target_cuts = [], []
+    for src_batch, tgt_batch in sampler:
+        source_cuts.extend(src_batch)
+        target_cuts.extend(tgt_batch)
+
+    # Invariant 1: we receive the same amount of items in a dataloader epoch as there we in the CutSet
+    assert len(source_cuts) == len(cut_set)
+    assert len(target_cuts) == len(cut_set)
+    # Invariant 2: the items are not duplicated
+    assert len(set(c.id for c in source_cuts)) == len(source_cuts)
+    assert len(set(c.id for c in target_cuts)) == len(target_cuts)
+    # Invariant 3: the items are shuffled, i.e. the order is different than that in the CutSet
+    assert [c.id for c in source_cuts] != [c.id for c in cut_set]
+    # Invariant 4: the source and target cuts are in the same order
+    assert [c.id for c in source_cuts] == [c.id for c in target_cuts]
+
+
+def test_dynamic_cut_sampler_as_cut_pairs_sampler():
+    # The dummy cuts have a duration of 1 second each
+    cut_set = DummyManifest(CutSet, begin_id=0, end_id=100)
+
+    sampler = DynamicCutSampler(
+        cut_set,
+        cut_set,
+        shuffle=True,
+        max_duration=5.0,
     )
     source_cuts, target_cuts = [], []
     for src_batch, tgt_batch in sampler:
@@ -644,7 +677,9 @@ def test_bucketing_sampler_time_constraints(constraint):
 
 @pytest.mark.parametrize("world_size", [2, 3, 4])
 @pytest.mark.parametrize("n_cuts", [995, 996, 997, 998, 999, 1000, 1001, 1002, 1003])
-@pytest.mark.parametrize("sampler_cls", [SimpleCutSampler, BucketingSampler])
+@pytest.mark.parametrize(
+    "sampler_cls", [SimpleCutSampler, BucketingSampler, DynamicCutSampler]
+)
 def test_partitions_are_equal(world_size, n_cuts, sampler_cls):
     # Create a dummy CutSet.
     cut_set = DummyManifest(CutSet, begin_id=0, end_id=n_cuts)
@@ -666,6 +701,7 @@ def test_partitions_are_equal(world_size, n_cuts, sampler_cls):
     [
         SimpleCutSampler,
         BucketingSampler,
+        DynamicCutSampler,
     ],
 )
 def test_single_cut_sampler_with_lazy_cuts(sampler_cls):
@@ -681,7 +717,7 @@ def test_single_cut_sampler_with_lazy_cuts(sampler_cls):
             # Set an effective batch size of 10 cuts, as all have 1s duration == 100 frames
             # This way we're testing that it works okay when returning multiple batches in
             # a full epoch.
-            max_frames=1000,
+            max_duration=10.0,
         )
         sampled_cuts = []
         for batch in sampler:
@@ -698,9 +734,10 @@ def test_single_cut_sampler_with_lazy_cuts(sampler_cls):
     [
         SimpleCutSampler,
         BucketingSampler,
+        DynamicCutSampler,
     ],
 )
-def test_single_cut_sampler_with_lazy_cuts(sampler_cls):
+def test_single_cut_sampler_with_lazy_cuts_concat(sampler_cls):
     # The dummy cuts have a duration of 1 second each
     eager1 = DummyManifest(CutSet, begin_id=0, end_id=100)
     eager2 = DummyManifest(CutSet, begin_id=1000, end_id=1100)
@@ -714,7 +751,7 @@ def test_single_cut_sampler_with_lazy_cuts(sampler_cls):
             # Set an effective batch size of 10 cuts, as all have 1s duration == 100 frames
             # This way we're testing that it works okay when returning multiple batches in
             # a full epoch.
-            max_frames=1000,
+            max_duration=10.0,
         )
         sampled_cuts = []
         for batch in sampler:
@@ -726,7 +763,9 @@ def test_single_cut_sampler_with_lazy_cuts(sampler_cls):
         assert len(set(c.id for c in sampled_cuts)) == len(sampled_cuts)
 
 
-@pytest.mark.parametrize("sampler_cls", [SimpleCutSampler, BucketingSampler])
+@pytest.mark.parametrize(
+    "sampler_cls", [SimpleCutSampler, BucketingSampler, DynamicCutSampler]
+)
 def test_sampler_filter(sampler_cls):
     # The dummy cuts have a duration of 1 second each
     cut_set = DummyManifest(CutSet, begin_id=0, end_id=100)
@@ -736,7 +775,7 @@ def test_sampler_filter(sampler_cls):
         # Set an effective batch size of 10 cuts, as all have 1s duration == 100 frames
         # This way we're testing that it works okay when returning multiple batches in
         # a full epoch.
-        max_frames=1000,
+        max_duration=10.0,
     )
     removed_cut_id = "dummy-cut-0010"
     sampler.filter(lambda cut: cut.id != removed_cut_id)
@@ -852,16 +891,17 @@ def test_zip_sampler_merge_batches_false():
         )  # two come from cuts2
 
 
-def test_single_cut_sampler_drop_last():
+@pytest.mark.parametrize("sampler_cls", [SimpleCutSampler, DynamicCutSampler])
+def test_single_cut_sampler_drop_last(sampler_cls):
     # The dummy cuts have a duration of 1 second each
     cut_set = DummyManifest(CutSet, begin_id=0, end_id=100)
 
-    sampler = SimpleCutSampler(
+    sampler = sampler_cls(
         cut_set,
         # Set an effective batch size of 15 cuts, as all have 1s duration == 100 frames
         # This way we're testing that it works okay when returning multiple batches in
         # a full epoch.
-        max_frames=1500,
+        max_duration=15.0,
         drop_last=True,
     )
     batches = []
@@ -926,6 +966,7 @@ def test_bucketing_sampler_drop_last(drop_last):
     "sampler",
     [
         SimpleCutSampler(DummyManifest(CutSet, begin_id=0, end_id=10)),
+        DynamicCutSampler(DummyManifest(CutSet, begin_id=0, end_id=10)),
         CutPairsSampler(
             DummyManifest(CutSet, begin_id=0, end_id=10),
             DummyManifest(CutSet, begin_id=0, end_id=10),
@@ -948,6 +989,7 @@ def test_sampler_get_report(sampler):
     [
         SimpleCutSampler,
         BucketingSampler,
+        DynamicCutSampler,
     ],
 )
 def test_single_cut_sampler_lazy_shuffle(sampler_cls):
@@ -963,7 +1005,7 @@ def test_single_cut_sampler_lazy_shuffle(sampler_cls):
             # Set an effective batch size of 10 cuts, as all have 1s duration == 100 frames
             # This way we're testing that it works okay when returning multiple batches in
             # a full epoch.
-            max_frames=1000,
+            max_duration=10.0,
         )
         sampled_cuts = []
         for batch in sampler:

@@ -18,6 +18,12 @@ The dataset can be downloaded from: https://openslr.org/111/
 
 NOTE: The following recordings have annotation issues in the TextGrid files:
 20200622_M_R002S07C01, 20200710_M_R002S06C01
+
+NOTE about speaker ids: The speaker ids are assigned "locally" in the dataset, i.e., same
+ids may be assigned to different speakers in different meetings. This may cause an
+issue when training ASR models. To avoid this issue, we use the global speaker ids
+which are assigned "globally" in the dataset, i.e., the tuple (meeting_id, local_spk_id)
+is assigned a unique global_spk_id.
 """
 
 import logging
@@ -36,12 +42,13 @@ def download_aishell4(
     target_dir: Pathlike = ".",
     force_download: Optional[bool] = False,
     base_url: Optional[str] = "http://www.openslr.org/resources",
-) -> None:
+) -> Path:
     """
     Downdload and untar the dataset
     :param target_dir: Pathlike, the path of the dir to storage the dataset.
     :param force_download: Bool, if True, download the tars no matter if the tars exist.
     :param base_url: str, the url of the OpenSLR resources.
+    :return: the path to downloaded and extracted directory with data.
     """
     url = f"{base_url}/111"
     target_dir = Path(target_dir)
@@ -61,9 +68,12 @@ def download_aishell4(
         with tarfile.open(tar_path) as tar:
             tar.extractall(path=target_dir)
 
+    return target_dir
+
 
 def prepare_aishell4(
-    corpus_dir: Pathlike, output_dir: Optional[Pathlike] = None
+    corpus_dir: Pathlike,
+    output_dir: Optional[Pathlike] = None,
 ) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet]]]:
     """
     Returns the manifests which consist of the Recordings and Supervisions
@@ -85,6 +95,7 @@ def prepare_aishell4(
         output_dir = Path(output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
 
+    global_spk_id = {}
     for part in ["train_L", "train_M", "train_S", "test"]:
         recordings = []
         supervisions = []
@@ -105,18 +116,22 @@ def prepare_aishell4(
             recording = Recording.from_file(audio_path)
             recordings.append(recording)
 
-            for i in range(len(tg.tiers)):
-                spk_id = tg.tiers[i].name
-                for j in range(len(tg.tiers[i].intervals)):
-                    if tg.tiers[i].intervals[j].mark != "":
-                        start = tg.tiers[i].intervals[j].minTime
-                        end = tg.tiers[i].intervals[j].maxTime
-                        text = tg.tiers[i].intervals[j].mark
+            for tier in tg.tiers:
+                local_spk_id = tier.name
+                key = (idx, local_spk_id)
+                if key not in global_spk_id:
+                    global_spk_id[key] = f"SPK{len(global_spk_id)+1:04d}"
+                spk_id = global_spk_id[key]
+                for j, interval in enumerate(tier.intervals):
+                    if interval.mark != "":
+                        start = interval.minTime
+                        end = interval.maxTime
+                        text = interval.mark
                         segment = SupervisionSegment(
                             id=f"{idx}-{spk_id}-{j}",
                             recording_id=idx,
                             start=start,
-                            duration=end - start,
+                            duration=round(end - start, 4),
                             channel=0,
                             language="Chinese",
                             speaker=spk_id,
@@ -129,8 +144,8 @@ def prepare_aishell4(
         validate_recordings_and_supervisions(recording_set, supervision_set)
 
         if output_dir is not None:
-            supervision_set.to_json(output_dir / f"supervisions_{part}.json")
-            recording_set.to_json(output_dir / f"recordings_{part}.json")
+            supervision_set.to_file(output_dir / f"supervisions_{part}.jsonl")
+            recording_set.to_file(output_dir / f"recordings_{part}.jsonl")
 
         manifests[part] = {"recordings": recording_set, "supervisions": supervision_set}
 

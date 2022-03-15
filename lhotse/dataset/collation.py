@@ -10,7 +10,11 @@ from torch.nn import CrossEntropyLoss
 from lhotse import CutSet
 from lhotse.audio import AudioLoadingError, DurationMismatchError
 from lhotse.cut import Cut, MixedCut
-from lhotse.utils import DEFAULT_PADDING_VALUE, suppress_and_warn
+from lhotse.utils import (
+    DEFAULT_PADDING_VALUE,
+    NonPositiveEnergyError,
+    suppress_and_warn,
+)
 
 
 class TokenCollater:
@@ -251,9 +255,6 @@ def collate_custom_field(
             )
             pad_value = DEFAULT_PADDING_VALUE
         temporal_dim = first_manifest.temporal_dim
-        arr_lens = torch.tensor(
-            [getattr(c, field).shape[temporal_dim] for c in cuts], dtype=torch.int32
-        )
 
         # We avoid cuts.pad() because the users might be defining frame_shift differently
         # that we typically do in Lhotse. This may result in extra padding where they
@@ -263,6 +264,9 @@ def collate_custom_field(
 
         # Instead, we're going to load everything and pad to the longest sequence.
         arrs = [torch.from_numpy(c.load_custom(field)) for c in cuts]
+        arr_lens = torch.tensor(
+            [a.shape[temporal_dim] for a in arrs], dtype=torch.int32
+        )
         largest_arr = max(arrs, key=torch.numel)
         maxlen = largest_arr.shape[temporal_dim]
         collated_shape = (len(arrs), *largest_arr.shape)
@@ -330,11 +334,21 @@ def collate_multi_channel_audio(cuts: CutSet) -> torch.Tensor:
     assert all(cut.has_recording for cut in cuts)
     assert all(isinstance(cut, MixedCut) for cut in cuts)
     cuts = maybe_pad(cuts)
+
+    # Remember how many samples were there in each cut (later, we might remove cuts that fail to load).
+    cut_id2num_samples = {}
+    for cut in cuts:
+        cut_id2num_samples[cut.id] = cut.num_samples
+
     first_cut = next(iter(cuts))
     audio = torch.empty(len(cuts), len(first_cut.tracks), first_cut.num_samples)
     for idx, cut in enumerate(cuts):
         audio[idx] = torch.from_numpy(cut.load_audio())
-    return audio
+
+    audio_lens = torch.tensor(
+        [cut_id2num_samples[cut.id] for cut in cuts], dtype=torch.int32
+    )
+    return audio, audio_lens
 
 
 def collate_vectors(
@@ -468,7 +482,10 @@ def _read_audio(cut: Cut, suppress_errors: bool = False) -> Optional[torch.Tenso
     and ``suppress_errors`` was set to ``True``.
     """
     with suppress_and_warn(
-        AudioLoadingError, DurationMismatchError, enabled=suppress_errors
+        AudioLoadingError,
+        DurationMismatchError,
+        NonPositiveEnergyError,
+        enabled=suppress_errors,
     ):
         return torch.from_numpy(cut.load_audio()[0])
 

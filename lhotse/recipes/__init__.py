@@ -1,10 +1,12 @@
 from .adept import download_adept, prepare_adept
 from .aishell import download_aishell, prepare_aishell
 from .aishell4 import download_aishell4, prepare_aishell4
+from .ali_meeting import download_ali_meeting, prepare_ali_meeting
 from .ami import download_ami, prepare_ami
 from .aspire import prepare_aspire
 from .babel import prepare_single_babel_language
 from .broadcast_news import prepare_broadcast_news
+from .bvcc import download_bvcc, prepare_bvcc
 from .callhome_egyptian import prepare_callhome_egyptian
 from .callhome_english import prepare_callhome_english
 from .cmu_arctic import download_cmu_arctic, prepare_cmu_arctic
@@ -34,6 +36,7 @@ from .musan import download_musan, prepare_musan
 from .nsc import prepare_nsc
 from .peoples_speech import prepare_peoples_speech
 from .rir_noise import download_rir_noise, prepare_rir_noise
+from .spgispeech import download_spgispeech, prepare_spgispeech
 from .switchboard import prepare_switchboard
 from .tedlium import download_tedlium, prepare_tedlium
 from .timit import download_timit, prepare_timit

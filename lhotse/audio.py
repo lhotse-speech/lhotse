@@ -7,7 +7,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from decimal import ROUND_HALF_UP
 from functools import lru_cache, partial
-from io import BytesIO
+from io import BytesIO, IOBase
 from itertools import islice
 from math import ceil, sqrt
 from pathlib import Path
@@ -27,6 +27,7 @@ from typing import (
 )
 
 import numpy as np
+import torch
 from tqdm.auto import tqdm
 
 from lhotse.augmentation import (
@@ -61,7 +62,7 @@ from lhotse.utils import (
 Channels = Union[int, List[int]]
 
 
-_DEFAULT_LHOTSE_AUDIO_DURATION_MISMATCH_TOLERANCE: Seconds = 1e-2
+_DEFAULT_LHOTSE_AUDIO_DURATION_MISMATCH_TOLERANCE: Seconds = 0.025
 LHOTSE_AUDIO_DURATION_MISMATCH_TOLERANCE: Seconds = (
     _DEFAULT_LHOTSE_AUDIO_DURATION_MISMATCH_TOLERANCE
 )
@@ -120,11 +121,12 @@ class AudioSource:
     - 'file' (formats supported by soundfile, possibly multi-channel)
     - 'command' [unix pipe] (must be WAVE, possibly multi-channel)
     - 'url' (any URL type that is supported by "smart_open" library, e.g. http/https/s3/gcp/azure/etc.)
+    - 'memory' (any format, read from a binary string attached to 'source' member of AudioSource)
     """
 
     type: str
     channels: List[int]
-    source: str
+    source: Union[str, bytes]
 
     def load_audio(
         self,
@@ -144,7 +146,7 @@ class AudioSource:
         :param force_opus_sampling_rate: This parameter is only used when we detect an OPUS file.
             It will tell ffmpeg to resample OPUS to this sampling rate.
         """
-        assert self.type in ("file", "command", "url")
+        assert self.type in ("file", "command", "url", "memory")
 
         # TODO: refactor when another source type is added
         source = self.source
@@ -180,6 +182,16 @@ class AudioSource:
                     source, offset=offset, duration=duration
                 )
 
+        elif self.type == "memory":
+            assert isinstance(self.source, bytes), (
+                "Corrupted manifest: specified AudioSource type is 'memory', "
+                "but 'self.source' attribute is not of type 'bytes'."
+            )
+            source = BytesIO(self.source)
+            samples, sampling_rate = read_audio(
+                source, offset=offset, duration=duration
+            )
+
         else:  # self.type == 'file'
             samples, sampling_rate = read_audio(
                 source,
@@ -214,6 +226,12 @@ class AudioSource:
     @staticmethod
     def from_dict(data) -> "AudioSource":
         return AudioSource(**data)
+
+    def __repr__(self):
+        return (
+            f"AudioSource(type='{self.type}', channels={self.channels}, "
+            f"source='{self.source if isinstance(self.source, str) else '<binary-data>'}')"
+        )
 
 
 @dataclass
@@ -297,7 +315,7 @@ class Recording:
     @staticmethod
     def from_file(
         path: Pathlike,
-        recording_id: Optional[str] = None,
+        recording_id: Optional[Union[str, Callable[[Path], str]]] = None,
         relative_path_depth: Optional[int] = None,
         force_opus_sampling_rate: Optional[int] = None,
         force_read_audio: bool = False,
@@ -313,6 +331,7 @@ class Recording:
 
         :param path: Path to an audio file supported by libsoundfile (pysoundfile).
         :param recording_id: recording id, when not specified ream the filename's stem ("x.wav" -> "x").
+            It can be specified as a string or a function that takes the recording path and returns a string.
         :param relative_path_depth: optional int specifying how many last parts of the file path
             should be retained in the ``AudioSource``. By default writes the path as is.
         :param force_opus_sampling_rate: when specified, this value will be used as the sampling rate
@@ -324,13 +343,20 @@ class Recording:
         :return: a new ``Recording`` instance pointing to the audio file.
         """
         path = Path(path)
+        recording_id = (
+            path.stem
+            if recording_id is None
+            else recording_id(path)
+            if callable(recording_id)
+            else recording_id
+        )
         audio_info = info(
             path,
             force_opus_sampling_rate=force_opus_sampling_rate,
             force_read_audio=force_read_audio,
         )
         return Recording(
-            id=recording_id if recording_id is not None else path.stem,
+            id=recording_id,
             sampling_rate=audio_info.samplerate,
             num_samples=audio_info.frames,
             duration=audio_info.duration,
@@ -347,8 +373,143 @@ class Recording:
             ],
         )
 
+    @staticmethod
+    def from_bytes(
+        data: bytes,
+        recording_id: str,
+    ) -> "Recording":
+        """
+        Like :meth:`.Recording.from_file`, but creates a manifest for a byte string with
+        raw encoded audio data. This data is first decoded to obtain info such as the
+        sampling rate, number of channels, etc. Then, the binary data is attached to the
+        manifest. Calling :meth:`.Recording.load_audio` does not perform any I/O and
+        instead decodes the byte string contents in memory.
+
+        .. note:: Intended use of this method is for packing Recordings into archives
+            where metadata and data should be available together
+            (e.g., in WebDataset style tarballs).
+
+        .. caution:: Manifest created with this method cannot be stored as JSON
+            because JSON doesn't allow serializing binary data.
+
+        :param data: bytes, byte string containing encoded audio contents.
+        :param recording_id: recording id, unique string identifier.
+        :return: a new ``Recording`` instance that owns the byte string data.
+        """
+        stream = BytesIO(data)
+        audio_info = torchaudio_info(stream)
+        return Recording(
+            id=recording_id,
+            sampling_rate=audio_info.samplerate,
+            num_samples=audio_info.frames,
+            duration=audio_info.duration,
+            sources=[
+                AudioSource(
+                    type="memory",
+                    channels=list(range(audio_info.channels)),
+                    source=data,
+                )
+            ],
+        )
+
+    def move_to_memory(
+        self,
+        channels: Optional[Channels] = None,
+        offset: Seconds = None,
+        duration: Optional[Seconds] = None,
+        format: Optional[str] = None,
+    ) -> "Recording":
+        """
+        Read audio data and return a copy of the manifest with binary data attached.
+        Calling :meth:`.Recording.load_audio` on that copy will not trigger I/O.
+
+        If all arguments are left as defaults, we won't decode the audio and attach
+        the bytes we read from disk/other source as-is.
+        If ``channels``, ``duration``, or ``offset`` are specified, we'll decode the
+        audio and re-encode it into ``format`` before attaching.
+        The default format is FLAC, other formats compatible with torchaudio.save are
+        also accepted.
+        """
+
+        # Case #1: no opts specified, read audio without decoding and move it in memory.
+        if all(opt is None for opt in (channels, offset, duration)):
+            memory_sources = [
+                AudioSource(
+                    type="memory",
+                    channels=old_source.channels,
+                    source=open(old_source.source, "rb").read(),
+                )
+                for old_source in self.sources
+            ]
+            return fastcopy(self, sources=memory_sources)
+
+        # Case #2: user specified some subset of the recording, decode audio,
+        #          subset it, and encode it again but save in memory.
+        import torchaudio
+
+        audio = self.load_audio(
+            channels=channels, offset=ifnone(offset, 0), duration=duration
+        )
+        stream = BytesIO()
+        torchaudio.save(
+            stream, torch.from_numpy(audio), self.sampling_rate, format=format
+        )
+        channels = (ifnone(channels, self.channel_ids),)
+        if isinstance(channels, int):
+            channels = [channels]
+        return Recording(
+            id=self.id,
+            sources=[
+                AudioSource(
+                    type="memory",
+                    channels=channels,
+                    source=stream.getvalue(),
+                )
+            ],
+            sampling_rate=self.sampling_rate,
+            num_samples=audio.shape[1],
+            duration=ifnone(duration, self.duration),
+        )
+
     def to_dict(self) -> dict:
         return asdict_nonull(self)
+
+    def to_cut(self):
+        """
+        Create a Cut out of this recording.
+
+        For single-channel recordings, we return a :class:`MonoCut`.
+        For multi-channel recordings, we return a :class:`MixedCut` with as
+        many tracks as the number of channels.
+        The implementation of the multi-channel case may change in the future...
+        """
+        from lhotse.cut import MonoCut, MixedCut, MixTrack
+
+        if self.num_channels == 1:
+            return MonoCut(
+                id=self.id,
+                start=0.0,
+                duration=self.duration,
+                channel=self.channel_ids[0],
+                recording=self,
+            )
+        else:
+            # TODO: if we ever have "MultiCut" we may replace this implementation
+            return MixedCut(
+                id=self.id,
+                tracks=[
+                    MixTrack(
+                        cut=MonoCut(
+                            id=f"{self.id}_ch{cidx}",
+                            start=0.0,
+                            duration=self.duration,
+                            channel=cidx,
+                            recording=self,
+                        )
+                    )
+                    for cidx in self.channel_ids
+                ],
+            )
 
     @property
     def num_channels(self):
@@ -375,6 +536,12 @@ class Recording:
         :param duration: seconds, indicates the total audio time to read (starting from ``offset``).
         :return: a numpy array of audio samples with shape ``(num_channels, num_samples)``.
         """
+
+        assert offset <= self.duration, (
+            f"Cannot load audio because the Recording's duration {self.duration}s "
+            f"is smaller than the requested offset {offset}s."
+        )
+
         if channels is None:
             channels = SetContainingAnything()
         else:
@@ -518,6 +685,7 @@ class Recording:
         normalize_output: bool = True,
         early_only: bool = False,
         affix_id: bool = True,
+        rir_channels: List[int] = [0],
     ) -> "Recording":
         """
         Return a new ``Recording`` that will lazily apply reverberation based on provided
@@ -528,6 +696,8 @@ class Recording:
         :param early_only: When true, only the early reflections (first 50 ms) will be used.
         :param affix_id: When true, we will modify the ``Recording.id`` field
             by affixing it with "_rvb".
+        :param rir_channels: The channels of the impulse response to be used (in case of multi-channel
+            impulse responses).
         :return: the perturbed ``Recording``.
         """
         transforms = self.transforms.copy() if self.transforms is not None else []
@@ -536,6 +706,7 @@ class Recording:
                 rir_recording,
                 normalize_output=normalize_output,
                 early_only=early_only,
+                rir_channels=rir_channels,
             ).to_dict()
         )
         return fastcopy(
@@ -552,7 +723,10 @@ class Recording:
         """
         transforms = self.transforms.copy() if self.transforms is not None else []
 
-        if not any(s.source.endswith(".opus") for s in self.sources):
+        if not any(
+            isinstance(s.source, str) and s.source.endswith(".opus")
+            for s in self.sources
+        ):
             # OPUS is a special case for resampling.
             # Normally, we use Torchaudio SoX bindings for resampling,
             # but in case of OPUS we ask FFMPEG to resample it during
@@ -589,7 +763,7 @@ class Recording:
         )
 
 
-class RecordingSet(Serializable, Sequence[Recording]):
+class RecordingSet(Serializable):
     """
     :class:`~lhotse.audio.RecordingSet` represents a collection of recordings, indexed by recording IDs.
     It does not contain any annotation such as the transcript or the speaker identity --
@@ -658,13 +832,9 @@ class RecordingSet(Serializable, Sequence[Recording]):
         return self.recordings == other.recordings
 
     @property
-    def is_lazy(self) -> bool:
-        """
-        Indicates whether this manifest was opened in lazy (read-on-the-fly) mode or not.
-        """
-        from lhotse.serialization import LazyJsonlIterator
-
-        return isinstance(self.recordings, LazyJsonlIterator)
+    def data(self) -> Union[Dict[str, Recording], Iterable[Recording]]:
+        """Alias property for ``self.recordings``"""
+        return self.recordings
 
     @property
     def ids(self) -> Iterable[str]:
@@ -682,6 +852,7 @@ class RecordingSet(Serializable, Sequence[Recording]):
         pattern: str,
         num_jobs: int = 1,
         force_opus_sampling_rate: Optional[int] = None,
+        recording_id: Optional[Callable[[Path], str]] = None,
     ):
         """
         Recursively scan a directory ``path`` for audio files that match the given ``pattern`` and create
@@ -701,22 +872,29 @@ class RecordingSet(Serializable, Sequence[Recording]):
             instead of the one we read from the manifest. This is useful for OPUS files that always
             have 48kHz rate and need to be resampled to the real one -- we will perform that operation
             "under-the-hood". For non-OPUS files this input does nothing.
+        :param recording_id: A function which takes the audio file path and returns the recording ID. If not
+            specified, the filename will be used as the recording ID.
         :return: a new ``Recording`` instance pointing to the audio file.
         """
         msg = f"Scanning audio files ({pattern})"
-        fn = Recording.from_file
-        if force_opus_sampling_rate is not None:
-            fn = partial(
-                Recording.from_file, force_opus_sampling_rate=force_opus_sampling_rate
-            )
+
+        file_read_worker = partial(
+            Recording.from_file,
+            force_opus_sampling_rate=force_opus_sampling_rate,
+            recording_id=recording_id,
+        )
+
         if num_jobs == 1:
             # Avoid spawning process for one job.
             return RecordingSet.from_recordings(
-                tqdm(map(fn, Path(path).rglob(pattern)), desc=msg)
+                tqdm(map(file_read_worker, Path(path).rglob(pattern)), desc=msg)
             )
         with ProcessPoolExecutor(num_jobs) as ex:
             return RecordingSet.from_recordings(
-                tqdm(ex.map(fn, Path(path).rglob(pattern)), desc=msg)
+                tqdm(
+                    ex.map(file_read_worker, Path(path).rglob(pattern)),
+                    desc=msg,
+                )
             )
 
     @staticmethod
@@ -902,6 +1080,7 @@ class RecordingSet(Serializable, Sequence[Recording]):
         normalize_output: bool = True,
         early_only: bool = False,
         affix_id: bool = True,
+        rir_channels: List[int] = [0],
     ) -> "RecordingSet":
         """
         Return a new ``RecordingSet`` that will lazily apply reverberation based on provided
@@ -912,6 +1091,8 @@ class RecordingSet(Serializable, Sequence[Recording]):
         :param early_only: When true, only the early reflections (first 50 ms) will be used.
         :param affix_id: When true, we will modify the ``Recording.id`` field
             by affixing it with "_rvb".
+        :param rir_channels: The channels to be used for the RIRs (if multi-channel). Uses first
+            channel by default.
         :return: a ``RecordingSet`` containing the perturbed ``Recording`` objects.
         """
         rir_recordings = list(rir_recordings)
@@ -921,6 +1102,7 @@ class RecordingSet(Serializable, Sequence[Recording]):
                 normalize_output=normalize_output,
                 early_only=early_only,
                 affix_id=affix_id,
+                rir_channels=rir_channels,
             )
             for r in self
         )
@@ -1015,9 +1197,11 @@ class AudioMixer:
             self.reference_energy = audio_energy(base_audio)
         else:
             self.reference_energy = reference_energy
-        assert (
-            self.reference_energy > 0.0
-        ), f"To perform mix, energy must be non-zero and non-negative (got {self.reference_energy})"
+
+        if self.reference_energy <= 0.0:
+            raise NonPositiveEnergyError(
+                f"To perform mix, energy must be non-zero and non-negative (got {self.reference_energy})"
+            )
 
     @property
     def unmixed_audio(self) -> np.ndarray:
@@ -1221,19 +1405,6 @@ def torchaudio_load(
     import torch
     import torchaudio
 
-    if not isinstance(path_or_fd, (str, Path)):
-        # Special case: we are likely dealing with a file descriptor (open file).
-        # If we run torchaudio.info() on it, it will consume some data,
-        # which will cause torchaudio.load() to fail.
-        # We expect offset and duration have default values, otherwise we fail.
-        assert offset == 0 and duration is None, (
-            "Lhotse doesn't support using torchaudio.load() "
-            "with open file objects when offset or duration "
-            "arguments are non-default."
-        )
-        audio, sampling_rate = torchaudio.load(path_or_fd)
-        return audio.numpy(), sampling_rate
-
     # Need to grab the "info" about sampling rate before reading to compute
     # the number of samples provided in offset / num_frames.
     audio_info = torchaudio_info(path_or_fd)
@@ -1243,39 +1414,15 @@ def torchaudio_load(
         frame_offset = compute_num_samples(offset, audio_info.samplerate)
     if duration is not None:
         num_frames = compute_num_samples(duration, audio_info.samplerate)
+    if isinstance(path_or_fd, IOBase):
+        # Set seek pointer to the beginning of the file as torchaudio.info
+        # might have left it at the end of the header
+        path_or_fd.seek(0)
     audio, sampling_rate = torchaudio.load(
         path_or_fd,
         frame_offset=frame_offset,
         num_frames=num_frames,
     )
-
-    # MP3 has weird behaviour sometimes: torchaudio.info() `num_frames` indicates
-    # a different number of samples than data shape from torchaudio.load().
-    # We'll truncate/zero-pad to ensure the shape is the same as from info,
-    # up to some threshold determined heuristically (25ms).
-    THRESHOLD: Seconds = 0.025
-    threshold_samples = THRESHOLD / sampling_rate
-    diff = audio.shape[1] - audio_info.frames
-    if diff < 0:
-        if abs(diff) <= threshold_samples:
-            audio = torch.nn.functional.pad(
-                audio, (0, abs(diff)), mode="constant", value=0
-            )
-        else:
-            raise ValueError(
-                f"Inconsistent audio data for '{path_or_fd}': torchaudio.info() declared "
-                f"{audio_info.frames} samples, but torchaudio.load() returned {audio.shape[1]} samples. "
-                f"Please report an issue in Lhotse or Torchaudio GitHub."
-            )
-    elif diff > 0:
-        if abs(diff) <= threshold_samples:
-            audio = audio[:, :-diff]
-        else:
-            raise ValueError(
-                f"Inconsistent audio data for '{path_or_fd}': torchaudio.info() declared "
-                f"{audio_info.frames} samples, but torchaudio.load() returned {audio.shape[1]} samples. "
-                f"Please report an issue in Lhotse or Torchaudio GitHub."
-            )
     return audio.numpy(), sampling_rate
 
 
@@ -1567,7 +1714,7 @@ def read_opus_ffmpeg(
     :return: a tuple of audio samples and the sampling rate.
     """
     # Construct the ffmpeg command depending on the arguments passed.
-    cmd = f"ffmpeg -threads 1"
+    cmd = "ffmpeg -threads 1"
     sampling_rate = 48000
     # Note: we have to add offset and duration options (-ss and -t) BEFORE specifying the input
     #       (-i), otherwise ffmpeg will decode everything and trim afterwards...

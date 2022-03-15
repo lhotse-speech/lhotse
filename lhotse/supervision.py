@@ -436,7 +436,7 @@ class SupervisionSegment:
             raise AttributeError(f"No such attribute: {name}")
 
 
-class SupervisionSet(Serializable, Sequence[SupervisionSegment]):
+class SupervisionSet(Serializable):
     """
     :class:`~lhotse.supervision.SupervisionSet` represents a collection of segments containing some
     supervision information (see :class:`~lhotse.supervision.SupervisionSegment`),
@@ -489,13 +489,11 @@ class SupervisionSet(Serializable, Sequence[SupervisionSegment]):
         return self.segments == other.segments
 
     @property
-    def is_lazy(self) -> bool:
-        """
-        Indicates whether this manifest was opened in lazy (read-on-the-fly) mode or not.
-        """
-        from lhotse.serialization import LazyJsonlIterator
-
-        return isinstance(self.segments, LazyJsonlIterator)
+    def data(
+        self,
+    ) -> Union[Dict[str, SupervisionSegment], Iterable[SupervisionSegment]]:
+        """Alias property for ``self.segments``"""
+        return self.segments
 
     @property
     def ids(self) -> Iterable[str]:

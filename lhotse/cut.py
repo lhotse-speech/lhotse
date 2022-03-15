@@ -266,12 +266,18 @@ class Cut:
         self,
         other: "Cut",
         offset_other_by: Seconds = 0.0,
+        allow_padding: bool = False,
         snr: Optional[Decibels] = None,
         preserve_id: Optional[str] = None,
     ) -> "MixedCut":
         """Refer to :function:`~lhotse.cut.mix` documentation."""
         return mix(
-            self, other, offset=offset_other_by, snr=snr, preserve_id=preserve_id
+            self,
+            other,
+            offset=offset_other_by,
+            allow_padding=allow_padding,
+            snr=snr,
+            preserve_id=preserve_id,
         )
 
     def append(
@@ -972,6 +978,70 @@ class MonoCut(Cut):
             )
         return None
 
+    def move_to_memory(
+        self,
+        audio_format: str = "flac",
+        load_audio: bool = True,
+        load_features: bool = True,
+        load_custom: bool = True,
+    ) -> "MonoCut":
+        """
+        Load data (audio, features, or custom arrays) into memory and attach them
+        to a copy of the manifest. This is useful when you want to store cuts together
+        with the actual data in some binary format that enables sequential data reads.
+
+        Audio is encoded with ``audio_format`` (compatible with ``torchaudio.save``),
+        floating point features are encoded with lilcom, and other arrays are pickled.
+        """
+
+        # Handle moving audio to memory.
+        if not load_audio or not self.has_recording:
+            recording = self.recording
+        else:
+            recording = self.recording.move_to_memory(
+                channels=self.channel,
+                offset=self.start,
+                duration=self.duration,
+                format=audio_format,
+            )
+
+        # Handle moving features to memory.
+        if not load_features or not self.has_features:
+            features = self.features
+        else:
+            features = self.features.move_to_memory(
+                start=self.start, duration=self.duration
+            )
+
+        # Handle moving custom arrays to memory.
+        if not load_custom or self.custom is None:
+            custom = self.custom
+        else:
+            from lhotse.array import Array, TemporalArray
+
+            custom = {
+                # Case 1: Array
+                k: v.move_to_memory() if isinstance(v, Array)
+                # Case 2: TemporalArray
+                else v.move_to_memory(start=self.start, duration=self.duration)
+                if isinstance(v, TemporalArray)
+                # Case 3: anything else
+                else v
+                for k, v in self.custom.items()
+            }
+
+        cut = fastcopy(
+            self,
+            # note: cut's start is relative to the start of the recording/features;
+            # since we moved to memory only a subset of recording/features that
+            # corresponds to this cut, the start is always 0.
+            start=0.0,
+            recording=recording,
+            features=features,
+            custom=custom,
+        )
+        return cut
+
     def drop_features(self) -> "MonoCut":
         """Return a copy of the current :class:`.MonoCut`, detached from ``features``."""
         assert (
@@ -1464,15 +1534,20 @@ class MonoCut(Cut):
         normalize_output: bool = True,
         early_only: bool = False,
         affix_id: bool = True,
-    ) -> "MonoCut":
+        rir_channels: List[int] = [0],
+    ) -> Union["MonoCut", "MixedCut"]:
         """
         Return a new ``MonoCut`` that will convolve the audio with the provided impulse response.
+        If the `rir_recording` is multi-channel, the `rir_channels` argument determines which channels
+        will be used. By default, we use the first channel and return a MonoCut.
 
         :param rir_recording: The impulse response to use for convolving.
         :param normalize_output: When true, output will be normalized to have energy as input.
         :param early_only: When true, only the early reflections (first 50 ms) will be used.
         :param affix_id: When true, we will modify the ``MonoCut.id`` field
             by affixing it with "_rvb".
+        :param rir_channels: The channels of the impulse response to use. First channel is used by default.
+            If multiple channels are specified, this will produce a MixedCut instead of a MonoCut.
         :return: a modified copy of the current ``MonoCut``.
         """
         # Pre-conditions
@@ -1486,27 +1561,61 @@ class MonoCut(Cut):
                 "reverberation."
             )
             self.features = None
-        # Actual reverberation.
-        recording_rvb = self.recording.reverb_rir(
-            rir_recording=rir_recording,
-            normalize_output=normalize_output,
-            early_only=early_only,
-            affix_id=affix_id,
-        )
-        # Match the supervision's id (and it's underlying recording id).
-        supervisions_rvb = [
-            s.reverb_rir(
-                affix_id=affix_id,
-            )
-            for s in self.supervisions
-        ]
 
-        return fastcopy(
-            self,
-            id=f"{self.id}_rvb" if affix_id else self.id,
-            recording=recording_rvb,
-            supervisions=supervisions_rvb,
-        )
+        assert all(
+            c < rir_recording.num_channels for c in rir_channels
+        ), "Invalid channel index in `rir_channels`."
+        if rir_recording.num_channels == 1 or len(rir_channels) == 1:
+            # reverberation will return a MonoCut
+            recording_rvb = self.recording.reverb_rir(
+                rir_recording=rir_recording,
+                normalize_output=normalize_output,
+                early_only=early_only,
+                affix_id=affix_id,
+                rir_channels=rir_channels,
+            )
+            # Match the supervision's id (and it's underlying recording id).
+            supervisions_rvb = [
+                s.reverb_rir(
+                    affix_id=affix_id,
+                )
+                for s in self.supervisions
+            ]
+
+            return fastcopy(
+                self,
+                id=f"{self.id}_rvb" if affix_id else self.id,
+                recording=recording_rvb,
+                supervisions=supervisions_rvb,
+            )
+        else:
+            # we will return a MixedCut where each track represents the MonoCut convolved
+            # with a single channel of the RIR
+            new_tracks = [
+                MixTrack(
+                    cut=fastcopy(
+                        self,
+                        recording=self.recording.reverb_rir(
+                            rir_recording=rir_recording,
+                            normalize_output=normalize_output,
+                            early_only=early_only,
+                            affix_id=affix_id,
+                            rir_channels=[channel],
+                        ),
+                        supervisions=[
+                            s.reverb_rir(
+                                affix_id=affix_id,
+                            )
+                            for s in self.supervisions
+                        ],
+                    ),
+                    offset=0,
+                )
+                for channel in rir_channels
+            ]
+            return MixedCut(
+                id=f"{self.id}_rvb" if affix_id else self.id, tracks=new_tracks
+            )
 
     def map_supervisions(
         self, transform_fn: Callable[[SupervisionSegment], SupervisionSegment]
@@ -1569,6 +1678,9 @@ class MonoCut(Cut):
     def from_dict(data: dict) -> "MonoCut":
         from lhotse.serialization import deserialize_custom_field
 
+        # Remove "type" field if exists.
+        data.pop("type", None)
+
         features = (
             Features.from_dict(data.pop("features")) if "features" in data else None
         )
@@ -1579,6 +1691,9 @@ class MonoCut(Cut):
 
         if "custom" in data:
             deserialize_custom_field(data["custom"])
+
+        if "type" in data:
+            data.pop("type")
 
         return MonoCut(
             **data,
@@ -1900,6 +2015,7 @@ class PaddingCut(Cut):
         normalize_output: bool = True,
         early_only: bool = False,
         affix_id: bool = True,
+        rir_channels: List[int] = [0],
     ) -> "PaddingCut":
         """
         Return a new ``PaddingCut`` that will "mimic" the effect of reverberation with impulse response
@@ -1910,6 +2026,7 @@ class PaddingCut(Cut):
         :param early_only: When true, only the early reflections (first 50 ms) will be used.
         :param affix_id: When true, we will modify the ``PaddingCut.id`` field
             by affixing it with "_rvb".
+        :param rir_channels: The channels of the impulse response to use.
         :return: a modified copy of the current ``PaddingCut``.
         """
 
@@ -1987,6 +2104,8 @@ class PaddingCut(Cut):
 
     @staticmethod
     def from_dict(data: dict) -> "PaddingCut":
+        # Remove "type" field if exists
+        data.pop("type", None)
         return PaddingCut(**data)
 
     def with_features_path_prefix(self, path: Pathlike) -> "PaddingCut":
@@ -2542,6 +2661,7 @@ class MixedCut(Cut):
         normalize_output: bool = True,
         early_only: bool = False,
         affix_id: bool = True,
+        rir_channels: List[int] = [0],
     ) -> "MixedCut":
         """
         Return a new ``MixedCut`` that will convolve the audio with the provided impulse response.
@@ -2551,6 +2671,10 @@ class MixedCut(Cut):
         :param early_only: When true, only the early reflections (first 50 ms) will be used.
         :param affix_id: When true, we will modify the ``MixedCut.id`` field
             by affixing it with "_rvb".
+        :param rir_channels: The channels of the impulse response to use. By default, first channel is used.
+            If only one channel is specified, all tracks will be convolved with this channel. If a list
+            is provided, it must contain as many channels as there are tracks such that each track will
+            be convolved with one of the specified channels.
         :return: a modified copy of the current ``MixedCut``.
         """
         # Pre-conditions
@@ -2563,6 +2687,17 @@ class MixedCut(Cut):
                 "The feature manifest(s) will be detached, as we do not support feature-domain "
                 "reverberation."
             )
+
+        assert all(
+            c < rir_recording.num_channels for c in rir_channels
+        ), "Invalid channel index in `rir_channels`."
+        assert len(rir_channels) == 1 or len(rir_channels) == len(
+            self.tracks
+        ), "Invalid number of channels in `rir_channels`. Must be 1 or equal to number of tracks."
+
+        if len(rir_channels) == 1:
+            rir_channels = rir_channels * len(self.tracks)
+
         return MixedCut(
             id=f"{self.id}_rvb" if affix_id else self.id,
             tracks=[
@@ -2573,9 +2708,10 @@ class MixedCut(Cut):
                         normalize_output=normalize_output,
                         early_only=early_only,
                         affix_id=affix_id,
+                        rir_channels=[channel],
                     ),
                 )
-                for track in self.tracks
+                for track, channel in zip(self.tracks, rir_channels)
             ],
         )
 
@@ -2700,11 +2836,19 @@ class MixedCut(Cut):
             reference_audio = reference_cut.load_audio()
             reference_energy = audio_energy(reference_audio)
 
-        mixer = AudioMixer(
-            self.tracks[0].cut.load_audio(),
-            sampling_rate=self.tracks[0].cut.sampling_rate,
-            reference_energy=reference_energy,
-        )
+        try:
+            mixer = AudioMixer(
+                self.tracks[0].cut.load_audio(),
+                sampling_rate=self.tracks[0].cut.sampling_rate,
+                reference_energy=reference_energy,
+            )
+        except NonPositiveEnergyError as e:
+            logging.warning(
+                f"{e}\nNote: we cannot mix signal with a given SNR to the reference audio with zero energy. "
+                f'Cut ID: "{self.tracks[0].cut.id}"'
+            )
+            raise
+
         for pos, track in enumerate(self.tracks[1:], start=1):
             try:
                 if pos == reference_pos and reference_audio is not None:
@@ -2718,7 +2862,7 @@ class MixedCut(Cut):
                 )
             except NonPositiveEnergyError as e:
                 logging.warning(
-                    str(e) + f' MonoCut with id "{track.cut.id}" will not be mixed in.'
+                    f'{e} MonoCut with id "{track.cut.id}" will not be mixed in.'
                 )
 
         if mixed:
@@ -3005,6 +3149,8 @@ class MixedCut(Cut):
 
     @staticmethod
     def from_dict(data: dict) -> "MixedCut":
+        if "type" in data:
+            data.pop("type")
         return MixedCut(
             id=data["id"],
             tracks=[MixTrack.from_dict(track) for track in data["tracks"]],
@@ -3041,7 +3187,7 @@ class MixedCut(Cut):
         return [t for t in self.tracks if not isinstance(t.cut, PaddingCut)][0]
 
 
-class CutSet(Serializable, Sequence[Cut]):
+class CutSet(Serializable):
     """
     :class:`~lhotse.cut.CutSet` represents a collection of cuts, indexed by cut IDs.
     CutSet ties together all types of data -- audio, features and supervisions, and is suitable to represent
@@ -3216,13 +3362,9 @@ class CutSet(Serializable, Sequence[Cut]):
         return self.cuts == other.cuts
 
     @property
-    def is_lazy(self) -> bool:
-        """
-        Indicates whether this manifest was opened in lazy (read-on-the-fly) mode or not.
-        """
-        from lhotse.serialization import LazyJsonlIterator
-
-        return isinstance(self.cuts, LazyJsonlIterator)
+    def data(self) -> Union[Dict[str, Cut], Iterable[Cut]]:
+        """Alias property for ``self.cuts``"""
+        return self.cuts
 
     @property
     def mixed_cuts(self) -> Dict[str, MixedCut]:
@@ -3315,6 +3457,56 @@ class CutSet(Serializable, Sequence[Cut]):
 
         return CutSet.from_cuts(deserialize_one(cut) for cut in data)
 
+    @staticmethod
+    def from_webdataset(
+        path: Union[Pathlike, Sequence[Pathlike]], **wds_kwargs
+    ) -> "CutSet":
+        """
+        Provides the ability to read Lhotse objects from a WebDataset tarball (or a
+        collection of them, i.e., shards) sequentially, without reading the full contents
+        into memory. It also supports passing a list of paths, or WebDataset-style pipes.
+
+        CutSets stored in this format are potentially much faster to read from due to
+        sequential I/O (we observed speedups of 50-100x vs random-read mechanisms).
+
+        Since this mode does not support random access reads, some methods of CutSet
+        might not work properly (e.g. ``len()``).
+
+        The behaviour of the underlying ``WebDataset`` instance can be customized by
+        providing its kwargs directly to the constructor of this class. For details,
+        see :func:`lhotse.dataset.webdataset.mini_webdataset` documentation.
+
+        **Examples**
+
+        Read manifests and data from a single tarball::
+
+            >>> cuts = CutSet.from_webdataset("data/cuts-train.tar")
+
+        Read manifests and data from a multiple tarball shards::
+
+            >>> cuts = CutSet.from_webdataset("data/shard-{000000..004126}.tar")
+            >>> # alternatively
+            >>> cuts = CutSet.from_webdataset(["data/shard-000000.tar", "data/shard-000001.tar", ...])
+
+        Read manifests and data from shards in cloud storage (here AWS S3 via AWS CLI)::
+
+            >>> cuts = CutSet.from_webdataset("pipe:aws s3 cp data/shard-{000000..004126}.tar -")
+
+        Read manifests and data from shards which are split between PyTorch DistributeDataParallel
+        nodes and dataloading workers, with shard-level shuffling enabled::
+
+            >>> cuts = CutSet.from_webdataset(
+            ...     "data/shard-{000000..004126}.tar",
+            ...     split_by_worker=True,
+            ...     split_by_node=True,
+            ...     shuffle_shards=True,
+            ... )
+
+        """
+        from lhotse.dataset.webdataset import LazyWebdatasetIterator
+
+        return CutSet(cuts=LazyWebdatasetIterator(path, **wds_kwargs))
+
     def to_dicts(self) -> Iterable[dict]:
         return (cut.to_dict() for cut in self)
 
@@ -3390,6 +3582,9 @@ class CutSet(Serializable, Sequence[Cut]):
             25%     1523.0
             50%     2157.0
             75%     2423.0
+            99%     2500.0
+            99.5%   2523.0
+            99.9%   2601.0
             max     5415.0
             dtype: float64
         """
@@ -3412,6 +3607,9 @@ class CutSet(Serializable, Sequence[Cut]):
         print(f"25%\t{np.percentile(durations, 25):.1f}")
         print(f"50%\t{np.median(durations):.1f}")
         print(f"75%\t{np.percentile(durations, 75):.1f}")
+        print(f"99%\t{np.percentile(durations, 99):.1f}")
+        print(f"99.5%\t{np.percentile(durations, 99.5):.1f}")
+        print(f"99.9%\t{np.percentile(durations, 99.9):.1f}")
         print(f"max\t{np.max(durations):.1f}")
 
     def shuffle(self, rng: Optional[random.Random] = None) -> "CutSet":
@@ -3940,7 +4138,7 @@ class CutSet(Serializable, Sequence[Cut]):
         assert n_cuts > 0
         # TODO: We might want to make this more efficient in the future
         #  by holding a cached list of cut ids as a member of CutSet...
-        cut_indices = [random.randint(0, len(self) - 1) for _ in range(n_cuts)]
+        cut_indices = random.sample(range(len(self)), min(n_cuts, len(self)))
         cuts = [self[idx] for idx in cut_indices]
         if n_cuts == 1:
             return cuts[0]
@@ -4014,6 +4212,7 @@ class CutSet(Serializable, Sequence[Cut]):
         normalize_output: bool = True,
         early_only: bool = False,
         affix_id: bool = True,
+        rir_channels: List[int] = [0],
     ) -> "CutSet":
         """
         Return a new :class:`~lhotse.cut.CutSet` that contains original cuts convolved with
@@ -4026,6 +4225,8 @@ class CutSet(Serializable, Sequence[Cut]):
         :param early_only: When true, only the early reflections (first 50 ms) will be used.
         :param affix_id: Should we modify the ID (useful if both versions of the same
             cut are going to be present in a single manifest).
+        :param rir_channels: The channels of the impulse response to use. By default, first channel will be used.
+            If it is a multi-channel RIR, applying RIR will produce MixedCut.
         :return: a modified copy of the ``CutSet``.
         """
         rir_recordings = list(rir_recordings)
@@ -4036,6 +4237,7 @@ class CutSet(Serializable, Sequence[Cut]):
                     normalize_output=normalize_output,
                     early_only=early_only,
                     affix_id=affix_id,
+                    rir_channels=rir_channels,
                 )
                 for cut in self
             ]
@@ -4045,6 +4247,7 @@ class CutSet(Serializable, Sequence[Cut]):
         self,
         cuts: "CutSet",
         duration: Optional[Seconds] = None,
+        allow_padding: bool = False,
         snr: Optional[Union[Decibels, Sequence[Decibels]]] = 20,
         preserve_id: Optional[str] = None,
         mix_prob: float = 1.0,
@@ -4059,6 +4262,9 @@ class CutSet(Serializable, Sequence[Cut]):
             (i.e. we'll truncate the mix if it exceeded the original duration).
             Otherwise, we will keep sampling cuts to mix in until we reach the specified
             ``duration`` (and truncate to that value, should it be exceeded).
+        :param allow_padding: an optional bool.
+            When it is ``True``, we will allow the offset to be larger than the reference
+            cut by padding the reference cut.
         :param snr: an optional float, or pair (range) of floats, in decibels.
             When it's a single float, we will mix all cuts with this SNR level
             (where cuts in ``self`` are treated as signals, and cuts in ``cuts`` are treated as noise).
@@ -4108,6 +4314,7 @@ class CutSet(Serializable, Sequence[Cut]):
                         other=to_mix,
                         snr=snr,
                         offset_other_by=mixed_in_duration,
+                        allow_padding=allow_padding,
                         preserve_id=preserve_id,
                     )
                     # Since we're adding floats, we can be off by an epsilon and trigger
@@ -4785,7 +4992,11 @@ class CutSet(Serializable, Sequence[Cut]):
         return self.map_supervisions(lambda s: s.transform_text(transform_fn))
 
     def __repr__(self) -> str:
-        return f"CutSet(len={len(self)})"
+        try:
+            len_val = len(self)
+        except:
+            len_val = "<unknown>"
+        return f"CutSet(len={len_val}) [underlying data type: {type(self.data)}]"
 
     def __contains__(self, item: Union[str, Cut]) -> bool:
         if isinstance(item, str):
@@ -4821,28 +5032,6 @@ class CutSet(Serializable, Sequence[Cut]):
             f"Failed check: {len(merged)} == {len(self.cuts)} + {len(other.cuts)}"
         )
         return CutSet(cuts=merged)
-
-    @classmethod
-    def mux(
-        cls,
-        *cut_sets: "CutSet",
-        weights: Optional[List[Union[int, float]]] = None,
-        seed: int = 0,
-    ) -> "CutSet":
-        """
-        Merges multiple CutSets into a new CutSet by lazily multiplexing them during iteration time.
-        If one of the CutSets is exhausted before the others, we will keep iterating until all CutSets
-        are exhausted.
-
-        :param cut_sets: cut sets to be multiplexed.
-            They can be either lazy or eager, but the resulting manifest will always be lazy.
-        :param weights: an optional weight for each CutSet, affects the probability of it being sampled.
-            The weights are uniform by default.
-        :param seed: the random seed, ensures deterministic order across multiple iterations.
-        """
-        from lhotse.serialization import LazyIteratorMultiplexer
-
-        return cls(cuts=LazyIteratorMultiplexer(*cut_sets, weights=weights, seed=seed))
 
 
 def make_windowed_cuts_from_features(
@@ -4898,6 +5087,7 @@ def mix(
     reference_cut: Cut,
     mixed_in_cut: Cut,
     offset: Seconds = 0,
+    allow_padding: bool = False,
     snr: Optional[Decibels] = None,
     preserve_id: Optional[str] = None,
 ) -> MixedCut:
@@ -4910,6 +5100,7 @@ def mix(
     :param reference_cut: The reference cut for the mix - offset and snr are specified w.r.t this cut.
     :param mixed_in_cut: The mixed-in cut - it will be offset and rescaled to match the offset and snr parameters.
     :param offset: How many seconds to shift the ``mixed_in_cut`` w.r.t. the ``reference_cut``.
+    :param allow_padding: If the offset is larger than the cut duration, allow the cut to be padded.
     :param snr: Desired SNR of the ``right_cut`` w.r.t. the ``left_cut`` in the mix.
     :param preserve_id: optional string ("left", "right"). when specified, append will preserve the cut id
         of the left- or right-hand side argument. otherwise, a new random id is generated.
@@ -4932,10 +5123,10 @@ def mix(
         assert (
             reference_cut.num_features == mixed_in_cut.num_features
         ), "Cannot mix cuts with different feature dimensions."
-    assert offset <= reference_cut.duration, (
+    assert offset <= reference_cut.duration or allow_padding, (
         f"Cannot mix cut '{mixed_in_cut.id}' with offset {offset},"
         f" which is greater than cuts {reference_cut.id} duration"
-        f" of {reference_cut.duration}"
+        f" of {reference_cut.duration}. Set `allow_padding=True` to allow padding."
     )
     assert reference_cut.sampling_rate == mixed_in_cut.sampling_rate, (
         f"Cannot mix cuts with different sampling rates "
@@ -4956,6 +5147,10 @@ def mix(
             "Unexpected value for 'preserve_id' argument: "
             f"got '{preserve_id}', expected one of (None, 'left', 'right')."
         )
+
+    # If the offset is larger than the left_cut duration, pad it.
+    if offset > reference_cut.duration:
+        reference_cut = reference_cut.pad(duration=offset)
 
     # When the left_cut is a MixedCut, take its existing tracks, otherwise create a new track.
     if isinstance(reference_cut, MixedCut):

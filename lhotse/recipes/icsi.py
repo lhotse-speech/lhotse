@@ -158,7 +158,7 @@ def download_audio(
         if mic in ["ihm", "sdm", "mdm"]:
             for channel in MIC_TO_CHANNELS[mic]:
                 wav_url = f"{url}/ICSIsignals/SPH/{item}/chan{channel}.sph"
-                wav_dir = target_dir / "speech" / item
+                wav_dir = target_dir / item
                 wav_dir.mkdir(parents=True, exist_ok=True)
                 wav_path = wav_dir / f"chan{channel}.sph"
                 if force_download or not wav_path.is_file():
@@ -172,7 +172,7 @@ def download_audio(
                         pass
         else:
             wav_url = f"{url}/ICSIsignals/NXT/{item}.interaction.wav"
-            wav_dir = target_dir / "speech" / item
+            wav_dir = target_dir / item
             wav_dir.mkdir(parents=True, exist_ok=True)
             wav_path = wav_dir / f"Mix-Headset.wav"
             if force_download or not wav_path.is_file():
@@ -184,22 +184,28 @@ def download_audio(
 
 
 def download_icsi(
-    audio_dir: Pathlike = ".",
+    target_dir: Pathlike = ".",
+    audio_dir: Optional[Pathlike] = None,
     transcripts_dir: Optional[Pathlike] = None,
     force_download: Optional[bool] = False,
     url: Optional[str] = "http://groups.inf.ed.ac.uk/ami",
     mic: Optional[str] = "ihm",
-) -> None:
+) -> Path:
     """
     Download ICSI audio and annotations for provided microphone setting.
-    :param audio_dir: Pathlike, the path to store the audio data.
-    :param transcripts_dir: Pathlike (default = None), path to save annotations zip file
+    :param target_dir: Pathlike, the path in which audio and transcripts dir are created by default.
+    :param audio_dir: Pathlike (default = '<target_dir>/audio'), the path to store the audio data.
+    :param transcripts_dir: Pathlike (default = '<target_dir>/transcripts'), path to store the transcripts data
     :param force_download: bool (default = False), if True, download even if file is present.
     :param url: str (default = 'http://groups.inf.ed.ac.uk/ami'), download URL.
     :param mic: str {'ihm','ihm-mix','sdm','mdm'}, type of mic setting.
+    :return: the path to downloaded and extracted directory with data.
     """
-    audio_dir = Path(audio_dir)
-    transcripts_dir = Path(transcripts_dir) if transcripts_dir else audio_dir
+    target_dir = Path(target_dir)
+    audio_dir = Path(audio_dir) if audio_dir else target_dir / "speech"
+    transcripts_dir = (
+        Path(transcripts_dir) if transcripts_dir else target_dir / "transcripts"
+    )
 
     # Audio
     download_audio(audio_dir, force_download, url, mic)
@@ -207,21 +213,29 @@ def download_icsi(
     # Annotations
     logging.info("Downloading AMI annotations")
 
-    if (transcripts_dir / "transcripts").exists() and not force_download:
+    if (transcripts_dir).exists() and not force_download:
         logging.info(
             f"Skip downloading transcripts as they exist in: {transcripts_dir}"
         )
-        return
+        return target_dir
     annotations_url = f"{url}/ICSICorpusAnnotations/ICSI_original_transcripts.zip"
 
     # The following is analogous to `wget --no-check-certificate``
     context = ssl._create_unverified_context()
     urllib.request.urlretrieve(
-        annotations_url, filename=transcripts_dir / "ICSI_original_transcripts.zip"
+        annotations_url, filename=target_dir / "ICSI_original_transcripts.zip"
     )
+
     # Unzip annotations zip file
-    with zipfile.ZipFile(transcripts_dir / "ICSI_original_transcripts.zip") as z:
-        z.extractall(transcripts_dir)
+    with zipfile.ZipFile(target_dir / "ICSI_original_transcripts.zip") as z:
+        # Unzips transcripts to <target_dir>/'transcripts'
+        # zip file also contains some documentation which will be unzipped to <target_dir>
+        z.extractall(target_dir)
+        # If custom dir is passed, rename 'transcripts' dir accordingly
+        if transcripts_dir:
+            Path(target_dir / "transcripts").rename(transcripts_dir)
+
+    return target_dir
 
 
 def parse_icsi_annotations(
@@ -235,7 +249,7 @@ def parse_icsi_annotations(
 
     # First we get global speaker ids and channels
     for meeting_file in tqdm(
-        transcripts_dir.rglob("transcripts/*.mrt"), desc="Parsing ICSI mrt files"
+        transcripts_dir.rglob("./*.mrt"), desc="Parsing ICSI mrt files"
     ):
         if meeting_file.stem == "preambles":
             continue
@@ -467,23 +481,24 @@ def prepare_supervision_other(
 
 def prepare_icsi(
     audio_dir: Pathlike,
-    transcripts_dir: Optional[Pathlike] = None,
+    transcripts_dir: Pathlike,
     output_dir: Optional[Pathlike] = None,
     mic: Optional[str] = "ihm",
     normalize_text: str = "kaldi",
 ) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet]]]:
     """
     Returns the manifests which consist of the Recordings and Supervisions
-    :param data_dir: Pathlike, the path of the audio dir (LDC2004S02).
-    :param transcripts_dir: Pathlike, the path of the transcripts dir (LDC2004T04).
-    :param output_dir: Pathlike, the path where to write the manifests.
+    :param audio_dir: Pathlike, the path which holds the audio data
+    :param transcripts_dir: Pathlike, the path which holds the transcripts data
+    :param output_dir: Pathlike, the path where to write the manifests - `None` means manifests aren't stored on disk.
     :param mic: str {'ihm','ihm-mix','sdm','mdm'}, type of mic to use.
     :param normalize_text: str {'none', 'upper', 'kaldi'} normalization of text
     :return: a Dict whose key is ('train', 'dev', 'test'), and the values are dicts of manifests under keys
         'recordings' and 'supervisions'.
     """
     audio_dir = Path(audio_dir)
-    transcripts_dir = Path(transcripts_dir) if transcripts_dir else audio_dir
+    transcripts_dir = Path(transcripts_dir)
+
     assert audio_dir.is_dir(), f"No such directory: {audio_dir}"
     assert transcripts_dir.is_dir(), f"No such directory: {transcripts_dir}"
     assert mic in MIC_TO_CHANNELS.keys(), f"Mic {mic} not supported"
