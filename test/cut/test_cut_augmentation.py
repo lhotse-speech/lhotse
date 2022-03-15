@@ -25,7 +25,12 @@ def recording(file_source):
 
 @pytest.fixture
 def rir():
-    return Recording.from_file("test/fixtures/rir/Room001-00031.wav")
+    return Recording.from_file("test/fixtures/rir/sim_1ch.wav")
+
+
+@pytest.fixture
+def multi_channel_rir():
+    return Recording.from_file("test/fixtures/rir/real_8ch.wav")
 
 
 @pytest.fixture
@@ -389,6 +394,22 @@ def test_mixed_cut_start01_reverb_rir(cut_with_supervision_start01, rir):
     )
 
 
+@pytest.mark.parametrize(
+    "rir_channels, expected_num_tracks",
+    [(None, 2), ([0], 2), ([0, 1], 2), ([0, 1, 2], None)],
+)
+def test_mixed_cut_start01_reverb_rir_multi_channel(
+    cut_with_supervision_start01, multi_channel_rir, rir_channels, expected_num_tracks
+):
+    mixed_cut = cut_with_supervision_start01.append(cut_with_supervision_start01)
+    if expected_num_tracks is not None:
+        mixed_rvb = mixed_cut.reverb_rir(multi_channel_rir, rir_channels=rir_channels)
+        assert len(mixed_rvb.tracks) == expected_num_tracks
+    else:
+        with pytest.raises(AssertionError):
+            mixed_cut.reverb_rir(multi_channel_rir, rir_channels=rir_channels)
+
+
 def test_padding_cut_perturb_speed():
     cut = PaddingCut(
         id="cut",
@@ -513,7 +534,45 @@ def test_cut_reverb_rir(libri_cut_with_supervision, libri_recording_rvb, rir):
     np.testing.assert_array_almost_equal(cut_rvb.load_audio(), rvb_audio_from_fixture)
 
 
-def test_resample_padding_cut():
+@pytest.mark.parametrize(
+    "rir_channels, expected_type, expected_num_tracks",
+    [
+        (None, "MixedCut", 8),
+        ([0], "MonoCut", 1),
+        ([1], "MonoCut", 1),
+        ([0, 1], "MixedCut", 2),
+    ],
+)
+def test_cut_reverb_multi_channel_rir(
+    libri_cut_with_supervision,
+    multi_channel_rir,
+    rir_channels,
+    expected_type,
+    expected_num_tracks,
+):
+
+    cut = libri_cut_with_supervision
+    cut_rvb = cut.reverb_rir(multi_channel_rir, rir_channels=rir_channels)
+    assert cut_rvb.to_dict()["type"] == expected_type
+
+    if expected_type == "MixedCut":
+        assert len(cut_rvb.tracks) == expected_num_tracks
+
+        for track in cut_rvb.tracks:
+            assert track.cut.start == cut.start
+            assert track.cut.duration == cut.duration
+            assert track.cut.end == cut.end
+            assert track.cut.num_samples == cut.num_samples
+
+        assert cut_rvb.load_audio(mixed=False).shape == (
+            expected_num_tracks,
+            cut.num_samples,
+        )
+    else:
+        assert cut_rvb.load_audio().shape == (expected_num_tracks, cut.num_samples)
+
+
+def test_padding_cut_resample():
     original = PaddingCut(
         id="cut",
         duration=5.75,
@@ -528,7 +587,7 @@ def test_resample_padding_cut():
     assert samples.shape[1] == resampled.num_samples
 
 
-def test_resample_mixed_cut(cut_with_supervision_start01):
+def test_mixed_cut_resample(cut_with_supervision_start01):
     original = cut_with_supervision_start01.append(cut_with_supervision_start01)
     resampled = original.resample(16000)
     assert original.sampling_rate == 8000
@@ -539,7 +598,7 @@ def test_resample_mixed_cut(cut_with_supervision_start01):
 
 
 @pytest.mark.parametrize("affix_id", [True, False])
-def test_resample_cut_set(cut_set, affix_id):
+def test_cut_set_resample(cut_set, affix_id):
     resampled_cs = cut_set.resample(16000, affix_id=affix_id)
     for original, resampled in zip(cut_set, resampled_cs):
         if affix_id:

@@ -2671,9 +2671,9 @@ class MixedCut(Cut):
         :param early_only: When true, only the early reflections (first 50 ms) will be used.
         :param affix_id: When true, we will modify the ``MixedCut.id`` field
             by affixing it with "_rvb".
-        :param rir_channels: The channels of the impulse response to use. If None or only one channel
-            is specified, all tracks will be convolved with this channel. If a list is provided, it
-            must contain as many channels as there are tracks.
+        :param rir_channels: The channels of the impulse response to use. If None, first channel is used.
+            If only one channel is specified, all tracks will be convolved with this channel. If a list
+            is provided, it must contain as many channels as there are tracks.
         :return: a modified copy of the current ``MixedCut``.
         """
         # Pre-conditions
