@@ -240,6 +240,10 @@ class Cut:
     with_features_path_prefix: Callable
     with_recording_path_prefix: Callable
 
+    @property
+    def end(self) -> Seconds:
+        return add_durations(self.start, self.duration, sampling_rate=self.sampling_rate)
+
     def to_dict(self) -> dict:
         d = asdict_nonull(self)
         return {**d, "type": type(self).__name__}
@@ -890,10 +894,6 @@ class MonoCut(Cut):
     @property
     def recording_id(self) -> str:
         return self.recording.id if self.has_recording else self.features.recording_id
-
-    @property
-    def end(self) -> Seconds:
-        return round(self.start + self.duration, ndigits=8)
 
     @property
     def has_features(self) -> bool:
@@ -1713,10 +1713,6 @@ class PaddingCut(Cut):
         return 0
 
     @property
-    def end(self) -> Seconds:
-        return self.duration
-
-    @property
     def supervisions(self):
         return []
 
@@ -2143,10 +2139,6 @@ class MixedCut(Cut):
     @property
     def start(self) -> Seconds:
         return 0
-
-    @property
-    def end(self) -> Seconds:
-        return self.duration
 
     @property
     def duration(self) -> Seconds:

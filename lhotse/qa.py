@@ -10,7 +10,7 @@ from lhotse.audio import Recording, RecordingSet
 from lhotse.cut import Cut, CutSet, MixedCut, PaddingCut
 from lhotse.features import FeatureSet, Features
 from lhotse.supervision import SupervisionSegment, SupervisionSet
-from lhotse.utils import compute_num_frames
+from lhotse.utils import compute_num_frames, overlaps
 
 _VALIDATORS: Dict[str, Callable] = {}
 
@@ -408,6 +408,12 @@ def validate_cut(c: Cut, read_data: bool = False) -> None:
                         f"in custom field '{key}' (num_frames={value.num_frames} * "
                         f"frame_shift={value.frame_shift} == duration={value.duration})."
                     )
+                assert overlaps(c, value), (
+                    f"MonoCut {c.id}: TemporalArray at custom field '{key}' "
+                    "seems to have incorrect start time (the array with time span "
+                    f"[{value.start}s - {value.end}s] does not overlap with cut "
+                    f"with time span [{c.start}s - {c.end}s]"
+                )
 
 
 @register_validator
