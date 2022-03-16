@@ -709,13 +709,12 @@ class SupervisionSet(Serializable):
 
         if first is not None:
             assert first > 0
-            if first > len(self):
+            out = SupervisionSet.from_items(islice(self, first))
+            if len(out) < first:
                 logging.warning(
-                    f"SupervisionSet has only {len(self)} items but first {first} required; "
-                    f"not doing anything."
+                    f"SupervisionSet has only {len(out)} items but first {first} were requested."
                 )
-                return self
-            return SupervisionSet.from_segments(islice(self, first))
+            return out
 
         if last is not None:
             assert last > 0

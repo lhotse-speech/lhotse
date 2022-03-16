@@ -985,13 +985,12 @@ class RecordingSet(Serializable):
 
         if first is not None:
             assert first > 0
-            if first > len(self):
+            out = RecordingSet.from_items(islice(self, first))
+            if len(out) < first:
                 logging.warning(
-                    f"RecordingSet has only {len(self)} items but first {first} required; "
-                    f"not doing anything."
+                    f"RecordingSet has only {len(out)} items but first {first} were requested."
                 )
-                return self
-            return RecordingSet.from_recordings(islice(self, first))
+            return out
 
         if last is not None:
             assert last > 0
