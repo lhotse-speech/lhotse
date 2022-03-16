@@ -3694,7 +3694,7 @@ class CutSet(Serializable):
                 logging.warning(
                     f"CutSet has only {len(out)} items but first {first} were requested."
                 )
-                return self
+            return out
 
         if last is not None:
             assert last > 0

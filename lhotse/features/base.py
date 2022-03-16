@@ -663,7 +663,7 @@ class FeatureSet(Serializable):
                 logging.warning(
                     f"FeatureSet has only {len(out)} items but first {first} were requested."
                 )
-                return self
+            return out
 
         if last is not None:
             assert last > 0
