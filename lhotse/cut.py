@@ -3689,12 +3689,12 @@ class CutSet(Serializable):
 
         if first is not None:
             assert first > 0
-            if first > len(self):
+            out = CutSet.from_cuts(islice(self, first))
+            if len(out) < first:
                 logging.warning(
-                    f"CutSet has only {len(self)} items but first {first} required; not doing anything."
+                    f"CutSet has only {len(out)} items but first {first} were requested."
                 )
                 return self
-            return CutSet.from_cuts(islice(self, first))
 
         if last is not None:
             assert last > 0

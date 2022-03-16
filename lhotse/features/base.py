@@ -5,7 +5,7 @@ import warnings
 from abc import ABCMeta, abstractmethod
 from concurrent.futures.process import ProcessPoolExecutor
 from dataclasses import asdict, dataclass, is_dataclass
-from itertools import chain
+from itertools import chain, islice
 from math import isclose
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Type, Union
@@ -658,13 +658,12 @@ class FeatureSet(Serializable):
 
         if first is not None:
             assert first > 0
-            if first > len(self):
+            out = FeatureSet.from_items(islice(self, first))
+            if len(out) < first:
                 logging.warning(
-                    f"FeatureSet has only {len(self)} items but first {first} required; "
-                    f"not doing anything."
+                    f"FeatureSet has only {len(out)} items but first {first} were requested."
                 )
                 return self
-            return FeatureSet.from_features(self.features[:first])
 
         if last is not None:
             assert last > 0
