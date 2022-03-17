@@ -104,7 +104,7 @@ class AlgorithmMixin(LazyMixin, Iterable):
             rng.shuffle(ids)
             return cls({id_: self[id_] for id_ in ids})
 
-    def repeat(self, times: Optional[int] = None) -> "CutSet":
+    def repeat(self, times: Optional[int] = None):
         """
         Return a new, lazily evaluated CutSet that iterates over the original cuts ``times``
         number of times.
