@@ -412,11 +412,8 @@ def test_manifest_is_lazy(manifests, manifest_type):
         assert lazy.is_lazy
 
         # Concatenation of eager + eager manifests is eager
-        # (we have to modify ids to concatenate because of sanity checks)
-        eager_eager_cat = eager + cls.from_items(
-            fastcopy(it, id=it.id + "_cpy") if hasattr(it, "id") else it for it in eager
-        )
-        assert not eager_eager_cat.is_lazy
+        eager_eager_cat = eager + eager
+        assert eager_eager_cat.is_lazy
 
         # Concatenation of lazy + eager manifests is lazy
         lazy_eager_cat = lazy + eager

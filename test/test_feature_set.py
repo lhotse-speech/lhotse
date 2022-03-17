@@ -215,7 +215,7 @@ def test_add_feature_sets():
     feature_set_1 = DummyManifest(FeatureSet, begin_id=0, end_id=5)
     feature_set_2 = DummyManifest(FeatureSet, begin_id=5, end_id=10)
     combined = feature_set_1 + feature_set_2
-    assert combined == expected
+    assert combined.to_eager() == expected
 
 
 @pytest.mark.parametrize(

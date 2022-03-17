@@ -121,7 +121,7 @@ def test_combine(manifest_type):
         DummyManifest(manifest_type, begin_id=68, end_id=136),
         DummyManifest(manifest_type, begin_id=136, end_id=200),
     )
-    assert combined == expected
+    assert combined.to_eager() == expected
     combined_iterable = combine(
         [
             DummyManifest(manifest_type, begin_id=0, end_id=68),
@@ -129,7 +129,7 @@ def test_combine(manifest_type):
             DummyManifest(manifest_type, begin_id=136, end_id=200),
         ]
     )
-    assert combined_iterable == expected
+    assert combined_iterable.to_eager() == expected
 
 
 @mark.parametrize("manifest_type", [RecordingSet, SupervisionSet, FeatureSet, CutSet])

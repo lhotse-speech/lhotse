@@ -474,6 +474,7 @@ def test_map_cut_set(cut_set_with_mixed_cut):
         assert cut.duration == 1000.0
 
 
+@pytest.mark.skip(reason="For now, we are avoiding checking this explicitly.")
 def test_map_cut_set_rejects_noncut(cut_set_with_mixed_cut):
     with pytest.raises(AssertionError):
         cut_set = cut_set_with_mixed_cut.map(lambda cut: "not-a-cut")

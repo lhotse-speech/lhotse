@@ -147,7 +147,7 @@ def test_add_recording_sets():
     recording_set_1 = DummyManifest(RecordingSet, begin_id=0, end_id=5)
     recording_set_2 = DummyManifest(RecordingSet, begin_id=5, end_id=10)
     combined = recording_set_1 + recording_set_2
-    assert combined == expected
+    assert combined.to_eager() == expected
 
 
 @pytest.mark.parametrize(

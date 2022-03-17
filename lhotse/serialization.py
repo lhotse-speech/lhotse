@@ -316,6 +316,17 @@ class LazyMixin:
         """
         raise NotImplemented
 
+    def to_eager(self):
+        """
+        Evaluates all lazy operations on this manifest, if any, and returns a copy
+        that keeps all items in memory.
+        If the manifest was "eager" already, this is a no-op and won't copy anything.
+        """
+        if not self.is_lazy:
+            return self
+        cls = type(self)
+        return cls.from_items(self)
+
     @property
     def is_lazy(self) -> bool:
         """

@@ -111,6 +111,19 @@ def test_repeat_infinite(manifest_type):
 
 
 @pytest.mark.parametrize(
+    "manifest_type", [RecordingSet, SupervisionSet, FeatureSet, CutSet]
+)
+def test_to_eager(manifest_type):
+    data = DummyManifest(manifest_type, begin_id=0, end_id=10)
+
+    with as_lazy(data) as lazy_data:
+        eager_data = lazy_data.to_eager()
+        assert isinstance(eager_data.data, type(data.data))
+        assert eager_data == data
+        assert list(eager_data) == list(data)
+
+
+@pytest.mark.parametrize(
     "manifest_type",
     [
         RecordingSet,

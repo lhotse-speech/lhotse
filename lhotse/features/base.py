@@ -584,6 +584,9 @@ class FeatureSet(Serializable, AlgorithmMixin):
         """Alias property for ``self.features``"""
         return self.features
 
+    def to_eager(self) -> "FeatureSet":
+        return FeatureSet(list(self))
+
     @staticmethod
     def from_features(features: Iterable[Features]) -> "FeatureSet":
         return FeatureSet(list(features))  # just for consistency with other *Sets

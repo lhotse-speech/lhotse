@@ -612,7 +612,7 @@ def test_bucketing_sampler_buckets_have_different_durations():
     cut_set_2s = DummyManifest(CutSet, begin_id=10, end_id=20)
     for c in cut_set_2s:
         c.duration = 2.0
-    cut_set = cut_set_1s + cut_set_2s
+    cut_set = (cut_set_1s + cut_set_2s).to_eager()
 
     # The bucketing sampler should return 5 batches with two 1s cuts, and 10 batches with one 2s cut.
     sampler = BucketingSampler(
@@ -640,6 +640,7 @@ def test_bucketing_sampler_chooses_buckets_randomly():
         for c in new_cuts:
             c.duration = i
         cut_set = cut_set + new_cuts
+    cut_set = cut_set.to_eager()
 
     # Sampler that always select one cut.
     sampler = BucketingSampler(
