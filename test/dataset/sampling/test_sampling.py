@@ -15,11 +15,14 @@ from lhotse.dataset.sampling import (
     SimpleCutSampler,
     SingleCutSampler,
     ZipSampler,
-    streaming_shuffle,
 )
 from lhotse.dataset.sampling.dynamic import DynamicCutSampler
 from lhotse.testing.dummies import DummyManifest, as_lazy, dummy_cut
-from lhotse.utils import fastcopy, nullcontext as does_not_raise
+from lhotse.utils import (
+    fastcopy,
+    nullcontext as does_not_raise,
+    streaming_shuffle,
+)
 
 
 @pytest.fixture

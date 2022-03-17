@@ -1,8 +1,7 @@
 import pickle
-import random
 
 from lhotse import CutSet
-from lhotse.serialization import LazyIteratorMultiplexer
+from lhotse.lazy import LazyIteratorMultiplexer
 from lhotse.testing.dummies import DummyManifest
 
 

@@ -1,9 +1,8 @@
 import itertools
 import json
-import random
 import warnings
 from pathlib import Path
-from typing import Any, Dict, Generator, Iterable, List, Optional, Type, Union
+from typing import Any, Dict, Generator, Iterable, Optional, Type, Union
 
 import yaml
 
@@ -300,6 +299,15 @@ class JsonlMixin:
 
 
 class LazyMixin:
+
+    def from_items(self, data: Iterable):
+        """
+        Function to be implemented by every sub-class of this mixin.
+        It's expected to create a sub-class instance out of an iterable of items
+        that are held by the sub-class (e.g., ``CutSet.from_items(iterable_of_cuts)``).
+        """
+        raise NotImplemented
+
     @property
     def data(self) -> Union[Dict[str, Any], Iterable[Any]]:
         """
@@ -325,33 +333,9 @@ class LazyMixin:
         .. warning:: Opening the manifest in this way might cause some methods that
             rely on random access to fail.
         """
+        from lhotse.lazy import LazyJsonlIterator
+
         return cls(LazyJsonlIterator(path))
-
-    @classmethod
-    def mux(
-        cls,
-        *manifests: Manifest,
-        stop_early: bool = False,
-        weights: Optional[List[Union[int, float]]] = None,
-        seed: int = 0,
-    ) -> Manifest:
-        """
-        Merges multiple CutSets into a new CutSet by lazily multiplexing them during iteration time.
-        If one of the CutSets is exhausted before the others, we will keep iterating until all CutSets
-        are exhausted. This behavior can be changed with ``stop_early`` parameter.
-
-        :param cut_sets: cut sets to be multiplexed.
-            They can be either lazy or eager, but the resulting manifest will always be lazy.
-        :param stop_early: should we stop the iteration as soon as we exhaust one of the manifests.
-        :param weights: an optional weight for each CutSet, affects the probability of it being sampled.
-            The weights are uniform by default.
-        :param seed: the random seed, ensures deterministic order across multiple iterations.
-        """
-        return cls(
-            LazyIteratorMultiplexer(
-                *manifests, stop_early=stop_early, weights=weights, seed=seed
-            )
-        )
 
 
 def grouper(n, iterable):
@@ -480,181 +464,6 @@ class Serializable(JsonMixin, JsonlMixin, LazyMixin, YamlMixin):
         store_manifest(self, path)
 
 
-class LazyJsonlIterator:
-    """
-    LazyJsonlIterator provides the ability to read Lhotse objects from a
-    JSONL file on-the-fly, without reading its full contents into memory.
-
-    This class is designed to be a partial "drop-in" replacement for ordinary dicts
-    to support lazy loading of RecordingSet, SupervisionSet and CutSet.
-    Since it does not support random access reads, some methods of these classes
-    might not work properly.
-    """
-
-    def __init__(self, path: Pathlike) -> None:
-        self.path = path
-        assert extension_contains(".jsonl", self.path)
-
-    def _reset(self) -> None:
-        self._file = open_best(self.path)
-
-    def __getstate__(self):
-        """
-        Store the state for pickling -- we'll only store the path, and re-initialize
-        this iterator when unpickled. This is necessary to transfer this object across processes
-        for PyTorch's DataLoader workers.
-        """
-        state = {"path": self.path}
-        return state
-
-    def __setstate__(self, state: Dict):
-        """Restore the state when unpickled -- open the jsonl file again."""
-        self.__dict__.update(state)
-
-    def __iter__(self):
-        self._reset()
-        return self
-
-    def __next__(self):
-        line = next(self._file)
-        data = decode_json_line(line)
-        item = deserialize_item(data)
-        return item
-
-    def values(self):
-        yield from self
-
-    def keys(self):
-        return (item.id for item in self)
-
-    def items(self):
-        return ((item.id, item) for item in self)
-
-    def __len__(self) -> int:
-        return count_newlines_fast(self.path)
-
-    def __add__(self, other) -> "LazyIteratorChain":
-        return LazyIteratorChain(self, other)
-
-
-class LazyIteratorChain:
-    """
-    A thin wrapper over multiple iterators that enables to combine lazy manifests
-    in Lhotse. It iterates all underlying iterables sequentially.
-
-    .. note:: if any of the input iterables is a dict, we'll iterate only its values.
-    """
-
-    def __init__(self, *iterators: Iterable) -> None:
-        self.iterators = []
-        for it in iterators:
-            # Auto-flatten LazyIteratorChain instances if any are passed
-            if isinstance(it, LazyIteratorChain):
-                for sub_it in it.iterators:
-                    self.iterators.append(sub_it)
-            else:
-                self.iterators.append(it)
-
-    def __iter__(self):
-        for it in self.iterators:
-            if isinstance(it, dict):
-                it = it.values()
-            yield from it
-
-    def values(self):
-        yield from self
-
-    def keys(self):
-        return (item.id for item in self)
-
-    def items(self):
-        return ((item.id, item) for item in self)
-
-    def __len__(self) -> int:
-        return sum(len(it) for it in self.iterators)
-
-    def __add__(self, other) -> "LazyIteratorChain":
-        return LazyIteratorChain(self, other)
-
-
-class LazyIteratorMultiplexer:
-    """
-    A wrapper over multiple iterators that enables to combine lazy manifests in Lhotse.
-    During iteration, unlike :class:`.LazyIteratorChain`, :class:`.LazyIteratorMultiplexer`
-    at each step randomly selects the iterable used to yield an item.
-
-    Since the iterables might be of different length, we provide a ``weights`` parameter
-    to let the user decide which iterables should be sampled more frequently than others.
-    When an iterable is exhausted, we will keep sampling from the other iterables, until
-    we exhaust them all, unless ``stop_early`` is set to ``True``.
-    """
-
-    def __init__(
-        self,
-        *iterators: Iterable,
-        stop_early: bool = False,
-        weights: Optional[List[Union[int, float]]] = None,
-        seed: int = 0,
-    ) -> None:
-        self.iterators = list(iterators)
-        self.stop_early = stop_early
-        self.seed = seed
-
-        assert (
-            len(self.iterators) > 1
-        ), "There have to be at least two iterables to multiplex."
-
-        if weights is None:
-            self.weights = [1] * len(self.iterators)
-        else:
-            self.weights = weights
-
-        assert len(self.iterators) == len(self.weights)
-
-    def __iter__(self):
-        rng = random.Random(self.seed)
-        iters = [iter(it) for it in self.iterators]
-        exhausted = [False for _ in range(len(iters))]
-
-        def should_continue():
-            if self.stop_early:
-                return not any(exhausted)
-            else:
-                return not all(exhausted)
-
-        while should_continue():
-            active_indexes, active_weights = zip(
-                *[
-                    (i, w)
-                    for i, (is_exhausted, w) in enumerate(zip(exhausted, self.weights))
-                    if not is_exhausted
-                ]
-            )
-            idx = rng.choices(active_indexes, weights=active_weights, k=1)[0]
-            selected = iters[idx]
-            try:
-                item = next(selected)
-                yield item
-            except StopIteration:
-                exhausted[idx] = True
-                continue
-
-    def values(self):
-        yield from self
-
-    def keys(self):
-        return (item.id for item in self)
-
-    def items(self):
-        return ((item.id, item) for item in self)
-
-    def __len__(self) -> int:
-        return sum(len(it) for it in self.iterators)
-
-    def __add__(self, other) -> "LazyIteratorChain":
-        return LazyIteratorChain(self, other)
-
-
 def deserialize_item(data: dict) -> Any:
     # Figures out what type of manifest is being decoded with some heuristics
     # and returns a Lhotse manifest object rather than a raw dict.
@@ -713,25 +522,6 @@ def deserialize_custom_field(data: Optional[dict]) -> Optional[dict]:
                 pass
 
     return data
-
-
-def count_newlines_fast(path: Pathlike):
-    """
-    Counts newlines in a file using buffered chunk reads.
-    The fastest possible option in Python according to:
-    https://stackoverflow.com/a/68385697/5285891
-    (This is a slightly modified variant of that answer.)
-    """
-
-    def _make_gen(reader):
-        b = reader(2 ** 16)
-        while b:
-            yield b
-            b = reader(2 ** 16)
-
-    with open_best(path, "rb") as f:
-        count = sum(buf.count(b"\n") for buf in _make_gen(f.read))
-    return count
 
 
 if is_module_available("orjson"):

@@ -17,6 +17,7 @@ from tqdm.auto import tqdm
 from lhotse.audio import Recording
 from lhotse.augmentation import AugmentFn
 from lhotse.features.io import FeaturesWriter, get_reader
+from lhotse.lazy import AlgorithmMixin
 from lhotse.serialization import Serializable, load_yaml, save_to_yaml
 from lhotse.utils import (
     Pathlike,
@@ -546,23 +547,23 @@ class Features:
     def __repr__(self):
         return (
             f"Features("
-            f"type={self.type}, "
+            f"type='{self.type}', "
             f"num_frames={self.num_frames}, "
             f"num_features={self.num_features}, "
             f"frame_shift={self.frame_shift}, "
             f"sampling_rate={self.sampling_rate}, "
             f"start={self.start}, "
             f"duration={self.duration}, "
-            f"storage_type={self.storage_type}, "
-            f"storage_path={self.storage_path}, "
-            f"storage_key={self.storage_key if isinstance(self.storage_key, str) else '<binary-data>'}, "
-            f"recording_id={self.recording_id}, "
+            f"storage_type='{self.storage_type}', "
+            f"storage_path='{self.storage_path}', "
+            f"storage_key='{self.storage_key if isinstance(self.storage_key, str) else '<binary-data>'}', "
+            f"recording_id='{self.recording_id}', "
             f"channels={self.channels}"
             f")"
         )
 
 
-class FeatureSet(Serializable):
+class FeatureSet(Serializable, AlgorithmMixin):
     """
     Represents a feature manifest, and allows to read features for given recordings
     within particular channels and time ranges.
@@ -640,6 +641,9 @@ class FeatureSet(Serializable):
         :return: a list of lazily opened chunk manifests.
         """
         return split_manifest_lazy(self, output_dir=output_dir, chunk_size=chunk_size)
+
+    def shuffle(self, *args, **kwargs):
+        raise NotImplementedError("FeatureSet does not support shuffling.")
 
     def subset(
         self, first: Optional[int] = None, last: Optional[int] = None
@@ -797,13 +801,6 @@ class FeatureSet(Serializable):
 
     def __len__(self) -> int:
         return len(self.features)
-
-    def __add__(self, other: "FeatureSet") -> "FeatureSet":
-        from lhotse.serialization import LazyIteratorChain
-
-        if self.is_lazy or other.is_lazy:
-            return FeatureSet(LazyIteratorChain(self.features, other.features))
-        return FeatureSet(features=self.features + other.features)
 
 
 class FeatureSetBuilder:

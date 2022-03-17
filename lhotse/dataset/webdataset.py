@@ -56,7 +56,7 @@ from typing import Callable, Dict, List, Optional, Sequence, Union
 from tqdm.auto import tqdm
 
 from lhotse import CutSet, MonoCut
-from lhotse.serialization import LazyIteratorChain
+from lhotse.lazy import LazyIteratorChain
 from lhotse.utils import Pathlike, is_module_available, suppress_and_warn
 
 
