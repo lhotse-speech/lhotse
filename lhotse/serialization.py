@@ -299,7 +299,6 @@ class JsonlMixin:
 
 
 class LazyMixin:
-
     def from_items(self, data: Iterable):
         """
         Function to be implemented by every sub-class of this mixin.
