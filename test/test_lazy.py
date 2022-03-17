@@ -90,6 +90,27 @@ def test_repeat(manifest_type):
 
 
 @pytest.mark.parametrize(
+    "manifest_type", [RecordingSet, SupervisionSet, FeatureSet, CutSet]
+)
+def test_repeat_infinite(manifest_type):
+    data = DummyManifest(manifest_type, begin_id=0, end_id=10)
+
+    # hard to test infinite iterables, iterate it 10x more times than the original size
+    eager_result = data.repeat()
+    for idx, item in enumerate(eager_result):
+        if idx == 105:
+            break
+    assert idx == 105
+
+    with as_lazy(data) as lazy_data:
+        lazy_result = lazy_data.repeat()
+        for idx, item in enumerate(lazy_result):
+            if idx == 105:
+                break
+        assert idx == 105
+
+
+@pytest.mark.parametrize(
     "manifest_type",
     [
         RecordingSet,

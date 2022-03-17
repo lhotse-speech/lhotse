@@ -23,11 +23,11 @@ class AlgorithmMixin(LazyMixin, Iterable):
 
     def filter(self, predicate: Callable[[T], bool]):
         """
-        Return a new CutSet with the Cuts that satisfy the `predicate`.
-        If the CutSet is lazy, the filtering will also be applied lazily.
+        Return a new manifest containing only the items that satisfy ``predicate``.
+        If the manifest is lazy, the filtering will also be applied lazily.
 
         :param predicate: a function that takes a cut as an argument and returns bool.
-        :return: a filtered CutSet.
+        :return: a filtered manifest.
         """
         cls = type(self)
 
@@ -38,11 +38,12 @@ class AlgorithmMixin(LazyMixin, Iterable):
 
     def map(self, transform_fn: Callable[[T], T]):
         """
-        Apply `transform_fn` to the cuts in this :class:`.CutSet` and return a new :class:`.CutSet`.
-        If the CutSet is opened lazy, the transform is also applied lazily.
+        Apply `transform_fn` to each item in this manifest and return a new manifest.
+        If the manifest is opened lazy, the transform is also applied lazily.
 
-        :param transform_fn: A callable (function) that accepts a single cut instance
-            and returns a single cut instance.
+        :param transform_fn: A callable (function) that accepts a single item instance
+            and returns a new (or the same) instance of the same type.
+            E.g. with CutSet, callable accepts ``Cut`` and returns also ``Cut``.
         :return: a new ``CutSet`` with transformed cuts.
         """
         cls = type(self)
@@ -86,8 +87,8 @@ class AlgorithmMixin(LazyMixin, Iterable):
         buffer_size: int = 10000,
     ):
         """
-        Shuffle the cut IDs in the current :class:`.CutSet` and return a shuffled copy of self.
-        If the CutSet is opened lazily, performs shuffling on-the-fly with a fixed buffer size.
+        Shuffles the elements and returns a shuffled variant of self.
+        If the manifest is opened lazily, performs shuffling on-the-fly with a fixed buffer size.
 
         :param rng: an optional instance of ``random.Random`` for precise control of randomness.
         :return: a shuffled copy of self, or a manifest that is shuffled lazily.
@@ -106,11 +107,11 @@ class AlgorithmMixin(LazyMixin, Iterable):
 
     def repeat(self, times: Optional[int] = None):
         """
-        Return a new, lazily evaluated CutSet that iterates over the original cuts ``times``
+        Return a new, lazily evaluated manifest that iterates over the original elements ``times``
         number of times.
 
         :param predicate: how many times to repeat (infinite by default).
-        :return: a repeated CutSet.
+        :return: a repeated manifest.
         """
         cls = type(self)
         return cls(LazyRepeater(self, times=times))
