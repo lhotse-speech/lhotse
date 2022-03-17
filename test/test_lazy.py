@@ -9,6 +9,7 @@ import pytest
 
 from lhotse import CutSet, FeatureSet, RecordingSet, SupervisionSet, combine
 from lhotse.testing.dummies import DummyManifest, as_lazy
+from lhotse.utils import fastcopy
 
 
 @pytest.mark.parametrize(
@@ -114,4 +115,25 @@ def test_shuffle(manifest_type):
 
     with as_lazy(data) as lazy_data:
         lazy_result = lazy_data.shuffle(rng=rng)
+        assert [item.duration for item in lazy_result] == list(expected_durations)
+
+
+def test_composable_operations():
+    expected_durations = [0, 2, 4, 6, 8, 0, 2, 4, 6, 8]
+
+    data = DummyManifest(CutSet, begin_id=0, end_id=10)
+    for idx, cut in enumerate(data):
+        cut.duration = idx
+
+    def less_than_5s(item):
+        return item.duration < 5
+
+    def double_duration(item):
+        return fastcopy(item, duration=item.duration * 2)
+
+    eager_result = data.repeat(2).filter(less_than_5s).map(double_duration)
+    assert [c.duration for c in eager_result] == expected_durations
+
+    with as_lazy(data) as lazy_data:
+        lazy_result = lazy_data.repeat(2).filter(less_than_5s).map(double_duration)
         assert [item.duration for item in lazy_result] == list(expected_durations)
