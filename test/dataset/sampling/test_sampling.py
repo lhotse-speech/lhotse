@@ -7,7 +7,7 @@ from tempfile import NamedTemporaryFile
 import pytest
 
 from lhotse import CutSet
-from lhotse.dataset import report_padding_ratio_estimate
+from lhotse.dataset import DynamicBucketingSampler, report_padding_ratio_estimate
 from lhotse.dataset.cut_transforms import concat_cuts
 from lhotse.dataset.sampling import (
     BucketingSampler,
@@ -976,6 +976,11 @@ def test_bucketing_sampler_drop_last(drop_last):
             DummyManifest(CutSet, begin_id=0, end_id=10),
         ),
         BucketingSampler(DummyManifest(CutSet, begin_id=0, end_id=10)),
+        DynamicBucketingSampler(
+            DummyManifest(CutSet, begin_id=0, end_id=10),
+            max_duration=1.0,
+            num_buckets=2,
+        ),
         ZipSampler(
             SimpleCutSampler(DummyManifest(CutSet, begin_id=0, end_id=10)),
             SimpleCutSampler(DummyManifest(CutSet, begin_id=10, end_id=20)),
@@ -983,9 +988,14 @@ def test_bucketing_sampler_drop_last(drop_last):
     ],
 )
 def test_sampler_get_report(sampler):
+    sampler.filter(
+        lambda c: "8" not in c.id
+    )  # to check that the report correctly accounts for discarded data
     _ = [b for b in sampler]
-    print(sampler.get_report())
-    # It runs - voila!
+    report = sampler.get_report()
+    assert not report.startswith("Sampling statistics unavailable")
+    assert "cuts discarded 0" not in report
+    print(report)
 
 
 @pytest.mark.parametrize(

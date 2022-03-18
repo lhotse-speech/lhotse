@@ -387,7 +387,7 @@ class SamplingDiagnostics:
             cntr += 1
         if not cntr:
             warnings.warn(
-                "Found an accepted batch with zero cuts. This could be an error."
+                "Found and accepted batch with zero cuts. This could be an error."
             )
         self.num_kept_batches += 1
 
@@ -425,15 +425,14 @@ class SamplingDiagnostics:
                 "If this is unexpected, and you're using a custom sampler, ensure that the sampler "
                 "is registering the batches in SamplerDiagnostics."
             )
+
         return (
-            f"Sampling statistics: \n"
-            f"Kept {self.kept_stats.num_cuts:d}/{self.total_cuts:d} "
-            f"({self.kept_stats.num_cuts / self.total_cuts:.2%}) cuts "
-            f"({self.discarded_stats.num_cuts:d} cuts discarded).\n"
-            f"Kept {self.num_kept_batches:d}/{self.total_batches:d} "
-            f"({self.num_kept_batches / self.total_batches:.2%}) batches "
-            f"({self.num_discarded_batches:d} batches discarded).\n"
-            f"Overall, {round(self.discarded_stats.current):d} seconds of supervision were discarded."
+            f"| cuts kept {self.kept_stats.num_cuts:d}/{self.total_cuts:d} "
+            f"({self.kept_stats.num_cuts / self.total_cuts:.2%}) "
+            f"| cuts discarded {self.discarded_stats.num_cuts:d} "
+            f"| batches kept {self.num_kept_batches:d}/{self.total_batches:d} "
+            f"({self.kept_stats.num_cuts / self.total_cuts:.2%})"
+            f"| batches discarded {self.num_discarded_batches:d} |"
         )
 
     def state_dict(self) -> Dict[str, Any]:

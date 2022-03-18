@@ -17,9 +17,9 @@ import numpy as np
 
 from lhotse import CutSet, Seconds
 from lhotse.cut import Cut
-from lhotse.utils import streaming_shuffle
-from lhotse.dataset.sampling.base import CutSampler, TimeConstraint
-from lhotse.dataset.sampling.dynamic import DurationBatcher
+from lhotse.dataset.sampling.base import CutSampler, SamplingDiagnostics, TimeConstraint
+from lhotse.dataset.sampling.dynamic import DurationBatcher, Filter
+from lhotse.utils import ifnone, streaming_shuffle
 
 
 class DynamicBucketingSampler(CutSampler):
@@ -155,8 +155,10 @@ class DynamicBucketingSampler(CutSampler):
                 for cs in self.cuts_iter
             ]
         # Apply filter predicate
-        self.cuts_iter = filter(
-            lambda tpl: all(self._filter_fn(c) for c in tpl), zip(*self.cuts_iter)
+        self.cuts_iter = Filter(
+            iterator=zip(*self.cuts_iter),
+            predicate=lambda tpl: all(self._filter_fn(c) for c in tpl),
+            diagnostics=self.diagnostics,
         )
         # Convert Iterable[Cut] -> Iterable[CutSet]
         self.cuts_iter = DynamicBucketer(
@@ -167,6 +169,7 @@ class DynamicBucketingSampler(CutSampler):
             buffer_size=self.buffer_size,
             rng=self.rng,
         )
+        self.cuts_iter.diagnostics = self.diagnostics
         self.cuts_iter = iter(self.cuts_iter)
         return self
 
@@ -239,12 +242,14 @@ class DynamicBucketer:
         drop_last: bool = False,
         buffer_size: int = 10000,
         rng: random.Random = None,
+        diagnostics: Optional[SamplingDiagnostics] = None,
     ) -> None:
         self.cuts = cuts
         self.duration_bins = duration_bins
         self.max_duration = max_duration
         self.drop_last = drop_last
         self.buffer_size = buffer_size
+        self.diagnostics = ifnone(diagnostics, SamplingDiagnostics())
         if rng is None:
             rng = random.Random()
         self.rng = rng
@@ -304,7 +309,9 @@ class DynamicBucketer:
                 sampling_bucket = self.rng.choice(ready_buckets)
                 # Sample one batch from that bucket and yield it to the caller.
                 batcher = DurationBatcher(
-                    sampling_bucket, max_duration=self.max_duration
+                    sampling_bucket,
+                    max_duration=self.max_duration,
+                    diagnostics=self.diagnostics,
                 )
                 batch = next(iter(batcher))
                 if isinstance(batch, tuple):
