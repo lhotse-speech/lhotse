@@ -277,6 +277,9 @@ class Filter(Iterable):
     A wrapper over an iterable that enables lazy filtering.
     It works like Python's `filter` built-in by applying the filter predicate
     to each element and yielding it further if predicate returned ``True``.
+
+    This variant additionally tracks the number of discarded items and updates
+    the sampling statistics.
     """
 
     def __init__(
