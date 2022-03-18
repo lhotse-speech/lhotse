@@ -301,6 +301,7 @@ class OnTheFlyFeatures(BatchIO):
         num_workers: int = 0,
         use_batch_extract: bool = True,
         fault_tolerant: bool = False,
+        return_audio: bool = False,
         executor_type: Type[ExecutorType] = ThreadPoolExecutor,
     ) -> None:
         """
@@ -321,6 +322,8 @@ class OnTheFlyFeatures(BatchIO):
             will be skipped. It will make ``__call__`` return an additional item,
             which is the CutSet for which we successfully read the audio.
             It may be a subset of the input CutSet.
+        :param return_audio: When ``True``, calling this object will additionally return collated
+            audio tensor and audio lengths tensor.
         :param executor_type: the type of executor used for parallel audio reads
             (only relevant when ``num_workers>0``).
         """
@@ -329,6 +332,7 @@ class OnTheFlyFeatures(BatchIO):
         self.wave_transforms = ifnone(wave_transforms, [])
         self.use_batch_extract = use_batch_extract
         self.fault_tolerant = fault_tolerant
+        self.return_audio = return_audio
 
     def __call__(
         self, cuts: CutSet
@@ -340,7 +344,9 @@ class OnTheFlyFeatures(BatchIO):
         and computes their features.
         The returned shape is ``(B, T, F) => (batch_size, num_frames, num_features)``.
 
-        :return: a tensor with collated features, and a tensor of ``num_frames`` of each cut before padding.
+        :return: a tuple of objcets: ``(feats, feat_lens, [audios, audio_lens], [cuts])``.
+            Tensors ``audios`` and ``audio_lens`` are returned when ``return_audio=True``.
+            CutSet ``cuts`` is returned when ``fault_tolerant=True``.
         """
         audios, cuts = read_audio_from_cuts(
             cuts,
@@ -382,13 +388,22 @@ class OnTheFlyFeatures(BatchIO):
                 )
                 for cut in cuts
             ],
-            dtype=torch.int32,
+            dtype=torch.int64,
         )
 
+        out = (features_batch, feature_lens)
+
+        if self.return_audio:
+            audios = [a.squeeze(0) for a in audios]  # (1, T) -> (T, )
+            audio_lens = torch.tensor([a.size(0) for a in audios], dtype=torch.int64)
+            audios = collate_vectors(audios, padding_value=0)
+
+            out = out + (audios, audio_lens)
+
         if self.fault_tolerant:
-            return features_batch, feature_lens, cuts
-        else:
-            return features_batch, feature_lens
+            out = out + (cuts,)
+
+        return out
 
     def supervision_intervals(self, cuts: CutSet) -> Dict[str, torch.Tensor]:
         """

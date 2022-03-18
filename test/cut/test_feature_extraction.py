@@ -8,13 +8,10 @@ from unittest.mock import Mock
 import pytest
 import torch
 
-import lhotse
 from lhotse import (
     CutSet,
     Fbank,
     FbankConfig,
-    TorchaudioFbank,
-    TorchaudioMfcc,
     KaldifeatFbank,
     KaldifeatMfcc,
     LibrosaFbank,
@@ -23,6 +20,8 @@ from lhotse import (
     Mfcc,
     MonoCut,
     Recording,
+    TorchaudioFbank,
+    TorchaudioMfcc,
     load_manifest,
     validate,
 )
@@ -314,3 +313,20 @@ def test_on_the_fly_batch_feature_extraction(cut_set, extractor_type):
     feats, feat_lens = extractor(cut_set)  # does not crash
     assert isinstance(feats, torch.Tensor)
     assert isinstance(feat_lens, torch.Tensor)
+
+
+def test_on_the_fly_feats_return_audio(cut_set):
+    from lhotse.dataset import OnTheFlyFeatures
+
+    extractor = OnTheFlyFeatures(extractor=Fbank(), return_audio=True)
+    cut_set = cut_set.resample(16000)
+    feats, feat_lens, audios, audio_lens = extractor(cut_set)
+    assert isinstance(feats, torch.Tensor)
+    assert isinstance(feat_lens, torch.Tensor)
+    assert isinstance(audios, torch.Tensor)
+    assert isinstance(audio_lens, torch.Tensor)
+
+    assert feats.shape == (2, 300, 80)
+    assert feat_lens.shape == (2,)
+    assert audios.shape == (2, 48000)
+    assert audio_lens.shape == (2,)
