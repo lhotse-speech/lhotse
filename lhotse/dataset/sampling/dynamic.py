@@ -1,12 +1,13 @@
 import random
+import types
 import warnings
 from collections import deque
-from typing import Generator, Iterable, List, Optional, Tuple, Union
+from typing import Callable, Generator, Iterable, List, Optional, Tuple, Union
 
 from lhotse import CutSet, Seconds
 from lhotse.cut import Cut
 from lhotse.dataset.sampling.base import CutSampler, SamplingDiagnostics, TimeConstraint
-from lhotse.utils import streaming_shuffle
+from lhotse.utils import ifnone, streaming_shuffle
 
 
 class DynamicCutSampler(CutSampler):
@@ -120,8 +121,10 @@ class DynamicCutSampler(CutSampler):
                 for cs in self.cuts_iter
             ]
         # Apply filter predicate
-        self.cuts_iter = filter(
-            lambda tpl: all(self._filter_fn(c) for c in tpl), zip(*self.cuts_iter)
+        self.cuts_iter = Filter(
+            iterator=zip(*self.cuts_iter),
+            predicate=lambda tpl: all(self._filter_fn(c) for c in tpl),
+            diagnostics=self.diagnostics,
         )
         # Convert Iterable[Cut] -> Iterable[CutSet]
         self.cuts_iter = DurationBatcher(
@@ -129,6 +132,7 @@ class DynamicCutSampler(CutSampler):
             max_duration=self.max_duration,
             max_cuts=self.max_cuts,
             drop_last=self.drop_last,
+            diagnostics=self.diagnostics,
         )
         self.cuts_iter = iter(self.cuts_iter)
         return self
@@ -168,12 +172,13 @@ class DurationBatcher:
         max_duration: Seconds = None,
         max_cuts: Optional[int] = None,
         drop_last: bool = False,
+        diagnostics: Optional[SamplingDiagnostics] = None,
     ) -> None:
         self.datapipe = datapipe
         self.reuse_cuts_buffer = deque()
         self.drop_last = drop_last
         self.max_cuts = max_cuts
-        self.diagnostics = SamplingDiagnostics()
+        self.diagnostics = ifnone(diagnostics, SamplingDiagnostics())
         self.time_constraint = TimeConstraint(
             max_duration=max_duration, max_frames=max_frames, max_samples=max_samples
         )
@@ -265,3 +270,35 @@ class DurationBatcher:
                     cuts.append(next_cut_or_tpl)
 
         return detuplify(cuts)
+
+
+class Filter(Iterable):
+    """
+    A wrapper over an iterable that enables lazy filtering.
+    It works like Python's `filter` built-in by applying the filter predicate
+    to each element and yielding it further if predicate returned ``True``.
+
+    This variant additionally tracks the number of discarded items and updates
+    the sampling statistics.
+    """
+
+    def __init__(
+        self,
+        iterator: Iterable,
+        predicate: Callable[[Cut], bool],
+        diagnostics: Optional[SamplingDiagnostics] = None,
+    ) -> None:
+        self.iterator = iterator
+        self.predicate = predicate
+        self.diagnostics = ifnone(diagnostics, SamplingDiagnostics())
+
+        assert callable(
+            self.predicate
+        ), f"LazyFilter: 'predicate' arg must be callable (got {predicate})."
+
+    def __iter__(self) -> Iterable:
+        for item in self.iterator:
+            if self.predicate(item):
+                yield item
+            else:
+                self.diagnostics.discard(item)
