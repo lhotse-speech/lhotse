@@ -21,7 +21,6 @@ from typing import (
     Mapping,
     NamedTuple,
     Optional,
-    Sequence,
     Tuple,
     Union,
 )
@@ -39,6 +38,7 @@ from lhotse.augmentation import (
     Volume,
 )
 from lhotse.caching import dynamic_lru_cache
+from lhotse.lazy import AlgorithmMixin
 from lhotse.serialization import Serializable
 from lhotse.utils import (
     Decibels,
@@ -763,7 +763,7 @@ class Recording:
         )
 
 
-class RecordingSet(Serializable):
+class RecordingSet(Serializable, AlgorithmMixin):
     """
     :class:`~lhotse.audio.RecordingSet` represents a collection of recordings, indexed by recording IDs.
     It does not contain any annotation such as the transcript or the speaker identity --
@@ -905,28 +905,6 @@ class RecordingSet(Serializable):
 
     def to_dicts(self) -> Iterable[dict]:
         return (r.to_dict() for r in self)
-
-    def filter(self, predicate: Callable[[Recording], bool]) -> "RecordingSet":
-        """
-        Return a new RecordingSet with the Recordings that satisfy the `predicate`.
-
-        :param predicate: a function that takes a recording as an argument and returns bool.
-        :return: a filtered RecordingSet.
-        """
-        return RecordingSet.from_recordings(rec for rec in self if predicate(rec))
-
-    def shuffle(self, rng: Optional[random.Random] = None) -> "RecordingSet":
-        """
-        Shuffle the recording IDs in the current :class:`.RecordingSet` and return a shuffled copy of self.
-
-        :param rng: an optional instance of ``random.Random`` for precise control of randomness.
-        :return: a shuffled copy of self.
-        """
-        if rng is None:
-            rng = random
-        ids = list(self.ids)
-        rng.shuffle(ids)
-        return RecordingSet(recordings={rid: self[rid] for rid in ids})
 
     def split(
         self, num_splits: int, shuffle: bool = False, drop_last: bool = False
@@ -1138,23 +1116,6 @@ class RecordingSet(Serializable):
 
     def __len__(self) -> int:
         return len(self.recordings)
-
-    def __add__(self, other: "RecordingSet") -> "RecordingSet":
-        if self.is_lazy or other.is_lazy:
-            # Lazy manifests are specially combined
-            from lhotse.serialization import LazyIteratorChain
-
-            return RecordingSet(
-                recordings=LazyIteratorChain(self.recordings, other.recordings)
-            )
-
-        # Eager manifests are just merged like standard dicts.
-        merged = {**self.recordings, **other.recordings}
-        assert len(merged) == len(self.recordings) + len(other.recordings), (
-            f"Conflicting IDs when concatenating RecordingSets! "
-            f"Failed check: {len(merged)} == {len(self.recordings)} + {len(other.recordings)}"
-        )
-        return RecordingSet(recordings=merged)
 
 
 class AudioMixer:
@@ -1401,7 +1362,6 @@ def torchaudio_info(path: Pathlike) -> LibsndfileCompatibleAudioInfo:
 def torchaudio_load(
     path_or_fd: Pathlike, offset: Seconds = 0, duration: Optional[Seconds] = None
 ) -> Tuple[np.ndarray, int]:
-    import torch
     import torchaudio
 
     # Need to grab the "info" about sampling rate before reading to compute

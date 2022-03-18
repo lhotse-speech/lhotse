@@ -1,5 +1,4 @@
 import logging
-import random
 from collections import defaultdict
 from dataclasses import dataclass
 from itertools import groupby, islice
@@ -11,17 +10,16 @@ from typing import (
     List,
     Mapping,
     Optional,
-    Sequence,
     Union,
 )
 
+from lhotse.lazy import AlgorithmMixin
 from lhotse.serialization import Serializable
 from lhotse.utils import (
     Pathlike,
     Seconds,
     TimeSpan,
     asdict_nonull,
-    check_and_rglob,
     compute_num_samples,
     exactly_one_not_null,
     fastcopy,
@@ -436,7 +434,7 @@ class SupervisionSegment:
             raise AttributeError(f"No such attribute: {name}")
 
 
-class SupervisionSet(Serializable):
+class SupervisionSet(Serializable, AlgorithmMixin):
     """
     :class:`~lhotse.supervision.SupervisionSet` represents a collection of segments containing some
     supervision information (see :class:`~lhotse.supervision.SupervisionSegment`),
@@ -637,19 +635,6 @@ class SupervisionSet(Serializable):
     def to_dicts(self) -> Iterable[dict]:
         return (s.to_dict() for s in self)
 
-    def shuffle(self, rng: Optional[random.Random] = None) -> "SupervisionSet":
-        """
-        Shuffle the supervision IDs in the current :class:`.SupervisionSet` and return a shuffled copy of self.
-
-        :param rng: an optional instance of ``random.Random`` for precise control of randomness.
-        :return: a shuffled copy of self.
-        """
-        if rng is None:
-            rng = random
-        ids = list(self.ids)
-        rng.shuffle(ids)
-        return SupervisionSet(segments={sid: self[sid] for sid in ids})
-
     def split(
         self, num_splits: int, shuffle: bool = False, drop_last: bool = False
     ) -> List["SupervisionSet"]:
@@ -727,28 +712,6 @@ class SupervisionSet(Serializable):
             return SupervisionSet.from_segments(
                 islice(self, len(self) - last, len(self))
             )
-
-    def filter(
-        self, predicate: Callable[[SupervisionSegment], bool]
-    ) -> "SupervisionSet":
-        """
-        Return a new SupervisionSet with the SupervisionSegments that satisfy the `predicate`.
-
-        :param predicate: a function that takes a supervision as an argument and returns bool.
-        :return: a filtered SupervisionSet.
-        """
-        return SupervisionSet.from_segments(seg for seg in self if predicate(seg))
-
-    def map(
-        self, transform_fn: Callable[[SupervisionSegment], SupervisionSegment]
-    ) -> "SupervisionSet":
-        """
-        Map a ``transform_fn`` to the SupervisionSegments and return a new ``SupervisionSet``.
-
-        :param transform_fn: a function that modifies a supervision as an argument.
-        :return: a new ``SupervisionSet`` with modified segments.
-        """
-        return SupervisionSet.from_segments(s.map(transform_fn) for s in self)
 
     def transform_text(self, transform_fn: Callable[[str], str]) -> "SupervisionSet":
         """
@@ -849,20 +812,3 @@ class SupervisionSet(Serializable):
 
     def __len__(self) -> int:
         return len(self.segments)
-
-    def __add__(self, other: "SupervisionSet") -> "SupervisionSet":
-        if self.is_lazy or other.is_lazy:
-            # Lazy manifests are specially combined
-            from lhotse.serialization import LazyIteratorChain
-
-            return SupervisionSet(
-                segments=LazyIteratorChain(self.segments, other.segments)
-            )
-
-        # Eager manifests are just merged like standard dicts.
-        merged = {**self.segments, **other.segments}
-        assert len(merged) == len(self.segments) + len(other.segments), (
-            f"Conflicting IDs when concatenating SupervisionSets! "
-            f"Failed check: {len(merged)} == {len(self.segments)} + {len(other.segments)}"
-        )
-        return SupervisionSet(segments=merged)

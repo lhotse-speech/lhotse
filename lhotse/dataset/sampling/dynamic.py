@@ -6,7 +6,7 @@ from typing import Generator, Iterable, List, Optional, Tuple, Union
 from lhotse import CutSet, Seconds
 from lhotse.cut import Cut
 from lhotse.dataset.sampling.base import CutSampler, SamplingDiagnostics, TimeConstraint
-from lhotse.dataset.sampling.data_source import streaming_shuffle
+from lhotse.utils import streaming_shuffle
 
 
 class DynamicCutSampler(CutSampler):

@@ -43,6 +43,7 @@ from lhotse.features import (
 )
 from lhotse.features.base import compute_global_stats
 from lhotse.features.io import FeaturesWriter, LilcomChunkyWriter, LilcomFilesWriter
+from lhotse.lazy import AlgorithmMixin
 from lhotse.serialization import Serializable
 from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import (
@@ -3181,7 +3182,7 @@ class MixedCut(Cut):
         return [t for t in self.tracks if not isinstance(t.cut, PaddingCut)][0]
 
 
-class CutSet(Serializable):
+class CutSet(Serializable, AlgorithmMixin):
     """
     :class:`~lhotse.cut.CutSet` represents a collection of cuts, indexed by cut IDs.
     CutSet ties together all types of data -- audio, features and supervisions, and is suitable to represent
@@ -3606,19 +3607,6 @@ class CutSet(Serializable):
         print(f"99.9%\t{np.percentile(durations, 99.9):.1f}")
         print(f"max\t{np.max(durations):.1f}")
 
-    def shuffle(self, rng: Optional[random.Random] = None) -> "CutSet":
-        """
-        Shuffle the cut IDs in the current :class:`.CutSet` and return a shuffled copy of self.
-
-        :param rng: an optional instance of ``random.Random`` for precise control of randomness.
-        :return: a shuffled copy of self.
-        """
-        if rng is None:
-            rng = random
-        ids = list(self.ids)
-        rng.shuffle(ids)
-        return CutSet(cuts={cid: self[cid] for cid in ids})
-
     def split(
         self, num_splits: int, shuffle: bool = False, drop_last: bool = False
     ) -> List["CutSet"]:
@@ -3768,15 +3756,6 @@ class CutSet(Serializable):
         return CutSet.from_cuts(
             c.merge_supervisions(custom_merge_fn=custom_merge_fn) for c in self
         )
-
-    def filter(self, predicate: Callable[[Cut], bool]) -> "CutSet":
-        """
-        Return a new CutSet with the Cuts that satisfy the `predicate`.
-
-        :param predicate: a function that takes a cut as an argument and returns bool.
-        :return: a filtered CutSet.
-        """
-        return CutSet.from_cuts(cut for cut in self if predicate(cut))
 
     def trim_to_supervisions(
         self,
@@ -4875,23 +4854,6 @@ class CutSet(Serializable):
     def with_recording_path_prefix(self, path: Pathlike) -> "CutSet":
         return CutSet.from_cuts(c.with_recording_path_prefix(path) for c in self)
 
-    def map(self, transform_fn: Callable[[Cut], Cut]) -> "CutSet":
-        """
-        Apply `transform_fn` to the cuts in this :class:`.CutSet` and return a new :class:`.CutSet`.
-
-        :param transform_fn: A callable (function) that accepts a single cut instance
-            and returns a single cut instance.
-        :return: a new ``CutSet`` with transformed cuts.
-        """
-
-        def verified(mapped: Any) -> Cut:
-            assert isinstance(
-                mapped, (MonoCut, MixedCut, PaddingCut)
-            ), "The callable passed to CutSet.map() must return a Cut class instance."
-            return mapped
-
-        return CutSet.from_cuts(verified(transform_fn(c)) for c in self)
-
     def copy_feats(
         self, writer: FeaturesWriter, output_path: Optional[Pathlike] = None
     ) -> "CutSet":
@@ -5011,21 +4973,6 @@ class CutSet(Serializable):
 
     def __iter__(self) -> Iterable[Cut]:
         return iter(self.cuts.values())
-
-    def __add__(self, other: "CutSet") -> "CutSet":
-        if self.is_lazy or other.is_lazy:
-            # Lazy manifests are specially combined
-            from lhotse.serialization import LazyIteratorChain
-
-            return CutSet(cuts=LazyIteratorChain(self.cuts, other.cuts))
-
-        # Eager manifests are just merged like standard dicts.
-        merged = {**self.cuts, **other.cuts}
-        assert len(merged) == len(self.cuts) + len(other.cuts), (
-            f"Conflicting IDs when concatenating CutSets! "
-            f"Failed check: {len(merged)} == {len(self.cuts)} + {len(other.cuts)}"
-        )
-        return CutSet(cuts=merged)
 
 
 def make_windowed_cuts_from_features(

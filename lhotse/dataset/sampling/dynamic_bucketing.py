@@ -17,7 +17,7 @@ import numpy as np
 
 from lhotse import CutSet, Seconds
 from lhotse.cut import Cut
-from lhotse.dataset.sampling import streaming_shuffle
+from lhotse.utils import streaming_shuffle
 from lhotse.dataset.sampling.base import CutSampler, TimeConstraint
 from lhotse.dataset.sampling.dynamic import DurationBatcher
 

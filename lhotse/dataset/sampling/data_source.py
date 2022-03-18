@@ -1,6 +1,6 @@
 import random
 from collections import deque
-from typing import Generator, Iterable, Optional, TypeVar
+from typing import Optional
 
 from lhotse import CutSet
 from lhotse.cut import Cut
@@ -48,10 +48,7 @@ class DataSource:
         """
         self.reset()
         r = random.Random(seed)
-        if self._orig_items.is_lazy:
-            self._shuffled_items = streaming_shuffle(iter(self._orig_items), rng=r)
-        else:
-            self._shuffled_items = self._orig_items.shuffle(rng=r)
+        self._shuffled_items = self._orig_items.shuffle(rng=r)
         return self
 
     def sort_like(self, other: "DataSource") -> "DataSource":
@@ -101,50 +98,3 @@ class DataSource:
 
     def __len__(self) -> int:
         return len(self._shuffled_items)
-
-
-T = TypeVar("T")
-
-
-def streaming_shuffle(
-    data: Iterable[T],
-    bufsize: int = 10000,
-    rng: random.Random = random,
-) -> Generator[T, None, None]:
-    """
-    Shuffle the data in the stream.
-
-    This uses a buffer of size ``bufsize``. Shuffling at
-    startup is less random; this is traded off against
-    yielding samples quickly.
-
-    This code is mostly borrowed from WebDataset; note that we use much larger default
-    buffer size because Cuts are very lightweight and fast to read.
-    https://github.com/webdataset/webdataset/blob/master/webdataset/iterators.py#L145
-
-    .. warning: The order of the elements is expected to be much less random than
-        if the whole sequence was shuffled before-hand with standard methods like
-        ``random.shuffle``.
-
-    :param data: iterator
-    :param bufsize: buffer size for shuffling
-    :param rng: either random module or random.Random instance
-    :return: a generator of cuts, shuffled on-the-fly.
-    """
-    buf = []
-    startup = True
-    for sample in data:
-        if len(buf) < bufsize:
-            try:
-                buf.append(next(data))
-            except StopIteration:
-                pass
-        k = rng.randint(0, len(buf) - 1)
-        sample, buf[k] = buf[k], sample
-        if startup and len(buf) < bufsize:
-            buf.append(sample)
-            continue
-        startup = False
-        yield sample
-    for sample in buf:
-        yield sample
