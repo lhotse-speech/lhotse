@@ -295,15 +295,6 @@ class Filter(Iterable):
         assert callable(
             self.predicate
         ), f"LazyFilter: 'predicate' arg must be callable (got {predicate})."
-        if (
-            isinstance(self.predicate, types.LambdaType)
-            and self.predicate.__name__ == "<lambda>"
-        ):
-            warnings.warn(
-                "A lambda was passed to LazyFilter: it may prevent you from forking this process. "
-                "If you experience issues with num_workers > 0 in torch.utils.data.DataLoader, "
-                "try passing a regular function instead."
-            )
 
     def __iter__(self) -> Iterable:
         for item in self.iterator:
