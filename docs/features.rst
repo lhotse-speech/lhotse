@@ -3,9 +3,9 @@ Feature extraction
 
 Lhotse provides the following feature extractor implementations:
 
-- `Torchaudio`_ based extractors, which involve :class:`~lhotse.features.fbank.Fbank`, :class:`~lhotse.features.mfcc.Mfcc`, and :class:`~lhotse.features.spectrogram.Spectrogram`;
+- `Torchaudio`_ based extractors, which involve :class:`~lhotse.features.fbank.TorchaudioFbank`, :class:`~lhotse.features.mfcc.TorchaudioMfcc`, and :class:`~lhotse.features.spectrogram.Spectrogram`;
 - `Librosa`_ compatible filter-bank feature extractor :class:`~lhotse.features.librosa_fbank.LibrosaFbank` (compatible with the one used in `ESPnet`_ and `ParallelWaveGAN`_ projects for TTS and vocoders);
-- Log-Mel filter-bank :class:`~lhotse.features.kaldi.extractors.KaldiFbank` and MFCC :class:`~lhotse.features.kaldi.extractors.KaldiMfcc` PyTorch implementations. They are very close to Kaldi's, and their underlying components are PyTorch modules that can be used as layers in neural networks (i.e. support batching, GPUs, and autograd). These classes are found in ``lhotse.features.kaldi.layers`` (in particular: :class:`~lhotse.features.kaldi.layers.Wav2LogFilterBank` and :class:`~lhotse.features.kaldi.layers.Wav2MFCC`).
+- Log-Mel filter-bank :class:`~lhotse.features.kaldi.extractors.Fbank` and MFCC :class:`~lhotse.features.kaldi.extractors.Mfcc` PyTorch implementations. They are very close to Kaldi's, and their underlying components are PyTorch modules that can be used as layers in neural networks (i.e. support batching, GPUs, and autograd). These classes are found in ``lhotse.features.kaldi.layers`` (in particular: :class:`~lhotse.features.kaldi.layers.Wav2LogFilterBank` and :class:`~lhotse.features.kaldi.layers.Wav2MFCC`).
 
 We also support custom defined feature extractors via a Python API.
 
@@ -133,7 +133,7 @@ The overridden members include:
 - ``frame_shift`` property, which is key to know the relationship between the duration and the number of frames.
 - ``feature_dim()`` method, which accepts the ``sampling_rate`` as its argument, as some types of features (e.g. spectrogram) will depend on that.
 
-Additionally, there are two extra methods than when overridden, allow to perform dynamic feature-space mixing (see Cuts):
+Additionally, there are two extra methods when overridden, allow to perform dynamic feature-space mixing (see Cuts):
 
 .. code-block::
 
@@ -160,7 +160,7 @@ Feature normalization
 We will briefly discuss how to perform mean and variance normalization (a.k.a. CMVN) in Lhotse effectively. We compute and store unnormalized features, and it is up to the user to normalize them if they want to do so. There are three common ways to perform feature normalization:
 
 - **Global normalization**: we compute the means and variances using the whole data (``FeatureSet`` or ``CutSet``), and apply the same transform on every sample. The global statistics can be computed efficiently with ``FeatureSet.compute_global_stats()`` or ``CutSet.compute_global_feature_stats()``. They use an iterative algorithm that does not require loading the whole dataset into memory.
-- **Per-instance normalization**: we compute the means and variances separately for each data sample (i.e. a single feature matrix). Each feature matrix undergoes a different transform. This approach seems to be common in computer vision modelling.
+- **Per-instance normalization**: we compute the means and variances separately for each data sample (i.e. a single feature matrix). Each feature matrix undergoes a different transform. This approach seems to be common in computer vision modeling.
 - **Sliding window ("online") normalization**: we compute the means and variances using a slice of the feature matrix with a specified duration, e.g. 3 seconds (a standard value in Kaldi). This is useful when we expect the model to work on incomplete inputs, e.g. streaming speech recognition. We currently recommend using `Torchaudio CMVN`_ for that.
 
 Storage backend details
@@ -187,7 +187,7 @@ Python usage
 ************
 
 The feature manifest is represented by a :class:`FeatureSet` object.
-Feature extractors have a class that represents both the extract and its configuration, named :class:`FeatureExtractor`.
+Feature extractors have a class that represents both the extractor and its configuration, named :class:`FeatureExtractor`.
 We provide a utility called :class:`FeatureSetBuilder` that can process a :class:`RecordingSet` in parallel,
 store the feature matrices on disk and generate a feature manifest.
 

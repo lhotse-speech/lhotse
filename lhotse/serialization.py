@@ -114,7 +114,7 @@ class SequentialJsonlWriter:
     This writer can be useful for continuing to write files that were previously
     stopped -- it will open the existing file and scan it for item IDs to skip
     writing them later. It can also be queried for existing IDs so that the user
-    code may skip preparing the corresponding manifets.
+    code may skip preparing the corresponding manifests.
 
     Example:
 
@@ -187,7 +187,7 @@ class SequentialJsonlWriter:
         if flush:
             self.file.flush()
 
-    def open_manifest(self) -> Manifest:
+    def open_manifest(self) -> Optional[Manifest]:
         """
         Opens the manifest that this writer has been writing to.
         The manifest is opened in a lazy mode.
@@ -277,7 +277,7 @@ class JsonlMixin:
         This writer can be useful for continuing to write files that were previously
         stopped -- it will open the existing file and scan it for item IDs to skip
         writing them later. It can also be queried for existing IDs so that the user
-        code may skip preparing the corresponding manifets.
+        code may skip preparing the corresponding manifests.
 
         Example:
 

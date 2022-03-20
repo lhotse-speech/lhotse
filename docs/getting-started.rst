@@ -25,9 +25,9 @@ Examples of use
 Check out the following links to see how Lhotse is being put to use:
 
 * `Icefall recipes`_: where k2 and Lhotse meet.
-* Minima ESPnet+Lhotse example: |yesno colab notebook|
+* Minima ESPnet+Lhotse example: |mini librispeech colab notebook|
 
- .. |yesno colab notebook| image:: https://colab.research.google.com/assets/colab-badge.svg
+ .. |mini librispeech colab notebook| image:: https://colab.research.google.com/assets/colab-badge.svg
     :target: https://colab.research.google.com/drive/1HKSYPsWx_HoCdrnLpaPdYj5zwlPsM3NH
 
 Main ideas
@@ -128,7 +128,7 @@ the speech starts roughly at the first second (100 frames):
 .. image:: vad_sample.png
 
 
-.. _k2: https://github.com/kaldi-asr/kaldi
+.. _k2: https://github.com/k2-fsa/k2
 .. _Kaldi: https://github.com/kaldi-asr/kaldi
 .. _Icefall recipes: https://github.com/k2-fsa/icefall
 .. _orjson: https://pypi.org/project/orjson/

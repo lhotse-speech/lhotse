@@ -812,8 +812,7 @@ class LilcomChunkyWriter(FeaturesWriter):
         **kwargs,
     ):
         """
-        :param storage_path: Path under which we'll create the HDF5 file.
-            We will add a ``.h5`` suffix if it is not already in ``storage_path``.
+        :param storage_path: Path under which we'll create the binary file.
         :param tick_power: Determines the lilcom compression accuracy;
             the input will be compressed to integer multiples of 2^tick_power.
         :param chunk_size: How many frames to store per chunk.
