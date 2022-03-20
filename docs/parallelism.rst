@@ -7,7 +7,7 @@ parallelize some tasks (mostly feature extraction).
 There are multiple ways we can parallelize execution of a Python method:
 
 - using multi-threading (single node, single process);
-- using multi-processing (single node, multiplce processes);
+- using multi-processing (single node, multiple processes);
 - using distributed processing (multiple nodes, multiple processes).
 
 The ``Executor`` API, introduced in Python's standard library in :mod:`concurrent.futures` module,
@@ -31,12 +31,12 @@ An example of use to extract features on a :class:`lhotse.CutSet`:
 .. code-block::
 
     from concurrent.futures import ProcessPoolExecutor
-    from lhotse import CutSet, Fbank, LilcomFilesWriter
+    from lhotse import CutSet, Fbank, ChunkedLilcomHdf5Writer
     num_jobs = 8
     with ProcessPoolExecutor(num_jobs) as ex:
         cuts: CutSet = cuts.compute_and_store_features(
             extractor=Fbank(),
-            storage=LilcomFilesWriter('feats'),
+            storage=ChunkedLilcomHdf5Writer('feats'),
             executor=ex
         )
 

@@ -60,7 +60,7 @@ Lhotse supports Python version 3.6 and later.
 Lhotse is available on PyPI:
 
     pip install lhotse
-    
+
 To install the latest, unreleased version, do:
 
     pip install git+https://github.com/lhotse-speech/lhotse
@@ -93,14 +93,14 @@ For reading older LDC SPHERE (.sph) audio files that are compressed with codecs 
     from lhotse.tools import install_sph2pipe
     install_sph2pipe()
 
-It will download it to `~/.lhotse/tools`, compile it, and auto-register in `PATH`. The program should be automatically detected and used by Lhotse. 
+It will download it to `~/.lhotse/tools`, compile it, and auto-register in `PATH`. The program should be automatically detected and used by Lhotse.
 
 ## Examples
 
 We have example recipes showing how to prepare data and load it in Python as a PyTorch `Dataset`.
 They are located in the `examples` directory.
 
-A short snippet to show how Lhotse can make audio data prepartion quick and easy:
+A short snippet to show how Lhotse can make audio data preparation quick and easy:
 
 ```python
 from torch.utils.data import DataLoader
@@ -117,7 +117,7 @@ swbd = prepare_switchboard('/export/corpora3/LDC/LDC97S62')
 
 # CutSet is the workhorse of Lhotse, allowing for flexible data manipulation.
 # We create 5-second cuts by traversing SWBD recordings in windows.
-# No audio data is actually loaded into memory or stored to disk at this point.  
+# No audio data is actually loaded into memory or stored to disk at this point.
 cuts = CutSet.from_manifests(
     recordings=swbd['recordings'],
     supervisions=swbd['supervisions']

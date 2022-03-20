@@ -141,7 +141,7 @@ class AudioSource:
         (n_channels, n_samples) for multi-channel.
 
         Note: The elements in the returned array are in the range [-1.0, 1.0]
-        and are of dtype `np.floatt32`.
+        and are of dtype `np.float32`.
 
         :param force_opus_sampling_rate: This parameter is only used when we detect an OPUS file.
             It will tell ffmpeg to resample OPUS to this sampling rate.
@@ -938,7 +938,6 @@ class RecordingSet(Serializable, AlgorithmMixin):
         .. note:: For lowest memory usage, use ``load_manifest_lazy`` to open the
             input manifest for this method.
 
-        :param it: any iterable of Lhotse manifests.
         :param output_dir: directory where the split manifests are saved.
             Each manifest is saved at: ``{output_dir}/{split_idx}.jsonl.gz``
         :param chunk_size: the number of items in each chunk.
@@ -1608,7 +1607,7 @@ def read_opus(
     """
     Reads OPUS files either using torchaudio or ffmpeg.
     Torchaudio is faster, but if unavailable for some reason,
-    we fallback to a slower ffmpeg-based implemention.
+    we fallback to a slower ffmpeg-based implementation.
 
     :return: a tuple of audio samples and the sampling rate.
     """

@@ -36,9 +36,9 @@ Features API - extractor and manifests
 Lhotse's feature extractors
 ***************************
 
-.. autoclass:: lhotse.features.kaldi.extractors.KaldiFbank
+.. autoclass:: lhotse.features.kaldi.extractors.Fbank
 
-.. autoclass:: lhotse.features.kaldi.extractors.KaldiMfcc
+.. autoclass:: lhotse.features.kaldi.extractors.Mfcc
 
 Kaldi feature extractors as network layers
 ******************************************
