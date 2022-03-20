@@ -31,12 +31,12 @@ An example of use to extract features on a :class:`lhotse.CutSet`:
 .. code-block::
 
     from concurrent.futures import ProcessPoolExecutor
-    from lhotse import CutSet, Fbank, ChunkedLilcomHdf5Writer
+    from lhotse import CutSet, Fbank, LilcomChunkyWriter
     num_jobs = 8
     with ProcessPoolExecutor(num_jobs) as ex:
         cuts: CutSet = cuts.compute_and_store_features(
             extractor=Fbank(),
-            storage=ChunkedLilcomHdf5Writer('feats'),
+            storage=LilcomChunkyWriter('feats'),
             executor=ex
         )
 
