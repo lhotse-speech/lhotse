@@ -27,8 +27,8 @@ jobs:
         python-version: ${{ matrix.python-version }}
         cache: pip
         cache-dependency-path: |
-          - docs/requirements.txt
-          - setup.py
+          docs/requirements.txt
+          setup.py
     - name: Install apt dependencies
       run: |
         sudo apt update
