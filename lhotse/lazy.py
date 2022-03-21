@@ -154,36 +154,20 @@ class LazyJsonlIterator(ImitatesDict):
 
     def __init__(self, path: Pathlike) -> None:
         self.path = path
+        self._len = None
         assert extension_contains(".jsonl", self.path)
 
-    def _reset(self) -> None:
-        self._file = open_best(self.path)
-
-    def __getstate__(self):
-        """
-        Store the state for pickling -- we'll only store the path, and re-initialize
-        this iterator when unpickled. This is necessary to transfer this object across processes
-        for PyTorch's DataLoader workers.
-        """
-        state = {"path": self.path}
-        return state
-
-    def __setstate__(self, state: Dict):
-        """Restore the state when unpickled -- open the jsonl file again."""
-        self.__dict__.update(state)
-
     def __iter__(self):
-        self._reset()
-        return self
-
-    def __next__(self):
-        line = next(self._file)
-        data = decode_json_line(line)
-        item = deserialize_item(data)
-        return item
+        with open_best(self.path) as f:
+            for line in f:
+                data = decode_json_line(line)
+                item = deserialize_item(data)
+                yield item
 
     def __len__(self) -> int:
-        return count_newlines_fast(self.path)
+        if self._len is None:
+            self._len = count_newlines_fast(self.path)
+        return self._len
 
     def __add__(self, other) -> "LazyIteratorChain":
         return LazyIteratorChain(self, other)

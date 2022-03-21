@@ -363,6 +363,13 @@ class TimeConstraint:
             num_cuts=self.num_cuts + other.num_cuts,
         )
 
+    def __eq__(self, other: "TimeConstraint") -> bool:
+        return (
+            self.max_duration == other.max_duration
+            and self.max_samples == other.max_samples
+            and self.max_frames == other.max_frames
+        )
+
 
 @dataclass
 class SamplingDiagnostics:
