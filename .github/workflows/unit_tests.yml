@@ -41,10 +41,28 @@ jobs:
         pip install torch==1.8.2+cpu torchaudio==0.8.2 -f https://download.pytorch.org/whl/lts/1.8/torch_lts.html
         pip install '.[tests]'
         pip install smart_open[http]  # for URL audio downloading test
-        pip install kaldifeat  # for running kaldifeat tests
         pip install opensmile  # for running opensmile tests
         pip install kaldi_native_io  # for running kaldi_native_io tests
         pip install webdataset==0.1.103 # for running webdataset tests
+    - name: Cache kaldifeat
+       id: my-cache
+       uses: actions/cache@v2
+       with:
+         path: |
+           ~/tmp/kaldifeat
+         key: cache-tmp-${{ matrix.python-version }}
+     - name: Install kaldifeat
+       if: steps.my-cache.outputs.cache-hit != 'true'
+       shell: bash
+       run: |
+         mkdir -p ~/tmp
+         cd ~/tmp
+         git clone https://github.com/csukuangfj/kaldifeat
+         cd kaldifeat
+         mkdir build
+         cd build
+         cmake -DCMAKE_BUILD_TYPE=Release ..
+         make -j2 _kaldifeat
     - name: Install sph2pipe
       run: |
         lhotse install-sph2pipe  # Handle sphere files.
