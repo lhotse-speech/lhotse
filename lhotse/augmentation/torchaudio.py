@@ -387,7 +387,7 @@ class ReverbWithImpulseResponse(AudioTransform):
     early_only: bool = False
     rir_channels: List[int] = field(default_factory=lambda: [0])
 
-    RIR_SCALING_FACTOR: float = 0.5 ** 15
+    RIR_SCALING_FACTOR: float = 0.5**15
 
     def __post_init__(self):
         if isinstance(self.rir, dict):
