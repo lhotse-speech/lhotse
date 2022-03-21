@@ -400,10 +400,10 @@ def count_newlines_fast(path: Pathlike):
     """
 
     def _make_gen(reader):
-        b = reader(2 ** 16)
+        b = reader(2**16)
         while b:
             yield b
-            b = reader(2 ** 16)
+            b = reader(2**16)
 
     with open_best(path, "rb") as f:
         count = sum(buf.count(b"\n") for buf in _make_gen(f.read))

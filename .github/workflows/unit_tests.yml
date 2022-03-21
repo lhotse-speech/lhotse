@@ -22,21 +22,25 @@ jobs:
     steps:
     - uses: actions/checkout@v2
     - name: Set up Python ${{ matrix.python-version }}
-      uses: actions/setup-python@v1
+      uses: actions/setup-python@v2
       with:
         python-version: ${{ matrix.python-version }}
-    - name: Install libnsdfile and libsox
+        cache: pip
+        cache-dependency-path: |
+          docs/requirements.txt
+          setup.py
+    - name: Install apt dependencies
       run: |
         sudo apt update
         sudo apt install libsndfile1-dev libsndfile1 ffmpeg
-        sudo apt install --fix-missing sox libsox-dev libsox-fmt-all
     - name: Install Python dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install --no-cache-dir numpy
+        pip install wheel
+        pip install numpy
         # Force the installation of a CPU-only PyTorch
         pip install torch==1.8.2+cpu torchaudio==0.8.2 -f https://download.pytorch.org/whl/lts/1.8/torch_lts.html
-        pip install --no-cache-dir '.[tests]'
+        pip install '.[tests]'
         pip install smart_open[http]  # for URL audio downloading test
         pip install kaldifeat  # for running kaldifeat tests
         pip install opensmile  # for running opensmile tests
