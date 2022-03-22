@@ -4263,7 +4263,7 @@ class CutSet(Serializable, AlgorithmMixin):
         for cut in self:
             # Check whether we're going to mix something into the current cut
             # or pass it through unchanged.
-            if random.uniform(0.0, 1.0) > mix_prob:
+            if random.uniform(0.0, 1.0) < mix_prob:
                 mixed_cuts.append(cut)
                 continue
             # Randomly sample a new cut from "cuts" to mix in.
