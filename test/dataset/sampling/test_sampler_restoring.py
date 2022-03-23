@@ -22,22 +22,22 @@ CUTS_MOD = CUTS.modify_ids(lambda cid: cid + "_alt")
 # fmt: off
 SAMPLERS_TO_TEST = [
     # Identically initialized SingleCutSampler
-    (
+    lambda: (
         SingleCutSampler(CUTS, max_duration=10.0, shuffle=True, drop_last=True),
         SingleCutSampler(CUTS, max_duration=10.0, shuffle=True, drop_last=True),
     ),
     # Differently initialized SingleCutSampler with the same CUTS
-    (
+    lambda: (
         SingleCutSampler(CUTS, max_duration=10.0, shuffle=True, drop_last=True),
         SingleCutSampler(CUTS),
     ),
     # Differently initialized CutPairsSampler with the same CUTS
-    (
+    lambda: (
         CutPairsSampler(CUTS, CUTS, max_source_duration=10.0, shuffle=True, drop_last=True),
         CutPairsSampler(CUTS, CUTS),
     ),
     # Differently initialized ZipSampler with the same CUTS
-    (
+    lambda: (
         ZipSampler(  # CUTS_SHUF just to randomize the order of the zipped-in cutset
             SingleCutSampler(CUTS, max_duration=10.0, shuffle=True, drop_last=True),
             SingleCutSampler(CUTS_MOD, max_duration=10.0, shuffle=True, drop_last=True),
@@ -48,7 +48,7 @@ SAMPLERS_TO_TEST = [
         ),
     ),
     # Differently initialized ZipSampler with the same CUTS (cut pairs)
-    (
+    lambda: (
         ZipSampler(
             CutPairsSampler(CUTS, CUTS, max_source_duration=10.0, shuffle=True, drop_last=True),
             CutPairsSampler(CUTS_MOD, CUTS_MOD, max_source_duration=10.0, shuffle=True, drop_last=True),
@@ -59,32 +59,38 @@ SAMPLERS_TO_TEST = [
         ),
     ),
     # Differently initialized BucketingSampler with the same CUTS
-    (
+    lambda: (
         BucketingSampler(CUTS, max_duration=10.0, shuffle=True, drop_last=True, num_buckets=2),
         BucketingSampler(CUTS, num_buckets=2),
     ),
     # Differently initialized BucketingSampler (using CutPairsSampler) with the same CUTS
-    (
+    lambda: (
         BucketingSampler(CUTS, CUTS, max_source_duration=10.0, shuffle=True, drop_last=True, num_buckets=2,
                          sampler_type=CutPairsSampler),
         BucketingSampler(CUTS, CUTS, num_buckets=2, sampler_type=CutPairsSampler),
     ),
     pytest.param(
-        DynamicBucketingSampler(CUTS, max_duration=10.0, shuffle=True, drop_last=True, num_buckets=2),
-        DynamicBucketingSampler(CUTS, max_duration=10.0, num_buckets=2),
+        lambda: (
+            DynamicBucketingSampler(CUTS, max_duration=10.0, shuffle=True, drop_last=True, num_buckets=2),
+            DynamicBucketingSampler(CUTS, max_duration=10.0, num_buckets=2),
+        ),
         marks=pytest.mark.xfail(reason='DynamicBucketingSampler does not support resumption yet.')
     ),
     pytest.param(
-        DynamicCutSampler(CUTS, max_duration=10.0, shuffle=True, drop_last=True),
-        DynamicCutSampler(CUTS, max_duration=10.0),
+        lambda: (
+            DynamicCutSampler(CUTS, max_duration=10.0, shuffle=True, drop_last=True),
+            DynamicCutSampler(CUTS, max_duration=10.0),
+        ),
         marks=pytest.mark.xfail(reason='DynamicCutSampler does not support resumption yet.')
     )
 ]
 # fmt: on
 
 
-@pytest.mark.parametrize(["sampler", "restored_sampler"], SAMPLERS_TO_TEST)
-def test_restore_sampler_state(sampler, restored_sampler):
+@pytest.mark.parametrize("create_samplers", SAMPLERS_TO_TEST)
+def test_restore_sampler_state(create_samplers):
+    sampler, restored_sampler = create_samplers()
+
     # Iterate the sampler a bit. With max_duration=10s, all samplers should have 10 batches total per epoch.
     sampler.set_epoch(3)
     iter(sampler)
@@ -128,8 +134,10 @@ def test_restore_sampler_state(sampler, restored_sampler):
         assert ob == rb
 
 
-@pytest.mark.parametrize(["sampler", "restored_sampler"], SAMPLERS_TO_TEST)
-def test_restored_sampler_continues_as_normal(sampler, restored_sampler):
+@pytest.mark.parametrize("create_samplers", SAMPLERS_TO_TEST)
+def test_restored_sampler_continues_as_normal(create_samplers):
+    sampler, restored_sampler = create_samplers()
+
     # Iterate the sampler a bit. With max_duration=10s, all samplers should have 10 batches total per epoch.
     sampler.set_epoch(3)
     iter(sampler)
@@ -155,8 +163,10 @@ def test_restored_sampler_continues_as_normal(sampler, restored_sampler):
     assert len(batches_reiter) == 10
 
 
-@pytest.mark.parametrize(["sampler", "restored_sampler"], SAMPLERS_TO_TEST)
-def test_restored_sampler_forced_to_start_from_scratch(sampler, restored_sampler):
+@pytest.mark.parametrize("create_samplers", SAMPLERS_TO_TEST)
+def test_restored_sampler_forced_to_start_from_scratch(create_samplers):
+    sampler, restored_sampler = create_samplers()
+
     # Iterate the sampler a bit. With max_duration=10s, all samplers should have 10 batches total per epoch.
     sampler.set_epoch(3)
     iter(sampler)
@@ -179,8 +189,9 @@ def test_restored_sampler_forced_to_start_from_scratch(sampler, restored_sampler
     assert len(batches) == 10
 
 
-@pytest.mark.parametrize(["sampler", "restored_sampler"], SAMPLERS_TO_TEST)
-def test_save_and_load_sampler_state(sampler, restored_sampler):
+@pytest.mark.parametrize("create_samplers", SAMPLERS_TO_TEST)
+def test_save_and_load_sampler_state(create_samplers):
+    sampler, restored_sampler = create_samplers()
     sd = sampler.state_dict()
     with NamedTemporaryFile(suffix=".pt") as f:
         torch.save(sd, f.name)
@@ -194,8 +205,16 @@ class DummyDataset(torch.utils.data.Dataset):
         return list(item.ids)
 
 
+@pytest.mark.parametrize("sampler", [
+    SingleCutSampler(CUTS, max_duration=10.0, shuffle=True, drop_last=True),
+    BucketingSampler(CUTS, max_duration=10.0, shuffle=True, drop_last=True, num_buckets=2),
+    ZipSampler(
+        SingleCutSampler(CUTS, max_duration=10.0, shuffle=True, drop_last=True),
+        SingleCutSampler(CUTS_MOD, max_duration=10.0, shuffle=True, drop_last=True),
+    ),
+])
 @pytest.mark.parametrize("num_workers", [0, 1])
-def test_e2e_restore_with_dataloader(num_workers):
+def test_e2e_restore_with_dataloader(num_workers, sampler):
     dset = DummyDataset()
     # Expecting 10 batches in total.
     sampler = SingleCutSampler(CUTS, max_duration=10.0, shuffle=True, drop_last=True)
