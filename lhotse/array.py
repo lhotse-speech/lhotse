@@ -56,7 +56,11 @@ class Array:
 
     @classmethod
     def from_dict(cls, data: dict) -> "Array":
-        if "storage_path" not in data:
+        if (
+            "storage_key" in data
+            and "storage_type" in data
+            and "storage_path" not in data
+        ):
             data["storage_path"] = None
         return cls(**data)
 
