@@ -975,7 +975,9 @@ SAMPLERS_FACTORIES_FOR_REPORT_TEST = [
         DummyManifest(CutSet, begin_id=0, end_id=10),
         DummyManifest(CutSet, begin_id=0, end_id=10),
     ),
-    lambda: BucketingSampler(DummyManifest(CutSet, begin_id=0, end_id=10), num_buckets=2),
+    lambda: BucketingSampler(
+        DummyManifest(CutSet, begin_id=0, end_id=10), num_buckets=2
+    ),
     lambda: DynamicBucketingSampler(
         DummyManifest(CutSet, begin_id=0, end_id=10),
         max_duration=1.0,

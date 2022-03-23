@@ -205,14 +205,19 @@ class DummyDataset(torch.utils.data.Dataset):
         return list(item.ids)
 
 
-@pytest.mark.parametrize("sampler", [
-    SingleCutSampler(CUTS, max_duration=10.0, shuffle=True, drop_last=True),
-    BucketingSampler(CUTS, max_duration=10.0, shuffle=True, drop_last=True, num_buckets=2),
-    ZipSampler(
+@pytest.mark.parametrize(
+    "sampler",
+    [
         SingleCutSampler(CUTS, max_duration=10.0, shuffle=True, drop_last=True),
-        SingleCutSampler(CUTS_MOD, max_duration=10.0, shuffle=True, drop_last=True),
-    ),
-])
+        BucketingSampler(
+            CUTS, max_duration=10.0, shuffle=True, drop_last=True, num_buckets=2
+        ),
+        ZipSampler(
+            SingleCutSampler(CUTS, max_duration=10.0, shuffle=True, drop_last=True),
+            SingleCutSampler(CUTS_MOD, max_duration=10.0, shuffle=True, drop_last=True),
+        ),
+    ],
+)
 @pytest.mark.parametrize("num_workers", [0, 1])
 def test_e2e_restore_with_dataloader(num_workers, sampler):
     dset = DummyDataset()

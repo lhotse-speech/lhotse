@@ -204,9 +204,7 @@ class ZipSampler(CutSampler):
 
     @property
     def diagnostics(self) -> SamplingDiagnostics:
-        return reduce(
-            add, (s.diagnostics for s in self.samplers)
-        )
+        return reduce(add, (s.diagnostics for s in self.samplers))
 
     def get_report(self) -> str:
         """Returns a string describing the statistics of the sampling process so far."""

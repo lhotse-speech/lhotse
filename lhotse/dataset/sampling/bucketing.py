@@ -345,9 +345,7 @@ class BucketingSampler(CutSampler):
 
     @property
     def diagnostics(self) -> SamplingDiagnostics:
-        return reduce(
-            add, (bucket.diagnostics for bucket in self.bucket_samplers)
-        )
+        return reduce(add, (bucket.diagnostics for bucket in self.bucket_samplers))
 
     def get_report(self) -> str:
         """Returns a string describing the statistics of the sampling process so far."""
