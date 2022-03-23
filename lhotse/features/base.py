@@ -486,6 +486,9 @@ class Features:
     ) -> "Features":
         from lhotse.features.io import get_memory_writer
 
+        if self.storage_type in ("memory_lilcom", "memory_writer"):
+            return self  # nothing to do
+
         arr = self.load(start=start, duration=duration)
         if issubclass(arr.dtype.type, np.floating):
             writer = get_memory_writer("memory_lilcom")()

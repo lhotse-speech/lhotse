@@ -431,6 +431,9 @@ class Recording:
         also accepted.
         """
 
+        if all(src.type == "memory" for src in self.sources):
+            return self  # nothing to do
+
         # Case #1: no opts specified, read audio without decoding and move it in memory.
         if all(opt is None for opt in (channels, offset, duration)):
             memory_sources = [
