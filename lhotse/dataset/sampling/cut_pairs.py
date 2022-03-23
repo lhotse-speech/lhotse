@@ -195,7 +195,6 @@ class CutPairsSampler(CutSampler):
             self.target_cuts.shuffle(self.seed + self.epoch)
         iter(self.source_cuts)
         iter(self.target_cuts)
-        self.diagnostics.reset()
         return self
 
     def _next_batch(self) -> Tuple[CutSet, CutSet]:

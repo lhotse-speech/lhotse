@@ -1,4 +1,5 @@
 import random
+from copy import deepcopy
 from itertools import groupby
 from math import isclose
 from statistics import mean
@@ -16,6 +17,7 @@ from lhotse.dataset.sampling import (
     SingleCutSampler,
     ZipSampler,
 )
+from lhotse.dataset.sampling.base import SamplingDiagnostics
 from lhotse.dataset.sampling.dynamic import DynamicCutSampler
 from lhotse.testing.dummies import DummyManifest, as_lazy, dummy_cut
 from lhotse.utils import (
@@ -966,28 +968,29 @@ def test_bucketing_sampler_drop_last(drop_last):
     assert num_discarded_cuts == expected_discarded_cuts
 
 
-@pytest.mark.parametrize(
-    "sampler",
-    [
+SAMPLERS_FACTORIES_FOR_REPORT_TEST = [
+    lambda: SimpleCutSampler(DummyManifest(CutSet, begin_id=0, end_id=10)),
+    lambda: DynamicCutSampler(DummyManifest(CutSet, begin_id=0, end_id=10)),
+    lambda: CutPairsSampler(
+        DummyManifest(CutSet, begin_id=0, end_id=10),
+        DummyManifest(CutSet, begin_id=0, end_id=10),
+    ),
+    lambda: BucketingSampler(DummyManifest(CutSet, begin_id=0, end_id=10), num_buckets=2),
+    lambda: DynamicBucketingSampler(
+        DummyManifest(CutSet, begin_id=0, end_id=10),
+        max_duration=1.0,
+        num_buckets=2,
+    ),
+    lambda: ZipSampler(
         SimpleCutSampler(DummyManifest(CutSet, begin_id=0, end_id=10)),
-        DynamicCutSampler(DummyManifest(CutSet, begin_id=0, end_id=10)),
-        CutPairsSampler(
-            DummyManifest(CutSet, begin_id=0, end_id=10),
-            DummyManifest(CutSet, begin_id=0, end_id=10),
-        ),
-        BucketingSampler(DummyManifest(CutSet, begin_id=0, end_id=10)),
-        DynamicBucketingSampler(
-            DummyManifest(CutSet, begin_id=0, end_id=10),
-            max_duration=1.0,
-            num_buckets=2,
-        ),
-        ZipSampler(
-            SimpleCutSampler(DummyManifest(CutSet, begin_id=0, end_id=10)),
-            SimpleCutSampler(DummyManifest(CutSet, begin_id=10, end_id=20)),
-        ),
-    ],
-)
-def test_sampler_get_report(sampler):
+        SimpleCutSampler(DummyManifest(CutSet, begin_id=10, end_id=20)),
+    ),
+]
+
+
+@pytest.mark.parametrize("create_sampler", SAMPLERS_FACTORIES_FOR_REPORT_TEST)
+def test_sampler_get_report(create_sampler):
+    sampler = create_sampler()
     sampler.filter(
         lambda c: "8" not in c.id
     )  # to check that the report correctly accounts for discarded data
@@ -996,6 +999,37 @@ def test_sampler_get_report(sampler):
     assert not report.startswith("Sampling statistics unavailable")
     assert "cuts discarded 0" not in report
     print(report)
+
+
+@pytest.mark.parametrize("create_sampler", SAMPLERS_FACTORIES_FOR_REPORT_TEST)
+def test_sampler_diagnostics_accumulate_across_epochs(create_sampler):
+    sampler = create_sampler()
+    sampler.filter(
+        lambda c: "8" not in c.id
+    )  # to check that the report correctly accounts for discarded data
+
+    sampler.set_epoch(0)
+    _ = [b for b in sampler]  # iterate full epoch
+    diagnostics_ep0: SamplingDiagnostics = deepcopy(sampler.diagnostics)
+
+    sampler.set_epoch(1)
+    _ = [b for b in sampler]  # iterate full epoch
+    diagnostics_ep1: SamplingDiagnostics = sampler.diagnostics
+
+    # batch statistics
+    assert diagnostics_ep0.num_kept_batches < diagnostics_ep1.num_kept_batches
+    assert diagnostics_ep0.total_batches < diagnostics_ep1.total_batches
+    # note: no assumption about diagnostics.num_discarded_batches here
+
+    # cut statistics
+    assert 2 * diagnostics_ep0.total_cuts == diagnostics_ep1.total_cuts
+    assert (
+        2 * diagnostics_ep0.kept_stats.num_cuts == diagnostics_ep1.kept_stats.num_cuts
+    )
+    assert (
+        2 * diagnostics_ep0.discarded_stats.num_cuts
+        == diagnostics_ep1.discarded_stats.num_cuts
+    )
 
 
 @pytest.mark.parametrize(

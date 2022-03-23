@@ -177,7 +177,6 @@ class SimpleCutSampler(CutSampler):
         if self.shuffle:
             self.data_source.shuffle(self.seed + self.epoch)
         iter(self.data_source)
-        self.diagnostics.reset()
         return self
 
     def _next_batch(self) -> CutSet:

@@ -4,7 +4,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 from lhotse import CutSet
 from lhotse.cut import Cut
-from lhotse.dataset.sampling.base import CutSampler
+from lhotse.dataset.sampling.base import CutSampler, SamplingDiagnostics
 
 
 class ZipSampler(CutSampler):
@@ -202,9 +202,12 @@ class ZipSampler(CutSampler):
         for sampler in self.samplers:
             sampler.filter(predicate)
 
+    @property
+    def diagnostics(self) -> SamplingDiagnostics:
+        return reduce(
+            add, (s.diagnostics for s in self.samplers)
+        )
+
     def get_report(self) -> str:
         """Returns a string describing the statistics of the sampling process so far."""
-        total_diagnostics = reduce(
-            add, (sampler.diagnostics for sampler in self.samplers)
-        )
-        return total_diagnostics.get_report()
+        return self.diagnostics.get_report()

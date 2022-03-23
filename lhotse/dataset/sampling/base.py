@@ -70,6 +70,7 @@ class CutSampler(Sampler):
         self.shuffle = shuffle
         self.seed = seed
         self.epoch = 0
+        self._diagnostics = SamplingDiagnostics()
 
         # This flag is used to indicate that we have restored a sampler's state from a state_dict.
         # When it is set, we will ignore the next call to iter(), which would have reset the
@@ -79,7 +80,15 @@ class CutSampler(Sampler):
         self._maybe_init_distributed(world_size=world_size, rank=rank)
         # By default, self._filter_fn passes every Cut through.
         self._filter_fn: Callable[[Cut], bool] = _filter_nothing
-        self.diagnostics = SamplingDiagnostics()
+
+    @property
+    def diagnostics(self):
+        """
+        Info on how many cuts / batches were returned or rejected during iteration.
+
+        This property can be overriden by child classes e.g. to merge diagnostics of composite samplers.
+        """
+        return self._diagnostics
 
     def _maybe_init_distributed(self, world_size: Optional[int], rank: Optional[int]):
         if world_size is not None:
