@@ -56,6 +56,8 @@ class Array:
 
     @classmethod
     def from_dict(cls, data: dict) -> "Array":
+        if "storage_path" not in data:
+            data["storage_path"] = None
         return cls(**data)
 
     def load(self) -> np.ndarray:
@@ -78,6 +80,9 @@ class Array:
 
     def move_to_memory(self) -> "Array":
         from lhotse.features.io import get_memory_writer
+
+        if self.storage_type in ("memory_lilcom", "memory_writer"):
+            return self  # nothing to do
 
         arr = self.load()
         if issubclass(arr.dtype.type, np.float):
@@ -240,6 +245,9 @@ class TemporalArray:
         duration: Optional[Seconds] = None,
     ) -> "TemporalArray":
         from lhotse.features.io import get_memory_writer
+
+        if self.array.storage_type in ("memory_lilcom", "memory_writer"):
+            return self  # nothing to do
 
         arr = self.load(start=start, duration=duration)
         if issubclass(arr.dtype.type, np.float):
