@@ -35,7 +35,7 @@ class PerturbVolume:
                 factor=self.random.uniform(self.scale_low, self.scale_high),
                 affix_id=not self.preserve_id,
             )
-            if self.random.random() >= self.p
+            if self.random.random() <= self.p
             else cut
             for cut in cuts
         )

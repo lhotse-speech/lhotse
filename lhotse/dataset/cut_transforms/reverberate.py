@@ -49,7 +49,7 @@ class ReverbWithImpulseResponse:
                 affix_id=not self.preserve_id,
                 rir_channels=self.rir_channels,
             )
-            if self.random.random() >= self.p
+            if self.random.random() <= self.p
             else cut
             for cut in cuts
         )
