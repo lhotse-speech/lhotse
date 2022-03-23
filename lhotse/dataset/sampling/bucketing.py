@@ -94,8 +94,8 @@ class BucketingSampler(CutSampler):
         self.cut_sets = cuts
         if self.cut_sets[0].is_lazy:
             warnings.warn(
-                "Lazy CutSet detected in BucketingSampler: this is not well supported yet, "
-                "and you might experience a potentially long lag while the buckets are being created."
+                "Lazy CutSet detected in BucketingSampler: we will read it into memory anyway. "
+                "Please use lhotse.dataset.DynamicBucketingSampler instead."
             )
 
         # Split data into buckets.
