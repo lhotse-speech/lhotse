@@ -56,6 +56,8 @@ class Array:
 
     @classmethod
     def from_dict(cls, data: dict) -> "Array":
+        if "storage_path" not in data:
+            data["storage_path"] = None
         return cls(**data)
 
     def load(self) -> np.ndarray:
