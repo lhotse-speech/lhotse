@@ -545,6 +545,8 @@ class Features:
             data["frame_shift"] = round(
                 data["duration"] / data["num_frames"], ndigits=3
             )
+        if "storage_path" not in data:
+            data["storage_path"] = None
         return Features(**data)
 
     def __repr__(self):
