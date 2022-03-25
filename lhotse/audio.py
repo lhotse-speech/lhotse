@@ -1279,26 +1279,29 @@ def read_audio(
 ) -> Tuple[np.ndarray, int]:
     # First handle special cases: OPUS and SPHERE (SPHERE may be encoded with shorten,
     #   which can only be decoded by binaries "shorten" and "sph2pipe").
-    if isinstance(path_or_fd, (str, Path)) and str(path_or_fd).lower().endswith(
-        ".opus"
-    ):
-        return read_opus(
-            path_or_fd,
-            offset=offset,
-            duration=duration,
-            force_opus_sampling_rate=force_opus_sampling_rate,
-        )
-    elif isinstance(path_or_fd, (str, Path)) and str(path_or_fd).lower().endswith(
-        ".sph"
-    ):
-        return read_sph(path_or_fd, offset=offset, duration=duration)
     try:
-        return torchaudio_load(path_or_fd, offset=offset, duration=duration)
-    except:
+        if isinstance(path_or_fd, (str, Path)) and str(path_or_fd).lower().endswith(
+            ".opus"
+        ):
+            return read_opus(
+                path_or_fd,
+                offset=offset,
+                duration=duration,
+                force_opus_sampling_rate=force_opus_sampling_rate,
+            )
+        elif isinstance(path_or_fd, (str, Path)) and str(path_or_fd).lower().endswith(
+            ".sph"
+        ):
+            return read_sph(path_or_fd, offset=offset, duration=duration)
         try:
-            return soundfile_load(path_or_fd, offset=offset, duration=duration)
+            return torchaudio_load(path_or_fd, offset=offset, duration=duration)
         except:
-            return audioread_load(path_or_fd, offset=offset, duration=duration)
+            try:
+                return soundfile_load(path_or_fd, offset=offset, duration=duration)
+            except:
+                return audioread_load(path_or_fd, offset=offset, duration=duration)
+    except Exception as e:
+        raise AudioLoadingError(f"Reading audio from '{path_or_fd}' failed. Details: {type(e)}('{str(e)}')")
 
 
 class LibsndfileCompatibleAudioInfo(NamedTuple):
