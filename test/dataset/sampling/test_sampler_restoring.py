@@ -1,3 +1,4 @@
+from copy import deepcopy
 from tempfile import NamedTemporaryFile
 from typing import List
 
@@ -213,29 +214,35 @@ class DummyDataset(torch.utils.data.Dataset):
 
 
 @pytest.mark.parametrize(
-    "sampler",
+    "create_sampler",
     [
-        SingleCutSampler(CUTS, max_duration=10.0, shuffle=True, drop_last=True),
-        BucketingSampler(
+        lambda: SingleCutSampler(CUTS, max_duration=10.0, shuffle=True, drop_last=True),
+        lambda: BucketingSampler(
             CUTS, max_duration=10.0, shuffle=True, drop_last=True, num_buckets=2
         ),
-        ZipSampler(
+        lambda: ZipSampler(
             SingleCutSampler(CUTS, max_duration=10.0, shuffle=True, drop_last=True),
             SingleCutSampler(CUTS_MOD, max_duration=10.0, shuffle=True, drop_last=True),
         ),
     ],
 )
 @pytest.mark.parametrize("num_workers", [0, 1])
-def test_e2e_restore_with_dataloader(num_workers, sampler):
+def test_e2e_restore_with_dataloader(num_workers, create_sampler):
+    sampler = create_sampler()
+    restored_sampler = deepcopy(sampler)  # keep fresh sampler for state restoration later
     dset = DummyDataset()
     # Expecting 10 batches in total.
-    sampler = SingleCutSampler(CUTS, max_duration=10.0, shuffle=True, drop_last=True)
-    sampler.set_epoch(1)
     # Note: not testing with num_workers > 1 as it will randomize the order of batches.
     dloader = DataLoader(
         dset, batch_size=None, sampler=sampler, num_workers=num_workers
     )
 
+    # Iterate the dataloader for one epoch to accumulate some stats.
+    dloader.sampler.set_epoch(0)
+    list(dloader)
+
+    # Advance to epoch 1 and iterate it partially to check resuming.
+    dloader.sampler.set_epoch(1)
     expected_batches = []
     for idx, b in enumerate(dloader):
         if idx == 4:
@@ -246,7 +253,6 @@ def test_e2e_restore_with_dataloader(num_workers, sampler):
             expected_batches.append(b)
 
     # Restore the sampler to its state from the dloader.
-    restored_sampler = SingleCutSampler(CUTS)
     restored_sampler.load_state_dict(state)
 
     # Initialize a new dloader with the restored sampler.
