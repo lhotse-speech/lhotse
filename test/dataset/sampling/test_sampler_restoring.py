@@ -229,7 +229,9 @@ class DummyDataset(torch.utils.data.Dataset):
 @pytest.mark.parametrize("num_workers", [0, 1])
 def test_e2e_restore_with_dataloader(num_workers, create_sampler):
     sampler = create_sampler()
-    restored_sampler = deepcopy(sampler)  # keep fresh sampler for state restoration later
+    restored_sampler = deepcopy(
+        sampler
+    )  # keep fresh sampler for state restoration later
     dset = DummyDataset()
     # Expecting 10 batches in total.
     # Note: not testing with num_workers > 1 as it will randomize the order of batches.
