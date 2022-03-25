@@ -2271,7 +2271,7 @@ class MixedCut(Cut):
         except AssertionError:
             raise AttributeError(
                 f"No such attribute: '{name}' (note: custom attributes are not supported "
-                f"when the mixed cut has a different number of MonoCut tracks than one)."
+                f"when a MixedCut consists of more than one MonoCut with that attribute)."
             )
 
     def load_custom(self, name: str) -> np.ndarray:
