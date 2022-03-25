@@ -2350,7 +2350,7 @@ class MixedCut(Cut):
         assert len(non_padding_cuts_with_custom_attr) == 1, (
             f"This MixedCut has {len(non_padding_cuts_with_custom_attr)} non-padding cuts "
             f"with a custom attribute '{attr_name}'. We currently don't support mixing custom attributes. "
-            f"Consider dropping the attribute on all but one of MonoCuts."
+            f"Consider dropping the attribute on all but one of MonoCuts. Problematic cut:\n{self}"
         )
         non_padding_idx, mono_cut = non_padding_cuts_with_custom_attr[0]
         return non_padding_idx, mono_cut
