@@ -2266,7 +2266,7 @@ class MixedCut(Cut):
             (
                 non_padding_idx,
                 mono_cut,
-            ) = self._assert_one_mono_cut_with_attr_and_return_it_with_track_index()
+            ) = self._assert_one_mono_cut_with_attr_and_return_it_with_track_index(name)
             return getattr(mono_cut, name)
         except AssertionError:
             raise AttributeError(
