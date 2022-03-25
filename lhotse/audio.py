@@ -1301,7 +1301,9 @@ def read_audio(
             except:
                 return audioread_load(path_or_fd, offset=offset, duration=duration)
     except Exception as e:
-        raise AudioLoadingError(f"Reading audio from '{path_or_fd}' failed. Details: {type(e)}('{str(e)}')")
+        raise AudioLoadingError(
+            f"Reading audio from '{path_or_fd}' failed. Details: {type(e)}('{str(e)}')"
+        )
 
 
 class LibsndfileCompatibleAudioInfo(NamedTuple):
