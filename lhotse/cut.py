@@ -2314,12 +2314,12 @@ class MixedCut(Cut):
         # We need to pad it.
         left_padding = self.tracks[non_padding_idx].offset
         padded_duration = self.duration
-        pad_value_dict = [t.cut for t in self.tracks if isinstance(t.cut, PaddingCut)][
-            0
-        ].custom
-        if pad_value_dict is not None and name in pad_value_dict:
+        try:
+            pad_value_dict = [
+                t.cut for t in self.tracks if isinstance(t.cut, PaddingCut)
+            ][0].custom
             pad_value = pad_value_dict[name]
-        else:
+        except:
             pad_value = DEFAULT_PADDING_VALUE
 
         return pad_array(
@@ -2350,7 +2350,7 @@ class MixedCut(Cut):
         assert len(non_padding_cuts_with_custom_attr) == 1, (
             f"This MixedCut has {len(non_padding_cuts_with_custom_attr)} non-padding cuts "
             f"with a custom attribute '{attr_name}'. We currently don't support mixing custom attributes. "
-            f"Consider dropping the attribute on all but one of MonoCuts."
+            f"Consider dropping the attribute on all but one of MonoCuts. Problematic cut:\n{self}"
         )
         non_padding_idx, mono_cut = non_padding_cuts_with_custom_attr[0]
         return non_padding_idx, mono_cut
