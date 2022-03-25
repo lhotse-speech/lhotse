@@ -90,6 +90,13 @@ SAMPLERS_TO_TEST = [
 @pytest.mark.parametrize("create_samplers", SAMPLERS_TO_TEST)
 def test_restore_sampler_state(create_samplers):
     sampler, restored_sampler = create_samplers()
+    # Iterate a full epoch through the sampler first to accumulate some sampling diagnostics.
+    sampler.set_epoch(0)
+    list(sampler)
+    sampler.set_epoch(1)
+    list(sampler)
+    sampler.set_epoch(2)
+    list(sampler)
 
     # Iterate the sampler a bit. With max_duration=10s, all samplers should have 10 batches total per epoch.
     sampler.set_epoch(3)
@@ -99,7 +106,7 @@ def test_restore_sampler_state(create_samplers):
 
     # Restore state.
     state_dict = sampler.state_dict()
-    # Call .state_dict() again, becuase load_state_dict() is mutating the input.
+    # Call .state_dict() again, because load_state_dict() is mutating the input.
     restored_sampler.load_state_dict(sampler.state_dict())
 
     # Check it's the same: state dicts.

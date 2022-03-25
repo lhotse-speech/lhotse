@@ -164,7 +164,7 @@ class SimpleCutSampler(CutSampler):
         # Restore the data source's state
         if self.shuffle:
             self.data_source.shuffle(self.seed + self.epoch)
-        self.data_source.fast_forward(self.diagnostics.total_cuts)
+        self.data_source.fast_forward(self.diagnostics.current_epoch_stats.total_cuts)
 
     def __iter__(self) -> "SimpleCutSampler":
         """

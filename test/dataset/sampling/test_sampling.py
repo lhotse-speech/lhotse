@@ -1019,19 +1019,14 @@ def test_sampler_diagnostics_accumulate_across_epochs(create_sampler):
     diagnostics_ep1: SamplingDiagnostics = sampler.diagnostics
 
     # batch statistics
-    assert diagnostics_ep0.num_kept_batches < diagnostics_ep1.num_kept_batches
+    assert diagnostics_ep0.kept_batches < diagnostics_ep1.kept_batches
     assert diagnostics_ep0.total_batches < diagnostics_ep1.total_batches
     # note: no assumption about diagnostics.num_discarded_batches here
 
     # cut statistics
     assert 2 * diagnostics_ep0.total_cuts == diagnostics_ep1.total_cuts
-    assert (
-        2 * diagnostics_ep0.kept_stats.num_cuts == diagnostics_ep1.kept_stats.num_cuts
-    )
-    assert (
-        2 * diagnostics_ep0.discarded_stats.num_cuts
-        == diagnostics_ep1.discarded_stats.num_cuts
-    )
+    assert 2 * diagnostics_ep0.kept_cuts == diagnostics_ep1.kept_cuts
+    assert 2 * diagnostics_ep0.discarded_cuts == diagnostics_ep1.discarded_cuts
 
 
 @pytest.mark.parametrize(

@@ -179,8 +179,8 @@ class CutPairsSampler(CutSampler):
         if self.shuffle:
             self.source_cuts.shuffle(self.seed + self.epoch)
             self.target_cuts.shuffle(self.seed + self.epoch)
-        self.source_cuts.fast_forward(self.diagnostics.total_cuts)
-        self.target_cuts.fast_forward(self.diagnostics.total_cuts)
+        self.source_cuts.fast_forward(self.diagnostics.current_epoch_stats.total_cuts)
+        self.target_cuts.fast_forward(self.diagnostics.current_epoch_stats.total_cuts)
 
     def __iter__(self) -> "CutPairsSampler":
         """
