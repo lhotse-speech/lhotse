@@ -2266,7 +2266,7 @@ class MixedCut(Cut):
             (
                 non_padding_idx,
                 mono_cut,
-            ) = self._assert_mono_cut_with_padding_and_return_it_with_track_index()
+            ) = self._assert_one_mono_cut_with_attr_and_return_it_with_track_index()
             return getattr(mono_cut, name)
         except AssertionError:
             raise AttributeError(
@@ -2297,7 +2297,7 @@ class MixedCut(Cut):
         (
             non_padding_idx,
             mono_cut,
-        ) = self._assert_mono_cut_with_padding_and_return_it_with_track_index()
+        ) = self._assert_one_mono_cut_with_attr_and_return_it_with_track_index(name)
 
         # Load the array and retrieve the manifest from the only non-padding cut.
         # Use getattr to propagate AttributeError if "name" is not defined.
@@ -2331,8 +2331,9 @@ class MixedCut(Cut):
             pad_value=pad_value,
         )
 
-    def _assert_mono_cut_with_padding_and_return_it_with_track_index(
+    def _assert_one_mono_cut_with_attr_and_return_it_with_track_index(
         self,
+        attr_name: str,
     ) -> Tuple[int, MonoCut]:
         # TODO(pzelasko): consider relaxing this condition to
         #                 supporting mixed cuts that are not overlapping
@@ -2341,10 +2342,17 @@ class MixedCut(Cut):
             for idx, t in enumerate(self.tracks)
             if isinstance(t.cut, MonoCut)
         ]
-        assert (
-            len(non_padding_cuts) == 1
-        ), f"The cut has {len(non_padding_cuts)} non-padding cuts (expected exactly one)"
-        non_padding_idx, mono_cut = non_padding_cuts[0]
+        non_padding_cuts_with_custom_attr = [
+            (idx, cut)
+            for idx, cut in non_padding_cuts
+            if cut.custom is not None and attr_name in cut.custom
+        ]
+        assert len(non_padding_cuts_with_custom_attr) == 1, (
+            f"This MixedCut has {len(non_padding_cuts_with_custom_attr)} non-padding cuts "
+            f"with a custom attribute '{attr_name}'. We currently don't support mixing custom attributes. "
+            f"Consider dropping the attribute on all but one of MonoCuts."
+        )
+        non_padding_idx, mono_cut = non_padding_cuts_with_custom_attr[0]
         return non_padding_idx, mono_cut
 
     def truncate(
