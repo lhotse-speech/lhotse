@@ -152,7 +152,7 @@ class SpecAugment(torch.nn.Module):
         super().__init__()
         assert 0 <= p <= 1
         assert num_feature_masks >= 0
-        assert num_frame_masks > 0
+        assert num_frame_masks >= 0
         assert features_mask_size > 0
         assert frames_mask_size > 0
         self.time_warp_factor = time_warp_factor
@@ -224,30 +224,32 @@ class SpecAugment(torch.nn.Module):
                 features = time_warp(features, factor=self.time_warp_factor)
         if mask:
             mean = features.mean()
-            # Frequency masking
-            features = mask_along_axis_optimized(
-                features,
-                mask_size=self.features_mask_size,
-                mask_times=self.num_feature_masks,
-                mask_value=mean,
-                axis=2,
-            )
+            if self.num_feature_masks > 0:
+                # Frequency masking
+                features = mask_along_axis_optimized(
+                    features,
+                    mask_size=self.features_mask_size,
+                    mask_times=self.num_feature_masks,
+                    mask_value=mean,
+                    axis=2,
+                )
             # Time masking
-            max_tot_mask_frames = self.max_frames_mask_fraction * features.size(0)
-            num_frame_masks = min(
-                self.num_frame_masks,
-                math.ceil(max_tot_mask_frames / self.frames_mask_size),
-            )
-            max_mask_frames = min(
-                self.frames_mask_size, max_tot_mask_frames // num_frame_masks
-            )
-            features = mask_along_axis_optimized(
-                features,
-                mask_size=max_mask_frames,
-                mask_times=num_frame_masks,
-                mask_value=mean,
-                axis=1,
-            )
+            if self.num_frame_masks > 0:
+                max_tot_mask_frames = self.max_frames_mask_fraction * features.size(0)
+                num_frame_masks = min(
+                    self.num_frame_masks,
+                    math.ceil(max_tot_mask_frames / self.frames_mask_size),
+                )
+                max_mask_frames = min(
+                    self.frames_mask_size, max_tot_mask_frames // num_frame_masks
+                )
+                features = mask_along_axis_optimized(
+                    features,
+                    mask_size=max_mask_frames,
+                    mask_times=num_frame_masks,
+                    mask_value=mean,
+                    axis=1,
+                )
 
         return features
 
