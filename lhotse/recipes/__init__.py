@@ -22,6 +22,7 @@ from .gale_mandarin import prepare_gale_mandarin
 from .gigaspeech import prepare_gigaspeech
 from .heroico import download_heroico, prepare_heroico
 from .hifitts import download_hifitts, prepare_hifitts
+from .iwslt2022_dialect import prepare_iwslt2022_dialect, prepare_iwslt2022_dialect_eval
 from .icsi import download_icsi, prepare_icsi
 from .l2_arctic import prepare_l2_arctic
 from .libricss import download_libricss, prepare_libricss
