@@ -7,7 +7,11 @@ from tempfile import NamedTemporaryFile
 import pytest
 
 from lhotse import CutSet
-from lhotse.dataset import DynamicBucketingSampler, RoundRobinSampler, report_padding_ratio_estimate
+from lhotse.dataset import (
+    DynamicBucketingSampler,
+    RoundRobinSampler,
+    report_padding_ratio_estimate,
+)
 from lhotse.dataset.cut_transforms import concat_cuts
 from lhotse.dataset.sampling import (
     BucketingSampler,

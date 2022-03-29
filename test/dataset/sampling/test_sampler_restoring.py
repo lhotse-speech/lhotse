@@ -10,7 +10,8 @@ from lhotse.dataset import (
     BucketingSampler,
     CutPairsSampler,
     DynamicBucketingSampler,
-    RoundRobinSampler, SingleCutSampler,
+    RoundRobinSampler,
+    SingleCutSampler,
     ZipSampler,
 )
 from lhotse.dataset.sampling.dynamic import DynamicCutSampler

@@ -142,7 +142,9 @@ class RoundRobinSampler(CutSampler):
             self._nondepleted_samplers.pop(self._cur_sampler_idx)
             return self._next_batch()
 
-        self._cur_sampler_idx = (self._cur_sampler_idx + 1) % len(self._nondepleted_samplers)
+        self._cur_sampler_idx = (self._cur_sampler_idx + 1) % len(
+            self._nondepleted_samplers
+        )
 
         return batch
 
