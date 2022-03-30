@@ -11,7 +11,7 @@ from typing_extensions import Literal
 
 from lhotse import CutSet
 from lhotse.cut import Cut
-from lhotse.dataset.sampling.base import CutSampler
+from lhotse.dataset.sampling.base import CutSampler, SamplingDiagnostics
 from lhotse.dataset.sampling.simple import SimpleCutSampler
 
 
@@ -94,8 +94,8 @@ class BucketingSampler(CutSampler):
         self.cut_sets = cuts
         if self.cut_sets[0].is_lazy:
             warnings.warn(
-                "Lazy CutSet detected in BucketingSampler: this is not well supported yet, "
-                "and you might experience a potentially long lag while the buckets are being created."
+                "Lazy CutSet detected in BucketingSampler: we will read it into memory anyway. "
+                "Please use lhotse.dataset.DynamicBucketingSampler instead."
             )
 
         # Split data into buckets.
@@ -343,12 +343,13 @@ class BucketingSampler(CutSampler):
             if not depleted
         ]
 
+    @property
+    def diagnostics(self) -> SamplingDiagnostics:
+        return reduce(add, (bucket.diagnostics for bucket in self.bucket_samplers))
+
     def get_report(self) -> str:
         """Returns a string describing the statistics of the sampling process so far."""
-        total_diagnostics = reduce(
-            add, (bucket.diagnostics for bucket in self.bucket_samplers)
-        )
-        return total_diagnostics.get_report()
+        return self.diagnostics.get_report()
 
 
 def create_buckets_equal_len(

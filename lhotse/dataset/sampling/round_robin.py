@@ -4,7 +4,7 @@ from typing import Any, Callable, Dict, Optional, Tuple, Union
 
 from lhotse import CutSet
 from lhotse.cut import Cut
-from lhotse.dataset.sampling.base import CutSampler
+from lhotse.dataset.sampling.base import CutSampler, SamplingDiagnostics
 
 
 class RoundRobinSampler(CutSampler):
@@ -38,6 +38,8 @@ class RoundRobinSampler(CutSampler):
         """
         super().__init__()
         self.samplers = samplers
+        self._nondepleted_samplers_indices = list(range(len(self.samplers)))
+        self._cur_sampler_idx = 0
 
     @property
     def remaining_duration(self) -> Optional[float]:
@@ -92,6 +94,11 @@ class RoundRobinSampler(CutSampler):
         state_dict.update(
             {
                 "samplers": [s.state_dict() for s in self.samplers],
+                "_cur_sampler_idx": self._cur_sampler_idx,
+                # Explicit list copy below allows to restore within the same process.
+                "_nondepleted_samplers_indices": list(
+                    self._nondepleted_samplers_indices
+                ),
             }
         )
         return state_dict
@@ -114,6 +121,10 @@ class RoundRobinSampler(CutSampler):
             For implementers of sub-classes of CutSampler: the flag ``self._just_restored_state`` has to be
             handled in ``__iter__`` to make it avoid resetting the just-restored state (only once).
         """
+        self._cur_sampler_idx = state_dict.pop("_cur_sampler_idx")
+        self._nondepleted_samplers_indices = state_dict.pop(
+            "_nondepleted_samplers_indices"
+        )
         assert len(self.samplers) == len(state_dict["samplers"]), (
             "Error in RoundRobinSampler.load_state_dict(): Inconsistent number of samplers: "
             f"current RoundRobinSampler has {len(self.samplers)}, the state_dict has {len(state_dict['samplers'])}."
@@ -125,25 +136,28 @@ class RoundRobinSampler(CutSampler):
     def __iter__(self):
         for sampler in self.samplers:
             iter(sampler)
-        self._nondepleted_samplers = list(self.samplers)
+        if self._just_restored_state:
+            return self
+        self._nondepleted_samplers_indices = list(range(len(self.samplers)))
         self._cur_sampler_idx = 0
         return self
 
     def _next_batch(self) -> Union[CutSet, Tuple[CutSet]]:
-        if len(self._nondepleted_samplers) == 0:
+        if len(self._nondepleted_samplers_indices) == 0:
             raise StopIteration()
 
-        sampler = self._nondepleted_samplers[self._cur_sampler_idx]
+        sampler_idx = self._nondepleted_samplers_indices[self._cur_sampler_idx]
+        sampler = self.samplers[sampler_idx]
 
         try:
             batch = next(sampler)
         except StopIteration:
             # Try again recursively as long as there is at least one non depleted sampler left.
-            self._nondepleted_samplers.pop(self._cur_sampler_idx)
+            self._nondepleted_samplers_indices.pop(self._cur_sampler_idx)
             return self._next_batch()
 
         self._cur_sampler_idx = (self._cur_sampler_idx + 1) % len(
-            self._nondepleted_samplers
+            self._nondepleted_samplers_indices
         )
 
         return batch
@@ -176,9 +190,10 @@ class RoundRobinSampler(CutSampler):
         for sampler in self.samplers:
             sampler.filter(predicate)
 
+    @property
+    def diagnostics(self) -> SamplingDiagnostics:
+        return reduce(add, (s.diagnostics for s in self.samplers))
+
     def get_report(self) -> str:
         """Returns a string describing the statistics of the sampling process so far."""
-        total_diagnostics = reduce(
-            add, (sampler.diagnostics for sampler in self.samplers)
-        )
-        return total_diagnostics.get_report()
+        return self.diagnostics.get_report()
