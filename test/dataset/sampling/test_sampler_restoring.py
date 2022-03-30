@@ -10,6 +10,7 @@ from lhotse.dataset import (
     BucketingSampler,
     CutPairsSampler,
     DynamicBucketingSampler,
+    RoundRobinSampler,
     SingleCutSampler,
     ZipSampler,
 )
@@ -78,7 +79,19 @@ SAMPLERS_TO_TEST = [
         DynamicCutSampler(CUTS, max_duration=10.0, shuffle=True, drop_last=True),
         DynamicCutSampler(CUTS, max_duration=10.0),
         marks=pytest.mark.xfail(reason='DynamicCutSampler does not support resumption yet.')
-    )
+    ),
+    # Differently initialized RoundRobinSampler with the same CUTS
+    pytest.param(
+        RoundRobinSampler(
+            SingleCutSampler(CUTS, max_duration=10.0, shuffle=True, drop_last=True),
+            SingleCutSampler(CUTS_MOD, max_duration=10.0, shuffle=True, drop_last=True),
+        ),
+        RoundRobinSampler(
+            SingleCutSampler(CUTS),
+            SingleCutSampler(CUTS_MOD),
+        ),
+        marks=pytest.mark.xfail(reason='RoundRobinSampler does not support resumption yet.')
+    ),
 ]
 # fmt: on
 
