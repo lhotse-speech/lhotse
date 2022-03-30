@@ -67,7 +67,26 @@ def test_num_frames(libri_cut):
 
     expected_cut_frame_count = round(10 / 0.01)  # duration / frame_shift
     assert libri_cut.num_frames == expected_cut_frame_count
+    
+    
+@pytest.mark.parametrize(
+    "params, expected_n_win", #params: (sig_len,win_len,hop)
+    [
+        ((1, 6.1, 3), 1),  # 0-1
+        ((3, 1, 6.1), 1),  # 0-1
+        ((3, 6.1, 1), 1),  # 0-3
+        ((5.9, 1, 3), 2),  # 0-1, 3-4
+        ((5.9, 3, 1), 4),  # 0-3, 1-4, 2-5, 3-5.9
+        ((6.1, 1, 3), 3),  # 0-1, 3-4, 6-6.1
+        ((6.1, 3, 1), 5),  # 0-3, 1-4, 2-5, 3-6, 4-6.1
+        ((5.9, 3, 3), 2),  # 0-3, 3-5.9
+        ((6.1, 3, 3), 3),  # 0-3, 3-6, 6-6.1
+        ((0.0, 3, 3), 0),
+    ],
+)
 
+def test_num_windows(params, expected_n_win):
+    assert CutSet.num_windows(params[0], params[1], params[2]) == expected_n_win
 
 def test_load_features(libri_cut):
     feats = libri_cut.load_features()

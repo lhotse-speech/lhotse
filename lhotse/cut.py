@@ -4058,34 +4058,54 @@ class CutSet(Serializable, AlgorithmMixin):
             )
             for cut in self
         )
+        
+    @staticmethod
+    def num_windows(sig_len:Seconds, win_len:Seconds, hop:Seconds)->int:
+        """
+        Returns a number of windows obtained from signal of length equal to ``sig_len``
+        with windows of ``win_len`` and ``hop`` denoting shift between windows. 
+
+        :param sig_len: Signal length in seconds.
+        :param win_len: Window length in seconds
+        :param hop: Shift between the windows in in seconds.
+        :return: number of windows in signal assuming that last .
+        """
+        n = ceil(max(sig_len - win_len, 0) / hop)
+        b = (sig_len - n*hop) > 0
+        return (sig_len > 0) * (n + int(b))
 
     def cut_into_windows(
         self,
         duration: Seconds,
+        hop: Seconds = None,
         keep_excessive_supervisions: bool = True,
         num_jobs: int = 1,
     ) -> "CutSet":
         """
-        Return a new ``CutSet``, made by traversing each ``MonoCut`` in windows of ``duration`` seconds and
+        Return a new ``CutSet``, made by traversing each ``MonoCut`` in windows of ``duration`` seconds by ``hop`` seconds and
         creating new ``MonoCut`` out of them.
 
         The last window might have a shorter duration if there was not enough audio, so you might want to
         use either ``.filter()`` or ``.pad()`` afterwards to obtain a uniform duration ``CutSet``.
 
         :param duration: Desired duration of the new cuts in seconds.
+        :param hop: Shift between the windows in the new cuts in seconds.
         :param keep_excessive_supervisions: bool. When a cut is truncated in the middle of a supervision segment,
             should the supervision be kept.
         :param num_jobs: The number of parallel workers.
         :return: a new CutSet with cuts made from shorter duration windows.
         """
+        if not hop:
+            hop = duration
         if num_jobs == 1:
             new_cuts = []
             for cut in self:
-                n_windows = ceil(cut.duration / duration)
+                n_windows = self.num_windows(cut.duration, duration, hop)
+                #n_windows = ceil(cut.duration / duration)
                 for i in range(n_windows):
                     new_cuts.append(
                         cut.truncate(
-                            offset=duration * i,
+                            offset=hop * i,
                             duration=duration,
                             keep_excessive_supervisions=keep_excessive_supervisions,
                         )
@@ -4099,6 +4119,7 @@ class CutSet(Serializable, AlgorithmMixin):
             self,
             CutSet.cut_into_windows,
             duration=duration,
+            hop=hop,
             keep_excessive_supervisions=keep_excessive_supervisions,
         )
         return result
