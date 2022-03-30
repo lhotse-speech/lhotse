@@ -1,5 +1,6 @@
 import warnings
-from dataclasses import asdict, dataclass, field
+from copy import deepcopy
+from dataclasses import asdict, dataclass
 from math import isclose
 from typing import Any, Callable, Dict, Iterable, Optional, Tuple, Union
 
@@ -70,6 +71,7 @@ class CutSampler(Sampler):
         self.shuffle = shuffle
         self.seed = seed
         self.epoch = 0
+        self._diagnostics = SamplingDiagnostics()
 
         # This flag is used to indicate that we have restored a sampler's state from a state_dict.
         # When it is set, we will ignore the next call to iter(), which would have reset the
@@ -79,7 +81,15 @@ class CutSampler(Sampler):
         self._maybe_init_distributed(world_size=world_size, rank=rank)
         # By default, self._filter_fn passes every Cut through.
         self._filter_fn: Callable[[Cut], bool] = _filter_nothing
-        self.diagnostics = SamplingDiagnostics()
+
+    @property
+    def diagnostics(self):
+        """
+        Info on how many cuts / batches were returned or rejected during iteration.
+
+        This property can be overriden by child classes e.g. to merge diagnostics of composite samplers.
+        """
+        return self._diagnostics
 
     def _maybe_init_distributed(self, world_size: Optional[int], rank: Optional[int]):
         if world_size is not None:
@@ -107,6 +117,7 @@ class CutSampler(Sampler):
             # from a previously read state dict.
             self.allow_iter_to_reset_state()
         self.epoch = epoch
+        self.diagnostics.set_epoch(epoch)
 
     def filter(self, predicate: Callable[[Cut], bool]) -> None:
         """
@@ -372,59 +383,142 @@ class TimeConstraint:
 
 
 @dataclass
+class EpochDiagnostics:
+    epoch: int = 0
+    kept_cuts: int = 0
+    discarded_cuts: int = 0
+    kept_batches: int = 0
+    discarded_batches: int = 0
+
+    @property
+    def total_cuts(self) -> int:
+        return self.kept_cuts + self.discarded_cuts
+
+    @property
+    def total_batches(self) -> int:
+        return self.kept_batches + self.discarded_batches
+
+    def get_report(self) -> str:
+        """Returns a string describing the statistics of the sampling process so far."""
+        if self.total_batches == 0 or self.total_cuts == 0:
+            return (
+                "Sampling statistics unavailable: EpochDiagnostics received no cuts or batches. "
+                "If this is unexpected, and you're using a custom sampler, ensure that the sampler "
+                "is registering the batches in SamplerDiagnostics/EpochDiagnostics."
+            )
+
+        return (
+            f"| ep {self.epoch:>3d} | cuts kept {self.kept_cuts:d}/{self.total_cuts:d} "
+            f"({self.kept_cuts / self.total_cuts:.2%}) "
+            f"| cuts discarded {self.discarded_cuts:d} "
+            f"| batches kept {self.kept_batches:d}/{self.total_batches:d} "
+            f"({self.kept_batches / self.total_batches:.2%})"
+            f"| batches discarded {self.discarded_batches:d} |"
+        )
+
+    def state_dict(self) -> Dict[str, Any]:
+        return asdict(self)
+
+    def load_state_dict(self, state_dict: Dict[str, Any]) -> "EpochDiagnostics":
+        self.epoch = state_dict.pop("epoch")
+        self.kept_batches = state_dict.pop("kept_batches")
+        self.discarded_batches = state_dict.pop("discarded_batches")
+        self.kept_cuts = state_dict.pop("kept_cuts")
+        self.discarded_cuts = state_dict.pop("discarded_cuts")
+
+        assert len(state_dict) == 0, (
+            "Error in EpochDiagnostics.load_state_dict(): Unexpected keys:\n- "
+            + "\n- ".join(state_dict.keys())
+        )
+
+        return self
+
+    def __add__(self, other: "EpochDiagnostics") -> "EpochDiagnostics":
+        assert self.epoch == other.epoch
+        return EpochDiagnostics(
+            epoch=self.epoch,
+            kept_cuts=self.kept_cuts + other.kept_cuts,
+            kept_batches=self.kept_batches + other.kept_batches,
+            discarded_cuts=self.discarded_cuts + other.discarded_cuts,
+            discarded_batches=self.discarded_batches + other.discarded_batches,
+        )
+
+
+@dataclass
 class SamplingDiagnostics:
     """
     Utility for collecting diagnostics about the sampling process:
     how many cuts/batches were discarded.
     """
 
-    kept_stats: TimeConstraint = field(
-        default_factory=lambda: TimeConstraint(max_duration=float("inf"))
-    )
-    discarded_stats: TimeConstraint = field(
-        default_factory=lambda: TimeConstraint(max_duration=float("inf"))
-    )
-    num_kept_batches: int = 0
-    num_discarded_batches: int = 0
+    current_epoch: int = 0
+    stats_per_epoch: Dict[int, EpochDiagnostics] = None
+
+    def __post_init__(self):
+        if self.stats_per_epoch is None:
+            self.stats_per_epoch = {}
+            self.set_epoch(self.current_epoch)
+
+    def set_epoch(self, epoch: int) -> None:
+        self.current_epoch = epoch
+        if epoch not in self.stats_per_epoch:
+            self.stats_per_epoch[epoch] = EpochDiagnostics(epoch=epoch)
+
+    def advance_epoch(self) -> None:
+        self.set_epoch(self.current_epoch + 1)
+
+    @property
+    def current_epoch_stats(self) -> EpochDiagnostics:
+        return self.stats_per_epoch[self.current_epoch]
 
     def keep(self, cuts: Iterable[Cut]) -> None:
         cntr = 0
         for cut in cuts:
-            self.kept_stats.add(cut)
+            self.current_epoch_stats.kept_cuts += 1
             cntr += 1
         if not cntr:
             warnings.warn(
                 "Found and accepted batch with zero cuts. This could be an error."
             )
-        self.num_kept_batches += 1
+        self.current_epoch_stats.kept_batches += 1
 
     def discard(self, cuts: Iterable[Cut]) -> None:
         cntr = 0
         for cut in cuts:
-            self.discarded_stats.add(cut)
+            self.current_epoch_stats.discarded_cuts += 1
             cntr += 1
         if cntr:
             # We don't warn about discarded batches with 0 cuts.
-            self.num_discarded_batches += 1
+            self.current_epoch_stats.discarded_batches += 1
 
     def discard_single(self, cut: Cut) -> None:
-        self.discarded_stats.add(cut)
+        self.current_epoch_stats.discarded_cuts += 1
 
-    def reset(self) -> None:
-        self.kept_stats.reset()
-        self.discarded_stats.reset()
-        self.num_kept_batches = 0
-        self.num_discarded_batches = 0
+    @property
+    def kept_cuts(self) -> int:
+        return sum(s.kept_cuts for s in self.stats_per_epoch.values())
+
+    @property
+    def discarded_cuts(self) -> int:
+        return sum(s.discarded_cuts for s in self.stats_per_epoch.values())
+
+    @property
+    def kept_batches(self) -> int:
+        return sum(s.kept_batches for s in self.stats_per_epoch.values())
+
+    @property
+    def discarded_batches(self) -> int:
+        return sum(s.discarded_batches for s in self.stats_per_epoch.values())
 
     @property
     def total_cuts(self) -> int:
-        return self.kept_stats.num_cuts + self.discarded_stats.num_cuts
+        return sum(s.total_cuts for s in self.stats_per_epoch.values())
 
     @property
     def total_batches(self) -> int:
-        return self.num_kept_batches + self.num_discarded_batches
+        return sum(s.total_batches for s in self.stats_per_epoch.values())
 
-    def get_report(self) -> str:
+    def get_report(self, per_epoch: bool = False) -> str:
         """Returns a string describing the statistics of the sampling process so far."""
         if self.total_batches == 0 or self.total_cuts == 0:
             return (
@@ -433,35 +527,44 @@ class SamplingDiagnostics:
                 "is registering the batches in SamplerDiagnostics."
             )
 
-        return (
-            f"| cuts kept {self.kept_stats.num_cuts:d}/{self.total_cuts:d} "
-            f"({self.kept_stats.num_cuts / self.total_cuts:.2%}) "
-            f"| cuts discarded {self.discarded_stats.num_cuts:d} "
-            f"| batches kept {self.num_kept_batches:d}/{self.total_batches:d} "
-            f"({self.kept_stats.num_cuts / self.total_cuts:.2%})"
-            f"| batches discarded {self.num_discarded_batches:d} |"
+        ret = []
+
+        if per_epoch:
+            for epoch in sorted(self.stats_per_epoch):
+                ret.append(self.stats_per_epoch[epoch].get_report())
+
+        ret.append(
+            f"|  total  | cuts kept {self.kept_cuts:d}/{self.total_cuts:d} "
+            f"({self.kept_cuts / self.total_cuts:.2%}) "
+            f"| cuts discarded {self.discarded_cuts:d} "
+            f"| batches kept {self.kept_batches:d}/{self.total_batches:d} "
+            f"({self.kept_batches / self.total_batches:.2%})"
+            f"| batches discarded {self.discarded_batches:d} |"
         )
+
+        return "\n".join(ret)
 
     def state_dict(self) -> Dict[str, Any]:
         return asdict(self)
 
-    def load_state_dict(self, state_dict: Dict[str, Any]) -> None:
-        self.num_kept_batches = state_dict.pop("num_kept_batches")
-        self.num_discarded_batches = state_dict.pop("num_discarded_batches")
-        self.kept_stats.load_state_dict(state_dict.pop("kept_stats"))
-        self.discarded_stats.load_state_dict(state_dict.pop("discarded_stats"))
-        assert len(state_dict) == 0, (
-            "Error in SamplingDiagnostics.load_state_dict(): Unexpected keys:\n- "
-            + "\n- ".join(state_dict.keys())
-        )
+    def load_state_dict(self, state_dict: Dict[str, Any]) -> "SamplingDiagnostics":
+        self.current_epoch = state_dict.pop("current_epoch")
+        self.stats_per_epoch = {
+            epoch: EpochDiagnostics().load_state_dict(sd)
+            for epoch, sd in state_dict.pop("stats_per_epoch").items()
+        }
+        return self
 
     def __add__(self, other: "SamplingDiagnostics") -> "SamplingDiagnostics":
+        stats_per_epoch = deepcopy(self.stats_per_epoch)
+        for epoch, stats in other.stats_per_epoch.items():
+            if epoch in stats_per_epoch:
+                stats_per_epoch[epoch] = stats_per_epoch[epoch] + stats
+            else:
+                stats_per_epoch[epoch] = stats
+
         return SamplingDiagnostics(
-            kept_stats=self.kept_stats + other.kept_stats,
-            discarded_stats=self.discarded_stats + other.discarded_stats,
-            num_kept_batches=self.num_kept_batches + other.num_kept_batches,
-            num_discarded_batches=self.num_discarded_batches
-            + other.num_discarded_batches,
+            current_epoch=self.current_epoch, stats_per_epoch=stats_per_epoch
         )
 
 

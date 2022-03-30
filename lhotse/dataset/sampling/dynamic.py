@@ -1,5 +1,4 @@
 import random
-import types
 import warnings
 from collections import deque
 from typing import Callable, Generator, Iterable, List, Optional, Tuple, Union
