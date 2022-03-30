@@ -377,6 +377,34 @@ def compute_num_frames(
     return num_frames
 
 
+def compute_num_windows(sig_len: Seconds, win_len: Seconds, hop: Seconds) -> int:
+    """
+    Return a number of windows obtained from signal of length equal to ``sig_len``
+    with windows of ``win_len`` and ``hop`` denoting shift between windows.
+    Examples:
+    ```
+      (sig_len,win_len,hop) -> num_windows # list of windows times
+      (1, 6.1, 3) -> 1  # 0-1
+      (3, 1, 6.1) -> 1  # 0-1
+      (3, 6.1, 1) -> 1  # 0-3
+      (5.9, 1, 3) -> 2  # 0-1, 3-4
+      (5.9, 3, 1) -> 4  # 0-3, 1-4, 2-5, 3-5.9
+      (6.1, 1, 3) -> 3  # 0-1, 3-4, 6-6.1
+      (6.1, 3, 1) -> 5  # 0-3, 1-4, 2-5, 3-6, 4-6.1
+      (5.9, 3, 3) -> 2  # 0-3, 3-5.9
+      (6.1, 3, 3) -> 3  # 0-3, 3-6, 6-6.1
+      (0.0, 3, 3) -> 0
+    ```
+    :param sig_len: Signal length in seconds.
+    :param win_len: Window length in seconds
+    :param hop: Shift between windows in seconds.
+    :return: Number of windows in signal.
+    """
+    n = ceil(max(sig_len - win_len, 0) / hop)
+    b = (sig_len - n * hop) > 0
+    return (sig_len > 0) * (n + int(b))
+
+
 def during_docs_build() -> bool:
     import os
 

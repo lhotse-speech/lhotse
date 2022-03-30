@@ -59,6 +59,7 @@ from lhotse.utils import (
     asdict_nonull,
     compute_num_frames,
     compute_num_samples,
+    compute_num_windows,
     compute_start_duration_for_extended_cut,
     deprecated,
     exactly_one_not_null,
@@ -4067,21 +4068,6 @@ class CutSet(Serializable, AlgorithmMixin):
             for cut in self
         )
 
-    @staticmethod
-    def num_windows(sig_len: Seconds, win_len: Seconds, hop: Seconds) -> int:
-        """
-        Returns a number of windows obtained from signal of length equal to ``sig_len``
-        with windows of ``win_len`` and ``hop`` denoting shift between windows.
-
-        :param sig_len: Signal length in seconds.
-        :param win_len: Window length in seconds
-        :param hop: Shift between the windows in in seconds.
-        :return: number of windows in signal assuming that last .
-        """
-        n = ceil(max(sig_len - win_len, 0) / hop)
-        b = (sig_len - n * hop) > 0
-        return (sig_len > 0) * (n + int(b))
-
     def cut_into_windows(
         self,
         duration: Seconds,
@@ -4108,8 +4094,7 @@ class CutSet(Serializable, AlgorithmMixin):
         if num_jobs == 1:
             new_cuts = []
             for cut in self:
-                n_windows = self.num_windows(cut.duration, duration, hop)
-                # n_windows = ceil(cut.duration / duration)
+                n_windows = compute_num_windows(cut.duration, duration, hop)
                 for i in range(n_windows):
                     new_cuts.append(
                         cut.truncate(
