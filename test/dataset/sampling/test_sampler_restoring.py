@@ -86,17 +86,19 @@ SAMPLERS_TO_TEST = [
         marks=pytest.mark.xfail(reason='DynamicCutSampler does not support resumption yet.')
     ),
     # Differently initialized RoundRobinSampler with the same CUTS
-    pytest.param(
+    # pytest.param(
+    lambda: (
         RoundRobinSampler(
-            SingleCutSampler(CUTS, max_duration=10.0, shuffle=True, drop_last=True),
-            SingleCutSampler(CUTS_MOD, max_duration=10.0, shuffle=True, drop_last=True),
+            SingleCutSampler(CUTS.subset(first=50), max_duration=10.0, shuffle=True, drop_last=True),
+            SingleCutSampler(CUTS_MOD.subset(first=50), max_duration=10.0, shuffle=True, drop_last=True),
         ),
         RoundRobinSampler(
-            SingleCutSampler(CUTS),
-            SingleCutSampler(CUTS_MOD),
+            SingleCutSampler(CUTS.subset(first=50)),
+            SingleCutSampler(CUTS_MOD.subset(first=50)),
         ),
-        marks=pytest.mark.xfail(reason='RoundRobinSampler does not support resumption yet.')
     ),
+        # marks=pytest.mark.xfail(reason='RoundRobinSampler does not support resumption yet.')
+    # ),
 ]
 # fmt: on
 
@@ -151,8 +153,12 @@ def test_restore_sampler_state(create_samplers):
     # There should be a total of 5 batches since we're starting mid-epoch.
     assert len(orig_batches) == 5
     assert len(restored_batches) == 5
-    for ob, rb in zip(orig_batches, restored_batches):
-        assert ob == rb
+
+    assert orig_batches[0] == restored_batches[0]
+    assert orig_batches[1] == restored_batches[1]
+    assert orig_batches[2] == restored_batches[2]
+    assert orig_batches[3] == restored_batches[3]
+    assert orig_batches[4] == restored_batches[4]
 
 
 @pytest.mark.parametrize("create_samplers", SAMPLERS_TO_TEST)
@@ -237,6 +243,18 @@ class DummyDataset(torch.utils.data.Dataset):
             SingleCutSampler(CUTS, max_duration=10.0, shuffle=True, drop_last=True),
             SingleCutSampler(CUTS_MOD, max_duration=10.0, shuffle=True, drop_last=True),
         ),
+        lambda: RoundRobinSampler(
+            # subset to first 50 cuts so that total num batches is 10, not 20
+            SingleCutSampler(
+                CUTS.subset(first=50), max_duration=10.0, shuffle=True, drop_last=True
+            ),
+            SingleCutSampler(
+                CUTS_MOD.subset(first=50),
+                max_duration=10.0,
+                shuffle=True,
+                drop_last=True,
+            ),
+        ),
     ],
 )
 @pytest.mark.parametrize("num_workers", [0, 1])
@@ -275,7 +293,9 @@ def test_e2e_restore_with_dataloader(num_workers, create_sampler):
         dset, batch_size=None, sampler=restored_sampler, num_workers=num_workers
     )
     batches = []
+    print(restored_dloader.sampler.remaining_cuts)
     for b in restored_dloader:
+        print(restored_dloader.sampler.remaining_cuts)
         batches.append(b)
 
     # Check that the results are the same.

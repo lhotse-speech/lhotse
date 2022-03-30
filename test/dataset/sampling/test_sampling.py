@@ -1022,6 +1022,10 @@ SAMPLERS_FACTORIES_FOR_REPORT_TEST = [
         SimpleCutSampler(DummyManifest(CutSet, begin_id=0, end_id=10)),
         SimpleCutSampler(DummyManifest(CutSet, begin_id=10, end_id=20)),
     ),
+    lambda: RoundRobinSampler(
+        SimpleCutSampler(DummyManifest(CutSet, begin_id=0, end_id=10)),
+        SimpleCutSampler(DummyManifest(CutSet, begin_id=10, end_id=20)),
+    ),
 ]
 
 
