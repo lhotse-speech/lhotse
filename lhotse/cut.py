@@ -4085,7 +4085,7 @@ class CutSet(Serializable, AlgorithmMixin):
     def cut_into_windows(
         self,
         duration: Seconds,
-        hop: Seconds = None,
+        hop: Optional[Seconds] = None,
         keep_excessive_supervisions: bool = True,
         num_jobs: int = 1,
     ) -> "CutSet":
