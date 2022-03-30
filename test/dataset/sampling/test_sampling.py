@@ -7,7 +7,11 @@ from tempfile import NamedTemporaryFile
 import pytest
 
 from lhotse import CutSet
-from lhotse.dataset import DynamicBucketingSampler, report_padding_ratio_estimate
+from lhotse.dataset import (
+    DynamicBucketingSampler,
+    RoundRobinSampler,
+    report_padding_ratio_estimate,
+)
 from lhotse.dataset.cut_transforms import concat_cuts
 from lhotse.dataset.sampling import (
     BucketingSampler,
@@ -895,6 +899,37 @@ def test_zip_sampler_merge_batches_false():
         )  # two come from cuts2
 
 
+def test_round_robin_sampler():
+    cuts1 = DummyManifest(CutSet, begin_id=0, end_id=30)
+    cuts2 = DummyManifest(CutSet, begin_id=1000, end_id=1100)
+    sampler = RoundRobinSampler(
+        # Note: each cut is 1s duration in this test.
+        SimpleCutSampler(cuts1, max_duration=10),
+        SimpleCutSampler(cuts2, max_duration=2),
+    )
+
+    batches = [b for b in sampler]
+    assert len(batches) == 3 + 50
+
+    batches_10cuts = [b for b in batches if len(b) == 10]
+    assert len(batches_10cuts) == 3
+
+    batches_2cuts = [b for b in batches if len(b) == 2]
+    assert len(batches_2cuts) == 50
+
+    assert len(batches[0]) == 10
+    assert len(batches[1]) == 2
+    assert len(batches[2]) == 10
+    assert len(batches[3]) == 2
+    assert len(batches[4]) == 10
+    assert len(batches[5]) == 2
+    assert len(batches[6]) == 2
+    assert len(batches[7]) == 2
+    assert len(batches[8]) == 2
+    assert len(batches[9]) == 2
+    # ... and so on
+
+
 @pytest.mark.parametrize("sampler_cls", [SimpleCutSampler, DynamicCutSampler])
 def test_single_cut_sampler_drop_last(sampler_cls):
     # The dummy cuts have a duration of 1 second each
@@ -1100,6 +1135,10 @@ def test_streaming_shuffle(datasize, bufsize):
         ZipSampler(
             SimpleCutSampler(DummyManifest(CutSet, begin_id=0, end_id=10)),
             SimpleCutSampler(DummyManifest(CutSet, begin_id=10, end_id=20)),
+        ),
+        RoundRobinSampler(
+            SimpleCutSampler(DummyManifest(CutSet, begin_id=0, end_id=5)),
+            SimpleCutSampler(DummyManifest(CutSet, begin_id=10, end_id=15)),
         ),
     ],
 )
