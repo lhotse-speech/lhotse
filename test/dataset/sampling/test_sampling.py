@@ -21,7 +21,7 @@ from lhotse.dataset.sampling import (
     SingleCutSampler,
     ZipSampler,
 )
-from lhotse.dataset.sampling.base import SamplingDiagnostics
+from lhotse.dataset.sampling.base import SamplingDiagnostics, TimeConstraint
 from lhotse.dataset.sampling.dynamic import DynamicCutSampler
 from lhotse.testing.dummies import DummyManifest, as_lazy, dummy_cut
 from lhotse.utils import (
@@ -1190,3 +1190,34 @@ def test_sampler_properties(sampler):
 def test_report_padding_ratio_estimate():
     s = SingleCutSampler(DummyManifest(CutSet, begin_id=0, end_id=1000))
     report_padding_ratio_estimate(s)  # just test that it runs
+
+
+def test_time_constraint_strictness():
+    normal = TimeConstraint(max_duration=100, strictness="normal")
+    paranoid = TimeConstraint(max_duration=100, strictness="paranoid")
+
+    # create cuts with large variance of durations
+    cut_durs = [30.0, 30.0, 10.0, 10.0, 20.0]
+    assert sum(cut_durs) == pytest.approx(100.0)
+    cuts = [dummy_cut(idx, duration=cd) for idx, cd in enumerate(cut_durs)]
+
+    # accumulate 80s of duration
+    for cut in cuts[:-1]:
+        normal.add(cut)
+        paranoid.add(cut)
+
+    assert normal.current == pytest.approx(80)
+    assert paranoid.current == pytest.approx(80)
+
+    # "normal" strictness is not close to exceeding (will accept next cut in a batch)
+    # "paranoid" strictness is close to exceeding (will not accept next cut in a batch)
+    assert not normal.close_to_exceeding()
+    assert paranoid.close_to_exceeding()
+
+    normal.add(cuts[-1])
+    paranoid.add(cuts[-1])
+
+    assert not normal.exceeded()
+    assert paranoid.exceeded()
+
+

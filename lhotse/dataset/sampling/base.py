@@ -281,7 +281,7 @@ class TimeConstraint:
     current: Union[int, Seconds] = 0
     num_cuts: int = 0
     longest_seen: Union[int, float] = 0
-    exceed_thresh: Literal["mean", "max"] = "max"
+    strictness: Literal["normal", "paranoid"] = "paranoid"
 
     def __post_init__(self) -> None:
         assert exactly_one_not_null(*self._constraints) or all(
@@ -289,11 +289,21 @@ class TimeConstraint:
         )
         for c in self._constraints:
             assert is_none_or_gt(c, 0)
-        assert self.exceed_thresh in ("mean", "max")
+        assert self.strictness in ("normal", "paranoid")
 
     @property
     def _constraints(self) -> Tuple:
         return self.max_duration, self.max_frames, self.max_samples
+
+    @property
+    def active_constraint(self) -> Union[int, float, None]:
+        if self.max_frames is not None:
+            return self.max_frames
+        if self.max_samples is not None:
+            return self.max_samples
+        if self.max_duration is not None:
+            return self.max_duration
+        return None
 
     def is_active(self) -> bool:
         """Is it an actual constraint, or a dummy one (i.e. never exceeded)."""
@@ -317,13 +327,15 @@ class TimeConstraint:
 
     def exceeded(self) -> bool:
         """Is the constraint exceeded or not."""
-        if self.max_frames is not None:
-            return self.current > self.max_frames
-        if self.max_samples is not None:
-            return self.current > self.max_samples
-        if self.max_duration is not None:
-            return self.current > self.max_duration
-        return False
+        constraint = self.active_constraint
+        if constraint is None:
+            return False
+        if self.strictness == "normal":
+            return self.current > constraint
+        elif self.strictness == "paranoid":
+            return self.num_cuts * self.longest_seen > constraint
+        else:
+            raise ValueError(f"Unknown strictness value: {self.strictness}")
 
     def close_to_exceeding(self) -> bool:
         """
@@ -332,12 +344,12 @@ class TimeConstraint:
         duration/num_frames/num_samples equal to the mean of the current
         batch, then the batch would have exceeded the constraints.
         """
-        if self.exceed_thresh == "mean":
+        if self.strictness == "normal":
             thresh = self.current / self.num_cuts
-        elif self.exceed_thresh == "max":
+        elif self.strictness == "paranoid":
             thresh = self.longest_seen
         else:
-            raise ValueError(f"Unknown threshold type: {self.exceed_thresh}")
+            raise ValueError(f"Unknown strictness value: {self.strictness}")
 
         if self.max_frames is not None:
             return self.current + thresh > self.max_frames
@@ -365,7 +377,7 @@ class TimeConstraint:
         self.max_frames = state_dict.pop("max_frames")
         self.current = state_dict.pop("current")
         self.num_cuts = state_dict.pop("num_cuts")
-        self.exceed_thresh = state_dict.pop("exceed_thresh", "mean")
+        self.strictness = state_dict.pop("exceed_thresh", "mean")
         self.longest_seen = state_dict.pop("longest_seen", 0)
         assert len(state_dict) == 0, (
             "Error in TimeConstraint.load_state_dict(): Unexpected keys:\n- "
@@ -381,14 +393,14 @@ class TimeConstraint:
                 f"To add two TimeConstraint objects, they need to represent the same constraint "
                 f"(got self.{key}={self_attr} != other.{key}={other_attr})."
             )
-        assert self.exceed_thresh == other.exceed_thresh
+        assert self.strictness == other.strictness
         return TimeConstraint(
             max_duration=self.max_duration,
             max_frames=self.max_frames,
             max_samples=self.max_samples,
             current=self.current + other.current,
             num_cuts=self.num_cuts + other.num_cuts,
-            exceed_thresh=self.exceed_thresh,
+            exceed_thresh=self.strictness,
             longest_seen=max(self.longest_seen, other.longest_seen)
         )
 
