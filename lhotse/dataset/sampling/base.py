@@ -281,7 +281,7 @@ class TimeConstraint:
     current: Union[int, Seconds] = 0
     num_cuts: int = 0
     longest_seen: Union[int, float] = 0
-    strictness: Literal["normal", "paranoid"] = "paranoid"
+    strict: bool = False
 
     def __post_init__(self) -> None:
         assert exactly_one_not_null(*self._constraints) or all(
@@ -289,7 +289,6 @@ class TimeConstraint:
         )
         for c in self._constraints:
             assert is_none_or_gt(c, 0)
-        assert self.strictness in ("normal", "paranoid")
 
     @property
     def _constraints(self) -> Tuple:
@@ -330,12 +329,10 @@ class TimeConstraint:
         constraint = self.active_constraint
         if constraint is None:
             return False
-        if self.strictness == "normal":
-            return self.current > constraint
-        elif self.strictness == "paranoid":
+        if self.strict:
             return self.num_cuts * self.longest_seen > constraint
         else:
-            raise ValueError(f"Unknown strictness value: {self.strictness}")
+            return self.current > constraint
 
     def close_to_exceeding(self) -> bool:
         """
@@ -344,12 +341,10 @@ class TimeConstraint:
         duration/num_frames/num_samples equal to the mean of the current
         batch, then the batch would have exceeded the constraints.
         """
-        if self.strictness == "normal":
-            thresh = self.current / self.num_cuts
-        elif self.strictness == "paranoid":
+        if self.strict:
             thresh = self.longest_seen
         else:
-            raise ValueError(f"Unknown strictness value: {self.strictness}")
+            thresh = self.current / self.num_cuts
 
         if self.max_frames is not None:
             return self.current + thresh > self.max_frames
@@ -377,7 +372,7 @@ class TimeConstraint:
         self.max_frames = state_dict.pop("max_frames")
         self.current = state_dict.pop("current")
         self.num_cuts = state_dict.pop("num_cuts")
-        self.strictness = state_dict.pop("strictness", "paranoid")
+        self.strict = state_dict.pop("strict", False)
         self.longest_seen = state_dict.pop("longest_seen", 0)
         assert len(state_dict) == 0, (
             "Error in TimeConstraint.load_state_dict(): Unexpected keys:\n- "
@@ -393,14 +388,14 @@ class TimeConstraint:
                 f"To add two TimeConstraint objects, they need to represent the same constraint "
                 f"(got self.{key}={self_attr} != other.{key}={other_attr})."
             )
-        assert self.strictness == other.strictness
+        assert self.strict == other.strict
         return TimeConstraint(
             max_duration=self.max_duration,
             max_frames=self.max_frames,
             max_samples=self.max_samples,
             current=self.current + other.current,
             num_cuts=self.num_cuts + other.num_cuts,
-            strictness=self.strictness,
+            strict=self.strict,
             longest_seen=max(self.longest_seen, other.longest_seen),
         )
 

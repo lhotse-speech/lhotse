@@ -1193,8 +1193,8 @@ def test_report_padding_ratio_estimate():
 
 
 def test_time_constraint_strictness():
-    normal = TimeConstraint(max_duration=100, strictness="normal")
-    paranoid = TimeConstraint(max_duration=100, strictness="paranoid")
+    normal = TimeConstraint(max_duration=100, strict=False)
+    strict = TimeConstraint(max_duration=100, strict=True)
 
     # create cuts with large variance of durations
     cut_durs = [30.0, 30.0, 10.0, 10.0, 20.0]
@@ -1204,18 +1204,18 @@ def test_time_constraint_strictness():
     # accumulate 80s of duration
     for cut in cuts[:-1]:
         normal.add(cut)
-        paranoid.add(cut)
+        strict.add(cut)
 
     assert normal.current == pytest.approx(80)
-    assert paranoid.current == pytest.approx(80)
+    assert strict.current == pytest.approx(80)
 
-    # "normal" strictness is not close to exceeding (will accept next cut in a batch)
-    # "paranoid" strictness is close to exceeding (will not accept next cut in a batch)
+    # non-strict constraint is not close to exceeding (will accept next cut in a batch)
+    # strict constraint is close to exceeding (will not accept next cut in a batch)
     assert not normal.close_to_exceeding()
-    assert paranoid.close_to_exceeding()
+    assert strict.close_to_exceeding()
 
     normal.add(cuts[-1])
-    paranoid.add(cuts[-1])
+    strict.add(cuts[-1])
 
     assert not normal.exceeded()
-    assert paranoid.exceeded()
+    assert strict.exceeded()

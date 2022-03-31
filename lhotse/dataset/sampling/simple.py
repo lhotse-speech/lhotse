@@ -37,6 +37,7 @@ class SimpleCutSampler(CutSampler):
         max_cuts: Optional[int] = None,
         shuffle: bool = False,
         drop_last: bool = False,
+        strict: bool = False,
         world_size: Optional[int] = None,
         rank: Optional[int] = None,
         seed: int = 0,
@@ -54,6 +55,11 @@ class SimpleCutSampler(CutSampler):
             Convenient when mini-batch loop is inside an outer epoch-level loop, e.g.:
             `for epoch in range(10): for batch in dataset: ...` as every epoch will see a
             different cuts order.
+        :param strict: When ``True``, for the purposes of determining dynamic batch size,
+            we take the longest cut sampled so far and multiply its duration/num_frames/num_samples
+            by the number of cuts currently in mini-batch to check if it exceeded max_duration/etc.
+            This can help make the GPU memory usage more predictable when there is a large variance
+            in cuts duration.
         :param drop_last: When ``True``, the last batch is dropped if it's incomplete.
         :param world_size: Total number of distributed nodes. We will try to infer it by default.
         :param rank: Index of distributed node. We will try to infer it by default.
@@ -67,7 +73,10 @@ class SimpleCutSampler(CutSampler):
         )
         self.data_source = DataSource(cuts)
         self.time_constraint = TimeConstraint(
-            max_duration=max_duration, max_frames=max_frames, max_samples=max_samples
+            max_duration=max_duration,
+            max_frames=max_frames,
+            max_samples=max_samples,
+            strict=strict,
         )
         self.drop_last = drop_last
         self.max_cuts = max_cuts
