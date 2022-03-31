@@ -238,11 +238,10 @@ class Resample(AudioTransform):
         check_torchaudio_version()
         import torchaudio
 
-        effect = [["rate", str(self.target_sampling_rate)]]
         if isinstance(samples, np.ndarray):
             samples = torch.from_numpy(samples)
-        augmented, _ = torchaudio.sox_effects.apply_effects_tensor(
-            samples, self.source_sampling_rate, effect
+        augmented = torchaudio.functional.resample(
+            samples, self.source_sampling_rate, self.target_sampling_rate
         )
         return augmented.numpy()
 
