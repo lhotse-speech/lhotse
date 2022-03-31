@@ -235,7 +235,9 @@ class Resample(AudioTransform):
 
         self.source_sampling_rate = int(self.source_sampling_rate)
         self.target_sampling_rate = int(self.target_sampling_rate)
-        self.resampler = torchaudio.transforms.Resample(self.source_sampling_rate, self.target_sampling_rate)
+        self.resampler = torchaudio.transforms.Resample(
+            self.source_sampling_rate, self.target_sampling_rate
+        )
 
     def __call__(self, samples: np.ndarray, *args, **kwargs) -> np.ndarray:
 
