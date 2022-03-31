@@ -377,7 +377,7 @@ class TimeConstraint:
         self.max_frames = state_dict.pop("max_frames")
         self.current = state_dict.pop("current")
         self.num_cuts = state_dict.pop("num_cuts")
-        self.strictness = state_dict.pop("exceed_thresh", "mean")
+        self.strictness = state_dict.pop("strictness", "paranoid")
         self.longest_seen = state_dict.pop("longest_seen", 0)
         assert len(state_dict) == 0, (
             "Error in TimeConstraint.load_state_dict(): Unexpected keys:\n- "
@@ -400,8 +400,8 @@ class TimeConstraint:
             max_samples=self.max_samples,
             current=self.current + other.current,
             num_cuts=self.num_cuts + other.num_cuts,
-            exceed_thresh=self.strictness,
-            longest_seen=max(self.longest_seen, other.longest_seen)
+            strictness=self.strictness,
+            longest_seen=max(self.longest_seen, other.longest_seen),
         )
 
     def __eq__(self, other: "TimeConstraint") -> bool:

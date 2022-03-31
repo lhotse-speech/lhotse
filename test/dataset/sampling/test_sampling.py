@@ -1219,5 +1219,3 @@ def test_time_constraint_strictness():
 
     assert not normal.exceeded()
     assert paranoid.exceeded()
-
-
