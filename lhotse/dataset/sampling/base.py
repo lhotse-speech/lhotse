@@ -2,7 +2,7 @@ import warnings
 from copy import deepcopy
 from dataclasses import asdict, dataclass
 from math import isclose
-from typing import Any, Callable, Dict, Iterable, Optional, Tuple, Union
+from typing import Any, Callable, Dict, Iterable, Literal, Optional, Tuple, Union
 
 from torch import distributed as dist
 from torch.utils.data import Sampler
@@ -280,6 +280,8 @@ class TimeConstraint:
     max_frames: Optional[int] = None
     current: Union[int, Seconds] = 0
     num_cuts: int = 0
+    longest_seen: Union[int, float] = 0
+    exceed_thresh: Literal["mean", "max"] = "max"
 
     def __post_init__(self) -> None:
         assert exactly_one_not_null(*self._constraints) or all(
@@ -287,6 +289,7 @@ class TimeConstraint:
         )
         for c in self._constraints:
             assert is_none_or_gt(c, 0)
+        assert self.exceed_thresh in ("mean", "max")
 
     @property
     def _constraints(self) -> Tuple:
@@ -303,10 +306,13 @@ class TimeConstraint:
         """
         if self.max_frames is not None:
             self.current += cut.num_frames
+            self.longest_seen = max(self.longest_seen, cut.num_frames)
         if self.max_samples is not None:
             self.current += cut.num_samples
+            self.longest_seen = max(self.longest_seen, cut.num_samples)
         if self.max_duration is not None:
             self.current += cut.duration
+            self.longest_seen = max(self.longest_seen, cut.duration)
         self.num_cuts += 1
 
     def exceeded(self) -> bool:
@@ -326,13 +332,19 @@ class TimeConstraint:
         duration/num_frames/num_samples equal to the mean of the current
         batch, then the batch would have exceeded the constraints.
         """
-        mean = self.current / self.num_cuts
+        if self.exceed_thresh == "mean":
+            thresh = self.current / self.num_cuts
+        elif self.exceed_thresh == "max":
+            thresh = self.longest_seen
+        else:
+            raise ValueError(f"Unknown threshold type: {self.exceed_thresh}")
+
         if self.max_frames is not None:
-            return self.current + mean > self.max_frames
+            return self.current + thresh > self.max_frames
         if self.max_samples is not None:
-            return self.current + mean > self.max_samples
+            return self.current + thresh > self.max_samples
         if self.max_duration is not None:
-            return self.current + mean > self.max_duration
+            return self.current + thresh > self.max_duration
         return False
 
     def reset(self) -> None:
@@ -342,6 +354,7 @@ class TimeConstraint:
         """
         self.current = 0
         self.num_cuts = 0
+        self.longest_seen = 0
 
     def state_dict(self) -> Dict[str, Any]:
         return asdict(self)
@@ -352,6 +365,8 @@ class TimeConstraint:
         self.max_frames = state_dict.pop("max_frames")
         self.current = state_dict.pop("current")
         self.num_cuts = state_dict.pop("num_cuts")
+        self.exceed_thresh = state_dict.pop("exceed_thresh", "mean")
+        self.longest_seen = state_dict.pop("longest_seen", 0)
         assert len(state_dict) == 0, (
             "Error in TimeConstraint.load_state_dict(): Unexpected keys:\n- "
             + "\n- ".join(state_dict.keys())
@@ -366,12 +381,14 @@ class TimeConstraint:
                 f"To add two TimeConstraint objects, they need to represent the same constraint "
                 f"(got self.{key}={self_attr} != other.{key}={other_attr})."
             )
+        assert self.exceed_thresh == other.exceed_thresh
         return TimeConstraint(
             max_duration=self.max_duration,
             max_frames=self.max_frames,
             max_samples=self.max_samples,
             current=self.current + other.current,
             num_cuts=self.num_cuts + other.num_cuts,
+            longest_seen=max(self.longest_seen, other.longest_seen)
         )
 
     def __eq__(self, other: "TimeConstraint") -> bool:
