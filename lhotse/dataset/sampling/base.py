@@ -2,7 +2,7 @@ import warnings
 from copy import deepcopy
 from dataclasses import asdict, dataclass
 from math import isclose
-from typing import Any, Callable, Dict, Iterable, Literal, Optional, Tuple, Union
+from typing import Any, Callable, Dict, Iterable, Optional, Tuple, Union
 
 from torch import distributed as dist
 from torch.utils.data import Sampler
