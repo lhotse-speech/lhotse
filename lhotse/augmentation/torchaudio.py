@@ -230,19 +230,18 @@ class Resample(AudioTransform):
     target_sampling_rate: int
 
     def __post_init__(self):
-        # paranoia mode
-        self.source_sampling_rate = int(self.source_sampling_rate)
-        self.target_sampling_rate = int(self.target_sampling_rate)
-
-    def __call__(self, samples: np.ndarray, *args, **kwargs) -> np.ndarray:
         check_torchaudio_version()
         import torchaudio
 
+        self.source_sampling_rate = int(self.source_sampling_rate)
+        self.target_sampling_rate = int(self.target_sampling_rate)
+        self.resampler = torchaudio.transforms.Resample(self.source_sampling_rate, self.target_sampling_rate)
+
+    def __call__(self, samples: np.ndarray, *args, **kwargs) -> np.ndarray:
+
         if isinstance(samples, np.ndarray):
             samples = torch.from_numpy(samples)
-        augmented = torchaudio.functional.resample(
-            samples, self.source_sampling_rate, self.target_sampling_rate
-        )
+        augmented = self.resampler(samples)
         return augmented.numpy()
 
     def reverse_timestamps(
