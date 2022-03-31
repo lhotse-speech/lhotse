@@ -15,6 +15,7 @@ from lhotse.utils import (
     TimeSpan,
     add_durations,
     compute_start_duration_for_extended_cut,
+    compute_num_windows,
     overlaps,
     overspans,
 )
@@ -145,3 +146,22 @@ def test_add_durations():
     assert naive != expected
     safe = add_durations(end, -begin, sampling_rate=16000)
     assert safe == expected
+
+
+@pytest.mark.parametrize(
+    "params, expected_n_win",  # params: (sig_len,win_len,hop)
+    [
+        ((1, 6.1, 3), 1),  # 0-1
+        ((3, 1, 6.1), 1),  # 0-1
+        ((3, 6.1, 1), 1),  # 0-3
+        ((5.9, 1, 3), 2),  # 0-1, 3-4
+        ((5.9, 3, 1), 4),  # 0-3, 1-4, 2-5, 3-5.9
+        ((6.1, 1, 3), 3),  # 0-1, 3-4, 6-6.1
+        ((6.1, 3, 1), 5),  # 0-3, 1-4, 2-5, 3-6, 4-6.1
+        ((5.9, 3, 3), 2),  # 0-3, 3-5.9
+        ((6.1, 3, 3), 3),  # 0-3, 3-6, 6-6.1
+        ((0.0, 3, 3), 0),
+    ],
+)
+def test_compute_num_windows(params, expected_n_win):
+    assert compute_num_windows(params[0], params[1], params[2]) == expected_n_win
