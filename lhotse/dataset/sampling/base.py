@@ -388,6 +388,7 @@ class TimeConstraint:
             max_samples=self.max_samples,
             current=self.current + other.current,
             num_cuts=self.num_cuts + other.num_cuts,
+            exceed_thresh=self.exceed_thresh,
             longest_seen=max(self.longest_seen, other.longest_seen)
         )
 
