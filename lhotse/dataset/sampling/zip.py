@@ -38,7 +38,7 @@ class ZipSampler(CutSampler):
             or return a tuple of CutSets. Setting this to ``False`` makes ZipSampler behave
             more like Python's ``zip`` function.
         """
-        super().__init__()
+        super().__init__(rank=0, world_size=1)
         self.samplers = samplers
         self.merge_batches = merge_batches
 
