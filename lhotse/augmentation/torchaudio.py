@@ -1,7 +1,7 @@
 import warnings
 from dataclasses import asdict, dataclass, field
 from decimal import ROUND_HALF_UP
-from typing import List, Optional, Tuple, Union
+from typing import Dict, List, Optional, Tuple, Union
 
 import numpy as np
 import torch
@@ -220,6 +220,25 @@ class Speed(AudioTransform):
         )
 
 
+_precompiled_resamplers: Dict[Tuple[int, int], torch.nn.Module] = {}
+
+
+def get_or_create_resampler(
+    source_sampling_rate: int, target_sampling_rate: int
+) -> torch.nn.Module:
+    global _precompiled_resamplers
+
+    tpl = (source_sampling_rate, target_sampling_rate)
+    if tpl not in _precompiled_resamplers:
+        check_torchaudio_version()
+        import torchaudio
+
+        _precompiled_resamplers[tpl] = torchaudio.transforms.Resample(
+            source_sampling_rate, target_sampling_rate
+        )
+    return _precompiled_resamplers[tpl]
+
+
 @dataclass
 class Resample(AudioTransform):
     """
@@ -230,12 +249,9 @@ class Resample(AudioTransform):
     target_sampling_rate: int
 
     def __post_init__(self):
-        check_torchaudio_version()
-        import torchaudio
-
         self.source_sampling_rate = int(self.source_sampling_rate)
         self.target_sampling_rate = int(self.target_sampling_rate)
-        self.resampler = torchaudio.transforms.Resample(
+        self.resampler = get_or_create_resampler(
             self.source_sampling_rate, self.target_sampling_rate
         )
 
