@@ -1,56 +1,53 @@
 from functools import reduce
 from operator import add
-from typing import Any, Callable, Dict, List, Optional, Tuple, Union
+from typing import Any, Callable, Dict, Optional, Tuple, Union
 
 from lhotse import CutSet
 from lhotse.cut import Cut
 from lhotse.dataset.sampling.base import CutSampler, SamplingDiagnostics
 
 
-class ZipSampler(CutSampler):
+class RoundRobinSampler(CutSampler):
     """
-    :class:`.ZipSampler` takes several samplers as input and concatenates their
-    sampled mini-batch cuts together into a single :class:`~lhotse.cut.CutSet`,
-    or returns a tuple of the mini-batch CutSets.
-    It is helpful for ensuring that each batch consists of some proportion of cuts
-    coming from different sources.
+    :class:`.RoundRobinSampler` takes several samplers as input, and yields
+    a mini-batch of cuts from each of those samplers in turn.
+    E.g., with two samplers, the first mini-batch is from ``sampler0``,
+    the seconds from ``sampler1``, the third from ``sampler0``, and so on.
+    It is helpful for alternating mini-batches from multiple datasets or manually
+    creating batches of different sizes.
 
     The input samplers do not have to provide the same number of batches -- when
-    any of the samplers becomes depleted, the iteration will stop (like with
-    Python's ``zip()`` function).
+    any of the samplers becomes depleted, we continue to iterate the non-depleted
+    samplers, until all of them are exhausted.
 
     Example::
 
-        >>> sampler = ZipSampler(
-        ...     SimpleCutSampler(cuts_corpusA, max_duration=250, shuffle=True),
-        ...     SimpleCutSampler(cuts_corpusB, max_duration=100, shuffle=True),
+        >>> sampler = RoundRobinSampler(
+        ...     SimpleCutSampler(cuts_corpusA, max_cuts=32, shuffle=True),
+        ...     SimpleCutSampler(cuts_corpusB, max_cuts=64, shuffle=True),
         ... )
         >>> for cut in sampler:
         ...     pass  # profit
     """
 
-    def __init__(self, *samplers: CutSampler, merge_batches: bool = True) -> None:
+    def __init__(self, *samplers: CutSampler) -> None:
         """
-        ZipSampler's constructor.
+        RoundRobinSampler's constructor.
 
-        :param samplers: The list of samplers from which we sample batches together.
-        :param merge_batches: Should we merge the batches from each sampler into a single CutSet,
-            or return a tuple of CutSets. Setting this to ``False`` makes ZipSampler behave
-            more like Python's ``zip`` function.
+        :param samplers: The list of samplers from which we sample batches in turns.
         """
         super().__init__(rank=0, world_size=1)
         self.samplers = samplers
-        self.merge_batches = merge_batches
+        self._nondepleted_samplers_indices = list(range(len(self.samplers)))
+        self._cur_sampler_idx = 0
 
     @property
     def remaining_duration(self) -> Optional[float]:
         """
         Remaining duration of data left in the sampler (may be inexact due to float arithmetic).
-
-        .. note: For ZipSampler, it's the minimum of remaining durations in its sub-samplers.
         """
         try:
-            return min(s.remaining_duration for s in self.samplers)
+            return sum(s.remaining_duration for s in self.samplers)
         except TypeError:
             return None
 
@@ -59,11 +56,9 @@ class ZipSampler(CutSampler):
         """
         Remaining number of cuts in the sampler.
         Not available when the CutSet is read in lazy mode (returns None).
-
-        .. note: For ZipSampler, it's the minimum of remaining cuts in its sub-samplers.
         """
         try:
-            return min(s.remaining_cuts for s in self.samplers)
+            return sum(s.remaining_cuts for s in self.samplers)
         except TypeError:
             return None
 
@@ -72,11 +67,9 @@ class ZipSampler(CutSampler):
         """
         Total number of cuts in the sampler.
         Not available when the CutSet is read in lazy mode (returns None).
-
-        .. note: For ZipSampler, it's the minimum of num cuts in its sub-samplers.
         """
         try:
-            return min(s.num_cuts for s in self.samplers)
+            return sum(s.num_cuts for s in self.samplers)
         except TypeError:
             return None
 
@@ -100,8 +93,12 @@ class ZipSampler(CutSampler):
         state_dict = super().state_dict()
         state_dict.update(
             {
-                "merge_batches": self.merge_batches,
                 "samplers": [s.state_dict() for s in self.samplers],
+                "_cur_sampler_idx": self._cur_sampler_idx,
+                # Explicit list copy below allows to restore within the same process.
+                "_nondepleted_samplers_indices": list(
+                    self._nondepleted_samplers_indices
+                ),
             }
         )
         return state_dict
@@ -124,10 +121,13 @@ class ZipSampler(CutSampler):
             For implementers of sub-classes of CutSampler: the flag ``self._just_restored_state`` has to be
             handled in ``__iter__`` to make it avoid resetting the just-restored state (only once).
         """
-        self.merge_batches = state_dict.pop("merge_batches")
+        self._cur_sampler_idx = state_dict.pop("_cur_sampler_idx")
+        self._nondepleted_samplers_indices = state_dict.pop(
+            "_nondepleted_samplers_indices"
+        )
         assert len(self.samplers) == len(state_dict["samplers"]), (
-            "Error in ZipSampler.load_state_dict(): Inconsistent number of samplers: "
-            f"current ZipSampler has {len(self.samplers)}, the state_dict has {len(state_dict['samplers'])}."
+            "Error in RoundRobinSampler.load_state_dict(): Inconsistent number of samplers: "
+            f"current RoundRobinSampler has {len(self.samplers)}, the state_dict has {len(state_dict['samplers'])}."
         )
         for sampler, sampler_sd in zip(self.samplers, state_dict.pop("samplers")):
             sampler.load_state_dict(sampler_sd)
@@ -136,43 +136,31 @@ class ZipSampler(CutSampler):
     def __iter__(self):
         for sampler in self.samplers:
             iter(sampler)
+        if self._just_restored_state:
+            return self
+        self._nondepleted_samplers_indices = list(range(len(self.samplers)))
+        self._cur_sampler_idx = 0
         return self
 
     def _next_batch(self) -> Union[CutSet, Tuple[CutSet]]:
-        self.allow_iter_to_reset_state()
-        if self.merge_batches:
-            # Take a batch from each sampler and merge it.
-            # Useful when the Dataset class doesn't treat
-            # different sources of cuts in any different way.
-            #
-            # Note: merging batches is tricky because the samplers can be either
-            # SimpleCutSampler or CutPairsSampler, and we need to handle them differently.
-            cuts: List[Union[CutSet, Tuple[CutSet]]] = []
-            for sampler in self.samplers:
-                batch = next(sampler)
-                cuts.append(batch)
-            if not cuts:
-                return CutSet()
-            if isinstance(batch, CutSet):
-                # Each returned batch is a CutSet -- flatten them.
-                return CutSet.from_cuts(c for batch in cuts for c in batch)
-            else:
-                # Each returned batch is a tuple of CutSets -- determine the tuple size N
-                # and merge each N-th CutSet together; return a tuple of merged CutSets.
-                tuple_len = len(batch)
-                cut_sets = []
-                for i in range(tuple_len):
-                    cut_sets.append(
-                        CutSet.from_cuts(c for batch in cuts for c in batch[i])
-                    )
-                return tuple(cut_sets)
-        else:
-            # Take a batch from each sampler and return tuple of batches.
-            # Useful when the Dataset treats each source differently.
-            cuts: List[CutSet] = []
-            for sampler in self.samplers:
-                cuts.append(next(sampler))
-            return tuple(cuts)
+        if len(self._nondepleted_samplers_indices) == 0:
+            raise StopIteration()
+
+        sampler_idx = self._nondepleted_samplers_indices[self._cur_sampler_idx]
+        sampler = self.samplers[sampler_idx]
+
+        try:
+            batch = next(sampler)
+        except StopIteration:
+            # Try again recursively as long as there is at least one non depleted sampler left.
+            self._nondepleted_samplers_indices.pop(self._cur_sampler_idx)
+            return self._next_batch()
+
+        self._cur_sampler_idx = (self._cur_sampler_idx + 1) % len(
+            self._nondepleted_samplers_indices
+        )
+
+        return batch
 
     def set_epoch(self, epoch: int) -> None:
         """
