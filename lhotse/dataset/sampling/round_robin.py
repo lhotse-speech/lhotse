@@ -36,7 +36,7 @@ class RoundRobinSampler(CutSampler):
 
         :param samplers: The list of samplers from which we sample batches in turns.
         """
-        super().__init__()
+        super().__init__(rank=0, world_size=1)
         self.samplers = samplers
         self._nondepleted_samplers_indices = list(range(len(self.samplers)))
         self._cur_sampler_idx = 0
