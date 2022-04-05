@@ -688,7 +688,7 @@ class Recording:
         normalize_output: bool = True,
         early_only: bool = False,
         affix_id: bool = True,
-        rir_channels: List[int] = [0],
+        rir_channels: Optional[List[int]] = None,
     ) -> "Recording":
         """
         Return a new ``Recording`` that will lazily apply reverberation based on provided
@@ -700,7 +700,7 @@ class Recording:
         :param affix_id: When true, we will modify the ``Recording.id`` field
             by affixing it with "_rvb".
         :param rir_channels: The channels of the impulse response to be used (in case of multi-channel
-            impulse responses).
+            impulse responses). By default, only the first channel is used.
         :return: the perturbed ``Recording``.
         """
         transforms = self.transforms.copy() if self.transforms is not None else []
@@ -709,7 +709,7 @@ class Recording:
                 rir_recording,
                 normalize_output=normalize_output,
                 early_only=early_only,
-                rir_channels=rir_channels,
+                rir_channels=rir_channels if rir_channels is not None else [0],
             ).to_dict()
         )
         return fastcopy(
@@ -724,6 +724,9 @@ class Recording:
         :param sampling_rate: The new sampling rate.
         :return: A resampled ``Recording``.
         """
+        if sampling_rate == self.sampling_rate:
+            return fastcopy(self)
+
         transforms = self.transforms.copy() if self.transforms is not None else []
 
         if not any(

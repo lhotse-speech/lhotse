@@ -256,6 +256,8 @@ class Resample(AudioTransform):
         )
 
     def __call__(self, samples: np.ndarray, *args, **kwargs) -> np.ndarray:
+        if self.source_sampling_rate == self.target_sampling_rate:
+            return samples
 
         if isinstance(samples, np.ndarray):
             samples = torch.from_numpy(samples)
@@ -277,6 +279,9 @@ class Resample(AudioTransform):
         E.g. 16kHz, 235636 samples correspond to 14.72725s duration; after resampling to 22.05kHz,
         it is 324736 samples which correspond to 14.727256235827664s duration.
         """
+        if self.source_sampling_rate == self.target_sampling_rate:
+            return offset, duration
+
         old_num_samples = compute_num_samples(
             offset, self.source_sampling_rate, rounding=ROUND_HALF_UP
         )
