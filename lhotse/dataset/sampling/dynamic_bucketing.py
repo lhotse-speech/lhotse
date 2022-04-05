@@ -74,6 +74,7 @@ class DynamicBucketingSampler(CutSampler):
         num_cuts_for_bins_estimate: int = 10000,
         buffer_size: int = 10000,
         shuffle_buffer_size: int = 20000,
+        strict: bool = False,
         world_size: Optional[int] = None,
         rank: Optional[int] = None,
         seed: int = 0,
@@ -104,6 +105,11 @@ class DynamicBucketingSampler(CutSampler):
         :param shuffle_buffer_size: How many cuts (or cut pairs, triplets) are being held in memory
             a buffer used for streaming shuffling. Larger number means better randomness at the cost
             of higher memory usage.
+        :param strict: When ``True``, for the purposes of determining dynamic batch size,
+            we take the longest cut sampled so far and multiply its duration/num_frames/num_samples
+            by the number of cuts currently in mini-batch to check if it exceeded max_duration/etc.
+            This can help make the GPU memory usage more predictable when there is a large variance
+            in cuts duration.
         :param world_size: Total number of distributed nodes. We will try to infer it by default.
         :param rank: Index of distributed node. We will try to infer it by default.
         :param seed: Random seed used to consistently shuffle the dataset across different processes.
@@ -123,6 +129,7 @@ class DynamicBucketingSampler(CutSampler):
         self.num_cuts_for_bins_estimate = num_cuts_for_bins_estimate
         self.buffer_size = buffer_size
         self.shuffle_buffer_size = shuffle_buffer_size
+        self.strict = strict
         self.rng = None
 
         if self.shuffle:
@@ -167,6 +174,7 @@ class DynamicBucketingSampler(CutSampler):
             max_duration=self.max_duration,
             drop_last=self.drop_last,
             buffer_size=self.buffer_size,
+            strict=self.strict,
             rng=self.rng,
         )
         self.cuts_iter.diagnostics = self.diagnostics
@@ -241,6 +249,7 @@ class DynamicBucketer:
         max_duration: float,
         drop_last: bool = False,
         buffer_size: int = 10000,
+        strict: bool = False,
         rng: random.Random = None,
         diagnostics: Optional[SamplingDiagnostics] = None,
     ) -> None:
@@ -249,6 +258,7 @@ class DynamicBucketer:
         self.max_duration = max_duration
         self.drop_last = drop_last
         self.buffer_size = buffer_size
+        self.strict = strict
         self.diagnostics = ifnone(diagnostics, SamplingDiagnostics())
         if rng is None:
             rng = random.Random()
@@ -281,7 +291,7 @@ class DynamicBucketer:
 
         # Init: determine which buckets are "ready"
         def is_ready(bucket: Deque[Cut]):
-            tot = TimeConstraint(max_duration=self.max_duration)
+            tot = TimeConstraint(max_duration=self.max_duration, strict=self.strict)
             for c in bucket:
                 tot.add(c[0] if isinstance(c, tuple) else c)
                 if tot.close_to_exceeding():

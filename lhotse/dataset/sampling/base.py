@@ -280,6 +280,8 @@ class TimeConstraint:
     max_frames: Optional[int] = None
     current: Union[int, Seconds] = 0
     num_cuts: int = 0
+    longest_seen: Union[int, float] = 0
+    strict: bool = False
 
     def __post_init__(self) -> None:
         assert exactly_one_not_null(*self._constraints) or all(
@@ -292,6 +294,16 @@ class TimeConstraint:
     def _constraints(self) -> Tuple:
         return self.max_duration, self.max_frames, self.max_samples
 
+    @property
+    def active_constraint(self) -> Union[int, float, None]:
+        if self.max_frames is not None:
+            return self.max_frames
+        if self.max_samples is not None:
+            return self.max_samples
+        if self.max_duration is not None:
+            return self.max_duration
+        return None
+
     def is_active(self) -> bool:
         """Is it an actual constraint, or a dummy one (i.e. never exceeded)."""
         return any(x is not None for x in self._constraints)
@@ -303,21 +315,24 @@ class TimeConstraint:
         """
         if self.max_frames is not None:
             self.current += cut.num_frames
+            self.longest_seen = max(self.longest_seen, cut.num_frames)
         if self.max_samples is not None:
             self.current += cut.num_samples
+            self.longest_seen = max(self.longest_seen, cut.num_samples)
         if self.max_duration is not None:
             self.current += cut.duration
+            self.longest_seen = max(self.longest_seen, cut.duration)
         self.num_cuts += 1
 
     def exceeded(self) -> bool:
         """Is the constraint exceeded or not."""
-        if self.max_frames is not None:
-            return self.current > self.max_frames
-        if self.max_samples is not None:
-            return self.current > self.max_samples
-        if self.max_duration is not None:
-            return self.current > self.max_duration
-        return False
+        constraint = self.active_constraint
+        if constraint is None:
+            return False
+        if self.strict:
+            return self.num_cuts * self.longest_seen > constraint
+        else:
+            return self.current > constraint
 
     def close_to_exceeding(self) -> bool:
         """
@@ -326,13 +341,17 @@ class TimeConstraint:
         duration/num_frames/num_samples equal to the mean of the current
         batch, then the batch would have exceeded the constraints.
         """
-        mean = self.current / self.num_cuts
+        if self.strict:
+            thresh = self.longest_seen
+        else:
+            thresh = self.current / self.num_cuts
+
         if self.max_frames is not None:
-            return self.current + mean > self.max_frames
+            return self.current + thresh > self.max_frames
         if self.max_samples is not None:
-            return self.current + mean > self.max_samples
+            return self.current + thresh > self.max_samples
         if self.max_duration is not None:
-            return self.current + mean > self.max_duration
+            return self.current + thresh > self.max_duration
         return False
 
     def reset(self) -> None:
@@ -342,6 +361,7 @@ class TimeConstraint:
         """
         self.current = 0
         self.num_cuts = 0
+        self.longest_seen = 0
 
     def state_dict(self) -> Dict[str, Any]:
         return asdict(self)
@@ -352,6 +372,8 @@ class TimeConstraint:
         self.max_frames = state_dict.pop("max_frames")
         self.current = state_dict.pop("current")
         self.num_cuts = state_dict.pop("num_cuts")
+        self.strict = state_dict.pop("strict", False)
+        self.longest_seen = state_dict.pop("longest_seen", 0)
         assert len(state_dict) == 0, (
             "Error in TimeConstraint.load_state_dict(): Unexpected keys:\n- "
             + "\n- ".join(state_dict.keys())
@@ -366,12 +388,15 @@ class TimeConstraint:
                 f"To add two TimeConstraint objects, they need to represent the same constraint "
                 f"(got self.{key}={self_attr} != other.{key}={other_attr})."
             )
+        assert self.strict == other.strict
         return TimeConstraint(
             max_duration=self.max_duration,
             max_frames=self.max_frames,
             max_samples=self.max_samples,
             current=self.current + other.current,
             num_cuts=self.num_cuts + other.num_cuts,
+            strict=self.strict,
+            longest_seen=max(self.longest_seen, other.longest_seen),
         )
 
     def __eq__(self, other: "TimeConstraint") -> bool:

@@ -171,6 +171,7 @@ class DurationBatcher:
         max_duration: Seconds = None,
         max_cuts: Optional[int] = None,
         drop_last: bool = False,
+        strict: bool = False,
         diagnostics: Optional[SamplingDiagnostics] = None,
     ) -> None:
         self.datapipe = datapipe
@@ -179,7 +180,10 @@ class DurationBatcher:
         self.max_cuts = max_cuts
         self.diagnostics = ifnone(diagnostics, SamplingDiagnostics())
         self.time_constraint = TimeConstraint(
-            max_duration=max_duration, max_frames=max_frames, max_samples=max_samples
+            max_duration=max_duration,
+            max_frames=max_frames,
+            max_samples=max_samples,
+            strict=strict,
         )
 
     def __iter__(self) -> Generator[Union[CutSet, Tuple[CutSet]], None, None]:
