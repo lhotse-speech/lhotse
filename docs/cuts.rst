@@ -41,9 +41,6 @@ There are three cut classes: :class:`~lhotse.cut.MonoCut`, :class:`~lhotse.cut.M
     :no-special-members:
     :noindex:
 
-Each of these types has additional attributes that are not common - e.g., it makes sense to specify *start* for
-:class:`MonoCut` to locate it in the source recording, but it is undefined for :class:`MixedCut` and :class:`PaddingCut`.
-
 CLI
 ***
 

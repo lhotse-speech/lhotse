@@ -29,11 +29,19 @@ Lhotse is a Python library aiming to make speech and audio data preparation flex
 - Flexible data preparation for model training with the notion of **audio cuts**.
 - **Efficiency**, especially in terms of I/O bandwidth and storage capacity.
 
+### Tutorials
+
+We currently have the following tutorials available in `examples` directory:
+- Basic complete Lhotse workflow [![Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/lhotse-speech/lhotse/blob/master/examples/00-basic-workflow.ipynb)
+- Transforming data with Cuts [![Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/lhotse-speech/lhotse/blob/master/examples/01-cut-python-api.ipynb)
+- *(experimental)* WebDataset integration [![Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/lhotse-speech/lhotse/blob/master/examples/02-webdataset-integration.ipynb)
+- How to combine multiple datasets [![Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/lhotse-speech/lhotse/blob/master/examples/03-combining-datasets.ipynb)
+
 ### Examples of use
 
 Check out the following links to see how Lhotse is being put to use:
 - [Icefall recipes](https://github.com/k2-fsa/icefall): where k2 and Lhotse meet.
-- Minima ESPnet+Lhotse example: [![Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/drive/1HKSYPsWx_HoCdrnLpaPdYj5zwlPsM3NH)
+- Minimal ESPnet+Lhotse example: [![Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/drive/1HKSYPsWx_HoCdrnLpaPdYj5zwlPsM3NH)
 
 ### Main ideas
 
