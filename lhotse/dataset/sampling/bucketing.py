@@ -56,6 +56,7 @@ class BucketingSampler(CutSampler):
         drop_last: bool = False,
         proportional_sampling: bool = True,
         seed: int = 0,
+        strict: bool = True,
         **kwargs: Any,
     ) -> None:
         """
@@ -78,6 +79,11 @@ class BucketingSampler(CutSampler):
             This mechanism reduces the chance that any of the buckets gets depleted early.
             Enabled by default.
         :param seed: random seed for bucket selection
+        :param strict: When ``True``, for the purposes of determining dynamic batch size,
+            we take the longest cut sampled so far and multiply its duration/num_frames/num_samples
+            by the number of cuts currently in mini-batch to check if it exceeded max_duration/etc.
+            This can help make the GPU memory usage more predictable when there is a large variance
+            in cuts duration.
         :param kwargs: Arguments used to create the underlying sampler for each bucket.
         """
         # Do not use the distributed capacities of the CutSampler in the top-level sampler.
@@ -117,7 +123,10 @@ class BucketingSampler(CutSampler):
         # Create a separate sampler for each bucket.
         self.bucket_samplers = [
             self.sampler_type(
-                *bucket_cut_sets, drop_last=drop_last, **self.sampler_kwargs
+                *bucket_cut_sets,
+                drop_last=drop_last,
+                strict=strict,
+                **self.sampler_kwargs,
             )
             for bucket_cut_sets in self.buckets
         ]

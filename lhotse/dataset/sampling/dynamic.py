@@ -59,6 +59,7 @@ class DynamicCutSampler(CutSampler):
         drop_last: bool = False,
         consistent_ids: bool = True,
         shuffle_buffer_size: int = 20000,
+        strict: bool = False,
         world_size: Optional[int] = None,
         rank: Optional[int] = None,
         seed: int = 0,
@@ -83,6 +84,11 @@ class DynamicCutSampler(CutSampler):
         :param shuffle_buffer_size: How many cuts (or cut pairs, triplets) are being held in memory
             a buffer used for streaming shuffling. Larger number means better randomness at the cost
             of higher memory usage.
+        :param strict: When ``True``, for the purposes of determining dynamic batch size,
+            we take the longest cut sampled so far and multiply its duration/num_frames/num_samples
+            by the number of cuts currently in mini-batch to check if it exceeded max_duration/etc.
+            This can help make the GPU memory usage more predictable when there is a large variance
+            in cuts duration.
         :param world_size: Total number of distributed nodes. We will try to infer it by default.
         :param rank: Index of distributed node. We will try to infer it by default.
         :param seed: Random seed used to consistently shuffle the dataset across different processes.
@@ -101,6 +107,7 @@ class DynamicCutSampler(CutSampler):
         self.drop_last = drop_last
         self.consistent_ids = consistent_ids
         self.shuffle_buffer_size = shuffle_buffer_size
+        self.strict = strict
         self.rng = None
 
     def __iter__(self) -> "DynamicCutSampler":
@@ -132,6 +139,7 @@ class DynamicCutSampler(CutSampler):
             max_cuts=self.max_cuts,
             drop_last=self.drop_last,
             diagnostics=self.diagnostics,
+            strict=self.strict,
         )
         self.cuts_iter = iter(self.cuts_iter)
         return self
