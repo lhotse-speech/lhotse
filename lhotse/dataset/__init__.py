@@ -5,6 +5,7 @@ from . import signal_transforms
 from .cut_transforms import *
 from .diarization import DiarizationDataset
 from .input_strategies import AudioSamples, OnTheFlyFeatures, PrecomputedFeatures
+from .iterable_dataset import IterableDatasetWrapper
 from .sampling import *
 from .signal_transforms import GlobalMVN, RandomizedSmoothing, SpecAugment
 from .source_separation import (
