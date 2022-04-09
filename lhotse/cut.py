@@ -884,11 +884,16 @@ class MonoCut(Cut):
 
         value = self.custom.get(name)
         if isinstance(value, Array):
-            # We return the method to read Array (it is called in the user's code).
+            # Array does not support slicing.
             return value.load()
         elif isinstance(value, TemporalArray):
-            # TemporalArray supports slicing (note we return the method, without evaluating it).
+            # TemporalArray supports slicing.
             return value.load(start=self.start, duration=self.duration)
+        elif isinstance(value, Recording):
+            # Recording supports slicing.
+            return value.load_audio(
+                channels=self.channel, offset=self.start, duration=self.duration
+            )
         else:
             raise ValueError(
                 f"To load {name}, the cut needs to have field {name} (or cut.custom['{name}']) "
@@ -2300,21 +2305,33 @@ class MixedCut(Cut):
             mono_cut,
         ) = self._assert_one_mono_cut_with_attr_and_return_it_with_track_index(name)
 
-        # Load the array and retrieve the manifest from the only non-padding cut.
         # Use getattr to propagate AttributeError if "name" is not defined.
-        array = mono_cut.load_custom(name)
         manifest = getattr(mono_cut, name)
 
         # Check if the corresponding manifest for 'load_something' is of type
         # Array; if yes, just return the loaded data.
         # This is likely an embedding without a temporal dimension.
         if isinstance(manifest, Array):
-            return array
+            return mono_cut.load_custom(name)
 
-        # We are loading an array with a temporal dimension:
+        # We are loading either an array with a temporal dimension, or a recording:
         # We need to pad it.
         left_padding = self.tracks[non_padding_idx].offset
         padded_duration = self.duration
+
+        # Then, check if it's a Recording. In that case we convert it to a cut,
+        # leverage existing padding methods, and load padded audio data.
+        if isinstance(manifest, Recording):
+            return (
+                manifest.to_cut()
+                .pad(duration=manifest.duration + left_padding, direction="left")
+                .pad(duration=padded_duration, direction="right")
+                .load_audio()
+            )
+
+        # Load the array and retrieve the manifest from the only non-padding cut.
+        # We'll also need to fetch the dict defining what padding value to use (if present).
+        array = mono_cut.load_custom(name)
         try:
             pad_value_dict = [
                 t.cut for t in self.tracks if isinstance(t.cut, PaddingCut)
