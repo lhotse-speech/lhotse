@@ -209,7 +209,7 @@ class AudioSamples(BatchIO):
         self.fault_tolerant = fault_tolerant
 
     def __call__(
-        self, cuts: CutSet
+        self, cuts: CutSet, recording_field: Optional[str] = None
     ) -> Union[
         Tuple[torch.Tensor, torch.Tensor], Tuple[torch.Tensor, torch.Tensor, CutSet]
     ]:
@@ -218,11 +218,14 @@ class AudioSamples(BatchIO):
         The returned shape is ``(B, T) => (batch_size, num_samples)``.
 
         :return: a tensor with collated audio samples, and a tensor of ``num_samples`` of each cut before padding.
+        :param recording_field: when specified, we will try to load recordings from a custom field with this name
+            (i.e., ``cut.load_<recording_field>()`` instead of default ``cut.load_audio()``).
         """
         return collate_audio(
             cuts,
             executor=_get_executor(self.num_workers, executor_type=self._executor_type),
             fault_tolerant=self.fault_tolerant,
+            recording_field=recording_field,
         )
 
     def supervision_intervals(self, cuts: CutSet) -> Dict[str, torch.Tensor]:
