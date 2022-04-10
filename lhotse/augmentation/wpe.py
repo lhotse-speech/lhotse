@@ -12,7 +12,8 @@ from lhotse.utils import Seconds, is_module_available
 class DereverbWPE(AudioTransform):
     """
     Dereverberation with Weighted Prediction Error (WPE).
-    The implementation and default values are borrowed from `nara_wpe`.
+    The implementation and default values are borrowed from `nara_wpe` package:
+    https://github.com/fgnt/nara_wpe
     """
 
     n_fft: int = 512
