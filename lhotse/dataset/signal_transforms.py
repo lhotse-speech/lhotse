@@ -403,6 +403,7 @@ class DereverbWPE(torch.nn.Module):
     The method and library are described in the following paper:
     https://groups.uni-paderborn.de/nt/pubs/2018/ITG_2018_Drude_Paper.pdf
     """
+
     def __init__(self, n_fft: int = 512, hop_length: int = 128):
         super().__init__()
         self.n_fft = n_fft
