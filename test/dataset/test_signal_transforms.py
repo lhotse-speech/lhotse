@@ -6,6 +6,7 @@ import torch
 from lhotse import CutSet
 from lhotse.dataset import GlobalMVN, RandomizedSmoothing, SpecAugment
 from lhotse.dataset.collation import collate_features
+from lhotse.dataset.signal_transforms import DereverbWPE
 
 
 @pytest.fixture
@@ -165,3 +166,25 @@ def test_randomized_smoothing_schedule():
     audio_aug2 = tfnm(audio)
     # The schedule kicked in and the abs magnitudes should be larger.
     assert audio_aug2.abs().sum() > audio_aug.abs().sum()
+
+
+def test_wpe_single_channel():
+    B, T = 16, 32000
+    audio = torch.randn(B, T, dtype=torch.float32)
+    tfnm = DereverbWPE()
+    audio_aug = tfnm(audio)
+    # Shapes are the same
+    assert audio.shape == audio_aug.shape
+    # Some samples are different than the input audio
+    assert (audio != audio_aug).any()
+
+
+def test_wpe_multi_channel():
+    B, D, T = 16, 2, 32000
+    audio = torch.randn(B, D, T, dtype=torch.float32)
+    tfnm = DereverbWPE()
+    audio_aug = tfnm(audio)
+    # Shapes are the same
+    assert audio.shape == audio_aug.shape
+    # Some samples are different than the input audio
+    assert (audio != audio_aug).any()
