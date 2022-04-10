@@ -46,6 +46,7 @@ jobs:
         pip install opensmile  # for running opensmile tests
         pip install kaldi_native_io  # for running kaldi_native_io tests
         pip install webdataset==0.1.103 # for running webdataset tests
+        pip install git+https://github.com/fgnt/nara_wpe  # for running WPE tests
     - name: Install sph2pipe
       run: |
         lhotse install-sph2pipe  # Handle sphere files.

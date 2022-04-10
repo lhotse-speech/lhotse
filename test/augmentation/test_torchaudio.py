@@ -1,8 +1,8 @@
 import math
 
+import numpy as np
 import pytest
 import torch
-import numpy as np
 from hypothesis import given, settings
 from hypothesis import strategies as st
 from numpy.testing import assert_array_almost_equal
@@ -20,7 +20,8 @@ from lhotse.augmentation import (
     Volume,
     ReverbWithImpulseResponse,
 )
-from lhotse import AudioTransform, MonoCut, Recording, Resample, Seconds
+from lhotse import MonoCut, Recording, Resample, Seconds
+from lhotse.augmentation.transform import AudioTransform
 
 SAMPLING_RATE = 16000
 
