@@ -7,6 +7,7 @@ from lhotse import CutSet
 from lhotse.dataset import GlobalMVN, RandomizedSmoothing, SpecAugment
 from lhotse.dataset.collation import collate_features
 from lhotse.dataset.signal_transforms import DereverbWPE
+from lhotse.utils import is_module_available
 
 
 @pytest.fixture
@@ -168,6 +169,7 @@ def test_randomized_smoothing_schedule():
     assert audio_aug2.abs().sum() > audio_aug.abs().sum()
 
 
+@pytest.mark.skipif(not is_module_available("nara_wpe"), reason="Requires nara_wpe to be installed.")
 def test_wpe_single_channel():
     B, T = 16, 32000
     audio = torch.randn(B, T, dtype=torch.float32)
@@ -179,6 +181,7 @@ def test_wpe_single_channel():
     assert (audio != audio_aug).any()
 
 
+@pytest.mark.skipif(not is_module_available("nara_wpe"), reason="Requires nara_wpe to be installed.")
 def test_wpe_multi_channel():
     B, D, T = 16, 2, 32000
     audio = torch.randn(B, D, T, dtype=torch.float32)
