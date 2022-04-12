@@ -3655,7 +3655,7 @@ class CutSet(Serializable, AlgorithmMixin):
         ]
 
     def split_lazy(
-        self, output_dir: Pathlike, chunk_size: int, prefix: str
+        self, output_dir: Pathlike, chunk_size: int, prefix: str = ""
     ) -> List["CutSet"]:
         """
         Splits a manifest (either lazily or eagerly opened) into chunks, each

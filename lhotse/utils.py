@@ -268,7 +268,7 @@ def fastcopy(dataclass_obj: T, **kwargs) -> T:
 
 
 def split_manifest_lazy(
-    it: Iterable[Any], output_dir: Pathlike, chunk_size: int, prefix: str
+    it: Iterable[Any], output_dir: Pathlike, chunk_size: int, prefix: str = ""
 ) -> List:
     """
     Splits a manifest (either lazily or eagerly opened) into chunks, each
@@ -291,6 +291,9 @@ def split_manifest_lazy(
 
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
+
+    if prefix == "":
+        prefix = "split"
 
     items = iter(it)
     split_idx = 1
