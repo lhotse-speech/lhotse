@@ -293,7 +293,7 @@ def split_manifest_lazy(
     output_dir.mkdir(parents=True, exist_ok=True)
 
     items = iter(it)
-    split_idx = 0
+    split_idx = 1
     splits = []
     while True:
         try:
