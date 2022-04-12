@@ -35,10 +35,10 @@ def get_duration(
             )
         import kaldi_native_io
 
-        wave_info = kaldi_native_io.read_wave_info(path)
-        assert wave_info.num_channels == 1, wave_info.num_channels
+        wave = kaldi_native_io.read_wave(path)
+        assert wave.data.shape[0] == 1, f"Expect 1 channel. Given {wave.data.shape[0]}"
 
-        return wave_info.duration
+        return wave.duration
     try:
         # Try to parse the file using pysoundfile first.
         import soundfile
