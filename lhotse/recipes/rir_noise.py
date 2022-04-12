@@ -88,7 +88,7 @@ def download_rir_noise(
     else:
         urlretrieve_progress(url, zip_path, desc=f"Downloading {zip_name}")
         logging.info(f"Downloaded {zip_name}.")
-    zip_dir = target_dir / "rirs_noises"
+    zip_dir = target_dir / "RIRS_NOISES"
     if not zip_dir.exists():
         logging.info(f"Unzipping {zip_name}.")
         with zipfile.ZipFile(zip_path) as zf:
