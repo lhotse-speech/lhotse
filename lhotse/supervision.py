@@ -657,7 +657,7 @@ class SupervisionSet(Serializable, AlgorithmMixin):
         ]
 
     def split_lazy(
-        self, output_dir: Pathlike, chunk_size: int
+        self, output_dir: Pathlike, chunk_size: int, prefix: str
     ) -> List["SupervisionSet"]:
         """
         Splits a manifest (either lazily or eagerly opened) into chunks, each
@@ -671,11 +671,14 @@ class SupervisionSet(Serializable, AlgorithmMixin):
 
         :param it: any iterable of Lhotse manifests.
         :param output_dir: directory where the split manifests are saved.
-            Each manifest is saved at: ``{output_dir}/{split_idx}.jsonl.gz``
+            Each manifest is saved at: ``{output_dir}/{prefix}.{split_idx}.jsonl.gz``
         :param chunk_size: the number of items in each chunk.
+        :param prefix: the prefix of each manifest.
         :return: a list of lazily opened chunk manifests.
         """
-        return split_manifest_lazy(self, output_dir=output_dir, chunk_size=chunk_size)
+        return split_manifest_lazy(
+            self, output_dir=output_dir, chunk_size=chunk_size, prefix=prefix
+        )
 
     def subset(
         self, first: Optional[int] = None, last: Optional[int] = None
