@@ -295,12 +295,7 @@ def split_manifest_lazy(
     if prefix == "":
         prefix = "split"
 
-    items = iter(it)
-    num_items = 0
-    for item in items:
-        num_items += 1
-    num_splits = math.ceil(num_items / chunk_size)
-    num_digits = len(str(num_splits))
+    num_digits = 8
 
     items = iter(it)
     split_idx = 1
