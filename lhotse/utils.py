@@ -295,14 +295,17 @@ def split_manifest_lazy(
     if prefix == "":
         prefix = "split"
 
+    num_digits = 8
+
     items = iter(it)
     split_idx = 1
     splits = []
     while True:
         try:
             written = 0
+            idx = f"{split_idx}".zfill(num_digits)
             with SequentialJsonlWriter(
-                (output_dir / prefix).with_suffix(f".{split_idx}.jsonl.gz")
+                (output_dir / prefix).with_suffix(f".{idx}.jsonl.gz")
             ) as writer:
                 while written < chunk_size:
                     item = next(items)
