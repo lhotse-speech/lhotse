@@ -165,7 +165,8 @@ def split_lazy(manifest: Pathlike, output_dir: Pathlike, chunk_size: int):
     """
     Load MANIFEST (lazily if in JSONL format) and split it into parts,
     each with CHUNK_SIZE items.
-    The parts are saved to separate files with pattern "{output_dir}/{chunk_idx}.jsonl.gz".
+    The parts are saved to separate files with pattern
+    "{output_dir}/{manifest.stem}.{chunk_idx}.jsonl.gz".
 
     Prefer this to "lhotse split" when your manifests are very large.
     """
@@ -174,7 +175,9 @@ def split_lazy(manifest: Pathlike, output_dir: Pathlike, chunk_size: int):
     output_dir = Path(output_dir)
     manifest = Path(manifest)
     any_set = load_manifest_lazy_or_eager(manifest)
-    any_set.split_lazy(output_dir=output_dir, chunk_size=chunk_size)
+    any_set.split_lazy(
+        output_dir=output_dir, chunk_size=chunk_size, prefix=manifest.stem
+    )
 
 
 @cli.command()

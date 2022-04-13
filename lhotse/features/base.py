@@ -635,7 +635,9 @@ class FeatureSet(Serializable, AlgorithmMixin):
             )
         ]
 
-    def split_lazy(self, output_dir: Pathlike, chunk_size: int) -> List["FeatureSet"]:
+    def split_lazy(
+        self, output_dir: Pathlike, chunk_size: int, prefix: str = ""
+    ) -> List["FeatureSet"]:
         """
         Splits a manifest (either lazily or eagerly opened) into chunks, each
         with ``chunk_size`` items (except for the last one, typically).
@@ -648,11 +650,14 @@ class FeatureSet(Serializable, AlgorithmMixin):
 
         :param it: any iterable of Lhotse manifests.
         :param output_dir: directory where the split manifests are saved.
-            Each manifest is saved at: ``{output_dir}/{split_idx}.jsonl.gz``
+            Each manifest is saved at: ``{output_dir}/{prefix}.{split_idx}.jsonl.gz``
         :param chunk_size: the number of items in each chunk.
+        :param prefix: the prefix of each manifest.
         :return: a list of lazily opened chunk manifests.
         """
-        return split_manifest_lazy(self, output_dir=output_dir, chunk_size=chunk_size)
+        return split_manifest_lazy(
+            self, output_dir=output_dir, chunk_size=chunk_size, prefix=prefix
+        )
 
     def shuffle(self, *args, **kwargs):
         raise NotImplementedError("FeatureSet does not support shuffling.")
