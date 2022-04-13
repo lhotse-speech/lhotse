@@ -176,8 +176,8 @@ class DynamicBucketingSampler(CutSampler):
             buffer_size=self.buffer_size,
             strict=self.strict,
             rng=self.rng,
+            diagnostics=self.diagnostics,
         )
-        self.cuts_iter.diagnostics = self.diagnostics
         self.cuts_iter = iter(self.cuts_iter)
         return self
 
@@ -224,9 +224,9 @@ def estimate_duration_buckets(cuts: Iterable[Cut], num_buckets: int) -> List[Sec
 
     durs = np.array([c.duration for c in cuts])
     durs.sort()
-    assert num_buckets < durs.shape[0], (
-        f"The number of buckets ({num_buckets}) must be smaller "
-        f"than the number of cuts ({durs.shape[0]})."
+    assert num_buckets <= durs.shape[0], (
+        f"The number of buckets ({num_buckets}) must be smaller than "
+        f"or equal to the number of cuts ({durs.shape[0]})."
     )
     bucket_duration = durs.sum() / num_buckets
 
@@ -297,8 +297,6 @@ class DynamicBucketer:
                 if tot.close_to_exceeding():
                     return True
             return False
-
-        assert any(is_ready(bucket) for bucket in self.buckets)
 
         # The iteration code starts here.
         # On each step we're sampling a new batch.

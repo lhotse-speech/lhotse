@@ -143,6 +143,49 @@ def test_dynamic_bucketing_sampler():
     assert sum(c.duration for c in batches[3]) == 2
 
 
+def test_dynamic_bucketing_sampler_too_small_data_can_be_sampled():
+    cuts = DummyManifest(CutSet, begin_id=0, end_id=10)
+    for i, c in enumerate(cuts):
+        if i < 5:
+            c.duration = 1
+        else:
+            c.duration = 2
+
+    # 10 cuts with 30s total are not enough to satisfy max_duration of 100 with 2 buckets
+    sampler = DynamicBucketingSampler(cuts, max_duration=100, num_buckets=2, seed=0)
+    batches = [b for b in sampler]
+    sampled_cuts = [c for b in batches for c in b]
+
+    # Invariant: no duplicated cut IDs
+    assert len(set(c.id for b in batches for c in b)) == len(sampled_cuts)
+
+    # Same number of sampled and source cuts.
+    assert len(sampled_cuts) == len(cuts)
+
+    # We sampled 10 batches
+    assert len(batches) == 2
+
+    # Each batch has five cuts
+    for b in batches:
+        assert len(b) == 5
+
+
+def test_dynamic_bucketing_sampler_too_small_data_drop_last_true_results_in_no_batches():
+    cuts = DummyManifest(CutSet, begin_id=0, end_id=10)
+    for i, c in enumerate(cuts):
+        if i < 5:
+            c.duration = 1
+        else:
+            c.duration = 2
+
+    # 10 cuts with 30s total are not enough to satisfy max_duration of 100 with 2 buckets
+    sampler = DynamicBucketingSampler(
+        cuts, max_duration=100, num_buckets=2, seed=0, drop_last=True
+    )
+    batches = [b for b in sampler]
+    assert len(batches) == 0
+
+
 def test_dynamic_bucketing_sampler_filter():
     cuts = DummyManifest(CutSet, begin_id=0, end_id=10)
     for i, c in enumerate(cuts):
