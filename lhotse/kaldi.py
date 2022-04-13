@@ -141,12 +141,12 @@ def load_kaldi_data_dir(
             feature_set = FeatureSet.from_features(
                 Features(
                     type="kaldi_native_io",
-                    num_frames=mat.shape[0],
-                    num_features=mat.shape[1],
+                    num_frames=mat_shape.num_rows,
+                    num_features=mat_shape.num_cols,
                     frame_shift=frame_shift,
                     sampling_rate=sampling_rate,
                     start=0,
-                    duration=mat.shape[0] * frame_shift,
+                    duration=mat_shape.num_rows * frame_shift,
                     storage_type=KaldiReader.name,
                     storage_path=str(feats_scp),
                     storage_key=utt_id,
@@ -155,7 +155,7 @@ def load_kaldi_data_dir(
                     else utt_id,
                     channels=0,
                 )
-                for utt_id, mat in kaldi_native_io.SequentialFloatMatrixReader(
+                for utt_id, mat_shape in kaldi_native_io.SequentialMatrixShapeReader(
                     f"scp:{feats_scp}"
                 )
             )
