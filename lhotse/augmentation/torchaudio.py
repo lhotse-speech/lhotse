@@ -114,16 +114,10 @@ class Speed(AudioTransform):
     factor: float
 
     def __call__(self, samples: np.ndarray, sampling_rate: int) -> np.ndarray:
-        check_torchaudio_version()
-        import torchaudio
-
-        sampling_rate = int(sampling_rate)  # paranoia mode
-        effect = [["speed", str(self.factor)], ["rate", str(sampling_rate)]]
-        if isinstance(samples, np.ndarray):
-            samples = torch.from_numpy(samples)
-        augmented, new_sampling_rate = torchaudio.sox_effects.apply_effects_tensor(
-            samples, sampling_rate, effect
+        resampler = get_or_create_resampler(
+            round(sampling_rate * self.factor), sampling_rate
         )
+        augmented = resampler(torch.from_numpy(samples))
         return augmented.numpy()
 
     def reverse_timestamps(
