@@ -127,7 +127,7 @@ def test_reverb_normalize_output(audio, rir, normalize_output, early_only):
 def test_speed(audio):
     speed = Speed(factor=1.1)
     perturbed = speed(audio, SAMPLING_RATE)
-    assert perturbed.shape == (1, 14545)
+    assert perturbed.shape == (1, 14546)
 
 
 @pytest.mark.parametrize("scale", [0.125, 1.0, 2.0])
@@ -143,7 +143,7 @@ def test_deserialize_transform_speed(audio):
     speed = AudioTransform.from_dict({"name": "Speed", "kwargs": {"factor": 1.1}})
     perturbed_speed = speed(audio, SAMPLING_RATE)
 
-    assert perturbed_speed.shape == (1, 14545)
+    assert perturbed_speed.shape == (1, 14546)
 
 
 def test_deserialize_transform_volume(audio):
@@ -160,7 +160,7 @@ def test_serialize_deserialize_transform_speed(audio):
     speed = AudioTransform.from_dict(data_speed)
     perturbed_speed = speed(audio, SAMPLING_RATE)
 
-    assert perturbed_speed.shape == (1, 14545)
+    assert perturbed_speed.shape == (1, 14546)
 
 
 def test_serialize_deserialize_transform_volume(audio):
