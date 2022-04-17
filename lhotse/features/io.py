@@ -824,7 +824,7 @@ class LilcomChunkyWriter(FeaturesWriter):
 
         if "b" not in mode:
             mode = mode + "b"
-        assert mode == "wb" or "ab"
+        assert mode in ("wb", "ab")
 
         # ".lca" -> "lilcom chunky archive"
         self.storage_path_ = Path(storage_path).with_suffix(".lca")
