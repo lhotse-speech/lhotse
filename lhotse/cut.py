@@ -4650,29 +4650,29 @@ class CutSet(Serializable, AlgorithmMixin):
                         waves, sampling_rate=cuts[0].sampling_rate
                     )
 
-                for cut, feat_mtx in zip(cuts, features):
+                for cut, feat_mat in zip(cuts, features):
                     if isinstance(cut, PaddingCut):
                         # For padding cuts, just fill out the fields in the manfiest
                         # and don't store anything.
                         cuts_writer.write(
                             fastcopy(
                                 cut,
-                                num_frames=feat_mtx.shape[0],
-                                num_features=feat_mtx.shape[1],
+                                num_frames=feat_mat.shape[0],
+                                num_features=feat_mat.shape[1],
                                 frame_shift=frame_shift,
                             )
                         )
                         continue
                     # Store the computed features and describe them in a manifest.
-                    if isinstance(feat_mtx, torch.Tensor):
-                        feat_mtx = feat_mtx.cpu().numpy()
-                    storage_key = feats_writer.write(cut.id, feat_mtx)
+                    if isinstance(feat_mat, torch.Tensor):
+                        feat_mat = feat_mat.cpu().numpy()
+                    storage_key = feats_writer.write(cut.id, feat_mat)
                     feat_manifest = Features(
                         start=cut.start,
                         duration=cut.duration,
                         type=extractor.name,
-                        num_frames=feat_mtx.shape[0],
-                        num_features=feat_mtx.shape[1],
+                        num_frames=feat_mat.shape[0],
+                        num_features=feat_mat.shape[1],
                         frame_shift=frame_shift,
                         sampling_rate=cut.sampling_rate,
                         channels=0,
@@ -4680,7 +4680,7 @@ class CutSet(Serializable, AlgorithmMixin):
                         storage_path=str(feats_writer.storage_path),
                         storage_key=storage_key,
                     )
-                    validate_features(feat_manifest, feats_data=feat_mtx)
+                    validate_features(feat_manifest, feats_data=feat_mat)
 
                     # Update the cut manifest.
                     if isinstance(cut, MonoCut):
