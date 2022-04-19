@@ -2,7 +2,9 @@ import random
 import warnings
 from bisect import bisect_right
 from collections import deque
+from concurrent.futures import ThreadPoolExecutor
 from itertools import islice
+from threading import Lock
 from typing import (
     Deque,
     Generator,
@@ -284,6 +286,9 @@ class DynamicBucketer:
             deque() for _ in range(len(duration_bins) + 1)
         ]
 
+        self._cut_reading_thread = ThreadPoolExecutor(1)
+        self._bucket_mutex = Lock()
+
     def __iter__(self) -> Generator[CutSet, None, None]:
         # Init: sample `buffer_size` cuts and assign them to the right buckets.
         self.cuts_iter = iter(self.cuts)
@@ -302,19 +307,20 @@ class DynamicBucketer:
         # On each step we're sampling a new batch.
         try:
             while True:
-                ready_buckets = [b for b in self.buckets if is_ready(b)]
-                if not ready_buckets:
-                    # No bucket has enough data to yield for the last full batch.
-                    non_empty_buckets = [b for b in self.buckets if b]
-                    if self.drop_last or len(non_empty_buckets) == 0:
-                        # Either the user requested only full batches, or we have nothing left.
-                        raise StopIteration()
-                    else:
-                        # Sample from partial batches that are left.
-                        ready_buckets = non_empty_buckets
-                # Choose a bucket to sample from.
-                # We'll only select from the buckets that have a full batch available.
-                sampling_bucket = self.rng.choice(ready_buckets)
+                with self._bucket_mutex:
+                    ready_buckets = [b for b in self.buckets if is_ready(b)]
+                    if not ready_buckets:
+                        # No bucket has enough data to yield for the last full batch.
+                        non_empty_buckets = [b for b in self.buckets if b]
+                        if self.drop_last or len(non_empty_buckets) == 0:
+                            # Either the user requested only full batches, or we have nothing left.
+                            raise StopIteration()
+                        else:
+                            # Sample from partial batches that are left.
+                            ready_buckets = non_empty_buckets
+                    # Choose a bucket to sample from.
+                    # We'll only select from the buckets that have a full batch available.
+                    sampling_bucket = self.rng.choice(ready_buckets)
                 # Sample one batch from that bucket and yield it to the caller.
                 batcher = DurationBatcher(
                     sampling_bucket,
@@ -339,13 +345,17 @@ class DynamicBucketer:
         self.cuts_iter = None
 
     def _collect_cuts_in_buckets(self, n_cuts: int):
-        try:
-            for _ in range(n_cuts):
+        def collect_one():
+            with self._bucket_mutex:
                 cuts = next(self.cuts_iter)
                 duration = (
                     cuts[0].duration if isinstance(cuts, tuple) else cuts.duration
                 )
                 bucket_idx = bisect_right(self.duration_bins, duration)
                 self.buckets[bucket_idx].append(cuts)
+
+        try:
+            for _ in range(n_cuts):
+                self._cut_reading_thread.submit(collect_one)
         except StopIteration:
             pass
