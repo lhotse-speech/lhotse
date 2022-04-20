@@ -185,12 +185,12 @@ class DurationBatcher:
         self.datapipe = datapipe
         self.reuse_cuts_buffer = deque()
         self.drop_last = drop_last
-        self.max_cuts = max_cuts
         self.diagnostics = ifnone(diagnostics, SamplingDiagnostics())
         self.time_constraint = TimeConstraint(
             max_duration=max_duration,
             max_frames=max_frames,
             max_samples=max_samples,
+            max_cuts=max_cuts,
             strict=strict,
         )
 
@@ -255,12 +255,9 @@ class DurationBatcher:
                 if isinstance(next_cut_or_tpl, tuple)
                 else next_cut_or_tpl
             )
-            next_num_cuts = len(cuts) + 1
 
             # Did we exceed the max_frames and max_cuts constraints?
-            if not self.time_constraint.exceeded() and (
-                self.max_cuts is None or next_num_cuts <= self.max_cuts
-            ):
+            if not self.time_constraint.exceeded():
                 # No - add the next cut to the batch, and keep trying.
                 cuts.append(next_cut_or_tpl)
             else:
