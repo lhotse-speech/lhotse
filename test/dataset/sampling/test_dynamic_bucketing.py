@@ -151,7 +151,9 @@ def test_dynamic_bucketing_sampler_max_duration_and_max_cuts():
         else:
             c.duration = 2
 
-    sampler = DynamicBucketingSampler(cuts, max_duration=5, max_cuts=1, num_buckets=2, seed=0)
+    sampler = DynamicBucketingSampler(
+        cuts, max_duration=5, max_cuts=1, num_buckets=2, seed=0
+    )
     batches = [b for b in sampler]
     sampled_cuts = [c for b in batches for c in b]
 
