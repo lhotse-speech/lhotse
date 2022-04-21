@@ -382,17 +382,16 @@ def validate_cut(c: Cut, read_data: bool = False) -> None:
     # Conditions related to supervisions.
     # We only validate those for MonoCut; PaddingCut doesn't have supervisions,
     # and MixedCut may consist of more than one recording/channel.
-    if isinstance(c, MonoCut):
-        for s in c.supervisions:
-            validate_supervision(s)
-            assert s.recording_id == c.recording_id, (
-                f"MonoCut {c.id}: supervision {s.id} has a mismatched recording_id "
-                f"(expected {c.recording_id}, supervision has {s.recording_id})"
-            )
-            assert s.channel == c.channel, (
-                f"MonoCut {c.id}: supervision {s.id} has a mismatched channel "
-                f"(expected {c.channel}, supervision has {s.channel})"
-            )
+    for s in c.supervisions:
+        validate_supervision(s)
+        assert s.recording_id == c.recording_id, (
+            f"MonoCut {c.id}: supervision {s.id} has a mismatched recording_id "
+            f"(expected {c.recording_id}, supervision has {s.recording_id})"
+        )
+        assert s.channel == c.channel, (
+            f"MonoCut {c.id}: supervision {s.id} has a mismatched channel "
+            f"(expected {c.channel}, supervision has {s.channel})"
+        )
 
     # Conditions related to custom fields
     if c.custom is not None:

@@ -2993,12 +2993,15 @@ class MixedCut(Cut):
                 channel=0,
                 augment_fn=augment_fn,
             )
+            features_info.recording_id = self.id
             return MonoCut(
                 id=self.id,
                 start=0,
                 duration=self.duration,
                 channel=0,
-                supervisions=self.supervisions,
+                supervisions=[
+                    fastcopy(s, recording_id=self.id) for s in self.supervisions
+                ],
                 features=features_info,
                 recording=None,
                 custom=self.custom if hasattr(self, "custom") else None,
