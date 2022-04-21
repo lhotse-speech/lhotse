@@ -4655,7 +4655,7 @@ class CutSet(Serializable, AlgorithmMixin):
 
                 for cut, feat_mat in zip(cuts, features):
                     if isinstance(cut, PaddingCut):
-                        # For padding cuts, just fill out the fields in the manfiest
+                        # For padding cuts, just fill out the fields in the manifest
                         # and don't store anything.
                         cuts_writer.write(
                             fastcopy(
@@ -4687,17 +4687,23 @@ class CutSet(Serializable, AlgorithmMixin):
 
                     # Update the cut manifest.
                     if isinstance(cut, MonoCut):
+                        feat_manifest.recording_id = cut.recording_id
                         cut = fastcopy(cut, features=feat_manifest)
                     if isinstance(cut, MixedCut):
                         # If this was a mixed cut, we will just discard its
                         # recordings and create a new mono cut that has just
                         # the features attached.
+                        feat_manifest.recording_id = cut.id
                         cut = MonoCut(
                             id=cut.id,
                             start=0,
                             duration=cut.duration,
                             channel=0,
-                            supervisions=cut.supervisions,
+                            # Update supervisions recording_id for consistency
+                            supervisions=[
+                                fastcopy(s, recording_id=cut.id)
+                                for s in cut.supervisions
+                            ],
                             features=feat_manifest,
                             recording=None,
                         )
