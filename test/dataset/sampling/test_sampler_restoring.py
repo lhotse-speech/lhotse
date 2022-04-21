@@ -71,22 +71,15 @@ SAMPLERS_TO_TEST = [
                          sampler_type=CutPairsSampler),
         BucketingSampler(CUTS, CUTS, num_buckets=2, sampler_type=CutPairsSampler),
     ),
-    pytest.param(
-        lambda: (
-            DynamicBucketingSampler(CUTS, max_duration=10.0, shuffle=True, drop_last=True, num_buckets=2),
-            DynamicBucketingSampler(CUTS, max_duration=10.0, num_buckets=2),
-        ),
-        marks=pytest.mark.xfail(reason='DynamicBucketingSampler does not support resumption yet.')
+    lambda: (
+        DynamicBucketingSampler(CUTS, max_duration=10.0, shuffle=True, drop_last=True, num_buckets=2),
+        DynamicBucketingSampler(CUTS, max_duration=10.0, num_buckets=2),
     ),
-    pytest.param(
-        lambda: (
-            DynamicCutSampler(CUTS, max_duration=10.0, shuffle=True, drop_last=True),
-            DynamicCutSampler(CUTS, max_duration=10.0),
-        ),
-        marks=pytest.mark.xfail(reason='DynamicCutSampler does not support resumption yet.')
+    lambda: (
+        DynamicCutSampler(CUTS, max_duration=10.0, shuffle=True, drop_last=True),
+        DynamicCutSampler(CUTS, max_duration=10.0),
     ),
     # Differently initialized RoundRobinSampler with the same CUTS
-    # pytest.param(
     lambda: (
         RoundRobinSampler(
             SingleCutSampler(CUTS.subset(first=50), max_duration=10.0, shuffle=True, drop_last=True),
@@ -97,8 +90,6 @@ SAMPLERS_TO_TEST = [
             SingleCutSampler(CUTS_MOD.subset(first=50)),
         ),
     ),
-        # marks=pytest.mark.xfail(reason='RoundRobinSampler does not support resumption yet.')
-    # ),
 ]
 # fmt: on
 
