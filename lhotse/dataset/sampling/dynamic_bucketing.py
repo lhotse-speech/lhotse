@@ -67,6 +67,7 @@ class DynamicBucketingSampler(CutSampler):
         self,
         *cuts: CutSet,
         max_duration: float,
+        max_cuts: Optional[int] = None,
         num_buckets: int = 10,
         shuffle: bool = False,
         drop_last: bool = False,
@@ -83,6 +84,8 @@ class DynamicBucketingSampler(CutSampler):
         :param cuts: one or more CutSets (when more than one, will yield tuples of CutSets as mini-batches)
         :param max_duration: The maximum total recording duration from ``cuts``.
             Note: with multiple CutSets, ``max_duration`` constraint applies only to the first CutSet.
+        :param max_cuts: The maximum total number of ``cuts`` per batch.
+            When only ``max_duration`` is specified, this sampler yields static batch sizes.
         :param num_buckets: how many buckets to create.
         :param shuffle: When ``True``, the cuts will be shuffled dynamically with
             a reservoir-sampling-based algorithm.
@@ -123,6 +126,7 @@ class DynamicBucketingSampler(CutSampler):
             )
         self.cuts = cuts
         self.max_duration = max_duration
+        self.max_cuts = max_cuts
         self.shuffle = shuffle
         self.drop_last = drop_last
         self.consistent_ids = consistent_ids
@@ -172,6 +176,7 @@ class DynamicBucketingSampler(CutSampler):
             self.cuts_iter,
             duration_bins=self.duration_bins,
             max_duration=self.max_duration,
+            max_cuts=self.max_cuts,
             drop_last=self.drop_last,
             buffer_size=self.buffer_size,
             strict=self.strict,
@@ -247,6 +252,7 @@ class DynamicBucketer:
         cuts: Iterable[Union[Cut, Tuple[Cut]]],
         duration_bins: List[Seconds],
         max_duration: float,
+        max_cuts: Optional[int] = None,
         drop_last: bool = False,
         buffer_size: int = 10000,
         strict: bool = False,
@@ -256,6 +262,7 @@ class DynamicBucketer:
         self.cuts = cuts
         self.duration_bins = duration_bins
         self.max_duration = max_duration
+        self.max_cuts = max_cuts
         self.drop_last = drop_last
         self.buffer_size = buffer_size
         self.strict = strict
@@ -291,7 +298,11 @@ class DynamicBucketer:
 
         # Init: determine which buckets are "ready"
         def is_ready(bucket: Deque[Cut]):
-            tot = TimeConstraint(max_duration=self.max_duration, strict=self.strict)
+            tot = TimeConstraint(
+                max_duration=self.max_duration,
+                max_cuts=self.max_cuts,
+                strict=self.strict,
+            )
             for c in bucket:
                 tot.add(c[0] if isinstance(c, tuple) else c)
                 if tot.close_to_exceeding():
@@ -319,6 +330,7 @@ class DynamicBucketer:
                 batcher = DurationBatcher(
                     sampling_bucket,
                     max_duration=self.max_duration,
+                    max_cuts=self.max_cuts,
                     diagnostics=self.diagnostics,
                 )
                 batch = next(iter(batcher))

@@ -278,6 +278,7 @@ class TimeConstraint:
     max_duration: Optional[Seconds] = None
     max_samples: Optional[int] = None
     max_frames: Optional[int] = None
+    max_cuts: Optional[int] = None
     current: Union[int, Seconds] = 0
     num_cuts: int = 0
     longest_seen: Union[int, float] = 0
@@ -289,6 +290,7 @@ class TimeConstraint:
         )
         for c in self._constraints:
             assert is_none_or_gt(c, 0)
+        assert is_none_or_gt(self.max_cuts, 0)
 
     @property
     def _constraints(self) -> Tuple:
@@ -306,7 +308,7 @@ class TimeConstraint:
 
     def is_active(self) -> bool:
         """Is it an actual constraint, or a dummy one (i.e. never exceeded)."""
-        return any(x is not None for x in self._constraints)
+        return any(x is not None for x in self._constraints + (self.max_cuts,))
 
     def add(self, cut: Cut) -> None:
         """
@@ -326,6 +328,8 @@ class TimeConstraint:
 
     def exceeded(self) -> bool:
         """Is the constraint exceeded or not."""
+        if self.max_cuts is not None and self.num_cuts >= self.max_cuts:
+            return True
         constraint = self.active_constraint
         if constraint is None:
             return False
@@ -341,6 +345,9 @@ class TimeConstraint:
         duration/num_frames/num_samples equal to the mean of the current
         batch, then the batch would have exceeded the constraints.
         """
+        if self.max_cuts is not None and self.num_cuts >= self.max_cuts:
+            return True
+
         if self.strict:
             thresh = self.longest_seen
         else:
@@ -370,6 +377,7 @@ class TimeConstraint:
         self.max_duration = state_dict.pop("max_duration")
         self.max_samples = state_dict.pop("max_samples")
         self.max_frames = state_dict.pop("max_frames")
+        self.max_cuts = state_dict.pop("max_cuts")
         self.current = state_dict.pop("current")
         self.num_cuts = state_dict.pop("num_cuts")
         self.strict = state_dict.pop("strict", False)
@@ -380,7 +388,7 @@ class TimeConstraint:
         )
 
     def __add__(self, other: "TimeConstraint") -> "TimeConstraint":
-        for key in ("max_duration", "max_frames", "max_samples"):
+        for key in ("max_duration", "max_frames", "max_samples", "max_cuts"):
             self_attr = getattr(self, key)
             other_attr = getattr(other, key)
             is_none = self_attr is None and other_attr is None
@@ -393,6 +401,7 @@ class TimeConstraint:
             max_duration=self.max_duration,
             max_frames=self.max_frames,
             max_samples=self.max_samples,
+            max_cuts=self.max_cuts,
             current=self.current + other.current,
             num_cuts=self.num_cuts + other.num_cuts,
             strict=self.strict,
@@ -404,6 +413,7 @@ class TimeConstraint:
             self.max_duration == other.max_duration
             and self.max_samples == other.max_samples
             and self.max_frames == other.max_frames
+            and self.max_cuts == other.max_cuts
         )
 
 

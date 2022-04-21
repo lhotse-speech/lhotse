@@ -3615,7 +3615,7 @@ class CutSet(Serializable, AlgorithmMixin):
         )
         total_sum = durations.sum()
         speech_sum = speech_durations.sum()
-        print("Cuts count:", len(self))
+        print("Cuts count:", len(durations))
         print(f"Total duration (hours): {total_sum / 3600:.1f}")
         print(
             f"Speech duration (hours): {speech_sum / 3600:.1f} ({speech_sum / total_sum:.1%})"
