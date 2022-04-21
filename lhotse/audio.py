@@ -1,3 +1,4 @@
+import functools
 import logging
 import random
 import re
@@ -57,6 +58,7 @@ from lhotse.utils import (
     rich_exception_info,
     split_manifest_lazy,
     split_sequence,
+    suppress_and_warn,
 )
 
 Channels = Union[int, List[int]]
@@ -1812,3 +1814,45 @@ class AudioLoadingError(Exception):
 
 class DurationMismatchError(Exception):
     pass
+
+
+@contextmanager
+def suppress_audio_loading_errors(enabled: bool = True):
+    """
+    Context manager that suppresses errors related to audio loading.
+    Emits warning to the console.
+    """
+    with suppress_and_warn(
+        AudioLoadingError,
+        DurationMismatchError,
+        NonPositiveEnergyError,
+        enabled=enabled,
+    ):
+        yield
+
+
+def null_result_on_audio_loading_error(func: Callable) -> Callable:
+    """
+    This is a decorator that makes a function return None when reading audio with Lhotse failed.
+
+    Example::
+
+        >>> @null_result_on_audio_loading_error
+        ... def func_loading_audio(rec):
+        ...     audio = rec.load_audio()  # if this fails, will return None instead
+        ...     return other_func(audio)
+
+    Another example::
+
+        >>> # crashes on loading audio
+        >>> audio = load_audio(cut)
+        >>> # does not crash on loading audio, return None instead
+        >>> maybe_audio: Optional = null_result_on_audio_loading_error(load_audio)(cut)
+    """
+
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs) -> Optional:
+        with suppress_audio_loading_errors():
+            return func(*args, **kwargs)
+
+    return wrapper

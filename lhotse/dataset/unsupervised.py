@@ -4,12 +4,11 @@ from typing import Any, Dict, Optional
 import torch
 
 from lhotse import validate
-from lhotse.audio import AudioLoadingError, DurationMismatchError
+from lhotse.audio import suppress_audio_loading_errors
 from lhotse.augmentation import AugmentFn
 from lhotse.cut import CutSet
 from lhotse.dataset.collation import collate_audio, collate_features, collate_matrices
 from lhotse.features import FeatureExtractor
-from lhotse.utils import NonPositiveEnergyError, suppress_and_warn
 
 
 class UnsupervisedDataset(torch.utils.data.Dataset):
@@ -73,9 +72,7 @@ class UnsupervisedWaveformDataset(UnsupervisedDataset):
             remain_cuts = []
             remain_audios = []
             for c in cuts:
-                with suppress_and_warn(
-                    AudioLoadingError, DurationMismatchError, NonPositiveEnergyError
-                ):
+                with suppress_audio_loading_errors():
                     remain_audios.append(c.load_audio())
                     remain_cuts.append(c)
             return {"cuts": CutSet.from_cuts(remain_cuts), "audio": remain_audios}
@@ -109,9 +106,7 @@ class DynamicUnsupervisedDataset(UnsupervisedDataset):
 
         def generate_cut(cuts: CutSet):
             for cut in cuts:
-                with suppress_and_warn(
-                    AudioLoadingError, DurationMismatchError, NonPositiveEnergyError
-                ):
+                with suppress_audio_loading_errors():
                     yield cut.compute_features(
                         extractor=self.feature_extractor,
                         augment_fn=self.augment_fn,
