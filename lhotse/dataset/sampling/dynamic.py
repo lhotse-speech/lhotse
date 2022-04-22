@@ -1,11 +1,26 @@
 import random
 import warnings
 from collections import deque
-from typing import Callable, Generator, Iterable, List, Optional, Tuple, Union
+from typing import (
+    Any,
+    Callable,
+    Dict,
+    Generator,
+    Iterable,
+    List,
+    Optional,
+    Tuple,
+    Union,
+)
 
 from lhotse import CutSet, Seconds
 from lhotse.cut import Cut
-from lhotse.dataset.sampling.base import CutSampler, SamplingDiagnostics, TimeConstraint
+from lhotse.dataset.sampling.base import (
+    CutSampler,
+    EpochDiagnostics,
+    SamplingDiagnostics,
+    TimeConstraint,
+)
 from lhotse.utils import ifnone, streaming_shuffle
 
 
@@ -110,7 +125,51 @@ class DynamicCutSampler(CutSampler):
         self.strict = strict
         self.rng = None
 
+    def state_dict(self) -> Dict[str, Any]:
+        sd = super().state_dict()
+        sd.update(
+            {
+                "max_duration": self.max_duration,
+                "max_cuts": self.max_cuts,
+                "drop_last": self.drop_last,
+                "consistent_ids": self.consistent_ids,
+                "shuffle_buffer_size": self.shuffle_buffer_size,
+                "strict": self.strict,
+            }
+        )
+        return sd
+
+    def load_state_dict(self, sd: Dict[str, Any]) -> None:
+        self.max_duration = sd.pop("max_duration")
+        self.max_cuts = sd.pop("max_cuts")
+        self.drop_last = sd.pop("drop_last")
+        self.consistent_ids = sd.pop("consistent_ids")
+        self.shuffle_buffer_size = sd.pop("shuffle_buffer_size")
+        self.strict = sd.pop("strict")
+        super().load_state_dict(sd)
+        self._fast_forward()
+
+    def _fast_forward(self):
+        current_epoch = self.diagnostics.current_epoch
+        num_batches_to_iter = self.diagnostics.current_epoch_stats.total_batches
+
+        # Set the right epoch
+        self.set_epoch(current_epoch)
+        # Reset diagnostics for this epoch as we're about to re-iterate
+        self.diagnostics.stats_per_epoch[current_epoch] = EpochDiagnostics(
+            epoch=current_epoch
+        )
+
+        self._just_restored_state = False
+        iter(self)
+        for _ in range(num_batches_to_iter):
+            next(self)
+        self._just_restored_state = True
+
     def __iter__(self) -> "DynamicCutSampler":
+        if self._just_restored_state:
+            self.allow_iter_to_reset_state()
+            return self
         self.rng = random.Random(self.seed + self.epoch)
         # Initiate iteration
         self.cuts_iter = [iter(cs) for cs in self.cuts]
@@ -185,12 +244,12 @@ class DurationBatcher:
         self.datapipe = datapipe
         self.reuse_cuts_buffer = deque()
         self.drop_last = drop_last
-        self.max_cuts = max_cuts
         self.diagnostics = ifnone(diagnostics, SamplingDiagnostics())
         self.time_constraint = TimeConstraint(
             max_duration=max_duration,
             max_frames=max_frames,
             max_samples=max_samples,
+            max_cuts=max_cuts,
             strict=strict,
         )
 
@@ -255,12 +314,9 @@ class DurationBatcher:
                 if isinstance(next_cut_or_tpl, tuple)
                 else next_cut_or_tpl
             )
-            next_num_cuts = len(cuts) + 1
 
             # Did we exceed the max_frames and max_cuts constraints?
-            if not self.time_constraint.exceeded() and (
-                self.max_cuts is None or next_num_cuts <= self.max_cuts
-            ):
+            if not self.time_constraint.exceeded():
                 # No - add the next cut to the batch, and keep trying.
                 cuts.append(next_cut_or_tpl)
             else:

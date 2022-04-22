@@ -2993,12 +2993,15 @@ class MixedCut(Cut):
                 channel=0,
                 augment_fn=augment_fn,
             )
+            features_info.recording_id = self.id
             return MonoCut(
                 id=self.id,
                 start=0,
                 duration=self.duration,
                 channel=0,
-                supervisions=self.supervisions,
+                supervisions=[
+                    fastcopy(s, recording_id=self.id) for s in self.supervisions
+                ],
                 features=features_info,
                 recording=None,
                 custom=self.custom if hasattr(self, "custom") else None,
@@ -3615,7 +3618,7 @@ class CutSet(Serializable, AlgorithmMixin):
         )
         total_sum = durations.sum()
         speech_sum = speech_durations.sum()
-        print("Cuts count:", len(self))
+        print("Cuts count:", len(durations))
         print(f"Total duration (hours): {total_sum / 3600:.1f}")
         print(
             f"Speech duration (hours): {speech_sum / 3600:.1f} ({speech_sum / total_sum:.1%})"
@@ -4652,7 +4655,7 @@ class CutSet(Serializable, AlgorithmMixin):
 
                 for cut, feat_mat in zip(cuts, features):
                     if isinstance(cut, PaddingCut):
-                        # For padding cuts, just fill out the fields in the manfiest
+                        # For padding cuts, just fill out the fields in the manifest
                         # and don't store anything.
                         cuts_writer.write(
                             fastcopy(
@@ -4684,17 +4687,23 @@ class CutSet(Serializable, AlgorithmMixin):
 
                     # Update the cut manifest.
                     if isinstance(cut, MonoCut):
+                        feat_manifest.recording_id = cut.recording_id
                         cut = fastcopy(cut, features=feat_manifest)
                     if isinstance(cut, MixedCut):
                         # If this was a mixed cut, we will just discard its
                         # recordings and create a new mono cut that has just
                         # the features attached.
+                        feat_manifest.recording_id = cut.id
                         cut = MonoCut(
                             id=cut.id,
                             start=0,
                             duration=cut.duration,
                             channel=0,
-                            supervisions=cut.supervisions,
+                            # Update supervisions recording_id for consistency
+                            supervisions=[
+                                fastcopy(s, recording_id=cut.id)
+                                for s in cut.supervisions
+                            ],
                             features=feat_manifest,
                             recording=None,
                         )

@@ -76,15 +76,16 @@ class CutPairsSampler(CutSampler):
             max_duration=max_source_duration,
             max_samples=max_source_samples,
             max_frames=max_source_frames,
+            max_cuts=max_cuts,
             strict=strict,
         )
         self.target_constraints = TimeConstraint(
             max_duration=max_target_duration,
             max_samples=max_target_samples,
             max_frames=max_target_frames,
+            max_cuts=max_cuts,
             strict=strict,
         )
-        self.max_cuts = max_cuts
         self.drop_last = drop_last
 
     @property
@@ -127,7 +128,6 @@ class CutPairsSampler(CutSampler):
                 "drop_last": self.drop_last,
                 "source_constraints": self.source_constraints.state_dict(),
                 "target_constraints": self.target_constraints.state_dict(),
-                "max_cuts": self.max_cuts,
             }
         )
         return state_dict
@@ -171,15 +171,6 @@ class CutPairsSampler(CutSampler):
                 f"We will overwrite the settings with the received state_dict."
             )
         self.target_constraints = target_constraints
-
-        max_cuts = state_dict.pop("max_cuts")
-        if self.max_cuts != max_cuts:
-            warnings.warn(
-                "CutPairsSampler.load_state_dict(): Inconsistent max_cuts:\n"
-                f"expected {self.max_cuts}\n"
-                f"received {max_cuts}\n"
-                f"We will ignore the received settings."
-            )
 
         super().load_state_dict(state_dict)
 
@@ -256,13 +247,11 @@ class CutPairsSampler(CutSampler):
 
             self.source_constraints.add(next_source_cut)
             self.target_constraints.add(next_target_cut)
-            next_num_cuts = len(source_cuts) + 1
 
             # Did we exceed the max_source_frames and max_cuts constraints?
             if (
                 not self.source_constraints.exceeded()
                 and not self.target_constraints.exceeded()
-                and (self.max_cuts is None or next_num_cuts <= self.max_cuts)
             ):
                 # No - add the next cut to the batch, and keep trying.
                 source_cuts.append(next_source_cut)
