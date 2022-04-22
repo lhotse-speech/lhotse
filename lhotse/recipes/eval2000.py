@@ -12,19 +12,17 @@
 """
 
 import os
-from typing import Dict, List, Optional, Tuple, Union   
+from typing import Dict, List, Optional, Tuple, Union
 from pathlib import Path
 import numpy as np
-from lhotse.audio import Recording, RecordingSet                                                                                             
-from lhotse.qa import (                                                                                                                      
-    fix_manifests,                                                                                                                           
-    validate_recordings_and_supervisions,                                                                                                    
-)                                                                                                                                            
-from lhotse.supervision import SupervisionSegment, SupervisionSet 
+from lhotse.audio import Recording, RecordingSet
+from lhotse.qa import fix_manifests, validate_recordings_and_supervisions
+from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import Pathlike, check_and_rglob
 
 EVAL2000_AUDIO_DIR = "LDC2002S09"
 EVAL2000_TRANSCRIPT_DIR = "LDC2002T43"
+
 
 def prepare_eval2000(
     corpus_dir: Pathlike,
@@ -45,17 +43,15 @@ def prepare_eval2000(
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
     audio_partition_dir_path = corpus_dir / EVAL2000_AUDIO_DIR / "hub5e_00" / "english"
-    assert audio_partition_dir_path.is_dir(), f"No such directory:{audio_partition_dir_path}"
+    assert (
+        audio_partition_dir_path.is_dir()
+    ), f"No such directory:{audio_partition_dir_path}"
     transcript_dir_path = corpus_dir / EVAL2000_TRANSCRIPT_DIR / "reference" / "english"
     assert transcript_dir_path.is_dir(), f"No such directory:{transcript_dir_path}"
-    groups = []    
+    groups = []
     for path in (audio_partition_dir_path).rglob("*.sph"):
-        base=Path(path).stem
-        groups.append(
-            {
-                "audio": path
-            }
-        )
+        base = Path(path).stem
+        groups.append({"audio": path})
     recordings = RecordingSet.from_recordings(
         Recording.from_file(
             group["audio"], relative_path_depth=None if absolute_paths else 3
@@ -65,39 +61,38 @@ def prepare_eval2000(
     segment_supervision = make_segments(transcript_dir_path)
     supervision_set = SupervisionSet.from_segments(segment_supervision)
     recordings, supervisions = fix_manifests(recordings, supervision_set)
-    validate_recordings_and_supervisions(recordings, supervisions)  
+    validate_recordings_and_supervisions(recordings, supervisions)
     if output_dir is not None:
         output_dir = Path(output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
         recordings.to_file(output_dir / "recordings_eval2000.jsonl")
         supervision_set.to_file(output_dir / "supervisions_unnorm_eval2000.jsonl")
     return {"recordings": recordings, "supervisions": supervisions}
-                    
-                    
-def make_segments(transcript_dir_path,
-                  omit_silence: bool = True):
+
+
+def make_segments(transcript_dir_path, omit_silence: bool = True):
     segment_supervision = []
     for text_path in (transcript_dir_path).rglob("*.txt"):
-        trans_file=Path(text_path).stem
-        trans_file_lines = [ l.split() for l in open(text_path) ]
+        trans_file = Path(text_path).stem
+        trans_file_lines = [l.split() for l in open(text_path)]
         id = -1
         for i in range(0, len(trans_file_lines)):
-            if trans_file_lines[i]: # skip empty lines                                                                                       
-                trans_line = trans_file_lines[i] # ref line                                                                                  
-                if "#" not in trans_line[0]: #skip header lines of the file
-                    id = id+1
-                    start=float(trans_line[0])
-                    end=float(trans_line[1])
-                    duration=round(end - start, ndigits=8)
-                    side=(trans_line[2].split(":"))[0]
-                    if side == "A" :
-                        channel=0
+            if trans_file_lines[i]:  # skip empty lines
+                trans_line = trans_file_lines[i]  # ref line
+                if "#" not in trans_line[0]:  # skip header lines of the file
+                    id = id + 1
+                    start = float(trans_line[0])
+                    end = float(trans_line[1])
+                    duration = round(end - start, ndigits=8)
+                    side = (trans_line[2].split(":"))[0]
+                    if side == "A":
+                        channel = 0
                     else:
-                        channel=1
-                    text_line=" ".join(trans_line[3::])
-                    segment_id=trans_file+"-"+str(id)
-                    recording_id=trans_file
-                    speaker=trans_file+"-"+side
+                        channel = 1
+                    text_line = " ".join(trans_line[3::])
+                    segment_id = trans_file + "-" + str(id)
+                    recording_id = trans_file
+                    speaker = trans_file + "-" + side
                     segment = SupervisionSegment(
                         id=segment_id,
                         recording_id=recording_id,
@@ -106,10 +101,11 @@ def make_segments(transcript_dir_path,
                         channel=channel,
                         language="English",
                         speaker=speaker,
-                        text=text_line)
+                        text=text_line,
+                    )
                     segment_supervision.append(segment)
     return segment_supervision
-    # transcript lines  in one .txt file looks like this 
+    # transcript lines  in one .txt file looks like this
     """
     #Language: eng
     #File id: 5017  
@@ -125,5 +121,3 @@ def make_segments(transcript_dir_path,
 
     126.30 128.83 B: what to you mean? {breath} oh, about <contraction e_form="[you=>you]['re=>are]">you're leaving? 
     """
-    
-    
