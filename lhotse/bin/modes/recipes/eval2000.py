@@ -14,18 +14,10 @@ from lhotse.utils import Pathlike
     default=False,
     help="Whether to return absolute or relative (to the corpus dir) paths for recordings.",
 )
-@click.option(
-    "-j",
-    "--num-jobs",
-    default=1,
-    type=int,
-    help="Number of concurrent processes scanning the audio files.",
-)
 def eval2000(
     corpus_dir: Pathlike,
     output_dir: Pathlike,
     absolute_paths: bool,
-    num_jobs: int,
 ):
     """
     The Eval2000 corpus preparation.
@@ -40,5 +32,4 @@ def eval2000(
         corpus_dir=corpus_dir,
         output_dir=output_dir,
         absolute_paths=absolute_paths,
-        num_jobs=num_jobs,
     )

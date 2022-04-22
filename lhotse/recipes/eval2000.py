@@ -1,5 +1,14 @@
 """  
  About the eval2000 corpus
+     2000 HUB5 English Evaluation was developed by the Linguistic Data Consortium (LDC) and
+     consists of approximately 11 hours of English conversational telephone speech used in the
+     2000 HUB5 evaluation sponsored by NIST (National Institute of Standards and Technology).
+     The source data consists of conversational telephone speech collected by LDC:
+     (1) 20 unreleased telephone conversations from the Swtichboard studies in which recruited
+      speakers were connected through a robot operator to carry on casual conversations about a
+      daily topic announced by the robot operator at the start of the call; and
+     (2) 20 telephone conversations from CALLHOME American English Speech which consists of
+      unscripted telephone conversations between native English speakers.
 """
 
 import os
@@ -35,17 +44,13 @@ def prepare_eval2000(
     corpus_dir = Path(corpus_dir)
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
-    print(corpus_dir)
-    print(output_dir)
     audio_partition_dir_path = corpus_dir / EVAL2000_AUDIO_DIR / "hub5e_00" / "english"
-    print(audio_partition_dir_path)
+    assert audio_partition_dir_path.is_dir(), f"No such directory:{audio_partition_dir_path}"
     transcript_dir_path = corpus_dir / EVAL2000_TRANSCRIPT_DIR / "reference" / "english"
-    print(transcript_dir_path)
+    assert transcript_dir_path.is_dir(), f"No such directory:{transcript_dir_path}"
     groups = []    
     for path in (audio_partition_dir_path).rglob("*.sph"):
-        #print(path)
         base=Path(path).stem
-        #print(base)
         groups.append(
             {
                 "audio": path
@@ -61,7 +66,6 @@ def prepare_eval2000(
     supervision_set = SupervisionSet.from_segments(segment_supervision)
     recordings, supervisions = fix_manifests(recordings, supervision_set)
     validate_recordings_and_supervisions(recordings, supervisions)  
-    #print(segment_supervision)
     if output_dir is not None:
         output_dir = Path(output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
@@ -75,9 +79,7 @@ def make_segments(transcript_dir_path,
     segment_supervision = []
     for text_path in (transcript_dir_path).rglob("*.txt"):
         trans_file=Path(text_path).stem
-        #print(text_path)
         trans_file_lines = [ l.split() for l in open(text_path) ]
-        #print(trans_file_lines)                                                                                                             
         id = -1
         for i in range(0, len(trans_file_lines)):
             if trans_file_lines[i]: # skip empty lines                                                                                       
@@ -96,7 +98,6 @@ def make_segments(transcript_dir_path,
                     segment_id=trans_file+"-"+str(id)
                     recording_id=trans_file
                     speaker=trans_file+"-"+side
-                    #print(segment_id, recording_id, start, duration, channel, text_line)
                     segment = SupervisionSegment(
                         id=segment_id,
                         recording_id=recording_id,
