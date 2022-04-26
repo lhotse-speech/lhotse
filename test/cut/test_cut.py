@@ -70,11 +70,24 @@ def test_num_frames(libri_cut):
     assert libri_cut.num_frames == expected_cut_frame_count
 
 
-def test_cut_into_windows(libri_cut_set):
+def test_cut_into_windows():
     cuts0 = CutSet.from_json(
         "test/fixtures/ljspeech/cuts.json"
     )  # has 2 cuts of 1.54s and 1.6s
     cuts = cuts0.cut_into_windows(duration=0.5, hop=0.4)  # 0, 0.4, 0.8, 1.2
+    starts = [cut.start for cut in cuts]
+    assert starts == approx([0, 0.4, 0.8, 1.2, 0, 0.4, 0.8, 1.2])
+    durations = [cut.duration for cut in cuts]
+    assert durations == approx(
+        [0.5, 0.5, 0.5, 0.3396371882, 0.5, 0.5, 0.5, 0.39768707483]
+    )
+
+
+def test_cut_into_windows_parallel():
+    cuts0 = CutSet.from_json(
+        "test/fixtures/ljspeech/cuts.json"
+    )  # has 2 cuts of 1.54s and 1.6s
+    cuts = cuts0.cut_into_windows(duration=0.5, hop=0.4, num_jobs=2)  # 0, 0.4, 0.8, 1.2
     starts = [cut.start for cut in cuts]
     assert starts == approx([0, 0.4, 0.8, 1.2, 0, 0.4, 0.8, 1.2])
     durations = [cut.duration for cut in cuts]

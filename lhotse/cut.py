@@ -483,6 +483,39 @@ class Cut:
             cuts.append(trimmed)
         return cuts
 
+    def cut_into_windows(
+        self,
+        duration: Seconds,
+        hop: Optional[Seconds] = None,
+        keep_excessive_supervisions: bool = True,
+    ) -> List["Cut"]:
+        """
+        Return a list of shorter cuts, made by traversing this cut in windows of
+        ``duration`` seconds by ``hop`` seconds.
+
+        The last window might have a shorter duration if there was not enough audio,
+        so you might want to use either filter or pad the results.
+
+        :param duration: Desired duration of the new cuts in seconds.
+        :param hop: Shift between the windows in the new cuts in seconds.
+        :param keep_excessive_supervisions: bool. When a cut is truncated in the
+            middle of a supervision segment, should the supervision be kept.
+        :return: a list of cuts made from shorter duration windows.
+        """
+        if not hop:
+            hop = duration
+        new_cuts = []
+        n_windows = compute_num_windows(self.duration, duration, hop)
+        for i in range(n_windows):
+            new_cuts.append(
+                self.truncate(
+                    offset=hop * i,
+                    duration=duration,
+                    keep_excessive_supervisions=keep_excessive_supervisions,
+                )
+            )
+        return new_cuts
+
     def index_supervisions(
         self, index_mixed_tracks: bool = False, keep_ids: Optional[Set[str]] = None
     ) -> Dict[str, IntervalTree]:
@@ -4117,28 +4150,32 @@ class CutSet(Serializable, AlgorithmMixin):
         if not hop:
             hop = duration
         if num_jobs == 1:
-            new_cuts = []
-            for cut in self:
-                n_windows = compute_num_windows(cut.duration, duration, hop)
-                for i in range(n_windows):
-                    new_cuts.append(
-                        cut.truncate(
-                            offset=hop * i,
+            from lhotse.lazy import LazyFlattener, LazyMapper
+
+            return CutSet(
+                LazyFlattener(
+                    LazyMapper(
+                        self,
+                        lambda cut: cut.cut_into_windows(
                             duration=duration,
+                            hop=hop,
                             keep_excessive_supervisions=keep_excessive_supervisions,
-                        )
+                        ),
                     )
-            return CutSet(cuts={c.id: c for c in new_cuts})
+                )
+            )
 
         from lhotse.manipulation import split_parallelize_combine
 
         result = split_parallelize_combine(
             num_jobs,
             self,
-            CutSet.cut_into_windows,
-            duration=duration,
-            hop=hop,
-            keep_excessive_supervisions=keep_excessive_supervisions,
+            partial(
+                _cut_into_windows_single,
+                duration=duration,
+                hop=hop,
+                keep_excessive_supervisions=keep_excessive_supervisions,
+            ),
         )
         return result
 
@@ -5777,3 +5814,13 @@ def merge_supervisions(
         return new_cut
     else:
         return fastcopy(cut, supervisions=[msup])
+
+
+def _cut_into_windows_single(
+    cuts: CutSet, duration, hop, keep_excessive_supervisions
+) -> CutSet:
+    return cuts.cut_into_windows(
+        duration=duration,
+        hop=hop,
+        keep_excessive_supervisions=keep_excessive_supervisions,
+    ).to_eager()

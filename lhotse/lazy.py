@@ -1,7 +1,7 @@
 import random
 import types
 import warnings
-from typing import Any, Callable, Dict, Iterable, List, Optional, TypeVar, Union
+from typing import Any, Callable, Iterable, List, Optional, TypeVar, Union
 
 from lhotse.serialization import (
     LazyMixin,
@@ -361,6 +361,27 @@ class LazyMapper(ImitatesDict):
 
     def __len__(self) -> int:
         return len(self.iterator)
+
+    def __add__(self, other) -> "LazyIteratorChain":
+        return LazyIteratorChain(self, other)
+
+
+class LazyFlattener(ImitatesDict):
+    """
+    A wrapper over an iterable of collections that flattens it to an iterable of items.
+
+    Example::
+
+        >>> list_of_cut_sets: List[CutSet] = [CutSet(...), CutSet(...)]
+        >>> list_of_cuts: List[Cut] = list(LazyFlattener(list_of_cut_sets))
+    """
+
+    def __init__(self, iterator: Iterable) -> None:
+        self.iterator = iterator
+
+    def __iter__(self):
+        for cuts in self.iterator:
+            yield from cuts
 
     def __add__(self, other) -> "LazyIteratorChain":
         return LazyIteratorChain(self, other)
