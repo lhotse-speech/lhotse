@@ -266,7 +266,7 @@ def test_truncate_cut_set_offset_random_rng(use_rng):
 
 @pytest.mark.parametrize("num_jobs", [1, 2])
 def test_cut_set_windows_even_split_keep_supervisions(cut_set, num_jobs):
-    windows_cut_set = cut_set.cut_into_windows(duration=5.0, num_jobs=num_jobs)
+    windows_cut_set = cut_set.cut_into_windows(duration=5.0, num_jobs=num_jobs).to_eager()
     assert len(windows_cut_set) == 4
     assert all(cut.duration == 5.0 for cut in windows_cut_set)
 
