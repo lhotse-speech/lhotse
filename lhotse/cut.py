@@ -4150,26 +4150,32 @@ class CutSet(Serializable, AlgorithmMixin):
         if not hop:
             hop = duration
         if num_jobs == 1:
-            new_cuts = []
-            for cut in self:
-                new_cuts.extend(
-                    cut.cut_into_windows(
-                        duration=duration,
-                        hop=hop,
-                        keep_excessive_supervisions=keep_excessive_supervisions,
+            from lhotse.lazy import LazyFlattener, LazyMapper
+
+            return CutSet(
+                LazyFlattener(
+                    LazyMapper(
+                        self,
+                        lambda cut: cut.cut_into_windows(
+                            duration=duration,
+                            hop=hop,
+                            keep_excessive_supervisions=keep_excessive_supervisions,
+                        ),
                     )
                 )
-            return CutSet(cuts={c.id: c for c in new_cuts})
+            )
 
         from lhotse.manipulation import split_parallelize_combine
 
         result = split_parallelize_combine(
             num_jobs,
             self,
-            CutSet.cut_into_windows,
-            duration=duration,
-            hop=hop,
-            keep_excessive_supervisions=keep_excessive_supervisions,
+            partial(
+                _cut_into_windows_single,
+                duration=duration,
+                hop=hop,
+                keep_excessive_supervisions=keep_excessive_supervisions,
+            ),
         )
         return result
 
@@ -5808,3 +5814,13 @@ def merge_supervisions(
         return new_cut
     else:
         return fastcopy(cut, supervisions=[msup])
+
+
+def _cut_into_windows_single(
+    cuts: CutSet, duration, hop, keep_excessive_supervisions
+) -> CutSet:
+    return cuts.cut_into_windows(
+        duration=duration,
+        hop=hop,
+        keep_excessive_supervisions=keep_excessive_supervisions,
+    ).to_eager()
