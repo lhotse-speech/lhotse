@@ -82,6 +82,7 @@ def test_cut_into_windows():
         [0.5, 0.5, 0.5, 0.3396371882, 0.5, 0.5, 0.5, 0.39768707483]
     )
 
+
 def test_cut_into_windows_parallel():
     cuts0 = CutSet.from_json(
         "test/fixtures/ljspeech/cuts.json"
