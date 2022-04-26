@@ -1321,6 +1321,61 @@ class LibsndfileCompatibleAudioInfo(NamedTuple):
     duration: float
 
 
+class AudioReadingBackend:
+    name = "<undefined>"
+
+    def load(
+        self,
+        path_or_fd: Union[str, Path, IOBase],
+        offset: Seconds = 0.0,
+        duration: Optional[Seconds] = None,
+        **kwargs,
+    ) -> Tuple[np.ndarray, int]:
+        raise NotImplemented
+
+    def info(
+        self,
+        path_or_fd: Union[str, Path, IOBase],
+        **kwargs,
+    ) -> LibsndfileCompatibleAudioInfo:
+        raise NotImplemented
+
+    def is_applicable(self, path_or_fd: Union[str, Path, IOBase]) -> bool:
+        return True
+
+
+class FfmpegOpusBackend(AudioReadingBackend):
+    name = "ffmpeg_opus"
+
+    def load(
+        self,
+        path_or_fd: Union[str, Path, IOBase],
+        offset: Seconds = 0.0,
+        duration: Optional[Seconds] = None,
+        force_opus_sampling_rate: Optional[int] = None,
+        **kwargs,
+    ) -> Tuple[np.ndarray, int]:
+        return read_opus_ffmpeg(
+            path_or_fd,
+            offset=offset,
+            duration=duration,
+            force_opus_sampling_rate=force_opus_sampling_rate,
+        )
+
+    def info(
+        self,
+        path_or_fd: Union[str, Path, IOBase],
+        force_opus_sampling_rate: Optional[int] = None,
+        **kwargs,
+    ) -> LibsndfileCompatibleAudioInfo:
+        return opus_info(path_or_fd, force_opus_sampling_rate=force_opus_sampling_rate)
+
+    def is_applicable(self, path_or_fd: Union[str, Path, IOBase]) -> bool:
+        return isinstance(path_or_fd, (str, Path)) and str(path_or_fd).lower().endswith(
+            ".opus"
+        )
+
+
 def info(
     path: Pathlike,
     force_opus_sampling_rate: Optional[int] = None,
