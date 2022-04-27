@@ -4,6 +4,8 @@ import contextlib
 from pathlib import Path
 
 import lhotse
+import lhotse.utils
+from lhotse.utils import is_module_available
 
 FIXTURE_PATH = Path(os.path.realpath(__file__)).parent / "fixtures"
 
@@ -37,6 +39,19 @@ def test_kaldi_import(replace):
 
     assert out[0] == recording_set
     assert out[1] == supervision_set
+
+
+@pytest.mark.xfail(reason="Import ordering is somehow not working for now")
+def test_get_duration_failurex(monkeypatch):
+    def always_fail_is_module_available(path):
+        return False
+
+    monkeypatch.setattr(
+        lhotse.utils.is_module_available, always_fail_is_module_available
+    )
+
+    with pytest.raises(ValueError):
+        lhotse.kaldi.get_duration("true |")
 
 
 def open_and_load(path):
