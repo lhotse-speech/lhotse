@@ -21,14 +21,18 @@ def working_directory(path):
         os.chdir(prev_cwd)
 
 
-# @pytest.mark.parametrize("replace", [None, "lbi"])
-@pytest.mark.parametrize("replace", [None])
+@pytest.mark.parametrize("replace", [None, "b"])
 def test_kaldi_import(replace):
     fixture_path = MINILIB_PATH
     with working_directory(fixture_path):
         out = lhotse.kaldi.load_kaldi_data_dir(fixture_path, 16000, 0.01, replace, 1)
 
-    with working_directory(fixture_path / "lhotse"):
+    if replace:
+        lhotse_dir = "lhotse-" + replace
+    else:
+        lhotse_dir = "lhotse"
+
+    with working_directory(fixture_path / lhotse_dir):
         recording_set = lhotse.RecordingSet.from_jsonl("recordings.jsonl.gz")
         supervision_set = lhotse.SupervisionSet.from_jsonl("supervisions.jsonl.gz")
 
