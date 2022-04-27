@@ -27,10 +27,9 @@ def test_kaldi_import(replace):
     with working_directory(fixture_path):
         out = lhotse.kaldi.load_kaldi_data_dir(fixture_path, 16000, 0.01, replace, 1)
 
+    lhotse_dir = "lhotse"
     if replace:
-        lhotse_dir = "lhotse-" + replace
-    else:
-        lhotse_dir = "lhotse"
+        lhotse_dir += "-" + replace
 
     with working_directory(fixture_path / lhotse_dir):
         recording_set = lhotse.RecordingSet.from_jsonl("recordings.jsonl.gz")
@@ -44,12 +43,92 @@ def open_and_load(path):
     return lhotse.kaldi.load_kaldi_text_mapping(Path(path))
 
 
-@pytest.mark.parametrize("replace", [None, "lbi"])
+def test_fail_on_unknown_source_type(tmp_path):
+    source = lhotse.AudioSource(
+        type="unknown", channels=[0], source="http://example.com/"
+    )
+    with pytest.raises(ValueError):
+        lhotse.kaldi.make_wavscp_channel_string_map(source, 16000)
+
+
+def test_fail_on_url_source_type(tmp_path):
+    source = lhotse.AudioSource(type="url", channels=[0], source="http://example.com/")
+    with pytest.raises(ValueError):
+        lhotse.kaldi.make_wavscp_channel_string_map(source, 16000)
+
+
+def test_fail_on_command_multichannel_source_type(tmp_path):
+    source = lhotse.AudioSource(type="command", channels=[0, 1], source="false")
+    with pytest.raises(ValueError):
+        lhotse.kaldi.make_wavscp_channel_string_map(source, 16000)
+
+
+def test_ok_on_command_singlechannel_source_type(tmp_path):
+    source = lhotse.AudioSource(type="command", channels=[0], source="true")
+    out = lhotse.kaldi.make_wavscp_channel_string_map(source, 16000)
+    assert list(out.keys()) == [0]
+    assert out[0] == "true |"
+
+
+@pytest.mark.parametrize("channel", [0, 3])
+def test_ok_on_file_singlechannel_wav_source_type(tmp_path, channel):
+    source = lhotse.AudioSource(
+        type="file", channels=[channel], source="nonexistent.wav"
+    )
+    out = lhotse.kaldi.make_wavscp_channel_string_map(source, 16000)
+    assert list(out.keys()) == [channel]
+    assert out[channel] == "nonexistent.wav"
+
+
+@pytest.mark.parametrize("channel", [0, 3])
+def test_ok_on_file_singlechannel_sph_source_type(tmp_path, channel):
+    source = lhotse.AudioSource(
+        type="file", channels=[channel], source="nonexistent.sph"
+    )
+    out = lhotse.kaldi.make_wavscp_channel_string_map(source, 16000)
+    assert list(out.keys()) == [channel]
+    assert out[channel].startswith("sph2pipe")
+    assert "nonexistent.sph" in out[channel]
+
+
+@pytest.mark.parametrize("channel", [0, 3])
+def test_ok_on_file_singlechannel_mp3_source_type(tmp_path, channel):
+    source = lhotse.AudioSource(
+        type="file", channels=[channel], source="nonexistent.mp3"
+    )
+    out = lhotse.kaldi.make_wavscp_channel_string_map(source, 16000)
+    assert list(out.keys()) == [channel]
+    assert out[channel].startswith("ffmpeg")
+    assert "nonexistent.mp3" in out[channel]
+
+
+def test_ok_on_file_multichannel_wav_source_type(tmp_path):
+    source = lhotse.AudioSource(
+        type="file", channels=[0, 1, 2], source="nonexistent.wav"
+    )
+    out = lhotse.kaldi.make_wavscp_channel_string_map(source, 16000)
+    assert list(out.keys()) == [0, 1, 2]
+    for channel in out.keys():
+        assert out[channel].startswith("ffmpeg")
+        assert "nonexistent.wav" in out[channel]
+
+
+def test_load_kaldi_text_mapping(tmp_path):
+    with pytest.raises(ValueError):
+        lhotse.kaldi.load_kaldi_text_mapping(tmp_path / "nonexistent", must_exist=True)
+
+
+@pytest.mark.parametrize("replace", [None, "b"])
 @pytest.mark.parametrize("prefix", [False, True])
 def test_kaldi_export(tmp_path, replace, prefix):
     fixture_path = MINILIB_PATH
     output_path = tmp_path
-    with working_directory(fixture_path / "lhotse"):
+
+    lhotse_dir = "lhotse"
+    if replace:
+        lhotse_dir += "-" + replace
+
+    with working_directory(fixture_path / lhotse_dir):
         recording_set = lhotse.RecordingSet.from_jsonl("recordings.jsonl.gz")
         supervision_set = lhotse.SupervisionSet.from_jsonl("supervisions.jsonl.gz")
 
