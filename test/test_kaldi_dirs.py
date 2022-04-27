@@ -12,6 +12,118 @@ FIXTURE_PATH = Path(os.path.realpath(__file__)).parent / "fixtures"
 MINILIB_PATH = FIXTURE_PATH / "mini_librispeech"
 
 
+@pytest.fixture
+def multi_file_recording():
+    recording = lhotse.RecordingSet.from_recordings(
+        [
+            lhotse.Recording(
+                id="lbi-1272-135031-0000",
+                sources=[
+                    lhotse.AudioSource(
+                        type="file", channels=[0], source="nonexistent-c1.wav"
+                    ),
+                    lhotse.AudioSource(
+                        type="file", channels=[1], source="nonexistent-c2.wav"
+                    ),
+                ],
+                sampling_rate=16000,
+                num_samples=174160,
+                duration=174160.0 / 16000.0,
+                transforms=None,
+            )
+        ]
+    )
+
+    supervision = lhotse.SupervisionSet.from_segments(
+        [
+            lhotse.SupervisionSegment(
+                id="lbi-1272-135031-0000-A",
+                recording_id="lbi-1272-135031-0000",
+                start=0.0,
+                duration=10.885,
+                channel=0,
+                text="SOMETHING",
+                speaker="lbi-1272-135031-A",
+                gender="m",
+                language="en-US",
+            ),
+            lhotse.SupervisionSegment(
+                id="lbi-1272-135031-0000-B",
+                recording_id="lbi-1272-135031-0000",
+                start=0.0,
+                duration=10.885,
+                channel=1,
+                text="SOMETHING ELSE",
+                speaker="lbi-1272-135031-B",
+                gender="f",
+                language="en-US",
+            ),
+        ]
+    )
+    return recording, supervision
+
+
+@pytest.fixture
+def multi_channel_recording():
+    recording = lhotse.RecordingSet.from_recordings(
+        [
+            lhotse.Recording(
+                id="lbi-1272-135031-0000",
+                sources=[
+                    lhotse.AudioSource(
+                        type="file", channels=[0, 1], source="nonexistent.wav"
+                    ),
+                ],
+                sampling_rate=16000,
+                num_samples=174160,
+                duration=174160.0 / 16000.0,
+                transforms=None,
+            )
+        ]
+    )
+
+    supervision = lhotse.SupervisionSet.from_segments(
+        [
+            lhotse.SupervisionSegment(
+                id="lbi-1272-135031-0000-A",
+                recording_id="lbi-1272-135031-0000",
+                start=0.0,
+                duration=10.885,
+                channel=0,
+                text="SOMETHING",
+                speaker="lbi-1272-135031-A",
+                gender="m",
+            ),
+            lhotse.SupervisionSegment(
+                id="lbi-1272-135031-0000-B",
+                recording_id="lbi-1272-135031-0000",
+                start=0.0,
+                duration=10.885,
+                channel=1,
+                text="SOMETHING ELSE",
+                speaker="lbi-1272-135031-B",
+                gender="f",
+            ),
+        ]
+    )
+    return recording, supervision
+
+
+@pytest.mark.xfail(reason="multi fail recordings not supported yet")
+def test_multi_file_recording(tmp_path, multi_file_recording):
+    with working_directory(tmp_path):
+        lhotse.kaldi.export_to_kaldi(
+            multi_file_recording[0], multi_file_recording[1], ".", None, False
+        )
+
+
+def test_multi_channel_recording(tmp_path, multi_channel_recording):
+    with working_directory(tmp_path):
+        lhotse.kaldi.export_to_kaldi(
+            multi_channel_recording[0], multi_channel_recording[1], ".", None, False
+        )
+
+
 @contextlib.contextmanager
 def working_directory(path):
     """Changes working directory and returns to previous on exit."""
