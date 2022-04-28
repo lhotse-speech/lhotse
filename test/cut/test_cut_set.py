@@ -20,7 +20,7 @@ from lhotse.serialization import load_jsonl
 from lhotse.testing.dummies import (
     DummyManifest,
     dummy_cut,
-    dummy_supervision,
+    dummy_recording, dummy_supervision,
     remove_spaces_from_segment_text,
 )
 from lhotse.utils import is_module_available
@@ -83,6 +83,7 @@ def test_trim_to_unsupervised_segments():
                     SupervisionSegment("sup2", "rec1", start=10, duration=5),
                     SupervisionSegment("sup3", "rec1", start=20, duration=8),
                 ],
+                recording=dummy_recording(1, duration=30)
             ),
             # Does not yield any "unsupervised" cut.
             MonoCut(
@@ -93,6 +94,7 @@ def test_trim_to_unsupervised_segments():
                 supervisions=[
                     SupervisionSegment("sup4", "rec1", start=0, duration=30),
                 ],
+                recording=dummy_recording(2, duration=30)
             ),
         ]
     )
@@ -128,6 +130,7 @@ def test_trim_to_supervisions_simple_cuts(keep_overlapping, num_jobs):
                     SupervisionSegment("sup2", "rec1", start=10, duration=5),
                     SupervisionSegment("sup3", "rec1", start=20, duration=8),
                 ],
+                recording=dummy_recording(1, duration=30),
             ),
             MonoCut(
                 "cut2",
@@ -137,6 +140,7 @@ def test_trim_to_supervisions_simple_cuts(keep_overlapping, num_jobs):
                 supervisions=[
                     SupervisionSegment("sup4", "rec1", start=0, duration=30),
                 ],
+                recording=dummy_recording(2, duration=30),
             ),
         ]
     )
@@ -483,7 +487,7 @@ def test_map_cut_set_rejects_noncut(cut_set_with_mixed_cut):
 def test_store_audio():
     cut_set = CutSet.from_json("test/fixtures/libri/cuts.json")
     with TemporaryDirectory() as tmpdir:
-        stored_cut_set = cut_set.compute_and_store_recordings(tmpdir)
+        stored_cut_set = cut_set.save_audios(tmpdir)
         for cut1, cut2 in zip(cut_set, stored_cut_set):
             samples1 = cut1.load_audio()
             samples2 = cut2.load_audio()

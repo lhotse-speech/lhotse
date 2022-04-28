@@ -586,19 +586,14 @@ class Cut:
             E.g. for speed perturbation, use ``CutSet.perturb_speed()`` instead.
         :return: a new MonoCut instance.
         """
+        import torchaudio
+
         storage_path = Path(storage_path)
         samples = self.load_audio()
         if augment_fn is not None:
             samples = augment_fn(samples, self.sampling_rate)
-        # Store audio as FLAC
-        import soundfile as sf
 
-        sf.write(
-            file=str(storage_path),
-            data=samples.transpose(),
-            samplerate=self.sampling_rate,
-            format="FLAC",
-        )
+        torchaudio.save(str(storage_path), torch.as_tensor(samples), sample_rate=self.sampling_rate)
         recording = Recording(
             id=storage_path.stem,
             sampling_rate=self.sampling_rate,
@@ -1215,17 +1210,29 @@ class MonoCut(Cut):
         assert (
             offset >= 0
         ), f"Offset for truncate must be non-negative (provided {offset})."
-        new_start = max(self.start + offset, 0)
-        until = offset + (duration if duration is not None else self.duration)
-        new_duration = self.duration - new_start if duration is None else until - offset
+        new_start = max(
+            add_durations(self.start, offset, sampling_rate=self.sampling_rate), 0
+        )
+        until = add_durations(
+            offset,
+            duration if duration is not None else self.duration,
+            sampling_rate=self.sampling_rate,
+        )
+        new_duration = add_durations(until, -offset, sampling_rate=self.sampling_rate)
         assert new_duration > 0.0
-        duration_past_end = (new_start + new_duration) - (self.start + self.duration)
+        # duration_past_end = (new_start + new_duration) - (self.start + self.duration)
+        duration_past_end = add_durations(
+            new_start,
+            new_duration,
+            -self.start,
+            -self.duration,
+            sampling_rate=self.sampling_rate,
+        )
         if duration_past_end > 0:
             # When the end of the MonoCut has been exceeded, trim the new duration to not exceed the old MonoCut's end.
-            new_duration -= duration_past_end
-        # Round the duration to avoid the possible loss of a single audio sample due to floating point
-        # additions and subtractions.
-        new_duration = round(new_duration, ndigits=8)
+            new_duration = add_durations(
+                new_duration, -duration_past_end, sampling_rate=self.sampling_rate
+            )
 
         if _supervisions_index is None:
             criterion = overlaps if keep_excessive_supervisions else overspans
@@ -4797,6 +4804,7 @@ class CutSet(Serializable, AlgorithmMixin):
     def save_audios(
         self,
         storage_path: Pathlike,
+        format: str = "wav",
         num_jobs: Optional[int] = None,
         executor: Optional[Executor] = None,
         augment_fn: Optional[AugmentFn] = None,
@@ -4808,7 +4816,8 @@ class CutSet(Serializable, AlgorithmMixin):
         :param storage_path: The path to location where we will store the audio recordings.
             For each cut, a sub-directory will be created that starts with the first 3
             characters of the cut's ID. The audio recording is then stored in the sub-directory
-            using the cut ID as filename and '.flac' as suffix.
+            using filename ``{cut.id}.{format}``
+        :param format: Audio format argument supported by ``torchaudio.save``. Default is ``wav``.
         :param num_jobs: The number of parallel processes used to store the audio recordings.
             We will internally split the CutSet into this many chunks
             and process each chunk in parallel.
@@ -4847,7 +4856,7 @@ class CutSet(Serializable, AlgorithmMixin):
             # too many files in a single directory.
             subdir = Path(storage_path) / cut.id[:3]
             subdir.mkdir(exist_ok=True, parents=True)
-            return (subdir / cut.id).with_suffix(".flac")
+            return (subdir / cut.id).with_suffix(f".{format}")
 
         # Non-parallel execution
         if executor is None and num_jobs == 1:
