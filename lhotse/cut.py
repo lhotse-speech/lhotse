@@ -1221,7 +1221,7 @@ class MonoCut(Cut):
             sampling_rate=self.sampling_rate,
         )
         new_duration = add_durations(until, -offset, sampling_rate=self.sampling_rate)
-        assert new_duration > 0.0
+        assert new_duration > 0.0, f"{new_duration=}"
         # duration_past_end = (new_start + new_duration) - (self.start + self.duration)
         duration_past_end = add_durations(
             new_start,
@@ -1326,13 +1326,15 @@ class MonoCut(Cut):
         if direction == "right" or direction == "both":
             new_end = min(self.end + duration, self.recording.duration)
 
-        new_duration = new_end - new_start
-        # Round the duration to avoid the possible loss of a single audio sample due to floating point
-        # additions and subtractions.
-        new_duration = round(new_duration, ndigits=8)
+        new_duration = add_durations(
+            new_end, new_start, sampling_rate=self.sampling_rate
+        )
 
         new_supervisions = (
-            segment.with_offset(self.start - new_start) for segment in self.supervisions
+            segment.with_offset(
+                add_durations(self.start, new_start, sampling_rate=self.sampling_rate)
+            )
+            for segment in self.supervisions
         )
 
         def _this_exceeds_duration(attribute: Union[Features, TemporalArray]) -> bool:
@@ -2445,7 +2447,11 @@ class MixedCut(Cut):
         ), f"Offset for truncate must be non-negative (provided {offset})."
         new_tracks = []
         old_duration = self.duration
-        new_mix_end = old_duration - offset if duration is None else offset + duration
+        new_mix_end = (
+            add_durations(old_duration, -offset, sampling_rate=self.sampling_rate)
+            if duration is None
+            else add_durations(offset, duration, sampling_rate=self.sampling_rate)
+        )
 
         for track in sorted(self.tracks, key=lambda t: t.offset):
             # First, determine how much of the beginning of the current track we're going to truncate:
@@ -2453,12 +2459,20 @@ class MixedCut(Cut):
             # just decreasing the track offset.
 
             # 'cut_offset' determines how much we're going to truncate the Cut for the current track.
-            cut_offset = max(offset - track.offset, 0)
+            cut_offset = max(
+                add_durations(offset, -track.offset, sampling_rate=self.sampling_rate),
+                0,
+            )
             # 'track_offset' determines the new track's offset after truncation.
-            track_offset = max(track.offset - offset, 0)
+            track_offset = max(
+                add_durations(track.offset, -offset, sampling_rate=self.sampling_rate),
+                0,
+            )
             # 'track_end' is expressed relative to the beginning of the mix
             # (not to be confused with the 'start' of the underlying MonoCut)
-            track_end = track.offset + track.cut.duration
+            track_end = add_durations(
+                track.offset, track.cut.duration, sampling_rate=self.sampling_rate
+            )
 
             if track_end < offset:
                 # Omit a MonoCut that ends before the truncation offset.
@@ -2467,12 +2481,21 @@ class MixedCut(Cut):
             cut_duration_decrease = 0
             if track_end > new_mix_end:
                 if duration is not None:
-                    cut_duration_decrease = track_end - new_mix_end
+                    cut_duration_decrease = add_durations(
+                        track_end, -new_mix_end, sampling_rate=self.sampling_rate
+                    )
                 else:
-                    cut_duration_decrease = track_end - old_duration
+                    cut_duration_decrease = add_durations(
+                        track_end, -old_duration, sampling_rate=self.sampling_rate
+                    )
 
             # Compute the new MonoCut's duration after trimming the start and the end.
-            new_duration = track.cut.duration - cut_offset - cut_duration_decrease
+            new_duration = add_durations(
+                track.cut.duration,
+                -cut_offset,
+                -cut_duration_decrease,
+                sampling_rate=self.sampling_rate,
+            )
             if new_duration <= 0:
                 # Omit a MonoCut that is completely outside the time span of the new truncated MixedCut.
                 continue
