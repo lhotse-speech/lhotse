@@ -342,10 +342,11 @@ class TestAudioMixer:
         mixer.add_to_mix(self.audio2, snr=None, offset=0)
 
         unmixed = mixer.unmixed_audio
-        assert unmixed.shape == (2, 8000)
-        assert (unmixed[0, :] == 1).all()
-        assert (unmixed[1, :] == 2).all()
-        assert unmixed.dtype == np.float32
+        assert len(unmixed) == 2
+        assert all(u.shape == (1, 8000) for u in unmixed)
+        assert (unmixed[0] == 1).all()
+        assert (unmixed[1] == 2).all()
+        assert all(u.dtype == np.float32 for u in unmixed)
 
         mixed = mixer.mixed_audio
         assert mixed.shape == (1, 8000)
@@ -357,12 +358,13 @@ class TestAudioMixer:
         mixer.add_to_mix(self.audio2, snr=None, offset=0.5)
 
         unmixed = mixer.unmixed_audio
-        assert unmixed.shape == (2, 12000)  # offset 0.5s == 4000 samples
-        assert (unmixed[0, :8000] == 1).all()
-        assert (unmixed[0, 8000:] == 0).all()
-        assert (unmixed[1, :4000] == 0).all()
-        assert (unmixed[1, 4000:] == 2).all()
-        assert unmixed.dtype == np.float32
+        assert len(unmixed) == 2
+        assert all(u.shape == (1, 12000) for u in unmixed)
+        assert (unmixed[0][:, :8000] == 1).all()
+        assert (unmixed[0][:, 8000:] == 0).all()
+        assert (unmixed[1][: ,:4000] == 0).all()
+        assert (unmixed[1][:, 4000:] == 2).all()
+        assert all(u.dtype == np.float32 for u in unmixed)
 
         mixed = mixer.mixed_audio
         assert mixed.shape == (1, 12000)
@@ -376,10 +378,11 @@ class TestAudioMixer:
         mixer.add_to_mix(self.audio2, snr=10, offset=0)
 
         unmixed = mixer.unmixed_audio
-        assert unmixed.shape == (2, 8000)
-        assert (unmixed[0, :] == 1).all()
-        np.testing.assert_almost_equal(unmixed[1, :], 0.31622776)
-        assert unmixed.dtype == np.float32
+        assert len(unmixed) == 2
+        assert all(u.shape == (1, 8000) for u in unmixed)
+        assert (unmixed[0] == 1).all()
+        np.testing.assert_almost_equal(unmixed[1], 0.31622776)
+        assert all(u.dtype == np.float32 for u in unmixed)
 
         mixed = mixer.mixed_audio
         assert mixed.shape == (1, 8000)
@@ -391,12 +394,13 @@ class TestAudioMixer:
         mixer.add_to_mix(self.audio2, snr=10, offset=0.5)
 
         unmixed = mixer.unmixed_audio
-        assert unmixed.shape == (2, 12000)  # offset 0.5s == 4000 samples
-        assert (unmixed[0, :8000] == 1).all()
-        assert (unmixed[0, 8000:] == 0).all()
-        assert (unmixed[1, :4000] == 0).all()
-        np.testing.assert_almost_equal(unmixed[1, 4000:], 0.31622776)
-        assert unmixed.dtype == np.float32
+        assert len(unmixed) == 2
+        assert all(u.shape == (1, 12000) for u in unmixed)
+        assert (unmixed[0][:, :8000] == 1).all()
+        assert (unmixed[0][:, 8000:] == 0).all()
+        assert (unmixed[1][:, :4000] == 0).all()
+        np.testing.assert_almost_equal(unmixed[1][:, 4000:], 0.31622776)
+        assert all(u.dtype == np.float32 for u in unmixed)
 
         mixed = mixer.mixed_audio
         assert mixed.shape == (1, 12000)
