@@ -1197,7 +1197,7 @@ class AudioMixer:
     @property
     def unmixed_audio(self) -> List[np.ndarray]:
         """
-        Return a numpy ndarray with the shape (num_tracks, num_samples), where each track is
+        Return a list of numpy arrays with the shape (1, num_samples), where each track is
         zero padded and scaled adequately to the offsets and SNR used in ``add_to_mix`` call.
         """
         total = self.num_samples_total

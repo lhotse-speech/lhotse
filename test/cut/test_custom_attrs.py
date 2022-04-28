@@ -57,7 +57,11 @@ def test_cut_load_array_pad():
     ivector = np.arange(20).astype(np.float32)
     with NamedTemporaryFile(suffix=".h5") as f, LilcomHdf5Writer(f.name) as writer:
         cut = MonoCut(
-            id="x", start=0, duration=5, channel=0, recording=dummy_recording(1, duration=5.0)
+            id="x",
+            start=0,
+            duration=5,
+            channel=0,
+            recording=dummy_recording(1, duration=5.0),
         )
         cut.ivector = writer.store_array(key="utt1", value=ivector)
 
