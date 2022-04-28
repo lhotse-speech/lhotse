@@ -1,4 +1,5 @@
 from collections import defaultdict
+from pathlib import Path
 from typing import Dict, Iterable, Optional, Sequence, Union
 
 from lhotse import CutSet, FeatureSet, load_manifest
@@ -23,7 +24,7 @@ def read_manifests_if_cached(
     suffix: Optional[str] = "json",
     types: Iterable[str] = DEFAULT_DETECTED_MANIFEST_TYPES,
     lazy: bool = False,
-) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet]]]:
+) -> Optional[Dict[str, Dict[str, Union[RecordingSet, SupervisionSet]]]]:
     """
     Loads manifests from the disk, or a subset of them if only some exist.
     The manifests are searched for using the pattern ``output_dir / f'{prefix}_{manifest}_{part}.json'``,
@@ -38,7 +39,7 @@ def read_manifests_if_cached(
     :return: A dict with manifest (``d[dataset_part]['recording'|'manifest']``) or ``None``.
     """
     if output_dir is None:
-        return {}
+        return None
     if prefix and not prefix.endswith("_"):
         prefix = f"{prefix}_"
     if suffix.startswith("."):
@@ -48,6 +49,7 @@ def read_manifests_if_cached(
             f"Only JSONL manifests can be opened lazily (got suffix: '{suffix}')"
         )
     manifests = defaultdict(dict)
+    output_dir = Path(output_dir)
     for part in dataset_parts:
         for manifest in types:
             path = output_dir / f"{prefix}{manifest}_{part}.{suffix}"
@@ -75,6 +77,7 @@ def manifests_exist(
         prefix = f"{prefix}_"
     if suffix.startswith("."):
         suffix = suffix[1:]
+    output_dir = Path(output_dir)
     for name in types:
         path = output_dir / f"{prefix}{name}_{part}.{suffix}"
         if not path.is_file():
