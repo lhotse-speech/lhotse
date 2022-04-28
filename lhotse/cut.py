@@ -270,6 +270,18 @@ class Cut:
         """
         return [s.trim(self.duration) for s in self.supervisions]
 
+    def split(self, timestamp: Seconds) -> Tuple["Cut", "Cut"]:
+        """
+        Split a cut into two cuts at ``timestamp``, which is measured from the start of the cut.
+        For example, a [0s - 10s] cut split at 4s yields:
+            - left cut [0s - 4s]
+            - right cut [4s - 10s]
+        """
+        assert 0 < timestamp < self.duration, f"{timestamp=}"
+        left = self.truncate(duration=timestamp)
+        right = self.truncate(offset=timestamp)
+        return left, right
+
     def mix(
         self,
         other: "Cut",

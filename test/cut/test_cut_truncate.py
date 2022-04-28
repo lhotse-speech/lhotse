@@ -119,6 +119,15 @@ def test_cut_truncate_offset_with_nonzero_start():
     assert right.end == pytest.approx(5.0)
 
 
+def test_cut_split():
+    cut = dummy_cut(0, start=1.0, duration=4.0)
+    left, right = cut.split(2.0)
+    assert left.start == pytest.approx(1.0)
+    assert left.end == pytest.approx(3.0)
+    assert right.start == pytest.approx(3.0)
+    assert right.end == pytest.approx(5.0)
+
+
 @pytest.fixture
 def simple_mixed_cut():
     return MixedCut(
