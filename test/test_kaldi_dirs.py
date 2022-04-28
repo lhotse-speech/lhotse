@@ -1,13 +1,11 @@
-import pytest
-import os.path
 import contextlib
-from pathlib import Path
+import os
+import pytest
 
 import lhotse
-import lhotse.utils
-from lhotse.utils import is_module_available
+from pathlib import Path
 
-FIXTURE_PATH = Path(os.path.realpath(__file__)).parent / "fixtures"
+FIXTURE_PATH = Path(__file__).resolve().parent / "fixtures"
 
 MINILIB_PATH = FIXTURE_PATH / "mini_librispeech"
 
@@ -109,18 +107,26 @@ def multi_channel_recording():
     return recording, supervision
 
 
-@pytest.mark.xfail(reason="multi fail recordings not supported yet")
+@pytest.mark.xfail(reason="multi file recordings not supported yet")
 def test_multi_file_recording(tmp_path, multi_file_recording):
     with working_directory(tmp_path):
         lhotse.kaldi.export_to_kaldi(
-            multi_file_recording[0], multi_file_recording[1], ".", None, False
+            multi_file_recording[0],
+            multi_file_recording[1],
+            output_dir=".",
+            map_underscores_to=None,
+            prefix_spk_id=False,
         )
 
 
 def test_multi_channel_recording(tmp_path, multi_channel_recording):
     with working_directory(tmp_path):
         lhotse.kaldi.export_to_kaldi(
-            multi_channel_recording[0], multi_channel_recording[1], ".", None, False
+            multi_channel_recording[0],
+            multi_channel_recording[1],
+            output_dir=".",
+            map_underscores_to=None,
+            prefix_spk_id=False,
         )
 
 
@@ -139,7 +145,13 @@ def working_directory(path):
 def test_kaldi_import(replace):
     fixture_path = MINILIB_PATH
     with working_directory(fixture_path):
-        out = lhotse.kaldi.load_kaldi_data_dir(fixture_path, 16000, 0.01, replace, 1)
+        out = lhotse.kaldi.load_kaldi_data_dir(
+            fixture_path,
+            sampling_rate=16000,
+            frame_shift=0.01,
+            map_string_to_underscores=replace,
+            num_jobs=1,
+        )
 
     lhotse_dir = "lhotse"
     if replace:
@@ -264,13 +276,13 @@ def test_kaldi_export(tmp_path, replace, prefix):
     )
 
     with working_directory(output_path):
-        assert os.path.exists("wav.scp")
-        assert os.path.exists("segments")
-        assert os.path.exists("text")
-        assert os.path.exists("utt2spk")
-        assert os.path.exists("utt2dur")
-        assert os.path.exists("utt2gender")
-        assert os.path.exists("reco2dur")
+        assert Path("wav.scp").is_file()
+        assert Path("segments").is_file()
+        assert Path("text").is_file()
+        assert Path("utt2spk").is_file()
+        assert Path("utt2dur").is_file()
+        assert Path("utt2gender").is_file()
+        assert Path("reco2dur").is_file()
 
         wavs = open_and_load("wav.scp")
         text = open_and_load("text")
