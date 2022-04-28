@@ -131,7 +131,7 @@ def dummy_cut(
     unique_id: int,
     start: float = 0.0,
     duration: float = 1.0,
-    recording: Union[Recording, bool] = None,
+    recording: Recording = None,
     features: Features = None,
     supervisions=None,
 ):
