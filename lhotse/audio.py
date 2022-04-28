@@ -1177,12 +1177,12 @@ class AudioMixer:
     def _pad_track(
         self, audio: np.ndarray, offset: int, total: Optional[int] = None
     ) -> np.ndarray:
-        assert audio.ndim == 2, f"{audio.ndim=}"
+        assert audio.ndim == 2, f"audio.ndim={audio.ndim}"
         if total is None:
             total = audio.shape[1] + offset
         assert (
             audio.shape[1] + offset <= total
-        ), f"{audio.shape[1]=} + {offset=} <= {total=}"
+        ), f"{audio.shape[1]} + {offset} <= {total}"
         return np.pad(
             audio, pad_width=((0, 0), (offset, total - audio.shape[1] - offset))
         )

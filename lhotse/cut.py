@@ -277,7 +277,7 @@ class Cut:
             - left cut [0s - 4s]
             - right cut [4s - 10s]
         """
-        assert 0 < timestamp < self.duration, f"{timestamp=}"
+        assert 0 < timestamp < self.duration, f"0 < {timestamp} < {self.duration}"
         left = self.truncate(duration=timestamp)
         right = self.truncate(offset=timestamp)
         return left, right
@@ -1233,7 +1233,7 @@ class MonoCut(Cut):
             sampling_rate=self.sampling_rate,
         )
         new_duration = add_durations(until, -offset, sampling_rate=self.sampling_rate)
-        assert new_duration > 0.0, f"{new_duration=}"
+        assert new_duration > 0.0, f"new_duration={new_duration}"
         # duration_past_end = (new_start + new_duration) - (self.start + self.duration)
         duration_past_end = add_durations(
             new_start,
@@ -1339,12 +1339,12 @@ class MonoCut(Cut):
             new_end = min(self.end + duration, self.recording.duration)
 
         new_duration = add_durations(
-            new_end, new_start, sampling_rate=self.sampling_rate
+            new_end, -new_start, sampling_rate=self.sampling_rate
         )
 
         new_supervisions = (
             segment.with_offset(
-                add_durations(self.start, new_start, sampling_rate=self.sampling_rate)
+                add_durations(self.start, -new_start, sampling_rate=self.sampling_rate)
             )
             for segment in self.supervisions
         )
