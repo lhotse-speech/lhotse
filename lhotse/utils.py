@@ -519,7 +519,9 @@ def add_durations(*durs: Seconds, sampling_rate: int) -> Seconds:
     The durations in seconds are first converted to audio sample counts,
     then added, and finally converted back to floating point seconds.
     """
-    tot_num_samples = sum(compute_num_samples(d, sampling_rate=sampling_rate) for d in durs)
+    tot_num_samples = sum(
+        compute_num_samples(d, sampling_rate=sampling_rate) for d in durs
+    )
     return tot_num_samples / sampling_rate
 
 

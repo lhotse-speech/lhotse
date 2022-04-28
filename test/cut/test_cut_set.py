@@ -20,7 +20,8 @@ from lhotse.serialization import load_jsonl
 from lhotse.testing.dummies import (
     DummyManifest,
     dummy_cut,
-    dummy_recording, dummy_supervision,
+    dummy_recording,
+    dummy_supervision,
     remove_spaces_from_segment_text,
 )
 from lhotse.utils import is_module_available
@@ -83,7 +84,7 @@ def test_trim_to_unsupervised_segments():
                     SupervisionSegment("sup2", "rec1", start=10, duration=5),
                     SupervisionSegment("sup3", "rec1", start=20, duration=8),
                 ],
-                recording=dummy_recording(1, duration=30)
+                recording=dummy_recording(1, duration=30),
             ),
             # Does not yield any "unsupervised" cut.
             MonoCut(
@@ -94,7 +95,7 @@ def test_trim_to_unsupervised_segments():
                 supervisions=[
                     SupervisionSegment("sup4", "rec1", start=0, duration=30),
                 ],
-                recording=dummy_recording(2, duration=30)
+                recording=dummy_recording(2, duration=30),
             ),
         ]
     )

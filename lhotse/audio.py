@@ -1174,12 +1174,18 @@ class AudioMixer:
                 f"To perform mix, energy must be non-zero and non-negative (got {self.reference_energy})"
             )
 
-    def _pad_track(self, audio: np.ndarray, offset: int, total: Optional[int] = None) -> np.ndarray:
+    def _pad_track(
+        self, audio: np.ndarray, offset: int, total: Optional[int] = None
+    ) -> np.ndarray:
         assert audio.ndim == 2, f"{audio.ndim=}"
         if total is None:
             total = audio.shape[1] + offset
-        assert audio.shape[1] + offset <= total, f"{audio.shape[1]=} + {offset=} <= {total=}"
-        return np.pad(audio, pad_width=((0, 0), (offset, total - audio.shape[1] - offset)))
+        assert (
+            audio.shape[1] + offset <= total
+        ), f"{audio.shape[1]=} + {offset=} <= {total=}"
+        return np.pad(
+            audio, pad_width=((0, 0), (offset, total - audio.shape[1] - offset))
+        )
 
     @property
     def num_samples_total(self) -> int:
@@ -1195,7 +1201,10 @@ class AudioMixer:
         zero padded and scaled adequately to the offsets and SNR used in ``add_to_mix`` call.
         """
         total = self.num_samples_total
-        return [self._pad_track(track, offset=offset, total=total) for offset, track in zip(self.offsets, self.tracks)]
+        return [
+            self._pad_track(track, offset=offset, total=total)
+            for offset, track in zip(self.offsets, self.tracks)
+        ]
 
     @property
     def mixed_audio(self) -> np.ndarray:
@@ -1206,7 +1215,7 @@ class AudioMixer:
         total = self.num_samples_total
         mixed = np.zeros((1, total), dtype=self.dtype)
         for offset, track in zip(self.offsets, self.tracks):
-            mixed[:, offset: offset + track.shape[1]] += track
+            mixed[:, offset : offset + track.shape[1]] += track
         return mixed
 
     def add_to_mix(

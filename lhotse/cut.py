@@ -593,7 +593,9 @@ class Cut:
         if augment_fn is not None:
             samples = augment_fn(samples, self.sampling_rate)
 
-        torchaudio.save(str(storage_path), torch.as_tensor(samples), sample_rate=self.sampling_rate)
+        torchaudio.save(
+            str(storage_path), torch.as_tensor(samples), sample_rate=self.sampling_rate
+        )
         recording = Recording(
             id=storage_path.stem,
             sampling_rate=self.sampling_rate,

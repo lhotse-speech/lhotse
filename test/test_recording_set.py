@@ -362,7 +362,7 @@ class TestAudioMixer:
         assert all(u.shape == (1, 12000) for u in unmixed)
         assert (unmixed[0][:, :8000] == 1).all()
         assert (unmixed[0][:, 8000:] == 0).all()
-        assert (unmixed[1][: ,:4000] == 0).all()
+        assert (unmixed[1][:, :4000] == 0).all()
         assert (unmixed[1][:, 4000:] == 2).all()
         assert all(u.dtype == np.float32 for u in unmixed)
 
