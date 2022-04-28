@@ -591,8 +591,31 @@ class Recording:
                 samples = np.delete(samples, channels_to_remove, axis=0)
             samples_per_source.append(samples)
 
-        # shape: (n_channels, n_samples)
-        audio = np.vstack(samples_per_source)
+        # There may be a mismatch in the number of samples between different channels. We
+        # check if the mismatch is within a reasonable tolerance and if so, we pad
+        # all channels to the length of the longest one.
+        allowed_diff = int(
+            ceil(LHOTSE_AUDIO_DURATION_MISMATCH_TOLERANCE * self.sampling_rate)
+        )
+        if len(samples_per_source) > 1:
+            # Make all arrays 2D
+            samples_per_source = [
+                s[None, :] if s.ndim == 1 else s for s in samples_per_source
+            ]
+            max_samples = max(s.shape[1] for s in samples_per_source)
+            for s in samples_per_source:
+                if max_samples - s.shape[1] <= allowed_diff:
+                    s = np.pad(s, ((0, 0), (0, max_samples - s.shape[1])), "constant")
+                else:
+                    raise ValueError(
+                        f"The mismatch between the number of samples in the "
+                        f"different channels of the recording {self.id} is "
+                        f"greater than the allowed tolerance {LHOTSE_AUDIO_DURATION_MISMATCH_TOLERANCE}."
+                    )
+            audio = np.concatenate(samples_per_source, axis=0)
+        else:
+            # shape: (n_channels, n_samples)
+            audio = np.vstack(samples_per_source)
 
         # We'll apply the transforms now (if any).
         for tfn in transforms:
