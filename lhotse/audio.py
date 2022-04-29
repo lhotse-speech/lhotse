@@ -591,11 +591,30 @@ class Recording:
                 samples = np.delete(samples, channels_to_remove, axis=0)
             samples_per_source.append(samples)
 
+        # Stack all the samples from all the sources into a single array.
+        audio = self._stack_audio_channels(samples_per_source)
+
+        # We'll apply the transforms now (if any).
+        for tfn in transforms:
+            audio = tfn(audio, self.sampling_rate)
+
+        # Transformation chains can introduce small mismatches in the number of samples:
+        # we'll fix them here, or raise an error if they exceeded a tolerance threshold.
+        audio = assert_and_maybe_fix_num_samples(
+            audio, offset=offset, duration=duration, recording=self
+        )
+
+        return audio
+
+    def _stack_audio_channels(self, samples_per_source: List[np.ndarray]) -> np.ndarray:
         # There may be a mismatch in the number of samples between different channels. We
         # check if the mismatch is within a reasonable tolerance and if so, we pad
         # all channels to the length of the longest one.
         allowed_diff = int(
-            ceil(LHOTSE_AUDIO_DURATION_MISMATCH_TOLERANCE * self.sampling_rate)
+            compute_num_samples(
+                LHOTSE_AUDIO_DURATION_MISMATCH_TOLERANCE,
+                sampling_rate=self.sampling_rate,
+            )
         )
         if len(samples_per_source) > 1:
             # Make all arrays 2D
@@ -616,17 +635,6 @@ class Recording:
         else:
             # shape: (n_channels, n_samples)
             audio = np.vstack(samples_per_source)
-
-        # We'll apply the transforms now (if any).
-        for tfn in transforms:
-            audio = tfn(audio, self.sampling_rate)
-
-        # Transformation chains can introduce small mismatches in the number of samples:
-        # we'll fix them here, or raise an error if they exceeded a tolerance threshold.
-        audio = assert_and_maybe_fix_num_samples(
-            audio, offset=offset, duration=duration, recording=self
-        )
-
         return audio
 
     def _expected_num_samples(
