@@ -108,9 +108,10 @@ def test_load_none_features(libri_cut):
     assert feats is None
 
 
-def test_store_audio(libri_cut):
-    with NamedTemporaryFile() as f:
-        stored_cut = libri_cut.compute_and_store_recording(f.name)
+@pytest.mark.parametrize("ext", [".wav", ".flac"])
+def test_save_audio(libri_cut, ext):
+    with NamedTemporaryFile(suffix=ext) as f:
+        stored_cut = libri_cut.save_audio(f.name)
         samples1 = libri_cut.load_audio()
         rec = Recording.from_file(f.name)
         samples2 = rec.load_audio()
