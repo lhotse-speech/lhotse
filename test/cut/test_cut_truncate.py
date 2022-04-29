@@ -108,6 +108,26 @@ def test_truncate_above_duration_has_no_effect(overlapping_supervisions_cut):
     assert truncated_cut == overlapping_supervisions_cut
 
 
+def test_cut_truncate_offset_with_nonzero_start():
+    cut = dummy_cut(0, start=1.0, duration=4.0)
+    left = cut.truncate(duration=2.0)
+    assert left.start == pytest.approx(1.0)
+    assert left.end == pytest.approx(3.0)
+
+    right = cut.truncate(offset=2.0)
+    assert right.start == pytest.approx(3.0)
+    assert right.end == pytest.approx(5.0)
+
+
+def test_cut_split():
+    cut = dummy_cut(0, start=1.0, duration=4.0)
+    left, right = cut.split(2.0)
+    assert left.start == pytest.approx(1.0)
+    assert left.end == pytest.approx(3.0)
+    assert right.start == pytest.approx(3.0)
+    assert right.end == pytest.approx(5.0)
+
+
 @pytest.fixture
 def simple_mixed_cut():
     return MixedCut(

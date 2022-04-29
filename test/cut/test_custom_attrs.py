@@ -43,7 +43,7 @@ def test_cut_load_array_truncate():
     """Check that loading a custom Array works after truncation."""
     ivector = np.arange(20).astype(np.float32)
     with NamedTemporaryFile(suffix=".h5") as f, LilcomHdf5Writer(f.name) as writer:
-        cut = MonoCut(id="x", start=0, duration=5, channel=0)
+        cut = dummy_cut(0, duration=5.0)
         cut.ivector = writer.store_array(key="utt1", value=ivector)
 
         cut = cut.truncate(duration=3)
@@ -57,7 +57,11 @@ def test_cut_load_array_pad():
     ivector = np.arange(20).astype(np.float32)
     with NamedTemporaryFile(suffix=".h5") as f, LilcomHdf5Writer(f.name) as writer:
         cut = MonoCut(
-            id="x", start=0, duration=5, channel=0, recording=dummy_recording(1)
+            id="x",
+            start=0,
+            duration=5,
+            channel=0,
+            recording=dummy_recording(1, duration=5.0),
         )
         cut.ivector = writer.store_array(key="utt1", value=ivector)
 
@@ -115,7 +119,7 @@ def test_cut_load_temporal_array_truncate():
     """Check the array loaded via TemporalArray is truncated along with the cut."""
     with NamedTemporaryFile(suffix=".h5") as f, NumpyHdf5Writer(f.name) as writer:
         expected_duration = 52.4  # 131 frames x 0.4s frame shift == 52.4s
-        cut = MonoCut(id="x", start=0, duration=expected_duration, channel=0)
+        cut = dummy_cut(0, duration=expected_duration)
 
         alignment = np.random.randint(500, size=131)
         cut.alignment = writer.store_array(
@@ -215,7 +219,7 @@ def test_cut_load_custom_recording_truncate():
         # Note: MonoCut doesn't normally have an "alignment" attribute,
         #       and a "load_alignment()" method.
         #       We are dynamically extending it.
-        cut = MonoCut(id="x", start=0, duration=duration, channel=0)
+        cut = dummy_cut(0, duration=duration)
         cut.my_favorite_song = recording
 
         cut_trunc = cut.truncate(duration=5.0)
