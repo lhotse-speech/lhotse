@@ -246,6 +246,12 @@ class DummyDataset(torch.utils.data.Dataset):
                 drop_last=True,
             ),
         ),
+        lambda: DynamicCutSampler(
+            CUTS, max_duration=10.0, shuffle=True, drop_last=True
+        ),
+        lambda: DynamicBucketingSampler(
+            CUTS, max_duration=10.0, shuffle=True, drop_last=True
+        ),
     ],
 )
 @pytest.mark.parametrize("num_workers", [0, 1])
@@ -299,3 +305,8 @@ def test_e2e_restore_with_dataloader(num_workers, create_sampler):
         # and we cannot recover from it for now)
         assert len(batches) == 3
         assert batches == expected_batches[2:]
+
+    # Advance the epoch and make sure it is fully iterated
+    restored_dloader.sampler.set_epoch(2)
+    ep2_batches = list(restored_dloader)
+    assert len(ep2_batches) == 10

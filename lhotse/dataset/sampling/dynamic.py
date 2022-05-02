@@ -168,7 +168,6 @@ class DynamicCutSampler(CutSampler):
 
     def __iter__(self) -> "DynamicCutSampler":
         if self._just_restored_state:
-            self.allow_iter_to_reset_state()
             return self
         self.rng = random.Random(self.seed + self.epoch)
         # Initiate iteration

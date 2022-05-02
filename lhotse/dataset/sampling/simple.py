@@ -4,7 +4,6 @@ from typing import Any, Dict, Optional
 from lhotse import CutSet, Seconds
 from lhotse.dataset.sampling.base import CutSampler, TimeConstraint
 from lhotse.dataset.sampling.data_source import DataSource
-from lhotse.utils import is_none_or_gt
 
 
 class SimpleCutSampler(CutSampler):
