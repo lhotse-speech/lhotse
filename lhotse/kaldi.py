@@ -187,7 +187,7 @@ class DefaultInputKaldiFormatter(KaldiFormatterBase):
         return segments
 
     def segments(self):
-        segments = self.can_haz_segments_maybe()
+        segments = self._can_haz_segments_maybe()
         sampling_rate = self.options["sampling_rate"]
         texts = self.kaldi_data_dir.get_map("text")
         utt2spk = self.kaldi_data_dir.get_map("utt2spk")
