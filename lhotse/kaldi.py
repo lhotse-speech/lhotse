@@ -166,7 +166,8 @@ class DefaultInputKaldiFormatter(KaldiFormatterBase):
                 duration=duration,
             )
 
-    def segments(self):
+    def _can_haz_segments_maybe(self):
+        segments = None
         if self.kaldi_data_dir.has("text") and not self.kaldi_data_dir.has("segments"):
             # this situation assumes the files are indexed by utterance id
             recs = self.kaldi_data_dir.get_map("wav.scp")
@@ -174,6 +175,7 @@ class DefaultInputKaldiFormatter(KaldiFormatterBase):
             durations = self.durations(recs, num_jobs)
             segments = {id: (id, 0, durations[id]) for id in self.recs.keys()}
         elif self.kaldi_data_dir.has("text"):
+            # datadir is indexed by utterance
             segments = self.kaldi_data_dir.get_map("segments")
             for id in segments.keys():
                 entries = segments[id].split()
@@ -181,8 +183,11 @@ class DefaultInputKaldiFormatter(KaldiFormatterBase):
                 segments[id] = (entries[0], float(entries[1]), float(entries[2]))
         else:
             # assert self.kaldi_data_dir.has("text")
-            return
+            pass
+        return segments
 
+    def segments(self):
+        segments = self.can_haz_segments_maybe()
         sampling_rate = self.options["sampling_rate"]
         texts = self.kaldi_data_dir.get_map("text")
         utt2spk = self.kaldi_data_dir.get_map("utt2spk")
@@ -201,6 +206,38 @@ class DefaultInputKaldiFormatter(KaldiFormatterBase):
                 gender=spk2gender[utt2spk[seg_id]],
             )
         pass
+
+    def has_features(self):
+        return self.options["frame_shift"] and self.kaldi_data_dir.has("feats.scp")
+
+    def features(self):
+        import kaldi_native_io
+        from lhotse.features.io import KaldiReader
+
+        frame_shift = self.options["frame_shift"]
+        sampling_rate = self.options["sampling_rate"]
+        feats_scp = self.kaldi_data_dir.path / "feats.scp"
+        for utt_id, mat_shape in kaldi_native_io.SequentialMatrixShapeReader(
+            f"scp:{feats_scp}"
+        ):
+            yield Features(
+                type="kaldi_native_io",
+                num_frames=mat_shape.num_rows,
+                num_features=mat_shape.num_cols,
+                frame_shift=frame_shift,
+                sampling_rate=sampling_rate,
+                start=0,
+                duration=mat_shape.num_rows * frame_shift,
+                storage_type=KaldiReader.name,
+                storage_path=str(feats_scp),
+                storage_key=utt_id,
+                recording_id=self._fix_segment_id(
+                    self.supervision_set[utt_id].recording_id
+                )
+                if self.supervision_set is not None
+                else utt_id,
+                channels=0,
+            )
 
 
 @contextlib.contextmanager
@@ -314,8 +351,9 @@ def load_kaldi_data_dir(
             )
 
         if kaldi_data.has("feats.scp") and is_module_available("kaldi_native_io"):
-            # feature_set = FeatureSet.from_features(
-            pass
+            feature_set = FeatureSet.from_features(
+                feature for feature in fmt.features()
+            )
 
     return recording_set, supervision_set, feature_set
 
