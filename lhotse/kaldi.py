@@ -1,4 +1,3 @@
-import warnings
 from collections import defaultdict
 from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
@@ -15,6 +14,210 @@ from lhotse.utils import (
     fastcopy,
     is_module_available,
 )
+import contextlib
+
+
+class KaldiFormatterBase:
+    def __init__(self, options: dict):
+        self.options = options
+
+    def __enter__(self):
+        return
+
+    def __exit__(self, type, value, traceback):
+        return True
+
+
+class DefaultOutputKaldiFormatter(KaldiFormatterBase):
+    def __init__(
+        self, recordings: RecordingSet, supervisions: SupervisionSet, options: dict
+    ):
+        super().__init__(options)
+        self.recordings = recordings
+        self.supervisions = supervisions
+
+    def _maybe_remap_supervision_names(
+        self, supervisions: SupervisionSet
+    ) -> SupervisionSet:
+        if self.options.get("map_underscores_to") is not None:
+            supervisions = supervisions.map(
+                lambda s: fastcopy(
+                    s,
+                    id=s.id.replace("_", self.options["map_underscores_to"]),
+                    speaker=s.speaker.replace("_", self.options["map_underscores_to"]),
+                )
+            )
+
+        if self.options.get("prefix_spk_id"):
+            supervisions = supervisions.map(
+                lambda s: fastcopy(s, id=f"{s.speaker}-{s.id}")
+            )
+        return supervisions
+
+    def has_utt2gender(self):
+        return all(s.gender is not None for s in self.supervisions)
+
+    def utt2gender(self):
+        supervisions = self._maybe_remap_supervision_names(self.supervisions)
+        if all(s.gender is not None for s in supervisions):
+            for s in supervisions:
+                yield s.id, s.gender
+        else:
+            return
+
+    def has_utt2lang(self):
+        return all(s.language is not None for s in self.supervisions)
+
+    def utt2lang(self):
+        supervisions = self._maybe_remap_supervision_names(self.supervisions)
+        if all(s.language is not None for s in supervisions):
+            for s in supervisions:
+                yield s.id, s.language
+        else:
+            return
+
+    def utt2dur(self):
+        supervisions = self._maybe_remap_supervision_names(self.supervisions)
+        for s in supervisions:
+            yield s.id, s.duration
+
+    def utt2spk(self):
+        supervisions = self._maybe_remap_supervision_names(self.supervisions)
+        for s in supervisions:
+            yield s.id, s.speaker
+
+    def text(self):
+        supervisions = self._maybe_remap_supervision_names(self.supervisions)
+        for s in supervisions:
+            yield s.id, s.text
+
+    def reco2dur(self):
+        recordings = self.recordings
+        if all(r.num_channels == 1 for r in recordings):
+            for r in recordings:
+                yield r.id, r.duration
+        else:
+            for r in recordings:
+                for channel in r.sources[0].channels:
+                    yield f"{r.id}_{channel}", r.duration
+
+    def segments(self):
+        supervisions = self._maybe_remap_supervision_names(self.supervisions)
+        for s in supervisions:
+            yield s.id, s.recording_id, s.start, s.end
+
+    def wav_scp(self):
+        recordings = self.recordings
+        if all(r.num_channels == 1 for r in recordings):
+            for r in recordings:
+                for source in r.sources:
+                    yield r.id, make_wavscp_channel_string_map(source, r.sampling_rate)[
+                        0
+                    ]
+        else:
+            for r in recordings:
+                for source in r.sources:
+                    for channel in source.channels:
+                        yield f"{r.id}_{channel}", make_wavscp_channel_string_map(
+                            source, r.sampling_rate
+                        )[channel]
+
+
+class DefaultInputKaldiFormatter(KaldiFormatterBase):
+    def __init__(self, kaldi_data_dir, options: dict):
+        super().__init__(options)
+        self.kaldi_data_dir = kaldi_data_dir
+
+    @classmethod
+    def durations(cls, recordings, num_jobs):
+        with ProcessPoolExecutor(num_jobs) as ex:
+            dur_vals = ex.map(get_duration, recordings.values())
+        durations = dict(zip(recordings.keys(), dur_vals))
+        return durations
+
+    def _fix_segment_id(self, segment_id: str) -> str:
+        if self.options.get("map_string_to_underscores", None):
+            return segment_id.replace(self.options["map_string_to_underscores"], "_")
+        else:
+            return segment_id
+
+    def recordings(self):
+        self.recs = self.kaldi_data_dir.get_map("wav.scp")
+        num_jobs = self.options.get("num_jobs", 1)
+        self.durs = self.durations(self.recs, num_jobs)
+
+        sampling_rate = self.options["sampling_rate"]
+
+        for id, path_or_cmd in self.recs.items():
+            duration = self.durs[id]
+            yield Recording(
+                id=id,
+                sources=[
+                    AudioSource(
+                        type="command" if path_or_cmd.endswith("|") else "file",
+                        channels=[0],
+                        source=(path_or_cmd[:-1])
+                        if path_or_cmd.endswith("|")
+                        else path_or_cmd,
+                    )
+                ],
+                sampling_rate=sampling_rate,
+                num_samples=compute_num_samples(duration, sampling_rate),
+                duration=duration,
+            )
+
+    def segments(self):
+        if self.kaldi_data_dir.has("text") and not self.kaldi_data_dir.has("segments"):
+            # this situation assumes the files are indexed by utterance id
+            recs = self.kaldi_data_dir.get_map("wav.scp")
+            num_jobs = self.options.get("num_jobs", 1)
+            durations = self.durations(recs, num_jobs)
+            segments = {id: (id, 0, durations[id]) for id in self.recs.keys()}
+        elif self.kaldi_data_dir.has("text"):
+            segments = self.kaldi_data_dir.get_map("segments")
+            for id in segments.keys():
+                entries = segments[id].split()
+                assert len(entries) == 3
+                segments[id] = (entries[0], float(entries[1]), float(entries[2]))
+        else:
+            # assert self.kaldi_data_dir.has("text")
+            return
+
+        sampling_rate = self.options["sampling_rate"]
+        texts = self.kaldi_data_dir.get_map("text")
+        utt2spk = self.kaldi_data_dir.get_map("utt2spk")
+        spk2gender = self.kaldi_data_dir.get_map("spk2gender")
+        utt2lang = self.kaldi_data_dir.get_map("utt2lang")
+        for seg_id, (recording_id, start, end) in segments.items():
+            yield SupervisionSegment(
+                id=self._fix_segment_id(seg_id),
+                recording_id=recording_id,
+                start=start,
+                duration=add_durations(end, -start, sampling_rate=sampling_rate),
+                channel=0,
+                text=texts[seg_id],
+                language=utt2lang[seg_id],
+                speaker=self._fix_segment_id(utt2spk[seg_id]),
+                gender=spk2gender[utt2spk[seg_id]],
+            )
+        pass
+
+
+@contextlib.contextmanager
+def formatter(*argv) -> KaldiFormatterBase:
+    if len(argv) == 4:
+        format = argv[0]
+        recordings = argv[1]
+        supervisions = argv[2]
+        options = argv[3]
+        yield DefaultOutputKaldiFormatter(recordings, supervisions, options)
+    elif len(argv) == 3:
+        format = argv[0]
+        options = argv[2]
+        kaldi_data_dir = argv[1]
+        yield DefaultInputKaldiFormatter(kaldi_data_dir, options)
+    else:
+        assert False
 
 
 def get_duration(
@@ -50,6 +253,22 @@ def get_duration(
     return info.duration
 
 
+class KaldiDirectory:
+    def __init__(self, path: Pathlike, options: dict):
+        self.path = Path(path)
+        self.options = options
+
+    def has(self, filename: Pathlike):
+        return (self.path / filename).is_file()
+
+    def get_map(self, map):
+        return load_kaldi_text_mapping(self.path / map)
+
+    def get_value(self, map):
+        with open(self.path / map) as f:
+            return f.readline().strip()
+
+
 def load_kaldi_data_dir(
     path: Pathlike,
     sampling_rate: int,
@@ -72,99 +291,31 @@ def load_kaldi_data_dir(
     path = Path(path)
     assert path.is_dir()
 
-    def fix_id(t: str) -> str:
-        if map_string_to_underscores is None:
-            return t
-        return t.replace(map_string_to_underscores, "_")
+    options = {
+        "map_string_to_underscores": map_string_to_underscores,
+        "frame_shift": frame_shift,
+        "sampling_rate": sampling_rate,
+        "num_jobs": num_jobs,
+    }
 
-    # must exist for RecordingSet
-    recordings = load_kaldi_text_mapping(path / "wav.scp", must_exist=True)
-
-    with ProcessPoolExecutor(num_jobs) as ex:
-        dur_vals = ex.map(get_duration, recordings.values())
-    durations = dict(zip(recordings.keys(), dur_vals))
-
-    recording_set = RecordingSet.from_recordings(
-        Recording(
-            id=recording_id,
-            sources=[
-                AudioSource(
-                    type="command" if path_or_cmd.endswith("|") else "file",
-                    channels=[0],
-                    source=path_or_cmd[:-1]
-                    if path_or_cmd.endswith("|")
-                    else path_or_cmd,
-                )
-            ],
-            sampling_rate=sampling_rate,
-            num_samples=compute_num_samples(durations[recording_id], sampling_rate),
-            duration=durations[recording_id],
-        )
-        for recording_id, path_or_cmd in recordings.items()
-    )
-
+    kaldi_data = KaldiDirectory(path, options)
+    format = "default"
+    recording_set = None
     supervision_set = None
-    segments = path / "segments"
-    if segments.is_file():
-        with segments.open() as f:
-            supervision_segments = [sup_string.strip().split() for sup_string in f]
-
-        texts = load_kaldi_text_mapping(path / "text")
-        speakers = load_kaldi_text_mapping(path / "utt2spk")
-        genders = load_kaldi_text_mapping(path / "spk2gender")
-        languages = load_kaldi_text_mapping(path / "utt2lang")
-
-        supervision_set = SupervisionSet.from_segments(
-            SupervisionSegment(
-                id=fix_id(segment_id),
-                recording_id=recording_id,
-                start=float(start),
-                duration=add_durations(
-                    float(end), -float(start), sampling_rate=sampling_rate
-                ),
-                channel=0,
-                text=texts[segment_id],
-                language=languages[segment_id],
-                speaker=fix_id(speakers[segment_id]),
-                gender=genders[speakers[segment_id]],
-            )
-            for segment_id, recording_id, start, end in supervision_segments
+    feature_set = None
+    with formatter(format, kaldi_data, options) as fmt:
+        recording_set = RecordingSet.from_recordings(
+            recording for recording in fmt.recordings()
         )
 
-    feature_set = None
-    feats_scp = path / "feats.scp"
-    if feats_scp.exists() and is_module_available("kaldi_native_io"):
-        if frame_shift is not None:
-            import kaldi_native_io
-            from lhotse.features.io import KaldiReader
+        if kaldi_data.has("text") or kaldi_data.has("segments"):
+            supervision_set = SupervisionSet.from_segments(
+                segment for segment in fmt.segments()
+            )
 
-            feature_set = FeatureSet.from_features(
-                Features(
-                    type="kaldi_native_io",
-                    num_frames=mat_shape.num_rows,
-                    num_features=mat_shape.num_cols,
-                    frame_shift=frame_shift,
-                    sampling_rate=sampling_rate,
-                    start=0,
-                    duration=mat_shape.num_rows * frame_shift,
-                    storage_type=KaldiReader.name,
-                    storage_path=str(feats_scp),
-                    storage_key=utt_id,
-                    recording_id=supervision_set[utt_id].recording_id
-                    if supervision_set is not None
-                    else utt_id,
-                    channels=0,
-                )
-                for utt_id, mat_shape in kaldi_native_io.SequentialMatrixShapeReader(
-                    f"scp:{feats_scp}"
-                )
-            )
-        else:
-            warnings.warn(
-                "Failed to import Kaldi 'feats.scp' to Lhotse: "
-                "frame_shift must be not None. "
-                "Feature import omitted."
-            )
+        if kaldi_data.has("feats.scp") and is_module_available("kaldi_native_io"):
+            # feature_set = FeatureSet.from_features(
+            pass
 
     return recording_set, supervision_set, feature_set
 
@@ -195,110 +346,61 @@ def export_to_kaldi(
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    assert all(len(r.sources) == 1 for r in recordings), (
-        "Kaldi export of Recordings with multiple audio sources "
-        "is currently not supported."
-    )
+    options = {"map_underscores_to": map_underscores_to, "prefix_spk_id": prefix_spk_id}
 
-    if map_underscores_to is not None:
-        supervisions = supervisions.map(
-            lambda s: fastcopy(
-                s,
-                id=s.id.replace("_", map_underscores_to),
-                speaker=s.speaker.replace("_", map_underscores_to),
+    format = "default"
+    with formatter(format, recordings, supervisions, options) as fmt:
+
+        save_kaldi_text_mapping(
+            data={id: audio_spec for id, audio_spec in fmt.wav_scp()},
+            path=output_dir / "wav.scp",
+        )
+
+        save_kaldi_text_mapping(
+            data={
+                id: f"{recording_id} {start} {end}"
+                for id, recording_id, start, end in fmt.segments()
+            },
+            path=output_dir / "segments",
+        )
+
+        # reco2dur
+        save_kaldi_text_mapping(
+            data={id: duration for id, duration in fmt.reco2dur()},
+            path=output_dir / "reco2dur",
+        )
+
+        # text
+        save_kaldi_text_mapping(
+            data={id: text for id, text in fmt.text()},
+            path=output_dir / "text",
+        )
+
+        # utt2spk
+        save_kaldi_text_mapping(
+            data={id: speaker for id, speaker in fmt.utt2spk()},
+            path=output_dir / "utt2spk",
+        )
+
+        # utt2dur
+        save_kaldi_text_mapping(
+            data={id: duration for id, duration in fmt.utt2dur()},
+            path=output_dir / "utt2dur",
+        )
+
+        # utt2lang [optional]
+        if fmt.has_utt2lang:
+            save_kaldi_text_mapping(
+                data={id: language for id, language in fmt.utt2lang()},
+                path=output_dir / "utt2lang",
             )
-        )
 
-    if prefix_spk_id:
-        supervisions = supervisions.map(lambda s: fastcopy(s, id=f"{s.speaker}-{s.id}"))
-
-    if all(r.num_channels == 1 for r in recordings):
-        # if all the recordings are single channel, we won't add
-        # the channel id affix to retain back compatibility
-        # and the ability to receive back the same utterances after
-        # importing the exported directory back
-        # wav.scp
-        save_kaldi_text_mapping(
-            data={
-                recording.id: make_wavscp_channel_string_map(
-                    source, sampling_rate=recording.sampling_rate
-                )[0]
-                for recording in recordings
-                for source in recording.sources
-            },
-            path=output_dir / "wav.scp",
-        )
-        # segments
-        save_kaldi_text_mapping(
-            data={
-                sup.id: f"{sup.recording_id} {sup.start} {sup.end}"
-                for sup in supervisions
-            },
-            path=output_dir / "segments",
-        )
-        # reco2dur
-        save_kaldi_text_mapping(
-            data={recording.id: recording.duration for recording in recordings},
-            path=output_dir / "reco2dur",
-        )
-
-    else:
-        # wav.scp
-        save_kaldi_text_mapping(
-            data={
-                f"{recording.id}_{channel}": make_wavscp_channel_string_map(
-                    source, sampling_rate=recording.sampling_rate
-                )[channel]
-                for recording in recordings
-                for source in recording.sources
-                for channel in source.channels
-            },
-            path=output_dir / "wav.scp",
-        )
-        # segments
-        save_kaldi_text_mapping(
-            data={
-                sup.id: f"{sup.recording_id} {sup.start} {sup.end}"
-                for sup in supervisions
-            },
-            path=output_dir / "segments",
-        )
-        # reco2dur
-        save_kaldi_text_mapping(
-            data={
-                f"{recording.id}_{channel}": recording.duration
-                for recording in recordings
-                for channel in recording.sources[0].channels
-            },
-            path=output_dir / "reco2dur",
-        )
-    # text
-    save_kaldi_text_mapping(
-        data={sup.id: sup.text for sup in supervisions},
-        path=output_dir / "text",
-    )
-    # utt2spk
-    save_kaldi_text_mapping(
-        data={sup.id: sup.speaker for sup in supervisions},
-        path=output_dir / "utt2spk",
-    )
-    # utt2dur
-    save_kaldi_text_mapping(
-        data={sup.id: sup.duration for sup in supervisions},
-        path=output_dir / "utt2dur",
-    )
-    # utt2lang [optional]
-    if all(s.language is not None for s in supervisions):
-        save_kaldi_text_mapping(
-            data={sup.id: sup.language for sup in supervisions},
-            path=output_dir / "utt2lang",
-        )
-    # utt2gender [optional]
-    if all(s.gender is not None for s in supervisions):
-        save_kaldi_text_mapping(
-            data={sup.id: sup.gender for sup in supervisions},
-            path=output_dir / "utt2gender",
-        )
+        # utt2gender [optional]
+        if fmt.has_utt2gender:
+            save_kaldi_text_mapping(
+                data={id: gender for id, gender in fmt.utt2gender()},
+                path=output_dir / "utt2gender",
+            )
 
 
 def load_kaldi_text_mapping(
