@@ -108,7 +108,9 @@ class DynamicCutSampler(CutSampler):
         :param rank: Index of distributed node. We will try to infer it by default.
         :param seed: Random seed used to consistently shuffle the dataset across different processes.
         """
-        super().__init__(drop_last=drop_last, world_size=world_size, rank=rank, seed=seed)
+        super().__init__(
+            drop_last=drop_last, world_size=world_size, rank=rank, seed=seed
+        )
         if not all(cs.is_lazy for cs in cuts if isinstance(cs, CutSet)):
             warnings.warn(
                 "You are using DynamicCutSampler with an eagerly read CutSet. "
