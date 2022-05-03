@@ -30,13 +30,13 @@ def prepare_eval2000(
     absolute_paths: bool = False,
     num_jobs: int = 1,
 ) -> Dict[str, Union[RecordingSet, SupervisionSet]]:
-    """                                                                                                                                      
-    Prepares manifests for Eval2000.                                                                                         
-                                                                                                                                        
-    :param corpus_path: Path to global corpus                                                                                                
-    :param output_dir: Directory where the manifests should be written. Can be omitted to avoid writing.                                     
-    :param absolute_paths: Whether to return absolute or relative (to the corpus dir) paths for recordings.                                  
-    :return: A dict with manifests. The keys are: ``{'recordings', 'supervisions'}``.                                                        
+    """
+    Prepares manifests for Eval2000.
+
+    :param corpus_path: Path to global corpus
+    :param output_dir: Directory where the manifests should be written. Can be omitted to avoid writing.
+    :param absolute_paths: Whether to return absolute or relative (to the corpus dir) paths for recordings.
+    :return: A dict with manifests. The keys are: ``{'recordings', 'supervisions'}``.
     """
 
     corpus_dir = Path(corpus_dir)
