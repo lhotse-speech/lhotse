@@ -203,7 +203,6 @@ class DynamicBucketingSampler(CutSampler):
 
     def __iter__(self) -> "DynamicBucketingSampler":
         if self._just_restored_state:
-            self.allow_iter_to_reset_state()
             return self
         self.rng = random.Random(self.seed + self.epoch)
         # Initiate iteration

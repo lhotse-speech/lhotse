@@ -108,6 +108,26 @@ def test_truncate_above_duration_has_no_effect(overlapping_supervisions_cut):
     assert truncated_cut == overlapping_supervisions_cut
 
 
+def test_cut_truncate_offset_with_nonzero_start():
+    cut = dummy_cut(0, start=1.0, duration=4.0)
+    left = cut.truncate(duration=2.0)
+    assert left.start == pytest.approx(1.0)
+    assert left.end == pytest.approx(3.0)
+
+    right = cut.truncate(offset=2.0)
+    assert right.start == pytest.approx(3.0)
+    assert right.end == pytest.approx(5.0)
+
+
+def test_cut_split():
+    cut = dummy_cut(0, start=1.0, duration=4.0)
+    left, right = cut.split(2.0)
+    assert left.start == pytest.approx(1.0)
+    assert left.end == pytest.approx(3.0)
+    assert right.start == pytest.approx(3.0)
+    assert right.end == pytest.approx(5.0)
+
+
 @pytest.fixture
 def simple_mixed_cut():
     return MixedCut(
@@ -266,7 +286,9 @@ def test_truncate_cut_set_offset_random_rng(use_rng):
 
 @pytest.mark.parametrize("num_jobs", [1, 2])
 def test_cut_set_windows_even_split_keep_supervisions(cut_set, num_jobs):
-    windows_cut_set = cut_set.cut_into_windows(duration=5.0, num_jobs=num_jobs)
+    windows_cut_set = cut_set.cut_into_windows(
+        duration=5.0, num_jobs=num_jobs
+    ).to_eager()
     assert len(windows_cut_set) == 4
     assert all(cut.duration == 5.0 for cut in windows_cut_set)
 
