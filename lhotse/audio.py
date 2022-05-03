@@ -593,8 +593,8 @@ class Recording:
                 samples = np.delete(samples, channels_to_remove, axis=0)
             samples_per_source.append(samples)
 
-        # shape: (n_channels, n_samples)
-        audio = np.vstack(samples_per_source)
+        # Stack all the samples from all the sources into a single array.
+        audio = self._stack_audio_channels(samples_per_source)
 
         # We'll apply the transforms now (if any).
         for tfn in transforms:
@@ -606,6 +606,37 @@ class Recording:
             audio, offset=offset, duration=duration, recording=self
         )
 
+        return audio
+
+    def _stack_audio_channels(self, samples_per_source: List[np.ndarray]) -> np.ndarray:
+        # There may be a mismatch in the number of samples between different channels. We
+        # check if the mismatch is within a reasonable tolerance and if so, we pad
+        # all channels to the length of the longest one.
+        allowed_diff = int(
+            compute_num_samples(
+                LHOTSE_AUDIO_DURATION_MISMATCH_TOLERANCE,
+                sampling_rate=self.sampling_rate,
+            )
+        )
+        if len(samples_per_source) > 1:
+            # Make all arrays 2D
+            samples_per_source = [
+                s[None, :] if s.ndim == 1 else s for s in samples_per_source
+            ]
+            max_samples = max(s.shape[1] for s in samples_per_source)
+            for s in samples_per_source:
+                if max_samples - s.shape[1] <= allowed_diff:
+                    s = np.pad(s, ((0, 0), (0, max_samples - s.shape[1])), "constant")
+                else:
+                    raise ValueError(
+                        f"The mismatch between the number of samples in the "
+                        f"different channels of the recording {self.id} is "
+                        f"greater than the allowed tolerance {LHOTSE_AUDIO_DURATION_MISMATCH_TOLERANCE}."
+                    )
+            audio = np.concatenate(samples_per_source, axis=0)
+        else:
+            # shape: (n_channels, n_samples)
+            audio = np.vstack(samples_per_source)
         return audio
 
     def _expected_num_samples(
@@ -1160,6 +1191,7 @@ class AudioMixer:
             This might be required when ``base_audio`` corresponds to zero-padding.
         """
         self.tracks = [base_audio]
+        self.offsets = [0]
         self.sampling_rate = sampling_rate
         self.dtype = self.tracks[0].dtype
 
@@ -1175,13 +1207,37 @@ class AudioMixer:
                 f"To perform mix, energy must be non-zero and non-negative (got {self.reference_energy})"
             )
 
+    def _pad_track(
+        self, audio: np.ndarray, offset: int, total: Optional[int] = None
+    ) -> np.ndarray:
+        assert audio.ndim == 2, f"audio.ndim={audio.ndim}"
+        if total is None:
+            total = audio.shape[1] + offset
+        assert (
+            audio.shape[1] + offset <= total
+        ), f"{audio.shape[1]} + {offset} <= {total}"
+        return np.pad(
+            audio, pad_width=((0, 0), (offset, total - audio.shape[1] - offset))
+        )
+
     @property
-    def unmixed_audio(self) -> np.ndarray:
+    def num_samples_total(self) -> int:
+        longest = 0
+        for offset, audio in zip(self.offsets, self.tracks):
+            longest = max(longest, offset + audio.shape[1])
+        return longest
+
+    @property
+    def unmixed_audio(self) -> List[np.ndarray]:
         """
-        Return a numpy ndarray with the shape (num_tracks, num_samples), where each track is
+        Return a list of numpy arrays with the shape (1, num_samples), where each track is
         zero padded and scaled adequately to the offsets and SNR used in ``add_to_mix`` call.
         """
-        return np.vstack(self.tracks)
+        total = self.num_samples_total
+        return [
+            self._pad_track(track, offset=offset, total=total)
+            for offset, track in zip(self.offsets, self.tracks)
+        ]
 
     @property
     def mixed_audio(self) -> np.ndarray:
@@ -1189,7 +1245,11 @@ class AudioMixer:
         Return a numpy ndarray with the shape (1, num_samples) - a mono mix of the tracks
         supplied with ``add_to_mix`` calls.
         """
-        return np.sum(self.unmixed_audio, axis=0, keepdims=True)
+        total = self.num_samples_total
+        mixed = np.zeros((1, total), dtype=self.dtype)
+        for offset, track in zip(self.offsets, self.tracks):
+            mixed[:, offset : offset + track.shape[1]] += track
+        return mixed
 
     def add_to_mix(
         self,
@@ -1212,48 +1272,7 @@ class AudioMixer:
         assert audio.shape[0] == 1  # TODO: support multi-channels
         assert offset >= 0.0, "Negative offset in mixing is not supported."
 
-        reference_audio = self.tracks[0]
-        num_samples_offset = round(offset * self.sampling_rate)
-        current_num_samples = reference_audio.shape[1]
-
-        audio_to_add = audio
-
-        # When there is an offset, we need to pad before the start of the audio we're adding.
-        if offset > 0:
-            audio_to_add = np.hstack(
-                [np.zeros((1, num_samples_offset), self.dtype), audio_to_add]
-            )
-
-        incoming_num_samples = audio_to_add.shape[1]
-        mix_num_samples = max(current_num_samples, incoming_num_samples)
-
-        # When the existing samples are less than what we anticipate after the mix,
-        # we need to pad after the end of the existing audio mixed so far.
-        # Since we're keeping every track as a separate entry in the ``self.tracks`` list,
-        # we need to pad each of them so that their shape matches when performing the final mix.
-        if current_num_samples < mix_num_samples:
-            for idx in range(len(self.tracks)):
-                padded_audio = np.hstack(
-                    [
-                        self.tracks[idx],
-                        np.zeros(
-                            (1, mix_num_samples - current_num_samples), self.dtype
-                        ),
-                    ]
-                )
-                self.tracks[idx] = padded_audio
-
-        # When the audio we're mixing in are shorter that the anticipated mix length,
-        # we need to pad after their end.
-        # Note: we're doing that non-efficiently, as it we potentially re-allocate numpy arrays twice,
-        # during this padding and the  offset padding before. If that's a bottleneck, we'll optimize.
-        if incoming_num_samples < mix_num_samples:
-            audio_to_add = np.hstack(
-                [
-                    audio_to_add,
-                    np.zeros((1, mix_num_samples - incoming_num_samples), self.dtype),
-                ]
-            )
+        num_samples_offset = compute_num_samples(offset, self.sampling_rate)
 
         # When SNR is requested, find what gain is needed to satisfy the SNR
         gain = 1.0
@@ -1269,8 +1288,8 @@ class AudioMixer:
             # we need to take a square root of the energy ratio.
             gain = sqrt(target_energy / added_audio_energy)
 
-        # self.mixed_audio = reference_audio + gain * audio_to_add
-        self.tracks.append(gain * audio_to_add)
+        self.tracks.append(gain * audio)
+        self.offsets.append(num_samples_offset)
 
 
 def audio_energy(audio: np.ndarray) -> float:

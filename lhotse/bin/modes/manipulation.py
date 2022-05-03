@@ -137,7 +137,14 @@ def copy_feats_worker(
     is_flag=True,
     help="Optionally shuffle the sequence before splitting.",
 )
-def split(num_splits: int, manifest: Pathlike, output_dir: Pathlike, shuffle: bool):
+@click.option(
+    "--pad/--no-pad",
+    default=True,
+    help="Whether to pad the split output idx with zeros (e.g. 01, 02, .., 10).",
+)
+def split(
+    num_splits: int, manifest: Pathlike, output_dir: Pathlike, shuffle: bool, pad: bool
+):
     """
     Load MANIFEST, split it into NUM_SPLITS equal parts and save as separate manifests in OUTPUT_DIR.
 
@@ -153,7 +160,7 @@ def split(num_splits: int, manifest: Pathlike, output_dir: Pathlike, shuffle: bo
     output_dir.mkdir(parents=True, exist_ok=True)
     num_digits = len(str(num_splits))
     for idx, part in enumerate(parts):
-        idx = f"{idx + 1}".zfill(num_digits)
+        idx = f"{idx + 1}".zfill(num_digits) if pad else str(idx + 1)
         part.to_file((output_dir / manifest.stem).with_suffix(f".{idx}{suffix}"))
 
 

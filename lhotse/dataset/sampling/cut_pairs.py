@@ -64,6 +64,7 @@ class CutPairsSampler(CutSampler):
         :param seed: Random seed used to consistently shuffle the dataset across different processes.
         """
         super().__init__(
+            drop_last=drop_last,
             shuffle=shuffle,
             world_size=world_size,
             rank=rank,
@@ -86,7 +87,6 @@ class CutPairsSampler(CutSampler):
             max_cuts=max_cuts,
             strict=strict,
         )
-        self.drop_last = drop_last
 
     @property
     def remaining_duration(self) -> Optional[float]:
@@ -125,7 +125,6 @@ class CutPairsSampler(CutSampler):
         state_dict = super().state_dict()
         state_dict.update(
             {
-                "drop_last": self.drop_last,
                 "source_constraints": self.source_constraints.state_dict(),
                 "target_constraints": self.target_constraints.state_dict(),
             }
@@ -150,8 +149,6 @@ class CutPairsSampler(CutSampler):
             For implementers of sub-classes of CutSampler: the flag ``self._just_restored_state`` has to be
             handled in ``__iter__`` to make it avoid resetting the just-restored state (only once).
         """
-        self.drop_last = state_dict.pop("drop_last")
-
         source_constraints = TimeConstraint(**state_dict.pop("source_constraints"))
         if self.source_constraints != source_constraints:
             warnings.warn(

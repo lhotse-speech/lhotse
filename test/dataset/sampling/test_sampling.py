@@ -1,5 +1,6 @@
 import random
 from copy import deepcopy
+from functools import partial
 from itertools import groupby
 from math import isclose
 from statistics import mean
@@ -698,7 +699,9 @@ def test_partitions_are_equal(world_size, n_cuts, sampler_cls):
         c.duration += 10 * random.random()
     # Create a sampler for each "distributed worker."
     samplers = [
-        sampler_cls(cut_set, max_duration=25.0, rank=i, world_size=world_size)
+        sampler_cls(
+            cut_set, max_duration=25.0, drop_last=True, rank=i, world_size=world_size
+        )
         for i in range(world_size)
     ]
     # Check that it worked.
@@ -1219,3 +1222,25 @@ def test_time_constraint_strictness():
 
     assert not normal.exceeded()
     assert strict.exceeded()
+
+
+@pytest.mark.parametrize(
+    "sampler_fn",
+    [
+        SimpleCutSampler,
+        DynamicCutSampler,
+        partial(BucketingSampler, num_buckets=2),
+        partial(DynamicBucketingSampler, num_buckets=2),
+    ],
+)
+@pytest.mark.parametrize("world_size", [1, 2, 3, 4])
+def test_sampler_does_not_drop_cuts_with_multiple_ranks(world_size, sampler_fn):
+    cuts = DummyManifest(CutSet, begin_id=0, end_id=10)
+
+    tot_cuts = 0
+    for rank in range(world_size):
+        sampler = sampler_fn(cuts, max_duration=1.0, world_size=world_size, rank=rank)
+        for batch in sampler:
+            tot_cuts += len(batch)
+
+    assert tot_cuts == len(cuts)

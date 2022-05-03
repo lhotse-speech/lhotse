@@ -28,8 +28,8 @@ def kaldi():
     "--map-string-to-underscores",
     default=None,
     type=str,
-    help="""When specified, we will replace all instances of this string 
-    in SupervisonSegment IDs to underscores. This is to help with handling 
+    help="""When specified, we will replace all instances of this string
+    in SupervisonSegment IDs to underscores. This is to help with handling
     underscores in Kaldi (see 'export_to_kaldi').""",
 )
 @click.option(
