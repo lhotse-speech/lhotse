@@ -563,7 +563,7 @@ def test_cut_reverb_multi_channel_rir(
             assert track.cut.end == cut.end
             assert track.cut.num_samples == cut.num_samples
 
-        assert cut_rvb.load_audio(mixed=False).shape == (
+        assert np.vstack(cut_rvb.load_audio(mixed=False)).shape == (
             expected_num_tracks,
             cut.num_samples,
         )

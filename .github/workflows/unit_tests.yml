@@ -32,7 +32,7 @@ jobs:
     - name: Install apt dependencies
       run: |
         sudo apt update
-        sudo apt install libsndfile1-dev libsndfile1 ffmpeg
+        sudo apt install libsndfile1-dev libsndfile1 ffmpeg sox
     - name: Install Python dependencies
       run: |
         python -m pip install --upgrade pip

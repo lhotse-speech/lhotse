@@ -24,11 +24,12 @@ from lhotse.utils import Seconds, uuid4
 
 
 def random_cut_set(n_cuts=100) -> CutSet:
+    sr = 16000
     return CutSet.from_cuts(
         MonoCut(
             id=uuid4(),
-            start=round(random.uniform(0, 5), ndigits=8),
-            duration=round(random.uniform(3, 10), ndigits=8),
+            start=random.randint(0, 5 * sr) / sr,
+            duration=random.randint(3 * sr, 10 * sr) / sr,
             channel=0,
             recording=Recording(
                 id=uuid4(),

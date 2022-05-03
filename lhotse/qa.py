@@ -7,7 +7,7 @@ import numpy as np
 
 from lhotse.array import Array, TemporalArray
 from lhotse.audio import Recording, RecordingSet
-from lhotse.cut import Cut, CutSet, MixedCut, PaddingCut
+from lhotse.cut import Cut, CutSet, MixedCut, MonoCut, PaddingCut
 from lhotse.features import FeatureSet, Features
 from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import compute_num_frames, overlaps
@@ -379,17 +379,20 @@ def validate_cut(c: Cut, read_data: bool = False) -> None:
                 c.num_samples == samples.shape[1]
             ), f"MonoCut {c.id}: expected {c.num_samples} samples, got {samples.shape[1]}"
 
-    # Conditions related to supervisions
-    for s in c.supervisions:
-        validate_supervision(s)
-        assert s.recording_id == c.recording_id, (
-            f"MonoCut {c.id}: supervision {s.id} has a mismatched recording_id "
-            f"(expected {c.recording_id}, supervision has {s.recording_id})"
-        )
-        assert s.channel == c.channel, (
-            f"MonoCut {c.id}: supervision {s.id} has a mismatched channel "
-            f"(expected {c.channel}, supervision has {s.channel})"
-        )
+    # Conditions related to supervisions.
+    # We only validate those for MonoCut; PaddingCut doesn't have supervisions,
+    # and MixedCut may consist of more than one recording/channel.
+    if isinstance(c, MonoCut):
+        for s in c.supervisions:
+            validate_supervision(s)
+            assert s.recording_id == c.recording_id, (
+                f"MonoCut {c.id}: supervision {s.id} has a mismatched recording_id "
+                f"(expected {c.recording_id}, supervision has {s.recording_id})"
+            )
+            assert s.channel == c.channel, (
+                f"MonoCut {c.id}: supervision {s.id} has a mismatched channel "
+                f"(expected {c.channel}, supervision has {s.channel})"
+            )
 
     # Conditions related to custom fields
     if c.custom is not None:
