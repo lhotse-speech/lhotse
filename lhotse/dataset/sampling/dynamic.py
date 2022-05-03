@@ -108,7 +108,9 @@ class DynamicCutSampler(CutSampler):
         :param rank: Index of distributed node. We will try to infer it by default.
         :param seed: Random seed used to consistently shuffle the dataset across different processes.
         """
-        super().__init__(world_size=world_size, rank=rank, seed=seed)
+        super().__init__(
+            drop_last=drop_last, world_size=world_size, rank=rank, seed=seed
+        )
         if not all(cs.is_lazy for cs in cuts if isinstance(cs, CutSet)):
             warnings.warn(
                 "You are using DynamicCutSampler with an eagerly read CutSet. "
@@ -119,7 +121,6 @@ class DynamicCutSampler(CutSampler):
         self.max_duration = max_duration
         self.max_cuts = max_cuts
         self.shuffle = shuffle
-        self.drop_last = drop_last
         self.consistent_ids = consistent_ids
         self.shuffle_buffer_size = shuffle_buffer_size
         self.strict = strict
@@ -131,7 +132,6 @@ class DynamicCutSampler(CutSampler):
             {
                 "max_duration": self.max_duration,
                 "max_cuts": self.max_cuts,
-                "drop_last": self.drop_last,
                 "consistent_ids": self.consistent_ids,
                 "shuffle_buffer_size": self.shuffle_buffer_size,
                 "strict": self.strict,
@@ -142,7 +142,6 @@ class DynamicCutSampler(CutSampler):
     def load_state_dict(self, sd: Dict[str, Any]) -> None:
         self.max_duration = sd.pop("max_duration")
         self.max_cuts = sd.pop("max_cuts")
-        self.drop_last = sd.pop("drop_last")
         self.consistent_ids = sd.pop("consistent_ids")
         self.shuffle_buffer_size = sd.pop("shuffle_buffer_size")
         self.strict = sd.pop("strict")

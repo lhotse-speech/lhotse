@@ -65,6 +65,7 @@ class SimpleCutSampler(CutSampler):
         :param seed: Random seed used to consistently shuffle the dataset across different processes.
         """
         super().__init__(
+            drop_last=drop_last,
             shuffle=shuffle,
             world_size=world_size,
             rank=rank,
@@ -78,7 +79,6 @@ class SimpleCutSampler(CutSampler):
             max_cuts=max_cuts,
             strict=strict,
         )
-        self.drop_last = drop_last
 
     @property
     def remaining_duration(self) -> Optional[float]:
@@ -115,7 +115,6 @@ class SimpleCutSampler(CutSampler):
         state_dict = super().state_dict()
         state_dict.update(
             {
-                "drop_last": self.drop_last,
                 "time_constraint": self.time_constraint.state_dict(),
             }
         )
@@ -139,8 +138,6 @@ class SimpleCutSampler(CutSampler):
             For implementers of sub-classes of CutSampler: the flag ``self._just_restored_state`` has to be
             handled in ``__iter__`` to make it avoid resetting the just-restored state (only once).
         """
-        self.drop_last = state_dict.pop("drop_last")
-
         time_constraint = TimeConstraint(**state_dict.pop("time_constraint"))
         if self.time_constraint != time_constraint:
             warnings.warn(

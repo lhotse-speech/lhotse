@@ -52,6 +52,7 @@ class CutSampler(Sampler):
     def __init__(
         self,
         shuffle: bool = False,
+        drop_last: bool = False,
         world_size: Optional[int] = None,
         rank: Optional[int] = None,
         seed: int = 0,
@@ -61,6 +62,7 @@ class CutSampler(Sampler):
             Convenient when mini-batch loop is inside an outer epoch-level loop, e.g.:
             `for epoch in range(10): for batch in dataset: ...` as every epoch will see a
             different cuts order.
+        :param drop_last: When ``True``, the last batch is dropped if it's incomplete.
         :param world_size: Total number of distributed nodes. We will try to infer it by default.
         :param rank: Index of distributed node. We will try to infer it by default.
         :param seed: Random seed used to consistently shuffle the dataset across different processes.
@@ -68,6 +70,7 @@ class CutSampler(Sampler):
         super().__init__(
             data_source=None
         )  # the "data_source" arg is not used in Sampler...
+        self.drop_last = drop_last
         self.shuffle = shuffle
         self.seed = seed
         self.epoch = 0
@@ -142,6 +145,7 @@ class CutSampler(Sampler):
         """
         return {
             "epoch": self.epoch,
+            "drop_last": self.drop_last,
             "world_size": self.world_size,
             "rank": self.rank,
             "seed": self.seed,
@@ -167,6 +171,7 @@ class CutSampler(Sampler):
             For implementers of sub-classes of CutSampler: the flag ``self._just_restored_state`` has to be
             handled in ``__iter__`` to make it avoid resetting the just-restored state (only once).
         """
+        self.drop_last = state_dict.pop("drop_last")
         world_size = state_dict.pop("world_size")
         assert self.world_size == world_size, (
             f"Cannot restore sampler with a different world_size (before load_state_dict(): {self.world_size},"
@@ -253,8 +258,21 @@ class CutSampler(Sampler):
         # when a given batch was available for one of the nodes, but not for the others.
         batches = []
         for _ in range(self.world_size):
-            batches.append(self._next_batch())
-        return batches[self.rank]
+            try:
+                batch = self._next_batch()
+            except StopIteration:
+                if self.drop_last:
+                    # The users indicated they want an equal number of batches on all
+                    # ranks and are ready to lose some data: drop remainder batches.
+                    raise
+                # We have to delay raising StopIteration to let some the sampler
+                # yield the last N batches (when N < world_size - 1).
+                batch = None
+            batches.append(batch)
+        selected = batches[self.rank]
+        if selected is None:
+            raise StopIteration
+        return selected
 
     def get_report(self) -> str:
         """Returns a string describing the statistics of the sampling process so far."""
