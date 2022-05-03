@@ -4730,6 +4730,10 @@ class CutSet(Serializable, AlgorithmMixin):
                 cuts = batch["cuts"]
                 waves = batch["audio"]
 
+                if len(cuts) == 0:
+                    # Fault-tolerant audio loading filtered out everything.
+                    continue
+
                 assert all(c.sampling_rate == cuts[0].sampling_rate for c in cuts)
 
                 # Optionally apply the augment_fn
