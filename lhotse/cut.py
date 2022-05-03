@@ -32,7 +32,14 @@ from intervaltree import Interval, IntervalTree
 from tqdm.auto import tqdm
 from typing_extensions import Literal
 
-from lhotse.audio import AudioMixer, AudioSource, Recording, RecordingSet, audio_energy
+from lhotse.audio import (
+    AudioMixer,
+    AudioSource,
+    Recording,
+    RecordingSet,
+    audio_energy,
+    null_result_on_audio_loading_error,
+)
 from lhotse.augmentation import AugmentFn
 from lhotse.features import (
     FeatureExtractor,
@@ -4563,10 +4570,14 @@ class CutSet(Serializable, AlgorithmMixin):
                 progress = partial(
                     tqdm, desc="Extracting and storing features", total=len(self)
                 )
+
             with storage_type(storage_path) as storage:
                 return CutSet.from_cuts(
-                    progress(
-                        cut.compute_and_store_features(
+                    maybe_cut
+                    for maybe_cut in progress(
+                        null_result_on_audio_loading_error(
+                            cut.compute_and_store_features
+                        )(
                             extractor=extractor,
                             storage=storage,
                             augment_fn=augment_fn,
@@ -4574,6 +4585,7 @@ class CutSet(Serializable, AlgorithmMixin):
                         )
                         for cut in self
                     )
+                    if maybe_cut is not None
                 )
 
         # HACK: support URL storage for writing
@@ -4717,6 +4729,10 @@ class CutSet(Serializable, AlgorithmMixin):
             for batch in dloader:
                 cuts = batch["cuts"]
                 waves = batch["audio"]
+
+                if len(cuts) == 0:
+                    # Fault-tolerant audio loading filtered out everything.
+                    continue
 
                 assert all(c.sampling_rate == cuts[0].sampling_rate for c in cuts)
 
