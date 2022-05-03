@@ -150,7 +150,7 @@ def load_kaldi_data_dir(
                     storage_type=KaldiReader.name,
                     storage_path=str(feats_scp),
                     storage_key=utt_id,
-                    recording_id=supervision_set[utt_id].recording_id
+                    recording_id=supervision_set[fix_id(utt_id)].recording_id
                     if supervision_set is not None
                     else utt_id,
                     channels=0,

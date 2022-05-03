@@ -8,13 +8,9 @@ import torch
 from torch.nn import CrossEntropyLoss
 
 from lhotse import CutSet, Recording
-from lhotse.audio import AudioLoadingError, DurationMismatchError
+from lhotse.audio import suppress_audio_loading_errors
 from lhotse.cut import Cut, MixedCut
-from lhotse.utils import (
-    DEFAULT_PADDING_VALUE,
-    NonPositiveEnergyError,
-    suppress_and_warn,
-)
+from lhotse.utils import DEFAULT_PADDING_VALUE
 
 
 class TokenCollater:
@@ -501,12 +497,7 @@ def _read_audio(
     Loads audio data from cut, or returns None if there was an error
     and ``suppress_errors`` was set to ``True``.
     """
-    with suppress_and_warn(
-        AudioLoadingError,
-        DurationMismatchError,
-        NonPositiveEnergyError,
-        enabled=suppress_errors,
-    ):
+    with suppress_audio_loading_errors(enabled=suppress_errors):
         if recording_field is None:
             audio = cut.load_audio()
         else:
