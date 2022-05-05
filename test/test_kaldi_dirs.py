@@ -165,19 +165,6 @@ def test_kaldi_import(replace):
     assert out[1] == supervision_set
 
 
-@pytest.mark.xfail(reason="Import ordering is somehow not working for now")
-def test_get_duration_failurex(monkeypatch):
-    def always_fail_is_module_available(path):
-        return False
-
-    monkeypatch.setattr(
-        lhotse.utils.is_module_available, always_fail_is_module_available
-    )
-
-    with pytest.raises(ValueError):
-        lhotse.kaldi.get_duration("true |")
-
-
 def open_and_load(path):
     return lhotse.kaldi.load_kaldi_text_mapping(Path(path))
 
