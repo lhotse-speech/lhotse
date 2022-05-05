@@ -3,7 +3,6 @@ import os
 import pytest
 
 import lhotse
-import lhotse.utils
 from pathlib import Path
 
 FIXTURE_PATH = Path(__file__).resolve().parent / "fixtures"
