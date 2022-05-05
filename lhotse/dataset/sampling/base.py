@@ -7,9 +7,8 @@ from typing import Any, Callable, Dict, Iterable, Optional, Tuple, Union
 from torch import distributed as dist
 from torch.utils.data import Sampler
 
-from lhotse import Seconds
 from lhotse.cut import Cut
-from lhotse.utils import exactly_one_not_null, is_none_or_gt
+from lhotse.utils import Seconds, exactly_one_not_null, is_none_or_gt
 
 
 class CutSampler(Sampler):
