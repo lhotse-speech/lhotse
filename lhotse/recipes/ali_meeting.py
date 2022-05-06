@@ -44,7 +44,7 @@ def download_ali_meeting(
     :param base_url: str, the url of the OpenSLR resources.
     :return: the path to downloaded and extracted directory with data.
     """
-    url = f"{base_url}/AliMeeting/openlr/"
+    url = f"{base_url}/AliMeeting/openlr"
     target_dir = Path(target_dir)
     target_dir.mkdir(parents=True, exist_ok=True)
     dataset_tar_names = [
