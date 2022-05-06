@@ -20,6 +20,7 @@ from lhotse import (
     Mfcc,
     MonoCut,
     Recording,
+    SupervisionSegment,
     TorchaudioFbank,
     TorchaudioMfcc,
     load_manifest,
@@ -48,7 +49,18 @@ def recording():
 
 @pytest.fixture
 def cut(recording):
-    return MonoCut(id="cut", start=0, duration=1.0, channel=0, recording=recording)
+    return MonoCut(
+        id="cut",
+        start=0,
+        duration=1.0,
+        channel=0,
+        recording=recording,
+        supervisions=[
+            SupervisionSegment(
+                id="sup", recording_id=recording.id, start=0, duration=0.5
+            )
+        ],
+    )
 
 
 def test_extract_features(cut):
@@ -77,6 +89,7 @@ def test_extract_and_store_features_from_mixed_cut(cut, mix_eagerly):
         cut_with_feats = mixed_cut.compute_and_store_features(
             extractor=extractor, storage=storage, mix_eagerly=mix_eagerly
         )
+        validate(cut_with_feats)
         arr = cut_with_feats.load_features()
     assert arr.shape[0] == 200
     assert arr.shape[1] == extractor.feature_dim(mixed_cut.sampling_rate)

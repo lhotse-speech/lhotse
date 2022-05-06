@@ -11,7 +11,7 @@ from typing_extensions import Literal
 
 from lhotse import CutSet
 from lhotse.cut import Cut
-from lhotse.dataset.sampling.base import CutSampler
+from lhotse.dataset.sampling.base import CutSampler, SamplingDiagnostics
 from lhotse.dataset.sampling.simple import SimpleCutSampler
 
 
@@ -56,6 +56,7 @@ class BucketingSampler(CutSampler):
         drop_last: bool = False,
         proportional_sampling: bool = True,
         seed: int = 0,
+        strict: bool = True,
         **kwargs: Any,
     ) -> None:
         """
@@ -78,24 +79,29 @@ class BucketingSampler(CutSampler):
             This mechanism reduces the chance that any of the buckets gets depleted early.
             Enabled by default.
         :param seed: random seed for bucket selection
+        :param strict: When ``True``, for the purposes of determining dynamic batch size,
+            we take the longest cut sampled so far and multiply its duration/num_frames/num_samples
+            by the number of cuts currently in mini-batch to check if it exceeded max_duration/etc.
+            This can help make the GPU memory usage more predictable when there is a large variance
+            in cuts duration.
         :param kwargs: Arguments used to create the underlying sampler for each bucket.
         """
         # Do not use the distributed capacities of the CutSampler in the top-level sampler.
         super().__init__(
+            drop_last=drop_last,
             world_size=1,
             rank=0,
             seed=seed,
         )
         self.num_buckets = num_buckets
-        self.drop_last = drop_last
         self.proportional_sampling = proportional_sampling
         self.sampler_type = sampler_type
         self.sampler_kwargs = kwargs
         self.cut_sets = cuts
         if self.cut_sets[0].is_lazy:
             warnings.warn(
-                "Lazy CutSet detected in BucketingSampler: this is not well supported yet, "
-                "and you might experience a potentially long lag while the buckets are being created."
+                "Lazy CutSet detected in BucketingSampler: we will read it into memory anyway. "
+                "Please use lhotse.dataset.DynamicBucketingSampler instead."
             )
 
         # Split data into buckets.
@@ -117,7 +123,10 @@ class BucketingSampler(CutSampler):
         # Create a separate sampler for each bucket.
         self.bucket_samplers = [
             self.sampler_type(
-                *bucket_cut_sets, drop_last=drop_last, **self.sampler_kwargs
+                *bucket_cut_sets,
+                drop_last=drop_last,
+                strict=strict,
+                **self.sampler_kwargs,
             )
             for bucket_cut_sets in self.buckets
         ]
@@ -219,7 +228,6 @@ class BucketingSampler(CutSampler):
         state_dict.update(
             {
                 "num_buckets": self.num_buckets,
-                "drop_last": self.drop_last,
                 "proportional_sampling": self.proportional_sampling,
                 "bucket_method": self.bucket_method,
                 "depleted": deepcopy(self.depleted),
@@ -253,7 +261,6 @@ class BucketingSampler(CutSampler):
             "Error in BucketingSampler.load_state_dict(): Inconsistent number of buckets: "
             f"current sampler has {self.num_buckets}, the state_dict has {num_buckets}."
         )
-        self.drop_last = state_dict.pop("drop_last")
         self.proportional_sampling = state_dict.pop("proportional_sampling")
         self.bucket_method = state_dict.pop("bucket_method")
         self.sampler_kwargs = state_dict.pop("sampler_kwargs")
@@ -343,12 +350,13 @@ class BucketingSampler(CutSampler):
             if not depleted
         ]
 
+    @property
+    def diagnostics(self) -> SamplingDiagnostics:
+        return reduce(add, (bucket.diagnostics for bucket in self.bucket_samplers))
+
     def get_report(self) -> str:
         """Returns a string describing the statistics of the sampling process so far."""
-        total_diagnostics = reduce(
-            add, (bucket.diagnostics for bucket in self.bucket_samplers)
-        )
-        return total_diagnostics.get_report()
+        return self.diagnostics.get_report()
 
 
 def create_buckets_equal_len(

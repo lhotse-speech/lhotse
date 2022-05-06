@@ -1,4 +1,6 @@
 import random
+from copy import deepcopy
+from functools import partial
 from itertools import groupby
 from math import isclose
 from statistics import mean
@@ -7,7 +9,11 @@ from tempfile import NamedTemporaryFile
 import pytest
 
 from lhotse import CutSet
-from lhotse.dataset import DynamicBucketingSampler, report_padding_ratio_estimate
+from lhotse.dataset import (
+    DynamicBucketingSampler,
+    RoundRobinSampler,
+    report_padding_ratio_estimate,
+)
 from lhotse.dataset.cut_transforms import concat_cuts
 from lhotse.dataset.sampling import (
     BucketingSampler,
@@ -16,6 +22,7 @@ from lhotse.dataset.sampling import (
     SingleCutSampler,
     ZipSampler,
 )
+from lhotse.dataset.sampling.base import SamplingDiagnostics, TimeConstraint
 from lhotse.dataset.sampling.dynamic import DynamicCutSampler
 from lhotse.testing.dummies import DummyManifest, as_lazy, dummy_cut
 from lhotse.utils import (
@@ -701,7 +708,9 @@ def test_partitions_are_equal(world_size, n_cuts, sampler_cls):
         c.duration += 10 * random.random()
     # Create a sampler for each "distributed worker."
     samplers = [
-        sampler_cls(cut_set, max_duration=25.0, rank=i, world_size=world_size)
+        sampler_cls(
+            cut_set, max_duration=25.0, drop_last=True, rank=i, world_size=world_size
+        )
         for i in range(world_size)
     ]
     # Check that it worked.
@@ -904,6 +913,37 @@ def test_zip_sampler_merge_batches_false():
         )  # two come from cuts2
 
 
+def test_round_robin_sampler():
+    cuts1 = DummyManifest(CutSet, begin_id=0, end_id=30)
+    cuts2 = DummyManifest(CutSet, begin_id=1000, end_id=1100)
+    sampler = RoundRobinSampler(
+        # Note: each cut is 1s duration in this test.
+        SimpleCutSampler(cuts1, max_duration=10),
+        SimpleCutSampler(cuts2, max_duration=2),
+    )
+
+    batches = [b for b in sampler]
+    assert len(batches) == 3 + 50
+
+    batches_10cuts = [b for b in batches if len(b) == 10]
+    assert len(batches_10cuts) == 3
+
+    batches_2cuts = [b for b in batches if len(b) == 2]
+    assert len(batches_2cuts) == 50
+
+    assert len(batches[0]) == 10
+    assert len(batches[1]) == 2
+    assert len(batches[2]) == 10
+    assert len(batches[3]) == 2
+    assert len(batches[4]) == 10
+    assert len(batches[5]) == 2
+    assert len(batches[6]) == 2
+    assert len(batches[7]) == 2
+    assert len(batches[8]) == 2
+    assert len(batches[9]) == 2
+    # ... and so on
+
+
 @pytest.mark.parametrize("sampler_cls", [SimpleCutSampler, DynamicCutSampler])
 def test_single_cut_sampler_drop_last(sampler_cls):
     # The dummy cuts have a duration of 1 second each
@@ -975,28 +1015,35 @@ def test_bucketing_sampler_drop_last(drop_last):
     assert num_discarded_cuts == expected_discarded_cuts
 
 
-@pytest.mark.parametrize(
-    "sampler",
-    [
+SAMPLERS_FACTORIES_FOR_REPORT_TEST = [
+    lambda: SimpleCutSampler(DummyManifest(CutSet, begin_id=0, end_id=10)),
+    lambda: DynamicCutSampler(DummyManifest(CutSet, begin_id=0, end_id=10)),
+    lambda: CutPairsSampler(
+        DummyManifest(CutSet, begin_id=0, end_id=10),
+        DummyManifest(CutSet, begin_id=0, end_id=10),
+    ),
+    lambda: BucketingSampler(
+        DummyManifest(CutSet, begin_id=0, end_id=10), num_buckets=2
+    ),
+    lambda: DynamicBucketingSampler(
+        DummyManifest(CutSet, begin_id=0, end_id=10),
+        max_duration=1.0,
+        num_buckets=2,
+    ),
+    lambda: ZipSampler(
         SimpleCutSampler(DummyManifest(CutSet, begin_id=0, end_id=10)),
-        DynamicCutSampler(DummyManifest(CutSet, begin_id=0, end_id=10)),
-        CutPairsSampler(
-            DummyManifest(CutSet, begin_id=0, end_id=10),
-            DummyManifest(CutSet, begin_id=0, end_id=10),
-        ),
-        BucketingSampler(DummyManifest(CutSet, begin_id=0, end_id=10)),
-        DynamicBucketingSampler(
-            DummyManifest(CutSet, begin_id=0, end_id=10),
-            max_duration=1.0,
-            num_buckets=2,
-        ),
-        ZipSampler(
-            SimpleCutSampler(DummyManifest(CutSet, begin_id=0, end_id=10)),
-            SimpleCutSampler(DummyManifest(CutSet, begin_id=10, end_id=20)),
-        ),
-    ],
-)
-def test_sampler_get_report(sampler):
+        SimpleCutSampler(DummyManifest(CutSet, begin_id=10, end_id=20)),
+    ),
+    lambda: RoundRobinSampler(
+        SimpleCutSampler(DummyManifest(CutSet, begin_id=0, end_id=10)),
+        SimpleCutSampler(DummyManifest(CutSet, begin_id=10, end_id=20)),
+    ),
+]
+
+
+@pytest.mark.parametrize("create_sampler", SAMPLERS_FACTORIES_FOR_REPORT_TEST)
+def test_sampler_get_report(create_sampler):
+    sampler = create_sampler()
     sampler.filter(
         lambda c: "8" not in c.id
     )  # to check that the report correctly accounts for discarded data
@@ -1005,6 +1052,32 @@ def test_sampler_get_report(sampler):
     assert not report.startswith("Sampling statistics unavailable")
     assert "cuts discarded 0" not in report
     print(report)
+
+
+@pytest.mark.parametrize("create_sampler", SAMPLERS_FACTORIES_FOR_REPORT_TEST)
+def test_sampler_diagnostics_accumulate_across_epochs(create_sampler):
+    sampler = create_sampler()
+    sampler.filter(
+        lambda c: "8" not in c.id
+    )  # to check that the report correctly accounts for discarded data
+
+    sampler.set_epoch(0)
+    _ = [b for b in sampler]  # iterate full epoch
+    diagnostics_ep0: SamplingDiagnostics = deepcopy(sampler.diagnostics)
+
+    sampler.set_epoch(1)
+    _ = [b for b in sampler]  # iterate full epoch
+    diagnostics_ep1: SamplingDiagnostics = sampler.diagnostics
+
+    # batch statistics
+    assert diagnostics_ep0.kept_batches < diagnostics_ep1.kept_batches
+    assert diagnostics_ep0.total_batches < diagnostics_ep1.total_batches
+    # note: no assumption about diagnostics.num_discarded_batches here
+
+    # cut statistics
+    assert 2 * diagnostics_ep0.total_cuts == diagnostics_ep1.total_cuts
+    assert 2 * diagnostics_ep0.kept_cuts == diagnostics_ep1.kept_cuts
+    assert 2 * diagnostics_ep0.discarded_cuts == diagnostics_ep1.discarded_cuts
 
 
 @pytest.mark.parametrize(
@@ -1110,6 +1183,10 @@ def test_streaming_shuffle(datasize, bufsize):
             SimpleCutSampler(DummyManifest(CutSet, begin_id=0, end_id=10)),
             SimpleCutSampler(DummyManifest(CutSet, begin_id=10, end_id=20)),
         ),
+        RoundRobinSampler(
+            SimpleCutSampler(DummyManifest(CutSet, begin_id=0, end_id=5)),
+            SimpleCutSampler(DummyManifest(CutSet, begin_id=10, end_id=15)),
+        ),
     ],
 )
 def test_sampler_properties(sampler):
@@ -1125,3 +1202,54 @@ def test_sampler_properties(sampler):
 def test_report_padding_ratio_estimate():
     s = SingleCutSampler(DummyManifest(CutSet, begin_id=0, end_id=1000))
     report_padding_ratio_estimate(s)  # just test that it runs
+
+
+def test_time_constraint_strictness():
+    normal = TimeConstraint(max_duration=100, strict=False)
+    strict = TimeConstraint(max_duration=100, strict=True)
+
+    # create cuts with large variance of durations
+    cut_durs = [30.0, 30.0, 10.0, 10.0, 20.0]
+    assert sum(cut_durs) == pytest.approx(100.0)
+    cuts = [dummy_cut(idx, duration=cd) for idx, cd in enumerate(cut_durs)]
+
+    # accumulate 80s of duration
+    for cut in cuts[:-1]:
+        normal.add(cut)
+        strict.add(cut)
+
+    assert normal.current == pytest.approx(80)
+    assert strict.current == pytest.approx(80)
+
+    # non-strict constraint is not close to exceeding (will accept next cut in a batch)
+    # strict constraint is close to exceeding (will not accept next cut in a batch)
+    assert not normal.close_to_exceeding()
+    assert strict.close_to_exceeding()
+
+    normal.add(cuts[-1])
+    strict.add(cuts[-1])
+
+    assert not normal.exceeded()
+    assert strict.exceeded()
+
+
+@pytest.mark.parametrize(
+    "sampler_fn",
+    [
+        SimpleCutSampler,
+        DynamicCutSampler,
+        partial(BucketingSampler, num_buckets=2),
+        partial(DynamicBucketingSampler, num_buckets=2),
+    ],
+)
+@pytest.mark.parametrize("world_size", [1, 2, 3, 4])
+def test_sampler_does_not_drop_cuts_with_multiple_ranks(world_size, sampler_fn):
+    cuts = DummyManifest(CutSet, begin_id=0, end_id=10)
+
+    tot_cuts = 0
+    for rank in range(world_size):
+        sampler = sampler_fn(cuts, max_duration=1.0, world_size=world_size, rank=rank)
+        for batch in sampler:
+            tot_cuts += len(batch)
+
+    assert tot_cuts == len(cuts)

@@ -1,15 +1,16 @@
 import bisect
 import math
 import random
-from typing import Optional, Sequence, Tuple, TypeVar, Union, Dict
+from typing import Dict, Optional, Sequence, Tuple, TypeVar, Union
 
 import numpy as np
 import torch
 
 from lhotse import CutSet
+from lhotse.augmentation import dereverb_wpe_torch
 from lhotse.utils import Pathlike
 
-__all__ = ["GlobalMVN", "SpecAugment", "RandomizedSmoothing"]
+__all__ = ["GlobalMVN", "SpecAugment", "RandomizedSmoothing", "DereverbWPE"]
 
 
 class GlobalMVN(torch.nn.Module):
@@ -391,3 +392,49 @@ def random_mask_along_batch_axis(tensor: torch.Tensor, p: float = 0.5) -> torch.
     mask_shape = (tensor.shape[0],) + tuple(1 for _ in tensor.shape[1:])
     mask = (torch.rand(mask_shape) > p).to(torch.float32)
     return mask
+
+
+class DereverbWPE(torch.nn.Module):
+    """
+    Dereverberation with Weighted Prediction Error (WPE).
+    The implementation and default values are borrowed from `nara_wpe` package:
+    https://github.com/fgnt/nara_wpe
+
+    The method and library are described in the following paper:
+    https://groups.uni-paderborn.de/nt/pubs/2018/ITG_2018_Drude_Paper.pdf
+    """
+
+    def __init__(self, n_fft: int = 512, hop_length: int = 128):
+        super().__init__()
+        self.n_fft = n_fft
+        self.hop_length = hop_length
+
+    def forward(self, audio: torch.Tensor, *args, **kwargs) -> torch.Tensor:
+        """
+        Expects audio to be 2D or 3D tensor.
+        2D means a batch of single-channel audio, shape (B, T).
+        3D means a batch of multi-channel audio, shape (B, D, T).
+        B => batch size; D => number of channels; T => number of audio samples.
+        """
+
+        # Assume batch of single-channel data: apply dereverb to each example independently.
+        if audio.ndim == 2:
+            return torch.cat(
+                [
+                    dereverb_wpe_torch(
+                        a.unsqueeze(0), n_fft=self.n_fft, hop_length=self.hop_length
+                    )
+                    for a in audio
+                ],
+                dim=0,
+            )
+
+        # Assume batch of multi-channel data: each example has D channels.
+        assert audio.ndim == 3
+        return torch.stack(
+            [
+                dereverb_wpe_torch(a, n_fft=self.n_fft, hop_length=self.hop_length)
+                for a in audio
+            ],
+            dim=0,
+        )

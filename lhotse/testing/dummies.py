@@ -1,6 +1,6 @@
 import contextlib
 from tempfile import NamedTemporaryFile
-from typing import Dict, List, Optional, Type
+from typing import Dict, List, Optional, Type, Union
 
 from lhotse import AudioSource
 from lhotse.array import Array, TemporalArray

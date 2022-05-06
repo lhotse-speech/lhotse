@@ -31,6 +31,7 @@ class CutPairsSampler(CutSampler):
         max_cuts: Optional[int] = None,
         shuffle: bool = False,
         drop_last: bool = False,
+        strict: bool = False,
         world_size: Optional[int] = None,
         rank: Optional[int] = None,
         seed: int = 0,
@@ -53,11 +54,17 @@ class CutPairsSampler(CutSampler):
             `for epoch in range(10): for batch in dataset: ...` as every epoch will see a
             different cuts order.
         :param drop_last: When ``True``, the last batch is dropped if it's incomplete.
+        :param strict: When ``True``, for the purposes of determining dynamic batch size,
+            we take the longest cut sampled so far and multiply its duration/num_frames/num_samples
+            by the number of cuts currently in mini-batch to check if it exceeded max_duration/etc.
+            This can help make the GPU memory usage more predictable when there is a large variance
+            in cuts duration.
         :param world_size: Total number of distributed nodes. We will try to infer it by default.
         :param rank: Index of distributed node. We will try to infer it by default.
         :param seed: Random seed used to consistently shuffle the dataset across different processes.
         """
         super().__init__(
+            drop_last=drop_last,
             shuffle=shuffle,
             world_size=world_size,
             rank=rank,
@@ -70,14 +77,16 @@ class CutPairsSampler(CutSampler):
             max_duration=max_source_duration,
             max_samples=max_source_samples,
             max_frames=max_source_frames,
+            max_cuts=max_cuts,
+            strict=strict,
         )
         self.target_constraints = TimeConstraint(
             max_duration=max_target_duration,
             max_samples=max_target_samples,
             max_frames=max_target_frames,
+            max_cuts=max_cuts,
+            strict=strict,
         )
-        self.max_cuts = max_cuts
-        self.drop_last = drop_last
 
     @property
     def remaining_duration(self) -> Optional[float]:
@@ -116,10 +125,8 @@ class CutPairsSampler(CutSampler):
         state_dict = super().state_dict()
         state_dict.update(
             {
-                "drop_last": self.drop_last,
                 "source_constraints": self.source_constraints.state_dict(),
                 "target_constraints": self.target_constraints.state_dict(),
-                "max_cuts": self.max_cuts,
             }
         )
         return state_dict
@@ -142,8 +149,6 @@ class CutPairsSampler(CutSampler):
             For implementers of sub-classes of CutSampler: the flag ``self._just_restored_state`` has to be
             handled in ``__iter__`` to make it avoid resetting the just-restored state (only once).
         """
-        self.drop_last = state_dict.pop("drop_last")
-
         source_constraints = TimeConstraint(**state_dict.pop("source_constraints"))
         if self.source_constraints != source_constraints:
             warnings.warn(
@@ -164,23 +169,14 @@ class CutPairsSampler(CutSampler):
             )
         self.target_constraints = target_constraints
 
-        max_cuts = state_dict.pop("max_cuts")
-        if self.max_cuts != max_cuts:
-            warnings.warn(
-                "CutPairsSampler.load_state_dict(): Inconsistent max_cuts:\n"
-                f"expected {self.max_cuts}\n"
-                f"received {max_cuts}\n"
-                f"We will ignore the received settings."
-            )
-
         super().load_state_dict(state_dict)
 
         # Restore the data source's state
         if self.shuffle:
             self.source_cuts.shuffle(self.seed + self.epoch)
             self.target_cuts.shuffle(self.seed + self.epoch)
-        self.source_cuts.fast_forward(self.diagnostics.total_cuts)
-        self.target_cuts.fast_forward(self.diagnostics.total_cuts)
+        self.source_cuts.fast_forward(self.diagnostics.current_epoch_stats.total_cuts)
+        self.target_cuts.fast_forward(self.diagnostics.current_epoch_stats.total_cuts)
 
     def __iter__(self) -> "CutPairsSampler":
         """
@@ -195,7 +191,6 @@ class CutPairsSampler(CutSampler):
             self.target_cuts.shuffle(self.seed + self.epoch)
         iter(self.source_cuts)
         iter(self.target_cuts)
-        self.diagnostics.reset()
         return self
 
     def _next_batch(self) -> Tuple[CutSet, CutSet]:
@@ -249,13 +244,11 @@ class CutPairsSampler(CutSampler):
 
             self.source_constraints.add(next_source_cut)
             self.target_constraints.add(next_target_cut)
-            next_num_cuts = len(source_cuts) + 1
 
             # Did we exceed the max_source_frames and max_cuts constraints?
             if (
                 not self.source_constraints.exceeded()
                 and not self.target_constraints.exceeded()
-                and (self.max_cuts is None or next_num_cuts <= self.max_cuts)
             ):
                 # No - add the next cut to the batch, and keep trying.
                 source_cuts.append(next_source_cut)

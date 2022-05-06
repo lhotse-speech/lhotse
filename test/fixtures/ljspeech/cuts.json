@@ -44,7 +44,7 @@
       "num_samples": 33949,
       "duration": 1.5396371882086168
     },
-    "type": "Cut"
+    "type": "MonoCut"
   },
   {
     "id": "d9145a74-749e-489a-b3d5-653e047bd274",
@@ -91,6 +91,6 @@
       "num_samples": 35229,
       "duration": 1.5976870748299319
     },
-    "type": "Cut"
+    "type": "MonoCut"
   }
 ]

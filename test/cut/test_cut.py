@@ -2,6 +2,7 @@ from tempfile import NamedTemporaryFile
 
 import numpy as np
 import pytest
+from pytest import approx
 
 from lhotse.audio import AudioSource, Recording, RecordingSet
 from lhotse.cut import CutSet, MonoCut
@@ -69,6 +70,32 @@ def test_num_frames(libri_cut):
     assert libri_cut.num_frames == expected_cut_frame_count
 
 
+def test_cut_into_windows():
+    cuts0 = CutSet.from_json(
+        "test/fixtures/ljspeech/cuts.json"
+    )  # has 2 cuts of 1.54s and 1.6s
+    cuts = cuts0.cut_into_windows(duration=0.5, hop=0.4)  # 0, 0.4, 0.8, 1.2
+    starts = [cut.start for cut in cuts]
+    assert starts == approx([0, 0.4, 0.8, 1.2, 0, 0.4, 0.8, 1.2])
+    durations = [cut.duration for cut in cuts]
+    assert durations == approx(
+        [0.5, 0.5, 0.5, 0.3396371882, 0.5, 0.5, 0.5, 0.39768707483]
+    )
+
+
+def test_cut_into_windows_parallel():
+    cuts0 = CutSet.from_json(
+        "test/fixtures/ljspeech/cuts.json"
+    )  # has 2 cuts of 1.54s and 1.6s
+    cuts = cuts0.cut_into_windows(duration=0.5, hop=0.4, num_jobs=2)  # 0, 0.4, 0.8, 1.2
+    starts = [cut.start for cut in cuts]
+    assert starts == approx([0, 0.4, 0.8, 1.2, 0, 0.4, 0.8, 1.2])
+    durations = [cut.duration for cut in cuts]
+    assert durations == approx(
+        [0.5, 0.5, 0.5, 0.3396371882, 0.5, 0.5, 0.5, 0.39768707483]
+    )
+
+
 def test_load_features(libri_cut):
     feats = libri_cut.load_features()
     assert feats.shape[0] == libri_cut.num_frames
@@ -81,9 +108,10 @@ def test_load_none_features(libri_cut):
     assert feats is None
 
 
-def test_store_audio(libri_cut):
-    with NamedTemporaryFile() as f:
-        stored_cut = libri_cut.compute_and_store_recording(f.name)
+@pytest.mark.parametrize("ext", [".wav", ".flac"])
+def test_save_audio(libri_cut, ext):
+    with NamedTemporaryFile(suffix=ext) as f:
+        stored_cut = libri_cut.save_audio(f.name)
         samples1 = libri_cut.load_audio()
         rec = Recording.from_file(f.name)
         samples2 = rec.load_audio()

@@ -268,7 +268,7 @@ def fastcopy(dataclass_obj: T, **kwargs) -> T:
 
 
 def split_manifest_lazy(
-    it: Iterable[Any], output_dir: Pathlike, chunk_size: int
+    it: Iterable[Any], output_dir: Pathlike, chunk_size: int, prefix: str = ""
 ) -> List:
     """
     Splits a manifest (either lazily or eagerly opened) into chunks, each
@@ -282,8 +282,9 @@ def split_manifest_lazy(
 
     :param it: any iterable of Lhotse manifests.
     :param output_dir: directory where the split manifests are saved.
-        Each manifest is saved at: ``{output_dir}/{split_idx}.jsonl.gz``
+        Each manifest is saved at: ``{output_dir}/{prefix}.{split_idx}.jsonl.gz``
     :param chunk_size: the number of items in each chunk.
+    :param prefix: the prefix of each manifest.
     :return: a list of lazily opened chunk manifests.
     """
     from lhotse.serialization import SequentialJsonlWriter
@@ -291,13 +292,21 @@ def split_manifest_lazy(
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
+    if prefix == "":
+        prefix = "split"
+
+    num_digits = 8
+
     items = iter(it)
-    split_idx = 0
+    split_idx = 1
     splits = []
     while True:
         try:
             written = 0
-            with SequentialJsonlWriter(output_dir / f"{split_idx}.jsonl.gz") as writer:
+            idx = f"{split_idx}".zfill(num_digits)
+            with SequentialJsonlWriter(
+                (output_dir / prefix).with_suffix(f".{idx}.jsonl.gz")
+            ) as writer:
                 while written < chunk_size:
                     item = next(items)
                     writer.write(item)
@@ -375,6 +384,34 @@ def compute_num_frames(
     window_hop = round(frame_shift * sampling_rate)
     num_frames = int((num_samples + window_hop // 2) // window_hop)
     return num_frames
+
+
+def compute_num_windows(sig_len: Seconds, win_len: Seconds, hop: Seconds) -> int:
+    """
+    Return a number of windows obtained from signal of length equal to ``sig_len``
+    with windows of ``win_len`` and ``hop`` denoting shift between windows.
+    Examples:
+    ```
+      (sig_len,win_len,hop) -> num_windows # list of windows times
+      (1, 6.1, 3) -> 1  # 0-1
+      (3, 1, 6.1) -> 1  # 0-1
+      (3, 6.1, 1) -> 1  # 0-3
+      (5.9, 1, 3) -> 2  # 0-1, 3-4
+      (5.9, 3, 1) -> 4  # 0-3, 1-4, 2-5, 3-5.9
+      (6.1, 1, 3) -> 3  # 0-1, 3-4, 6-6.1
+      (6.1, 3, 1) -> 5  # 0-3, 1-4, 2-5, 3-6, 4-6.1
+      (5.9, 3, 3) -> 2  # 0-3, 3-5.9
+      (6.1, 3, 3) -> 3  # 0-3, 3-6, 6-6.1
+      (0.0, 3, 3) -> 0
+    ```
+    :param sig_len: Signal length in seconds.
+    :param win_len: Window length in seconds
+    :param hop: Shift between windows in seconds.
+    :return: Number of windows in signal.
+    """
+    n = ceil(max(sig_len - win_len, 0) / hop)
+    b = (sig_len - n * hop) > 0
+    return (sig_len > 0) * (n + int(b))
 
 
 def during_docs_build() -> bool:
@@ -476,16 +513,16 @@ def compute_num_samples(
     )
 
 
-def add_durations(d1: Seconds, d2: Seconds, sampling_rate: int) -> Seconds:
+def add_durations(*durs: Seconds, sampling_rate: int) -> Seconds:
     """
     Adds two durations in a way that avoids floating point precision issues.
     The durations in seconds are first converted to audio sample counts,
     then added, and finally converted back to floating point seconds.
     """
-    s1 = compute_num_samples(d1, sampling_rate=sampling_rate)
-    s2 = compute_num_samples(d2, sampling_rate=sampling_rate)
-    tot = s1 + s2
-    return tot / sampling_rate
+    tot_num_samples = sum(
+        compute_num_samples(d, sampling_rate=sampling_rate) for d in durs
+    )
+    return tot_num_samples / sampling_rate
 
 
 def compute_start_duration_for_extended_cut(

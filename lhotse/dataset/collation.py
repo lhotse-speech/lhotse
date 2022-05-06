@@ -7,14 +7,10 @@ import numpy as np
 import torch
 from torch.nn import CrossEntropyLoss
 
-from lhotse import CutSet
-from lhotse.audio import AudioLoadingError, DurationMismatchError
+from lhotse import CutSet, Recording
+from lhotse.audio import suppress_audio_loading_errors
 from lhotse.cut import Cut, MixedCut
-from lhotse.utils import (
-    DEFAULT_PADDING_VALUE,
-    NonPositiveEnergyError,
-    suppress_and_warn,
-)
+from lhotse.utils import DEFAULT_PADDING_VALUE
 
 
 class TokenCollater:
@@ -151,6 +147,7 @@ def collate_audio(
     pad_direction: str = "right",
     executor: Optional[Executor] = None,
     fault_tolerant: bool = False,
+    recording_field: Optional[str] = None,
 ) -> Union[
     Tuple[torch.Tensor, torch.Tensor], Tuple[torch.Tensor, torch.Tensor, CutSet]
 ]:
@@ -166,6 +163,8 @@ def collate_audio(
     :param fault_tolerant: when ``True``, the cuts for which audio loading failed
         will be skipped. Setting this parameter will cause the function to return a 3-tuple,
         where the third element is a CutSet for which the audio data were sucessfully read.
+    :param recording_field: when specified, we will try to load recordings from a custom field with this name
+        (i.e., ``cut.load_<recording_field>()`` instead of default ``cut.load_audio()``).
     :return: a tuple of tensors ``(audio, audio_lens)``, or ``(audio, audio_lens, cuts)``.
     """
     assert all(cut.has_recording for cut in cuts)
@@ -183,7 +182,9 @@ def collate_audio(
     )
 
     # Note: returned "cuts" may be a subset of the original "cuts" if fault_tolerant=True.
-    audios, cuts = read_audio_from_cuts(cuts, executor, suppress_errors=fault_tolerant)
+    audios, cuts = read_audio_from_cuts(
+        cuts, executor, suppress_errors=fault_tolerant, recording_field=recording_field
+    )
 
     audios = torch.stack(audios)
     audio_lens = torch.tensor(
@@ -442,6 +443,7 @@ def read_audio_from_cuts(
     cuts: Iterable[Cut],
     executor: Optional[Executor] = None,
     suppress_errors: bool = False,
+    recording_field: Optional[str] = None,
 ) -> Tuple[List[torch.Tensor], CutSet]:
     """
     Loads audio data from an iterable of cuts.
@@ -452,6 +454,8 @@ def read_audio_from_cuts(
     :param suppress_errors: when set to ``True``, will enable fault-tolerant data reads;
         we will skip the cuts and audio data for the instances that failed (and emit a warning).
         When ``False`` (default), the errors will not be suppressed.
+    :param recording_field: when specified, we will try to load recordings from a custom field with this name
+        (i.e., ``cut.load_<recording_field>()`` instead of default ``cut.load_audio()``).
     :return: a tuple of two items: a list of audio tensors (with different shapes),
         and a list of cuts for which we read the data successfully.
     """
@@ -459,7 +463,17 @@ def read_audio_from_cuts(
     audios = []
     ok_cuts = []
     for idx, (cut, maybe_audio) in enumerate(
-        zip(cuts, map_fn(partial(_read_audio, suppress_errors=suppress_errors), cuts))
+        zip(
+            cuts,
+            map_fn(
+                partial(
+                    _read_audio,
+                    suppress_errors=suppress_errors,
+                    recording_field=recording_field,
+                ),
+                cuts,
+            ),
+        )
     ):
         if maybe_audio is None:
             continue
@@ -476,18 +490,24 @@ def read_features_from_cuts(
     return list(map_fn(_read_features, cuts))
 
 
-def _read_audio(cut: Cut, suppress_errors: bool = False) -> Optional[torch.Tensor]:
+def _read_audio(
+    cut: Cut, suppress_errors: bool = False, recording_field: Optional[str] = None
+) -> Optional[torch.Tensor]:
     """
     Loads audio data from cut, or returns None if there was an error
     and ``suppress_errors`` was set to ``True``.
     """
-    with suppress_and_warn(
-        AudioLoadingError,
-        DurationMismatchError,
-        NonPositiveEnergyError,
-        enabled=suppress_errors,
-    ):
-        return torch.from_numpy(cut.load_audio()[0])
+    with suppress_audio_loading_errors(enabled=suppress_errors):
+        if recording_field is None:
+            audio = cut.load_audio()
+        else:
+            attr = getattr(cut, recording_field)
+            assert isinstance(
+                attr, Recording
+            ), f"Expected 'getattr(cut, {recording_field})' to yield Recording, got {type(attr)}"
+            audio = cut.load_custom(recording_field)
+        assert audio.shape[0] == 1, f"Expected single-channel audio in cut:\n{cut}"
+        return torch.from_numpy(audio[0])
 
 
 def _read_features(cut: Cut) -> torch.Tensor:

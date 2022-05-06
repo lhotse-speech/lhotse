@@ -76,17 +76,36 @@ def test_filter(manifest_type):
 @pytest.mark.parametrize(
     "manifest_type", [RecordingSet, SupervisionSet, FeatureSet, CutSet]
 )
-def test_repeat(manifest_type):
+@pytest.mark.parametrize("preserve_id", [True, False])
+def test_repeat(manifest_type, preserve_id):
     data = DummyManifest(manifest_type, begin_id=0, end_id=10)
 
     expected = data + data
 
-    eager_result = data.repeat(times=2)
-    assert list(eager_result) == list(expected)
+    eager_result = data.repeat(times=2, preserve_id=preserve_id)
+    if preserve_id or manifest_type == FeatureSet:
+        assert list(eager_result) == list(expected)
+    else:
+        items = list(eager_result)
+        ref_items = list(expected)
+        assert len(items) == len(ref_items)
+        for i, refi in zip(items, ref_items):
+            assert i.id.endswith("_repeat0") or i.id.endswith("_repeat1")
+            i_modi = fastcopy(i, id=refi.id)
+            assert i_modi == refi
 
     with as_lazy(data) as lazy_data:
-        lazy_result = lazy_data.repeat(times=2)
-        assert list(lazy_result) == list(expected)
+        lazy_result = lazy_data.repeat(times=2, preserve_id=preserve_id)
+        if preserve_id or manifest_type == FeatureSet:
+            assert list(lazy_result) == list(expected)
+        else:
+            items = list(lazy_result)
+            ref_items = list(expected)
+            assert len(items) == len(ref_items)
+            for i, refi in zip(items, ref_items):
+                assert i.id.endswith("_repeat0") or i.id.endswith("_repeat1")
+                i_modi = fastcopy(i, id=refi.id)
+                assert i_modi == refi
 
 
 @pytest.mark.parametrize(

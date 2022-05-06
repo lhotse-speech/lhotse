@@ -277,9 +277,9 @@ def upload(
 
 
 def _upload_one(item: Features, url: str) -> Features:
-    feats_mtx = item.load()
+    feats_mat = item.load()
     feats_writer = LilcomURLWriter(url)
-    new_key = feats_writer.write(key=item.storage_key, value=feats_mtx)
+    new_key = feats_writer.write(key=item.storage_key, value=feats_mat)
     return fastcopy(
         item, storage_path=url, storage_key=new_key, storage_type=feats_writer.name
     )

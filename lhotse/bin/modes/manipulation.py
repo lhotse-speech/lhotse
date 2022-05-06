@@ -137,7 +137,14 @@ def copy_feats_worker(
     is_flag=True,
     help="Optionally shuffle the sequence before splitting.",
 )
-def split(num_splits: int, manifest: Pathlike, output_dir: Pathlike, shuffle: bool):
+@click.option(
+    "--pad/--no-pad",
+    default=True,
+    help="Whether to pad the split output idx with zeros (e.g. 01, 02, .., 10).",
+)
+def split(
+    num_splits: int, manifest: Pathlike, output_dir: Pathlike, shuffle: bool, pad: bool
+):
     """
     Load MANIFEST, split it into NUM_SPLITS equal parts and save as separate manifests in OUTPUT_DIR.
 
@@ -153,7 +160,7 @@ def split(num_splits: int, manifest: Pathlike, output_dir: Pathlike, shuffle: bo
     output_dir.mkdir(parents=True, exist_ok=True)
     num_digits = len(str(num_splits))
     for idx, part in enumerate(parts):
-        idx = f"{idx + 1}".zfill(num_digits)
+        idx = f"{idx + 1}".zfill(num_digits) if pad else str(idx + 1)
         part.to_file((output_dir / manifest.stem).with_suffix(f".{idx}{suffix}"))
 
 
@@ -165,7 +172,8 @@ def split_lazy(manifest: Pathlike, output_dir: Pathlike, chunk_size: int):
     """
     Load MANIFEST (lazily if in JSONL format) and split it into parts,
     each with CHUNK_SIZE items.
-    The parts are saved to separate files with pattern "{output_dir}/{chunk_idx}.jsonl.gz".
+    The parts are saved to separate files with pattern
+    "{output_dir}/{manifest.stem}.{chunk_idx}.jsonl.gz".
 
     Prefer this to "lhotse split" when your manifests are very large.
     """
@@ -174,7 +182,9 @@ def split_lazy(manifest: Pathlike, output_dir: Pathlike, chunk_size: int):
     output_dir = Path(output_dir)
     manifest = Path(manifest)
     any_set = load_manifest_lazy_or_eager(manifest)
-    any_set.split_lazy(output_dir=output_dir, chunk_size=chunk_size)
+    any_set.split_lazy(
+        output_dir=output_dir, chunk_size=chunk_size, prefix=manifest.stem
+    )
 
 
 @cli.command()
