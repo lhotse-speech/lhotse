@@ -61,7 +61,7 @@ class YamlMixin:
 def save_to_json(data: Any, path: Pathlike) -> None:
     """Save the data to a JSON file. Will use GZip to compress it if the path ends with a ``.gz`` extension."""
     with open_best(path, "w") as f:
-        json.dump(data, f, indent=2)
+        json.dump(data, f, indent=2, ensure_ascii=False)
 
 
 def load_json(path: Pathlike) -> Union[dict, list]:
