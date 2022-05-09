@@ -95,6 +95,7 @@ def prepare_ali_meeting(
         recordings = []
         supervisions = []
         # Eval and Test may further be inside another folder (since the "far" and "near" are grouped together)
+        corpus_dir_split = corpus_dir
         if part == "Eval" or part == "Test":
             corpus_dir_split = (
                 corpus_dir / f"{part}_Ali"
