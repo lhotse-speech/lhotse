@@ -84,7 +84,7 @@ def save_to_jsonl(data: Iterable[Dict[str, Any]], path: Pathlike) -> None:
     """Save the data to a JSON file. Will use GZip to compress it if the path ends with a ``.gz`` extension."""
     with open_best(path, "w") as f:
         for item in data:
-            print(json.dumps(item), file=f)
+            print(json.dumps(item, ensure_ascii=False), file=f)
 
 
 def load_jsonl(path: Pathlike) -> Generator[Dict[str, Any], None, None]:
@@ -183,7 +183,7 @@ class SequentialJsonlWriter:
                 return
         except AttributeError:
             pass
-        print(json.dumps(manifest.to_dict()), file=self.file)
+        print(json.dumps(manifest.to_dict(), ensure_ascii=False), file=self.file)
         if flush:
             self.file.flush()
 
