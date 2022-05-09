@@ -95,14 +95,15 @@ def prepare_ali_meeting(
         recordings = []
         supervisions = []
         # Eval and Test may further be inside another folder (since the "far" and "near" are grouped together)
+        corpus_dir_split = corpus_dir
         if part == "Eval" or part == "Test":
-            corpus_dir = (
+            corpus_dir_split = (
                 corpus_dir / f"{part}_Ali"
                 if (corpus_dir / f"{part}_Ali").is_dir()
                 else corpus_dir
             )
-        wav_paths = corpus_dir / f"{part}_Ali_{mic}" / "audio_dir"
-        text_paths = corpus_dir / f"{part}_Ali_{mic}" / "textgrid_dir"
+        wav_paths = corpus_dir_split / f"{part}_Ali_{mic}" / "audio_dir"
+        text_paths = corpus_dir_split / f"{part}_Ali_{mic}" / "textgrid_dir"
 
         # For 'near' setting:
         #  - wav files have names like R0003_M0046_F_SPK0093.wav
