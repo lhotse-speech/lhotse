@@ -406,10 +406,10 @@ class LazyRepeater(ImitatesDict):
         epoch = 0
         while self.times is None or epoch < self.times:
             if not self.preserve_id:
-                self.iterator = LazyMapper(
+                iterator = LazyMapper(
                     self.iterator, partial(attach_repeat_idx_to_id, idx=epoch)
                 )
-            yield from self.iterator
+            yield from iterator
             epoch += 1
 
     def __len__(self) -> int:
