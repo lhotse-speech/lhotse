@@ -403,7 +403,6 @@ def mini_webdataset(
     from webdataset import (
         WebDataset,
         split_by_node as split_by_node_,
-        single_node_only,
         reraise_exception,
         warn_and_continue,
     )
@@ -419,9 +418,16 @@ def mini_webdataset(
         urls,
         handler=warn_and_continue if ignore_error_shards else reraise_exception,
         shardshuffle=shuffle_shards,
-        nodesplitter=split_by_node_ if split_by_node else single_node_only,
+        nodesplitter=split_by_node_ if split_by_node else _single_node_or_multi_node_with_duplicated_data,
         detshuffle=True,
     )
+
+
+def _single_node_or_multi_node_with_duplicated_data(src, group=None):
+    """
+    Helper fn that works normally with single-node training, but duplicates data in multi-node training.
+    """
+    yield from src
 
 
 class ShardWriter:
