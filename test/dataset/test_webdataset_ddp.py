@@ -98,7 +98,8 @@ def run_test(
         for c in batch:
             cut_ids.append(c.id)
 
-    # print(sorted(cut_ids))
+    print(f"[Rank {rank}/{world_size}] Actual   cuts: ", sorted(cut_ids))
+    print(f"[Rank {rank}/{world_size}] Expected cuts: ", sorted(expected_cut_ids))
     try:
         assert tot == len(expected_cut_ids)
         assert sorted(cut_ids) == sorted(
