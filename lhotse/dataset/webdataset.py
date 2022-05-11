@@ -418,7 +418,9 @@ def mini_webdataset(
         urls,
         handler=warn_and_continue if ignore_error_shards else reraise_exception,
         shardshuffle=shuffle_shards,
-        nodesplitter=split_by_node_ if split_by_node else _single_node_or_multi_node_with_duplicated_data,
+        nodesplitter=split_by_node_
+        if split_by_node
+        else _single_node_or_multi_node_with_duplicated_data,
         detshuffle=True,
     )
 
