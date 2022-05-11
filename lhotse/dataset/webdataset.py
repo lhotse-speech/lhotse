@@ -50,6 +50,7 @@ Read the documentation of the items below to understand each component better.
 """
 import logging
 import pickle
+import warnings
 from functools import partial
 from typing import Callable, Dict, List, Optional, Sequence, Union
 
@@ -363,13 +364,9 @@ class LazyWebdatasetIterator:
 
 def mini_webdataset(
     urls: Union[Pathlike, Sequence[Pathlike]],
-    epoch: int = 0,
-    repeat: bool = False,
     shuffle_shards: bool = False,
-    shuffle: bool = False,
-    split_by_worker: bool = False,
+    split_by_worker: bool = True,
     split_by_node: bool = False,
-    shuffle_bufsize: int = 1000,
     ignore_error_shards: bool = True,
 ):
     """
@@ -388,46 +385,51 @@ def mini_webdataset(
         possible to disable the node/worker splitting.
 
     :param urls: the source URLs: a string or a list.
-    :param epoch: epoch number (used only when shuffling is enabled).
-    :param repeat: repeat infinitely if True.
-    :param shuffle: shuffle the items if True (after shuffling the shards, if enabled).
-        Note: ``shuffle`` is seeded with PID and time, making it non-reproducible across processes.
     :param shuffle_shards: shuffle the shards if True.
         Only takes effect when ``urls`` is a list of shard paths/urls.
-    :param split_by_worker: if True, shards are split per DataLoader worker subprocesses,
+    :param split_by_worker: DEPRECATED: always acts as if True.
+        If True, shards are split per DataLoader worker subprocesses,
         otherwise each dataloader worker will yield the same data.
         Only takes effect when ``urls`` is a list of shard paths/urls.
     :param split_by_node: if True, shards are split per node in DDP training,
         otherwise on each node we'll yield the same data.
         Only takes effect when ``urls`` is a list of shard paths/urls.
-    :param shuffle_bufsize: Buffer size for the ``shuffle`` argument.
-        Larger bufsize means more memory usage but potentially improved randomness.
     :param ignore_error_shards: when ``True``, we tell WebDataset to ignore shards that
         failed during loading and emit a warning. When ``False``, we won't catch the exceptions.
     """
     if not is_module_available("webdataset"):
         raise ImportError("Please 'pip install webdataset' first.")
 
-    from webdataset import PytorchShardList, reraise_exception, warn_and_continue
-    from webdataset import tariterators
-
-    handler = warn_and_continue if ignore_error_shards else reraise_exception
-
-    result = PytorchShardList(
-        urls,
-        shuffle=shuffle_shards,
-        split_by_worker=split_by_worker,
-        split_by_node=split_by_node,
+    from webdataset import (
+        WebDataset,
+        split_by_node as split_by_node_,
+        reraise_exception,
+        warn_and_continue,
     )
-    result.set_epoch(epoch)
-    result = result.then(tariterators.url_opener, handler=handler)
-    result = result.then(tariterators.tar_file_expander, handler=handler)
-    result = result.then(tariterators.group_by_keys, handler=handler)
-    if repeat:
-        result = result.repeat()
-    if shuffle:
-        result = result.shuffle(shuffle_bufsize)
-    return result
+
+    if not split_by_worker:
+        warnings.warn(
+            "split_by_node argument is deprecated and will be removed in future Lhotse version."
+            "Splitting shards by worker is hard-coded in WebDataset 0.2 and onwards.",
+            category=DeprecationWarning,
+        )
+
+    return WebDataset(
+        urls,
+        handler=warn_and_continue if ignore_error_shards else reraise_exception,
+        shardshuffle=shuffle_shards,
+        nodesplitter=split_by_node_
+        if split_by_node
+        else _single_node_or_multi_node_with_duplicated_data,
+        detshuffle=True,
+    )
+
+
+def _single_node_or_multi_node_with_duplicated_data(src, group=None):
+    """
+    Helper fn that works normally with single-node training, but duplicates data in multi-node training.
+    """
+    yield from src
 
 
 class ShardWriter:
