@@ -10,7 +10,7 @@ import torch.multiprocessing as mp
 from torch.utils.data import DataLoader
 
 from lhotse import CutSet
-from lhotse.dataset import SimpleCutSampler
+from lhotse.dataset import IterableDatasetWrapper, SimpleCutSampler, make_worker_init_fn
 from lhotse.dataset.webdataset import export_to_webdataset
 from lhotse.utils import Pathlike
 
@@ -78,6 +78,8 @@ def run_test(
         # adjust the expected cut IDs according to rank
         expected_cut_ids_orig = expected_cut_ids
         expected_cut_ids = expected_cut_ids[rank::world_size]
+    else:
+        rank = None
 
     # Open CutSet with options that de-duplicate the data across nodes and workers
     cuts_wds = CutSet.from_webdataset(
@@ -91,7 +93,13 @@ def run_test(
     cut_ids = []
     sampler = SimpleCutSampler(cuts_wds, max_duration=100, rank=0, world_size=1)
     dloader = DataLoader(
-        DummyDataset(), sampler=sampler, batch_size=None, num_workers=num_workers
+        IterableDatasetWrapper(dataset=DummyDataset(), sampler=sampler),
+        batch_size=None,
+        num_workers=num_workers,
+        worker_init_fn=make_worker_init_fn(
+            rank=rank,
+            world_size=world_size,
+        ),
     )
     for batch in dloader:
         tot += len(batch)
@@ -101,7 +109,7 @@ def run_test(
     print(f"[Rank {rank}/{world_size}] Actual   cuts: ", sorted(cut_ids))
     print(f"[Rank {rank}/{world_size}] Expected cuts: ", sorted(expected_cut_ids))
     try:
-        assert tot == len(expected_cut_ids)
+        assert tot == len(expected_cut_ids), f"{tot} != {len(expected_cut_ids)}"
         assert sorted(cut_ids) == sorted(
             expected_cut_ids
         ), f"{sorted(cut_ids)}\n!=\n{sorted(expected_cut_ids)}"
