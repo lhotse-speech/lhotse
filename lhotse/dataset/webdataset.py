@@ -50,7 +50,6 @@ Read the documentation of the items below to understand each component better.
 """
 import logging
 import pickle
-import warnings
 from functools import partial
 from typing import Callable, Dict, List, Optional, Sequence, Union
 
@@ -364,6 +363,7 @@ class LazyWebdatasetIterator:
 
 def mini_webdataset(
     urls: Union[Pathlike, Sequence[Pathlike]],
+    epoch: int = 0,
     shuffle_shards: bool = False,
     split_by_worker: bool = True,
     split_by_node: bool = False,
@@ -385,6 +385,7 @@ def mini_webdataset(
         possible to disable the node/worker splitting.
 
     :param urls: the source URLs: a string or a list.
+    :param epoch: epoch number (used only when ``shuffle_shards`` is enabled).
     :param shuffle_shards: shuffle the shards if True.
         Only takes effect when ``urls`` is a list of shard paths/urls.
     :param split_by_worker: DEPRECATED: always acts as if True.
@@ -401,28 +402,29 @@ def mini_webdataset(
         raise ImportError("Please 'pip install webdataset' first.")
 
     from webdataset import (
-        WebDataset,
+        DataPipeline,
         split_by_node as split_by_node_,
+        split_by_worker as split_by_worker_,
         reraise_exception,
         warn_and_continue,
+        SimpleShardList,
+        detshuffle,
+        tarfile_to_samples,
     )
 
-    if not split_by_worker:
-        warnings.warn(
-            "split_by_node argument is deprecated and will be removed in future Lhotse version."
-            "Splitting shards by worker is hard-coded in WebDataset 0.2 and onwards.",
-            category=DeprecationWarning,
+    wds = DataPipeline(SimpleShardList(urls=urls))
+    if split_by_node:
+        wds.append(split_by_node_)
+    if split_by_worker:
+        wds.append(split_by_worker_)
+    if shuffle_shards:
+        wds.append(detshuffle(bufsize=100, epoch=epoch))
+    wds.append(
+        tarfile_to_samples(
+            handler=warn_and_continue if ignore_error_shards else reraise_exception,
         )
-
-    return WebDataset(
-        urls,
-        handler=warn_and_continue if ignore_error_shards else reraise_exception,
-        shardshuffle=shuffle_shards,
-        nodesplitter=split_by_node_
-        if split_by_node
-        else _single_node_or_multi_node_with_duplicated_data,
-        detshuffle=True,
     )
+    return wds
 
 
 def _single_node_or_multi_node_with_duplicated_data(src, group=None):

@@ -1155,7 +1155,9 @@ def test_cut_pairs_sampler_lazy_shuffle(sampler_cls):
 @pytest.mark.parametrize("bufsize", [100, 1000, 10000])
 def test_streaming_shuffle(datasize, bufsize):
     data = list(range(int(datasize)))
-    shuffled = list(streaming_shuffle(iter(data), bufsize=int(bufsize)))
+    shuffled = list(
+        streaming_shuffle(iter(data), bufsize=int(bufsize), rng=random.Random(42))
+    )
     assert len(data) == len(shuffled)
     assert len(shuffled) == len(set(shuffled))
     assert data != shuffled
