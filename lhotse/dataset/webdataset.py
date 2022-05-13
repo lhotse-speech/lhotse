@@ -320,7 +320,6 @@ class LazyWebdatasetIterator:
         if not is_module_available("webdataset"):
             raise ImportError("Please 'pip install webdataset' first.")
 
-        print(f"lazy wds iterator: reset with kwargs: {self.wds_kwargs}")
         self._ds = mini_webdataset(self.source, **self.wds_kwargs)
         self._ds_iter = iter(self._ds)
 
