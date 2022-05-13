@@ -314,9 +314,6 @@ class LazyWebdatasetIterator:
         self.source = source
         self.wds_kwargs = wds_kwargs
 
-    def set_epoch(self, epoch: int) -> None:
-        self.wds_kwargs["epoch"] = epoch
-
     def _reset(self) -> None:
         if not is_module_available("webdataset"):
             raise ImportError("Please 'pip install webdataset' first.")

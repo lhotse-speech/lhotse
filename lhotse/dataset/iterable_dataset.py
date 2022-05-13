@@ -76,13 +76,6 @@ class IterableDatasetWrapper(torch.utils.data.IterableDataset):
         self.epoch = epoch
         self.sampler.set_epoch(epoch)
 
-        # The code below is for WebDataset-powered CutSet. We have to set the epoch like
-        # this so that the shards become shuffled. Maybe there is a cleaner way of doing this.
-        if hasattr(self.sampler, "cuts") and isinstance(self.sampler.cuts, tuple):
-            for cs in self.sampler.cuts:
-                if hasattr(cs.data, "set_epoch"):
-                    cs.data.set_epoch(epoch)
-
     def __iter__(self):
         self._sampler_iter = iter(self.sampler)
         return self
