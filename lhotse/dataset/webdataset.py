@@ -418,7 +418,7 @@ def mini_webdataset(
     if split_by_worker:
         wds.append(split_by_worker_)
     if shuffle_shards:
-        wds.append(create_shard_shuffler()(epoch=epoch))
+        wds.append(create_shard_shuffler(epoch=epoch))
     wds.append(
         tarfile_to_samples(
             handler=warn_and_continue if ignore_error_shards else reraise_exception,
@@ -427,23 +427,24 @@ def mini_webdataset(
     return wds
 
 
-def create_shard_shuffler():
+def create_shard_shuffler(epoch: int):
     from webdataset import PipelineStage
 
     class detshuffle_all(PipelineStage):
-        def __init__(self, seed=0, epoch=-1):
-            self.seed = seed
-            self.epoch = epoch
+        def __init__(self, seed_=0, epoch_=-1):
+            self.seed_ = seed_
+            self.epoch_ = epoch_
 
         def run(self, src):
-            self.epoch += 1
+            self.epoch_ += 1
             rng = random.Random()
-            rng.seed((self.seed, self.epoch))
+            rng.seed((self.seed_, self.epoch_))
             items = list(src)
             rng.shuffle(items)
             return items
 
-    return detshuffle_all
+    return detshuffle_all(epoch_=epoch)
+
 
 def _single_node_or_multi_node_with_duplicated_data(src, group=None):
     """
