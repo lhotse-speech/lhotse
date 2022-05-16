@@ -71,22 +71,15 @@ SAMPLERS_TO_TEST = [
                          sampler_type=CutPairsSampler),
         BucketingSampler(CUTS, CUTS, num_buckets=2, sampler_type=CutPairsSampler),
     ),
-    pytest.param(
-        lambda: (
-            DynamicBucketingSampler(CUTS, max_duration=10.0, shuffle=True, drop_last=True, num_buckets=2),
-            DynamicBucketingSampler(CUTS, max_duration=10.0, num_buckets=2),
-        ),
-        marks=pytest.mark.xfail(reason='DynamicBucketingSampler does not support resumption yet.')
+    lambda: (
+        DynamicBucketingSampler(CUTS, max_duration=10.0, shuffle=True, drop_last=True, num_buckets=2),
+        DynamicBucketingSampler(CUTS, max_duration=10.0, num_buckets=2),
     ),
-    pytest.param(
-        lambda: (
-            DynamicCutSampler(CUTS, max_duration=10.0, shuffle=True, drop_last=True),
-            DynamicCutSampler(CUTS, max_duration=10.0),
-        ),
-        marks=pytest.mark.xfail(reason='DynamicCutSampler does not support resumption yet.')
+    lambda: (
+        DynamicCutSampler(CUTS, max_duration=10.0, shuffle=True, drop_last=True),
+        DynamicCutSampler(CUTS, max_duration=10.0),
     ),
     # Differently initialized RoundRobinSampler with the same CUTS
-    # pytest.param(
     lambda: (
         RoundRobinSampler(
             SingleCutSampler(CUTS.subset(first=50), max_duration=10.0, shuffle=True, drop_last=True),
@@ -97,8 +90,6 @@ SAMPLERS_TO_TEST = [
             SingleCutSampler(CUTS_MOD.subset(first=50)),
         ),
     ),
-        # marks=pytest.mark.xfail(reason='RoundRobinSampler does not support resumption yet.')
-    # ),
 ]
 # fmt: on
 
@@ -255,6 +246,12 @@ class DummyDataset(torch.utils.data.Dataset):
                 drop_last=True,
             ),
         ),
+        lambda: DynamicCutSampler(
+            CUTS, max_duration=10.0, shuffle=True, drop_last=True
+        ),
+        lambda: DynamicBucketingSampler(
+            CUTS, max_duration=10.0, shuffle=True, drop_last=True
+        ),
     ],
 )
 @pytest.mark.parametrize("num_workers", [0, 1])
@@ -308,3 +305,8 @@ def test_e2e_restore_with_dataloader(num_workers, create_sampler):
         # and we cannot recover from it for now)
         assert len(batches) == 3
         assert batches == expected_batches[2:]
+
+    # Advance the epoch and make sure it is fully iterated
+    restored_dloader.sampler.set_epoch(2)
+    ep2_batches = list(restored_dloader)
+    assert len(ep2_batches) == 10

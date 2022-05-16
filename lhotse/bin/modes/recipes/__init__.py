@@ -15,6 +15,7 @@ from .cmu_indic import *
 from .cmu_kids import *
 from .commonvoice import *
 from .cslu_kids import *
+from .earnings21 import *
 from .dihard3 import *
 from .fisher_english import *
 from .fisher_spanish import *
@@ -44,3 +45,4 @@ from .vctk import *
 from .voxceleb import *
 from .wenet_speech import *
 from .yesno import *
+from .eval2000 import *

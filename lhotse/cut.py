@@ -32,7 +32,14 @@ from intervaltree import Interval, IntervalTree
 from tqdm.auto import tqdm
 from typing_extensions import Literal
 
-from lhotse.audio import AudioMixer, AudioSource, Recording, RecordingSet, audio_energy
+from lhotse.audio import (
+    AudioMixer,
+    AudioSource,
+    Recording,
+    RecordingSet,
+    audio_energy,
+    null_result_on_audio_loading_error,
+)
 from lhotse.augmentation import AugmentFn
 from lhotse.features import (
     FeatureExtractor,
@@ -270,6 +277,18 @@ class Cut:
         """
         return [s.trim(self.duration) for s in self.supervisions]
 
+    def split(self, timestamp: Seconds) -> Tuple["Cut", "Cut"]:
+        """
+        Split a cut into two cuts at ``timestamp``, which is measured from the start of the cut.
+        For example, a [0s - 10s] cut split at 4s yields:
+            - left cut [0s - 4s]
+            - right cut [4s - 10s]
+        """
+        assert 0 < timestamp < self.duration, f"0 < {timestamp} < {self.duration}"
+        left = self.truncate(duration=timestamp)
+        right = self.truncate(offset=timestamp)
+        return left, right
+
     def mix(
         self,
         other: "Cut",
@@ -483,6 +502,39 @@ class Cut:
             cuts.append(trimmed)
         return cuts
 
+    def cut_into_windows(
+        self,
+        duration: Seconds,
+        hop: Optional[Seconds] = None,
+        keep_excessive_supervisions: bool = True,
+    ) -> List["Cut"]:
+        """
+        Return a list of shorter cuts, made by traversing this cut in windows of
+        ``duration`` seconds by ``hop`` seconds.
+
+        The last window might have a shorter duration if there was not enough audio,
+        so you might want to use either filter or pad the results.
+
+        :param duration: Desired duration of the new cuts in seconds.
+        :param hop: Shift between the windows in the new cuts in seconds.
+        :param keep_excessive_supervisions: bool. When a cut is truncated in the
+            middle of a supervision segment, should the supervision be kept.
+        :return: a list of cuts made from shorter duration windows.
+        """
+        if not hop:
+            hop = duration
+        new_cuts = []
+        n_windows = compute_num_windows(self.duration, duration, hop)
+        for i in range(n_windows):
+            new_cuts.append(
+                self.truncate(
+                    offset=hop * i,
+                    duration=duration,
+                    keep_excessive_supervisions=keep_excessive_supervisions,
+                )
+            )
+        return new_cuts
+
     def index_supervisions(
         self, index_mixed_tracks: bool = False, keep_ids: Optional[Set[str]] = None
     ) -> Dict[str, IntervalTree]:
@@ -553,18 +605,15 @@ class Cut:
             E.g. for speed perturbation, use ``CutSet.perturb_speed()`` instead.
         :return: a new MonoCut instance.
         """
+        import torchaudio
+
         storage_path = Path(storage_path)
         samples = self.load_audio()
         if augment_fn is not None:
             samples = augment_fn(samples, self.sampling_rate)
-        # Store audio as FLAC
-        import soundfile as sf
 
-        sf.write(
-            file=str(storage_path),
-            data=samples.transpose(),
-            samplerate=self.sampling_rate,
-            format="FLAC",
+        torchaudio.save(
+            str(storage_path), torch.as_tensor(samples), sample_rate=self.sampling_rate
         )
         recording = Recording(
             id=storage_path.stem,
@@ -1182,17 +1231,29 @@ class MonoCut(Cut):
         assert (
             offset >= 0
         ), f"Offset for truncate must be non-negative (provided {offset})."
-        new_start = max(self.start + offset, 0)
-        until = offset + (duration if duration is not None else self.duration)
-        new_duration = self.duration - new_start if duration is None else until - offset
-        assert new_duration > 0.0
-        duration_past_end = (new_start + new_duration) - (self.start + self.duration)
+        new_start = max(
+            add_durations(self.start, offset, sampling_rate=self.sampling_rate), 0
+        )
+        until = add_durations(
+            offset,
+            duration if duration is not None else self.duration,
+            sampling_rate=self.sampling_rate,
+        )
+        new_duration = add_durations(until, -offset, sampling_rate=self.sampling_rate)
+        assert new_duration > 0.0, f"new_duration={new_duration}"
+        # duration_past_end = (new_start + new_duration) - (self.start + self.duration)
+        duration_past_end = add_durations(
+            new_start,
+            new_duration,
+            -self.start,
+            -self.duration,
+            sampling_rate=self.sampling_rate,
+        )
         if duration_past_end > 0:
             # When the end of the MonoCut has been exceeded, trim the new duration to not exceed the old MonoCut's end.
-            new_duration -= duration_past_end
-        # Round the duration to avoid the possible loss of a single audio sample due to floating point
-        # additions and subtractions.
-        new_duration = round(new_duration, ndigits=8)
+            new_duration = add_durations(
+                new_duration, -duration_past_end, sampling_rate=self.sampling_rate
+            )
 
         if _supervisions_index is None:
             criterion = overlaps if keep_excessive_supervisions else overspans
@@ -1284,13 +1345,15 @@ class MonoCut(Cut):
         if direction == "right" or direction == "both":
             new_end = min(self.end + duration, self.recording.duration)
 
-        new_duration = new_end - new_start
-        # Round the duration to avoid the possible loss of a single audio sample due to floating point
-        # additions and subtractions.
-        new_duration = round(new_duration, ndigits=8)
+        new_duration = add_durations(
+            new_end, -new_start, sampling_rate=self.sampling_rate
+        )
 
         new_supervisions = (
-            segment.with_offset(self.start - new_start) for segment in self.supervisions
+            segment.with_offset(
+                add_durations(self.start, -new_start, sampling_rate=self.sampling_rate)
+            )
+            for segment in self.supervisions
         )
 
         def _this_exceeds_duration(attribute: Union[Features, TemporalArray]) -> bool:
@@ -2403,7 +2466,11 @@ class MixedCut(Cut):
         ), f"Offset for truncate must be non-negative (provided {offset})."
         new_tracks = []
         old_duration = self.duration
-        new_mix_end = old_duration - offset if duration is None else offset + duration
+        new_mix_end = (
+            add_durations(old_duration, -offset, sampling_rate=self.sampling_rate)
+            if duration is None
+            else add_durations(offset, duration, sampling_rate=self.sampling_rate)
+        )
 
         for track in sorted(self.tracks, key=lambda t: t.offset):
             # First, determine how much of the beginning of the current track we're going to truncate:
@@ -2411,12 +2478,20 @@ class MixedCut(Cut):
             # just decreasing the track offset.
 
             # 'cut_offset' determines how much we're going to truncate the Cut for the current track.
-            cut_offset = max(offset - track.offset, 0)
+            cut_offset = max(
+                add_durations(offset, -track.offset, sampling_rate=self.sampling_rate),
+                0,
+            )
             # 'track_offset' determines the new track's offset after truncation.
-            track_offset = max(track.offset - offset, 0)
+            track_offset = max(
+                add_durations(track.offset, -offset, sampling_rate=self.sampling_rate),
+                0,
+            )
             # 'track_end' is expressed relative to the beginning of the mix
             # (not to be confused with the 'start' of the underlying MonoCut)
-            track_end = track.offset + track.cut.duration
+            track_end = add_durations(
+                track.offset, track.cut.duration, sampling_rate=self.sampling_rate
+            )
 
             if track_end < offset:
                 # Omit a MonoCut that ends before the truncation offset.
@@ -2425,12 +2500,21 @@ class MixedCut(Cut):
             cut_duration_decrease = 0
             if track_end > new_mix_end:
                 if duration is not None:
-                    cut_duration_decrease = track_end - new_mix_end
+                    cut_duration_decrease = add_durations(
+                        track_end, -new_mix_end, sampling_rate=self.sampling_rate
+                    )
                 else:
-                    cut_duration_decrease = track_end - old_duration
+                    cut_duration_decrease = add_durations(
+                        track_end, -old_duration, sampling_rate=self.sampling_rate
+                    )
 
             # Compute the new MonoCut's duration after trimming the start and the end.
-            new_duration = track.cut.duration - cut_offset - cut_duration_decrease
+            new_duration = add_durations(
+                track.cut.duration,
+                -cut_offset,
+                -cut_duration_decrease,
+                sampling_rate=self.sampling_rate,
+            )
             if new_duration <= 0:
                 # Omit a MonoCut that is completely outside the time span of the new truncated MixedCut.
                 continue
@@ -2993,12 +3077,15 @@ class MixedCut(Cut):
                 channel=0,
                 augment_fn=augment_fn,
             )
+            features_info.recording_id = self.id
             return MonoCut(
                 id=self.id,
                 start=0,
                 duration=self.duration,
                 channel=0,
-                supervisions=self.supervisions,
+                supervisions=[
+                    fastcopy(s, recording_id=self.id) for s in self.supervisions
+                ],
                 features=features_info,
                 recording=None,
                 custom=self.custom if hasattr(self, "custom") else None,
@@ -3615,7 +3702,7 @@ class CutSet(Serializable, AlgorithmMixin):
         )
         total_sum = durations.sum()
         speech_sum = speech_durations.sum()
-        print("Cuts count:", len(self))
+        print("Cuts count:", len(durations))
         print(f"Total duration (hours): {total_sum / 3600:.1f}")
         print(
             f"Speech duration (hours): {speech_sum / 3600:.1f} ({speech_sum / total_sum:.1%})"
@@ -4114,28 +4201,32 @@ class CutSet(Serializable, AlgorithmMixin):
         if not hop:
             hop = duration
         if num_jobs == 1:
-            new_cuts = []
-            for cut in self:
-                n_windows = compute_num_windows(cut.duration, duration, hop)
-                for i in range(n_windows):
-                    new_cuts.append(
-                        cut.truncate(
-                            offset=hop * i,
+            from lhotse.lazy import LazyFlattener, LazyMapper
+
+            return CutSet(
+                LazyFlattener(
+                    LazyMapper(
+                        self,
+                        lambda cut: cut.cut_into_windows(
                             duration=duration,
+                            hop=hop,
                             keep_excessive_supervisions=keep_excessive_supervisions,
-                        )
+                        ),
                     )
-            return CutSet(cuts={c.id: c for c in new_cuts})
+                )
+            )
 
         from lhotse.manipulation import split_parallelize_combine
 
         result = split_parallelize_combine(
             num_jobs,
             self,
-            CutSet.cut_into_windows,
-            duration=duration,
-            hop=hop,
-            keep_excessive_supervisions=keep_excessive_supervisions,
+            partial(
+                _cut_into_windows_single,
+                duration=duration,
+                hop=hop,
+                keep_excessive_supervisions=keep_excessive_supervisions,
+            ),
         )
         return result
 
@@ -4479,10 +4570,14 @@ class CutSet(Serializable, AlgorithmMixin):
                 progress = partial(
                     tqdm, desc="Extracting and storing features", total=len(self)
                 )
+
             with storage_type(storage_path) as storage:
                 return CutSet.from_cuts(
-                    progress(
-                        cut.compute_and_store_features(
+                    maybe_cut
+                    for maybe_cut in progress(
+                        null_result_on_audio_loading_error(
+                            cut.compute_and_store_features
+                        )(
                             extractor=extractor,
                             storage=storage,
                             augment_fn=augment_fn,
@@ -4490,6 +4585,7 @@ class CutSet(Serializable, AlgorithmMixin):
                         )
                         for cut in self
                     )
+                    if maybe_cut is not None
                 )
 
         # HACK: support URL storage for writing
@@ -4634,6 +4730,10 @@ class CutSet(Serializable, AlgorithmMixin):
                 cuts = batch["cuts"]
                 waves = batch["audio"]
 
+                if len(cuts) == 0:
+                    # Fault-tolerant audio loading filtered out everything.
+                    continue
+
                 assert all(c.sampling_rate == cuts[0].sampling_rate for c in cuts)
 
                 # Optionally apply the augment_fn
@@ -4652,7 +4752,7 @@ class CutSet(Serializable, AlgorithmMixin):
 
                 for cut, feat_mat in zip(cuts, features):
                     if isinstance(cut, PaddingCut):
-                        # For padding cuts, just fill out the fields in the manfiest
+                        # For padding cuts, just fill out the fields in the manifest
                         # and don't store anything.
                         cuts_writer.write(
                             fastcopy(
@@ -4684,17 +4784,23 @@ class CutSet(Serializable, AlgorithmMixin):
 
                     # Update the cut manifest.
                     if isinstance(cut, MonoCut):
+                        feat_manifest.recording_id = cut.recording_id
                         cut = fastcopy(cut, features=feat_manifest)
                     if isinstance(cut, MixedCut):
                         # If this was a mixed cut, we will just discard its
                         # recordings and create a new mono cut that has just
                         # the features attached.
+                        feat_manifest.recording_id = cut.id
                         cut = MonoCut(
                             id=cut.id,
                             start=0,
                             duration=cut.duration,
                             channel=0,
-                            supervisions=cut.supervisions,
+                            # Update supervisions recording_id for consistency
+                            supervisions=[
+                                fastcopy(s, recording_id=cut.id)
+                                for s in cut.supervisions
+                            ],
                             features=feat_manifest,
                             recording=None,
                         )
@@ -4751,6 +4857,7 @@ class CutSet(Serializable, AlgorithmMixin):
     def save_audios(
         self,
         storage_path: Pathlike,
+        format: str = "wav",
         num_jobs: Optional[int] = None,
         executor: Optional[Executor] = None,
         augment_fn: Optional[AugmentFn] = None,
@@ -4762,7 +4869,8 @@ class CutSet(Serializable, AlgorithmMixin):
         :param storage_path: The path to location where we will store the audio recordings.
             For each cut, a sub-directory will be created that starts with the first 3
             characters of the cut's ID. The audio recording is then stored in the sub-directory
-            using the cut ID as filename and '.flac' as suffix.
+            using filename ``{cut.id}.{format}``
+        :param format: Audio format argument supported by ``torchaudio.save``. Default is ``wav``.
         :param num_jobs: The number of parallel processes used to store the audio recordings.
             We will internally split the CutSet into this many chunks
             and process each chunk in parallel.
@@ -4801,7 +4909,7 @@ class CutSet(Serializable, AlgorithmMixin):
             # too many files in a single directory.
             subdir = Path(storage_path) / cut.id[:3]
             subdir.mkdir(exist_ok=True, parents=True)
-            return (subdir / cut.id).with_suffix(".flac")
+            return (subdir / cut.id).with_suffix(f".{format}")
 
         # Non-parallel execution
         if executor is None and num_jobs == 1:
@@ -5768,3 +5876,13 @@ def merge_supervisions(
         return new_cut
     else:
         return fastcopy(cut, supervisions=[msup])
+
+
+def _cut_into_windows_single(
+    cuts: CutSet, duration, hop, keep_excessive_supervisions
+) -> CutSet:
+    return cuts.cut_into_windows(
+        duration=duration,
+        hop=hop,
+        keep_excessive_supervisions=keep_excessive_supervisions,
+    ).to_eager()

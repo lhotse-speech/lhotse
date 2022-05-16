@@ -143,6 +143,32 @@ def test_dynamic_bucketing_sampler():
     assert sum(c.duration for c in batches[3]) == 2
 
 
+def test_dynamic_bucketing_sampler_max_duration_and_max_cuts():
+    cuts = DummyManifest(CutSet, begin_id=0, end_id=10)
+    for i, c in enumerate(cuts):
+        if i < 5:
+            c.duration = 1
+        else:
+            c.duration = 2
+
+    sampler = DynamicBucketingSampler(
+        cuts, max_duration=5, max_cuts=1, num_buckets=2, seed=0
+    )
+    batches = [b for b in sampler]
+    sampled_cuts = [c for b in batches for c in b]
+
+    # Invariant: no duplicated cut IDs
+    assert len(set(c.id for b in batches for c in b)) == len(sampled_cuts)
+
+    # Same number of sampled and source cuts.
+    assert len(sampled_cuts) == len(cuts)
+
+    # We sampled 10 batches because max_cuts == 1
+    assert len(batches) == 10
+    for b in batches:
+        assert len(b) == 1
+
+
 def test_dynamic_bucketing_sampler_too_small_data_can_be_sampled():
     cuts = DummyManifest(CutSet, begin_id=0, end_id=10)
     for i, c in enumerate(cuts):

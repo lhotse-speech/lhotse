@@ -44,3 +44,4 @@ from .vctk import download_vctk, prepare_vctk
 from .voxceleb import download_voxceleb1, download_voxceleb2, prepare_voxceleb
 from .wenet_speech import prepare_wenet_speech
 from .yesno import download_yesno, prepare_yesno
+from .eval2000 import prepare_eval2000

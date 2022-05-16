@@ -7,9 +7,8 @@ from typing import Any, Callable, Dict, Iterable, Optional, Tuple, Union
 from torch import distributed as dist
 from torch.utils.data import Sampler
 
-from lhotse import Seconds
 from lhotse.cut import Cut
-from lhotse.utils import exactly_one_not_null, is_none_or_gt
+from lhotse.utils import Seconds, exactly_one_not_null, is_none_or_gt
 
 
 class CutSampler(Sampler):
@@ -52,6 +51,7 @@ class CutSampler(Sampler):
     def __init__(
         self,
         shuffle: bool = False,
+        drop_last: bool = False,
         world_size: Optional[int] = None,
         rank: Optional[int] = None,
         seed: int = 0,
@@ -61,6 +61,7 @@ class CutSampler(Sampler):
             Convenient when mini-batch loop is inside an outer epoch-level loop, e.g.:
             `for epoch in range(10): for batch in dataset: ...` as every epoch will see a
             different cuts order.
+        :param drop_last: When ``True``, the last batch is dropped if it's incomplete.
         :param world_size: Total number of distributed nodes. We will try to infer it by default.
         :param rank: Index of distributed node. We will try to infer it by default.
         :param seed: Random seed used to consistently shuffle the dataset across different processes.
@@ -68,6 +69,7 @@ class CutSampler(Sampler):
         super().__init__(
             data_source=None
         )  # the "data_source" arg is not used in Sampler...
+        self.drop_last = drop_last
         self.shuffle = shuffle
         self.seed = seed
         self.epoch = 0
@@ -142,6 +144,7 @@ class CutSampler(Sampler):
         """
         return {
             "epoch": self.epoch,
+            "drop_last": self.drop_last,
             "world_size": self.world_size,
             "rank": self.rank,
             "seed": self.seed,
@@ -167,6 +170,7 @@ class CutSampler(Sampler):
             For implementers of sub-classes of CutSampler: the flag ``self._just_restored_state`` has to be
             handled in ``__iter__`` to make it avoid resetting the just-restored state (only once).
         """
+        self.drop_last = state_dict.pop("drop_last")
         world_size = state_dict.pop("world_size")
         assert self.world_size == world_size, (
             f"Cannot restore sampler with a different world_size (before load_state_dict(): {self.world_size},"
@@ -253,8 +257,21 @@ class CutSampler(Sampler):
         # when a given batch was available for one of the nodes, but not for the others.
         batches = []
         for _ in range(self.world_size):
-            batches.append(self._next_batch())
-        return batches[self.rank]
+            try:
+                batch = self._next_batch()
+            except StopIteration:
+                if self.drop_last:
+                    # The users indicated they want an equal number of batches on all
+                    # ranks and are ready to lose some data: drop remainder batches.
+                    raise
+                # We have to delay raising StopIteration to let some the sampler
+                # yield the last N batches (when N < world_size - 1).
+                batch = None
+            batches.append(batch)
+        selected = batches[self.rank]
+        if selected is None:
+            raise StopIteration
+        return selected
 
     def get_report(self) -> str:
         """Returns a string describing the statistics of the sampling process so far."""
@@ -278,6 +295,7 @@ class TimeConstraint:
     max_duration: Optional[Seconds] = None
     max_samples: Optional[int] = None
     max_frames: Optional[int] = None
+    max_cuts: Optional[int] = None
     current: Union[int, Seconds] = 0
     num_cuts: int = 0
     longest_seen: Union[int, float] = 0
@@ -289,6 +307,7 @@ class TimeConstraint:
         )
         for c in self._constraints:
             assert is_none_or_gt(c, 0)
+        assert is_none_or_gt(self.max_cuts, 0)
 
     @property
     def _constraints(self) -> Tuple:
@@ -306,7 +325,7 @@ class TimeConstraint:
 
     def is_active(self) -> bool:
         """Is it an actual constraint, or a dummy one (i.e. never exceeded)."""
-        return any(x is not None for x in self._constraints)
+        return any(x is not None for x in self._constraints + (self.max_cuts,))
 
     def add(self, cut: Cut) -> None:
         """
@@ -326,6 +345,8 @@ class TimeConstraint:
 
     def exceeded(self) -> bool:
         """Is the constraint exceeded or not."""
+        if self.max_cuts is not None and self.num_cuts >= self.max_cuts:
+            return True
         constraint = self.active_constraint
         if constraint is None:
             return False
@@ -341,6 +362,9 @@ class TimeConstraint:
         duration/num_frames/num_samples equal to the mean of the current
         batch, then the batch would have exceeded the constraints.
         """
+        if self.max_cuts is not None and self.num_cuts >= self.max_cuts:
+            return True
+
         if self.strict:
             thresh = self.longest_seen
         else:
@@ -370,6 +394,7 @@ class TimeConstraint:
         self.max_duration = state_dict.pop("max_duration")
         self.max_samples = state_dict.pop("max_samples")
         self.max_frames = state_dict.pop("max_frames")
+        self.max_cuts = state_dict.pop("max_cuts")
         self.current = state_dict.pop("current")
         self.num_cuts = state_dict.pop("num_cuts")
         self.strict = state_dict.pop("strict", False)
@@ -380,7 +405,7 @@ class TimeConstraint:
         )
 
     def __add__(self, other: "TimeConstraint") -> "TimeConstraint":
-        for key in ("max_duration", "max_frames", "max_samples"):
+        for key in ("max_duration", "max_frames", "max_samples", "max_cuts"):
             self_attr = getattr(self, key)
             other_attr = getattr(other, key)
             is_none = self_attr is None and other_attr is None
@@ -393,6 +418,7 @@ class TimeConstraint:
             max_duration=self.max_duration,
             max_frames=self.max_frames,
             max_samples=self.max_samples,
+            max_cuts=self.max_cuts,
             current=self.current + other.current,
             num_cuts=self.num_cuts + other.num_cuts,
             strict=self.strict,
@@ -404,6 +430,7 @@ class TimeConstraint:
             self.max_duration == other.max_duration
             and self.max_samples == other.max_samples
             and self.max_frames == other.max_frames
+            and self.max_cuts == other.max_cuts
         )
 
 

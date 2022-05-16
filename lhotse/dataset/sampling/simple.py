@@ -4,7 +4,6 @@ from typing import Any, Dict, Optional
 from lhotse import CutSet, Seconds
 from lhotse.dataset.sampling.base import CutSampler, TimeConstraint
 from lhotse.dataset.sampling.data_source import DataSource
-from lhotse.utils import is_none_or_gt
 
 
 class SimpleCutSampler(CutSampler):
@@ -66,6 +65,7 @@ class SimpleCutSampler(CutSampler):
         :param seed: Random seed used to consistently shuffle the dataset across different processes.
         """
         super().__init__(
+            drop_last=drop_last,
             shuffle=shuffle,
             world_size=world_size,
             rank=rank,
@@ -76,15 +76,9 @@ class SimpleCutSampler(CutSampler):
             max_duration=max_duration,
             max_frames=max_frames,
             max_samples=max_samples,
+            max_cuts=max_cuts,
             strict=strict,
         )
-        self.drop_last = drop_last
-        self.max_cuts = max_cuts
-        assert self.time_constraint.is_active() or not (
-            self.time_constraint.is_active() and self.max_cuts is not None
-        )
-        # Constraints
-        assert is_none_or_gt(self.max_cuts, 0)
 
     @property
     def remaining_duration(self) -> Optional[float]:
@@ -121,9 +115,7 @@ class SimpleCutSampler(CutSampler):
         state_dict = super().state_dict()
         state_dict.update(
             {
-                "drop_last": self.drop_last,
                 "time_constraint": self.time_constraint.state_dict(),
-                "max_cuts": self.max_cuts,
             }
         )
         return state_dict
@@ -146,8 +138,6 @@ class SimpleCutSampler(CutSampler):
             For implementers of sub-classes of CutSampler: the flag ``self._just_restored_state`` has to be
             handled in ``__iter__`` to make it avoid resetting the just-restored state (only once).
         """
-        self.drop_last = state_dict.pop("drop_last")
-
         time_constraint = TimeConstraint(**state_dict.pop("time_constraint"))
         if self.time_constraint != time_constraint:
             warnings.warn(
@@ -157,16 +147,6 @@ class SimpleCutSampler(CutSampler):
                 f"We will overwrite the settings with the received state_dict."
             )
         self.time_constraint = time_constraint
-
-        max_cuts = state_dict.pop("max_cuts")
-        if self.max_cuts != max_cuts:
-            warnings.warn(
-                "SimpleCutSampler.load_state_dict(): Inconsistent max_cuts:\n"
-                f"expected {self.max_cuts}\n"
-                f"received {max_cuts}\n"
-                f"We will overwrite the settings with the received state_dict."
-            )
-        self.max_cuts = max_cuts
 
         super().load_state_dict(state_dict)
 
@@ -225,12 +205,9 @@ class SimpleCutSampler(CutSampler):
 
             # Track the duration/frames/etc. constraints.
             self.time_constraint.add(next_cut)
-            next_num_cuts = len(cuts) + 1
 
             # Did we exceed the max_frames and max_cuts constraints?
-            if not self.time_constraint.exceeded() and (
-                self.max_cuts is None or next_num_cuts <= self.max_cuts
-            ):
+            if not self.time_constraint.exceeded():
                 # No - add the next cut to the batch, and keep trying.
                 cuts.append(next_cut)
             else:

@@ -8,7 +8,7 @@ It is available at OpenSLR: http://openslr.org/94
 import logging
 from collections import defaultdict
 from pathlib import Path
-from typing import Dict
+from typing import Dict, Optional, Union
 
 from tqdm.auto import tqdm
 

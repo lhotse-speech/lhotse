@@ -32,7 +32,7 @@ jobs:
     - name: Install apt dependencies
       run: |
         sudo apt update
-        sudo apt install libsndfile1-dev libsndfile1 ffmpeg
+        sudo apt install libsndfile1-dev libsndfile1 ffmpeg sox
     - name: Install Python dependencies
       run: |
         python -m pip install --upgrade pip
@@ -45,7 +45,7 @@ jobs:
         pip install kaldifeat  # for running kaldifeat tests
         pip install opensmile  # for running opensmile tests
         pip install kaldi_native_io  # for running kaldi_native_io tests
-        pip install webdataset==0.1.103 # for running webdataset tests
+        pip install webdataset==0.2.5 # for running webdataset tests
         pip install git+https://github.com/fgnt/nara_wpe  # for running WPE tests
     - name: Install sph2pipe
       run: |

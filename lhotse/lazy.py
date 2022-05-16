@@ -1,7 +1,8 @@
 import random
 import types
 import warnings
-from typing import Any, Callable, Dict, Iterable, List, Optional, TypeVar, Union
+from functools import partial
+from typing import Any, Callable, Iterable, List, Optional, TypeVar, Union
 
 from lhotse.serialization import (
     LazyMixin,
@@ -10,7 +11,7 @@ from lhotse.serialization import (
     extension_contains,
     open_best,
 )
-from lhotse.utils import Pathlike, streaming_shuffle
+from lhotse.utils import Pathlike, fastcopy, streaming_shuffle
 
 T = TypeVar("T")
 
@@ -105,16 +106,17 @@ class AlgorithmMixin(LazyMixin, Iterable):
             rng.shuffle(ids)
             return cls({id_: self[id_] for id_ in ids})
 
-    def repeat(self, times: Optional[int] = None):
+    def repeat(self, times: Optional[int] = None, preserve_id: bool = False):
         """
         Return a new, lazily evaluated manifest that iterates over the original elements ``times``
         number of times.
 
-        :param predicate: how many times to repeat (infinite by default).
+        :param times: how many times to repeat (infinite by default).
+        :param preserve_id: when ``True``, we won't update the element ID with repeat number.
         :return: a repeated manifest.
         """
         cls = type(self)
-        return cls(LazyRepeater(self, times=times))
+        return cls(LazyRepeater(self, times=times, preserve_id=preserve_id))
 
     def __add__(self, other):
         cls = type(self)
@@ -366,20 +368,51 @@ class LazyMapper(ImitatesDict):
         return LazyIteratorChain(self, other)
 
 
+class LazyFlattener(ImitatesDict):
+    """
+    A wrapper over an iterable of collections that flattens it to an iterable of items.
+
+    Example::
+
+        >>> list_of_cut_sets: List[CutSet] = [CutSet(...), CutSet(...)]
+        >>> list_of_cuts: List[Cut] = list(LazyFlattener(list_of_cut_sets))
+    """
+
+    def __init__(self, iterator: Iterable) -> None:
+        self.iterator = iterator
+
+    def __iter__(self):
+        for cuts in self.iterator:
+            yield from cuts
+
+    def __add__(self, other) -> "LazyIteratorChain":
+        return LazyIteratorChain(self, other)
+
+
 class LazyRepeater(ImitatesDict):
     """
     A wrapper over an iterable that enables to repeat it N times or infinitely (default).
     """
 
-    def __init__(self, iterator: Iterable, times: Optional[int] = None) -> None:
+    def __init__(
+        self, iterator: Iterable, times: Optional[int] = None, preserve_id: bool = False
+    ) -> None:
         self.iterator = iterator
         self.times = times
+        self.preserve_id = preserve_id
         assert self.times is None or self.times > 0
 
     def __iter__(self):
         epoch = 0
         while self.times is None or epoch < self.times:
-            yield from self.iterator
+            if self.preserve_id:
+                iterator = self.iterator
+            else:
+                iterator = LazyMapper(
+                    self.iterator, partial(attach_repeat_idx_to_id, idx=epoch)
+                )
+
+            yield from iterator
             epoch += 1
 
     def __len__(self) -> int:
@@ -389,6 +422,12 @@ class LazyRepeater(ImitatesDict):
 
     def __add__(self, other) -> "LazyIteratorChain":
         return LazyIteratorChain(self, other)
+
+
+def attach_repeat_idx_to_id(item: Any, idx: int) -> Any:
+    if not hasattr(item, "id"):
+        return item
+    return fastcopy(item, id=f"{item.id}_repeat{idx}")
 
 
 def count_newlines_fast(path: Pathlike):
