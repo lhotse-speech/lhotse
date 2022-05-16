@@ -347,6 +347,7 @@ class LazyWebdatasetIterator:
         data_dict = next(self._ds_iter)
         data = pickle.loads(data_dict["data"])
         item = deserialize_item(data)
+        item.shard_origin = data_dict["__url__"]
         return item
 
     def values(self):
