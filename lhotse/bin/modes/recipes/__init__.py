@@ -16,6 +16,7 @@ from .cmu_kids import *
 from .commonvoice import *
 from .cslu_kids import *
 from .earnings21 import *
+from .earnings22 import *
 from .dihard3 import *
 from .fisher_english import *
 from .fisher_spanish import *
