@@ -5,7 +5,6 @@ from bisect import bisect_right
 from collections import deque
 from concurrent.futures import ThreadPoolExecutor
 from itertools import islice
-from threading import Lock
 from typing import (
     Any,
     Deque,
