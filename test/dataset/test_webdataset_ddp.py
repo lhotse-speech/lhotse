@@ -86,6 +86,7 @@ def run_test(
         "%s/shard-{000000..%06d}.tar" % (root, n_shards - 1),
         split_by_node=True,
         split_by_worker=True,
+        shuffle_shards=True,
     )
 
     # Iterate the data
