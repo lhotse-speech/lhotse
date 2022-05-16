@@ -117,7 +117,7 @@ def prepare_aishell(
 
         if output_dir is not None:
             supervision_set.to_file(output_dir / f"aishell_supervisions_{part}.jsonl")
-            recording_set.to_json(output_dir / f"aishell_recordings_{part}.jsonl")
+            recording_set.to_file(output_dir / f"aishell_recordings_{part}.jsonl")
 
         manifests[part] = {"recordings": recording_set, "supervisions": supervision_set}
 
