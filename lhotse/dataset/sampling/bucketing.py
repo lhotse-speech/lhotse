@@ -1,5 +1,4 @@
 import random
-import warnings
 from copy import deepcopy
 from functools import reduce
 from itertools import chain
