@@ -245,10 +245,10 @@ def prepare_single_mtedx_language(
                 output_dir.mkdir(parents=True, exist_ok=True)
                 save_split = "dev" if split == "valid" else split
                 recordings.to_file(
-                    output_dir / f"mtedx_recordings_{language}_{split}.jsonl"
+                    output_dir / f"mtedx-{language}_recordings_{split}.jsonl.gz"
                 )
                 supervisions.to_file(
-                    output_dir / f"mtedx_supervisions_{language}_{split}.jsonl"
+                    output_dir / f"mtedx-{language}_supervisions_{split}.jsonl.gz"
                 )
 
     return dict(manifests)

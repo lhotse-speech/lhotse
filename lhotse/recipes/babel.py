@@ -194,10 +194,10 @@ def prepare_single_babel_language(
             language = BABELCODE2LANG[lang_code]
             save_split = "train" if split == "training" else split
             recordings.to_file(
-                output_dir / f"babel_recordings_{language}_{save_split}.jsonl"
+                output_dir / f"babel-{language}_recordings_{save_split}.jsonl.gz"
             )
             supervisions.to_file(
-                output_dir / f"babel_supervisions_{language}_{save_split}.jsonl"
+                output_dir / f"babel-{language}_supervisions_{save_split}.jsonl.gz"
             )
 
     return dict(manifests)

@@ -203,10 +203,10 @@ def prepare_librispeech(
 
             if output_dir is not None:
                 supervision_set.to_file(
-                    output_dir / f"librispeech_supervisions_{part}.jsonl"
+                    output_dir / f"librispeech_supervisions_{part}.jsonl.gz"
                 )
                 recording_set.to_file(
-                    output_dir / f"librispeech_recordings_{part}.jsonl"
+                    output_dir / f"librispeech_recordings_{part}.jsonl.gz"
                 )
 
             manifests[part] = {

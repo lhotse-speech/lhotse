@@ -155,10 +155,10 @@ def prepare_gale_arabic(
         output_dir.mkdir(parents=True, exist_ok=True)
         for part in ["train", "test"]:
             manifests[part]["recordings"].to_file(
-                output_dir / f"gale_arabic_recordings_{part}.jsonl"
+                output_dir / f"gale-arabic_recordings_{part}.jsonl.gz"
             )
             manifests[part]["supervisions"].to_file(
-                output_dir / f"gale_arabic_supervisions_{part}.jsonl"
+                output_dir / f"gale-arabic_supervisions_{part}.jsonl.gz"
             )
 
     return manifests

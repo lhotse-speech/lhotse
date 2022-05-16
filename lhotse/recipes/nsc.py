@@ -74,10 +74,10 @@ def prepare_nsc(
         output_dir = Path(output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
         manifests["supervisions"].to_file(
-            output_dir / f"nsc_supervisions_{dataset_part}.jsonl"
+            output_dir / f"nsc_supervisions_{dataset_part}.jsonl.gz"
         )
         manifests["recordings"].to_file(
-            output_dir / f"nsc_recordings_{dataset_part}.jsonl"
+            output_dir / f"nsc_recordings_{dataset_part}.jsonl.gz"
         )
 
     return manifests

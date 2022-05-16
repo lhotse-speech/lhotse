@@ -242,10 +242,10 @@ def prepare_voxceleb(
     if output_dir is not None:
         if "pos_trials" in manifests:
             for i, cuts in enumerate(manifests["pos_trials"]):
-                cuts.to_file(output_dir / f"voxceleb_pos_trials_utt{i+1}.jsonl.gz")
+                cuts.to_file(output_dir / f"voxceleb_pos-trials_utt{i+1}.jsonl.gz")
         if "neg_trials" in manifests:
             for i, cuts in enumerate(manifests["neg_trials"]):
-                cuts.to_file(output_dir / f"voxceleb_neg_trials_utt{i+1}.jsonl.gz")
+                cuts.to_file(output_dir / f"voxceleb_neg-trials_utt{i+1}.jsonl.gz")
 
     return manifests
 

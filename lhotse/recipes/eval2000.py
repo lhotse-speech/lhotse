@@ -65,8 +65,8 @@ def prepare_eval2000(
     if output_dir is not None:
         output_dir = Path(output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
-        recordings.to_file(output_dir / "eval2000_recordings.jsonl")
-        supervision_set.to_file(output_dir / "eval2000_supervisions_unnorm.jsonl")
+        recordings.to_file(output_dir / "eval2000_recordings_all.jsonl.gz")
+        supervision_set.to_file(output_dir / "eval2000_supervisions_unnorm.jsonl.gz")
     return {"recordings": recordings, "supervisions": supervisions}
 
 

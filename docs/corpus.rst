@@ -168,6 +168,14 @@ Adding new corpora
     ``{'train': {'recordings': <RecordingSet>, 'supervisions': <SupervisionSet>}, 'dev': ...}``
 
 .. hint::
+    **Manifest naming convention.** The default naming convention is ``<corpus-name>_<manifest-type>_<split>.jsonl.gz``,
+    i.e., we save the manifests in a compressed JSONL file. Here, ``<manifest-type>`` can be ``recordings``, 
+    ``supervisions``, etc., and ``<split>`` can be ``train``, ``dev``, ``test``, etc. In case the corpus
+    has no such split defined, we can use ``all`` as default. Other information, e.g., mic type, language, etc. may 
+    be included in the ``<corpus-name>``. Some examples are: ``cmu-indic_recordings_all.jsonl.gz``,
+    ``ami-ihm_supervisions_dev.jsonl.gz``, ``mtedx-english_recordings_train.jsonl.gz``.
+
+.. hint::
     **Isolated utterance corpora.** Some corpora (like LibriSpeech) come with pre-segmented recordings.
     In these cases, the :class:`~lhotse.supervision.SupervisionSegment` will exactly match the
     :class:`~lhotse.recording.Recording` duration

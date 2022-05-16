@@ -70,9 +70,13 @@ def prepare_broadcast_news(
     if output_dir is not None:
         output_dir = Path(output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
-        recordings.to_file(output_dir / "broadcast_news_recordings.jsonl")
-        section_supervisions.to_file(output_dir / "broadcast_news_sections.jsonl")
-        segment_supervisions.to_file(output_dir / "broadcast_news_segments.jsonl")
+        recordings.to_file(output_dir / "broadcast-news_recordings_all.jsonl.gz")
+        section_supervisions.to_file(
+            output_dir / "broadcast-news_sections_all.jsonl.gz"
+        )
+        segment_supervisions.to_file(
+            output_dir / "broadcast-news_segments_all.jsonl.gz"
+        )
 
     return {
         "recordings": recordings,

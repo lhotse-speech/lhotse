@@ -210,10 +210,10 @@ def prepare_callhome_english_asr(
             output_dir = Path(output_dir)
             output_dir.mkdir(parents=True, exist_ok=True)
             recordings.to_file(
-                output_dir / f"callhome_english_recordings_{split}.jsonl"
+                output_dir / f"callhome-english_recordings_{split}.jsonl.gz"
             )
             supervisions.to_file(
-                output_dir / f"callhome_english_supervisions_{split}.jsonl"
+                output_dir / f"callhome-english_supervisions_{split}.jsonl.gz"
             )
 
         manifests[split] = {"recordings": recordings, "supervisions": supervisions}

@@ -281,8 +281,8 @@ def prepare_heroico(
         validate_recordings_and_supervisions(audio, supervision)
 
         if output_dir is not None:
-            supervision.to_file(output_dir / f"heroico_supervisions_{fld}.jsonl")
-            audio.to_file(output_dir / f"heroico_recordings_{fld}.jsonl")
+            supervision.to_file(output_dir / f"heroico_supervisions_{fld}.jsonl.gz")
+            audio.to_file(output_dir / f"heroico_recordings_{fld}.jsonl.gz")
 
         manifests[fld] = {"recordings": audio, "supervisions": supervision}
 

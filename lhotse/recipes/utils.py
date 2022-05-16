@@ -21,7 +21,7 @@ def read_manifests_if_cached(
     dataset_parts: Optional[Sequence[str]],
     output_dir: Optional[Pathlike],
     prefix: str = "",
-    suffix: Optional[str] = "json",
+    suffix: Optional[str] = "jsonl.gz",
     types: Iterable[str] = DEFAULT_DETECTED_MANIFEST_TYPES,
     lazy: bool = False,
 ) -> Optional[Dict[str, Dict[str, Union[RecordingSet, SupervisionSet]]]]:

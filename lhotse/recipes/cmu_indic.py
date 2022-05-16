@@ -204,8 +204,8 @@ def prepare_cmu_indic(
 
     if output_dir is not None:
         output_dir = Path(output_dir)
-        recordings.to_file(output_dir / "cmu_indic_recordings.jsonl")
-        supervisions.to_file(output_dir / "cmu_indic_supervisions.jsonl")
+        recordings.to_file(output_dir / "cmu-indic_recordings_all.jsonl.gz")
+        supervisions.to_file(output_dir / "cmu-indic_supervisions_all.jsonl.gz")
 
     return {"recordings": recordings, "supervisions": supervisions}
 

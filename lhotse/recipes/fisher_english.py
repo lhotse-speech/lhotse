@@ -254,7 +254,7 @@ def prepare_fisher_english(
     validate_recordings_and_supervisions(recordings, supervisions)
 
     # Write the fixed and validated version to files with standard names.
-    recordings.to_file(recs_path.parent / "fisher_english_recordings.jsonl.gz")
-    supervisions.to_file(sups_path.parent / "fisher_english_supervisions.jsonl.gz")
+    recordings.to_file(recs_path.parent / "fisher-english_recordings_all.jsonl.gz")
+    supervisions.to_file(sups_path.parent / "fisher-english_supervisions_all.jsonl.gz")
 
     return {"recordings": recordings, "supervisions": supervisions}

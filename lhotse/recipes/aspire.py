@@ -167,8 +167,8 @@ def prepare_aspire(
         validate_recordings_and_supervisions(recording_set, supervision_set)
 
         if output_dir is not None:
-            supervision_set.to_file(output_dir / f"aspire_supervisions_{part}.jsonl")
-            recording_set.to_file(output_dir / f"aspire_recordings_{part}.jsonl")
+            supervision_set.to_file(output_dir / f"aspire_supervisions_{part}.jsonl.gz")
+            recording_set.to_file(output_dir / f"aspire_recordings_{part}.jsonl.gz")
 
         manifests[part] = {"recordings": recording_set, "supervisions": supervision_set}
 

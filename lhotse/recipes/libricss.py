@@ -195,8 +195,8 @@ def prepare_libricss(
     if output_dir is not None:
         output_dir = Path(output_dir)
         output_dir.mkdir(exist_ok=True, parents=True)
-        recordings.to_file(output_dir / "libricss_recordings.jsonl")
-        supervisions.to_file(output_dir / "libricss_supervisions.jsonl")
+        recordings.to_file(output_dir / "libricss_recordings_all.jsonl.gz")
+        supervisions.to_file(output_dir / "libricss_supervisions_all.jsonl.gz")
 
     return {"recordings": recordings, "supervisions": supervisions}
 

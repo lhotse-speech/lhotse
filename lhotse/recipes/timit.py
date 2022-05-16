@@ -161,9 +161,11 @@ def prepare_timit(
 
                 if output_dir is not None:
                     supervision_set.to_file(
-                        output_dir / f"timit_supervisions_{part}.jsonl"
+                        output_dir / f"timit_supervisions_{part}.jsonl.gz"
                     )
-                    recording_set.to_file(output_dir / f"timit_recordings_{part}.jsonl")
+                    recording_set.to_file(
+                        output_dir / f"timit_recordings_{part}.jsonl.gz"
+                    )
 
                 manifests[part] = {
                     "recordings": recording_set,

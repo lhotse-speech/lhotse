@@ -186,10 +186,10 @@ def prepare_l2_arctic(
         makedirs(output_dir, exist_ok=True)
         for key, manifests in splits.items():
             manifests["recordings"].to_file(
-                output_dir / f"l2_arctic_recordings_{key}.jsonl"
+                output_dir / f"l2-arctic_recordings_{key}.jsonl.gz"
             )
             manifests["supervisions"].to_file(
-                output_dir / f"l2_arctic_supervisions_{key}.jsonl"
+                output_dir / f"l2-arctic_supervisions_{key}.jsonl.gz"
             )
 
     return splits

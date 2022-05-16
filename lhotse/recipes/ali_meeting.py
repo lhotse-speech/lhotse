@@ -173,10 +173,10 @@ def prepare_ali_meeting(
 
         if output_dir is not None:
             supervision_set.to_file(
-                output_dir / f"alimeeting_supervisions_{part.lower()}.jsonl"
+                output_dir / f"alimeeting_supervisions_{part.lower()}.jsonl.gz"
             )
             recording_set.to_file(
-                output_dir / f"alimeeting_recordings_{part.lower()}.jsonl"
+                output_dir / f"alimeeting_recordings_{part.lower()}.jsonl.gz"
             )
 
         manifests[part.lower()] = {

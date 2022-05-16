@@ -70,8 +70,10 @@ def prepare_librimix(
     supervision_sources = make_corresponding_supervisions(audio_sources)
     validate_recordings_and_supervisions(audio_sources, supervision_sources)
     if output_dir is not None:
-        audio_sources.to_file(output_dir / "librimix_recordings_sources.jsonl")
-        supervision_sources.to_file(output_dir / "librimix_supervisions_sources.jsonl")
+        audio_sources.to_file(output_dir / "librimix_recordings_sources.jsonl.gz")
+        supervision_sources.to_file(
+            output_dir / "librimix_supervisions_sources.jsonl.gz"
+        )
     manifests["sources"] = {
         "recordings": audio_sources,
         "supervisions": supervision_sources,
@@ -97,8 +99,8 @@ def prepare_librimix(
         supervision_mix = make_corresponding_supervisions(audio_mix)
         validate_recordings_and_supervisions(audio_mix, supervision_mix)
         if output_dir is not None:
-            audio_mix.to_file(output_dir / "librimix_recordings_mix.jsonl")
-            supervision_mix.to_file(output_dir / "librimix_supervisions_mix.jsonl")
+            audio_mix.to_file(output_dir / "librimix_recordings_mix.jsonl.gz")
+            supervision_mix.to_file(output_dir / "librimix_supervisions_mix.jsonl.gz")
         manifests["premixed"] = {
             "recordings": audio_mix,
             "supervisions": supervision_mix,
@@ -123,8 +125,10 @@ def prepare_librimix(
         supervision_noise = make_corresponding_supervisions(audio_noise)
         validate_recordings_and_supervisions(audio_noise, supervision_noise)
         if output_dir is not None:
-            audio_noise.to_file(output_dir / "librimix_recordings_noise.jsonl")
-            supervision_noise.to_file(output_dir / "libirmix_supervisions_noise.jsonl")
+            audio_noise.to_file(output_dir / "librimix_recordings_noise.jsonl.gz")
+            supervision_noise.to_file(
+                output_dir / "libirmix_supervisions_noise.jsonl.gz"
+            )
         manifests["noise"] = {
             "recordings": audio_noise,
             "supervisions": supervision_noise,

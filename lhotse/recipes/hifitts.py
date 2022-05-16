@@ -164,10 +164,10 @@ def prepare_hifitts(
 
             if output_dir is not None:
                 supervisions.to_file(
-                    output_dir / f"hifitts_supervisions_{partition_id}.jsonl"
+                    output_dir / f"hifitts_supervisions_{partition_id}.jsonl.gz"
                 )
                 recordings.to_file(
-                    output_dir / f"hifitts_recordings_{partition_id}.jsonl"
+                    output_dir / f"hifitts_recordings_{partition_id}.jsonl.gz"
                 )
 
             manifests[partition_id] = {
