@@ -157,6 +157,6 @@ def prepare_rir_noise(
         output_dir.mkdir(parents=True, exist_ok=True)
         for part in manifests:
             for key, manifest in manifests[part].items():
-                manifest.to_file(output_dir / f"{key}_{part}.json")
+                manifest.to_file(output_dir / f"{key}_{part}.jsonl")
 
     return manifests

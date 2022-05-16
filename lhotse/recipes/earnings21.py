@@ -171,7 +171,7 @@ def prepare_earnings21(
 
     validate_recordings_and_supervisions(recording_set, supervision_set)
     if output_dir is not None:
-        supervision_set.to_jsonl(output_dir / "supervisions.jsonl")
-        recording_set.to_jsonl(output_dir / "recordings.jsonl")
+        supervision_set.to_file(output_dir / "earnings21_supervisions.jsonl")
+        recording_set.to_file(output_dir / "earnings21_recordings.jsonl")
 
     return recording_set, supervision_set

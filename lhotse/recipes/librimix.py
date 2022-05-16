@@ -70,8 +70,8 @@ def prepare_librimix(
     supervision_sources = make_corresponding_supervisions(audio_sources)
     validate_recordings_and_supervisions(audio_sources, supervision_sources)
     if output_dir is not None:
-        audio_sources.to_json(output_dir / "recordings_sources.json")
-        supervision_sources.to_json(output_dir / "supervisions_sources.json")
+        audio_sources.to_file(output_dir / "librimix_recordings_sources.jsonl")
+        supervision_sources.to_file(output_dir / "librimix_supervisions_sources.jsonl")
     manifests["sources"] = {
         "recordings": audio_sources,
         "supervisions": supervision_sources,
@@ -97,8 +97,8 @@ def prepare_librimix(
         supervision_mix = make_corresponding_supervisions(audio_mix)
         validate_recordings_and_supervisions(audio_mix, supervision_mix)
         if output_dir is not None:
-            audio_mix.to_json(output_dir / "recordings_mix.json")
-            supervision_mix.to_json(output_dir / "supervisions_mix.json")
+            audio_mix.to_file(output_dir / "librimix_recordings_mix.jsonl")
+            supervision_mix.to_file(output_dir / "librimix_supervisions_mix.jsonl")
         manifests["premixed"] = {
             "recordings": audio_mix,
             "supervisions": supervision_mix,
@@ -123,8 +123,8 @@ def prepare_librimix(
         supervision_noise = make_corresponding_supervisions(audio_noise)
         validate_recordings_and_supervisions(audio_noise, supervision_noise)
         if output_dir is not None:
-            audio_noise.to_json(output_dir / "recordings_noise.json")
-            supervision_noise.to_json(output_dir / "supervisions_noise.json")
+            audio_noise.to_file(output_dir / "librimix_recordings_noise.jsonl")
+            supervision_noise.to_file(output_dir / "libirmix_supervisions_noise.jsonl")
         manifests["noise"] = {
             "recordings": audio_noise,
             "supervisions": supervision_noise,

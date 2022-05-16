@@ -208,8 +208,8 @@ def prepare_libritts(
         validate_recordings_and_supervisions(recordings, supervisions)
 
         if output_dir is not None:
-            supervisions.to_json(output_dir / f"libritts_supervisions_{part}.json")
-            recordings.to_json(output_dir / f"libritts_recordings_{part}.json")
+            supervisions.to_file(output_dir / f"libritts_supervisions_{part}.jsonl")
+            recordings.to_file(output_dir / f"libritts_recordings_{part}.jsonl")
 
         manifests[part] = {"recordings": recordings, "supervisions": supervisions}
 

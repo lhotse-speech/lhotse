@@ -646,8 +646,8 @@ def prepare_ami(
 
         # Write to output directory if a path is provided
         if output_dir is not None:
-            audio_part.to_file(output_dir / f"recordings_{part}.jsonl")
-            supervision_part.to_file(output_dir / f"supervisions_{part}.jsonl")
+            audio_part.to_file(output_dir / f"ami_recordings_{part}.jsonl")
+            supervision_part.to_file(output_dir / f"ami_supervisions_{part}.jsonl")
 
         audio_part, supervision_part = fix_manifests(audio_part, supervision_part)
         validate_recordings_and_supervisions(audio_part, supervision_part)

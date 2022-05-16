@@ -98,8 +98,8 @@ def prepare_ljspeech(
     validate_recordings_and_supervisions(recording_set, supervision_set)
 
     if output_dir is not None:
-        supervision_set.to_json(output_dir / "supervisions.json")
-        recording_set.to_json(output_dir / "recordings.json")
+        supervision_set.to_file(output_dir / "ljspeech_supervisions.jsonl")
+        recording_set.to_file(output_dir / "ljspeech_recordings.jsonl")
 
     return {"recordings": recording_set, "supervisions": supervision_set}
 

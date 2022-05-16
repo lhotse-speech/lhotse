@@ -85,10 +85,10 @@ def prepare_dihard3(
         if output_dir is not None:
             output_dir = Path(output_dir)
             output_dir.mkdir(parents=True, exist_ok=True)
-            recordings.to_json(output_dir / f"recordings_{part}.json")
-            supervisions.to_json(output_dir / f"supervisions_{part}.json")
+            recordings.to_file(output_dir / f"dihard3_recordings_{part}.jsonl")
+            supervisions.to_file(output_dir / f"dihard3_supervisions_{part}.jsonl")
             if uem_manifest:
-                uem.to_json(output_dir / f"uem_{part}.json")
+                uem.to_json(output_dir / f"dihard3_uem_{part}.json")
         manifests[part] = {"recordings": recordings, "supervisions": supervisions}
         if uem_manifest:
             manifests[part].update({"uem": uem})

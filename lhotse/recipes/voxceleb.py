@@ -235,17 +235,17 @@ def prepare_voxceleb(
         supervisions = manifests[split]["supervisions"]
         validate_recordings_and_supervisions(recordings, supervisions)
         if output_dir is not None:
-            recordings.to_file(output_dir / f"recordings_voxceleb_{split}.jsonl.gz")
-            supervisions.to_file(output_dir / f"supervisions_voxceleb_{split}.jsonl.gz")
+            recordings.to_file(output_dir / f"voxceleb_recordings_{split}.jsonl.gz")
+            supervisions.to_file(output_dir / f"voxceleb_supervisions_{split}.jsonl.gz")
 
     # Write the trials cut sets to the output directory
     if output_dir is not None:
         if "pos_trials" in manifests:
             for i, cuts in enumerate(manifests["pos_trials"]):
-                cuts.to_file(output_dir / f"pos_trials_voxceleb_utt{i+1}.jsonl.gz")
+                cuts.to_file(output_dir / f"voxceleb_pos_trials_utt{i+1}.jsonl.gz")
         if "neg_trials" in manifests:
             for i, cuts in enumerate(manifests["neg_trials"]):
-                cuts.to_file(output_dir / f"neg_trials_voxceleb_utt{i+1}.jsonl.gz")
+                cuts.to_file(output_dir / f"voxceleb_neg_trials_utt{i+1}.jsonl.gz")
 
     return manifests
 

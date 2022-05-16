@@ -135,9 +135,11 @@ def prepare_bvcc(
         output_dir = Path(output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
         for part, d in manifests.items():
-            d["recordings"].to_file(output_dir / f"recordings_{part}.jsonl.gz")
+            d["recordings"].to_file(output_dir / f"bvcc_recordings_{part}.jsonl.gz")
             if "supervisions" in d:
-                d["supervisions"].to_file(output_dir / f"supervisions_{part}.jsonl.gz")
+                d["supervisions"].to_file(
+                    output_dir / f"bvcc_supervisions_{part}.jsonl.gz"
+                )
 
     return manifests
 

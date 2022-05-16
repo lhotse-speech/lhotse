@@ -135,15 +135,15 @@ def prepare_gale_mandarin(
     }
 
     if output_dir is not None:
-        logging.info("Writing manifests to JSON files")
+        logging.info("Writing manifests to JSONL files")
         output_dir = Path(output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
         for part in ["train", "dev"]:
-            manifests[part]["recordings"].to_json(
-                output_dir / f"recordings_{part}.json"
+            manifests[part]["recordings"].to_file(
+                output_dir / f"gale_mandarin_recordings_{part}.jsonl"
             )
-            manifests[part]["supervisions"].to_json(
-                output_dir / f"supervisions_{part}.json"
+            manifests[part]["supervisions"].to_file(
+                output_dir / f"gale_mandarin_supervisions_{part}.jsonl"
             )
 
     return manifests

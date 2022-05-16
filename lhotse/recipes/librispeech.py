@@ -202,8 +202,12 @@ def prepare_librispeech(
             validate_recordings_and_supervisions(recording_set, supervision_set)
 
             if output_dir is not None:
-                supervision_set.to_file(output_dir / f"supervisions_{part}.json")
-                recording_set.to_file(output_dir / f"recordings_{part}.json")
+                supervision_set.to_file(
+                    output_dir / f"librispeech_supervisions_{part}.jsonl"
+                )
+                recording_set.to_file(
+                    output_dir / f"librispeech_recordings_{part}.jsonl"
+                )
 
             manifests[part] = {
                 "recordings": recording_set,
