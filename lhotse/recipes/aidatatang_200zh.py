@@ -131,7 +131,7 @@ def prepare_aidatatang_200zh(
 
         if output_dir is not None:
             supervision_set.to_file(
-                output_dir / f"aidatatang_supervisions_{part}.jsonl"
+                output_dir / f"aidatatang_supervisions_{part}.jsonl.gz"
             )
             recording_set.to_file(output_dir / f"aidatatang_recordings_{part}.jsonl.gz")
 
