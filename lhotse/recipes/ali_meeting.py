@@ -172,8 +172,12 @@ def prepare_ali_meeting(
         validate_recordings_and_supervisions(recording_set, supervision_set)
 
         if output_dir is not None:
-            supervision_set.to_file(output_dir / f"supervisions_{part.lower()}.jsonl")
-            recording_set.to_file(output_dir / f"recordings_{part.lower()}.jsonl")
+            supervision_set.to_file(
+                output_dir / f"alimeeting_supervisions_{part.lower()}.jsonl.gz"
+            )
+            recording_set.to_file(
+                output_dir / f"alimeeting_recordings_{part.lower()}.jsonl.gz"
+            )
 
         manifests[part.lower()] = {
             "recordings": recording_set,

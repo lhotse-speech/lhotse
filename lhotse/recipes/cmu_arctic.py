@@ -177,8 +177,8 @@ def prepare_cmu_arctic(
 
     if output_dir is not None:
         output_dir = Path(output_dir)
-        recordings.to_json(output_dir / "cmu_arctic_recordings.json")
-        supervisions.to_json(output_dir / "cmu_arctic_supervisions.json")
+        recordings.to_file(output_dir / "cmu-arctic_recordings_all.jsonl.gz")
+        supervisions.to_file(output_dir / "cmu-arctic_supervisions_all.jsonl.gz")
 
     return {"recordings": recordings, "supervisions": supervisions}
 

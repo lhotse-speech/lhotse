@@ -130,8 +130,10 @@ def prepare_aidatatang_200zh(
         validate_recordings_and_supervisions(recording_set, supervision_set)
 
         if output_dir is not None:
-            supervision_set.to_json(output_dir / f"supervisions_{part}.json")
-            recording_set.to_json(output_dir / f"recordings_{part}.json")
+            supervision_set.to_file(
+                output_dir / f"aidatatang_supervisions_{part}.jsonl.gz"
+            )
+            recording_set.to_file(output_dir / f"aidatatang_recordings_{part}.jsonl.gz")
 
         manifests[part] = {"recordings": recording_set, "supervisions": supervision_set}
 

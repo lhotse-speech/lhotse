@@ -93,8 +93,10 @@ def prepare_wenet_speech(
         )
 
         if output_dir is not None:
-            supervisions.to_file(output_dir / f"supervisions_{sub}.jsonl.gz")
-            recordings.to_file(output_dir / f"recordings_{sub}.jsonl.gz")
+            supervisions.to_file(
+                output_dir / f"wenetspeech_supervisions_{sub}.jsonl.gz"
+            )
+            recordings.to_file(output_dir / f"wenetspeech_recordings_{sub}.jsonl.gz")
 
         manifests[sub] = {
             "recordings": recordings,

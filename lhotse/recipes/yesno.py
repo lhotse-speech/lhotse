@@ -158,8 +158,8 @@ def prepare_yesno(
         validate_recordings_and_supervisions(recording_set, supervision_set)
 
         if output_dir is not None:
-            supervision_set.to_json(output_dir / f"supervisions_{name}.json")
-            recording_set.to_json(output_dir / f"recordings_{name}.json")
+            supervision_set.to_file(output_dir / f"yesno_supervisions_{name}.jsonl.gz")
+            recording_set.to_file(output_dir / f"yesno_recordings_{name}.jsonl.gz")
 
         manifests[name] = {
             "recordings": recording_set,
