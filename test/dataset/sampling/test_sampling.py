@@ -709,11 +709,22 @@ def test_partitions_are_equal(world_size, n_cuts, sampler_cls):
     assert all(nb == n_batches[0] for nb in n_batches)
 
 
+def test_bucketing_sampler_raises_value_error_on_lazy_cuts_input():
+    cut_set = DummyManifest(CutSet, begin_id=0, end_id=2)
+    with NamedTemporaryFile(suffix=".jsonl") as f:
+        cut_set.to_jsonl(f.name)
+        lazy_cuts = CutSet.from_jsonl_lazy(f.name)
+        with pytest.raises(ValueError):
+            sampler = BucketingSampler(
+                lazy_cuts,
+                max_duration=10.0,
+            )
+
+
 @pytest.mark.parametrize(
     "sampler_cls",
     [
         SimpleCutSampler,
-        BucketingSampler,
         DynamicCutSampler,
     ],
 )
@@ -746,7 +757,6 @@ def test_single_cut_sampler_with_lazy_cuts(sampler_cls):
     "sampler_cls",
     [
         SimpleCutSampler,
-        BucketingSampler,
         DynamicCutSampler,
     ],
 )
@@ -968,7 +978,7 @@ def test_bucketing_sampler_drop_last(drop_last):
 
     # Sampler that always select one cut.
     sampler = BucketingSampler(
-        cut_set,
+        cut_set.to_eager(),
         sampler_type=SimpleCutSampler,
         max_duration=10.5,
         num_buckets=5,
@@ -1075,7 +1085,6 @@ def test_sampler_diagnostics_accumulate_across_epochs(create_sampler):
     "sampler_cls",
     [
         SimpleCutSampler,
-        BucketingSampler,
         DynamicCutSampler,
     ],
 )
