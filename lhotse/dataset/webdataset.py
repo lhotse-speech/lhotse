@@ -50,8 +50,9 @@ Read the documentation of the items below to understand each component better.
 """
 import logging
 import pickle
+import random
 from functools import partial
-from typing import Callable, Dict, List, Optional, Sequence, Union
+from typing import Callable, Dict, Generator, Iterable, List, Optional, Sequence, Union
 
 from tqdm.auto import tqdm
 
@@ -408,7 +409,6 @@ def mini_webdataset(
         reraise_exception,
         warn_and_continue,
         SimpleShardList,
-        detshuffle,
         tarfile_to_samples,
     )
 
@@ -418,7 +418,7 @@ def mini_webdataset(
     if split_by_worker:
         wds.append(split_by_worker_)
     if shuffle_shards:
-        wds.append(detshuffle(bufsize=100, epoch=epoch))
+        wds.append(create_shard_shuffler()(epoch=epoch))
     wds.append(
         tarfile_to_samples(
             handler=warn_and_continue if ignore_error_shards else reraise_exception,
@@ -426,6 +426,24 @@ def mini_webdataset(
     )
     return wds
 
+
+def create_shard_shuffler():
+    from webdataset import PipelineStage
+
+    class detshuffle_all(PipelineStage):
+        def __init__(self, seed=0, epoch=-1):
+            self.seed = seed
+            self.epoch = epoch
+
+        def run(self, src):
+            self.epoch += 1
+            rng = random.Random()
+            rng.seed((self.seed, self.epoch))
+            items = list(src)
+            rng.shuffle(items)
+            return items
+
+    return detshuffle_all
 
 def _single_node_or_multi_node_with_duplicated_data(src, group=None):
     """
