@@ -30,14 +30,19 @@ class RoundRobinSampler(CutSampler):
         ...     pass  # profit
     """
 
-    def __init__(self, *samplers: CutSampler) -> None:
+    def __init__(self, *samplers: CutSampler, stop_early: bool = False) -> None:
         """
         RoundRobinSampler's constructor.
 
         :param samplers: The list of samplers from which we sample batches in turns.
+        :param stop_early: Should we finish the epoch once any of the samplers becomes
+            depleted.
+            By default, we will keep iterating until all of the samplers are exhausted.
+            This setting can be used to balance datasets of different sizes.
         """
         super().__init__(rank=0, world_size=1)
         self.samplers = samplers
+        self.stop_early = stop_early
         self._nondepleted_samplers_indices = list(range(len(self.samplers)))
         self._cur_sampler_idx = 0
 
@@ -94,6 +99,7 @@ class RoundRobinSampler(CutSampler):
         state_dict.update(
             {
                 "samplers": [s.state_dict() for s in self.samplers],
+                "stop_early": self.stop_early,
                 "_cur_sampler_idx": self._cur_sampler_idx,
                 # Explicit list copy below allows to restore within the same process.
                 "_nondepleted_samplers_indices": list(
@@ -121,6 +127,7 @@ class RoundRobinSampler(CutSampler):
             For implementers of sub-classes of CutSampler: the flag ``self._just_restored_state`` has to be
             handled in ``__iter__`` to make it avoid resetting the just-restored state (only once).
         """
+        self.stop_early = state_dict.pop("stop_early")
         self._cur_sampler_idx = state_dict.pop("_cur_sampler_idx")
         self._nondepleted_samplers_indices = state_dict.pop(
             "_nondepleted_samplers_indices"
@@ -154,6 +161,9 @@ class RoundRobinSampler(CutSampler):
         except StopIteration:
             # Try again recursively as long as there is at least one non depleted sampler left.
             self._nondepleted_samplers_indices.pop(self._cur_sampler_idx)
+            if self.stop_early or len(self._nondepleted_samplers_indices) == 0:
+                raise
+            self._cur_sampler_idx = self._nondepleted_samplers_indices[0]
             return self._next_batch()
 
         self._cur_sampler_idx = (self._cur_sampler_idx + 1) % len(
