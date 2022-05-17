@@ -163,7 +163,9 @@ class RoundRobinSampler(CutSampler):
             self._nondepleted_samplers_indices.pop(self._cur_sampler_idx)
             if self.stop_early or len(self._nondepleted_samplers_indices) == 0:
                 raise
-            self._cur_sampler_idx = self._nondepleted_samplers_indices[0]
+            self._cur_sampler_idx = (self._cur_sampler_idx + 1) % len(
+                self._nondepleted_samplers_indices
+            )
             return self._next_batch()
 
         self._cur_sampler_idx = (self._cur_sampler_idx + 1) % len(
