@@ -52,8 +52,8 @@ def prepare_peoples_speech(
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    recs_path = output_dir / "peoples-speech_recordings.jsonl.gz"
-    sups_path = output_dir / "peoples-speech_supervisions.jsonl.gz"
+    recs_path = output_dir / "peoples-speech_recordings_all.jsonl.gz"
+    sups_path = output_dir / "peoples-speech_supervisions_all.jsonl.gz"
 
     if recs_path.is_file() and sups_path.is_file():
         # Nothing to do: just open the manifests in lazy mode.

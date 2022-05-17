@@ -4,7 +4,9 @@ from bisect import bisect_right
 from collections import deque
 from itertools import islice
 from typing import (
+    Any,
     Deque,
+    Dict,
     Generator,
     Iterable,
     List,
@@ -17,7 +19,12 @@ import numpy as np
 
 from lhotse import CutSet, Seconds
 from lhotse.cut import Cut
-from lhotse.dataset.sampling.base import CutSampler, SamplingDiagnostics, TimeConstraint
+from lhotse.dataset.sampling.base import (
+    CutSampler,
+    EpochDiagnostics,
+    SamplingDiagnostics,
+    TimeConstraint,
+)
 from lhotse.dataset.sampling.dynamic import DurationBatcher, Filter
 from lhotse.utils import ifnone, streaming_shuffle
 
@@ -117,7 +124,9 @@ class DynamicBucketingSampler(CutSampler):
         :param rank: Index of distributed node. We will try to infer it by default.
         :param seed: Random seed used to consistently shuffle the dataset across different processes.
         """
-        super().__init__(world_size=world_size, rank=rank, seed=seed)
+        super().__init__(
+            drop_last=drop_last, world_size=world_size, rank=rank, seed=seed
+        )
         if not all(cs.is_lazy for cs in cuts if isinstance(cs, CutSet)):
             warnings.warn(
                 "You are using DynamicBucketingSampler with an eagerly read CutSet. "
@@ -128,7 +137,6 @@ class DynamicBucketingSampler(CutSampler):
         self.max_duration = max_duration
         self.max_cuts = max_cuts
         self.shuffle = shuffle
-        self.drop_last = drop_last
         self.consistent_ids = consistent_ids
         self.num_cuts_for_bins_estimate = num_cuts_for_bins_estimate
         self.buffer_size = buffer_size
@@ -149,7 +157,52 @@ class DynamicBucketingSampler(CutSampler):
             num_buckets=num_buckets,
         )
 
+    def state_dict(self) -> Dict[str, Any]:
+        sd = super().state_dict()
+        sd.update(
+            {
+                "max_duration": self.max_duration,
+                "max_cuts": self.max_cuts,
+                "consistent_ids": self.consistent_ids,
+                "buffer_size": self.buffer_size,
+                "num_cuts_for_bins_estimate": self.num_cuts_for_bins_estimate,
+                "shuffle_buffer_size": self.shuffle_buffer_size,
+                "strict": self.strict,
+            }
+        )
+        return sd
+
+    def load_state_dict(self, sd: Dict[str, Any]) -> None:
+        self.max_duration = sd.pop("max_duration")
+        self.max_cuts = sd.pop("max_cuts")
+        self.consistent_ids = sd.pop("consistent_ids")
+        self.num_cuts_for_bins_estimate = sd.pop("num_cuts_for_bins_estimate")
+        self.buffer_size = sd.pop("buffer_size")
+        self.shuffle_buffer_size = sd.pop("shuffle_buffer_size")
+        self.strict = sd.pop("strict")
+        super().load_state_dict(sd)
+        self._fast_forward()
+
+    def _fast_forward(self):
+        current_epoch = self.diagnostics.current_epoch
+        num_batches_to_iter = self.diagnostics.current_epoch_stats.total_batches
+
+        # Set the right epoch
+        self.set_epoch(current_epoch)
+        # Reset diagnostics for this epoch as we're about to re-iterate
+        self.diagnostics.stats_per_epoch[current_epoch] = EpochDiagnostics(
+            epoch=current_epoch
+        )
+
+        self._just_restored_state = False
+        iter(self)
+        for _ in range(num_batches_to_iter):
+            next(self)
+        self._just_restored_state = True
+
     def __iter__(self) -> "DynamicBucketingSampler":
+        if self._just_restored_state:
+            return self
         self.rng = random.Random(self.seed + self.epoch)
         # Initiate iteration
         self.cuts_iter = [iter(cs) for cs in self.cuts]

@@ -44,7 +44,7 @@ def download_ali_meeting(
     :param base_url: str, the url of the OpenSLR resources.
     :return: the path to downloaded and extracted directory with data.
     """
-    url = f"{base_url}/AliMeeting/openlr/"
+    url = f"{base_url}/AliMeeting/openlr"
     target_dir = Path(target_dir)
     target_dir.mkdir(parents=True, exist_ok=True)
     dataset_tar_names = [
@@ -95,14 +95,15 @@ def prepare_ali_meeting(
         recordings = []
         supervisions = []
         # Eval and Test may further be inside another folder (since the "far" and "near" are grouped together)
+        corpus_dir_split = corpus_dir
         if part == "Eval" or part == "Test":
-            corpus_dir = (
+            corpus_dir_split = (
                 corpus_dir / f"{part}_Ali"
                 if (corpus_dir / f"{part}_Ali").is_dir()
                 else corpus_dir
             )
-        wav_paths = corpus_dir / f"{part}_Ali_{mic}" / "audio_dir"
-        text_paths = corpus_dir / f"{part}_Ali_{mic}" / "textgrid_dir"
+        wav_paths = corpus_dir_split / f"{part}_Ali_{mic}" / "audio_dir"
+        text_paths = corpus_dir_split / f"{part}_Ali_{mic}" / "textgrid_dir"
 
         # For 'near' setting:
         #  - wav files have names like R0003_M0046_F_SPK0093.wav
@@ -171,8 +172,12 @@ def prepare_ali_meeting(
         validate_recordings_and_supervisions(recording_set, supervision_set)
 
         if output_dir is not None:
-            supervision_set.to_file(output_dir / f"supervisions_{part.lower()}.jsonl")
-            recording_set.to_file(output_dir / f"recordings_{part.lower()}.jsonl")
+            supervision_set.to_file(
+                output_dir / f"alimeeting_supervisions_{part.lower()}.jsonl.gz"
+            )
+            recording_set.to_file(
+                output_dir / f"alimeeting_recordings_{part.lower()}.jsonl.gz"
+            )
 
         manifests[part.lower()] = {
             "recordings": recording_set,

@@ -1,5 +1,4 @@
 import random
-import warnings
 from copy import deepcopy
 from functools import reduce
 from itertools import chain
@@ -88,19 +87,21 @@ class BucketingSampler(CutSampler):
         """
         # Do not use the distributed capacities of the CutSampler in the top-level sampler.
         super().__init__(
+            drop_last=drop_last,
             world_size=1,
             rank=0,
             seed=seed,
         )
         self.num_buckets = num_buckets
-        self.drop_last = drop_last
         self.proportional_sampling = proportional_sampling
         self.sampler_type = sampler_type
         self.sampler_kwargs = kwargs
         self.cut_sets = cuts
-        if self.cut_sets[0].is_lazy:
-            warnings.warn(
-                "Lazy CutSet detected in BucketingSampler: we will read it into memory anyway. "
+        if any(cs.is_lazy for cs in self.cut_sets):
+            raise ValueError(
+                "BucketingSampler does not support working with lazy CutSet (e.g., "
+                "those opened with 'load_manifest_lazy', 'CutSet.from_jsonl_lazy', or "
+                "'CutSet.from_webdataset'). "
                 "Please use lhotse.dataset.DynamicBucketingSampler instead."
             )
 
@@ -228,7 +229,6 @@ class BucketingSampler(CutSampler):
         state_dict.update(
             {
                 "num_buckets": self.num_buckets,
-                "drop_last": self.drop_last,
                 "proportional_sampling": self.proportional_sampling,
                 "bucket_method": self.bucket_method,
                 "depleted": deepcopy(self.depleted),
@@ -262,7 +262,6 @@ class BucketingSampler(CutSampler):
             "Error in BucketingSampler.load_state_dict(): Inconsistent number of buckets: "
             f"current sampler has {self.num_buckets}, the state_dict has {num_buckets}."
         )
-        self.drop_last = state_dict.pop("drop_last")
         self.proportional_sampling = state_dict.pop("proportional_sampling")
         self.bucket_method = state_dict.pop("bucket_method")
         self.sampler_kwargs = state_dict.pop("sampler_kwargs")

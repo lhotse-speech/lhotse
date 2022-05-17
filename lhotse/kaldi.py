@@ -4,12 +4,13 @@ from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 
-from lhotse import FeatureSet, Features, Seconds
 from lhotse.audio import AudioSource, Recording, RecordingSet
 from lhotse.audio import audioread_info
+from lhotse.features import FeatureSet, Features
 from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import (
     Pathlike,
+    Seconds,
     add_durations,
     compute_num_samples,
     fastcopy,
@@ -44,7 +45,7 @@ def get_duration(
         import soundfile
 
         info = soundfile.info(path)
-    except:
+    except Exception:
         # Try to parse the file using audioread as a fallback.
         info = audioread_info(path)
     return info.duration
@@ -150,7 +151,7 @@ def load_kaldi_data_dir(
                     storage_type=KaldiReader.name,
                     storage_path=str(feats_scp),
                     storage_key=utt_id,
-                    recording_id=supervision_set[utt_id].recording_id
+                    recording_id=supervision_set[fix_id(utt_id)].recording_id
                     if supervision_set is not None
                     else utt_id,
                     channels=0,
