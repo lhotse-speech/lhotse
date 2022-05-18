@@ -47,3 +47,4 @@ from .voxceleb import *
 from .wenet_speech import *
 from .yesno import *
 from .eval2000 import *
+from .mgb2 import *
