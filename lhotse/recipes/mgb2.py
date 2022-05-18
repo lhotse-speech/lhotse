@@ -18,10 +18,9 @@ from pathlib import Path
 from typing import Dict, Optional, Union
 from lhotse.kaldi import load_kaldi_data_dir
 from lhotse import fix_manifests, validate_recordings_and_supervisions
-from lhotse.audio import Recording, RecordingSet
-from lhotse.supervision import SupervisionSegment, SupervisionSet
+from lhotse import Recording, RecordingSet, SupervisionSegment, SupervisionSet
 from lhotse.recipes.utils import manifests_exist, read_manifests_if_cached
-from lhotse.utils import Pathlike, recursion_limit, check_and_rglob
+from lhotse.utils import Pathlike, recursion_limit, check_and_rglob, is_module_available
 from itertools import chain
 from bs4 import BeautifulSoup
 import re
@@ -62,7 +61,9 @@ def prepare_mgb2(
     :param corpus_dir: Pathlike, the path of the data dir.
     :param output_dir: Pathlike, the path where to write the manifests.
     :param text_cleaning: Bool, if True, basic text cleaning is performed (similar to ESPNet recipe).
+    :param buck_walter: Bool, use BuckWalter transliteration 
     :param num_jobs: int, the number of jobs to use for parallel processing.
+    :param mer_thresh: int, filter out segments based on mer (Match Error Rate)
     :return: a Dict whose key is the dataset part, and the value is Dicts with the keys 'audio' and 'supervisions'.
 
     .. note::
@@ -72,7 +73,11 @@ def prepare_mgb2(
     .. caution::
         The `text_cleaning` option removes all punctuation and diacritics.
     """
-    
+    if not is_module_available("bs4"):
+        raise ValueError(
+            "To prepare MGB2 data, please 'pip install beautifulsoup4' first."
+        )
+
     corpus_dir = Path(corpus_dir)
     assert corpus_dir.is_dir(), f"No such directory: {corpus_dir}"
     
@@ -100,11 +105,11 @@ def prepare_mgb2(
         # supervisions.
         
         if part == "test" or part == "dev":
-            os.system(f'mkdir -p {os.path.join(output_dir, part)}')
-            os.system(f"cp {os.path.join(corpus_dir, part,'text.non_overlap_speech')}\
-                 {os.path.join(output_dir, part,'text')}")
-            os.system(f"cp {os.path.join(corpus_dir, part,'segments.non_overlap_speech')}\
-                 {os.path.join(output_dir, part,'segments')}")
+	    output_dir = Path(output_dir)
+	    (output_dir / part).mkdir(parents=True, exist_ok=True)
+            corpus_dir = Path(corpus_dir)
+	    shutil.copy(corpus_dir / part / "text.non_overlap_speech", output_dir / part / "text")
+	    shutil.copy(corpus_dir / part / "segments.non_overlap_speech", output_dir / part / "segments")
             os.system(f"cat {os.path.join(corpus_dir, part,'wav.scp')}\
                  | sed 's:wav/:{os.path.join(corpus_dir, part,'wav/')}:g' > {os.path.join(output_dir, part,'wav.scp')}") 
 
@@ -196,8 +201,4 @@ def make_supervisions(xml_path, mer_thresh):
         for segment in soup.find_all("segment") 
             if mer_thresh is None or float(segment["WMER"]) <= mer_thresh
         ]
-
-# if __name__ == '__main__':
-
-#     prepare_mgb2('/alt-data/speech/mgb2','/home/local/QCRI/ahussein/data/')
  
