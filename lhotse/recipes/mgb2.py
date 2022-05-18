@@ -30,8 +30,7 @@ from lhotse.kaldi import load_kaldi_data_dir
 from lhotse import fix_manifests, validate_recordings_and_supervisions
 from lhotse import RecordingSet, SupervisionSegment, SupervisionSet
 from lhotse.recipes.utils import manifests_exist, read_manifests_if_cached
-from lhotse.utils import (check_and_rglob, Pathlike,
-                          recursion_limit, is_module_available)
+from lhotse.utils import check_and_rglob, Pathlike, recursion_limit, is_module_available
 
 
 def download_mgb2(
@@ -66,7 +65,7 @@ def prepare_mgb2(
     :param corpus_dir: Pathlike, the path of the data dir.
     :param output_dir: Pathlike, the path where to write the manifests.
     :param text_cleaning: Bool, if True, basic text cleaning is performed (similar to ESPNet recipe).
-    :param buck_walter: Bool, use BuckWalter transliteration 
+    :param buck_walter: Bool, use BuckWalter transliteration
     :param num_jobs: int, the number of jobs to use for parallel processing.
     :param mer_thresh: int, filter out segments based on mer (Match Error Rate)
     :return: a Dict whose key is the dataset part, and the value is Dicts with the keys 'audio' and 'supervisions'.
@@ -90,7 +89,11 @@ def prepare_mgb2(
         output_dir.mkdir(parents=True, exist_ok=True)
         # Maybe the manifests already exist: we can read them and save a bit of preparation time.
         manifests = read_manifests_if_cached(
-            dataset_parts=dataset_parts, output_dir=output_dir, prefix="mgb2", suffix="jsonl.gz", lazy=True,
+            dataset_parts=dataset_parts,
+            output_dir=output_dir,
+            prefix="mgb2",
+            suffix="jsonl.gz",
+            lazy=True,
         )
 
     for part in dataset_parts:
@@ -109,37 +112,54 @@ def prepare_mgb2(
         corpus_dir = Path(corpus_dir)
         if part == "test" or part == "dev":
             (output_dir / part).mkdir(parents=True, exist_ok=True)
-            copy(corpus_dir / part / "text.non_overlap_speech",
-                 output_dir / part / "text")
-            copy(corpus_dir / part / "segments.non_overlap_speech",
-                 output_dir / part / "segments")
-            system(f"cat {(corpus_dir / part / 'wav.scp')}\
+            copy(
+                corpus_dir / part / "text.non_overlap_speech",
+                output_dir / part / "text",
+            )
+            copy(
+                corpus_dir / part / "segments.non_overlap_speech",
+                output_dir / part / "segments",
+            )
+            system(
+                f"cat {(corpus_dir / part / 'wav.scp')}\
                  | sed 's:wav/:{(corpus_dir / part / 'wav')}/:g' >\
-                      {(output_dir / part / 'wav.scp')}")
+                      {(output_dir / part / 'wav.scp')}"
+            )
 
             recordings, supervisions, _ = load_kaldi_data_dir(
-                (output_dir / part), 16000)
+                (output_dir / part), 16000
+            )
             if buck_walter is False:
                 supervisions = supervisions.transform_text(from_buck_walter)
             if part == "test":
-                assert len(supervisions) == 5365
+                assert (
+                    len(supervisions) == 5365
+                ), f"Expected 5365 supervisions for test, found {len(supervisions)}"
             elif part == "dev":
-                assert len(supervisions) == 5002
+                assert (
+                    len(supervisions) == 5002
+                ), f"Expected 5002 supervisions for dev, found {len(supervisions)}"
         elif part == "train":
             recordings = RecordingSet.from_dir(
-                (corpus_dir / part / "wav"),
-                pattern='*.wav', num_jobs=num_jobs)
+                (corpus_dir / part / "wav"), pattern="*.wav", num_jobs=num_jobs
+            )
 
             xml_paths = check_and_rglob(
-                path.join(corpus_dir, part, "xml/utf8"), "*.xml")
+                path.join(corpus_dir, part, "xml/utf8"), "*.xml"
+            )
             # Read supervisions and write them to manifest
             with recursion_limit(5000):
-                supervisions_list = list(chain.from_iterable(
-                    [make_supervisions(p, mer_thresh) for p in xml_paths]))
+                supervisions_list = list(
+                    chain.from_iterable(
+                        [make_supervisions(p, mer_thresh) for p in xml_paths]
+                    )
+                )
 
             supervisions = SupervisionSet.from_segments(supervisions_list)
 
-            assert len(supervisions) == 375103
+            assert (
+                len(supervisions) == 375103
+            ), f"Expected 375103 supervisions for train, found {len(supervisions)}"
 
             if text_cleaning is True:
                 supervisions = supervisions.transform_text(cleaning)
@@ -147,10 +167,8 @@ def prepare_mgb2(
         validate_recordings_and_supervisions(recordings, supervisions)
 
         # saving recordings and supervisions
-        recordings.to_file(
-            path.join(output_dir, f"mgb2_recordings_{part}.jsonl.gz"))
-        supervisions.to_file(
-            path.join(output_dir, f"mgb2_supervisions_{part}.jsonl.gz"))
+        recordings.to_file((output_dir / f"mgb2_recordings_{part}.jsonl.gz"))
+        supervisions.to_file((output_dir / f"mgb2_supervisions_{part}.jsonl.gz"))
 
         manifests[part] = {
             "recordings": recordings,
@@ -159,11 +177,11 @@ def prepare_mgb2(
     return manifests
 
 
-_unicode = u"\u0622\u0624\u0626\u0628\u062a\u062c\u06af\u062e\u0630\u0632\u0634\
+_unicode = "\u0622\u0624\u0626\u0628\u062a\u062c\u06af\u062e\u0630\u0632\u0634\
     \u0636\u0638\u063a\u0640\u0642\u0644\u0646\u0648\u064a\u064c\u064e\u0650\u0652\u0670\
     \u067e\u0686\u0621\u0623\u0625\u06a4\u0627\u0629\u062b\u062d\u062f\u0631\u0633\u0635\
     \u0637\u0639\u0641\u0643\u0645\u0647\u0649\u064b\u064d\u064f\u0651\u0671"
-_buckwalter = u"|&}btjGx*z$DZg_qlnwyNaio`PJ'><VApvHdrsSTEfkmhYFKu~{"
+_buckwalter = "|&}btjGx*z$DZg_qlnwyNaio`PJ'><VApvHdrsSTEfkmhYFKu~{"
 _backwardMap = {ord(a): b for a, b in zip(_buckwalter, _unicode)}
 
 
@@ -173,20 +191,20 @@ def from_buck_walter(s: str) -> str:
 
 def remove_diacritics(text: str) -> str:
     # https://unicode-table.com/en/blocks/arabic/
-    return sub(r'[\u064B-\u0652\u06D4\u0670\u0674\u06D5-\u06ED]+', '', text)
+    return sub(r"[\u064B-\u0652\u06D4\u0670\u0674\u06D5-\u06ED]+", "", text)
 
 
 def remove_punctuations(text: str) -> str:
-    """ This function  removes all punctuations except the verbatim """
+    """This function  removes all punctuations except the verbatim"""
 
-    arabic_punctuations = '''`÷×؛<>_()*&^%][ـ،/:"؟.,'{}~¦+|!”…“–ـ'''
+    arabic_punctuations = """`÷×؛<>_()*&^%][ـ،/:"؟.,'{}~¦+|!”…“–ـ"""
     english_punctuations = punctuation
     # remove all non verbatim punctuations
     all_punctuations = set(arabic_punctuations + english_punctuations)
 
     for p in all_punctuations:
         if p in text:
-            text = text.replace(p, ' ')
+            text = text.replace(p, " ")
     return text
 
 
@@ -207,17 +225,20 @@ def make_supervisions(xml_path: str, mer_thresh: int) -> None:
     soup = BeautifulSoup(xml_handle, "xml")
     return [
         SupervisionSegment(
-            id=segment["id"]+"_"+segment["starttime"]+":"+segment["endtime"],
+            id=segment["id"] + "_" + segment["starttime"] + ":" + segment["endtime"],
             recording_id=segment["id"].split("_utt")[0].replace("_", "-"),
             start=float(segment["starttime"]),
-            duration=round(float(segment["endtime"]) -
-                           float(segment["starttime"]), ndigits=8),
+            duration=round(
+                float(segment["endtime"]) - float(segment["starttime"]), ndigits=8
+            ),
             channel=0,
-            text=" ".join([
-                element.string
-                for element in segment.find_all("element")
-                if element.string is not None
-            ]),
+            text=" ".join(
+                [
+                    element.string
+                    for element in segment.find_all("element")
+                    if element.string is not None
+                ]
+            ),
             language="Arabic",
             speaker=int(match(r"\w+speaker(\d+)\w+", segment["who"]).group(1)),
         )
