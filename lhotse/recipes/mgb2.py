@@ -11,7 +11,7 @@ and a similar evaluation set of 10 hours.
 Both the development and evaluation data have been released in the 2016 MGB challenge
 """
 from shutil import copy
-from re import match, sub 
+from re import match, sub
 from os import path, system
 from string import punctuation
 from logging import info
@@ -60,7 +60,7 @@ def prepare_mgb2(
     :param corpus_dir: Pathlike, the path of the data dir.
     :param output_dir: Pathlike, the path where to write the manifests.
     :param text_cleaning: Bool, if True, basic text cleaning is performed (similar to ESPNet recipe).
-    :param buck_walter: Bool, use BuckWalter transliteration 
+    :param buck_walter: Bool, use BuckWalter transliteration
     :param num_jobs: int, the number of jobs to use for parallel processing.
     :param mer_thresh: int, filter out segments based on mer (Match Error Rate)
     :return: a Dict whose key is the dataset part, and the value is Dicts with the keys 'audio' and 'supervisions'.
@@ -76,12 +76,12 @@ def prepare_mgb2(
         raise ValueError(
             "To prepare MGB2 data, please 'pip install beautifulsoup4' first."
         )
-    
+
     from bs4 import BeautifulSoup
 
     corpus_dir = Path(corpus_dir)
     assert corpus_dir.is_dir(), f"No such directory: {corpus_dir}"
-    
+
     dataset_parts = ["dev", "train", "test"]
     manifests = {}
 
@@ -90,31 +90,45 @@ def prepare_mgb2(
         output_dir.mkdir(parents=True, exist_ok=True)
         # Maybe the manifests already exist: we can read them and save a bit of preparation time.
         manifests = read_manifests_if_cached(
-            dataset_parts=dataset_parts, output_dir=output_dir, prefix="mgb2", suffix="jsonl.gz", lazy=True,
+            dataset_parts=dataset_parts,
+            output_dir=output_dir,
+            prefix="mgb2",
+            suffix="jsonl.gz",
+            lazy=True,
         )
 
     for part in dataset_parts:
         info(f"Processing MGB2 subset: {part}")
         if manifests_exist(
             part=part, output_dir=output_dir, prefix="mgb2", suffix="jsonl.gz"
-            ):
+        ):
             info(f"MGB2 subset: {part} already prepared - skipping.")
             continue
 
         # Read the recordings and write them into manifest. We additionally store the
         # duration of the recordings in a dict which will be used later to create the
         # supervisions.
-        
+
         output_dir = Path(output_dir)
         corpus_dir = Path(corpus_dir)
         if part == "test" or part == "dev":
             (output_dir / part).mkdir(parents=True, exist_ok=True)
-            copy(corpus_dir / part / "text.non_overlap_speech", output_dir / part / "text")
-            copy(corpus_dir / part / "segments.non_overlap_speech", output_dir / part / "segments")
-            system(f"cat {(corpus_dir / part / 'wav.scp')}\
-                 | sed 's:wav/:{(corpus_dir / part / 'wav')}/:g' > {path.join(output_dir, part,'wav.scp')}") 
+            copy(
+                corpus_dir / part / "text.non_overlap_speech",
+                output_dir / part / "text",
+            )
+            copy(
+                corpus_dir / part / "segments.non_overlap_speech",
+                output_dir / part / "segments",
+            )
+            system(
+                f"cat {(corpus_dir / part / 'wav.scp')}\
+                 | sed 's:wav/:{(corpus_dir / part / 'wav')}/:g' > {path.join(output_dir, part,'wav.scp')}"
+            )
 
-            recordings, supervisions, _= load_kaldi_data_dir(path.join(output_dir, part), 16000)
+            recordings, supervisions, _ = load_kaldi_data_dir(
+                path.join(output_dir, part), 16000
+            )
             if buck_walter == False:
                 supervisions = supervisions.transform_text(from_buck_walter)
             if part == "test":
@@ -122,84 +136,103 @@ def prepare_mgb2(
             elif part == "dev":
                 assert len(supervisions) == 5002
         elif part == "train":
-            recordings = RecordingSet.from_dir(path.join(corpus_dir, part, "wav"),
-                                                pattern='*.wav', num_jobs=num_jobs)
+            recordings = RecordingSet.from_dir(
+                path.join(corpus_dir, part, "wav"), pattern="*.wav", num_jobs=num_jobs
+            )
 
-            xml_paths = check_and_rglob(path.join(corpus_dir, part, "xml/utf8"), "*.xml")
+            xml_paths = check_and_rglob(
+                path.join(corpus_dir, part, "xml/utf8"), "*.xml"
+            )
             # Read supervisions and write them to manifest
             with recursion_limit(5000):
-                supervisions_list = list(chain.from_iterable(
-                    [make_supervisions(p, mer_thresh) for p in xml_paths]))
-            
+                supervisions_list = list(
+                    chain.from_iterable(
+                        [make_supervisions(p, mer_thresh) for p in xml_paths]
+                    )
+                )
+
             supervisions = SupervisionSet.from_segments(supervisions_list)
-            
+
             assert len(supervisions) == 375103
-                
+
             if text_cleaning == True:
                 supervisions = supervisions.transform_text(cleaning)
             recordings, supervisions = fix_manifests(recordings, supervisions)
         validate_recordings_and_supervisions(recordings, supervisions)
 
         # saving recordings and supervisions
-        recordings.to_file(path.join(output_dir,f"mgb2_recordings_{part}.jsonl.gz"))
-        supervisions.to_file(path.join(output_dir,f"mgb2_supervisions_{part}.jsonl.gz"))
+        recordings.to_file(path.join(output_dir, f"mgb2_recordings_{part}.jsonl.gz"))
+        supervisions.to_file(
+            path.join(output_dir, f"mgb2_supervisions_{part}.jsonl.gz")
+        )
 
         manifests[part] = {
-                "recordings":recordings,
-                "supervisions": supervisions,
-                }
+            "recordings": recordings,
+            "supervisions": supervisions,
+        }
     return manifests
 
-_unicode = u"\u0622\u0624\u0626\u0628\u062a\u062c\u06af\u062e\u0630\u0632\u0634\
+
+_unicode = "\u0622\u0624\u0626\u0628\u062a\u062c\u06af\u062e\u0630\u0632\u0634\
     \u0636\u0638\u063a\u0640\u0642\u0644\u0646\u0648\u064a\u064c\u064e\u0650\u0652\u0670\
     \u067e\u0686\u0621\u0623\u0625\u06a4\u0627\u0629\u062b\u062d\u062f\u0631\u0633\u0635\
     \u0637\u0639\u0641\u0643\u0645\u0647\u0649\u064b\u064d\u064f\u0651\u0671"
-_buckwalter = u"|&}btjGx*z$DZg_qlnwyNaio`PJ'><VApvHdrsSTEfkmhYFKu~{"
-_backwardMap = {ord(a):b for a,b in zip(_buckwalter, _unicode)}
+_buckwalter = "|&}btjGx*z$DZg_qlnwyNaio`PJ'><VApvHdrsSTEfkmhYFKu~{"
+_backwardMap = {ord(a): b for a, b in zip(_buckwalter, _unicode)}
+
 
 def from_buck_walter(s: str) -> str:
     return s.translate(_backwardMap)
 
+
 def remove_diacritics(text: str) -> str:
-    #https://unicode-table.com/en/blocks/arabic/
-    return sub(r'[\u064B-\u0652\u06D4\u0670\u0674\u06D5-\u06ED]+', '', text)
+    # https://unicode-table.com/en/blocks/arabic/
+    return sub(r"[\u064B-\u0652\u06D4\u0670\u0674\u06D5-\u06ED]+", "", text)
+
 
 def remove_punctuations(text: str) -> str:
-    """ This function  removes all punctuations except the verbatim """
-	
-    arabic_punctuations = '''`÷×؛<>_()*&^%][ـ،/:"؟.,'{}~¦+|!”…“–ـ'''
+    """This function  removes all punctuations except the verbatim"""
+
+    arabic_punctuations = """`÷×؛<>_()*&^%][ـ،/:"؟.,'{}~¦+|!”…“–ـ"""
     english_punctuations = punctuation
-    all_punctuations = set(arabic_punctuations + english_punctuations) # remove all non verbatim punctuations
-	
+    all_punctuations = set(
+        arabic_punctuations + english_punctuations
+    )  # remove all non verbatim punctuations
+
     for p in all_punctuations:
         if p in text:
-            text = text.replace(p, ' ')
+            text = text.replace(p, " ")
     return text
+
 
 def cleaning(text: str) -> str:
     text = remove_punctuations(text)
     text = remove_diacritics(text)
     return text
 
+
 def make_supervisions(xml_path, mer_thresh):
     xml_handle = open(xml_path, "r")
     soup = BeautifulSoup(xml_handle, "xml")
     return [
         SupervisionSegment(
-            id = segment["id"]+"_"+segment["starttime"]+":"+segment["endtime"],
-            recording_id = segment["id"].split("_utt")[0].replace("_","-"),
-            start = float(segment["starttime"]),
-            duration = round(float(segment["endtime"]) - float(segment["starttime"]), ndigits=8),
-            channel = 0,
-            text=" ".join([
-                element.string
-                for element in segment.find_all("element")
-                if element.string is not None
-                ]),
-            language = "Arabic",
+            id=segment["id"] + "_" + segment["starttime"] + ":" + segment["endtime"],
+            recording_id=segment["id"].split("_utt")[0].replace("_", "-"),
+            start=float(segment["starttime"]),
+            duration=round(
+                float(segment["endtime"]) - float(segment["starttime"]), ndigits=8
+            ),
+            channel=0,
+            text=" ".join(
+                [
+                    element.string
+                    for element in segment.find_all("element")
+                    if element.string is not None
+                ]
+            ),
+            language="Arabic",
             speaker=int(match(r"\w+speaker(\d+)\w+", segment["who"]).group(1)),
-            )
-        for segment in soup.find_all("segment") 
-            if mer_thresh is None or float(segment["WMER"]) <= mer_thresh
-        ]
-
+        )
+        for segment in soup.find_all("segment")
+        if mer_thresh is None or float(segment["WMER"]) <= mer_thresh
+    ]
