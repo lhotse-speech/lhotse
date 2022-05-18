@@ -11,23 +11,21 @@ and a similar evaluation set of 10 hours.
 Both the development and evaluation data have been released in the 2016 MGB challenge
 """
 from shutil import copy
-from re import match, sub 
+from re import sub, match
 from os import path, system
 from string import punctuation
 from logging import info
 from itertools import chain
 from pathlib import Path
 from typing import Dict, Optional, Union
-from itertools import chain
-
-from bs4 import BeautifulSoup
-
 from lhotse.kaldi import load_kaldi_data_dir
 from lhotse import fix_manifests, validate_recordings_and_supervisions
 from lhotse import Recording, RecordingSet, SupervisionSegment, SupervisionSet
 from lhotse.recipes.utils import manifests_exist, read_manifests_if_cached
-from lhotse.utils import check_and_rglob, Pathlike, recursion_limit, is_module_available
-
+from lhotse.utils import Pathlike, recursion_limit, check_and_rglob, is_module_available
+from itertools import chain
+from bs4 import BeautifulSoup
+import pdb
 
 def download_mgb2(
     target_dir: Pathlike = ".",
@@ -104,7 +102,7 @@ def prepare_mgb2(
         # Read the recordings and write them into manifest. We additionally store the
         # duration of the recordings in a dict which will be used later to create the
         # supervisions.
-        
+        pdb.set_trace()
         output_dir = Path(output_dir)
         corpus_dir = Path(corpus_dir)
         if part == "test" or part == "dev":
