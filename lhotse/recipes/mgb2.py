@@ -20,8 +20,6 @@ from pathlib import Path
 from typing import Dict, Optional, Union
 from itertools import chain
 
-from bs4 import BeautifulSoup
-
 from lhotse.kaldi import load_kaldi_data_dir
 from lhotse import fix_manifests, validate_recordings_and_supervisions
 from lhotse import Recording, RecordingSet, SupervisionSegment, SupervisionSet
@@ -78,6 +76,8 @@ def prepare_mgb2(
         raise ValueError(
             "To prepare MGB2 data, please 'pip install beautifulsoup4' first."
         )
+    
+    from bs4 import BeautifulSoup
 
     corpus_dir = Path(corpus_dir)
     assert corpus_dir.is_dir(), f"No such directory: {corpus_dir}"
@@ -165,16 +165,16 @@ def remove_diacritics(text: str) -> str:
     return sub(r'[\u064B-\u0652\u06D4\u0670\u0674\u06D5-\u06ED]+', '', text)
 
 def remove_punctuations(text: str) -> str:
-	""" This function  removes all punctuations except the verbatim """
+    """ This function  removes all punctuations except the verbatim """
 	
-	arabic_punctuations = '''`÷×؛<>_()*&^%][ـ،/:"؟.,'{}~¦+|!”…“–ـ'''
-	english_punctuations = punctuation
-	all_punctuations = set(arabic_punctuations + english_punctuations) # remove all non verbatim punctuations
+    arabic_punctuations = '''`÷×؛<>_()*&^%][ـ،/:"؟.,'{}~¦+|!”…“–ـ'''
+    english_punctuations = punctuation
+    all_punctuations = set(arabic_punctuations + english_punctuations) # remove all non verbatim punctuations
 	
-	for p in all_punctuations:
-		if p in text:
-			text = text.replace(p, ' ')
-	return text
+    for p in all_punctuations:
+        if p in text:
+            text = text.replace(p, ' ')
+    return text
 
 def cleaning(text: str) -> str:
     text = remove_punctuations(text)
