@@ -11,8 +11,7 @@ and a similar evaluation set of 10 hours.
 Both the development and evaluation data have been released in the 2016 MGB challenge
 """
 
-import logging
-import tarfile
+from logging import info
 from itertools import chain
 from pathlib import Path
 from typing import Dict, Optional, Union
@@ -39,7 +38,7 @@ def download_mgb2(
 
     :param target_dir: Pathlike, the path of the dir to storage the dataset.
     """
-    logging.info(
+    info(
         "MGB2 is not available for direct download. Please fill out the form at"
         " https://arabicspeech.org/mgb2 to download the corpus."
     )
@@ -93,11 +92,11 @@ def prepare_mgb2(
         )
 
     for part in dataset_parts:
-        logging.info(f"Processing MGB2 subset: {part}")
+        info(f"Processing MGB2 subset: {part}")
         if manifests_exist(
             part=part, output_dir=output_dir, prefix="mgb2", suffix="jsonl.gz"
             ):
-            logging.info(f"MGB2 subset: {part} already prepared - skipping.")
+            info(f"MGB2 subset: {part} already prepared - skipping.")
             continue
 
         # Read the recordings and write them into manifest. We additionally store the
