@@ -162,7 +162,7 @@ def remove_diacritics(text: str) -> str:
     return sub(r'[\u064B-\u0652\u06D4\u0670\u0674\u06D5-\u06ED]+', '', text)
 
 def remove_punctuations(text: str) -> str:
-	""" This function  removes all punctuations except the verbatim """
+	""" This function removes all punctuations except the verbatim """
 	
 	arabic_punctuations = '''`÷×؛<>_()*&^%][ـ،/:"؟.,'{}~¦+|!”…“–ـ'''
 	english_punctuations = punctuation
