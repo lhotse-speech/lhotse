@@ -10,7 +10,9 @@ More than 20 hours from 2015 programs have been transcribed verbatim and manuall
 and a similar evaluation set of 10 hours. 
 Both the development and evaluation data have been released in the 2016 MGB challenge
 """
-
+from re import sub, match
+from os import path, system
+from string import punctuation
 from logging import info
 from itertools import chain
 from pathlib import Path
@@ -22,9 +24,6 @@ from lhotse.recipes.utils import manifests_exist, read_manifests_if_cached
 from lhotse.utils import Pathlike, recursion_limit, check_and_rglob, is_module_available
 from itertools import chain
 from bs4 import BeautifulSoup
-import re
-import os
-import string
 
 
 def download_mgb2(
@@ -109,10 +108,10 @@ def prepare_mgb2(
             corpus_dir = Path(corpus_dir)
 	    shutil.copy(corpus_dir / part / "text.non_overlap_speech", output_dir / part / "text")
 	    shutil.copy(corpus_dir / part / "segments.non_overlap_speech", output_dir / part / "segments")
-            os.system(f"cat {os.path.join(corpus_dir, part,'wav.scp')}\
-                 | sed 's:wav/:{os.path.join(corpus_dir, part,'wav/')}:g' > {os.path.join(output_dir, part,'wav.scp')}") 
+            system(f"cat {path.join(corpus_dir, part,'wav.scp')}\
+                 | sed 's:wav/:{path.join(corpus_dir, part,'wav/')}:g' > {path.join(output_dir, part,'wav.scp')}") 
 
-            recordings, supervisions, _= load_kaldi_data_dir(os.path.join(output_dir, part), 16000)
+            recordings, supervisions, _= load_kaldi_data_dir(path.join(output_dir, part), 16000)
             if buck_walter == False:
                 supervisions = supervisions.transform_text(fromBuckWalter)
             if part == "test":
@@ -120,10 +119,10 @@ def prepare_mgb2(
             elif part == "dev":
                 assert len(supervisions) == 5002
         elif part == "train":
-            recordings = RecordingSet.from_dir(os.path.join(corpus_dir, part, "wav"),
+            recordings = RecordingSet.from_dir(path.join(corpus_dir, part, "wav"),
                                                 pattern='*.wav', num_jobs=num_jobs)
 
-            xml_paths = check_and_rglob(os.path.join(corpus_dir, part, "xml/utf8"), "*.xml")
+            xml_paths = check_and_rglob(path.join(corpus_dir, part, "xml/utf8"), "*.xml")
             # Read supervisions and write them to manifest
             with recursion_limit(5000):
                 supervisions_list = list(chain.from_iterable(
@@ -139,8 +138,8 @@ def prepare_mgb2(
         validate_recordings_and_supervisions(recordings, supervisions)
 
         # saving recordings and supervisions
-        recordings.to_file(os.path.join(output_dir,f"mgb2_recordings_{part}.jsonl.gz"))
-        supervisions.to_file(os.path.join(output_dir,f"mgb2_supervisions_{part}.jsonl.gz"))
+        recordings.to_file(path.join(output_dir,f"mgb2_recordings_{part}.jsonl.gz"))
+        supervisions.to_file(path.join(output_dir,f"mgb2_supervisions_{part}.jsonl.gz"))
 
         manifests[part] = {
                 "recordings":recordings,
@@ -160,13 +159,13 @@ def fromBuckWalter(s: str) -> str:
 
 def remove_diacritics(text: str) -> str:
     #https://unicode-table.com/en/blocks/arabic/
-    return re.sub(r'[\u064B-\u0652\u06D4\u0670\u0674\u06D5-\u06ED]+', '', text)
+    return sub(r'[\u064B-\u0652\u06D4\u0670\u0674\u06D5-\u06ED]+', '', text)
 
 def remove_punctuations(text: str) -> str:
 	""" This function  removes all punctuations except the verbatim """
 	
 	arabic_punctuations = '''`÷×؛<>_()*&^%][ـ،/:"؟.,'{}~¦+|!”…“–ـ'''
-	english_punctuations = string.punctuation
+	english_punctuations = punctuation
 	all_punctuations = set(arabic_punctuations + english_punctuations) # remove all non verbatim punctuations
 	
 	for p in all_punctuations:
@@ -195,7 +194,7 @@ def make_supervisions(xml_path, mer_thresh):
                 if element.string is not None
                 ]),
             language = "Arabic",
-            speaker=int(re.match(r"\w+speaker(\d+)\w+", segment["who"]).group(1)),
+            speaker=int(match(r"\w+speaker(\d+)\w+", segment["who"]).group(1)),
             )
         for segment in soup.find_all("segment") 
             if mer_thresh is None or float(segment["WMER"]) <= mer_thresh
