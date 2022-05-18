@@ -1,3 +1,4 @@
+from .mgb2 import prepare_mgb2
 from .adept import download_adept, prepare_adept
 from .aishell import download_aishell, prepare_aishell
 from .aishell4 import download_aishell4, prepare_aishell4
