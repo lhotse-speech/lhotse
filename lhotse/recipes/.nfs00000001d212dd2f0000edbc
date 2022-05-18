@@ -10,22 +10,24 @@ More than 20 hours from 2015 programs have been transcribed verbatim and manuall
 and a similar evaluation set of 10 hours. 
 Both the development and evaluation data have been released in the 2016 MGB challenge
 """
-from shutil import copy
-from re import sub, match
-from os import path, system
-from string import punctuation
-from logging import info
+
+import logging
+import tarfile
 from itertools import chain
 from pathlib import Path
 from typing import Dict, Optional, Union
 from lhotse.kaldi import load_kaldi_data_dir
 from lhotse import fix_manifests, validate_recordings_and_supervisions
-from lhotse import Recording, RecordingSet, SupervisionSegment, SupervisionSet
+from lhotse.audio import Recording, RecordingSet
+from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.recipes.utils import manifests_exist, read_manifests_if_cached
-from lhotse.utils import Pathlike, recursion_limit, check_and_rglob, is_module_available
+from lhotse.utils import Pathlike, recursion_limit, check_and_rglob
 from itertools import chain
 from bs4 import BeautifulSoup
-import pdb
+import re
+import os
+import string
+
 
 def download_mgb2(
     target_dir: Pathlike = ".",
@@ -38,7 +40,7 @@ def download_mgb2(
 
     :param target_dir: Pathlike, the path of the dir to storage the dataset.
     """
-    info(
+    logging.info(
         "MGB2 is not available for direct download. Please fill out the form at"
         " https://arabicspeech.org/mgb2 to download the corpus."
     )
@@ -50,7 +52,7 @@ def prepare_mgb2(
     text_cleaning: bool = True,
     buck_walter: bool = False,
     num_jobs: int = 1,
-    mer_thresh: int = 80,
+    mer_thresh:int = 80,
 ) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet]]]:
 
     """
@@ -60,9 +62,7 @@ def prepare_mgb2(
     :param corpus_dir: Pathlike, the path of the data dir.
     :param output_dir: Pathlike, the path where to write the manifests.
     :param text_cleaning: Bool, if True, basic text cleaning is performed (similar to ESPNet recipe).
-    :param buck_walter: Bool, use BuckWalter transliteration 
     :param num_jobs: int, the number of jobs to use for parallel processing.
-    :param mer_thresh: int, filter out segments based on mer (Match Error Rate)
     :return: a Dict whose key is the dataset part, and the value is Dicts with the keys 'audio' and 'supervisions'.
 
     .. note::
@@ -72,11 +72,7 @@ def prepare_mgb2(
     .. caution::
         The `text_cleaning` option removes all punctuation and diacritics.
     """
-    if not is_module_available("bs4"):
-        raise ValueError(
-            "To prepare MGB2 data, please 'pip install beautifulsoup4' first."
-        )
-
+    
     corpus_dir = Path(corpus_dir)
     assert corpus_dir.is_dir(), f"No such directory: {corpus_dir}"
     
@@ -92,38 +88,38 @@ def prepare_mgb2(
         )
 
     for part in dataset_parts:
-        info(f"Processing MGB2 subset: {part}")
+        logging.info(f"Processing MGB2 subset: {part}")
         if manifests_exist(
             part=part, output_dir=output_dir, prefix="mgb2", suffix="jsonl.gz"
             ):
-            info(f"MGB2 subset: {part} already prepared - skipping.")
+            logging.info(f"MGB2 subset: {part} already prepared - skipping.")
             continue
 
         # Read the recordings and write them into manifest. We additionally store the
         # duration of the recordings in a dict which will be used later to create the
         # supervisions.
-        pdb.set_trace()
-        output_dir = Path(output_dir)
-        corpus_dir = Path(corpus_dir)
+        
         if part == "test" or part == "dev":
-            (output_dir / part).mkdir(parents=True, exist_ok=True)
-            copy(corpus_dir / part / "text.non_overlap_speech", output_dir / part / "text")
-            copy(corpus_dir / part / "segments.non_overlap_speech", output_dir / part / "segments")
-            system(f"cat {(corpus_dir / part / 'wav.scp')}\
-                 | sed 's:wav/:{(corpus_dir / part / 'wav')}/:g' > {path.join(output_dir, part,'wav.scp')}") 
+            os.system(f'mkdir -p {os.path.join(output_dir, part)}')
+            os.system(f"cp {os.path.join(corpus_dir, part,'text.non_overlap_speech')}\
+                 {os.path.join(output_dir, part,'text')}")
+            os.system(f"cp {os.path.join(corpus_dir, part,'segments.non_overlap_speech')}\
+                 {os.path.join(output_dir, part,'segments')}")
+            os.system(f"cat {os.path.join(corpus_dir, part,'wav.scp')}\
+                 | sed 's:wav/:{os.path.join(corpus_dir, part,'wav/')}:g' > {os.path.join(output_dir, part,'wav.scp')}") 
 
-            recordings, supervisions, _= load_kaldi_data_dir(path.join(output_dir, part), 16000)
+            recordings, supervisions, _= load_kaldi_data_dir(os.path.join(output_dir, part), 16000)
             if buck_walter == False:
-                supervisions = supervisions.transform_text(from_buck_walter)
+                supervisions = supervisions.transform_text(fromBuckWalter)
             if part == "test":
                 assert len(supervisions) == 5365
             elif part == "dev":
                 assert len(supervisions) == 5002
         elif part == "train":
-            recordings = RecordingSet.from_dir(path.join(corpus_dir, part, "wav"),
+            recordings = RecordingSet.from_dir(os.path.join(corpus_dir, part, "wav"),
                                                 pattern='*.wav', num_jobs=num_jobs)
 
-            xml_paths = check_and_rglob(path.join(corpus_dir, part, "xml/utf8"), "*.xml")
+            xml_paths = check_and_rglob(os.path.join(corpus_dir, part, "xml/utf8"), "*.xml")
             # Read supervisions and write them to manifest
             with recursion_limit(5000):
                 supervisions_list = list(chain.from_iterable(
@@ -139,8 +135,8 @@ def prepare_mgb2(
         validate_recordings_and_supervisions(recordings, supervisions)
 
         # saving recordings and supervisions
-        recordings.to_file(path.join(output_dir,f"mgb2_recordings_{part}.jsonl.gz"))
-        supervisions.to_file(path.join(output_dir,f"mgb2_supervisions_{part}.jsonl.gz"))
+        recordings.to_file(os.path.join(output_dir,f"mgb2_recordings_{part}.jsonl.gz"))
+        supervisions.to_file(os.path.join(output_dir,f"mgb2_supervisions_{part}.jsonl.gz"))
 
         manifests[part] = {
                 "recordings":recordings,
@@ -155,18 +151,18 @@ _unicode = u"\u0622\u0624\u0626\u0628\u062a\u062c\u06af\u062e\u0630\u0632\u0634\
 _buckwalter = u"|&}btjGx*z$DZg_qlnwyNaio`PJ'><VApvHdrsSTEfkmhYFKu~{"
 _backwardMap = {ord(a):b for a,b in zip(_buckwalter, _unicode)}
 
-def from_buck_walter(s: str) -> str:
+def fromBuckWalter(s: str) -> str:
     return s.translate(_backwardMap)
 
 def remove_diacritics(text: str) -> str:
     #https://unicode-table.com/en/blocks/arabic/
-    return sub(r'[\u064B-\u0652\u06D4\u0670\u0674\u06D5-\u06ED]+', '', text)
+    return re.sub(r'[\u064B-\u0652\u06D4\u0670\u0674\u06D5-\u06ED]+', '', text)
 
 def remove_punctuations(text: str) -> str:
 	""" This function  removes all punctuations except the verbatim """
 	
 	arabic_punctuations = '''`÷×؛<>_()*&^%][ـ،/:"؟.,'{}~¦+|!”…“–ـ'''
-	english_punctuations = punctuation
+	english_punctuations = string.punctuation
 	all_punctuations = set(arabic_punctuations + english_punctuations) # remove all non verbatim punctuations
 	
 	for p in all_punctuations:
@@ -195,9 +191,13 @@ def make_supervisions(xml_path, mer_thresh):
                 if element.string is not None
                 ]),
             language = "Arabic",
-            speaker=int(match(r"\w+speaker(\d+)\w+", segment["who"]).group(1)),
+            speaker=int(re.match(r"\w+speaker(\d+)\w+", segment["who"]).group(1)),
             )
         for segment in soup.find_all("segment") 
             if mer_thresh is None or float(segment["WMER"]) <= mer_thresh
         ]
 
+# if __name__ == '__main__':
+
+#     prepare_mgb2('/alt-data/speech/mgb2','/home/local/QCRI/ahussein/data/')
+ 
