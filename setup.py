@@ -52,9 +52,9 @@ project_root = Path(__file__).parent
 # NOTE: REMEMBER TO UPDATE THE FALLBACK VERSION IN lhotse/__init__.py WHEN RELEASING #
 # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! #
 MAJOR_VERSION = 1
-MINOR_VERSION = 2
+MINOR_VERSION = 3
 PATCH_VERSION = 0
-IS_DEV_VERSION = False  # False = public release, True = otherwise
+IS_DEV_VERSION = True  # False = public release, True = otherwise
 
 
 def discover_lhotse_version() -> str:
