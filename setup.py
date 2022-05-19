@@ -158,7 +158,7 @@ except ImportError:
 
 docs_require = (project_root / "docs" / "requirements.txt").read_text().splitlines()
 tests_require = [
-    "pytest==7.1.1",
+    "pytest>=5.4.3",
     "flake8==4.0.1",
     "coverage==5.1",
     "hypothesis==5.41.2",
