@@ -33,12 +33,12 @@ import zipfile
 from collections import defaultdict
 from pathlib import Path
 from typing import Dict, List, NamedTuple, Optional, Union
-from lhotse.qa import fix_manifests
 
 from tqdm.auto import tqdm
 
 from lhotse import validate_recordings_and_supervisions
 from lhotse.audio import AudioSource, Recording, RecordingSet
+from lhotse.qa import fix_manifests
 from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import Pathlike, Seconds, urlretrieve_progress
 

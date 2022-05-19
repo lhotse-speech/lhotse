@@ -683,6 +683,7 @@ class ChunkedLilcomHdf5Writer(FeaturesWriter):
 
     def write(self, key: str, value: np.ndarray) -> str:
         import h5py
+
         from lhotse.features.compression import lilcom_compress_chunked
 
         serialized_feats = lilcom_compress_chunked(

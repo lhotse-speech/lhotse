@@ -1,10 +1,11 @@
+import warnings
 from dataclasses import asdict, dataclass
-from typing import Any, Dict, List, Union, Optional, Sequence
+from typing import Any, Dict, List, Optional, Sequence, Union
 
 import numpy as np
-import warnings
+
 from lhotse.features.base import FeatureExtractor, register_extractor
-from lhotse.utils import is_module_available, Seconds, compute_num_frames
+from lhotse.utils import Seconds, compute_num_frames, is_module_available
 
 
 @dataclass

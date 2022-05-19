@@ -2,16 +2,7 @@ import logging
 from collections import defaultdict
 from dataclasses import dataclass
 from itertools import groupby, islice
-from typing import (
-    Any,
-    Callable,
-    Dict,
-    Iterable,
-    List,
-    Mapping,
-    Optional,
-    Union,
-)
+from typing import Any, Callable, Dict, Iterable, List, Mapping, Optional, Union
 
 from lhotse.lazy import AlgorithmMixin
 from lhotse.serialization import Serializable

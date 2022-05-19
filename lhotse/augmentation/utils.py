@@ -2,9 +2,9 @@ import torch
 
 try:
     # Pytorch >= 1.7
-    from torch.fft import rfft, irfft
+    from torch.fft import irfft, rfft
 except ImportError:
-    from torch import rfft, irfft
+    from torch import irfft, rfft
 
 # Implementation based on torch-audiomentations:
 # https://github.com/asteroid-team/torch-audiomentations/blob/master/torch_audiomentations/utils/convolution.py

@@ -15,9 +15,10 @@ from .cmu_indic import *
 from .cmu_kids import *
 from .commonvoice import *
 from .cslu_kids import *
+from .dihard3 import *
 from .earnings21 import *
 from .earnings22 import *
-from .dihard3 import *
+from .eval2000 import *
 from .fisher_english import *
 from .fisher_spanish import *
 from .gale_arabic import *
@@ -32,6 +33,7 @@ from .librimix import *
 from .librispeech import *
 from .libritts import *
 from .ljspeech import *
+from .mgb2 import *
 from .mls import *
 from .mtedx import *
 from .musan import *
@@ -46,5 +48,3 @@ from .vctk import *
 from .voxceleb import *
 from .wenet_speech import *
 from .yesno import *
-from .eval2000 import *
-from .mgb2 import *

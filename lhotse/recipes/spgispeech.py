@@ -1,22 +1,22 @@
 """
 Description taken from official website: https://datasets.kensho.com/datasets/spgispeech
-SPGISpeech consists of 5,000 hours of recorded company earnings calls and their respective 
-transcriptions. The original calls were split into slices ranging from 5 to 15 seconds in 
-length to allow easy training for speech recognition systems. Calls represent a broad 
-cross-section of international business English; SPGISpeech contains approximately 50,000 
-speakers, one of the largest numbers of any speech corpus, and offers a variety of L1 and 
+SPGISpeech consists of 5,000 hours of recorded company earnings calls and their respective
+transcriptions. The original calls were split into slices ranging from 5 to 15 seconds in
+length to allow easy training for speech recognition systems. Calls represent a broad
+cross-section of international business English; SPGISpeech contains approximately 50,000
+speakers, one of the largest numbers of any speech corpus, and offers a variety of L1 and
 L2 English accents. The format of each WAV file is single channel, 16kHz, 16 bit audio.
 
-Transcription text represents the output of several stages of manual post-processing. 
-As such, the text contains polished English orthography following a detailed style guide, 
-including proper casing, punctuation, and denormalized non-standard words such as numbers 
+Transcription text represents the output of several stages of manual post-processing.
+As such, the text contains polished English orthography following a detailed style guide,
+including proper casing, punctuation, and denormalized non-standard words such as numbers
 and acronyms, making SPGISpeech suited for training fully formatted end-to-end models.
 
 Official reference:
 
-O’Neill, P.K., Lavrukhin, V., Majumdar, S., Noroozi, V., Zhang, Y., Kuchaiev, O., Balam, 
-J., Dovzhenko, Y., Freyberg, K., Shulman, M.D., Ginsburg, B., Watanabe, S., & Kucsko, G. 
-(2021). SPGISpeech: 5, 000 hours of transcribed financial audio for fully formatted 
+O’Neill, P.K., Lavrukhin, V., Majumdar, S., Noroozi, V., Zhang, Y., Kuchaiev, O., Balam,
+J., Dovzhenko, Y., Freyberg, K., Shulman, M.D., Ginsburg, B., Watanabe, S., & Kucsko, G.
+(2021). SPGISpeech: 5, 000 hours of transcribed financial audio for fully formatted
 end-to-end speech recognition. ArXiv, abs/2104.02014.
 
 ArXiv link: https://arxiv.org/abs/2104.02014
@@ -31,7 +31,7 @@ from tqdm.auto import tqdm
 from lhotse.audio import Recording, RecordingSet
 from lhotse.parallel import parallel_map
 from lhotse.recipes.utils import manifests_exist, read_manifests_if_cached
-from lhotse.supervision import SupervisionSet, SupervisionSegment
+from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import Pathlike, Seconds
 
 

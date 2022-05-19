@@ -18,9 +18,9 @@ from collections import defaultdict
 from concurrent.futures import ProcessPoolExecutor
 from itertools import repeat
 from pathlib import Path
-from tqdm.auto import tqdm
+from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
 
-from typing import Any, Dict, List, Optional, Tuple, Union, Sequence
+from tqdm.auto import tqdm
 
 from lhotse import (
     compute_num_samples,

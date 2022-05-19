@@ -1,7 +1,7 @@
 import pytest
 
 from lhotse.cut import make_windowed_cuts_from_features
-from lhotse.features import FeatureSet, Features
+from lhotse.features import Features, FeatureSet
 
 
 def features(rec_id, start, duration):

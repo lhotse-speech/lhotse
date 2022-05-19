@@ -25,11 +25,9 @@ from lhotse.dataset.sampling import (
 from lhotse.dataset.sampling.base import SamplingDiagnostics, TimeConstraint
 from lhotse.dataset.sampling.dynamic import DynamicCutSampler
 from lhotse.testing.dummies import DummyManifest, as_lazy, dummy_cut
-from lhotse.utils import (
-    fastcopy,
-    nullcontext as does_not_raise,
-    streaming_shuffle,
-)
+from lhotse.utils import fastcopy
+from lhotse.utils import nullcontext as does_not_raise
+from lhotse.utils import streaming_shuffle
 
 
 @pytest.fixture

@@ -4,9 +4,8 @@ from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 
-from lhotse.audio import AudioSource, Recording, RecordingSet
-from lhotse.audio import audioread_info
-from lhotse.features import FeatureSet, Features
+from lhotse.audio import AudioSource, Recording, RecordingSet, audioread_info
+from lhotse.features import Features, FeatureSet
 from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import (
     Pathlike,
@@ -137,6 +136,7 @@ def load_kaldi_data_dir(
     if feats_scp.exists() and is_module_available("kaldi_native_io"):
         if frame_shift is not None:
             import kaldi_native_io
+
             from lhotse.features.io import KaldiReader
 
             feature_set = FeatureSet.from_features(

@@ -9,20 +9,20 @@ from numpy.testing import assert_array_almost_equal
 
 torchaudio = pytest.importorskip("torchaudio", minversion="0.6")
 
+from lhotse import MonoCut, Recording, Seconds
 from lhotse.augmentation import (
     AudioTransform,
     Resample,
+    ReverbWithImpulseResponse,
     SoxEffectTransform,
+    Speed,
+    Tempo,
+    Volume,
     pitch,
     reverb,
     speed,
     volume,
-    Speed,
-    Tempo,
-    Volume,
-    ReverbWithImpulseResponse,
 )
-from lhotse import MonoCut, Recording, Seconds
 
 SAMPLING_RATE = 16000
 

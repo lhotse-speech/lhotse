@@ -2,7 +2,7 @@ import random
 import warnings
 from typing import List
 
-from lhotse import RecordingSet, CutSet
+from lhotse import CutSet, RecordingSet
 
 
 class ReverbWithImpulseResponse:

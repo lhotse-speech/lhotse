@@ -1,4 +1,7 @@
 import logging
+from pathlib import Path
+from typing import Dict, Optional, Union
+
 from lhotse import (
     Recording,
     RecordingSet,
@@ -7,8 +10,6 @@ from lhotse import (
     validate_recordings_and_supervisions,
 )
 from lhotse.utils import Pathlike
-from typing import Dict, Union, Optional
-from pathlib import Path
 
 
 def download_bvcc(target_dir) -> None:

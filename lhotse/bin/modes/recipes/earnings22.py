@@ -1,4 +1,5 @@
 import click
+
 from lhotse.bin.modes import download, prepare
 from lhotse.recipes.earnings22 import download_earnings22, prepare_earnings22
 from lhotse.utils import Pathlike

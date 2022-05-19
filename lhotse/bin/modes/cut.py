@@ -220,8 +220,9 @@ def random_mixed(
     The parameters of the mix are controlled via SNR_RANGE and OFFSET_RANGE.
     """
     import numpy as np
-    from lhotse.supervision import SupervisionSet
+
     from lhotse.features import FeatureSet
+    from lhotse.supervision import SupervisionSet
 
     supervision_set = SupervisionSet.from_json(supervision_manifest)
     feature_set = FeatureSet.from_json(feature_manifest)
@@ -269,6 +270,7 @@ def mix_by_recording_id(cut_manifests: List[Pathlike], output_cut_manifest: Path
     and mixing them together.
     """
     from cytoolz.itertoolz import groupby
+
     from lhotse.manipulation import combine
 
     all_cuts = combine(*[CutSet.from_json(path) for path in cut_manifests])
