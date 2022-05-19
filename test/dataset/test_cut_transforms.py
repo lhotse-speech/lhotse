@@ -5,8 +5,13 @@ import pytest
 
 from lhotse import CutSet
 from lhotse.cut import MixedCut
-from lhotse.dataset import CutMix, ExtraPadding, PerturbTempo
-from lhotse.dataset import PerturbSpeed, PerturbVolume
+from lhotse.dataset import (
+    CutMix,
+    ExtraPadding,
+    PerturbSpeed,
+    PerturbTempo,
+    PerturbVolume,
+)
 from lhotse.testing.dummies import DummyManifest
 
 

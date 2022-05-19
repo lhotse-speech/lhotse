@@ -5,8 +5,8 @@ import pytest
 from lhotse import (
     AudioSource,
     CutSet,
-    FeatureSet,
     Features,
+    FeatureSet,
     MonoCut,
     Recording,
     RecordingSet,
@@ -18,7 +18,8 @@ from lhotse import (
 from lhotse.serialization import load_manifest_lazy
 from lhotse.supervision import AlignmentItem
 from lhotse.testing.dummies import DummyManifest
-from lhotse.utils import fastcopy, nullcontext as does_not_raise
+from lhotse.utils import fastcopy
+from lhotse.utils import nullcontext as does_not_raise
 
 
 @pytest.mark.parametrize(

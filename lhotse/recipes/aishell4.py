@@ -1,17 +1,17 @@
 """
-The AISHELL-4 is a sizable real-recorded Mandarin speech dataset collected by 8-channel 
-circular microphone array for speech processing in conference scenarios. The dataset 
-consists of 211 recorded meeting sessions, each containing 4 to 8 speakers, with a total 
-length of 120 hours. This dataset aims to bridge the advanced research on multi-speaker 
-processing and the practical application scenario in three aspects. With real recorded 
-meetings, AISHELL-4 provides realistic acoustics and rich natural speech characteristics 
-in conversation such as short pause, speech overlap, quick speaker turn, noise, etc. 
-Meanwhile, the accurate transcription and speaker voice activity are provided for each 
-meeting in AISHELL-4. This allows the researchers to explore different aspects in meeting 
-processing, ranging from individual tasks such as speech front-end processing, speech 
-recognition and speaker diarization, to multi-modality modeling and joint optimization 
-of relevant tasks. We also release a PyTorch-based training and evaluation framework as 
-a baseline system to promote reproducible research in this field. The baseline system 
+The AISHELL-4 is a sizable real-recorded Mandarin speech dataset collected by 8-channel
+circular microphone array for speech processing in conference scenarios. The dataset
+consists of 211 recorded meeting sessions, each containing 4 to 8 speakers, with a total
+length of 120 hours. This dataset aims to bridge the advanced research on multi-speaker
+processing and the practical application scenario in three aspects. With real recorded
+meetings, AISHELL-4 provides realistic acoustics and rich natural speech characteristics
+in conversation such as short pause, speech overlap, quick speaker turn, noise, etc.
+Meanwhile, the accurate transcription and speaker voice activity are provided for each
+meeting in AISHELL-4. This allows the researchers to explore different aspects in meeting
+processing, ranging from individual tasks such as speech front-end processing, speech
+recognition and speaker diarization, to multi-modality modeling and joint optimization
+of relevant tasks. We also release a PyTorch-based training and evaluation framework as
+a baseline system to promote reproducible research in this field. The baseline system
 code and generated samples are available at: https://github.com/felixfuyihui/AISHELL-4
 
 The dataset can be downloaded from: https://openslr.org/111/
@@ -35,7 +35,7 @@ from typing import Dict, Optional, Union
 from lhotse import validate_recordings_and_supervisions
 from lhotse.audio import Recording, RecordingSet
 from lhotse.supervision import SupervisionSegment, SupervisionSet
-from lhotse.utils import Pathlike, urlretrieve_progress, is_module_available
+from lhotse.utils import Pathlike, is_module_available, urlretrieve_progress
 
 
 def download_aishell4(

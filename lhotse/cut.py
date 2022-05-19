@@ -44,8 +44,8 @@ from lhotse.augmentation import AugmentFn
 from lhotse.features import (
     FeatureExtractor,
     FeatureMixer,
-    FeatureSet,
     Features,
+    FeatureSet,
     create_default_feature_extractor,
 )
 from lhotse.features.base import compute_global_stats
@@ -55,8 +55,8 @@ from lhotse.serialization import Serializable
 from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import (
     DEFAULT_PADDING_VALUE,
-    Decibels,
     LOG_EPSILON,
+    Decibels,
     NonPositiveEnergyError,
     Pathlike,
     Seconds,
@@ -380,6 +380,7 @@ class Cut:
         Display the alignment on top of a spectrogram. Requires matplotlib to be installed.
         """
         import matplotlib.pyplot as plt
+
         from lhotse import Fbank
         from lhotse.utils import compute_num_frames
 
@@ -4541,8 +4542,9 @@ class CutSet(Serializable, AlgorithmMixin):
             for parallel computation).
         :return: Returns a new ``CutSet`` with ``Features`` manifests attached to the cuts.
         """
-        from lhotse.manipulation import combine
         from cytoolz import identity
+
+        from lhotse.manipulation import combine
 
         # Pre-conditions and args setup
         progress = (
@@ -4699,6 +4701,7 @@ class CutSet(Serializable, AlgorithmMixin):
         """
         import torch
         from torch.utils.data import DataLoader
+
         from lhotse.dataset import SingleCutSampler, UnsupervisedWaveformDataset
         from lhotse.qa import validate_features
 
@@ -4887,8 +4890,9 @@ class CutSet(Serializable, AlgorithmMixin):
             for parallel computation).
         :return: Returns a new ``CutSet``.
         """
-        from lhotse.manipulation import combine
         from cytoolz import identity
+
+        from lhotse.manipulation import combine
 
         # Pre-conditions and args setup
         progress = (

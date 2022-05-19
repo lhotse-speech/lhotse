@@ -477,7 +477,7 @@ class Serializable(JsonMixin, JsonlMixin, LazyMixin, YamlMixin):
 def deserialize_item(data: dict) -> Any:
     # Figures out what type of manifest is being decoded with some heuristics
     # and returns a Lhotse manifest object rather than a raw dict.
-    from lhotse import MonoCut, Features, Recording, SupervisionSegment
+    from lhotse import Features, MonoCut, Recording, SupervisionSegment
     from lhotse.array import deserialize_array
     from lhotse.cut import MixedCut
 

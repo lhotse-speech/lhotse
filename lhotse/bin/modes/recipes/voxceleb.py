@@ -1,10 +1,10 @@
+from typing import Optional
+
 import click
 
 from lhotse.bin.modes import download, prepare
 from lhotse.recipes import download_voxceleb1, download_voxceleb2, prepare_voxceleb
 from lhotse.utils import Pathlike
-
-from typing import Optional
 
 
 @download.command()

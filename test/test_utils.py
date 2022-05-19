@@ -14,8 +14,8 @@ from lhotse.serialization import (
 from lhotse.utils import (
     TimeSpan,
     add_durations,
-    compute_start_duration_for_extended_cut,
     compute_num_windows,
+    compute_start_duration_for_extended_cut,
     overlaps,
     overspans,
 )

@@ -2,40 +2,40 @@
 This is a data preparation script for the ASpIRE dataset. The following description
 is taken from the LDC website:
 
-ASpIRE Development and Development Test Sets was developed for the Automatic Speech 
-recognition In Reverberant Environments (ASpIRE) Challenge sponsored by IARPA 
-(the Intelligent Advanced Research Projects Activity). It contains approximately 226 
+ASpIRE Development and Development Test Sets was developed for the Automatic Speech
+recognition In Reverberant Environments (ASpIRE) Challenge sponsored by IARPA
+(the Intelligent Advanced Research Projects Activity). It contains approximately 226
 hours of English speech with transcripts and scoring files.
 
-The ASpIRE challenge asked solvers to develop innovative speech recognition systems 
+The ASpIRE challenge asked solvers to develop innovative speech recognition systems
 that could be trained on conversational telephone speech, and yet work well on far-
-field microphone data from noisy, reverberant rooms. Participants had the opportunity 
-to evaluate their techniques on a common set of challenging data that included 
+field microphone data from noisy, reverberant rooms. Participants had the opportunity
+to evaluate their techniques on a common set of challenging data that included
 significant room noise and reverberation.
 
-The data is provided in LDC catalog LDC2017S21. The audio data is a subset of Mixer 6 
-Speech (LDC2013S03), audio recordings of interviews, transcript readings and 
-conversational telephone speech collected by the Linguistic Data Consortium in 2009 
-and 2010 from native English speakers local to the Philadelphia area. The transcripts 
+The data is provided in LDC catalog LDC2017S21. The audio data is a subset of Mixer 6
+Speech (LDC2013S03), audio recordings of interviews, transcript readings and
+conversational telephone speech collected by the Linguistic Data Consortium in 2009
+and 2010 from native English speakers local to the Philadelphia area. The transcripts
 were developed by Appen for the ASpIRE challenge.
 
 Data is divided into development and development test sets.
 
-There are 2 versions: "single" and "multi", which stand for single-channel and 
-multi-channel audio respectively. All audio is presented as single channel, 16kHz 
+There are 2 versions: "single" and "multi", which stand for single-channel and
+multi-channel audio respectively. All audio is presented as single channel, 16kHz
 16-bit Signed Integer PCM *.wav files. Transcripts are plain text tdf files or as STM
 files. Scoring files (glm) are also included.
 """
 
-import logging
 import itertools
+import logging
 import tarfile
 from collections import defaultdict
 from pathlib import Path
-from typing import Dict, Optional, Union, NamedTuple
+from typing import Dict, NamedTuple, Optional, Union
 
-from lhotse import validate_recordings_and_supervisions, fix_manifests
-from lhotse.audio import Recording, RecordingSet, AudioSource
+from lhotse import fix_manifests, validate_recordings_and_supervisions
+from lhotse.audio import AudioSource, Recording, RecordingSet
 from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import Pathlike, Seconds
 

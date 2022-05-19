@@ -17,20 +17,25 @@ development set of 10 hours, and a similar evaluation set of 10 hours.
 Both the development and evaluation data have been released in the 2016 MGB
 challenge
 """
-from shutil import copy
-from re import match, sub
-from os import path, system
-from string import punctuation
-from logging import info
 from itertools import chain
+from logging import info
+from os import path, system
 from pathlib import Path
+from re import match, sub
+from shutil import copy
+from string import punctuation
 from typing import Dict, Union
 
+from lhotse import (
+    RecordingSet,
+    SupervisionSegment,
+    SupervisionSet,
+    fix_manifests,
+    validate_recordings_and_supervisions,
+)
 from lhotse.kaldi import load_kaldi_data_dir
-from lhotse import fix_manifests, validate_recordings_and_supervisions
-from lhotse import RecordingSet, SupervisionSegment, SupervisionSet
 from lhotse.recipes.utils import manifests_exist, read_manifests_if_cached
-from lhotse.utils import check_and_rglob, Pathlike, recursion_limit, is_module_available
+from lhotse.utils import Pathlike, check_and_rglob, is_module_available, recursion_limit
 
 
 def download_mgb2(

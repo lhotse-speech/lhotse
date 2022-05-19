@@ -3,17 +3,7 @@ import warnings
 from bisect import bisect_right
 from collections import deque
 from itertools import islice
-from typing import (
-    Any,
-    Deque,
-    Dict,
-    Generator,
-    Iterable,
-    List,
-    Optional,
-    Tuple,
-    Union,
-)
+from typing import Any, Deque, Dict, Generator, Iterable, List, Optional, Tuple, Union
 
 import numpy as np
 

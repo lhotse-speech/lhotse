@@ -26,7 +26,7 @@ About the Earnings 22 dataset:
 import logging
 import string
 from pathlib import Path
-from typing import Optional, Union, Dict, List
+from typing import Dict, List, Optional, Union
 
 from lhotse import validate_recordings_and_supervisions
 from lhotse.audio import Recording, RecordingSet

@@ -6,8 +6,8 @@ import numpy as np
 import pytest
 
 from lhotse import (
-    FeatureSet,
     Features,
+    FeatureSet,
     Recording,
     RecordingSet,
     SupervisionSegment,
@@ -15,7 +15,7 @@ from lhotse import (
     load_manifest,
 )
 from lhotse.audio import AudioSource
-from lhotse.cut import CutSet, MixTrack, MixedCut, MonoCut
+from lhotse.cut import CutSet, MixedCut, MixTrack, MonoCut
 from lhotse.serialization import load_jsonl
 from lhotse.testing.dummies import (
     DummyManifest,

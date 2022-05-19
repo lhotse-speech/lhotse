@@ -1,88 +1,88 @@
 """
 The data preparation recipe for the ICSI Meeting Corpus. It follows the Kaldi recipe
-by Pawel Swietojanski: 
+by Pawel Swietojanski:
 https://git.informatik.fh-nuernberg.de/poppto72658/kaldi/-/commit/d5815d3255bb62eacf2fba6314f194fe09966453
 
-ICSI data comprises around 72 hours of natural, meeting-style overlapped English speech 
-recorded at International Computer Science Institute (ICSI), Berkley. 
+ICSI data comprises around 72 hours of natural, meeting-style overlapped English speech
+recorded at International Computer Science Institute (ICSI), Berkley.
 Speech is captured using the set of parallel microphones, including close-talk headsets,
-and several distant independent microhones (i.e. mics that do not form any explicitly 
+and several distant independent microhones (i.e. mics that do not form any explicitly
 known geometry, see below for an example layout). Recordings are sampled at 16kHz.
- 
+
 The correponding paper describing the ICSI corpora is [1]
 
 [1] A Janin, D Baron, J Edwards, D Ellis, D Gelbart, N Morgan, B Peskin,
-    T Pfau, E Shriberg, A Stolcke, and C Wooters, The ICSI meeting corpus. 
+    T Pfau, E Shriberg, A Stolcke, and C Wooters, The ICSI meeting corpus.
     in Proc IEEE ICASSP, 2003, pp. 364-367
 
 
 ICSI data did not come with any pre-defined splits for train/valid/eval sets as it was
-mostly used as a training material for NIST RT evaluations. Some portions of the unrelased ICSI 
+mostly used as a training material for NIST RT evaluations. Some portions of the unrelased ICSI
 data (as a part of this corpora) can be found in, for example, NIST RT04 amd RT05 evaluation sets.
 
-This recipe, however, to be self-contained factors out training (67.5 hours), development (2.2 hours 
-and evaluation (2.8 hours) sets in a way to minimise the speaker-overlap between different partitions, 
-and to avoid known issues with available recordings during evaluation. This recipe follows [2] where 
+This recipe, however, to be self-contained factors out training (67.5 hours), development (2.2 hours
+and evaluation (2.8 hours) sets in a way to minimise the speaker-overlap between different partitions,
+and to avoid known issues with available recordings during evaluation. This recipe follows [2] where
 dev and eval sets are making use of {Bmr021, Bns001} and {Bmr013, Bmr018, Bro021} meetings, respectively.
 
-[2] S Renals and P Swietojanski, Neural networks for distant speech recognition. 
+[2] S Renals and P Swietojanski, Neural networks for distant speech recognition.
     in Proc IEEE HSCMA 2014 pp. 172-176. DOI:10.1109/HSCMA.2014.6843274
 
 Below description is (mostly) copied from ICSI documentation for convenience.
 =================================================================================
 
-Simple diagram of the seating arrangement in the ICSI meeting room.             
-                                                                                
-The ordering of seat numbers is as specified below, but their                   
-alignment with microphones may not always be as precise as indicated            
-here. Also, the seat number only indicates where the participant                
-started the meeting. Since most of the microphones are wireless, they           
-were able to move around.                                                       
-                                                                                                                                                                
-   Door                                                                         
-                                                                                
-                                                                                
-          1         2            3           4                                  
-     -----------------------------------------------------------------------    
+Simple diagram of the seating arrangement in the ICSI meeting room.
+
+The ordering of seat numbers is as specified below, but their
+alignment with microphones may not always be as precise as indicated
+here. Also, the seat number only indicates where the participant
+started the meeting. Since most of the microphones are wireless, they
+were able to move around.
+
+   Door
+
+
+          1         2            3           4
+     -----------------------------------------------------------------------
      |                      |                       |                      |   S
      |                      |                       |                      |   c
      |                      |                       |                      |   r
     9|   D1        D2       |   D3  PDA     D4      |                      |   e
      |                      |                       |                      |   e
      |                      |                       |                      |   n
-     |                      |                       |                      |    
-     -----------------------------------------------------------------------    
-          8         7            6           5                                  
-                                                                                
-                                                                                
-                                                                                
-D1, D2, D3, D4  - Desktop PZM microphones                                       
-PDA - The mockup PDA with two cheap microphones                                 
-                                                                                
-The following are the TYPICAL channel assignments, although a handful           
-of meetings (including Bmr003, Btr001, Btr002) differed in assignment.         
+     |                      |                       |                      |
+     -----------------------------------------------------------------------
+          8         7            6           5
+
+
+
+D1, D2, D3, D4  - Desktop PZM microphones
+PDA - The mockup PDA with two cheap microphones
+
+The following are the TYPICAL channel assignments, although a handful
+of meetings (including Bmr003, Btr001, Btr002) differed in assignment.
 
 The mapping from the above, to the actual waveform channels in the corpora,
 and (this recipe for a signle distant mic case) is:
-                                                                                
-D1 - chanE - (this recipe: sdm3)                                                                      
-D2 - chanF - (this recipe: sdm4)                                                                     
-D3 - chan6 - (this recipe: sdm1)                                                                     
-D4 - chan7 - (this recipe: sdm2)                                                                     
-PDA left - chanC                                                                
-PDA right - chanD 
+
+D1 - chanE - (this recipe: sdm3)
+D2 - chanF - (this recipe: sdm4)
+D3 - chan6 - (this recipe: sdm1)
+D4 - chan7 - (this recipe: sdm2)
+PDA left - chanC
+PDA right - chanD
 
 -----------
-Note (Pawel): The mapping for headsets is being extracted from mrt files. 
-In cases where IHM channels are missing for some speakers in some meetings, 
+Note (Pawel): The mapping for headsets is being extracted from mrt files.
+In cases where IHM channels are missing for some speakers in some meetings,
 in this recipe we either back off to distant channel (typically D2, default)
-or (optionally) skip this speaker's segments entirely from processing. 
-This is not the case for eval set, where all the channels come with the 
-expected recordings, and split is the same for all conditions (thus allowing 
+or (optionally) skip this speaker's segments entirely from processing.
+This is not the case for eval set, where all the channels come with the
+expected recordings, and split is the same for all conditions (thus allowing
 for direct comparisons between IHM, SDM and MDM settings).
 
 NOTE on data: The ICSI data is freely available from the website (see `download` below)
-and also as LDC corpora. The annotations that we download below are same as 
+and also as LDC corpora. The annotations that we download below are same as
 LDC2004T04, but there are some differences in the audio data, specifically in the
 session names. Some sessions (Bns...) are named (bns...) in the LDC corpus, and the
 Mix-Headset wav files are not available from the LDC corpus. So we recommend downloading
@@ -90,36 +90,36 @@ the public version even if you have an LDC subscription. The public data also in
 annotations of roles, dialog, summary etc. but we have not included them in this recipe.
 """
 
-import logging
 import itertools
-import zipfile
-import urllib
+import logging
 import ssl
+import urllib
 import xml.etree.ElementTree as ET
+import zipfile
 from collections import defaultdict
 from pathlib import Path
-from typing import Dict, List, NamedTuple, Optional, Union, Tuple
-from lhotse.qa import fix_manifests
+from typing import Dict, List, NamedTuple, Optional, Tuple, Union
 
 from tqdm.auto import tqdm
 
 from lhotse import validate_recordings_and_supervisions
 from lhotse.audio import AudioSource, Recording, RecordingSet, read_sph
+from lhotse.qa import fix_manifests
+from lhotse.recipes.ami import normalize_text
 from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import Pathlike, Seconds, urlretrieve_progress
-from lhotse.recipes.ami import normalize_text
 
 # fmt:off
 PARTITIONS = {
     'train': [
-        "Bdb001", "Bed002", "Bed003", "Bed004", "Bed005", "Bed006", "Bed008", "Bed009", 
-        "Bed010", "Bed011", "Bed012", "Bed013", "Bed014", "Bed015", "Bed016", "Bed017", 
-        "Bmr001", "Bmr002", "Bmr003", "Bmr005", "Bmr006", "Bmr007", "Bmr008", "Bmr009", 
-        "Bmr010", "Bmr011", "Bmr012", "Bmr014", "Bmr015", "Bmr016", "Bmr019", "Bmr020", 
-        "Bmr022", "Bmr023", "Bmr024", "Bmr025", "Bmr026", "Bmr027", "Bmr028", "Bmr029", 
-        "Bmr030", "Bmr031", "Bns002", "Bns003", "Bro003", "Bro004", "Bro005", "Bro007", 
-        "Bro008", "Bro010", "Bro011", "Bro012", "Bro013", "Bro014", "Bro015", "Bro016", 
-        "Bro017", "Bro018", "Bro019", "Bro022", "Bro023", "Bro024", "Bro025", "Bro026", 
+        "Bdb001", "Bed002", "Bed003", "Bed004", "Bed005", "Bed006", "Bed008", "Bed009",
+        "Bed010", "Bed011", "Bed012", "Bed013", "Bed014", "Bed015", "Bed016", "Bed017",
+        "Bmr001", "Bmr002", "Bmr003", "Bmr005", "Bmr006", "Bmr007", "Bmr008", "Bmr009",
+        "Bmr010", "Bmr011", "Bmr012", "Bmr014", "Bmr015", "Bmr016", "Bmr019", "Bmr020",
+        "Bmr022", "Bmr023", "Bmr024", "Bmr025", "Bmr026", "Bmr027", "Bmr028", "Bmr029",
+        "Bmr030", "Bmr031", "Bns002", "Bns003", "Bro003", "Bro004", "Bro005", "Bro007",
+        "Bro008", "Bro010", "Bro011", "Bro012", "Bro013", "Bro014", "Bro015", "Bro016",
+        "Bro017", "Bro018", "Bro019", "Bro022", "Bro023", "Bro024", "Bro025", "Bro026",
         "Bro027", "Bro028", "Bsr001", "Btr001", "Btr002", "Buw001",
     ],
     'dev': ["Bmr021", "Bns001"],
@@ -127,7 +127,7 @@ PARTITIONS = {
 }
 
 MIC_TO_CHANNELS = {
-    "ihm": ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "A", "B"], 
+    "ihm": ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "A", "B"],
     "sdm": ["6"],
     "mdm": ["E", "F", "6", "7"],
     "ihm-mix": [],

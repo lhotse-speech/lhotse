@@ -1,4 +1,4 @@
-"""  
+"""
  About the eval2000 corpus
      2000 HUB5 English Evaluation was developed by the Linguistic Data Consortium (LDC) and
      consists of approximately 11 hours of English conversational telephone speech used in the
@@ -12,9 +12,11 @@
 """
 
 import os
-from typing import Dict, List, Optional, Tuple, Union
 from pathlib import Path
+from typing import Dict, List, Optional, Tuple, Union
+
 import numpy as np
+
 from lhotse.audio import Recording, RecordingSet
 from lhotse.qa import fix_manifests, validate_recordings_and_supervisions
 from lhotse.supervision import SupervisionSegment, SupervisionSet
@@ -108,16 +110,16 @@ def make_segments(transcript_dir_path, omit_silence: bool = True):
     # transcript lines  in one .txt file looks like this
     """
     #Language: eng
-    #File id: 5017  
+    #File id: 5017
     #Starting at 121 Ending at 421
     # 121 131 #BEGIN
     # 411 421 #END
 
-    116.17 121.98 A: <contraction e_form="[we=>we]['re=>are]">we're starting the transition I you know told the students that they were going to you know, what the new plan was and   
+    116.17 121.98 A: <contraction e_form="[we=>we]['re=>are]">we're starting the transition I you know told the students that they were going to you know, what the new plan was and
 
-    121.79 122.43 B: mhm   
+    121.79 122.43 B: mhm
 
-    122.93 126.57 A: %um, <contraction e_form="[they=>they]['re=>are]">they're not that thrilled about it, but %uh    
+    122.93 126.57 A: %um, <contraction e_form="[they=>they]['re=>are]">they're not that thrilled about it, but %uh
 
-    126.30 128.83 B: what to you mean? {breath} oh, about <contraction e_form="[you=>you]['re=>are]">you're leaving? 
+    126.30 128.83 B: what to you mean? {breath} oh, about <contraction e_form="[you=>you]['re=>are]">you're leaving?
     """
