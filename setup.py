@@ -164,7 +164,7 @@ tests_require = [
     "hypothesis==5.41.2",
     "black==22.3.0",
     "isort==5.10.1",
-    "pre-commit==2.19.0",
+    "pre-commit>=2.17.0,<=2.19.0",
 ]
 dev_requires = sorted(docs_require + tests_require + ["jupyterlab", "matplotlib"])
 orjson_require = ["orjson>=3.6.6"]
