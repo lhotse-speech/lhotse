@@ -86,9 +86,13 @@ For development installation, you can fork/clone the GitHub repo and install wit
     git clone https://github.com/lhotse-speech/lhotse
     cd lhotse
     pip install -e '.[dev]'
+    pre-commit install  # installs pre-commit hooks with style checks
 
     # Running unit tests
     pytest test
+
+    # Running linter checks
+    pre-commit run
 
 This is an editable installation (``-e`` option), meaning that your changes to the source code are automatically
 reflected when importing lhotse (no re-install needed). The ``[dev]`` part means you're installing extra dependencies
