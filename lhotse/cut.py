@@ -3011,7 +3011,7 @@ class MixedCut(Cut):
         audio = self.load_audio(mixed=False)
         fig, axes = plt.subplots(len(self.tracks), sharex=False, sharey=True)
         for idx, (track, ax) in enumerate(zip(self.tracks, axes)):
-            samples = audio[idx, :]
+            samples = audio[idx].squeeze(0)
             ax.plot(np.linspace(0, self.duration, len(samples)), samples)
             for supervision in track.cut.supervisions:
                 supervision = supervision.trim(track.cut.duration)
