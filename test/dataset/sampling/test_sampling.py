@@ -487,8 +487,9 @@ def test_bucketing_sampler_single_cuts_equal_duration():
     mean_bucket_dur = mean(bucket_cum_durs)  # ~ 1300s
     for d in bucket_cum_durs:
         assert abs(d - mean_bucket_dur) < 0.1 * mean_bucket_dur
-    
+
     assert set(cut_set.ids) == set(c.id for c in sampled_cuts)
+
 
 def test_bucketing_sampler_shuffle():
     cut_set = DummyManifest(CutSet, begin_id=0, end_id=10)
