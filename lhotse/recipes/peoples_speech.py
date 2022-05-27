@@ -1,9 +1,9 @@
 """
-The People’s Speech Dataset is among the world’s largest English speech recognition corpus today 
-that is licensed for academic and commercial usage under CC-BY-SA and CC-BY 4.0. 
-It includes 30,000+ hours of transcribed speech in English languages with a diverse set of speakers. 
-This open dataset is large enough to train speech-to-text systems and crucially is available with 
-a permissive license. 
+The People’s Speech Dataset is among the world’s largest English speech recognition corpus today
+that is licensed for academic and commercial usage under CC-BY-SA and CC-BY 4.0.
+It includes 30,000+ hours of transcribed speech in English languages with a diverse set of speakers.
+This open dataset is large enough to train speech-to-text systems and crucially is available with
+a permissive license.
 Just as ImageNet catalyzed machine learning for vision, the People’s Speech will unleash innovation
 in speech research and products that are available to users across the globe.
 
@@ -11,17 +11,17 @@ Source: https://mlcommons.org/en/peoples-speech/
 Full paper: https://openreview.net/pdf?id=R8CwidgJ0yT
 """
 
+import warnings
 from pathlib import Path
 from typing import Dict, Union
-import warnings
 
 from tqdm.auto import tqdm
-from lhotse.qa import validate_recordings_and_supervisions
 
-from lhotse.utils import Pathlike, compute_num_samples
-from lhotse.audio import Recording, RecordingSet, AudioSource, info
+from lhotse.audio import AudioSource, Recording, RecordingSet, info
+from lhotse.qa import validate_recordings_and_supervisions
 from lhotse.serialization import load_jsonl
-from lhotse.supervision import SupervisionSet, SupervisionSegment
+from lhotse.supervision import SupervisionSegment, SupervisionSet
+from lhotse.utils import Pathlike, compute_num_samples
 
 
 def prepare_peoples_speech(
@@ -52,8 +52,8 @@ def prepare_peoples_speech(
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    recs_path = output_dir / "peoples-speech_recordings.jsonl.gz"
-    sups_path = output_dir / "peoples-speech_supervisions.jsonl.gz"
+    recs_path = output_dir / "peoples-speech_recordings_all.jsonl.gz"
+    sups_path = output_dir / "peoples-speech_supervisions_all.jsonl.gz"
 
     if recs_path.is_file() and sups_path.is_file():
         # Nothing to do: just open the manifests in lazy mode.

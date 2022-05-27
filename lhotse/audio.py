@@ -12,7 +12,7 @@ from io import BytesIO, IOBase
 from itertools import islice
 from math import ceil, sqrt
 from pathlib import Path
-from subprocess import CalledProcessError, PIPE, run
+from subprocess import PIPE, CalledProcessError, run
 from typing import (
     Any,
     Callable,
@@ -488,7 +488,7 @@ class Recording:
         many tracks as the number of channels.
         The implementation of the multi-channel case may change in the future...
         """
-        from lhotse.cut import MonoCut, MixedCut, MixTrack
+        from lhotse.cut import MixedCut, MixTrack, MonoCut
 
         if self.num_channels == 1:
             return MonoCut(

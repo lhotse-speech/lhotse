@@ -1,6 +1,6 @@
 import pytest
 
-from lhotse import FeatureSet, Features, RecordingSet, SupervisionSet, validate
+from lhotse import Features, FeatureSet, RecordingSet, SupervisionSet, validate
 from lhotse.qa import remove_missing_recordings_and_supervisions, validate_features
 from lhotse.testing.dummies import DummyManifest
 

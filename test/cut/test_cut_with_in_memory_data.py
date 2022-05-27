@@ -3,7 +3,7 @@ from tempfile import NamedTemporaryFile
 
 import numpy as np
 
-from lhotse import CutSet, NumpyHdf5Writer, Recording, MonoCut
+from lhotse import CutSet, MonoCut, NumpyHdf5Writer, Recording
 from lhotse.array import Array
 from lhotse.testing.dummies import dummy_cut
 from lhotse.utils import compute_num_frames

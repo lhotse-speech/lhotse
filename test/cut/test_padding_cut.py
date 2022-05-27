@@ -6,7 +6,8 @@ import pytest
 from lhotse.audio import AudioSource, Recording
 from lhotse.cut import CutSet, MonoCut, PaddingCut
 from lhotse.features import Features
-from lhotse.utils import EPSILON, LOG_EPSILON, nullcontext as does_not_raise
+from lhotse.utils import EPSILON, LOG_EPSILON
+from lhotse.utils import nullcontext as does_not_raise
 
 PADDING_ENERGY = EPSILON
 PADDING_LOG_ENERGY = LOG_EPSILON

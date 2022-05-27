@@ -3,7 +3,7 @@ from typing import Optional
 
 import click
 
-from lhotse import FeatureSet, Features, LilcomURLWriter, Seconds
+from lhotse import Features, FeatureSet, LilcomURLWriter, Seconds
 from lhotse.audio import RecordingSet
 from lhotse.bin.modes.cli_base import cli
 from lhotse.features import (
@@ -257,6 +257,7 @@ def upload(
     and assumes that you have the write permissions.
     """
     from concurrent.futures import ProcessPoolExecutor
+
     from tqdm import tqdm
 
     output_manifest = Path(output_manifest)

@@ -1,8 +1,6 @@
-from . import cut_transforms
-from . import input_strategies
-from . import sampling
-from . import signal_transforms
+from . import cut_transforms, input_strategies, sampling, signal_transforms
 from .cut_transforms import *
+from .dataloading import make_worker_init_fn
 from .diarization import DiarizationDataset
 from .input_strategies import AudioSamples, OnTheFlyFeatures, PrecomputedFeatures
 from .iterable_dataset import IterableDatasetWrapper

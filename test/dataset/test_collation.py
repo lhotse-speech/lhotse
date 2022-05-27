@@ -2,9 +2,9 @@ import random
 from math import isclose
 from tempfile import NamedTemporaryFile
 
+import numpy as np
 import pytest
 import torch
-import numpy as np
 
 from lhotse import CutSet, MonoCut, NumpyHdf5Writer
 from lhotse.array import seconds_to_frames

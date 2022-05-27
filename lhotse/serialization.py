@@ -61,7 +61,7 @@ class YamlMixin:
 def save_to_json(data: Any, path: Pathlike) -> None:
     """Save the data to a JSON file. Will use GZip to compress it if the path ends with a ``.gz`` extension."""
     with open_best(path, "w") as f:
-        json.dump(data, f, indent=2)
+        json.dump(data, f, indent=2, ensure_ascii=False)
 
 
 def load_json(path: Pathlike) -> Union[dict, list]:
@@ -84,7 +84,7 @@ def save_to_jsonl(data: Iterable[Dict[str, Any]], path: Pathlike) -> None:
     """Save the data to a JSON file. Will use GZip to compress it if the path ends with a ``.gz`` extension."""
     with open_best(path, "w") as f:
         for item in data:
-            print(json.dumps(item), file=f)
+            print(json.dumps(item, ensure_ascii=False), file=f)
 
 
 def load_jsonl(path: Pathlike) -> Generator[Dict[str, Any], None, None]:
@@ -183,7 +183,7 @@ class SequentialJsonlWriter:
                 return
         except AttributeError:
             pass
-        print(json.dumps(manifest.to_dict()), file=self.file)
+        print(json.dumps(manifest.to_dict(), ensure_ascii=False), file=self.file)
         if flush:
             self.file.flush()
 
@@ -477,7 +477,7 @@ class Serializable(JsonMixin, JsonlMixin, LazyMixin, YamlMixin):
 def deserialize_item(data: dict) -> Any:
     # Figures out what type of manifest is being decoded with some heuristics
     # and returns a Lhotse manifest object rather than a raw dict.
-    from lhotse import MonoCut, Features, Recording, SupervisionSegment
+    from lhotse import Features, MonoCut, Recording, SupervisionSegment
     from lhotse.array import deserialize_array
     from lhotse.cut import MixedCut
 

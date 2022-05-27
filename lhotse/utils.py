@@ -7,7 +7,7 @@ import uuid
 import warnings
 from contextlib import AbstractContextManager, contextmanager
 from dataclasses import asdict, dataclass
-from decimal import Decimal, ROUND_HALF_DOWN, ROUND_HALF_UP
+from decimal import ROUND_HALF_DOWN, ROUND_HALF_UP, Decimal
 from math import ceil, isclose
 from pathlib import Path
 from typing import (

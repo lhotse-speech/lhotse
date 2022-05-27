@@ -103,8 +103,12 @@ def prepare_callhome_egyptian(
         if output_dir is not None:
             output_dir = Path(output_dir)
             output_dir.mkdir(parents=True, exist_ok=True)
-            recordings.to_json(output_dir / f"recordings_{split}.json")
-            supervisions.to_json(output_dir / f"supervisions_{split}.json")
+            recordings.to_file(
+                output_dir / f"callhome-egyptian_recordings_{split}.jsonl.gz"
+            )
+            supervisions.to_file(
+                output_dir / f"callhome-egyptian_supervisions_{split}.jsonl.gz"
+            )
 
         manifests[split] = {"recordings": recordings, "supervisions": supervisions}
 

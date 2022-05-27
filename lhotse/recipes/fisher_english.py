@@ -1,7 +1,7 @@
 """
 About the Fisher English Part 1,2 corpus
 
-    This is conversational telephone speech collected as 2-channel, 8kHz-sampled data. 
+    This is conversational telephone speech collected as 2-channel, 8kHz-sampled data.
     The catalog number LDC2004S13 and LDC2005S13 for audio corpora and LDC2004T19 LDC2005T19 for transcripts.
 
     This data is not available for free - your institution needs to have an LDC subscription.
@@ -11,19 +11,16 @@ import codecs
 import itertools as it
 import logging
 import os
+import warnings
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
 from pathlib import Path
 from subprocess import CalledProcessError
 from typing import Dict, List, Optional, Tuple, Union
-import warnings
 
 from tqdm.auto import tqdm
 
 from lhotse.audio import Recording, RecordingSet
-from lhotse.qa import (
-    fix_manifests,
-    validate_recordings_and_supervisions,
-)
+from lhotse.qa import fix_manifests, validate_recordings_and_supervisions
 from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import Pathlike, check_and_rglob
 
@@ -254,7 +251,7 @@ def prepare_fisher_english(
     validate_recordings_and_supervisions(recordings, supervisions)
 
     # Write the fixed and validated version to files with standard names.
-    recordings.to_file(recs_path.parent / "recordings.jsonl.gz")
-    supervisions.to_file(sups_path.parent / "supervisions.jsonl.gz")
+    recordings.to_file(recs_path.parent / "fisher-english_recordings_all.jsonl.gz")
+    supervisions.to_file(sups_path.parent / "fisher-english_supervisions_all.jsonl.gz")
 
     return {"recordings": recordings, "supervisions": supervisions}

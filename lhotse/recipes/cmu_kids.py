@@ -137,10 +137,12 @@ def prepare_cmu_kids(
     }
 
     if output_dir is not None:
-        logging.info("Writing manifests to JSON files")
+        logging.info("Writing manifests to JSONL files")
         output_dir = Path(output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
-        manifests["recordings"].to_json(output_dir / "recordings.json")
-        manifests["supervisions"].to_json(output_dir / "supervisions.json")
+        manifests["recordings"].to_file(output_dir / "cmu-kids_recordings_all.jsonl.gz")
+        manifests["supervisions"].to_file(
+            output_dir / "cmu-kids_supervisions_all.jsonl.gz"
+        )
 
     return manifests

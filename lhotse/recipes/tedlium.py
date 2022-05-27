@@ -134,7 +134,7 @@ def prepare_tedlium(
         validate_recordings_and_supervisions(**corpus[split])
 
         if output_dir is not None:
-            recordings.to_json(output_dir / f"recordings_{split}.json")
-            supervisions.to_json(output_dir / f"supervisions_{split}.json")
+            recordings.to_file(output_dir / f"tedlium_recordings_{split}.jsonl.gz")
+            supervisions.to_file(output_dir / f"tedlium_supervisions_{split}.jsonl.gz")
 
     return corpus

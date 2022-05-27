@@ -1,9 +1,10 @@
 import contextlib
 import os
+from pathlib import Path
+
 import pytest
 
 import lhotse
-from pathlib import Path
 
 FIXTURE_PATH = Path(__file__).resolve().parent / "fixtures"
 

@@ -15,6 +15,7 @@ from .cmu_kids import prepare_cmu_kids
 from .commonvoice import prepare_commonvoice
 from .cslu_kids import prepare_cslu_kids
 from .dihard3 import prepare_dihard3
+from .eval2000 import prepare_eval2000
 from .fisher_english import prepare_fisher_english
 from .fisher_spanish import prepare_fisher_spanish
 from .gale_arabic import prepare_gale_arabic
@@ -29,6 +30,7 @@ from .librimix import download_librimix, prepare_librimix
 from .librispeech import download_librispeech, prepare_librispeech
 from .libritts import download_libritts, prepare_libritts
 from .ljspeech import download_ljspeech, prepare_ljspeech
+from .mgb2 import prepare_mgb2
 from .mls import prepare_mls
 from .mobvoihotwords import download_mobvoihotwords, prepare_mobvoihotwords
 from .mtedx import download_mtedx, prepare_mtedx
@@ -44,4 +46,3 @@ from .vctk import download_vctk, prepare_vctk
 from .voxceleb import download_voxceleb1, download_voxceleb2, prepare_voxceleb
 from .wenet_speech import prepare_wenet_speech
 from .yesno import download_yesno, prepare_yesno
-from .eval2000 import prepare_eval2000

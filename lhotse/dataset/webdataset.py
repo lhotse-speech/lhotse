@@ -50,8 +50,9 @@ Read the documentation of the items below to understand each component better.
 """
 import logging
 import pickle
+import random
 from functools import partial
-from typing import Callable, Dict, List, Optional, Sequence, Union
+from typing import Callable, Dict, Generator, Iterable, List, Optional, Sequence, Union
 
 from tqdm.auto import tqdm
 
@@ -346,6 +347,7 @@ class LazyWebdatasetIterator:
         data_dict = next(self._ds_iter)
         data = pickle.loads(data_dict["data"])
         item = deserialize_item(data)
+        item.shard_origin = data_dict["__url__"]
         return item
 
     def values(self):
@@ -364,12 +366,9 @@ class LazyWebdatasetIterator:
 def mini_webdataset(
     urls: Union[Pathlike, Sequence[Pathlike]],
     epoch: int = 0,
-    repeat: bool = False,
     shuffle_shards: bool = False,
-    shuffle: bool = False,
-    split_by_worker: bool = False,
+    split_by_worker: bool = True,
     split_by_node: bool = False,
-    shuffle_bufsize: int = 1000,
     ignore_error_shards: bool = True,
 ):
     """
@@ -388,46 +387,66 @@ def mini_webdataset(
         possible to disable the node/worker splitting.
 
     :param urls: the source URLs: a string or a list.
-    :param epoch: epoch number (used only when shuffling is enabled).
-    :param repeat: repeat infinitely if True.
-    :param shuffle: shuffle the items if True (after shuffling the shards, if enabled).
-        Note: ``shuffle`` is seeded with PID and time, making it non-reproducible across processes.
+    :param epoch: epoch number (used only when ``shuffle_shards`` is enabled).
     :param shuffle_shards: shuffle the shards if True.
         Only takes effect when ``urls`` is a list of shard paths/urls.
-    :param split_by_worker: if True, shards are split per DataLoader worker subprocesses,
+    :param split_by_worker: DEPRECATED: always acts as if True.
+        If True, shards are split per DataLoader worker subprocesses,
         otherwise each dataloader worker will yield the same data.
         Only takes effect when ``urls`` is a list of shard paths/urls.
     :param split_by_node: if True, shards are split per node in DDP training,
         otherwise on each node we'll yield the same data.
         Only takes effect when ``urls`` is a list of shard paths/urls.
-    :param shuffle_bufsize: Buffer size for the ``shuffle`` argument.
-        Larger bufsize means more memory usage but potentially improved randomness.
     :param ignore_error_shards: when ``True``, we tell WebDataset to ignore shards that
         failed during loading and emit a warning. When ``False``, we won't catch the exceptions.
     """
     if not is_module_available("webdataset"):
         raise ImportError("Please 'pip install webdataset' first.")
 
-    from webdataset import PytorchShardList, reraise_exception, warn_and_continue
-    from webdataset import tariterators
+    from webdataset import DataPipeline, SimpleShardList, reraise_exception
+    from webdataset import split_by_node as split_by_node_
+    from webdataset import split_by_worker as split_by_worker_
+    from webdataset import tarfile_to_samples, warn_and_continue
 
-    handler = warn_and_continue if ignore_error_shards else reraise_exception
-
-    result = PytorchShardList(
-        urls,
-        shuffle=shuffle_shards,
-        split_by_worker=split_by_worker,
-        split_by_node=split_by_node,
+    wds = DataPipeline(SimpleShardList(urls=urls))
+    if split_by_node:
+        wds.append(split_by_node_)
+    if split_by_worker:
+        wds.append(split_by_worker_)
+    if shuffle_shards:
+        wds.append(create_shard_shuffler(epoch=epoch))
+    wds.append(
+        tarfile_to_samples(
+            handler=warn_and_continue if ignore_error_shards else reraise_exception,
+        )
     )
-    result.set_epoch(epoch)
-    result = result.then(tariterators.url_opener, handler=handler)
-    result = result.then(tariterators.tar_file_expander, handler=handler)
-    result = result.then(tariterators.group_by_keys, handler=handler)
-    if repeat:
-        result = result.repeat()
-    if shuffle:
-        result = result.shuffle(shuffle_bufsize)
-    return result
+    return wds
+
+
+def create_shard_shuffler(epoch: int):
+    from webdataset import PipelineStage
+
+    class detshuffle_all(PipelineStage):
+        def __init__(self, seed_=0, epoch_=-1):
+            self.seed_ = seed_
+            self.epoch_ = epoch_
+
+        def run(self, src):
+            self.epoch_ += 1
+            rng = random.Random()
+            rng.seed((self.seed_, self.epoch_))
+            items = list(src)
+            rng.shuffle(items)
+            return items
+
+    return detshuffle_all(epoch_=epoch)
+
+
+def _single_node_or_multi_node_with_duplicated_data(src, group=None):
+    """
+    Helper fn that works normally with single-node training, but duplicates data in multi-node training.
+    """
+    yield from src
 
 
 class ShardWriter:

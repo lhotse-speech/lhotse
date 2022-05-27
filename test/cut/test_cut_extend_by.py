@@ -4,13 +4,13 @@ import pytest
 
 from lhotse import CutSet, SupervisionSegment, SupervisionSet
 from lhotse.cut import MixedCut, PaddingCut
-from lhotse.utils import LOG_EPSILON, uuid4
 from lhotse.testing.dummies import (
-    dummy_features,
     dummy_cut,
+    dummy_features,
     dummy_recording,
     dummy_temporal_array,
 )
+from lhotse.utils import LOG_EPSILON, uuid4
 
 
 @pytest.mark.parametrize(

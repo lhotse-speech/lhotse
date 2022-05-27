@@ -1,5 +1,5 @@
-from collections import defaultdict
 import logging
+from collections import defaultdict
 from math import isclose
 from typing import Any, Callable, Dict, Optional, Tuple, Union
 
@@ -8,7 +8,7 @@ import numpy as np
 from lhotse.array import Array, TemporalArray
 from lhotse.audio import Recording, RecordingSet
 from lhotse.cut import Cut, CutSet, MixedCut, MonoCut, PaddingCut
-from lhotse.features import FeatureSet, Features
+from lhotse.features import Features, FeatureSet
 from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import compute_num_frames, overlaps
 

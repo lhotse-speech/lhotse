@@ -6,9 +6,7 @@ import torch
 import torchaudio
 
 from lhotse import Fbank, KaldifeatFbank, KaldifeatFbankConfig, Mfcc
-from lhotse.features import (
-    create_default_feature_extractor,
-)
+from lhotse.features import create_default_feature_extractor
 from lhotse.features.kaldifeat import KaldifeatMelOptions, KaldifeatMfcc
 from lhotse.utils import nullcontext as does_not_raise
 

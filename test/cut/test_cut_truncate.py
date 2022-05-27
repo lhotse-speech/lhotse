@@ -4,7 +4,7 @@ from math import isclose
 import pytest
 
 from lhotse import RecordingSet
-from lhotse.cut import CutSet, MixTrack, MixedCut, MonoCut
+from lhotse.cut import CutSet, MixedCut, MixTrack, MonoCut
 from lhotse.features import Features
 from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.testing.dummies import DummyManifest, dummy_cut, dummy_recording
