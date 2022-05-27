@@ -422,23 +422,55 @@ def _create_buckets_equal_duration_single(
     """
     total_duration = np.sum(c.duration for c in cuts)
     bucket_duration = total_duration / num_buckets
-    iter_cuts = iter(cuts)
-    buckets = []
-    for bucket_idx in range(num_buckets):
-        bucket = []
-        current_duration = 0
-        try:
-            while current_duration < bucket_duration:
-                bucket.append(next(iter_cuts))
-                current_duration += bucket[-1].duration
-            # Every odd bucket, take the cut that exceeded the bucket's duration
-            # and put it in the front of the iterable, so that it goes to the
-            # next bucket instead. It will ensure that the last bucket is not too
-            # thin (otherwise all the previous buckets are a little too large).
-            if bucket_idx % 2:
-                last_cut = bucket.pop()
-                iter_cuts = chain([last_cut], iter_cuts)
-        except StopIteration:
-            assert bucket_idx == num_buckets - 1
-        buckets.append(CutSet.from_cuts(bucket))
+    # Define the order for adding cuts. We start at the beginning, then go to
+    # the end, and work our way to the middle. Once in the middle we distribute
+    # excess cuts among the two buckets close to the median duration. This
+    # handles the problem of where to place cuts that caused previous buckets
+    # to "over-flow" without sticking all of them in the last bucket, which
+    # causes one large bucket at the end and also places many small duration
+    # cuts with longer ones.
+    order = list(range(0, len(cuts), 2)) + list(
+        range(len(cuts) - (1 + len(cuts) % 2), 0, -2)
+    )
+    order2idx = {o_idx: i for i, o_idx in enumerate(order)}
+    durations = [c.duration for c in cuts]
+
+    # We need a list of the cut durations in the same order (0, N-1, 1, N-2, ...)
+    ordered_cut_durations = sorted(zip(order, durations), key=lambda x: x[0])
+    last_order, first_bucket = 0, 0
+    last_bucket = num_buckets - 1
+    buckets_dict = {i: 0 for i in range(num_buckets)}
+    buckets_cut_dict = {i: [] for i in range(num_buckets)}
+    middle_bucket = None
+    idx_to_bucket_id = {}
+    for i, (order_idx, duration) in enumerate(ordered_cut_durations, 1):
+        # Check if we are at the middle bucket. first_bucket is the left bucket
+        # we are processing. last_bucket is the right bucket. When they are the
+        # same we are filling the bucket with cuts near the median duration.
+        if middle_bucket is None and first_bucket == last_bucket:
+            middle_bucket = first_bucket
+
+        # i % 2 = 1 ==> process the left_bucket (first_bucket)
+        if i % 2:
+            if buckets_dict[first_bucket] + duration > bucket_duration:
+                if middle_bucket is not None and first_bucket == middle_bucket:
+                    first_bucket = min(middle_bucket - 1, num_buckets - 1)
+                else:
+                    first_bucket = min(first_bucket + 1, num_buckets - 1)
+            buckets_dict[first_bucket] += duration
+            idx_to_bucket_id[order2idx[order_idx]] = first_bucket
+        # i % 2 = 0 ==> process the right bucket (last_bucket)
+        else:
+            if buckets_dict[last_bucket] + duration > bucket_duration:
+                if middle_bucket is not None and last_bucket == middle_bucket:
+                    last_bucket = max(middle_bucket + 1, 0)
+                else:
+                    last_bucket = max(last_bucket - 1, 0)
+            buckets_dict[last_bucket] += duration
+            idx_to_bucket_id[order2idx[order_idx]] = last_bucket
+
+    # Now that buckets have been assigned, create the new cutset.
+    for cut_idx, cut in enumerate(cuts):
+        buckets_cut_dict[idx_to_bucket_id[cut_idx]].append(cut)
+    buckets = [CutSet.from_cuts(buckets_cut_dict[i]) for i in range(num_buckets)]
     return buckets
