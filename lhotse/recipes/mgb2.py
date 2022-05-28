@@ -130,7 +130,7 @@ def prepare_mgb2(
             ) as f_out:
                 for line in f_in:
                     f_out.write(line.replace("wav/", f"{corpus_dir}/{part}/wav/"))
-                    f_out.write("\n")
+                    
 
             recordings, supervisions, _ = load_kaldi_data_dir(
                 (output_dir / part), 16000
