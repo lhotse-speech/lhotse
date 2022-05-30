@@ -83,7 +83,7 @@ def extract(
     Extract features for recordings in a given AUDIO_MANIFEST. The features are stored in OUTPUT_DIR,
     with one file per recording (or segment).
     """
-    recordings: RecordingSet = RecordingSet.from_json(recording_manifest)
+    recordings: RecordingSet = RecordingSet.from_file(recording_manifest)
     if root_dir is not None:
         recordings = recordings.with_path_prefix(root_dir)
 
