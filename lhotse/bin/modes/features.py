@@ -49,7 +49,7 @@ def write_default_config(output_config: Pathlike, feature_type: str):
 @click.option(
     "--storage-type",
     type=click.Choice(available_storage_backends()),
-    default="lilcom_files",
+    default="lilcom_chunky",
     help="Select a storage backend for the feature matrices.",
 )
 @click.option(
@@ -126,7 +126,7 @@ def extract(
 @click.option(
     "--storage-type",
     type=click.Choice(available_storage_backends()),
-    default="lilcom_hdf5",
+    default="lilcom_chunky",
     help="Select a storage backend for the feature matrices.",
 )
 @click.option(
@@ -178,7 +178,7 @@ def extract_cuts(
 @click.option(
     "--storage-type",
     type=click.Choice(available_storage_backends()),
-    default="lilcom_hdf5",
+    default="lilcom_chunky",
     help="Select a storage backend for the feature matrices.",
 )
 @click.option(
