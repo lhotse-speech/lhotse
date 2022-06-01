@@ -3,7 +3,7 @@ from typing import Optional
 
 import click
 
-from lhotse import Features, FeatureSet, LilcomURLWriter, Seconds
+from lhotse import CutSet, Features, FeatureSet, LilcomURLWriter, Seconds
 from lhotse.audio import RecordingSet
 from lhotse.bin.modes.cli_base import cli
 from lhotse.features import (
@@ -14,13 +14,18 @@ from lhotse.features import (
 )
 from lhotse.features.base import FEATURE_EXTRACTORS
 from lhotse.features.io import available_storage_backends, get_writer
+from lhotse.serialization import load_manifest_lazy_or_eager
 from lhotse.utils import Pathlike, fastcopy
 
 
 @cli.group()
 def feat():
     """Feature extraction related commands."""
-    pass
+    import torch
+
+    # Speeds up multiprocess feature extraction and avoids deadlocks.
+    torch.set_num_threads(1)
+    torch.set_num_interop_threads(1)
 
 
 @feat.command(context_settings=dict(show_default=True))
@@ -145,9 +150,8 @@ def extract_cuts(
     The features are stored in STORAGE_PATH, and the output manifest
     with features is stored in OUTPUT_CUTSET.
     """
-    from lhotse import CutSet
-
-    cuts: CutSet = CutSet.from_file(cutset)
+    cuts = load_manifest_lazy_or_eager(cutset)
+    assert isinstance(cuts, CutSet)
     feature_extractor = (
         FeatureExtractor.from_yaml(feature_manifest)
         if feature_manifest is not None
@@ -219,9 +223,8 @@ def extract_cuts_batch(
 
         $ lhotse feat extract-cuts-batch -f feat-cuda.yml cuts.jsonl cuts_with_feats.jsonl feats.h5
     """
-    from lhotse import CutSet
-
-    cuts: CutSet = CutSet.from_file(cutset)
+    cuts = load_manifest_lazy_or_eager(cutset)
+    assert isinstance(cuts, CutSet)
     feature_extractor = (
         FeatureExtractor.from_yaml(feature_manifest)
         if feature_manifest is not None
