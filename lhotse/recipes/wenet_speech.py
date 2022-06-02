@@ -133,7 +133,9 @@ def parse_utterance(
             id=seg["sid"],
             recording_id=audio["aid"],
             start=seg["begin_time"],
-            duration=add_durations(seg["end_time"], -seg["begin_time"], sampling_rate),
+            duration=add_durations(
+                seg["end_time"], -seg["begin_time"], sampling_rate=sampling_rate
+            ),
             language="Chinese",
             text=seg["text"].strip(),
         )
