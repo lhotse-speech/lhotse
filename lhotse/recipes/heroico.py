@@ -63,12 +63,12 @@ def prepare_heroico(
     output_dir: Optional[Pathlike] = None,
 ) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet]]]:
     """
-        Returns the manifests which consist of the Recordings and Supervisions
+    Returns the manifests which consist of the Recordings and Supervisions
 
-        :param speech_dir: Pathlike, the path of the speech data dir.
-    param transcripts_dir: Pathlike, the path of the transcript data dir.
-        :param output_dir: Pathlike, the path where to write the manifests.
-        :return: a Dict whose key is the fold, and the value is Dicts with the keys 'audio' and 'supervisions'.
+    :param speech_dir: Pathlike, the path of the speech data dir.
+    :param transcripts_dir: Pathlike, the path of the transcript data dir.
+    :param output_dir: Pathlike, the path where to write the manifests.
+    :return: a Dict whose key is the fold, and the value is Dicts with the keys 'audio' and 'supervisions'.
     """
     import soundfile
 
@@ -82,21 +82,21 @@ def prepare_heroico(
     manifests = defaultdict(dict)
 
     # set some patterns to match fields in transcript files and filenames
-    answers_line_pattern = re.compile("\d+/\d+\t.+")
+    answers_line_pattern = re.compile(r"\d+/\d+\t.+")
     answers_path_pattern = re.compile("Answers_Spanish")
-    heroico_recitations_line_pattern = re.compile("\d+\t.+")
+    heroico_recitations_line_pattern = re.compile(r"\d+\t.+")
     heroico_recitations_devtest_path_pattern = re.compile("Recordings_Spanish")
     heroico_recitations_train_path_pattern = re.compile("Recordings_Spanish")
-    usma_line_pattern = re.compile("s\d+\t.+")
+    usma_line_pattern = re.compile(r"s\d+\t.+")
     usma_native_demo_pattern = re.compile(
-        "usma/native\-[fm]\-\w+\-\S+\-\S+\-\S+\-\S+\-\w+\d+"
+        r"usma/native\-[fm]\-\w+\-\S+\-\S+\-\S+\-\S+\-\w+\d+"
     )
     usma_native_path_pattern = re.compile("usma/native")
-    usma_native_prompt_id_pattern = re.compile("s\d+")
+    usma_native_prompt_id_pattern = re.compile(r"s\d+")
     usma_nonnative_demo_pattern = re.compile(
-        "nonnative\-[fm]\-[a-zA-Z]+\d*\-[a-zA-Z]+\-[a-zA-Z]+\-[a-zA-Z]+\-[a-zA-Z]+\-[a-zA-Z]+\d+"
+        r"nonnative\-[fm]\-[a-zA-Z]+\d*\-[a-zA-Z]+\-[a-zA-Z]+\-[a-zA-Z]+\-[a-zA-Z]+\-[a-zA-Z]+\d+"
     )
-    usma_nonnative_path_pattern = re.compile("nonnative.+\.wav")
+    usma_nonnative_path_pattern = re.compile(r"nonnative.+\.wav")
 
     # Generate a mapping: utt_id -> (audio_path, audio_info, text)
 
