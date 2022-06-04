@@ -130,7 +130,6 @@ def prepare_mgb2(
             ) as f_out:
                 for line in f_in:
                     f_out.write(line.replace("wav/", f"{corpus_dir}/{part}/wav/"))
-                    f_out.write("\n")
 
             recordings, supervisions, _ = load_kaldi_data_dir(
                 (output_dir / part), 16000
@@ -183,16 +182,20 @@ def prepare_mgb2(
     return manifests
 
 
-_unicode = "\u0622\u0624\u0626\u0628\u062a\u062c\u06af\u062e\u0630\u0632\u0634\
-    \u0636\u0638\u063a\u0640\u0642\u0644\u0646\u0648\u064a\u064c\u064e\u0650\u0652\u0670\
-    \u067e\u0686\u0621\u0623\u0625\u06a4\u0627\u0629\u062b\u062d\u062f\u0631\u0633\u0635\
-    \u0637\u0639\u0641\u0643\u0645\u0647\u0649\u064b\u064d\u064f\u0651\u0671"
+_unicode = (
+    "\u0622\u0624\u0626\u0628\u062a\u062c\u06af\u062e\u0630\u0632"
+    "\u0634\u0636\u0638\u063a\u0640\u0642\u0644\u0646\u0648\u064a\u064c\u064e"
+    "\u0650\u0652\u0670\u067e\u0686\u0621\u0623\u0625\u06a4\u0627\u0629\u062b"
+    "\u062d\u062f\u0631\u0633\u0635\u0637\u0639\u0641\u0643\u0645\u0647\u0649"
+    "\u064b\u064d\u064f\u0651\u0671"
+)
 _buckwalter = "|&}btjGx*z$DZg_qlnwyNaio`PJ'><VApvHdrsSTEfkmhYFKu~{"
-_backwardMap = {ord(a): b for a, b in zip(_buckwalter, _unicode)}
+
+_backward_map = {ord(b): a for a, b in zip(_unicode, _buckwalter)}
 
 
 def from_buck_walter(s: str) -> str:
-    return s.translate(_backwardMap)
+    return s.translate(_backward_map)
 
 
 def remove_diacritics(text: str) -> str:
@@ -203,7 +206,7 @@ def remove_diacritics(text: str) -> str:
 def remove_punctuations(text: str) -> str:
     """This function  removes all punctuations except the verbatim"""
 
-    arabic_punctuations = """`÷×؛<>_()*&^%][ـ،/:"؟.,'{}~¦+|!”…“–ـ"""
+    arabic_punctuations = """﴿﴾`÷×؛<>_()*&^%][ـ،/:"؟.,'{}~¦+|!”…“–ـ"""
     english_punctuations = punctuation
     # remove all non verbatim punctuations
     all_punctuations = set(arabic_punctuations + english_punctuations)
@@ -214,9 +217,60 @@ def remove_punctuations(text: str) -> str:
     return text
 
 
+def remove_non_alphanumeric(text: str) -> str:
+    text = text.lower()
+    return sub(r"[^\u0600-\u06FF\s\da-z]+", "", text)
+
+
+def remove_single_char_word(text: str) -> str:
+    """
+    Remove single character word from text
+    Example: I am in a a home for two years => am in home for two years
+    Args:
+            text (str): text
+    Returns:
+            (str): text with single char removed
+    """
+    words = text.split()
+
+    filter_words = [word for word in words if len(word) > 1 or word.isnumeric()]
+    return " ".join(filter_words)
+
+
+def east_to_west_num(text: str) -> str:
+    eastern_to_western = {
+        "٠": "0",
+        "١": "1",
+        "٢": "2",
+        "٣": "3",
+        "٤": "4",
+        "٥": "5",
+        "٦": "6",
+        "٧": "7",
+        "٨": "8",
+        "٩": "9",
+        "٪": "%",
+        "_": " ",
+        "ڤ": "ف",
+        "|": " ",
+    }
+    trans_string = str.maketrans(eastern_to_western)
+    return text.translate(trans_string)
+
+
+def remove_extra_space(text: str) -> str:
+    text = sub("\s+", " ", text)
+    text = sub("\s+\.\s+", ".", text)
+    return text
+
+
 def cleaning(text: str) -> str:
     text = remove_punctuations(text)
+    text = east_to_west_num(text)
     text = remove_diacritics(text)
+    text = remove_non_alphanumeric(text)
+    text = remove_single_char_word(text)
+    text = remove_extra_space(text)
     return text
 
 
