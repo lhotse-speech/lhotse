@@ -1157,7 +1157,7 @@ class MonoCut(Cut):
             old_sup = self.supervisions[0]
             if isclose(old_sup.start, 0) and isclose(old_sup.duration, self.duration):
                 return self
-            if old_sup.start < 0 or old_sup.end > self.end and not shrink_ok:
+            if (old_sup.start < 0 or old_sup.end > self.end) and not shrink_ok:
                 raise ValueError(
                     f"Cannot shrink supervision (start={old_sup.start}, end={old_sup.end}) to cut "
                     f"(start=0, duration={self.duration}) because the argument `shrink_ok` is `False`. "
