@@ -43,6 +43,7 @@ from .rir_noise import *
 from .spgispeech import *
 from .switchboard import *
 from .tedlium import *
+from .thchs_30 import *
 from .timit import *
 from .vctk import *
 from .voxceleb import *
