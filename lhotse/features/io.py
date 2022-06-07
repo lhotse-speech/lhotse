@@ -746,8 +746,6 @@ class LilcomChunkyReader(FeaturesReader):
         chunk_data = []
         with open(self.storage_path, "rb") as file:
             for offset, end in pairwise(chunk_offsets):
-                # We need to use locks to avoid race conditions between seek
-                # and read in multi-threaded reads.
                 file.seek(offset)
                 chunk_data.append(file.read(end - offset))
 
