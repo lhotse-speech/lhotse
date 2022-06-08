@@ -46,6 +46,7 @@ from .spgispeech import *
 from .stcmds import *
 from .switchboard import *
 from .tal_asr import *
+from .tal_csasr import *
 from .tedlium import *
 from .thchs_30 import *
 from .timit import *

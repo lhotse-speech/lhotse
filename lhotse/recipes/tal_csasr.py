@@ -1,5 +1,6 @@
 """
-AISHELL2 (~1000 hours) if available(https://www.aishelltech.com/aishell_2).
+optional TAL_CSASR(587 hours) if available(https://ai.100tal.com/dataset).
+It is a mandarin-english code-switch corpus.
 """
 
 import logging
@@ -18,7 +19,7 @@ from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import Pathlike, urlretrieve_progress
 
 
-def prepare_aishell2(
+def prepare_tal_csasr(
     corpus_dir: Pathlike, output_dir: Optional[Pathlike] = None
 ) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet]]]:
     """
@@ -33,7 +34,7 @@ def prepare_aishell2(
         output_dir = Path(output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
 
-    transcript_path = corpus_dir / "AISHELL-2" / "iOS" / "data" / "trans.txt"
+    transcript_path = corpus_dir / "TAL_CSASR" / "label"
     transcript_dict = {}
     with open(transcript_path, "r", encoding="utf-8") as f:
         for line in f.readlines():
@@ -43,17 +44,17 @@ def prepare_aishell2(
     manifests = defaultdict(dict)
     dataset_parts = ["train"]
     for part in tqdm(
-        dataset_parts, desc="process aishell2 audio, it needs waste some time."
+        dataset_parts, desc="Process tal_csasr audio, it needs waste some time."
     ):
-        logging.info(f"Processing aishell2 {part}")
+        logging.info(f"Processing tal_csasr {part}")
         # Generate a mapping: utt_id -> (audio_path, audio_info, speaker, text)
         recordings = []
         supervisions = []
-        wav_path = corpus_dir / "AISHELL-2" / "iOS" / "data" / "wav"
+        wav_path = corpus_dir / "TAL_CSASR" / "cs_wav"
         for audio_path in wav_path.rglob("**/*.wav"):
-            logging.info(f"Processing audio path  {audio_path}")
+            logging.info(f"Processing audio path {audio_path}")
             idx = audio_path.stem
-            speaker = audio_path.parts[-2]
+            speaker = idx
             if idx not in transcript_dict:
                 logging.warning(f"No transcript: {idx}")
                 continue
@@ -81,9 +82,9 @@ def prepare_aishell2(
 
         if output_dir is not None:
             supervision_set.to_file(
-                output_dir / f"aishell2_supervisions_{part}.jsonl.gz"
+                output_dir / f"tal_csasr_supervisions_{part}.jsonl.gz"
             )
-            recording_set.to_file(output_dir / f"aishell2_recordings_{part}.jsonl.gz")
+            recording_set.to_file(output_dir / f"tal_csasr_recordings_{part}.jsonl.gz")
 
         manifests[part] = {"recordings": recording_set, "supervisions": supervision_set}
 

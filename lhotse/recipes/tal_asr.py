@@ -39,7 +39,7 @@ def prepare_tal_asr(
     with open(transcript_path, "r", encoding="utf-8") as f:
         for line in f.readlines():
             idx_transcript = line.split()
-            transcript_dict[idx_transcript[0]] = "".join(idx_transcript[1:])
+            transcript_dict[idx_transcript[0]] = " ".join(idx_transcript[1:])
 
     manifests = defaultdict(dict)
     dataset_parts = ["train", "dev", "test"]
