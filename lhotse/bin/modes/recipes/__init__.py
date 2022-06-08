@@ -45,6 +45,7 @@ from .rir_noise import *
 from .spgispeech import *
 from .stcmds import *
 from .switchboard import *
+from .tal_asr import *
 from .tedlium import *
 from .thchs_30 import *
 from .timit import *

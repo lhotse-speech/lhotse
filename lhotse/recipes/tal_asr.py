@@ -34,7 +34,7 @@ def prepare_tal_asr(
         output_dir = Path(output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
 
-    transcript_path = corpus_dir / "AISHELL-2" / "iOS" / "data" / "trans.txt"
+    transcript_path = corpus_dir / "aisolution_data" / "transcript" / "transcript.txt"
     transcript_dict = {}
     with open(transcript_path, "r", encoding="utf-8") as f:
         for line in f.readlines():
@@ -42,16 +42,17 @@ def prepare_tal_asr(
             transcript_dict[idx_transcript[0]] = "".join(idx_transcript[1:])
 
     manifests = defaultdict(dict)
-    dataset_parts = ["train"]
+    dataset_parts = ["train", "dev", "test"]
     for part in tqdm(
-        dataset_parts, desc="process aishell2 audio, it needs waste some time."
+        dataset_parts, desc="Process tal_asr audio, it needs waste some time."
     ):
-        logging.info(f"Processing aishell2 {part}")
+        logging.info(f"Processing tal_asr {part}")
         # Generate a mapping: utt_id -> (audio_path, audio_info, speaker, text)
         recordings = []
         supervisions = []
-        wav_path = corpus_dir / "AISHELL-2" / "iOS" / "data" / "wav"
+        wav_path = corpus_dir / "aisolution_data" / "wav" / f"{part}"
         for audio_path in wav_path.rglob("**/*.wav"):
+            logging.info(f"Processing audio path {audio_path}")
             idx = audio_path.stem
             speaker = audio_path.parts[-2]
             if idx not in transcript_dict:
@@ -81,9 +82,9 @@ def prepare_tal_asr(
 
         if output_dir is not None:
             supervision_set.to_file(
-                output_dir / f"aishell2_supervisions_{part}.jsonl.gz"
+                output_dir / f"tal_asr_supervisions_{part}.jsonl.gz"
             )
-            recording_set.to_file(output_dir / f"aishell2_recordings_{part}.jsonl.gz")
+            recording_set.to_file(output_dir / f"tal_asr_recordings_{part}.jsonl.gz")
 
         manifests[part] = {"recordings": recording_set, "supervisions": supervision_set}
 

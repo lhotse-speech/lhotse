@@ -51,6 +51,7 @@ def prepare_aishell2(
         supervisions = []
         wav_path = corpus_dir / "AISHELL-2" / "iOS" / "data" / "wav"
         for audio_path in wav_path.rglob("**/*.wav"):
+            logging.info(f"Processing audio path  {audio_path}")
             idx = audio_path.stem
             speaker = audio_path.parts[-2]
             if idx not in transcript_dict:
