@@ -1,12 +1,9 @@
 """
-Magicdata is an open-source Chinese Mandarin speech corpus by Magic Data Technology Co., Ltd.,
-containing 755 hours of scripted read speech data from 1080 native speakers of the Mandarin Chinese spoken
-in mainland China. The sentence transcription accuracy is higher than 98%.
-Publicly available on https://www.openslr.org/resources/68
-MagicData (712 hours)
+Stcmds is an open-source  Chinese Mandarin corpus by Surfingtech (www.surfing.ai), containing utterances from 855 speakers, 102600 utterances;
+Publicly available on https://www.openslr.org/resources/38
+ST-CMDS (110 hours)
+
 """
-
-
 import logging
 import os
 import shutil
@@ -23,7 +20,7 @@ from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import Pathlike, urlretrieve_progress
 
 
-def download_magicdata(
+def download_stcmds(
     target_dir: Pathlike = ".",
     force_download: Optional[bool] = False,
     base_url: Optional[str] = "http://www.openslr.org/resources",
@@ -35,14 +32,12 @@ def download_magicdata(
     :param base_url: str, the url of the OpenSLR resources.
     :return: the path to downloaded and extracted directory with data.
     """
-    url = f"{base_url}/68"
+    url = f"{base_url}/38"
     target_dir = Path(target_dir)
     target_dir.mkdir(parents=True, exist_ok=True)
-    corpus_dir = target_dir / "magicdata"
-    train_tar_name = "train_set.tar.gz"
-    dev_tar_name = "dev_set.tar.gz"
-    test_tar_name = "test_set.tar.gz"
-    for tar_name in [train_tar_name, dev_tar_name, test_tar_name]:
+    corpus_dir = target_dir / "stcmds"
+    dataset_tar_name = "ST-CMDS-20170001_1-OS.tar.gz"
+    for tar_name in [dataset_tar_name]:
         tar_path = target_dir / tar_name
         extracted_dir = corpus_dir / tar_name[:-7]
         completed_detector = extracted_dir / ".completed"
@@ -61,7 +56,7 @@ def download_magicdata(
     return corpus_dir
 
 
-def prepare_magicdata(
+def prepare_stcmds(
     corpus_dir: Pathlike, output_dir: Optional[Pathlike] = None
 ) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet]]]:
     """
@@ -76,43 +71,29 @@ def prepare_magicdata(
         output_dir = Path(output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
 
-    dataset_parts = ["train", "dev", "test"]
+    path = corpus_dir / "ST-CMDS-20170001_1-OS"
     transcript_dict = {}
-    for part in dataset_parts:
-        path = corpus_dir / f"{part}" / "TRANS.txt"
-        with open(path, "r", encoding="utf-8") as f1:
-            for line in f1:
-                if line.startswith("UtteranceID"):
-                    logging.info(f"line is {line}")
-                    continue
-                idx_transcript = line.split()
-                ## because the below two utterance is bad, so it will be removed.
-                if (
-                    idx_transcript[0] == "16_4013_20170819121429.wav"
-                    or idx_transcript[0] == "18_1565_20170712000170.wav"
-                ):
-                    continue
-                idx_ = idx_transcript[0].split(".")[0]
-                transcript_dict[idx_] = " ".join(idx_transcript[2:])
+    for text_path in path.rglob("**/*.txt"):
+        idx = text_path.stem
+        logging.info(f"processing stcmds transcript  {text_path}")
+        with open(text_path, "r", encoding="utf-8") as f:
+            for line in f.readlines():
+                transcript_dict[idx] = line
 
     manifests = defaultdict(dict)
+    dataset_parts = ["train"]
     for part in tqdm(
-        dataset_parts, desc="process magicdata audio, it needs waste some time."
+        dataset_parts, desc="process stcmds audio, it needs waste some time."
     ):
-        logging.info(f"Processing magicdata subset:{part}")
-        # Generate a mapping: utt_id -> (audio_path, audio_info, speaker, text)
+        logging.info(f"Processing stcmds {part}")
         recordings = []
         supervisions = []
-        wav_path = corpus_dir / f"{part}"
-        for audio_path in wav_path.rglob("**/*.wav"):
+        for audio_path in path.rglob("**/*.wav"):
             idx = audio_path.stem
-            logging.info(f"process audio_path is {audio_path}")
-            speaker = audio_path.parts[-2]
-
+            speaker = "".join(list(idx)[8:14])
             if idx not in transcript_dict:
                 logging.warning(f"No transcript: {idx}")
                 continue
-
             text = transcript_dict[idx]
             if not audio_path.is_file():
                 logging.warning(f"No such file: {audio_path}")
@@ -136,10 +117,8 @@ def prepare_magicdata(
         validate_recordings_and_supervisions(recording_set, supervision_set)
 
         if output_dir is not None:
-            supervision_set.to_file(
-                output_dir / f"magicdata_supervisions_{part}.jsonl.gz"
-            )
-            recording_set.to_file(output_dir / f"magicdata_recordings_{part}.jsonl.gz")
+            supervision_set.to_file(output_dir / f"stcmds_supervisions_{part}.jsonl.gz")
+            recording_set.to_file(output_dir / f"stcmds_recordings_{part}.jsonl.gz")
 
         manifests[part] = {"recordings": recording_set, "supervisions": supervision_set}
 

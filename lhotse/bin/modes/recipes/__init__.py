@@ -1,6 +1,7 @@
 from .adept import *
 from .aidatatang_200zh import *
 from .aishell import *
+from .aishell2 import *
 from .aishell4 import *
 from .ali_meeting import *
 from .ami import *
@@ -33,6 +34,7 @@ from .librimix import *
 from .librispeech import *
 from .libritts import *
 from .ljspeech import *
+from .magicdata import *
 from .mgb2 import *
 from .mls import *
 from .mtedx import *
@@ -41,6 +43,7 @@ from .nsc import *
 from .peoples_speech import *
 from .rir_noise import *
 from .spgispeech import *
+from .stcmds import *
 from .switchboard import *
 from .tedlium import *
 from .thchs_30 import *

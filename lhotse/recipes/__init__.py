@@ -40,7 +40,7 @@ from .nsc import prepare_nsc
 from .peoples_speech import prepare_peoples_speech
 from .rir_noise import download_rir_noise, prepare_rir_noise
 from .spgispeech import download_spgispeech, prepare_spgispeech
-from .st_cmds import download_stcmds, prepare_stcmds
+from .stcmds import download_stcmds, prepare_stcmds
 from .switchboard import prepare_switchboard
 from .tedlium import download_tedlium, prepare_tedlium
 from .thchs_30 import download_thchs_30, prepare_thchs_30

@@ -1,9 +1,8 @@
 """
-Stcmds is an open-source  Chinese Mandarin corpus by Surfingtech (www.surfing.ai), containing utterances from 855 speakers, 102600 utterances;
-Publicly available on https://www.openslr.org/resources/38
-ST-CMDS (110 hours)
+optional TAL_ASR (100 hours) if available(https://ai.100tal.com/dataset).
 
 """
+
 import logging
 import os
 import shutil
@@ -12,49 +11,15 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Dict, Optional, Union
 
+from tqdm.auto import tqdm
+
 from lhotse import validate_recordings_and_supervisions
 from lhotse.audio import Recording, RecordingSet
 from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import Pathlike, urlretrieve_progress
 
 
-def download_stcmds(
-    target_dir: Pathlike = ".",
-    force_download: Optional[bool] = False,
-    base_url: Optional[str] = "http://www.openslr.org/resources",
-) -> Path:
-    """
-    Downdload and untar the dataset
-    :param target_dir: Pathlike, the path of the dir to storage the dataset.
-    :param force_download: Bool, if True, download the tars no matter if the tars exist.
-    :param base_url: str, the url of the OpenSLR resources.
-    :return: the path to downloaded and extracted directory with data.
-    """
-    url = f"{base_url}/38"
-    target_dir = Path(target_dir)
-    target_dir.mkdir(parents=True, exist_ok=True)
-    corpus_dir = target_dir / "stcmds"
-    dataset_tar_name = "ST-CMDS-20170001_1-OS.tar.gz"
-    for tar_name in [dataset_tar_name]:
-        tar_path = target_dir / tar_name
-        extracted_dir = corpus_dir / tar_name[:-7]
-        completed_detector = extracted_dir / ".completed"
-        if completed_detector.is_file():
-            logging.info(f"Skipping download of because {completed_detector} exists.")
-            continue
-        if force_download or not tar_path.is_file():
-            urlretrieve_progress(
-                f"{url}/{tar_name}", filename=tar_path, desc=f"Downloading {tar_name}"
-            )
-        shutil.rmtree(extracted_dir, ignore_errors=True)
-        with tarfile.open(tar_path) as tar:
-            tar.extractall(path=corpus_dir)
-        completed_detector.touch()
-
-    return corpus_dir
-
-
-def prepare_stcmds(
+def prepare_tal_asr(
     corpus_dir: Pathlike, output_dir: Optional[Pathlike] = None
 ) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet]]]:
     """
@@ -69,22 +34,26 @@ def prepare_stcmds(
         output_dir = Path(output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
 
-    path = corpus_dir / "ST-CMDS-20170001_1-OS"
+    transcript_path = corpus_dir / "AISHELL-2" / "iOS" / "data" / "trans.txt"
     transcript_dict = {}
-    for text_path in path.rglob("**/*.txt"):
-        idx = text_path.stem
-        with open(text_path, "r", encoding="utf-8") as f:
-            for line in f.readlines():
-                transcript_dict[idx] = line
+    with open(transcript_path, "r", encoding="utf-8") as f:
+        for line in f.readlines():
+            idx_transcript = line.split()
+            transcript_dict[idx_transcript[0]] = "".join(idx_transcript[1:])
 
     manifests = defaultdict(dict)
     dataset_parts = ["train"]
-    for part in dataset_parts:
+    for part in tqdm(
+        dataset_parts, desc="process aishell2 audio, it needs waste some time."
+    ):
+        logging.info(f"Processing aishell2 {part}")
+        # Generate a mapping: utt_id -> (audio_path, audio_info, speaker, text)
         recordings = []
         supervisions = []
-        for audio_path in path.rglob("**/*.wav"):
+        wav_path = corpus_dir / "AISHELL-2" / "iOS" / "data" / "wav"
+        for audio_path in wav_path.rglob("**/*.wav"):
             idx = audio_path.stem
-            speaker = "".join(list(idx)[8:14])
+            speaker = audio_path.parts[-2]
             if idx not in transcript_dict:
                 logging.warning(f"No transcript: {idx}")
                 continue
@@ -111,8 +80,10 @@ def prepare_stcmds(
         validate_recordings_and_supervisions(recording_set, supervision_set)
 
         if output_dir is not None:
-            supervision_set.to_file(output_dir / f"stcmds_supervisions_{part}.jsonl.gz")
-            recording_set.to_file(output_dir / f"stcmds_recordings_{part}.jsonl.gz")
+            supervision_set.to_file(
+                output_dir / f"aishell2_supervisions_{part}.jsonl.gz"
+            )
+            recording_set.to_file(output_dir / f"aishell2_recordings_{part}.jsonl.gz")
 
         manifests[part] = {"recordings": recording_set, "supervisions": supervision_set}
 
