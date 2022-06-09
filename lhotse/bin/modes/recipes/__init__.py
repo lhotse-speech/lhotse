@@ -42,6 +42,7 @@ from .peoples_speech import *
 from .rir_noise import *
 from .spgispeech import *
 from .switchboard import *
+from .tal_csasr import *
 from .tedlium import *
 from .timit import *
 from .vctk import *

@@ -40,6 +40,7 @@ from .peoples_speech import prepare_peoples_speech
 from .rir_noise import download_rir_noise, prepare_rir_noise
 from .spgispeech import download_spgispeech, prepare_spgispeech
 from .switchboard import prepare_switchboard
+from .tal_csasr import prepare_tal_csasr
 from .tedlium import download_tedlium, prepare_tedlium
 from .timit import download_timit, prepare_timit
 from .vctk import download_vctk, prepare_vctk
