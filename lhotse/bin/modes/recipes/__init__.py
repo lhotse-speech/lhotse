@@ -41,6 +41,7 @@ from .mtedx import *
 from .musan import *
 from .nsc import *
 from .peoples_speech import *
+from .primewords import *
 from .rir_noise import *
 from .spgispeech import *
 from .stcmds import *
