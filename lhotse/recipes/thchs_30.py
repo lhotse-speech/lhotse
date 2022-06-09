@@ -14,6 +14,8 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Dict, Optional, Union
 
+from tqdm.auto import tqdm
+
 from lhotse import validate_recordings_and_supervisions
 from lhotse.audio import Recording, RecordingSet
 from lhotse.supervision import SupervisionSegment, SupervisionSet
@@ -71,7 +73,7 @@ def prepare_thchs_30(
         output_dir = Path(output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
 
-    path = corpus_dir / "data"
+    path = corpus_dir / "data_thchs30" / "data"
     transcript_dict = {}
     for text_path in path.rglob("**/*.wav.trn"):
         idx = Path(text_path.stem).stem
@@ -83,12 +85,17 @@ def prepare_thchs_30(
 
     manifests = defaultdict(dict)
     dataset_parts = ["train", "dev", "test"]
-    for part in dataset_parts:
+    for part in tqdm(
+        dataset_parts, desc="process thchs_30 audio, it needs waste some time."
+    ):
+        logging.info(f"Processing thchs_30 {part}")
+
         # Generate a mapping: utt_id -> (audio_path, audio_info, speaker, text)
         recordings = []
         supervisions = []
-        wav_path = corpus_dir / f"{part}"
+        wav_path = corpus_dir / "data_thchs30" / f"{part}"
         for audio_path in wav_path.rglob("**/*.wav"):
+            logging.info(f"Processing audio path {audio_path}")
             idx = audio_path.stem
             speaker = idx.split("_")[0]
             if idx not in transcript_dict:
