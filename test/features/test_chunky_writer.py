@@ -5,11 +5,22 @@ import pytest
 
 from lhotse import ChunkedLilcomHdf5Writer, LilcomChunkyWriter
 from lhotse.features.io import get_reader
+from lhotse.utils import is_module_available
 
 
 @pytest.mark.parametrize(
     ["writer_type", "ext"],
-    [(LilcomChunkyWriter, ".lca"), (ChunkedLilcomHdf5Writer, ".h5")],
+    [
+        (LilcomChunkyWriter, ".lca"),
+        pytest.param(
+            ChunkedLilcomHdf5Writer,
+            ".h5",
+            marks=pytest.mark.skipif(
+                not is_module_available("h5py"),
+                reason="Requires h5py to run HDF5 tests.",
+            ),
+        ),
+    ],
 )
 def test_chunky_writer_left_right_offsets_equal(writer_type, ext):
     # Generate small random numbers that are nicely compressed with lilcom
