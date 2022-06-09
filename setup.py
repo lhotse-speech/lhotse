@@ -129,7 +129,6 @@ install_requires = [
     "click>=7.1.1",
     "cytoolz>=0.10.1",
     "dataclasses",
-    "h5py>=2.10.0",
     "intervaltree>= 3.1.0",
     "lilcom>=1.1.0",
     "numpy>=1.18.1",

@@ -1,6 +1,6 @@
 import logging
 import os
-from tempfile import NamedTemporaryFile
+from tempfile import NamedTemporaryFile, TemporaryDirectory
 
 import numpy as np
 import pytest
@@ -8,9 +8,9 @@ import torch
 import torchaudio
 
 from lhotse import (
-    LilcomHdf5Writer,
+    LilcomFilesWriter,
     MonoCut,
-    NumpyHdf5Writer,
+    NumpyFilesWriter,
     Recording,
     compute_num_samples,
     validate,
@@ -28,7 +28,7 @@ def test_cut_nonexistent_attribute(cut):
 def test_cut_load_array():
     """Check that a custom Array attribute is successfully recognized."""
     ivector = np.arange(20).astype(np.float32)
-    with NamedTemporaryFile(suffix=".h5") as f, LilcomHdf5Writer(f.name) as writer:
+    with TemporaryDirectory() as d, LilcomFilesWriter(d) as writer:
         manifest = writer.store_array(key="utt1", value=ivector)
         cut = MonoCut(id="x", start=0, duration=5, channel=0)
         # Note: MonoCut doesn't normally have an "ivector" attribute,
@@ -42,7 +42,7 @@ def test_cut_load_array():
 def test_cut_load_array_truncate():
     """Check that loading a custom Array works after truncation."""
     ivector = np.arange(20).astype(np.float32)
-    with NamedTemporaryFile(suffix=".h5") as f, LilcomHdf5Writer(f.name) as writer:
+    with TemporaryDirectory() as d, LilcomFilesWriter(d) as writer:
         cut = dummy_cut(0, duration=5.0)
         cut.ivector = writer.store_array(key="utt1", value=ivector)
 
@@ -55,7 +55,7 @@ def test_cut_load_array_truncate():
 def test_cut_load_array_pad():
     """Check that loading a custom Array works after padding."""
     ivector = np.arange(20).astype(np.float32)
-    with NamedTemporaryFile(suffix=".h5") as f, LilcomHdf5Writer(f.name) as writer:
+    with TemporaryDirectory() as d, LilcomFilesWriter(d) as writer:
         cut = MonoCut(
             id="x",
             start=0,
@@ -74,7 +74,7 @@ def test_cut_load_array_pad():
 def test_cut_custom_attr_serialization():
     """Check that a custom Array attribute is successfully serialized + deserialized."""
     ivector = np.arange(20).astype(np.float32)
-    with NamedTemporaryFile(suffix=".h5") as f, LilcomHdf5Writer(f.name) as writer:
+    with TemporaryDirectory() as d, LilcomFilesWriter(d) as writer:
         cut = MonoCut(id="x", start=0, duration=5, channel=0)
         cut.ivector = writer.store_array(key="utt1", value=ivector)
 
@@ -101,7 +101,7 @@ def test_cut_custom_nonarray_attr_serialization():
 def test_cut_load_temporal_array():
     """Check that we can read a TemporalArray from a cut when their durations match."""
     alignment = np.random.randint(500, size=131)
-    with NamedTemporaryFile(suffix=".h5") as f, NumpyHdf5Writer(f.name) as writer:
+    with TemporaryDirectory() as d, NumpyFilesWriter(d) as writer:
         manifest = writer.store_array(
             key="utt1", value=alignment, frame_shift=0.4, temporal_dim=0
         )
@@ -117,7 +117,7 @@ def test_cut_load_temporal_array():
 
 def test_cut_load_temporal_array_truncate():
     """Check the array loaded via TemporalArray is truncated along with the cut."""
-    with NamedTemporaryFile(suffix=".h5") as f, NumpyHdf5Writer(f.name) as writer:
+    with TemporaryDirectory() as d, NumpyFilesWriter(d) as writer:
         expected_duration = 52.4  # 131 frames x 0.4s frame shift == 52.4s
         cut = dummy_cut(0, duration=expected_duration)
 
@@ -135,7 +135,7 @@ def test_cut_load_temporal_array_truncate():
 @pytest.mark.parametrize("pad_value", [-1, 0])
 def test_cut_load_temporal_array_pad(pad_value):
     """Check the array loaded via TemporalArray is padded along with the cut."""
-    with NamedTemporaryFile(suffix=".h5") as f, NumpyHdf5Writer(f.name) as writer:
+    with TemporaryDirectory() as d, NumpyFilesWriter(d) as writer:
         cut = MonoCut(
             id="x",
             start=0,
@@ -159,7 +159,7 @@ def test_cut_load_temporal_array_pad(pad_value):
 def test_validate_cut_with_temporal_array(caplog):
     # Note: "caplog" is a special variable in pytest that captures logs.
     caplog.set_level(logging.WARNING)
-    with NamedTemporaryFile(suffix=".h5") as f, NumpyHdf5Writer(f.name) as writer:
+    with TemporaryDirectory() as d, NumpyFilesWriter(d) as writer:
         cut = MonoCut(
             id="cut1",
             start=0,

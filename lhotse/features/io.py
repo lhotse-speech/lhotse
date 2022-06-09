@@ -354,6 +354,13 @@ Non-compressed numpy arrays, stored in HDF5 file.
 """
 
 
+def check_h5py_installed():
+    if not is_module_available("h5py"):
+        raise ValueError(
+            "To read and write HDF5 file formats, please 'pip install h5py' first."
+        )
+
+
 @lru_cache(maxsize=None)
 def lookup_cache_or_open(storage_path: str):
     """
@@ -364,6 +371,7 @@ def lookup_cache_or_open(storage_path: str):
 
     The file handles can be freed at any time by calling ``close_cached_file_handles()``.
     """
+    check_h5py_installed()
     import h5py
 
     return h5py.File(storage_path, "r")
@@ -435,6 +443,7 @@ class NumpyHdf5Writer(FeaturesWriter):
             a        Read/write if exists, create otherwise
         """
         super().__init__()
+        check_h5py_installed()
         import h5py
 
         self.storage_path_ = Path(storage_path).with_suffix(".h5")
@@ -523,6 +532,7 @@ class LilcomHdf5Writer(FeaturesWriter):
             a        Read/write if exists, create otherwise
         """
         super().__init__()
+        check_h5py_installed()
         import h5py
 
         self.storage_path_ = Path(storage_path).with_suffix(".h5")
@@ -647,6 +657,7 @@ class ChunkedLilcomHdf5Writer(FeaturesWriter):
             a        Read/write if exists, create otherwise
         """
         super().__init__()
+        check_h5py_installed()
         import h5py
 
         self.storage_path_ = Path(storage_path).with_suffix(".h5")
@@ -667,6 +678,7 @@ class ChunkedLilcomHdf5Writer(FeaturesWriter):
         return str(self.storage_path_)
 
     def write(self, key: str, value: np.ndarray) -> str:
+        check_h5py_installed()
         import h5py
 
         from lhotse.features.compression import lilcom_compress_chunked

@@ -127,12 +127,30 @@ def test_compute_global_stats():
     "storage_fn",
     [
         lambda: LilcomFilesWriter(TemporaryDirectory().name),
-        lambda: LilcomHdf5Writer(NamedTemporaryFile().name),
-        lambda: ChunkedLilcomHdf5Writer(NamedTemporaryFile().name),
         lambda: LilcomChunkyWriter(NamedTemporaryFile().name),
         lambda: NumpyFilesWriter(TemporaryDirectory().name),
-        lambda: NumpyHdf5Writer(NamedTemporaryFile().name),
         lambda: MemoryLilcomWriter(),
+        pytest.param(
+            lambda: NumpyHdf5Writer(NamedTemporaryFile().name),
+            marks=pytest.mark.skipif(
+                not is_module_available("h5py"),
+                reason="h5py must be installed for HDF5 writing",
+            ),
+        ),
+        pytest.param(
+            lambda: LilcomHdf5Writer(NamedTemporaryFile().name),
+            marks=pytest.mark.skipif(
+                not is_module_available("h5py"),
+                reason="h5py must be installed for HDF5 writing",
+            ),
+        ),
+        pytest.param(
+            lambda: ChunkedLilcomHdf5Writer(NamedTemporaryFile().name),
+            marks=pytest.mark.skipif(
+                not is_module_available("h5py"),
+                reason="h5py must be installed for HDF5 writing",
+            ),
+        ),
         pytest.param(
             lambda: KaldiWriter(TemporaryDirectory().name),
             marks=pytest.mark.skipif(
