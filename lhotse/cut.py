@@ -4387,6 +4387,11 @@ class CutSet(Serializable, AlgorithmMixin):
             ), f"SNR range must be a list or tuple with exactly two values (got: {snr})"
         else:
             assert isinstance(snr, (type(None), int, float))
+        assert not cuts.is_lazy, (
+            "Mixing of two CutSets does not support a lazy mixed-in CutSet ('cuts' argument), "
+            "as it would be extremely inefficient. "
+            "You can use 'cuts.to_eager()' on the function argument to fix this."
+        )
         mixed_cuts = []
         for cut in self:
             # Check whether we're going to mix something into the current cut
