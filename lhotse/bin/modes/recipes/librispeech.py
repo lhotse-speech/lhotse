@@ -1,10 +1,10 @@
+from typing import Sequence
+
 import click
 
 from lhotse.bin.modes import download, prepare
 from lhotse.recipes.librispeech import download_librispeech, prepare_librispeech
 from lhotse.utils import Pathlike
-
-from typing import Sequence
 
 __all__ = ["librispeech"]
 

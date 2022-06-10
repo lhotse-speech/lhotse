@@ -6,7 +6,7 @@ from pytest import approx
 
 from lhotse.audio import AudioSource, Recording, RecordingSet
 from lhotse.cut import CutSet, MonoCut
-from lhotse.features import FeatureSet, Features
+from lhotse.features import Features, FeatureSet
 from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.testing.dummies import dummy_cut, dummy_supervision
 

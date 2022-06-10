@@ -1,10 +1,10 @@
+from typing import Sequence, Union
+
 import click
 
 from lhotse.bin.modes import download, prepare
 from lhotse.recipes import download_rir_noise, prepare_rir_noise
 from lhotse.utils import Pathlike
-
-from typing import Sequence, Union
 
 __all__ = ["rir_noise"]
 

@@ -8,7 +8,6 @@ from lhotse.supervision import SupervisionSegment
 from lhotse.testing.dummies import remove_spaces_from_segment_text
 from lhotse.utils import nullcontext as does_not_raise
 
-
 # Note:
 # Definitions for `cut1`, `cut2` and `cut_set` parameters are standard Pytest fixtures located in test/cut/conftest.py
 

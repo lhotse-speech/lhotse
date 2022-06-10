@@ -347,6 +347,7 @@ class LazyWebdatasetIterator:
         data_dict = next(self._ds_iter)
         data = pickle.loads(data_dict["data"])
         item = deserialize_item(data)
+        item.shard_origin = data_dict["__url__"]
         return item
 
     def values(self):
@@ -402,15 +403,10 @@ def mini_webdataset(
     if not is_module_available("webdataset"):
         raise ImportError("Please 'pip install webdataset' first.")
 
-    from webdataset import (
-        DataPipeline,
-        split_by_node as split_by_node_,
-        split_by_worker as split_by_worker_,
-        reraise_exception,
-        warn_and_continue,
-        SimpleShardList,
-        tarfile_to_samples,
-    )
+    from webdataset import DataPipeline, SimpleShardList, reraise_exception
+    from webdataset import split_by_node as split_by_node_
+    from webdataset import split_by_worker as split_by_worker_
+    from webdataset import tarfile_to_samples, warn_and_continue
 
     wds = DataPipeline(SimpleShardList(urls=urls))
     if split_by_node:

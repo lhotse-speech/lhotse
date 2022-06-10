@@ -25,11 +25,9 @@ from lhotse.dataset.sampling import (
 from lhotse.dataset.sampling.base import SamplingDiagnostics, TimeConstraint
 from lhotse.dataset.sampling.dynamic import DynamicCutSampler
 from lhotse.testing.dummies import DummyManifest, as_lazy, dummy_cut
-from lhotse.utils import (
-    fastcopy,
-    nullcontext as does_not_raise,
-    streaming_shuffle,
-)
+from lhotse.utils import fastcopy
+from lhotse.utils import nullcontext as does_not_raise
+from lhotse.utils import streaming_shuffle
 
 
 @pytest.fixture
@@ -469,18 +467,28 @@ def test_bucketing_sampler_single_cuts_equal_duration():
     )
 
     # Ensure that each consecutive bucket has less cuts than the previous one
-    prev_len = float("inf")
-    bucket_cum_durs = []
+    sampled_cuts, bucket_cum_durs = [], []
+    prev_min, prev_max = 0, 0
+    num_overlapping_bins = 0
     for (bucket,) in sampler.buckets:
-        bucket_cum_durs.append(sum(c.duration for c in bucket))
-        curr_len = len(bucket)
-        assert curr_len < prev_len
-        prev_len = curr_len
+        bucket_durs = [c.duration for c in bucket]
+        sampled_cuts.extend(c for c in bucket)
+        bucket_cum_durs.append(sum(bucket_durs))
+        bucket_min, bucket_max = min(bucket_durs), max(bucket_durs)
+        # Ensure that bucket lengths do not overlap, except for the middle
+        # 3 buckets maybe
+        if prev_max > bucket_min:
+            num_overlapping_bins += 1
+        assert num_overlapping_bins < 3
+        prev_min = bucket_min
+        prev_max = bucket_max
 
     # Assert that all bucket cumulative durations are within 1/10th of the mean
     mean_bucket_dur = mean(bucket_cum_durs)  # ~ 1300s
     for d in bucket_cum_durs:
         assert abs(d - mean_bucket_dur) < 0.1 * mean_bucket_dur
+
+    assert set(cut_set.ids) == set(c.id for c in sampled_cuts)
 
 
 def test_bucketing_sampler_shuffle():

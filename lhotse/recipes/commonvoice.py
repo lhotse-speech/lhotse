@@ -224,10 +224,10 @@ def prepare_single_commonvoice_tsv(
     df = pd.read_csv(tsv_path, sep="\t")
     # Scan all the audio files
     with RecordingSet.open_writer(
-        output_dir / f"cv_recordings_{lang}_{part}.jsonl.gz",
+        output_dir / f"cv-{lang}_recordings_{part}.jsonl.gz",
         overwrite=False,
     ) as recs_writer, SupervisionSet.open_writer(
-        output_dir / f"cv_supervisions_{lang}_{part}.jsonl.gz",
+        output_dir / f"cv-{lang}_supervisions_{part}.jsonl.gz",
         overwrite=False,
     ) as sups_writer:
         for idx, row in tqdm(

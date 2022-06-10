@@ -52,7 +52,7 @@ project_root = Path(__file__).parent
 # NOTE: REMEMBER TO UPDATE THE FALLBACK VERSION IN lhotse/__init__.py WHEN RELEASING #
 # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! #
 MAJOR_VERSION = 1
-MINOR_VERSION = 2
+MINOR_VERSION = 3
 PATCH_VERSION = 0
 IS_DEV_VERSION = True  # False = public release, True = otherwise
 
@@ -129,7 +129,6 @@ install_requires = [
     "click>=7.1.1",
     "cytoolz>=0.10.1",
     "dataclasses",
-    "h5py>=2.10.0",
     "intervaltree>= 3.1.0",
     "lilcom>=1.1.0",
     "numpy>=1.18.1",
@@ -158,15 +157,15 @@ except ImportError:
 
 docs_require = (project_root / "docs" / "requirements.txt").read_text().splitlines()
 tests_require = [
-    "pytest==5.4.3",
-    "flake8==3.8.3",
+    "pytest>=5.4.3",
+    "flake8==4.0.1",
     "coverage==5.1",
     "hypothesis==5.41.2",
     "black==22.3.0",
+    "isort==5.10.1",
+    "pre-commit>=2.17.0,<=2.19.0",
 ]
-dev_requires = sorted(
-    docs_require + tests_require + ["jupyterlab", "matplotlib", "isort"]
-)
+dev_requires = sorted(docs_require + tests_require + ["jupyterlab", "matplotlib"])
 orjson_require = ["orjson>=3.6.6"]
 all_requires = sorted(dev_requires + orjson_require)
 

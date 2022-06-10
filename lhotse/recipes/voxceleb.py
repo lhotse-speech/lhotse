@@ -1,55 +1,55 @@
 """
-The following description is taken from the official website: 
+The following description is taken from the official website:
 https://www.robots.ox.ac.uk/~vgg/data/voxceleb/
 
-VoxCeleb is an audio-visual dataset consisting of short clips of human speech, extracted 
-from interview videos uploaded to YouTube. VoxCeleb contains speech from speakers spanning 
+VoxCeleb is an audio-visual dataset consisting of short clips of human speech, extracted
+from interview videos uploaded to YouTube. VoxCeleb contains speech from speakers spanning
 a wide range of different ethnicities, accents, professions and ages. There are a total of
 7000+ speakers and 1 million utterances.
 
-All speaking face-tracks are captured "in the wild", with background chatter, laughter, 
-overlapping speech, pose variation and different lighting conditions. VoxCeleb consists 
-of both audio and video, comprising over 2000 hours of speech. Each segment is at least 
+All speaking face-tracks are captured "in the wild", with background chatter, laughter,
+overlapping speech, pose variation and different lighting conditions. VoxCeleb consists
+of both audio and video, comprising over 2000 hours of speech. Each segment is at least
 3 seconds long.
 
-The dataset consists of two versions, VoxCeleb1 and VoxCeleb2. Each version has it's own 
-train/test split. For each version, the YouTube URLs, face detections and tracks, audio files, 
-cropped face videos and speaker meta-data are provided. There is no overlap between the 
+The dataset consists of two versions, VoxCeleb1 and VoxCeleb2. Each version has it's own
+train/test split. For each version, the YouTube URLs, face detections and tracks, audio files,
+cropped face videos and speaker meta-data are provided. There is no overlap between the
 two versions.
 
 - VoxCeleb1: VoxCeleb1 contains over 100,000 utterances for 1,251 celebrities.
   http://www.robots.ox.ac.uk/~vgg/data/voxceleb/
 - VoxCeleb2: VoxCeleb2 contains over a million utterances for 6,112 identities.
-  http://www.robots.ox.ac.uk/~vgg/data/voxceleb2/ 
+  http://www.robots.ox.ac.uk/~vgg/data/voxceleb2/
 
-LICENSE: The VoxCeleb dataset is available to download for commercial/research purposes 
-under a Creative Commons Attribution 4.0 International License. The copyright remains with 
+LICENSE: The VoxCeleb dataset is available to download for commercial/research purposes
+under a Creative Commons Attribution 4.0 International License. The copyright remains with
 the original owners of the video.
 
 This Lhotse recipe prepares the VoxCeleb1 and VoxCeleb2 datasets.
 """
 import logging
-import zipfile
 import shutil
+import zipfile
+from collections import defaultdict, namedtuple
+from concurrent.futures import as_completed
+from concurrent.futures.process import ProcessPoolExecutor
 from pathlib import Path
 from typing import Dict, Optional, Tuple, Union
-from collections import defaultdict, namedtuple
 
-from concurrent.futures.process import ProcessPoolExecutor
-from concurrent.futures import as_completed
 from tqdm.auto import tqdm
 
 from lhotse import (
-    MonoCut,
     CutSet,
+    MonoCut,
     Recording,
     RecordingSet,
     SupervisionSegment,
     SupervisionSet,
 )
-from lhotse.utils import Pathlike, urlretrieve_progress
-from lhotse.qa import validate_recordings_and_supervisions
 from lhotse.manipulation import combine
+from lhotse.qa import validate_recordings_and_supervisions
+from lhotse.utils import Pathlike, urlretrieve_progress
 
 VOXCELEB1_PARTS_URL = [
     "https://thor.robots.ox.ac.uk/~vgg/data/voxceleb/vox1a/vox1_dev_wav_partaa",
@@ -235,17 +235,17 @@ def prepare_voxceleb(
         supervisions = manifests[split]["supervisions"]
         validate_recordings_and_supervisions(recordings, supervisions)
         if output_dir is not None:
-            recordings.to_file(output_dir / f"recordings_voxceleb_{split}.jsonl.gz")
-            supervisions.to_file(output_dir / f"supervisions_voxceleb_{split}.jsonl.gz")
+            recordings.to_file(output_dir / f"voxceleb_recordings_{split}.jsonl.gz")
+            supervisions.to_file(output_dir / f"voxceleb_supervisions_{split}.jsonl.gz")
 
     # Write the trials cut sets to the output directory
     if output_dir is not None:
         if "pos_trials" in manifests:
             for i, cuts in enumerate(manifests["pos_trials"]):
-                cuts.to_file(output_dir / f"pos_trials_voxceleb_utt{i+1}.jsonl.gz")
+                cuts.to_file(output_dir / f"voxceleb_pos-trials_utt{i+1}.jsonl.gz")
         if "neg_trials" in manifests:
             for i, cuts in enumerate(manifests["neg_trials"]):
-                cuts.to_file(output_dir / f"neg_trials_voxceleb_utt{i+1}.jsonl.gz")
+                cuts.to_file(output_dir / f"voxceleb_neg-trials_utt{i+1}.jsonl.gz")
 
     return manifests
 

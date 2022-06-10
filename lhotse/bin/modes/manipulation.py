@@ -7,10 +7,7 @@ from typing import Optional
 
 import click
 
-from lhotse import (
-    FeatureSet,
-    available_storage_backends,
-)
+from lhotse import FeatureSet, available_storage_backends
 from lhotse.bin.modes.cli_base import cli
 from lhotse.cut import CutSet
 from lhotse.features.io import get_writer
@@ -67,8 +64,8 @@ def copy_feats(
     read every feature matrix using ``features.load()`` or ``cut.load_features()``,
     save them in STORAGE_PATH and save the updated manifest to OUTPUT_MANIFEST.
     """
-    from lhotse.serialization import load_manifest_lazy_or_eager
     from lhotse.manipulation import combine as combine_manifests
+    from lhotse.serialization import load_manifest_lazy_or_eager
 
     manifests = load_manifest_lazy_or_eager(input_manifest)
 
@@ -239,8 +236,8 @@ def subset(
 @click.argument("output_manifest", type=click.Path())
 def combine(manifests: Pathlike, output_manifest: Pathlike):
     """Load MANIFESTS, combine them into a single one, and write it to OUTPUT_MANIFEST."""
-    from lhotse.serialization import load_manifest_lazy_or_eager
     from lhotse.manipulation import combine as combine_manifests
+    from lhotse.serialization import load_manifest_lazy_or_eager
 
     data_set = combine_manifests(*[load_manifest_lazy_or_eager(m) for m in manifests])
     data_set.to_file(output_manifest)
@@ -268,7 +265,9 @@ def filter(predicate: str, manifest: Pathlike, output_manifest: Pathlike):
     import operator
     import re
     from math import isclose
+
     from cytoolz.functoolz import complement
+
     from lhotse import load_manifest
     from lhotse.manipulation import to_manifest
 

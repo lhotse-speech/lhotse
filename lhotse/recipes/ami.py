@@ -33,12 +33,12 @@ import zipfile
 from collections import defaultdict
 from pathlib import Path
 from typing import Dict, List, NamedTuple, Optional, Union
-from lhotse.qa import fix_manifests
 
 from tqdm.auto import tqdm
 
 from lhotse import validate_recordings_and_supervisions
 from lhotse.audio import AudioSource, Recording, RecordingSet
+from lhotse.qa import fix_manifests
 from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import Pathlike, Seconds, urlretrieve_progress
 
@@ -646,8 +646,10 @@ def prepare_ami(
 
         # Write to output directory if a path is provided
         if output_dir is not None:
-            audio_part.to_file(output_dir / f"recordings_{part}.jsonl")
-            supervision_part.to_file(output_dir / f"supervisions_{part}.jsonl")
+            audio_part.to_file(output_dir / f"ami-{mic}_recordings_{part}.jsonl.gz")
+            supervision_part.to_file(
+                output_dir / f"ami-{mic}_supervisions_{part}.jsonl.gz"
+            )
 
         audio_part, supervision_part = fix_manifests(audio_part, supervision_part)
         validate_recordings_and_supervisions(audio_part, supervision_part)

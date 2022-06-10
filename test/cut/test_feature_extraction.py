@@ -16,7 +16,7 @@ from lhotse import (
     KaldifeatMfcc,
     LibrosaFbank,
     LibrosaFbankConfig,
-    LilcomHdf5Writer,
+    LilcomChunkyWriter,
     Mfcc,
     MonoCut,
     Recording,
@@ -123,7 +123,7 @@ def is_dask_availabe():
 
 
 @pytest.mark.parametrize("mix_eagerly", [False, True])
-@pytest.mark.parametrize("storage_type", [LilcomFilesWriter, LilcomHdf5Writer])
+@pytest.mark.parametrize("storage_type", [LilcomFilesWriter, LilcomChunkyWriter])
 @pytest.mark.parametrize(
     ["executor", "num_jobs"],
     [

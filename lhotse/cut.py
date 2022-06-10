@@ -44,8 +44,8 @@ from lhotse.augmentation import AugmentFn
 from lhotse.features import (
     FeatureExtractor,
     FeatureMixer,
-    FeatureSet,
     Features,
+    FeatureSet,
     create_default_feature_extractor,
 )
 from lhotse.features.base import compute_global_stats
@@ -55,8 +55,8 @@ from lhotse.serialization import Serializable
 from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import (
     DEFAULT_PADDING_VALUE,
-    Decibels,
     LOG_EPSILON,
+    Decibels,
     NonPositiveEnergyError,
     Pathlike,
     Seconds,
@@ -380,6 +380,7 @@ class Cut:
         Display the alignment on top of a spectrogram. Requires matplotlib to be installed.
         """
         import matplotlib.pyplot as plt
+
         from lhotse import Fbank
         from lhotse.utils import compute_num_frames
 
@@ -1156,7 +1157,7 @@ class MonoCut(Cut):
             old_sup = self.supervisions[0]
             if isclose(old_sup.start, 0) and isclose(old_sup.duration, self.duration):
                 return self
-            if old_sup.start < 0 or old_sup.end > self.end and not shrink_ok:
+            if (old_sup.start < 0 or old_sup.end > self.end) and not shrink_ok:
                 raise ValueError(
                     f"Cannot shrink supervision (start={old_sup.start}, end={old_sup.end}) to cut "
                     f"(start=0, duration={self.duration}) because the argument `shrink_ok` is `False`. "
@@ -3010,7 +3011,7 @@ class MixedCut(Cut):
         audio = self.load_audio(mixed=False)
         fig, axes = plt.subplots(len(self.tracks), sharex=False, sharey=True)
         for idx, (track, ax) in enumerate(zip(self.tracks, axes)):
-            samples = audio[idx, :]
+            samples = audio[idx].squeeze(0)
             ax.plot(np.linspace(0, self.duration, len(samples)), samples)
             for supervision in track.cut.supervisions:
                 supervision = supervision.trim(track.cut.duration)
@@ -4386,6 +4387,11 @@ class CutSet(Serializable, AlgorithmMixin):
             ), f"SNR range must be a list or tuple with exactly two values (got: {snr})"
         else:
             assert isinstance(snr, (type(None), int, float))
+        assert not cuts.is_lazy, (
+            "Mixing of two CutSets does not support a lazy mixed-in CutSet ('cuts' argument), "
+            "as it would be extremely inefficient. "
+            "You can use 'cuts.to_eager()' on the function argument to fix this."
+        )
         mixed_cuts = []
         for cut in self:
             # Check whether we're going to mix something into the current cut
@@ -4541,8 +4547,9 @@ class CutSet(Serializable, AlgorithmMixin):
             for parallel computation).
         :return: Returns a new ``CutSet`` with ``Features`` manifests attached to the cuts.
         """
-        from lhotse.manipulation import combine
         from cytoolz import identity
+
+        from lhotse.manipulation import combine
 
         # Pre-conditions and args setup
         progress = (
@@ -4699,6 +4706,7 @@ class CutSet(Serializable, AlgorithmMixin):
         """
         import torch
         from torch.utils.data import DataLoader
+
         from lhotse.dataset import SingleCutSampler, UnsupervisedWaveformDataset
         from lhotse.qa import validate_features
 
@@ -4887,8 +4895,9 @@ class CutSet(Serializable, AlgorithmMixin):
             for parallel computation).
         :return: Returns a new ``CutSet``.
         """
-        from lhotse.manipulation import combine
         from cytoolz import identity
+
+        from lhotse.manipulation import combine
 
         # Pre-conditions and args setup
         progress = (

@@ -1,9 +1,9 @@
 from math import isclose
-from tempfile import NamedTemporaryFile
+from tempfile import TemporaryDirectory
 
 import numpy as np
 
-from lhotse import CutSet, NumpyHdf5Writer, Recording, MonoCut
+from lhotse import CutSet, MonoCut, NumpyFilesWriter, Recording
 from lhotse.array import Array
 from lhotse.testing.dummies import dummy_cut
 from lhotse.utils import compute_num_frames
@@ -92,7 +92,7 @@ def test_cut_with_audio_move_to_memory_large_offset():
 def test_cut_with_array_move_to_memory():
     path = "test/fixtures/libri/cuts.json"
     cut = CutSet.from_file(path)[0]
-    with NamedTemporaryFile(suffix=".h5") as f, NumpyHdf5Writer(f.name) as w:
+    with TemporaryDirectory() as d, NumpyFilesWriter(d) as w:
         arr = np.array([0, 1, 2, 3])
         cut.custom_array = w.store_array(key="dummy-key", value=arr)
 
@@ -106,7 +106,7 @@ def test_cut_with_array_move_to_memory():
 def test_cut_with_temporal_array_move_to_memory():
     path = "test/fixtures/libri/cuts.json"
     cut = CutSet.from_file(path)[0]
-    with NamedTemporaryFile(suffix=".h5") as f, NumpyHdf5Writer(f.name) as w:
+    with TemporaryDirectory() as d, NumpyFilesWriter(d) as w:
         arr = np.array(
             np.arange(
                 compute_num_frames(cut.duration, frame_shift=0.01, sampling_rate=16000)
@@ -135,7 +135,7 @@ def test_cut_with_temporal_array_move_to_memory_large_offset():
     cut.start = 10.0
     cut.duration = 1.5
 
-    with NamedTemporaryFile(suffix=".h5") as f, NumpyHdf5Writer(f.name) as w:
+    with TemporaryDirectory() as d, NumpyFilesWriter(d) as w:
         arr = np.array(
             np.arange(
                 compute_num_frames(cut.duration, frame_shift=0.01, sampling_rate=16000)

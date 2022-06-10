@@ -9,13 +9,13 @@ from pytest import mark, raises
 from lhotse.audio import (
     AudioMixer,
     AudioSource,
+    DurationMismatchError,
     Recording,
     RecordingSet,
-    DurationMismatchError,
 )
 from lhotse.testing.dummies import DummyManifest
-from lhotse.utils import INT16MAX
-from lhotse.utils import fastcopy, nullcontext as does_not_raise
+from lhotse.utils import INT16MAX, fastcopy
+from lhotse.utils import nullcontext as does_not_raise
 
 
 @pytest.fixture

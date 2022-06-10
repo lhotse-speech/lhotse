@@ -1,41 +1,39 @@
 """
-About the Earnings 21 dataset:
+About the Earnings 22 dataset:
 
-    The Earnings 21 dataset ( also referred to as earnings21 ) is a 39-hour corpus of
-    earnings calls containing entity dense speech from nine different financial sectors.
-    This corpus is intended to benchmark automatic speech recognition (ASR) systems
-    in the wild with special attention towards named entity recognition (NER).
+    The Earnings 22 dataset ( also referred to as earnings22 ) is a 119-hour corpus
+    of English-language earnings calls collected from global companies. The primary
+    purpose is to serve as a benchmark for industrial and academic automatic speech
+    recognition (ASR) models on real-world accented speech.
 
-    This dataset has been submitted to Interspeech 2021. The paper describing methods
-    and results can be found on arXiv at https://arxiv.org/pdf/2104.11348.pdf
+    This dataset has been submitted to Interspeech 2022. The paper describing our
+    methods and results can be found on arXiv at https://arxiv.org/abs/2203.15591.
 
-    @misc{delrio2021earnings21,
-        title={Earnings-21: A Practical Benchmark for ASR in the Wild},
-        author={Miguel Del Rio and Natalie Delworth and Ryan Westerman and Michelle Huang and Nishchal Bhandari and Joseph Palakapilly and Quinten McNamara and Joshua Dong and Piotr Zelasko and Miguel Jette},
-        year={2021},
-        eprint={2104.11348},
-        archivePrefix={arXiv},
-        primaryClass={cs.CL}
+    @misc{https://doi.org/10.48550/arxiv.2203.15591,
+    doi = {10.48550/ARXIV.2203.15591},
+    url = {https://arxiv.org/abs/2203.15591},
+    author = {Del Rio, Miguel and Ha, Peter and McNamara, Quinten and Miller, Corey and Chandra, Shipra},
+    keywords = {Computation and Language (cs.CL), FOS: Computer and information sciences, FOS: Computer and information sciences},
+    title = {Earnings-22: A Practical Benchmark for Accents in the Wild},
+    publisher = {arXiv},
+    year = {2022},
+    copyright = {Creative Commons Attribution Share Alike 4.0 International}
     }
 
 """
 
 
 import logging
-import shutil
 import string
-import zipfile
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple, Union
+from typing import Dict, List, Optional, Union
 
 from lhotse import validate_recordings_and_supervisions
 from lhotse.audio import Recording, RecordingSet
 from lhotse.supervision import SupervisionSegment, SupervisionSet
-from lhotse.utils import Pathlike, urlretrieve_progress
+from lhotse.utils import Pathlike
 
-_DEFAULT_URL = (
-    "https://codeload.github.com/revdotcom/speech-datasets/zip/refs/heads/main"
-)
+_DEFAULT_URL = "https://github.com/revdotcom/speech-datasets"
 
 
 def normalize(text: str) -> str:
@@ -46,14 +44,24 @@ def normalize(text: str) -> str:
     return text
 
 
-def download_earnings21(
+def read_metadata(path: Pathlike) -> Dict[str, List[str]]:
+    with open(path) as f:
+        f.readline()  # skip header
+        out = dict()
+        for line in f:
+            line = line.split(",")
+            out[line[0]] = line[1:-1]
+        return out
+
+
+def download_earnings22(
     target_dir: Pathlike = ".",
     force_download: Optional[bool] = False,
     url: Optional[str] = _DEFAULT_URL,
 ) -> Path:
     """Download and untar the dataset.
     :param target_dir: Pathlike, the path of the dir to store the dataset.
-        The extracted files are saved to target_dir/earnings21/
+        The extracted files are saved to target_dir/earnings22/
         Please note that the github repository contains other additional datasets and
         using this call, you will be downloading all of them and then throwing them out.
     :param force_download: Bool, if True, download the tar file no matter
@@ -61,39 +69,12 @@ def download_earnings21(
     :param url: str, the url to download the dataset.
     :return: the path to downloaded and extracted directory with data.
     """
-    logging.info(
-        "Downloading Earnings21 from github repository is not very efficient way"
-        + " how to obtain the corpus. You will be downloading other data as well."
+    logging.error(
+        "Downloading Earnings22 from github repository is not implemented. "
+        + f"Please visit {_DEFAULT_URL} and download the files manually. Please "
+        + "follow the instructions closely as you need to use git-lfs to download "
+        + "some of the audio files."
     )
-    target_dir = Path(target_dir)
-    target_dir.mkdir(parents=True, exist_ok=True)
-    extracted_dir = target_dir / "earnings21"
-
-    zip_path = target_dir / "speech-datasets-main.zip"
-
-    completed_detector = extracted_dir / ".lhotse-download.completed"
-    if completed_detector.is_file():
-        logging.info(f"Skipping - {completed_detector} exists.")
-        return extracted_dir
-
-    if force_download or not zip_path.is_file():
-        urlretrieve_progress(
-            url, filename=zip_path, desc="Getting speech-datasets-main.zip"
-        )
-
-    shutil.rmtree(extracted_dir, ignore_errors=True)
-
-    with zipfile.ZipFile(zip_path) as zip:
-        for f in zip.namelist():
-            if "earnings21" in f:
-                zip.extract(f, path=target_dir)
-
-    shutil.move(target_dir / "speech-datasets-main" / "earnings21", target_dir)
-    shutil.rmtree(target_dir / "speech-datasets-main")
-
-    completed_detector.touch()
-
-    return extracted_dir
 
 
 def parse_nlp_file(filename: Pathlike):
@@ -106,7 +87,7 @@ def parse_nlp_file(filename: Pathlike):
         return transcript
 
 
-def prepare_earnings21(
+def prepare_earnings22(
     corpus_dir: Pathlike,
     output_dir: Optional[Pathlike] = None,
     normalize_text: bool = False,
@@ -139,7 +120,7 @@ def prepare_earnings21(
 
     media_dir = corpus_dir / "media"
     audio_files = list(media_dir.glob("*.mp3"))
-    assert len(audio_files) == 44
+    assert len(audio_files) == 125
 
     audio_files.sort()
     recording_set = RecordingSet.from_recordings(
@@ -148,8 +129,11 @@ def prepare_earnings21(
 
     nlp_dir = corpus_dir / "transcripts" / "nlp_references"
     nlp_files = list(nlp_dir.glob("*.nlp"))
-    assert len(nlp_files) == 44
+    assert len(nlp_files) == 125
 
+    metadata = read_metadata(corpus_dir / "metadata.csv")
+
+    nlp_files.sort()
     supervision_segments = list()
     for nlp_file in nlp_files:
         id = nlp_file.stem
@@ -163,7 +147,7 @@ def prepare_earnings21(
             start=0.0,
             duration=recording_set[id].duration,  # recording.duration,
             channel=0,
-            language="English",
+            language=f"English-{metadata[id][4]}",
             text=text,
         )
         supervision_segments.append(s)
@@ -171,7 +155,7 @@ def prepare_earnings21(
 
     validate_recordings_and_supervisions(recording_set, supervision_set)
     if output_dir is not None:
-        supervision_set.to_file(output_dir / "earnings21_supervisions_all.jsonl.gz")
-        recording_set.to_file(output_dir / "earnings21_recordings_all.jsonl.gz")
+        supervision_set.to_file(output_dir / "earnings22_supervisions_all.jsonl.gz")
+        recording_set.to_file(output_dir / "earnings22_recordings_all.jsonl.gz")
 
     return recording_set, supervision_set

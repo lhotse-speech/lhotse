@@ -354,6 +354,13 @@ Non-compressed numpy arrays, stored in HDF5 file.
 """
 
 
+def check_h5py_installed():
+    if not is_module_available("h5py"):
+        raise ValueError(
+            "To read and write HDF5 file formats, please 'pip install h5py' first."
+        )
+
+
 @lru_cache(maxsize=None)
 def lookup_cache_or_open(storage_path: str):
     """
@@ -364,23 +371,10 @@ def lookup_cache_or_open(storage_path: str):
 
     The file handles can be freed at any time by calling ``close_cached_file_handles()``.
     """
+    check_h5py_installed()
     import h5py
 
     return h5py.File(storage_path, "r")
-
-
-@lru_cache(maxsize=None)
-def lookup_cache_or_open_regular_file(storage_path: str):
-    """
-    Helper internal function used in "fast" file readers.
-    It opens regular files and keeps their handles open in a global program cache
-    to avoid excessive amount of syscalls when the Reader class is instantiated
-    and destroyed in a loop repeatedly (frequent use-case).
-
-    The file handles can be freed at any time by calling ``close_cached_file_handles()``.
-    """
-    f = open(storage_path, "rb")
-    return f
 
 
 @lru_cache(maxsize=None)
@@ -394,7 +388,6 @@ def lookup_chunk_size(h5_file_handle) -> int:
 
 def close_cached_file_handles() -> None:
     """Closes the cached file handles in ``lookup_cache_or_open`` (see its docs for more details)."""
-    lookup_cache_or_open_regular_file.cache_clear()
     lookup_cache_or_open.cache_clear()
     lookup_chunk_size.cache_clear()
 
@@ -450,6 +443,7 @@ class NumpyHdf5Writer(FeaturesWriter):
             a        Read/write if exists, create otherwise
         """
         super().__init__()
+        check_h5py_installed()
         import h5py
 
         self.storage_path_ = Path(storage_path).with_suffix(".h5")
@@ -538,6 +532,7 @@ class LilcomHdf5Writer(FeaturesWriter):
             a        Read/write if exists, create otherwise
         """
         super().__init__()
+        check_h5py_installed()
         import h5py
 
         self.storage_path_ = Path(storage_path).with_suffix(".h5")
@@ -662,6 +657,7 @@ class ChunkedLilcomHdf5Writer(FeaturesWriter):
             a        Read/write if exists, create otherwise
         """
         super().__init__()
+        check_h5py_installed()
         import h5py
 
         self.storage_path_ = Path(storage_path).with_suffix(".h5")
@@ -682,7 +678,9 @@ class ChunkedLilcomHdf5Writer(FeaturesWriter):
         return str(self.storage_path_)
 
     def write(self, key: str, value: np.ndarray) -> str:
+        check_h5py_installed()
         import h5py
+
         from lhotse.features.compression import lilcom_compress_chunked
 
         serialized_feats = lilcom_compress_chunked(
@@ -736,8 +734,7 @@ class LilcomChunkyReader(FeaturesReader):
 
     def __init__(self, storage_path: Pathlike, *args, **kwargs):
         super().__init__()
-        self.file = lookup_cache_or_open_regular_file(storage_path)
-        self.lock = threading.Lock()
+        self.storage_path = storage_path
 
     @dynamic_lru_cache
     def read(
@@ -759,12 +756,10 @@ class LilcomChunkyReader(FeaturesReader):
         chunk_offsets = chunk_offsets[left_chunk_idx:right_chunk_idx]
 
         chunk_data = []
-        for offset, end in pairwise(chunk_offsets):
-            # We need to use locks to avoid race conditions between seek
-            # and read in multi-threaded reads.
-            with self.lock:
-                self.file.seek(offset)
-                chunk_data.append(self.file.read(end - offset))
+        with open(self.storage_path, "rb") as file:
+            for offset, end in pairwise(chunk_offsets):
+                file.seek(offset)
+                chunk_data.append(file.read(end - offset))
 
         # Read, decode, concat
         decompressed_chunks = [lilcom.decompress(data) for data in chunk_data]

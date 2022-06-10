@@ -11,9 +11,9 @@ from lhotse.audio import RecordingSet
 from lhotse.features import (
     Fbank,
     FeatureMixer,
+    Features,
     FeatureSet,
     FeatureSetBuilder,
-    Features,
     Mfcc,
     Spectrogram,
 )
@@ -28,8 +28,9 @@ from lhotse.features.io import (
     NumpyHdf5Writer,
 )
 from lhotse.testing.dummies import DummyManifest
-from lhotse.utils import Seconds, is_module_available, time_diff_to_num_frames
+from lhotse.utils import Seconds, is_module_available
 from lhotse.utils import nullcontext as does_not_raise
+from lhotse.utils import time_diff_to_num_frames
 
 other_params = {}
 some_augmentation = None
@@ -126,12 +127,30 @@ def test_compute_global_stats():
     "storage_fn",
     [
         lambda: LilcomFilesWriter(TemporaryDirectory().name),
-        lambda: LilcomHdf5Writer(NamedTemporaryFile().name),
-        lambda: ChunkedLilcomHdf5Writer(NamedTemporaryFile().name),
         lambda: LilcomChunkyWriter(NamedTemporaryFile().name),
         lambda: NumpyFilesWriter(TemporaryDirectory().name),
-        lambda: NumpyHdf5Writer(NamedTemporaryFile().name),
         lambda: MemoryLilcomWriter(),
+        pytest.param(
+            lambda: NumpyHdf5Writer(NamedTemporaryFile().name),
+            marks=pytest.mark.skipif(
+                not is_module_available("h5py"),
+                reason="h5py must be installed for HDF5 writing",
+            ),
+        ),
+        pytest.param(
+            lambda: LilcomHdf5Writer(NamedTemporaryFile().name),
+            marks=pytest.mark.skipif(
+                not is_module_available("h5py"),
+                reason="h5py must be installed for HDF5 writing",
+            ),
+        ),
+        pytest.param(
+            lambda: ChunkedLilcomHdf5Writer(NamedTemporaryFile().name),
+            marks=pytest.mark.skipif(
+                not is_module_available("h5py"),
+                reason="h5py must be installed for HDF5 writing",
+            ),
+        ),
         pytest.param(
             lambda: KaldiWriter(TemporaryDirectory().name),
             marks=pytest.mark.skipif(
