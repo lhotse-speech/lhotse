@@ -12,6 +12,8 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Dict, Optional, Union
 
+from tqdm.auto import tqdm
+
 from lhotse import validate_recordings_and_supervisions
 from lhotse.audio import Recording, RecordingSet
 from lhotse.supervision import SupervisionSegment, SupervisionSet
@@ -20,8 +22,8 @@ from lhotse.utils import Pathlike, urlretrieve_progress
 
 def download_aishell(
     target_dir: Pathlike = ".",
-    force_download: Optional[bool] = False,
-    base_url: Optional[str] = "http://www.openslr.org/resources",
+    force_download: bool = False,
+    base_url: str = "http://www.openslr.org/resources",
 ) -> Path:
     """
     Downdload and untar the dataset
@@ -82,7 +84,11 @@ def prepare_aishell(
             transcript_dict[idx_transcript[0]] = " ".join(idx_transcript[1:])
     manifests = defaultdict(dict)
     dataset_parts = ["train", "dev", "test"]
-    for part in dataset_parts:
+    for part in tqdm(
+        dataset_parts,
+        desc="process aishell audio, it needs waste about 102 seconds time.",
+    ):
+        logging.info(f"Processing aishell {part}")
         # Generate a mapping: utt_id -> (audio_path, audio_info, speaker, text)
         recordings = []
         supervisions = []
@@ -92,6 +98,7 @@ def prepare_aishell(
             speaker = audio_path.parts[-2]
             if idx not in transcript_dict:
                 logging.warning(f"No transcript: {idx}")
+                logging.warning(f"{audio_path} has no transcript.")
                 continue
             text = transcript_dict[idx]
             if not audio_path.is_file():

@@ -97,7 +97,7 @@ def prepare_aidatatang_200zh(
 
     for part in dataset_parts:
         # Generate a mapping: utt_id -> (audio_path, audio_info, speaker, text)
-        logging.info(f"Processing {part}")
+        logging.info(f"Processing  prepare_aidatatang_200zh subset: {part}")
         recordings = []
         supervisions = []
         wav_path = d / "corpus" / part

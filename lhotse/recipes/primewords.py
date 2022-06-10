@@ -5,7 +5,6 @@ Primewords (99 hours)
 """
 import json
 import logging
-import os
 import shutil
 import tarfile
 from collections import defaultdict
@@ -22,8 +21,8 @@ from lhotse.utils import Pathlike, urlretrieve_progress
 
 def download_primewords(
     target_dir: Pathlike = ".",
-    force_download: Optional[bool] = False,
-    base_url: Optional[str] = "http://www.openslr.org/resources",
+    force_download: bool = False,
+    base_url: str = "http://www.openslr.org/resources",
 ) -> Path:
     """
     Downdload and untar the dataset
@@ -42,7 +41,9 @@ def download_primewords(
         extracted_dir = corpus_dir / tar_name[:-7]
         completed_detector = extracted_dir / ".completed"
         if completed_detector.is_file():
-            logging.info(f"Skipping download of because {completed_detector} exists.")
+            logging.info(
+                f"Skipping download {tar_name} because {completed_detector} exists."
+            )
             continue
         if force_download or not tar_path.is_file():
             urlretrieve_progress(
@@ -84,7 +85,7 @@ def prepare_primewords(
     manifests = defaultdict(dict)
     dataset_parts = ["train"]
     for part in tqdm(
-        dataset_parts, desc="process primewords audio, it needs waste some time."
+        dataset_parts, desc="process primewords audio, it needs waste 35 seconds time."
     ):
         logging.info(f"Processing primewords {part}")
         # Generate a mapping: utt_id -> (audio_path, audio_info, speaker, text)
@@ -92,11 +93,12 @@ def prepare_primewords(
         supervisions = []
         wav_path = corpus_dir / "primewords_md_2018_set1" / "audio_files"
         for audio_path in wav_path.rglob("**/*.wav"):
-            logging.info(f"Processing audio path {audio_path}")
+
             idx = audio_path.stem
             speaker = speaker_dict[idx]
             if idx not in transcript_dict:
                 logging.warning(f"No transcript: {idx}")
+                logging.warning(f"{audio_path} has no transcript.")
                 continue
             text = transcript_dict[idx]
             if not audio_path.is_file():

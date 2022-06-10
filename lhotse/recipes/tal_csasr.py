@@ -4,9 +4,6 @@ It is a mandarin-english code-switch corpus.
 """
 
 import logging
-import os
-import shutil
-import tarfile
 from collections import defaultdict
 from pathlib import Path
 from typing import Dict, Optional, Union
@@ -16,11 +13,13 @@ from tqdm.auto import tqdm
 from lhotse import validate_recordings_and_supervisions
 from lhotse.audio import Recording, RecordingSet
 from lhotse.supervision import SupervisionSegment, SupervisionSet
-from lhotse.utils import Pathlike, urlretrieve_progress
+from lhotse.utils import Pathlike
 
 
 def prepare_tal_csasr(
-    corpus_dir: Pathlike, output_dir: Optional[Pathlike] = None
+    corpus_dir: Pathlike,
+    output_dir: Optional[Pathlike] = None,
+    num_jobs: int = 10,
 ) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet]]]:
     """
     Returns the manifests which consist of the Recordings and Supervisions
@@ -52,11 +51,12 @@ def prepare_tal_csasr(
         supervisions = []
         wav_path = corpus_dir / "TAL_CSASR" / "cs_wav"
         for audio_path in wav_path.rglob("**/*.wav"):
-            logging.info(f"Processing audio path {audio_path}")
+
             idx = audio_path.stem
             speaker = idx
             if idx not in transcript_dict:
                 logging.warning(f"No transcript: {idx}")
+                logging.warning(f"{audio_path} has no transcript.")
                 continue
             text = transcript_dict[idx]
             if not audio_path.is_file():

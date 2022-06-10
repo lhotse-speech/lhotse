@@ -7,7 +7,6 @@ THCHS-30 (26 hours)
 
 
 import logging
-import os
 import shutil
 import tarfile
 from collections import defaultdict
@@ -24,8 +23,8 @@ from lhotse.utils import Pathlike, urlretrieve_progress
 
 def download_thchs_30(
     target_dir: Pathlike = ".",
-    force_download: Optional[bool] = False,
-    base_url: Optional[str] = "http://www.openslr.org/resources",
+    force_download: bool = False,
+    base_url: str = "http://www.openslr.org/resources",
 ) -> Path:
     """
     Downdload and untar the dataset
@@ -44,7 +43,9 @@ def download_thchs_30(
         extracted_dir = corpus_dir / tar_name[:-4]
         completed_detector = extracted_dir / ".completed"
         if completed_detector.is_file():
-            logging.info(f"Skipping download of because {completed_detector} exists.")
+            logging.info(
+                f"Skipping download {tar_name} because {completed_detector} exists."
+            )
             continue
         if force_download or not tar_path.is_file():
             urlretrieve_progress(
@@ -83,23 +84,25 @@ def prepare_thchs_30(
                     transcript_dict[idx] = line
                 continue
 
+    print(f"transcript_dict length is {len(transcript_dict)}")
     manifests = defaultdict(dict)
     dataset_parts = ["train", "dev", "test"]
     for part in tqdm(
-        dataset_parts, desc="process thchs_30 audio, it needs waste some time."
+        dataset_parts,
+        desc="process thchs_30 audio, it needs waste about 19 seconds time.",
     ):
         logging.info(f"Processing thchs_30 {part}")
-
         # Generate a mapping: utt_id -> (audio_path, audio_info, speaker, text)
         recordings = []
         supervisions = []
         wav_path = corpus_dir / "data_thchs30" / f"{part}"
         for audio_path in wav_path.rglob("**/*.wav"):
-            logging.info(f"Processing audio path {audio_path}")
+            # logging.info(f"Processing audio path {audio_path}")
             idx = audio_path.stem
             speaker = idx.split("_")[0]
             if idx not in transcript_dict:
                 logging.warning(f"No transcript: {idx}")
+                logging.warning(f"{audio_path} has no transcript.")
                 continue
             text = transcript_dict[idx]
             if not audio_path.is_file():

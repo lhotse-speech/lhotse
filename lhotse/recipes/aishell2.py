@@ -3,9 +3,6 @@ AISHELL2 (~1000 hours) if available(https://www.aishelltech.com/aishell_2).
 """
 
 import logging
-import os
-import shutil
-import tarfile
 from collections import defaultdict
 from pathlib import Path
 from typing import Dict, Optional, Union
@@ -15,7 +12,7 @@ from tqdm.auto import tqdm
 from lhotse import validate_recordings_and_supervisions
 from lhotse.audio import Recording, RecordingSet
 from lhotse.supervision import SupervisionSegment, SupervisionSet
-from lhotse.utils import Pathlike, urlretrieve_progress
+from lhotse.utils import Pathlike
 
 
 def prepare_aishell2(
@@ -36,7 +33,7 @@ def prepare_aishell2(
     transcript_path = corpus_dir / "AISHELL-2" / "iOS" / "data" / "trans.txt"
     transcript_dict = {}
     with open(transcript_path, "r", encoding="utf-8") as f:
-        for line in f.readlines():
+        for line in f:
             idx_transcript = line.split()
             transcript_dict[idx_transcript[0]] = " ".join(idx_transcript[1:])
 
@@ -51,11 +48,12 @@ def prepare_aishell2(
         supervisions = []
         wav_path = corpus_dir / "AISHELL-2" / "iOS" / "data" / "wav"
         for audio_path in wav_path.rglob("**/*.wav"):
-            logging.info(f"Processing audio path  {audio_path}")
+
             idx = audio_path.stem
             speaker = audio_path.parts[-2]
             if idx not in transcript_dict:
                 logging.warning(f"No transcript: {idx}")
+                logging.warning(f"{audio_path} has no transcript.")
                 continue
             text = transcript_dict[idx]
             if not audio_path.is_file():

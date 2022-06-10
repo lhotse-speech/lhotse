@@ -1,6 +1,6 @@
 import click
 
-from lhotse.bin.modes import download, prepare
+from lhotse.bin.modes import prepare
 from lhotse.recipes.tal_asr import prepare_tal_asr
 from lhotse.utils import Pathlike
 

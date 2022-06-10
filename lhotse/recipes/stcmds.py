@@ -22,8 +22,8 @@ from lhotse.utils import Pathlike, urlretrieve_progress
 
 def download_stcmds(
     target_dir: Pathlike = ".",
-    force_download: Optional[bool] = False,
-    base_url: Optional[str] = "http://www.openslr.org/resources",
+    force_download: bool = False,
+    base_url: str = "http://www.openslr.org/resources",
 ) -> Path:
     """
     Downdload and untar the dataset
@@ -83,7 +83,8 @@ def prepare_stcmds(
     manifests = defaultdict(dict)
     dataset_parts = ["train"]
     for part in tqdm(
-        dataset_parts, desc="process stcmds audio, it needs waste some time."
+        dataset_parts,
+        desc="process stcmds audio, it needs waste about 2169 seconds time.",
     ):
         logging.info(f"Processing stcmds {part}")
         recordings = []
@@ -93,6 +94,7 @@ def prepare_stcmds(
             speaker = "".join(list(idx)[8:14])
             if idx not in transcript_dict:
                 logging.warning(f"No transcript: {idx}")
+                logging.warning(f"{audio_path} has no transcript")
                 continue
             text = transcript_dict[idx]
             if not audio_path.is_file():

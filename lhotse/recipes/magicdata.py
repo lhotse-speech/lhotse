@@ -2,8 +2,7 @@
 Magicdata is an open-source Chinese Mandarin speech corpus by Magic Data Technology Co., Ltd.,
 containing 755 hours of scripted read speech data from 1080 native speakers of the Mandarin Chinese spoken
 in mainland China. The sentence transcription accuracy is higher than 98%.
-Publicly available on https://www.openslr.org/resources/68
-MagicData (712 hours)
+Publicly available on https://www.openslr.org/68
 """
 
 
@@ -25,8 +24,8 @@ from lhotse.utils import Pathlike, urlretrieve_progress
 
 def download_magicdata(
     target_dir: Pathlike = ".",
-    force_download: Optional[bool] = False,
-    base_url: Optional[str] = "http://www.openslr.org/resources",
+    force_download: bool = False,
+    base_url: str = "http://www.openslr.org/resources",
 ) -> Path:
     """
     Downdload and untar the dataset
@@ -47,7 +46,9 @@ def download_magicdata(
         extracted_dir = corpus_dir / tar_name[:-7]
         completed_detector = extracted_dir / ".completed"
         if completed_detector.is_file():
-            logging.info(f"Skipping download of because {completed_detector} exists.")
+            logging.info(
+                f"Skipping download {tar_name} because {completed_detector} exists."
+            )
             continue
         if force_download or not tar_path.is_file():
             urlretrieve_progress(
@@ -86,7 +87,7 @@ def prepare_magicdata(
                     logging.info(f"line is {line}")
                     continue
                 idx_transcript = line.split()
-                ## because the below two utterance is bad, so it will be removed.
+                ## because the below two utterances are bad, they are removed.
                 if (
                     idx_transcript[0] == "16_4013_20170819121429.wav"
                     or idx_transcript[0] == "18_1565_20170712000170.wav"
@@ -106,11 +107,11 @@ def prepare_magicdata(
         wav_path = corpus_dir / f"{part}"
         for audio_path in wav_path.rglob("**/*.wav"):
             idx = audio_path.stem
-            logging.info(f"process audio_path is {audio_path}")
             speaker = audio_path.parts[-2]
 
             if idx not in transcript_dict:
                 logging.warning(f"No transcript: {idx}")
+                logging.info(f"{audio_path} has no transcript.")
                 continue
 
             text = transcript_dict[idx]
