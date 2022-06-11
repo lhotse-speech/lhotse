@@ -313,7 +313,7 @@ def test_generic_serialization_classmethod(
     manifest = manifests[manifest_type]
     with NamedTemporaryFile(suffix="." + format + (".gz" if compressed else "")) as f:
         manifest.to_file(f.name)
-        restored = type(manifest).from_file(f.name)
+        restored = type(manifest).from_file(f.name).to_eager()
     assert manifest == restored
 
 

@@ -3697,12 +3697,13 @@ class CutSet(Serializable, AlgorithmMixin):
             max     5415.0
             dtype: float64
         """
-        durations = np.array([c.duration for c in self])
-        speech_durations = np.array(
-            [s.duration for c in self for s in c.trimmed_supervisions]
-        )
-        total_sum = durations.sum()
-        speech_sum = speech_durations.sum()
+        durations, speech_durations = [], []
+        for c in self:
+            durations.append(c.duration)
+            for s in c.trimmed_supervisions:
+                speech_durations.append(s.duration)
+        total_sum = np.array(durations).sum()
+        speech_sum = np.array(speech_durations).sum()
         print("Cuts count:", len(durations))
         print(f"Total duration (hours): {total_sum / 3600:.1f}")
         print(
@@ -5126,55 +5127,6 @@ class CutSet(Serializable, AlgorithmMixin):
 
     def __iter__(self) -> Iterable[Cut]:
         return iter(self.cuts.values())
-
-
-def make_windowed_cuts_from_features(
-    feature_set: FeatureSet,
-    cut_duration: Seconds,
-    cut_shift: Optional[Seconds] = None,
-    keep_shorter_windows: bool = False,
-) -> CutSet:
-    """
-    Converts a FeatureSet to a CutSet by traversing each Features object in - possibly overlapping - windows, and
-    creating a MonoCut out of that area. By default, the last window in traversal will be discarded if it cannot satisfy
-    the `cut_duration` requirement.
-
-    :param feature_set: a FeatureSet object.
-    :param cut_duration: float, duration of created Cuts in seconds.
-    :param cut_shift: optional float, specifies how many seconds are in between the starts of consecutive windows.
-        Equals `cut_duration` by default.
-    :param keep_shorter_windows: bool, when True, the last window will be used to create a MonoCut even if
-        its duration is shorter than `cut_duration`.
-    :return: a CutSet object.
-    """
-    if cut_shift is None:
-        cut_shift = cut_duration
-    round_fn = ceil if keep_shorter_windows else floor
-    cuts = []
-    for features in feature_set:
-        # Determine the number of cuts, depending on `keep_shorter_windows` argument.
-        # When its true, we'll want to include the residuals in the output; otherwise,
-        # we provide only full duration cuts.
-        n_cuts = round_fn(features.duration / cut_shift)
-        if (
-            (n_cuts - 1) * cut_shift + cut_duration > features.duration
-            and not keep_shorter_windows
-        ):
-            n_cuts -= 1
-        for idx in range(n_cuts):
-            offset = features.start + idx * cut_shift
-            duration = min(cut_duration, features.end - offset)
-            cuts.append(
-                MonoCut(
-                    id=str(uuid4()),
-                    start=offset,
-                    duration=duration,
-                    channel=features.channels,
-                    features=features,
-                    supervisions=[],
-                )
-            )
-    return CutSet.from_cuts(cuts)
 
 
 def mix(
