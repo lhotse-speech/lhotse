@@ -337,3 +337,26 @@ def test_cut_load_custom_recording_pad_both():
         np.testing.assert_almost_equal(
             0, restored_audio[:, sampling_rate + audio.shape[1] :]
         )
+
+
+def test_cut_attach_tensor():
+    alignment = np.random.randint(500, size=131)
+    expected_duration = 52.4  # 131 frames x 0.4s frame shift == 52.4s
+    cut = MonoCut(id="x", start=0, duration=expected_duration, channel=0)
+    # Note: MonoCut doesn't normally have an "alignment" attribute,
+    #       and a "load_alignment()" method.
+    #       We are dynamically extending it.
+    cut = cut.attach_tensor("alignment", alignment, frame_shift=0.4, temporal_dim=0)
+    restored_alignment = cut.load_alignment()
+    np.testing.assert_equal(alignment, restored_alignment)
+
+
+def test_cut_attach_tensor_temporal():
+    ivector = np.arange(20).astype(np.float32)
+    cut = MonoCut(id="x", start=0, duration=5, channel=0)
+    # Note: MonoCut doesn't normally have an "ivector" attribute,
+    #       and a "load_ivector()" method.
+    #       We are dynamically extending it.
+    cut = cut.attach_tensor("ivector", ivector)
+    restored_ivector = cut.load_ivector()
+    np.testing.assert_equal(ivector, restored_ivector)

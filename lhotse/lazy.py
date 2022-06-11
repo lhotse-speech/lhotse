@@ -157,7 +157,7 @@ class LazyJsonlIterator(ImitatesDict):
     def __init__(self, path: Pathlike) -> None:
         self.path = path
         self._len = None
-        assert extension_contains(".jsonl", self.path)
+        assert extension_contains(".jsonl", self.path) or self.path == "-"
 
     def __iter__(self):
         with open_best(self.path) as f:
