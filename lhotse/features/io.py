@@ -1099,6 +1099,9 @@ class MemoryLilcomWriter(FeaturesWriter):
         return None
 
     def write(self, key: str, value: np.ndarray) -> bytes:
+        assert np.issubdtype(
+            value.dtype, np.floating
+        ), "Lilcom compression supports only floating-point arrays."
         return lilcom.compress(value)
 
     def close(self) -> None:

@@ -59,3 +59,16 @@ def test_audio_samples_with_missing_custom_field(libri_cut_set):
     batchio = AudioSamples()
     with pytest.raises(AttributeError):
         audio, audio_lens = batchio(libri_cut_set, recording_field="my_favorite_song")
+
+
+def test_audio_samples_equivalent_to_cut_set_load_audio(libri_cut_set):
+    batchio = AudioSamples()
+    audio, audio_lens = batchio(libri_cut_set)
+    audio2, audio_lens2 = libri_cut_set.load_audio(collate=True)
+    np.testing.assert_equal(audio2, audio.numpy())
+    np.testing.assert_equal(audio_lens2, audio_lens.numpy())
+
+
+def test_cut_set_load_audio_collate_false(libri_cut_set):
+    audio = libri_cut_set.load_audio()
+    assert isinstance(audio, list)

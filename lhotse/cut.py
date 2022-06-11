@@ -1101,6 +1101,65 @@ class MonoCut(Cut):
         )
         return cut
 
+    def attach_tensor(
+        self,
+        name: str,
+        data: Union[np.ndarray, torch.Tensor],
+        frame_shift: Optional[Seconds] = None,
+        temporal_dim: Optional[int] = None,
+        compressed: bool = False,
+    ) -> "MonoCut":
+        """
+        Attach a tensor to this MonoCut, described with an :class:`~lhotse.array.Array` manifest.
+        The attached data is stored in-memory for later use, and can be accessed by
+        calling ``cut.load_<name>()`` or :meth:`cut.load_custom`.
+
+        This is useful if you want actions such as truncate/pad to propagate to the tensor, e.g.::
+
+            >>> cut = MonoCut(id="c1", start=2, duration=8, ...)
+            >>> cut = cut.attach_tensor(
+            ...     "alignment",
+            ...     torch.tensor([0, 0, 0, ...]),
+            ...     frame_shift=0.1,
+            ...     temporal_dim=0,
+            ... )
+            >>> half_alignment = cut.truncate(duration=4.0).load_alignment()
+
+        .. note:: This object can't be stored in JSON/JSONL manifests anymore.
+
+        :param name: attribute under which the data can be found.
+        :param data: PyTorch tensor or numpy array.
+        :param frame_shift: Optional float, when the array has a temporal dimension
+            it indicates how much time has passed between the starts of consecutive frames
+            (expressed in seconds).
+        :param temporal_dim: Optional int, when the array has a temporal dimension,
+            it indicates which dim to interpret as temporal.
+        :param compressed: When True, we will apply lilcom compression to the array.
+            Only applicable to arrays of floats.
+        :return:
+        """
+        from lhotse.features.io import MemoryLilcomWriter, MemoryRawWriter
+
+        cpy = fastcopy(
+            self, custom=self.custom.copy() if self.custom is not None else {}
+        )
+        writer = MemoryLilcomWriter() if compressed else MemoryRawWriter()
+        if isinstance(data, torch.Tensor):
+            data = data.numpy()
+        with writer:
+            setattr(
+                cpy,
+                name,
+                writer.store_array(
+                    key=cpy.id,
+                    value=data,
+                    frame_shift=frame_shift,
+                    temporal_dim=temporal_dim,
+                    start=cpy.start,
+                ),
+            )
+        return cpy
+
     def drop_features(self) -> "MonoCut":
         """Return a copy of the current :class:`.MonoCut`, detached from ``features``."""
         assert (
@@ -3851,7 +3910,7 @@ class CutSet(Serializable, AlgorithmMixin):
         :param predicate: A callable that accepts `SupervisionSegment` and returns bool
         :return: a CutSet with filtered supervisions
         """
-        return CutSet.from_cuts(cut.filter_supervisions(predicate) for cut in self)
+        return self.map(lambda cut: cut.filter_supervisions(predicate))
 
     def merge_supervisions(
         self, custom_merge_fn: Optional[Callable[[str, Iterable[Any]], Any]] = None
@@ -3873,8 +3932,8 @@ class CutSet(Serializable, AlgorithmMixin):
             It will be called roughly like:
             ``custom_merge_fn(custom_key, [s.custom[custom_key] for s in sups])``
         """
-        return CutSet.from_cuts(
-            c.merge_supervisions(custom_merge_fn=custom_merge_fn) for c in self
+        return self.map(
+            lambda cut: cut.merge_supervisions(custom_merge_fn=custom_merge_fn)
         )
 
     def trim_to_supervisions(
@@ -3924,16 +3983,20 @@ class CutSet(Serializable, AlgorithmMixin):
         :param num_jobs: Number of parallel workers to process the cuts.
         :return: a ``CutSet``.
         """
+
         if num_jobs == 1:
-            return CutSet.from_cuts(
-                # chain.from_iterable is a flatten operation: Iterable[Iterable[T]] -> Iterable[T]
-                chain.from_iterable(
-                    cut.trim_to_supervisions(
-                        keep_overlapping=keep_overlapping,
-                        min_duration=min_duration,
-                        context_direction=context_direction,
+            from lhotse.lazy import LazyFlattener, LazyMapper
+
+            return CutSet(
+                LazyFlattener(
+                    LazyMapper(
+                        self,
+                        lambda cut: cut.trim_to_supervisions(
+                            keep_overlapping=keep_overlapping,
+                            min_duration=min_duration,
+                            context_direction=context_direction,
+                        ),
                     )
-                    for cut in self
                 )
             )
 
@@ -3942,7 +4005,7 @@ class CutSet(Serializable, AlgorithmMixin):
         result = split_parallelize_combine(
             num_jobs,
             self,
-            CutSet.trim_to_supervisions,
+            _trim_to_supervisions_single,
             keep_overlapping=keep_overlapping,
             min_duration=min_duration,
             context_direction=context_direction,
@@ -4093,8 +4156,8 @@ class CutSet(Serializable, AlgorithmMixin):
             else:
                 duration = max(cut.duration for cut in self)
 
-        return CutSet.from_cuts(
-            cut.pad(
+        return self.map(
+            lambda cut: cut.pad(
                 duration=duration,
                 num_frames=num_frames,
                 num_samples=num_samples,
@@ -4103,7 +4166,6 @@ class CutSet(Serializable, AlgorithmMixin):
                 preserve_id=preserve_id,
                 pad_value_dict=pad_value_dict,
             )
-            for cut in self
         )
 
     def truncate(
@@ -4172,11 +4234,10 @@ class CutSet(Serializable, AlgorithmMixin):
         :param preserve_id: bool. Should the extended cut keep the same ID or get a new, random one.
         :return: a new CutSet instance.
         """
-        return CutSet.from_cuts(
-            cut.extend_by(
+        return self.map(
+            lambda cut: cut.extend_by(
                 duration=duration, direction=direction, preserve_id=preserve_id
             )
-            for cut in self
         )
 
     def cut_into_windows(
@@ -4231,6 +4292,36 @@ class CutSet(Serializable, AlgorithmMixin):
             ),
         )
         return result
+
+    def load_audio(
+        self,
+        collate: bool = False,
+        limit: int = 1024,
+    ) -> Union[List[np.ndarray], Tuple[np.ndarray, np.ndarray]]:
+        """
+        Reads the audio of all cuts in this :class:`.CutSet` into memory.
+        Useful when this object represents a mini-batch.
+
+        :param collate: Should we collate the read audio into a single array.
+            Shorter cuts will be padded. False by default.
+        :param limit: Maximum number of read audio examples.
+            By default it's 1024 which covers most frequently encountered mini-batch sizes.
+            If you are working with larger batch sizes, increase this limit.
+        :return: A list of numpy arrays, or a single array with batch size as the first dim.
+        """
+        assert not self.is_lazy, "Cannot load audio of cuts in a lazy CutSet."
+        assert len(self) < limit, (
+            f"Cannot load audio of a CutSet with len={len(self)} because limit was set to {limit}. "
+            f"This is a safe-guard against accidental CPU memory blow-ups. "
+            f"If you know what you're doing, set the limit higher."
+        )
+        if collate:
+            from lhotse.dataset.collation import collate_audio
+
+            audios, audio_lens = collate_audio(self)
+            return audios.numpy(), audio_lens.numpy()
+
+        return [cut.load_audio() for cut in self]
 
     def sample(self, n_cuts: int = 1) -> Union[Cut, "CutSet"]:
         """
@@ -4332,17 +4423,14 @@ class CutSet(Serializable, AlgorithmMixin):
         :return: a modified copy of the ``CutSet``.
         """
         rir_recordings = list(rir_recordings)
-        return CutSet.from_cuts(
-            [
-                cut.reverb_rir(
-                    rir_recording=random.choice(rir_recordings),
-                    normalize_output=normalize_output,
-                    early_only=early_only,
-                    affix_id=affix_id,
-                    rir_channels=rir_channels,
-                )
-                for cut in self
-            ]
+        return self.map(
+            lambda cut: cut.reverb_rir(
+                rir_recording=random.choice(rir_recordings),
+                normalize_output=normalize_output,
+                early_only=early_only,
+                affix_id=affix_id,
+                rir_channels=rir_channels,
+            )
         )
 
     def mix(
@@ -4441,19 +4529,19 @@ class CutSet(Serializable, AlgorithmMixin):
         """
         Return a new :class:`.CutSet`, where each :class:`.Cut` is copied and detached from its extracted features.
         """
-        return CutSet.from_cuts(c.drop_features() for c in self)
+        return self.map(lambda cut: cut.drop_features())
 
     def drop_recordings(self) -> "CutSet":
         """
         Return a new :class:`.CutSet`, where each :class:`.Cut` is copied and detached from its recordings.
         """
-        return CutSet.from_cuts(c.drop_recording() for c in self)
+        return self.map(lambda cut: cut.drop_recording())
 
     def drop_supervisions(self) -> "CutSet":
         """
         Return a new :class:`.CutSet`, where each :class:`.Cut` is copied and detached from its supervisions.
         """
-        return CutSet.from_cuts(c.drop_supervisions() for c in self)
+        return self.map(lambda cut: cut.drop_supervisions())
 
     def compute_and_store_features(
         self,
@@ -5003,10 +5091,10 @@ class CutSet(Serializable, AlgorithmMixin):
         )
 
     def with_features_path_prefix(self, path: Pathlike) -> "CutSet":
-        return CutSet.from_cuts(c.with_features_path_prefix(path) for c in self)
+        return self.map(partial(_add_features_path_prefix_single, path=path))
 
     def with_recording_path_prefix(self, path: Pathlike) -> "CutSet":
-        return CutSet.from_cuts(c.with_recording_path_prefix(path) for c in self)
+        return self.map(partial(_add_recording_path_prefix_single, path=path))
 
     def copy_feats(
         self, writer: FeaturesWriter, output_path: Optional[Pathlike] = None
@@ -5054,7 +5142,7 @@ class CutSet(Serializable, AlgorithmMixin):
         a new string (new cut ID).
         :return: a new ``CutSet`` with cuts with modified IDs.
         """
-        return CutSet.from_cuts(c.with_id(transform_fn(c.id)) for c in self)
+        return self.map(lambda cut: cut.with_id(transform_fn(cut.id)))
 
     def fill_supervisions(
         self, add_empty: bool = True, shrink_ok: bool = False
@@ -5075,9 +5163,8 @@ class CutSet(Serializable, AlgorithmMixin):
         :param shrink_ok: should we raise an error if a supervision would be shrank as a result
             of calling this method.
         """
-        return CutSet.from_cuts(
-            cut.fill_supervision(add_empty=add_empty, shrink_ok=shrink_ok)
-            for cut in self
+        return self.map(
+            lambda cut: cut.fill_supervision(add_empty=add_empty, shrink_ok=shrink_ok)
         )
 
     def map_supervisions(
@@ -5089,7 +5176,7 @@ class CutSet(Serializable, AlgorithmMixin):
         :param transform_fn: a function that modifies a supervision as an argument.
         :return: a new, modified CutSet.
         """
-        return CutSet.from_cuts(cut.map_supervisions(transform_fn) for cut in self)
+        return self.map(lambda cut: cut.map_supervisions(transform_fn))
 
     def transform_text(self, transform_fn: Callable[[str], str]) -> "CutSet":
         """
@@ -5847,3 +5934,25 @@ def _cut_into_windows_single(
         hop=hop,
         keep_excessive_supervisions=keep_excessive_supervisions,
     ).to_eager()
+
+
+def _trim_to_supervisions_single(
+    cuts: CutSet, keep_overlapping, min_duration, context_direction
+) -> CutSet:
+    return cuts.trim_to_supervisions(
+        keep_overlapping=keep_overlapping,
+        min_duration=min_duration,
+        context_direction=context_direction,
+    ).to_eager()
+
+
+def _add_recording_path_prefix_single(cut, path):
+    return cut.with_recording_path_prefix(path)
+
+
+def _add_features_path_prefix_single(cut, path):
+    return cut.with_features_path_prefix(path)
+
+
+def _call(obj, member_fn: str, *args, **kwargs) -> Callable:
+    return getattr(obj, member_fn)(*args, **kwargs)

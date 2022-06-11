@@ -344,7 +344,7 @@ def test_known_issue_with_overlap():
     cuts = CutSet.from_manifests(recordings=rec, supervisions=sup)
     assert len(cuts) == 1
 
-    cuts_trim = cuts.trim_to_supervisions(keep_overlapping=False)
+    cuts_trim = cuts.trim_to_supervisions(keep_overlapping=False).to_eager()
     assert len(cuts_trim) == 2
 
     cut = cuts_trim[0]
