@@ -150,8 +150,7 @@ def extract_cuts(
     The features are stored in STORAGE_PATH, and the output manifest
     with features is stored in OUTPUT_CUTSET.
     """
-    cuts = load_manifest_lazy_or_eager(cutset)
-    assert isinstance(cuts, CutSet)
+    cuts = CutSet.from_file(cutset)
     feature_extractor = (
         FeatureExtractor.from_yaml(feature_manifest)
         if feature_manifest is not None
@@ -223,8 +222,7 @@ def extract_cuts_batch(
 
         $ lhotse feat extract-cuts-batch -f feat-cuda.yml cuts.jsonl cuts_with_feats.jsonl feats.h5
     """
-    cuts = load_manifest_lazy_or_eager(cutset)
-    assert isinstance(cuts, CutSet)
+    cuts = CutSet.from_file(cutset)
     feature_extractor = (
         FeatureExtractor.from_yaml(feature_manifest)
         if feature_manifest is not None
