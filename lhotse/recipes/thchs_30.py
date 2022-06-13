@@ -88,7 +88,7 @@ def prepare_thchs_30(
     dataset_parts = ["train", "dev", "test"]
     for part in tqdm(
         dataset_parts,
-        desc="process thchs_30 audio, it takes about 19 seconds.",
+        desc="Process thchs_30 audio, it takes about 19 seconds.",
     ):
         logging.info(f"Processing thchs_30 subset: {part}")
         # Generate a mapping: utt_id -> (audio_path, audio_info, speaker, text)

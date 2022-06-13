@@ -98,7 +98,7 @@ def prepare_magicdata(
 
     manifests = defaultdict(dict)
     for part in tqdm(
-        dataset_parts, desc="process magicdata audio, it takes 6818 seconds."
+        dataset_parts, desc="Process magicdata audio, it takes 6818 seconds."
     ):
         logging.info(f"Processing magicdata subset: {part}")
         # Generate a mapping: utt_id -> (audio_path, audio_info, speaker, text)

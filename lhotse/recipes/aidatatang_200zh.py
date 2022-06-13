@@ -99,7 +99,7 @@ def prepare_aidatatang_200zh(
 
     for part in tqdm(
         dataset_parts,
-        desc="process aidatatang audio, it takes about 2559 seconds.",
+        desc="Process aidatatang audio, it takes about 2559 seconds.",
     ):
         # Generate a mapping: utt_id -> (audio_path, audio_info, speaker, text)
         logging.info(f"Processing  prepare_aidatatang_200zh subset: {part}")

@@ -85,7 +85,7 @@ def prepare_primewords(
     manifests = defaultdict(dict)
     dataset_parts = ["train"]
     for part in tqdm(
-        dataset_parts, desc="process primewords audio, it takes 35 seconds."
+        dataset_parts, desc="Process primewords audio, it takes 35 seconds."
     ):
         logging.info(f"Processing primewords  subset: {part}")
         # Generate a mapping: utt_id -> (audio_path, audio_info, speaker, text)
