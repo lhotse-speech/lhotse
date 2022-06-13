@@ -88,7 +88,7 @@ def prepare_aishell(
         dataset_parts,
         desc="process aishell audio, it needs waste about 102 seconds time.",
     ):
-        logging.info(f"Processing aishell {part}")
+        logging.info(f"Processing aishell subset: {part}")
         # Generate a mapping: utt_id -> (audio_path, audio_info, speaker, text)
         recordings = []
         supervisions = []

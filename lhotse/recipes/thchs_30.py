@@ -84,14 +84,13 @@ def prepare_thchs_30(
                     transcript_dict[idx] = line
                 continue
 
-    print(f"transcript_dict length is {len(transcript_dict)}")
     manifests = defaultdict(dict)
     dataset_parts = ["train", "dev", "test"]
     for part in tqdm(
         dataset_parts,
         desc="process thchs_30 audio, it needs waste about 19 seconds time.",
     ):
-        logging.info(f"Processing thchs_30 {part}")
+        logging.info(f"Processing thchs_30 subset: {part}")
         # Generate a mapping: utt_id -> (audio_path, audio_info, speaker, text)
         recordings = []
         supervisions = []
@@ -127,8 +126,10 @@ def prepare_thchs_30(
         validate_recordings_and_supervisions(recording_set, supervision_set)
 
         if output_dir is not None:
-            supervision_set.to_file(output_dir / f"thchs_supervisions_{part}.jsonl.gz")
-            recording_set.to_file(output_dir / f"thchs_recordings_{part}.jsonl.gz")
+            supervision_set.to_file(
+                output_dir / f"thchs_30_supervisions_{part}.jsonl.gz"
+            )
+            recording_set.to_file(output_dir / f"thchs_30_recordings_{part}.jsonl.gz")
 
         manifests[part] = {"recordings": recording_set, "supervisions": supervision_set}
 

@@ -43,9 +43,10 @@ def prepare_tal_csasr(
     manifests = defaultdict(dict)
     dataset_parts = ["train"]
     for part in tqdm(
-        dataset_parts, desc="Process tal_csasr audio, it needs waste some time."
+        dataset_parts,
+        desc="Process tal_csasr audio, it needs waste about 1319 seconds time.",
     ):
-        logging.info(f"Processing tal_csasr {part}")
+        logging.info(f"Processing tal_csasr subset: {part}")
         # Generate a mapping: utt_id -> (audio_path, audio_info, speaker, text)
         recordings = []
         supervisions = []
@@ -63,6 +64,7 @@ def prepare_tal_csasr(
                 logging.warning(f"No such file: {audio_path}")
                 continue
             recording = Recording.from_file(audio_path)
+
             recordings.append(recording)
             segment = SupervisionSegment(
                 id=idx,

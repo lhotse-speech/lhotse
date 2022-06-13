@@ -98,9 +98,9 @@ def prepare_magicdata(
 
     manifests = defaultdict(dict)
     for part in tqdm(
-        dataset_parts, desc="process magicdata audio, it needs waste some time."
+        dataset_parts, desc="process magicdata audio, it needs waste 6818 seconds time."
     ):
-        logging.info(f"Processing magicdata subset:{part}")
+        logging.info(f"Processing magicdata subset: {part}")
         # Generate a mapping: utt_id -> (audio_path, audio_info, speaker, text)
         recordings = []
         supervisions = []

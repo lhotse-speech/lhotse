@@ -87,7 +87,7 @@ def prepare_primewords(
     for part in tqdm(
         dataset_parts, desc="process primewords audio, it needs waste 35 seconds time."
     ):
-        logging.info(f"Processing primewords {part}")
+        logging.info(f"Processing primewords  subset: {part}")
         # Generate a mapping: utt_id -> (audio_path, audio_info, speaker, text)
         recordings = []
         supervisions = []
