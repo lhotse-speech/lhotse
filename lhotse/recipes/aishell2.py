@@ -40,7 +40,7 @@ def prepare_aishell2(
     manifests = defaultdict(dict)
     dataset_parts = ["train"]
     for part in tqdm(
-        dataset_parts, desc="process aishell2 audio, it needs waste about 6 hours time."
+        dataset_parts, desc="Process aishell2 audio, it takes about 6 hours."
     ):
         logging.info(f"Processing aishell2 subset: {part}")
         # Generate a mapping: utt_id -> (audio_path, audio_info, speaker, text)

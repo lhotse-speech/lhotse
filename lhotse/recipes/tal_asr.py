@@ -42,7 +42,7 @@ def prepare_tal_asr(
     dataset_parts = ["train", "dev", "test"]
     for part in tqdm(
         dataset_parts,
-        desc="Process tal_asr audio, it needs waste about 447 seconds time.",
+        desc="Process tal_asr audio, it takes about 447 seconds.",
     ):
         logging.info(f"Processing tal_asr subset: {part}")
         # Generate a mapping: utt_id -> (audio_path, audio_info, speaker, text)
