@@ -42,6 +42,7 @@ jobs:
         pip install torch==1.8.2+cpu torchaudio==0.8.2 -f https://download.pytorch.org/whl/lts/1.8/torch_lts.html
         pip install '.[tests]'
         pip install h5py  # for HDF5 storage tests
+        pip install dill # for dill lambda pickling tests
         pip install smart_open[http]  # for URL audio downloading test
         pip install kaldifeat  # for running kaldifeat tests
         pip install opensmile  # for running opensmile tests
