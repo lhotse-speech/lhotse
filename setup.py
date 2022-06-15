@@ -167,7 +167,8 @@ tests_require = [
 ]
 dev_requires = sorted(docs_require + tests_require + ["jupyterlab", "matplotlib"])
 orjson_require = ["orjson>=3.6.6"]
-all_requires = sorted(dev_requires + orjson_require)
+dill_require = ["dill"]
+all_requires = sorted(dev_requires + orjson_require + dill_require)
 
 if os.environ.get("READTHEDOCS", False):
     # When building documentation, omit torchaudio installation and mock it instead.
@@ -198,6 +199,7 @@ setup(
     },
     install_requires=install_requires,
     extras_require={
+        "dill": dill_require,
         "orjson": orjson_require,
         "docs": docs_require,
         "tests": tests_require,

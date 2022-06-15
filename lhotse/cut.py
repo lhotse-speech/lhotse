@@ -435,7 +435,7 @@ class Cut:
         keep_overlapping: bool = True,
         min_duration: Optional[Seconds] = None,
         context_direction: Literal["center", "left", "right", "random"] = "center",
-    ) -> List["Cut"]:
+    ) -> "CutSet":
         """
         Splits the current :class:`.Cut` into as many cuts as there are supervisions (:class:`.SupervisionSegment`).
         These cuts have identical start times and durations as the supervisions.
@@ -501,14 +501,14 @@ class Cut:
                 # Ensure that there is exactly one supervision per cut.
                 trimmed = trimmed.filter_supervisions(lambda s: s.id == segment.id)
             cuts.append(trimmed)
-        return cuts
+        return CutSet.from_cuts(cuts)
 
     def cut_into_windows(
         self,
         duration: Seconds,
         hop: Optional[Seconds] = None,
         keep_excessive_supervisions: bool = True,
-    ) -> List["Cut"]:
+    ) -> "CutSet":
         """
         Return a list of shorter cuts, made by traversing this cut in windows of
         ``duration`` seconds by ``hop`` seconds.
@@ -534,7 +534,7 @@ class Cut:
                     keep_excessive_supervisions=keep_excessive_supervisions,
                 )
             )
-        return new_cuts
+        return CutSet.from_cuts(new_cuts)
 
     def index_supervisions(
         self, index_mixed_tracks: bool = False, keep_ids: Optional[Set[str]] = None
@@ -3991,7 +3991,8 @@ class CutSet(Serializable, AlgorithmMixin):
                 LazyFlattener(
                     LazyMapper(
                         self,
-                        lambda cut: cut.trim_to_supervisions(
+                        partial(
+                            _trim_to_supervisions_single,
                             keep_overlapping=keep_overlapping,
                             min_duration=min_duration,
                             context_direction=context_direction,
@@ -4270,7 +4271,8 @@ class CutSet(Serializable, AlgorithmMixin):
                 LazyFlattener(
                     LazyMapper(
                         self,
-                        lambda cut: cut.cut_into_windows(
+                        partial(
+                            _cut_into_windows_single,
                             duration=duration,
                             hop=hop,
                             keep_excessive_supervisions=keep_excessive_supervisions,
@@ -4284,12 +4286,10 @@ class CutSet(Serializable, AlgorithmMixin):
         result = split_parallelize_combine(
             num_jobs,
             self,
-            partial(
-                _cut_into_windows_single,
-                duration=duration,
-                hop=hop,
-                keep_excessive_supervisions=keep_excessive_supervisions,
-            ),
+            _cut_into_windows_single,
+            duration=duration,
+            hop=hop,
+            keep_excessive_supervisions=keep_excessive_supervisions,
         )
         return result
 
