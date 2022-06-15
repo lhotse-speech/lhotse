@@ -11,7 +11,7 @@ from lhotse.serialization import (
     extension_contains,
     open_best,
 )
-from lhotse.utils import Pathlike, fastcopy, streaming_shuffle
+from lhotse.utils import Pathlike, fastcopy, is_module_available, streaming_shuffle
 
 T = TypeVar("T")
 
@@ -123,7 +123,35 @@ class AlgorithmMixin(LazyMixin, Iterable):
         return cls(LazyIteratorChain(self.data, other.data))
 
 
-class ImitatesDict:
+class Dillable:
+    """
+    Mix-in that will leverage ``dill`` instead of ``pickle``
+    when pickling an object.
+
+    It is useful when the user can't avoid ``pickle`` (e.g. in multiprocessing),
+    but needs to use unpicklable objects such as lambdas.
+
+    If ``dill`` is not installed, it defers to what ``pickle`` does by default.
+    """
+
+    def __getstate__(self):
+        if is_module_available("dill"):
+            import dill
+
+            return dill.dumps(self.__dict__)
+        else:
+            return self.__dict__
+
+    def __setstate__(self, state):
+        if is_module_available("dill"):
+            import dill
+
+            self.__dict__ = dill.loads(state)
+        else:
+            self.__dict__ = state
+
+
+class ImitatesDict(Dillable):
     """
     Helper base class for lazy iterators defined below.
     It exists to make them drop-in replacements for data-holding dicts
@@ -324,6 +352,7 @@ class LazyFilter(ImitatesDict):
         if (
             isinstance(self.predicate, types.LambdaType)
             and self.predicate.__name__ == "<lambda>"
+            and not is_module_available("dill")
         ):
             warnings.warn(
                 "A lambda was passed to LazyFilter: it may prevent you from forking this process. "
@@ -351,7 +380,11 @@ class LazyMapper(ImitatesDict):
         self.iterator = iterator
         self.fn = fn
         assert callable(self.fn), f"LazyMapper: 'fn' arg must be callable (got {fn})."
-        if isinstance(self.fn, types.LambdaType) and self.fn.__name__ == "<lambda>":
+        if (
+            isinstance(self.fn, types.LambdaType)
+            and self.fn.__name__ == "<lambda>"
+            and not is_module_available("dill")
+        ):
             warnings.warn(
                 "A lambda was passed to LazyMapper: it may prevent you from forking this process. "
                 "If you experience issues with num_workers > 0 in torch.utils.data.DataLoader, "
