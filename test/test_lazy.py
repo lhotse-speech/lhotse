@@ -4,12 +4,13 @@ we try to leverage 'duration' attribute which is shared by all tested types of i
 (cuts, features, recordings, supervisions).
 """
 import random
+from concurrent.futures import ProcessPoolExecutor
 
 import pytest
 
 from lhotse import CutSet, FeatureSet, RecordingSet, SupervisionSet, combine
 from lhotse.testing.dummies import DummyManifest, as_lazy
-from lhotse.utils import fastcopy
+from lhotse.utils import fastcopy, is_module_available
 
 
 @pytest.mark.parametrize(
@@ -190,3 +191,28 @@ def test_composable_operations():
     with as_lazy(data) as lazy_data:
         lazy_result = lazy_data.repeat(2).filter(less_than_5s).map(double_duration)
         assert [item.duration for item in lazy_result] == list(expected_durations)
+
+
+def _get_ids(cuts):
+    return [cut.id for cut in cuts]
+
+
+@pytest.mark.xfail(
+    not is_module_available("dill"),
+    reason="This test will fail when 'dill' module is not installed as it won't be able to pickle a lambda.",
+    raises=AttributeError,
+)
+def test_dillable():
+    cuts = DummyManifest(CutSet, begin_id=0, end_id=2)
+    with as_lazy(cuts) as lazy_cuts:
+        lazy_cuts = lazy_cuts.map(lambda c: fastcopy(c, id=c.id + "-random-suffix"))
+        with ProcessPoolExecutor(1) as ex:
+            # Moves the cutset which has a lambda stored somewhere to another process,
+            # iterates it there, and gets results back to the main process.
+            # Should work with dill, shouldn't work with just pickle.
+            ids = list(ex.map(_get_ids, [lazy_cuts]))
+
+        assert ids[0] == [
+            "dummy-cut-0000-random-suffix",
+            "dummy-cut-0001-random-suffix",
+        ]
