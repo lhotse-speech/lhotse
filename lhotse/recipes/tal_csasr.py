@@ -19,7 +19,7 @@ from lhotse.utils import Pathlike
 def prepare_tal_csasr(
     corpus_dir: Pathlike,
     output_dir: Optional[Pathlike] = None,
-    num_jobs: int = 10,
+    num_jobs: int = 1,
 ) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet]]]:
     """
     Returns the manifests which consist of the Recordings and Supervisions
@@ -44,13 +44,17 @@ def prepare_tal_csasr(
     dataset_parts = ["train"]
     for part in tqdm(
         dataset_parts,
-        desc="Process tal_csasr audio, it takes about 1319 seconds.",
+        desc="Process tal_csasr audio, it takes about 4 minutes using 40 cpu jobs.",
     ):
         logging.info(f"Processing tal_csasr subset: {part}")
         # Generate a mapping: utt_id -> (audio_path, audio_info, speaker, text)
-        recordings = []
+
         supervisions = []
         wav_path = corpus_dir / "TAL_CSASR" / "cs_wav"
+        recordings = RecordingSet.from_dir(
+            path=wav_path, pattern="*.wav", num_jobs=num_jobs
+        )
+
         for audio_path in wav_path.rglob("**/*.wav"):
 
             idx = audio_path.stem
@@ -63,14 +67,12 @@ def prepare_tal_csasr(
             if not audio_path.is_file():
                 logging.warning(f"No such file: {audio_path}")
                 continue
-            recording = Recording.from_file(audio_path)
 
-            recordings.append(recording)
             segment = SupervisionSegment(
                 id=idx,
                 recording_id=idx,
                 start=0.0,
-                duration=recording.duration,
+                duration=recordings.duration(idx),
                 channel=0,
                 language="Chinese",
                 speaker=speaker,

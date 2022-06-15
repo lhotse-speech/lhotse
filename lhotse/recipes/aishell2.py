@@ -16,7 +16,9 @@ from lhotse.utils import Pathlike
 
 
 def prepare_aishell2(
-    corpus_dir: Pathlike, output_dir: Optional[Pathlike] = None
+    corpus_dir: Pathlike,
+    output_dir: Optional[Pathlike] = None,
+    num_jobs: int = 1,
 ) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet]]]:
     """
     Returns the manifests which consist of the Recordings and Supervisions
@@ -40,13 +42,18 @@ def prepare_aishell2(
     manifests = defaultdict(dict)
     dataset_parts = ["train"]
     for part in tqdm(
-        dataset_parts, desc="Process aishell2 audio, it takes about 6 hours."
+        dataset_parts,
+        desc="Process aishell2 audio, it takes about 55  minutes using 40 cpu jobs.",
     ):
         logging.info(f"Processing aishell2 subset: {part}")
         # Generate a mapping: utt_id -> (audio_path, audio_info, speaker, text)
-        recordings = []
         supervisions = []
         wav_path = corpus_dir / "AISHELL-2" / "iOS" / "data" / "wav"
+
+        recordings = RecordingSet.from_dir(
+            path=wav_path, pattern="*.wav", num_jobs=num_jobs
+        )
+
         for audio_path in wav_path.rglob("**/*.wav"):
 
             idx = audio_path.stem
@@ -59,13 +66,12 @@ def prepare_aishell2(
             if not audio_path.is_file():
                 logging.warning(f"No such file: {audio_path}")
                 continue
-            recording = Recording.from_file(audio_path)
-            recordings.append(recording)
+
             segment = SupervisionSegment(
                 id=idx,
                 recording_id=idx,
                 start=0.0,
-                duration=recording.duration,
+                duration=recordings.duration(idx),
                 channel=0,
                 language="Chinese",
                 speaker=speaker,
