@@ -355,8 +355,8 @@ class TimeConstraint:
         """
         Check if the batch is close to satisfying the constraints.
         We define "closeness" as: if we added one more cut that has
-        duration/num_frames/num_samples equal to the mean of the current
-        batch, then the batch would have exceeded the constraints.
+        duration/num_frames/num_samples equal to the longest seen cut
+        in the current batch, then the batch would have exceeded the constraints.
         """
         if self.max_cuts is not None and self.num_cuts >= self.max_cuts:
             return True
