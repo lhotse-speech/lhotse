@@ -1,4 +1,5 @@
 import random
+import warnings
 from copy import deepcopy
 from functools import reduce
 from itertools import chain
@@ -55,7 +56,7 @@ class BucketingSampler(CutSampler):
         drop_last: bool = False,
         proportional_sampling: bool = True,
         seed: int = 0,
-        strict: bool = True,
+        strict=None,
         **kwargs: Any,
     ) -> None:
         """
@@ -78,11 +79,6 @@ class BucketingSampler(CutSampler):
             This mechanism reduces the chance that any of the buckets gets depleted early.
             Enabled by default.
         :param seed: random seed for bucket selection
-        :param strict: When ``True``, for the purposes of determining dynamic batch size,
-            we take the longest cut sampled so far and multiply its duration/num_frames/num_samples
-            by the number of cuts currently in mini-batch to check if it exceeded max_duration/etc.
-            This can help make the GPU memory usage more predictable when there is a large variance
-            in cuts duration.
         :param kwargs: Arguments used to create the underlying sampler for each bucket.
         """
         # Do not use the distributed capacities of the CutSampler in the top-level sampler.
@@ -103,6 +99,13 @@ class BucketingSampler(CutSampler):
                 "those opened with 'load_manifest_lazy', 'CutSet.from_jsonl_lazy', or "
                 "'CutSet.from_webdataset'). "
                 "Please use lhotse.dataset.DynamicBucketingSampler instead."
+            )
+
+        if strict is not None:
+            warnings.warn(
+                "In Lhotse v1.4 all samplers act as if 'strict=True'. "
+                "Sampler's argument 'strict' will be removed in a future Lhotse release.",
+                category=DeprecationWarning,
             )
 
         # Split data into buckets.
@@ -126,7 +129,6 @@ class BucketingSampler(CutSampler):
             self.sampler_type(
                 *bucket_cut_sets,
                 drop_last=drop_last,
-                strict=strict,
                 **self.sampler_kwargs,
             )
             for bucket_cut_sets in self.buckets

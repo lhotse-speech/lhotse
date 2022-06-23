@@ -299,7 +299,6 @@ class TimeConstraint:
     current: Union[int, Seconds] = 0
     num_cuts: int = 0
     longest_seen: Union[int, float] = 0
-    strict: bool = False
 
     def __post_init__(self) -> None:
         assert exactly_one_not_null(*self._constraints) or all(
@@ -350,10 +349,7 @@ class TimeConstraint:
         constraint = self.active_constraint
         if constraint is None:
             return False
-        if self.strict:
-            return self.num_cuts * self.longest_seen > constraint
-        else:
-            return self.current > constraint
+        return self.num_cuts * self.longest_seen > constraint
 
     def close_to_exceeding(self) -> bool:
         """
@@ -365,10 +361,7 @@ class TimeConstraint:
         if self.max_cuts is not None and self.num_cuts >= self.max_cuts:
             return True
 
-        if self.strict:
-            thresh = self.longest_seen
-        else:
-            thresh = self.current / self.num_cuts
+        thresh = self.longest_seen
 
         if self.max_frames is not None:
             return self.current + thresh > self.max_frames
@@ -397,8 +390,8 @@ class TimeConstraint:
         self.max_cuts = state_dict.pop("max_cuts")
         self.current = state_dict.pop("current")
         self.num_cuts = state_dict.pop("num_cuts")
-        self.strict = state_dict.pop("strict", False)
         self.longest_seen = state_dict.pop("longest_seen", 0)
+        state_dict.pop("strict", None)  # backward compatibility
         assert len(state_dict) == 0, (
             "Error in TimeConstraint.load_state_dict(): Unexpected keys:\n- "
             + "\n- ".join(state_dict.keys())
@@ -413,7 +406,6 @@ class TimeConstraint:
                 f"To add two TimeConstraint objects, they need to represent the same constraint "
                 f"(got self.{key}={self_attr} != other.{key}={other_attr})."
             )
-        assert self.strict == other.strict
         return TimeConstraint(
             max_duration=self.max_duration,
             max_frames=self.max_frames,
@@ -421,7 +413,6 @@ class TimeConstraint:
             max_cuts=self.max_cuts,
             current=self.current + other.current,
             num_cuts=self.num_cuts + other.num_cuts,
-            strict=self.strict,
             longest_seen=max(self.longest_seen, other.longest_seen),
         )
 
