@@ -364,11 +364,11 @@ class TimeConstraint:
         thresh = self.longest_seen
 
         if self.max_frames is not None:
-            return self.current + thresh > self.max_frames
+            return self.current + thresh >= self.max_frames
         if self.max_samples is not None:
-            return self.current + thresh > self.max_samples
+            return self.current + thresh >= self.max_samples
         if self.max_duration is not None:
-            return self.current + thresh > self.max_duration
+            return self.current + thresh >= self.max_duration - 1e-3  # float precision
         return False
 
     def reset(self) -> None:

@@ -1215,32 +1215,28 @@ def test_report_padding_ratio_estimate():
 
 
 def test_time_constraint_strictness():
-    normal = TimeConstraint(max_duration=100, strict=False)
-    strict = TimeConstraint(max_duration=100, strict=True)
+    strict = TimeConstraint(max_duration=100)
 
     # create cuts with large variance of durations
     cut_durs = [30.0, 30.0, 10.0, 10.0, 20.0]
     assert sum(cut_durs) == pytest.approx(100.0)
     cuts = [dummy_cut(idx, duration=cd) for idx, cd in enumerate(cut_durs)]
 
-    # accumulate 80s of duration
-    for cut in cuts[:-1]:
-        normal.add(cut)
-        strict.add(cut)
+    strict.add(cuts[0])  # total duration: 30s, effective duration: 30s
+    assert not strict.close_to_exceeding()
+    assert not strict.exceeded()
 
-    assert normal.current == pytest.approx(80)
-    assert strict.current == pytest.approx(80)
+    strict.add(cuts[1])  # total duration: 60s, effective duration: 60s
+    assert not strict.close_to_exceeding()
+    assert not strict.exceeded()
 
-    # non-strict constraint is not close to exceeding (will accept next cut in a batch)
-    # strict constraint is close to exceeding (will not accept next cut in a batch)
-    assert not normal.close_to_exceeding()
-    assert strict.close_to_exceeding()
+    strict.add(cuts[2])  # total duration: 70s, effective duration: 90s
+    assert strict.close_to_exceeding()  # because 70s + longest seen 30s = 100s
+    assert not strict.exceeded()
 
-    normal.add(cuts[-1])
-    strict.add(cuts[-1])
-
-    assert not normal.exceeded()
-    assert strict.exceeded()
+    strict.add(cuts[3])  # total duration: 80s, effective duration: 120s
+    assert strict.close_to_exceeding()  # because 80s + longest seen 30s = 110s
+    assert strict.exceeded()  # because longest seen 30s * 4 seen cuts = 120s
 
 
 @pytest.mark.parametrize(
