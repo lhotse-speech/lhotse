@@ -53,7 +53,9 @@ def simple(
         for p in (supervision_manifest, feature_manifest, recording_manifest)
     ]
 
-    if all(m is None or m.lazy for m in (supervision_set, feature_set, recording_set)):
+    if all(
+        m is None or m.is_lazy for m in (supervision_set, feature_set, recording_set)
+    ):
         # Create the CutSet lazily; requires sorting by recording_id
         CutSet.from_manifests(
             recordings=recording_set,
