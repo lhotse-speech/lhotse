@@ -16,6 +16,8 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Dict, Optional, Union
 
+from tqdm.auto import tqdm
+
 from lhotse import validate_recordings_and_supervisions
 from lhotse.audio import Recording, RecordingSet
 from lhotse.supervision import SupervisionSegment, SupervisionSet
@@ -95,9 +97,12 @@ def prepare_aidatatang_200zh(
     manifests = defaultdict(dict)
     dataset_parts = ["dev", "test", "train"]
 
-    for part in dataset_parts:
+    for part in tqdm(
+        dataset_parts,
+        desc="Process aidatatang audio, it takes about 2559 seconds.",
+    ):
         # Generate a mapping: utt_id -> (audio_path, audio_info, speaker, text)
-        logging.info(f"Processing {part}")
+        logging.info(f"Processing  prepare_aidatatang_200zh subset: {part}")
         recordings = []
         supervisions = []
         wav_path = d / "corpus" / part
@@ -106,6 +111,7 @@ def prepare_aidatatang_200zh(
             speaker = audio_path.parts[-2]
             if idx not in transcript_dict:
                 logging.warning(f"No transcript: {idx}")
+                logging.warning(f"{audio_path} has no transcript. ")
                 continue
             text = transcript_dict[idx]
             if not audio_path.is_file():
@@ -131,9 +137,11 @@ def prepare_aidatatang_200zh(
 
         if output_dir is not None:
             supervision_set.to_file(
-                output_dir / f"aidatatang_supervisions_{part}.jsonl.gz"
+                output_dir / f"aidatatang_200zh_supervisions_{part}.jsonl.gz"
             )
-            recording_set.to_file(output_dir / f"aidatatang_recordings_{part}.jsonl.gz")
+            recording_set.to_file(
+                output_dir / f"aidatatang_200zh_recordings_{part}.jsonl.gz"
+            )
 
         manifests[part] = {"recordings": recording_set, "supervisions": supervision_set}
 
