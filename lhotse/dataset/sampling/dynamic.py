@@ -74,10 +74,10 @@ class DynamicCutSampler(CutSampler):
         drop_last: bool = False,
         consistent_ids: bool = True,
         shuffle_buffer_size: int = 20000,
-        strict: bool = False,
         world_size: Optional[int] = None,
         rank: Optional[int] = None,
         seed: int = 0,
+        strict=None,
     ) -> None:
         """
         :param cuts: one or more CutSets (when more than one, will yield tuples of CutSets as mini-batches)
@@ -99,11 +99,6 @@ class DynamicCutSampler(CutSampler):
         :param shuffle_buffer_size: How many cuts (or cut pairs, triplets) are being held in memory
             a buffer used for streaming shuffling. Larger number means better randomness at the cost
             of higher memory usage.
-        :param strict: When ``True``, for the purposes of determining dynamic batch size,
-            we take the longest cut sampled so far and multiply its duration/num_frames/num_samples
-            by the number of cuts currently in mini-batch to check if it exceeded max_duration/etc.
-            This can help make the GPU memory usage more predictable when there is a large variance
-            in cuts duration.
         :param world_size: Total number of distributed nodes. We will try to infer it by default.
         :param rank: Index of distributed node. We will try to infer it by default.
         :param seed: Random seed used to consistently shuffle the dataset across different processes.
@@ -123,8 +118,14 @@ class DynamicCutSampler(CutSampler):
         self.shuffle = shuffle
         self.consistent_ids = consistent_ids
         self.shuffle_buffer_size = shuffle_buffer_size
-        self.strict = strict
         self.rng = None
+
+        if strict is not None:
+            warnings.warn(
+                "In Lhotse v1.4 all samplers act as if 'strict=True'. "
+                "Sampler's argument 'strict' will be removed in a future Lhotse release.",
+                category=DeprecationWarning,
+            )
 
     def state_dict(self) -> Dict[str, Any]:
         sd = super().state_dict()
@@ -134,7 +135,6 @@ class DynamicCutSampler(CutSampler):
                 "max_cuts": self.max_cuts,
                 "consistent_ids": self.consistent_ids,
                 "shuffle_buffer_size": self.shuffle_buffer_size,
-                "strict": self.strict,
             }
         )
         return sd
@@ -144,7 +144,7 @@ class DynamicCutSampler(CutSampler):
         self.max_cuts = sd.pop("max_cuts")
         self.consistent_ids = sd.pop("consistent_ids")
         self.shuffle_buffer_size = sd.pop("shuffle_buffer_size")
-        self.strict = sd.pop("strict")
+        sd.pop("strict", None)  # backward compatibility
         super().load_state_dict(sd)
         self._fast_forward()
 
@@ -196,7 +196,6 @@ class DynamicCutSampler(CutSampler):
             max_cuts=self.max_cuts,
             drop_last=self.drop_last,
             diagnostics=self.diagnostics,
-            strict=self.strict,
         )
         self.cuts_iter = iter(self.cuts_iter)
         return self
@@ -236,7 +235,6 @@ class DurationBatcher:
         max_duration: Seconds = None,
         max_cuts: Optional[int] = None,
         drop_last: bool = False,
-        strict: bool = False,
         diagnostics: Optional[SamplingDiagnostics] = None,
     ) -> None:
         self.datapipe = datapipe
@@ -248,7 +246,6 @@ class DurationBatcher:
             max_frames=max_frames,
             max_samples=max_samples,
             max_cuts=max_cuts,
-            strict=strict,
         )
 
     def __iter__(self) -> Generator[Union[CutSet, Tuple[CutSet]], None, None]:
