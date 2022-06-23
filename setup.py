@@ -52,7 +52,7 @@ project_root = Path(__file__).parent
 # NOTE: REMEMBER TO UPDATE THE FALLBACK VERSION IN lhotse/__init__.py WHEN RELEASING #
 # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! #
 MAJOR_VERSION = 1
-MINOR_VERSION = 3
+MINOR_VERSION = 4
 PATCH_VERSION = 0
 IS_DEV_VERSION = True  # False = public release, True = otherwise
 
@@ -129,7 +129,6 @@ install_requires = [
     "click>=7.1.1",
     "cytoolz>=0.10.1",
     "dataclasses",
-    "h5py>=2.10.0",
     "intervaltree>= 3.1.0",
     "lilcom>=1.1.0",
     "numpy>=1.18.1",
@@ -168,7 +167,8 @@ tests_require = [
 ]
 dev_requires = sorted(docs_require + tests_require + ["jupyterlab", "matplotlib"])
 orjson_require = ["orjson>=3.6.6"]
-all_requires = sorted(dev_requires + orjson_require)
+dill_require = ["dill"]
+all_requires = sorted(dev_requires + orjson_require + dill_require)
 
 if os.environ.get("READTHEDOCS", False):
     # When building documentation, omit torchaudio installation and mock it instead.
@@ -199,6 +199,7 @@ setup(
     },
     install_requires=install_requires,
     extras_require={
+        "dill": dill_require,
         "orjson": orjson_require,
         "docs": docs_require,
         "tests": tests_require,

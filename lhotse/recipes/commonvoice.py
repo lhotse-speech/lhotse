@@ -263,6 +263,11 @@ def parse_utterance(
         raise ValueError(f"No such file: {audio_path}")
     recording_id = Path(row.path).stem
     recording = Recording.from_file(audio_path, recording_id=recording_id)
+    # Handling accent(s) in different versions of CommonVoice
+    if "accents" in row:
+        accents = row.accents if row.accents != "nan" else None
+    else:
+        accents = row.accent if row.accent != "nan" else None
     # Then, create the corresponding supervisions
     segment = SupervisionSegment(
         id=recording_id,
@@ -278,7 +283,7 @@ def parse_utterance(
         gender=row.gender if row.gender != "nan" else None,
         custom={
             "age": row.age if row.age != "nan" else None,
-            "accent": row.accent if row.accent != "nan" else None,
+            "accents": accents,
         },
     )
     return recording, segment

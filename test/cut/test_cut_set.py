@@ -147,7 +147,7 @@ def test_trim_to_supervisions_simple_cuts(keep_overlapping, num_jobs):
     )
     cuts = cut_set.trim_to_supervisions(
         keep_overlapping=keep_overlapping, num_jobs=num_jobs
-    )
+    ).to_eager()
     assert len(cuts) == 4
 
     # Note: expected results diverge here depending on the value of keep_overlapping flag
@@ -263,7 +263,9 @@ def mixed_overlapping_cut_set():
 def test_trim_to_supervisions_mixed_cuts_keep_overlapping_false(
     mixed_overlapping_cut_set,
 ):
-    cuts = mixed_overlapping_cut_set.trim_to_supervisions(keep_overlapping=False)
+    cuts = mixed_overlapping_cut_set.trim_to_supervisions(
+        keep_overlapping=False
+    ).to_eager()
     assert len(cuts) == 3
     # After "trimming", in some instances the MixedCut "decayed" into simple, unmixed cuts, as they did not overlap;
     # In other instances, it's still a MixedCut
@@ -300,7 +302,9 @@ def test_trim_to_supervisions_mixed_cuts_keep_overlapping_false(
 def test_trim_to_supervisions_mixed_cuts_keep_overlapping_true(
     mixed_overlapping_cut_set,
 ):
-    cuts = mixed_overlapping_cut_set.trim_to_supervisions(keep_overlapping=True)
+    cuts = mixed_overlapping_cut_set.trim_to_supervisions(
+        keep_overlapping=True
+    ).to_eager()
     assert len(cuts) == 3
     # After "trimming", in some instances the MixedCut "decayed" into simple, unmixed cuts, as they did not overlap;
     # In other instances, it's still a MixedCut

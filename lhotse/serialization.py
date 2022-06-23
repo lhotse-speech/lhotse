@@ -1,6 +1,8 @@
 import itertools
 import json
+import sys
 import warnings
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Dict, Generator, Iterable, Optional, Type, Union
 
@@ -15,6 +17,21 @@ Manifest = Any  # Union['RecordingSet', 'SupervisionSet', 'FeatureSet', 'CutSet'
 
 
 def open_best(path: Pathlike, mode: str = "r"):
+    """
+    Auto-determine the best way to open the input path or URI.
+    Uses ``smart_open`` when available to handle URLs and URIs.
+    Supports providing "-" as input to read from stdin or save to stdout.
+    """
+    if path == "-":
+        if mode == "r":
+            return StdStreamWrapper(sys.stdin)
+        elif mode == "w":
+            return StdStreamWrapper(sys.stdout)
+        else:
+            raise ValueError(
+                f"Cannot open stream for '-' with mode other 'r' or 'w' (got: '{mode}')"
+            )
+
     if is_module_available("smart_open"):
         from smart_open import smart_open
 
@@ -407,7 +424,7 @@ def load_manifest_lazy(path: Pathlike) -> Optional[Manifest]:
     Generic utility for reading an arbitrary manifest from a JSONL file.
     Returns None when the manifest is empty.
     """
-    assert extension_contains(".jsonl", path)
+    assert extension_contains(".jsonl", path) or path == "-"
     raw_data = iter(load_jsonl(path))
     try:
         first = next(raw_data)
@@ -418,15 +435,17 @@ def load_manifest_lazy(path: Pathlike) -> Optional[Manifest]:
     return cls.from_jsonl_lazy(path)
 
 
-def load_manifest_lazy_or_eager(path: Pathlike) -> Optional[Manifest]:
+def load_manifest_lazy_or_eager(
+    path: Pathlike, manifest_cls=None
+) -> Optional[Manifest]:
     """
     Generic utility for reading an arbitrary manifest.
     If possible, opens the manifest lazily, otherwise reads everything into memory.
     """
-    if extension_contains(".jsonl", path):
+    if extension_contains(".jsonl", path) or path == "-":
         return load_manifest_lazy(path)
     else:
-        return load_manifest(path)
+        return load_manifest(path, manifest_cls=manifest_cls)
 
 
 def resolve_manifest_set_class(item):
@@ -455,7 +474,7 @@ def resolve_manifest_set_class(item):
 
 
 def store_manifest(manifest: Manifest, path: Pathlike) -> None:
-    if extension_contains(".jsonl", path):
+    if extension_contains(".jsonl", path) or path == "-":
         manifest.to_jsonl(path)
     elif extension_contains(".json", path):
         manifest.to_json(path)
@@ -468,7 +487,7 @@ def store_manifest(manifest: Manifest, path: Pathlike) -> None:
 class Serializable(JsonMixin, JsonlMixin, LazyMixin, YamlMixin):
     @classmethod
     def from_file(cls, path: Pathlike) -> Manifest:
-        return load_manifest(path, manifest_cls=cls)
+        return load_manifest_lazy_or_eager(path, manifest_cls=cls)
 
     def to_file(self, path: Pathlike) -> None:
         store_manifest(self, path)
@@ -540,3 +559,22 @@ if is_module_available("orjson"):
     decode_json_line = orjson.loads
 else:
     decode_json_line = json.loads
+
+
+class StdStreamWrapper:
+    def __init__(self, stream):
+        self.stream = stream
+
+    def close(self):
+        pass
+
+    def __enter__(self):
+        return self.stream
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        pass
+
+    def __getattr__(self, item: str):
+        if item == "close":
+            return self.close
+        return getattr(self.stream, item)
