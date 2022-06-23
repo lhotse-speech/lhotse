@@ -298,7 +298,8 @@ class TimeConstraint:
     max_cuts: Optional[int] = None
     current: Union[int, Seconds] = 0
     num_cuts: int = 0
-    longest_seen: Union[int, float] = 0
+    longest_seen: Union[int, Seconds] = 0
+    scaling_threshold: Union[None, int, Seconds] = None
 
     def __post_init__(self) -> None:
         assert exactly_one_not_null(*self._constraints) or all(
@@ -349,6 +350,8 @@ class TimeConstraint:
         constraint = self.active_constraint
         if constraint is None:
             return False
+        if self.longest_seen >= self.scaling_threshold:
+            constraint *= 0.8
         return self.num_cuts * self.longest_seen > constraint
 
     def close_to_exceeding(self) -> bool:
@@ -361,14 +364,16 @@ class TimeConstraint:
         if self.max_cuts is not None and self.num_cuts >= self.max_cuts:
             return True
 
-        thresh = self.longest_seen
+        thresh = self.current + self.longest_seen
+        if self.longest_seen >= self.scaling_threshold:
+            thresh *= 1.25
 
         if self.max_frames is not None:
-            return self.current + thresh >= self.max_frames
+            return thresh >= self.max_frames
         if self.max_samples is not None:
-            return self.current + thresh >= self.max_samples
+            return thresh >= self.max_samples
         if self.max_duration is not None:
-            return self.current + thresh >= self.max_duration - 1e-3  # float precision
+            return thresh >= self.max_duration - 1e-3  # float precision
         return False
 
     def reset(self) -> None:

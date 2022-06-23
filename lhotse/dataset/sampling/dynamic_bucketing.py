@@ -143,7 +143,7 @@ class DynamicBucketingSampler(CutSampler):
             )
         else:
             cuts_for_bins_estimate = self.cuts[0]
-        self.duration_bins = estimate_duration_buckets(
+        self.duration_bins, self.duration_scaling_thresh = estimate_duration_buckets(
             islice(cuts_for_bins_estimate, num_cuts_for_bins_estimate),
             num_buckets=num_buckets,
         )
@@ -224,6 +224,7 @@ class DynamicBucketingSampler(CutSampler):
             buffer_size=self.buffer_size,
             rng=self.rng,
             diagnostics=self.diagnostics,
+            scaling_threshold=self.duration_scaling_thresh,
         )
         self.cuts_iter = iter(self.cuts_iter)
         return self
@@ -253,10 +254,16 @@ class DynamicBucketingSampler(CutSampler):
         return None
 
 
-def estimate_duration_buckets(cuts: Iterable[Cut], num_buckets: int) -> List[Seconds]:
+def estimate_duration_buckets(
+    cuts: Iterable[Cut], num_buckets: int
+) -> Tuple[List[Seconds], Seconds]:
     """
     Given an iterable of cuts and a desired number of buckets, select duration values
     that should start each bucket.
+
+    It also returns to 90th percentile of durations encountered in the dataset.
+    This is useful for scaling down max_duration in mini-batches with long cuts,
+    which helps with better GPU memory utilization.
 
     The returned list, ``bins``, has ``num_buckets - 1`` elements.
     The first bucket should contain cuts with duration ``0 <= d < bins[0]``;
@@ -265,7 +272,9 @@ def estimate_duration_buckets(cuts: Iterable[Cut], num_buckets: int) -> List[Sec
 
     :param cuts: an iterable of :class:`lhotse.cut.Cut`.
     :param num_buckets: desired number of buckets.
-    :return: a list of boundary duration values (floats).
+    :return: a tuple of:
+        - a list of boundary duration values (floats);
+        - the 90th percentile of duration values.
     """
     assert num_buckets > 1
 
@@ -276,6 +285,7 @@ def estimate_duration_buckets(cuts: Iterable[Cut], num_buckets: int) -> List[Sec
         f"or equal to the number of cuts ({durs.shape[0]})."
     )
     bucket_duration = durs.sum() / num_buckets
+    dur_90 = np.percentile(durs, 90)
 
     bins = []
     tot = 0.0
@@ -285,7 +295,7 @@ def estimate_duration_buckets(cuts: Iterable[Cut], num_buckets: int) -> List[Sec
             tot = 0.0
         tot += dur
 
-    return bins
+    return bins, dur_90
 
 
 class DynamicBucketer:
@@ -299,6 +309,7 @@ class DynamicBucketer:
         buffer_size: int = 10000,
         rng: random.Random = None,
         diagnostics: Optional[SamplingDiagnostics] = None,
+        scaling_threshold: Optional[Seconds] = None,
     ) -> None:
         self.cuts = cuts
         self.duration_bins = duration_bins
@@ -307,6 +318,7 @@ class DynamicBucketer:
         self.drop_last = drop_last
         self.buffer_size = buffer_size
         self.diagnostics = ifnone(diagnostics, SamplingDiagnostics())
+        self.scaling_threshold = scaling_threshold
         if rng is None:
             rng = random.Random()
         self.rng = rng
@@ -341,6 +353,7 @@ class DynamicBucketer:
             tot = TimeConstraint(
                 max_duration=self.max_duration,
                 max_cuts=self.max_cuts,
+                scaling_threshold=self.scaling_threshold,
             )
             for c in bucket:
                 tot.add(c[0] if isinstance(c, tuple) else c)
