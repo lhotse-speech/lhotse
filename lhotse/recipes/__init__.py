@@ -30,6 +30,7 @@ from .librimix import download_librimix, prepare_librimix
 from .librispeech import download_librispeech, prepare_librispeech
 from .libritts import download_libritts, prepare_libritts
 from .ljspeech import download_ljspeech, prepare_ljspeech
+from .magicdata import download_magicdata, prepare_magicdata
 from .mgb2 import prepare_mgb2
 from .mls import prepare_mls
 from .mobvoihotwords import download_mobvoihotwords, prepare_mobvoihotwords
@@ -39,8 +40,10 @@ from .nsc import prepare_nsc
 from .peoples_speech import prepare_peoples_speech
 from .rir_noise import download_rir_noise, prepare_rir_noise
 from .spgispeech import download_spgispeech, prepare_spgispeech
+from .stcmds import download_stcmds, prepare_stcmds
 from .switchboard import prepare_switchboard
 from .tedlium import download_tedlium, prepare_tedlium
+from .thchs_30 import download_thchs_30, prepare_thchs_30
 from .timit import download_timit, prepare_timit
 from .vctk import download_vctk, prepare_vctk
 from .voxceleb import download_voxceleb1, download_voxceleb2, prepare_voxceleb
