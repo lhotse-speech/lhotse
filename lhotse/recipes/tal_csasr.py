@@ -16,6 +16,61 @@ from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import Pathlike
 
 
+def text_normalize(line: str):
+    """
+    Modified from https://github.com/wenet-e2e/wenet/blob/main/examples/multi_cn/s0/local/tal_mix_data_prep.sh#L52
+    sed 's/Ａ/A/g' | sed 's/Ｃ/C/g' | sed 's/Ｄ/D/g' | sed 's/Ｇ/G/g' | \
+    sed 's/Ｈ/H/g' | sed 's/Ｕ/U/g' | sed 's/Ｙ/Y/g' | sed 's/ａ/a/g' | \
+    sed 's/Ｉ/I/g' | sed 's/#//g' | sed 's/=//g' | sed 's/；//g' | \
+    sed 's/，//g' | sed 's/？//g' | sed 's/。//g' | sed 's/\///g' | \
+    sed 's/！//g' | sed 's/!//g' | sed 's/\.//g' | sed 's/\?//g' | \
+    sed 's/：//g' | sed 's/,//g' | sed 's/\"//g' | sed 's/://g' | \
+    sed 's/@//g' | sed 's/-/ /g' | sed 's/、/ /g' | sed 's/~/ /g' | \
+    sed "s/‘/\'/g" | sed 's/Ｅ/E/g' | sed "s/’/\'/g" | sed 's/《//g' | sed 's/》//g' | \
+    sed "s/[ ][ ]*$//g" | sed "s/\[//g" | sed 's/、//g'
+    """
+    line = line.replace("Ａ", "A")
+    line = line.replace("Ｃ", "C")
+    line = line.replace("Ｄ", "D")
+    line = line.replace("Ｇ", "G")
+    line = line.replace("Ｈ", "H")
+    line = line.replace("Ｕ", "U")
+    line = line.replace("Ｙ", "Y")
+    line = line.replace("ａ", "a")
+    line = line.replace("Ｉ", "I")
+    line = line.replace("#", "")
+    line = line.replace("=", "")
+    line = line.replace("；", "")
+    line = line.replace("，", "")
+    line = line.replace("？", "")
+    line = line.replace("。", "")
+    line = line.replace("/", "")
+    line = line.replace("！", "")
+    line = line.replace("!", "")
+    line = line.replace(".", "")
+    line = line.replace("?", "")
+    line = line.replace("：", "")
+    line = line.replace(",", "")
+    line = line.replace('"', "")
+    line = line.replace(":", "")
+    line = line.replace("@", "")
+    line = line.replace("-", " ")
+    line = line.replace("、", " ")
+    line = line.replace("~", " ")
+    #line = line.replace("‘", "'")
+    line = line.replace("Ｅ", "E")
+    #line = line.replace("’", "'")
+    line = line.replace("《 ", "")
+    line = line.replace("《", "")
+    line = line.replace("》", "")
+    line = line.replace("[ ", "")
+    line = line.replace("[", "")
+    line = line.replace("]", "")
+    line = line.replace("、", "")
+    line = line.upper()
+    return line
+
+
 def prepare_tal_csasr(
     corpus_dir: Pathlike,
     output_dir: Optional[Pathlike] = None,
@@ -38,7 +93,9 @@ def prepare_tal_csasr(
     with open(transcript_path, "r", encoding="utf-8") as f:
         for line in f.readlines():
             idx_transcript = line.split()
-            transcript_dict[idx_transcript[0]] = " ".join(idx_transcript[1:])
+            content = " ".join(idx_transcript[1:])
+            content = text_normalize(content)
+            transcript_dict[idx_transcript[0]] = content
 
     manifests = defaultdict(dict)
     dataset_parts = ["train"]

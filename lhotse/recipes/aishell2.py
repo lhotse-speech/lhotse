@@ -14,6 +14,57 @@ from lhotse.audio import Recording, RecordingSet
 from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import Pathlike
 
+def text_normalize(line: str):
+    """
+    Modified from https://github.com/wenet-e2e/wenet/blob/main/examples/multi_cn/s0/local/aishell2_data_prep.sh#L50    
+
+    """
+    line = line.replace("Ａ", "A")
+    line = line.replace("Ｔ", "T")
+    line = line.replace("Ｍ", "M")
+    line = line.replace("𫖯", "頫")
+    """
+    The below code is to only remove "'" of mandarin.
+    The "'" of english remains unchanged.
+    
+    for example:
+    IC0010W0228	Here's
+    IC0012W0161	I'm
+    IC0013W0018	It's
+    IC0017W0126	Nothing'sGChange
+    IC0020W0392	She's
+    IC0022W0444	That's
+    IC0073W0058	搬不走的要及时'关停并转'
+    IC0085W0187	帮我放一首歌Let's
+    IC0392W0410	对低收入群体的帮助也更大'
+    IC0975W0451	明年二月底'小成'
+    ID0114W0368	我感觉就是在不断'拉抽屉'
+    ID0115W0198	我公司员工不存在持有'和泰创投'股份的情况
+
+    ---->>
+    IC0010W0228 Here's
+    IC0012W0161 I'm
+    IC0013W0018 It's
+    IC0017W0126 Nothing'sGChange
+    IC0020W0392 She's
+    IC0022W0444 That's
+    IC0073W0058 搬不走的要及时关停并转
+    IC0085W0187 帮我放一首歌Let's
+    IC0392W0410 对低收入群体的帮助也更大
+    IC0975W0451 明年二月底小成
+    ID0114W0368 我感觉就是在不断拉抽屉
+    ID0115W0198 我公司员工不存在持有和泰创投股份的情况
+
+    """
+    new_line = []
+    line = list(line)
+    for i ,char in enumerate(line):
+        if char == "'" and u'\u4e00'<=line[i-1]<=u'\u9fff':
+            char = char.replace("'","")
+        new_line.append(char)
+    line = ''.join(new_line)
+    line = line.upper()
+    return line
 
 def prepare_aishell2(
     corpus_dir: Pathlike,
@@ -37,7 +88,12 @@ def prepare_aishell2(
     with open(transcript_path, "r", encoding="utf-8") as f:
         for line in f:
             idx_transcript = line.split()
-            transcript_dict[idx_transcript[0]] = " ".join(idx_transcript[1:])
+            content = " ".join(idx_transcript[1:])
+            content = text_normalize(content)
+            ## the utterance transcript is error. 
+            if idx_transcript[0] == "ID1042W0075":
+                content = "打开爱芒果电视"
+            transcript_dict[idx_transcript[0]] = content
 
     manifests = defaultdict(dict)
     dataset_parts = ["train"]
