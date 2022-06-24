@@ -20,6 +20,19 @@ from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import Pathlike, urlretrieve_progress
 
 
+def text_normalize(line: str):
+    """
+    Modified from https://github.com/wenet-e2e/wenet/blob/main/examples/multi_cn/s0/local/stcmds_data_prep.sh#L42
+    paste -d' ' $data/utt.list $data/text.list |\
+    sed 's/，//g' |\
+    tr '[a-z]' '[A-Z]' |\
+    awk '{if (NF > 1) print $0;}' > $data/train/text
+    """
+    line = line.replace("，", "")
+    line = line.upper()
+    return line
+
+
 def download_stcmds(
     target_dir: Pathlike = ".",
     force_download: bool = False,
@@ -77,7 +90,8 @@ def prepare_stcmds(
         idx = text_path.stem
         logging.info(f"processing stcmds transcript  {text_path}")
         with open(text_path, "r", encoding="utf-8") as f:
-            for line in f.readlines():
+            for line in f:
+                line = text_normalize(line)
                 transcript_dict[idx] = line
 
     manifests = defaultdict(dict)
