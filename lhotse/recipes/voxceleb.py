@@ -134,27 +134,25 @@ def _dowload_voxceleb(
         logging.info(f"Skipping {dev_zip_name} because file exists.")
     else:
         # Download the data in parts
-        # with tempfile.TemporaryDirectory() as temp_dir:
-
-        temp_dir = target_dir
-        for url in part_urls:
-            url_filename = PurePath(
-                urllib.parse.unquote(urllib.parse.urlparse(url).path)
-            ).name
-            temp_dir = Path(temp_dir)
-            temp_target_file = temp_dir / url_filename
-            urlretrieve_progress(
-                url,
-                filename=temp_target_file,
-                desc=f"Downloading {voxceleb_name} {url_filename}",
-            )
-        # Combine the parts for dev set
-        with open(temp_dir / dev_zip_name, "wb") as outFile:
-            for file in sorted(target_dir.glob(f"{part_suffix}*")):
-                with open(file, "rb") as inFile:
-                    shutil.copyfileobj(inFile, outFile)
-        for file in temp_dir.glob("*.zip"):
-            shutil.move(file, target_dir / Path(file).name)
+        with tempfile.TemporaryDirectory() as temp_dir:
+            for url in part_urls:
+                url_filename = PurePath(
+                    urllib.parse.unquote(urllib.parse.urlparse(url).path)
+                ).name
+                temp_dir = Path(temp_dir)
+                temp_target_file = temp_dir / url_filename
+                urlretrieve_progress(
+                    url,
+                    filename=temp_target_file,
+                    desc=f"Downloading {voxceleb_name} {url_filename}",
+                )
+            # Combine the parts for dev set
+            with open(temp_dir / dev_zip_name, "wb") as outFile:
+                for file in sorted(target_dir.glob(f"{part_suffix}*")):
+                    with open(file, "rb") as inFile:
+                        shutil.copyfileobj(inFile, outFile)
+            for file in temp_dir.glob("*.zip"):
+                shutil.move(file, target_dir / Path(file).name)
         logging.info(f"Unzipping dev...")
         with zipfile.ZipFile(zip_path) as zf:
             zf.extractall(target_dir)
