@@ -30,12 +30,14 @@ This Lhotse recipe prepares the VoxCeleb1 and VoxCeleb2 datasets.
 """
 import logging
 import shutil
+import tempfile
+import urllib
 import zipfile
 from collections import defaultdict, namedtuple
 from concurrent.futures import as_completed
 from concurrent.futures.process import ProcessPoolExecutor
-from pathlib import Path
-from typing import Dict, Optional, Tuple, Union
+from pathlib import Path, PurePath
+from typing import Dict, List, Optional, Tuple, Union
 
 from tqdm.auto import tqdm
 
@@ -91,31 +93,74 @@ def download_voxceleb1(
     :param force_download: bool, if True, download the archive even if it already exists.
     :return: the path to downloaded and extracted directory with data.
     """
+
+    return _dowload_voxceleb(
+        voxceleb_name="VoxCeleb1",
+        part_urls=VOXCELEB1_PARTS_URL,
+        part_suffix="vox1_dev_wav_part",
+        dev_zip_name="vox1_dev_wav.zip",
+        test_zip_name="vox1_test_wav.zip",
+        target_dir=target_dir,
+        force_download=force_download,
+    )
+
+
+def _dowload_voxceleb(
+    voxceleb_name: str,
+    part_urls: List[str],
+    part_suffix: str,
+    dev_zip_name: str,
+    test_zip_name: str,
+    target_dir: Pathlike,
+    force_download: Optional[bool] = False,
+):
+    """
+    Download and unzip a VoxCeleb dataset
+
+    ;param voxceleb_name :str, dataset name.
+    :param part_urls: List[str], list of downloable links to zip partials.
+    ;param part_suffix: str, dataset partial suffix.
+    ;param dev_zip_name: str, name of concatenated dev zip file.
+    ;param test_zip_name: str, name of concatenated test zip file.
+    :param target_dir: Pathlike, the path of the dir to store the dataset.
+    :param force_download: bool, if True, download the archive even if it already exists.
+
+    :return: the path to downloaded and extracted directory with data.
+    """
     target_dir = Path(target_dir)
     target_dir.mkdir(parents=True, exist_ok=True)
-
-    zip_name = "vox1_dev_wav.zip"
-    zip_path = target_dir / zip_name
+    zip_path = target_dir / dev_zip_name
     if zip_path.exists() and not force_download:
-        logging.info(f"Skipping {zip_name} because file exists.")
+        logging.info(f"Skipping {dev_zip_name} because file exists.")
     else:
         # Download the data in parts
-        for url in VOXCELEB1_PARTS_URL:
+        # with tempfile.TemporaryDirectory() as temp_dir:
+
+        temp_dir = target_dir
+        for url in part_urls:
+            url_filename = PurePath(
+                urllib.parse.unquote(urllib.parse.urlparse(url).path)
+            ).name
+            temp_dir = Path(temp_dir)
+            temp_target_file = temp_dir / url_filename
             urlretrieve_progress(
-                url, desc=f"Downloading VoxCeleb1 {url.split('/')[-1]}"
+                url,
+                filename=temp_target_file,
+                desc=f"Downloading {voxceleb_name} {url_filename}",
             )
         # Combine the parts for dev set
-        with open(zip_name, "wb") as outFile:
-            for file in target_dir.glob("vox1_dev_wav_part*"):
+        with open(temp_dir / dev_zip_name, "wb") as outFile:
+            for file in sorted(target_dir.glob(f"{part_suffix}*")):
                 with open(file, "rb") as inFile:
                     shutil.copyfileobj(inFile, outFile)
-    logging.info(f"Unzipping dev...")
-    with zipfile.ZipFile(zip_path) as zf:
-        zf.extractall(target_dir)
-    logging.info(f"Unzipping test...")
-    with zipfile.ZipFile(target_dir / "vox1_test_wav.zip") as zf:
-        zf.extractall(target_dir)
-
+        for file in temp_dir.glob("*.zip"):
+            shutil.move(file, target_dir / Path(file).name)
+        logging.info(f"Unzipping dev...")
+        with zipfile.ZipFile(zip_path) as zf:
+            zf.extractall(target_dir)
+        logging.info(f"Unzipping test...")
+        with zipfile.ZipFile(target_dir / test_zip_name) as zf:
+            zf.extractall(target_dir)
     return target_dir
 
 
@@ -132,32 +177,16 @@ def download_voxceleb2(
     :param force_download: bool, if True, download the archive even if it already exists.
     :return: the path to downloaded and extracted directory with data.
     """
-    target_dir = Path(target_dir)
-    target_dir.mkdir(parents=True, exist_ok=True)
 
-    zip_name = "vox2_aac.zip"
-    zip_path = target_dir / zip_name
-    if zip_path.exists() and not force_download:
-        logging.info(f"Skipping {zip_name} because file exists.")
-    else:
-        # Download the data in parts
-        for url in VOXCELEB2_PARTS_URL:
-            urlretrieve_progress(
-                url, desc=f"Downloading VoxCeleb2 {url.split('/')[-1]}"
-            )
-        # Combine the parts for dev set
-        with open(zip_name, "wb") as outFile:
-            for file in target_dir.glob("vox2_dev_aac_part*"):
-                with open(file, "rb") as inFile:
-                    shutil.copyfileobj(inFile, outFile)
-    logging.info(f"Unzipping dev...")
-    with zipfile.ZipFile(zip_path) as zf:
-        zf.extractall(target_dir)
-    logging.info(f"Unzipping test...")
-    with zipfile.ZipFile(target_dir / "vox2_test_aac.zip") as zf:
-        zf.extractall(target_dir)
-
-    return target_dir
+    return _dowload_voxceleb(
+        voxceleb_name="VoxCeleb2",
+        part_urls=VOXCELEB2_PARTS_URL,
+        part_suffix="vox2_dev_aac_part",
+        dev_zip_name="vox2_aac.zip",
+        test_zip_name="vox2_test_aac.zip",
+        target_dir=target_dir,
+        force_download=force_download,
+    )
 
 
 def prepare_voxceleb(
@@ -242,10 +271,10 @@ def prepare_voxceleb(
     if output_dir is not None:
         if "pos_trials" in manifests:
             for i, cuts in enumerate(manifests["pos_trials"]):
-                cuts.to_file(output_dir / f"voxceleb_pos-trials_utt{i+1}.jsonl.gz")
+                cuts.to_file(output_dir / f"voxceleb_pos-trials_utt{i + 1}.jsonl.gz")
         if "neg_trials" in manifests:
             for i, cuts in enumerate(manifests["neg_trials"]):
-                cuts.to_file(output_dir / f"voxceleb_neg-trials_utt{i+1}.jsonl.gz")
+                cuts.to_file(output_dir / f"voxceleb_neg-trials_utt{i + 1}.jsonl.gz")
 
     return manifests
 
