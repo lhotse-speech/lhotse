@@ -14,9 +14,10 @@ from lhotse.audio import Recording, RecordingSet
 from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import Pathlike
 
+
 def text_normalize(line: str):
     """
-    Modified from https://github.com/wenet-e2e/wenet/blob/main/examples/multi_cn/s0/local/aishell2_data_prep.sh#L50    
+    Modified from https://github.com/wenet-e2e/wenet/blob/main/examples/multi_cn/s0/local/aishell2_data_prep.sh#L50
 
     """
     line = line.replace("Ａ", "A")
@@ -26,7 +27,7 @@ def text_normalize(line: str):
     """
     The below code is to only remove "'" of mandarin.
     The "'" of english remains unchanged.
-    
+
     for example:
     IC0010W0228	Here's
     IC0012W0161	I'm
@@ -58,13 +59,14 @@ def text_normalize(line: str):
     """
     new_line = []
     line = list(line)
-    for i ,char in enumerate(line):
-        if char == "'" and u'\u4e00'<=line[i-1]<=u'\u9fff':
-            char = char.replace("'","")
+    for i, char in enumerate(line):
+        if char == "'" and "\u4e00" <= line[i - 1] <= "\u9fff":
+            char = char.replace("'", "")
         new_line.append(char)
-    line = ''.join(new_line)
+    line = "".join(new_line)
     line = line.upper()
     return line
+
 
 def prepare_aishell2(
     corpus_dir: Pathlike,
@@ -90,9 +92,9 @@ def prepare_aishell2(
             idx_transcript = line.split()
             content = " ".join(idx_transcript[1:])
             content = text_normalize(content)
-            ## the utterance transcript is error. 
-            if idx_transcript[0] == "ID1042W0075":
-                content = "打开爱芒果电视"
+            ## the utterance transcript is error.
+            # if idx_transcript[0] == "ID1042W0075":
+            #    content = "打开爱芒果电视"
             transcript_dict[idx_transcript[0]] = content
 
     manifests = defaultdict(dict)
