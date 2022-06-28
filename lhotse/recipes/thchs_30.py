@@ -70,6 +70,7 @@ x v2 x i1 j vn1 x iao1 j in1 sh eng1 l iu2 uu un2 h ua2 q v1 ii iong3 l i4 uu ua
 
 def text_normalize(line: str):
     line = line.replace(" l =", "")
+    line = line.upper()
     return line
 
 
