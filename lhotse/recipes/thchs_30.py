@@ -59,6 +59,20 @@ def download_thchs_30(
     return corpus_dir
 
 
+"""
+data_thchs30/data/B11_374.wav.trn
+Its content is as follows:
+徐 希君 肖 金生 刘 文华 屈 永利 王开 宇 骆 瑛 等 也 被 分别 判处 l = 六年 至 十 五年 有期徒刑
+xu2 xi1 jun1 xiao1 jin1 sheng1 liu2 wen2 hua2 qu1 yong3 li4 wang2 kai1 yu3 luo4 ying1 deng3 ye3 bei4 fen1 bie2 pan4 chu3 liu4 nian2 zhi4 shi2 wu3 nian2 you3 qi1 tu2 xing2
+x v2 x i1 j vn1 x iao1 j in1 sh eng1 l iu2 uu un2 h ua2 q v1 ii iong3 l i4 uu uang2 k ai1 vv v3 l uo4 ii ing1 d eng3 ii ie3 b ei4 f en1 b ie2 p an4 ch u3 l iu4 n ian2 zh ix4 sh ix2 uu u3 n ian2 ii iu3 q i1 t u2 x ing2
+"""
+
+
+def text_normalize(line: str):
+    line = line.replace(" l =", "")
+    return line
+
+
 def prepare_thchs_30(
     corpus_dir: Pathlike, output_dir: Optional[Pathlike] = None
 ) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet]]]:
@@ -81,6 +95,7 @@ def prepare_thchs_30(
         with open(text_path, "r", encoding="utf-8") as f:
             for line_idx, line in enumerate(f):
                 if line_idx == 0:
+                    line = text_normalize(line)
                     transcript_dict[idx] = line
                 continue
 

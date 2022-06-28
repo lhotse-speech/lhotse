@@ -28,6 +28,7 @@ def text_normalize(line: str):
     sed 's/@//g' | sed 's/-/ /g' | sed 's/、/ /g' | sed 's/~/ /g' | \
     sed "s/‘/\'/g" | sed 's/Ｅ/E/g' | sed "s/’/\'/g" | sed 's/《//g' | sed 's/》//g' | \
     sed "s/[ ][ ]*$//g" | sed "s/\[//g" | sed 's/、//g'
+    210_40223_210_6228_1_1533298404_4812267_555 上面是一般现在对然后然后下面呢 HE IS ALWAYS FINISHIＮG
     """
     line = line.replace("Ａ", "A")
     line = line.replace("Ｃ", "C")
@@ -57,9 +58,10 @@ def text_normalize(line: str):
     line = line.replace("-", " ")
     line = line.replace("、", " ")
     line = line.replace("~", " ")
-    #line = line.replace("‘", "'")
+    # line = line.replace("‘", "'")
     line = line.replace("Ｅ", "E")
-    #line = line.replace("’", "'")
+    line = line.replace("Ｎ", "N")
+    # line = line.replace("’", "'")
     line = line.replace("《 ", "")
     line = line.replace("《", "")
     line = line.replace("》", "")
