@@ -2,8 +2,8 @@
 optional TAL_ASR (100 hours) if available(https://ai.100tal.com/dataset).
 
 """
-
 import logging
+import re
 from collections import defaultdict
 from pathlib import Path
 from typing import Dict, Optional, Union
@@ -23,15 +23,7 @@ def text_normalize(line: str):
     sed 's/，//g' | sed 's/？//g' | sed 's/。//g' | sed 's/[ ][ ]*$//g'\
     """
     line = line.replace("Ａ", "A")
-    line = line.replace("#", "")
-    line = line.replace("=", "")
-    line = line.replace("、", "")
-    line = line.replace("，", "")
-    line = line.replace("？", "")
-    line = line.replace("。", "")
-    line = line.replace("[ ", "")
-    line = line.replace("[", "")
-    line = line.replace("]", "")
+    line = re.sub(f"#|=|、|，|？|。|[|]", "", line)
     line = line.upper()
     return line
 

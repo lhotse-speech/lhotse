@@ -2,8 +2,8 @@
 optional TAL_CSASR(587 hours) if available(https://ai.100tal.com/dataset).
 It is a mandarin-english code-switch corpus.
 """
-
 import logging
+import re
 from collections import defaultdict
 from pathlib import Path
 from typing import Dict, Optional, Union
@@ -39,36 +39,9 @@ def text_normalize(line: str):
     line = line.replace("Ｙ", "Y")
     line = line.replace("ａ", "a")
     line = line.replace("Ｉ", "I")
-    line = line.replace("#", "")
-    line = line.replace("=", "")
-    line = line.replace("；", "")
-    line = line.replace("，", "")
-    line = line.replace("？", "")
-    line = line.replace("。", "")
-    line = line.replace("/", "")
-    line = line.replace("！", "")
-    line = line.replace("!", "")
-    line = line.replace(".", "")
-    line = line.replace("?", "")
-    line = line.replace("：", "")
-    line = line.replace(",", "")
-    line = line.replace('"', "")
-    line = line.replace(":", "")
-    line = line.replace("@", "")
-    line = line.replace("-", " ")
-    line = line.replace("、", " ")
-    line = line.replace("~", " ")
-    # line = line.replace("‘", "'")
+    line = re.sub(f'#|=|；|，|？|。|/|！|!|.|?|：|,|"|:|@|-|、|~|《|》|[|]|、', "", line)
     line = line.replace("Ｅ", "E")
     line = line.replace("Ｎ", "N")
-    # line = line.replace("’", "'")
-    line = line.replace("《 ", "")
-    line = line.replace("《", "")
-    line = line.replace("》", "")
-    line = line.replace("[ ", "")
-    line = line.replace("[", "")
-    line = line.replace("]", "")
-    line = line.replace("、", "")
     line = line.upper()
     return line
 
