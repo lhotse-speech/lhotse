@@ -5583,11 +5583,13 @@ def create_cut_set_eager(
         features is not None,
         recordings is not None,
     )
-    supervisions = supervisions.to_eager()  # must be eager to use .find()
+    if sup_ok:
+        supervisions = supervisions.to_eager()  # must be eager to use .find()
     if feat_ok:
         # Case I: Features are provided.
         # Use features to determine the cut boundaries and attach recordings and supervisions as available.
-        recordings = recordings.to_eager()  # ensure it can be indexed with cut.id
+        if rec_ok:
+            recordings = recordings.to_eager()  # ensure it can be indexed with cut.id
         cuts = CutSet.from_cuts(
             MonoCut(
                 id=str(uuid4())
