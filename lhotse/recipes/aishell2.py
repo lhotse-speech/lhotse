@@ -39,11 +39,11 @@ def prepare_aishell2(
         desc="Process aishell2 audio, it takes about 55  minutes using 40 cpu jobs.",
     ):
         logging.info(f"Processing aishell2 subset: {part}")
-        if part == 'train':
+        if part == "train":
             transcript_path = corpus_dir / "AISHELL-2" / "iOS" / "data" / "trans.txt"
             wav_path = corpus_dir / "AISHELL-2" / "iOS" / "data" / "wav"
         else:
-            # using dev_ios, test_ios 
+            # using dev_ios, test_ios
             transcript_path = corpus_dir / "AISHELL-2" / "iOS" / f"{part}" / "trans.txt"
             wav_path = corpus_dir / "AISHELL-2" / "iOS" / f"{part}" / "wav"
 
