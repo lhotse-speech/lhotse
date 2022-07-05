@@ -75,6 +75,8 @@ a CLI tool that create the manifests given a corpus directory.
     - :func:`lhotse.recipes.prepare_commonvoice`
   * - CSLU Kids
     - :func:`lhotse.recipes.prepare_cslu_kids`
+  * - DailyTalk
+    - :func:`lhotse.recipes.prepare_daily_talk`
   * - DIHARD III
     - :func:`lhotse.recipes.prepare_dihard3`
   * - English Broadcast News 1997
@@ -171,9 +173,9 @@ Adding new corpora
 
 .. hint::
     **Manifest naming convention.** The default naming convention is ``<corpus-name>_<manifest-type>_<split>.jsonl.gz``,
-    i.e., we save the manifests in a compressed JSONL file. Here, ``<manifest-type>`` can be ``recordings``, 
+    i.e., we save the manifests in a compressed JSONL file. Here, ``<manifest-type>`` can be ``recordings``,
     ``supervisions``, etc., and ``<split>`` can be ``train``, ``dev``, ``test``, etc. In case the corpus
-    has no such split defined, we can use ``all`` as default. Other information, e.g., mic type, language, etc. may 
+    has no such split defined, we can use ``all`` as default. Other information, e.g., mic type, language, etc. may
     be included in the ``<corpus-name>``. Some examples are: ``cmu-indic_recordings_all.jsonl.gz``,
     ``ami-ihm_supervisions_dev.jsonl.gz``, ``mtedx-english_recordings_train.jsonl.gz``.
 

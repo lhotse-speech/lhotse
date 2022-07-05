@@ -22,7 +22,7 @@ def libricss(corpus_dir: Pathlike, output_dir: Pathlike, type: str = "replay"):
 
 
 @download.command()
-@click.argument("target_dir", type=click.Path(exists=True, dir_okay=True))
+@click.argument("target_dir", type=click.Path())
 @click.option("--force-download", is_flag=True, help="Force download")
 def libricss(target_dir: Pathlike, force_download: bool = False):
     """
