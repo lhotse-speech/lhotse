@@ -88,9 +88,7 @@ class SmartOpen:
     smart_open: Optional[Callable] = None
 
     @classmethod
-    def setup(
-        cls, transport_params: Optional[dict] = None
-    ):
+    def setup(cls, transport_params: Optional[dict] = None):
         try:
             from smart_open import open as sm_open
         except ImportError:
