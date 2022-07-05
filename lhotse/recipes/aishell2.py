@@ -32,28 +32,33 @@ def prepare_aishell2(
         output_dir = Path(output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
 
-    transcript_path = corpus_dir / "AISHELL-2" / "iOS" / "data" / "trans.txt"
-    transcript_dict = {}
-    with open(transcript_path, "r", encoding="utf-8") as f:
-        for line in f:
-            idx_transcript = line.split()
-            transcript_dict[idx_transcript[0]] = " ".join(idx_transcript[1:])
-
     manifests = defaultdict(dict)
-    dataset_parts = ["train"]
+    dataset_parts = ["train", "dev", "test"]
     for part in tqdm(
         dataset_parts,
         desc="Process aishell2 audio, it takes about 55  minutes using 40 cpu jobs.",
     ):
         logging.info(f"Processing aishell2 subset: {part}")
-        # Generate a mapping: utt_id -> (audio_path, audio_info, speaker, text)
+        if part == 'train':
+            transcript_path = corpus_dir / "AISHELL-2" / "iOS" / "data" / "trans.txt"
+            wav_path = corpus_dir / "AISHELL-2" / "iOS" / "data" / "wav"
+        else:
+            # using dev_ios, test_ios 
+            transcript_path = corpus_dir / "AISHELL-2" / "iOS" / f"{part}" / "trans.txt"
+            wav_path = corpus_dir / "AISHELL-2" / "iOS" / f"{part}" / "wav"
+
+        transcript_dict = {}
+        with open(transcript_path, "r", encoding="utf-8") as f:
+            for line in f:
+                idx_transcript = line.split()
+                transcript_dict[idx_transcript[0]] = " ".join(idx_transcript[1:])
+
         supervisions = []
-        wav_path = corpus_dir / "AISHELL-2" / "iOS" / "data" / "wav"
 
         recordings = RecordingSet.from_dir(
             path=wav_path, pattern="*.wav", num_jobs=num_jobs
         )
-
+        # Generate a mapping: utt_id -> (audio_path, audio_info, speaker, text)
         for audio_path in wav_path.rglob("**/*.wav"):
 
             idx = audio_path.stem
