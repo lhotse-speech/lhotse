@@ -7,6 +7,7 @@ Paper: https://arxiv.org/abs/2207.01063
 GitHub: https://github.com/keonlee9420/DailyTalk
 """
 import logging
+import zipfile
 from pathlib import Path
 from typing import Tuple
 
@@ -45,14 +46,15 @@ def download_daily_talk(target_dir: Pathlike, force_download: bool = False) -> P
         logging.info(f"{corpus_zip} already exists. Skipping download.")
     else:
         logging.info(f"Running: gdown --fuzzy {DAILY_TALK_URL}")
-        gdown.download(DAILY_TALK_URL, str(corpus_zip), quiet=False)
+        gdown.download(DAILY_TALK_URL, str(corpus_zip), fuzzy=True, quiet=False)
 
     # Extract the zipped file
     if not corpus_dir.exists() or force_download:
         logging.info(f"Extracting {corpus_zip} to {target_dir}")
-        corpus_zip.unzip(target_dir)
+        with zipfile.ZipFile(corpus_zip) as zf:
+            zf.extractall(path=target_dir)
 
-    return target_dir
+    return corpus_dir
 
 
 def prepare_daily_talk(

@@ -80,7 +80,6 @@ class SmartOpen:
     """
 
     transport_params: Optional[Dict] = None
-    compression: Optional[str] = None
     import_err_msg = (
         "Please do 'pip install smart_open' - "
         "if you are using S3/GCP/Azure/other cloud-specific URIs, do "
@@ -90,7 +89,7 @@ class SmartOpen:
 
     @classmethod
     def setup(
-        cls, compression: Optional[str] = None, transport_params: Optional[dict] = None
+        cls, transport_params: Optional[dict] = None
     ):
         try:
             from smart_open import open as sm_open
@@ -104,27 +103,19 @@ class SmartOpen:
                 f"SmartOpen.setup second call overwrites existing transport_params with new version"
                 f"\t\n{cls.transport_params}\t\nvs\t\n{transport_params}"
             )
-        if cls.compression is not None and cls.compression != compression:
-            logging.warning(
-                f"SmartOpen.setup second call overwrites existing compression param with new version"
-                f"\t\n{cls.compression} vs {compression}"
-            )
         cls.transport_params = transport_params
-        cls.compression = compression
         cls.smart_open = sm_open
 
     @classmethod
-    def open(cls, uri, mode="rb", compression=None, transport_params=None, **kwargs):
+    def open(cls, uri, mode="rb", transport_params=None, **kwargs):
         if cls.smart_open is None:
-            cls.setup(compression=compression, transport_params=transport_params)
-        compression = compression if compression else cls.compression
+            cls.setup(transport_params=transport_params)
         transport_params = (
             transport_params if transport_params else cls.transport_params
         )
         return cls.smart_open(
             uri,
             mode=mode,
-            compression=compression,
             transport_params=transport_params,
             **kwargs,
         )
@@ -315,7 +306,10 @@ def split_manifest_lazy(
         except StopIteration:
             break
         finally:
-            splits.append(writer.open_manifest())
+            subcutset = writer.open_manifest()
+            if subcutset is not None:
+                # Edge case: there were exactly chunk_size cuts in the cutset
+                splits.append(subcutset)
 
     return splits
 
