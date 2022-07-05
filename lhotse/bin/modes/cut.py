@@ -36,7 +36,6 @@ def cut():
     help="Optional supervision manifest - will be used to attach the supervisions to the cuts.",
 )
 @click.option(
-    "-f",
     "--force-eager",
     is_flag=True,
     help="Force reading full manifests into memory before creating the manifests "
