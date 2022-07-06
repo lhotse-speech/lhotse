@@ -1,5 +1,6 @@
 import itertools
 import logging
+import pickle
 import random
 import warnings
 from concurrent.futures import Executor, ProcessPoolExecutor
@@ -48,7 +49,7 @@ from lhotse.features import (
     FeatureSet,
     create_default_feature_extractor,
 )
-from lhotse.features.base import compute_global_stats
+from lhotse.features.base import StatsAccumulator, compute_global_stats
 from lhotse.features.io import FeaturesWriter, LilcomChunkyWriter, LilcomFilesWriter
 from lhotse.lazy import AlgorithmMixin
 from lhotse.serialization import Serializable
@@ -5057,7 +5058,10 @@ class CutSet(Serializable, AlgorithmMixin):
         return cuts
 
     def compute_global_feature_stats(
-        self, storage_path: Optional[Pathlike] = None, max_cuts: Optional[int] = None
+        self,
+        storage_path: Optional[Pathlike] = None,
+        max_cuts: Optional[int] = None,
+        extractor: Optional[FeatureExtractor] = None,
     ) -> Dict[str, np.ndarray]:
         """
         Compute the global means and standard deviations for each feature bin in the manifest.
@@ -5069,9 +5073,29 @@ class CutSet(Serializable, AlgorithmMixin):
         :param storage_path: an optional path to a file where the stats will be stored with pickle.
         :param max_cuts: optionally, limit the number of cuts used for stats estimation. The cuts will be
             selected randomly in that case.
+        :param extractor: optional FeatureExtractor, when provided, we ignore any pre-computed features.
+
         :return a dict of ``{'norm_means': np.ndarray, 'norm_stds': np.ndarray}`` with the
             shape of the arrays equal to the number of feature bins in this manifest.
         """
+        if extractor is not None:
+            cuts = self
+            if max_cuts is not None:
+                cuts = islice(cuts, max_cuts)
+            cuts = iter(cuts)
+            first = next(cuts)
+            stats = StatsAccumulator(
+                feature_dim=extractor.feature_dim(first.sampling_rate)
+            )
+            for cut in chain([first], cuts):
+                arr = cut.compute_features(extractor)
+                stats.update(arr)
+            mvn = stats.get()
+            if storage_path is not None:
+                with open(storage_path, "wb") as f:
+                    pickle.dump(mvn, f)
+            return mvn
+
         have_features = [cut.has_features for cut in self]
         if not any(have_features):
             raise ValueError(
