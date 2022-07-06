@@ -927,39 +927,60 @@ def compute_global_stats(
     """
     feature_manifests = iter(feature_manifests)
     first = next(feature_manifests)
-    total_sum = np.zeros((first.num_features,), dtype=np.float64)
-    total_unnorm_var = np.zeros((first.num_features,), dtype=np.float64)
-    total_frames = 0
-    with np.errstate(divide="ignore", invalid="ignore"):
-        for features in chain([first], feature_manifests):
-            # Read the features
-            arr = features.load().astype(np.float64)
+    stats = StatsAccumulator(feature_dim=first.num_features)
+    for features in chain([first], feature_manifests):
+        # Read the features
+        arr = features.load().astype(np.float64)
+        # Update
+        stats.update(arr)
+    mvn = stats.get()
+    if storage_path is not None:
+        with open(storage_path, "wb") as f:
+            pickle.dump(mvn, f)
+    return mvn
+
+
+class StatsAccumulator:
+    def __init__(self, feature_dim: int):
+        self.total_sum = np.zeros((feature_dim,), dtype=np.float64)
+        self.total_unnorm_var = np.zeros((feature_dim,), dtype=np.float64)
+        self.total_frames = 0
+
+    def update(self, arr: np.ndarray) -> None:
+        with np.errstate(divide="ignore", invalid="ignore"):
+            arr = arr.astype(np.float64)
             # Update the sum for the means
             curr_sum = arr.sum(axis=0)
-            updated_total_sum = total_sum + curr_sum
+            updated_total_sum = self.total_sum + curr_sum
             # Update the number of frames
             curr_frames = arr.shape[0]
-            updated_total_frames = total_frames + curr_frames
+            updated_total_frames = self.total_frames + curr_frames
             # Update the unnormalized variance
-            total_over_curr_frames = total_frames / curr_frames
+            total_over_curr_frames = self.total_frames / curr_frames
             curr_unnorm_var = np.var(arr, axis=0) * curr_frames
-            if total_frames > 0:
-                total_unnorm_var = (
-                    total_unnorm_var
+            if self.total_frames > 0:
+                self.total_unnorm_var = (
+                    self.total_unnorm_var
                     + curr_unnorm_var
                     + total_over_curr_frames
                     / updated_total_frames
-                    * (total_sum / total_over_curr_frames - curr_sum) ** 2
+                    * (self.total_sum / total_over_curr_frames - curr_sum) ** 2
                 )
             else:
-                total_unnorm_var = curr_unnorm_var
-            total_sum = updated_total_sum
-            total_frames = updated_total_frames
-    stats = {
-        "norm_means": total_sum / total_frames,
-        "norm_stds": np.sqrt(total_unnorm_var / total_frames),
-    }
-    if storage_path is not None:
-        with open(storage_path, "wb") as f:
-            pickle.dump(stats, f)
-    return stats
+                self.total_unnorm_var = curr_unnorm_var
+            self.total_sum = updated_total_sum
+            self.total_frames = updated_total_frames
+
+    @property
+    def norm_means(self) -> np.ndarray:
+        return self.total_sum / self.total_frames
+
+    @property
+    def norm_stds(self) -> np.ndarray:
+        return np.sqrt(self.total_unnorm_var / self.total_frames)
+
+    def get(self) -> Dict[str, np.ndarray]:
+        return {
+            "norm_means": self.norm_means,
+            "norm_stds": self.norm_stds,
+        }
