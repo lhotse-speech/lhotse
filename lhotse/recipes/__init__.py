@@ -14,6 +14,7 @@ from .cmu_indic import download_cmu_indic, prepare_cmu_indic
 from .cmu_kids import prepare_cmu_kids
 from .commonvoice import prepare_commonvoice
 from .cslu_kids import prepare_cslu_kids
+from .daily_talk import download_daily_talk, prepare_daily_talk
 from .dihard3 import prepare_dihard3
 from .eval2000 import prepare_eval2000
 from .fisher_english import prepare_fisher_english
