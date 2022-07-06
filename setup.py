@@ -158,8 +158,11 @@ except ImportError:
 docs_require = (project_root / "docs" / "requirements.txt").read_text().splitlines()
 tests_require = [
     "pytest>=5.4.3",
+    "pytest-forked==1.4.0",
+    "pytest-xdist==2.5.0",
+    "pytest-cov==3.0.0",
     "flake8==4.0.1",
-    "coverage==5.1",
+    "coverage>=6.0.0",
     "hypothesis==5.41.2",
     "black==22.3.0",
     "isort==5.10.1",
@@ -212,6 +215,7 @@ setup(
         "Programming Language :: Python :: 3.7",
         "Programming Language :: Python :: 3.8",
         "Programming Language :: Python :: 3.9",
+        "Programming Language :: Python :: 3.10",
         "Intended Audience :: Science/Research",
         "Operating System :: POSIX :: Linux",
         "Operating System :: MacOS :: MacOS X",

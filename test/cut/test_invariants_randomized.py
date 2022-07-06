@@ -3,7 +3,7 @@ from hypothesis import strategies as st
 
 from lhotse.testing.fixtures import RandomCutTestCase
 
-EXAMPLE_TIMEOUT_MS = 3000
+EXAMPLE_TIMEOUT_MS = 5000
 MAX_EXAMPLES = 200
 
 
