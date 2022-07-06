@@ -22,6 +22,7 @@ def libri_cut_set():
     )
 
 
+@pytest.mark.forked
 @pytest.mark.parametrize(
     "batchio", [AudioSamples, PrecomputedFeatures, partial(OnTheFlyFeatures, Fbank())]
 )
