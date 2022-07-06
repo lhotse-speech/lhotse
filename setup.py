@@ -159,6 +159,7 @@ docs_require = (project_root / "docs" / "requirements.txt").read_text().splitlin
 tests_require = [
     "pytest>=5.4.3",
     "pytest-forked==1.4.0",
+    "pytest-xdist==2.5.0",
     "flake8==4.0.1",
     "coverage==5.1",
     "hypothesis==5.41.2",
