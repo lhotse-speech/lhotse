@@ -64,8 +64,6 @@ jobs:
         lhotse install-sph2pipe  # Handle sphere files.
     - name: Test with pytest and coverage
       run: |
-        coverage run -m pytest --forked -n auto test
-    - name: Generate and upload the coverage report
-      run: |
-        coverage xml
-        bash <(curl -s https://codecov.io/bash)
+        pytest --cov --forked -n auto test
+    - name: Upload coverage to Codecov
+      uses: codecov/codecov-action@v3
