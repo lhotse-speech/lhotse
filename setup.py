@@ -162,7 +162,7 @@ tests_require = [
     "pytest-xdist==2.5.0",
     "pytest-cov==3.0.0",
     "flake8==4.0.1",
-    "coverage==6.4.1",
+    "coverage>=6.0.0",
     "hypothesis==5.41.2",
     "black==22.3.0",
     "isort==5.10.1",
