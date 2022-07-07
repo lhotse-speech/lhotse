@@ -3,6 +3,7 @@ import logging
 import pickle
 import random
 import warnings
+from collections import Counter, defaultdict
 from concurrent.futures import Executor, ProcessPoolExecutor
 from dataclasses import dataclass, field
 from functools import partial, reduce
@@ -3757,19 +3758,36 @@ class CutSet(Serializable, AlgorithmMixin):
             max     5415.0
             dtype: float64
         """
+
+        def convert(hours: float) -> Tuple[int, int, int]:
+            hours, seconds = divmod(hours, 3600)
+            minutes, seconds = divmod(seconds, 60)
+            return int(hours), int(minutes), ceil(seconds)
+
+        cntrs = defaultdict(int)
+        cut_custom, sup_custom = Counter(), Counter()
         durations, speech_durations = [], []
         for c in self:
             durations.append(c.duration)
+            if hasattr(c, "custom"):
+                for key in ifnone(c.custom, ()):
+                    cut_custom[key] += 1
+            cntrs["recordings"] += int(c.has_recording)
+            cntrs["features"] += int(c.has_recording)
             for s in c.trimmed_supervisions:
                 speech_durations.append(s.duration)
-        total_sum = np.array(durations).sum()
-        speech_sum = np.array(speech_durations).sum()
+                cntrs["supervisions"] += 1
+                for key in ifnone(s.custom, ()):
+                    sup_custom[key] += 1
         print("Cuts count:", len(durations))
-        print(f"Total duration (hours): {total_sum / 3600:.1f}")
+        total_sum = np.array(durations).sum()
+        hh, mm, ss = convert(total_sum)
+        print(f"Total duration (hh:mm:ss): {hh:02d}:{mm:02d}:{ss:02d}")
+        hh, mm, ss = convert(total_sum)
+        speech_sum = np.array(speech_durations).sum()
         print(
-            f"Speech duration (hours): {speech_sum / 3600:.1f} ({speech_sum / total_sum:.1%})"
+            f"Speech duration (hh:mm:ss): {hh:02d}:{mm:02d}:{ss:02d} ({speech_sum / total_sum:.1%})"
         )
-        print("***")
         print("Duration statistics (seconds):")
         print(f"mean\t{np.mean(durations):.1f}")
         print(f"std\t{np.std(durations):.1f}")
@@ -3781,6 +3799,16 @@ class CutSet(Serializable, AlgorithmMixin):
         print(f"99.5%\t{np.percentile(durations, 99.5):.1f}")
         print(f"99.9%\t{np.percentile(durations, 99.9):.1f}")
         print(f"max\t{np.max(durations):.1f}")
+        for key, val in cntrs.items():
+            print(f"{key.title()} available: {val}")
+        if cut_custom:
+            print("CUT custom fields:")
+            for key, val in cut_custom.most_common():
+                print(f"- {key} (in {val} cuts)")
+        if sup_custom:
+            print("SUPERVISION custom fields:")
+            for key, val in sup_custom.most_common():
+                print(f"- {key} (in {val} cuts)")
 
     def split(
         self, num_splits: int, shuffle: bool = False, drop_last: bool = False
