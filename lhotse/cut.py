@@ -3773,7 +3773,7 @@ class CutSet(Serializable, AlgorithmMixin):
                 for key in ifnone(c.custom, ()):
                     cut_custom[key] += 1
             cntrs["recordings"] += int(c.has_recording)
-            cntrs["features"] += int(c.has_recording)
+            cntrs["features"] += int(c.has_features)
             for s in c.trimmed_supervisions:
                 speech_durations.append(s.duration)
                 cntrs["supervisions"] += 1
