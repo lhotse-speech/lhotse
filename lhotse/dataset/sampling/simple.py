@@ -189,7 +189,6 @@ class SimpleCutSampler(CutSampler):
                     not self.drop_last or self.time_constraint.close_to_exceeding()
                 ):
                     # We have a partial batch and we can return it.
-                    self.diagnostics.keep(cuts)
                     return CutSet.from_cuts(cuts)
                 else:
                     # There is nothing more to return or it's discarded:
@@ -227,7 +226,6 @@ class SimpleCutSampler(CutSampler):
                     )
                     cuts.append(next_cut)
 
-        self.diagnostics.keep(cuts)
         return CutSet.from_cuts(cuts)
 
 
