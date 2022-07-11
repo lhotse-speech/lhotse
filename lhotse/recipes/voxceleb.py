@@ -148,7 +148,7 @@ def _dowload_voxceleb(
                 )
             # Combine the parts for dev set
             with open(temp_dir / dev_zip_name, "wb") as outFile:
-                for file in sorted(target_dir.glob(f"{part_suffix}*")):
+                for file in sorted(temp_dir.glob(f"{part_suffix}*")):
                     with open(file, "rb") as inFile:
                         shutil.copyfileobj(inFile, outFile)
             for file in temp_dir.glob("*.zip"):
@@ -421,10 +421,8 @@ def _prepare_voxceleb_v2(
         recordings = []
         supervisions = []
         futures = []
-        for p in (corpus_path / split).glob("*.wav"):
-            futures.append(
-                ex.submit(_process_file, p, speaker_metadata, type="command")
-            )
+        for p in corpus_path.rglob("*.m4a"):
+            futures.append(ex.submit(_process_file, p, speaker_metadata))
         for future in tqdm(
             futures,
             total=len(futures),
