@@ -59,6 +59,7 @@ VOXCELEB1_PARTS_URL = [
     "https://thor.robots.ox.ac.uk/~vgg/data/voxceleb/vox1a/vox1_dev_wav_partac",
     "https://thor.robots.ox.ac.uk/~vgg/data/voxceleb/vox1a/vox1_dev_wav_partad",
     "https://thor.robots.ox.ac.uk/~vgg/data/voxceleb/vox1a/vox1_test_wav.zip",
+    "https://www.robots.ox.ac.uk/~vgg/data/voxceleb/meta/vox1_meta.csv",
 ]
 
 VOXCELEB2_PARTS_URL = [
@@ -71,6 +72,7 @@ VOXCELEB2_PARTS_URL = [
     "https://thor.robots.ox.ac.uk/~vgg/data/voxceleb/vox1a/vox2_dev_aac_partag",
     "https://thor.robots.ox.ac.uk/~vgg/data/voxceleb/vox1a/vox2_dev_aac_partah",
     "https://thor.robots.ox.ac.uk/~vgg/data/voxceleb/vox1a/vox2_test_aac.zip",
+    "https://www.robots.ox.ac.uk/~vgg/data/voxceleb/meta/vox2_meta.csv",
 ]
 
 VOXCELEB1_TRIALS_URL = "http://www.openslr.org/resources/49/voxceleb1_test_v2.txt"
@@ -152,6 +154,8 @@ def _dowload_voxceleb(
                     with open(file, "rb") as inFile:
                         shutil.copyfileobj(inFile, outFile)
             for file in temp_dir.glob("*.zip"):
+                shutil.move(file, target_dir / Path(file).name)
+            for file in temp_dir.glob("*.csv"):
                 shutil.move(file, target_dir / Path(file).name)
         logging.info(f"Unzipping dev...")
         with zipfile.ZipFile(zip_path) as zf:
