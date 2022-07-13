@@ -35,11 +35,18 @@ def cut():
     type=click.Path(exists=True, dir_okay=False),
     help="Optional supervision manifest - will be used to attach the supervisions to the cuts.",
 )
+@click.option(
+    "--force-eager",
+    is_flag=True,
+    help="Force reading full manifests into memory before creating the manifests "
+    "(useful when you are not sure about the input manifest sorting).",
+)
 def simple(
     output_cut_manifest: Pathlike,
     recording_manifest: Optional[Pathlike],
     feature_manifest: Optional[Pathlike],
     supervision_manifest: Optional[Pathlike],
+    force_eager: bool,
 ):
     """
     Create a CutSet stored in OUTPUT_CUT_MANIFEST. Depending on the provided options, it may contain any combination
@@ -53,7 +60,13 @@ def simple(
         for p in (supervision_manifest, feature_manifest, recording_manifest)
     ]
 
-    if all(m is None or m.lazy for m in (supervision_set, feature_set, recording_set)):
+    if (
+        all(
+            m is None or m.is_lazy
+            for m in (supervision_set, feature_set, recording_set)
+        )
+        and not force_eager
+    ):
         # Create the CutSet lazily; requires sorting by recording_id
         CutSet.from_manifests(
             recordings=recording_set,

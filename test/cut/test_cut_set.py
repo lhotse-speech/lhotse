@@ -6,6 +6,8 @@ import numpy as np
 import pytest
 
 from lhotse import (
+    Fbank,
+    FbankConfig,
     Features,
     FeatureSet,
     Recording,
@@ -469,6 +471,24 @@ def test_compute_cmvn_stats():
     assert stats["norm_stds"].shape == (cut_set[0].num_features,)
     assert (stats["norm_means"] == read_stats["norm_means"]).all()
     assert (stats["norm_stds"] == read_stats["norm_stds"]).all()
+
+
+@pytest.mark.parametrize("max_cuts", [None, 1])
+def test_compute_cmvn_stats_on_the_fly(max_cuts):
+    cut_set = CutSet.from_json("test/fixtures/libri/cuts.json")
+    fbank = Fbank()
+    with TemporaryDirectory() as d:
+        cut_set = cut_set.compute_and_store_features(fbank, d)
+        # precomputed
+        precomputed_stats = cut_set.compute_global_feature_stats(max_cuts=max_cuts)
+        # on the fly
+        on_the_fly_stats = cut_set.compute_global_feature_stats(
+            max_cuts=max_cuts, extractor=fbank
+        )
+    for key in ("norm_means", "norm_stds"):
+        np.testing.assert_almost_equal(
+            precomputed_stats[key], on_the_fly_stats[key], decimal=3
+        )
 
 
 def test_modify_ids(cut_set_with_mixed_cut):

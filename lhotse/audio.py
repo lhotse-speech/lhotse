@@ -1385,6 +1385,37 @@ def torchaudio_info(path: Pathlike) -> LibsndfileCompatibleAudioInfo:
     that we need to create a ``Recording`` manifest.
     """
     import torchaudio
+    from packaging import version
+
+    if (
+        isinstance(path, (str, Path))
+        and str(path).endswith(".mp3")
+        and version.parse(torchaudio.__version__) >= version.parse("0.12.0")
+    ):
+        # Torchaudio 0.12 has a new StreamReader API that uses ffmpeg.
+        # They dropped support for using sox bindings in torchaudio.info
+        # for MP3 files and implicitly delegate the call to ffmpeg.
+        # Unfortunately, they always return num_frames/num_samples = 0,
+        # as explained here: https://github.com/pytorch/audio/issues/2524
+        # We have to work around by streaming the MP3 and counting the number
+        # of samples.
+        from torchaudio.io import StreamReader
+
+        streamer = StreamReader(src=str(path))
+        assert streamer.num_src_streams == 1
+        info = streamer.get_src_stream_info(0)
+        streamer.add_basic_audio_stream(
+            frames_per_chunk=int(info.sample_rate),
+        )
+        tot_samples = 0
+        for (chunk,) in streamer.stream():
+            tot_samples += chunk.shape[0]
+        return LibsndfileCompatibleAudioInfo(
+            channels=info.num_channels,
+            frames=tot_samples,
+            samplerate=info.sample_rate,
+            duration=tot_samples / info.sample_rate,
+        )
 
     info = torchaudio.info(path)
     return LibsndfileCompatibleAudioInfo(
