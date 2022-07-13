@@ -262,6 +262,8 @@ def prepare_voxceleb(
             manifests["train"] = v2_manifests
 
     for split in ("train", "test"):
+        if split not in manifests:
+            continue
         recordings = manifests[split]["recordings"]
         supervisions = manifests[split]["supervisions"]
         validate_recordings_and_supervisions(recordings, supervisions)
