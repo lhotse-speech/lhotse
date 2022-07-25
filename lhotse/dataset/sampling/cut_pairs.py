@@ -225,7 +225,6 @@ class CutPairsSampler(CutSampler):
                     assert len(source_cuts) == len(
                         target_cuts
                     ), "Unexpected state: some cuts in source / target are missing their counterparts..."
-                    self.diagnostics.keep(source_cuts)
                     return CutSet.from_cuts(source_cuts), CutSet.from_cuts(target_cuts)
                 else:
                     # There is nothing more to return or it's discarded:
@@ -272,5 +271,4 @@ class CutPairsSampler(CutSampler):
         assert len(source_cuts) == len(
             target_cuts
         ), "Unexpected state: some cuts in source / target are missing their counterparts..."
-        self.diagnostics.keep(source_cuts)
         return CutSet.from_cuts(source_cuts), CutSet.from_cuts(target_cuts)

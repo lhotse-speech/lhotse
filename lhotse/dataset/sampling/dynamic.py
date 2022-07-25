@@ -265,14 +265,11 @@ class DurationBatcher:
             if isinstance(cuts[0], tuple):
                 if len(cuts[0]) == 1:
                     cuts = CutSet.from_cuts(cs[0] for cs in cuts)
-                    self.diagnostics.keep(cuts)
                     return cuts
                 else:
                     tuple_of_cut_lists = list(zip(*cuts))
-                    self.diagnostics.keep(cuts[0])
                     return tuple([CutSet.from_cuts(cs) for cs in tuple_of_cut_lists])
             else:
-                self.diagnostics.keep(cuts)
                 return CutSet.from_cuts(cuts)
 
         self.time_constraint.reset()
