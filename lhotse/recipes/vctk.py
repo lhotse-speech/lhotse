@@ -147,9 +147,8 @@ def prepare_vctk(
 
     :param corpus_dir: Pathlike, the path of the data dir.
     :param output_dir: Pathlike, the path where to write the manifests.
-    :param use_edinburgh_vctk_url: Bool, if use edinburgh_vctk_url to download the
+    :param use_edinburgh_vctk_url: Bool, if use edinburgh_vctk_url to download the dataset, please set it as True.
     :param mic_id: str, the default of mic_id is mic2.
-    dataset, please set it as True.
     :return: a dict with keys "read" and "spontaneous".
         Each hold another dict of {'recordings': ..., 'supervisions': ...}
 
