@@ -7,9 +7,9 @@ import numpy as np
 
 from lhotse.array import Array, TemporalArray
 from lhotse.audio import (
+    LHOTSE_AUDIO_DURATION_MISMATCH_TOLERANCE,
     Recording,
     RecordingSet,
-    LHOTSE_AUDIO_DURATION_MISMATCH_TOLERANCE,
 )
 from lhotse.cut import Cut, CutSet, MixedCut, MonoCut, PaddingCut
 from lhotse.features import Features, FeatureSet
