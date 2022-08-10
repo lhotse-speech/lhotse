@@ -82,32 +82,7 @@ SpeakerMetadata = namedtuple(
 )
 
 
-def download_voxceleb1(
-    target_dir: Pathlike = ".",
-    force_download: Optional[bool] = False,
-) -> Path:
-    """
-    Download and unzip the VoxCeleb1 data.
-
-    .. note:: A "connection refused" error may occur if you are downloading without a password.
-
-    :param target_dir: Pathlike, the path of the dir to store the dataset.
-    :param force_download: bool, if True, download the archive even if it already exists.
-    :return: the path to downloaded and extracted directory with data.
-    """
-
-    return _dowload_voxceleb(
-        voxceleb_name="VoxCeleb1",
-        part_urls=VOXCELEB1_PARTS_URL,
-        part_suffix="vox1_dev_wav_part",
-        dev_zip_name="vox1_dev_wav.zip",
-        test_zip_name="vox1_test_wav.zip",
-        target_dir=target_dir,
-        force_download=force_download,
-    )
-
-
-def _dowload_voxceleb(
+def _download_voxceleb(
     voxceleb_name: str,
     part_urls: List[str],
     part_suffix: str,
@@ -166,6 +141,31 @@ def _dowload_voxceleb(
     return target_dir
 
 
+def download_voxceleb1(
+    target_dir: Pathlike = ".",
+    force_download: Optional[bool] = False,
+) -> Path:
+    """
+    Download and unzip the VoxCeleb1 data.
+
+    .. note:: A "connection refused" error may occur if you are downloading without a password.
+
+    :param target_dir: Pathlike, the path of the dir to store the dataset.
+    :param force_download: bool, if True, download the archive even if it already exists.
+    :return: the path to downloaded and extracted directory with data.
+    """
+
+    return _download_voxceleb(
+        voxceleb_name="VoxCeleb1",
+        part_urls=VOXCELEB1_PARTS_URL,
+        part_suffix="vox1_dev_wav_part",
+        dev_zip_name="vox1_dev_wav.zip",
+        test_zip_name="vox1_test_wav.zip",
+        target_dir=target_dir,
+        force_download=force_download,
+    )
+
+
 def download_voxceleb2(
     target_dir: Pathlike = ".",
     force_download: Optional[bool] = False,
@@ -180,7 +180,7 @@ def download_voxceleb2(
     :return: the path to downloaded and extracted directory with data.
     """
 
-    return _dowload_voxceleb(
+    return _download_voxceleb(
         voxceleb_name="VoxCeleb2",
         part_urls=VOXCELEB2_PARTS_URL,
         part_suffix="vox2_dev_aac_part",
