@@ -31,10 +31,10 @@ class CutPairsSampler(CutSampler):
         max_cuts: Optional[int] = None,
         shuffle: bool = False,
         drop_last: bool = False,
-        strict: bool = False,
         world_size: Optional[int] = None,
         rank: Optional[int] = None,
         seed: int = 0,
+        strict=None,
     ):
         """
         CutPairsSampler's constructor.
@@ -54,11 +54,6 @@ class CutPairsSampler(CutSampler):
             `for epoch in range(10): for batch in dataset: ...` as every epoch will see a
             different cuts order.
         :param drop_last: When ``True``, the last batch is dropped if it's incomplete.
-        :param strict: When ``True``, for the purposes of determining dynamic batch size,
-            we take the longest cut sampled so far and multiply its duration/num_frames/num_samples
-            by the number of cuts currently in mini-batch to check if it exceeded max_duration/etc.
-            This can help make the GPU memory usage more predictable when there is a large variance
-            in cuts duration.
         :param world_size: Total number of distributed nodes. We will try to infer it by default.
         :param rank: Index of distributed node. We will try to infer it by default.
         :param seed: Random seed used to consistently shuffle the dataset across different processes.
@@ -78,15 +73,19 @@ class CutPairsSampler(CutSampler):
             max_samples=max_source_samples,
             max_frames=max_source_frames,
             max_cuts=max_cuts,
-            strict=strict,
         )
         self.target_constraints = TimeConstraint(
             max_duration=max_target_duration,
             max_samples=max_target_samples,
             max_frames=max_target_frames,
             max_cuts=max_cuts,
-            strict=strict,
         )
+        if strict is not None:
+            warnings.warn(
+                "In Lhotse v1.4 all samplers act as if 'strict=True'. "
+                "Sampler's argument 'strict' will be removed in a future Lhotse release.",
+                category=DeprecationWarning,
+            )
 
     @property
     def remaining_duration(self) -> Optional[float]:
@@ -226,7 +225,6 @@ class CutPairsSampler(CutSampler):
                     assert len(source_cuts) == len(
                         target_cuts
                     ), "Unexpected state: some cuts in source / target are missing their counterparts..."
-                    self.diagnostics.keep(source_cuts)
                     return CutSet.from_cuts(source_cuts), CutSet.from_cuts(target_cuts)
                 else:
                     # There is nothing more to return or it's discarded:
@@ -273,5 +271,4 @@ class CutPairsSampler(CutSampler):
         assert len(source_cuts) == len(
             target_cuts
         ), "Unexpected state: some cuts in source / target are missing their counterparts..."
-        self.diagnostics.keep(source_cuts)
         return CutSet.from_cuts(source_cuts), CutSet.from_cuts(target_cuts)

@@ -7,7 +7,7 @@ from typing import Any, Callable, Dict, Iterable, Optional, Tuple, Union
 from torch import distributed as dist
 from torch.utils.data import Sampler
 
-from lhotse.cut import Cut
+from lhotse.cut import Cut, CutSet
 from lhotse.utils import Seconds, exactly_one_not_null, is_none_or_gt
 
 
@@ -271,7 +271,16 @@ class CutSampler(Sampler):
         selected = batches[self.rank]
         if selected is None:
             raise StopIteration
+        self._log_diagnostics(selected)
         return selected
+
+    def _log_diagnostics(self, batch: Union[CutSet, Tuple[CutSet, ...]]) -> None:
+        if isinstance(batch, CutSet):
+            self.diagnostics.keep(batch)
+        elif isinstance(batch, tuple) and isinstance(batch[0], CutSet):
+            self.diagnostics.keep(batch[0])
+        else:
+            raise ValueError(f"Object with unexpected type: {batch}")
 
     def get_report(self) -> str:
         """Returns a string describing the statistics of the sampling process so far."""
@@ -299,7 +308,6 @@ class TimeConstraint:
     current: Union[int, Seconds] = 0
     num_cuts: int = 0
     longest_seen: Union[int, float] = 0
-    strict: bool = False
 
     def __post_init__(self) -> None:
         assert exactly_one_not_null(*self._constraints) or all(
@@ -350,32 +358,26 @@ class TimeConstraint:
         constraint = self.active_constraint
         if constraint is None:
             return False
-        if self.strict:
-            return self.num_cuts * self.longest_seen > constraint
-        else:
-            return self.current > constraint
+        return self.num_cuts * self.longest_seen > constraint
 
     def close_to_exceeding(self) -> bool:
         """
         Check if the batch is close to satisfying the constraints.
         We define "closeness" as: if we added one more cut that has
-        duration/num_frames/num_samples equal to the mean of the current
-        batch, then the batch would have exceeded the constraints.
+        duration/num_frames/num_samples equal to the longest seen cut
+        in the current batch, then the batch would have exceeded the constraints.
         """
         if self.max_cuts is not None and self.num_cuts >= self.max_cuts:
             return True
 
-        if self.strict:
-            thresh = self.longest_seen
-        else:
-            thresh = self.current / self.num_cuts
+        thresh = self.longest_seen
 
         if self.max_frames is not None:
-            return self.current + thresh > self.max_frames
+            return self.current + thresh >= self.max_frames
         if self.max_samples is not None:
-            return self.current + thresh > self.max_samples
+            return self.current + thresh >= self.max_samples
         if self.max_duration is not None:
-            return self.current + thresh > self.max_duration
+            return self.current + thresh >= self.max_duration - 1e-3  # float precision
         return False
 
     def reset(self) -> None:
@@ -397,8 +399,8 @@ class TimeConstraint:
         self.max_cuts = state_dict.pop("max_cuts")
         self.current = state_dict.pop("current")
         self.num_cuts = state_dict.pop("num_cuts")
-        self.strict = state_dict.pop("strict", False)
         self.longest_seen = state_dict.pop("longest_seen", 0)
+        state_dict.pop("strict", None)  # backward compatibility
         assert len(state_dict) == 0, (
             "Error in TimeConstraint.load_state_dict(): Unexpected keys:\n- "
             + "\n- ".join(state_dict.keys())
@@ -413,7 +415,6 @@ class TimeConstraint:
                 f"To add two TimeConstraint objects, they need to represent the same constraint "
                 f"(got self.{key}={self_attr} != other.{key}={other_attr})."
             )
-        assert self.strict == other.strict
         return TimeConstraint(
             max_duration=self.max_duration,
             max_frames=self.max_frames,
@@ -421,7 +422,6 @@ class TimeConstraint:
             max_cuts=self.max_cuts,
             current=self.current + other.current,
             num_cuts=self.num_cuts + other.num_cuts,
-            strict=self.strict,
             longest_seen=max(self.longest_seen, other.longest_seen),
         )
 
