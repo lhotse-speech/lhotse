@@ -79,7 +79,7 @@ ISOCODE2LANG = {
 def download_mtedx(
     target_dir: Pathlike = ".",
     languages: Optional[Union[str, Sequence[str]]] = "all",
-) -> None:
+) -> Path:
     """
     Download and untar the dataset.
 
@@ -89,6 +89,7 @@ def download_mtedx(
     :param: languages: A str or sequence of strings specifying which
         languages to download. The default 'all', downloads all available
         languages.
+    :return: the path to downloaded and extracted directory with data.
     """
     target_dir = Path(target_dir) / "mtedx_corpus"
     target_dir.mkdir(parents=True, exist_ok=True)
@@ -114,6 +115,8 @@ def download_mtedx(
         with tarfile.open(tar_path) as tar:
             tar.extractall(path=target_dir)
         completed_detector.touch()
+
+    return target_dir
 
 
 ###############################################################################
@@ -241,9 +244,11 @@ def prepare_single_mtedx_language(
                     output_dir = Path(output_dir)
                 output_dir.mkdir(parents=True, exist_ok=True)
                 save_split = "dev" if split == "valid" else split
-                recordings.to_file(output_dir / f"recordings_{language}_{split}.json")
+                recordings.to_file(
+                    output_dir / f"mtedx-{language}_recordings_{split}.jsonl.gz"
+                )
                 supervisions.to_file(
-                    output_dir / f"supervisions_{language}_{split}.json"
+                    output_dir / f"mtedx-{language}_supervisions_{split}.jsonl.gz"
                 )
 
     return dict(manifests)

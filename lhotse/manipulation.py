@@ -6,7 +6,7 @@ from typing import Callable, Iterable, Optional, TypeVar, Union
 
 from lhotse.audio import Recording, RecordingSet
 from lhotse.cut import CutSet, MixedCut, MonoCut
-from lhotse.features import FeatureSet, Features
+from lhotse.features import Features, FeatureSet
 from lhotse.supervision import SupervisionSegment, SupervisionSet
 
 ManifestItem = TypeVar(

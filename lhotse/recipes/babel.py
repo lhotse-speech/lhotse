@@ -8,9 +8,10 @@ of development set recordings.
 import logging
 import re
 from collections import defaultdict
-from typing import Dict, Iterable, List, Optional, Union
 from pathlib import Path
+from typing import Dict, Iterable, List, Optional, Union
 
+import tqdm
 from cytoolz import sliding_window
 
 from lhotse import (
@@ -20,6 +21,7 @@ from lhotse import (
     SupervisionSet,
     validate_recordings_and_supervisions,
 )
+from lhotse.manipulation import combine
 from lhotse.qa import (
     remove_missing_recordings_and_supervisions,
     trim_supervisions_to_recordings,
@@ -105,17 +107,21 @@ def prepare_single_babel_language(
 
     for split in ("dev", "eval", "training"):
         audio_dir = corpus_dir / f"conversational/{split}/audio"
-        recordings = RecordingSet.from_recordings(
+        sph_recordings = RecordingSet.from_recordings(
             Recording.from_file(p) for p in audio_dir.glob("*.sph")
         )
+        wav_recordings = RecordingSet.from_recordings(
+            Recording.from_file(p) for p in audio_dir.glob("*.wav")
+        )
+        recordings = combine(sph_recordings, wav_recordings)
         if len(recordings) == 0:
             if split == "eval" and no_eval_ok:
                 continue
-            logging.warning(f"No SPHERE files found in {audio_dir}")
+            logging.warning(f"No SPHERE or WAV files found in {audio_dir}")
 
         supervisions = []
         text_dir = corpus_dir / f"conversational/{split}/transcription"
-        for p in text_dir.glob("*"):
+        for p in tqdm.tqdm(text_dir.glob("*")):
             # p.stem -> BABEL_BP_101_10033_20111024_205740_inLine
             # parts:
             #   0 -> BABEL
@@ -153,7 +159,7 @@ def prepare_single_babel_language(
                             channel=0,
                             text=normalize_text(text),
                             language=BABELCODE2LANG[lang_code],
-                            speaker=speaker,
+                            speaker=f"{lang_code}_{speaker}_{channel}",
                         )
                     )
                 except Exception as e:
@@ -182,14 +188,16 @@ def prepare_single_babel_language(
 
         manifests[split] = {"recordings": recordings, "supervisions": supervisions}
 
-        output_dir = Path(output_dir)
         if output_dir is not None:
+            output_dir = Path(output_dir)
             output_dir.mkdir(parents=True, exist_ok=True)
             language = BABELCODE2LANG[lang_code]
             save_split = "train" if split == "training" else split
-            recordings.to_file(output_dir / f"recordings_{language}_{save_split}.json")
+            recordings.to_file(
+                output_dir / f"babel-{language}_recordings_{save_split}.jsonl.gz"
+            )
             supervisions.to_file(
-                output_dir / f"supervisions_{language}_{save_split}.json"
+                output_dir / f"babel-{language}_supervisions_{save_split}.jsonl.gz"
             )
 
     return dict(manifests)

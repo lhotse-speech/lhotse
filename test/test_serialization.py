@@ -5,8 +5,8 @@ import pytest
 from lhotse import (
     AudioSource,
     CutSet,
-    FeatureSet,
     Features,
+    FeatureSet,
     MonoCut,
     Recording,
     RecordingSet,
@@ -18,7 +18,8 @@ from lhotse import (
 from lhotse.serialization import load_manifest_lazy
 from lhotse.supervision import AlignmentItem
 from lhotse.testing.dummies import DummyManifest
-from lhotse.utils import fastcopy, nullcontext as does_not_raise
+from lhotse.utils import fastcopy
+from lhotse.utils import nullcontext as does_not_raise
 
 
 @pytest.mark.parametrize(
@@ -312,7 +313,7 @@ def test_generic_serialization_classmethod(
     manifest = manifests[manifest_type]
     with NamedTemporaryFile(suffix="." + format + (".gz" if compressed else "")) as f:
         manifest.to_file(f.name)
-        restored = type(manifest).from_file(f.name)
+        restored = type(manifest).from_file(f.name).to_eager()
     assert manifest == restored
 
 
@@ -412,11 +413,8 @@ def test_manifest_is_lazy(manifests, manifest_type):
         assert lazy.is_lazy
 
         # Concatenation of eager + eager manifests is eager
-        # (we have to modify ids to concatenate because of sanity checks)
-        eager_eager_cat = eager + cls.from_items(
-            fastcopy(it, id=it.id + "_cpy") if hasattr(it, "id") else it for it in eager
-        )
-        assert not eager_eager_cat.is_lazy
+        eager_eager_cat = eager + eager
+        assert eager_eager_cat.is_lazy
 
         # Concatenation of lazy + eager manifests is lazy
         lazy_eager_cat = lazy + eager

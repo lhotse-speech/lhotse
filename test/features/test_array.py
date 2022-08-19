@@ -5,6 +5,7 @@ import pytest
 
 from lhotse import (
     ChunkedLilcomHdf5Writer,
+    LilcomChunkyWriter,
     LilcomFilesWriter,
     LilcomHdf5Writer,
     MonoCut,
@@ -12,6 +13,7 @@ from lhotse import (
     NumpyHdf5Writer,
 )
 from lhotse.array import Array
+from lhotse.utils import is_module_available
 
 
 @pytest.mark.parametrize(
@@ -28,7 +30,17 @@ from lhotse.array import Array
     "writer_class",
     [
         NumpyFilesWriter,
-        NumpyHdf5Writer,
+        pytest.param(
+            NumpyHdf5Writer,
+            marks=pytest.mark.skipif(
+                not is_module_available("h5py"),
+                reason="Requires h5py to run HDF5 tests.",
+            ),
+        ),
+        pytest.param(
+            LilcomChunkyWriter,
+            marks=pytest.mark.xfail(reason="Lilcom changes dtype to float32"),
+        ),
         pytest.param(
             LilcomFilesWriter,
             marks=pytest.mark.xfail(reason="Lilcom changes dtype to float32"),
@@ -60,7 +72,13 @@ def test_write_read_array_no_lilcom(array, writer_class):
     "writer_class",
     [
         LilcomFilesWriter,
-        LilcomHdf5Writer,
+        pytest.param(
+            LilcomHdf5Writer,
+            marks=pytest.mark.skipif(
+                not is_module_available("h5py"),
+                reason="Requires h5py to run HDF5 tests.",
+            ),
+        ),
     ],
 )
 def test_write_read_array_lilcom(writer_class):

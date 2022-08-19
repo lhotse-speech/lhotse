@@ -12,6 +12,7 @@ def plot_batch(batch: Mapping[str, Any], supervisions: bool = True, text=True):
         feat_actors = []
         for idx in range(batch_size):
             feat_actors.append(axes[idx].imshow(feats[idx].numpy().transpose()))
+            axes[idx].invert_yaxis()
         fig.tight_layout(h_pad=2)
         fig.colorbar(feat_actors[-1], ax=axes)
 
@@ -52,7 +53,7 @@ def plot_batch(batch: Mapping[str, Any], supervisions: bool = True, text=True):
                 start, end, fill=False, edgecolor="red", linestyle="--", linewidth=4
             )
             if text and "text" in sups:
-                axes[seq_idx].text(start, -3, sups["text"][idx])
+                axes[seq_idx].text(start, 83, sups["text"][idx])
 
 
 def _get_one_of(d, *keys):

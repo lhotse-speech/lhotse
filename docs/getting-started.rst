@@ -19,15 +19,34 @@ Main goals
 * Flexible data preparation for model training with the notion of **audio cuts**.
 * **Efficiency**, especially in terms of I/O bandwidth and storage capacity.
 
+Tutorials
+*********
+
+We currently have the following tutorials available in `examples` directory:
+* Basic complete Lhotse workflow |tutorial00|
+* Transforming data with Cuts |tutorial01|
+* *(experimental)* WebDataset integration |tutorial02|
+* How to combine multiple datasets |tutorial03|
+
+.. |tutorial00| image:: https://colab.research.google.com/assets/colab-badge.svg
+    :target: https://colab.research.google.com/github/lhotse-speech/lhotse/blob/master/examples/00-basic-workflow.ipynb
+.. |tutorial01| image:: https://colab.research.google.com/assets/colab-badge.svg
+    :target: https://colab.research.google.com/github/lhotse-speech/lhotse/blob/master/examples/01-cut-python-api.ipynb
+.. |tutorial02| image:: https://colab.research.google.com/assets/colab-badge.svg
+    :target: https://colab.research.google.com/github/lhotse-speech/lhotse/blob/master/examples/02-webdataset-integration.ipynb
+.. |tutorial03| image:: https://colab.research.google.com/assets/colab-badge.svg
+    :target: https://colab.research.google.com/github/lhotse-speech/lhotse/blob/master/examples/03-combining-datasets.ipynb
+
+
 Examples of use
 ***************
 
 Check out the following links to see how Lhotse is being put to use:
 
 * `Icefall recipes`_: where k2 and Lhotse meet.
-* Minima ESPnet+Lhotse example: |yesno colab notebook|
+* Minimal ESPnet+Lhotse example: |mini librispeech colab notebook|
 
- .. |yesno colab notebook| image:: https://colab.research.google.com/assets/colab-badge.svg
+ .. |mini librispeech colab notebook| image:: https://colab.research.google.com/assets/colab-badge.svg
     :target: https://colab.research.google.com/drive/1HKSYPsWx_HoCdrnLpaPdYj5zwlPsM3NH
 
 Main ideas
@@ -67,9 +86,13 @@ For development installation, you can fork/clone the GitHub repo and install wit
     git clone https://github.com/lhotse-speech/lhotse
     cd lhotse
     pip install -e '.[dev]'
+    pre-commit install  # installs pre-commit hooks with style checks
 
     # Running unit tests
     pytest test
+
+    # Running linter checks
+    pre-commit run
 
 This is an editable installation (``-e`` option), meaning that your changes to the source code are automatically
 reflected when importing lhotse (no re-install needed). The ``[dev]`` part means you're installing extra dependencies
@@ -128,7 +151,7 @@ the speech starts roughly at the first second (100 frames):
 .. image:: vad_sample.png
 
 
-.. _k2: https://github.com/kaldi-asr/kaldi
+.. _k2: https://github.com/k2-fsa/k2
 .. _Kaldi: https://github.com/kaldi-asr/kaldi
 .. _Icefall recipes: https://github.com/k2-fsa/icefall
 .. _orjson: https://pypi.org/project/orjson/

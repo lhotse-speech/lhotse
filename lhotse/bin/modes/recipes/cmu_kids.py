@@ -1,6 +1,6 @@
-import click
+from typing import List, Optional
 
-from typing import Optional, List
+import click
 
 from lhotse.bin.modes import prepare
 from lhotse.recipes.cmu_kids import prepare_cmu_kids

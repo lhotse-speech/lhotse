@@ -59,7 +59,7 @@ from lhotse.utils import Pathlike, urlretrieve_progress
 
 def download_tedlium(
     target_dir: Pathlike = ".", force_download: Optional[bool] = False
-) -> None:
+) -> Path:
     target_dir = Path(target_dir)
     target_dir.mkdir(parents=True, exist_ok=True)
     tar_path = target_dir / "TEDLIUM_release-3.tgz"
@@ -67,7 +67,7 @@ def download_tedlium(
     completed_detector = corpus_dir / ".completed"
     if completed_detector.is_file():
         logging.info(f"Skipping {tar_path.name} because {completed_detector} exists.")
-        return
+        return corpus_dir
     if force_download or not tar_path.is_file():
         urlretrieve_progress(
             "http://www.openslr.org/resources/51/TEDLIUM_release-3.tgz",
@@ -78,6 +78,7 @@ def download_tedlium(
     with tarfile.open(tar_path) as tar:
         tar.extractall(path=target_dir)
     completed_detector.touch()
+    return corpus_dir
 
 
 def prepare_tedlium(
@@ -133,7 +134,7 @@ def prepare_tedlium(
         validate_recordings_and_supervisions(**corpus[split])
 
         if output_dir is not None:
-            recordings.to_json(output_dir / f"recordings_{split}.json")
-            supervisions.to_json(output_dir / f"supervisions_{split}.json")
+            recordings.to_file(output_dir / f"tedlium_recordings_{split}.jsonl.gz")
+            supervisions.to_file(output_dir / f"tedlium_supervisions_{split}.jsonl.gz")
 
     return corpus

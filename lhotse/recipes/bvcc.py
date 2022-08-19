@@ -1,4 +1,7 @@
 import logging
+from pathlib import Path
+from typing import Dict, Optional, Union
+
 from lhotse import (
     Recording,
     RecordingSet,
@@ -7,8 +10,6 @@ from lhotse import (
     validate_recordings_and_supervisions,
 )
 from lhotse.utils import Pathlike
-from typing import Dict, Union, Optional
-from pathlib import Path
 
 
 def download_bvcc(target_dir) -> None:
@@ -135,9 +136,11 @@ def prepare_bvcc(
         output_dir = Path(output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
         for part, d in manifests.items():
-            d["recordings"].to_file(output_dir / f"recordings_{part}.jsonl.gz")
+            d["recordings"].to_file(output_dir / f"bvcc_recordings_{part}.jsonl.gz")
             if "supervisions" in d:
-                d["supervisions"].to_file(output_dir / f"supervisions_{part}.jsonl.gz")
+                d["supervisions"].to_file(
+                    output_dir / f"bvcc_supervisions_{part}.jsonl.gz"
+                )
 
     return manifests
 

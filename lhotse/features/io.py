@@ -1,3 +1,4 @@
+import pickle
 import threading
 from abc import ABCMeta, abstractmethod
 from functools import lru_cache
@@ -353,6 +354,13 @@ Non-compressed numpy arrays, stored in HDF5 file.
 """
 
 
+def check_h5py_installed():
+    if not is_module_available("h5py"):
+        raise ValueError(
+            "To read and write HDF5 file formats, please 'pip install h5py' first."
+        )
+
+
 @lru_cache(maxsize=None)
 def lookup_cache_or_open(storage_path: str):
     """
@@ -363,23 +371,10 @@ def lookup_cache_or_open(storage_path: str):
 
     The file handles can be freed at any time by calling ``close_cached_file_handles()``.
     """
+    check_h5py_installed()
     import h5py
 
     return h5py.File(storage_path, "r")
-
-
-@lru_cache(maxsize=None)
-def lookup_cache_or_open_regular_file(storage_path: str):
-    """
-    Helper internal function used in "fast" file readers.
-    It opens regular files and keeps their handles open in a global program cache
-    to avoid excessive amount of syscalls when the Reader class is instantiated
-    and destroyed in a loop repeatedly (frequent use-case).
-
-    The file handles can be freed at any time by calling ``close_cached_file_handles()``.
-    """
-    f = open(storage_path, "rb")
-    return f
 
 
 @lru_cache(maxsize=None)
@@ -393,7 +388,6 @@ def lookup_chunk_size(h5_file_handle) -> int:
 
 def close_cached_file_handles() -> None:
     """Closes the cached file handles in ``lookup_cache_or_open`` (see its docs for more details)."""
-    lookup_cache_or_open_regular_file.cache_clear()
     lookup_cache_or_open.cache_clear()
     lookup_chunk_size.cache_clear()
 
@@ -449,6 +443,7 @@ class NumpyHdf5Writer(FeaturesWriter):
             a        Read/write if exists, create otherwise
         """
         super().__init__()
+        check_h5py_installed()
         import h5py
 
         self.storage_path_ = Path(storage_path).with_suffix(".h5")
@@ -537,6 +532,7 @@ class LilcomHdf5Writer(FeaturesWriter):
             a        Read/write if exists, create otherwise
         """
         super().__init__()
+        check_h5py_installed()
         import h5py
 
         self.storage_path_ = Path(storage_path).with_suffix(".h5")
@@ -661,6 +657,7 @@ class ChunkedLilcomHdf5Writer(FeaturesWriter):
             a        Read/write if exists, create otherwise
         """
         super().__init__()
+        check_h5py_installed()
         import h5py
 
         self.storage_path_ = Path(storage_path).with_suffix(".h5")
@@ -681,7 +678,9 @@ class ChunkedLilcomHdf5Writer(FeaturesWriter):
         return str(self.storage_path_)
 
     def write(self, key: str, value: np.ndarray) -> str:
+        check_h5py_installed()
         import h5py
+
         from lhotse.features.compression import lilcom_compress_chunked
 
         serialized_feats = lilcom_compress_chunked(
@@ -735,8 +734,7 @@ class LilcomChunkyReader(FeaturesReader):
 
     def __init__(self, storage_path: Pathlike, *args, **kwargs):
         super().__init__()
-        self.file = lookup_cache_or_open_regular_file(storage_path)
-        self.lock = threading.Lock()
+        self.storage_path = storage_path
 
     @dynamic_lru_cache
     def read(
@@ -758,12 +756,10 @@ class LilcomChunkyReader(FeaturesReader):
         chunk_offsets = chunk_offsets[left_chunk_idx:right_chunk_idx]
 
         chunk_data = []
-        for offset, end in pairwise(chunk_offsets):
-            # We need to use locks to avoid race conditions between seek
-            # and read in multi-threaded reads.
-            with self.lock:
-                self.file.seek(offset)
-                chunk_data.append(self.file.read(end - offset))
+        with open(self.storage_path, "rb") as file:
+            for offset, end in pairwise(chunk_offsets):
+                file.seek(offset)
+                chunk_data.append(file.read(end - offset))
 
         # Read, decode, concat
         decompressed_chunks = [lilcom.decompress(data) for data in chunk_data]
@@ -811,8 +807,7 @@ class LilcomChunkyWriter(FeaturesWriter):
         **kwargs,
     ):
         """
-        :param storage_path: Path under which we'll create the HDF5 file.
-            We will add a ``.h5`` suffix if it is not already in ``storage_path``.
+        :param storage_path: Path under which we'll create the binary file.
         :param tick_power: Determines the lilcom compression accuracy;
             the input will be compressed to integer multiples of 2^tick_power.
         :param chunk_size: How many frames to store per chunk.
@@ -824,7 +819,7 @@ class LilcomChunkyWriter(FeaturesWriter):
 
         if "b" not in mode:
             mode = mode + "b"
-        assert mode == "wb" or "ab"
+        assert mode in ("wb", "ab")
 
         # ".lca" -> "lilcom chunky archive"
         self.storage_path_ = Path(storage_path).with_suffix(".lca")
@@ -951,26 +946,28 @@ Kaldi-compatible feature reader
 @register_reader
 class KaldiReader(FeaturesReader):
     """
-    Reads Kaldi's "feats.scp" file using kaldiio.
+    Reads Kaldi's "feats.scp" file using kaldi_native_io.
     ``storage_path`` corresponds to the path to ``feats.scp``.
     ``storage_key`` corresponds to the utterance-id in Kaldi.
 
     .. caution::
-        Requires ``kaldiio`` to be installed (``pip install kaldiio``).
+        Requires ``kaldi_native_io`` to be installed (``pip install kaldi_native_io``).
     """
 
     name = "kaldiio"
 
     def __init__(self, storage_path: Pathlike, *args, **kwargs):
-        if not is_module_available("kaldiio"):
+        if not is_module_available("kaldi_native_io"):
             raise ValueError(
-                "To read Kaldi feats.scp, please 'pip install kaldiio' first."
+                "To read Kaldi feats.scp, please 'pip install kaldi_native_io' first."
             )
-        import kaldiio
+        import kaldi_native_io
 
         super().__init__()
         self.storage_path = storage_path
-        self.storage = kaldiio.load_scp(str(self.storage_path))
+        self.storage = kaldi_native_io.RandomAccessFloatMatrixReader(
+            f"scp:{self.storage_path}"
+        )
 
     @dynamic_lru_cache
     def read(
@@ -979,19 +976,19 @@ class KaldiReader(FeaturesReader):
         left_offset_frames: int = 0,
         right_offset_frames: Optional[int] = None,
     ) -> np.ndarray:
-        arr = self.storage[key]
+        arr = np.copy(self.storage[key])
         return arr[left_offset_frames:right_offset_frames]
 
 
 @register_writer
 class KaldiWriter(FeaturesWriter):
     """
-    Write data to Kaldi's "feats.scp" and "feats.ark" files using kaldiio.
+    Write data to Kaldi's "feats.scp" and "feats.ark" files using kaldi_native_io.
     ``storage_path`` corresponds to a directory where we'll create "feats.scp"
     and "feats.ark" files.
     ``storage_key`` corresponds to the utterance-id in Kaldi.
 
-    The following ``compression_method`` values are supported by kaldiio::
+    The following ``compression_method`` values are supported by kaldi_native_io::
 
         kAutomaticMethod = 1
         kSpeechFeature = 2
@@ -1013,7 +1010,7 @@ class KaldiWriter(FeaturesWriter):
         >>> np.testing.assert_equal(data, read_data)
 
     .. caution::
-        Requires ``kaldiio`` to be installed (``pip install kaldiio``).
+        Requires ``kaldi_native_io`` to be installed (``pip install kaldi_native_io``).
     """
 
     name = "kaldiio"
@@ -1021,31 +1018,31 @@ class KaldiWriter(FeaturesWriter):
     def __init__(
         self,
         storage_path: Pathlike,
-        compression_method: Optional[int] = None,
+        compression_method: int = 1,
         *args,
         **kwargs,
     ):
-        if not is_module_available("kaldiio"):
+        if not is_module_available("kaldi_native_io"):
             raise ValueError(
-                "To read Kaldi feats.scp, please 'pip install kaldiio' first."
+                "To read Kaldi feats.scp, please 'pip install kaldi_native_io' first."
             )
-        import kaldiio
+        import kaldi_native_io
 
         super().__init__()
         self.storage_dir = Path(storage_path)
         self.storage_dir.mkdir(parents=True, exist_ok=True)
         self.storage_path_ = str(self.storage_dir / "feats.scp")
-        self.storage = kaldiio.WriteHelper(
-            f"ark,scp:{self.storage_dir}/feats.ark,{self.storage_dir}/feats.scp",
-            compression_method=compression_method,
+        self.storage = kaldi_native_io.CompressedMatrixWriter(
+            f"ark,scp:{self.storage_dir}/feats.ark,{self.storage_dir}/feats.scp"
         )
+        self.compression_method = kaldi_native_io.CompressionMethod(compression_method)
 
     @property
     def storage_path(self) -> str:
         return self.storage_path_
 
     def write(self, key: str, value: np.ndarray) -> str:
-        self.storage(key, value)
+        self.storage.write(key, value, self.compression_method)
         return key
 
     def close(self) -> None:
@@ -1056,6 +1053,111 @@ class KaldiWriter(FeaturesWriter):
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.close()
+
+
+"""
+In-memory reader/writer
+"""
+
+
+def get_memory_writer(name: str):
+    assert "memory" in name
+    return get_writer(name)
+
+
+@register_reader
+class MemoryLilcomReader(FeaturesReader):
+    """ """
+
+    name = "memory_lilcom"
+
+    def __init__(self, *args, **kwargs):
+        pass
+
+    @dynamic_lru_cache
+    def read(
+        self,
+        raw_data: bytes,
+        left_offset_frames: int = 0,
+        right_offset_frames: Optional[int] = None,
+    ) -> np.ndarray:
+        arr = lilcom.decompress(raw_data)
+        return arr[left_offset_frames:right_offset_frames]
+
+
+@register_writer
+class MemoryLilcomWriter(FeaturesWriter):
+    """ """
+
+    name = "memory_lilcom"
+
+    def __init__(self, *args, **kwargs):
+        pass
+
+    @property
+    def storage_path(self) -> None:
+        return None
+
+    def write(self, key: str, value: np.ndarray) -> bytes:
+        assert np.issubdtype(
+            value.dtype, np.floating
+        ), "Lilcom compression supports only floating-point arrays."
+        return lilcom.compress(value)
+
+    def close(self) -> None:
+        pass
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        pass
+
+
+@register_reader
+class MemoryRawReader(FeaturesReader):
+    """ """
+
+    name = "memory_raw"
+
+    def __init__(self, *args, **kwargs):
+        pass
+
+    @dynamic_lru_cache
+    def read(
+        self,
+        raw_data: bytes,
+        left_offset_frames: int = 0,
+        right_offset_frames: Optional[int] = None,
+    ) -> np.ndarray:
+        arr = pickle.loads(raw_data)
+        return arr[left_offset_frames:right_offset_frames]
+
+
+@register_writer
+class MemoryRawWriter(FeaturesWriter):
+    """ """
+
+    name = "memory_raw"
+
+    def __init__(self, *args, **kwargs):
+        pass
+
+    @property
+    def storage_path(self) -> None:
+        return None
+
+    def write(self, key: str, value: np.ndarray) -> bytes:
+        return pickle.dumps(value)
+
+    def close(self) -> None:
+        pass
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        pass
 
 
 def pairwise(iterable):

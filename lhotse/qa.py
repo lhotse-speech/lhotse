@@ -1,16 +1,20 @@
-from collections import defaultdict
 import logging
+from collections import defaultdict
 from math import isclose
 from typing import Any, Callable, Dict, Optional, Tuple, Union
 
 import numpy as np
 
 from lhotse.array import Array, TemporalArray
-from lhotse.audio import Recording, RecordingSet
-from lhotse.cut import Cut, CutSet, MixedCut, PaddingCut
-from lhotse.features import FeatureSet, Features
+from lhotse.audio import (
+    LHOTSE_AUDIO_DURATION_MISMATCH_TOLERANCE,
+    Recording,
+    RecordingSet,
+)
+from lhotse.cut import Cut, CutSet, MixedCut, MonoCut, PaddingCut
+from lhotse.features import Features, FeatureSet
 from lhotse.supervision import SupervisionSegment, SupervisionSet
-from lhotse.utils import compute_num_frames
+from lhotse.utils import compute_num_frames, overlaps
 
 _VALIDATORS: Dict[str, Callable] = {}
 
@@ -210,7 +214,9 @@ def validate_recording(r: Recording, read_data: bool = False) -> None:
     ), f"Recording {r.id}: duration has to be greater than 0 (is {r.duration})"
     expected_duration = r.num_samples / r.sampling_rate
     assert r.num_channels > 0, f"Recording {r.id}: no channels available"
-    assert isclose(expected_duration, r.duration), (
+    assert (
+        abs(expected_duration - r.duration) <= LHOTSE_AUDIO_DURATION_MISMATCH_TOLERANCE
+    ), (
         f"Recording {r.id}: mismatched declared duration ({r.duration}) with "
         f"num_samples / sampling_rate ({expected_duration})."
     )
@@ -379,17 +385,20 @@ def validate_cut(c: Cut, read_data: bool = False) -> None:
                 c.num_samples == samples.shape[1]
             ), f"MonoCut {c.id}: expected {c.num_samples} samples, got {samples.shape[1]}"
 
-    # Conditions related to supervisions
-    for s in c.supervisions:
-        validate_supervision(s)
-        assert s.recording_id == c.recording_id, (
-            f"MonoCut {c.id}: supervision {s.id} has a mismatched recording_id "
-            f"(expected {c.recording_id}, supervision has {s.recording_id})"
-        )
-        assert s.channel == c.channel, (
-            f"MonoCut {c.id}: supervision {s.id} has a mismatched channel "
-            f"(expected {c.channel}, supervision has {s.channel})"
-        )
+    # Conditions related to supervisions.
+    # We only validate those for MonoCut; PaddingCut doesn't have supervisions,
+    # and MixedCut may consist of more than one recording/channel.
+    if isinstance(c, MonoCut):
+        for s in c.supervisions:
+            validate_supervision(s)
+            assert s.recording_id == c.recording_id, (
+                f"MonoCut {c.id}: supervision {s.id} has a mismatched recording_id "
+                f"(expected {c.recording_id}, supervision has {s.recording_id})"
+            )
+            assert s.channel == c.channel, (
+                f"MonoCut {c.id}: supervision {s.id} has a mismatched channel "
+                f"(expected {c.channel}, supervision has {s.channel})"
+            )
 
     # Conditions related to custom fields
     if c.custom is not None:
@@ -408,6 +417,12 @@ def validate_cut(c: Cut, read_data: bool = False) -> None:
                         f"in custom field '{key}' (num_frames={value.num_frames} * "
                         f"frame_shift={value.frame_shift} == duration={value.duration})."
                     )
+                assert overlaps(c, value), (
+                    f"MonoCut {c.id}: TemporalArray at custom field '{key}' "
+                    "seems to have incorrect start time (the array with time span "
+                    f"[{value.start}s - {value.end}s] does not overlap with cut "
+                    f"with time span [{c.start}s - {c.end}s])."
+                )
 
 
 @register_validator

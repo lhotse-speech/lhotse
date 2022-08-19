@@ -4,7 +4,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 from lhotse import CutSet
 from lhotse.cut import Cut
-from lhotse.dataset.sampling.base import CutSampler
+from lhotse.dataset.sampling.base import CutSampler, SamplingDiagnostics
 
 
 class ZipSampler(CutSampler):
@@ -38,7 +38,7 @@ class ZipSampler(CutSampler):
             or return a tuple of CutSets. Setting this to ``False`` makes ZipSampler behave
             more like Python's ``zip`` function.
         """
-        super().__init__()
+        super().__init__(rank=0, world_size=1)
         self.samplers = samplers
         self.merge_batches = merge_batches
 
@@ -202,9 +202,13 @@ class ZipSampler(CutSampler):
         for sampler in self.samplers:
             sampler.filter(predicate)
 
+    def _log_diagnostics(self, batch: Union[CutSet, Tuple[CutSet, ...]]) -> None:
+        return  # do nothing
+
+    @property
+    def diagnostics(self) -> SamplingDiagnostics:
+        return reduce(add, (s.diagnostics for s in self.samplers))
+
     def get_report(self) -> str:
         """Returns a string describing the statistics of the sampling process so far."""
-        total_diagnostics = reduce(
-            add, (sampler.diagnostics for sampler in self.samplers)
-        )
-        return total_diagnostics.get_report()
+        return self.diagnostics.get_report()

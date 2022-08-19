@@ -69,13 +69,14 @@ def download_hifitts(
     target_dir: Pathlike = ".",
     force_download: Optional[bool] = False,
     base_url: Optional[str] = "http://www.openslr.org/resources",
-) -> None:
+) -> Path:
     """
     Download and untar the HiFi TTS dataset.
 
     :param target_dir: Pathlike, the path of the dir to store the dataset.
     :param force_download: Bool, if True, download the tars no matter if the tars exist.
     :param base_url: str, the url of the OpenSLR resources.
+    :return: the path to downloaded and extracted directory with data.
     """
     target_dir = Path(target_dir)
     target_dir.mkdir(parents=True, exist_ok=True)
@@ -89,7 +90,7 @@ def download_hifitts(
         logging.info(
             f"Skipping HiFiTTS preparation because {completed_detector} exists."
         )
-        return
+        return part_dir
     if force_download or not tar_path.is_file():
         urlretrieve_progress(
             f"{url}/{tar_name}", filename=tar_path, desc=f"Downloading {tar_name}"
@@ -98,6 +99,8 @@ def download_hifitts(
     with tarfile.open(tar_path) as tar:
         tar.extractall(path=target_dir)
     completed_detector.touch()
+
+    return part_dir
 
 
 def prepare_hifitts(
@@ -160,11 +163,11 @@ def prepare_hifitts(
             recordings, supervisions = future.result()
 
             if output_dir is not None:
-                supervisions.to_json(
-                    output_dir / f"hifitts_supervisions_{partition_id}.json"
+                supervisions.to_file(
+                    output_dir / f"hifitts_supervisions_{partition_id}.jsonl.gz"
                 )
-                recordings.to_json(
-                    output_dir / f"hifitts_recordings_{partition_id}.json"
+                recordings.to_file(
+                    output_dir / f"hifitts_recordings_{partition_id}.jsonl.gz"
                 )
 
             manifests[partition_id] = {

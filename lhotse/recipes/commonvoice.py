@@ -224,10 +224,10 @@ def prepare_single_commonvoice_tsv(
     df = pd.read_csv(tsv_path, sep="\t")
     # Scan all the audio files
     with RecordingSet.open_writer(
-        output_dir / f"cv_recordings_{lang}_{part}.jsonl.gz",
+        output_dir / f"cv-{lang}_recordings_{part}.jsonl.gz",
         overwrite=False,
     ) as recs_writer, SupervisionSet.open_writer(
-        output_dir / f"cv_supervisions_{lang}_{part}.jsonl.gz",
+        output_dir / f"cv-{lang}_supervisions_{part}.jsonl.gz",
         overwrite=False,
     ) as sups_writer:
         for idx, row in tqdm(
@@ -263,6 +263,11 @@ def parse_utterance(
         raise ValueError(f"No such file: {audio_path}")
     recording_id = Path(row.path).stem
     recording = Recording.from_file(audio_path, recording_id=recording_id)
+    # Handling accent(s) in different versions of CommonVoice
+    if "accents" in row:
+        accents = row.accents if row.accents != "nan" else None
+    else:
+        accents = row.accent if row.accent != "nan" else None
     # Then, create the corresponding supervisions
     segment = SupervisionSegment(
         id=recording_id,
@@ -278,7 +283,7 @@ def parse_utterance(
         gender=row.gender if row.gender != "nan" else None,
         custom={
             "age": row.age if row.age != "nan" else None,
-            "accent": row.accent if row.accent != "nan" else None,
+            "accents": accents,
         },
     )
     return recording, segment

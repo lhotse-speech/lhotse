@@ -7,7 +7,7 @@ import torchaudio
 
 import lhotse
 from lhotse import Recording
-from lhotse.audio import read_opus_ffmpeg, read_opus_torchaudio
+from lhotse.audio import read_opus_ffmpeg, read_opus_torchaudio, torchaudio_load
 
 
 @pytest.mark.parametrize(
@@ -28,6 +28,26 @@ def test_info_and_read_audio_consistency(path):
     recording = Recording.from_file(path)
     audio = recording.load_audio()
     assert audio.shape[1] == recording.num_samples
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "test/fixtures/mono_c0.wav",
+        "test/fixtures/mono_c1.wav",
+        "test/fixtures/stereo.wav",
+        "test/fixtures/libri/libri-1088-134315-0000.wav",
+        "test/fixtures/mono_c0.opus",
+        "test/fixtures/stereo.opus",
+        "test/fixtures/stereo.mp3",
+        "test/fixtures/common_voice_en_651325.mp3",
+    ],
+)
+@pytest.mark.parametrize("offset", [0, 0.1])
+@pytest.mark.parametrize("duration", [None, 0.1])
+def test_torchaudio_load_with_offset_duration_works(path, offset, duration):
+    audio, sr = torchaudio_load(path, offset=offset, duration=duration)
+    # just test that it runs -- the assertions are inside the function
 
 
 @pytest.mark.parametrize(

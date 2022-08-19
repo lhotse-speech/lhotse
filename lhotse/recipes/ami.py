@@ -33,12 +33,12 @@ import zipfile
 from collections import defaultdict
 from pathlib import Path
 from typing import Dict, List, NamedTuple, Optional, Union
-from lhotse.qa import fix_manifests
 
 from tqdm.auto import tqdm
 
 from lhotse import validate_recordings_and_supervisions
 from lhotse.audio import AudioSource, Recording, RecordingSet
+from lhotse.qa import fix_manifests
 from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import Pathlike, Seconds, urlretrieve_progress
 
@@ -221,20 +221,22 @@ def download_ami(
     force_download: Optional[bool] = False,
     url: Optional[str] = "http://groups.inf.ed.ac.uk/ami",
     mic: Optional[str] = "ihm",
-) -> None:
+) -> Path:
     """
     Download AMI audio and annotations for provided microphone setting.
-    :param target_dir: Pathlike, the path to store the data.
-    :param annotations: Pathlike (default = None), path to save annotations zip file
-    :param force_download: bool (default = False), if True, download even if file is present.
-    :param url: str (default = 'http://groups.inf.ed.ac.uk/ami'), AMI download URL.
-    :param mic: str {'ihm','ihm-mix','sdm','mdm'}, type of mic setting.
 
     Example usage:
     1. Download AMI data for IHM mic setting:
     >>> download_ami(mic='ihm')
     2. Download AMI data for IHM-mix mic setting, and use existing annotations:
     >>> download_ami(mic='ihm-mix', annotations='/path/to/existing/annotations.zip')
+
+    :param target_dir: Pathlike, the path to store the data.
+    :param annotations: Pathlike (default = None), path to save annotations zip file
+    :param force_download: bool (default = False), if True, download even if file is present.
+    :param url: str (default = 'http://groups.inf.ed.ac.uk/ami'), AMI download URL.
+    :param mic: str {'ihm','ihm-mix','sdm','mdm'}, type of mic setting.
+    :return: the path to downloaded and extracted directory with data.
     """
     target_dir = Path(target_dir)
 
@@ -250,10 +252,12 @@ def download_ami(
 
     if annotations.exists():
         logging.info(f"Skip downloading annotations as they exist in: {annotations}")
-        return
+        return target_dir
     annotations_url = f"{url}/AMICorpusAnnotations/ami_public_manual_1.6.2.zip"
     if force_download or not annotations.is_file():
         urllib.request.urlretrieve(annotations_url, filename=annotations)
+
+    return target_dir
 
 
 class AmiSegmentAnnotation(NamedTuple):
@@ -642,8 +646,10 @@ def prepare_ami(
 
         # Write to output directory if a path is provided
         if output_dir is not None:
-            audio_part.to_file(output_dir / f"recordings_{part}.jsonl")
-            supervision_part.to_file(output_dir / f"supervisions_{part}.jsonl")
+            audio_part.to_file(output_dir / f"ami-{mic}_recordings_{part}.jsonl.gz")
+            supervision_part.to_file(
+                output_dir / f"ami-{mic}_supervisions_{part}.jsonl.gz"
+            )
 
         audio_part, supervision_part = fix_manifests(audio_part, supervision_part)
         validate_recordings_and_supervisions(audio_part, supervision_part)

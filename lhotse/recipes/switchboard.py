@@ -91,8 +91,8 @@ def prepare_switchboard(
     if output_dir is not None:
         output_dir = Path(output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
-        recordings.to_file(output_dir / "swbd_recordings.jsonl")
-        supervisions.to_file(output_dir / "swbd_supervisions.jsonl")
+        recordings.to_file(output_dir / "swbd_recordings_all.jsonl.gz")
+        supervisions.to_file(output_dir / "swbd_supervisions_all.jsonl.gz")
     return {"recordings": recordings, "supervisions": supervisions}
 
 

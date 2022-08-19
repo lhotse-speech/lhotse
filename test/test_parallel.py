@@ -4,7 +4,7 @@ from lhotse.parallel import parallel_map
 
 
 def pow2(x):
-    return x ** 2
+    return x**2
 
 
 def mul(x, y):

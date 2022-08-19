@@ -52,7 +52,7 @@ project_root = Path(__file__).parent
 # NOTE: REMEMBER TO UPDATE THE FALLBACK VERSION IN lhotse/__init__.py WHEN RELEASING #
 # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! #
 MAJOR_VERSION = 1
-MINOR_VERSION = 0
+MINOR_VERSION = 6
 PATCH_VERSION = 0
 IS_DEV_VERSION = True  # False = public release, True = otherwise
 
@@ -129,7 +129,6 @@ install_requires = [
     "click>=7.1.1",
     "cytoolz>=0.10.1",
     "dataclasses",
-    "h5py>=2.10.0",
     "intervaltree>= 3.1.0",
     "lilcom>=1.1.0",
     "numpy>=1.18.1",
@@ -158,16 +157,21 @@ except ImportError:
 
 docs_require = (project_root / "docs" / "requirements.txt").read_text().splitlines()
 tests_require = [
-    "pytest==5.4.3",
-    "flake8==3.8.3",
-    "coverage==5.1",
+    "pytest>=5.4.3",
+    "pytest-forked==1.4.0",
+    "pytest-xdist==2.5.0",
+    "pytest-cov==3.0.0",
+    "flake8==4.0.1",
+    "coverage>=6.0.0",
     "hypothesis==5.41.2",
+    "black==22.3.0",
+    "isort==5.10.1",
+    "pre-commit>=2.17.0,<=2.19.0",
 ]
-dev_requires = sorted(
-    docs_require + tests_require + ["jupyterlab", "matplotlib", "isort"]
-)
+dev_requires = sorted(docs_require + tests_require + ["jupyterlab", "matplotlib"])
 orjson_require = ["orjson>=3.6.6"]
-all_requires = sorted(dev_requires + orjson_require)
+dill_require = ["dill"]
+all_requires = sorted(dev_requires + orjson_require + dill_require)
 
 if os.environ.get("READTHEDOCS", False):
     # When building documentation, omit torchaudio installation and mock it instead.
@@ -198,6 +202,7 @@ setup(
     },
     install_requires=install_requires,
     extras_require={
+        "dill": dill_require,
         "orjson": orjson_require,
         "docs": docs_require,
         "tests": tests_require,
@@ -210,6 +215,7 @@ setup(
         "Programming Language :: Python :: 3.7",
         "Programming Language :: Python :: 3.8",
         "Programming Language :: Python :: 3.9",
+        "Programming Language :: Python :: 3.10",
         "Intended Audience :: Science/Research",
         "Operating System :: POSIX :: Linux",
         "Operating System :: MacOS :: MacOS X",

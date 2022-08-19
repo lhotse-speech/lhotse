@@ -127,7 +127,7 @@ def prepare_fisher_spanish(
     if output_dir is not None:
         output_dir = Path(output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
-        recordings.to_json(output_dir / "recordings.json")
-        supervisions.to_json(output_dir / "supervisions.json")
+        recordings.to_file(output_dir / "fisher-spanish_recordings_all.jsonl")
+        supervisions.to_file(output_dir / "fisher-spanish_supervisions_all.jsonl")
 
     return {"recordings": recordings, "supervisions": supervisions}

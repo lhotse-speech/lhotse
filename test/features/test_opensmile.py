@@ -1,8 +1,10 @@
 from tempfile import NamedTemporaryFile
+
 import numpy as np
 import pytest
-from lhotse import Recording, OpenSmileExtractor, OpenSmileConfig
-from lhotse.utils import is_module_available, compute_num_frames, compute_num_samples
+
+from lhotse import OpenSmileConfig, OpenSmileExtractor, Recording
+from lhotse.utils import compute_num_frames, compute_num_samples, is_module_available
 
 opensmile = pytest.importorskip(
     "opensmile", reason="Opensmile is an optional dependency."

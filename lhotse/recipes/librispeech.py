@@ -38,7 +38,7 @@ def download_librispeech(
     alignments: bool = False,
     base_url: str = "http://www.openslr.org/resources",
     alignments_url: str = LIBRISPEECH_ALIGNMENTS_URL,
-) -> None:
+) -> Path:
     """
     Download and untar the dataset, supporting both LibriSpeech and MiniLibrispeech
 
@@ -50,8 +50,10 @@ def download_librispeech(
         https://github.com/CorentinJ/librispeech-alignments
     :param base_url: str, the url of the OpenSLR resources.
     :param alignments_url: str, the url of LibriSpeech word alignments
+    :return: the path to downloaded and extracted directory with data.
     """
     target_dir = Path(target_dir)
+    corpus_dir = target_dir / "LibriSpeech"
     target_dir.mkdir(parents=True, exist_ok=True)
 
     if dataset_parts == "librispeech":
@@ -72,7 +74,7 @@ def download_librispeech(
             logging.warning(f"Invalid dataset part name: {part}")
             continue
         # Split directory exists and seem valid? Skip this split.
-        part_dir = target_dir / f"LibriSpeech/{part}"
+        part_dir = corpus_dir / part
         completed_detector = part_dir / ".completed"
         if completed_detector.is_file():
             logging.info(f"Skipping {part} because {completed_detector} exists.")
@@ -93,7 +95,7 @@ def download_librispeech(
     if alignments:
         completed_detector = target_dir / ".ali_completed"
         if completed_detector.is_file() and not force_download:
-            return
+            return corpus_dir
         assert is_module_available(
             "gdown"
         ), 'To download LibriSpeech alignments, please install "pip install gdown"'
@@ -104,6 +106,8 @@ def download_librispeech(
         with zipfile.ZipFile(ali_zip_path) as f:
             f.extractall(path=target_dir)
             completed_detector.touch()
+
+    return corpus_dir
 
 
 def prepare_librispeech(
@@ -198,8 +202,12 @@ def prepare_librispeech(
             validate_recordings_and_supervisions(recording_set, supervision_set)
 
             if output_dir is not None:
-                supervision_set.to_file(output_dir / f"supervisions_{part}.json")
-                recording_set.to_file(output_dir / f"recordings_{part}.json")
+                supervision_set.to_file(
+                    output_dir / f"librispeech_supervisions_{part}.jsonl.gz"
+                )
+                recording_set.to_file(
+                    output_dir / f"librispeech_recordings_{part}.jsonl.gz"
+                )
 
             manifests[part] = {
                 "recordings": recording_set,
