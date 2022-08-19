@@ -89,7 +89,7 @@ def download_cmu_arctic(
     speakers: Sequence[str] = SPEAKERS,
     force_download: Optional[bool] = False,
     base_url: Optional[str] = BASE_URL,
-) -> None:
+) -> Path:
     """
     Download and untar the CMU Arctic dataset.
 
@@ -97,6 +97,7 @@ def download_cmu_arctic(
     :param speakers: a list of speakers to download. By default, downloads all.
     :param force_download: Bool, if True, download the tars no matter if the tars exist.
     :param base_url: str, the url of CMU Arctic download site.
+    :return: the path to downloaded and extracted directory with data.
     """
     target_dir = Path(target_dir)
     target_dir.mkdir(parents=True, exist_ok=True)
@@ -119,6 +120,8 @@ def download_cmu_arctic(
         with tarfile.open(tar_path) as tar:
             tar.extractall(path=target_dir)
         completed_detector.touch()
+
+    return target_dir
 
 
 def prepare_cmu_arctic(
@@ -174,8 +177,8 @@ def prepare_cmu_arctic(
 
     if output_dir is not None:
         output_dir = Path(output_dir)
-        recordings.to_json(output_dir / "cmu_arctic_recordings.json")
-        supervisions.to_json(output_dir / "cmu_arctic_supervisions.json")
+        recordings.to_file(output_dir / "cmu-arctic_recordings_all.jsonl.gz")
+        supervisions.to_file(output_dir / "cmu-arctic_supervisions_all.jsonl.gz")
 
     return {"recordings": recordings, "supervisions": supervisions}
 

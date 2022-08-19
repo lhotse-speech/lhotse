@@ -1,14 +1,16 @@
 import bisect
+import math
 import random
-from typing import Optional, Sequence, Tuple, TypeVar, Union, Dict
+from typing import Dict, Optional, Sequence, Tuple, TypeVar, Union
 
 import numpy as np
 import torch
 
-from lhotse import CutSet
+from lhotse import CutSet, FeatureExtractor
+from lhotse.augmentation import dereverb_wpe_torch
 from lhotse.utils import Pathlike
 
-__all__ = ["GlobalMVN", "SpecAugment", "RandomizedSmoothing"]
+__all__ = ["GlobalMVN", "SpecAugment", "RandomizedSmoothing", "DereverbWPE"]
 
 
 class GlobalMVN(torch.nn.Module):
@@ -21,8 +23,15 @@ class GlobalMVN(torch.nn.Module):
         self.register_buffer("norm_stds", torch.ones(feature_dim))
 
     @classmethod
-    def from_cuts(cls, cuts: CutSet, max_cuts: Optional[int] = None) -> "GlobalMVN":
-        stats = cuts.compute_global_feature_stats(max_cuts=max_cuts)
+    def from_cuts(
+        cls,
+        cuts: CutSet,
+        max_cuts: Optional[int] = None,
+        extractor: Optional[FeatureExtractor] = None,
+    ) -> "GlobalMVN":
+        stats = cuts.compute_global_feature_stats(
+            max_cuts=max_cuts, extractor=extractor
+        )
         stats = {name: torch.as_tensor(value) for name, value in stats.items()}
         (feature_dim,) = stats["norm_means"].shape
         global_mvn = cls(feature_dim)
@@ -124,12 +133,12 @@ class SpecAugment(torch.nn.Module):
     def __init__(
         self,
         time_warp_factor: Optional[int] = 80,
-        num_feature_masks: int = 1,
-        features_mask_size: int = 13,
-        num_frame_masks: int = 1,
-        frames_mask_size: int = 70,
-        max_frames_mask_fraction: float = 0.2,
-        p=0.5,
+        num_feature_masks: int = 2,
+        features_mask_size: int = 27,
+        num_frame_masks: int = 10,
+        frames_mask_size: int = 100,
+        max_frames_mask_fraction: float = 0.15,
+        p=0.9,
     ):
         """
         SpecAugment's constructor.
@@ -139,7 +148,7 @@ class SpecAugment(torch.nn.Module):
         :param num_feature_masks: how many feature masks should be applied. Set to ``0`` to disable.
         :param features_mask_size: the width of the feature mask (expressed in the number of masked feature bins).
             This is the ``F`` parameter from the SpecAugment paper.
-        :param num_frame_masks: how many frame (temporal) masks should be applied. Set to ``0`` to disable.
+        :param num_frame_masks: the number of masking regions for utterances. Set to ``0`` to disable.
         :param frames_mask_size: the width of the frame (temporal) masks (expressed in the number of masked frames).
             This is the ``T`` parameter from the SpecAugment paper.
         :param max_frames_mask_fraction: limits the size of the frame (temporal) mask to this value times the length
@@ -151,7 +160,7 @@ class SpecAugment(torch.nn.Module):
         super().__init__()
         assert 0 <= p <= 1
         assert num_feature_masks >= 0
-        assert num_frame_masks >= 0
+        assert num_frame_masks > 0
         assert features_mask_size > 0
         assert frames_mask_size > 0
         self.time_warp_factor = time_warp_factor
@@ -222,27 +231,32 @@ class SpecAugment(torch.nn.Module):
             if self.time_warp_factor is not None and self.time_warp_factor >= 1:
                 features = time_warp(features, factor=self.time_warp_factor)
         if mask:
-            from torchaudio.functional import mask_along_axis
-
             mean = features.mean()
-            for _ in range(self.num_feature_masks):
-                features = mask_along_axis(
-                    features.unsqueeze(0),
-                    mask_param=self.features_mask_size,
-                    mask_value=mean,
-                    axis=2,
-                ).squeeze(0)
-            for _ in range(self.num_frame_masks):
-                max_mask_frames = min(
-                    self.frames_mask_size,
-                    self.max_frames_mask_fraction * features.size(0),
-                )
-                features = mask_along_axis(
-                    features.unsqueeze(0),
-                    mask_param=max_mask_frames,
-                    mask_value=mean,
-                    axis=1,
-                ).squeeze(0)
+            # Frequency masking
+            features = mask_along_axis_optimized(
+                features,
+                mask_size=self.features_mask_size,
+                mask_times=self.num_feature_masks,
+                mask_value=mean,
+                axis=2,
+            )
+            # Time masking
+            max_tot_mask_frames = self.max_frames_mask_fraction * features.size(0)
+            num_frame_masks = min(
+                self.num_frame_masks,
+                math.ceil(max_tot_mask_frames / self.frames_mask_size),
+            )
+            max_mask_frames = min(
+                self.frames_mask_size, max_tot_mask_frames // num_frame_masks
+            )
+            features = mask_along_axis_optimized(
+                features,
+                mask_size=max_mask_frames,
+                mask_times=num_frame_masks,
+                mask_value=mean,
+                axis=1,
+            )
+
         return features
 
     def state_dict(self) -> Dict:
@@ -274,6 +288,51 @@ class SpecAugment(torch.nn.Module):
             "max_frames_mask_fraction", self.max_frames_mask_fraction
         )
         self.p = state_dict.get("p", self.p)
+
+
+def mask_along_axis_optimized(
+    features: torch.Tensor,
+    mask_size: int,
+    mask_times: int,
+    mask_value: float,
+    axis: int,
+) -> torch.Tensor:
+    """
+    Apply Frequency and Time masking along axis.
+    Frequency and Time masking as described in the SpecAugment paper.
+
+    :param features: input tensor of shape ``(T, F)``
+    :mask_size: the width size for masking.
+    :mask_times: the number of masking regions.
+    :mask_value: Value to assign to the masked regions.
+    :axis: Axis to apply masking on (1 -> time, 2 -> frequency)
+    """
+    if axis not in [1, 2]:
+        raise ValueError("Only Frequency and Time masking are supported!")
+
+    features = features.unsqueeze(0)
+    features = features.reshape([-1] + list(features.size()[-2:]))
+
+    values = torch.randint(int(0), int(mask_size), (1, mask_times))
+    min_values = torch.rand(1, mask_times) * (features.size(axis) - values)
+    mask_starts = (min_values.long()).squeeze()
+    mask_ends = (min_values.long() + values.long()).squeeze()
+
+    if axis == 1:
+        if mask_times == 1:
+            features[:, mask_starts:mask_ends] = mask_value
+            return features.squeeze(0)
+        for (mask_start, mask_end) in zip(mask_starts, mask_ends):
+            features[:, mask_start:mask_end] = mask_value
+    else:
+        if mask_times == 1:
+            features[:, :, mask_starts:mask_ends] = mask_value
+            return features.squeeze(0)
+        for (mask_start, mask_end) in zip(mask_starts, mask_ends):
+            features[:, :, mask_start:mask_end] = mask_value
+
+    features = features.squeeze(0)
+    return features
 
 
 def time_warp(features: torch.Tensor, factor: int) -> torch.Tensor:
@@ -340,3 +399,49 @@ def random_mask_along_batch_axis(tensor: torch.Tensor, p: float = 0.5) -> torch.
     mask_shape = (tensor.shape[0],) + tuple(1 for _ in tensor.shape[1:])
     mask = (torch.rand(mask_shape) > p).to(torch.float32)
     return mask
+
+
+class DereverbWPE(torch.nn.Module):
+    """
+    Dereverberation with Weighted Prediction Error (WPE).
+    The implementation and default values are borrowed from `nara_wpe` package:
+    https://github.com/fgnt/nara_wpe
+
+    The method and library are described in the following paper:
+    https://groups.uni-paderborn.de/nt/pubs/2018/ITG_2018_Drude_Paper.pdf
+    """
+
+    def __init__(self, n_fft: int = 512, hop_length: int = 128):
+        super().__init__()
+        self.n_fft = n_fft
+        self.hop_length = hop_length
+
+    def forward(self, audio: torch.Tensor, *args, **kwargs) -> torch.Tensor:
+        """
+        Expects audio to be 2D or 3D tensor.
+        2D means a batch of single-channel audio, shape (B, T).
+        3D means a batch of multi-channel audio, shape (B, D, T).
+        B => batch size; D => number of channels; T => number of audio samples.
+        """
+
+        # Assume batch of single-channel data: apply dereverb to each example independently.
+        if audio.ndim == 2:
+            return torch.cat(
+                [
+                    dereverb_wpe_torch(
+                        a.unsqueeze(0), n_fft=self.n_fft, hop_length=self.hop_length
+                    )
+                    for a in audio
+                ],
+                dim=0,
+            )
+
+        # Assume batch of multi-channel data: each example has D channels.
+        assert audio.ndim == 3
+        return torch.stack(
+            [
+                dereverb_wpe_torch(a, n_fft=self.n_fft, hop_length=self.hop_length)
+                for a in audio
+            ],
+            dim=0,
+        )

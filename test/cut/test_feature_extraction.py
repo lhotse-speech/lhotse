@@ -8,21 +8,21 @@ from unittest.mock import Mock
 import pytest
 import torch
 
-import lhotse
 from lhotse import (
     CutSet,
     Fbank,
     FbankConfig,
-    TorchaudioFbank,
-    TorchaudioMfcc,
     KaldifeatFbank,
     KaldifeatMfcc,
     LibrosaFbank,
     LibrosaFbankConfig,
-    LilcomHdf5Writer,
+    LilcomChunkyWriter,
     Mfcc,
     MonoCut,
     Recording,
+    SupervisionSegment,
+    TorchaudioFbank,
+    TorchaudioMfcc,
     load_manifest,
     validate,
 )
@@ -49,7 +49,18 @@ def recording():
 
 @pytest.fixture
 def cut(recording):
-    return MonoCut(id="cut", start=0, duration=1.0, channel=0, recording=recording)
+    return MonoCut(
+        id="cut",
+        start=0,
+        duration=1.0,
+        channel=0,
+        recording=recording,
+        supervisions=[
+            SupervisionSegment(
+                id="sup", recording_id=recording.id, start=0, duration=0.5
+            )
+        ],
+    )
 
 
 def test_extract_features(cut):
@@ -78,6 +89,7 @@ def test_extract_and_store_features_from_mixed_cut(cut, mix_eagerly):
         cut_with_feats = mixed_cut.compute_and_store_features(
             extractor=extractor, storage=storage, mix_eagerly=mix_eagerly
         )
+        validate(cut_with_feats)
         arr = cut_with_feats.load_features()
     assert arr.shape[0] == 200
     assert arr.shape[1] == extractor.feature_dim(mixed_cut.sampling_rate)
@@ -111,7 +123,7 @@ def is_dask_availabe():
 
 
 @pytest.mark.parametrize("mix_eagerly", [False, True])
-@pytest.mark.parametrize("storage_type", [LilcomFilesWriter, LilcomHdf5Writer])
+@pytest.mark.parametrize("storage_type", [LilcomFilesWriter, LilcomChunkyWriter])
 @pytest.mark.parametrize(
     ["executor", "num_jobs"],
     [
@@ -314,3 +326,20 @@ def test_on_the_fly_batch_feature_extraction(cut_set, extractor_type):
     feats, feat_lens = extractor(cut_set)  # does not crash
     assert isinstance(feats, torch.Tensor)
     assert isinstance(feat_lens, torch.Tensor)
+
+
+def test_on_the_fly_feats_return_audio(cut_set):
+    from lhotse.dataset import OnTheFlyFeatures
+
+    extractor = OnTheFlyFeatures(extractor=Fbank(), return_audio=True)
+    cut_set = cut_set.resample(16000)
+    feats, feat_lens, audios, audio_lens = extractor(cut_set)
+    assert isinstance(feats, torch.Tensor)
+    assert isinstance(feat_lens, torch.Tensor)
+    assert isinstance(audios, torch.Tensor)
+    assert isinstance(audio_lens, torch.Tensor)
+
+    assert feats.shape == (2, 300, 80)
+    assert feat_lens.shape == (2,)
+    assert audios.shape == (2, 48000)
+    assert audio_lens.shape == (2,)

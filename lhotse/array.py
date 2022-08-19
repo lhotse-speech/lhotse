@@ -1,4 +1,5 @@
 import decimal
+import warnings
 from dataclasses import asdict, dataclass
 from math import isclose
 from pathlib import Path
@@ -6,7 +7,7 @@ from typing import List, Optional, Union
 
 import numpy as np
 
-from lhotse.utils import Pathlike, Seconds, fastcopy
+from lhotse.utils import Pathlike, Seconds, fastcopy, ifnone
 
 
 @dataclass
@@ -55,6 +56,12 @@ class Array:
 
     @classmethod
     def from_dict(cls, data: dict) -> "Array":
+        if (
+            "storage_key" in data
+            and "storage_type" in data
+            and "storage_path" not in data
+        ):
+            data["storage_path"] = None
         return cls(**data)
 
     def load(self) -> np.ndarray:
@@ -74,6 +81,35 @@ class Array:
         to the ``storage_path`` member.
         """
         return fastcopy(self, storage_path=str(Path(path) / self.storage_path))
+
+    def move_to_memory(self) -> "Array":
+        from lhotse.features.io import get_memory_writer
+
+        if self.storage_type in ("memory_lilcom", "memory_writer"):
+            return self  # nothing to do
+
+        arr = self.load()
+        if issubclass(arr.dtype.type, np.float):
+            writer = get_memory_writer("memory_lilcom")()
+        else:
+            writer = get_memory_writer("memory_raw")()
+        data = writer.write("", arr)  # key is ignored by in memory writers
+        return Array(
+            storage_type=writer.name,
+            storage_key=data,
+            storage_path="",
+            shape=self.shape,
+        )
+
+    def __repr__(self):
+        return (
+            f"Array("
+            f"storage_type='{self.storage_type}', "
+            f"storage_path='{self.storage_path}', "
+            f"storage_key='{self.storage_key if isinstance(self.storage_key, str) else '<binary-data>'}', "
+            f"shape={self.shape}"
+            f")"
+        )
 
 
 @dataclass
@@ -206,6 +242,49 @@ class TemporalArray:
         to the ``storage_path`` member.
         """
         return fastcopy(self, array=self.array.with_path_prefix(path))
+
+    def move_to_memory(
+        self,
+        start: Seconds = 0,
+        duration: Optional[Seconds] = None,
+    ) -> "TemporalArray":
+        from lhotse.features.io import get_memory_writer
+
+        if self.array.storage_type in ("memory_lilcom", "memory_writer"):
+            return self  # nothing to do
+
+        arr = self.load(start=start, duration=duration)
+        if issubclass(arr.dtype.type, np.float):
+            writer = get_memory_writer("memory_lilcom")()
+        else:
+            writer = get_memory_writer("memory_raw")()
+        data = writer.write("", arr)  # key is ignored by in memory writers
+        out = TemporalArray(
+            array=Array(
+                storage_type=writer.name,
+                storage_key=data,
+                storage_path="",
+                shape=list(arr.shape),
+            ),
+            temporal_dim=self.temporal_dim,
+            frame_shift=self.frame_shift,
+            # note: to understand why start is set to zero here, consider two cases:
+            # 1) this method moves the whole array to memory => the start was 0 anyway
+            # 2) this method moves a subset of the array to memory => the manifest is
+            #    now relative to the start of that subset, and since it describes the
+            #    whole subset, start=0 and duration=self.duration
+            start=0.0,
+        )
+
+        # Sanity check -- can help detect issues with start/offset in long-recording data.
+        if out.shape == [0]:
+            warnings.warn(
+                "A TemporalArray with shape [0] encountered. If this is not expected and "
+                "you're working with long-recording data, make sure you did set the 'start' "
+                "attribute properly."
+            )
+
+        return out
 
 
 def seconds_to_frames(

@@ -1,12 +1,12 @@
 import contextlib
 from tempfile import NamedTemporaryFile
-from typing import Dict, List, Optional, Type
+from typing import Dict, List, Optional, Type, Union
 
 from lhotse import AudioSource
 from lhotse.array import Array, TemporalArray
 from lhotse.audio import Recording, RecordingSet
 from lhotse.cut import CutSet, MonoCut
-from lhotse.features import FeatureSet, Features
+from lhotse.features import Features, FeatureSet
 from lhotse.manipulation import Manifest
 from lhotse.supervision import AlignmentItem, SupervisionSegment, SupervisionSet
 from lhotse.utils import fastcopy

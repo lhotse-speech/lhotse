@@ -10,9 +10,12 @@ __all__ = ["vctk"]
 @prepare.command()
 @click.argument("corpus_dir", type=click.Path(exists=True, dir_okay=True))
 @click.argument("output_dir", type=click.Path())
-def vctk(corpus_dir: Pathlike, output_dir: Pathlike):
+@click.option("--use-edinburgh-vctk-url", default=False)
+def vctk(corpus_dir: Pathlike, output_dir: Pathlike, use_edinburgh_vctk_url: bool):
     """VCTK data preparation."""
-    prepare_vctk(corpus_dir, output_dir=output_dir)
+    prepare_vctk(
+        corpus_dir, output_dir=output_dir, use_edinburgh_vctk_url=use_edinburgh_vctk_url
+    )
 
 
 @download.command()

@@ -1,8 +1,8 @@
 import click
 
-from .cli_base import cli
 from ...tools.env import default_tools_cachedir
 from ...tools.sph2pipe import SPH2PIPE_URL
+from .cli_base import cli
 
 
 @cli.command(context_settings=dict(show_default=True))

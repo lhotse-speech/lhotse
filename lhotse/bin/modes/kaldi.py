@@ -28,8 +28,8 @@ def kaldi():
     "--map-string-to-underscores",
     default=None,
     type=str,
-    help="""When specified, we will replace all instances of this string 
-    in SupervisonSegment IDs to underscores. This is to help with handling 
+    help="""When specified, we will replace all instances of this string
+    in SupervisonSegment IDs to underscores. This is to help with handling
     underscores in Kaldi (see 'export_to_kaldi').""",
 )
 @click.option(
@@ -102,13 +102,13 @@ def export(
     """
     Convert a pair of ``RecordingSet`` and ``SupervisionSet`` manifests into a Kaldi-style data directory.
     """
-    from lhotse import load_manifest
     from lhotse.kaldi import export_to_kaldi
+    from lhotse.serialization import load_manifest_lazy_or_eager
 
     output_dir = Path(output_dir)
     export_to_kaldi(
-        recordings=load_manifest(recordings),
-        supervisions=load_manifest(supervisions),
+        recordings=load_manifest_lazy_or_eager(recordings),
+        supervisions=load_manifest_lazy_or_eager(supervisions),
         output_dir=output_dir,
         map_underscores_to=map_underscores_to,
         prefix_spk_id=prefix_spk_id,

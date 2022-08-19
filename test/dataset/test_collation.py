@@ -1,12 +1,12 @@
 import random
 from math import isclose
-from tempfile import NamedTemporaryFile
+from tempfile import TemporaryDirectory
 
+import numpy as np
 import pytest
 import torch
-import numpy as np
 
-from lhotse import CutSet, MonoCut, NumpyHdf5Writer
+from lhotse import CutSet, MonoCut, NumpyFilesWriter
 from lhotse.array import seconds_to_frames
 from lhotse.dataset.collation import (
     TokenCollater,
@@ -15,7 +15,6 @@ from lhotse.dataset.collation import (
     collate_features,
 )
 from lhotse.testing.dummies import dummy_cut, dummy_recording, dummy_supervision
-from lhotse.utils import nullcontext as does_not_raise
 
 
 @pytest.mark.parametrize("add_bos", [True, False])
@@ -88,7 +87,7 @@ def test_collate_custom_array():
     EMBEDDING_SIZE = 300
 
     cuts = CutSet.from_json("test/fixtures/ljspeech/cuts.json")
-    with NamedTemporaryFile(suffix=".h5") as f, NumpyHdf5Writer(f.name) as writer:
+    with TemporaryDirectory() as d, NumpyFilesWriter(d) as writer:
         expected_xvectors = []
         for cut in cuts:
             expected_xvectors.append(np.random.randn(EMBEDDING_SIZE).astype(np.float32))
@@ -127,7 +126,7 @@ def test_collate_custom_temporal_array_floats(pad_value):
     cuts = CutSet.from_json("test/fixtures/ljspeech/cuts.json")
     max_num_frames = max(cut.num_frames for cut in cuts)
 
-    with NamedTemporaryFile(suffix=".h5") as f, NumpyHdf5Writer(f.name) as writer:
+    with TemporaryDirectory() as d, NumpyFilesWriter(d) as writer:
         expected_posteriors = []
         for cut in cuts:
             expected_posteriors.append(
@@ -173,7 +172,7 @@ def test_collate_custom_temporal_array_ints(pad_value):
     cuts = CutSet.from_json("test/fixtures/ljspeech/cuts.json")
     max_num_frames = max(seconds_to_frames(cut.duration, FRAME_SHIFT) for cut in cuts)
 
-    with NamedTemporaryFile(suffix=".h5") as f, NumpyHdf5Writer(f.name) as writer:
+    with TemporaryDirectory() as d, NumpyFilesWriter(d) as writer:
         expected_codebook_indices = []
         for cut in cuts:
             expected_codebook_indices.append(
@@ -222,7 +221,7 @@ def test_collate_custom_temporal_array_ints_with_truncate(pad_value):
 
     cuts = CutSet.from_json("test/fixtures/ljspeech/cuts.json")
 
-    with NamedTemporaryFile(suffix=".h5") as f, NumpyHdf5Writer(f.name) as writer:
+    with TemporaryDirectory() as d, NumpyFilesWriter(d) as writer:
         expected_codebook_indices = []
         for cut in cuts:
             expected_codebook_indices.append(
@@ -275,7 +274,7 @@ def test_collate_custom_temporal_array_ints(pad_direction):
     cuts = CutSet.from_json("test/fixtures/ljspeech/cuts.json")
     max_num_frames = max(seconds_to_frames(cut.duration, FRAME_SHIFT) for cut in cuts)
 
-    with NamedTemporaryFile(suffix=".h5") as f, NumpyHdf5Writer(f.name) as writer:
+    with TemporaryDirectory() as d, NumpyFilesWriter(d) as writer:
         expected_codebook_indices = []
         for cut in cuts:
             expected_codebook_indices.append(
@@ -347,7 +346,7 @@ def test_padding_issue_478():
     """
     https://github.com/lhotse-speech/lhotse/issues/478
     """
-    with NamedTemporaryFile(suffix=".h5") as f, NumpyHdf5Writer(f.name) as writer:
+    with TemporaryDirectory() as d, NumpyFilesWriter(d) as writer:
 
         # Prepare data for cut 1.
         cut1 = MonoCut(

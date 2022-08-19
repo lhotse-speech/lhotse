@@ -9,13 +9,13 @@ from pytest import mark, raises
 from lhotse.audio import (
     AudioMixer,
     AudioSource,
+    DurationMismatchError,
     Recording,
     RecordingSet,
-    DurationMismatchError,
 )
 from lhotse.testing.dummies import DummyManifest
-from lhotse.utils import INT16MAX
-from lhotse.utils import fastcopy, nullcontext as does_not_raise
+from lhotse.utils import INT16MAX, fastcopy
+from lhotse.utils import nullcontext as does_not_raise
 
 
 @pytest.fixture
@@ -147,7 +147,7 @@ def test_add_recording_sets():
     recording_set_1 = DummyManifest(RecordingSet, begin_id=0, end_id=5)
     recording_set_2 = DummyManifest(RecordingSet, begin_id=5, end_id=10)
     combined = recording_set_1 + recording_set_2
-    assert combined == expected
+    assert combined.to_eager() == expected
 
 
 @pytest.mark.parametrize(
@@ -342,10 +342,11 @@ class TestAudioMixer:
         mixer.add_to_mix(self.audio2, snr=None, offset=0)
 
         unmixed = mixer.unmixed_audio
-        assert unmixed.shape == (2, 8000)
-        assert (unmixed[0, :] == 1).all()
-        assert (unmixed[1, :] == 2).all()
-        assert unmixed.dtype == np.float32
+        assert len(unmixed) == 2
+        assert all(u.shape == (1, 8000) for u in unmixed)
+        assert (unmixed[0] == 1).all()
+        assert (unmixed[1] == 2).all()
+        assert all(u.dtype == np.float32 for u in unmixed)
 
         mixed = mixer.mixed_audio
         assert mixed.shape == (1, 8000)
@@ -357,12 +358,13 @@ class TestAudioMixer:
         mixer.add_to_mix(self.audio2, snr=None, offset=0.5)
 
         unmixed = mixer.unmixed_audio
-        assert unmixed.shape == (2, 12000)  # offset 0.5s == 4000 samples
-        assert (unmixed[0, :8000] == 1).all()
-        assert (unmixed[0, 8000:] == 0).all()
-        assert (unmixed[1, :4000] == 0).all()
-        assert (unmixed[1, 4000:] == 2).all()
-        assert unmixed.dtype == np.float32
+        assert len(unmixed) == 2
+        assert all(u.shape == (1, 12000) for u in unmixed)
+        assert (unmixed[0][:, :8000] == 1).all()
+        assert (unmixed[0][:, 8000:] == 0).all()
+        assert (unmixed[1][:, :4000] == 0).all()
+        assert (unmixed[1][:, 4000:] == 2).all()
+        assert all(u.dtype == np.float32 for u in unmixed)
 
         mixed = mixer.mixed_audio
         assert mixed.shape == (1, 12000)
@@ -376,10 +378,11 @@ class TestAudioMixer:
         mixer.add_to_mix(self.audio2, snr=10, offset=0)
 
         unmixed = mixer.unmixed_audio
-        assert unmixed.shape == (2, 8000)
-        assert (unmixed[0, :] == 1).all()
-        np.testing.assert_almost_equal(unmixed[1, :], 0.31622776)
-        assert unmixed.dtype == np.float32
+        assert len(unmixed) == 2
+        assert all(u.shape == (1, 8000) for u in unmixed)
+        assert (unmixed[0] == 1).all()
+        np.testing.assert_almost_equal(unmixed[1], 0.31622776)
+        assert all(u.dtype == np.float32 for u in unmixed)
 
         mixed = mixer.mixed_audio
         assert mixed.shape == (1, 8000)
@@ -391,12 +394,13 @@ class TestAudioMixer:
         mixer.add_to_mix(self.audio2, snr=10, offset=0.5)
 
         unmixed = mixer.unmixed_audio
-        assert unmixed.shape == (2, 12000)  # offset 0.5s == 4000 samples
-        assert (unmixed[0, :8000] == 1).all()
-        assert (unmixed[0, 8000:] == 0).all()
-        assert (unmixed[1, :4000] == 0).all()
-        np.testing.assert_almost_equal(unmixed[1, 4000:], 0.31622776)
-        assert unmixed.dtype == np.float32
+        assert len(unmixed) == 2
+        assert all(u.shape == (1, 12000) for u in unmixed)
+        assert (unmixed[0][:, :8000] == 1).all()
+        assert (unmixed[0][:, 8000:] == 0).all()
+        assert (unmixed[1][:, :4000] == 0).all()
+        np.testing.assert_almost_equal(unmixed[1][:, 4000:], 0.31622776)
+        assert all(u.dtype == np.float32 for u in unmixed)
 
         mixed = mixer.mixed_audio
         assert mixed.shape == (1, 12000)
@@ -517,3 +521,28 @@ def test_opus_stereo_recording_from_file_force_sampling_rate_read_chunk():
     assert num_channels == recording.num_channels
     assert num_samples == 2000
     np.testing.assert_almost_equal(samples, all_samples[:, 4000:6000], decimal=5)
+
+
+def test_audio_source_memory_type(recording):
+    memory_recording = recording.move_to_memory()
+
+    np.testing.assert_equal(memory_recording.load_audio(), recording.load_audio())
+
+
+def test_recording_from_bytes():
+    path = "test/fixtures/mono_c0.wav"
+    recording = Recording.from_file(path)
+    memory_recording = Recording.from_bytes(
+        data=open(path, "rb").read(),
+        recording_id=recording.id,
+    )
+    np.testing.assert_equal(memory_recording.load_audio(), recording.load_audio())
+
+
+def test_memory_recording_dict_serialization():
+    path = "test/fixtures/mono_c0.wav"
+    rec = Recording.from_bytes(data=open(path, "rb").read(), recording_id="testrec")
+    data = rec.to_dict()
+    rec_reconstructed = Recording.from_dict(data)
+    assert rec == rec_reconstructed
+    np.testing.assert_equal(rec_reconstructed.load_audio(), rec.load_audio())

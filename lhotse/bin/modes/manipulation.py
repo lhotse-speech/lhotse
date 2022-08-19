@@ -7,36 +7,36 @@ from typing import Optional
 
 import click
 
-from lhotse import (
-    FeatureSet,
-    available_storage_backends,
-)
+from lhotse import FeatureSet, available_storage_backends
 from lhotse.bin.modes.cli_base import cli
 from lhotse.cut import CutSet
 from lhotse.features.io import get_writer
+from lhotse.serialization import load_manifest_lazy_or_eager
 from lhotse.utils import Pathlike
 
 __all__ = ["split", "combine", "subset", "filter"]
 
 
 @cli.command()
-@click.argument("input_manifest", type=click.Path(exists=True, dir_okay=False))
-@click.argument("output_manifest", type=click.Path())
+@click.argument(
+    "input_manifest", type=click.Path(exists=True, dir_okay=False, allow_dash=True)
+)
+@click.argument("output_manifest", type=click.Path(allow_dash=True))
 def copy(input_manifest, output_manifest):
     """
     Load INPUT_MANIFEST and store it to OUTPUT_MANIFEST.
     Useful for conversion between different serialization formats (e.g. JSON, JSONL, YAML).
     Automatically supports gzip compression when '.gz' suffix is detected.
     """
-    from lhotse import load_manifest
-
-    data = load_manifest(input_manifest)
+    data = load_manifest_lazy_or_eager(input_manifest)
     data.to_file(output_manifest)
 
 
 @cli.command()
-@click.argument("input_manifest", type=click.Path(exists=True, dir_okay=False))
-@click.argument("output_manifest", type=click.Path())
+@click.argument(
+    "input_manifest", type=click.Path(exists=True, dir_okay=False, allow_dash=True)
+)
+@click.argument("output_manifest", type=click.Path(allow_dash=True))
 @click.argument("storage_path", type=str)
 @click.option(
     "-t",
@@ -67,8 +67,8 @@ def copy_feats(
     read every feature matrix using ``features.load()`` or ``cut.load_features()``,
     save them in STORAGE_PATH and save the updated manifest to OUTPUT_MANIFEST.
     """
-    from lhotse.serialization import load_manifest_lazy_or_eager
     from lhotse.manipulation import combine as combine_manifests
+    from lhotse.serialization import load_manifest_lazy_or_eager
 
     manifests = load_manifest_lazy_or_eager(input_manifest)
 
@@ -129,7 +129,9 @@ def copy_feats_worker(
 
 @cli.command()
 @click.argument("num_splits", type=int)
-@click.argument("manifest", type=click.Path(exists=True, dir_okay=False))
+@click.argument(
+    "manifest", type=click.Path(exists=True, dir_okay=False, allow_dash=True)
+)
 @click.argument("output_dir", type=click.Path())
 @click.option(
     "-s",
@@ -137,7 +139,14 @@ def copy_feats_worker(
     is_flag=True,
     help="Optionally shuffle the sequence before splitting.",
 )
-def split(num_splits: int, manifest: Pathlike, output_dir: Pathlike, shuffle: bool):
+@click.option(
+    "--pad/--no-pad",
+    default=True,
+    help="Whether to pad the split output idx with zeros (e.g. 01, 02, .., 10).",
+)
+def split(
+    num_splits: int, manifest: Pathlike, output_dir: Pathlike, shuffle: bool, pad: bool
+):
     """
     Load MANIFEST, split it into NUM_SPLITS equal parts and save as separate manifests in OUTPUT_DIR.
 
@@ -153,19 +162,22 @@ def split(num_splits: int, manifest: Pathlike, output_dir: Pathlike, shuffle: bo
     output_dir.mkdir(parents=True, exist_ok=True)
     num_digits = len(str(num_splits))
     for idx, part in enumerate(parts):
-        idx = f"{idx + 1}".zfill(num_digits)
+        idx = f"{idx + 1}".zfill(num_digits) if pad else str(idx + 1)
         part.to_file((output_dir / manifest.stem).with_suffix(f".{idx}{suffix}"))
 
 
 @cli.command()
-@click.argument("manifest", type=click.Path(exists=True, dir_okay=False))
-@click.argument("output_dir", type=click.Path())
+@click.argument(
+    "manifest", type=click.Path(exists=True, dir_okay=False, allow_dash=True)
+)
+@click.argument("output_dir", type=click.Path(allow_dash=True))
 @click.argument("chunk_size", type=int)
 def split_lazy(manifest: Pathlike, output_dir: Pathlike, chunk_size: int):
     """
     Load MANIFEST (lazily if in JSONL format) and split it into parts,
     each with CHUNK_SIZE items.
-    The parts are saved to separate files with pattern "{output_dir}/{chunk_idx}.jsonl.gz".
+    The parts are saved to separate files with pattern
+    "{output_dir}/{manifest.stem}.{chunk_idx}.jsonl.gz".
 
     Prefer this to "lhotse split" when your manifests are very large.
     """
@@ -174,12 +186,16 @@ def split_lazy(manifest: Pathlike, output_dir: Pathlike, chunk_size: int):
     output_dir = Path(output_dir)
     manifest = Path(manifest)
     any_set = load_manifest_lazy_or_eager(manifest)
-    any_set.split_lazy(output_dir=output_dir, chunk_size=chunk_size)
+    any_set.split_lazy(
+        output_dir=output_dir, chunk_size=chunk_size, prefix=manifest.stem
+    )
 
 
 @cli.command()
-@click.argument("manifest", type=click.Path(exists=True, dir_okay=False))
-@click.argument("output_manifest", type=click.Path())
+@click.argument(
+    "manifest", type=click.Path(exists=True, dir_okay=False, allow_dash=True)
+)
+@click.argument("output_manifest", type=click.Path(allow_dash=True))
 @click.option("--first", type=int)
 @click.option("--last", type=int)
 @click.option(
@@ -198,11 +214,10 @@ def subset(
     cutids: Optional[str],
 ):
     """Load MANIFEST, select the FIRST or LAST number of items and store it in OUTPUT_MANIFEST."""
-    from lhotse import load_manifest
 
     output_manifest = Path(output_manifest)
     manifest = Path(manifest)
-    any_set = load_manifest(manifest)
+    any_set = load_manifest_lazy_or_eager(manifest)
 
     cids = None
     if cutids is not None:
@@ -225,11 +240,12 @@ def subset(
 
 
 @cli.command()
-@click.argument("manifests", nargs=-1, type=click.Path(exists=True, dir_okay=False))
-@click.argument("output_manifest", type=click.Path())
+@click.argument(
+    "manifests", nargs=-1, type=click.Path(exists=True, dir_okay=False, allow_dash=True)
+)
+@click.argument("output_manifest", type=click.Path(allow_dash=True))
 def combine(manifests: Pathlike, output_manifest: Pathlike):
     """Load MANIFESTS, combine them into a single one, and write it to OUTPUT_MANIFEST."""
-    from lhotse.serialization import load_manifest_lazy_or_eager
     from lhotse.manipulation import combine as combine_manifests
 
     data_set = combine_manifests(*[load_manifest_lazy_or_eager(m) for m in manifests])
@@ -238,8 +254,10 @@ def combine(manifests: Pathlike, output_manifest: Pathlike):
 
 @cli.command()
 @click.argument("predicate")
-@click.argument("manifest", type=click.Path(exists=True, dir_okay=False))
-@click.argument("output_manifest", type=click.Path())
+@click.argument(
+    "manifest", type=click.Path(exists=True, dir_okay=False, allow_dash=True)
+)
+@click.argument("output_manifest", type=click.Path(allow_dash=True))
 def filter(predicate: str, manifest: Pathlike, output_manifest: Pathlike):
     """
     Filter a MANIFEST according to the rule specified in PREDICATE, and save the result to OUTPUT_MANIFEST.
@@ -258,11 +276,12 @@ def filter(predicate: str, manifest: Pathlike, output_manifest: Pathlike):
     import operator
     import re
     from math import isclose
+
     from cytoolz.functoolz import complement
-    from lhotse import load_manifest
+
     from lhotse.manipulation import to_manifest
 
-    data_set = load_manifest(manifest)
+    data_set = load_manifest_lazy_or_eager(manifest)
 
     predicate_pattern = re.compile(
         r"(?P<key>\w+)(?P<op>=|==|!=|>|<|>=|<=)(?P<value>[0-9.]+)"

@@ -1,10 +1,10 @@
 from pathlib import Path
-from typing import List, Optional, Tuple
+from typing import List, Optional
 
 import click
 
 from lhotse.bin.modes.cli_base import cli
-from lhotse.cut import CutSet, append_cuts, make_windowed_cuts_from_features, mix_cuts
+from lhotse.cut import CutSet, append_cuts, mix_cuts
 from lhotse.serialization import load_manifest_lazy_or_eager
 from lhotse.utils import Pathlike
 
@@ -16,7 +16,7 @@ def cut():
 
 
 @cut.command()
-@click.argument("output_cut_manifest", type=click.Path())
+@click.argument("output_cut_manifest", type=click.Path(allow_dash=True))
 @click.option(
     "-r",
     "--recording-manifest",
@@ -35,11 +35,18 @@ def cut():
     type=click.Path(exists=True, dir_okay=False),
     help="Optional supervision manifest - will be used to attach the supervisions to the cuts.",
 )
+@click.option(
+    "--force-eager",
+    is_flag=True,
+    help="Force reading full manifests into memory before creating the manifests "
+    "(useful when you are not sure about the input manifest sorting).",
+)
 def simple(
     output_cut_manifest: Pathlike,
     recording_manifest: Optional[Pathlike],
     feature_manifest: Optional[Pathlike],
     supervision_manifest: Optional[Pathlike],
+    force_eager: bool,
 ):
     """
     Create a CutSet stored in OUTPUT_CUT_MANIFEST. Depending on the provided options, it may contain any combination
@@ -48,21 +55,36 @@ def simple(
     When SUPERVISION_MANIFEST is provided, the cuts time span will correspond to that of the supervision segments.
     Otherwise, that time span corresponds to the one found in features, if available, otherwise recordings.
     """
-    from lhotse import load_manifest
-
     supervision_set, feature_set, recording_set = [
-        load_manifest(p) if p is not None else None
+        load_manifest_lazy_or_eager(p) if p is not None else None
         for p in (supervision_manifest, feature_manifest, recording_manifest)
     ]
-    cut_set = CutSet.from_manifests(
-        recordings=recording_set, supervisions=supervision_set, features=feature_set
-    )
-    cut_set.to_file(output_cut_manifest)
+
+    if (
+        all(
+            m is None or m.is_lazy
+            for m in (supervision_set, feature_set, recording_set)
+        )
+        and not force_eager
+    ):
+        # Create the CutSet lazily; requires sorting by recording_id
+        CutSet.from_manifests(
+            recordings=recording_set,
+            supervisions=supervision_set,
+            features=feature_set,
+            output_path=output_cut_manifest,
+            lazy=True,
+        )
+    else:
+        cut_set = CutSet.from_manifests(
+            recordings=recording_set, supervisions=supervision_set, features=feature_set
+        )
+        cut_set.to_file(output_cut_manifest)
 
 
 @cut.command()
-@click.argument("cuts", type=click.Path(exists=True, dir_okay=False))
-@click.argument("output_cuts", type=click.Path())
+@click.argument("cuts", type=click.Path(exists=True, dir_okay=False, allow_dash=True))
+@click.argument("output_cuts", type=click.Path(allow_dash=True))
 @click.option(
     "--keep-overlapping/--discard-overlapping",
     type=bool,
@@ -125,124 +147,15 @@ def trim_to_supervisions(
                 Sup2
            |-----------|
     """
-    from lhotse.serialization import load_manifest_lazy_or_eager
-
-    cuts = load_manifest_lazy_or_eager(cuts)
+    cuts = CutSet.from_file(cuts)
 
     with CutSet.open_writer(output_cuts) as writer:
-        for c in cuts:
-            subcuts = c.trim_to_supervisions(
-                keep_overlapping=keep_overlapping,
-                min_duration=min_duration,
-                context_direction=context_direction,
-            )
-            for sc in subcuts:
-                writer.write(sc)
-
-
-@cut.command()
-@click.argument("feature_manifest", type=click.Path(exists=True, dir_okay=False))
-@click.argument("output_cut_manifest", type=click.Path())
-@click.option(
-    "-d",
-    "--cut-duration",
-    type=float,
-    default=5.0,
-    help="How long should the cuts be in seconds.",
-)
-@click.option(
-    "-s",
-    "--cut-shift",
-    type=float,
-    default=None,
-    help="How much to shift the cutting window in seconds (by default the shift is equal to CUT_DURATION).",
-)
-@click.option(
-    "--keep-shorter-windows/--discard-shorter-windows",
-    type=bool,
-    default=False,
-    help="When true, the last window will be used to create a Cut even if its duration is "
-    "shorter than CUT_DURATION.",
-)
-def windowed(
-    feature_manifest: Pathlike,
-    output_cut_manifest: Pathlike,
-    cut_duration: float,
-    cut_shift: Optional[float],
-    keep_shorter_windows: bool,
-):
-    """
-    Create a CutSet stored in OUTPUT_CUT_MANIFEST from feature regions in FEATURE_MANIFEST.
-    The feature matrices are traversed in windows with CUT_SHIFT increments, creating cuts of constant CUT_DURATION.
-    """
-    from lhotse.features import FeatureSet
-
-    feature_set = FeatureSet.from_json(feature_manifest)
-    cut_set = make_windowed_cuts_from_features(
-        feature_set=feature_set,
-        cut_duration=cut_duration,
-        cut_shift=cut_shift,
-        keep_shorter_windows=keep_shorter_windows,
-    )
-    cut_set.to_file(output_cut_manifest)
-
-
-@cut.command()
-@click.argument("supervision_manifest", type=click.Path(exists=True, dir_okay=False))
-@click.argument("feature_manifest", type=click.Path(exists=True, dir_okay=False))
-@click.argument("output_cut_manifest", type=click.Path())
-@click.option(
-    "-s",
-    "--snr-range",
-    type=(float, float),
-    default=(20, 20),
-    help="Range of SNR values (in dB) that will be uniformly sampled in order to mix the signals.",
-)
-@click.option(
-    "-o",
-    "--offset-range",
-    type=(float, float),
-    default=(0.5, 0.5),
-    help='Range of relative offset values (0 - 1), which will offset the "right" signal by this many times '
-    'the duration of the "left" signal. It is uniformly sampled for each mix operation.',
-)
-def random_mixed(
-    supervision_manifest: Pathlike,
-    feature_manifest: Pathlike,
-    output_cut_manifest: Pathlike,
-    snr_range: Tuple[float, float],
-    offset_range: Tuple[float, float],
-):
-    """
-    Create a CutSet stored in OUTPUT_CUT_MANIFEST that contains supervision regions from SUPERVISION_MANIFEST
-    and features supplied by FEATURE_MANIFEST. It first creates a trivial CutSet, splits it into two equal, randomized
-    parts and mixes their features.
-    The parameters of the mix are controlled via SNR_RANGE and OFFSET_RANGE.
-    """
-    import numpy as np
-    from lhotse.supervision import SupervisionSet
-    from lhotse.features import FeatureSet
-
-    supervision_set = SupervisionSet.from_json(supervision_manifest)
-    feature_set = FeatureSet.from_json(feature_manifest)
-
-    source_cut_set = CutSet.from_manifests(
-        supervisions=supervision_set, features=feature_set
-    )
-    left_cuts, right_cuts = source_cut_set.split(num_splits=2, shuffle=True)
-
-    snrs = np.random.uniform(*snr_range, size=len(left_cuts)).tolist()
-    relative_offsets = np.random.uniform(*offset_range, size=len(left_cuts)).tolist()
-
-    mixed_cut_set = CutSet.from_cuts(
-        left_cut.mix(
-            right_cut, offset_other_by=left_cut.duration * relative_offset, snr=snr
-        )
-        for left_cut, right_cut, snr, relative_offset in zip(
-            left_cuts, right_cuts, snrs, relative_offsets
-        )
-    )
-    mixed_cut_set.to_file(output_cut_manifest)
+        for cut in cuts.trim_to_supervisions(
+            keep_overlapping=keep_overlapping,
+            min_duration=min_duration,
+            context_direction=context_direction,
+        ):
+            writer.write(cut)
 
 
 @cut.command()
@@ -255,9 +168,10 @@ def mix_sequential(cut_manifests: List[Pathlike], output_cut_manifest: Pathlike)
     The mix is performed by summing the features from all Cuts.
     If the CUT_MANIFESTS have different number of Cuts, the mixing ends when the shorter manifest is depleted.
     """
-    cut_manifests = [CutSet.from_json(path) for path in cut_manifests]
-    mixed_cut_set = CutSet.from_cuts(mix_cuts(cuts) for cuts in zip(*cut_manifests))
-    mixed_cut_set.to_file(output_cut_manifest)
+    cut_manifests = [CutSet.from_file(path) for path in cut_manifests]
+    with CutSet.open_writer(output_cut_manifest) as w:
+        for cuts in zip(*cut_manifests):
+            w.write(mix_cuts(cuts))
 
 
 @cut.command()
@@ -269,9 +183,10 @@ def mix_by_recording_id(cut_manifests: List[Pathlike], output_cut_manifest: Path
     and mixing them together.
     """
     from cytoolz.itertoolz import groupby
+
     from lhotse.manipulation import combine
 
-    all_cuts = combine(*[CutSet.from_json(path) for path in cut_manifests])
+    all_cuts = combine(*[CutSet.from_file(path) for path in cut_manifests])
     recording_id_to_cuts = groupby(lambda cut: cut.recording_id, all_cuts)
     mixed_cut_set = CutSet.from_cuts(
         mix_cuts(cuts) for recording_id, cuts in recording_id_to_cuts.items()
@@ -280,8 +195,10 @@ def mix_by_recording_id(cut_manifests: List[Pathlike], output_cut_manifest: Path
 
 
 @cut.command(context_settings=dict(show_default=True))
-@click.argument("cut_manifest", type=click.Path(exists=True, dir_okay=False))
-@click.argument("output_cut_manifest", type=click.Path())
+@click.argument(
+    "cut_manifest", type=click.Path(exists=True, dir_okay=False, allow_dash=True)
+)
+@click.argument("output_cut_manifest", type=click.Path(allow_dash=True))
 @click.option(
     "--preserve-id",
     is_flag=True,
@@ -346,13 +263,16 @@ def append(
     If CUT_MANIFESTS have different lengths, the script stops once the shortest CutSet is depleted.
     """
     cut_sets = [CutSet.from_file(path) for path in cut_manifests]
-    appended_cut_set = CutSet.from_cuts(append_cuts(cuts) for cuts in zip(*cut_sets))
-    appended_cut_set.to_file(output_cut_manifest)
+    with CutSet.open_writer(output_cut_manifest) as w:
+        for cuts in zip(*cut_sets):
+            w.write(append_cuts(cuts))
 
 
 @cut.command()
-@click.argument("cut_manifest", type=click.Path(exists=True, dir_okay=False))
-@click.argument("output_cut_manifest", type=click.Path())
+@click.argument(
+    "cut_manifest", type=click.Path(exists=True, dir_okay=False, allow_dash=True)
+)
+@click.argument("output_cut_manifest", type=click.Path(allow_dash=True))
 @click.option(
     "-d",
     "--duration",
@@ -375,7 +295,7 @@ def pad(
 
 
 @cut.command()
-@click.argument("cutset", type=click.Path(exists=True, dir_okay=False))
+@click.argument("cutset", type=click.Path(exists=True, dir_okay=False, allow_dash=True))
 @click.argument("output", type=click.Path())
 def decompose(cutset: Pathlike, output: Pathlike):
     """
@@ -388,22 +308,96 @@ def decompose(cutset: Pathlike, output: Pathlike):
     If any of these are not preset in any of the cuts,
     the corresponding file for them will be empty.
     """
-    cuts = load_manifest_lazy_or_eager(cutset)
-    assert isinstance(
-        cuts, CutSet
-    ), f"Only CutSet can be decomposed (got: {type(cuts)} from '{cutset}')"
-    output = Path(output)
-    cuts.decompose(output_dir=output, verbose=True)
+    CutSet.from_file(cutset).decompose(output_dir=Path(output), verbose=True)
 
 
 @cut.command()
-@click.argument("cutset", type=click.Path(exists=True, dir_okay=False))
+@click.argument("cutset", type=click.Path(exists=True, dir_okay=False, allow_dash=True))
 def describe(cutset: Pathlike):
     """
     Describe some statistics of CUTSET, such as the total speech and audio duration.
     """
-    cuts = load_manifest_lazy_or_eager(cutset)
+    CutSet.from_file(cutset).describe()
+
+
+@cut.command(context_settings=dict(show_default=True))
+@click.argument("cutset", type=click.Path(exists=True, dir_okay=False, allow_dash=True))
+@click.argument("wspecifier", type=str)
+@click.option(
+    "-s",
+    "--shard-size",
+    type=int,
+    help="Number of cuts per shard (sharding disabled if not defined).",
+)
+@click.option(
+    "-f",
+    "--audio-format",
+    type=str,
+    default="flac",
+    help="Format in which the audio is encoded (uses torchaudio available formats).",
+)
+@click.option(
+    "--audio/--no-audio",
+    default=True,
+    help="Should we load and add audio data.",
+)
+@click.option(
+    "--features/--no-features",
+    default=True,
+    help="Should we load and add feature data.",
+)
+@click.option(
+    "--custom/--no-custom",
+    default=True,
+    help="Should we load and add custom data.",
+)
+@click.option(
+    "--fault-tolerant/--stop-on-fail",
+    default=True,
+    help="Should we omit the cuts for which loading data failed, or stop the execution.",
+)
+def export_to_webdataset(
+    cutset: Pathlike,
+    wspecifier: str,
+    shard_size: Optional[int],
+    audio_format: str,
+    audio: bool,
+    features: bool,
+    custom: bool,
+    fault_tolerant: bool,
+):
+    """
+    Export CUTS into a WebDataset tarfile, or a collection of tarfile shards, as specified by
+    WSPECIFIER.
+
+    \b
+    WSPECIFIER can be:
+    - a regular path (e.g., "data/cuts.tar"),
+    - a path template for sharding (e.g., "data/shard-06%d.tar"), or
+    - a "pipe:" expression (e.g., "pipe:gzip -c > data/shard-06%d.tar.gz").
+
+    The resulting CutSet contains audio/feature data in addition to metadata, and can be read in
+    Python using 'CutSet.from_webdataset' API.
+
+    This function is useful for I/O intensive applications where random reads are too slow, and
+    a one-time lengthy export step that enables fast sequential reading is preferable.
+
+    See the WebDataset project for more information: https://github.com/webdataset/webdataset
+    """
+    from lhotse.dataset.webdataset import export_to_webdataset as export_
+
+    cuts = CutSet.from_file(cutset)
     assert isinstance(
         cuts, CutSet
-    ), f"Only CutSet can be described (got: {type(cuts)} from '{cutset}')"
-    cuts.describe()
+    ), f"Only CutSet can be exported to WebDataset format (got: {type(cuts)} from '{cutset}')"
+
+    export_(
+        cuts=cuts,
+        output_path=wspecifier,
+        shard_size=shard_size,
+        audio_format=audio_format,
+        load_audio=audio,
+        load_features=features,
+        load_custom=custom,
+        fault_tolerant=fault_tolerant,
+    )

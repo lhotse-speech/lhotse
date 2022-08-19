@@ -34,7 +34,7 @@ def download_gigaspeech(
     target_dir: Pathlike = ".",
     dataset_parts: Optional[Union[str, Sequence[str]]] = "auto",
     host: Optional[str] = "tsinghua",
-):
+) -> Path:
     if is_module_available("speechcolab"):
         from speechcolab.datasets.gigaspeech import GigaSpeech
     else:
@@ -51,6 +51,8 @@ def download_gigaspeech(
     for part in dataset_parts:
         logging.info(f"Downloading GigaSpeech part: {part}")
         gigaspeech.download(password, "{" + part + "}", host=host)
+
+    return target_dir
 
 
 def prepare_gigaspeech(

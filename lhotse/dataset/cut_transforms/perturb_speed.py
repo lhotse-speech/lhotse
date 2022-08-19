@@ -32,7 +32,7 @@ class PerturbSpeed:
             cut.perturb_speed(
                 factor=self.random.choice(self.factors), affix_id=not self.preserve_id
             )
-            if self.random.random() >= self.p
+            if self.random.random() <= self.p
             else cut
             for cut in cuts
         )

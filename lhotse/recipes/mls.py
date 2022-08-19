@@ -8,7 +8,7 @@ It is available at OpenSLR: http://openslr.org/94
 import logging
 from collections import defaultdict
 from pathlib import Path
-from typing import Dict
+from typing import Dict, Optional, Union
 
 from tqdm.auto import tqdm
 
@@ -74,12 +74,12 @@ def prepare_mls(
             recordings_path = (
                 None
                 if output_dir is None
-                else output_dir / f"recordings_{lang}_{split}.jsonl.gz"
+                else output_dir / f"mls-{lang}_recordings_{split}.jsonl.gz"
             )
             supervisions_path = (
                 None
                 if output_dir is None
-                else output_dir / f"supervisions_{lang}_{split}.jsonl.gz"
+                else output_dir / f"mls-{lang}_supervisions_{split}.jsonl.gz"
             )
             if (
                 recordings_path is not None

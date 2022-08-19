@@ -185,8 +185,3 @@ Collation utilities for building custom Datasets
 ------------------------------------------------
 
 .. automodule:: lhotse.dataset.collation
-
-Experimental: LhotseDataLoader
-------------------------------
-
-.. autoclass:: lhotse.dataset.dataloading.LhotseDataLoader

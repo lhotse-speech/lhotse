@@ -18,9 +18,9 @@ from collections import defaultdict
 from concurrent.futures import ProcessPoolExecutor
 from itertools import repeat
 from pathlib import Path
-from tqdm.auto import tqdm
+from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
 
-from typing import Any, Dict, List, Optional, Tuple, Union, Sequence
+from tqdm.auto import tqdm
 
 from lhotse import (
     compute_num_samples,
@@ -93,8 +93,10 @@ def prepare_wenet_speech(
         )
 
         if output_dir is not None:
-            supervisions.to_file(output_dir / f"supervisions_{sub}.jsonl.gz")
-            recordings.to_file(output_dir / f"recordings_{sub}.jsonl.gz")
+            supervisions.to_file(
+                output_dir / f"wenetspeech_supervisions_{sub}.jsonl.gz"
+            )
+            recordings.to_file(output_dir / f"wenetspeech_recordings_{sub}.jsonl.gz")
 
         manifests[sub] = {
             "recordings": recordings,
@@ -131,7 +133,9 @@ def parse_utterance(
             id=seg["sid"],
             recording_id=audio["aid"],
             start=seg["begin_time"],
-            duration=add_durations(seg["end_time"], -seg["begin_time"], sampling_rate),
+            duration=add_durations(
+                seg["end_time"], -seg["begin_time"], sampling_rate=sampling_rate
+            ),
             language="Chinese",
             text=seg["text"].strip(),
         )

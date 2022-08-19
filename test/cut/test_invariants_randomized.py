@@ -3,8 +3,8 @@ from hypothesis import strategies as st
 
 from lhotse.testing.fixtures import RandomCutTestCase
 
-EXAMPLE_TIMEOUT_MS = 1000
-MAX_EXAMPLES = 500
+EXAMPLE_TIMEOUT_MS = 5000
+MAX_EXAMPLES = 200
 
 
 class TestMixedCutNumFramesNumSamplesRandomized(RandomCutTestCase):
@@ -44,10 +44,10 @@ class TestMixedCutNumFramesNumSamplesRandomized(RandomCutTestCase):
         mixed = cuts[0]
         for idx, cut in enumerate(cuts[1:]):
             offset = rand_gen.draw(
-                st.floats(min_value=0.1, max_value=mixed.duration),
+                st.floats(min_value=0.1, max_value=2 * mixed.duration),
                 label=f"Offset for cut {idx + 1}",
             )
-            mixed = mixed.mix(cut, offset_other_by=offset)
+            mixed = mixed.mix(cut, offset_other_by=offset, allow_padding=True)
         # Truncate somewhere around the middle
         # end = rand_gen.draw(st.floats(mixed.duration * 0.4, mixed.duration * 0.6), label='Truncated duration')
         # mixed = mixed.truncate(duration=end)

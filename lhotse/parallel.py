@@ -1,5 +1,5 @@
-import threading
 import queue
+import threading
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
 from typing import Callable, Generator, Iterable
 

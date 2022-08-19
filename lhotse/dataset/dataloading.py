@@ -1,105 +1,57 @@
-import platform
-from collections import deque
-from concurrent.futures import ProcessPoolExecutor
-from multiprocessing import get_context
-from typing import Any, Dict, List
+from functools import partial
+from typing import Callable, Optional
 
-import torch.utils.data
-
-from lhotse.dataset.sampling.base import CutSampler
+from lhotse.utils import fix_random_seed
 
 
-class LhotseDataLoader:
+def make_worker_init_fn(
+    rank: Optional[int] = None,
+    world_size: Optional[int] = None,
+    set_different_node_and_worker_seeds: bool = True,
+    seed: Optional[int] = 42,
+) -> Optional[Callable[[int], None]]:
     """
-    A simplified ``DataLoader`` implementation that relies on a ``ProcessPoolExecutor``.
-    The main difference between this and ``torch.utils.data.DataLoader`` is that
-    :class:`.LhotseDataLoader` allows to launch subprocesses inside of its workers.
-    This is useful for working with dataset classes which perform dynamic batching
-    and need to perform concurrent I/O to read all the necessary data from disk/network.
+    Calling this function creates a worker_init_fn suitable to pass to PyTorch's DataLoader.
 
-    .. note:: :class:`.LhotseDataLoader` does not support ``num_workers=0``.
-
-    .. warning:: :class:`.LhotseDataLoader` is experimental and not guaranteed to work
-        correctly across all possible edge cases related to subprocess worker termination.
-        If you experience stability problems, contact us or use a standard ``DataLoader``
-        instead.
-
-    .. warning:: :class:`.LhotseDataLoader` requires Python >= 3.7.
+    It helps with two issues:
+    - sets the random seeds differently for each worker and node, which helps with
+        avoiding duplication in randomized data augmentation techniques.
+    - sets environment variables that help WebDataset detect it's inside multi-GPU (DDP)
+        training, so that it correctly de-duplicates the data across nodes.
     """
-
-    def __init__(
-        self,
-        dataset: torch.utils.data.Dataset,
-        sampler: CutSampler,
-        num_workers: int = 1,
-        prefetch_factor: int = 2,
-    ) -> None:
-        from packaging.version import parse as _version
-
-        if _version(platform.python_version()) < _version("3.7"):
-            raise RuntimeError("LhotseDataLoader requires Python version at least 3.7")
-        assert num_workers >= 1
-        assert prefetch_factor >= 1
-        self.dataset = dataset
-        self.sampler = sampler
-        self.num_workers = num_workers
-        self.prefetch_factor = prefetch_factor
-        # Mutable state
-        self._iter = None
-        self._futures = deque([])
-        # Start the worker processes. The initializer receives the dataset object
-        # from the main process and caches it globally, so that it can be re-used
-        # for subsequent tasks sent to the worker. This helps avoid excessive
-        # communication between the processes.
-        self.pool = ProcessPoolExecutor(
-            num_workers,
-            initializer=_init_worker,
-            initargs=(dataset,),
-            mp_context=get_context("spawn"),
-        )
-
-    def __iter__(self) -> "LhotseDataLoader":
-        """Prepares the sampler for iteration and schedules initial tasks to the workers."""
-        self._iter = iter(self.sampler)
-        for _ in range(self.prefetch_factor * self.num_workers):
-            self._schedule_one()
-        return self
-
-    def _schedule_one(self) -> None:
-        """Submits a task and stores the future for results retrieval."""
-        if self._iter is not None:
-            try:
-                self._futures.append(self.pool.submit(_get_item, next(self._iter)))
-            except StopIteration:
-                self._iter = None
-
-    def _retrieve_one(self) -> Dict[str, Any]:
-        """Retrieves the result from the earliest submitted task."""
-        if self._futures:
-            return self._futures.popleft().result()
-        raise StopIteration()
-
-    def __next__(self) -> Dict[str, Any]:
-        """Submits a new batch to process and then retrieves and returns a completed batch."""
-        self._schedule_one()
-        return self._retrieve_one()
+    return partial(
+        worker_init_fn,
+        rank=rank,
+        world_size=world_size,
+        set_different_node_and_worker_seeds=set_different_node_and_worker_seeds,
+        seed=seed,
+    )
 
 
-def _init_worker(dataset: torch.utils.data.Dataset) -> None:
-    """
-    Stores the dataset in the global state of the process -- this is safe because
-    the process is initialized only once and used for unique dataset in its life span.
-    """
-    global _GLOBAL_DATASET_CACHE
-    _GLOBAL_DATASET_CACHE = dataset
+def worker_init_fn(
+    worker_id: int,
+    rank: Optional[int] = None,
+    world_size: Optional[int] = None,
+    set_different_node_and_worker_seeds: bool = True,
+    seed: Optional[int] = 42,
+) -> None:
+    if set_different_node_and_worker_seeds:
+        process_seed = seed + worker_id
+        if rank is not None:
+            process_seed += 1000 * rank
+        fix_random_seed(process_seed)
 
+    if rank is None and world_size is None:
+        return
 
-def _get_item(cut_ids: List[str]) -> Dict[str, Any]:
-    """
-    Queries the globally cached dataset to retrieve a batch. Has to be run
-    inside a worker process that was initialized with :meth:`._init_worker`.
-    """
-    return _GLOBAL_DATASET_CACHE[cut_ids]
+    assert (
+        rank is not None and world_size is not None
+    ), f"Both args must be not None: rank={rank}, world_size={world_size}"
 
+    # This sets the rank/world_size info for WebDataset to read it in worker subprocesses.
+    # If we didn't do it, WebDataset will "think" this is always single-node training,
+    # because DataLoader workers did not initialize torch.distributed.
+    import os
 
-_GLOBAL_DATASET_CACHE = None
+    os.environ["RANK"] = str(rank)
+    os.environ["WORLD_SIZE"] = str(world_size)

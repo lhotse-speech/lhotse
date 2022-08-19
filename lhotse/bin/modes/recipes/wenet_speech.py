@@ -1,9 +1,10 @@
+from typing import Sequence
+
 import click
+
 from lhotse.bin.modes import prepare
 from lhotse.recipes.wenet_speech import prepare_wenet_speech
 from lhotse.utils import Pathlike
-
-from typing import Sequence
 
 
 @prepare.command(context_settings=dict(show_default=True))

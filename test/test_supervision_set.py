@@ -178,7 +178,7 @@ def test_add_supervision_sets():
     supervision_set_1 = DummyManifest(SupervisionSet, begin_id=0, end_id=5)
     supervision_set_2 = DummyManifest(SupervisionSet, begin_id=5, end_id=10)
     combined = supervision_set_1 + supervision_set_2
-    assert combined == expected
+    assert list(combined) == list(expected)
 
 
 @pytest.fixture

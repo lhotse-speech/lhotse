@@ -1,7 +1,7 @@
 """
 About the Aishell corpus
 Aishell is an open-source Chinese Mandarin speech corpus published by Beijing Shell Shell Technology Co.,Ltd.
-publicly availble on https://www.openslr.org/33
+publicly available on https://www.openslr.org/33
 """
 
 import logging
@@ -12,6 +12,8 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Dict, Optional, Union
 
+from tqdm.auto import tqdm
+
 from lhotse import validate_recordings_and_supervisions
 from lhotse.audio import Recording, RecordingSet
 from lhotse.supervision import SupervisionSegment, SupervisionSet
@@ -20,23 +22,24 @@ from lhotse.utils import Pathlike, urlretrieve_progress
 
 def download_aishell(
     target_dir: Pathlike = ".",
-    force_download: Optional[bool] = False,
-    base_url: Optional[str] = "http://www.openslr.org/resources",
-) -> None:
+    force_download: bool = False,
+    base_url: str = "http://www.openslr.org/resources",
+) -> Path:
     """
     Downdload and untar the dataset
     :param target_dir: Pathlike, the path of the dir to storage the dataset.
     :param force_download: Bool, if True, download the tars no matter if the tars exist.
     :param base_url: str, the url of the OpenSLR resources.
+    :return: the path to downloaded and extracted directory with data.
     """
     url = f"{base_url}/33"
     target_dir = Path(target_dir)
     target_dir.mkdir(parents=True, exist_ok=True)
+    corpus_dir = target_dir / "aishell"
     dataset_tar_name = "data_aishell.tgz"
     resources_tar_name = "resource_aishell.tgz"
     for tar_name in [dataset_tar_name, resources_tar_name]:
         tar_path = target_dir / tar_name
-        corpus_dir = target_dir / "aishell"
         extracted_dir = corpus_dir / tar_name[:-4]
         completed_detector = extracted_dir / ".completed"
         if completed_detector.is_file():
@@ -55,6 +58,8 @@ def download_aishell(
                 with tarfile.open(wav_dir / sub_tar_name) as tar:
                     tar.extractall(path=wav_dir)
         completed_detector.touch()
+
+    return corpus_dir
 
 
 def prepare_aishell(
@@ -79,7 +84,11 @@ def prepare_aishell(
             transcript_dict[idx_transcript[0]] = " ".join(idx_transcript[1:])
     manifests = defaultdict(dict)
     dataset_parts = ["train", "dev", "test"]
-    for part in dataset_parts:
+    for part in tqdm(
+        dataset_parts,
+        desc="Process aishell audio, it takes about 102 seconds.",
+    ):
+        logging.info(f"Processing aishell subset: {part}")
         # Generate a mapping: utt_id -> (audio_path, audio_info, speaker, text)
         recordings = []
         supervisions = []
@@ -89,6 +98,7 @@ def prepare_aishell(
             speaker = audio_path.parts[-2]
             if idx not in transcript_dict:
                 logging.warning(f"No transcript: {idx}")
+                logging.warning(f"{audio_path} has no transcript.")
                 continue
             text = transcript_dict[idx]
             if not audio_path.is_file():
@@ -113,8 +123,10 @@ def prepare_aishell(
         validate_recordings_and_supervisions(recording_set, supervision_set)
 
         if output_dir is not None:
-            supervision_set.to_json(output_dir / f"supervisions_{part}.json")
-            recording_set.to_json(output_dir / f"recordings_{part}.json")
+            supervision_set.to_file(
+                output_dir / f"aishell_supervisions_{part}.jsonl.gz"
+            )
+            recording_set.to_file(output_dir / f"aishell_recordings_{part}.jsonl.gz")
 
         manifests[part] = {"recordings": recording_set, "supervisions": supervision_set}
 
