@@ -105,6 +105,7 @@ def load_kaldi_data_dir(
 
     supervision_set = None
     segments = path / "segments"
+    utt2spk_f = path / "utt2spk"
     if segments.is_file():
         with segments.open() as f:
             supervision_segments = [sup_string.strip().split() for sup_string in f]
@@ -130,7 +131,7 @@ def load_kaldi_data_dir(
             )
             for segment_id, recording_id, start, end in supervision_segments
         )
-    else:
+    elif utt2spk_f.is_file():
         # segments file does not exist => recordings are already segmented
         speakers = load_kaldi_text_mapping(path / "utt2spk")
         assert len(speakers) == len(recording_set)
