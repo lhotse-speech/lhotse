@@ -105,6 +105,7 @@ def load_kaldi_data_dir(
 
     supervision_set = None
     segments = path / "segments"
+    utt2spk_f = path / "utt2spk"
     if segments.is_file():
         with segments.open() as f:
             supervision_segments = [sup_string.strip().split() for sup_string in f]
@@ -129,6 +130,29 @@ def load_kaldi_data_dir(
                 gender=genders[speakers[segment_id]],
             )
             for segment_id, recording_id, start, end in supervision_segments
+        )
+    elif utt2spk_f.is_file():
+        # segments file does not exist => provided supervision
+        # corresponds to whole recordings
+        speakers = load_kaldi_text_mapping(path / "utt2spk")
+        assert len(speakers) == len(recording_set)
+
+        texts = load_kaldi_text_mapping(path / "text")
+        genders = load_kaldi_text_mapping(path / "spk2gender")
+        languages = load_kaldi_text_mapping(path / "utt2lang")
+        supervision_set = SupervisionSet.from_segments(
+            SupervisionSegment(
+                id=fix_id(rec_id),
+                recording_id=rec_id,
+                start=0.0,
+                duration=durations[rec_id],
+                channel=0,
+                text=texts[rec_id],
+                language=languages[rec_id],
+                speaker=fix_id(spkr),
+                gender=genders[spkr],
+            )
+            for rec_id, spkr in speakers.items()
         )
 
     feature_set = None
