@@ -36,6 +36,7 @@ def text_normalize(line: str):
     line = line.upper()
     return line
 
+
 def download_aishell(
     target_dir: Pathlike = ".",
     force_download: bool = False,
