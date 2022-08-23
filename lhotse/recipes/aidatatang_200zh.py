@@ -93,7 +93,10 @@ def prepare_aidatatang_200zh(
     with open(transcript_path, "r", encoding="utf-8") as f:
         for line in f.readlines():
             idx_transcript = line.split()
-            transcript_dict[idx_transcript[0]] = " ".join(idx_transcript[1:])
+            content = " ".join(idx_transcript[1:])
+            content = content.replace("Ａ", "A")
+            content = content.upper()
+            transcript_dict[idx_transcript[0]] = content
     manifests = defaultdict(dict)
     dataset_parts = ["dev", "test", "train"]
 

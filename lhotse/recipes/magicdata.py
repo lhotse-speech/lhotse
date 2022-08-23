@@ -22,6 +22,55 @@ from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import Pathlike, urlretrieve_progress
 
 
+def text_normalize(line: str):
+    """
+    Modified from https://github.com/wenet-e2e/wenet/blob/main/examples/multi_cn/s0/local/magicdata_data_prep.sh#L41
+     sed 's/！//g' | sed 's/？//g' |\
+    sed 's/，//g' | sed 's/－//g' |\
+    sed 's/：//g' | sed 's/；//g' |\
+    sed 's/　//g' | sed 's/。//g' |\
+    sed 's/`//g' | sed 's/,//g' |\
+    sed 's/://g' | sed 's/?//g' |\
+    sed 's/\///g' | sed 's/·//g' |\
+    sed 's/\"//g' | sed 's/“//g' |\
+    sed 's/”//g' | sed 's/\\//g' |\
+    sed 's/…//g' | sed "s///g" |\
+    sed 's/、//g' | sed "s///g" | sed 's/《//g' | sed 's/》//g' |\
+    sed 's/\[//g' | sed 's/\]//g' | sed 's/FIL//g' | sed 's/SPK//' |\
+    tr '[a-z]' '[A-Z]' |\
+    """
+    line = line.replace("！", "")
+    line = line.replace("？", "")
+    line = line.replace("，", "")
+    line = line.replace("－", "")
+    line = line.replace("：", "")
+    line = line.replace("；", "")
+    line = line.replace("　", "")
+    line = line.replace("。", "")
+    line = line.replace("`", "")
+    line = line.replace(",", "")
+    line = line.replace(":", "")
+    line = line.replace("?", "")
+    line = line.replace("/", "")
+    line = line.replace("·", "")
+    line = line.replace('"', "")
+    line = line.replace("“", "")
+    line = line.replace("”", "")
+    line = line.replace("\\", "")
+    line = line.replace("…", "")
+    line = line.replace("、", "")
+    line = line.replace("[ ", "")
+    line = line.replace("[", "")
+    line = line.replace("]", "")
+    line = line.replace("《 ", "")
+    line = line.replace("《", "")
+    line = line.replace("》", "")
+    line = line.replace("FIL", "")
+    line = line.replace("SPK", "")
+    line = line.upper()
+    return line
+
+
 def download_magicdata(
     target_dir: Pathlike = ".",
     force_download: bool = False,
@@ -94,7 +143,9 @@ def prepare_magicdata(
                 ):
                     continue
                 idx_ = idx_transcript[0].split(".")[0]
-                transcript_dict[idx_] = " ".join(idx_transcript[2:])
+                content = " ".join(idx_transcript[2:])
+                content = text_normalize(content)
+                transcript_dict[idx_] = content
 
     manifests = defaultdict(dict)
     for part in tqdm(

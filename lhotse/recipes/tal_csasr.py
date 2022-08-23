@@ -2,8 +2,8 @@
 optional TAL_CSASR(587 hours) if available(https://ai.100tal.com/dataset).
 It is a mandarin-english code-switch corpus.
 """
-
 import logging
+import re
 from collections import defaultdict
 from pathlib import Path
 from typing import Dict, Optional, Union
@@ -14,6 +14,36 @@ from lhotse import validate_recordings_and_supervisions
 from lhotse.audio import Recording, RecordingSet
 from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import Pathlike
+
+
+def text_normalize(line: str):
+    """
+    Modified from https://github.com/wenet-e2e/wenet/blob/main/examples/multi_cn/s0/local/tal_mix_data_prep.sh#L52
+    sed 's/Ａ/A/g' | sed 's/Ｃ/C/g' | sed 's/Ｄ/D/g' | sed 's/Ｇ/G/g' | \
+    sed 's/Ｈ/H/g' | sed 's/Ｕ/U/g' | sed 's/Ｙ/Y/g' | sed 's/ａ/a/g' | \
+    sed 's/Ｉ/I/g' | sed 's/#//g' | sed 's/=//g' | sed 's/；//g' | \
+    sed 's/，//g' | sed 's/？//g' | sed 's/。//g' | sed 's/\///g' | \
+    sed 's/！//g' | sed 's/!//g' | sed 's/\.//g' | sed 's/\?//g' | \
+    sed 's/：//g' | sed 's/,//g' | sed 's/\"//g' | sed 's/://g' | \
+    sed 's/@//g' | sed 's/-/ /g' | sed 's/、/ /g' | sed 's/~/ /g' | \
+    sed "s/‘/\'/g" | sed 's/Ｅ/E/g' | sed "s/’/\'/g" | sed 's/《//g' | sed 's/》//g' | \
+    sed "s/[ ][ ]*$//g" | sed "s/\[//g" | sed 's/、//g'
+    210_40223_210_6228_1_1533298404_4812267_555 上面是一般现在对然后然后下面呢 HE IS ALWAYS FINISHIＮG
+    """
+    line = line.replace("Ａ", "A")
+    line = line.replace("Ｃ", "C")
+    line = line.replace("Ｄ", "D")
+    line = line.replace("Ｇ", "G")
+    line = line.replace("Ｈ", "H")
+    line = line.replace("Ｕ", "U")
+    line = line.replace("Ｙ", "Y")
+    line = line.replace("ａ", "a")
+    line = line.replace("Ｉ", "I")
+    line = re.sub(f'#|=|；|，|？|。|/|！|!|.|?|：|,|"|:|@|-|、|~|《|》|[|]|、', "", line)
+    line = line.replace("Ｅ", "E")
+    line = line.replace("Ｎ", "N")
+    line = line.upper()
+    return line
 
 
 def prepare_tal_csasr(
@@ -38,7 +68,9 @@ def prepare_tal_csasr(
     with open(transcript_path, "r", encoding="utf-8") as f:
         for line in f.readlines():
             idx_transcript = line.split()
-            transcript_dict[idx_transcript[0]] = " ".join(idx_transcript[1:])
+            content = " ".join(idx_transcript[1:])
+            content = text_normalize(content)
+            transcript_dict[idx_transcript[0]] = content
 
     manifests = defaultdict(dict)
     dataset_parts = ["train"]

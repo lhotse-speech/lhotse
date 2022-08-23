@@ -20,6 +20,23 @@ from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import Pathlike, urlretrieve_progress
 
 
+def text_normalize(line: str):
+    """
+    Modified from https://github.com/wenet-e2e/wenet/blob/main/examples/multi_cn/s0/local/aishell_data_prep.sh#L54
+    sed 's/ａ/a/g' | sed 's/ｂ/b/g' |\
+    sed 's/ｃ/c/g' | sed 's/ｋ/k/g' |\
+    sed 's/ｔ/t/g' > $dir/transcripts.t
+
+    """
+    line = line.replace("ａ", "a")
+    line = line.replace("ｂ", "b")
+    line = line.replace("ｃ", "c")
+    line = line.replace("ｋ", "k")
+    line = line.replace("ｔ", "t")
+    line = line.upper()
+    return line
+
+
 def download_aishell(
     target_dir: Pathlike = ".",
     force_download: bool = False,
@@ -81,7 +98,9 @@ def prepare_aishell(
     with open(transcript_path, "r", encoding="utf-8") as f:
         for line in f.readlines():
             idx_transcript = line.split()
-            transcript_dict[idx_transcript[0]] = " ".join(idx_transcript[1:])
+            content = " ".join(idx_transcript[1:])
+            content = text_normalize(content)
+            transcript_dict[idx_transcript[0]] = content
     manifests = defaultdict(dict)
     dataset_parts = ["train", "dev", "test"]
     for part in tqdm(

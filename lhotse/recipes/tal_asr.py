@@ -2,8 +2,8 @@
 optional TAL_ASR (100 hours) if available(https://ai.100tal.com/dataset).
 
 """
-
 import logging
+import re
 from collections import defaultdict
 from pathlib import Path
 from typing import Dict, Optional, Union
@@ -14,6 +14,18 @@ from lhotse import validate_recordings_and_supervisions
 from lhotse.audio import Recording, RecordingSet
 from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import Pathlike
+
+
+def text_normalize(line: str):
+    """
+    It is from https://github.com/wenet-e2e/wenet/blob/main/examples/multi_cn/s0/local/tal_data_prep.sh#L57
+      sed 's/Ａ/A/g' | sed 's/#//g' | sed 's/=//g' | sed 's/、//g' | \
+    sed 's/，//g' | sed 's/？//g' | sed 's/。//g' | sed 's/[ ][ ]*$//g'\
+    """
+    line = line.replace("Ａ", "A")
+    line = re.sub(f"#|=|、|，|？|。|[|]", "", line)
+    line = line.upper()
+    return line
 
 
 def prepare_tal_asr(
@@ -36,7 +48,9 @@ def prepare_tal_asr(
     with open(transcript_path, "r", encoding="utf-8") as f:
         for line in f.readlines():
             idx_transcript = line.split()
-            transcript_dict[idx_transcript[0]] = " ".join(idx_transcript[1:])
+            content = " ".join(idx_transcript[1:])
+            content = text_normalize(content)
+            transcript_dict[idx_transcript[0]] = content
 
     manifests = defaultdict(dict)
     dataset_parts = ["train", "dev", "test"]
