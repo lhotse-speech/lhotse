@@ -93,22 +93,37 @@ def prepare_aishell2(
             idx_transcript = line.split()
             content = " ".join(idx_transcript[1:])
             content = text_normalize(content)
-            ## the utterance transcript is error.
-            # if idx_transcript[0] == "ID1042W0075":
-            #    content = "打开爱芒果电视"
             transcript_dict[idx_transcript[0]] = content
 
     manifests = defaultdict(dict)
-    dataset_parts = ["train"]
+    dataset_parts = ["train", "dev", "test"]
     for part in tqdm(
         dataset_parts,
         desc="Process aishell2 audio, it takes about 55  minutes using 40 cpu jobs.",
     ):
         logging.info(f"Processing aishell2 subset: {part}")
         # Generate a mapping: utt_id -> (audio_path, audio_info, speaker, text)
-        supervisions = []
-        wav_path = corpus_dir / "AISHELL-2" / "iOS" / "data" / "wav"
 
+
+        if part == "train":
+            transcript_path = corpus_dir / "AISHELL-2" / "iOS" / "data" / "trans.txt"
+            wav_path = corpus_dir / "AISHELL-2" / "iOS" / "data" / "wav"
+        else:
+            # using dev_ios, test_ios
+            transcript_path = corpus_dir / "AISHELL-2" / "iOS" / f"{part}" / "trans.txt"
+            wav_path = corpus_dir / "AISHELL-2" / "iOS" / f"{part}" / "wav"
+        
+        transcript_dict = {}
+        with open(transcript_path, "r", encoding="utf-8") as f:
+            for line in f:
+                idx_transcript = line.split()
+                content = " ".join(idx_transcript[1:])
+                content = text_normalize(content)
+                transcript_dict[idx_transcript[0]] = content
+
+
+
+        supervisions = []
         recordings = RecordingSet.from_dir(
             path=wav_path, pattern="*.wav", num_jobs=num_jobs
         )
