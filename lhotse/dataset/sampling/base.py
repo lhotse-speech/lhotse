@@ -7,7 +7,7 @@ from typing import Any, Callable, Dict, Iterable, Optional, Tuple, Union
 from torch import distributed as dist
 from torch.utils.data import Sampler
 
-from lhotse.cut import Cut
+from lhotse.cut import Cut, CutSet
 from lhotse.utils import Seconds, exactly_one_not_null, is_none_or_gt
 
 
@@ -271,7 +271,16 @@ class CutSampler(Sampler):
         selected = batches[self.rank]
         if selected is None:
             raise StopIteration
+        self._log_diagnostics(selected)
         return selected
+
+    def _log_diagnostics(self, batch: Union[CutSet, Tuple[CutSet, ...]]) -> None:
+        if isinstance(batch, CutSet):
+            self.diagnostics.keep(batch)
+        elif isinstance(batch, tuple) and isinstance(batch[0], CutSet):
+            self.diagnostics.keep(batch[0])
+        else:
+            raise ValueError(f"Object with unexpected type: {batch}")
 
     def get_report(self) -> str:
         """Returns a string describing the statistics of the sampling process so far."""

@@ -202,6 +202,9 @@ class ZipSampler(CutSampler):
         for sampler in self.samplers:
             sampler.filter(predicate)
 
+    def _log_diagnostics(self, batch: Union[CutSet, Tuple[CutSet, ...]]) -> None:
+        return  # do nothing
+
     @property
     def diagnostics(self) -> SamplingDiagnostics:
         return reduce(add, (s.diagnostics for s in self.samplers))
