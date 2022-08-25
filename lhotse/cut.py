@@ -3273,6 +3273,8 @@ class MixedCut(Cut):
         """
         new_mixed_cut = fastcopy(self)
         for track in new_mixed_cut.tracks:
+            if isinstance(track.cut, PaddingCut):
+                continue
             track.cut.supervisions = [
                 segment.map(transform_fn) for segment in track.cut.supervisions
             ]
