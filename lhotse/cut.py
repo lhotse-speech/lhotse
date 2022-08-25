@@ -1518,11 +1518,21 @@ class MonoCut(Cut):
         :return: a modified copy of the current ``MonoCut``.
         """
         assert self.has_recording, "Cannot resample a MonoCut without Recording."
+        custom = self.custom
+        if isinstance(custom, dict) and any(
+            isinstance(v, Recording) for v in custom.values()
+        ):
+            custom = {
+                k: v.resample(sampling_rate) if isinstance(v, Recording) else v
+                for k, v in custom.items()
+            }
+
         return fastcopy(
             self,
             id=f"{self.id}_rs{sampling_rate}" if affix_id else self.id,
             recording=self.recording.resample(sampling_rate),
             features=None,
+            custom=custom,
         )
 
     def perturb_speed(self, factor: float, affix_id: bool = True) -> "MonoCut":
@@ -3263,6 +3273,8 @@ class MixedCut(Cut):
         """
         new_mixed_cut = fastcopy(self)
         for track in new_mixed_cut.tracks:
+            if isinstance(track.cut, PaddingCut):
+                continue
             track.cut.supervisions = [
                 segment.map(transform_fn) for segment in track.cut.supervisions
             ]
