@@ -109,7 +109,6 @@ def prepare_aishell2(
         logging.info(f"Processing aishell2 subset: {part}")
         # Generate a mapping: utt_id -> (audio_path, audio_info, speaker, text)
 
-
         if part == "train":
             transcript_path = corpus_dir / "AISHELL-2" / "iOS" / "data" / "trans.txt"
             wav_path = corpus_dir / "AISHELL-2" / "iOS" / "data" / "wav"
@@ -117,7 +116,7 @@ def prepare_aishell2(
             # using dev_ios, test_ios
             transcript_path = corpus_dir / "AISHELL-2" / "iOS" / f"{part}" / "trans.txt"
             wav_path = corpus_dir / "AISHELL-2" / "iOS" / f"{part}" / "wav"
-        
+
         transcript_dict = {}
         with open(transcript_path, "r", encoding="utf-8") as f:
             for line in f:
@@ -125,8 +124,6 @@ def prepare_aishell2(
                 content = " ".join(idx_transcript[1:])
                 content = text_normalize(content)
                 transcript_dict[idx_transcript[0]] = content
-
-
 
         supervisions = []
         recordings = RecordingSet.from_dir(
