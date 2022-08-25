@@ -338,7 +338,7 @@ class OnTheFlyFeatures(BatchIO):
         self.return_audio = return_audio
 
     def __call__(
-        self, cuts: CutSet
+        self, cuts: CutSet, recording_field: Optional[str] = None
     ) -> Union[
         Tuple[torch.Tensor, torch.Tensor], Tuple[torch.Tensor, torch.Tensor, CutSet]
     ]:
@@ -347,6 +347,8 @@ class OnTheFlyFeatures(BatchIO):
         and computes their features.
         The returned shape is ``(B, T, F) => (batch_size, num_frames, num_features)``.
 
+        :param recording_field: when specified, we will try to load recordings from a custom field with this name
+            (i.e., ``cut.load_<recording_field>()`` instead of default ``cut.load_audio()``).
         :return: a tuple of objcets: ``(feats, feat_lens, [audios, audio_lens], [cuts])``.
             Tensors ``audios`` and ``audio_lens`` are returned when ``return_audio=True``.
             CutSet ``cuts`` is returned when ``fault_tolerant=True``.
@@ -355,6 +357,7 @@ class OnTheFlyFeatures(BatchIO):
             cuts,
             executor=_get_executor(self.num_workers, executor_type=self._executor_type),
             suppress_errors=self.fault_tolerant,
+            recording_field=recording_field,
         )
 
         for tfnm in self.wave_transforms:
