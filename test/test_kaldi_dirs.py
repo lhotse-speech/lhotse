@@ -6,6 +6,10 @@ import pytest
 
 import lhotse
 
+pytest.importorskip(
+    "kaldi_native_io", reason="Kaldi tests require kaldi_native_io to be installed."
+)
+
 FIXTURE_PATH = Path(__file__).resolve().parent / "fixtures"
 
 MINILIB_PATH = FIXTURE_PATH / "mini_librispeech"

@@ -4,7 +4,7 @@ from copy import deepcopy
 from functools import reduce
 from itertools import chain
 from operator import add
-from typing import Any, Callable, Dict, List, Optional, Tuple, Type
+from typing import Any, Callable, Dict, List, Optional, Tuple, Type, Union
 
 import numpy as np
 from typing_extensions import Literal
@@ -341,6 +341,9 @@ class BucketingSampler(CutSampler):
             )
             if not depleted
         ]
+
+    def _log_diagnostics(self, batch: Union[CutSet, Tuple[CutSet, ...]]) -> None:
+        return  # do nothing
 
     @property
     def diagnostics(self) -> SamplingDiagnostics:

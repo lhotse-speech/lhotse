@@ -14,6 +14,12 @@ from lhotse.dataset import IterableDatasetWrapper, SimpleCutSampler, make_worker
 from lhotse.dataset.webdataset import export_to_webdataset
 from lhotse.utils import Pathlike
 
+pytest.importorskip(
+    "webdataset",
+    minversion="0.2.5",
+    reason="These tests require webdataset==0.2.5 to be installed.",
+)
+
 
 @pytest.mark.parametrize("world_size", [0, 1, 2])
 @pytest.mark.parametrize("num_workers", [0, 1, 2])
