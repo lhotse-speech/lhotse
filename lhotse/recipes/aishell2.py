@@ -57,19 +57,19 @@ def text_normalize(line: str):
     IC0001W0065 听YESTERDAY ONCE MORE
     IC0001W0066 听广岛之恋
     IC0001W0067 听一生有你
-    IC0010W0228 Here's
-    IC0012W0161 I'm
-    IC0013W0018 It's
-    IC0017W0126 Nothing'sGChange
-    IC0020W0392 She's
-    IC0022W0444 That's
+    IC0010W0228 HERE'S
+    IC0012W0161 I'M
+    IC0013W0018 IT'S
+    IC0017W0126 NOTHING'SGCHANGE
+    IC0020W0392 SHE'S
+    IC0022W0444 THAT'S
     IC0073W0058 搬不走的要及时关停并转
-    IC0085W0187 帮我放一首歌Let's
+    IC0085W0187 帮我放一首歌LET'S
     IC0392W0410 对低收入群体的帮助也更大
     IC0975W0451 明年二月底小成
     ID0114W0368 我感觉就是在不断拉抽屉
     ID0115W0198 我公司员工不存在持有和泰创投股份的情况
-
+    
     """
     new_line = []
     line = list(line)
