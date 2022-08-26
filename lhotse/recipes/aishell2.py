@@ -15,7 +15,7 @@ from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import Pathlike
 
 
-def text_normalize(line: str):
+def text_normalize(line: str) -> str:
     """
     Modified from https://github.com/wenet-e2e/wenet/blob/main/examples/multi_cn/s0/local/aishell2_data_prep.sh#L50
 
