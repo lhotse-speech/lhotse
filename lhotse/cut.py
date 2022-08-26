@@ -964,6 +964,14 @@ class MonoCut(Cut):
     def has_recording(self) -> bool:
         return self.recording is not None
 
+    def has(self, field: str) -> bool:
+        if field == "recording":
+            return self.has_recording
+        elif field == "features":
+            return self.has_features
+        else:
+            return self.custom is not None and field in self.custom
+
     @property
     def frame_shift(self) -> Optional[Seconds]:
         return self.features.frame_shift if self.has_features else None
@@ -1907,6 +1915,14 @@ class PaddingCut(Cut):
     def has_recording(self) -> bool:
         return self.num_samples is not None
 
+    def has(self, field: str) -> bool:
+        if field == "recording":
+            return self.has_recording
+        elif field == "features":
+            return self.has_features
+        else:
+            return self.custom is not None and field in self.custom
+
     @property
     def recording_id(self) -> str:
         return "PAD"
@@ -2337,6 +2353,9 @@ class MixedCut(Cut):
     @property
     def has_recording(self) -> bool:
         return self._first_non_padding_cut.has_recording
+
+    def has(self, field: str) -> bool:
+        return self._first_non_padding_cut.has(field)
 
     @property
     def num_frames(self) -> Optional[int]:
