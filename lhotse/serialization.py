@@ -538,6 +538,7 @@ def deserialize_custom_field(data: Optional[dict]) -> Optional[dict]:
         return None
 
     from lhotse.array import deserialize_array
+    from lhotse.audio import Recording
 
     # If any of the values in the input are also dicts,
     # it indicates that might be a serialized array manifest.
@@ -545,6 +546,9 @@ def deserialize_custom_field(data: Optional[dict]) -> Optional[dict]:
     # we'll just leave it as it was.
     for key, value in data.items():
         if isinstance(value, dict):
+            if all(k in value for k in ("id", "sources", "sampling_rate")):
+                data[key] = Recording.from_dict(value)
+                continue
             try:
                 data[key] = deserialize_array(value)
             except:

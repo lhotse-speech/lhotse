@@ -964,6 +964,14 @@ class MonoCut(Cut):
     def has_recording(self) -> bool:
         return self.recording is not None
 
+    def has(self, field: str) -> bool:
+        if field == "recording":
+            return self.has_recording
+        elif field == "features":
+            return self.has_features
+        else:
+            return self.custom is not None and field in self.custom
+
     @property
     def frame_shift(self) -> Optional[Seconds]:
         return self.features.frame_shift if self.has_features else None
@@ -1518,11 +1526,21 @@ class MonoCut(Cut):
         :return: a modified copy of the current ``MonoCut``.
         """
         assert self.has_recording, "Cannot resample a MonoCut without Recording."
+        custom = self.custom
+        if isinstance(custom, dict) and any(
+            isinstance(v, Recording) for v in custom.values()
+        ):
+            custom = {
+                k: v.resample(sampling_rate) if isinstance(v, Recording) else v
+                for k, v in custom.items()
+            }
+
         return fastcopy(
             self,
             id=f"{self.id}_rs{sampling_rate}" if affix_id else self.id,
             recording=self.recording.resample(sampling_rate),
             features=None,
+            custom=custom,
         )
 
     def perturb_speed(self, factor: float, affix_id: bool = True) -> "MonoCut":
@@ -1896,6 +1914,14 @@ class PaddingCut(Cut):
     @property
     def has_recording(self) -> bool:
         return self.num_samples is not None
+
+    def has(self, field: str) -> bool:
+        if field == "recording":
+            return self.has_recording
+        elif field == "features":
+            return self.has_features
+        else:
+            return self.custom is not None and field in self.custom
 
     @property
     def recording_id(self) -> str:
@@ -2327,6 +2353,9 @@ class MixedCut(Cut):
     @property
     def has_recording(self) -> bool:
         return self._first_non_padding_cut.has_recording
+
+    def has(self, field: str) -> bool:
+        return self._first_non_padding_cut.has(field)
 
     @property
     def num_frames(self) -> Optional[int]:
@@ -3263,6 +3292,8 @@ class MixedCut(Cut):
         """
         new_mixed_cut = fastcopy(self)
         for track in new_mixed_cut.tracks:
+            if isinstance(track.cut, PaddingCut):
+                continue
             track.cut.supervisions = [
                 segment.map(transform_fn) for segment in track.cut.supervisions
             ]
