@@ -96,8 +96,9 @@ def generate_fast_random_rir(
     :param tau: controlling the relationship between the distance and the number of reflections of each virtual sound source. Default: 0.25.
     :return: simulated RIR filter for all sources, shape: (nsource, nsample)
     """
-    from lhotse.augmentation.torchaudio import get_or_create_resampler
     from torchaudio.functional import highpass_biquad
+
+    from lhotse.augmentation.torchaudio import get_or_create_resampler
 
     # the sample rate at which the original RIR filter is generated
     ratio = 64
