@@ -2,8 +2,6 @@ from typing import List
 
 import numpy as np
 import torch
-from torchaudio.functional import highpass_biquad
-from torchaudio.transforms import Resample
 
 try:
     # Pytorch >= 1.7
@@ -76,7 +74,7 @@ def convolve1d(signal: torch.Tensor, kernel: torch.Tensor) -> torch.Tensor:
     return result[:padded_size]
 
 
-# The following is taken from: https://github.com/yluo42/FRA-RIR/blob/main/FRA-RIR.py
+# The following is based on: https://github.com/yluo42/FRA-RIR/blob/main/FRA-RIR.py
 def generate_fast_random_rir(
     nsource: int = 1,
     sr: int = 16000,
@@ -98,6 +96,16 @@ def generate_fast_random_rir(
     :param tau: controlling the relationship between the distance and the number of reflections of each virtual sound source. Default: 0.25.
     :return: simulated RIR filter for all sources, shape: (nsource, nsample)
     """
+    from torchaudio.functional import highpass_biquad
+    from lhotse.augmentation.torchaudio import get_or_create_resampler
+
+    # the sample rate at which the original RIR filter is generated
+    ratio = 64
+    sample_sr = sr * ratio
+
+    # two resampling operations
+    resample1 = get_or_create_resampler(sample_sr, sample_sr // int(np.sqrt(ratio)))
+    resample2 = get_or_create_resampler(sample_sr // int(np.sqrt(ratio)), sr)
 
     eps = np.finfo(np.float16).eps
 
@@ -113,10 +121,6 @@ def generate_fast_random_rir(
     # number of virtual sound sources
     image = sr * 2
 
-    # the sample rate at which the original RIR filter is generated
-    ratio = 64
-    sample_sr = sr * ratio
-
     # sound velocity
     velocity = 340.0
 
@@ -125,10 +129,6 @@ def generate_fast_random_rir(
 
     # length of the RIR filter based on the sampled T60
     rir_length = int(np.ceil(sample_sr * T60))
-
-    # two resampling operations
-    resample1 = Resample(sample_sr, sample_sr // int(np.sqrt(ratio)))
-    resample2 = Resample(sample_sr // int(np.sqrt(ratio)), sr)
 
     # calculate the reflection coefficient based on the Eyring's empirical equation
     reflect_coef = (1 - (1 - torch.exp(-0.16 * R / T60)).pow(2)).sqrt()
