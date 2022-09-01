@@ -2,8 +2,8 @@ from typing import List
 
 import numpy as np
 import torch
-from torchaudio.transforms import Resample
 from torchaudio.functional import highpass_biquad
+from torchaudio.transforms import Resample
 
 try:
     # Pytorch >= 1.7
