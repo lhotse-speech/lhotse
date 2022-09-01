@@ -45,13 +45,6 @@ def libri_recording_rvb():
 
 
 @pytest.fixture
-def libri_recording_rvb_fast_rir():
-    return Recording.from_file(
-        "test/fixtures/libri/libri-1088-134315-0000_rvb_fast_rir.wav"
-    )
-
-
-@pytest.fixture
 def cut_with_supervision(recording):
     return MonoCut(
         id="cut",
@@ -542,10 +535,7 @@ def test_cut_reverb_rir(libri_cut_with_supervision, libri_recording_rvb, rir):
     np.testing.assert_array_almost_equal(cut_rvb.load_audio(), rvb_audio_from_fixture)
 
 
-def test_cut_reverb_fast_rir(libri_cut_with_supervision, libri_recording_rvb_fast_rir):
-    # Seed 42 was used to generate the RIR in the fixtures
-    torch.manual_seed(42)
-
+def test_cut_reverb_fast_rir(libri_cut_with_supervision):
     cut = libri_cut_with_supervision
     cut_rvb = cut.reverb_rir(rir_recording=None)
     assert cut_rvb.start == cut.start

@@ -38,7 +38,9 @@ class ReverbWithImpulseResponse:
             self.random = random
         return CutSet.from_cuts(
             cut.reverb_rir(
-                rir_recording=self.random.choice(self.rir_recordings) if self.rir_recordings else None,
+                rir_recording=self.random.choice(self.rir_recordings)
+                if self.rir_recordings
+                else None,
                 normalize_output=self.normalize_output,
                 early_only=self.early_only,
                 affix_id=not self.preserve_id,
