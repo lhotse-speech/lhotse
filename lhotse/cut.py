@@ -2901,6 +2901,11 @@ class MixedCut(Cut):
         if len(rir_channels) == 1:
             rir_channels = rir_channels * len(self.tracks)
 
+        # NOTE: Currently, if no RIR is provided, this method will generate a
+        # random one for each track in the MixedCut. This is not ideal since the room
+        # configuration for all the RIRs should be the same. But we ignore this for now
+        # since it simplifies the implementation considerably.
+
         return MixedCut(
             id=f"{self.id}_rvb" if affix_id else self.id,
             tracks=[
