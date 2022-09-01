@@ -1682,7 +1682,7 @@ class MonoCut(Cut):
 
     def reverb_rir(
         self,
-        rir_recording: "Recording",
+        rir_recording: Optional["Recording"] = None,
         normalize_output: bool = True,
         early_only: bool = False,
         affix_id: bool = True,
@@ -1692,6 +1692,9 @@ class MonoCut(Cut):
         Return a new ``MonoCut`` that will convolve the audio with the provided impulse response.
         If the `rir_recording` is multi-channel, the `rir_channels` argument determines which channels
         will be used. By default, we use the first channel and return a MonoCut.
+
+        If no ``rir_recording`` is provided, we will generate an impulse response using a fast random
+        generator (https://arxiv.org/abs/2208.04101).
 
         :param rir_recording: The impulse response to use for convolving.
         :param normalize_output: When true, output will be normalized to have energy as input.
@@ -1714,10 +1717,12 @@ class MonoCut(Cut):
             )
             self.features = None
 
-        assert all(
+        assert rir_recording is None or all(
             c < rir_recording.num_channels for c in rir_channels
         ), "Invalid channel index in `rir_channels`."
-        if rir_recording.num_channels == 1 or len(rir_channels) == 1:
+        if len(rir_channels) == 1 or (
+            rir_recording is not None and rir_recording.num_channels == 1
+        ):
             # reverberation will return a MonoCut
             recording_rvb = self.recording.reverb_rir(
                 rir_recording=rir_recording,
@@ -2167,7 +2172,7 @@ class PaddingCut(Cut):
 
     def reverb_rir(
         self,
-        rir_recording: "Recording",
+        rir_recording: Optional["Recording"] = None,
         normalize_output: bool = True,
         early_only: bool = False,
         affix_id: bool = True,
@@ -2853,7 +2858,7 @@ class MixedCut(Cut):
 
     def reverb_rir(
         self,
-        rir_recording: "Recording",
+        rir_recording: Optional["Recording"] = None,
         normalize_output: bool = True,
         early_only: bool = False,
         affix_id: bool = True,
@@ -2861,6 +2866,8 @@ class MixedCut(Cut):
     ) -> "MixedCut":
         """
         Return a new ``MixedCut`` that will convolve the audio with the provided impulse response.
+        If no ``rir_recording`` is provided, we will generate an impulse response using a fast random
+        generator (https://arxiv.org/abs/2208.04101).
 
         :param rir_recording: The impulse response to use for convolving.
         :param normalize_output: When true, output will be normalized to have energy as input.
@@ -2884,7 +2891,7 @@ class MixedCut(Cut):
                 "reverberation."
             )
 
-        assert all(
+        assert rir_recording is None or all(
             c < rir_recording.num_channels for c in rir_channels
         ), "Invalid channel index in `rir_channels`."
         assert len(rir_channels) == 1 or len(rir_channels) == len(
@@ -2893,6 +2900,11 @@ class MixedCut(Cut):
 
         if len(rir_channels) == 1:
             rir_channels = rir_channels * len(self.tracks)
+
+        # NOTE: Currently, if no RIR is provided, this method will generate a
+        # random one for each track in the MixedCut. This is not ideal since the room
+        # configuration for all the RIRs should be the same. But we ignore this for now
+        # since it simplifies the implementation considerably.
 
         return MixedCut(
             id=f"{self.id}_rvb" if affix_id else self.id,
@@ -4461,7 +4473,7 @@ class CutSet(Serializable, AlgorithmMixin):
 
     def reverb_rir(
         self,
-        rir_recordings: "RecordingSet",
+        rir_recordings: Optional["RecordingSet"] = None,
         normalize_output: bool = True,
         early_only: bool = False,
         affix_id: bool = True,
@@ -4473,19 +4485,23 @@ class CutSet(Serializable, AlgorithmMixin):
         If the feature manifests are attached, they are dropped.
         The supervision manifests remain the same.
 
+        If no ``rir_recordings`` are provided, we will generate a set of impulse responses using a fast random
+        generator (https://arxiv.org/abs/2208.04101).
+
         :param rir_recordings: RecordingSet containing the room impulse responses.
         :param normalize_output: When true, output will be normalized to have energy as input.
         :param early_only: When true, only the early reflections (first 50 ms) will be used.
         :param affix_id: Should we modify the ID (useful if both versions of the same
             cut are going to be present in a single manifest).
         :param rir_channels: The channels of the impulse response to use. By default, first channel will be used.
-            If it is a multi-channel RIR, applying RIR will produce MixedCut.
+            If it is a multi-channel RIR, applying RIR will produce MixedCut. If no RIR is
+            provided, we will generate one with as many channels as this argument specifies.
         :return: a modified copy of the ``CutSet``.
         """
-        rir_recordings = list(rir_recordings)
+        rir_recordings = list(rir_recordings) if rir_recordings else None
         return self.map(
             lambda cut: cut.reverb_rir(
-                rir_recording=random.choice(rir_recordings),
+                rir_recording=random.choice(rir_recordings) if rir_recordings else None,
                 normalize_output=normalize_output,
                 early_only=early_only,
                 affix_id=affix_id,
