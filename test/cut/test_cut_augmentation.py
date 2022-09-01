@@ -1,5 +1,6 @@
 import numpy as np
 import pytest
+import torch
 
 from lhotse import AudioSource, CutSet, MonoCut, Recording, SupervisionSegment
 from lhotse.audio import RecordingSet
@@ -41,6 +42,13 @@ def libri_recording_orig():
 @pytest.fixture
 def libri_recording_rvb():
     return Recording.from_file("test/fixtures/libri/libri-1088-134315-0000_rvb.wav")
+
+
+@pytest.fixture
+def libri_recording_rvb_fast_rir():
+    return Recording.from_file(
+        "test/fixtures/libri/libri-1088-134315-0000_rvb_fast_rir.wav"
+    )
 
 
 @pytest.fixture
@@ -532,6 +540,28 @@ def test_cut_reverb_rir(libri_cut_with_supervision, libri_recording_rvb, rir):
     rvb_audio_from_fixture = libri_recording_rvb.load_audio()
 
     np.testing.assert_array_almost_equal(cut_rvb.load_audio(), rvb_audio_from_fixture)
+
+
+def test_cut_reverb_fast_rir(libri_cut_with_supervision, libri_recording_rvb_fast_rir):
+    # Seed 42 was used to generate the RIR in the fixtures
+    torch.manual_seed(42)
+
+    cut = libri_cut_with_supervision
+    cut_rvb = cut.reverb_rir(rir_recording=None)
+    assert cut_rvb.start == cut.start
+    assert cut_rvb.duration == cut.duration
+    assert cut_rvb.end == cut.end
+    assert cut_rvb.num_samples == cut.num_samples
+
+    assert cut_rvb.recording.duration == cut.recording.duration
+    assert cut_rvb.recording.num_samples == cut.recording.num_samples
+
+    assert cut_rvb.supervisions[0].start == cut.supervisions[0].start
+    assert cut_rvb.supervisions[0].duration == cut.supervisions[0].duration
+    assert cut_rvb.supervisions[0].end == cut.supervisions[0].end
+
+    assert cut_rvb.load_audio().shape == cut.load_audio().shape
+    assert cut_rvb.recording.load_audio().shape == cut.recording.load_audio().shape
 
 
 @pytest.mark.parametrize(
