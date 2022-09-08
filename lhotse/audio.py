@@ -717,7 +717,7 @@ class Recording:
 
     def reverb_rir(
         self,
-        rir_recording: "Recording",
+        rir_recording: Optional["Recording"] = None,
         normalize_output: bool = True,
         early_only: bool = False,
         affix_id: bool = True,
@@ -725,7 +725,8 @@ class Recording:
     ) -> "Recording":
         """
         Return a new ``Recording`` that will lazily apply reverberation based on provided
-        impulse response while loading audio.
+        impulse response while loading audio. If no impulse response is provided, we will
+        generate an RIR using a fast random generator (https://arxiv.org/abs/2208.04101).
 
         :param rir_recording: The impulse response to be used.
         :param normalize_output: When true, output will be normalized to have energy as input.
@@ -733,13 +734,14 @@ class Recording:
         :param affix_id: When true, we will modify the ``Recording.id`` field
             by affixing it with "_rvb".
         :param rir_channels: The channels of the impulse response to be used (in case of multi-channel
-            impulse responses). By default, only the first channel is used.
+            impulse responses). By default, only the first channel is used. If no RIR is
+            provided, we will generate one with as many channels as this argument specifies.
         :return: the perturbed ``Recording``.
         """
         transforms = self.transforms.copy() if self.transforms is not None else []
         transforms.append(
             ReverbWithImpulseResponse(
-                rir_recording,
+                rir=rir_recording,
                 normalize_output=normalize_output,
                 early_only=early_only,
                 rir_channels=rir_channels if rir_channels is not None else [0],
@@ -1096,7 +1098,7 @@ class RecordingSet(Serializable, AlgorithmMixin):
 
     def reverb_rir(
         self,
-        rir_recordings: "RecordingSet",
+        rir_recordings: Optional["RecordingSet"] = None,
         normalize_output: bool = True,
         early_only: bool = False,
         affix_id: bool = True,
@@ -1104,7 +1106,8 @@ class RecordingSet(Serializable, AlgorithmMixin):
     ) -> "RecordingSet":
         """
         Return a new ``RecordingSet`` that will lazily apply reverberation based on provided
-        impulse responses while loading audio.
+        impulse responses while loading audio. If no ``rir_recordings`` are provided, we will
+        generate a set of impulse responses using a fast random generator (https://arxiv.org/abs/2208.04101).
 
         :param rir_recordings: The impulse responses to be used.
         :param normalize_output: When true, output will be normalized to have energy as input.
@@ -1112,13 +1115,14 @@ class RecordingSet(Serializable, AlgorithmMixin):
         :param affix_id: When true, we will modify the ``Recording.id`` field
             by affixing it with "_rvb".
         :param rir_channels: The channels to be used for the RIRs (if multi-channel). Uses first
-            channel by default.
+            channel by default. If no RIR is provided, we will generate one with as many channels
+            as this argument specifies.
         :return: a ``RecordingSet`` containing the perturbed ``Recording`` objects.
         """
         rir_recordings = list(rir_recordings)
         return RecordingSet.from_recordings(
             r.reverb_rir(
-                rir_recording=random.choice(rir_recordings),
+                rir_recording=random.choice(rir_recordings) if rir_recordings else None,
                 normalize_output=normalize_output,
                 early_only=early_only,
                 affix_id=affix_id,

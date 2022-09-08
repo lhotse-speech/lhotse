@@ -91,6 +91,13 @@ def test_reverb_does_not_change_num_samples(audio, rir, early_only):
         assert augmented_audio.shape == (1, 16000)
 
 
+def test_reverb_with_fast_rir_does_not_change_num_samples(audio):
+    augment_fn = ReverbWithImpulseResponse(rir=None)
+    for _ in range(10):
+        augmented_audio = augment_fn(audio, sampling_rate=SAMPLING_RATE)
+        assert augmented_audio.shape == (1, 16000)
+
+
 @pytest.mark.parametrize(
     "rir_channels, expected_num_channels", [([0], 1), ([9], None), ([0, 4], 2)]
 )

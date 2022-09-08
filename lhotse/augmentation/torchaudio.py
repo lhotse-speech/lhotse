@@ -7,7 +7,7 @@ import numpy as np
 import torch
 
 from lhotse.augmentation.transform import AudioTransform
-from lhotse.augmentation.utils import convolve1d
+from lhotse.augmentation.utils import convolve1d, generate_fast_random_rir
 from lhotse.utils import (
     Seconds,
     compute_num_samples,
@@ -322,6 +322,9 @@ class ReverbWithImpulseResponse(AudioTransform):
     This code is based on Kaldi's wav-reverberate utility:
     https://github.com/kaldi-asr/kaldi/blob/master/src/featbin/wav-reverberate.cc
 
+    If no ``rir_recording`` is provided, we will generate an impulse response using a fast random
+    generator (https://arxiv.org/abs/2208.04101).
+
     The impulse response can possibly be multi-channel, in which case multi-channel reverberated
     audio can be obtained by appropriately setting `rir_channels`. For example, `rir_channels=[0,1]`
     will convolve using the first two channels of the impulse response, generating a stereo
@@ -330,7 +333,7 @@ class ReverbWithImpulseResponse(AudioTransform):
     which means that the output length will be equal to the input length.
     """
 
-    rir: dict
+    rir: Optional[dict] = None
     normalize_output: bool = True
     early_only: bool = False
     rir_channels: List[int] = field(default_factory=lambda: [0])
@@ -343,9 +346,10 @@ class ReverbWithImpulseResponse(AudioTransform):
 
             # Pass a shallow copy of the RIR dict since `from_dict()` pops the `sources` key.
             self.rir = Recording.from_dict(self.rir.copy())
-        assert all(
-            c < self.rir.num_channels for c in self.rir_channels
-        ), "Invalid channel index in `rir_channels`"
+        if self.rir is not None:
+            assert all(
+                c < self.rir.num_channels for c in self.rir_channels
+            ), "Invalid channel index in `rir_channels`"
 
     def __call__(
         self,
@@ -359,11 +363,16 @@ class ReverbWithImpulseResponse(AudioTransform):
         assert samples.shape[0] == 1, "The input audio must be single-channel."
         sampling_rate = int(sampling_rate)  # paranoia mode
 
-        rir_ = (
-            self.rir.load_audio(channels=self.rir_channels)
-            if not self.early_only
-            else self.rir.load_audio(duration=0.05)
-        )
+        if self.rir is None:
+            rir_ = generate_fast_random_rir(
+                nsource=len(self.rir_channels), sr=sampling_rate
+            )
+        else:
+            rir_ = (
+                self.rir.load_audio(channels=self.rir_channels)
+                if not self.early_only
+                else self.rir.load_audio(duration=0.05)
+            )
 
         # Determine output length.
         _, N_in = samples.shape
