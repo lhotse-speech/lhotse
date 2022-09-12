@@ -13,10 +13,15 @@ Main goals
 **********
 
 * Attract a wider community to speech processing tasks with a **Python-centric design**.
+
 * Accommodate experienced Kaldi users with an **expressive command-line interface**.
+
 * Provide **standard data preparation recipes** for commonly used corpora.
+
 * Provide **PyTorch Dataset classes** for speech and audio related tasks.
+
 * Flexible data preparation for model training with the notion of **audio cuts**.
+
 * **Efficiency**, especially in terms of I/O bandwidth and storage capacity.
 
 Tutorials
@@ -103,12 +108,19 @@ Optional dependencies
 *********************
 
 **Other pip packages.** You can leverage optional features of Lhotse by installing the relevant supporting package like this: ``pip install lhotse[package_name]``. The supported optional packages include:
+
 * ``pip install lhotse[kaldi]`` for a maximal feature set related to Kaldi compatibility. It includes libraries such as ``kaldi_native_io`` (a more efficient variant of ``kaldi_io``) and ``kaldifeat`` that port some of Kaldi functionality into Python.
+
 * ``pip install lhotse[orjson]`` for up to 50% faster reading of JSONL manifests.
+
 * ``pip install lhotse[webdataset]``. We support "compiling" your data into WebDataset tarball format for more effective IO. You can still interact with the data as if it was a regular lazy CutSet. To learn more, check out the following tutorial: |tutorial02|
+
 * ``pip install h5py`` if you want to extract speech features and store them as HDF5 arrays.
+
 * ``pip install dill``. When ``dill`` is installed, we'll use it to pickle CutSet that uses a lambda function in calls such as ``.map`` or ``.filter``. This is helpful in PyTorch DataLoader with ``num_jobs>0``. Without ``dill``, depending on your environment, you'll see an exception or a hanging script.
+
 * ``pip install smart_open`` to read and write manifests and data in any location supported by ``smart_open`` (e.g. cloud, http).
+
 * ``pip install opensmile`` for feature extraction using the OpenSmile toolkit's Python wrapper.
 
 **sph2pipe.** For reading older LDC SPHERE (.sph) audio files that are compressed with codecs unsupported by ffmpeg and sox, please run::
