@@ -130,12 +130,18 @@ install_requires = [
     "cytoolz>=0.10.1",
     "dataclasses",
     "intervaltree>= 3.1.0",
-    "lilcom>=1.1.0",
     "numpy>=1.18.1",
     "packaging",
     "pyyaml>=5.3.1",
     "tqdm",
 ]
+
+# Workaround for lilcom cmake issue: https://github.com/danpovey/lilcom/issues/41
+# present in automatic documentation builds.
+if os.environ.get("READTHEDOCS", False):
+    install_requires.append("lilcom==1.1.0")
+else:
+    install_requires.append("lilcom>=1.1.0")
 
 try:
     # If the user already installed PyTorch, make sure he has torchaudio too.
@@ -168,10 +174,20 @@ tests_require = [
     "isort==5.10.1",
     "pre-commit>=2.17.0,<=2.19.0",
 ]
-dev_requires = sorted(docs_require + tests_require + ["jupyterlab", "matplotlib"])
-orjson_require = ["orjson>=3.6.6"]
-dill_require = ["dill"]
-all_requires = sorted(dev_requires + orjson_require + dill_require)
+orjson_requires = ["orjson>=3.6.6"]
+webdataset_requires = ["webdataset==0.2.5"]
+dill_requires = ["dill"]
+h5py_requires = ["h5py"]
+kaldi_requires = ["kaldi_native_io", "kaldifeat"]
+dev_requires = sorted(
+    docs_require
+    + tests_require
+    + orjson_requires
+    + webdataset_requires
+    + dill_requires
+    + ["jupyterlab", "matplotlib"]
+)
+all_requires = sorted(dev_requires)
 
 if os.environ.get("READTHEDOCS", False):
     # When building documentation, omit torchaudio installation and mock it instead.
@@ -202,8 +218,11 @@ setup(
     },
     install_requires=install_requires,
     extras_require={
-        "dill": dill_require,
-        "orjson": orjson_require,
+        "dill": dill_requires,
+        "orjson": orjson_requires,
+        "webdataset": webdataset_requires,
+        "h5py": h5py_requires,
+        "kaldi": kaldi_requires,
         "docs": docs_require,
         "tests": tests_require,
         "dev": dev_requires,
