@@ -22,5 +22,6 @@ python:
   version: 3.7
   install:
     - requirements: docs/requirements.txt
+    - requirements: docs/requirements-2.txt
     - method: pip
       path: .

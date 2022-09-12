@@ -1,6 +1,4 @@
 numpy>=1.18.1
-lilcom==1.1.0
-cmake>=3.8
 sphinx_rtd_theme
 sphinx==4.2.0
 sphinx-click==3.0.1
