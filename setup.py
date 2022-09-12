@@ -130,12 +130,18 @@ install_requires = [
     "cytoolz>=0.10.1",
     "dataclasses",
     "intervaltree>= 3.1.0",
-    "lilcom>=1.1.0",
     "numpy>=1.18.1",
     "packaging",
     "pyyaml>=5.3.1",
     "tqdm",
 ]
+
+# Workaround for lilcom cmake issue: https://github.com/danpovey/lilcom/issues/41
+# present in automatic documentation builds.
+if os.environ.get("READTHEDOCS", False):
+    install_requires.append("lilcom==1.1.0")
+else:
+    install_requires.append("lilcom>=1.1.0")
 
 try:
     # If the user already installed PyTorch, make sure he has torchaudio too.
