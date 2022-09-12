@@ -28,9 +28,13 @@ Tutorials
 *********
 
 We currently have the following tutorials available in `examples` directory:
+
 * Basic complete Lhotse workflow |tutorial00|
+
 * Transforming data with Cuts |tutorial01|
+
 * WebDataset integration |tutorial02|
+
 * How to combine multiple datasets |tutorial03|
 
 .. |tutorial00| image:: https://colab.research.google.com/assets/colab-badge.svg
@@ -49,6 +53,7 @@ Examples of use
 Check out the following links to see how Lhotse is being put to use:
 
 * `Icefall recipes`_: where k2 and Lhotse meet.
+
 * Minimal ESPnet+Lhotse example: |mini librispeech colab notebook|
 
  .. |mini librispeech colab notebook| image:: https://colab.research.google.com/assets/colab-badge.svg
