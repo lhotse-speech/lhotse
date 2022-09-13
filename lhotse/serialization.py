@@ -22,7 +22,7 @@ def open_best(path: Pathlike, mode: str = "r"):
     Uses ``smart_open`` when available to handle URLs and URIs.
     Supports providing "-" as input to read from stdin or save to stdout.
     """
-    if path == "-":
+    if str(path) == "-":
         if mode == "r":
             return StdStreamWrapper(sys.stdin)
         elif mode == "w":
@@ -424,7 +424,7 @@ def load_manifest_lazy(path: Pathlike) -> Optional[Manifest]:
     Generic utility for reading an arbitrary manifest from a JSONL file.
     Returns None when the manifest is empty.
     """
-    assert extension_contains(".jsonl", path) or path == "-"
+    assert extension_contains(".jsonl", path) or str(path) == "-"
     raw_data = iter(load_jsonl(path))
     try:
         first = next(raw_data)
@@ -442,7 +442,7 @@ def load_manifest_lazy_or_eager(
     Generic utility for reading an arbitrary manifest.
     If possible, opens the manifest lazily, otherwise reads everything into memory.
     """
-    if extension_contains(".jsonl", path) or path == "-":
+    if extension_contains(".jsonl", path) or str(path) == "-":
         return load_manifest_lazy(path)
     else:
         return load_manifest(path, manifest_cls=manifest_cls)
@@ -474,7 +474,7 @@ def resolve_manifest_set_class(item):
 
 
 def store_manifest(manifest: Manifest, path: Pathlike) -> None:
-    if extension_contains(".jsonl", path) or path == "-":
+    if extension_contains(".jsonl", path) or str(path) == "-":
         manifest.to_jsonl(path)
     elif extension_contains(".json", path):
         manifest.to_json(path)
