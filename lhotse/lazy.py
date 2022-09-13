@@ -472,10 +472,10 @@ def count_newlines_fast(path: Pathlike):
     """
 
     def _make_gen(reader):
-        b = reader(2 ** 16)
+        b = reader(2**16)
         while b:
             yield b
-            b = reader(2 ** 16)
+            b = reader(2**16)
 
     read_mode = "rb" if not str(path) == "-" else "r"
     with open_best(path, read_mode) as f:
