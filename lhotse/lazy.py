@@ -185,7 +185,7 @@ class LazyJsonlIterator(ImitatesDict):
     def __init__(self, path: Pathlike) -> None:
         self.path = path
         self._len = None
-        assert extension_contains(".jsonl", self.path) or self.path == "-"
+        assert extension_contains(".jsonl", self.path) or str(self.path) == "-"
 
     def __iter__(self):
         with open_best(self.path) as f:
@@ -477,6 +477,7 @@ def count_newlines_fast(path: Pathlike):
             yield b
             b = reader(2**16)
 
-    with open_best(path, "rb") as f:
+    read_mode = "rb" if not str(path) == "-" else "r"
+    with open_best(path, read_mode) as f:
         count = sum(buf.count(b"\n") for buf in _make_gen(f.read))
     return count
