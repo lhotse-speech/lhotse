@@ -4564,8 +4564,6 @@ class CutSet(Serializable, AlgorithmMixin):
             if random.uniform(0.0, 1.0) > mix_prob:
                 mixed_cuts.append(cut)
                 continue
-            if duration is None: duration = cut.duration
-            # Randomly sample a new cut from "cuts" to mix in.
             to_mix = cuts.sample()
             # Determine the SNR - either it's specified or we need to sample one.
             snr = random.uniform(*snr) if isinstance(snr, (list, tuple)) else snr
@@ -4574,11 +4572,15 @@ class CutSet(Serializable, AlgorithmMixin):
             # Did the user specify a duration?
             # If yes, we will ensure that shorter cuts have more noise mixed in
             # to "pad" them with at the end.
+            # If no, we will mix in as many noise cuts as needed to cover complete
+            # duration.
             mixed_in_duration = to_mix.duration
             # Keep sampling until we mixed in a "duration" amount of noise.
             # Note: we subtract 0.05s (50ms) from the target duration to avoid edge cases
             #       where we mix in some noise cut that effectively has 0 frames of features.
-            while mixed_in_duration < (duration - 0.05):
+            while mixed_in_duration < (
+                duration if duration is not None else cut.duration - 0.05
+            ):
                 to_mix = cuts.sample()
                 # Keep the SNR constant for each cut from "self".
                 mixed = mixed.mix(
@@ -4595,7 +4597,8 @@ class CutSet(Serializable, AlgorithmMixin):
                 )
             # We truncate the mixed to either the original duration or the requested duration.
             mixed = mixed.truncate(
-                duration=duration, preserve_id=preserve_id is not None,
+                duration=duration if duration is not None else cut.duration,
+                preserve_id=preserve_id is not None,
             )
             mixed_cuts.append(mixed)
         return CutSet.from_cuts(mixed_cuts)
