@@ -4564,7 +4564,6 @@ class CutSet(Serializable, AlgorithmMixin):
             if random.uniform(0.0, 1.0) > mix_prob:
                 mixed_cuts.append(cut)
                 continue
-            # Randomly sample a new cut from "cuts" to mix in.
             to_mix = cuts.sample()
             # Determine the SNR - either it's specified or we need to sample one.
             snr = random.uniform(*snr) if isinstance(snr, (list, tuple)) else snr
@@ -4573,29 +4572,32 @@ class CutSet(Serializable, AlgorithmMixin):
             # Did the user specify a duration?
             # If yes, we will ensure that shorter cuts have more noise mixed in
             # to "pad" them with at the end.
-            if duration is not None:
-                mixed_in_duration = to_mix.duration
-                # Keep sampling until we mixed in a "duration" amount of noise.
-                # Note: we subtract 0.05s (50ms) from the target duration to avoid edge cases
-                #       where we mix in some noise cut that effectively has 0 frames of features.
-                while mixed_in_duration < (duration - 0.05):
-                    to_mix = cuts.sample()
-                    # Keep the SNR constant for each cut from "self".
-                    mixed = mixed.mix(
-                        other=to_mix,
-                        snr=snr,
-                        offset_other_by=mixed_in_duration,
-                        allow_padding=allow_padding,
-                        preserve_id=preserve_id,
-                    )
-                    # Since we're adding floats, we can be off by an epsilon and trigger
-                    # some assertions for exceeding duration; do precautionary rounding here.
-                    mixed_in_duration = round(
-                        mixed_in_duration + to_mix.duration, ndigits=8
-                    )
+            # If no, we will mix in as many noise cuts as needed to cover complete
+            # duration.
+            mixed_in_duration = to_mix.duration
+            # Keep sampling until we mixed in a "duration" amount of noise.
+            # Note: we subtract 0.05s (50ms) from the target duration to avoid edge cases
+            #       where we mix in some noise cut that effectively has 0 frames of features.
+            while mixed_in_duration < (
+                duration if duration is not None else cut.duration - 0.05
+            ):
+                to_mix = cuts.sample()
+                # Keep the SNR constant for each cut from "self".
+                mixed = mixed.mix(
+                    other=to_mix,
+                    snr=snr,
+                    offset_other_by=mixed_in_duration,
+                    allow_padding=allow_padding,
+                    preserve_id=preserve_id,
+                )
+                # Since we're adding floats, we can be off by an epsilon and trigger
+                # some assertions for exceeding duration; do precautionary rounding here.
+                mixed_in_duration = round(
+                    mixed_in_duration + to_mix.duration, ndigits=8
+                )
             # We truncate the mixed to either the original duration or the requested duration.
             mixed = mixed.truncate(
-                duration=cut.duration if duration is None else duration,
+                duration=duration if duration is not None else cut.duration,
                 preserve_id=preserve_id is not None,
             )
             mixed_cuts.append(mixed)
