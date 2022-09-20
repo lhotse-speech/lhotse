@@ -1327,7 +1327,14 @@ def read_audio(
         ):
             return read_sph(path_or_fd, offset=offset, duration=duration)
         try:
-            return torchaudio_load(path_or_fd, offset=offset, duration=duration)
+            # Use the new FFMPEG streaming API in torchaudio to read from file objects
+            # as a suggested workaround for: https://github.com/pytorch/audio/issues/2662
+            if isinstance(path_or_fd, BytesIO) and torchaudio_supports_ffmpeg():
+                return torchaudio_ffmpeg_load(
+                    path_or_fd, offset=offset, duration=duration
+                )
+            else:
+                return torchaudio_load(path_or_fd, offset=offset, duration=duration)
         except:
             try:
                 return soundfile_load(path_or_fd, offset=offset, duration=duration)
@@ -1383,31 +1390,54 @@ def info(
             # If both fail, then Python 3 will display both exception messages.
 
 
-def torchaudio_info(path: Pathlike) -> LibsndfileCompatibleAudioInfo:
+@lru_cache(maxsize=1)
+def torchaudio_supports_ffmpeg() -> bool:
+    """
+    Returns ``True`` when torchaudio version is at least 0.12.0, which
+    has support for FFMPEG streamer API.
+    """
+    import torchaudio
+    from packaging import version
+
+    return version.parse(torchaudio.__version__) >= version.parse("0.12.0")
+
+
+def torchaudio_info(
+    path_or_fileobj: Union[Path, str, BytesIO]
+) -> LibsndfileCompatibleAudioInfo:
     """
     Return an audio info data structure that's a compatible subset of ``pysoundfile.info()``
     that we need to create a ``Recording`` manifest.
     """
     import torchaudio
-    from packaging import version
 
-    if (
-        isinstance(path, (str, Path))
-        and str(path).endswith(".mp3")
-        and version.parse(torchaudio.__version__) >= version.parse("0.12.0")
-    ):
+    is_mp3 = isinstance(path_or_fileobj, (str, Path)) and str(path_or_fileobj).endswith(
+        ".mp3"
+    )
+    is_fileobj = isinstance(path_or_fileobj, BytesIO)
+    if (is_mp3 or is_fileobj) and torchaudio_supports_ffmpeg():
         # Torchaudio 0.12 has a new StreamReader API that uses ffmpeg.
+        #
         # They dropped support for using sox bindings in torchaudio.info
         # for MP3 files and implicitly delegate the call to ffmpeg.
         # Unfortunately, they always return num_frames/num_samples = 0,
         # as explained here: https://github.com/pytorch/audio/issues/2524
         # We have to work around by streaming the MP3 and counting the number
         # of samples.
+        #
+        # Unfortunately torchaudio also has issues with reading from file objects
+        # sometimes, which apparently we can work around by using StreamReader API.
+        # See:
+        # - https://github.com/pytorch/audio/issues/2524#issuecomment-1223901818
+        # - https://github.com/pytorch/audio/issues/2662
         from torchaudio.io import StreamReader
 
-        streamer = StreamReader(src=str(path))
-        assert streamer.num_src_streams == 1
-        info = streamer.get_src_stream_info(0)
+        streamer = StreamReader(src=str(path_or_fileobj) if is_mp3 else path_or_fileobj)
+        assert streamer.num_src_streams == 1, (
+            "Lhotse doesn't support files with more than one source stream yet "
+            "(not to be confused with multi-channel)."
+        )
+        info = streamer.get_src_stream_info(streamer.default_audio_stream)
         streamer.add_basic_audio_stream(
             frames_per_chunk=int(info.sample_rate),
         )
@@ -1421,7 +1451,7 @@ def torchaudio_info(path: Pathlike) -> LibsndfileCompatibleAudioInfo:
             duration=tot_samples / info.sample_rate,
         )
 
-    info = torchaudio.info(path)
+    info = torchaudio.info(path_or_fileobj)
     return LibsndfileCompatibleAudioInfo(
         channels=info.num_channels,
         frames=info.num_frames,
@@ -1453,6 +1483,48 @@ def torchaudio_load(
         frame_offset=frame_offset,
         num_frames=num_frames,
     )
+    return audio.numpy(), sampling_rate
+
+
+def torchaudio_ffmpeg_load(
+    path_or_fileobj: Union[Path, str, BytesIO],
+    offset: Seconds = 0,
+    duration: Optional[Seconds] = None,
+) -> Tuple[np.ndarray, int]:
+    import torchaudio
+
+    if not torchaudio_supports_ffmpeg():
+        raise RuntimeError(
+            "Using FFMPEG streamer backend for reading is supported only "
+            "with PyTorch 1.12+ and torchaudio 0.12+"
+        )
+
+    if isinstance(path_or_fileobj, Path):
+        path_or_fileobj = str(path_or_fileobj)
+
+    streamer = torchaudio.io.StreamReader(src=path_or_fileobj)
+    assert streamer.num_src_streams == 1, (
+        "Lhotse doesn't support files with more than one source stream yet "
+        "(not to be confused with multi-channel)."
+    )
+    info = streamer.get_src_stream_info(streamer.default_audio_stream)
+    sampling_rate = int(info.sample_rate)
+
+    if duration is not None:
+        # Try to read whole audio in a single chunk.
+        streamer.add_basic_audio_stream(
+            frames_per_chunk=compute_num_samples(duration, sampling_rate)
+        )
+        streamer.seek(offset)
+        (audio,) = next(streamer.stream())
+        audio = audio.transpose(0, 1)
+    else:
+        # Read in 1 second chunks and concatenate (we don't know how much audio is incoming)
+        streamer.add_basic_audio_stream(frames_per_chunk=sampling_rate)
+        streamer.seek(offset)
+        audio = torch.cat([t.transpose(0, 1) for t, in streamer.stream()], dim=0)
+
+    # Return shape (num_channels, num_samples)
     return audio.numpy(), sampling_rate
 
 
