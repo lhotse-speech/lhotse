@@ -19,15 +19,21 @@ from lhotse.utils import LOG_EPSILON, uuid4
         "cut_duration",
         "extend_duration",
         "extend_direction",
+        "pad_silence",
         "expected_start",
         "expected_end",
     ],
     [
-        (0.0, 0.5, 0.3, "right", 0.0, 0.8),
-        (0.0, 0.5, 0.3, "both", 0.0, 0.8),
-        (0.2, 0.5, 0.3, "left", 0.0, 0.7),
-        (0.2, 0.5, 0.1, "both", 0.1, 0.8),
-        (0.0, 0.8, 0.3, "both", 0.0, 1.0),
+        (0.0, 0.5, 0.3, "right", False, 0.0, 0.8),
+        (0.0, 0.5, 0.3, "both", False, 0.0, 0.8),
+        (0.2, 0.5, 0.3, "left", False, 0.0, 0.7),
+        (0.2, 0.5, 0.1, "both", False, 0.1, 0.8),
+        (0.0, 0.8, 0.3, "both", False, 0.0, 1.0),
+        (0.0, 0.5, 0.3, "right", True, 0.0, 0.8),
+        (0.0, 0.5, 0.3, "both", True, 0.0, 1.1),
+        (0.2, 0.5, 0.3, "left", True, 0.0, 0.8),
+        (0.2, 0.5, 0.1, "both", True, 0.1, 0.8),
+        (0.0, 0.8, 0.3, "both", True, 0.0, 1.4),
     ],
 )
 def test_extend_by_cut(
@@ -35,11 +41,14 @@ def test_extend_by_cut(
     cut_duration,
     extend_duration,
     extend_direction,
+    pad_silence,
     expected_start,
     expected_end,
 ):
     cut = dummy_cut(int(uuid4()), start=cut_start, duration=cut_duration)
-    extended_cut = cut.extend_by(duration=extend_duration, direction=extend_direction)
+    extended_cut = cut.extend_by(
+        duration=extend_duration, direction=extend_direction, pad_silence=pad_silence
+    )
     assert isclose(extended_cut.start, expected_start)
     assert isclose(extended_cut.end, expected_end)
 

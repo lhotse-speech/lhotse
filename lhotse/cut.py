@@ -1375,6 +1375,7 @@ class MonoCut(Cut):
         duration: Seconds,
         direction: str = "both",
         preserve_id: bool = False,
+        pad_silence: bool = False,
     ) -> "MonoCut":
         """
         Returns a new MonoCut that is an extended region of the current MonoCut by extending
@@ -1395,6 +1396,13 @@ class MonoCut(Cut):
 
         .. hint::
 
+            If `pad_silence` is set to True, then the cut will be extended by the specified duration
+            regardless of the length of the actual recording, by additionally padding with silence if
+            required. For example, in the above example, if the recording is only 6s long, the cut will
+            be extended by 1s of silence.
+
+        .. hint::
+
             If `direction` is "both", the resulting cut will be extended by the specified duration in
             both directions. This is different from the usage in :meth:`MonoCut.pad` where a padding
             equal to 0.5*duration is added to both sides.
@@ -1410,9 +1418,14 @@ class MonoCut(Cut):
         assert duration >= 0, f"Duration must be non-negative (provided {duration})."
 
         new_start, new_end = self.start, self.end
+        pad_left, pad_right = 0, 0
         if direction == "left" or direction == "both":
+            if self.start - duration < 0 and pad_silence:
+                pad_left = duration - self.start
             new_start = max(self.start - duration, 0)
         if direction == "right" or direction == "both":
+            if self.end + duration > self.recording.duration and pad_silence:
+                pad_right = duration - (self.recording.duration - self.end)
             new_end = min(self.end + duration, self.recording.duration)
 
         new_duration = add_durations(
@@ -1464,7 +1477,7 @@ class MonoCut(Cut):
                         )
                         custom_kwargs[name] = None
 
-        return fastcopy(
+        cut = fastcopy(
             self,
             id=self.id if preserve_id else str(uuid4()),
             start=new_start,
@@ -1473,6 +1486,21 @@ class MonoCut(Cut):
             **feature_kwargs,
             custom=custom_kwargs,
         )
+
+        # Now pad the cut on either side if needed
+        if pad_left > 0:
+            cut = cut.pad(
+                duration=cut.duration + pad_left,
+                direction="left",
+                preserve_id=preserve_id,
+            )
+        if pad_right > 0:
+            cut = cut.pad(
+                duration=cut.duration + pad_right,
+                direction="right",
+                preserve_id=preserve_id,
+            )
+        return cut
 
     def pad(
         self,
@@ -4297,6 +4325,7 @@ class CutSet(Serializable, AlgorithmMixin):
         duration: Seconds,
         direction: str = "both",
         preserve_id: bool = False,
+        pad_silence: bool = False,
     ) -> "CutSet":
         """
         Returns a new CutSet with cuts extended by `duration` amount.
@@ -4305,11 +4334,16 @@ class CutSet(Serializable, AlgorithmMixin):
         :param direction: string, 'left', 'right' or 'both'. Determines whether to extend on the left,
             right, or both sides. If 'both', extend on both sides by the same duration (equal to `duration`).
         :param preserve_id: bool. Should the extended cut keep the same ID or get a new, random one.
+        :param pad_silence: bool. If True, the extended part of the cut will be padded with silence if required
+            to match the specified duration.
         :return: a new CutSet instance.
         """
         return self.map(
             lambda cut: cut.extend_by(
-                duration=duration, direction=direction, preserve_id=preserve_id
+                duration=duration,
+                direction=direction,
+                preserve_id=preserve_id,
+                pad_silence=pad_silence,
             )
         )
 
