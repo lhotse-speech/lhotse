@@ -1375,7 +1375,7 @@ class MonoCut(Cut):
         duration: Seconds,
         direction: str = "both",
         preserve_id: bool = False,
-        pad_silence: bool = False,
+        pad_silence: bool = True,
     ) -> "MonoCut":
         """
         Returns a new MonoCut that is an extended region of the current MonoCut by extending
@@ -1391,15 +1391,15 @@ class MonoCut(Cut):
             the "real" content of the recording that the cut is part of. For example, a MonoCut spanning
             the region from 2s to 5s in a recording, when extended by 2s to the right, will now span
             the region from 2s to 7s in the same recording (provided the recording length exceeds 7s).
-            If the recording is shorter, the cut will only be extended up to the duration of the recording.
-            To "expand" a cut by padding, use :meth:`MonoCut.pad`. To "truncate" a cut, use :meth:`MonoCut.truncate`.
+            If the recording is shorter, additional silence will be padded to achieve the desired duration
+            by default. This behavior can be changed by setting ``pad_silence=False``.
+            Also see :meth:`MonoCut.pad` which pads a cut "to" a specified length.
+            To "truncate" a cut, use :meth:`MonoCut.truncate`.
 
         .. hint::
 
-            If `pad_silence` is set to True, then the cut will be extended by the specified duration
-            regardless of the length of the actual recording, by additionally padding with silence if
-            required. For example, in the above example, if the recording is only 6s long, the cut will
-            be extended by 1s of silence.
+            If `pad_silence` is set to False, then the cut will be extended only as much as allowed
+            within the recording's boundary.
 
         .. hint::
 
@@ -1411,6 +1411,9 @@ class MonoCut(Cut):
         :param direction: string, 'left', 'right' or 'both'. Determines whether to extend on the left,
             right, or both sides. If 'both', extend on both sides by the duration specified in `duration`.
         :param preserve_id: bool. Should the extended cut keep the same ID or get a new, random one.
+        :param pad_silence: bool. Should the cut be padded with silence if the recording is shorter than
+            the desired duration. If False, the cut will be extended only as much as allowed within the
+            recording's boundary.
         :return: a new MonoCut instance.
         """
         from lhotse.array import TemporalArray
@@ -2015,6 +2018,7 @@ class PaddingCut(Cut):
         duration: Seconds,
         direction: str = "both",
         preserve_id: bool = False,
+        pad_silence: bool = True,
     ) -> "PaddingCut":
         """
         Return a new PaddingCut with region extended by the specified duration.
@@ -2025,6 +2029,7 @@ class PaddingCut(Cut):
             the specified duration on both sides.
         :param preserve_id: When ``True``, preserves the cut ID from before padding.
             Otherwise, generates a new random ID (default).
+        :param pad_silence: See usage in :func:`lhotse.cut.MonoCut.extend_by`. It is ignored here.
         :return: an extended PaddingCut.
         """
         new_duration = self.duration + duration
@@ -2690,6 +2695,7 @@ class MixedCut(Cut):
         duration: Seconds,
         direction: str = "both",
         preserve_id: bool = False,
+        pad_silence: bool = True,
     ) -> "MixedCut":
         """
         This raises a ValueError since extending a MixedCut is not defined.
@@ -2698,6 +2704,7 @@ class MixedCut(Cut):
         :param direction: string, 'left', 'right' or 'both'. Determines whether to extend on the left,
             right, or both sides. If 'both', extend on both sides by the duration specified in `duration`.
         :param preserve_id: bool. Should the extended cut keep the same ID or get a new, random one.
+        :param pad_silence: bool. See usage in `lhotse.cut.MonoCut.extend_by`.
         :return: a new MixedCut instance.
         """
         raise ValueError("The extend_by() method is not defined for a MixedCut.")
@@ -4325,7 +4332,7 @@ class CutSet(Serializable, AlgorithmMixin):
         duration: Seconds,
         direction: str = "both",
         preserve_id: bool = False,
-        pad_silence: bool = False,
+        pad_silence: bool = True,
     ) -> "CutSet":
         """
         Returns a new CutSet with cuts extended by `duration` amount.
