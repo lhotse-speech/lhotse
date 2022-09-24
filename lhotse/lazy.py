@@ -427,6 +427,14 @@ class LazyFlattener(ImitatesDict):
     def __add__(self, other) -> "LazyIteratorChain":
         return LazyIteratorChain(self, other)
 
+    def __len__(self) -> int:
+        raise NotImplementedError(
+            "LazyFlattener does not support __len__ because it would require "
+            "iterating over the whole iterator, which is not possible in a lazy fashion. "
+            "If you really need to know the length, convert to eager mode first using "
+            "`.to_eager()`. Note that this will require loading the whole iterator into memory."
+        )
+
 
 class LazyRepeater(ImitatesDict):
     """
