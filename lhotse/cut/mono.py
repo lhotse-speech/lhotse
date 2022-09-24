@@ -2,29 +2,16 @@ import logging
 from dataclasses import dataclass, field
 from functools import partial
 from math import isclose
-from typing import (
-    Any,
-    Callable,
-    Dict,
-    Iterable,
-    List,
-    Optional,
-    Union,
-)
+from typing import Any, Callable, Dict, Iterable, List, Optional, Union
 
 import numpy as np
 import torch
 from intervaltree import IntervalTree
 
-from lhotse.audio import (
-    Recording,
-)
+from lhotse.audio import Recording
 from lhotse.augmentation import AugmentFn
 from lhotse.cut.base import Cut
-from lhotse.features import (
-    FeatureExtractor,
-    Features,
-)
+from lhotse.features import FeatureExtractor, Features
 from lhotse.features.io import FeaturesWriter
 from lhotse.supervision import SupervisionSegment
 from lhotse.utils import (

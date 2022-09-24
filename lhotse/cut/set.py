@@ -33,22 +33,13 @@ from intervaltree import IntervalTree
 from tqdm.auto import tqdm
 from typing_extensions import Literal
 
-from lhotse.audio import (
-    RecordingSet,
-    null_result_on_audio_loading_error,
-)
+from lhotse.audio import RecordingSet, null_result_on_audio_loading_error
 from lhotse.augmentation import AugmentFn
-
 from lhotse.cut.base import Cut
+from lhotse.cut.mixed import MixedCut, MixTrack
 from lhotse.cut.mono import MonoCut
 from lhotse.cut.padding import PaddingCut
-from lhotse.cut.mixed import MixedCut, MixTrack
-
-from lhotse.features import (
-    FeatureExtractor,
-    Features,
-    FeatureSet,
-)
+from lhotse.features import FeatureExtractor, Features, FeatureSet
 from lhotse.features.base import StatsAccumulator, compute_global_stats
 from lhotse.features.io import FeaturesWriter, LilcomChunkyWriter
 from lhotse.lazy import AlgorithmMixin
@@ -73,7 +64,6 @@ from lhotse.utils import (
     split_sequence,
     uuid4,
 )
-
 
 FW = TypeVar("FW", bound=FeaturesWriter)
 
