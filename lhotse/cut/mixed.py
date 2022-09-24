@@ -1,31 +1,16 @@
 import logging
 from dataclasses import dataclass
 from functools import partial
-from typing import (
-    Any,
-    Callable,
-    Dict,
-    Iterable,
-    List,
-    Optional,
-    Tuple,
-    Union,
-)
+from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple, Union
 
 import numpy as np
 from intervaltree import IntervalTree
 
-from lhotse.audio import (
-    AudioMixer,
-    Recording,
-    audio_energy,
-)
+from lhotse.audio import AudioMixer, Recording, audio_energy
 from lhotse.augmentation import AugmentFn
-
 from lhotse.cut.base import Cut
 from lhotse.cut.mono import MonoCut
 from lhotse.cut.padding import PaddingCut
-
 from lhotse.features import (
     FeatureExtractor,
     FeatureMixer,

@@ -1,27 +1,14 @@
 from pathlib import Path
-from typing import (
-    Callable,
-    Dict,
-    List,
-    Optional,
-    Set,
-    Tuple,
-)
+from typing import Callable, Dict, List, Optional, Set, Tuple
 
 import numpy as np
 import torch
 from intervaltree import Interval, IntervalTree
 from typing_extensions import Literal
 
-from lhotse.audio import (
-    AudioSource,
-    Recording,
-)
+from lhotse.audio import AudioSource, Recording
 from lhotse.augmentation import AugmentFn
-
-from lhotse.features import (
-    FeatureExtractor,
-)
+from lhotse.features import FeatureExtractor
 from lhotse.supervision import SupervisionSegment
 from lhotse.utils import (
     Decibels,
@@ -569,6 +556,7 @@ class Cut:
         :return: a new MonoCut instance.
         """
         import torchaudio
+
         from .mono import MonoCut
 
         storage_path = Path(storage_path)

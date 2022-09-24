@@ -1,6 +1,6 @@
 from .base import Cut
-from .mono import MonoCut
 from .mixed import MixedCut, MixTrack
+from .mono import MonoCut
 from .padding import PaddingCut
 from .set import CutSet
 
@@ -40,9 +40,9 @@ __all__ = [
 ]
 
 from .set import (
+    append_cuts,
+    compute_supervisions_frame_mask,
     create_cut_set_eager,
     create_cut_set_lazy,
-    compute_supervisions_frame_mask,
-    append_cuts,
     mix_cuts,
 )

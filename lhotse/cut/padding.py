@@ -1,23 +1,12 @@
 import logging
 from dataclasses import dataclass
-from typing import (
-    Any,
-    Callable,
-    Dict,
-    List,
-    Optional,
-    Union,
-)
+from typing import Any, Callable, Dict, List, Optional, Union
 
 import numpy as np
 
-from lhotse.audio import (
-    Recording,
-)
+from lhotse.audio import Recording
 from lhotse.cut.base import Cut
-from lhotse.features import (
-    FeatureExtractor,
-)
+from lhotse.features import FeatureExtractor
 from lhotse.supervision import SupervisionSegment
 from lhotse.utils import (
     LOG_EPSILON,
