@@ -456,9 +456,18 @@ class Recording:
             channels=channels, offset=ifnone(offset, 0), duration=duration
         )
         stream = BytesIO()
-        torchaudio.save(
-            stream, torch.from_numpy(audio), self.sampling_rate, format=format
-        )
+        if format in ("wav", "ogg", "vorbis", "flac", "sph"):
+            # Prefer saving with soundfile backend whenever possible to avoid issue:
+            # https://github.com/pytorch/audio/issues/2662
+            # Saving with sox_io backend to FLAC may corrupt the file, IDK about other
+            # formats but would rather be on the safe side.
+            torchaudio.backend.soundfile_backend.save(
+                stream, torch.from_numpy(audio), self.sampling_rate, format=format
+            )
+        else:
+            torchaudio.backend.sox_io_backend.save(
+                stream, torch.from_numpy(audio), self.sampling_rate, format=format
+            )
         channels = (ifnone(channels, self.channel_ids),)
         if isinstance(channels, int):
             channels = [channels]
