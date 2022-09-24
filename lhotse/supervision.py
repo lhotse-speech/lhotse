@@ -16,6 +16,7 @@ from lhotse.utils import (
     fastcopy,
     ifnone,
     index_by_id_and_check,
+    is_equal_or_contains,
     overspans,
     perturb_num_samples,
     split_manifest_lazy,
@@ -89,7 +90,9 @@ class SupervisionSegment:
     supervision labels and/or metadata, such as the transcription, the speaker identity, the language, etc.
 
     Each supervision has unique ``id`` and always refers to a specific recording (via ``recording_id``)
-    and a specific ``channel`` (by default, 0).
+    and one or more ``channel`` (by default, 0). Note that multiple channels of the recording
+    may share the same supervision, in which case the ``channel`` field will be a list of integers.
+
     It's also characterized by the start time (relative to the beginning of a :class:`~lhotse.audio.Recording`
     or a :class:`~lhotse.cut.Cut`) and a duration, both expressed in seconds.
 
@@ -154,6 +157,15 @@ class SupervisionSegment:
             ...     }
             ... )
 
+        A supervision shared across multiple channels of a recording (e.g. a microphone array)::
+
+            >>> sup5 = SupervisionSegment(
+            ...     id='rec00001-sup00005', recording_id='rec00001',
+            ...     start=33.0, duration=1.0, channel=[0, 1],
+            ...     text="ice",
+            ...     speaker='Maryla Zechariah',
+            ... )
+
         Converting :class:`~lhotse.supervsion.SupervisionSegment` to a ``dict``::
 
             >>> sup0.to_dict()
@@ -166,7 +178,7 @@ class SupervisionSegment:
     recording_id: str
     start: Seconds
     duration: Seconds
-    channel: int = 0
+    channel: Union[int, List[int]] = 0
     text: Optional[str] = None
     language: Optional[str] = None
     speaker: Optional[str] = None
@@ -619,8 +631,9 @@ class SupervisionSet(Serializable, AlgorithmMixin):
             for s in self:
                 if type in s.alignment:
                     for ali in s.alignment[type]:
+                        c = s.channel[0] if isinstance(s.channel, list) else s.channel
                         f.write(
-                            f"{s.recording_id} {s.channel} {ali.start:.02f} {ali.duration:.02f} {ali.symbol}\n"
+                            f"{s.recording_id} {c} {ali.start:.02f} {ali.duration:.02f} {ali.symbol}\n"
                         )
 
     def to_dicts(self) -> Iterable[dict]:
@@ -767,7 +780,7 @@ class SupervisionSet(Serializable, AlgorithmMixin):
             # relative to the Cut's start, and not truncating anything.
             segment.with_offset(-start_after) if adjust_offset else segment
             for segment in segment_by_recording_id.get(recording_id, [])
-            if (channel is None or segment.channel == channel)
+            if (channel is None or is_equal_or_contains(segment.channel, channel))
             and segment.start >= start_after - tolerance
             and (end_before is None or segment.end <= end_before + tolerance)
         )

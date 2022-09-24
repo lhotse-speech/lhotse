@@ -609,6 +609,10 @@ def is_none_or_gt(value, threshold) -> bool:
     return value is None or value > threshold
 
 
+def is_equal_or_contains(value, other) -> bool:
+    return value == other or (isinstance(value, Iterable) and other in value)
+
+
 def is_module_available(*modules: str) -> bool:
     r"""Returns if a top-level module with :attr:`name` exists *without**
     importing it. This is generally safer than try-catch block around a
