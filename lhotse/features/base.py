@@ -18,7 +18,7 @@ from lhotse.audio import Recording
 from lhotse.augmentation import AugmentFn
 from lhotse.features.io import FeaturesWriter, get_reader
 from lhotse.lazy import AlgorithmMixin
-from lhotse.serialization import Serializable, load_yaml, save_to_yaml
+from lhotse.serialization import LazyMixin, Serializable, load_yaml, save_to_yaml
 from lhotse.utils import (
     Pathlike,
     Seconds,
@@ -593,12 +593,13 @@ class FeatureSet(Serializable, AlgorithmMixin):
         """Alias property for ``self.features``"""
         return self.features
 
-    def to_eager(self) -> "FeatureSet":
-        return FeatureSet(list(self))
-
     @staticmethod
-    def from_features(features: Iterable[Features]) -> "FeatureSet":
-        return FeatureSet(list(features))  # just for consistency with other *Sets
+    def from_features(features: Union[Iterable[Features], LazyMixin]) -> "FeatureSet":
+        return (
+            FeatureSet([f for f in features])
+            if isinstance(features, LazyMixin)
+            else FeatureSet(list(features))
+        )
 
     from_items = from_features
 
