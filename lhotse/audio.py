@@ -1337,6 +1337,17 @@ def read_audio(
 
 
 class AudioBackend:
+    """
+    Internal Lhotse abstraction. An AudioBackend defines three methods:
+    one for reading audio, and two filters that help determine if it should be used.
+
+    ``handle_special_case`` means this backend should be exclusively
+    used for a given type of input path/file.
+
+    ``is_applicable`` means this backend most likely can be used for a given type of input path/file,
+    but it may also fail. Its purpose is more to filter out formats that definitely are not supported.
+    """
+
     def read_audio(
         self,
         path_or_fd: Union[Pathlike, FileObject],
@@ -1445,6 +1456,14 @@ class TorchaudioDefaultBackend(AudioBackend):
 
 
 class LibsndfileBackend(AudioBackend):
+    """
+    A backend that uses PySoundFile.
+
+    .. note:: PySoundFile has issues on MacOS because of the way its CFFI bindings are implemented.
+        For now, we disable it on this platform.
+        See: https://github.com/bastibe/python-soundfile/issues/331
+    """
+
     def read_audio(
         self,
         path_or_fd: Union[Pathlike, FileObject],
@@ -1555,6 +1574,16 @@ def verbose_audio_loading_exceptions() -> bool:
 
 @lru_cache(maxsize=1)
 def get_default_audio_backend():
+    """
+    Return a backend that can be used to read all audio formats supported by Lhotse.
+
+    It first looks for special cases that need very specific handling
+    (such as: opus, sphere/shorten, in-memory buffers)
+    and tries to match them against relevant audio backends.
+
+    Then, it tries to use several audio loading libraries (torchaudio, soundfile, audioread).
+    In case the first fails, it tries the next one, and so on.
+    """
     return CompositeAudioBackend(
         [
             # First handle special cases: OPUS and SPHERE (SPHERE may be encoded with shorten,
