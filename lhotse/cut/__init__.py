@@ -1,6 +1,7 @@
 from .base import Cut
 from .mixed import MixedCut, MixTrack
 from .mono import MonoCut
+from .multi import MultiCut
 from .padding import PaddingCut
 from .set import CutSet
 
