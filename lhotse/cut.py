@@ -1375,6 +1375,7 @@ class MonoCut(Cut):
         duration: Seconds,
         direction: str = "both",
         preserve_id: bool = False,
+        pad_silence: bool = True,
     ) -> "MonoCut":
         """
         Returns a new MonoCut that is an extended region of the current MonoCut by extending
@@ -1390,8 +1391,15 @@ class MonoCut(Cut):
             the "real" content of the recording that the cut is part of. For example, a MonoCut spanning
             the region from 2s to 5s in a recording, when extended by 2s to the right, will now span
             the region from 2s to 7s in the same recording (provided the recording length exceeds 7s).
-            If the recording is shorter, the cut will only be extended up to the duration of the recording.
-            To "expand" a cut by padding, use :meth:`MonoCut.pad`. To "truncate" a cut, use :meth:`MonoCut.truncate`.
+            If the recording is shorter, additional silence will be padded to achieve the desired duration
+            by default. This behavior can be changed by setting ``pad_silence=False``.
+            Also see :meth:`MonoCut.pad` which pads a cut "to" a specified length.
+            To "truncate" a cut, use :meth:`MonoCut.truncate`.
+
+        .. hint::
+
+            If `pad_silence` is set to False, then the cut will be extended only as much as allowed
+            within the recording's boundary.
 
         .. hint::
 
@@ -1403,6 +1411,9 @@ class MonoCut(Cut):
         :param direction: string, 'left', 'right' or 'both'. Determines whether to extend on the left,
             right, or both sides. If 'both', extend on both sides by the duration specified in `duration`.
         :param preserve_id: bool. Should the extended cut keep the same ID or get a new, random one.
+        :param pad_silence: bool. Should the cut be padded with silence if the recording is shorter than
+            the desired duration. If False, the cut will be extended only as much as allowed within the
+            recording's boundary.
         :return: a new MonoCut instance.
         """
         from lhotse.array import TemporalArray
@@ -1410,9 +1421,14 @@ class MonoCut(Cut):
         assert duration >= 0, f"Duration must be non-negative (provided {duration})."
 
         new_start, new_end = self.start, self.end
+        pad_left, pad_right = 0, 0
         if direction == "left" or direction == "both":
+            if self.start - duration < 0 and pad_silence:
+                pad_left = duration - self.start
             new_start = max(self.start - duration, 0)
         if direction == "right" or direction == "both":
+            if self.end + duration > self.recording.duration and pad_silence:
+                pad_right = duration - (self.recording.duration - self.end)
             new_end = min(self.end + duration, self.recording.duration)
 
         new_duration = add_durations(
@@ -1464,7 +1480,7 @@ class MonoCut(Cut):
                         )
                         custom_kwargs[name] = None
 
-        return fastcopy(
+        cut = fastcopy(
             self,
             id=self.id if preserve_id else str(uuid4()),
             start=new_start,
@@ -1473,6 +1489,21 @@ class MonoCut(Cut):
             **feature_kwargs,
             custom=custom_kwargs,
         )
+
+        # Now pad the cut on either side if needed
+        if pad_left > 0:
+            cut = cut.pad(
+                duration=cut.duration + pad_left,
+                direction="left",
+                preserve_id=preserve_id,
+            )
+        if pad_right > 0:
+            cut = cut.pad(
+                duration=cut.duration + pad_right,
+                direction="right",
+                preserve_id=preserve_id,
+            )
+        return cut
 
     def pad(
         self,
@@ -1987,6 +2018,7 @@ class PaddingCut(Cut):
         duration: Seconds,
         direction: str = "both",
         preserve_id: bool = False,
+        pad_silence: bool = True,
     ) -> "PaddingCut":
         """
         Return a new PaddingCut with region extended by the specified duration.
@@ -1997,6 +2029,7 @@ class PaddingCut(Cut):
             the specified duration on both sides.
         :param preserve_id: When ``True``, preserves the cut ID from before padding.
             Otherwise, generates a new random ID (default).
+        :param pad_silence: See usage in :func:`lhotse.cut.MonoCut.extend_by`. It is ignored here.
         :return: an extended PaddingCut.
         """
         new_duration = self.duration + duration
@@ -2662,6 +2695,7 @@ class MixedCut(Cut):
         duration: Seconds,
         direction: str = "both",
         preserve_id: bool = False,
+        pad_silence: bool = True,
     ) -> "MixedCut":
         """
         This raises a ValueError since extending a MixedCut is not defined.
@@ -2670,6 +2704,7 @@ class MixedCut(Cut):
         :param direction: string, 'left', 'right' or 'both'. Determines whether to extend on the left,
             right, or both sides. If 'both', extend on both sides by the duration specified in `duration`.
         :param preserve_id: bool. Should the extended cut keep the same ID or get a new, random one.
+        :param pad_silence: bool. See usage in `lhotse.cut.MonoCut.extend_by`.
         :return: a new MixedCut instance.
         """
         raise ValueError("The extend_by() method is not defined for a MixedCut.")
@@ -4297,6 +4332,7 @@ class CutSet(Serializable, AlgorithmMixin):
         duration: Seconds,
         direction: str = "both",
         preserve_id: bool = False,
+        pad_silence: bool = True,
     ) -> "CutSet":
         """
         Returns a new CutSet with cuts extended by `duration` amount.
@@ -4305,11 +4341,16 @@ class CutSet(Serializable, AlgorithmMixin):
         :param direction: string, 'left', 'right' or 'both'. Determines whether to extend on the left,
             right, or both sides. If 'both', extend on both sides by the same duration (equal to `duration`).
         :param preserve_id: bool. Should the extended cut keep the same ID or get a new, random one.
+        :param pad_silence: bool. If True, the extended part of the cut will be padded with silence if required
+            to match the specified duration.
         :return: a new CutSet instance.
         """
         return self.map(
             lambda cut: cut.extend_by(
-                duration=duration, direction=direction, preserve_id=preserve_id
+                duration=duration,
+                direction=direction,
+                preserve_id=preserve_id,
+                pad_silence=pad_silence,
             )
         )
 
@@ -4564,7 +4605,6 @@ class CutSet(Serializable, AlgorithmMixin):
             if random.uniform(0.0, 1.0) > mix_prob:
                 mixed_cuts.append(cut)
                 continue
-            # Randomly sample a new cut from "cuts" to mix in.
             to_mix = cuts.sample()
             # Determine the SNR - either it's specified or we need to sample one.
             snr = random.uniform(*snr) if isinstance(snr, (list, tuple)) else snr
@@ -4573,29 +4613,32 @@ class CutSet(Serializable, AlgorithmMixin):
             # Did the user specify a duration?
             # If yes, we will ensure that shorter cuts have more noise mixed in
             # to "pad" them with at the end.
-            if duration is not None:
-                mixed_in_duration = to_mix.duration
-                # Keep sampling until we mixed in a "duration" amount of noise.
-                # Note: we subtract 0.05s (50ms) from the target duration to avoid edge cases
-                #       where we mix in some noise cut that effectively has 0 frames of features.
-                while mixed_in_duration < (duration - 0.05):
-                    to_mix = cuts.sample()
-                    # Keep the SNR constant for each cut from "self".
-                    mixed = mixed.mix(
-                        other=to_mix,
-                        snr=snr,
-                        offset_other_by=mixed_in_duration,
-                        allow_padding=allow_padding,
-                        preserve_id=preserve_id,
-                    )
-                    # Since we're adding floats, we can be off by an epsilon and trigger
-                    # some assertions for exceeding duration; do precautionary rounding here.
-                    mixed_in_duration = round(
-                        mixed_in_duration + to_mix.duration, ndigits=8
-                    )
+            # If no, we will mix in as many noise cuts as needed to cover complete
+            # duration.
+            mixed_in_duration = to_mix.duration
+            # Keep sampling until we mixed in a "duration" amount of noise.
+            # Note: we subtract 0.05s (50ms) from the target duration to avoid edge cases
+            #       where we mix in some noise cut that effectively has 0 frames of features.
+            while mixed_in_duration < (
+                duration if duration is not None else cut.duration - 0.05
+            ):
+                to_mix = cuts.sample()
+                # Keep the SNR constant for each cut from "self".
+                mixed = mixed.mix(
+                    other=to_mix,
+                    snr=snr,
+                    offset_other_by=mixed_in_duration,
+                    allow_padding=allow_padding,
+                    preserve_id=preserve_id,
+                )
+                # Since we're adding floats, we can be off by an epsilon and trigger
+                # some assertions for exceeding duration; do precautionary rounding here.
+                mixed_in_duration = round(
+                    mixed_in_duration + to_mix.duration, ndigits=8
+                )
             # We truncate the mixed to either the original duration or the requested duration.
             mixed = mixed.truncate(
-                duration=cut.duration if duration is None else duration,
+                duration=duration if duration is not None else cut.duration,
                 preserve_id=preserve_id is not None,
             )
             mixed_cuts.append(mixed)
