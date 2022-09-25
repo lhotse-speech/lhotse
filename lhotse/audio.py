@@ -456,7 +456,13 @@ class Recording:
             channels=channels, offset=ifnone(offset, 0), duration=duration
         )
         stream = BytesIO()
-        if format in ("wav", "ogg", "vorbis", "flac", "sph"):
+        if torchaudio_soundfile_supports_format() and format in (
+            "wav",
+            "ogg",
+            "vorbis",
+            "flac",
+            "sph",
+        ):
             # Prefer saving with soundfile backend whenever possible to avoid issue:
             # https://github.com/pytorch/audio/issues/2662
             # Saving with sox_io backend to FLAC may corrupt the file, IDK about other
@@ -1409,6 +1415,18 @@ def torchaudio_supports_ffmpeg() -> bool:
     from packaging import version
 
     return version.parse(torchaudio.__version__) >= version.parse("0.12.0")
+
+
+@lru_cache(maxsize=1)
+def torchaudio_soundfile_supports_format() -> bool:
+    """
+    Returns ``True`` when torchaudio version is at least 0.9.0, which
+    has support for ``format`` keyword arg in ``torchaudio.save()``.
+    """
+    import torchaudio
+    from packaging import version
+
+    return version.parse(torchaudio.__version__) >= version.parse("0.9.0")
 
 
 def torchaudio_info(
