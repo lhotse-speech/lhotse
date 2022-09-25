@@ -918,7 +918,7 @@ class MonoCut(Cut):
         early_only: bool = False,
         affix_id: bool = True,
         rir_channels: List[int] = [0],
-    ) -> Union["MonoCut", "MixedCut"]:
+    ) -> Cut:
         """
         Return a new ``MonoCut`` that will convolve the audio with the provided impulse response.
         If the `rir_recording` is multi-channel, the `rir_channels` argument determines which channels
