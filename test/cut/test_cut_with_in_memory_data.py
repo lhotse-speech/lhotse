@@ -74,7 +74,9 @@ def test_cut_with_audio_move_to_memory():
 
     memory_cut = cut.move_to_memory()
 
-    np.testing.assert_equal(memory_cut.load_audio(), cut.load_audio())
+    ref = cut.load_audio()
+    hyp = memory_cut.load_audio()
+    np.testing.assert_equal(hyp, ref)
 
 
 def test_cut_with_audio_move_to_memory_large_offset():
