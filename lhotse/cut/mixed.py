@@ -10,6 +10,7 @@ from lhotse.audio import AudioMixer, Recording, audio_energy
 from lhotse.augmentation import AugmentFn
 from lhotse.cut.base import Cut
 from lhotse.cut.mono import MonoCut
+from lhotse.cut.multi import MultiCut
 from lhotse.cut.padding import PaddingCut
 from lhotse.features import (
     FeatureExtractor,
@@ -38,11 +39,11 @@ from lhotse.utils import (
 @dataclass
 class MixTrack:
     """
-    Represents a single track in a mix of Cuts. Points to a specific MonoCut and holds information on
+    Represents a single track in a mix of Cuts. Points to a specific MonoCut or MultiCut and holds information on
     how to mix it with other Cuts, relative to the first track in a mix.
     """
 
-    cut: Union[MonoCut, PaddingCut]
+    cut: Union[MonoCut, MultiCut, PaddingCut]
     offset: Seconds = 0.0
     snr: Optional[Decibels] = None
 
@@ -60,9 +61,8 @@ class MixTrack:
 class MixedCut(Cut):
     """
     :class:`~lhotse.cut.MixedCut` is a :class:`~lhotse.cut.Cut` that actually consists of multiple other cuts.
-    It can be interpreted as a multi-channel cut, but its primary purpose is to allow
-    time-domain and feature-domain augmentation via mixing the training cuts with noise, music, and babble cuts.
-    The actual mixing operations are performed on-the-fly.
+    Its primary purpose is to allow time-domain and feature-domain augmentation via mixing the training cuts
+    with noise, music, and babble cuts. The actual mixing operations are performed on-the-fly.
 
     Internally, :class:`~lhotse.cut.MixedCut` holds other cuts in multiple trakcs (:class:`~lhotse.cut.MixTrack`),
     each with its own offset and SNR that is relative to the first track.
@@ -78,6 +78,9 @@ class MixedCut(Cut):
         >>> multi_features = cut.load_features(mixed=False)
         >>> # Now, the first dimension is the channel.
         >>> assert len(multi_features.shape) == 3
+
+    .. note:: MixedCut is different from MultiCut, which is intended to represent multi-channel recordings
+        that share the same supervisions.
 
     See also:
 
