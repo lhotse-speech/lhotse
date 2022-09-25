@@ -293,7 +293,9 @@ class SupervisionSegment:
             else self.recording_id,
         )
 
-    def reverb_rir(self, affix_id: bool = True) -> "SupervisionSegment":
+    def reverb_rir(
+        self, affix_id: bool = True, channel: Optional[Union[int, List[int]]] = None
+    ) -> "SupervisionSegment":
         """
         Return a ``SupervisionSegment`` with modified ids.
 
@@ -306,6 +308,7 @@ class SupervisionSegment:
             self,
             id=f"{self.id}_rvb" if affix_id else self.id,
             recording_id=f"{self.recording_id}_rvb" if affix_id else self.recording_id,
+            channel=channel if channel is not None else self.channel,
         )
 
     def trim(self, end: Seconds, start: Seconds = 0) -> "SupervisionSegment":

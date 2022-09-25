@@ -50,10 +50,14 @@ class MixTrack:
     @staticmethod
     def from_dict(data: dict):
         raw_cut = data.pop("cut")
-        try:
+        if raw_cut["type"] == "MonoCut":
             cut = MonoCut.from_dict(raw_cut)
-        except TypeError:
+        elif raw_cut["type"] == "MultiCut":
+            cut = MultiCut.from_dict(raw_cut)
+        elif raw_cut["type"] == "PaddingCut":
             cut = PaddingCut.from_dict(raw_cut)
+        else:
+            raise ValueError(f"Unexpected cut type: {raw_cut['type']}")
         return MixTrack(cut, **data)
 
 
@@ -82,10 +86,13 @@ class MixedCut(Cut):
     .. note:: MixedCut is different from MultiCut, which is intended to represent multi-channel recordings
         that share the same supervisions.
 
+    .. note:: Each track in a MixedCut can be either a MonoCut, MultiCut, or PaddingCut.
+
     See also:
 
         - :class:`lhotse.cut.Cut`
         - :class:`lhotse.cut.MonoCut`
+        - :class:`lhotse.cut.MultiCut`
         - :class:`lhotse.cut.CutSet`
     """
 
@@ -149,6 +156,10 @@ class MixedCut(Cut):
     @property
     def num_features(self) -> Optional[int]:
         return self.tracks[0].cut.num_features
+
+    @property
+    def num_channels(self) -> Optional[int]:
+        return max(track.cut.num_channels for track in self.tracks)
 
     @property
     def features_type(self) -> Optional[str]:
@@ -352,7 +363,7 @@ class MixedCut(Cut):
             )
 
             if track_end < offset:
-                # Omit a MonoCut that ends before the truncation offset.
+                # Omit a Cut that ends before the truncation offset.
                 continue
 
             cut_duration_decrease = 0
@@ -366,7 +377,7 @@ class MixedCut(Cut):
                         track_end, -old_duration, sampling_rate=self.sampling_rate
                     )
 
-            # Compute the new MonoCut's duration after trimming the start and the end.
+            # Compute the new Cut's duration after trimming the start and the end.
             new_duration = add_durations(
                 track.cut.duration,
                 -cut_offset,
@@ -374,7 +385,7 @@ class MixedCut(Cut):
                 sampling_rate=self.sampling_rate,
             )
             if new_duration <= 0:
-                # Omit a MonoCut that is completely outside the time span of the new truncated MixedCut.
+                # Omit a Cut that is completely outside the time span of the new truncated MixedCut.
                 continue
 
             new_tracks.append(

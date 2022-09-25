@@ -38,6 +38,7 @@ from lhotse.augmentation import AugmentFn
 from lhotse.cut.base import Cut
 from lhotse.cut.mixed import MixedCut, MixTrack
 from lhotse.cut.mono import MonoCut
+from lhotse.cut.multi import MultiCut
 from lhotse.cut.padding import PaddingCut
 from lhotse.features import FeatureExtractor, Features, FeatureSet
 from lhotse.features.base import StatsAccumulator, compute_global_stats
@@ -2092,7 +2093,7 @@ def mix(
             )
             for track in mixed_in_cut.tracks
         ]
-    elif isinstance(mixed_in_cut, (MonoCut, PaddingCut)):
+    elif isinstance(mixed_in_cut, (MonoCut, MultiCut, PaddingCut)):
         new_tracks = [MixTrack(cut=mixed_in_cut, offset=offset, snr=snr)]
     else:
         raise ValueError(f"Unsupported type of cut in mix(): {type(reference_cut)}")

@@ -199,6 +199,10 @@ class MonoCut(Cut):
         return self.features.num_features if self.has_features else None
 
     @property
+    def num_channels(self) -> Optional[int]:
+        return self.recording.num_channels if self.has_recording else None
+
+    @property
     def features_type(self) -> Optional[str]:
         return self.features.type if self.has_features else None
 
@@ -922,7 +926,8 @@ class MonoCut(Cut):
         """
         Return a new ``MonoCut`` that will convolve the audio with the provided impulse response.
         If the `rir_recording` is multi-channel, the `rir_channels` argument determines which channels
-        will be used. By default, we use the first channel and return a MonoCut.
+        will be used. By default, we use the first channel and return a MonoCut. If we reverberate
+        with a multi-channel RIR, we return a MultiCut.
 
         If no ``rir_recording`` is provided, we will generate an impulse response using a fast random
         generator (https://arxiv.org/abs/2208.04101).
@@ -977,34 +982,32 @@ class MonoCut(Cut):
                 supervisions=supervisions_rvb,
             )
         else:
-            from .mixed import MixedCut, MixTrack
+            from .multi import MultiCut
 
-            # we will return a MixedCut where each track represents the MonoCut convolved
+            channels = list(range(len(rir_channels)))
+            # we will return a MultiCut where each track represents the MonoCut convolved
             # with a single channel of the RIR
-            new_tracks = [
-                MixTrack(
-                    cut=fastcopy(
-                        self,
-                        recording=self.recording.reverb_rir(
-                            rir_recording=rir_recording,
-                            normalize_output=normalize_output,
-                            early_only=early_only,
-                            affix_id=affix_id,
-                            rir_channels=[channel],
-                        ),
-                        supervisions=[
-                            s.reverb_rir(
-                                affix_id=affix_id,
-                            )
-                            for s in self.supervisions
-                        ],
-                    ),
-                    offset=0,
+            recording_rvb = self.recording.reverb_rir(
+                rir_recording=rir_recording,
+                normalize_output=normalize_output,
+                early_only=early_only,
+                affix_id=affix_id,
+                rir_channels=rir_channels,
+            )
+            # Match the supervision's id (and it's underlying recording id).
+            supervisions_rvb = [
+                s.reverb_rir(
+                    affix_id=affix_id,
+                    channel=channels,
                 )
-                for channel in rir_channels
+                for s in self.supervisions
             ]
-            return MixedCut(
-                id=f"{self.id}_rvb" if affix_id else self.id, tracks=new_tracks
+
+            return fastcopy(
+                MultiCut.from_mono(self),
+                recording=recording_rvb,
+                supervisions=supervisions_rvb,
+                channel=channels,
             )
 
     def map_supervisions(
