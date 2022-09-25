@@ -235,7 +235,7 @@ class Cut:
         allow_padding: bool = False,
         snr: Optional[Decibels] = None,
         preserve_id: Optional[str] = None,
-    ) -> "MixedCut":
+    ) -> "Cut":
         """Refer to :function:`~lhotse.cut.mix` documentation."""
         from .set import mix
 
@@ -253,7 +253,7 @@ class Cut:
         other: "Cut",
         snr: Optional[Decibels] = None,
         preserve_id: Optional[str] = None,
-    ) -> "MixedCut":
+    ) -> "Cut":
         """
         Append the ``other`` Cut after the current Cut. Conceptually the same as ``mix`` but with an offset
         matching the current cuts length. Optionally scale down (positive SNR) or scale up (negative SNR)
@@ -378,7 +378,7 @@ class Cut:
         keep_overlapping: bool = True,
         min_duration: Optional[Seconds] = None,
         context_direction: Literal["center", "left", "right", "random"] = "center",
-    ) -> "CutSet":
+    ) -> "CutSet":  # noqa: F821
         """
         Splits the current :class:`.Cut` into as many cuts as there are supervisions (:class:`.SupervisionSegment`).
         These cuts have identical start times and durations as the supervisions.
@@ -453,7 +453,7 @@ class Cut:
         duration: Seconds,
         hop: Optional[Seconds] = None,
         keep_excessive_supervisions: bool = True,
-    ) -> "CutSet":
+    ) -> "CutSet":  # noqa: F821
         """
         Return a list of shorter cuts, made by traversing this cut in windows of
         ``duration`` seconds by ``hop`` seconds.
@@ -525,7 +525,7 @@ class Cut:
         self,
         storage_path: Pathlike,
         augment_fn: Optional[AugmentFn] = None,
-    ) -> "MonoCut":
+    ) -> "Cut":
         """
         Store this cut's waveform as audio recording to disk.
 
@@ -543,7 +543,7 @@ class Cut:
         self,
         storage_path: Pathlike,
         augment_fn: Optional[AugmentFn] = None,
-    ) -> "MonoCut":
+    ) -> "Cut":
         """
         Store this cut's waveform as audio recording to disk.
 
