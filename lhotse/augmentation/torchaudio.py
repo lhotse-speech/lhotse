@@ -336,7 +336,7 @@ class ReverbWithImpulseResponse(AudioTransform):
     rir: Optional[dict] = None
     normalize_output: bool = True
     early_only: bool = False
-    rir_channels: List[int] = field(default_factory=lambda: [0])
+    rir_channels: Optional[List[int]] = None
 
     RIR_SCALING_FACTOR: float = 0.5**15
 
@@ -347,7 +347,7 @@ class ReverbWithImpulseResponse(AudioTransform):
             # Pass a shallow copy of the RIR dict since `from_dict()` pops the `sources` key.
             self.rir = Recording.from_dict(self.rir.copy())
         if self.rir is not None:
-            assert all(
+            assert self.rir_channels is not None and all(
                 c < self.rir.num_channels for c in self.rir_channels
             ), "Invalid channel index in `rir_channels`"
 
@@ -357,47 +357,48 @@ class ReverbWithImpulseResponse(AudioTransform):
         sampling_rate: int,
     ) -> np.ndarray:
         """
-        :param samples: The audio samples to reverberate (must be single-channel).
+        :param samples: The audio samples to reverberate.
         :param sampling_rate: The sampling rate of the audio samples.
         """
-        assert samples.shape[0] == 1, "The input audio must be single-channel."
         sampling_rate = int(sampling_rate)  # paranoia mode
 
+        D_in, N_in = samples.shape
+        input_is_mono = D_in == 1
+
         if self.rir is None:
-            rir_ = generate_fast_random_rir(
-                nsource=len(self.rir_channels), sr=sampling_rate
-            )
+            rir_ = generate_fast_random_rir(nsource=D_in, sr=sampling_rate)
         else:
+            assert input_is_mono or self.rir.num_channels == D_in, (
+                "The number of channels of the RIR recording must match the number of channels of "
+                "the input audio samples, if input is not mono."
+            )
             rir_ = (
                 self.rir.load_audio(channels=self.rir_channels)
                 if not self.early_only
                 else self.rir.load_audio(duration=0.05)
             )
 
-        # Determine output length.
-        _, N_in = samples.shape
-        D, N_rir = rir_.shape
+        D_out, N_rir = rir_.shape
         N_out = N_in  # Enforce shift output
 
         # Initialize output matrix with the specified input channel.
-        augmented = np.zeros((D, N_out), dtype=samples.dtype)
-        power_before_reverb = np.sum(np.abs(samples) ** 2) / samples.shape[1]
+        augmented = np.zeros((D_out, N_out), dtype=samples.dtype)
 
-        for d in range(D):
-            augmented[d, :N_in] = samples
+        for d in range(D_out):
+            d_in = 0 if input_is_mono else d
+            augmented[d, :N_in] = samples[d]
+            power_before_reverb = np.sum(np.abs(samples[d_in]) ** 2) / N_in
             rir_d = rir_[d, :] * self.RIR_SCALING_FACTOR
 
             # Convolve the signal with impulse response.
             aug_d = convolve1d(
-                torch.from_numpy(samples[0]), torch.from_numpy(rir_d)
+                torch.from_numpy(samples[d]), torch.from_numpy(rir_d)
             ).numpy()
             shift_index = np.argmax(rir_d)
             augmented[d, :] = aug_d[shift_index : shift_index + N_out]
 
             if self.normalize_output:
-                power_after_reverb = (
-                    np.sum(np.abs(augmented[d, :]) ** 2) / augmented.shape[1]
-                )
+                power_after_reverb = np.sum(np.abs(augmented[d, :]) ** 2) / N_out
                 if power_after_reverb > 0:
                     augmented[d, :] *= np.sqrt(power_before_reverb / power_after_reverb)
 

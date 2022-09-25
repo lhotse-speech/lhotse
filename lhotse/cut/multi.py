@@ -45,7 +45,10 @@ class MultiCut(Cut):
     the Recording object has multiple channels, and the Supervision object is shared across
     multiple channels. The channels that the MultiCut pertains to is defined by the channels
     in the Supervision object, and these are the same as the ``channel`` attribute of the
-    MultiCut.
+    MultiCut. These channels may be a subset of the channels in the Recording object. For
+    example, if the Recording object has 4 channels (0, 1, 2, 3), we may construct a MonoCut
+    object with a supervision for channel 0, and a MultiCut object with a supervision for
+    channels 1 and 2.
 
     See also:
 
@@ -976,65 +979,34 @@ class MultiCut(Cut):
         assert rir_recording is None or all(
             c < rir_recording.num_channels for c in rir_channels
         ), "Invalid channel index in `rir_channels`."
-        if len(rir_channels) == 1 or (
-            rir_recording is not None and rir_recording.num_channels == 1
-        ):
-            # reverberation will return a MonoCut
-            recording_rvb = self.recording.reverb_rir(
-                rir_recording=rir_recording,
-                normalize_output=normalize_output,
-                early_only=early_only,
+        assert (
+            rir_recording is None or len(rir_channels) == self.num_channels
+        ), "The number of channels in the RIR recording must match the number of channels in the MultiCut."
+        recording_rvb = self.recording.reverb_rir(
+            rir_recording=rir_recording,
+            normalize_output=normalize_output,
+            early_only=early_only,
+            affix_id=affix_id,
+            rir_channels=rir_channels,
+        )
+        # Match the supervision's id (and it's underlying recording id).
+        supervisions_rvb = [
+            s.reverb_rir(
                 affix_id=affix_id,
-                rir_channels=rir_channels,
             )
-            # Match the supervision's id (and it's underlying recording id).
-            supervisions_rvb = [
-                s.reverb_rir(
-                    affix_id=affix_id,
-                )
-                for s in self.supervisions
-            ]
+            for s in self.supervisions
+        ]
 
-            return fastcopy(
-                self,
-                id=f"{self.id}_rvb" if affix_id else self.id,
-                recording=recording_rvb,
-                supervisions=supervisions_rvb,
-            )
-        else:
-            from .mixed import MixedCut, MixTrack
-
-            # we will return a MixedCut where each track represents the MonoCut convolved
-            # with a single channel of the RIR
-            new_tracks = [
-                MixTrack(
-                    cut=fastcopy(
-                        self,
-                        recording=self.recording.reverb_rir(
-                            rir_recording=rir_recording,
-                            normalize_output=normalize_output,
-                            early_only=early_only,
-                            affix_id=affix_id,
-                            rir_channels=[channel],
-                        ),
-                        supervisions=[
-                            s.reverb_rir(
-                                affix_id=affix_id,
-                            )
-                            for s in self.supervisions
-                        ],
-                    ),
-                    offset=0,
-                )
-                for channel in rir_channels
-            ]
-            return MixedCut(
-                id=f"{self.id}_rvb" if affix_id else self.id, tracks=new_tracks
-            )
+        return fastcopy(
+            self,
+            id=f"{self.id}_rvb" if affix_id else self.id,
+            recording=recording_rvb,
+            supervisions=supervisions_rvb,
+        )
 
     def map_supervisions(
         self, transform_fn: Callable[[SupervisionSegment], SupervisionSegment]
-    ) -> "MonoCut":
+    ) -> "MultiCut":
         """
         Return a copy of the cut that has its supervisions transformed by ``transform_fn``.
 
@@ -1048,7 +1020,7 @@ class MultiCut(Cut):
 
     def filter_supervisions(
         self, predicate: Callable[[SupervisionSegment], bool]
-    ) -> "MonoCut":
+    ) -> "MultiCut":
         """
         Return a copy of the cut that only has supervisions accepted by ``predicate``.
 
@@ -1068,7 +1040,7 @@ class MultiCut(Cut):
 
     def merge_supervisions(
         self, custom_merge_fn: Optional[Callable[[str, Iterable[Any]], Any]] = None
-    ) -> "MonoCut":
+    ) -> "MultiCut":
         """
         Return a copy of the cut that has all of its supervisions merged into
         a single segment.
@@ -1124,19 +1096,19 @@ class MultiCut(Cut):
         if "type" in data:
             data.pop("type")
 
-        return MonoCut(
+        return MultiCut(
             **data,
             features=features,
             recording=recording,
             supervisions=[SupervisionSegment.from_dict(s) for s in supervision_infos],
         )
 
-    def with_features_path_prefix(self, path: Pathlike) -> "MonoCut":
+    def with_features_path_prefix(self, path: Pathlike) -> "MultiCut":
         if not self.has_features:
             return self
         return fastcopy(self, features=self.features.with_path_prefix(path))
 
-    def with_recording_path_prefix(self, path: Pathlike) -> "MonoCut":
+    def with_recording_path_prefix(self, path: Pathlike) -> "MultiCut":
         if not self.has_recording:
             return self
         return fastcopy(self, recording=self.recording.with_path_prefix(path))

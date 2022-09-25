@@ -671,9 +671,10 @@ class MixedCut(Cut):
         assert rir_recording is None or all(
             c < rir_recording.num_channels for c in rir_channels
         ), "Invalid channel index in `rir_channels`."
+
         assert len(rir_channels) == 1 or len(rir_channels) == len(
             self.tracks
-        ), "Invalid number of channels in `rir_channels`. Must be 1 or equal to number of tracks."
+        ), "Invalid number of channels in `rir_channels`, must be either 1 or equal to the number of tracks."
 
         if len(rir_channels) == 1:
             rir_channels = rir_channels * len(self.tracks)
