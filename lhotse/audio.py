@@ -1,7 +1,10 @@
 import functools
 import logging
+import os
 import random
 import re
+import sys
+import traceback
 import warnings
 from concurrent.futures import ProcessPoolExecutor
 from contextlib import contextmanager
@@ -1325,40 +1328,242 @@ def read_audio(
     duration: Optional[Seconds] = None,
     force_opus_sampling_rate: Optional[int] = None,
 ) -> Tuple[np.ndarray, int]:
-    # First handle special cases: OPUS and SPHERE (SPHERE may be encoded with shorten,
-    #   which can only be decoded by binaries "shorten" and "sph2pipe").
-    try:
-        if isinstance(path_or_fd, (str, Path)) and str(path_or_fd).lower().endswith(
+    return get_default_audio_backend().read_audio(
+        path_or_fd=path_or_fd,
+        offset=offset,
+        duration=duration,
+        force_opus_sampling_rate=force_opus_sampling_rate,
+    )
+
+
+class AudioBackend:
+    def read_audio(
+        self,
+        path_or_fd: Union[Pathlike, FileObject],
+        offset: Seconds = 0.0,
+        duration: Optional[Seconds] = None,
+        force_opus_sampling_rate: Optional[int] = None,
+    ) -> Tuple[np.ndarray, int]:
+        raise NotImplementedError()
+
+    def handles_special_case(self, path_or_fd: Union[Pathlike, FileObject]) -> bool:
+        return False
+
+    def is_applicable(self, path_or_fd: Union[Pathlike, FileObject]) -> bool:
+        return True
+
+
+class FfmpegSubprocessOpusBackend(AudioBackend):
+    def read_audio(
+        self,
+        path_or_fd: Union[Pathlike, FileObject],
+        offset: Seconds = 0.0,
+        duration: Optional[Seconds] = None,
+        force_opus_sampling_rate: Optional[int] = None,
+    ):
+        assert isinstance(
+            path_or_fd, (str, Path)
+        ), f"Cannot use an ffmpeg subprocess to read from path of type: '{type(path_or_fd)}'"
+        return read_opus_ffmpeg(
+            path=path_or_fd,
+            offset=offset,
+            duration=duration,
+            force_opus_sampling_rate=force_opus_sampling_rate,
+        )
+
+    def handles_special_case(self, path_or_fd: Union[Pathlike, FileObject]) -> bool:
+        return isinstance(path_or_fd, (str, Path)) and str(path_or_fd).lower().endswith(
             ".opus"
-        ):
-            return read_opus(
-                path_or_fd,
-                offset=offset,
-                duration=duration,
-                force_opus_sampling_rate=force_opus_sampling_rate,
-            )
-        elif isinstance(path_or_fd, (str, Path)) and str(path_or_fd).lower().endswith(
+        )
+
+    def is_applicable(self, path_or_fd: Union[Pathlike, FileObject]) -> bool:
+        return self.handles_special_case(path_or_fd)
+
+
+class Sph2pipeSubprocessBackend(AudioBackend):
+    def read_audio(
+        self,
+        path_or_fd: Union[Pathlike, FileObject],
+        offset: Seconds = 0.0,
+        duration: Optional[Seconds] = None,
+        force_opus_sampling_rate: Optional[int] = None,
+    ) -> Tuple[np.ndarray, int]:
+        assert isinstance(
+            path_or_fd, (str, Path)
+        ), f"Cannot use an sph2pipe subprocess to read from path of type: '{type(path_or_fd)}'"
+        return read_sph(
+            sph_path=path_or_fd,
+            offset=offset,
+            duration=duration,
+        )
+
+    def handles_special_case(self, path_or_fd: Union[Pathlike, FileObject]) -> bool:
+        return isinstance(path_or_fd, (str, Path)) and str(path_or_fd).lower().endswith(
             ".sph"
-        ):
-            return read_sph(path_or_fd, offset=offset, duration=duration)
-        try:
+        )
+
+    def is_applicable(self, path_or_fd: Union[Pathlike, FileObject]) -> bool:
+        return self.handles_special_case(path_or_fd)
+
+
+class FfmpegTorchaudioStreamerBackend(AudioBackend):
+    def read_audio(
+        self,
+        path_or_fd: Union[Pathlike, FileObject],
+        offset: Seconds = 0.0,
+        duration: Optional[Seconds] = None,
+        force_opus_sampling_rate: Optional[int] = None,
+    ) -> Tuple[np.ndarray, int]:
+        return torchaudio_ffmpeg_load(
+            path_or_fileobj=path_or_fd,
+            offset=offset,
+            duration=duration,
+        )
+
+    def handles_special_case(self, path_or_fd: Union[Pathlike, FileObject]) -> bool:
+        return isinstance(path_or_fd, BytesIO)
+
+
+class TorchaudioDefaultBackend(AudioBackend):
+    def read_audio(
+        self,
+        path_or_fd: Union[Pathlike, FileObject],
+        offset: Seconds = 0.0,
+        duration: Optional[Seconds] = None,
+        force_opus_sampling_rate: Optional[int] = None,
+    ) -> Tuple[np.ndarray, int]:
+        return torchaudio_load(
+            path_or_fd=path_or_fd,
+            offset=offset,
+            duration=duration,
+        )
+
+
+class LibsndfileBackend(AudioBackend):
+    def read_audio(
+        self,
+        path_or_fd: Union[Pathlike, FileObject],
+        offset: Seconds = 0.0,
+        duration: Optional[Seconds] = None,
+        force_opus_sampling_rate: Optional[int] = None,
+    ) -> Tuple[np.ndarray, int]:
+        return soundfile_load(
+            path_or_fd=path_or_fd,
+            offset=offset,
+            duration=duration,
+        )
+
+    def is_applicable(self, path_or_fd: Union[Pathlike, FileObject]) -> bool:
+        # libsndfile has issues with MacOS compatibility due to the way their cffi bindings are handled.
+        return not (sys.platform == "darwin")
+
+
+class AudioreadBackend(AudioBackend):
+    def read_audio(
+        self,
+        path_or_fd: Union[Pathlike, FileObject],
+        offset: Seconds = 0.0,
+        duration: Optional[Seconds] = None,
+        force_opus_sampling_rate: Optional[int] = None,
+    ) -> Tuple[np.ndarray, int]:
+        return audioread_load(
+            path_or_file=path_or_fd,
+            offset=offset,
+            duration=duration,
+        )
+
+
+class CompositeAudioBackend(AudioBackend):
+    def __init__(self, backends: List[AudioBackend]):
+        self.backends = backends
+
+    def read_audio(
+        self,
+        path_or_fd: Union[Pathlike, FileObject],
+        offset: Seconds = 0.0,
+        duration: Optional[Seconds] = None,
+        force_opus_sampling_rate: Optional[int] = None,
+    ) -> Tuple[np.ndarray, int]:
+        candidates = []
+        for b in self.backends:
+            if b.handles_special_case(path_or_fd):
+                candidates.append(b)
+
+        assert len(candidates) < 2, (
+            f"CompositeAudioBackend has more than one sub-backend that "
+            f"handles a given special case for input '{path_or_fd}'"
+        )
+
+        if len(candidates) == 1:
+            try:
+                return candidates[0].read_audio(
+                    path_or_fd=path_or_fd,
+                    offset=offset,
+                    duration=duration,
+                    force_opus_sampling_rate=force_opus_sampling_rate,
+                )
+            except Exception as e:
+                raise AudioLoadingError(
+                    f"Reading audio from '{path_or_fd}' failed. Details: {type(e)}: {str(e)}"
+                )
+
+        exceptions = []
+        for b in self.backends:
+            if b.is_applicable(path_or_fd):
+                try:
+                    return b.read_audio(
+                        path_or_fd=path_or_fd,
+                        offset=offset,
+                        duration=duration,
+                        force_opus_sampling_rate=force_opus_sampling_rate,
+                    )
+                except Exception as e:
+                    msg = f"Exception #{len(exceptions)}: "
+                    if verbose_audio_loading_exceptions():
+                        exceptions.append(f"{msg}{traceback.format_exc()}")
+                    else:
+                        exceptions.append(f"{msg}{type(e)}: {str(e)}")
+
+        if not exceptions:
+            raise AudioLoadingError(
+                f"No applicable backend found for input: '{path_or_fd}'"
+            )
+        else:
+            NL = "\n"
+            maybe_info = (
+                ""
+                if verbose_audio_loading_exceptions()
+                else "\nSet LHOTSE_AUDIO_LOADING_EXCEPTION_VERBOSE=1 environment variable for full stack traces."
+            )
+            raise AudioLoadingError(
+                f"Reading audio from '{path_or_fd}' failed. Details:{NL}{NL.join(exceptions)}{maybe_info}"
+            )
+
+
+def verbose_audio_loading_exceptions() -> bool:
+    return os.environ.get("LHOTSE_AUDIO_LOADING_EXCEPTION_VERBOSE") == "1"
+
+
+@lru_cache(maxsize=1)
+def get_default_audio_backend():
+    return CompositeAudioBackend(
+        [
+            # First handle special cases: OPUS and SPHERE (SPHERE may be encoded with shorten,
+            #   which can only be decoded by binaries "shorten" and "sph2pipe").
+            FfmpegSubprocessOpusBackend(),
+            Sph2pipeSubprocessBackend(),
             # Use the new FFMPEG streaming API in torchaudio to read from file objects
             # as a suggested workaround for: https://github.com/pytorch/audio/issues/2662
-            if isinstance(path_or_fd, BytesIO) and torchaudio_supports_ffmpeg():
-                return torchaudio_ffmpeg_load(
-                    path_or_fd, offset=offset, duration=duration
-                )
-            else:
-                return torchaudio_load(path_or_fd, offset=offset, duration=duration)
-        except:
-            try:
-                return soundfile_load(path_or_fd, offset=offset, duration=duration)
-            except:
-                return audioread_load(path_or_fd, offset=offset, duration=duration)
-    except Exception as e:
-        raise AudioLoadingError(
-            f"Reading audio from '{path_or_fd}' failed. Details: {type(e)}('{str(e)}')"
-        )
+            FfmpegTorchaudioStreamerBackend(),
+            # Torchaudio should be able to deal with most audio types...
+            TorchaudioDefaultBackend(),
+            # ... if not, try PySoundFile...
+            LibsndfileBackend(),
+            # ... if not, try audioread...
+            AudioreadBackend(),
+            # ... oops.
+        ]
+    )
 
 
 class LibsndfileCompatibleAudioInfo(NamedTuple):
