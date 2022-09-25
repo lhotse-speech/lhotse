@@ -1423,6 +1423,11 @@ class FfmpegTorchaudioStreamerBackend(AudioBackend):
     def handles_special_case(self, path_or_fd: Union[Pathlike, FileObject]) -> bool:
         return isinstance(path_or_fd, BytesIO)
 
+    def is_applicable(self, path_or_fd: Union[Pathlike, FileObject]) -> bool:
+        # Technically it's applicable with regular files as well, but for now
+        # we're not enabling that feature.
+        return torchaudio_supports_ffmpeg() and isinstance(path_or_fd, BytesIO)
+
 
 class TorchaudioDefaultBackend(AudioBackend):
     def read_audio(
