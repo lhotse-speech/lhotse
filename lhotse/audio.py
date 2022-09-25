@@ -1458,9 +1458,13 @@ class LibsndfileBackend(AudioBackend):
             duration=duration,
         )
 
+    def handles_special_case(self, path_or_fd: Union[Pathlike, FileObject]) -> bool:
+        return not (sys.platform == "darwin") and isinstance(path_or_fd, BytesIO)
+
     def is_applicable(self, path_or_fd: Union[Pathlike, FileObject]) -> bool:
-        # libsndfile has issues with MacOS compatibility due to the way their cffi bindings are handled.
-        return not (sys.platform == "darwin")
+        # Technically it's applicable with regular files as well, but for now
+        # we're not enabling that feature.
+        return not (sys.platform == "darwin") and isinstance(path_or_fd, BytesIO)
 
 
 class AudioreadBackend(AudioBackend):
@@ -1557,13 +1561,10 @@ def get_default_audio_backend():
             #   which can only be decoded by binaries "shorten" and "sph2pipe").
             FfmpegSubprocessOpusBackend(),
             Sph2pipeSubprocessBackend(),
-            # Use the new FFMPEG streaming API in torchaudio to read from file objects
-            # as a suggested workaround for: https://github.com/pytorch/audio/issues/2662
-            FfmpegTorchaudioStreamerBackend(),
+            # Prefer libsndfile for in-memory buffers only
+            LibsndfileBackend(),
             # Torchaudio should be able to deal with most audio types...
             TorchaudioDefaultBackend(),
-            # ... if not, try PySoundFile...
-            LibsndfileBackend(),
             # ... if not, try audioread...
             AudioreadBackend(),
             # ... oops.
