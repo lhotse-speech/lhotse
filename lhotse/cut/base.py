@@ -9,7 +9,7 @@ from typing_extensions import Literal
 from lhotse.audio import AudioSource, Recording
 from lhotse.augmentation import AugmentFn
 from lhotse.features import FeatureExtractor
-from lhotse.supervision import SupervisionSegment
+from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import (
     Decibels,
     Pathlike,
@@ -558,6 +558,7 @@ class Cut:
         import torchaudio
 
         from .mono import MonoCut
+        from .multi import MultiCut
 
         storage_path = Path(storage_path)
         samples = self.load_audio()
@@ -567,6 +568,7 @@ class Cut:
         torchaudio.save(
             str(storage_path), torch.as_tensor(samples), sample_rate=self.sampling_rate
         )
+        channels = list(range(self.num_channels))
         recording = Recording(
             id=storage_path.stem,
             sampling_rate=self.sampling_rate,
@@ -575,20 +577,33 @@ class Cut:
             sources=[
                 AudioSource(
                     type="file",
-                    channels=[0],
+                    channels=channels,
                     source=str(storage_path),
                 )
             ],
         )
-        return MonoCut(
-            id=self.id,
-            start=0,
-            duration=recording.duration,
-            channel=0,
-            supervisions=self.supervisions,
-            recording=recording,
-            custom=self.custom if hasattr(self, "custom") else None,
-        )
+        if self.num_channels == 1:
+            return MonoCut(
+                id=self.id,
+                start=0,
+                duration=recording.duration,
+                channel=0,
+                supervisions=self.supervisions,
+                recording=recording,
+                custom=self.custom if hasattr(self, "custom") else None,
+            )
+        else:
+            return MultiCut(
+                id=self.id,
+                start=0,
+                duration=recording.duration,
+                supervisions=SupervisionSet.from_segments(
+                    [fastcopy(s, channels=channels) for s in self.supervisions]
+                ),
+                channel=channels,
+                recording=recording,
+                custom=self.custom if hasattr(self, "custom") else None,
+            )
 
     def speakers_feature_mask(
         self,
