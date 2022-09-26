@@ -950,10 +950,11 @@ class MultiCut(Cut):
         """
         Return a new ``MultiCut`` that will convolve the audio with the provided impulse response.
         If the `rir_recording` is multi-channel, the `rir_channels` argument determines which channels
-        will be used. By default, we use the first channel and return a MultiCut.
+        will be used. This list must be of the same length as the number of channels in the `MultiCut`.
 
         If no ``rir_recording`` is provided, we will generate an impulse response using a fast random
-        generator (https://arxiv.org/abs/2208.04101).
+        generator (https://arxiv.org/abs/2208.04101), only if the MultiCut has exactly one channel.
+        At the moment we do not support simulation of multi-channel impulse responses.
 
         :param rir_recording: The impulse response to use for convolving.
         :param normalize_output: When true, output will be normalized to have energy as input.
@@ -976,12 +977,17 @@ class MultiCut(Cut):
             )
             self.features = None
 
-        assert rir_recording is None or all(
-            c < rir_recording.num_channels for c in rir_channels
-        ), "Invalid channel index in `rir_channels`."
-        assert (
-            rir_recording is None or len(rir_channels) == self.num_channels
-        ), "The number of channels in the RIR recording must match the number of channels in the MultiCut."
+        if rir_recording is None:
+            assert self.num_channels == 1, (
+                "We do not support reverberation simulation for multi-channel recordings. "
+                "Please provide an impulse response."
+            )
+            rir_channels = [0]
+        else:
+            assert all(
+                c < rir_recording.num_channels for c in rir_channels
+            ), "Invalid channel index in `rir_channels`."
+
         recording_rvb = self.recording.reverb_rir(
             rir_recording=rir_recording,
             normalize_output=normalize_output,
@@ -1064,16 +1070,24 @@ class MultiCut(Cut):
         return merge_supervisions(self, custom_merge_fn=custom_merge_fn)
 
     @staticmethod
-    def from_mono(cut: Cut) -> "MultiCut":
+    def from_mono(cuts: Union[Cut, Iterable[Cut]]) -> "MultiCut":
         """
-        Convert a MonoCut to a single-channel MultiCut.
+        Convert one or more MonoCut to a MultiCut. If multiple cuts are provided, they
+        must match in all fields except the channel. We will not perform the check here,
+        instead we will just take the first cut as a reference and copy the fields from it.
 
         :param cut: the input cut.
         :return: a MultiCut with a single track.
         """
-        data = cut.to_dict()
-        data["channel"] = [data["channel"]]  # convert channel to list
-        return MultiCut.from_dict(data)
+        if isinstance(cuts, Cut):
+            data = cuts.to_dict()
+            data["channel"] = [data["channel"]]  # convert channel to list
+            return MultiCut.from_dict(data)
+        else:
+            channels = sorted(set(c.channel for c in cuts))
+            data = cuts[0].to_dict()
+            data["channel"] = channels
+            return MultiCut.from_dict(data)
 
     @staticmethod
     def from_dict(data: dict) -> "MultiCut":

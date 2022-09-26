@@ -930,7 +930,8 @@ class MonoCut(Cut):
         with a multi-channel RIR, we return a MultiCut.
 
         If no ``rir_recording`` is provided, we will generate an impulse response using a fast random
-        generator (https://arxiv.org/abs/2208.04101).
+        generator (https://arxiv.org/abs/2208.04101). Note that the generator only supports simulating
+        reverberation with a single microphone, so we will return a MonoCut in this case.
 
         :param rir_recording: The impulse response to use for convolving.
         :param normalize_output: When true, output will be normalized to have energy as input.
@@ -938,7 +939,7 @@ class MonoCut(Cut):
         :param affix_id: When true, we will modify the ``MonoCut.id`` field
             by affixing it with "_rvb".
         :param rir_channels: The channels of the impulse response to use. First channel is used by default.
-            If multiple channels are specified, this will produce a MixedCut instead of a MonoCut.
+            If multiple channels are specified, this will produce a MultiCut instead of a MonoCut.
         :return: a modified copy of the current ``MonoCut``.
         """
         # Pre-conditions
@@ -956,9 +957,12 @@ class MonoCut(Cut):
         assert rir_recording is None or all(
             c < rir_recording.num_channels for c in rir_channels
         ), "Invalid channel index in `rir_channels`."
-        if len(rir_channels) == 1 or (
-            rir_recording is not None and rir_recording.num_channels == 1
-        ):
+
+        if rir_recording is None:
+            # Set rir_channels to 0 since we can only generate a single-channel RIR.
+            rir_channels = [0]
+
+        if len(rir_channels) == 1:
             # reverberation will return a MonoCut
             recording_rvb = self.recording.reverb_rir(
                 rir_recording=rir_recording,

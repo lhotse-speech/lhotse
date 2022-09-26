@@ -365,13 +365,32 @@ class ReverbWithImpulseResponse(AudioTransform):
         D_in, N_in = samples.shape
         input_is_mono = D_in == 1
 
-        if self.rir is None:
-            rir_ = generate_fast_random_rir(nsource=D_in, sr=sampling_rate)
+        # The following cases are possible:
+        # Case 1: input is mono, rir is mono -> mono output
+        #   We will generate a random mono rir if not provided explicitly.
+        # Case 2: input is mono, rir is multi-channel -> multi-channel output
+        #   This requires a user-provided rir, since we cannot simulate array microphone.
+        # Case 3: input is multi-channel, rir is mono -> multi-channel output
+        #   This does not make much sense, but we will apply the same rir to all channels.
+        # 4. input is multi-channel, rir is multi-channel -> multi-channel output
+        #   This also requires a user-provided rir. Also, the number of channels in the rir
+        #   must match the number of channels in the input.
+
+        # Let us make some assertions based on the above.
+        if input_is_mono:
+            assert (
+                self.rir is not None or len(self.rir_channels) == 1
+            ), "For mono input, either provide an RIR explicitly or set rir_channels to [0]."
         else:
-            assert input_is_mono or self.rir.num_channels == D_in, (
-                "The number of channels of the RIR recording must match the number of channels of "
-                "the input audio samples, if input is not mono."
+            assert len(self.rir_channels) == 1 or len(self.rir_channels) == D_in, (
+                "For multi-channel input, we only support mono RIR or RIR with the same number "
+                "of channels as the input."
             )
+
+        # Generate a random RIR if not provided.
+        if self.rir is None:
+            rir_ = generate_fast_random_rir(nsource=1, sr=sampling_rate)
+        else:
             rir_ = (
                 self.rir.load_audio(channels=self.rir_channels)
                 if not self.early_only
