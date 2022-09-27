@@ -195,7 +195,8 @@ class Cut:
         )
 
     def to_dict(self) -> dict:
-        return asdict_nonull(self, include_type=True)
+        d = asdict_nonull(self)
+        return {**d, "type": type(self).__name__}
 
     @property
     def trimmed_supervisions(self) -> List[SupervisionSegment]:
