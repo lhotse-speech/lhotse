@@ -1,5 +1,5 @@
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from functools import partial
 from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple, Union
 
@@ -27,6 +27,7 @@ from lhotse.utils import (
     Pathlike,
     Seconds,
     add_durations,
+    asdict_nonull,
     compute_num_frames,
     compute_num_samples,
     fastcopy,
@@ -44,20 +45,22 @@ class MixTrack:
     """
 
     cut: Union[MonoCut, MultiCut, PaddingCut]
+    type: str = field(init=False)
     offset: Seconds = 0.0
     snr: Optional[Decibels] = None
+
+    def __post_init__(self):
+        self.type = type(self.cut).__name__
 
     @staticmethod
     def from_dict(data: dict):
         raw_cut = data.pop("cut")
-        if raw_cut["type"] == "MonoCut":
-            cut = MonoCut.from_dict(raw_cut)
-        elif raw_cut["type"] == "MultiCut":
-            cut = MultiCut.from_dict(raw_cut)
-        elif raw_cut["type"] == "PaddingCut":
-            cut = PaddingCut.from_dict(raw_cut)
-        else:
-            raise ValueError(f"Unexpected cut type: {raw_cut['type']}")
+        raw_cut_type = eval(data.pop("type"))
+        try:
+            cut = raw_cut_type.from_dict(raw_cut)
+        except Exception as e:
+            logging.error(f"Failed to load a cut of type {raw_cut_type}: {e}")
+            raise e
         return MixTrack(cut, **data)
 
 

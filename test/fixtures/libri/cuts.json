@@ -10,6 +10,7 @@
         "recording_id": "recording-1",
         "start": 0,
         "duration": 10.0,
+        "channel": 0,
         "text": "EXAMPLE OF TEXT"
       }
     ],
@@ -42,6 +43,6 @@
       "num_samples": 256640,
       "duration": 16.04
     },
-    "type": "Cut"
+    "type": "MonoCut"
   }
 ]

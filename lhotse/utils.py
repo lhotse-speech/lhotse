@@ -144,10 +144,11 @@ def uuid4():
     return uuid.uuid4()
 
 
-def asdict_nonull(dclass) -> Dict[str, Any]:
+def asdict_nonull(dclass, include_type: bool = False) -> Dict[str, Any]:
     """
     Recursively convert a dataclass into a dict, removing all the fields with `None` value.
     Intended to use in place of dataclasses.asdict(), when the null values are not desired in the serialized document.
+    If `include_type` is True, the type of the dataclass will be included in the output dict.
     """
 
     def non_null_dict_factory(collection):
@@ -160,7 +161,8 @@ def asdict_nonull(dclass) -> Dict[str, Any]:
             del d[k]
         return d
 
-    return asdict(dclass, dict_factory=non_null_dict_factory)
+    d = asdict(dclass, dict_factory=non_null_dict_factory)
+    return {**d, "type": type(dclass).__name__} if include_type else d
 
 
 class SetContainingAnything:
