@@ -1,5 +1,4 @@
 import logging
-from itertools import pairwise
 from typing import Generator, List, Optional
 
 import torch
@@ -77,10 +76,12 @@ def _postprocess_timestamps(supervisions: List[SupervisionSegment]):
     Under a strong assumption that the input speech is non-overlapping, we can fix that
     by always truncating to the start timestamp of the next segment.
     """
+    from cytoolz import sliding_window
+
     if len(supervisions) < 2:
         return supervisions
     out = []
-    for cur, nxt in pairwise(supervisions):
+    for cur, nxt in sliding_window(2, supervisions):
         if cur.end > nxt.start:
             cur = cur.trim(end=nxt.start)
         out.append(cur)
