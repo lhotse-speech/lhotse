@@ -24,6 +24,7 @@ from .utils import (
     measure_overlap,
     streaming_shuffle,
 )
+from .workflows import *
 
 try:
     # Try to get Lhotse's version (should be created during running pip install / python setup.py ...)
