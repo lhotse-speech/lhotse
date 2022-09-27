@@ -336,7 +336,7 @@ class ReverbWithImpulseResponse(AudioTransform):
     rir: Optional[dict] = None
     normalize_output: bool = True
     early_only: bool = False
-    rir_channels: Optional[List[int]] = None
+    rir_channels: List[int] = field(default_factory=lambda: [0])
 
     RIR_SCALING_FACTOR: float = 0.5**15
 
@@ -347,7 +347,7 @@ class ReverbWithImpulseResponse(AudioTransform):
             # Pass a shallow copy of the RIR dict since `from_dict()` pops the `sources` key.
             self.rir = Recording.from_dict(self.rir.copy())
         if self.rir is not None:
-            assert self.rir_channels is not None and all(
+            assert all(
                 c < self.rir.num_channels for c in self.rir_channels
             ), "Invalid channel index in `rir_channels`"
 
@@ -405,13 +405,13 @@ class ReverbWithImpulseResponse(AudioTransform):
 
         for d in range(D_out):
             d_in = 0 if input_is_mono else d
-            augmented[d, :N_in] = samples[d]
+            augmented[d, :N_in] = samples[d_in]
             power_before_reverb = np.sum(np.abs(samples[d_in]) ** 2) / N_in
             rir_d = rir_[d, :] * self.RIR_SCALING_FACTOR
 
             # Convolve the signal with impulse response.
             aug_d = convolve1d(
-                torch.from_numpy(samples[d]), torch.from_numpy(rir_d)
+                torch.from_numpy(samples[d_in]), torch.from_numpy(rir_d)
             ).numpy()
             shift_index = np.argmax(rir_d)
             augmented[d, :] = aug_d[shift_index : shift_index + N_out]
