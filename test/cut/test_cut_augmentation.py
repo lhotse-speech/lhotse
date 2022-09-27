@@ -559,7 +559,7 @@ def test_cut_reverb_fast_rir(libri_cut_with_supervision):
     [
         ([0], "MonoCut", 1),
         ([1], "MonoCut", 1),
-        ([0, 1], "MixedCut", 2),
+        ([0, 1], "MultiCut", 2),
     ],
 )
 def test_cut_reverb_multi_channel_rir(

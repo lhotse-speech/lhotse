@@ -315,7 +315,18 @@ class Recording:
     sampling_rate: int
     num_samples: int
     duration: Seconds
+    channel_ids: Optional[List[int]] = None
     transforms: Optional[List[Dict]] = None
+
+    def __post_init__(self):
+        if self.channel_ids is None:
+            self.channel_ids = sorted(
+                cid for source in self.sources for cid in source.channels
+            )
+
+    @property
+    def num_channels(self):
+        return len(self.channel_ids)
 
     @staticmethod
     def from_file(
@@ -534,14 +545,6 @@ class Recording:
                 ],
             )
 
-    @property
-    def num_channels(self):
-        return sum(len(source.channels) for source in self.sources)
-
-    @property
-    def channel_ids(self):
-        return sorted(cid for source in self.sources for cid in source.channels)
-
     @rich_exception_info
     def load_audio(
         self,
@@ -756,6 +759,23 @@ class Recording:
             provided, we will generate one with as many channels as this argument specifies.
         :return: the perturbed ``Recording``.
         """
+
+        # We may need to change the `channel_ids` field according to whether we are convolving
+        # with a multi-channel RIR or not.
+        # The following cases are possible:
+        # Case 1: input is mono, rir is mono -> mono output, no need to change
+        # Case 2: input is mono, rir is multi-channel -> multi-channel output, change channel_ids
+        # Case 3: input is multi-channel, rir is mono -> multi-channel output, no need to change
+        # Case 4: input is multi-channel, rir is multi-channel -> multi-channel output,
+        #   no need to change (since we assume that the RIR has the same number of channels as the input)
+
+        if self.num_channels > 1 or rir_channels is None or len(rir_channels) == 1:
+            # Case 1, 3 or 4
+            new_channel_ids = self.channel_ids
+        else:
+            # Case 2
+            new_channel_ids = list(range(len(rir_channels)))
+
         transforms = self.transforms.copy() if self.transforms is not None else []
         transforms.append(
             ReverbWithImpulseResponse(
@@ -768,6 +788,7 @@ class Recording:
         return fastcopy(
             self,
             id=f"{self.id}_rvb" if affix_id else self.id,
+            channel_ids=new_channel_ids,
             transforms=transforms,
         )
 

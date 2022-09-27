@@ -45,7 +45,7 @@ class MixTrack:
     """
 
     cut: Union[MonoCut, MultiCut, PaddingCut]
-    type: str = field(init=False)
+    type: str = None
     offset: Seconds = 0.0
     snr: Optional[Decibels] = None
 
@@ -540,7 +540,8 @@ class MixedCut(Cut):
         return MixedCut(
             id=f"{self.id}_sp{factor}" if affix_id else self.id,
             tracks=[
-                MixTrack(
+                fastcopy(
+                    track,
                     cut=track.cut.perturb_speed(factor=factor, affix_id=affix_id),
                     offset=round(
                         perturb_num_samples(
@@ -552,7 +553,6 @@ class MixedCut(Cut):
                         / self.sampling_rate,
                         ndigits=8,
                     ),
-                    snr=track.snr,
                 )
                 for track in self.tracks
             ],
@@ -587,7 +587,8 @@ class MixedCut(Cut):
         return MixedCut(
             id=f"{self.id}_tp{factor}" if affix_id else self.id,
             tracks=[
-                MixTrack(
+                fastcopy(
+                    track,
                     cut=track.cut.perturb_tempo(factor=factor, affix_id=affix_id),
                     offset=round(
                         perturb_num_samples(
@@ -599,7 +600,6 @@ class MixedCut(Cut):
                         / self.sampling_rate,
                         ndigits=8,
                     ),
-                    snr=track.snr,
                 )
                 for track in self.tracks
             ],

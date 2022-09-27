@@ -2447,68 +2447,29 @@ def create_cut_set_eager(
         # Use recordings to determine the cut boundaries.
         cuts = []
         for ridx, recording in enumerate(recordings):
-            if len(recording.channel_ids) == 1:
-                # Single channel recording - create a MonoCut.
-                cuts.append(
-                    MonoCut(
-                        id=str(uuid4()) if random_ids else f"{recording.id}-{ridx}",
-                        start=0,
-                        duration=recording.duration,
-                        channel=recording.channel_ids[0],
-                        recording=recording,
-                        supervisions=list(
-                            supervisions.find(
-                                recording_id=recording.id,
-                                channel=recording.channel_ids[0],
-                            )
-                        )
-                        if sup_ok
-                        else [],
-                    )
-                    for ridx, recording in enumerate(recordings)
-                    # A single cut always represents a single channel. When a recording has multiple channels,
-                    # we create a new cut for each channel separately.
-                    for cidx, channel in enumerate(recording.channel_ids)
-                )
+            if recording.num_channels == 1:
+                cls = MonoCut
+                channel = recording.channel_ids[0]
             else:
-                # Multi-channel recording can result in either a MonoCut or a MultiCut,
-                # depending on how the supervisions are defined. We group the supervisions
-                # by their `channel` attribute and create a Cut for each group. We create
-                # MonoCut if the group refers to a single channel, and MultiCut otherwise.
-                sups_by_channel = {
-                    c: c_sups
-                    for c, c_sups in groupby(
-                        supervisions.find(recording_id=recording.id),
-                        key=lambda s: s.channel,
+                cls = MultiCut
+                channel = recording.channel_ids
+            cuts.append(
+                cls(
+                    id=str(uuid4()) if random_ids else f"{recording.id}-{ridx}",
+                    start=0,
+                    duration=recording.duration,
+                    channel=channel,
+                    recording=recording,
+                    supervisions=list(
+                        supervisions.find(
+                            recording_id=recording.id,
+                        )
                     )
-                }
-                for cidx, (channel, c_sups) in enumerate(sups_by_channel.items()):
-                    if isinstance(channel, int) or len(channel) == 1:
-                        cuts.append(
-                            MonoCut(
-                                id=str(uuid4())
-                                if random_ids
-                                else f"{recording.id}-{ridx}-{cidx}",
-                                start=0,
-                                duration=recording.duration,
-                                channel=channel,
-                                recording=recording,
-                                supervisions=list(c_sups) if sup_ok else [],
-                            )
-                        )
-                    else:
-                        cuts.append(
-                            MultiCut(
-                                id=str(uuid4())
-                                if random_ids
-                                else f"{recording.id}-{ridx}-{cidx}",
-                                start=0,
-                                duration=recording.duration,
-                                channel=channel,
-                                recording=recording,
-                                supervisions=list(c_sups) if sup_ok else [],
-                            )
-                        )
+                    if sup_ok
+                    else [],
+                )
+            )
+    cuts = CutSet.from_cuts(cuts)
     if output_path is not None:
         cuts.to_file(output_path)
     return cuts
@@ -2610,9 +2571,7 @@ def create_cut_set_lazy(
                     channel = list(feats.channels)
 
                 cut = cls(
-                    id=str(uuid4())
-                    if random_ids
-                    else f"{feats.recording_id}-{idx}-{feats.channels}",
+                    id=str(uuid4()) if random_ids else f"{feats.recording_id}-{idx}",
                     start=feats.start,
                     duration=feats.duration,
                     channel=channel,
@@ -2650,48 +2609,23 @@ def create_cut_set_lazy(
             )
             sups = SupervisionSet.from_segments(sups)
 
-            if len(recording.channel_ids) == 1:
-                # Single-channel recording will always result in a MonoCut.
-                assert all(len(sup.channel) == 1 for sup in sups)
-                cut = MonoCut(
-                    id=str(uuid4()) if random_ids else f"{recording.id}-{ridx}",
-                    start=0,
-                    duration=recording.duration,
-                    channel=recording.channel_ids[0],
-                    recording=recording,
-                    supervisions=list(sups.find(recording_id=recording.id))
-                    if sup_ok
-                    else [],
-                )
-                writer.write(cut)
+            if recording.num_channels == 1:
+                cls = MonoCut
+                channel = recording.channel_ids[0]
             else:
-                sups_by_channel = {
-                    c: c_sups for c, c_sups in groupby(sups, key=lambda s: s.channel)
-                }
-                for cidx, channel, c_sups in sups_by_channel.items():
-                    if len(channel) == 1:
-                        cut = MonoCut(
-                            id=str(uuid4())
-                            if random_ids
-                            else f"{recording.id}-{ridx}-{cidx}",
-                            start=0,
-                            duration=recording.duration,
-                            channel=channel,
-                            recording=recording,
-                            supervisions=list(c_sups) if sup_ok else [],
-                        )
-                    else:
-                        cut = MultiCut(
-                            id=str(uuid4())
-                            if random_ids
-                            else f"{recording.id}-{ridx}-{cidx}",
-                            start=0,
-                            duration=recording.duration,
-                            channel=channel,
-                            recording=recording,
-                            supervisions=list(c_sups) if sup_ok else [],
-                        )
-                    writer.write(cut)
+                cls = MultiCut
+                channel = recording.channel_ids
+            cut = cls(
+                id=str(uuid4()) if random_ids else f"{recording.id}-{ridx}",
+                start=0,
+                duration=recording.duration,
+                channel=channel,
+                recording=recording,
+                supervisions=list(sups.find(recording_id=recording.id))
+                if sup_ok
+                else [],
+            )
+            writer.write(cut)
 
     return CutSet.from_jsonl_lazy(output_path)
 

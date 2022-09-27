@@ -37,18 +37,44 @@ from lhotse.utils import (
 class MultiCut(Cut):
     """
     :class:`~lhotse.cut.MultiCut` is a :class:`~lhotse.cut.Cut` that is analogous to the MonoCut.
-    While MonoCut represents a single channel of a recording, MultiCut represents multiple channels
-    that share the same supervision. It is intended to be used to store, for example, segments
-    of a microphone array recording.
+    While MonoCut represents a single channel of a recording, MultiCut represents multi-channel
+    recordings where supervisions may or may not be shared across channels.
+    It is intended to be used to store, for example, segments of a microphone array recording.
+    The following diagrams illustrate some examples for MultiCut usage:
+
+    >>> 2-channel telephone recording with 2 supervisions, one for each channel (e.g., Switchboard):
+
+
+                  ╔══════════════════════════════  MultiCut  ═════════════════╗
+                  ║ ┌──────────────────────────┐                              ║
+     Channel 1  ──╬─│   Hello this is John.    │──────────────────────────────╬────────
+                  ║ └──────────────────────────┘                              ║
+                  ║                               ┌──────────────────────────┐║
+     Channel 2  ──╬───────────────────────────────│ Hey, John. How are you?  │╠────────
+                  ║                               └──────────────────────────┘║
+                  ╚═══════════════════════════════════════════════════════════╝
+
+    >>> Multi-array multi-microphone recording with shared supervisions (e.g., CHiME-6),
+    along with close-talk microphones (A and B are distant arrays, C is close-talk):
+
+               ╔═══════════════════════════════════════════════════════════════════════════╗
+               ║ ┌───────────────────┐                         ┌───────────────────┐       ║
+       A-1   ──╬─┤                   ├─────────────────────────┤                   ├───────╬─
+               ║ │ What did you do?  │                         │I cleaned my room. │       ║
+       A-2   ──╬─┤                   ├─────────────────────────┤                   ├───────╬─
+               ║ └───────────────────┘  ┌───────────────────┐  └───────────────────┘       ║
+       B-1   ──╬────────────────────────┤Yeah, we were going├──────────────────────────────╬─
+               ║                        │   to the mall.    │                              ║
+       B-2   ──╬────────────────────────┤                   ├──────────────────────────────╬─
+               ║                        └───────────────────┘        ┌───────────────────┐ ║
+        C    ──╬─────────────────────────────────────────────────────┤      Right.       ├─╬─
+               ║                                                     └───────────────────┘ ║
+               ╚════════════════════════════════  MultiCut  ═══════════════════════════════╝
 
     By definition, a MultiCut has the same attributes as a MonoCut. The key difference is that
-    the Recording object has multiple channels, and the Supervision object is shared across
-    multiple channels. The channels that the MultiCut pertains to is defined by the channels
-    in the Supervision object, and these are the same as the ``channel`` attribute of the
-    MultiCut. These channels may be a subset of the channels in the Recording object. For
-    example, if the Recording object has 4 channels (0, 1, 2, 3), we may construct a MonoCut
-    object with a supervision for channel 0, and a MultiCut object with a supervision for
-    channels 1 and 2.
+    the Recording object has multiple channels, and the Supervision objects may correspond to
+    any of these channels. The channels that the MultiCut can be a subset of the Recording
+    channels, but must be a superset of the Supervision channels.
 
     See also:
 
@@ -109,7 +135,7 @@ class MultiCut(Cut):
 
         Example of attaching and reading an alignment as TemporalArray::
 
-            >>> cut = MonoCut('cut1', start=0, duration=4, channel=0)
+            >>> cut = MultiCut('cut1', start=0, duration=4, channel=0)
             >>> cut.alignment = TemporalArray(...)
             >>> ali = cut.load_alignment()
 
