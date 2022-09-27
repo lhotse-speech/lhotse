@@ -1,5 +1,5 @@
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from functools import partial
 from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple, Union
 
@@ -27,7 +27,6 @@ from lhotse.utils import (
     Pathlike,
     Seconds,
     add_durations,
-    asdict_nonull,
     compute_num_frames,
     compute_num_samples,
     fastcopy,
@@ -162,6 +161,7 @@ class MixedCut(Cut):
 
     @property
     def num_channels(self) -> Optional[int]:
+        # PaddingCut has 0 channels, MonoCut has 1, MultiCut has N. We don't support MixedCut with MixedCut tracks.
         return max(track.cut.num_channels for track in self.tracks)
 
     @property

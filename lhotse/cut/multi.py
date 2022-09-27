@@ -13,7 +13,7 @@ from lhotse.augmentation import AugmentFn
 from lhotse.cut.base import Cut
 from lhotse.features import FeatureExtractor, Features
 from lhotse.features.io import FeaturesWriter
-from lhotse.supervision import SupervisionSegment
+from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import (
     LOG_EPSILON,
     Pathlike,
@@ -1099,21 +1099,25 @@ class MultiCut(Cut):
     def from_mono(cuts: Union[Cut, Iterable[Cut]]) -> "MultiCut":
         """
         Convert one or more MonoCut to a MultiCut. If multiple cuts are provided, they
-        must match in all fields except the channel. We will not perform the check here,
+        must match in all fields except the channel. We will not perform this check here,
         instead we will just take the first cut as a reference and copy the fields from it.
 
         :param cut: the input cut.
         :return: a MultiCut with a single track.
         """
-        if isinstance(cuts, Cut):
-            data = cuts.to_dict()
-            data["channel"] = [data["channel"]]  # convert channel to list
-            return MultiCut.from_dict(data)
+        from .mono import MonoCut
+
+        if isinstance(cuts, MonoCut):
+            return MultiCut(**{**cuts.__dict__, "channel": [0]})
         else:
-            channels = sorted(set(c.channel for c in cuts))
             data = cuts[0].to_dict()
-            data["channel"] = channels
-            return MultiCut.from_dict(data)
+            return MultiCut(
+                **{
+                    **data,
+                    "channel": sorted(set(c.channel for c in cuts)),
+                    "supervisions": [s for c in cuts for s in c.supervisions],
+                }
+            )
 
     @staticmethod
     def from_dict(data: dict) -> "MultiCut":

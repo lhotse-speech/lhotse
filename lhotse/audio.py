@@ -510,40 +510,19 @@ class Recording:
 
     def to_cut(self):
         """
-        Create a Cut out of this recording.
-
-        For single-channel recordings, we return a :class:`MonoCut`.
-        For multi-channel recordings, we return a :class:`MixedCut` with as
-        many tracks as the number of channels.
-        The implementation of the multi-channel case may change in the future...
+        Create a Cut out of this recording --- MonoCut or MultiCut, depending on the
+        number of channels.
         """
-        from lhotse.cut import MixedCut, MixTrack, MonoCut
+        from lhotse.cut import MonoCut, MultiCut
 
-        if self.num_channels == 1:
-            return MonoCut(
-                id=self.id,
-                start=0.0,
-                duration=self.duration,
-                channel=self.channel_ids[0],
-                recording=self,
-            )
-        else:
-            # TODO: if we ever have "MultiCut" we may replace this implementation
-            return MixedCut(
-                id=self.id,
-                tracks=[
-                    MixTrack(
-                        cut=MonoCut(
-                            id=f"{self.id}_ch{cidx}",
-                            start=0.0,
-                            duration=self.duration,
-                            channel=cidx,
-                            recording=self,
-                        )
-                    )
-                    for cidx in self.channel_ids
-                ],
-            )
+        cls = MonoCut if self.num_channels == 1 else MultiCut
+        return cls(
+            id=self.id,
+            start=0.0,
+            duration=self.duration,
+            channel=0 if self.num_channels == 1 else self.channel_ids,
+            recording=self,
+        )
 
     @rich_exception_info
     def load_audio(

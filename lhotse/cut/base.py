@@ -553,12 +553,9 @@ class Cut:
             the start/end/duration times of the cut and its supervisions,
             you will end up with incorrect supervision information when using this API.
             E.g. for speed perturbation, use ``CutSet.perturb_speed()`` instead.
-        :return: a new MonoCut instance.
+        :return: a new Cut instance.
         """
         import torchaudio
-
-        from .mono import MonoCut
-        from .multi import MultiCut
 
         storage_path = Path(storage_path)
         samples = self.load_audio()
@@ -568,7 +565,6 @@ class Cut:
         torchaudio.save(
             str(storage_path), torch.as_tensor(samples), sample_rate=self.sampling_rate
         )
-        channels = list(range(self.num_channels))
         recording = Recording(
             id=storage_path.stem,
             sampling_rate=self.sampling_rate,
@@ -582,28 +578,11 @@ class Cut:
                 )
             ],
         )
-        if self.num_channels == 1:
-            return MonoCut(
-                id=self.id,
-                start=0,
-                duration=recording.duration,
-                channel=0,
-                supervisions=self.supervisions,
-                recording=recording,
-                custom=self.custom if hasattr(self, "custom") else None,
-            )
-        else:
-            return MultiCut(
-                id=self.id,
-                start=0,
-                duration=recording.duration,
-                supervisions=SupervisionSet.from_segments(
-                    [fastcopy(s, channels=channels) for s in self.supervisions]
-                ),
-                channel=channels,
-                recording=recording,
-                custom=self.custom if hasattr(self, "custom") else None,
-            )
+        return fastcopy(
+            recording.to_cut(),
+            supervisions=self.supervisions,
+            custom=self.custom if hasattr(self, "custom") else None,
+        )
 
     def speakers_feature_mask(
         self,

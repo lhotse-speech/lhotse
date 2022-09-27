@@ -29,27 +29,27 @@ the original owners of the video.
 This Lhotse recipe prepares the VoxCeleb1 and VoxCeleb2 datasets.
 """
 import logging
-import shutil
 import zipfile
-from collections import defaultdict, namedtuple
-from concurrent.futures import as_completed
-from concurrent.futures.process import ProcessPoolExecutor
+import shutil
 from pathlib import Path
 from typing import Dict, Optional, Tuple, Union
+from collections import defaultdict, namedtuple
 
+from concurrent.futures.process import ProcessPoolExecutor
+from concurrent.futures import as_completed
 from tqdm.auto import tqdm
 
 from lhotse import (
-    CutSet,
     MonoCut,
+    CutSet,
     Recording,
     RecordingSet,
     SupervisionSegment,
     SupervisionSet,
 )
-from lhotse.manipulation import combine
-from lhotse.qa import validate_recordings_and_supervisions
 from lhotse.utils import Pathlike, urlretrieve_progress
+from lhotse.qa import validate_recordings_and_supervisions
+from lhotse.manipulation import combine
 
 VOXCELEB1_PARTS_URL = [
     "https://thor.robots.ox.ac.uk/~vgg/data/voxceleb/vox1a/vox1_dev_wav_partaa",

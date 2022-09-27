@@ -200,7 +200,8 @@ class MonoCut(Cut):
 
     @property
     def num_channels(self) -> Optional[int]:
-        return self.recording.num_channels if self.has_recording else None
+        # MonoCut is always single-channel, if it has a recording.
+        return int(self.has_recording)
 
     @property
     def features_type(self) -> Optional[str]:
@@ -989,7 +990,7 @@ class MonoCut(Cut):
             from .multi import MultiCut
 
             channels = list(range(len(rir_channels)))
-            # we will return a MultiCut where each track represents the MonoCut convolved
+            # we will return a MultiCut where each channel represents the MonoCut convolved
             # with a single channel of the RIR
             recording_rvb = self.recording.reverb_rir(
                 rir_recording=rir_recording,

@@ -6,7 +6,7 @@ import warnings
 from collections import Counter, defaultdict
 from concurrent.futures import Executor, ProcessPoolExecutor
 from functools import partial, reduce
-from itertools import chain, groupby, islice
+from itertools import chain, islice
 from math import ceil
 from operator import add
 from pathlib import Path
@@ -827,8 +827,8 @@ class CutSet(Serializable, AlgorithmMixin):
     def combine_same_recording_channels(self) -> "CutSet":
         """
         Find cuts that come from the same recording and have matching start and end times, but
-        represent different channels. Then, combine them together (in matching groups) and return
-        a new ``CutSet`` containing these `MultiCut`s. This is useful for processing microphone array
+        represent different channels. Then, combine them together to form MultiCut's and return
+        a new ``CutSet`` containing these MultiCut's. This is useful for processing microphone array
         recordings.
 
         It is intended to be used as the first operation after creating a new ``CutSet`` (but
