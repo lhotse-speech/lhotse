@@ -1546,7 +1546,7 @@ class CompositeAudioBackend(AudioBackend):
                         force_opus_sampling_rate=force_opus_sampling_rate,
                     )
                 except Exception as e:
-                    msg = f"Exception #{len(exceptions)}: "
+                    msg = f"Exception #{len(exceptions)} ({type(b)}): "
                     if verbose_audio_loading_exceptions():
                         exceptions.append(f"{msg}{traceback.format_exc()}")
                     else:

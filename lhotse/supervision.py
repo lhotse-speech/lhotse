@@ -10,6 +10,7 @@ from lhotse.utils import (
     Pathlike,
     Seconds,
     TimeSpan,
+    add_durations,
     asdict_nonull,
     compute_num_samples,
     exactly_one_not_null,
@@ -311,7 +312,9 @@ class SupervisionSegment:
         return fastcopy(
             self,
             start=max(start, self.start),
-            duration=self.duration - end_exceeds_by - start_exceeds_by,
+            duration=add_durations(
+                self.duration, -end_exceeds_by, -start_exceeds_by, sampling_rate=48000
+            ),
             alignment={
                 type: [item.trim(end=end, start=start) for item in ali]
                 for type, ali in self.alignment.items()

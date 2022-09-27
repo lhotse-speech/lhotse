@@ -1,7 +1,7 @@
 import logging
 from collections import defaultdict
 from math import isclose
-from typing import Any, Callable, Dict, Optional, Tuple, Union
+from typing import Any, Callable, Dict, Iterable, Optional, Tuple, Union
 
 import numpy as np
 
@@ -163,12 +163,16 @@ def remove_missing_recordings_and_supervisions(
 
 
 def trim_supervisions_to_recordings(
-    recordings: RecordingSet, supervisions: SupervisionSet
+    recordings: Union[Recording, RecordingSet],
+    supervisions: Iterable[SupervisionSegment],
+    verbose: bool = True,
 ) -> SupervisionSet:
     """
     Return a new :class:`~lhotse.supervision.SupervisionSet` with supervisions that are
     not exceeding the duration of their corresponding :class:`~lhotse.audio.Recording`.
     """
+    if isinstance(recordings, Recording):
+        recordings = RecordingSet.from_recordings([recordings])
     if recordings.is_lazy:
         recordings = RecordingSet.from_recordings(iter(recordings))
 
@@ -184,11 +188,11 @@ def trim_supervisions_to_recordings(
             trimmed += 1
             s = s.trim(recordings[s.recording_id].duration)
         sups.append(s)
-    if removed:
+    if verbose and removed:
         logging.warning(
             f"Removed {removed} supervisions starting after the end of the recording."
         )
-    if trimmed:
+    if verbose and trimmed:
         logging.warning(
             f"Trimmed {trimmed} supervisions exceeding the end of the recording."
         )
