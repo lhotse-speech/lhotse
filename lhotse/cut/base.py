@@ -573,7 +573,7 @@ class Cut:
             sources=[
                 AudioSource(
                     type="file",
-                    channels=channels,
+                    channels=list(range(self.num_channels)),
                     source=str(storage_path),
                 )
             ],
