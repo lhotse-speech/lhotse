@@ -105,8 +105,10 @@ def align_with_torchaudio(
                 )
                 for ws in word_segments
             ]
-            sup = sup.with_alignment(kind="word", alignment=alignment)
 
+            # Important: reference the original supervision before "trim_to_supervisions"
+            #            because the new one has start=0 to match the start of the subcut
+            sup = cut.supervisions[idx].with_alignment(kind="word", alignment=alignment)
             cut.supervisions[idx] = sup
 
         yield cut
