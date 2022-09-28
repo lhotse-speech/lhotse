@@ -17,11 +17,11 @@ def workflows():
 
 
 @workflows.command()
-@click.argument("out_cuts", type=click.Path())
+@click.argument("out_cuts", type=click.Path(allow_dash=True))
 @click.option(
     "-m",
     "--recordings-manifest",
-    type=click.Path(exists=True, dir_okay=False),
+    type=click.Path(exists=True, dir_okay=False, allow_dash=True),
     help="Path to an existing recording manifest.",
 )
 @click.option(
@@ -96,8 +96,10 @@ def annotate_with_whisper(
 
 
 @workflows.command()
-@click.argument("in_cuts", type=click.Path(exists=True, dir_okay=False))
-@click.argument("out_cuts", type=click.Path())
+@click.argument(
+    "in_cuts", type=click.Path(exists=True, dir_okay=False, allow_dash=True)
+)
+@click.argument("out_cuts", type=click.Path(allow_dash=True))
 @click.option(
     "-n",
     "--bundle-name",
