@@ -351,8 +351,9 @@ class Cut:
         ), f"Cannot plot alignment: missing alignment field or alignment type '{alignment_type}'"
 
         fbank = Fbank()
+        sampling_rate = fbank.extractor.sampling_rate
 
-        feats = self.compute_features(fbank)
+        feats = self.resample(sampling_rate).compute_features(fbank)
         speaker = sup.speaker
         language = sup.language
 
@@ -374,7 +375,7 @@ class Cut:
             end_frame = compute_num_frames(
                 item.end,
                 frame_shift=fbank.frame_shift,
-                sampling_rate=self.sampling_rate,
+                sampling_rate=sampling_rate,
             )
             plt.text(
                 end_frame - 4,
