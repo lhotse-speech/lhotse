@@ -354,8 +354,8 @@ class Cut:
         sampling_rate = fbank.extractor.sampling_rate
 
         feats = self.resample(sampling_rate).compute_features(fbank)
-        speaker = sup.speaker
-        language = sup.language
+        speaker = sup.speaker or "<unknown>"
+        language = sup.language or "<unknown>"
 
         fig = plt.matshow(np.flip(feats.transpose(1, 0), 0))
         plt.title(
