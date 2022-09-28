@@ -50,41 +50,11 @@ class AlignmentItem(NamedTuple):
 
     @staticmethod
     def deserialize(data: list) -> "AlignmentItem":
-        return AlignmentItem.new(*data)
+        return AlignmentItem(*data)
 
     def serialize(self) -> list:
         # return self._data
         return list(self)
-
-    @classmethod
-    def new(
-        cls,
-        symbol: str,
-        start: Seconds,
-        duration: Seconds,
-        score: Optional[float] = None,
-    ):
-        return cls(symbol, start, duration, score)
-        # data = {"start": start, "duration": duration, "symbol": symbol}
-        # if score is not None:
-        #     data["score"] = score
-        # return cls(data)
-
-    # @property
-    # def start(self) -> Seconds:
-    #     return self._data["start"]
-    #
-    # @property
-    # def duration(self) -> Seconds:
-    #     return self._data["duration"]
-    #
-    # @property
-    # def symbol(self) -> str:
-    #     return self._data["symbol"]
-    #
-    # @property
-    # def score(self) -> Optional[float]:
-    #     return self._data.get("score")
 
     @property
     def end(self) -> Seconds:
@@ -92,7 +62,7 @@ class AlignmentItem(NamedTuple):
 
     def with_offset(self, offset: Seconds) -> "AlignmentItem":
         """Return an identical ``AlignmentItem``, but with the ``offset`` added to the ``start`` field."""
-        return AlignmentItem.new(
+        return AlignmentItem(
             start=add_durations(self.start, offset, sampling_rate=48000),
             duration=self.duration,
             symbol=self.symbol,
@@ -109,7 +79,7 @@ class AlignmentItem(NamedTuple):
         num_samples = compute_num_samples(self.duration, sampling_rate)
         new_start = perturb_num_samples(start_sample, factor) / sampling_rate
         new_duration = perturb_num_samples(num_samples, factor) / sampling_rate
-        return AlignmentItem.new(
+        return AlignmentItem(
             symbol=self.symbol, start=new_start, duration=new_duration, score=self.score
         )
 
@@ -120,7 +90,7 @@ class AlignmentItem(NamedTuple):
         assert start >= 0
         start_exceeds_by = abs(min(0, self.start - start))
         end_exceeds_by = max(0, self.end - end)
-        return AlignmentItem.new(
+        return AlignmentItem(
             symbol=self.symbol,
             start=max(start, self.start),
             duration=add_durations(
@@ -132,7 +102,7 @@ class AlignmentItem(NamedTuple):
         """
         Perform specified transformation on the alignment content.
         """
-        return AlignmentItem.new(
+        return AlignmentItem(
             symbol=transform_fn(self.symbol),
             start=self.start,
             duration=self.duration,
