@@ -97,9 +97,12 @@ def align_with_torchaudio(
             alignment = [
                 AlignmentItem(
                     symbol=ws.label,
-                    start=round(int(ratio * ws.start) / sampling_rate, ndigits=8),
+                    start=round(
+                        subcut.start + int(ratio * ws.start) / sampling_rate, ndigits=8
+                    ),
                     duration=round(
-                        int(ratio * (ws.end - ws.start)) / sampling_rate, ndigits=8
+                        int(subcut.start + ratio * (ws.end - ws.start)) / sampling_rate,
+                        ndigits=8,
                     ),
                     score=ws.score,
                 )
