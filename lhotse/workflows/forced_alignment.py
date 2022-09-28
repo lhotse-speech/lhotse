@@ -4,6 +4,7 @@ alignment with Wav2Vec2 created by Moto Hira.
 
 Link: https://pytorch.org/audio/stable/pipelines.html
 """
+import re
 from typing import Generator, List, NamedTuple, Sequence
 
 import torch
@@ -14,7 +15,10 @@ from lhotse.supervision import AlignmentItem
 
 
 def align_with_torchaudio(
-    cuts: CutSet, bundle_name: str = "WAV2VEC2_ASR_BASE_960H", device: str = "cpu"
+    cuts: CutSet,
+    bundle_name: str = "WAV2VEC2_ASR_BASE_960H",
+    device: str = "cpu",
+    normalize_text: bool = True,
 ) -> Generator[MonoCut, None, None]:
     """
     Use a pretrained model from torchaudio (such as Wav2Vec2) to perform forced
@@ -37,6 +41,9 @@ def align_with_torchaudio(
     :param bundle_name: name of the selected pretrained model from torchaudio.
         By default, we use WAV2VEC2_ASR_BASE_960H.
     :param device: device on which to run the computation.
+    :param normalize_text: by default, we'll try to normalize the text by making
+        it uppercase and discarding symbols outside of model's character level vocabulary.
+        If this causes issues, turn the option off and normalize the text yourself.
     :return: a generator of cuts that have the "alignment" field set in each of
         their supervisions.
     """
@@ -46,6 +53,7 @@ def align_with_torchaudio(
     labels = bundle.get_labels()
     device = torch.device(device)
     dictionary = {c: i for i, c in enumerate(labels)}
+    discard_symbols = _make_discard_symbols_regex(labels)
 
     for cut in cuts:
         assert not cut.has_overlapping_supervisions, (
@@ -58,9 +66,10 @@ def align_with_torchaudio(
             waveform = torch.as_tensor(
                 subcut.resample(sampling_rate).load_audio(), device=device
             )
-            # TODO: smarter text norm
-            transcript = sup.text.replace(" ", "|")
-            # TODO: handle OOV symbols gracefully
+            if normalize_text:
+                transcript = _normalize_text(sup.text, discard_symbols=discard_symbols)
+            else:
+                transcript = sup.text.replace(" ", "|")
             tokens = [dictionary[c] for c in transcript]
 
             with torch.inference_mode():
@@ -94,6 +103,14 @@ def align_with_torchaudio(
             cut.supervisions[idx] = sup
 
         yield cut
+
+
+def _make_discard_symbols_regex(labels: Sequence[str]) -> re.Pattern:
+    return re.compile(rf"[^{' '.join(labels)}]")
+
+
+def _normalize_text(text: str, discard_symbols: re.Pattern) -> str:
+    return re.sub(discard_symbols, "", text.upper().replace(" ", "|"))
 
 
 def _get_trellis(

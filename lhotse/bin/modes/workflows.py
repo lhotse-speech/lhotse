@@ -107,11 +107,19 @@ def annotate_with_whisper(
 @click.option(
     "-d", "--device", default="cpu", help="Device on which to run the inference."
 )
+@click.option(
+    "--normalize-text/--dont-normalize-text",
+    default=True,
+    help="By default, we'll try to normalize the text by making it uppercase and discarding symbols "
+    "outside of model's character level vocabulary. If this causes issues, "
+    "turn the option off and normalize the text yourself.",
+)
 def align_with_torchaudio(
     in_cuts: str,
     out_cuts: str,
     bundle_name: str,
     device: str,
+    normalize_text: bool,
 ):
     """
     Use a pretrained ASR model from torchaudio to force align IN_CUTS (a Lhotse CutSet)
@@ -131,7 +139,12 @@ def align_with_torchaudio(
 
     with CutSet.open_writer(out_cuts) as writer:
         for cut in tqdm(
-            align_with_torchaudio_(cuts, bundle_name=bundle_name, device=device),
+            align_with_torchaudio_(
+                cuts,
+                bundle_name=bundle_name,
+                device=device,
+                normalize_text=normalize_text,
+            ),
             total=len(cuts),
             desc="Aligning",
         ):
