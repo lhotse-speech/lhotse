@@ -6,6 +6,7 @@ from tqdm import tqdm
 
 from lhotse import CutSet, RecordingSet
 from lhotse.bin.modes.cli_base import cli
+from lhotse.serialization import load_manifest_lazy_or_eager
 from lhotse.utils import exactly_one_not_null
 
 
@@ -90,5 +91,48 @@ def annotate_with_whisper(
             ),
             total=len(recordings),
             desc="Recordings",
+        ):
+            writer.write(cut, flush=True)
+
+
+@workflows.command()
+@click.argument("in_cuts", type=click.Path(exists=True, dir_okay=False))
+@click.argument("out_cuts", type=click.Path())
+@click.option(
+    "-n",
+    "--bundle-name",
+    default="WAV2VEC2_ASR_BASE_960H",
+    help="One of Torchaudio pretrained 'bundle' variants (see: https://pytorch.org/audio/stable/pipelines.html)",
+)
+@click.option(
+    "-d", "--device", default="cpu", help="Device on which to run the inference."
+)
+def align_with_torchaudio(
+    in_cuts: str,
+    out_cuts: str,
+    bundle_name: str,
+    device: str,
+):
+    """
+    Use a pretrained ASR model from torchaudio to force align IN_CUTS (a Lhotse CutSet)
+    and write the results to OUT_CUTS.
+    It will attach word-level alignment information (start, end, and score) to the
+    supervisions in each cut.
+
+    This is based on a tutorial from torchaudio:
+    https://pytorch.org/audio/stable/tutorials/forced_alignment_tutorial.html
+
+    Note: this is an experimental feature of Lhotse, and is not guaranteed to yield
+    high quality of data.
+    """
+    from lhotse import align_with_torchaudio as align_with_torchaudio_
+
+    cuts = load_manifest_lazy_or_eager(in_cuts)
+
+    with CutSet.open_writer(out_cuts) as writer:
+        for cut in tqdm(
+            align_with_torchaudio_(cuts, bundle_name=bundle_name, device=device),
+            total=len(cuts),
+            desc="Aligning",
         ):
             writer.write(cut, flush=True)

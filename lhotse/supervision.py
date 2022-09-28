@@ -2,7 +2,17 @@ import logging
 from collections import defaultdict
 from dataclasses import dataclass
 from itertools import groupby, islice
-from typing import Any, Callable, Dict, Iterable, List, Mapping, Optional, Union
+from typing import (
+    Any,
+    Callable,
+    Dict,
+    Iterable,
+    List,
+    Mapping,
+    NamedTuple,
+    Optional,
+    Union,
+)
 
 from lhotse.lazy import AlgorithmMixin
 from lhotse.serialization import Serializable
@@ -24,22 +34,57 @@ from lhotse.utils import (
 )
 
 
-@dataclass
-class AlignmentItem:
+class AlignmentItem(NamedTuple):
     """
     This class contains an alignment item, for example a word, along with its
     start time (w.r.t. the start of recording) and duration. It can potentially
     be used to store other kinds of alignment items, such as subwords, pdfid's etc.
-
-    We use dataclasses instead of namedtuples (even though they are potentially slower)
-    because of a serialization bug in nested namedtuples and dataclasses in Python 3.7
-    (see this: https://alexdelorenzo.dev/programming/2018/08/09/bug-in-dataclass.html).
-    We can revert to namedtuples if we bump up the Python requirement to 3.8+.
     """
 
     symbol: str
     start: Seconds
     duration: Seconds
+    score: Optional[float] = None
+
+    # _data: dict
+
+    @staticmethod
+    def deserialize(data: list) -> "AlignmentItem":
+        return AlignmentItem.new(*data)
+
+    def serialize(self) -> list:
+        # return self._data
+        return list(self)
+
+    @classmethod
+    def new(
+        cls,
+        symbol: str,
+        start: Seconds,
+        duration: Seconds,
+        score: Optional[float] = None,
+    ):
+        return cls(symbol, start, duration, score)
+        # data = {"start": start, "duration": duration, "symbol": symbol}
+        # if score is not None:
+        #     data["score"] = score
+        # return cls(data)
+
+    # @property
+    # def start(self) -> Seconds:
+    #     return self._data["start"]
+    #
+    # @property
+    # def duration(self) -> Seconds:
+    #     return self._data["duration"]
+    #
+    # @property
+    # def symbol(self) -> str:
+    #     return self._data["symbol"]
+    #
+    # @property
+    # def score(self) -> Optional[float]:
+    #     return self._data.get("score")
 
     @property
     def end(self) -> Seconds:
@@ -47,8 +92,11 @@ class AlignmentItem:
 
     def with_offset(self, offset: Seconds) -> "AlignmentItem":
         """Return an identical ``AlignmentItem``, but with the ``offset`` added to the ``start`` field."""
-        return AlignmentItem(
-            self.symbol, round(self.start + offset, ndigits=8), self.duration
+        return AlignmentItem.new(
+            start=add_durations(self.start, offset, sampling_rate=48000),
+            duration=self.duration,
+            symbol=self.symbol,
+            score=self.score,
         )
 
     def perturb_speed(self, factor: float, sampling_rate: int) -> "AlignmentItem":
@@ -61,7 +109,9 @@ class AlignmentItem:
         num_samples = compute_num_samples(self.duration, sampling_rate)
         new_start = perturb_num_samples(start_sample, factor) / sampling_rate
         new_duration = perturb_num_samples(num_samples, factor) / sampling_rate
-        return AlignmentItem(self.symbol, new_start, new_duration)
+        return AlignmentItem.new(
+            symbol=self.symbol, start=new_start, duration=new_duration, score=self.score
+        )
 
     def trim(self, end: Seconds, start: Seconds = 0) -> "AlignmentItem":
         """
@@ -70,17 +120,24 @@ class AlignmentItem:
         assert start >= 0
         start_exceeds_by = abs(min(0, self.start - start))
         end_exceeds_by = max(0, self.end - end)
-        return AlignmentItem(
-            self.symbol,
-            max(start, self.start),
-            self.duration - end_exceeds_by - start_exceeds_by,
+        return AlignmentItem.new(
+            symbol=self.symbol,
+            start=max(start, self.start),
+            duration=add_durations(
+                self.duration, -end_exceeds_by, -start_exceeds_by, sampling_rate=48000
+            ),
         )
 
     def transform(self, transform_fn: Callable[[str], str]) -> "AlignmentItem":
         """
         Perform specified transformation on the alignment content.
         """
-        return AlignmentItem(transform_fn(self.symbol), self.start, self.duration)
+        return AlignmentItem.new(
+            symbol=transform_fn(self.symbol),
+            start=self.start,
+            duration=self.duration,
+            score=self.score,
+        )
 
 
 @dataclass
@@ -178,6 +235,15 @@ class SupervisionSegment:
     @property
     def end(self) -> Seconds:
         return round(self.start + self.duration, ndigits=8)
+
+    def with_alignment(
+        self, kind: str, alignment: List[AlignmentItem]
+    ) -> "SupervisionSegment":
+        alis = self.alignment
+        if alis is None:
+            alis = {}
+        alis[kind] = alignment
+        return fastcopy(self, alignment=alis)
 
     def with_offset(self, offset: Seconds) -> "SupervisionSegment":
         """Return an identical ``SupervisionSegment``, but with the ``offset`` added to the ``start`` field."""
@@ -375,7 +441,16 @@ class SupervisionSegment:
         )
 
     def to_dict(self) -> dict:
-        return asdict_nonull(self)
+        if self.alignment is None:
+            return asdict_nonull(self)
+        else:
+            alis = {
+                kind: [item.serialize() for item in ali]
+                for kind, ali in self.alignment.items()
+            }
+            data = asdict_nonull(fastcopy(self, alignment=None))
+            data["alignment"] = alis
+            return data
 
     @staticmethod
     def from_dict(data: dict) -> "SupervisionSegment":
@@ -386,7 +461,8 @@ class SupervisionSegment:
 
         if "alignment" in data:
             data["alignment"] = {
-                k: [AlignmentItem(**x) for x in v] for k, v in data["alignment"].items()
+                k: [AlignmentItem.deserialize(x) for x in v]
+                for k, v in data["alignment"].items()
             }
 
         return SupervisionSegment(**data)

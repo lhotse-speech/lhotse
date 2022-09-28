@@ -23,6 +23,7 @@ from lhotse.utils import (
     deprecated,
     fastcopy,
     ifnone,
+    overlaps,
 )
 
 # One of the design principles for Cuts is a maximally "lazy" implementation, e.g. when mixing Cuts,
@@ -197,6 +198,20 @@ class Cut:
     def to_dict(self) -> dict:
         d = asdict_nonull(self)
         return {**d, "type": type(self).__name__}
+
+    @property
+    def has_overlapping_supervisions(self) -> bool:
+        if len(self.supervisions) < 2:
+            return False
+
+        from cytoolz import sliding_window
+
+        for left, right in sliding_window(
+            2, sorted(self.supervisions, key=lambda s: s.start)
+        ):
+            if overlaps(left, right):
+                return True
+        return False
 
     @property
     def trimmed_supervisions(self) -> List[SupervisionSegment]:
