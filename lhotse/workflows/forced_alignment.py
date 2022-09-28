@@ -4,6 +4,7 @@ alignment with Wav2Vec2 created by Moto Hira.
 
 Link: https://pytorch.org/audio/stable/pipelines.html
 """
+import logging
 import re
 from typing import Generator, List, NamedTuple, Sequence
 
@@ -79,7 +80,13 @@ def align_with_torchaudio(
 
             trellis = _get_trellis(emission, tokens)
 
-            path = _backtrack(trellis, emission, tokens)
+            try:
+                path = _backtrack(trellis, emission, tokens)
+            except FailedToAlign:
+                logging.info(
+                    f"Failed to align supervision '{sup.id}' for cut '{cut.id}'. Writing it without alignment."
+                )
+                continue
 
             segments = _merge_repeats(path, transcript)
 
@@ -144,6 +151,10 @@ class Point(NamedTuple):
     score: float
 
 
+class FailedToAlign(RuntimeError):
+    pass
+
+
 def _backtrack(
     trellis: torch.Tensor,
     emission: torch.Tensor,
@@ -181,7 +192,7 @@ def _backtrack(
             if j == 0:
                 break
     else:
-        raise ValueError("Failed to align")
+        raise FailedToAlign()
     return path[::-1]
 
 
