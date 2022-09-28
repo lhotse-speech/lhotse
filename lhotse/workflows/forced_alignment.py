@@ -79,7 +79,7 @@ def align_with_torchaudio(
             # Ratio of number of samples to number of frames
             ratio = waveform.size(1) / emission.size(0)
             alignment = [
-                AlignmentItem.new(
+                AlignmentItem(
                     symbol=ws.label,
                     start=round(int(ratio * ws.start) / sampling_rate, ndigits=8),
                     duration=round(

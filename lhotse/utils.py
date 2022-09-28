@@ -151,11 +151,15 @@ def asdict_nonull(dclass) -> Dict[str, Any]:
     """
 
     def non_null_dict_factory(collection):
+        from lhotse.supervision import AlignmentItem
+
         d = dict(collection)
         remove_keys = []
         for key, val in d.items():
             if val is None:
                 remove_keys.append(key)
+            elif isinstance(val, AlignmentItem):
+                d[key] = val.serialize()
         for k in remove_keys:
             del d[k]
         return d
