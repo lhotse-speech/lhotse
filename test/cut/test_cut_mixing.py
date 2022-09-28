@@ -8,7 +8,6 @@ from lhotse.supervision import SupervisionSegment
 from lhotse.testing.dummies import remove_spaces_from_segment_text
 from lhotse.utils import nullcontext as does_not_raise
 
-
 # Note:
 # Definitions for `cut1`, `cut2` and `cut_set` parameters are standard Pytest fixtures located in test/cut/conftest.py
 
@@ -108,7 +107,10 @@ def test_mixed_cut_load_audio_mixed(mixed_audio_cut):
 
 def test_mixed_cut_load_audio_unmixed(mixed_audio_cut):
     audio = mixed_audio_cut.load_audio(mixed=False)
-    assert audio.shape == (2, 230400)
+    assert isinstance(audio, list)
+    assert len(audio) == 2
+    assert audio[0].shape == (1, 230400)
+    assert audio[1].shape == (1, 230400)
 
 
 @pytest.fixture
@@ -124,7 +126,7 @@ def libri_cut(libri_cut_set) -> MonoCut:
 def E(x):
     if x.shape[0] == 1:
         # audio
-        return np.sum(x ** 2)
+        return np.sum(x**2)
     # fbank
     return np.sum(np.exp(x))
 

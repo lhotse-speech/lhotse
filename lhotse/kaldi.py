@@ -4,12 +4,12 @@ from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 
-from lhotse import FeatureSet, Features, Seconds
-from lhotse.audio import AudioSource, Recording, RecordingSet
-from lhotse.audio import audioread_info
+from lhotse.audio import AudioSource, Recording, RecordingSet, audioread_info
+from lhotse.features import Features, FeatureSet
 from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import (
     Pathlike,
+    Seconds,
     add_durations,
     compute_num_samples,
     fastcopy,
@@ -35,16 +35,16 @@ def get_duration(
             )
         import kaldi_native_io
 
-        wave_info = kaldi_native_io.read_wave_info(path)
-        assert wave_info.num_channels == 1, wave_info.num_channels
+        wave = kaldi_native_io.read_wave(path)
+        assert wave.data.shape[0] == 1, f"Expect 1 channel. Given {wave.data.shape[0]}"
 
-        return wave_info.duration
+        return wave.duration
     try:
         # Try to parse the file using pysoundfile first.
         import soundfile
 
         info = soundfile.info(path)
-    except:
+    except Exception:
         # Try to parse the file using audioread as a fallback.
         info = audioread_info(path)
     return info.duration
@@ -105,6 +105,7 @@ def load_kaldi_data_dir(
 
     supervision_set = None
     segments = path / "segments"
+    utt2spk_f = path / "utt2spk"
     if segments.is_file():
         with segments.open() as f:
             supervision_segments = [sup_string.strip().split() for sup_string in f]
@@ -130,32 +131,56 @@ def load_kaldi_data_dir(
             )
             for segment_id, recording_id, start, end in supervision_segments
         )
+    elif utt2spk_f.is_file():
+        # segments file does not exist => provided supervision
+        # corresponds to whole recordings
+        speakers = load_kaldi_text_mapping(path / "utt2spk")
+        assert len(speakers) == len(recording_set)
+
+        texts = load_kaldi_text_mapping(path / "text")
+        genders = load_kaldi_text_mapping(path / "spk2gender")
+        languages = load_kaldi_text_mapping(path / "utt2lang")
+        supervision_set = SupervisionSet.from_segments(
+            SupervisionSegment(
+                id=fix_id(rec_id),
+                recording_id=rec_id,
+                start=0.0,
+                duration=durations[rec_id],
+                channel=0,
+                text=texts[rec_id],
+                language=languages[rec_id],
+                speaker=fix_id(spkr),
+                gender=genders[spkr],
+            )
+            for rec_id, spkr in speakers.items()
+        )
 
     feature_set = None
     feats_scp = path / "feats.scp"
     if feats_scp.exists() and is_module_available("kaldi_native_io"):
         if frame_shift is not None:
             import kaldi_native_io
+
             from lhotse.features.io import KaldiReader
 
             feature_set = FeatureSet.from_features(
                 Features(
                     type="kaldi_native_io",
-                    num_frames=mat.shape[0],
-                    num_features=mat.shape[1],
+                    num_frames=mat_shape.num_rows,
+                    num_features=mat_shape.num_cols,
                     frame_shift=frame_shift,
                     sampling_rate=sampling_rate,
                     start=0,
-                    duration=mat.shape[0] * frame_shift,
+                    duration=mat_shape.num_rows * frame_shift,
                     storage_type=KaldiReader.name,
                     storage_path=str(feats_scp),
                     storage_key=utt_id,
-                    recording_id=supervision_set[utt_id].recording_id
+                    recording_id=supervision_set[fix_id(utt_id)].recording_id
                     if supervision_set is not None
                     else utt_id,
                     channels=0,
                 )
-                for utt_id, mat in kaldi_native_io.SequentialFloatMatrixReader(
+                for utt_id, mat_shape in kaldi_native_io.SequentialMatrixShapeReader(
                     f"scp:{feats_scp}"
                 )
             )

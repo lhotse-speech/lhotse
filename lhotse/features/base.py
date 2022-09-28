@@ -5,7 +5,7 @@ import warnings
 from abc import ABCMeta, abstractmethod
 from concurrent.futures.process import ProcessPoolExecutor
 from dataclasses import asdict, dataclass, is_dataclass
-from itertools import chain
+from itertools import chain, islice
 from math import isclose
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Type, Union
@@ -17,7 +17,8 @@ from tqdm.auto import tqdm
 from lhotse.audio import Recording
 from lhotse.augmentation import AugmentFn
 from lhotse.features.io import FeaturesWriter, get_reader
-from lhotse.serialization import Serializable, load_yaml, save_to_yaml
+from lhotse.lazy import AlgorithmMixin
+from lhotse.serialization import LazyMixin, Serializable, load_yaml, save_to_yaml
 from lhotse.utils import (
     Pathlike,
     Seconds,
@@ -485,6 +486,9 @@ class Features:
     ) -> "Features":
         from lhotse.features.io import get_memory_writer
 
+        if self.storage_type in ("memory_lilcom", "memory_writer"):
+            return self  # nothing to do
+
         arr = self.load(start=start, duration=duration)
         if issubclass(arr.dtype.type, np.floating):
             writer = get_memory_writer("memory_lilcom")()
@@ -541,28 +545,34 @@ class Features:
             data["frame_shift"] = round(
                 data["duration"] / data["num_frames"], ndigits=3
             )
+        if (
+            "storage_key" in data
+            and "storage_type" in data
+            and "storage_path" not in data
+        ):
+            data["storage_path"] = None
         return Features(**data)
 
     def __repr__(self):
         return (
             f"Features("
-            f"type={self.type}, "
+            f"type='{self.type}', "
             f"num_frames={self.num_frames}, "
             f"num_features={self.num_features}, "
             f"frame_shift={self.frame_shift}, "
             f"sampling_rate={self.sampling_rate}, "
             f"start={self.start}, "
             f"duration={self.duration}, "
-            f"storage_type={self.storage_type}, "
-            f"storage_path={self.storage_path}, "
-            f"storage_key={self.storage_key if isinstance(self.storage_key, str) else '<binary-data>'}, "
-            f"recording_id={self.recording_id}, "
+            f"storage_type='{self.storage_type}', "
+            f"storage_path='{self.storage_path}', "
+            f"storage_key='{self.storage_key if isinstance(self.storage_key, str) else '<binary-data>'}', "
+            f"recording_id='{self.recording_id}', "
             f"channels={self.channels}"
             f")"
         )
 
 
-class FeatureSet(Serializable):
+class FeatureSet(Serializable, AlgorithmMixin):
     """
     Represents a feature manifest, and allows to read features for given recordings
     within particular channels and time ranges.
@@ -584,8 +594,12 @@ class FeatureSet(Serializable):
         return self.features
 
     @staticmethod
-    def from_features(features: Iterable[Features]) -> "FeatureSet":
-        return FeatureSet(list(features))  # just for consistency with other *Sets
+    def from_features(features: Union[Iterable[Features], LazyMixin]) -> "FeatureSet":
+        return (
+            FeatureSet([f for f in features])
+            if isinstance(features, LazyMixin)
+            else FeatureSet(list(features))
+        )
 
     from_items = from_features
 
@@ -622,7 +636,9 @@ class FeatureSet(Serializable):
             )
         ]
 
-    def split_lazy(self, output_dir: Pathlike, chunk_size: int) -> List["FeatureSet"]:
+    def split_lazy(
+        self, output_dir: Pathlike, chunk_size: int, prefix: str = ""
+    ) -> List["FeatureSet"]:
         """
         Splits a manifest (either lazily or eagerly opened) into chunks, each
         with ``chunk_size`` items (except for the last one, typically).
@@ -635,11 +651,17 @@ class FeatureSet(Serializable):
 
         :param it: any iterable of Lhotse manifests.
         :param output_dir: directory where the split manifests are saved.
-            Each manifest is saved at: ``{output_dir}/{split_idx}.jsonl.gz``
+            Each manifest is saved at: ``{output_dir}/{prefix}.{split_idx}.jsonl.gz``
         :param chunk_size: the number of items in each chunk.
+        :param prefix: the prefix of each manifest.
         :return: a list of lazily opened chunk manifests.
         """
-        return split_manifest_lazy(self, output_dir=output_dir, chunk_size=chunk_size)
+        return split_manifest_lazy(
+            self, output_dir=output_dir, chunk_size=chunk_size, prefix=prefix
+        )
+
+    def shuffle(self, *args, **kwargs):
+        raise NotImplementedError("FeatureSet does not support shuffling.")
 
     def subset(
         self, first: Optional[int] = None, last: Optional[int] = None
@@ -658,13 +680,12 @@ class FeatureSet(Serializable):
 
         if first is not None:
             assert first > 0
-            if first > len(self):
+            out = FeatureSet.from_items(islice(self, first))
+            if len(out) < first:
                 logging.warning(
-                    f"FeatureSet has only {len(self)} items but first {first} required; "
-                    f"not doing anything."
+                    f"FeatureSet has only {len(out)} items but first {first} were requested."
                 )
-                return self
-            return FeatureSet.from_features(self.features[:first])
+            return out
 
         if last is not None:
             assert last > 0
@@ -799,13 +820,6 @@ class FeatureSet(Serializable):
     def __len__(self) -> int:
         return len(self.features)
 
-    def __add__(self, other: "FeatureSet") -> "FeatureSet":
-        from lhotse.serialization import LazyIteratorChain
-
-        if self.is_lazy or other.is_lazy:
-            return FeatureSet(LazyIteratorChain(self.features, other.features))
-        return FeatureSet(features=self.features + other.features)
-
 
 class FeatureSetBuilder:
     """
@@ -914,39 +928,60 @@ def compute_global_stats(
     """
     feature_manifests = iter(feature_manifests)
     first = next(feature_manifests)
-    total_sum = np.zeros((first.num_features,), dtype=np.float64)
-    total_unnorm_var = np.zeros((first.num_features,), dtype=np.float64)
-    total_frames = 0
-    with np.errstate(divide="ignore", invalid="ignore"):
-        for features in chain([first], feature_manifests):
-            # Read the features
-            arr = features.load().astype(np.float64)
+    stats = StatsAccumulator(feature_dim=first.num_features)
+    for features in chain([first], feature_manifests):
+        # Read the features
+        arr = features.load().astype(np.float64)
+        # Update
+        stats.update(arr)
+    mvn = stats.get()
+    if storage_path is not None:
+        with open(storage_path, "wb") as f:
+            pickle.dump(mvn, f)
+    return mvn
+
+
+class StatsAccumulator:
+    def __init__(self, feature_dim: int):
+        self.total_sum = np.zeros((feature_dim,), dtype=np.float64)
+        self.total_unnorm_var = np.zeros((feature_dim,), dtype=np.float64)
+        self.total_frames = 0
+
+    def update(self, arr: np.ndarray) -> None:
+        with np.errstate(divide="ignore", invalid="ignore"):
+            arr = arr.astype(np.float64)
             # Update the sum for the means
             curr_sum = arr.sum(axis=0)
-            updated_total_sum = total_sum + curr_sum
+            updated_total_sum = self.total_sum + curr_sum
             # Update the number of frames
             curr_frames = arr.shape[0]
-            updated_total_frames = total_frames + curr_frames
+            updated_total_frames = self.total_frames + curr_frames
             # Update the unnormalized variance
-            total_over_curr_frames = total_frames / curr_frames
+            total_over_curr_frames = self.total_frames / curr_frames
             curr_unnorm_var = np.var(arr, axis=0) * curr_frames
-            if total_frames > 0:
-                total_unnorm_var = (
-                    total_unnorm_var
+            if self.total_frames > 0:
+                self.total_unnorm_var = (
+                    self.total_unnorm_var
                     + curr_unnorm_var
                     + total_over_curr_frames
                     / updated_total_frames
-                    * (total_sum / total_over_curr_frames - curr_sum) ** 2
+                    * (self.total_sum / total_over_curr_frames - curr_sum) ** 2
                 )
             else:
-                total_unnorm_var = curr_unnorm_var
-            total_sum = updated_total_sum
-            total_frames = updated_total_frames
-    stats = {
-        "norm_means": total_sum / total_frames,
-        "norm_stds": np.sqrt(total_unnorm_var / total_frames),
-    }
-    if storage_path is not None:
-        with open(storage_path, "wb") as f:
-            pickle.dump(stats, f)
-    return stats
+                self.total_unnorm_var = curr_unnorm_var
+            self.total_sum = updated_total_sum
+            self.total_frames = updated_total_frames
+
+    @property
+    def norm_means(self) -> np.ndarray:
+        return self.total_sum / self.total_frames
+
+    @property
+    def norm_stds(self) -> np.ndarray:
+        return np.sqrt(self.total_unnorm_var / self.total_frames)
+
+    def get(self) -> Dict[str, np.ndarray]:
+        return {
+            "norm_means": self.norm_means,
+            "norm_stds": self.norm_stds,
+        }

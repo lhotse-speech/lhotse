@@ -17,4 +17,4 @@ jobs:
       - uses: psf/black@stable
         with:
           options: "--check --diff --color"
-          version: "21.10b0"
+          version: "22.3.0"

@@ -1,16 +1,16 @@
 """
-The AliMeeting Mandarin corpus, originally designed for ICASSP 2022 Multi-channel 
-Multi-party Meeting Transcription Challenge (M2MeT), is recorded from real meetings, 
-including far-field speech collected by an 8-channel microphone array as well as 
-near-field speech collected by each participants' headset microphone. The dataset 
-contains 118.75 hours of speech data in total, divided into 104.75 hours for training 
-(Train), 4 hours for evaluation (Eval) and 10 hours as test set (Test), according to 
-M2MeT challenge arrangement. Specifically, the Train, Eval and Test sets contain 212, 
-8 and 20 meeting sessions respectively, and each session consists of a 15 to 30-minute 
-discussion by 2-4 participants. AliMeeting covers a variety of aspects in real-world 
-meetings, including diverse meeting rooms, various number of meeting participants and 
-different speaker overlap ratios. High-quality transcriptions are provided as well. 
-The dataset can be used for tasks in meeting rich transcriptions, including speaker 
+The AliMeeting Mandarin corpus, originally designed for ICASSP 2022 Multi-channel
+Multi-party Meeting Transcription Challenge (M2MeT), is recorded from real meetings,
+including far-field speech collected by an 8-channel microphone array as well as
+near-field speech collected by each participants' headset microphone. The dataset
+contains 118.75 hours of speech data in total, divided into 104.75 hours for training
+(Train), 4 hours for evaluation (Eval) and 10 hours as test set (Test), according to
+M2MeT challenge arrangement. Specifically, the Train, Eval and Test sets contain 212,
+8 and 20 meeting sessions respectively, and each session consists of a 15 to 30-minute
+discussion by 2-4 participants. AliMeeting covers a variety of aspects in real-world
+meetings, including diverse meeting rooms, various number of meeting participants and
+different speaker overlap ratios. High-quality transcriptions are provided as well.
+The dataset can be used for tasks in meeting rich transcriptions, including speaker
 diarization and multi-speaker automatic speech recognition.
 
 More details and download link: https://openslr.org/119/
@@ -24,7 +24,7 @@ from typing import Dict, Optional, Union
 
 from tqdm import tqdm
 
-from lhotse import validate_recordings_and_supervisions, fix_manifests
+from lhotse import fix_manifests, validate_recordings_and_supervisions
 from lhotse.audio import AudioSource, Recording, RecordingSet
 from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import Pathlike, is_module_available, urlretrieve_progress
@@ -44,7 +44,7 @@ def download_ali_meeting(
     :param base_url: str, the url of the OpenSLR resources.
     :return: the path to downloaded and extracted directory with data.
     """
-    url = f"{base_url}/AliMeeting/openlr/"
+    url = f"{base_url}/AliMeeting/openlr"
     target_dir = Path(target_dir)
     target_dir.mkdir(parents=True, exist_ok=True)
     dataset_tar_names = [
@@ -95,14 +95,15 @@ def prepare_ali_meeting(
         recordings = []
         supervisions = []
         # Eval and Test may further be inside another folder (since the "far" and "near" are grouped together)
+        corpus_dir_split = corpus_dir
         if part == "Eval" or part == "Test":
-            corpus_dir = (
+            corpus_dir_split = (
                 corpus_dir / f"{part}_Ali"
                 if (corpus_dir / f"{part}_Ali").is_dir()
                 else corpus_dir
             )
-        wav_paths = corpus_dir / f"{part}_Ali_{mic}" / "audio_dir"
-        text_paths = corpus_dir / f"{part}_Ali_{mic}" / "textgrid_dir"
+        wav_paths = corpus_dir_split / f"{part}_Ali_{mic}" / "audio_dir"
+        text_paths = corpus_dir_split / f"{part}_Ali_{mic}" / "textgrid_dir"
 
         # For 'near' setting:
         #  - wav files have names like R0003_M0046_F_SPK0093.wav
@@ -171,8 +172,12 @@ def prepare_ali_meeting(
         validate_recordings_and_supervisions(recording_set, supervision_set)
 
         if output_dir is not None:
-            supervision_set.to_file(output_dir / f"supervisions_{part.lower()}.jsonl")
-            recording_set.to_file(output_dir / f"recordings_{part.lower()}.jsonl")
+            supervision_set.to_file(
+                output_dir / f"alimeeting_supervisions_{part.lower()}.jsonl.gz"
+            )
+            recording_set.to_file(
+                output_dir / f"alimeeting_recordings_{part.lower()}.jsonl.gz"
+            )
 
         manifests[part.lower()] = {
             "recordings": recording_set,

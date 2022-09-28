@@ -12,6 +12,7 @@ from lhotse import (
     NumpyHdf5Writer,
 )
 from lhotse.array import Array, TemporalArray
+from lhotse.utils import is_module_available
 
 
 @pytest.mark.parametrize(
@@ -28,7 +29,13 @@ from lhotse.array import Array, TemporalArray
     "writer_class",
     [
         NumpyFilesWriter,
-        NumpyHdf5Writer,
+        pytest.param(
+            NumpyHdf5Writer,
+            marks=pytest.mark.skipif(
+                not is_module_available("h5py"),
+                reason="Requires h5py to run HDF5 tests.",
+            ),
+        ),
         pytest.param(
             LilcomFilesWriter,
             marks=pytest.mark.xfail(reason="Lilcom changes dtype to float32"),
@@ -81,7 +88,13 @@ def test_write_read_temporal_array_no_lilcom(array, writer_class):
     [
         LilcomChunkyWriter,
         LilcomFilesWriter,
-        LilcomHdf5Writer,
+        pytest.param(
+            LilcomHdf5Writer,
+            marks=pytest.mark.skipif(
+                not is_module_available("h5py"),
+                reason="Requires h5py to run HDF5 tests.",
+            ),
+        ),
     ],
 )
 def test_write_read_temporal_array_lilcom(array, writer_class):
@@ -146,7 +159,7 @@ def test_temporal_array_set_prefix_path():
 def test_temporal_array_partial_read():
     array = np.arange(30).astype(np.int8)
 
-    with NamedTemporaryFile(suffix=".h5") as f, NumpyHdf5Writer(f.name) as writer:
+    with TemporaryDirectory() as d, NumpyFilesWriter(d) as writer:
         manifest = writer.store_array(
             key="utt1",
             value=array,

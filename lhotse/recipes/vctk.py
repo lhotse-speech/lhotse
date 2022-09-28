@@ -139,38 +139,74 @@ def download_vctk(
 def prepare_vctk(
     corpus_dir: Pathlike,
     output_dir: Optional[Pathlike] = None,
+    use_edinburgh_vctk_url: Optional[bool] = False,
+    mic_id: Optional[str] = "mic2",
 ) -> Dict[str, Union[RecordingSet, SupervisionSet]]:
     """
     Prepares and returns the VCTK manifests which consist of Recordings and Supervisions.
 
     :param corpus_dir: Pathlike, the path of the data dir.
     :param output_dir: Pathlike, the path where to write the manifests.
+    :param use_edinburgh_vctk_url: Bool, if use edinburgh_vctk_url to download the dataset, please set it as True.
+    :param mic_id: str, the default of mic_id is mic2.
     :return: a dict with keys "read" and "spontaneous".
         Each hold another dict of {'recordings': ..., 'supervisions': ...}
+
+    Note: when download the vctk dataset with the edinburgh url, there are some points should know:
+        * All the speeches from speaker ``p315`` will be skipped due to the lack of the corresponding text files.
+        * All the speeches from speaker ``p280`` will be skipped for ``mic_id="mic2"`` due to the lack of the audio files.
+        * Some of the speeches from speaker ``p362`` will be skipped due to the lack of  the audio files.
+        * See Also: https://datashare.is.ed.ac.uk/handle/10283/3443
     """
     corpus_dir = Path(corpus_dir)
     assert corpus_dir.is_dir(), f"No such directory: {corpus_dir}"
 
     speaker_meta = _parse_speaker_description(corpus_dir)
 
-    recordings = RecordingSet.from_recordings(
-        Recording.from_file(wav) for wav in (corpus_dir / "wav48").rglob("*.wav")
-    )
+    audios_dir = ""
+    recordings = ""
+    if use_edinburgh_vctk_url:
+        audios_dir = corpus_dir / "wav48_silence_trimmed"
+        recordings = RecordingSet.from_recordings(
+            Recording.from_file(flac) for flac in audios_dir.rglob("*.flac")
+        )
+    else:
+        audios_dir = corpus_dir / "wav48"
+        recordings = RecordingSet.from_recordings(
+            Recording.from_file(wav) for wav in audios_dir.rglob("*.wav")
+        )
+
     supervisions = []
     for path in (corpus_dir / "txt").rglob("*.txt"):
         # One utterance (line) per file
         text = path.read_text().strip()
         speaker = path.name.split("_")[0]  # p226_001.txt -> p226
         seg_id = path.stem
+        audio_file_id = ""
+        if use_edinburgh_vctk_url:
+            if speaker == "p280" and mic_id == "mic2":
+                continue
+            else:
+                audio_file_id = seg_id + "_" + mic_id
+        else:
+            audio_file_id = seg_id
+
+        if speaker == "p362":
+            if audio_file_id not in recordings:
+                continue
+            audio_file_path = recordings[audio_file_id].sources[0].source
+            if not Path(audio_file_path).is_file():
+                continue
+
         meta = speaker_meta.get(speaker, defaultdict(lambda: None))
         if meta is None:
             logging.warning(f"Cannot find metadata for speaker {speaker}.")
         supervisions.append(
             SupervisionSegment(
-                id=seg_id,
-                recording_id=seg_id,
+                id=audio_file_id,
+                recording_id=audio_file_id,
                 start=0,
-                duration=recordings[seg_id].duration,
+                duration=recordings[audio_file_id].duration,
                 text=text,
                 language="English",
                 speaker=speaker,
@@ -194,8 +230,8 @@ def prepare_vctk(
     if output_dir is not None:
         output_dir = Path(output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
-        recordings.to_json(output_dir / "recordings.json")
-        supervisions.to_json(output_dir / "supervisions.json")
+        recordings.to_file(output_dir / "vctk_recordings_all.jsonl.gz")
+        supervisions.to_file(output_dir / "vctk_supervisions_all.jsonl.gz")
 
     return {"recordings": recordings, "supervisions": supervisions}
 
@@ -207,7 +243,9 @@ def _parse_speaker_description(corpus_dir: Pathlike):
         for line in (corpus_dir / "speaker-info.txt").read_text().splitlines()
     ]
     header = lines[0]
-    assert header == ["ID", "AGE", "GENDER", "ACCENTS", "REGION"]
+
+    assert set(["ID", "AGE", "GENDER", "ACCENTS", "REGION"]).issubset(set(header))
+
     for spk, age, gender, accent, *region in lines[1:]:
         meta[f"p{spk}"] = {
             "age": int(age),

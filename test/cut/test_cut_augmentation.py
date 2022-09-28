@@ -1,8 +1,9 @@
-from lhotse.audio import RecordingSet
 import numpy as np
 import pytest
+import torch
 
 from lhotse import AudioSource, CutSet, MonoCut, Recording, SupervisionSegment
+from lhotse.audio import RecordingSet
 from lhotse.cut import PaddingCut
 from lhotse.utils import fastcopy
 
@@ -534,6 +535,25 @@ def test_cut_reverb_rir(libri_cut_with_supervision, libri_recording_rvb, rir):
     np.testing.assert_array_almost_equal(cut_rvb.load_audio(), rvb_audio_from_fixture)
 
 
+def test_cut_reverb_fast_rir(libri_cut_with_supervision):
+    cut = libri_cut_with_supervision
+    cut_rvb = cut.reverb_rir(rir_recording=None)
+    assert cut_rvb.start == cut.start
+    assert cut_rvb.duration == cut.duration
+    assert cut_rvb.end == cut.end
+    assert cut_rvb.num_samples == cut.num_samples
+
+    assert cut_rvb.recording.duration == cut.recording.duration
+    assert cut_rvb.recording.num_samples == cut.recording.num_samples
+
+    assert cut_rvb.supervisions[0].start == cut.supervisions[0].start
+    assert cut_rvb.supervisions[0].duration == cut.supervisions[0].duration
+    assert cut_rvb.supervisions[0].end == cut.supervisions[0].end
+
+    assert cut_rvb.load_audio().shape == cut.load_audio().shape
+    assert cut_rvb.recording.load_audio().shape == cut.recording.load_audio().shape
+
+
 @pytest.mark.parametrize(
     "rir_channels, expected_type, expected_num_tracks",
     [
@@ -563,7 +583,7 @@ def test_cut_reverb_multi_channel_rir(
             assert track.cut.end == cut.end
             assert track.cut.num_samples == cut.num_samples
 
-        assert cut_rvb.load_audio(mixed=False).shape == (
+        assert np.vstack(cut_rvb.load_audio(mixed=False)).shape == (
             expected_num_tracks,
             cut.num_samples,
         )

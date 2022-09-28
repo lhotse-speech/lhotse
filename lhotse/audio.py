@@ -1,6 +1,10 @@
+import functools
 import logging
+import os
 import random
 import re
+import sys
+import traceback
 import warnings
 from concurrent.futures import ProcessPoolExecutor
 from contextlib import contextmanager
@@ -11,7 +15,7 @@ from io import BytesIO, IOBase
 from itertools import islice
 from math import ceil, sqrt
 from pathlib import Path
-from subprocess import CalledProcessError, PIPE, run
+from subprocess import PIPE, CalledProcessError, run
 from typing import (
     Any,
     Callable,
@@ -21,7 +25,6 @@ from typing import (
     Mapping,
     NamedTuple,
     Optional,
-    Sequence,
     Tuple,
     Union,
 )
@@ -39,6 +42,7 @@ from lhotse.augmentation import (
     Volume,
 )
 from lhotse.caching import dynamic_lru_cache
+from lhotse.lazy import AlgorithmMixin
 from lhotse.serialization import Serializable
 from lhotse.utils import (
     Decibels,
@@ -57,6 +61,7 @@ from lhotse.utils import (
     rich_exception_info,
     split_manifest_lazy,
     split_sequence,
+    suppress_and_warn,
 )
 
 Channels = Union[int, List[int]]
@@ -141,7 +146,7 @@ class AudioSource:
         (n_channels, n_samples) for multi-channel.
 
         Note: The elements in the returned array are in the range [-1.0, 1.0]
-        and are of dtype `np.floatt32`.
+        and are of dtype `np.float32`.
 
         :param force_opus_sampling_rate: This parameter is only used when we detect an OPUS file.
             It will tell ffmpeg to resample OPUS to this sampling rate.
@@ -431,6 +436,9 @@ class Recording:
         also accepted.
         """
 
+        if all(src.type == "memory" for src in self.sources):
+            return self  # nothing to do
+
         # Case #1: no opts specified, read audio without decoding and move it in memory.
         if all(opt is None for opt in (channels, offset, duration)):
             memory_sources = [
@@ -451,9 +459,24 @@ class Recording:
             channels=channels, offset=ifnone(offset, 0), duration=duration
         )
         stream = BytesIO()
-        torchaudio.save(
-            stream, torch.from_numpy(audio), self.sampling_rate, format=format
-        )
+        if torchaudio_soundfile_supports_format() and format in (
+            "wav",
+            "ogg",
+            "vorbis",
+            "flac",
+            "sph",
+        ):
+            # Prefer saving with soundfile backend whenever possible to avoid issue:
+            # https://github.com/pytorch/audio/issues/2662
+            # Saving with sox_io backend to FLAC may corrupt the file, IDK about other
+            # formats but would rather be on the safe side.
+            torchaudio.backend.soundfile_backend.save(
+                stream, torch.from_numpy(audio), self.sampling_rate, format=format
+            )
+        else:
+            torchaudio.backend.sox_io_backend.save(
+                stream, torch.from_numpy(audio), self.sampling_rate, format=format
+            )
         channels = (ifnone(channels, self.channel_ids),)
         if isinstance(channels, int):
             channels = [channels]
@@ -483,7 +506,7 @@ class Recording:
         many tracks as the number of channels.
         The implementation of the multi-channel case may change in the future...
         """
-        from lhotse.cut import MonoCut, MixedCut, MixTrack
+        from lhotse.cut import MixedCut, MixTrack, MonoCut
 
         if self.num_channels == 1:
             return MonoCut(
@@ -588,8 +611,8 @@ class Recording:
                 samples = np.delete(samples, channels_to_remove, axis=0)
             samples_per_source.append(samples)
 
-        # shape: (n_channels, n_samples)
-        audio = np.vstack(samples_per_source)
+        # Stack all the samples from all the sources into a single array.
+        audio = self._stack_audio_channels(samples_per_source)
 
         # We'll apply the transforms now (if any).
         for tfn in transforms:
@@ -601,6 +624,37 @@ class Recording:
             audio, offset=offset, duration=duration, recording=self
         )
 
+        return audio
+
+    def _stack_audio_channels(self, samples_per_source: List[np.ndarray]) -> np.ndarray:
+        # There may be a mismatch in the number of samples between different channels. We
+        # check if the mismatch is within a reasonable tolerance and if so, we pad
+        # all channels to the length of the longest one.
+        allowed_diff = int(
+            compute_num_samples(
+                LHOTSE_AUDIO_DURATION_MISMATCH_TOLERANCE,
+                sampling_rate=self.sampling_rate,
+            )
+        )
+        if len(samples_per_source) > 1:
+            # Make all arrays 2D
+            samples_per_source = [
+                s[None, :] if s.ndim == 1 else s for s in samples_per_source
+            ]
+            max_samples = max(s.shape[1] for s in samples_per_source)
+            for s in samples_per_source:
+                if max_samples - s.shape[1] <= allowed_diff:
+                    s = np.pad(s, ((0, 0), (0, max_samples - s.shape[1])), "constant")
+                else:
+                    raise ValueError(
+                        f"The mismatch between the number of samples in the "
+                        f"different channels of the recording {self.id} is "
+                        f"greater than the allowed tolerance {LHOTSE_AUDIO_DURATION_MISMATCH_TOLERANCE}."
+                    )
+            audio = np.concatenate(samples_per_source, axis=0)
+        else:
+            # shape: (n_channels, n_samples)
+            audio = np.vstack(samples_per_source)
         return audio
 
     def _expected_num_samples(
@@ -681,15 +735,16 @@ class Recording:
 
     def reverb_rir(
         self,
-        rir_recording: "Recording",
+        rir_recording: Optional["Recording"] = None,
         normalize_output: bool = True,
         early_only: bool = False,
         affix_id: bool = True,
-        rir_channels: List[int] = [0],
+        rir_channels: Optional[List[int]] = None,
     ) -> "Recording":
         """
         Return a new ``Recording`` that will lazily apply reverberation based on provided
-        impulse response while loading audio.
+        impulse response while loading audio. If no impulse response is provided, we will
+        generate an RIR using a fast random generator (https://arxiv.org/abs/2208.04101).
 
         :param rir_recording: The impulse response to be used.
         :param normalize_output: When true, output will be normalized to have energy as input.
@@ -697,16 +752,17 @@ class Recording:
         :param affix_id: When true, we will modify the ``Recording.id`` field
             by affixing it with "_rvb".
         :param rir_channels: The channels of the impulse response to be used (in case of multi-channel
-            impulse responses).
+            impulse responses). By default, only the first channel is used. If no RIR is
+            provided, we will generate one with as many channels as this argument specifies.
         :return: the perturbed ``Recording``.
         """
         transforms = self.transforms.copy() if self.transforms is not None else []
         transforms.append(
             ReverbWithImpulseResponse(
-                rir_recording,
+                rir=rir_recording,
                 normalize_output=normalize_output,
                 early_only=early_only,
-                rir_channels=rir_channels,
+                rir_channels=rir_channels if rir_channels is not None else [0],
             ).to_dict()
         )
         return fastcopy(
@@ -721,6 +777,9 @@ class Recording:
         :param sampling_rate: The new sampling rate.
         :return: A resampled ``Recording``.
         """
+        if sampling_rate == self.sampling_rate:
+            return fastcopy(self)
+
         transforms = self.transforms.copy() if self.transforms is not None else []
 
         if not any(
@@ -763,7 +822,7 @@ class Recording:
         )
 
 
-class RecordingSet(Serializable):
+class RecordingSet(Serializable, AlgorithmMixin):
     """
     :class:`~lhotse.audio.RecordingSet` represents a collection of recordings, indexed by recording IDs.
     It does not contain any annotation such as the transcript or the speaker identity --
@@ -906,28 +965,6 @@ class RecordingSet(Serializable):
     def to_dicts(self) -> Iterable[dict]:
         return (r.to_dict() for r in self)
 
-    def filter(self, predicate: Callable[[Recording], bool]) -> "RecordingSet":
-        """
-        Return a new RecordingSet with the Recordings that satisfy the `predicate`.
-
-        :param predicate: a function that takes a recording as an argument and returns bool.
-        :return: a filtered RecordingSet.
-        """
-        return RecordingSet.from_recordings(rec for rec in self if predicate(rec))
-
-    def shuffle(self, rng: Optional[random.Random] = None) -> "RecordingSet":
-        """
-        Shuffle the recording IDs in the current :class:`.RecordingSet` and return a shuffled copy of self.
-
-        :param rng: an optional instance of ``random.Random`` for precise control of randomness.
-        :return: a shuffled copy of self.
-        """
-        if rng is None:
-            rng = random
-        ids = list(self.ids)
-        rng.shuffle(ids)
-        return RecordingSet(recordings={rid: self[rid] for rid in ids})
-
     def split(
         self, num_splits: int, shuffle: bool = False, drop_last: bool = False
     ) -> List["RecordingSet"]:
@@ -949,7 +986,9 @@ class RecordingSet(Serializable):
             )
         ]
 
-    def split_lazy(self, output_dir: Pathlike, chunk_size: int) -> List["RecordingSet"]:
+    def split_lazy(
+        self, output_dir: Pathlike, chunk_size: int, prefix: str = ""
+    ) -> List["RecordingSet"]:
         """
         Splits a manifest (either lazily or eagerly opened) into chunks, each
         with ``chunk_size`` items (except for the last one, typically).
@@ -960,13 +999,15 @@ class RecordingSet(Serializable):
         .. note:: For lowest memory usage, use ``load_manifest_lazy`` to open the
             input manifest for this method.
 
-        :param it: any iterable of Lhotse manifests.
         :param output_dir: directory where the split manifests are saved.
-            Each manifest is saved at: ``{output_dir}/{split_idx}.jsonl.gz``
+            Each manifest is saved at: ``{output_dir}/{prefix}.{split_idx}.jsonl.gz``
         :param chunk_size: the number of items in each chunk.
+        :param prefix: the prefix of each manifest.
         :return: a list of lazily opened chunk manifests.
         """
-        return split_manifest_lazy(self, output_dir=output_dir, chunk_size=chunk_size)
+        return split_manifest_lazy(
+            self, output_dir=output_dir, chunk_size=chunk_size, prefix=prefix
+        )
 
     def subset(
         self, first: Optional[int] = None, last: Optional[int] = None
@@ -985,13 +1026,12 @@ class RecordingSet(Serializable):
 
         if first is not None:
             assert first > 0
-            if first > len(self):
+            out = RecordingSet.from_items(islice(self, first))
+            if len(out) < first:
                 logging.warning(
-                    f"RecordingSet has only {len(self)} items but first {first} required; "
-                    f"not doing anything."
+                    f"RecordingSet has only {len(out)} items but first {first} were requested."
                 )
-                return self
-            return RecordingSet.from_recordings(islice(self, first))
+            return out
 
         if last is not None:
             assert last > 0
@@ -1076,7 +1116,7 @@ class RecordingSet(Serializable):
 
     def reverb_rir(
         self,
-        rir_recordings: "RecordingSet",
+        rir_recordings: Optional["RecordingSet"] = None,
         normalize_output: bool = True,
         early_only: bool = False,
         affix_id: bool = True,
@@ -1084,7 +1124,8 @@ class RecordingSet(Serializable):
     ) -> "RecordingSet":
         """
         Return a new ``RecordingSet`` that will lazily apply reverberation based on provided
-        impulse responses while loading audio.
+        impulse responses while loading audio. If no ``rir_recordings`` are provided, we will
+        generate a set of impulse responses using a fast random generator (https://arxiv.org/abs/2208.04101).
 
         :param rir_recordings: The impulse responses to be used.
         :param normalize_output: When true, output will be normalized to have energy as input.
@@ -1092,13 +1133,14 @@ class RecordingSet(Serializable):
         :param affix_id: When true, we will modify the ``Recording.id`` field
             by affixing it with "_rvb".
         :param rir_channels: The channels to be used for the RIRs (if multi-channel). Uses first
-            channel by default.
+            channel by default. If no RIR is provided, we will generate one with as many channels
+            as this argument specifies.
         :return: a ``RecordingSet`` containing the perturbed ``Recording`` objects.
         """
         rir_recordings = list(rir_recordings)
         return RecordingSet.from_recordings(
             r.reverb_rir(
-                rir_recording=random.choice(rir_recordings),
+                rir_recording=random.choice(rir_recordings) if rir_recordings else None,
                 normalize_output=normalize_output,
                 early_only=early_only,
                 affix_id=affix_id,
@@ -1140,23 +1182,6 @@ class RecordingSet(Serializable):
     def __len__(self) -> int:
         return len(self.recordings)
 
-    def __add__(self, other: "RecordingSet") -> "RecordingSet":
-        if self.is_lazy or other.is_lazy:
-            # Lazy manifests are specially combined
-            from lhotse.serialization import LazyIteratorChain
-
-            return RecordingSet(
-                recordings=LazyIteratorChain(self.recordings, other.recordings)
-            )
-
-        # Eager manifests are just merged like standard dicts.
-        merged = {**self.recordings, **other.recordings}
-        assert len(merged) == len(self.recordings) + len(other.recordings), (
-            f"Conflicting IDs when concatenating RecordingSets! "
-            f"Failed check: {len(merged)} == {len(self.recordings)} + {len(other.recordings)}"
-        )
-        return RecordingSet(recordings=merged)
-
 
 class AudioMixer:
     """
@@ -1188,6 +1213,7 @@ class AudioMixer:
             This might be required when ``base_audio`` corresponds to zero-padding.
         """
         self.tracks = [base_audio]
+        self.offsets = [0]
         self.sampling_rate = sampling_rate
         self.dtype = self.tracks[0].dtype
 
@@ -1203,13 +1229,37 @@ class AudioMixer:
                 f"To perform mix, energy must be non-zero and non-negative (got {self.reference_energy})"
             )
 
+    def _pad_track(
+        self, audio: np.ndarray, offset: int, total: Optional[int] = None
+    ) -> np.ndarray:
+        assert audio.ndim == 2, f"audio.ndim={audio.ndim}"
+        if total is None:
+            total = audio.shape[1] + offset
+        assert (
+            audio.shape[1] + offset <= total
+        ), f"{audio.shape[1]} + {offset} <= {total}"
+        return np.pad(
+            audio, pad_width=((0, 0), (offset, total - audio.shape[1] - offset))
+        )
+
     @property
-    def unmixed_audio(self) -> np.ndarray:
+    def num_samples_total(self) -> int:
+        longest = 0
+        for offset, audio in zip(self.offsets, self.tracks):
+            longest = max(longest, offset + audio.shape[1])
+        return longest
+
+    @property
+    def unmixed_audio(self) -> List[np.ndarray]:
         """
-        Return a numpy ndarray with the shape (num_tracks, num_samples), where each track is
+        Return a list of numpy arrays with the shape (1, num_samples), where each track is
         zero padded and scaled adequately to the offsets and SNR used in ``add_to_mix`` call.
         """
-        return np.vstack(self.tracks)
+        total = self.num_samples_total
+        return [
+            self._pad_track(track, offset=offset, total=total)
+            for offset, track in zip(self.offsets, self.tracks)
+        ]
 
     @property
     def mixed_audio(self) -> np.ndarray:
@@ -1217,7 +1267,11 @@ class AudioMixer:
         Return a numpy ndarray with the shape (1, num_samples) - a mono mix of the tracks
         supplied with ``add_to_mix`` calls.
         """
-        return np.sum(self.unmixed_audio, axis=0, keepdims=True)
+        total = self.num_samples_total
+        mixed = np.zeros((1, total), dtype=self.dtype)
+        for offset, track in zip(self.offsets, self.tracks):
+            mixed[:, offset : offset + track.shape[1]] += track
+        return mixed
 
     def add_to_mix(
         self,
@@ -1240,48 +1294,7 @@ class AudioMixer:
         assert audio.shape[0] == 1  # TODO: support multi-channels
         assert offset >= 0.0, "Negative offset in mixing is not supported."
 
-        reference_audio = self.tracks[0]
-        num_samples_offset = round(offset * self.sampling_rate)
-        current_num_samples = reference_audio.shape[1]
-
-        audio_to_add = audio
-
-        # When there is an offset, we need to pad before the start of the audio we're adding.
-        if offset > 0:
-            audio_to_add = np.hstack(
-                [np.zeros((1, num_samples_offset), self.dtype), audio_to_add]
-            )
-
-        incoming_num_samples = audio_to_add.shape[1]
-        mix_num_samples = max(current_num_samples, incoming_num_samples)
-
-        # When the existing samples are less than what we anticipate after the mix,
-        # we need to pad after the end of the existing audio mixed so far.
-        # Since we're keeping every track as a separate entry in the ``self.tracks`` list,
-        # we need to pad each of them so that their shape matches when performing the final mix.
-        if current_num_samples < mix_num_samples:
-            for idx in range(len(self.tracks)):
-                padded_audio = np.hstack(
-                    [
-                        self.tracks[idx],
-                        np.zeros(
-                            (1, mix_num_samples - current_num_samples), self.dtype
-                        ),
-                    ]
-                )
-                self.tracks[idx] = padded_audio
-
-        # When the audio we're mixing in are shorter that the anticipated mix length,
-        # we need to pad after their end.
-        # Note: we're doing that non-efficiently, as it we potentially re-allocate numpy arrays twice,
-        # during this padding and the  offset padding before. If that's a bottleneck, we'll optimize.
-        if incoming_num_samples < mix_num_samples:
-            audio_to_add = np.hstack(
-                [
-                    audio_to_add,
-                    np.zeros((1, mix_num_samples - incoming_num_samples), self.dtype),
-                ]
-            )
+        num_samples_offset = compute_num_samples(offset, self.sampling_rate)
 
         # When SNR is requested, find what gain is needed to satisfy the SNR
         gain = 1.0
@@ -1297,12 +1310,12 @@ class AudioMixer:
             # we need to take a square root of the energy ratio.
             gain = sqrt(target_energy / added_audio_energy)
 
-        # self.mixed_audio = reference_audio + gain * audio_to_add
-        self.tracks.append(gain * audio_to_add)
+        self.tracks.append(gain * audio)
+        self.offsets.append(num_samples_offset)
 
 
 def audio_energy(audio: np.ndarray) -> float:
-    return float(np.average(audio ** 2))
+    return float(np.average(audio**2))
 
 
 FileObject = Any  # Alias for file-like objects
@@ -1315,28 +1328,277 @@ def read_audio(
     duration: Optional[Seconds] = None,
     force_opus_sampling_rate: Optional[int] = None,
 ) -> Tuple[np.ndarray, int]:
-    # First handle special cases: OPUS and SPHERE (SPHERE may be encoded with shorten,
-    #   which can only be decoded by binaries "shorten" and "sph2pipe").
-    if isinstance(path_or_fd, (str, Path)) and str(path_or_fd).lower().endswith(
-        ".opus"
+    return get_default_audio_backend().read_audio(
+        path_or_fd=path_or_fd,
+        offset=offset,
+        duration=duration,
+        force_opus_sampling_rate=force_opus_sampling_rate,
+    )
+
+
+class AudioBackend:
+    """
+    Internal Lhotse abstraction. An AudioBackend defines three methods:
+    one for reading audio, and two filters that help determine if it should be used.
+
+    ``handle_special_case`` means this backend should be exclusively
+    used for a given type of input path/file.
+
+    ``is_applicable`` means this backend most likely can be used for a given type of input path/file,
+    but it may also fail. Its purpose is more to filter out formats that definitely are not supported.
+    """
+
+    def read_audio(
+        self,
+        path_or_fd: Union[Pathlike, FileObject],
+        offset: Seconds = 0.0,
+        duration: Optional[Seconds] = None,
+        force_opus_sampling_rate: Optional[int] = None,
+    ) -> Tuple[np.ndarray, int]:
+        raise NotImplementedError()
+
+    def handles_special_case(self, path_or_fd: Union[Pathlike, FileObject]) -> bool:
+        return False
+
+    def is_applicable(self, path_or_fd: Union[Pathlike, FileObject]) -> bool:
+        return True
+
+
+class FfmpegSubprocessOpusBackend(AudioBackend):
+    def read_audio(
+        self,
+        path_or_fd: Union[Pathlike, FileObject],
+        offset: Seconds = 0.0,
+        duration: Optional[Seconds] = None,
+        force_opus_sampling_rate: Optional[int] = None,
     ):
-        return read_opus(
-            path_or_fd,
+        assert isinstance(
+            path_or_fd, (str, Path)
+        ), f"Cannot use an ffmpeg subprocess to read from path of type: '{type(path_or_fd)}'"
+        return read_opus_ffmpeg(
+            path=path_or_fd,
             offset=offset,
             duration=duration,
             force_opus_sampling_rate=force_opus_sampling_rate,
         )
-    elif isinstance(path_or_fd, (str, Path)) and str(path_or_fd).lower().endswith(
-        ".sph"
-    ):
-        return read_sph(path_or_fd, offset=offset, duration=duration)
-    try:
-        return torchaudio_load(path_or_fd, offset=offset, duration=duration)
-    except:
-        try:
-            return soundfile_load(path_or_fd, offset=offset, duration=duration)
-        except:
-            return audioread_load(path_or_fd, offset=offset, duration=duration)
+
+    def handles_special_case(self, path_or_fd: Union[Pathlike, FileObject]) -> bool:
+        return isinstance(path_or_fd, (str, Path)) and str(path_or_fd).lower().endswith(
+            ".opus"
+        )
+
+    def is_applicable(self, path_or_fd: Union[Pathlike, FileObject]) -> bool:
+        return self.handles_special_case(path_or_fd)
+
+
+class Sph2pipeSubprocessBackend(AudioBackend):
+    def read_audio(
+        self,
+        path_or_fd: Union[Pathlike, FileObject],
+        offset: Seconds = 0.0,
+        duration: Optional[Seconds] = None,
+        force_opus_sampling_rate: Optional[int] = None,
+    ) -> Tuple[np.ndarray, int]:
+        assert isinstance(
+            path_or_fd, (str, Path)
+        ), f"Cannot use an sph2pipe subprocess to read from path of type: '{type(path_or_fd)}'"
+        return read_sph(
+            sph_path=path_or_fd,
+            offset=offset,
+            duration=duration,
+        )
+
+    def handles_special_case(self, path_or_fd: Union[Pathlike, FileObject]) -> bool:
+        return isinstance(path_or_fd, (str, Path)) and str(path_or_fd).lower().endswith(
+            ".sph"
+        )
+
+    def is_applicable(self, path_or_fd: Union[Pathlike, FileObject]) -> bool:
+        return self.handles_special_case(path_or_fd)
+
+
+class FfmpegTorchaudioStreamerBackend(AudioBackend):
+    def read_audio(
+        self,
+        path_or_fd: Union[Pathlike, FileObject],
+        offset: Seconds = 0.0,
+        duration: Optional[Seconds] = None,
+        force_opus_sampling_rate: Optional[int] = None,
+    ) -> Tuple[np.ndarray, int]:
+        return torchaudio_ffmpeg_load(
+            path_or_fileobj=path_or_fd,
+            offset=offset,
+            duration=duration,
+        )
+
+    def handles_special_case(self, path_or_fd: Union[Pathlike, FileObject]) -> bool:
+        return torchaudio_supports_ffmpeg() and isinstance(path_or_fd, BytesIO)
+
+    def is_applicable(self, path_or_fd: Union[Pathlike, FileObject]) -> bool:
+        # Technically it's applicable with regular files as well, but for now
+        # we're not enabling that feature.
+        return torchaudio_supports_ffmpeg() and isinstance(path_or_fd, BytesIO)
+
+
+class TorchaudioDefaultBackend(AudioBackend):
+    def read_audio(
+        self,
+        path_or_fd: Union[Pathlike, FileObject],
+        offset: Seconds = 0.0,
+        duration: Optional[Seconds] = None,
+        force_opus_sampling_rate: Optional[int] = None,
+    ) -> Tuple[np.ndarray, int]:
+        return torchaudio_load(
+            path_or_fd=path_or_fd,
+            offset=offset,
+            duration=duration,
+        )
+
+
+class LibsndfileBackend(AudioBackend):
+    """
+    A backend that uses PySoundFile.
+
+    .. note:: PySoundFile has issues on MacOS because of the way its CFFI bindings are implemented.
+        For now, we disable it on this platform.
+        See: https://github.com/bastibe/python-soundfile/issues/331
+    """
+
+    def read_audio(
+        self,
+        path_or_fd: Union[Pathlike, FileObject],
+        offset: Seconds = 0.0,
+        duration: Optional[Seconds] = None,
+        force_opus_sampling_rate: Optional[int] = None,
+    ) -> Tuple[np.ndarray, int]:
+        return soundfile_load(
+            path_or_fd=path_or_fd,
+            offset=offset,
+            duration=duration,
+        )
+
+    def handles_special_case(self, path_or_fd: Union[Pathlike, FileObject]) -> bool:
+        return not (sys.platform == "darwin") and isinstance(path_or_fd, BytesIO)
+
+    def is_applicable(self, path_or_fd: Union[Pathlike, FileObject]) -> bool:
+        # Technically it's applicable with regular files as well, but for now
+        # we're not enabling that feature.
+        return not (sys.platform == "darwin") and isinstance(path_or_fd, BytesIO)
+
+
+class AudioreadBackend(AudioBackend):
+    def read_audio(
+        self,
+        path_or_fd: Union[Pathlike, FileObject],
+        offset: Seconds = 0.0,
+        duration: Optional[Seconds] = None,
+        force_opus_sampling_rate: Optional[int] = None,
+    ) -> Tuple[np.ndarray, int]:
+        return audioread_load(
+            path_or_file=path_or_fd,
+            offset=offset,
+            duration=duration,
+        )
+
+
+class CompositeAudioBackend(AudioBackend):
+    def __init__(self, backends: List[AudioBackend]):
+        self.backends = backends
+
+    def read_audio(
+        self,
+        path_or_fd: Union[Pathlike, FileObject],
+        offset: Seconds = 0.0,
+        duration: Optional[Seconds] = None,
+        force_opus_sampling_rate: Optional[int] = None,
+    ) -> Tuple[np.ndarray, int]:
+        candidates = []
+        for b in self.backends:
+            if b.handles_special_case(path_or_fd):
+                candidates.append(b)
+
+        assert len(candidates) < 2, (
+            f"CompositeAudioBackend has more than one sub-backend that "
+            f"handles a given special case for input '{path_or_fd}'"
+        )
+
+        if len(candidates) == 1:
+            try:
+                return candidates[0].read_audio(
+                    path_or_fd=path_or_fd,
+                    offset=offset,
+                    duration=duration,
+                    force_opus_sampling_rate=force_opus_sampling_rate,
+                )
+            except Exception as e:
+                raise AudioLoadingError(
+                    f"Reading audio from '{path_or_fd}' failed. Details: {type(e)}: {str(e)}"
+                )
+
+        exceptions = []
+        for b in self.backends:
+            if b.is_applicable(path_or_fd):
+                try:
+                    return b.read_audio(
+                        path_or_fd=path_or_fd,
+                        offset=offset,
+                        duration=duration,
+                        force_opus_sampling_rate=force_opus_sampling_rate,
+                    )
+                except Exception as e:
+                    msg = f"Exception #{len(exceptions)} ({type(b)}): "
+                    if verbose_audio_loading_exceptions():
+                        exceptions.append(f"{msg}{traceback.format_exc()}")
+                    else:
+                        exceptions.append(f"{msg}{type(e)}: {str(e)}")
+
+        if not exceptions:
+            raise AudioLoadingError(
+                f"No applicable backend found for input: '{path_or_fd}'"
+            )
+        else:
+            NL = "\n"
+            maybe_info = (
+                ""
+                if verbose_audio_loading_exceptions()
+                else "\nSet LHOTSE_AUDIO_LOADING_EXCEPTION_VERBOSE=1 environment variable for full stack traces."
+            )
+            raise AudioLoadingError(
+                f"Reading audio from '{path_or_fd}' failed. Details:{NL}{NL.join(exceptions)}{maybe_info}"
+            )
+
+
+def verbose_audio_loading_exceptions() -> bool:
+    return os.environ.get("LHOTSE_AUDIO_LOADING_EXCEPTION_VERBOSE") == "1"
+
+
+@lru_cache(maxsize=1)
+def get_default_audio_backend():
+    """
+    Return a backend that can be used to read all audio formats supported by Lhotse.
+
+    It first looks for special cases that need very specific handling
+    (such as: opus, sphere/shorten, in-memory buffers)
+    and tries to match them against relevant audio backends.
+
+    Then, it tries to use several audio loading libraries (torchaudio, soundfile, audioread).
+    In case the first fails, it tries the next one, and so on.
+    """
+    return CompositeAudioBackend(
+        [
+            # First handle special cases: OPUS and SPHERE (SPHERE may be encoded with shorten,
+            #   which can only be decoded by binaries "shorten" and "sph2pipe").
+            FfmpegSubprocessOpusBackend(),
+            Sph2pipeSubprocessBackend(),
+            # Prefer libsndfile for in-memory buffers only
+            LibsndfileBackend(),
+            # Torchaudio should be able to deal with most audio types...
+            TorchaudioDefaultBackend(),
+            # ... if not, try audioread...
+            AudioreadBackend(),
+            # ... oops.
+        ]
+    )
 
 
 class LibsndfileCompatibleAudioInfo(NamedTuple):
@@ -1383,14 +1645,80 @@ def info(
             # If both fail, then Python 3 will display both exception messages.
 
 
-def torchaudio_info(path: Pathlike) -> LibsndfileCompatibleAudioInfo:
+@lru_cache(maxsize=1)
+def torchaudio_supports_ffmpeg() -> bool:
+    """
+    Returns ``True`` when torchaudio version is at least 0.12.0, which
+    has support for FFMPEG streamer API.
+    """
+    import torchaudio
+    from packaging import version
+
+    return version.parse(torchaudio.__version__) >= version.parse("0.12.0")
+
+
+@lru_cache(maxsize=1)
+def torchaudio_soundfile_supports_format() -> bool:
+    """
+    Returns ``True`` when torchaudio version is at least 0.9.0, which
+    has support for ``format`` keyword arg in ``torchaudio.save()``.
+    """
+    import torchaudio
+    from packaging import version
+
+    return version.parse(torchaudio.__version__) >= version.parse("0.9.0")
+
+
+def torchaudio_info(
+    path_or_fileobj: Union[Path, str, BytesIO]
+) -> LibsndfileCompatibleAudioInfo:
     """
     Return an audio info data structure that's a compatible subset of ``pysoundfile.info()``
     that we need to create a ``Recording`` manifest.
     """
     import torchaudio
 
-    info = torchaudio.info(path)
+    is_mp3 = isinstance(path_or_fileobj, (str, Path)) and str(path_or_fileobj).endswith(
+        ".mp3"
+    )
+    is_fileobj = isinstance(path_or_fileobj, BytesIO)
+    if (is_mp3 or is_fileobj) and torchaudio_supports_ffmpeg():
+        # Torchaudio 0.12 has a new StreamReader API that uses ffmpeg.
+        #
+        # They dropped support for using sox bindings in torchaudio.info
+        # for MP3 files and implicitly delegate the call to ffmpeg.
+        # Unfortunately, they always return num_frames/num_samples = 0,
+        # as explained here: https://github.com/pytorch/audio/issues/2524
+        # We have to work around by streaming the MP3 and counting the number
+        # of samples.
+        #
+        # Unfortunately torchaudio also has issues with reading from file objects
+        # sometimes, which apparently we can work around by using StreamReader API.
+        # See:
+        # - https://github.com/pytorch/audio/issues/2524#issuecomment-1223901818
+        # - https://github.com/pytorch/audio/issues/2662
+        from torchaudio.io import StreamReader
+
+        streamer = StreamReader(src=str(path_or_fileobj) if is_mp3 else path_or_fileobj)
+        assert streamer.num_src_streams == 1, (
+            "Lhotse doesn't support files with more than one source stream yet "
+            "(not to be confused with multi-channel)."
+        )
+        info = streamer.get_src_stream_info(streamer.default_audio_stream)
+        streamer.add_basic_audio_stream(
+            frames_per_chunk=int(info.sample_rate),
+        )
+        tot_samples = 0
+        for (chunk,) in streamer.stream():
+            tot_samples += chunk.shape[0]
+        return LibsndfileCompatibleAudioInfo(
+            channels=info.num_channels,
+            frames=tot_samples,
+            samplerate=info.sample_rate,
+            duration=tot_samples / info.sample_rate,
+        )
+
+    info = torchaudio.info(path_or_fileobj)
     return LibsndfileCompatibleAudioInfo(
         channels=info.num_channels,
         frames=info.num_frames,
@@ -1402,7 +1730,6 @@ def torchaudio_info(path: Pathlike) -> LibsndfileCompatibleAudioInfo:
 def torchaudio_load(
     path_or_fd: Pathlike, offset: Seconds = 0, duration: Optional[Seconds] = None
 ) -> Tuple[np.ndarray, int]:
-    import torch
     import torchaudio
 
     # Need to grab the "info" about sampling rate before reading to compute
@@ -1423,6 +1750,48 @@ def torchaudio_load(
         frame_offset=frame_offset,
         num_frames=num_frames,
     )
+    return audio.numpy(), sampling_rate
+
+
+def torchaudio_ffmpeg_load(
+    path_or_fileobj: Union[Path, str, BytesIO],
+    offset: Seconds = 0,
+    duration: Optional[Seconds] = None,
+) -> Tuple[np.ndarray, int]:
+    import torchaudio
+
+    if not torchaudio_supports_ffmpeg():
+        raise RuntimeError(
+            "Using FFMPEG streamer backend for reading is supported only "
+            "with PyTorch 1.12+ and torchaudio 0.12+"
+        )
+
+    if isinstance(path_or_fileobj, Path):
+        path_or_fileobj = str(path_or_fileobj)
+
+    streamer = torchaudio.io.StreamReader(src=path_or_fileobj)
+    assert streamer.num_src_streams == 1, (
+        "Lhotse doesn't support files with more than one source stream yet "
+        "(not to be confused with multi-channel)."
+    )
+    info = streamer.get_src_stream_info(streamer.default_audio_stream)
+    sampling_rate = int(info.sample_rate)
+
+    if duration is not None:
+        # Try to read whole audio in a single chunk.
+        streamer.add_basic_audio_stream(
+            frames_per_chunk=compute_num_samples(duration, sampling_rate)
+        )
+        streamer.seek(offset)
+        (audio,) = next(streamer.stream())
+        audio = audio.transpose(0, 1)
+    else:
+        # Read in 1 second chunks and concatenate (we don't know how much audio is incoming)
+        streamer.add_basic_audio_stream(frames_per_chunk=sampling_rate)
+        streamer.seek(offset)
+        audio = torch.cat([t.transpose(0, 1) for t, in streamer.stream()], dim=0)
+
+    # Return shape (num_channels, num_samples)
     return audio.numpy(), sampling_rate
 
 
@@ -1649,7 +2018,7 @@ def read_opus(
     """
     Reads OPUS files either using torchaudio or ffmpeg.
     Torchaudio is faster, but if unavailable for some reason,
-    we fallback to a slower ffmpeg-based implemention.
+    we fallback to a slower ffmpeg-based implementation.
 
     :return: a tuple of audio samples and the sampling rate.
     """
@@ -1838,3 +2207,45 @@ class AudioLoadingError(Exception):
 
 class DurationMismatchError(Exception):
     pass
+
+
+@contextmanager
+def suppress_audio_loading_errors(enabled: bool = True):
+    """
+    Context manager that suppresses errors related to audio loading.
+    Emits warning to the console.
+    """
+    with suppress_and_warn(
+        AudioLoadingError,
+        DurationMismatchError,
+        NonPositiveEnergyError,
+        enabled=enabled,
+    ):
+        yield
+
+
+def null_result_on_audio_loading_error(func: Callable) -> Callable:
+    """
+    This is a decorator that makes a function return None when reading audio with Lhotse failed.
+
+    Example::
+
+        >>> @null_result_on_audio_loading_error
+        ... def func_loading_audio(rec):
+        ...     audio = rec.load_audio()  # if this fails, will return None instead
+        ...     return other_func(audio)
+
+    Another example::
+
+        >>> # crashes on loading audio
+        >>> audio = load_audio(cut)
+        >>> # does not crash on loading audio, return None instead
+        >>> maybe_audio: Optional = null_result_on_audio_loading_error(load_audio)(cut)
+    """
+
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs) -> Optional:
+        with suppress_audio_loading_errors():
+            return func(*args, **kwargs)
+
+    return wrapper

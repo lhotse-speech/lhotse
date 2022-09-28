@@ -11,10 +11,9 @@ from lhotse import (
     CutSet,
     Fbank,
     FbankConfig,
-    LilcomFilesWriter,
-    LilcomHdf5Writer,
+    LilcomChunkyWriter,
     MonoCut,
-    NumpyHdf5Writer,
+    NumpyFilesWriter,
     Recording,
     SupervisionSegment,
 )
@@ -24,11 +23,12 @@ from lhotse.utils import Seconds, uuid4
 
 
 def random_cut_set(n_cuts=100) -> CutSet:
+    sr = 16000
     return CutSet.from_cuts(
         MonoCut(
             id=uuid4(),
-            start=round(random.uniform(0, 5), ndigits=8),
-            duration=round(random.uniform(3, 10), ndigits=8),
+            start=random.randint(0, 5 * sr) / sr,
+            duration=random.randint(3 * sr, 10 * sr) / sr,
             channel=0,
             recording=Recording(
                 id=uuid4(),
@@ -133,7 +133,7 @@ class RandomCutTestCase:
         extractor = Fbank(
             config=FbankConfig(sampling_rate=sampling_rate, frame_shift=frame_shift)
         )
-        with LilcomHdf5Writer(d.name) as storage:
+        with LilcomChunkyWriter(d.name) as storage:
             return cut.compute_and_store_features(extractor, storage=storage)
 
     def _with_alignment(
@@ -154,7 +154,7 @@ class RandomCutTestCase:
         self.dirs.append(d)
         num_frames = seconds_to_frames(cut.duration, frame_shift=frame_shift)
         array = np.random.randint(256, size=(num_frames,))
-        with NumpyHdf5Writer(d.name) as storage:
+        with NumpyFilesWriter(d.name) as storage:
             cut.codebook_indices = storage.store_array(
                 key="ali1", value=array, frame_shift=frame_shift, temporal_dim=0
             )

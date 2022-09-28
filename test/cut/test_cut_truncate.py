@@ -4,7 +4,7 @@ from math import isclose
 import pytest
 
 from lhotse import RecordingSet
-from lhotse.cut import CutSet, MixTrack, MixedCut, MonoCut
+from lhotse.cut import CutSet, MixedCut, MixTrack, MonoCut
 from lhotse.features import Features
 from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.testing.dummies import DummyManifest, dummy_cut, dummy_recording
@@ -106,6 +106,26 @@ def test_truncate_above_duration_has_no_effect(overlapping_supervisions_cut):
         duration=1.0, preserve_id=True
     )
     assert truncated_cut == overlapping_supervisions_cut
+
+
+def test_cut_truncate_offset_with_nonzero_start():
+    cut = dummy_cut(0, start=1.0, duration=4.0)
+    left = cut.truncate(duration=2.0)
+    assert left.start == pytest.approx(1.0)
+    assert left.end == pytest.approx(3.0)
+
+    right = cut.truncate(offset=2.0)
+    assert right.start == pytest.approx(3.0)
+    assert right.end == pytest.approx(5.0)
+
+
+def test_cut_split():
+    cut = dummy_cut(0, start=1.0, duration=4.0)
+    left, right = cut.split(2.0)
+    assert left.start == pytest.approx(1.0)
+    assert left.end == pytest.approx(3.0)
+    assert right.start == pytest.approx(3.0)
+    assert right.end == pytest.approx(5.0)
 
 
 @pytest.fixture
@@ -266,7 +286,9 @@ def test_truncate_cut_set_offset_random_rng(use_rng):
 
 @pytest.mark.parametrize("num_jobs", [1, 2])
 def test_cut_set_windows_even_split_keep_supervisions(cut_set, num_jobs):
-    windows_cut_set = cut_set.cut_into_windows(duration=5.0, num_jobs=num_jobs)
+    windows_cut_set = cut_set.cut_into_windows(
+        duration=5.0, num_jobs=num_jobs
+    ).to_eager()
     assert len(windows_cut_set) == 4
     assert all(cut.duration == 5.0 for cut in windows_cut_set)
 
@@ -322,7 +344,7 @@ def test_known_issue_with_overlap():
     cuts = CutSet.from_manifests(recordings=rec, supervisions=sup)
     assert len(cuts) == 1
 
-    cuts_trim = cuts.trim_to_supervisions(keep_overlapping=False)
+    cuts_trim = cuts.trim_to_supervisions(keep_overlapping=False).to_eager()
     assert len(cuts_trim) == 2
 
     cut = cuts_trim[0]

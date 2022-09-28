@@ -147,7 +147,7 @@ def prepare_adept(
 
     if output_dir is not None:
         output_dir = Path(output_dir)
-        supervisions.to_file(output_dir / "adept_supervisions.json")
-        recordings.to_file(output_dir / "adept_recordings.json")
+        supervisions.to_file(output_dir / "adept_supervisions_all.jsonl.gz")
+        recordings.to_file(output_dir / "adept_recordings_all.jsonl.gz")
 
     return {"recordings": recordings, "supervisions": supervisions}

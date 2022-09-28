@@ -12,16 +12,35 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Dict, Optional, Union
 
+from tqdm.auto import tqdm
+
 from lhotse import validate_recordings_and_supervisions
 from lhotse.audio import Recording, RecordingSet
 from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import Pathlike, urlretrieve_progress
 
 
+def text_normalize(line: str):
+    """
+    Modified from https://github.com/wenet-e2e/wenet/blob/main/examples/multi_cn/s0/local/aishell_data_prep.sh#L54
+    sed 's/ａ/a/g' | sed 's/ｂ/b/g' |\
+    sed 's/ｃ/c/g' | sed 's/ｋ/k/g' |\
+    sed 's/ｔ/t/g' > $dir/transcripts.t
+
+    """
+    line = line.replace("ａ", "a")
+    line = line.replace("ｂ", "b")
+    line = line.replace("ｃ", "c")
+    line = line.replace("ｋ", "k")
+    line = line.replace("ｔ", "t")
+    line = line.upper()
+    return line
+
+
 def download_aishell(
     target_dir: Pathlike = ".",
-    force_download: Optional[bool] = False,
-    base_url: Optional[str] = "http://www.openslr.org/resources",
+    force_download: bool = False,
+    base_url: str = "http://www.openslr.org/resources",
 ) -> Path:
     """
     Downdload and untar the dataset
@@ -79,10 +98,16 @@ def prepare_aishell(
     with open(transcript_path, "r", encoding="utf-8") as f:
         for line in f.readlines():
             idx_transcript = line.split()
-            transcript_dict[idx_transcript[0]] = " ".join(idx_transcript[1:])
+            content = " ".join(idx_transcript[1:])
+            content = text_normalize(content)
+            transcript_dict[idx_transcript[0]] = content
     manifests = defaultdict(dict)
     dataset_parts = ["train", "dev", "test"]
-    for part in dataset_parts:
+    for part in tqdm(
+        dataset_parts,
+        desc="Process aishell audio, it takes about 102 seconds.",
+    ):
+        logging.info(f"Processing aishell subset: {part}")
         # Generate a mapping: utt_id -> (audio_path, audio_info, speaker, text)
         recordings = []
         supervisions = []
@@ -92,6 +117,7 @@ def prepare_aishell(
             speaker = audio_path.parts[-2]
             if idx not in transcript_dict:
                 logging.warning(f"No transcript: {idx}")
+                logging.warning(f"{audio_path} has no transcript.")
                 continue
             text = transcript_dict[idx]
             if not audio_path.is_file():
@@ -116,8 +142,10 @@ def prepare_aishell(
         validate_recordings_and_supervisions(recording_set, supervision_set)
 
         if output_dir is not None:
-            supervision_set.to_json(output_dir / f"supervisions_{part}.json")
-            recording_set.to_json(output_dir / f"recordings_{part}.json")
+            supervision_set.to_file(
+                output_dir / f"aishell_supervisions_{part}.jsonl.gz"
+            )
+            recording_set.to_file(output_dir / f"aishell_recordings_{part}.jsonl.gz")
 
         manifests[part] = {"recordings": recording_set, "supervisions": supervision_set}
 

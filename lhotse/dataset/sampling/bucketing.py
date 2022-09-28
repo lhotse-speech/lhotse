@@ -4,14 +4,14 @@ from copy import deepcopy
 from functools import reduce
 from itertools import chain
 from operator import add
-from typing import Any, Callable, Dict, List, Optional, Tuple, Type
+from typing import Any, Callable, Dict, List, Optional, Tuple, Type, Union
 
 import numpy as np
 from typing_extensions import Literal
 
 from lhotse import CutSet
 from lhotse.cut import Cut
-from lhotse.dataset.sampling.base import CutSampler
+from lhotse.dataset.sampling.base import CutSampler, SamplingDiagnostics
 from lhotse.dataset.sampling.simple import SimpleCutSampler
 
 
@@ -52,10 +52,11 @@ class BucketingSampler(CutSampler):
         *cuts: CutSet,
         sampler_type: Type = SimpleCutSampler,
         num_buckets: int = 10,
-        bucket_method: Literal["equal_len", "equal_duration"] = "equal_len",
         drop_last: bool = False,
-        proportional_sampling: bool = True,
         seed: int = 0,
+        strict=None,
+        bucket_method=None,
+        proportional_sampling=None,
         **kwargs: Any,
     ) -> None:
         """
@@ -66,58 +67,61 @@ class BucketingSampler(CutSampler):
             Then, all of them will be used to instantiate the per-bucket samplers.
         :param sampler_type: a sampler type that will be created for each underlying bucket.
         :param num_buckets: how many buckets to create.
-        :param bucket_method: how should we shape the buckets. Available options are:
-            "equal_len", where each bucket contains the same number of cuts,
-            and "equal_duration", where each bucket has the same cumulative duration
-            (but different number of cuts).
         :param drop_last: When ``True``, we will drop all incomplete batches.
             A batch is considered incomplete if it depleted a bucket before
             hitting the constraint such as max_duration, max_cuts, etc.
-        :param proportional_sampling: When ``True``, we will introduce an approximate
-            proportional sampling mechanism in the bucket selection.
-            This mechanism reduces the chance that any of the buckets gets depleted early.
-            Enabled by default.
         :param seed: random seed for bucket selection
         :param kwargs: Arguments used to create the underlying sampler for each bucket.
         """
         # Do not use the distributed capacities of the CutSampler in the top-level sampler.
         super().__init__(
+            drop_last=drop_last,
             world_size=1,
             rank=0,
             seed=seed,
         )
         self.num_buckets = num_buckets
-        self.drop_last = drop_last
-        self.proportional_sampling = proportional_sampling
         self.sampler_type = sampler_type
         self.sampler_kwargs = kwargs
         self.cut_sets = cuts
-        if self.cut_sets[0].is_lazy:
+        if any(cs.is_lazy for cs in self.cut_sets):
+            raise ValueError(
+                "BucketingSampler does not support working with lazy CutSet (e.g., "
+                "those opened with 'load_manifest_lazy', 'CutSet.from_jsonl_lazy', or "
+                "'CutSet.from_webdataset'). "
+                "Please use lhotse.dataset.DynamicBucketingSampler instead."
+            )
+
+        if strict is not None:
             warnings.warn(
-                "Lazy CutSet detected in BucketingSampler: this is not well supported yet, "
-                "and you might experience a potentially long lag while the buckets are being created."
+                "In Lhotse v1.4 all samplers act as if 'strict=True'. "
+                "Sampler's argument 'strict' will be removed in a future Lhotse release.",
+                category=DeprecationWarning,
+            )
+        if proportional_sampling is not None:
+            warnings.warn(
+                "In Lhotse v1.4 BucketingSampler always performs proportional sampling."
+                "Argument 'proportional_sampling' will be removed in a future Lhotse release.",
+                category=DeprecationWarning,
+            )
+        if bucket_method is not None:
+            warnings.warn(
+                "In Lhotse v1.4 BucketingSampler always uses 'equal_duration' bucketing method."
+                "Argument 'bucket_method' will be removed in a future Lhotse release.",
+                category=DeprecationWarning,
             )
 
         # Split data into buckets.
-        self.bucket_method = bucket_method
-        if self.bucket_method == "equal_len":
-            self.buckets = create_buckets_equal_len(
-                *self.cut_sets, num_buckets=num_buckets
-            )
-        elif self.bucket_method == "equal_duration":
-            self.buckets = create_buckets_equal_duration(
-                *self.cut_sets, num_buckets=num_buckets
-            )
-        else:
-            raise ValueError(
-                f"Unknown bucket_method: '{self.bucket_method}'. "
-                f"Use one of: 'equal_len' or 'equal_duration'."
-            )
+        self.buckets = create_buckets_equal_duration(
+            *self.cut_sets, num_buckets=num_buckets
+        )
 
         # Create a separate sampler for each bucket.
         self.bucket_samplers = [
             self.sampler_type(
-                *bucket_cut_sets, drop_last=drop_last, **self.sampler_kwargs
+                *bucket_cut_sets,
+                drop_last=drop_last,
+                **self.sampler_kwargs,
             )
             for bucket_cut_sets in self.buckets
         ]
@@ -219,9 +223,6 @@ class BucketingSampler(CutSampler):
         state_dict.update(
             {
                 "num_buckets": self.num_buckets,
-                "drop_last": self.drop_last,
-                "proportional_sampling": self.proportional_sampling,
-                "bucket_method": self.bucket_method,
                 "depleted": deepcopy(self.depleted),
                 "bucket_samplers": [s.state_dict() for s in self.bucket_samplers],
                 "sampler_kwargs": deepcopy(self.sampler_kwargs),
@@ -253,9 +254,8 @@ class BucketingSampler(CutSampler):
             "Error in BucketingSampler.load_state_dict(): Inconsistent number of buckets: "
             f"current sampler has {self.num_buckets}, the state_dict has {num_buckets}."
         )
-        self.drop_last = state_dict.pop("drop_last")
-        self.proportional_sampling = state_dict.pop("proportional_sampling")
-        self.bucket_method = state_dict.pop("bucket_method")
+        state_dict.pop("proportional_sampling", None)  # backward compatibility
+        state_dict.pop("bucket_method", None)  # backward compatibility
         self.sampler_kwargs = state_dict.pop("sampler_kwargs")
         self.depleted = state_dict.pop("depleted")
         self.bucket_rng.setstate(state_dict.pop("bucket_rng_state"))
@@ -284,8 +284,7 @@ class BucketingSampler(CutSampler):
         return self
 
     def _select_bucket_with_idx(self) -> Tuple[int, CutSampler]:
-        if not self.proportional_sampling or self.cut_sets[0].is_lazy:
-            # Either proportional sampling was disabled, or the CutSet is lazy.
+        if self.cut_sets[0].is_lazy:
             # With lazy CutSets, we simply choose a random bucket,
             # because we can't know how much data is left in the buckets.
             return self.bucket_rng.choice(self._nondepleted_samplers_with_idxs)
@@ -343,35 +342,16 @@ class BucketingSampler(CutSampler):
             if not depleted
         ]
 
+    def _log_diagnostics(self, batch: Union[CutSet, Tuple[CutSet, ...]]) -> None:
+        return  # do nothing
+
+    @property
+    def diagnostics(self) -> SamplingDiagnostics:
+        return reduce(add, (bucket.diagnostics for bucket in self.bucket_samplers))
+
     def get_report(self) -> str:
         """Returns a string describing the statistics of the sampling process so far."""
-        total_diagnostics = reduce(
-            add, (bucket.diagnostics for bucket in self.bucket_samplers)
-        )
-        return total_diagnostics.get_report()
-
-
-def create_buckets_equal_len(
-    *cuts: CutSet, num_buckets: int
-) -> List[Tuple[CutSet, ...]]:
-    """
-    Creates buckets of cuts with similar durations.
-    Each bucket has the same number of cuts, but different cumulative duration.
-
-    :param cuts: One or more CutSets; the input CutSets are assumed to have the same cut IDs
-        (i.e., the cuts correspond to each other and are meant to be sampled together as pairs,
-        triples, etc.).
-    :param num_buckets: The number of buckets.
-    :return: A list of CutSet buckets (or tuples of CutSet buckets, depending on the input).
-    """
-    first_cut_set = cuts[0].sort_by_duration()
-    buckets = [first_cut_set.split(num_buckets)] + [
-        cs.sort_like(first_cut_set).split(num_buckets) for cs in cuts[1:]
-    ]
-    # zip(*buckets) does:
-    # [(cs0_0, cs1_0, cs2_0), (cs0_1, cs1_1, cs2_1)] -> [(cs0_0, cs0_1), (cs1_0, cs1_1), (cs2_0, cs2_1)]
-    buckets = list(zip(*buckets))
-    return buckets
+        return self.diagnostics.get_report()
 
 
 def create_buckets_equal_duration(
@@ -413,23 +393,55 @@ def _create_buckets_equal_duration_single(
     """
     total_duration = np.sum(c.duration for c in cuts)
     bucket_duration = total_duration / num_buckets
-    iter_cuts = iter(cuts)
-    buckets = []
-    for bucket_idx in range(num_buckets):
-        bucket = []
-        current_duration = 0
-        try:
-            while current_duration < bucket_duration:
-                bucket.append(next(iter_cuts))
-                current_duration += bucket[-1].duration
-            # Every odd bucket, take the cut that exceeded the bucket's duration
-            # and put it in the front of the iterable, so that it goes to the
-            # next bucket instead. It will ensure that the last bucket is not too
-            # thin (otherwise all the previous buckets are a little too large).
-            if bucket_idx % 2:
-                last_cut = bucket.pop()
-                iter_cuts = chain([last_cut], iter_cuts)
-        except StopIteration:
-            assert bucket_idx == num_buckets - 1
-        buckets.append(CutSet.from_cuts(bucket))
+    # Define the order for adding cuts. We start at the beginning, then go to
+    # the end, and work our way to the middle. Once in the middle we distribute
+    # excess cuts among the two buckets close to the median duration. This
+    # handles the problem of where to place cuts that caused previous buckets
+    # to "over-flow" without sticking all of them in the last bucket, which
+    # causes one large bucket at the end and also places many small duration
+    # cuts with longer ones.
+    order = list(range(0, len(cuts), 2)) + list(
+        range(len(cuts) - (1 + len(cuts) % 2), 0, -2)
+    )
+    order2idx = {o_idx: i for i, o_idx in enumerate(order)}
+    durations = [c.duration for c in cuts]
+
+    # We need a list of the cut durations in the same order (0, N-1, 1, N-2, ...)
+    ordered_cut_durations = sorted(zip(order, durations), key=lambda x: x[0])
+    last_order, first_bucket = 0, 0
+    last_bucket = num_buckets - 1
+    buckets_dict = {i: 0 for i in range(num_buckets)}
+    buckets_cut_dict = {i: [] for i in range(num_buckets)}
+    middle_bucket = None
+    idx_to_bucket_id = {}
+    for i, (order_idx, duration) in enumerate(ordered_cut_durations, 1):
+        # Check if we are at the middle bucket. first_bucket is the left bucket
+        # we are processing. last_bucket is the right bucket. When they are the
+        # same we are filling the bucket with cuts near the median duration.
+        if middle_bucket is None and first_bucket == last_bucket:
+            middle_bucket = first_bucket
+
+        # i % 2 = 1 ==> process the left_bucket (first_bucket)
+        if i % 2:
+            if buckets_dict[first_bucket] + duration > bucket_duration:
+                if middle_bucket is not None and first_bucket == middle_bucket:
+                    first_bucket = min(middle_bucket - 1, num_buckets - 1)
+                else:
+                    first_bucket = min(first_bucket + 1, num_buckets - 1)
+            buckets_dict[first_bucket] += duration
+            idx_to_bucket_id[order2idx[order_idx]] = first_bucket
+        # i % 2 = 0 ==> process the right bucket (last_bucket)
+        else:
+            if buckets_dict[last_bucket] + duration > bucket_duration:
+                if middle_bucket is not None and last_bucket == middle_bucket:
+                    last_bucket = max(middle_bucket + 1, 0)
+                else:
+                    last_bucket = max(last_bucket - 1, 0)
+            buckets_dict[last_bucket] += duration
+            idx_to_bucket_id[order2idx[order_idx]] = last_bucket
+
+    # Now that buckets have been assigned, create the new cutset.
+    for cut_idx, cut in enumerate(cuts):
+        buckets_cut_dict[idx_to_bucket_id[cut_idx]].append(cut)
+    buckets = [CutSet.from_cuts(buckets_cut_dict[i]) for i in range(num_buckets)]
     return buckets

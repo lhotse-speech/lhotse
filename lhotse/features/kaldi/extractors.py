@@ -67,7 +67,8 @@ class Fbank(FeatureExtractor):
         assert sampling_rate == self.config.sampling_rate, (
             f"Fbank was instantiated for sampling_rate "
             f"{self.config.sampling_rate}, but "
-            f"sampling_rate={sampling_rate} was passed to extract()."
+            f"sampling_rate={sampling_rate} was passed to extract(). "
+            "Note you can use CutSet/RecordingSet.resample() to change the audio sampling rate."
         )
 
         is_numpy = False
@@ -162,7 +163,8 @@ class Mfcc(FeatureExtractor):
         assert sampling_rate == self.config.sampling_rate, (
             f"Mfcc was instantiated for sampling_rate "
             f"{self.config.sampling_rate}, but "
-            f"sampling_rate={sampling_rate} was passed to extract()."
+            f"sampling_rate={sampling_rate} was passed to extract(). "
+            "Note you can use CutSet/RecordingSet.resample() to change the audio sampling rate."
         )
 
         is_numpy = False

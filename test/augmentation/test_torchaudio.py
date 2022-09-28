@@ -1,26 +1,28 @@
 import math
 
+import numpy as np
 import pytest
 import torch
-import numpy as np
 from hypothesis import given, settings
 from hypothesis import strategies as st
 from numpy.testing import assert_array_almost_equal
 
 torchaudio = pytest.importorskip("torchaudio", minversion="0.6")
 
+from lhotse import MonoCut, Recording, Seconds
 from lhotse.augmentation import (
+    AudioTransform,
+    Resample,
+    ReverbWithImpulseResponse,
     SoxEffectTransform,
+    Speed,
+    Tempo,
+    Volume,
     pitch,
     reverb,
     speed,
     volume,
-    Speed,
-    Tempo,
-    Volume,
-    ReverbWithImpulseResponse,
 )
-from lhotse import AudioTransform, MonoCut, Recording, Resample, Seconds
 
 SAMPLING_RATE = 16000
 
@@ -89,6 +91,13 @@ def test_reverb_does_not_change_num_samples(audio, rir, early_only):
         assert augmented_audio.shape == (1, 16000)
 
 
+def test_reverb_with_fast_rir_does_not_change_num_samples(audio):
+    augment_fn = ReverbWithImpulseResponse(rir=None)
+    for _ in range(10):
+        augmented_audio = augment_fn(audio, sampling_rate=SAMPLING_RATE)
+        assert augmented_audio.shape == (1, 16000)
+
+
 @pytest.mark.parametrize(
     "rir_channels, expected_num_channels", [([0], 1), ([9], None), ([0, 4], 2)]
 )
@@ -126,7 +135,7 @@ def test_reverb_normalize_output(audio, rir, normalize_output, early_only):
 def test_speed(audio):
     speed = Speed(factor=1.1)
     perturbed = speed(audio, SAMPLING_RATE)
-    assert perturbed.shape == (1, 14545)
+    assert perturbed.shape == (1, 14546)
 
 
 @pytest.mark.parametrize("scale", [0.125, 1.0, 2.0])
@@ -142,7 +151,7 @@ def test_deserialize_transform_speed(audio):
     speed = AudioTransform.from_dict({"name": "Speed", "kwargs": {"factor": 1.1}})
     perturbed_speed = speed(audio, SAMPLING_RATE)
 
-    assert perturbed_speed.shape == (1, 14545)
+    assert perturbed_speed.shape == (1, 14546)
 
 
 def test_deserialize_transform_volume(audio):
@@ -159,7 +168,7 @@ def test_serialize_deserialize_transform_speed(audio):
     speed = AudioTransform.from_dict(data_speed)
     perturbed_speed = speed(audio, SAMPLING_RATE)
 
-    assert perturbed_speed.shape == (1, 14545)
+    assert perturbed_speed.shape == (1, 14546)
 
 
 def test_serialize_deserialize_transform_volume(audio):

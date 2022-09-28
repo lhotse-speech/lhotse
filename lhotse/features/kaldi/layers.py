@@ -41,7 +41,6 @@ try:
     def _spectrogram(x: torch.Tensor) -> torch.Tensor:
         return x.abs()
 
-
 except ImportError:
 
     def _rfft(x: torch.Tensor) -> torch.Tensor:
@@ -206,9 +205,6 @@ class Wav2Win(nn.Module):
         remainder waveform from the previous call of ``online_inference()``, and returns
         a tuple of ``((frames, log_energy), remainder)``.
         """
-        assert (
-            not self.snip_edges
-        ), "Unsupported operation: snip_edges == True is not supported for online inference."
 
         # Add dither
         if self.dither != 0.0:
@@ -220,6 +216,7 @@ class Wav2Win(nn.Module):
             window_length=self._length,
             window_shift=self._shift,
             prev_remainder=context,
+            snip_edges=self.snip_edges,
         )
 
         x_strided, log_energy = self._forward_strided(x_strided)
@@ -796,6 +793,7 @@ def _get_strided_batch_streaming(
     window_shift: int,
     window_length: int,
     prev_remainder: Optional[torch.Tensor] = None,
+    snip_edges: bool = False,
 ) -> Tuple[torch.Tensor, torch.Tensor]:
     """
     A variant of _get_strided_batch that creates short frames of a batch of audio signals
@@ -825,13 +823,14 @@ def _get_strided_batch_streaming(
         ...     prev_remainder=prev_remainder,
         ... )
 
-    .. caution:: This windowing mechanism only supports ``snip_edges=False``.
-
     :param waveform: A waveform tensor of shape ``(batch_size, num_samples)``.
     :param window_shift: The shift between frames measured in the number of samples.
     :param window_length: The number of samples in each window (frame).
     :param prev_remainder: An optional waveform tensor of shape ``(batch_size, num_samples)``.
         Can be ``None`` which indicates the start of a recording.
+    :param snip_edges (bool): If True, end effects will be handled by outputting only frames that completely fit
+        in the file, and the number of frames depends on the frame_length.  If False, the number of frames
+        depends only on the frame_shift, and we reflect the data at the ends.
     :return: a pair of tensors with shapes ``(batch_size, num_frames, window_length)`` and
         ``(batch_size, remainder_len)``.
     """
@@ -841,9 +840,10 @@ def _get_strided_batch_streaming(
     batch_size = waveform.size(0)
 
     if prev_remainder is None:
-        npad_left = int((window_length - window_shift) // 2)
-        pad_left = torch.flip(waveform[:, :npad_left], (1,))
-        waveform = torch.cat((pad_left, waveform), dim=1)
+        if not snip_edges:
+            npad_left = int((window_length - window_shift) // 2)
+            pad_left = torch.flip(waveform[:, :npad_left], (1,))
+            waveform = torch.cat((pad_left, waveform), dim=1)
     else:
         assert prev_remainder.dim() == 2
         assert prev_remainder.size(0) == batch_size
@@ -851,8 +851,13 @@ def _get_strided_batch_streaming(
 
     num_samples = waveform.size(-1)
 
-    window_remainder = window_length - window_shift
-    num_frames = (num_samples - window_remainder) // window_shift
+    if snip_edges:
+        if num_samples < window_length:
+            return torch.empty((batch_size, 0, 0)), torch.empty(batch_size, 0)
+        num_frames = 1 + (num_samples - window_length) // window_shift
+    else:
+        window_remainder = window_length - window_shift
+        num_frames = (num_samples - window_remainder) // window_shift
 
     remainder = waveform[:, num_frames * window_shift :]
 

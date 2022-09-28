@@ -22,6 +22,10 @@ class IterableDatasetWrapper(torch.utils.data.IterableDataset):
         This problem is avoided with WebDataset by using sharding -- we let WebDataset
         subset the shards visible in each subprocess (and each node in multi-GPU DDP training).
 
+    .. note: If you are going to use this class with ``persistent_workers=True`` option of
+        ``torch.utils.data.DataLoader``, set ``auto_increment_epoch=True`` argument.
+        It will ensure that each epoch is shuffled differently than the previous one.
+
     Example usage::
 
         >>> from lhotse import CutSet
@@ -45,10 +49,17 @@ class IterableDatasetWrapper(torch.utils.data.IterableDataset):
         ...         pass  # training step
     """
 
-    def __init__(self, dataset: torch.utils.data.Dataset, sampler: CutSampler) -> None:
+    def __init__(
+        self,
+        dataset: torch.utils.data.Dataset,
+        sampler: CutSampler,
+        auto_increment_epoch: bool = False,
+    ) -> None:
         super().__init__()
         self.dataset = dataset
         self.sampler = sampler
+        self.auto_increment_epoch = auto_increment_epoch
+        self.epoch = 0
 
         rank = self.sampler.rank
         ws = self.sampler.world_size
@@ -62,6 +73,7 @@ class IterableDatasetWrapper(torch.utils.data.IterableDataset):
             )
 
     def set_epoch(self, epoch: int) -> None:
+        self.epoch = epoch
         self.sampler.set_epoch(epoch)
 
         # The code below is for WebDataset-powered CutSet. We have to set the epoch like
@@ -76,4 +88,9 @@ class IterableDatasetWrapper(torch.utils.data.IterableDataset):
         return self
 
     def __next__(self) -> dict:
-        return self.dataset[next(self._sampler_iter)]
+        try:
+            return self.dataset[next(self._sampler_iter)]
+        except StopIteration:
+            if self.auto_increment_epoch:
+                self.set_epoch(self.epoch + 1)
+            raise

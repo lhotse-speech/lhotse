@@ -4,7 +4,7 @@ from typing import Any, Callable
 LHOTSE_CACHING_ENABLED = False
 
 # This dict is holding two variants for each registered method:
-# the cached variant, that uses it's own LRU cache,
+# the cached variant, that uses its own LRU cache,
 # and a noncached variant, that will always be recomputed.
 # This allows the users to enable or disable caching and
 # always get the expected behavior.

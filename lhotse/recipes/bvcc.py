@@ -1,4 +1,7 @@
 import logging
+from pathlib import Path
+from typing import Dict, Optional, Union
+
 from lhotse import (
     Recording,
     RecordingSet,
@@ -7,8 +10,6 @@ from lhotse import (
     validate_recordings_and_supervisions,
 )
 from lhotse.utils import Pathlike
-from typing import Dict, Union, Optional
-from pathlib import Path
 
 
 def download_bvcc(target_dir) -> None:
@@ -42,6 +43,8 @@ def prepare_bvcc(
     assert main1_devp.exists(), main1_devp
     main1_trainp = main1_sets / "TRAINSET"
     assert main1_trainp.exists(), main1_trainp
+    main1_testp = main1_sets / "test.scp"
+    assert main1_testp.exists(), main1_testp
 
     phase1_ood = (corpus_dir / "phase1-ood").resolve()
     assert phase1_ood.exists(), f"Out of domain track dir is missing {phase1_ood}"
@@ -50,12 +53,14 @@ def prepare_bvcc(
     assert (
         ood1_sets.exists() and ood1_wav.exists()
     ), f"Have you run data preparation in {phase1_ood}?"
-    ood1_unlabeled = ood1_sets / "unlabeled_mos_list.txt"
-    assert ood1_unlabeled.exists(), ood1_unlabeled
+    ood1_unlabeledp = ood1_sets / "unlabeled_mos_list.txt"
+    assert ood1_unlabeledp.exists(), ood1_unlabeledp
     ood1_devp = ood1_sets / "DEVSET"
     assert ood1_devp.exists(), ood1_devp
     ood1_trainp = ood1_sets / "TRAINSET"
     assert ood1_trainp.exists(), ood1_devp
+    ood1_testp = ood1_sets / "test.scp"
+    assert ood1_testp.exists(), ood1_testp
 
     manifests = {}
 
@@ -90,13 +95,31 @@ def prepare_bvcc(
         "supervisions": main1_train_sup,
     }
 
+    main1_test_wavpaths = [
+        main1_wav / name.strip() for name in open(main1_testp).readlines()
+    ]
+    manifests["main1_test"] = {
+        "recordings": RecordingSet.from_recordings(
+            Recording.from_file(p) for p in main1_test_wavpaths
+        )
+    }
+
     # ### Out of Domain (OOD) track sets
     unlabeled_wavpaths = [
-        ood1_wav / name.strip() for name in open(ood1_unlabeled).readlines()
+        ood1_wav / name.strip() for name in open(ood1_unlabeledp).readlines()
     ]
     manifests["ood1_unlabeled"] = {
         "recordings": RecordingSet.from_recordings(
             Recording.from_file(p) for p in unlabeled_wavpaths
+        )
+    }
+
+    ood1_test_wavpaths = [
+        ood1_wav / name.strip() for name in open(ood1_testp).readlines()
+    ]
+    manifests["ood1_test"] = {
+        "recordings": RecordingSet.from_recordings(
+            Recording.from_file(p) for p in ood1_test_wavpaths
         )
     }
 
@@ -135,9 +158,11 @@ def prepare_bvcc(
         output_dir = Path(output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
         for part, d in manifests.items():
-            d["recordings"].to_file(output_dir / f"recordings_{part}.jsonl.gz")
+            d["recordings"].to_file(output_dir / f"bvcc_recordings_{part}.jsonl.gz")
             if "supervisions" in d:
-                d["supervisions"].to_file(output_dir / f"supervisions_{part}.jsonl.gz")
+                d["supervisions"].to_file(
+                    output_dir / f"bvcc_supervisions_{part}.jsonl.gz"
+                )
 
     return manifests
 

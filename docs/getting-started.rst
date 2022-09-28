@@ -13,11 +13,39 @@ Main goals
 **********
 
 * Attract a wider community to speech processing tasks with a **Python-centric design**.
+
 * Accommodate experienced Kaldi users with an **expressive command-line interface**.
+
 * Provide **standard data preparation recipes** for commonly used corpora.
+
 * Provide **PyTorch Dataset classes** for speech and audio related tasks.
+
 * Flexible data preparation for model training with the notion of **audio cuts**.
+
 * **Efficiency**, especially in terms of I/O bandwidth and storage capacity.
+
+Tutorials
+*********
+
+We currently have the following tutorials available in `examples` directory:
+
+* Basic complete Lhotse workflow |tutorial00|
+
+* Transforming data with Cuts |tutorial01|
+
+* WebDataset integration |tutorial02|
+
+* How to combine multiple datasets |tutorial03|
+
+.. |tutorial00| image:: https://colab.research.google.com/assets/colab-badge.svg
+    :target: https://colab.research.google.com/github/lhotse-speech/lhotse/blob/master/examples/00-basic-workflow.ipynb
+.. |tutorial01| image:: https://colab.research.google.com/assets/colab-badge.svg
+    :target: https://colab.research.google.com/github/lhotse-speech/lhotse/blob/master/examples/01-cut-python-api.ipynb
+.. |tutorial02| image:: https://colab.research.google.com/assets/colab-badge.svg
+    :target: https://colab.research.google.com/github/lhotse-speech/lhotse/blob/master/examples/02-webdataset-integration.ipynb
+.. |tutorial03| image:: https://colab.research.google.com/assets/colab-badge.svg
+    :target: https://colab.research.google.com/github/lhotse-speech/lhotse/blob/master/examples/03-combining-datasets.ipynb
+
 
 Examples of use
 ***************
@@ -25,9 +53,10 @@ Examples of use
 Check out the following links to see how Lhotse is being put to use:
 
 * `Icefall recipes`_: where k2 and Lhotse meet.
-* Minima ESPnet+Lhotse example: |yesno colab notebook|
 
- .. |yesno colab notebook| image:: https://colab.research.google.com/assets/colab-badge.svg
+* Minimal ESPnet+Lhotse example: |mini librispeech colab notebook|
+
+ .. |mini librispeech colab notebook| image:: https://colab.research.google.com/assets/colab-badge.svg
     :target: https://colab.research.google.com/drive/1HKSYPsWx_HoCdrnLpaPdYj5zwlPsM3NH
 
 Main ideas
@@ -67,13 +96,48 @@ For development installation, you can fork/clone the GitHub repo and install wit
     git clone https://github.com/lhotse-speech/lhotse
     cd lhotse
     pip install -e '.[dev]'
+    pre-commit install  # installs pre-commit hooks with style checks
 
     # Running unit tests
     pytest test
 
+    # Running linter checks
+    pre-commit run
+
 This is an editable installation (``-e`` option), meaning that your changes to the source code are automatically
 reflected when importing lhotse (no re-install needed). The ``[dev]`` part means you're installing extra dependencies
 that are used to run tests, build documentation or launch jupyter notebooks.
+
+
+Optional dependencies
+*********************
+
+**Other pip packages.** You can leverage optional features of Lhotse by installing the relevant supporting package like this: ``pip install lhotse[package_name]``. The supported optional packages include:
+
+* ``pip install lhotse[kaldi]`` for a maximal feature set related to Kaldi compatibility. It includes libraries such as ``kaldi_native_io`` (a more efficient variant of ``kaldi_io``) and ``kaldifeat`` that port some of Kaldi functionality into Python.
+
+* ``pip install lhotse[orjson]`` for up to 50% faster reading of JSONL manifests.
+
+* ``pip install lhotse[webdataset]``. We support "compiling" your data into WebDataset tarball format for more effective IO. You can still interact with the data as if it was a regular lazy CutSet. To learn more, check out the following tutorial: |tutorial02|
+
+* ``pip install h5py`` if you want to extract speech features and store them as HDF5 arrays.
+
+* ``pip install dill``. When ``dill`` is installed, we'll use it to pickle CutSet that uses a lambda function in calls such as ``.map`` or ``.filter``. This is helpful in PyTorch DataLoader with ``num_jobs>0``. Without ``dill``, depending on your environment, you'll see an exception or a hanging script.
+
+* ``pip install smart_open`` to read and write manifests and data in any location supported by ``smart_open`` (e.g. cloud, http).
+
+* ``pip install opensmile`` for feature extraction using the OpenSmile toolkit's Python wrapper.
+
+**sph2pipe.** For reading older LDC SPHERE (.sph) audio files that are compressed with codecs unsupported by ffmpeg and sox, please run::
+
+    # CLI
+    lhotse install-sph2pipe
+
+    # Python
+    from lhotse.tools import install_sph2pipe
+    install_sph2pipe()
+
+It will download it to ``~/.lhotse/tools``, compile it, and auto-register in ``PATH``. The program should be automatically detected and used by Lhotse.
 
 
 Examples
@@ -128,7 +192,7 @@ the speech starts roughly at the first second (100 frames):
 .. image:: vad_sample.png
 
 
-.. _k2: https://github.com/kaldi-asr/kaldi
+.. _k2: https://github.com/k2-fsa/k2
 .. _Kaldi: https://github.com/kaldi-asr/kaldi
 .. _Icefall recipes: https://github.com/k2-fsa/icefall
 .. _orjson: https://pypi.org/project/orjson/

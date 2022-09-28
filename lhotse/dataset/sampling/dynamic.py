@@ -1,12 +1,27 @@
 import random
 import warnings
 from collections import deque
-from typing import Generator, Iterable, List, Optional, Tuple, Union
+from typing import (
+    Any,
+    Callable,
+    Dict,
+    Generator,
+    Iterable,
+    List,
+    Optional,
+    Tuple,
+    Union,
+)
 
 from lhotse import CutSet, Seconds
 from lhotse.cut import Cut
-from lhotse.dataset.sampling.base import CutSampler, SamplingDiagnostics, TimeConstraint
-from lhotse.dataset.sampling.data_source import streaming_shuffle
+from lhotse.dataset.sampling.base import (
+    CutSampler,
+    EpochDiagnostics,
+    SamplingDiagnostics,
+    TimeConstraint,
+)
+from lhotse.utils import ifnone, streaming_shuffle
 
 
 class DynamicCutSampler(CutSampler):
@@ -62,6 +77,7 @@ class DynamicCutSampler(CutSampler):
         world_size: Optional[int] = None,
         rank: Optional[int] = None,
         seed: int = 0,
+        strict=None,
     ) -> None:
         """
         :param cuts: one or more CutSets (when more than one, will yield tuples of CutSets as mini-batches)
@@ -87,7 +103,9 @@ class DynamicCutSampler(CutSampler):
         :param rank: Index of distributed node. We will try to infer it by default.
         :param seed: Random seed used to consistently shuffle the dataset across different processes.
         """
-        super().__init__(world_size=world_size, rank=rank, seed=seed)
+        super().__init__(
+            drop_last=drop_last, world_size=world_size, rank=rank, seed=seed
+        )
         if not all(cs.is_lazy for cs in cuts if isinstance(cs, CutSet)):
             warnings.warn(
                 "You are using DynamicCutSampler with an eagerly read CutSet. "
@@ -98,12 +116,58 @@ class DynamicCutSampler(CutSampler):
         self.max_duration = max_duration
         self.max_cuts = max_cuts
         self.shuffle = shuffle
-        self.drop_last = drop_last
         self.consistent_ids = consistent_ids
         self.shuffle_buffer_size = shuffle_buffer_size
         self.rng = None
 
+        if strict is not None:
+            warnings.warn(
+                "In Lhotse v1.4 all samplers act as if 'strict=True'. "
+                "Sampler's argument 'strict' will be removed in a future Lhotse release.",
+                category=DeprecationWarning,
+            )
+
+    def state_dict(self) -> Dict[str, Any]:
+        sd = super().state_dict()
+        sd.update(
+            {
+                "max_duration": self.max_duration,
+                "max_cuts": self.max_cuts,
+                "consistent_ids": self.consistent_ids,
+                "shuffle_buffer_size": self.shuffle_buffer_size,
+            }
+        )
+        return sd
+
+    def load_state_dict(self, sd: Dict[str, Any]) -> None:
+        self.max_duration = sd.pop("max_duration")
+        self.max_cuts = sd.pop("max_cuts")
+        self.consistent_ids = sd.pop("consistent_ids")
+        self.shuffle_buffer_size = sd.pop("shuffle_buffer_size")
+        sd.pop("strict", None)  # backward compatibility
+        super().load_state_dict(sd)
+        self._fast_forward()
+
+    def _fast_forward(self):
+        current_epoch = self.diagnostics.current_epoch
+        num_batches_to_iter = self.diagnostics.current_epoch_stats.total_batches
+
+        # Set the right epoch
+        self.set_epoch(current_epoch)
+        # Reset diagnostics for this epoch as we're about to re-iterate
+        self.diagnostics.stats_per_epoch[current_epoch] = EpochDiagnostics(
+            epoch=current_epoch
+        )
+
+        self._just_restored_state = False
+        iter(self)
+        for _ in range(num_batches_to_iter):
+            next(self)
+        self._just_restored_state = True
+
     def __iter__(self) -> "DynamicCutSampler":
+        if self._just_restored_state:
+            return self
         self.rng = random.Random(self.seed + self.epoch)
         # Initiate iteration
         self.cuts_iter = [iter(cs) for cs in self.cuts]
@@ -120,8 +184,10 @@ class DynamicCutSampler(CutSampler):
                 for cs in self.cuts_iter
             ]
         # Apply filter predicate
-        self.cuts_iter = filter(
-            lambda tpl: all(self._filter_fn(c) for c in tpl), zip(*self.cuts_iter)
+        self.cuts_iter = Filter(
+            iterator=zip(*self.cuts_iter),
+            predicate=lambda tpl: all(self._filter_fn(c) for c in tpl),
+            diagnostics=self.diagnostics,
         )
         # Convert Iterable[Cut] -> Iterable[CutSet]
         self.cuts_iter = DurationBatcher(
@@ -129,6 +195,7 @@ class DynamicCutSampler(CutSampler):
             max_duration=self.max_duration,
             max_cuts=self.max_cuts,
             drop_last=self.drop_last,
+            diagnostics=self.diagnostics,
         )
         self.cuts_iter = iter(self.cuts_iter)
         return self
@@ -168,14 +235,17 @@ class DurationBatcher:
         max_duration: Seconds = None,
         max_cuts: Optional[int] = None,
         drop_last: bool = False,
+        diagnostics: Optional[SamplingDiagnostics] = None,
     ) -> None:
         self.datapipe = datapipe
         self.reuse_cuts_buffer = deque()
         self.drop_last = drop_last
-        self.max_cuts = max_cuts
-        self.diagnostics = SamplingDiagnostics()
+        self.diagnostics = ifnone(diagnostics, SamplingDiagnostics())
         self.time_constraint = TimeConstraint(
-            max_duration=max_duration, max_frames=max_frames, max_samples=max_samples
+            max_duration=max_duration,
+            max_frames=max_frames,
+            max_samples=max_samples,
+            max_cuts=max_cuts,
         )
 
     def __iter__(self) -> Generator[Union[CutSet, Tuple[CutSet]], None, None]:
@@ -195,14 +265,11 @@ class DurationBatcher:
             if isinstance(cuts[0], tuple):
                 if len(cuts[0]) == 1:
                     cuts = CutSet.from_cuts(cs[0] for cs in cuts)
-                    self.diagnostics.keep(cuts)
                     return cuts
                 else:
                     tuple_of_cut_lists = list(zip(*cuts))
-                    self.diagnostics.keep(cuts[0])
                     return tuple([CutSet.from_cuts(cs) for cs in tuple_of_cut_lists])
             else:
-                self.diagnostics.keep(cuts)
                 return CutSet.from_cuts(cuts)
 
         self.time_constraint.reset()
@@ -239,12 +306,9 @@ class DurationBatcher:
                 if isinstance(next_cut_or_tpl, tuple)
                 else next_cut_or_tpl
             )
-            next_num_cuts = len(cuts) + 1
 
             # Did we exceed the max_frames and max_cuts constraints?
-            if not self.time_constraint.exceeded() and (
-                self.max_cuts is None or next_num_cuts <= self.max_cuts
-            ):
+            if not self.time_constraint.exceeded():
                 # No - add the next cut to the batch, and keep trying.
                 cuts.append(next_cut_or_tpl)
             else:
@@ -265,3 +329,35 @@ class DurationBatcher:
                     cuts.append(next_cut_or_tpl)
 
         return detuplify(cuts)
+
+
+class Filter(Iterable):
+    """
+    A wrapper over an iterable that enables lazy filtering.
+    It works like Python's `filter` built-in by applying the filter predicate
+    to each element and yielding it further if predicate returned ``True``.
+
+    This variant additionally tracks the number of discarded items and updates
+    the sampling statistics.
+    """
+
+    def __init__(
+        self,
+        iterator: Iterable,
+        predicate: Callable[[Cut], bool],
+        diagnostics: Optional[SamplingDiagnostics] = None,
+    ) -> None:
+        self.iterator = iterator
+        self.predicate = predicate
+        self.diagnostics = ifnone(diagnostics, SamplingDiagnostics())
+
+        assert callable(
+            self.predicate
+        ), f"LazyFilter: 'predicate' arg must be callable (got {predicate})."
+
+    def __iter__(self) -> Iterable:
+        for item in self.iterator:
+            if self.predicate(item):
+                yield item
+            else:
+                self.diagnostics.discard(item)

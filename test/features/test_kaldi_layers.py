@@ -113,7 +113,7 @@ def test_wav2mfcc_is_torchscriptable():
     assert y.dtype == torch.float32
 
 
-def test_strided_waveform_batch_streaming():
+def test_strided_waveform_batch_streaming_snip_edges_false():
     x = torch.arange(16000).unsqueeze(0)
     window_length = 400
     window_shift = 160
@@ -147,8 +147,50 @@ def test_strided_waveform_batch_streaming():
         window_length=window_length,
         window_shift=window_shift,
         prev_remainder=remainder,
+        snip_edges=False,
     )
     frames.append(y_chunk)
+
+    y_online = torch.cat(frames, dim=1)
+
+    assert y.shape == y_online.shape
+
+    torch.testing.assert_allclose(y_online, y)
+
+
+def test_strided_waveform_batch_streaming_snip_edges_true():
+    x = torch.arange(16000).unsqueeze(0)
+    window_length = 400
+    window_shift = 160
+
+    # reference offline forward pass
+    y = _get_strided_batch(
+        waveform=x,
+        window_length=window_length,
+        window_shift=window_shift,
+        snip_edges=True,
+    )
+    assert y.shape == torch.Size([1, 98, window_length])
+
+    # online pass under test
+    frames = []
+    chunk_size = 1200
+    num_chunks = math.ceil(x.size(1) / chunk_size)
+    remainder = None
+    for i in range(num_chunks):
+        x_chunk = x[:, i * chunk_size : (i + 1) * chunk_size]
+        y_chunk, remainder = _get_strided_batch_streaming(
+            x_chunk,
+            window_length=400,
+            window_shift=160,
+            prev_remainder=remainder,
+            snip_edges=True,
+        )
+        frames.append(y_chunk)
+
+    # Note: unlike the case of snip_edges=False,
+    # we don't run one last step with reflected samples here
+    # to match the behavior of offline snip_edges=True.
 
     y_online = torch.cat(frames, dim=1)
 
