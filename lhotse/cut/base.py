@@ -23,6 +23,7 @@ from lhotse.utils import (
     deprecated,
     fastcopy,
     ifnone,
+    overlaps,
 )
 
 # One of the design principles for Cuts is a maximally "lazy" implementation, e.g. when mixing Cuts,
@@ -199,6 +200,20 @@ class Cut:
         return {**d, "type": type(self).__name__}
 
     @property
+    def has_overlapping_supervisions(self) -> bool:
+        if len(self.supervisions) < 2:
+            return False
+
+        from cytoolz import sliding_window
+
+        for left, right in sliding_window(
+            2, sorted(self.supervisions, key=lambda s: s.start)
+        ):
+            if overlaps(left, right):
+                return True
+        return False
+
+    @property
     def trimmed_supervisions(self) -> List[SupervisionSegment]:
         """
         Return the supervisions in this Cut that have modified time boundaries so as not to exceed
@@ -336,10 +351,11 @@ class Cut:
         ), f"Cannot plot alignment: missing alignment field or alignment type '{alignment_type}'"
 
         fbank = Fbank()
+        sampling_rate = fbank.extractor.sampling_rate
 
-        feats = self.compute_features(fbank)
-        speaker = sup.speaker
-        language = sup.language
+        feats = self.resample(sampling_rate).compute_features(fbank)
+        speaker = sup.speaker or "<unknown>"
+        language = sup.language or "<unknown>"
 
         fig = plt.matshow(np.flip(feats.transpose(1, 0), 0))
         plt.title(
@@ -359,7 +375,7 @@ class Cut:
             end_frame = compute_num_frames(
                 item.end,
                 frame_shift=fbank.frame_shift,
-                sampling_rate=self.sampling_rate,
+                sampling_rate=sampling_rate,
             )
             plt.text(
                 end_frame - 4,

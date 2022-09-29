@@ -724,3 +724,32 @@ class TestCreateCutSetLazy:
             assert cut1.num_frames == 1000
             assert cut1.num_features == 23
             assert cut1.features_type == "fbank"
+
+
+def test_cut_has_overlapping_supervisions_false():
+    cut = MonoCut(
+        "id",
+        start=0,
+        duration=10,
+        channel=0,
+        supervisions=[
+            dummy_supervision(0, start=0, duration=1),
+            dummy_supervision(0, start=5, duration=1),
+        ],
+    )
+    assert not cut.has_overlapping_supervisions
+
+
+@pytest.mark.parametrize("start", [0, 0.0001, 0.5, 0.99999])
+def test_cut_has_overlapping_supervisions_true(start):
+    cut = MonoCut(
+        "id",
+        start=0,
+        duration=10,
+        channel=0,
+        supervisions=[
+            dummy_supervision(0, start=0, duration=1),
+            dummy_supervision(0, start=start, duration=1),
+        ],
+    )
+    assert cut.has_overlapping_supervisions
