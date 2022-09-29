@@ -394,11 +394,16 @@ class ReverbWithImpulseResponse(AudioTransform):
             rir_ = (
                 self.rir.load_audio(channels=self.rir_channels)
                 if not self.early_only
-                else self.rir.load_audio(duration=0.05)
+                else self.rir.load_audio(channels=self.rir_channels, duration=0.05)
             )
 
-        D_out, N_rir = rir_.shape
+        D_rir, N_rir = rir_.shape
         N_out = N_in  # Enforce shift output
+        # output is multi-channel if either input or rir is multi-channel
+        D_out = D_rir if input_is_mono else D_in
+
+        # if RIR is mono, repeat it to match the number of channels in the input
+        rir_ = rir_.repeat(D_out, axis=0) if D_rir == 1 else rir_
 
         # Initialize output matrix with the specified input channel.
         augmented = np.zeros((D_out, N_out), dtype=samples.dtype)

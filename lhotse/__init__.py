@@ -5,7 +5,7 @@ from .audio import (
     set_audio_duration_mismatch_tolerance,
 )
 from .caching import is_caching_enabled, set_caching_enabled
-from .cut import CutSet, MonoCut, create_cut_set_eager, create_cut_set_lazy
+from .cut import CutSet, MonoCut, MultiCut, create_cut_set_eager, create_cut_set_lazy
 from .features import *
 from .kaldi import load_kaldi_data_dir
 from .manipulation import combine, split_parallelize_combine, to_manifest

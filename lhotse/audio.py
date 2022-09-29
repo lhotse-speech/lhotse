@@ -520,7 +520,7 @@ class Recording:
             id=self.id,
             start=0.0,
             duration=self.duration,
-            channel=0 if self.num_channels == 1 else self.channel_ids,
+            channel=self.channel_ids[0] if self.num_channels == 1 else self.channel_ids,
             recording=self,
         )
 
