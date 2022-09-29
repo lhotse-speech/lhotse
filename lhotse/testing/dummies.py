@@ -61,7 +61,7 @@ def dummy_recording(unique_id: int, duration: float = 1.0) -> Recording:
 
 def dummy_alignment(
     text: str = "irrelevant", start: float = 0.0, duration: float = 1.0
-) -> AlignmentItem:
+) -> Dict[str, List[AlignmentItem]]:
     subwords = [
         text[i : i + 3] for i in range(0, len(text), 3)
     ]  # Create subwords of 3 chars
