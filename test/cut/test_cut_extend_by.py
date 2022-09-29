@@ -6,8 +6,8 @@ from lhotse import CutSet, SupervisionSegment, SupervisionSet
 from lhotse.cut import MixedCut, PaddingCut
 from lhotse.testing.dummies import (
     dummy_cut,
-    dummy_multi_cut,
     dummy_features,
+    dummy_multi_cut,
     dummy_recording,
     dummy_temporal_array,
 )
