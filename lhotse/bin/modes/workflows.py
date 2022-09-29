@@ -104,7 +104,7 @@ def annotate_with_whisper(
     "-n",
     "--bundle-name",
     default="WAV2VEC2_ASR_BASE_960H",
-    help="One of Torchaudio pretrained 'bundle' variants (see: https://pytorch.org/audio/stable/pipelines.html)",
+    help="One of torchaudio pretrained 'bundle' variants (see: https://pytorch.org/audio/stable/pipelines.html)",
 )
 @click.option(
     "-d", "--device", default="cpu", help="Device on which to run the inference."
