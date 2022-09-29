@@ -2,7 +2,12 @@ import pytest
 
 from lhotse import CutSet
 from lhotse.cut import PaddingCut
-from lhotse.testing.dummies import dummy_cut, dummy_supervision
+from lhotse.testing.dummies import (
+    dummy_cut,
+    dummy_supervision,
+    dummy_multi_cut,
+    dummy_multi_channel_recording,
+)
 
 parametrize_on_cut_types = pytest.mark.parametrize(
     "cut",
@@ -25,6 +30,20 @@ parametrize_on_cut_types = pytest.mark.parametrize(
             dummy_cut(1, supervisions=[dummy_supervision(1)]),
             offset_other_by=0.5,
             snr=10,
+        ),
+        # MultiCut with channels equal to recording channels
+        dummy_multi_cut(
+            0,
+            supervisions=[dummy_supervision(0)],
+            recording=dummy_multi_channel_recording(0, channel_ids=[0, 1]),
+            channel=[0, 1],
+        ),
+        # MultiCut with channels subset of recording channels
+        dummy_multi_cut(
+            0,
+            supervisions=[dummy_supervision(0)],
+            recording=dummy_multi_channel_recording(0, channel_ids=[0, 1, 2]),
+            channel=[0, 1],
         ),
     ],
 )
@@ -76,6 +95,13 @@ def cutset():
                 dummy_cut(1, supervisions=[dummy_supervision(1)]),
                 offset_other_by=0.5,
                 snr=10,
+            ),
+            # MultiCut with channels equal to recording channels
+            dummy_multi_cut(
+                0,
+                supervisions=[dummy_supervision(0)],
+                recording=dummy_multi_channel_recording(0, channel_ids=[0, 1]),
+                channel=[0, 1],
             ),
         ]
     )

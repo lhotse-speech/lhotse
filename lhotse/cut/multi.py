@@ -427,18 +427,9 @@ class MultiCut(Cut):
         ), f"Cannot detach recording from a MultiCut with no Features (cut ID = {self.id})."
         return fastcopy(self, recording=None)
 
-    def drop_supervisions(self, reset_channels: bool = False) -> "MultiCut":
-        """Return a copy of the current :class:`.MultiCut`, detached from ``supervisions``.
-        If reset_channels is True, the channel attribute will be set to use all the available
-        channels in the recording.
-        """
-        return fastcopy(
-            self,
-            supervisions=[],
-            channel=self.channel
-            if not reset_channels
-            else list(self.recording.channel_ids),
-        )
+    def drop_supervisions(self) -> "MultiCut":
+        """Return a copy of the current :class:`.MultiCut`, detached from ``supervisions``."""
+        return fastcopy(self, supervisions=[])
 
     def fill_supervision(
         self, add_empty: bool = True, shrink_ok: bool = False
