@@ -1,8 +1,8 @@
 import pytest
 
-from lhotse.testing.dummies import dummy_cut, dummy_supervision
+from lhotse.testing.dummies import dummy_cut, dummy_multi_cut, dummy_supervision
 
-# Note: dummy_cut and dummy_supervision have a duration of 1.0 by default.
+# Note: dummy_cut, dummy_multi_cut, and dummy_supervision have a duration of 1.0 by default.
 
 
 def test_mono_cut_fill_supervision_identity():

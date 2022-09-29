@@ -4,9 +4,9 @@ from lhotse import CutSet
 from lhotse.cut import PaddingCut
 from lhotse.testing.dummies import (
     dummy_cut,
-    dummy_supervision,
-    dummy_multi_cut,
     dummy_multi_channel_recording,
+    dummy_multi_cut,
+    dummy_supervision,
 )
 
 parametrize_on_cut_types = pytest.mark.parametrize(

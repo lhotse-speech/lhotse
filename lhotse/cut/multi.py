@@ -251,15 +251,17 @@ class MultiCut(Cut):
         )
 
     @rich_exception_info
-    def load_features(self, channel: int = 0) -> Optional[np.ndarray]:
+    def load_features(self, channel: Optional[int] = None) -> Optional[np.ndarray]:
         """
         Load the features from the underlying storage and cut them to the relevant
-        [begin, duration] region of the current MonoCut. We can also specify which
-        channel to load (by default, we load the first channel).
+        [begin, duration] region of the current MultiCut. We can also specify which
+        channel to load (by default, we load the same channels as in the MultiCut).
         """
         if self.has_features:
             feats = self.features.load(
-                start=self.start, duration=self.duration, channel_id=channel
+                start=self.start,
+                duration=self.duration,
+                channel_id=self.channel if channel is None else channel,
             )
             # Note: we forgive off-by-one errors in the feature matrix frames
             #       due to various hard-to-predict floating point arithmetic issues.
@@ -277,7 +279,7 @@ class MultiCut(Cut):
         self, channel: Optional[Union[int, List[int]]] = None
     ) -> Optional[np.ndarray]:
         """
-        Load the audio by locating the appropriate recording in the supplied RecordingSet.
+        Load the audio by locating the appropriate recording in the supplied Recording.
         The audio is trimmed to the [begin, end] range specified by the MultiCut.
 
         :return: a numpy ndarray with audio samples, with shape (C <channel>, N <samples>)
@@ -421,7 +423,7 @@ class MultiCut(Cut):
         return fastcopy(self, features=None)
 
     def drop_recording(self) -> "MultiCut":
-        """Return a copy of the current :class:`.MonoCut`, detached from ``recording``."""
+        """Return a copy of the current :class:`.MultiCut`, detached from ``recording``."""
         assert (
             self.has_features
         ), f"Cannot detach recording from a MultiCut with no Features (cut ID = {self.id})."
@@ -637,7 +639,7 @@ class MultiCut(Cut):
             If the recording is shorter, additional silence will be padded to achieve the desired duration
             by default. This behavior can be changed by setting ``pad_silence=False``.
             Also see :meth:`MultiCut.pad` which pads a cut "to" a specified length.
-            To "truncate" a cut, use :meth:`MonoCut.truncate`.
+            To "truncate" a cut, use :meth:`MultiCut.truncate`.
 
         .. hint::
 
@@ -736,13 +738,17 @@ class MultiCut(Cut):
         # Now pad the cut on either side if needed
         if pad_left > 0:
             cut = cut.pad(
-                duration=cut.duration + pad_left,
+                duration=add_durations(
+                    cut.duration, pad_left, sampling_rate=self.sampling_rate
+                ),
                 direction="left",
                 preserve_id=preserve_id,
             )
         if pad_right > 0:
             cut = cut.pad(
-                duration=cut.duration + pad_right,
+                duration=add_durations(
+                    cut.duration, pad_right, sampling_rate=self.sampling_rate
+                ),
                 direction="right",
                 preserve_id=preserve_id,
             )
@@ -759,7 +765,7 @@ class MultiCut(Cut):
         pad_value_dict: Optional[Dict[str, Union[int, float]]] = None,
     ) -> Cut:
         """
-        Return a new MultiCut, padded with zeros in the recording, and ``pad_feat_value`` in each feature bin.
+        Return a new MixedCut, which is this MultiCut padded with zeros in the recording, and ``pad_feat_value`` in each feature bin.
 
         The user can choose to pad either to a specific `duration`; a specific number of frames `max_frames`;
         or a specific number of samples `num_samples`. The three arguments are mutually exclusive.
@@ -1087,13 +1093,13 @@ class MultiCut(Cut):
         return merge_supervisions(self, custom_merge_fn=custom_merge_fn)
 
     @staticmethod
-    def from_mono(cuts: Union[Cut, Iterable[Cut]]) -> "MultiCut":
+    def from_mono(*cuts: Cut) -> "MultiCut":
         """
-        Convert one or more MonoCut to a MultiCut. If multiple cuts are provided, they
+        Convert one or more MonoCut to a MultiCut. If multiple mono cuts are provided, they
         must match in all fields except the channel. We will not perform this check here,
         instead we will just take the first cut as a reference and copy the fields from it.
 
-        :param cut: the input cut.
+        :param cuts: the input cut(s).
         :return: a MultiCut with a single track.
         """
         from .mono import MonoCut
