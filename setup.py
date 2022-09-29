@@ -41,6 +41,7 @@
 #             ./osssssssssssssssssssssssssssssssssssssssssssssssssssssssssss/-`
 #                 .-:://++++++++++++++++++++++++++++++++++++++++++++///:-.`
 import os
+import sys
 from pathlib import Path
 from subprocess import DEVNULL, PIPE, run
 
@@ -55,6 +56,22 @@ MAJOR_VERSION = 1
 MINOR_VERSION = 8
 PATCH_VERSION = 0
 IS_DEV_VERSION = True  # False = public release, True = otherwise
+
+
+if sys.version_info < (3,):
+    # fmt: off
+    print(
+        "Python 2 has reached end-of-life and is no longer supported by lhotse."
+    )
+    # fmt: on
+    sys.exit(-1)
+
+if sys.version_info < (3, 7):
+    print(
+        "Python 3.6 has reached end-of-life on December 31st, 2021 "
+        "and is no longer supported by lhotse."
+    )
+    sys.exit(-1)
 
 
 def discover_lhotse_version() -> str:
