@@ -41,6 +41,7 @@
 #             ./osssssssssssssssssssssssssssssssssssssssssssssssssssssssssss/-`
 #                 .-:://++++++++++++++++++++++++++++++++++++++++++++///:-.`
 import os
+import sys
 from pathlib import Path
 from subprocess import DEVNULL, PIPE, run
 
@@ -55,6 +56,22 @@ MAJOR_VERSION = 1
 MINOR_VERSION = 8
 PATCH_VERSION = 0
 IS_DEV_VERSION = True  # False = public release, True = otherwise
+
+
+if sys.version_info < (3,):
+    # fmt: off
+    print(
+        "Python 2 has reached end-of-life and is no longer supported by lhotse."
+    )
+    # fmt: on
+    sys.exit(-1)
+
+if sys.version_info < (3, 7):
+    print(
+        "Python 3.6 has reached end-of-life on December 31st, 2021 "
+        "and is no longer supported by lhotse."
+    )
+    sys.exit(-1)
 
 
 def discover_lhotse_version() -> str:
@@ -202,7 +219,7 @@ if os.environ.get("READTHEDOCS", False):
 setup(
     name="lhotse",
     version=LHOTSE_VERSION,
-    python_requires=">=3.6.0",
+    python_requires=">=3.7.0",
     description="Data preparation for speech processing models training.",
     author="The Lhotse Development Team",
     author_email="pzelasko@jhu.edu",
@@ -230,7 +247,6 @@ setup(
     },
     classifiers=[
         "Development Status :: 4 - Beta",
-        "Programming Language :: Python :: 3.6",
         "Programming Language :: Python :: 3.7",
         "Programming Language :: Python :: 3.8",
         "Programming Language :: Python :: 3.9",
@@ -238,6 +254,7 @@ setup(
         "Intended Audience :: Science/Research",
         "Operating System :: POSIX :: Linux",
         "Operating System :: MacOS :: MacOS X",
+        "Operating System :: Microsoft :: Windows",
         "License :: OSI Approved :: Apache Software License",
         "Topic :: Multimedia :: Sound/Audio :: Speech",
         "Topic :: Scientific/Engineering :: Artificial Intelligence",
