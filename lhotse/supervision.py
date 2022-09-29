@@ -44,16 +44,17 @@ class AlignmentItem(NamedTuple):
     symbol: str
     start: Seconds
     duration: Seconds
-    score: Optional[float] = None
 
-    # _data: dict
+    # Score is an optional aligner-specific measure of confidence.
+    # A simple measure can be an average probability of "symbol" across
+    # frames covered by the AlignmentItem.
+    score: Optional[float] = None
 
     @staticmethod
     def deserialize(data: list) -> "AlignmentItem":
         return AlignmentItem(*data)
 
     def serialize(self) -> list:
-        # return self._data
         return list(self)
 
     @property
