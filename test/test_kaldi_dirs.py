@@ -156,6 +156,7 @@ def test_kaldi_import(replace):
             frame_shift=0.01,
             map_string_to_underscores=replace,
             num_jobs=1,
+            use_reco2dur=False,
         )
 
     lhotse_dir = "lhotse"
@@ -166,7 +167,7 @@ def test_kaldi_import(replace):
         recording_set = lhotse.RecordingSet.from_jsonl("recordings.jsonl.gz")
         supervision_set = lhotse.SupervisionSet.from_jsonl("supervisions.jsonl.gz")
 
-    assert out[0] == recording_set
+    assert list(out[0]) == list(recording_set)
     assert out[1] == supervision_set
 
 
@@ -276,7 +277,7 @@ def test_load_durations(tmp_path, load_durations):
                 lhotse.audio.LHOTSE_AUDIO_DURATION_MISMATCH_TOLERANCE,
             )
     else:
-        assert out[0] == recording_set
+        assert list(out[0]) == list(recording_set)
     assert out[1] == supervision_set
     pass
 
