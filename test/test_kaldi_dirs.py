@@ -220,6 +220,7 @@ def test_ok_on_file_singlechannel_sph_source_type(tmp_path, channel):
     assert list(out.keys()) == [channel]
     assert out[channel].startswith("sph2pipe")
     assert "nonexistent.sph" in out[channel]
+    assert "{" not in out[channel]
 
 
 @pytest.mark.parametrize("channel", [0, 3])
@@ -231,6 +232,7 @@ def test_ok_on_file_singlechannel_mp3_source_type(tmp_path, channel):
     assert list(out.keys()) == [channel]
     assert out[channel].startswith("ffmpeg")
     assert "nonexistent.mp3" in out[channel]
+    assert "{" not in out[channel]
 
 
 def test_ok_on_file_multichannel_wav_source_type(tmp_path):
@@ -242,11 +244,41 @@ def test_ok_on_file_multichannel_wav_source_type(tmp_path):
     for channel in out.keys():
         assert out[channel].startswith("ffmpeg")
         assert "nonexistent.wav" in out[channel]
+        assert "{" not in out[channel]
 
 
 def test_load_kaldi_text_mapping(tmp_path):
     with pytest.raises(ValueError):
         lhotse.kaldi.load_kaldi_text_mapping(tmp_path / "nonexistent", must_exist=True)
+
+
+@pytest.mark.parametrize("load_durations", [False, True])
+def test_load_durations(tmp_path, load_durations):
+    fixture_path = MINILIB_PATH
+    with working_directory(fixture_path):
+        out = lhotse.kaldi.load_kaldi_data_dir(
+            fixture_path,
+            sampling_rate=16000,
+            frame_shift=0.01,
+            use_reco2dur=load_durations,
+            num_jobs=1,
+        )
+
+    lhotse_dir = "lhotse"
+    with working_directory(fixture_path / lhotse_dir):
+        recording_set = lhotse.RecordingSet.from_jsonl("recordings.jsonl.gz")
+        supervision_set = lhotse.SupervisionSet.from_jsonl("supervisions.jsonl.gz")
+
+    if load_durations:
+        for i, recording in enumerate(out[0]):
+            assert recording_set[i].duration == pytest.approx(
+                recording.duration,
+                lhotse.audio.LHOTSE_AUDIO_DURATION_MISMATCH_TOLERANCE,
+            )
+    else:
+        assert out[0] == recording_set
+    assert out[1] == supervision_set
+    pass
 
 
 @pytest.mark.parametrize("replace", [None, "b"])
@@ -297,6 +329,7 @@ def test_kaldi_export(tmp_path, replace, prefix):
     assert len(wavs.keys()) == len(wavs_orig.keys())
     for elem in wavs_orig.keys():
         assert wavs_orig[elem].rstrip(" |") == wavs[elem].rstrip(" |")
+        assert "{" not in wavs[elem]
 
     for elem in segments_orig.keys():
         elem_other = utt2spk_orig[elem] + "-" + elem if prefix else elem
