@@ -42,7 +42,7 @@ def kaldi():
 @click.option(
     "-d",
     "--use-reco2dur",
-    default=False,
+    default=True,
     is_flag=True,
     show_default=True,
     type=bool,

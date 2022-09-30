@@ -55,13 +55,15 @@ def load_kaldi_data_dir(
     sampling_rate: int,
     frame_shift: Optional[Seconds] = None,
     map_string_to_underscores: Optional[str] = None,
-    use_reco2dur: bool = False,
+    use_reco2dur: bool = True,
     num_jobs: int = 1,
 ) -> Tuple[RecordingSet, Optional[SupervisionSet], Optional[FeatureSet]]:
     """
     Load a Kaldi data directory and convert it to a Lhotse RecordingSet and
     SupervisionSet manifests. For this to work, at least the wav.scp file must exist.
-    SupervisionSet is created only when a segments file exists.
+    SupervisionSet is created only when a segments file exists. reco2dur is used by
+    default when exists (to enforce reading the duration from the audio files
+    themselves, please set use_reco2dur = False.
     All the other files (text, utt2spk, etc.) are optional, and some of them might
     not be handled yet. In particular, feats.scp files are ignored.
 
@@ -382,8 +384,9 @@ def make_wavscp_channel_string_map(
             audios = dict()
             for channel in source.channels:
                 audios[channel] = (
-                    f"sph2pipe {source.source} -f wav -c {channel+1} -p | ffmpeg -threads 1 "
-                    f"-i pipe:0 -ar {sampling_rate} -f wav -threads 1 pipe:1 |"
+                    f"sph2pipe {source.source} -f wav -c {channel+1} -p | "
+                    "ffmpeg -threads 1"
+                    f" -i pipe:0 -ar {sampling_rate} -f wav -threads 1 pipe:1 |"
                 )
 
             return audios
