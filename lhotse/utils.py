@@ -8,6 +8,7 @@ import warnings
 from contextlib import AbstractContextManager, contextmanager
 from dataclasses import asdict, dataclass
 from decimal import ROUND_HALF_DOWN, ROUND_HALF_UP, Decimal
+from itertools import chain
 from math import ceil, isclose
 from pathlib import Path
 from typing import (
@@ -551,6 +552,20 @@ def compute_start_duration_for_extended_cut(
         new_start = 0
 
     return round(new_start, ndigits=15), new_duration
+
+
+def merge_items_with_delimiter(
+    values: Iterable[str], prefix: str = "cat", delimiter: str = "#"
+) -> Optional[str]:
+    # e.g.
+    # values = ["1125-76840-0001", "1125-53670-0003"]
+    # return "cat#1125-76840-0001#1125-53670-0003"
+    values = list(values)
+    if len(values) == 0:
+        return None
+    if len(values) == 1:
+        return values[0]
+    return delimiter.join(chain([prefix], values))
 
 
 def index_by_id_and_check(manifests: Iterable[T]) -> Dict[str, T]:

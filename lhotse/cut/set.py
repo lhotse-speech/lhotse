@@ -324,26 +324,7 @@ class CutSet(Serializable, AlgorithmMixin):
 
     @staticmethod
     def from_dicts(data: Iterable[dict]) -> "CutSet":
-        def deserialize_one(raw_cut: dict) -> Cut:
-            cut_type = raw_cut.pop("type")
-            if cut_type == "MonoCut":
-                return MonoCut.from_dict(raw_cut)
-            if cut_type == "MultiCut":
-                return MultiCut.from_dict(raw_cut)
-            if cut_type == "Cut":
-                warnings.warn(
-                    "Your manifest was created with Lhotse version earlier than v0.8, when MonoCut was called Cut. "
-                    "Please re-generate it with Lhotse v0.8 as it might stop working in a future version "
-                    "(using manifest.from_file() and then manifest.to_file() should be sufficient)."
-                )
-                return MonoCut.from_dict(raw_cut)
-            if cut_type == "MixedCut":
-                return MixedCut.from_dict(raw_cut)
-            raise ValueError(
-                f"Unexpected cut type during deserialization: '{cut_type}'"
-            )
-
-        return CutSet.from_cuts(deserialize_one(cut) for cut in data)
+        return CutSet.from_cuts(deserialize_cut(cut) for cut in data)
 
     @staticmethod
     def from_webdataset(
@@ -2663,18 +2644,14 @@ def merge_supervisions(
     """
     Return a copy of the cut that has all of its supervisions merged into
     a single segment.
-
     The new start is the start of the earliest superivion, and the new duration
     is a minimum spanning duration for all the supervisions.
-
     The text fields are concatenated with a whitespace, and all other string fields
     (including IDs) are prefixed with "cat#" and concatenated with a hash symbol "#".
     This is also applied to ``custom`` fields. Fields with a ``None`` value are omitted.
-
     .. note:: If you're using individual tracks of a :class:`MixedCut`, note that this transform
          drops all the supervisions in individual tracks and assigns the merged supervision
          in the first :class:`.MonoCut` found in ``self.tracks``.
-
     :param custom_merge_fn: a function that will be called to merge custom fields values.
         We expect ``custom_merge_fn`` to handle all possible custom keys.
         When not provided, we will treat all custom values as strings.
@@ -2774,6 +2751,24 @@ def merge_supervisions(
         return new_cut
     else:
         return fastcopy(cut, supervisions=[msup])
+
+
+def deserialize_cut(raw_cut: dict) -> Cut:
+    cut_type = raw_cut.pop("type")
+    if cut_type == "MonoCut":
+        return MonoCut.from_dict(raw_cut)
+    if cut_type == "MultiCut":
+        return MultiCut.from_dict(raw_cut)
+    if cut_type == "Cut":
+        warnings.warn(
+            "Your manifest was created with Lhotse version earlier than v0.8, when MonoCut was called Cut. "
+            "Please re-generate it with Lhotse v0.8 as it might stop working in a future version "
+            "(using manifest.from_file() and then manifest.to_file() should be sufficient)."
+        )
+        return MonoCut.from_dict(raw_cut)
+    if cut_type == "MixedCut":
+        return MixedCut.from_dict(raw_cut)
+    raise ValueError(f"Unexpected cut type during deserialization: '{cut_type}'")
 
 
 def _cut_into_windows_single(

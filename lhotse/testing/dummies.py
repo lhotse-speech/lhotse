@@ -95,6 +95,7 @@ def dummy_supervision(
     unique_id: int,
     start: float = 0.0,
     duration: float = 1.0,
+    channel: Union[int, List[int]] = 0,
     text: str = "irrelevant",
     alignment: Optional[Dict[str, List[AlignmentItem]]] = dummy_alignment(),
 ) -> SupervisionSegment:
@@ -103,6 +104,7 @@ def dummy_supervision(
         recording_id=f"dummy-recording-{unique_id:04d}",
         start=start,
         duration=duration,
+        channel=channel,
         text=text,
         speaker="irrelevant",
         language="irrelevant",

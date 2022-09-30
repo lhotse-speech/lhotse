@@ -72,7 +72,7 @@ class PaddingCut(Cut):
 
     @property
     def num_channels(self) -> int:
-        return 0
+        return 1
 
     def has(self, field: str) -> bool:
         if field == "recording":

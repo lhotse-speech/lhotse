@@ -53,14 +53,9 @@ class MixTrack:
 
     @staticmethod
     def from_dict(data: dict):
-        raw_cut = data.pop("cut")
-        raw_cut_type = eval(data.pop("type"))
-        try:
-            cut = raw_cut_type.from_dict(raw_cut)
-        except Exception as e:
-            logging.error(f"Failed to load a cut of type {raw_cut_type}: {e}")
-            raise e
-        return MixTrack(cut, **data)
+        from .set import deserialize_cut
+
+        return MixTrack(deserialize_cut(data), **data)
 
 
 @dataclass
@@ -161,7 +156,7 @@ class MixedCut(Cut):
 
     @property
     def num_channels(self) -> Optional[int]:
-        # PaddingCut has 0 channels, MonoCut has 1, MultiCut has N. We don't support MixedCut with MixedCut tracks.
+        # PaddingCut and MonoCut have 1 channel each, MultiCut has N. We don't support MixedCut with MixedCut tracks.
         return max(track.cut.num_channels for track in self.tracks)
 
     @property
