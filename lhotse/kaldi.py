@@ -283,7 +283,7 @@ def export_to_kaldi(
         # segments
         save_kaldi_text_mapping(
             data={
-                sup.id: f"{sup.recording_id} {sup.start} {sup.end}"
+                sup.id: f"{sup.recording_id}_{sup.channel} {sup.start} {sup.end}"
                 for sup in supervisions
             },
             path=output_dir / "segments",
