@@ -55,6 +55,7 @@ def load_kaldi_data_dir(
     sampling_rate: int,
     frame_shift: Optional[Seconds] = None,
     map_string_to_underscores: Optional[str] = None,
+    use_reco2dur: bool = False,
     num_jobs: int = 1,
 ) -> Tuple[RecordingSet, Optional[SupervisionSet], Optional[FeatureSet]]:
     """
@@ -79,10 +80,17 @@ def load_kaldi_data_dir(
 
     # must exist for RecordingSet
     recordings = load_kaldi_text_mapping(path / "wav.scp", must_exist=True)
-
-    with ProcessPoolExecutor(num_jobs) as ex:
-        dur_vals = ex.map(get_duration, recordings.values())
-    durations = dict(zip(recordings.keys(), dur_vals))
+    reco2dur = path / "reco2dur"
+    if use_reco2dur and reco2dur.is_file():
+        durations = load_kaldi_text_mapping(reco2dur)
+        assert len(durations) == len(recordings), (
+            "The duration file reco2dur does not "
+            "have the same length as the  wav.scp file"
+        )
+    else:
+        with ProcessPoolExecutor(num_jobs) as ex:
+            dur_vals = ex.map(get_duration, recordings.values())
+        durations = dict(zip(recordings.keys(), dur_vals))
 
     recording_set = RecordingSet.from_recordings(
         Recording(
@@ -97,8 +105,10 @@ def load_kaldi_data_dir(
                 )
             ],
             sampling_rate=sampling_rate,
-            num_samples=compute_num_samples(durations[recording_id], sampling_rate),
-            duration=durations[recording_id],
+            num_samples=compute_num_samples(
+                float(durations[recording_id]), sampling_rate
+            ),
+            duration=float(durations[recording_id]),
         )
         for recording_id, path_or_cmd in recordings.items()
     )
@@ -145,7 +155,7 @@ def load_kaldi_data_dir(
                 id=fix_id(rec_id),
                 recording_id=rec_id,
                 start=0.0,
-                duration=durations[rec_id],
+                duration=float(durations[rec_id]),
                 channel=0,
                 text=texts[rec_id],
                 language=languages[rec_id],
@@ -371,18 +381,20 @@ def make_wavscp_channel_string_map(
             # used in the sph files
             audios = dict()
             for channel in source.channels:
-                audios[
-                    channel
-                ] = f"sph2pipe {source.source} -f wav -c {channel+1} -p | ffmpeg -threads 1 -i pipe:0 -ar {sampling_rate} -f wav -threads 1 pipe:1 |"
+                audios[channel] = (
+                    f"sph2pipe {source.source} -f wav -c {channel+1} -p | ffmpeg -threads 1 "
+                    "-i pipe:0 -ar {sampling_rate} -f wav -threads 1 pipe:1 |"
+                )
 
             return audios
         else:
             # Handles non-WAVE audio formats and multi-channel WAVEs.
             audios = dict()
             for channel in source.channels:
-                audios[
-                    channel
-                ] = f"ffmpeg -threads 1 -i {source.source} -ar {sampling_rate} -map_channel 0.0.{channel}  -f wav -threads 1 pipe:1 |"
+                audios[channel] = (
+                    f"ffmpeg -threads 1 -i {source.source} -ar {sampling_rate} "
+                    "-map_channel 0.0.{channel}  -f wav -threads 1 pipe:1 |"
+                )
             return audios
 
     else:
