@@ -1,6 +1,8 @@
 import logging
+import warnings
 from dataclasses import dataclass
-from functools import partial
+from functools import partial, reduce
+from operator import add
 from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple, Union
 
 import numpy as np
@@ -30,6 +32,8 @@ from lhotse.utils import (
     compute_num_frames,
     compute_num_samples,
     fastcopy,
+    merge_items_with_delimiter,
+    overlaps,
     perturb_num_samples,
     rich_exception_info,
     uuid4,
@@ -1114,9 +1118,82 @@ class MixedCut(Cut):
             It will be called roughly like:
             ``custom_merge_fn(custom_key, [s.custom[custom_key] for s in sups])``
         """
-        from .set import merge_supervisions
+        # "m" stands for merged in variable names below
 
-        return merge_supervisions(self, custom_merge_fn=custom_merge_fn)
+        if custom_merge_fn is not None:
+            # Merge custom fields with the user-provided function.
+            merge_custom = custom_merge_fn
+        else:
+            # Merge the string representations of custom fields.
+            merge_custom = lambda k, vs: merge_items_with_delimiter(map(str, vs))
+
+        sups = sorted(self.supervisions, key=lambda s: s.start)
+
+        if len(sups) <= 1:
+            return self
+
+        # the sampling rate is arbitrary, ensures there are no float precision errors
+        mstart = sups[0].start
+        mend = sups[-1].end
+        mduration = add_durations(mend, -mstart, sampling_rate=self.sampling_rate)
+
+        custom_keys = set(
+            k for s in sups if s.custom is not None for k in s.custom.keys()
+        )
+        alignment_keys = set(
+            k for s in sups if s.alignment is not None for k in s.alignment.keys()
+        )
+
+        if any(overlaps(s1, s2) for s1, s2 in zip(sups, sups[1:])) and any(
+            s.text is not None for s in sups
+        ):
+            warnings.warn(
+                "You are merging overlapping supervisions that have text transcripts. "
+                "The result is likely to be unusable if you are going to train speech "
+                f"recognition models (cut id: {self.id})."
+            )
+
+        msup = SupervisionSegment(
+            id=merge_items_with_delimiter(s.id for s in sups),
+            # Make merged recording_id is a mix of recording_ids.
+            recording_id=merge_items_with_delimiter(s.recording_id for s in sups),
+            start=mstart,
+            duration=mduration,
+            # Hardcode -1 to indicate no specific channel, as the supervisions might have
+            # come from different channels in their original recordings.
+            channel=-1,
+            text=" ".join(s.text for s in sups if s.text),
+            speaker=merge_items_with_delimiter(s.speaker for s in sups if s.speaker),
+            language=merge_items_with_delimiter(s.language for s in sups if s.language),
+            gender=merge_items_with_delimiter(s.gender for s in sups if s.gender),
+            custom={
+                k: merge_custom(
+                    k,
+                    (
+                        s.custom[k]
+                        for s in sups
+                        if s.custom is not None and k in s.custom
+                    ),
+                )
+                for k in custom_keys
+            },
+            alignment={
+                # Concatenate the lists of alignment units.
+                k: reduce(
+                    add,
+                    (
+                        s.alignment[k]
+                        for s in sups
+                        if s.alignment is not None and k in s.alignment
+                    ),
+                )
+                for k in alignment_keys
+            },
+        )
+
+        new_cut = self.drop_supervisions()
+        new_cut._first_non_padding_cut.supervisions = [msup]
+        return new_cut
 
     def filter_supervisions(
         self, predicate: Callable[[SupervisionSegment], bool]
