@@ -43,6 +43,8 @@ def kaldi():
     "-d",
     "--use-reco2dur",
     default=False,
+    is_flag=True,
+    show_default=True,
     type=bool,
     help="Use the already existing utt2dur file instead of reading it from files directly.",
 )
