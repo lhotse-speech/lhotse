@@ -55,7 +55,10 @@ class MixTrack:
     def from_dict(data: dict):
         from .set import deserialize_cut
 
-        return MixTrack(deserialize_cut(data), **data)
+        # Take out `type` from data dict and put it into the `cut` dict.
+        cut_dict = data.pop("cut")
+        cut_dict["type"] = data.pop("type")
+        return MixTrack(deserialize_cut(cut_dict), **data)
 
 
 @dataclass

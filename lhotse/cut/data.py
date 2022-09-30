@@ -53,7 +53,7 @@ class DataCut(Cut, metaclass=ABCMeta):
     # Begin and duration are needed to specify which chunk of features/recording to load.
     start: Seconds
     duration: Seconds
-    channel: int
+    channel: Union[int, List[int]]
 
     # Supervisions that will be used as targets for model training later on. They don't have to cover the whole
     # cut duration. They also might overlap.

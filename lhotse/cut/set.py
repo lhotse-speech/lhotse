@@ -36,6 +36,7 @@ from typing_extensions import Literal
 from lhotse.audio import RecordingSet, null_result_on_audio_loading_error
 from lhotse.augmentation import AugmentFn
 from lhotse.cut.base import Cut
+from lhotse.cut.data import DataCut
 from lhotse.cut.mixed import MixedCut, MixTrack
 from lhotse.cut.mono import MonoCut
 from lhotse.cut.multi import MultiCut
@@ -409,7 +410,7 @@ class CutSet(Serializable, AlgorithmMixin):
             output_dir / "features.jsonl.gz" if output_dir is not None else None
         ) as fw:
 
-            def save(cut: Union[MonoCut, MultiCut]):
+            def save(cut: DataCut):
                 if cut.has_recording and cut.recording_id not in stored_rids:
                     rw.write(cut.recording)
                     stored_rids.add(cut.recording_id)
@@ -425,13 +426,11 @@ class CutSet(Serializable, AlgorithmMixin):
                         stored_sids.add(sup.id)
 
             for cut in tqdm(self, desc="Decomposing cuts") if verbose else self:
-                if isinstance(cut, MonoCut) or isinstance(cut, MultiCut):
+                if isinstance(cut, DataCut):
                     save(cut)
                 elif isinstance(cut, MixedCut):
                     for track in cut.tracks:
-                        if isinstance(track.cut, MonoCut) or isinstance(
-                            track.cut, MultiCut
-                        ):
+                        if isinstance(track.cut, DataCut):
                             save(track.cut)
 
         return rw.open_manifest(), sw.open_manifest(), fw.open_manifest()
@@ -864,7 +863,7 @@ class CutSet(Serializable, AlgorithmMixin):
 
         :param index_mixed_tracks: Should the tracks of MixedCut's be indexed as additional, separate entries.
         :param keep_ids: If specified, we will only index the supervisions with the specified IDs.
-        :return: a mapping from MonoCut ID to an interval tree of SupervisionSegments.
+        :return: a mapping from Cut ID to an interval tree of SupervisionSegments.
         """
         indexed = {}
         for cut in self:
@@ -1018,8 +1017,8 @@ class CutSet(Serializable, AlgorithmMixin):
         num_jobs: int = 1,
     ) -> "CutSet":
         """
-        Return a new ``CutSet``, made by traversing each ``MonoCut`` in windows of ``duration`` seconds by ``hop`` seconds and
-        creating new ``MonoCut`` out of them.
+        Return a new ``CutSet``, made by traversing each ``DataCut`` in windows of ``duration`` seconds by ``hop`` seconds and
+        creating new ``DataCut`` out of them.
 
         The last window might have a shorter duration if there was not enough audio, so you might want to
         use either ``.filter()`` or ``.pad()`` afterwards to obtain a uniform duration ``CutSet``.
@@ -1405,8 +1404,8 @@ class CutSet(Serializable, AlgorithmMixin):
             When False, extract and store the features for each track separately,
             and mix them dynamically when loading the features.
             When True, mix the audio first and store the mixed features,
-            returning a new ``MonoCut`` instance with the same ID.
-            The returned ``MonoCut`` will not have a ``Recording`` attached.
+            returning a new ``DataCut`` instance with the same ID.
+            The returned ``DataCut`` will not have a ``Recording`` attached.
         :param progress_bar: Should a progress bar be displayed (automatically turned off
             for parallel computation).
         :return: Returns a new ``CutSet`` with ``Features`` manifests attached to the cuts.
@@ -1655,7 +1654,7 @@ class CutSet(Serializable, AlgorithmMixin):
                     validate_features(feat_manifest, feats_data=feat_mat)
 
                     # Update the cut manifest.
-                    if isinstance(cut, MonoCut):
+                    if isinstance(cut, DataCut):
                         feat_manifest.recording_id = cut.recording_id
                         cut = fastcopy(cut, features=feat_manifest)
                     if isinstance(cut, MixedCut):
@@ -1916,11 +1915,11 @@ class CutSet(Serializable, AlgorithmMixin):
                 if isinstance(item, MixedCut):
                     cpy = fastcopy(item)
                     for t in cpy.tracks:
-                        if isinstance(t.cut, MonoCut):
+                        if isinstance(t.cut, DataCut):
                             t.cut.features = t.cut.features.copy_feats(writer=writer)
                     manifest_writer.write(cpy)
 
-                elif isinstance(item, MonoCut):
+                elif isinstance(item, DataCut):
                     cpy = fastcopy(item)
                     cpy.features = cpy.features.copy_feats(writer=writer)
                     manifest_writer.write(cpy)
@@ -2086,7 +2085,7 @@ def mix(
     # When the left_cut is a MixedCut, take its existing tracks, otherwise create a new track.
     if isinstance(reference_cut, MixedCut):
         old_tracks = reference_cut.tracks
-    elif isinstance(reference_cut, (MonoCut, PaddingCut)):
+    elif isinstance(reference_cut, (DataCut, PaddingCut)):
         old_tracks = [MixTrack(cut=reference_cut)]
     else:
         raise ValueError(f"Unsupported type of cut in mix(): {type(reference_cut)}")
@@ -2115,7 +2114,7 @@ def mix(
             )
             for track in mixed_in_cut.tracks
         ]
-    elif isinstance(mixed_in_cut, (MonoCut, MultiCut, PaddingCut)):
+    elif isinstance(mixed_in_cut, (DataCut, PaddingCut)):
         new_tracks = [MixTrack(cut=mixed_in_cut, offset=offset, snr=snr)]
     else:
         raise ValueError(f"Unsupported type of cut in mix(): {type(reference_cut)}")
@@ -2139,7 +2138,7 @@ def pad(
     The user can choose to pad either to a specific `duration`; a specific number of frames `max_frames`;
     or a specific number of samples `num_samples`. The three arguments are mutually exclusive.
 
-    :param cut: MonoCut to be padded.
+    :param cut: DataCut to be padded.
     :param duration: The cut's minimal duration after padding.
     :param num_frames: The cut's total number of frames after padding.
     :param num_samples: The cut's total number of samples after padding.
@@ -2358,8 +2357,8 @@ def create_cut_set_eager(
     Create a :class:`.CutSet` from any combination of supervision, feature and recording manifests.
     At least one of ``recordings`` or ``features`` is required.
 
-    The created cuts will be of type :class:`.MonoCut`, even when the recordings have multiple channels.
-    The :class:`.MonoCut` boundaries correspond to those found in the ``features``, when available,
+    The created cuts will be of type :class:`.DataCut` (MonoCut for single-channel and MultiCut for multi-channel).
+    The :class:`.DataCut` boundaries correspond to those found in the ``features``, when available,
     otherwise to those found in the ``recordings``.
 
     When ``supervisions`` are provided, we'll be searching them for matching recording IDs
@@ -2759,6 +2758,8 @@ def deserialize_cut(raw_cut: dict) -> Cut:
         return MonoCut.from_dict(raw_cut)
     if cut_type == "MultiCut":
         return MultiCut.from_dict(raw_cut)
+    if cut_type == "PaddingCut":
+        return PaddingCut.from_dict(raw_cut)
     if cut_type == "Cut":
         warnings.warn(
             "Your manifest was created with Lhotse version earlier than v0.8, when MonoCut was called Cut. "

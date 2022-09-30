@@ -35,10 +35,12 @@ class MonoCut(DataCut):
         - :class:`lhotse.cut.CutSet`
     """
 
+    channel: int
+
     @property
-    def num_channels(self) -> Optional[int]:
-        # MonoCut is always single-channel, if it has a recording.
-        return int(self.has_recording)
+    def num_channels(self) -> int:
+        # MonoCut is always single-channel.
+        return 1
 
     @rich_exception_info
     def load_features(self) -> Optional[np.ndarray]:

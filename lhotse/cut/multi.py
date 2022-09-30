@@ -73,9 +73,11 @@ class MultiCut(DataCut):
         - :class:`lhotse.cut.MixedCut`
     """
 
+    channel: List[int]
+
     @property
-    def num_channels(self) -> Optional[int]:
-        return len(self.channel) if self.has_recording else None
+    def num_channels(self) -> int:
+        return len(self.channel)
 
     @rich_exception_info
     def load_features(self, channel: Optional[int] = None) -> Optional[np.ndarray]:
@@ -330,7 +332,10 @@ class MultiCut(DataCut):
 
         assert all(isinstance(c, MonoCut) for c in cuts), "All cuts must be MonoCuts"
         assert (
-            len(groupby(cuts, key=lambda c: (c.recording_id, c.start, c.end))) == 1
+            sum(
+                1 for _ in groupby(cuts, key=lambda c: (c.recording_id, c.start, c.end))
+            )
+            == 1
         ), "Cuts must match in all fields except channel"
         assert len(set(c.channel for c in cuts)) == len(
             cuts
@@ -346,6 +351,28 @@ class MultiCut(DataCut):
                 "supervisions": [s for c in cuts for s in c.supervisions],
             }
         )
+
+    def to_mono(self) -> List["DataCut"]:
+        """
+        Convert a MultiCut to a list of MonoCuts, one for each channel.
+        """
+        from .mono import MonoCut
+
+        return [
+            MonoCut(
+                id=f"{self.id}-{channel}",
+                recording=self.recording,
+                start=self.start,
+                duration=self.duration,
+                channel=channel,
+                supervisions=[
+                    fastcopy(s, channel=channel)
+                    for s in self.supervisions
+                    if channel in s.channel
+                ],
+            )
+            for channel in self.channel
+        ]
 
     @staticmethod
     def from_dict(data: dict) -> "MultiCut":

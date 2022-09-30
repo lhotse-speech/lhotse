@@ -703,7 +703,7 @@ def test_sampler_filter(sampler_cls):
         # a full epoch.
         max_duration=10.0,
     )
-    removed_cut_id = "dummy-cut-0010"
+    removed_cut_id = "dummy-mono-cut-0010"
     sampler.filter(lambda cut: cut.id != removed_cut_id)
     sampled_cuts = []
     for batch in sampler:
@@ -731,7 +731,7 @@ def test_cut_pairs_sampler_filter():
         # a full epoch.
         max_source_frames=1000,
     )
-    removed_cut_id = "dummy-cut-0010"
+    removed_cut_id = "dummy-mono-cut-0010"
     sampler.filter(lambda cut: cut.id != removed_cut_id)
 
     source_cuts, target_cuts = [], []
