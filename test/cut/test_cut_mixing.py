@@ -3,17 +3,60 @@ from math import isclose
 import numpy as np
 import pytest
 
-from lhotse.cut import CutSet, MixedCut, MonoCut
+from lhotse.audio import Recording
+from lhotse.cut import CutSet, MixedCut, MonoCut, MultiCut
 from lhotse.supervision import SupervisionSegment
 from lhotse.testing.dummies import remove_spaces_from_segment_text
 from lhotse.utils import nullcontext as does_not_raise
 
 # Note:
-# Definitions for `cut1`, `cut2` and `cut_set` parameters are standard Pytest fixtures located in test/cut/conftest.py
+# Definitions for `cut1`, `cut2`, `multi_cut1`, `multi_cut2`, and `cut_set` parameters are
+# standard Pytest fixtures located in test/cut/conftest.py
 
 
 def test_append_cut_duration_and_supervisions(cut1, cut2):
     appended_cut = cut1.append(cut2)
+
+    assert isinstance(appended_cut, MixedCut)
+    assert appended_cut.duration == 20.0
+    assert appended_cut.supervisions == [
+        SupervisionSegment(
+            id="sup-1", recording_id="irrelevant", start=0.5, duration=6.0
+        ),
+        SupervisionSegment(
+            id="sup-2", recording_id="irrelevant", start=7.0, duration=2.0
+        ),
+        SupervisionSegment(
+            id="sup-3", recording_id="irrelevant", start=13.0, duration=2.5
+        ),
+    ]
+
+
+def test_append_multi_cut_with_same_channels(multi_cut1, multi_cut2):
+    appended_cut = multi_cut1.append(multi_cut2)
+
+    assert isinstance(appended_cut, MixedCut)
+    assert appended_cut.duration == 20.0
+    assert appended_cut.supervisions == [
+        SupervisionSegment(
+            id="sup-1", recording_id="irrelevant", start=0.5, duration=6.0
+        ),
+        SupervisionSegment(
+            id="sup-2", recording_id="irrelevant", start=7.0, duration=2.0
+        ),
+        SupervisionSegment(
+            id="sup-3", recording_id="irrelevant", start=13.0, duration=2.5
+        ),
+    ]
+
+
+def test_append_multi_cut_with_different_channels(multi_cut1, multi_cut3):
+    with pytest.raises(AssertionError):
+        _ = multi_cut1.append(multi_cut3)
+
+
+def test_append_mono_cut_with_multi_cut(cut1, multi_cut2):
+    appended_cut = cut1.append(multi_cut2)
 
     assert isinstance(appended_cut, MixedCut)
     assert appended_cut.duration == 20.0
@@ -111,6 +154,77 @@ def test_mixed_cut_load_audio_unmixed(mixed_audio_cut):
     assert len(audio) == 2
     assert audio[0].shape == (1, 230400)
     assert audio[1].shape == (1, 230400)
+
+
+@pytest.mark.parametrize(
+    "mixed, flattened",
+    [
+        (True, True),
+        (True, False),
+        pytest.param(
+            False,
+            True,
+            marks=pytest.mark.filterwarnings("ignore::UserWarning"),
+        ),
+        (False, False),
+    ],
+)
+def test_mixed_cut_with_multi_cut_load_audio_mixed1(mixed, flattened):
+    mono_cut1 = Recording.from_file(
+        "test/fixtures/mix_cut_test/audio/storage/2412-153948-0000.flac"
+    ).to_cut()  # 11.66s
+    mono_cut2 = Recording.from_file(
+        "test/fixtures/mix_cut_test/audio/storage/2412-153948-0001.flac"
+    ).to_cut()  # 10.51s
+    rir = Recording.from_file("test/fixtures/rir/real_8ch.wav")
+    multi_cut = mono_cut1.reverb_rir(
+        rir, rir_channels=[0, 1, 2, 3, 4, 5, 6, 7]
+    )  # 11.66s
+    mixed_cut = multi_cut.mix(mono_cut2, offset_other_by=5.0)  # 15.51s
+    assert mixed_cut.duration == 15.51
+    mixed_cut = mixed_cut.pad(duration=20.0)
+    assert mixed_cut.duration == 20.0
+    audio = mixed_cut.load_audio(mixed=mixed, flattened=flattened)
+    if mixed and flattened:
+        assert audio.shape == (1, 320000)
+    elif mixed and not flattened:
+        assert audio.shape == (8, 320000)
+    else:
+        assert isinstance(audio, list) and len(audio) == 3
+
+
+@pytest.mark.parametrize(
+    "mixed, flattened",
+    [
+        (True, True),
+        (True, False),
+        pytest.param(
+            False, True, marks=pytest.mark.filterwarnings("ignore::UserWarning")
+        ),
+        (False, False),
+    ],
+)
+def test_mixed_cut_with_multi_cut_load_audio_mixed2(mixed, flattened):
+    mono_cut1 = Recording.from_file(
+        "test/fixtures/mix_cut_test/audio/storage/2412-153948-0000.flac"
+    ).to_cut()
+    mono_cut2 = Recording.from_file(
+        "test/fixtures/mix_cut_test/audio/storage/2412-153948-0001.flac"
+    ).to_cut()
+    rir = Recording.from_file("test/fixtures/rir/real_8ch.wav")
+    multi_cut1 = mono_cut1.reverb_rir(rir, rir_channels=[0, 1, 2, 3])
+    multi_cut2 = mono_cut2.reverb_rir(rir, rir_channels=[0, 1, 2, 3])
+    mixed_cut = multi_cut1.append(multi_cut2)
+    assert mixed_cut.duration == 22.17
+    mixed_cut = mixed_cut.pad(duration=25.0)
+    assert mixed_cut.duration == 25.0
+    audio = mixed_cut.load_audio(mixed=mixed, flattened=flattened)
+    if mixed and flattened:
+        assert audio.shape == (1, 400000)
+    elif mixed and not flattened:
+        assert audio.shape == (4, 400000)
+    else:
+        assert isinstance(audio, list) and len(audio) == 3
 
 
 @pytest.fixture

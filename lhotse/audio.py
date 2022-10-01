@@ -1215,6 +1215,7 @@ class AudioMixer:
         self.tracks = [base_audio]
         self.offsets = [0]
         self.sampling_rate = sampling_rate
+        self.num_channels = base_audio.shape[0]
         self.dtype = self.tracks[0].dtype
 
         # Keep a pre-computed energy value of the audio that we initialize the Mixer with;
@@ -1252,7 +1253,7 @@ class AudioMixer:
     @property
     def unmixed_audio(self) -> List[np.ndarray]:
         """
-        Return a list of numpy arrays with the shape (1, num_samples), where each track is
+        Return a list of numpy arrays with the shape (C, num_samples), where each track is
         zero padded and scaled adequately to the offsets and SNR used in ``add_to_mix`` call.
         """
         total = self.num_samples_total
@@ -1264,12 +1265,38 @@ class AudioMixer:
     @property
     def mixed_audio(self) -> np.ndarray:
         """
-        Return a numpy ndarray with the shape (1, num_samples) - a mono mix of the tracks
+        Return a numpy ndarray with the shape (num_channels, num_samples) - a mix of the tracks
+        supplied with ``add_to_mix`` calls.
+        """
+        total = self.num_samples_total
+        mixed = np.zeros((self.num_channels, total), dtype=self.dtype)
+        for offset, track in zip(self.offsets, self.tracks):
+            if track.shape[0] == self.num_channels:
+                # Do nothing
+                ...
+            elif track.shape[0] == 1 and self.num_channels > 1:
+                # Duplicate the track for all channels
+                track = np.tile(track, (self.num_channels, 1))
+            elif track.shape[0] > 1 and self.num_channels == 1:
+                # Sum all channels of the track
+                track = np.sum(track, axis=0, keepdims=True)
+            else:
+                raise ValueError("Incompatible number of channels")
+            mixed[:, offset : offset + track.shape[1]] += track
+        return mixed
+
+    @property
+    def mixed_and_flattened_audio(self) -> np.ndarray:
+        """
+        Return a numpy ndarray with the shape (1, num_samples) - a mix of the tracks
         supplied with ``add_to_mix`` calls.
         """
         total = self.num_samples_total
         mixed = np.zeros((1, total), dtype=self.dtype)
         for offset, track in zip(self.offsets, self.tracks):
+            if track.shape[0] > 1:
+                # Sum all channels of the track
+                track = np.sum(track, axis=0, keepdims=True)
             mixed[:, offset : offset + track.shape[1]] += track
         return mixed
 
@@ -1280,7 +1307,7 @@ class AudioMixer:
         offset: Seconds = 0.0,
     ):
         """
-        Add audio (only support mono-channel) of a new track into the mix.
+        Add audio of a new track into the mix.
         :param audio: An array of audio samples to be mixed in.
         :param snr: Signal-to-noise ratio, assuming `audio` represents noise (positive SNR - lower `audio` energy,
         negative SNR - higher `audio` energy)
@@ -1288,10 +1315,9 @@ class AudioMixer:
         the start with low energy values.
         :return:
         """
-        if len(audio) == 0:
+        if audio.size == 0:
             return  # do nothing for empty arrays
 
-        assert audio.shape[0] == 1  # TODO: support multi-channels
         assert offset >= 0.0, "Negative offset in mixing is not supported."
 
         num_samples_offset = compute_num_samples(offset, self.sampling_rate)
@@ -1312,6 +1338,7 @@ class AudioMixer:
 
         self.tracks.append(gain * audio)
         self.offsets.append(num_samples_offset)
+        self.num_channels = max(self.num_channels, audio.shape[0])
 
 
 def audio_energy(audio: np.ndarray) -> float:

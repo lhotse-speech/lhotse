@@ -2065,6 +2065,28 @@ def mix(
         f"Please resample the recordings first."
     )
 
+    # If either of the cuts is a MultiCut, we need to further check a few things.
+    if isinstance(reference_cut, MultiCut) or isinstance(mixed_in_cut, MultiCut):
+        # If both are MultiCuts, we need to check that they point to the same channels
+        if isinstance(reference_cut, MultiCut) and isinstance(mixed_in_cut, MultiCut):
+            assert (
+                reference_cut.channel == mixed_in_cut.channel
+            ), "Cannot mix MultiCuts with different channel ids."
+        # If only one of them is a MultiCut and the other is a MixedCut, we need to check
+        # all the tracks of the MixedCut to make sure they point to the same channels.
+        if isinstance(reference_cut, MixedCut) or isinstance(mixed_in_cut, MixedCut):
+            if isinstance(reference_cut, MixedCut):
+                mixed_cut = reference_cut
+                multi_cut = mixed_in_cut
+            else:
+                mixed_cut = mixed_in_cut
+                multi_cut = reference_cut
+            assert all(
+                not isinstance(track, MultiCut)
+                or track.channel_ids == multi_cut.channel_ids
+                for track in mixed_cut.tracks
+            ), "Cannot mix a MultiCut with a MixedCut that contains MultiCuts with different channel ids."
+
     # Determine the ID of the result.
     if preserve_id is None:
         mixed_cut_id = str(uuid4())

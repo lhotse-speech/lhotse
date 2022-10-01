@@ -802,12 +802,22 @@ class MixedCut(Cut):
             return mixer.unmixed_feats
 
     @rich_exception_info
-    def load_audio(self, mixed: bool = True) -> Optional[np.ndarray]:
+    def load_audio(
+        self, mixed: bool = True, flattened: bool = False
+    ) -> Optional[np.ndarray]:
         """
         Loads the audios of the source cuts and mix them on-the-fly.
 
-        :param mixed: When True (default), returns a mono mix of the underlying tracks.
-            Otherwise returns a numpy array with the number of channels equal to the number of tracks.
+        :param mixed: When True (default), returns a mix of the underlying tracks. This will
+            return a numpy array with shape ``(num_channels, num_samples)``, where ``num_channels``
+            is determined by the ``num_channels`` property of the MixedCut. Otherwise returns a
+            numpy array with the number of channels equal to the total number of channels
+            across all tracks in the MixedCut. For example, if it contains a MultiCut with 2
+            channels and a MonoCut with 1 channel, the returned array will have shape
+            ``(3, num_samples)``.
+        :param flattened: If the MixedCut contains > 1 channels (for e.g. when one of its tracks
+            is a MultiCut), this parameter controls whether the returned array will be flattened
+            to a single channel. This flattening is done by summing the channels together.
         :return: A numpy ndarray with audio samples and with shape ``(num_channels, num_samples)``
         """
         if not self.has_recording:
@@ -853,13 +863,26 @@ class MixedCut(Cut):
                 )
             except NonPositiveEnergyError as e:
                 logging.warning(
-                    f'{e} MonoCut with id "{track.cut.id}" will not be mixed in.'
+                    f'{e} DataCut with id "{track.cut.id}" will not be mixed in.'
                 )
+
+        if flattened and not any(track.type == "MultiCut" for track in self.tracks):
+            warnings.warn(
+                "Flattening a MixedCut without MultiCut tracks has no effect.",
+                UserWarning,
+            )
+            flattened = False
+
+        if flattened and not mixed:
+            warnings.warn(
+                "Flattening a MixedCut without mixed=True has no effect.", UserWarning
+            )
+            flattened = False
 
         if mixed:
             # Off-by-one errors can happen during mixing due to imperfect float arithmetic and rounding;
             # we will fix them on-the-fly so that the manifest does not lie about the num_samples.
-            audio = mixer.mixed_audio
+            audio = mixer.mixed_and_flattened_audio if flattened else mixer.mixed_audio
             if audio.shape[1] - self.num_samples == 1:
                 audio = audio[:, : self.num_samples]
             if audio.shape[1] - self.num_samples == -1:
