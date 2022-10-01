@@ -8,7 +8,6 @@ from concurrent.futures import Executor, ProcessPoolExecutor
 from functools import partial, reduce
 from itertools import chain, islice
 from math import ceil
-from operator import add
 from pathlib import Path
 from typing import (
     Any,

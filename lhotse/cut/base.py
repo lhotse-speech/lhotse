@@ -9,7 +9,7 @@ from typing_extensions import Literal
 from lhotse.audio import AudioSource, Recording
 from lhotse.augmentation import AugmentFn
 from lhotse.features import FeatureExtractor
-from lhotse.supervision import SupervisionSegment, SupervisionSet
+from lhotse.supervision import SupervisionSegment
 from lhotse.utils import (
     Decibels,
     Pathlike,

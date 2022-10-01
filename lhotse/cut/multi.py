@@ -9,7 +9,6 @@ from typing import Any, Callable, Iterable, List, Optional, Union
 import numpy as np
 
 from lhotse.audio import Recording
-from lhotse.cut.base import Cut
 from lhotse.cut.data import DataCut
 from lhotse.features import Features
 from lhotse.supervision import SupervisionSegment
@@ -80,11 +79,14 @@ class MultiCut(DataCut):
         return len(self.channel)
 
     @rich_exception_info
-    def load_features(self, channel: Optional[int] = None) -> Optional[np.ndarray]:
+    def load_features(
+        self, channel: Optional[Union[int, List[int]]] = None
+    ) -> Optional[np.ndarray]:
         """
         Load the features from the underlying storage and cut them to the relevant
-        [begin, duration] region of the current MultiCut. We can also specify which
-        channel to load (by default, we load the same channels as in the MultiCut).
+        [begin, duration] region of the current MultiCut.
+
+        :param channel: The channel to load the features for. If None, all channels will be loaded.
         """
         if self.has_features:
             feats = self.features.load(
@@ -97,9 +99,9 @@ class MultiCut(DataCut):
             #       If needed, we will remove or duplicate the last frame to be
             #       consistent with the manifests declared "num_frames".
             if feats.shape[0] - self.num_frames == 1:
-                feats = feats[: self.num_frames, :]
+                feats = feats[: self.num_frames, ...]
             elif feats.shape[0] - self.num_frames == -1:
-                feats = np.concatenate((feats, feats[-1:, :]), axis=0)
+                feats = np.concatenate((feats, feats[-1:, ...]), axis=0)
             return feats
         return None
 
@@ -320,7 +322,7 @@ class MultiCut(DataCut):
         return fastcopy(self, supervisions=msups)
 
     @staticmethod
-    def from_mono(*cuts: Cut) -> "MultiCut":
+    def from_mono(*cuts: DataCut) -> "MultiCut":
         """
         Convert one or more MonoCut to a MultiCut. If multiple mono cuts are provided, they
         must match in all fields except the channel. Each cut must have a distinct channel.
