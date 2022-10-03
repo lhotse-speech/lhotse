@@ -141,6 +141,7 @@ mark_lhotse_version(LHOTSE_VERSION)
 
 
 install_requires = [
+    "importlib-metadata<5.0.0",
     "audioread>=2.1.9",
     "SoundFile>=0.10",
     "click>=7.1.1",
