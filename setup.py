@@ -181,6 +181,7 @@ except ImportError:
 
 docs_require = (project_root / "docs" / "requirements.txt").read_text().splitlines()
 tests_require = [
+    "importlib-metadata<5.0.0",
     "pytest>=5.4.3",
     "pytest-forked==1.4.0",
     "pytest-xdist==2.5.0",
