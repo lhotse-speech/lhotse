@@ -129,7 +129,7 @@ def load_kaldi_data_dir(
             SupervisionSegment(
                 id=fix_id(segment_id),
                 recording_id=recording_id,
-                start=start,
+                start=float(start),
                 duration=add_durations(
                     float(end), -float(start), sampling_rate=sampling_rate
                 ),
@@ -155,7 +155,7 @@ def load_kaldi_data_dir(
                 id=fix_id(rec_id),
                 recording_id=rec_id,
                 start=0.0,
-                duration=float(durations[rec_id]),
+                duration=durations[rec_id],
                 channel=0,
                 text=texts[rec_id],
                 language=languages[rec_id],
