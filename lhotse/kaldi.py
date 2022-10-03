@@ -107,10 +107,8 @@ def load_kaldi_data_dir(
                 )
             ],
             sampling_rate=sampling_rate,
-            num_samples=compute_num_samples(
-                float(durations[recording_id]), sampling_rate
-            ),
-            duration=float(durations[recording_id]),
+            num_samples=compute_num_samples(durations[recording_id], sampling_rate),
+            duration=durations[recording_id],
         )
         for recording_id, path_or_cmd in recordings.items()
     )
@@ -131,7 +129,7 @@ def load_kaldi_data_dir(
             SupervisionSegment(
                 id=fix_id(segment_id),
                 recording_id=recording_id,
-                start=float(start),
+                start=start,
                 duration=add_durations(
                     float(end), -float(start), sampling_rate=sampling_rate
                 ),
@@ -339,13 +337,15 @@ def export_to_kaldi(
 
 
 def load_kaldi_text_mapping(
-    path: Path, must_exist: bool = False
+    path: Path, must_exist: bool = False, float_vals: bool = False
 ) -> Dict[str, Optional[str]]:
     """Load Kaldi files such as utt2spk, spk2gender, text, etc. as a dict."""
     mapping = defaultdict(lambda: None)
     if path.is_file():
         with path.open() as f:
             mapping = dict(line.strip().split(maxsplit=1) for line in f)
+        if float_vals:
+            mapping = {key: float(val) for key, val in mapping.items()}
     elif must_exist:
         raise ValueError(f"No such file: {path}")
     return mapping
