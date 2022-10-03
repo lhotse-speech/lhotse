@@ -84,7 +84,7 @@ def load_kaldi_data_dir(
     recordings = load_kaldi_text_mapping(path / "wav.scp", must_exist=True)
     reco2dur = path / "reco2dur"
     if use_reco2dur and reco2dur.is_file():
-        durations = load_kaldi_text_mapping(reco2dur)
+        durations = load_kaldi_text_mapping(reco2dur, float_vals=True)
         assert len(durations) == len(recordings), (
             "The duration file reco2dur does not "
             "have the same length as the  wav.scp file"
