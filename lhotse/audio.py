@@ -1195,6 +1195,16 @@ class AudioMixer:
     The time offset is relative to the start of the reference signal
     (only positive values are supported).
     The SNR is relative to the energy of the signal used to initialize the ``AudioMixer``.
+
+    .. note:: Both single-channel and multi-channel signals are supported as reference
+        and added signals. The only requirement is that the when mixing 2 multi-channel
+        signals, they must have the same number of channels.
+
+    .. note:: When the AudioMixer contains multi-channel tracks, 2 types of mixed signals
+        can be generated:
+        - `mixed_audio` mixes each channel independently, and returns a multi-channel signal.
+          If there is a mono track, it is added to all the channels.
+        - `mixed_mono_audio` mixes all channels together, and returns a single-channel signal.
     """
 
     def __init__(
@@ -1286,7 +1296,7 @@ class AudioMixer:
         return mixed
 
     @property
-    def mixed_and_flattened_audio(self) -> np.ndarray:
+    def mixed_mono_audio(self) -> np.ndarray:
         """
         Return a numpy ndarray with the shape (1, num_samples) - a mix of the tracks
         supplied with ``add_to_mix`` calls.

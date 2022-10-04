@@ -1,10 +1,3 @@
-from .base import Cut
-from .mixed import MixedCut, MixTrack
-from .mono import MonoCut
-from .multi import MultiCut
-from .padding import PaddingCut
-from .set import CutSet
-
 """
 The following is the hierarchy of imports in this module (to avoid circular imports):
 
@@ -34,6 +27,13 @@ The following is the hierarchy of imports in this module (to avoid circular impo
     └────────────────┘
 
 """
+
+from .base import Cut
+from .mixed import MixedCut, MixTrack
+from .mono import MonoCut
+from .multi import MultiCut
+from .padding import PaddingCut
+from .set import CutSet
 
 # The following functions are imported in other modules, so we need to import them here.
 __all__ = [
