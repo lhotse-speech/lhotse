@@ -141,7 +141,6 @@ mark_lhotse_version(LHOTSE_VERSION)
 
 
 install_requires = [
-    "importlib-metadata<5.0.0",
     "audioread>=2.1.9",
     "SoundFile>=0.10",
     "click>=7.1.1",
@@ -181,7 +180,6 @@ except ImportError:
 
 docs_require = (project_root / "docs" / "requirements.txt").read_text().splitlines()
 tests_require = [
-    "importlib-metadata<5.0.0",
     "pytest>=5.4.3",
     "pytest-forked==1.4.0",
     "pytest-xdist==2.5.0",
