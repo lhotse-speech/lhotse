@@ -112,6 +112,20 @@ def multi_channel_recording():
     return recording, supervision
 
 
+@pytest.fixture
+def multi_channel_kaldi_dir():
+    return {
+        "wav.scp": {
+            "lbi-1272-135031-0000_0": "ffmpeg -threads 1 -i nonexistent.wav -ar 16000 -map_channel 0.0.0  -f wav -threads 1 pipe:1 |",
+            "lbi-1272-135031-0000_1": "ffmpeg -threads 1 -i nonexistent.wav -ar 16000 -map_channel 0.0.1  -f wav -threads 1 pipe:1 |",
+        },
+        "segments": {
+            "lbi-1272-135031-0000-A": "lbi-1272-135031-0000_0 0.0 10.885",
+            "lbi-1272-135031-0000-B": "lbi-1272-135031-0000_1 0.0 10.885",
+        },
+    }
+
+
 @pytest.mark.xfail(reason="multi file recordings not supported yet")
 def test_multi_file_recording(tmp_path, multi_file_recording):
     with working_directory(tmp_path):
@@ -124,7 +138,9 @@ def test_multi_file_recording(tmp_path, multi_file_recording):
         )
 
 
-def test_multi_channel_recording(tmp_path, multi_channel_recording):
+def test_multi_channel_recording(
+    tmp_path, multi_channel_recording, multi_channel_kaldi_dir
+):
     with working_directory(tmp_path):
         lhotse.kaldi.export_to_kaldi(
             multi_channel_recording[0],
@@ -133,6 +149,11 @@ def test_multi_channel_recording(tmp_path, multi_channel_recording):
             map_underscores_to=None,
             prefix_spk_id=False,
         )
+
+        wavs = open_and_load("wav.scp")
+        segments = open_and_load("segments")
+        assert wavs == multi_channel_kaldi_dir["wav.scp"]
+        assert segments == multi_channel_kaldi_dir["segments"]
 
 
 @contextlib.contextmanager
