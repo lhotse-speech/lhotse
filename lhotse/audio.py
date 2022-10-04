@@ -1348,6 +1348,15 @@ class AudioMixer:
 
         self.tracks.append(gain * audio)
         self.offsets.append(num_samples_offset)
+        # We cannot mix 2 multi-channel audios with different number of channels.
+        if (
+            audio.shape[0] != self.num_channels
+            and self.num_channels != 1
+            and audio.shape[0] != 1
+        ):
+            raise ValueError(
+                f"Cannot mix audios with {audio.shape[0]} and {self.num_channels} channels."
+            )
         self.num_channels = max(self.num_channels, audio.shape[0])
 
 
