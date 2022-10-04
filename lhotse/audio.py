@@ -1281,17 +1281,12 @@ class AudioMixer:
         total = self.num_samples_total
         mixed = np.zeros((self.num_channels, total), dtype=self.dtype)
         for offset, track in zip(self.offsets, self.tracks):
-            if track.shape[0] == self.num_channels:
-                # Do nothing
-                ...
-            elif track.shape[0] == 1 and self.num_channels > 1:
-                # Duplicate the track for all channels
+            # Only two cases are possible here: either the track is mono, or it has the same
+            # number of channels as the mixer. For the latter case, we don't need to do anything
+            # special, as we can just add the track to the mix. For the former case, we need to
+            # add the mono track to all channels by repeating it.
+            if track.shape[0] == 1 and self.num_channels > 1:
                 track = np.tile(track, (self.num_channels, 1))
-            elif track.shape[0] > 1 and self.num_channels == 1:
-                # Sum all channels of the track
-                track = np.sum(track, axis=0, keepdims=True)
-            else:
-                raise ValueError("Incompatible number of channels")
             mixed[:, offset : offset + track.shape[1]] += track
         return mixed
 
