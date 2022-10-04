@@ -157,7 +157,7 @@ def test_mixed_cut_load_audio_unmixed(mixed_audio_cut):
 
 
 @pytest.mark.parametrize(
-    "mixed, flattened",
+    "mixed, mono_downmix",
     [
         (True, True),
         (True, False),
@@ -169,7 +169,7 @@ def test_mixed_cut_load_audio_unmixed(mixed_audio_cut):
         (False, False),
     ],
 )
-def test_mixed_cut_with_multi_cut_load_audio_mixed1(mixed, flattened):
+def test_mixed_cut_with_multi_cut_load_audio_mixed1(mixed, mono_downmix):
     mono_cut1 = Recording.from_file(
         "test/fixtures/mix_cut_test/audio/storage/2412-153948-0000.flac"
     ).to_cut()  # 11.66s
@@ -184,17 +184,17 @@ def test_mixed_cut_with_multi_cut_load_audio_mixed1(mixed, flattened):
     assert mixed_cut.duration == 15.51
     mixed_cut = mixed_cut.pad(duration=20.0)
     assert mixed_cut.duration == 20.0
-    audio = mixed_cut.load_audio(mixed=mixed, flattened=flattened)
-    if mixed and flattened:
+    audio = mixed_cut.load_audio(mixed=mixed, mono_downmix=mono_downmix)
+    if mixed and mono_downmix:
         assert audio.shape == (1, 320000)
-    elif mixed and not flattened:
+    elif mixed and not mono_downmix:
         assert audio.shape == (8, 320000)
     else:
         assert isinstance(audio, list) and len(audio) == 3
 
 
 @pytest.mark.parametrize(
-    "mixed, flattened",
+    "mixed, mono_downmix",
     [
         (True, True),
         (True, False),
@@ -204,7 +204,7 @@ def test_mixed_cut_with_multi_cut_load_audio_mixed1(mixed, flattened):
         (False, False),
     ],
 )
-def test_mixed_cut_with_multi_cut_load_audio_mixed2(mixed, flattened):
+def test_mixed_cut_with_multi_cut_load_audio_mixed2(mixed, mono_downmix):
     mono_cut1 = Recording.from_file(
         "test/fixtures/mix_cut_test/audio/storage/2412-153948-0000.flac"
     ).to_cut()
@@ -218,10 +218,10 @@ def test_mixed_cut_with_multi_cut_load_audio_mixed2(mixed, flattened):
     assert mixed_cut.duration == 22.17
     mixed_cut = mixed_cut.pad(duration=25.0)
     assert mixed_cut.duration == 25.0
-    audio = mixed_cut.load_audio(mixed=mixed, flattened=flattened)
-    if mixed and flattened:
+    audio = mixed_cut.load_audio(mixed=mixed, mono_downmix=mono_downmix)
+    if mixed and mono_downmix:
         assert audio.shape == (1, 400000)
-    elif mixed and not flattened:
+    elif mixed and not mono_downmix:
         assert audio.shape == (4, 400000)
     else:
         assert isinstance(audio, list) and len(audio) == 3
