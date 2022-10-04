@@ -259,8 +259,8 @@ def east_to_west_num(text: str) -> str:
 
 
 def remove_extra_space(text: str) -> str:
-    text = sub("\s+", " ", text)
-    text = sub("\s+\.\s+", ".", text)
+    text = sub(r"\s+", " ", text)
+    text = sub(r"\s+\.\s+", ".", text)
     return text
 
 
