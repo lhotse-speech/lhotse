@@ -107,10 +107,8 @@ def load_kaldi_data_dir(
                 )
             ],
             sampling_rate=sampling_rate,
-            num_samples=compute_num_samples(
-                float(durations[recording_id]), sampling_rate
-            ),
-            duration=float(durations[recording_id]),
+            num_samples=compute_num_samples(durations[recording_id], sampling_rate),
+            duration=durations[recording_id],
         )
         for recording_id, path_or_cmd in recordings.items()
     )
@@ -157,7 +155,7 @@ def load_kaldi_data_dir(
                 id=fix_id(rec_id),
                 recording_id=rec_id,
                 start=0.0,
-                duration=float(durations[rec_id]),
+                duration=durations[rec_id],
                 channel=0,
                 text=texts[rec_id],
                 language=languages[rec_id],
