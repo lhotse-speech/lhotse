@@ -2081,8 +2081,7 @@ def mix(
                 mixed_cut = mixed_in_cut
                 multi_cut = reference_cut
             assert all(
-                not isinstance(track, MultiCut)
-                or track.channel_ids == multi_cut.channel_ids
+                track.type != "MultiCut" or track.cut.channel == multi_cut.channel
                 for track in mixed_cut.tracks
             ), "Cannot mix a MultiCut with a MixedCut that contains MultiCuts with different channel ids."
 

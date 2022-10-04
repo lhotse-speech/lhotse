@@ -227,6 +227,28 @@ def test_mixed_cut_with_multi_cut_load_audio_mixed2(mixed, mono_downmix):
         assert isinstance(audio, list) and len(audio) == 3
 
 
+def test_mixed_cut_with_multi_cut_incompatible():
+    mono_cut1 = Recording.from_file(
+        "test/fixtures/mix_cut_test/audio/storage/2412-153948-0000.flac"
+    ).to_cut()
+    mono_cut2 = Recording.from_file(
+        "test/fixtures/mix_cut_test/audio/storage/2412-153948-0001.flac"
+    ).to_cut()
+    rir = Recording.from_file("test/fixtures/rir/real_8ch.wav")
+    multi_cut1 = mono_cut1.reverb_rir(rir, rir_channels=[0, 1, 2, 3])
+    multi_cut2 = mono_cut2.reverb_rir(rir, rir_channels=[0, 1, 2])
+    mixed_cut = multi_cut1.pad(duration=20.0)
+    assert mixed_cut.duration == 20.0
+
+    # check 1
+    with pytest.raises(AssertionError):
+        mixed_cut.append(multi_cut2)
+
+    # check 2
+    with pytest.raises(AssertionError):
+        multi_cut2.append(mixed_cut)
+
+
 @pytest.fixture
 def libri_cut_set():
     return CutSet.from_json("test/fixtures/libri/cuts.json")
