@@ -1,0 +1,34 @@
+[
+  {
+    "id": "e3e70682-c209-4cac-629f-7gcfe93d18de",
+    "start": 0.0,
+    "duration": 10.0,
+    "channel": 0,
+    "supervisions": [
+      {
+        "id": "sup-1",
+        "recording_id": "recording-1",
+        "start": 0,
+        "duration": 10.0,
+        "channel": 0,
+        "text": "EXAMPLE OF TEXT"
+      }
+    ],
+    "recording": {
+      "id": "recording-1",
+      "sources": [
+        {
+          "type": "file",
+          "channels": [
+            0
+          ],
+          "source": "test/fixtures/libri/libri-1088-134315-0000_8ch.wav"
+        }
+      ],
+      "sampling_rate": 16000,
+      "num_samples": 256640,
+      "duration": 16.04
+    },
+    "type": "MultiCut"
+  }
+]
