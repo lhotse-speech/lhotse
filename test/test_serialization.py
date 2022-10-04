@@ -8,6 +8,7 @@ from lhotse import (
     Features,
     FeatureSet,
     MonoCut,
+    MultiCut,
     Recording,
     RecordingSet,
     SupervisionSegment,
@@ -29,6 +30,7 @@ from lhotse.utils import nullcontext as does_not_raise
         ("test/fixtures/supervision.json", does_not_raise()),
         ("test/fixtures/dummy_feats/feature_manifest.json", does_not_raise()),
         ("test/fixtures/libri/cuts.json", does_not_raise()),
+        ("test/fixtures/libri/cuts_multi.json", does_not_raise()),
         ("test/fixtures/feature_config.yml", pytest.raises(ValueError)),
         ("no/such/path.xd", pytest.raises(ValueError)),
     ],
@@ -45,6 +47,7 @@ def test_load_any_lhotse_manifest(path, exception_expectation):
         ("test/fixtures/supervision.json", does_not_raise()),
         ("test/fixtures/dummy_feats/feature_manifest.json", does_not_raise()),
         ("test/fixtures/libri/cuts.json", does_not_raise()),
+        ("test/fixtures/libri/cuts_multi.json", does_not_raise()),
         ("test/fixtures/feature_config.yml", pytest.raises(ValueError)),
         ("no/such/path.xd", pytest.raises(ValueError)),
     ],
@@ -169,6 +172,28 @@ def cut_set():
             ),
         ],
     )
+    multi_cut = MultiCut(
+        id="cut-2",
+        start=0.0,
+        duration=10.0,
+        channel=0,
+        recording=Recording(
+            id="rec-2",
+            sampling_rate=16000,
+            num_samples=160000,
+            duration=10.0,
+            channel_ids=[0, 1],
+            sources=[AudioSource(type="file", channels=[0, 1], source="irrelevant")],
+        ),
+        supervisions=[
+            SupervisionSegment(
+                id="sup-3", recording_id="irrelevant", start=0.5, duration=6.0
+            ),
+            SupervisionSegment(
+                id="sup-4", recording_id="irrelevant", start=7.0, duration=2.0
+            ),
+        ],
+    )
     return CutSet.from_cuts(
         [
             cut,
@@ -179,6 +204,7 @@ def cut_set():
             cut.pad(duration=30.0, direction="right"),
             cut.pad(duration=30.0, direction="both"),
             cut.mix(cut, offset_other_by=5.0, snr=8),
+            multi_cut,
         ]
     )
 

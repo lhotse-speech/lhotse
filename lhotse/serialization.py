@@ -496,7 +496,7 @@ class Serializable(JsonMixin, JsonlMixin, LazyMixin, YamlMixin):
 def deserialize_item(data: dict) -> Any:
     # Figures out what type of manifest is being decoded with some heuristics
     # and returns a Lhotse manifest object rather than a raw dict.
-    from lhotse import Features, MonoCut, Recording, SupervisionSegment
+    from lhotse import Features, MonoCut, MultiCut, Recording, SupervisionSegment
     from lhotse.array import deserialize_array
     from lhotse.cut import MixedCut
 
@@ -511,6 +511,8 @@ def deserialize_item(data: dict) -> Any:
     cut_type = data.pop("type")
     if cut_type == "MonoCut":
         return MonoCut.from_dict(data)
+    if cut_type == "MultiCut":
+        return MultiCut.from_dict(data)
     if cut_type == "Cut":
         warnings.warn(
             "Your manifest was created with Lhotse version earlier than v0.8, when MonoCut was called Cut. "
