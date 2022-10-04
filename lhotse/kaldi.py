@@ -84,7 +84,7 @@ def load_kaldi_data_dir(
     recordings = load_kaldi_text_mapping(path / "wav.scp", must_exist=True)
     reco2dur = path / "reco2dur"
     if use_reco2dur and reco2dur.is_file():
-        durations = load_kaldi_text_mapping(reco2dur)
+        durations = load_kaldi_text_mapping(reco2dur, float_vals=True)
         assert len(durations) == len(recordings), (
             "The duration file reco2dur does not "
             "have the same length as the  wav.scp file"
@@ -339,13 +339,15 @@ def export_to_kaldi(
 
 
 def load_kaldi_text_mapping(
-    path: Path, must_exist: bool = False
+    path: Path, must_exist: bool = False, float_vals: bool = False
 ) -> Dict[str, Optional[str]]:
     """Load Kaldi files such as utt2spk, spk2gender, text, etc. as a dict."""
     mapping = defaultdict(lambda: None)
     if path.is_file():
         with path.open() as f:
             mapping = dict(line.strip().split(maxsplit=1) for line in f)
+        if float_vals:
+            mapping = {key: float(val) for key, val in mapping.items()}
     elif must_exist:
         raise ValueError(f"No such file: {path}")
     return mapping
