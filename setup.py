@@ -180,13 +180,13 @@ except ImportError:
 
 docs_require = (project_root / "docs" / "requirements.txt").read_text().splitlines()
 tests_require = [
-    "pytest>=5.4.3",
+    "pytest==7.1.3",
     "pytest-forked==1.4.0",
     "pytest-xdist==2.5.0",
-    "pytest-cov==3.0.0",
-    "flake8==4.0.1",
-    "coverage>=6.0.0",
-    "hypothesis==5.41.2",
+    "pytest-cov==4.0.0",
+    "flake8==5.0.4",
+    "coverage==6.5.0",
+    "hypothesis==6.56.0",
     "black==22.3.0",
     "isort==5.10.1",
     "pre-commit>=2.17.0,<=2.19.0",
