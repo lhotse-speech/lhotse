@@ -15,7 +15,7 @@ def mono_cut():
         |-------------------Cut1--------------------|
     """
     rec = Recording(
-        id="rec1", duration=10.0, sampling_rate=8000, num_samples=80000, sources=[...]
+        id="rec1", duration=10.0, sampling_rate=8000, num_samples=80000, sources=[]
     )
     sups = [
         SupervisionSegment(
