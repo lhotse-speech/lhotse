@@ -132,7 +132,7 @@ def prepare_aishell4(
                             recording_id=idx,
                             start=start,
                             duration=round(end - start, 4),
-                            channel=0,
+                            channel=recording.channel_ids,
                             language="Chinese",
                             speaker=spk_id,
                             text=text.strip(),
