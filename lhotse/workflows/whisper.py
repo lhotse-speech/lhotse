@@ -113,7 +113,7 @@ def _annotate_cuts(cuts: CutSet, language: str, model_name: str, device: str):
             )
             for segment in result["segments"]
         ]
-        new_cut = fastcopy(cut, supervisions=supervisions).merge_supervisions()
+        new_cut = fastcopy(cut, supervisions=supervisions)
         yield new_cut
 
 
