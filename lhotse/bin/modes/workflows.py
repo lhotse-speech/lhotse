@@ -86,25 +86,23 @@ def annotate_with_whisper(
     )
 
     if recordings_manifest is not None:
-        recordings = RecordingSet.from_file(recordings_manifest)
+        manifest = RecordingSet.from_file(recordings_manifest)
     elif recordings_dir is not None:
-        recordings = RecordingSet.from_dir(
+        manifest = RecordingSet.from_dir(
             recordings_dir, pattern=f"*.{extension}", num_jobs=jobs
         )
     else:
-        recordings = None
-        cuts = CutSet.from_file(cuts_manifest)
+        manifest = CutSet.from_file(cuts_manifest).to_eager()
 
-    total = len(recordings) if recordings is not None else len(cuts)
     with CutSet.open_writer(out_cuts) as writer:
         for cut in tqdm(
             annotate_with_whisper_(
-                recordings if recordings is not None else cuts,
+                manifest,
                 language=language,
                 model_name=model_name,
                 device=device,
             ),
-            total=total,
+            total=len(manifest),
             desc="Annotating with Whisper",
         ):
             writer.write(cut, flush=True)

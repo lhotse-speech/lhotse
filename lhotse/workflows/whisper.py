@@ -1,11 +1,11 @@
 import logging
-from typing import Generator, List, Optional, Union
+from typing import Any, Generator, List, Optional, Union
 
 import torch
 
 from lhotse import CutSet, MonoCut, Recording, RecordingSet, SupervisionSegment
 from lhotse.qa import trim_supervisions_to_recordings
-from lhotse.utils import is_module_available
+from lhotse.utils import fastcopy, is_module_available
 
 
 def annotate_with_whisper(
@@ -36,25 +36,37 @@ def annotate_with_whisper(
         "(see https://github.com/openai/whisper for details)."
     )
 
+    if isinstance(manifest, RecordingSet):
+        yield from _annotate_recordings(manifest, language, model_name, device)
+    elif isinstance(manifest, CutSet):
+        yield from _annotate_cuts(manifest, language, model_name, device)
+    else:
+        raise ValueError("The ``manifest`` must be either a RecordingSet or a CutSet.")
+
+
+def _annotate_recordings(
+    recordings: RecordingSet, language: str, model_name: str, device: str
+):
+    """
+    Helper function that annotates a RecordingSet with Whisper.
+    """
     import whisper
 
     model = whisper.load_model(model_name, device=device)
 
-    for item in manifest:
-        if item.num_channels > 1:
+    for recording in recordings:
+        if recording.num_channels > 1:
             logging.warning(
-                f"Skipping recording or cut '{item.id}'. It has {item.num_channels} channels, "
+                f"Skipping recording '{recording.id}'. It has {recording.num_channels} channels, "
                 f"but we currently only support mono input."
             )
             continue
-        audio = torch.from_numpy(item.resample(16000).load_audio()).squeeze(0)
+        audio = torch.from_numpy(recording.resample(16000).load_audio()).squeeze(0)
         result = whisper.transcribe(model=model, audio=audio, language=language)
         supervisions = [
             SupervisionSegment(
-                id=f"{item.id}-{segment['id']:06d}",
-                recording_id=item.id
-                if isinstance(item, Recording)
-                else item.recording_id,
+                id=f"{recording.id}-{segment['id']:06d}",
+                recording_id=recording.id,
                 start=round(segment["start"], ndigits=8),
                 duration=round(segment["end"], ndigits=8),
                 text=segment["text"].strip(),
@@ -62,8 +74,7 @@ def annotate_with_whisper(
             )
             for segment in result["segments"]
         ]
-        cut = item.to_cut() if isinstance(item, Recording) else item
-        recording = item if isinstance(item, Recording) else item.recording
+        cut = recording.to_cut()
         if supervisions:
             supervisions = _postprocess_timestamps(supervisions)
             cut.supervisions = list(
@@ -72,6 +83,38 @@ def annotate_with_whisper(
                 )
             )
         yield cut
+
+
+def _annotate_cuts(cuts: CutSet, language: str, model_name: str, device: str):
+    """
+    Helper function that annotates a CutSet with Whisper.
+    """
+    import whisper
+
+    model = whisper.load_model(model_name, device=device)
+
+    for cut in cuts:
+        if cut.num_channels > 1:
+            logging.warning(
+                f"Skipping cut '{cut.id}'. It has {cut.num_channels} channels, "
+                f"but we currently only support mono input."
+            )
+            continue
+        audio = torch.from_numpy(cut.resample(16000).load_audio()).squeeze(0)
+        result = whisper.transcribe(model=model, audio=audio, language=language)
+        supervisions = [
+            SupervisionSegment(
+                id=f"{cut.id}-{segment['id']:06d}",
+                recording_id=cut.recording_id,
+                start=round(segment["start"], ndigits=8),
+                duration=round(segment["end"], ndigits=8),
+                text=segment["text"].strip(),
+                language=result["language"],
+            )
+            for segment in result["segments"]
+        ]
+        new_cut = fastcopy(cut, supervisions=supervisions).merge_supervisions()
+        yield new_cut
 
 
 def _postprocess_timestamps(supervisions: List[SupervisionSegment]):
