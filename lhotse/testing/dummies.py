@@ -5,7 +5,7 @@ from typing import Dict, List, Optional, Type, Union
 from lhotse import AudioSource
 from lhotse.array import Array, TemporalArray
 from lhotse.audio import Recording, RecordingSet
-from lhotse.cut import CutSet, MonoCut
+from lhotse.cut import CutSet, MonoCut, MultiCut
 from lhotse.features import Features, FeatureSet
 from lhotse.manipulation import Manifest
 from lhotse.supervision import AlignmentItem, SupervisionSegment, SupervisionSet
@@ -59,6 +59,24 @@ def dummy_recording(unique_id: int, duration: float = 1.0) -> Recording:
     )
 
 
+def dummy_multi_channel_recording(
+    unique_id: int, duration: float = 1.0, channel_ids: Optional[List[int]] = None
+) -> Recording:
+    if channel_ids is None:
+        channel_ids = [0, 1]
+    return Recording(
+        id=f"dummy-multi-channel-recording-{unique_id:04d}",
+        sources=[
+            AudioSource(
+                type="command", channels=channel_ids, source='echo "dummy waveform"'
+            )
+        ],
+        sampling_rate=16000,
+        num_samples=16000,
+        duration=duration,
+    )
+
+
 def dummy_alignment(
     text: str = "irrelevant", start: float = 0.0, duration: float = 1.0
 ) -> Dict[str, List[AlignmentItem]]:
@@ -77,6 +95,7 @@ def dummy_supervision(
     unique_id: int,
     start: float = 0.0,
     duration: float = 1.0,
+    channel: Union[int, List[int]] = 0,
     text: str = "irrelevant",
     alignment: Optional[Dict[str, List[AlignmentItem]]] = dummy_alignment(),
 ) -> SupervisionSegment:
@@ -85,6 +104,7 @@ def dummy_supervision(
         recording_id=f"dummy-recording-{unique_id:04d}",
         start=start,
         duration=duration,
+        channel=channel,
         text=text,
         speaker="irrelevant",
         language="irrelevant",
@@ -100,6 +120,30 @@ def dummy_features(
     return Features(
         recording_id=f"dummy-recording-{unique_id:04d}",
         channels=0,
+        start=start,
+        duration=duration,
+        type="fbank",
+        num_frames=100,
+        num_features=23,
+        frame_shift=0.01,
+        sampling_rate=16000,
+        storage_type="lilcom_files",
+        storage_path="test/fixtures/dummy_feats/storage",
+        storage_key="dbf9a0ec-f79d-4eb8-ae83-143a6d5de64d.llc",
+    )
+
+
+def dummy_multi_channel_features(
+    unique_id: int,
+    start: float = 0.0,
+    duration: float = 1.0,
+    channels: Optional[List[int]] = None,
+) -> Features:
+    if channels is None:
+        channels = [0, 1]
+    return Features(
+        recording_id=f"dummy-multi-channel-recording-{unique_id:04d}",
+        channels=channels,
         start=start,
         duration=duration,
         type="fbank",
@@ -136,12 +180,34 @@ def dummy_cut(
     supervisions=None,
 ):
     return MonoCut(
-        id=f"dummy-cut-{unique_id:04d}",
+        id=f"dummy-mono-cut-{unique_id:04d}",
         start=start,
         duration=duration,
         channel=0,
         recording=recording if recording else dummy_recording(unique_id),
         features=features if features else dummy_features(unique_id),
+        supervisions=supervisions if supervisions is not None else [],
+    )
+
+
+def dummy_multi_cut(
+    unique_id: int,
+    start: float = 0.0,
+    duration: float = 1.0,
+    recording: Recording = None,
+    features: Features = None,
+    supervisions: SupervisionSet = None,
+    channel: Optional[List[int]] = None,
+):
+    if channel is None:
+        channel = [0, 1]
+    return MultiCut(
+        id=f"dummy-multi-cut-{unique_id:04d}",
+        start=start,
+        duration=duration,
+        channel=channel,
+        recording=recording if recording else dummy_multi_channel_recording(unique_id),
+        features=features if features else dummy_multi_channel_features(unique_id),
         supervisions=supervisions if supervisions is not None else [],
     )
 

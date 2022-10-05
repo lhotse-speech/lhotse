@@ -215,6 +215,6 @@ def test_dillable():
             ids = list(ex.map(_get_ids, [lazy_cuts]))
 
         assert ids[0] == [
-            "dummy-cut-0000-random-suffix",
-            "dummy-cut-0001-random-suffix",
+            "dummy-mono-cut-0000-random-suffix",
+            "dummy-mono-cut-0001-random-suffix",
         ]

@@ -357,47 +357,72 @@ class ReverbWithImpulseResponse(AudioTransform):
         sampling_rate: int,
     ) -> np.ndarray:
         """
-        :param samples: The audio samples to reverberate (must be single-channel).
+        :param samples: The audio samples to reverberate.
         :param sampling_rate: The sampling rate of the audio samples.
         """
-        assert samples.shape[0] == 1, "The input audio must be single-channel."
         sampling_rate = int(sampling_rate)  # paranoia mode
 
-        if self.rir is None:
-            rir_ = generate_fast_random_rir(
-                nsource=len(self.rir_channels), sr=sampling_rate
+        D_in, N_in = samples.shape
+        input_is_mono = D_in == 1
+
+        # The following cases are possible:
+        # Case 1: input is mono, rir is mono -> mono output
+        #   We will generate a random mono rir if not provided explicitly.
+        # Case 2: input is mono, rir is multi-channel -> multi-channel output
+        #   This requires a user-provided rir, since we cannot simulate array microphone.
+        # Case 3: input is multi-channel, rir is mono -> multi-channel output
+        #   This does not make much sense, but we will apply the same rir to all channels.
+        # 4. input is multi-channel, rir is multi-channel -> multi-channel output
+        #   This also requires a user-provided rir. Also, the number of channels in the rir
+        #   must match the number of channels in the input.
+
+        # Let us make some assertions based on the above.
+        if input_is_mono:
+            assert (
+                self.rir is not None or len(self.rir_channels) == 1
+            ), "For mono input, either provide an RIR explicitly or set rir_channels to [0]."
+        else:
+            assert len(self.rir_channels) == 1 or len(self.rir_channels) == D_in, (
+                "For multi-channel input, we only support mono RIR or RIR with the same number "
+                "of channels as the input."
             )
+
+        # Generate a random RIR if not provided.
+        if self.rir is None:
+            rir_ = generate_fast_random_rir(nsource=1, sr=sampling_rate)
         else:
             rir_ = (
                 self.rir.load_audio(channels=self.rir_channels)
                 if not self.early_only
-                else self.rir.load_audio(duration=0.05)
+                else self.rir.load_audio(channels=self.rir_channels, duration=0.05)
             )
 
-        # Determine output length.
-        _, N_in = samples.shape
-        D, N_rir = rir_.shape
+        D_rir, N_rir = rir_.shape
         N_out = N_in  # Enforce shift output
+        # output is multi-channel if either input or rir is multi-channel
+        D_out = D_rir if input_is_mono else D_in
+
+        # if RIR is mono, repeat it to match the number of channels in the input
+        rir_ = rir_.repeat(D_out, axis=0) if D_rir == 1 else rir_
 
         # Initialize output matrix with the specified input channel.
-        augmented = np.zeros((D, N_out), dtype=samples.dtype)
-        power_before_reverb = np.sum(np.abs(samples) ** 2) / samples.shape[1]
+        augmented = np.zeros((D_out, N_out), dtype=samples.dtype)
 
-        for d in range(D):
-            augmented[d, :N_in] = samples
+        for d in range(D_out):
+            d_in = 0 if input_is_mono else d
+            augmented[d, :N_in] = samples[d_in]
+            power_before_reverb = np.sum(np.abs(samples[d_in]) ** 2) / N_in
             rir_d = rir_[d, :] * self.RIR_SCALING_FACTOR
 
             # Convolve the signal with impulse response.
             aug_d = convolve1d(
-                torch.from_numpy(samples[0]), torch.from_numpy(rir_d)
+                torch.from_numpy(samples[d_in]), torch.from_numpy(rir_d)
             ).numpy()
             shift_index = np.argmax(rir_d)
             augmented[d, :] = aug_d[shift_index : shift_index + N_out]
 
             if self.normalize_output:
-                power_after_reverb = (
-                    np.sum(np.abs(augmented[d, :]) ** 2) / augmented.shape[1]
-                )
+                power_after_reverb = np.sum(np.abs(augmented[d, :]) ** 2) / N_out
                 if power_after_reverb > 0:
                     augmented[d, :] *= np.sqrt(power_before_reverb / power_after_reverb)
 

@@ -1,7 +1,7 @@
 import pytest
 
 from lhotse.audio import AudioSource, Recording
-from lhotse.cut import CutSet, MonoCut
+from lhotse.cut import CutSet, MonoCut, MultiCut
 from lhotse.features import Features
 from lhotse.supervision import SupervisionSegment
 
@@ -62,6 +62,60 @@ def cut2(dummy_features, dummy_recording):
         start=180.0,
         duration=10.0,
         channel=0,
+        features=dummy_features,
+        recording=dummy_recording,
+        supervisions=[
+            SupervisionSegment(
+                id="sup-3", recording_id="irrelevant", start=3.0, duration=2.5
+            )
+        ],
+    )
+
+
+@pytest.fixture
+def multi_cut1(dummy_features, dummy_recording):
+    return MultiCut(
+        id="multi-cut-1",
+        start=0.0,
+        duration=10.0,
+        channel=[0, 1],
+        features=dummy_features,
+        recording=dummy_recording,
+        supervisions=[
+            SupervisionSegment(
+                id="sup-1", recording_id="irrelevant", start=0.5, duration=6.0
+            ),
+            SupervisionSegment(
+                id="sup-2", recording_id="irrelevant", start=7.0, duration=2.0
+            ),
+        ],
+    )
+
+
+@pytest.fixture
+def multi_cut2(dummy_features, dummy_recording):
+    return MultiCut(
+        id="cut-2",
+        start=180.0,
+        duration=10.0,
+        channel=[0, 1],
+        features=dummy_features,
+        recording=dummy_recording,
+        supervisions=[
+            SupervisionSegment(
+                id="sup-3", recording_id="irrelevant", start=3.0, duration=2.5
+            )
+        ],
+    )
+
+
+@pytest.fixture
+def multi_cut3(dummy_features, dummy_recording):
+    return MultiCut(
+        id="cut-2",
+        start=180.0,
+        duration=10.0,
+        channel=[1, 2],
         features=dummy_features,
         recording=dummy_recording,
         supervisions=[
