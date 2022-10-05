@@ -46,6 +46,7 @@ class FeatureMixer:
         """
         self.feature_extractor = feature_extractor
         self.tracks = [base_feats]
+        self.num_channels = 1 if base_feats.ndim == 2 else base_feats.shape[-1]
         self.gains = []
         self.frame_shift = frame_shift
         self.padding_value = padding_value
@@ -86,6 +87,19 @@ class FeatureMixer:
             )
         return result
 
+    def _get_dummy_array(self, num_frames: int) -> np.ndarray:
+        return np.full(
+            shape=(num_frames, self.num_features)
+            if self.num_channels == 1
+            else (
+                num_frames,
+                self.num_features,
+                self.num_channels,
+            ),
+            fill_value=self.padding_value,
+            dtype=self.dtype,
+        )
+
     def add_to_mix(
         self,
         feats: np.ndarray,
@@ -107,6 +121,10 @@ class FeatureMixer:
 
         assert offset >= 0.0, "Negative offset in mixing is not supported."
 
+        assert (
+            self.tracks[0].ndim == feats.ndim
+        ), f"Feature dimensions mismatch in mixing"
+
         reference_feats = self.tracks[0]
         num_frames_offset = compute_num_frames(
             duration=offset, frame_shift=self.frame_shift, sampling_rate=sampling_rate
@@ -124,11 +142,7 @@ class FeatureMixer:
                 padded_track = np.vstack(
                     [
                         self.tracks[idx],
-                        self.padding_value
-                        * np.ones(
-                            (mix_num_frames - current_num_frames, self.num_features),
-                            dtype=self.dtype,
-                        ),
+                        self._get_dummy_array(mix_num_frames - current_num_frames),
                     ]
                 )
                 self.tracks[idx] = padded_track
@@ -137,8 +151,7 @@ class FeatureMixer:
         if offset > 0:
             feats_to_add = np.vstack(
                 [
-                    self.padding_value
-                    * np.ones((num_frames_offset, self.num_features), dtype=self.dtype),
+                    self._get_dummy_array(num_frames_offset),
                     feats_to_add,
                 ]
             )
@@ -151,11 +164,7 @@ class FeatureMixer:
             feats_to_add = np.vstack(
                 [
                     feats_to_add,
-                    self.padding_value
-                    * np.ones(
-                        (mix_num_frames - incoming_num_frames, self.num_features),
-                        dtype=self.dtype,
-                    ),
+                    self._get_dummy_array(mix_num_frames - incoming_num_frames),
                 ]
             )
 

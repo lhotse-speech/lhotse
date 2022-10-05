@@ -522,25 +522,25 @@ def test_store_audio():
 
 def test_cut_set_subset_cut_ids_preserves_order():
     cuts = DummyManifest(CutSet, begin_id=0, end_id=1000)
-    cut_ids = ["dummy-cut-0010", "dummy-cut-0171", "dummy-cut-0009"]
+    cut_ids = ["dummy-mono-cut-0010", "dummy-mono-cut-0171", "dummy-mono-cut-0009"]
     subcuts = cuts.subset(cut_ids=cut_ids)
     cut1, cut2, cut3 = subcuts
-    assert cut1.id == "dummy-cut-0010"
-    assert cut2.id == "dummy-cut-0171"
-    assert cut3.id == "dummy-cut-0009"
+    assert cut1.id == "dummy-mono-cut-0010"
+    assert cut2.id == "dummy-mono-cut-0171"
+    assert cut3.id == "dummy-mono-cut-0009"
 
 
 def test_cut_set_subset_cut_ids_preserves_order_with_lazy_manifest():
     cuts = DummyManifest(CutSet, begin_id=0, end_id=1000)
-    cut_ids = ["dummy-cut-0010", "dummy-cut-0171", "dummy-cut-0009"]
+    cut_ids = ["dummy-mono-cut-0010", "dummy-mono-cut-0171", "dummy-mono-cut-0009"]
     with NamedTemporaryFile(suffix=".jsonl.gz") as f:
         cuts.to_file(f.name)
         cuts = cuts.from_jsonl_lazy(f.name)
         subcuts = cuts.subset(cut_ids=cut_ids)
         cut1, cut2, cut3 = subcuts
-        assert cut1.id == "dummy-cut-0010"
-        assert cut2.id == "dummy-cut-0171"
-        assert cut3.id == "dummy-cut-0009"
+        assert cut1.id == "dummy-mono-cut-0010"
+        assert cut2.id == "dummy-mono-cut-0171"
+        assert cut3.id == "dummy-mono-cut-0009"
 
 
 def test_cut_set_decompose():

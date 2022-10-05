@@ -251,25 +251,25 @@ def test_make_cuts_from_features_recordings(dummy_recording_set, dummy_feature_s
 def test_make_cuts_from_recordings_with_deterministic_ids(dummy_recording_set):
     cut_set = CutSet.from_manifests(recordings=dummy_recording_set, random_ids=False)
     for idx, cut in enumerate(cut_set):
-        assert cut.id == f"{cut.recording_id}-{idx}-{cut.channel}"
+        assert cut.id == f"{cut.recording_id}-{idx}"
 
 
 def test_make_cuts_from_recordings_with_random_ids(dummy_recording_set):
     cut_set = CutSet.from_manifests(recordings=dummy_recording_set, random_ids=True)
     for idx, cut in enumerate(cut_set):
-        assert cut.id != f"{cut.recording_id}-{idx}-{cut.channel}"
+        assert cut.id != f"{cut.recording_id}-{idx}"
 
 
 def test_make_cuts_from_features_with_deterministic_ids(dummy_feature_set):
     cut_set = CutSet.from_manifests(features=dummy_feature_set, random_ids=False)
     for idx, cut in enumerate(cut_set):
-        assert cut.id == f"{cut.recording_id}-{idx}-{cut.channel}"
+        assert cut.id == f"{cut.recording_id}-{idx}"
 
 
 def test_make_cuts_from_features_with_random_ids(dummy_feature_set):
     cut_set = CutSet.from_manifests(features=dummy_feature_set, random_ids=True)
     for idx, cut in enumerate(cut_set):
-        assert cut.id != f"{cut.recording_id}-{idx}-{cut.channel}"
+        assert cut.id != f"{cut.recording_id}-{idx}"
 
 
 class TestCutOnSupervisions:

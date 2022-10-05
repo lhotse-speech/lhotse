@@ -569,11 +569,9 @@ class Cut:
             the start/end/duration times of the cut and its supervisions,
             you will end up with incorrect supervision information when using this API.
             E.g. for speed perturbation, use ``CutSet.perturb_speed()`` instead.
-        :return: a new MonoCut instance.
+        :return: a new Cut instance.
         """
         import torchaudio
-
-        from .mono import MonoCut
 
         storage_path = Path(storage_path)
         samples = self.load_audio()
@@ -591,18 +589,14 @@ class Cut:
             sources=[
                 AudioSource(
                     type="file",
-                    channels=[0],
+                    channels=list(range(self.num_channels)),
                     source=str(storage_path),
                 )
             ],
         )
-        return MonoCut(
-            id=self.id,
-            start=0,
-            duration=recording.duration,
-            channel=0,
+        return fastcopy(
+            recording.to_cut(),
             supervisions=self.supervisions,
-            recording=recording,
             custom=self.custom if hasattr(self, "custom") else None,
         )
 
