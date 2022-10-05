@@ -107,13 +107,13 @@ def _annotate_cuts(cuts: CutSet, language: str, model_name: str, device: str):
                 id=f"{cut.id}-{segment['id']:06d}",
                 recording_id=cut.recording_id,
                 start=round(segment["start"], ndigits=8),
-                duration=round(segment["end"], ndigits=8),
+                duration=max(cut.duration, round(segment["end"], ndigits=8)),
                 text=segment["text"].strip(),
                 language=result["language"],
             )
             for segment in result["segments"]
         ]
-        new_cut = fastcopy(cut, supervisions=supervisions)
+        new_cut = fastcopy(cut, supervisions=_postprocess_timestamps(supervisions))
         yield new_cut
 
 
