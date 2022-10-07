@@ -93,6 +93,12 @@ def _annotate_cuts(cuts: CutSet, language: str, model_name: str, device: str):
 
     model = whisper.load_model(model_name, device=device)
 
+    device = torch.device("cpu")
+    if torch.cuda.is_available():
+        device = torch.device("cuda", 0)
+    
+    model.to(device)
+
     for cut in cuts:
         if cut.num_channels > 1:
             logging.warning(
@@ -100,7 +106,7 @@ def _annotate_cuts(cuts: CutSet, language: str, model_name: str, device: str):
                 f"but we currently only support mono input."
             )
             continue
-        audio = torch.from_numpy(cut.resample(16000).load_audio()).squeeze(0)
+        audio = torch.from_numpy(cut.resample(16000).load_audio()).squeeze(0).to(device) 
         result = whisper.transcribe(model=model, audio=audio, language=language)
         supervisions = [
             SupervisionSegment(
