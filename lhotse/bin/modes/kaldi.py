@@ -39,6 +39,15 @@ def kaldi():
     type=int,
     help="Number of jobs for computing recording durations.",
 )
+@click.option(
+    "-d",
+    "--compute-durations",
+    default=False,
+    is_flag=True,
+    show_default=True,
+    type=bool,
+    help="Compute durations by reading the whole file instead of using reco2dur file",
+)
 def import_(
     data_dir: Pathlike,
     sampling_rate: int,
@@ -46,6 +55,7 @@ def import_(
     frame_shift: float,
     map_string_to_underscores: Optional[str],
     num_jobs: int,
+    compute_durations: bool,
 ):
     """
     Convert a Kaldi data dir DATA_DIR into a directory MANIFEST_DIR of lhotse manifests. Ignores feats.scp.
@@ -59,6 +69,7 @@ def import_(
         frame_shift=frame_shift,
         map_string_to_underscores=map_string_to_underscores,
         num_jobs=num_jobs,
+        use_reco2dur=not compute_durations,
     )
     manifest_dir = Path(manifest_dir)
     manifest_dir.mkdir(parents=True, exist_ok=True)

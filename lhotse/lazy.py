@@ -471,6 +471,36 @@ class LazyRepeater(ImitatesDict):
         return LazyIteratorChain(self, other)
 
 
+class LazySlicer(ImitatesDict):
+    """
+    A wrapper over an iterable that enables selecting k-th element every n elements.
+    """
+
+    def __init__(self, iterator: Iterable, k: int, n: int) -> None:
+        self.iterator = iterator
+        assert (
+            k < n
+        ), f"When selecting k-th element every n elements, k must be less than n (got k={k} n={n})."
+        self.k = k
+        self.n = n
+
+    def __iter__(self):
+        for idx, item in enumerate(self.iterator):
+            if idx % self.n == self.k:
+                yield item
+
+    def __add__(self, other) -> "LazyIteratorChain":
+        return LazyIteratorChain(self, other)
+
+    def __len__(self) -> int:
+        raise NotImplementedError(
+            "LazySlicer does not support __len__ because it would require "
+            "iterating over the whole iterator, which is not possible in a lazy fashion. "
+            "If you really need to know the length, convert to eager mode first using "
+            "`.to_eager()`. Note that this will require loading the whole iterator into memory."
+        )
+
+
 def attach_repeat_idx_to_id(item: Any, idx: int) -> Any:
     if not hasattr(item, "id"):
         return item

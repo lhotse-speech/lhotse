@@ -36,6 +36,7 @@
             }
           ]
         },
+        "type": "MonoCut",
         "offset": 0.0
       },
       {
@@ -72,6 +73,7 @@
             }
           ]
         },
+        "type": "MonoCut",
         "offset": 3.89,
         "snr": 20.0
       }

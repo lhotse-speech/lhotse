@@ -55,12 +55,15 @@ def load_kaldi_data_dir(
     sampling_rate: int,
     frame_shift: Optional[Seconds] = None,
     map_string_to_underscores: Optional[str] = None,
+    use_reco2dur: bool = True,
     num_jobs: int = 1,
 ) -> Tuple[RecordingSet, Optional[SupervisionSet], Optional[FeatureSet]]:
     """
     Load a Kaldi data directory and convert it to a Lhotse RecordingSet and
     SupervisionSet manifests. For this to work, at least the wav.scp file must exist.
-    SupervisionSet is created only when a segments file exists.
+    SupervisionSet is created only when a segments file exists. reco2dur is used by
+    default when exists (to enforce reading the duration from the audio files
+    themselves, please set use_reco2dur = False.
     All the other files (text, utt2spk, etc.) are optional, and some of them might
     not be handled yet. In particular, feats.scp files are ignored.
 
@@ -79,10 +82,17 @@ def load_kaldi_data_dir(
 
     # must exist for RecordingSet
     recordings = load_kaldi_text_mapping(path / "wav.scp", must_exist=True)
-
-    with ProcessPoolExecutor(num_jobs) as ex:
-        dur_vals = ex.map(get_duration, recordings.values())
-    durations = dict(zip(recordings.keys(), dur_vals))
+    reco2dur = path / "reco2dur"
+    if use_reco2dur and reco2dur.is_file():
+        durations = load_kaldi_text_mapping(reco2dur, float_vals=True)
+        assert len(durations) == len(recordings), (
+            "The duration file reco2dur does not "
+            "have the same length as the  wav.scp file"
+        )
+    else:
+        with ProcessPoolExecutor(num_jobs) as ex:
+            dur_vals = ex.map(get_duration, recordings.values())
+        durations = dict(zip(recordings.keys(), dur_vals))
 
     recording_set = RecordingSet.from_recordings(
         Recording(
@@ -283,7 +293,7 @@ def export_to_kaldi(
         # segments
         save_kaldi_text_mapping(
             data={
-                sup.id: f"{sup.recording_id} {sup.start} {sup.end}"
+                sup.id: f"{sup.recording_id}_{sup.channel} {sup.start} {sup.end}"
                 for sup in supervisions
             },
             path=output_dir / "segments",
@@ -327,13 +337,15 @@ def export_to_kaldi(
 
 
 def load_kaldi_text_mapping(
-    path: Path, must_exist: bool = False
+    path: Path, must_exist: bool = False, float_vals: bool = False
 ) -> Dict[str, Optional[str]]:
     """Load Kaldi files such as utt2spk, spk2gender, text, etc. as a dict."""
     mapping = defaultdict(lambda: None)
     if path.is_file():
         with path.open() as f:
             mapping = dict(line.strip().split(maxsplit=1) for line in f)
+        if float_vals:
+            mapping = {key: float(val) for key, val in mapping.items()}
     elif must_exist:
         raise ValueError(f"No such file: {path}")
     return mapping
@@ -371,18 +383,21 @@ def make_wavscp_channel_string_map(
             # used in the sph files
             audios = dict()
             for channel in source.channels:
-                audios[
-                    channel
-                ] = f"sph2pipe {source.source} -f wav -c {channel+1} -p | ffmpeg -threads 1 -i pipe:0 -ar {sampling_rate} -f wav -threads 1 pipe:1 |"
+                audios[channel] = (
+                    f"sph2pipe {source.source} -f wav -c {channel+1} -p | "
+                    "ffmpeg -threads 1"
+                    f" -i pipe:0 -ar {sampling_rate} -f wav -threads 1 pipe:1 |"
+                )
 
             return audios
         else:
             # Handles non-WAVE audio formats and multi-channel WAVEs.
             audios = dict()
             for channel in source.channels:
-                audios[
-                    channel
-                ] = f"ffmpeg -threads 1 -i {source.source} -ar {sampling_rate} -map_channel 0.0.{channel}  -f wav -threads 1 pipe:1 |"
+                audios[channel] = (
+                    f"ffmpeg -threads 1 -i {source.source} -ar {sampling_rate} "
+                    f"-map_channel 0.0.{channel}  -f wav -threads 1 pipe:1 |"
+                )
             return audios
 
     else:

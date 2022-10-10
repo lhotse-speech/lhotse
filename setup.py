@@ -41,6 +41,7 @@
 #             ./osssssssssssssssssssssssssssssssssssssssssssssssssssssssssss/-`
 #                 .-:://++++++++++++++++++++++++++++++++++++++++++++///:-.`
 import os
+import sys
 from pathlib import Path
 from subprocess import DEVNULL, PIPE, run
 
@@ -52,9 +53,25 @@ project_root = Path(__file__).parent
 # NOTE: REMEMBER TO UPDATE THE FALLBACK VERSION IN lhotse/__init__.py WHEN RELEASING #
 # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! #
 MAJOR_VERSION = 1
-MINOR_VERSION = 8
+MINOR_VERSION = 9
 PATCH_VERSION = 0
 IS_DEV_VERSION = True  # False = public release, True = otherwise
+
+
+if sys.version_info < (3,):
+    # fmt: off
+    print(
+        "Python 2 has reached end-of-life and is no longer supported by lhotse."
+    )
+    # fmt: on
+    sys.exit(-1)
+
+if sys.version_info < (3, 7):
+    print(
+        "Python 3.6 has reached end-of-life on December 31st, 2021 "
+        "and is no longer supported by lhotse."
+    )
+    sys.exit(-1)
 
 
 def discover_lhotse_version() -> str:
@@ -163,13 +180,13 @@ except ImportError:
 
 docs_require = (project_root / "docs" / "requirements.txt").read_text().splitlines()
 tests_require = [
-    "pytest>=5.4.3",
+    "pytest==7.1.3",
     "pytest-forked==1.4.0",
     "pytest-xdist==2.5.0",
-    "pytest-cov==3.0.0",
-    "flake8==4.0.1",
-    "coverage>=6.0.0",
-    "hypothesis==5.41.2",
+    "pytest-cov==4.0.0",
+    "flake8==5.0.4",
+    "coverage==6.5.0",
+    "hypothesis==6.56.0",
     "black==22.3.0",
     "isort==5.10.1",
     "pre-commit>=2.17.0,<=2.19.0",
@@ -202,7 +219,7 @@ if os.environ.get("READTHEDOCS", False):
 setup(
     name="lhotse",
     version=LHOTSE_VERSION,
-    python_requires=">=3.6.0",
+    python_requires=">=3.7.0",
     description="Data preparation for speech processing models training.",
     author="The Lhotse Development Team",
     author_email="pzelasko@jhu.edu",
@@ -230,7 +247,6 @@ setup(
     },
     classifiers=[
         "Development Status :: 4 - Beta",
-        "Programming Language :: Python :: 3.6",
         "Programming Language :: Python :: 3.7",
         "Programming Language :: Python :: 3.8",
         "Programming Language :: Python :: 3.9",
@@ -238,6 +254,7 @@ setup(
         "Intended Audience :: Science/Research",
         "Operating System :: POSIX :: Linux",
         "Operating System :: MacOS :: MacOS X",
+        "Operating System :: Microsoft :: Windows",
         "License :: OSI Approved :: Apache Software License",
         "Topic :: Multimedia :: Sound/Audio :: Speech",
         "Topic :: Scientific/Engineering :: Artificial Intelligence",

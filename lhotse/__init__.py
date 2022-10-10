@@ -5,7 +5,7 @@ from .audio import (
     set_audio_duration_mismatch_tolerance,
 )
 from .caching import is_caching_enabled, set_caching_enabled
-from .cut import CutSet, MonoCut, create_cut_set_eager, create_cut_set_lazy
+from .cut import CutSet, MonoCut, MultiCut, create_cut_set_eager, create_cut_set_lazy
 from .features import *
 from .kaldi import load_kaldi_data_dir
 from .manipulation import combine, split_parallelize_combine, to_manifest
@@ -24,6 +24,7 @@ from .utils import (
     measure_overlap,
     streaming_shuffle,
 )
+from .workflows import *
 
 try:
     # Try to get Lhotse's version (should be created during running pip install / python setup.py ...)
@@ -33,7 +34,7 @@ except:
     # NOTE: REMEMBER TO UPDATE THE ACTUAL VERSION IN setup.py WHEN RELEASING #
     # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! #
     # Use a default placeholder when the version is unavailable...
-    __version__ = "1.8.0.dev+missing.version.file"
+    __version__ = "1.9.0.dev+missing.version.file"
 
 from . import augmentation, dataset, features, recipes
 
