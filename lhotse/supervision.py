@@ -52,7 +52,10 @@ class AlignmentItem(NamedTuple):
     score: Optional[float] = None
 
     @staticmethod
-    def deserialize(data: list) -> "AlignmentItem":
+    def deserialize(data: Union[List, Dict]) -> "AlignmentItem":
+        if isinstance(data, dict):
+            # Support loading alignments stored in the format we had before Lhotse v1.8
+            return AlignmentItem(*list(data.values()))
         return AlignmentItem(*data)
 
     def serialize(self) -> list:
