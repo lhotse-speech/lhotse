@@ -21,6 +21,7 @@ from lhotse.cut import CutSet, MixedCut, MixTrack, MonoCut
 from lhotse.serialization import load_jsonl
 from lhotse.testing.dummies import (
     DummyManifest,
+    as_lazy,
     dummy_cut,
     dummy_recording,
     dummy_supervision,
@@ -489,6 +490,18 @@ def test_compute_cmvn_stats_on_the_fly(max_cuts):
         np.testing.assert_almost_equal(
             precomputed_stats[key], on_the_fly_stats[key], decimal=3
         )
+
+
+@pytest.mark.parametrize("nj", [1, 2])
+def test_compute_and_store_features_lazy(nj):
+    eager_cuts = CutSet.from_json("test/fixtures/libri/cuts.json").repeat(10)
+    with as_lazy(eager_cuts) as cut_set:
+        fbank = Fbank()
+        with TemporaryDirectory() as d:
+            with_feats = cut_set.compute_and_store_features(fbank, d, num_jobs=nj)
+            assert len(with_feats) == len(cut_set)
+            assert set(with_feats.ids) == set(cut_set.ids)
+            assert all(c.has_features for c in with_feats)
 
 
 def test_modify_ids(cut_set_with_mixed_cut):
