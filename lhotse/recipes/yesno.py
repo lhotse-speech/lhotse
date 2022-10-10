@@ -99,7 +99,7 @@ def _prepare_dataset(
         words = [word_map[w] for w in words]
         text = " ".join(words)
 
-        recording = Recording.from_file(audio_path)
+        recording = Recording.from_file(audio_path.absolute())
         recordings.append(recording)
 
         segment = SupervisionSegment(
