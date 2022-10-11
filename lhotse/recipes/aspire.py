@@ -158,6 +158,9 @@ def prepare_aspire(
                     speaker=speaker,
                     text=seg.text,
                     language="English",
+                    channel=0
+                    if mic == "single"
+                    else recording_set[session].channel_ids,
                 )
                 for i, seg in enumerate(segs)
             ]
