@@ -59,8 +59,6 @@ def fix_manifests(
 
     :param recordings: a :class:`~lhotse.audio.RecordingSet` instance.
     :param supervisions: a corresponding :class:`~lhotse.supervision.SupervisionSet` instance.
-    :param eager: if True, manifests will be loaded into memory, if they are opened lazily. We
-        don't recommend this for large manifests.
     :return: a pair of ``recordings`` and ``supervisions`` that were fixed:
         the original manifests are not modified.
     """
