@@ -44,7 +44,7 @@ def validate(obj: Any, read_data: bool = False) -> None:
 
 
 def fix_manifests(
-    recordings: RecordingSet, supervisions: SupervisionSet
+    recordings: RecordingSet, supervisions: SupervisionSet, eager: bool = False
 ) -> Tuple[RecordingSet, SupervisionSet]:
     """
     Fix a pair of :class:`~lhotse.audio.RecordingSet` and :class:`~lhotse.supervision.SupervisionSet`,
@@ -59,19 +59,31 @@ def fix_manifests(
 
     :param recordings: a :class:`~lhotse.audio.RecordingSet` instance.
     :param supervisions: a corresponding :class:`~lhotse.supervision.SupervisionSet` instance.
+    :param eager: if True, manifests will be loaded into memory, if they are opened lazily. We
+        don't recommend this for large manifests.
     :return: a pair of ``recordings`` and ``supervisions`` that were fixed:
         the original manifests are not modified.
     """
     recordings, supervisions = remove_missing_recordings_and_supervisions(
         recordings, supervisions
     )
-    if len(recordings) == 0 or len(supervisions) == 0:
-        raise ValueError(
-            "There are no matching recordings and supervisions in the input manifests."
+    if recordings.is_lazy and not eager:
+        logging.warning(
+            "RecordingSet is opened lazily, we will not check for manifest size."
         )
+    else:
+        recordings = recordings.to_eager() if recordings.is_lazy else recordings
+        assert len(recordings) > 0, "No recordings left after fixing the manifests."
+
     supervisions = trim_supervisions_to_recordings(recordings, supervisions)
-    if len(supervisions) == 0:
-        raise ValueError("All supervisions exceed the recordings duration.")
+    if supervisions.is_lazy and not eager:
+        logging.warning(
+            "SupervisionSet is opened lazily, we will not check for manifest size."
+        )
+    else:
+        supervisions = supervisions.to_eager() if supervisions.is_lazy else supervisions
+        assert len(supervisions) > 0, "No supervisions left after fixing the manifests."
+
     return recordings, supervisions
 
 
@@ -150,11 +162,12 @@ def remove_missing_recordings_and_supervisions(
         )
     only_in_supervisions = recording_ids_in_sups - recording_ids
     if only_in_supervisions:
-        n_orig_sups = len(supervisions)
+        supervision_ids = frozenset(s.id for s in supervisions)
         supervisions = supervisions.filter(
             lambda s: s.recording_id not in only_in_supervisions
         )
-        n_removed_sups = n_orig_sups - len(supervisions)
+        supervision_ids_after = frozenset(s.id for s in supervisions)
+        n_removed_sups = len(supervision_ids) - len(supervision_ids_after)
         logging.warning(
             f"Removed {n_removed_sups} supervisions with no corresponding recordings "
             f"(for a total of {len(only_in_supervisions)} recording IDs)."
