@@ -143,8 +143,6 @@ def prepare_libricss(
     """
     assert type in ["mdm", "sdm", "ihm-mix", "ihm"]
 
-    manifests = {}
-
     corpus_dir = Path(corpus_dir)
     corpus_dir = (
         corpus_dir / "for_release" if corpus_dir.stem != "for_release" else corpus_dir
@@ -175,7 +173,7 @@ def prepare_libricss(
             for idx, seg in enumerate(
                 parse_transcript(session / "transcription" / "meeting_info.txt")
             ):
-                if type == "ihm-mix" or "sdm":
+                if type == "ihm-mix" or type == "sdm":
                     channel = 0
                 elif type == "ihm":
                     channel = SPK_TO_CHANNEL_MAP[session.name][seg[2]]

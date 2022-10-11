@@ -14,7 +14,7 @@ from lhotse.audio import (
 from lhotse.cut import Cut, CutSet, MixedCut, MonoCut, PaddingCut
 from lhotse.features import Features, FeatureSet
 from lhotse.supervision import SupervisionSegment, SupervisionSet
-from lhotse.utils import compute_num_frames, overlaps
+from lhotse.utils import compute_num_frames, overlaps, is_equal_or_contains
 
 _VALIDATORS: Dict[str, Callable] = {}
 
@@ -110,7 +110,7 @@ def validate_recordings_and_supervisions(
             f"Supervision {s.id}: exceeded the bounds of its corresponding recording "
             f"(supervision spans [{s.start}, {s.end}]; recording spans [0, {r.duration}])"
         )
-        assert s.channel in r.channel_ids, (
+        assert is_equal_or_contains(r.channel_ids, s.channel), (
             f"Supervision {s.id}: channel {s.channel} does not exist in its corresponding Recording "
             f"(recording channels: {r.channel_ids})"
         )
@@ -457,7 +457,9 @@ def validate_supervision_set(supervisions: SupervisionSet, **kwargs) -> None:
     for rid, sups in supervisions._segments_by_recording_id.items():
         cntr_per_channel = defaultdict(int)
         for s in sups:
-            cntr_per_channel[s.channel] += int(s.start == 0)
+            # channel can be an int or a list (in which case we convert it to a tuple)
+            c = s.channel if isinstance(s.channel, int) else tuple(s.channel)
+            cntr_per_channel[c] += int(s.start == 0)
         for channel, count in cntr_per_channel.items():
             if count > 1:
                 logging.warning(
