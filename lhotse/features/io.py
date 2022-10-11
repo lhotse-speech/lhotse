@@ -1,5 +1,4 @@
 import pickle
-import threading
 from abc import ABCMeta, abstractmethod
 from functools import lru_cache
 from math import ceil, floor
@@ -1091,8 +1090,13 @@ class MemoryLilcomWriter(FeaturesWriter):
 
     name = "memory_lilcom"
 
-    def __init__(self, *args, **kwargs):
-        pass
+    def __init__(
+        self,
+        *args,
+        lilcom_tick_power: int = -5,
+        **kwargs,
+    ) -> None:
+        self.lilcom_tick_power = lilcom_tick_power
 
     @property
     def storage_path(self) -> None:
@@ -1102,7 +1106,7 @@ class MemoryLilcomWriter(FeaturesWriter):
         assert np.issubdtype(
             value.dtype, np.floating
         ), "Lilcom compression supports only floating-point arrays."
-        return lilcom.compress(value)
+        return lilcom.compress(value, tick_power=self.lilcom_tick_power)
 
     def close(self) -> None:
         pass

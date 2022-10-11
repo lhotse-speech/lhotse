@@ -150,6 +150,7 @@ class SequentialJsonlWriter:
 
     def __init__(self, path: Pathlike, overwrite: bool = True) -> None:
         self.path = path
+        self.file = None
         if not extension_contains(".jsonl", self.path):
             raise InvalidPathExtension(
                 f"SequentialJsonlWriter supports only JSONL format (one JSON item per line), "
@@ -167,11 +168,11 @@ class SequentialJsonlWriter:
                 }
 
     def __enter__(self) -> "SequentialJsonlWriter":
-        self.file = open_best(self.path, self.mode)
+        self._maybe_open()
         return self
 
     def __exit__(self, *args, **kwargs) -> None:
-        self.file.close()
+        self.close()
 
     def __contains__(self, item: Union[str, Any]) -> bool:
         if isinstance(item, str):
@@ -182,6 +183,14 @@ class SequentialJsonlWriter:
             # The only case when this happens is for the FeatureSet -- Features do not have IDs.
             # In that case we can't know if they are already written or not.
             return False
+
+    def _maybe_open(self):
+        if self.file is None:
+            self.file = open_best(self.path, self.mode)
+
+    def close(self):
+        if self.file is not None:
+            self.file.close()
 
     def contains(self, item: Union[str, Any]) -> bool:
         return item in self
@@ -200,6 +209,7 @@ class SequentialJsonlWriter:
                 return
         except AttributeError:
             pass
+        self._maybe_open()
         print(json.dumps(manifest.to_dict(), ensure_ascii=False), file=self.file)
         if flush:
             self.file.flush()
