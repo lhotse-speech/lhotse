@@ -14,7 +14,7 @@ from lhotse.audio import (
 from lhotse.cut import Cut, CutSet, MixedCut, MonoCut, PaddingCut
 from lhotse.features import Features, FeatureSet
 from lhotse.supervision import SupervisionSegment, SupervisionSet
-from lhotse.utils import compute_num_frames, overlaps, is_equal_or_contains
+from lhotse.utils import compute_num_frames, is_equal_or_contains, overlaps
 
 _VALIDATORS: Dict[str, Callable] = {}
 
