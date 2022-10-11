@@ -3,7 +3,14 @@ from typing import Any, Generator, List, Optional, Union
 
 import torch
 
-from lhotse import CutSet, MonoCut, Recording, RecordingSet, SupervisionSegment
+from lhotse import (
+    CutSet,
+    MonoCut,
+    Recording,
+    RecordingSet,
+    SupervisionSegment,
+    add_durations,
+)
 from lhotse.qa import trim_supervisions_to_recordings
 from lhotse.utils import fastcopy, is_module_available
 
@@ -68,7 +75,9 @@ def _annotate_recordings(
                 id=f"{recording.id}-{segment['id']:06d}",
                 recording_id=recording.id,
                 start=round(segment["start"], ndigits=8),
-                duration=round(segment["end"], ndigits=8),
+                duration=add_durations(
+                    segment["end"], -segment["start"], sampling_rate=16000
+                ),
                 text=segment["text"].strip(),
                 language=result["language"],
             )
@@ -107,7 +116,12 @@ def _annotate_cuts(cuts: CutSet, language: str, model_name: str, device: str):
                 id=f"{cut.id}-{segment['id']:06d}",
                 recording_id=cut.recording_id,
                 start=round(segment["start"], ndigits=8),
-                duration=max(cut.duration, round(segment["end"], ndigits=8)),
+                duration=max(
+                    cut.duration,
+                    add_durations(
+                        segment["end"], -segment["start"], sampling_rate=16000
+                    ),
+                ),
                 text=segment["text"].strip(),
                 language=result["language"],
             )
