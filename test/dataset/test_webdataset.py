@@ -56,7 +56,7 @@ def test_cutset_from_webdataset():
         for c, cds in zip(cuts, cuts_ds):
             np.testing.assert_equal(c.load_audio(), cds.load_audio())
             np.testing.assert_almost_equal(
-                c.load_features(), cds.load_features(), decimal=2
+                c.load_features(), cds.load_features(), decimal=1
             )
 
 
@@ -82,7 +82,7 @@ def test_cutset_from_webdataset_sharded():
         for c, cds in zip(cuts, cuts_ds):
             np.testing.assert_equal(c.load_audio(), cds.load_audio())
             np.testing.assert_almost_equal(
-                c.load_features(), cds.load_features(), decimal=2
+                c.load_features(), cds.load_features(), decimal=1
             )
 
 
@@ -109,7 +109,7 @@ def test_cutset_from_webdataset_sharded_pipe():
         for c, cds in zip(cuts, cuts_ds):
             np.testing.assert_equal(c.load_audio(), cds.load_audio())
             np.testing.assert_almost_equal(
-                c.load_features(), cds.load_features(), decimal=2
+                c.load_features(), cds.load_features(), decimal=1
             )
 
 
