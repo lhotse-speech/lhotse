@@ -44,7 +44,7 @@ def validate(obj: Any, read_data: bool = False) -> None:
 
 
 def fix_manifests(
-    recordings: RecordingSet, supervisions: SupervisionSet, eager: bool = False
+    recordings: RecordingSet, supervisions: SupervisionSet
 ) -> Tuple[RecordingSet, SupervisionSet]:
     """
     Fix a pair of :class:`~lhotse.audio.RecordingSet` and :class:`~lhotse.supervision.SupervisionSet`,
@@ -67,22 +67,15 @@ def fix_manifests(
     recordings, supervisions = remove_missing_recordings_and_supervisions(
         recordings, supervisions
     )
-    if recordings.is_lazy and not eager:
-        logging.warning(
-            "RecordingSet is opened lazily, we will not check for manifest size."
-        )
-    else:
-        recordings = recordings.to_eager() if recordings.is_lazy else recordings
-        assert len(recordings) > 0, "No recordings left after fixing the manifests."
+    # We don't use len(recordings) or len(supervisions) here because recordings and supervisions can be lazy.
+    assert (
+        len(frozenset(r.id for r in recordings)) > 0
+    ), "No recordings left after fixing the manifests."
 
     supervisions = trim_supervisions_to_recordings(recordings, supervisions)
-    if supervisions.is_lazy and not eager:
-        logging.warning(
-            "SupervisionSet is opened lazily, we will not check for manifest size."
-        )
-    else:
-        supervisions = supervisions.to_eager() if supervisions.is_lazy else supervisions
-        assert len(supervisions) > 0, "No supervisions left after fixing the manifests."
+    assert (
+        len(frozenset(s.id for s in supervisions)) > 0
+    ), "No supervisions left after fixing the manifests."
 
     return recordings, supervisions
 
