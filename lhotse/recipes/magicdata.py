@@ -23,9 +23,9 @@ from lhotse.utils import Pathlike, urlretrieve_progress
 
 
 def text_normalize(line: str):
-    """
+    r"""
     Modified from https://github.com/wenet-e2e/wenet/blob/main/examples/multi_cn/s0/local/magicdata_data_prep.sh#L41
-     sed 's/！//g' | sed 's/？//g' |\
+    sed 's/！//g' | sed 's/？//g' |\
     sed 's/，//g' | sed 's/－//g' |\
     sed 's/：//g' | sed 's/；//g' |\
     sed 's/　//g' | sed 's/。//g' |\

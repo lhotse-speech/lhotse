@@ -31,6 +31,12 @@ def workflows():
     help="Directory with recordings. We will create a RecordingSet for it automatically.",
 )
 @click.option(
+    "-c",
+    "--cuts-manifest",
+    type=click.Path(exists=True, dir_okay=False, allow_dash=True),
+    help="Path to an existing cuts manifest.",
+)
+@click.option(
     "-e",
     "--extension",
     default="wav",
@@ -55,6 +61,7 @@ def annotate_with_whisper(
     out_cuts: str,
     recordings_manifest: Optional[str],
     recordings_dir: Optional[str],
+    cuts_manifest: Optional[str],
     extension: str,
     model_name: str,
     language: Optional[str],
@@ -62,35 +69,41 @@ def annotate_with_whisper(
     jobs: int,
 ):
     """
-    Use OpenAI Whisper model to annotate either RECORDINGS_MANIFEST or RECORDINGS_DIR.
+    Use OpenAI Whisper model to annotate either RECORDINGS_MANIFEST, RECORDINGS_DIR, or CUTS_MANIFEST.
     It will perform automatic segmentation, transcription, and language identification.
 
-    RECORDINGS_MANIFEST and RECORDINGS_DIR are mutually exclusive.
+    RECORDINGS_MANIFEST, RECORDINGS_DIR, and CUTS_MANIFEST are mutually exclusive. If CUTS_MANIFEST
+    is provided, its supervisions will be overwritten with the results of the inference.
 
     Note: this is an experimental feature of Lhotse, and is not guaranteed to yield
     high quality of data.
     """
     from lhotse import annotate_with_whisper as annotate_with_whisper_
 
-    assert exactly_one_not_null(recordings_manifest, recordings_dir), (
-        "Options RECORDINGS_MANIFEST and RECORDINGS_DIR are mutually exclusive "
+    assert exactly_one_not_null(recordings_manifest, recordings_dir, cuts_manifest), (
+        "Options RECORDINGS_MANIFEST, RECORDINGS_DIR, and CUTS_MANIFEST are mutually exclusive "
         "and at least one is required."
     )
 
     if recordings_manifest is not None:
-        recordings = RecordingSet.from_file(recordings_manifest)
-    else:
-        recordings = RecordingSet.from_dir(
+        manifest = RecordingSet.from_file(recordings_manifest)
+    elif recordings_dir is not None:
+        manifest = RecordingSet.from_dir(
             recordings_dir, pattern=f"*.{extension}", num_jobs=jobs
         )
+    else:
+        manifest = CutSet.from_file(cuts_manifest).to_eager()
 
     with CutSet.open_writer(out_cuts) as writer:
         for cut in tqdm(
             annotate_with_whisper_(
-                recordings, language=language, model_name=model_name, device=device
+                manifest,
+                language=language,
+                model_name=model_name,
+                device=device,
             ),
-            total=len(recordings),
-            desc="Recordings",
+            total=len(manifest),
+            desc="Annotating with Whisper",
         ):
             writer.write(cut, flush=True)
 

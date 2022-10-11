@@ -1409,14 +1409,13 @@ class CutSet(Serializable, AlgorithmMixin):
             for parallel computation).
         :return: Returns a new ``CutSet`` with ``Features`` manifests attached to the cuts.
         """
-        from cytoolz import identity
-
+        from lhotse.lazy import LazySlicer
         from lhotse.manipulation import combine
 
         # Pre-conditions and args setup
         progress = (
-            identity  # does nothing, unless we overwrite it with an actual prog bar
-        )
+            lambda x: x
+        )  # does nothing, unless we overwrite it with an actual prog bar
         if num_jobs is None:
             num_jobs = 1
         if num_jobs == 1 and executor is not None:
@@ -1473,7 +1472,9 @@ class CutSet(Serializable, AlgorithmMixin):
                 return storage_path / f"feats-{idx}"
 
         # Parallel execution: prepare the CutSet splits
-        cut_sets = self.split(num_jobs, shuffle=True)
+        # We use LazySlicer to pick every k element out of n
+        # (e.g. with 2 jobs, job 1 picks every 0th elem, job 2 picks every 1st elem)
+        cut_sets = [CutSet(LazySlicer(self, k=i, n=num_jobs)) for i in range(num_jobs)]
 
         # Initialize the default executor if None was given
         if executor is None:

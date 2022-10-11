@@ -1,3 +1,4 @@
+import multiprocessing
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
 from functools import partial
 
@@ -26,7 +27,13 @@ def libri_cut_set():
     "batchio", [AudioSamples, PrecomputedFeatures, partial(OnTheFlyFeatures, Fbank())]
 )
 @pytest.mark.parametrize("num_workers", [0, 1, 2])
-@pytest.mark.parametrize("executor_type", [ThreadPoolExecutor, ProcessPoolExecutor])
+@pytest.mark.parametrize(
+    "executor_type",
+    [
+        ThreadPoolExecutor,
+        partial(ProcessPoolExecutor, mp_context=multiprocessing.get_context("spawn")),
+    ],
+)
 def test_batch_io(libri_cut_set, batchio, num_workers, executor_type):
     # does not fail / hang / etc.
     read_fn = batchio(num_workers=num_workers, executor_type=executor_type)

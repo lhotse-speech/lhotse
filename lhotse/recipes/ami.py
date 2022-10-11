@@ -379,7 +379,7 @@ def normalize_text(text: str, normalize: str = "upper") -> str:
         # and will be added to dictionary
         text = re.sub(r"MM HMM", "MM-HMM", text)
         text = re.sub(r"UH HUH", "UH-HUH", text)
-        text = re.sub(r"(\b)O K(\b)", "\g<1>OK\g<2>", text)
+        text = re.sub(r"(\b)O K(\b)", r"\g<1>OK\g<2>", text)
         return text
 
 
