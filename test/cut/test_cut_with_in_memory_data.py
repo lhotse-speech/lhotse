@@ -34,7 +34,7 @@ def test_cut_with_features_move_to_memory():
     cut_mem = cut.move_to_memory()
     arr_mem = cut_mem.load_features()
 
-    np.testing.assert_almost_equal(arr, arr_mem, decimal=2)
+    np.testing.assert_almost_equal(arr, arr_mem, decimal=1)
 
 
 def test_cut_move_to_memory_load_features_false():

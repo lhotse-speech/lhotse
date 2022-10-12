@@ -128,6 +128,7 @@ def resolve_writer(
 ):
     if not isinstance(name_or_callable, str):
         return name_or_callable
+
     opts = {
         "wav": partial(AudioTarWriter, format="wav"),
         "flac": partial(AudioTarWriter, format="flac"),
