@@ -16,6 +16,7 @@ from .cmu_indic import *
 from .cmu_kids import *
 from .commonvoice import *
 from .cslu_kids import *
+from .csj import *
 from .daily_talk import *
 from .dihard3 import *
 from .earnings21 import *
