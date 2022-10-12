@@ -6,6 +6,9 @@ class CutShardWriter:
     def __init__(self, pattern: str, shard_size: int = 1000):
         self.pattern = pattern
         self.shard_size = shard_size
+        self.reset()
+
+    def reset(self):
         self.fname = None
         self.stream = None
         self.num_shards = 0
@@ -13,7 +16,7 @@ class CutShardWriter:
         self.num_items_total = 0
 
     def __enter__(self):
-        pass
+        self.reset()
 
     def __exit__(self, *args, **kwargs):
         self.close()

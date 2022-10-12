@@ -51,8 +51,11 @@ class SharWriter:
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
+        self.close()
+
+    def close(self):
         for w in self.writers.values():
-            w.__exit__(exc_type, exc_val, exc_tb)
+            w.close()
 
     def write(self, cut: Cut) -> None:
 

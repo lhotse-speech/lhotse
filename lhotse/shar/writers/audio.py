@@ -25,6 +25,7 @@ class AudioTarWriter:
             )
 
     def __enter__(self):
+        self.tar_writer.__enter__()
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
