@@ -1,6 +1,6 @@
 import logging
 import warnings
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from functools import reduce
 from itertools import groupby
 from operator import add
