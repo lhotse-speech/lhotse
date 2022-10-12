@@ -7,6 +7,7 @@ from lhotse import CutSet
 from lhotse.shar.readers import load_shar
 from lhotse.shar.writers.shar import SharWriter
 from lhotse.testing.dummies import DummyManifest
+from lhotse.utils import is_module_available
 
 
 def test_shar_writer(tmpdir: str):
@@ -86,6 +87,10 @@ def test_shar_writer(tmpdir: str):
             cut.load_custom_recording()
 
 
+@pytest.mark.skipif(
+    not is_module_available("torchdata"),
+    reason="This test requires torchdata to be installed.",
+)
 def test_shar_reader(tmpdir: str):
     tmpdir = Path(tmpdir)
 
