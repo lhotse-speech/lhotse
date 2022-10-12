@@ -3,7 +3,7 @@ import warnings
 from dataclasses import dataclass
 from functools import reduce
 from operator import add
-from typing import Any, Callable, Iterable, List, Optional
+from typing import Any, Callable, Iterable, List, Optional, Union
 
 import numpy as np
 
