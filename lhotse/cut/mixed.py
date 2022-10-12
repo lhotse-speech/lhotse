@@ -124,6 +124,11 @@ class MixedCut(Cut):
         return round(max(track_durations), ndigits=8)
 
     @property
+    def channel(self) -> Union[int, List[int]]:
+        num_channels = self.num_channels
+        return list(range(num_channels)) if num_channels > 1 else 0
+
+    @property
     def has_features(self) -> bool:
         return self._first_non_padding_cut.has_features
 

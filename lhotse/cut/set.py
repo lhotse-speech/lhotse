@@ -669,7 +669,7 @@ class CutSet(Serializable, AlgorithmMixin):
         keep_overlapping: bool = True,
         min_duration: Optional[Seconds] = None,
         context_direction: Literal["center", "left", "right", "random"] = "center",
-        ignore_channel: bool = False,
+        keep_all_channels: bool = False,
         num_jobs: int = 1,
     ) -> "CutSet":
         """
@@ -714,7 +714,7 @@ class CutSet(Serializable, AlgorithmMixin):
         :param context_direction: Which direction should the cut be expanded towards to include context.
             The value of "center" implies equal expansion to left and right;
             random uniformly samples a value between "left" and "right".
-        :param ignore_channel: If ``True``, the output cut will have the same channels as the input cut. By default,
+        :param keep_all_channels: If ``True``, the output cut will have the same channels as the input cut. By default,
             the trimmed cut will have the same channels as the supervision.
         :param num_jobs: Number of parallel workers to process the cuts.
         :return: a ``CutSet``.
@@ -732,7 +732,7 @@ class CutSet(Serializable, AlgorithmMixin):
                             keep_overlapping=keep_overlapping,
                             min_duration=min_duration,
                             context_direction=context_direction,
-                            ignore_channel=ignore_channel,
+                            keep_all_channels=keep_all_channels,
                         ),
                     )
                 )
@@ -747,6 +747,7 @@ class CutSet(Serializable, AlgorithmMixin):
             keep_overlapping=keep_overlapping,
             min_duration=min_duration,
             context_direction=context_direction,
+            keep_all_channels=keep_all_channels,
         )
         return result
 
@@ -2698,13 +2699,17 @@ def _cut_into_windows_single(
 
 
 def _trim_to_supervisions_single(
-    cuts: CutSet, keep_overlapping, min_duration, context_direction, ignore_channel
+    cuts: CutSet,
+    keep_overlapping,
+    min_duration,
+    context_direction,
+    keep_all_channels,
 ) -> CutSet:
     return cuts.trim_to_supervisions(
         keep_overlapping=keep_overlapping,
         min_duration=min_duration,
         context_direction=context_direction,
-        ignore_channel=ignore_channel,
+        keep_all_channels=keep_all_channels,
     ).to_eager()
 
 

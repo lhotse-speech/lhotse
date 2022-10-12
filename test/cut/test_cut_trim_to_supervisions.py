@@ -302,8 +302,10 @@ def test_cut_trim_to_supervisions_extend_handles_end_of_recording(mono_cut):
     assert c2_s1.duration == 3.0
 
 
-def test_multi_cut_trim_to_supervisions_ignore_channel(multi_cut):
-    cuts = multi_cut.trim_to_supervisions(keep_overlapping=False, ignore_channel=True)
+def test_multi_cut_trim_to_supervisions_keep_all_channels(multi_cut):
+    cuts = multi_cut.trim_to_supervisions(
+        keep_overlapping=False, keep_all_channels=True
+    )
     assert len(cuts) == 2
     for cut, original_sup in zip(cuts, multi_cut.supervisions):
         assert cut.start == original_sup.start
@@ -316,8 +318,10 @@ def test_multi_cut_trim_to_supervisions_ignore_channel(multi_cut):
         assert cut.channel == multi_cut.channel
 
 
-def test_multi_cut_trim_to_supervisions_no_ignore_channel(multi_cut):
-    cuts = multi_cut.trim_to_supervisions(keep_overlapping=False, ignore_channel=False)
+def test_multi_cut_trim_to_supervisions_do_not_keep_all_channels(multi_cut):
+    cuts = multi_cut.trim_to_supervisions(
+        keep_overlapping=False, keep_all_channels=False
+    )
     assert len(cuts) == 2
     for cut, original_sup in zip(cuts, multi_cut.supervisions):
         assert cut.start == original_sup.start
@@ -330,8 +334,8 @@ def test_multi_cut_trim_to_supervisions_no_ignore_channel(multi_cut):
         assert cut.channel == original_sup.channel
 
 
-def test_multi_cut_trim_to_supervisions_no_ignore_channel_raises(multi_cut):
+def test_multi_cut_trim_to_supervisions_do_not_keep_all_channels_raises(multi_cut):
     with pytest.raises(AssertionError):
         cuts = multi_cut.trim_to_supervisions(
-            keep_overlapping=True, ignore_channel=False
+            keep_overlapping=True, keep_all_channels=False
         )
