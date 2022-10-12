@@ -1,6 +1,6 @@
 import pytest
 
-from lhotse import MonoCut, Recording, SupervisionSegment
+from lhotse import MonoCut, MultiCut, Recording, SupervisionSegment
 
 
 @pytest.fixture
@@ -33,6 +33,55 @@ def mono_cut():
         start=0.0,
         duration=10.0,
         channel=0,
+        recording=rec,
+        supervisions=sups,
+    )
+
+
+@pytest.fixture
+def multi_cut():
+    """
+    Scenario::
+                  ╔══════════════════════════════  MultiCut  ═════════════════╗
+                  ║ ┌──────────────────────────┐                              ║
+     Channel 1  ──╬─│   Hello this is John.    │──────────────────────────────╬────────
+                  ║ └──────────────────────────┘                              ║
+                  ║                       ┌──────────────────────────────────┐║
+     Channel 2  ──╬───────────────────────│     Hey, John. How are you?      │╠────────
+                  ║                       └──────────────────────────────────┘║
+                  ╚═══════════════════════════════════════════════════════════╝
+    """
+    rec = Recording(
+        id="rec1",
+        duration=10.0,
+        sampling_rate=8000,
+        num_samples=80000,
+        sources=[],
+        channel_ids=[0, 1],
+    )
+    sups = [
+        SupervisionSegment(
+            id="sup1",
+            recording_id="rec1",
+            start=0.0,
+            duration=5.0,
+            text="Hello this is John.",
+            channel=0,
+        ),
+        SupervisionSegment(
+            id="sup2",
+            recording_id="rec1",
+            start=4.5,
+            duration=5.5,
+            text="Hey, John. How are you?",
+            channel=1,
+        ),
+    ]
+    return MultiCut(
+        id="rec1-cut1",
+        start=0.0,
+        duration=10.0,
+        channel=[0, 1],
         recording=rec,
         supervisions=sups,
     )
@@ -251,3 +300,38 @@ def test_cut_trim_to_supervisions_extend_handles_end_of_recording(mono_cut):
     (c2_s1,) = c2.supervisions
     assert c2_s1.start == 0.5
     assert c2_s1.duration == 3.0
+
+
+def test_multi_cut_trim_to_supervisions_ignore_channel(multi_cut):
+    cuts = multi_cut.trim_to_supervisions(keep_overlapping=False, ignore_channel=True)
+    assert len(cuts) == 2
+    for cut, original_sup in zip(cuts, multi_cut.supervisions):
+        assert cut.start == original_sup.start
+        assert cut.duration == original_sup.duration
+        assert len(cut.supervisions) == 1
+        (sup,) = cut.supervisions
+        assert sup.start == 0
+        assert sup.duration == cut.duration
+        assert sup.text == original_sup.text
+        assert cut.channel == multi_cut.channel
+
+
+def test_multi_cut_trim_to_supervisions_no_ignore_channel(multi_cut):
+    cuts = multi_cut.trim_to_supervisions(keep_overlapping=False, ignore_channel=False)
+    assert len(cuts) == 2
+    for cut, original_sup in zip(cuts, multi_cut.supervisions):
+        assert cut.start == original_sup.start
+        assert cut.duration == original_sup.duration
+        assert len(cut.supervisions) == 1
+        (sup,) = cut.supervisions
+        assert sup.start == 0
+        assert sup.duration == cut.duration
+        assert sup.text == original_sup.text
+        assert cut.channel == original_sup.channel
+
+
+def test_multi_cut_trim_to_supervisions_no_ignore_channel_raises(multi_cut):
+    with pytest.raises(AssertionError):
+        cuts = multi_cut.trim_to_supervisions(
+            keep_overlapping=True, ignore_channel=False
+        )
