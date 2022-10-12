@@ -61,7 +61,7 @@ class SharWriter:
             # TODO: with/without transcoding
             data = cut.load_audio()
             self.writers["recording"].write(cut.id, data, cut.sampling_rate)
-            cut.recording = to_placeholder(cut.recording)
+            cut = fastcopy(cut, recording=to_placeholder(cut.recording))
         elif cut.has_recording and self.warn_unused_fields:
             warnings.warn(
                 "Found cut with 'recording' field that is not specified for Shar writing."
@@ -71,7 +71,7 @@ class SharWriter:
         if cut.has_features and "features" in self.fields:
             data = cut.load_features()
             self.writers["features"].write(cut.id, data)
-            cut.features = to_placeholder(cut.features)
+            cut = fastcopy(cut, features=to_placeholder(cut.features))
         elif cut.has_features and self.warn_unused_fields:
             warnings.warn(
                 "Found cut with 'features' field that is not specified for Shar writing."
@@ -95,6 +95,7 @@ class SharWriter:
                 if isinstance(val, Recording):
                     kwargs["sampling_rate"] = val.sampling_rate
                 self.writers[key].write(cut.id, data, **kwargs)
+                cut = fastcopy(cut, custom=cut.custom.copy())
                 setattr(cut, key, to_placeholder(getattr(cut, key)))
 
         self.writers["cut"].write(cut)
@@ -105,6 +106,9 @@ Manifest = TypeVar("Manifest", Recording, Features, Array, TemporalArray)
 
 def to_placeholder(manifest: Manifest) -> Manifest:
     if isinstance(manifest, Recording):
+        assert (
+            len(manifest.sources) == 1
+        ), "Multiple AudioSources are not supported yet."
         return fastcopy(
             manifest,
             sources=[

@@ -1,8 +1,10 @@
 from pathlib import Path
 
+import numpy as np
 import pytest
 
 from lhotse import CutSet
+from lhotse.shar.readers import load_shar
 from lhotse.shar.writers.shar import SharWriter
 from lhotse.testing.dummies import DummyManifest
 
@@ -82,3 +84,48 @@ def test_shar_writer(tmpdir: str):
         assert cut.custom_recording.sources[0].type == "shar"
         with pytest.raises(RuntimeError):
             cut.load_custom_recording()
+
+
+def test_shar_reader(tmpdir: str):
+    tmpdir = Path(tmpdir)
+
+    # Prepare data
+    cuts = DummyManifest(CutSet, begin_id=0, end_id=20, with_data=True)
+    writer = SharWriter(
+        tmpdir,
+        fields={
+            "recording": "wav",
+            "features": "lilcom",
+            "custom_embedding": "numpy",
+            "custom_features": "lilcom",
+            "custom_indexes": "numpy",
+            "custom_recording": "wav",
+        },
+        shard_size=10,
+    )
+    with writer:
+        for c in cuts:
+            writer.write(c)
+
+    # Prepare system under test
+    cuts_iter = load_shar(tmpdir)
+
+    # Actual test
+    for c_test, c_ref in zip(cuts_iter, cuts):
+        assert c_test.id == c_ref.id
+        np.testing.assert_allclose(c_ref.load_audio(), c_test.load_audio(), rtol=1e-3)
+        np.testing.assert_allclose(
+            c_ref.load_custom_recording(), c_test.load_custom_recording(), rtol=1e-3
+        )
+        np.testing.assert_almost_equal(
+            c_ref.load_features(), c_test.load_features(), decimal=1
+        )
+        np.testing.assert_almost_equal(
+            c_ref.load_custom_features(), c_test.load_custom_features(), decimal=1
+        )
+        np.testing.assert_almost_equal(
+            c_ref.load_custom_embedding(), c_test.load_custom_embedding(), decimal=1
+        )
+        np.testing.assert_almost_equal(
+            c_ref.load_custom_indexes(), c_test.load_custom_indexes(), decimal=1
+        )

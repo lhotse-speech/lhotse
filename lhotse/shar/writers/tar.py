@@ -1,3 +1,4 @@
+import tarfile
 from io import BytesIO
 
 
@@ -9,6 +10,7 @@ class TarWriter:
         self.gzip = pattern.endswith(".gz")
         self.fname = None
         self.stream = None
+        self.tarstream = None
         self.num_shards = 0
         self.num_items = 0
         self.num_items_total = 0
@@ -20,29 +22,27 @@ class TarWriter:
         self.close()
 
     def close(self):
+        if self.tarstream is not None:
+            self.tarstream.close()
         if self.stream is not None:
             self.stream.close()
 
     def _next_stream(self):
-        import tarfile
-
         self.close()
 
         self.fname = self.pattern % self.num_shards
 
         # TODO: support gopen-like capabilities
-        fileobj = open(self.fname, "wb")
+        self.stream = open(self.fname, "wb")
 
         self.tarstream = tarfile.open(
-            fileobj=fileobj, mode="w|gz" if self.gzip else "w"
+            fileobj=self.stream, mode="w|gz" if self.gzip else "w"
         )
 
         self.num_shards += 1
         self.num_items = 0
 
     def write(self, key: str, data: BytesIO):
-        import tarfile
-
         if (
             # the first item written
             self.num_items_total == 0
