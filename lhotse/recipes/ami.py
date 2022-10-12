@@ -550,7 +550,7 @@ def prepare_supervision_other(
                         recording_id=recording.id,
                         start=seg_info.start_time,
                         duration=duration,
-                        channel=0,
+                        channel=recording.channel_ids,
                         language="English",
                         speaker=seg_info.speaker,
                         gender=seg_info.gender,

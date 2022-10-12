@@ -156,7 +156,7 @@ def prepare_ali_meeting(
                             recording_id=recording.id,
                             start=start,
                             duration=round(end - start, 4),
-                            channel=0,
+                            channel=0 if mic == "near" else list(range(8)),
                             language="Chinese",
                             speaker=spk_id,
                             gender=gender,
