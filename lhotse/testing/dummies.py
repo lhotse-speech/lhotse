@@ -86,7 +86,7 @@ def dummy_audio_source(
         return AudioSource(type="command", channels=[0], source='echo "dummy waveform"')
     else:
         # 1kHz sine wave
-        data = torch.sin(2 * torch.pi * 1000 * torch.arange(num_samples)).unsqueeze(0)
+        data = torch.sin(2 * np.pi * 1000 * torch.arange(num_samples)).unsqueeze(0)
         binary_data = BytesIO()
         torchaudio.save(binary_data, data, sample_rate=sampling_rate, format="wav")
         binary_data.seek(0)

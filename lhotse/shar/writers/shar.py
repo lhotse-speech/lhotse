@@ -1,6 +1,8 @@
 import warnings
 from functools import partial
-from typing import Any, Callable, Dict, Literal, Type, TypeVar, Union
+from typing import Any, Callable, Dict, Type, TypeVar, Union
+
+from typing_extensions import Literal
 
 from lhotse import AudioSource, Features, fastcopy
 from lhotse.array import Array, TemporalArray
@@ -38,7 +40,6 @@ class SharWriter:
             ),
         }
         for field, writer_type in self.fields.items():
-            # TODO: how to pass compression :)
             writer_type = resolve_writer(writer_type)
             self.writers[field] = writer_type(
                 pattern=f"{self.output_dir}/{field}.%06d.tar", shard_size=shard_size
@@ -47,12 +48,13 @@ class SharWriter:
     def __enter__(self):
         for w in self.writers.values():
             w.__enter__()
+        return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         for w in self.writers.values():
             w.__exit__(exc_type, exc_val, exc_tb)
 
-    def write(self, cut: Cut):
+    def write(self, cut: Cut) -> None:
 
         # handle audio
         if cut.has_recording and "recording" in self.fields:
@@ -67,7 +69,6 @@ class SharWriter:
 
         # handle features
         if cut.has_features and "features" in self.fields:
-            # TODO: with/without lilcom/gzip
             data = cut.load_features()
             self.writers["features"].write(cut.id, data)
             cut.features = to_placeholder(cut.features)
@@ -89,7 +90,6 @@ class SharWriter:
                         )
                     continue
 
-                # TODO: with/without lilcom/gzip
                 data = cut.load_custom(key)
                 kwargs = {}
                 if isinstance(val, Recording):
@@ -125,7 +125,7 @@ def to_placeholder(manifest: Manifest) -> Manifest:
 
 def resolve_writer(
     name_or_callable: Union[str, FieldWriter, Callable[[Any], FieldWriterInstance]]
-):
+) -> FieldWriter:
     if not isinstance(name_or_callable, str):
         return name_or_callable
 
