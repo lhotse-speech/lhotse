@@ -470,17 +470,17 @@ class Cut:
             if not keep_overlapping:
                 # Ensure that there is exactly one supervision per cut.
                 trimmed = trimmed.filter_supervisions(lambda s: s.id == segment.id)
-            if not keep_all_channels:
+            if not keep_all_channels and not isinstance(trimmed, MixedCut):
+                # For MixedCut, we can't change the channels since it is defined by the
+                # number of channels in underlying tracks.
+
                 # Ensure that all supervisions have the same channel.
                 assert len(set(s.channel for s in trimmed.supervisions)) == 1, (
                     "Trimmed cut has supervisions with different channels. Either set "
                     "`ignore_channel=True` to keep original channels or `keep_overlapping=False` "
                     "to retain only 1 supervision per trimmed cut."
                 )
-                if not isinstance(trimmed, MixedCut):
-                    # For MixedCut, we can't change the channels since it is defined by the
-                    # number of channels in underlying tracks.
-                    trimmed.channel = trimmed.supervisions[0].channel
+                trimmed.channel = trimmed.supervisions[0].channel
             cuts.append(trimmed)
         return CutSet.from_cuts(cuts)
 
