@@ -1,8 +1,8 @@
 from io import BytesIO
-from typing import Literal
 
 import lilcom
 import numpy as np
+from typing_extensions import Literal
 
 from lhotse.shar.writers.tar import TarWriter
 

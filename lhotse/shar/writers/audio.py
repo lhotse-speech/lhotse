@@ -1,10 +1,10 @@
 from functools import partial
 from io import BytesIO
-from typing import Literal
 
 import numpy as np
 import torch
 import torchaudio
+from typing_extensions import Literal
 
 from lhotse.shar.writers.tar import TarWriter
 
