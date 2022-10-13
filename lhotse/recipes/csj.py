@@ -39,7 +39,6 @@ Notice that the 'D' transcripts are split into respective (L)eft and (R)ight cha
 
 """
 
-from glob import glob
 import logging
 from concurrent.futures.thread import ThreadPoolExecutor
 from pathlib import Path
@@ -66,14 +65,14 @@ def parse_transcript_header(line : str):
     return (sgid, float(start), float(end), line)
 
 def parse_one_recording(
-    template : str,
+    template : Path,
     wavlist_path : Path, 
     recording_id : str
 ) -> Tuple[Recording, List[SupervisionSegment]]:
     transcripts = []
     
-    for trans in glob(template + '*.txt'):
-        trans_type = trans.replace(template + '-', '').replace(".txt", '')
+    for trans in template.glob(f'{recording_id}*.txt'):
+        trans_type = trans.stem.replace(recording_id + '-', '')
         transcripts.append([(trans_type, t) for t in Path(trans).read_text().split('\n')])
     
     assert all(len(c) == len(transcripts[0]) for c in transcripts), transcripts
@@ -156,8 +155,9 @@ def prepare_csj(
             futures = []
             
             for wavlist in part_path.glob("*/*-wav.list"):
-                template = wavlist.as_posix().rstrip('-wav.list')
                 spk = wavlist.name.rstrip('-wav.list')
+                template = wavlist.parent
+                
                 futures.append(
                     ex.submit(parse_one_recording, template, wavlist, spk)
                 )
