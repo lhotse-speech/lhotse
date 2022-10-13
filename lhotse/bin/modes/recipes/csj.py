@@ -28,24 +28,16 @@ __all__ = ["csj"]
     default=1,
     help="How many threads to use (can give good speed-ups with slow disks).",
 )
-@click.option(
-    "--split",
-    type=int,
-    default=4000,
-    help="The index at which to split the core+noncore utterances to valid and train."
-    
-)
+
 def csj(
     transcript_dir: Pathlike,
     output_dir: Pathlike,
     dataset_parts: Union[str, Sequence[str]],
     num_jobs: int,
-    split: int,
 ):
     prepare_csj(
         transcript_dir=transcript_dir,
         output_dir=output_dir,
         num_jobs=num_jobs,
         dataset_parts=dataset_parts,
-        split=split,
     )
