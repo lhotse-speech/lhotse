@@ -89,8 +89,7 @@ def parse_one_recording(
     for texts in zip(*transcripts):
         customs = {}
         for trans_type, line in texts:
-            sgid, start, end, customs[trans_type] = \
-                parse_transcript_header(line)
+            sgid, start, end, customs[trans_type] = parse_transcript_header(line)
 
         text = texts[0][1] if len(customs) == 1 else ""
 
@@ -161,13 +160,8 @@ def prepare_csj(
     with ThreadPoolExecutor(num_jobs) as ex:
         for part in tqdm(dataset_parts, desc="Dataset parts"):
             logging.info(f"Processing CSJ subset: {part}")
-            if manifests_exist(
-                part=part,
-                output_dir=output_dir,
-                prefix="csj"
-            ):
-                logging.info(
-                    f"CSJ subset: {part} already prepared - skipping.")
+            if manifests_exist(part=part, output_dir=output_dir, prefix="csj"):
+                logging.info(f"CSJ subset: {part} already prepared - skipping.")
                 continue
 
             recordings = []
@@ -179,8 +173,7 @@ def prepare_csj(
                 spk = wavlist.name.rstrip("-wav.list")
                 template = wavlist.parent
 
-                futures.append(
-                    ex.submit(parse_one_recording, template, wavlist, spk))
+                futures.append(ex.submit(parse_one_recording, template, wavlist, spk))
 
             for future in tqdm(futures, desc="Processing", leave=False):
                 result = future.result()
@@ -191,17 +184,13 @@ def prepare_csj(
 
             recording_set = RecordingSet.from_recordings(recordings)
             supervision_set = SupervisionSet.from_segments(supervisions)
-            validate_recordings_and_supervisions(
-                recording_set,
-                supervision_set
-            )
+            validate_recordings_and_supervisions(recording_set, supervision_set)
 
             if output_dir:
                 supervision_set.to_file(
                     output_dir / f"csj_supervisions_{part}.jsonl.gz"
                 )
-                recording_set.to_file(
-                    output_dir / f"csj_recordings_{part}.jsonl.gz")
+                recording_set.to_file(output_dir / f"csj_recordings_{part}.jsonl.gz")
 
             manifests[part] = {
                 "recordings": recording_set,
