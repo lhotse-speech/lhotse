@@ -18,8 +18,11 @@ __all__ = ["csj"]
     type=str,
     default=None,
     multiple=True,
-    help="List of dataset parts to prepare. To prepare multiple parts, pass each with `-p` "
-    "Example: `-p eval1 -p eval2`",
+    help=(
+        "List of dataset parts to prepare. "
+        "To prepare multiple parts, pass each with `-p` "
+        "Example: `-p eval1 -p eval2`"
+    ),
 )
 @click.option(
     "-j",
@@ -28,7 +31,6 @@ __all__ = ["csj"]
     default=1,
     help="How many threads to use (can give good speed-ups with slow disks).",
 )
-
 def csj(
     transcript_dir: Pathlike,
     output_dir: Pathlike,
