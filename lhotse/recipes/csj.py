@@ -1,3 +1,23 @@
+#!/usr/bin/env python3
+# Copyright    2022  The University of Electro-Communications  (Author: Teo Wen Shen)  # noqa
+#
+# Adapted from kaldi-asr/kaldi/egs/csj/s5/local/csj_make_trans/{csj_autorun.sh,csj2kaldim.pl,csjconnect.pl}  # noqa
+#
+# See ../LICENSE for clarification regarding multiple authors
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+
 """
 Corpus owner: https://clrd.ninjal.ac.jp/csj/en/index.html
 Corpus description:
@@ -55,18 +75,18 @@ The transcript directory will have this structure:-
  - noncore
    - ...
    - A01F0576
-     - A01F0576.sdb (not used in this script)
+     - A01F0576.sdb
      - A01F0576-{transcript_mode}.txt
-     - A01F0576-segments (not used in this script)
+     - A01F0576-segments
      - A01F0576-wav.list
    - ...
    - D03M0038
-     - D03M0038.sdb (not used in this script)
+     - D03M0038.sdb
      - D03M0038-L-{transcript_mode}.txt
-     - D03M0038-L-segments (not used in this script)
+     - D03M0038-L-segments
      - D03M0038-L-wav.list
      - D03M0038-R-{transcript_mode}.txt
-     - D03M0038-R-segments (not used in this script)
+     - D03M0038-R-segments
      - D03M0038-R-wav.list
 
 """
@@ -905,7 +925,6 @@ class CSJSDB_Word:
 
             if mem is not None:
                 mem._add_word(w)
-                # assert len(mem.words) < 50  or 'R' in mem.surface
                 if mem._parse_pronsurface():
                     mem = mem._resolve_multiline()
 
@@ -914,7 +933,6 @@ class CSJSDB_Word:
             elif is_complete_word and not w:
                 continue
             elif is_complete_word:
-                # assert all(p not in w.pron for p in ['(', ')', 'x'])
                 ret.append(w)
             else:
                 mem = w
@@ -1068,7 +1086,6 @@ def modify_text(
 
     if not tobreak:
         line = " ".join(line).replace(single_char_gap, gap_sym)
-        # assert '×' not in line
         out.append(f"{line_sgid} {line_start:09.3f} {line_end:09.3f} " + line)
 
     while segments_:
