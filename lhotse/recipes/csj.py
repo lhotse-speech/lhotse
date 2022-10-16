@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 # Copyright    2022  The University of Electro-Communications  (Author: Teo Wen Shen)  # noqa
 #
-# Adapted from kaldi-asr/kaldi/egs/csj/s5/local/csj_make_trans/{csj_autorun.sh,csj2kaldim.pl,csjconnect.pl}  # noqa
+# Adapted from kaldi-asr/kaldi/egs/csj/s5/local/csj_make_trans/{csj_autorun.sh,csj2kaldi4m.pl,csjconnect.pl}  # noqa
 #
-# See ../LICENSE for clarification regarding multiple authors
+# See ../../../LICENSE for clarification regarding multiple authors
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -1282,8 +1282,8 @@ def create_trans_dir(corpus_dir: Path, trans_dir: Path):
     logging.info("Transcripts have been moved.")
 
 
-def parse_sdb_process(
-    jobs_queue: Queue,
+def parse_one_sdb(
+    sdb: Path,
     gap: float,
     maxlen: float,
     minlen: float,
@@ -1292,39 +1292,32 @@ def parse_sdb_process(
     use_segments: bool,
     write_segments: bool,
 ):
-    def parse_one_sdb(sdb: Path):
-        with sdb.open("r", encoding="shift_jis") as fin:
-            result = CSJSDB_Word.from_file(fin)
+    with sdb.open("r", encoding="shift_jis") as fin:
+        result = CSJSDB_Word.from_file(fin)
 
-        if not use_segments:
-            transcripts = make_text(result, gap, maxlen, minlen, gap_sym)
-        else:
-            channels = (
-                ["-L-segments", "-R-segments"] if sdb.name[0] == "D" else ["-segments"]
+    if not use_segments:
+        transcripts = make_text(result, gap, maxlen, minlen, gap_sym)
+    else:
+        channels = (
+            ["-L-segments", "-R-segments"] if sdb.name[0] == "D" else ["-segments"]
+        )
+        transcripts = []
+        for channel in channels:
+            segments = Path(sdb.as_posix()[:-4] + channel).read_text().split("\n")
+            assert segments, segments
+            transcripts.append(modify_text(result, segments, "", 0.5))
+
+    for transcript in transcripts:
+        spk_id = transcript.pop("spk_id")
+        segments = transcript.pop("segments")
+        (sdb.parent / f"{spk_id}-{trans_mode}.txt").write_text(
+            "\n".join(transcript["text"]), encoding="utf8"
+        )
+        if write_segments:
+            (sdb.parent / f"{spk_id}-segments").write_text(
+                "\n".join(f"{s[0]} {s[1]} {s[2]}" for s in segments),
+                encoding="utf8",
             )
-            transcripts = []
-            for channel in channels:
-                segments = Path(sdb.as_posix()[:-4] + channel).read_text().split("\n")
-                assert segments, segments
-                transcripts.append(modify_text(result, segments, "", 0.5))
-
-        for transcript in transcripts:
-            spk_id = transcript.pop("spk_id")
-            segments = transcript.pop("segments")
-            (sdb.parent / f"{spk_id}-{trans_mode}.txt").write_text(
-                "\n".join(transcript["text"]), encoding="utf8"
-            )
-            if write_segments:
-                (sdb.parent / f"{spk_id}-segments").write_text(
-                    "\n".join(f"{s[0]} {s[1]} {s[2]}" for s in segments),
-                    encoding="utf8",
-                )
-
-    while True:
-        job = jobs_queue.get()
-        if not job:
-            break
-        parse_one_sdb(sdb=job)
 
 
 def load_config(config_file: str):
@@ -1368,13 +1361,6 @@ def prepare_transcripts(
     write_segments: bool,
     use_segments: bool,
 ):
-    if (transcript_dir / ".done").exists():
-        logging.info(
-            f"{transcript_dir} already parsed. "
-            f"Delete {transcript_dir / '.done'} to parse again."
-        )
-        return
-
     config = load_config(config)
     trans_mode = config["CONSTANTS"]["MODE"]
 
@@ -1386,49 +1372,21 @@ def prepare_transcripts(
     minlen = float(segment_config["minlen"])
     gap_sym = segment_config["gap_sym"]
 
-    Process = get_context("fork").Process
-    num_jobs = min(nj, os.cpu_count())
-    maxsize = 10 * num_jobs
-
-    jobs_queue = Queue(maxsize=maxsize)
-
-    workers: List[Process] = []
-
-    for _ in range(num_jobs):
-        worker = Process(
-            target=parse_sdb_process,
-            args=(
-                jobs_queue,
-                gap,
-                maxlen,
-                minlen,
-                gap_sym,
-                trans_mode,
-                use_segments,
-                write_segments,
-            ),
-        )
-        worker.daemon = True
-        worker.start()
-        workers.append(worker)
-
-    num_sdb = 0
     logging.info(f"Gathering sdbs to be parsed in {trans_mode} mode now.")
-    for sdb in transcript_dir.glob("*/*/*.sdb"):
-        jobs_queue.put(sdb)
-        num_sdb += 1
 
-    logging.info(f"Parsing found {num_sdb} sdbs now.")
-    # signal termination
-    for _ in workers:
-        jobs_queue.put(None)
-
-    # wait for workers to terminate
-    for w in workers:
-        w.join()
-
-    logging.info("All done.")
-    (transcript_dir / ".done").touch()
+    with ThreadPoolExecutor(nj) as ex:
+        for sdb in transcript_dir.glob("*/*/*.sdb"):
+            ex.submit(
+                fn=parse_one_sdb,
+                sdb=sdb,
+                gap=gap,
+                maxlen=maxlen,
+                minlen=minlen,
+                gap_sym=gap_sym,
+                trans_mode=trans_mode,
+                use_segments=use_segments,
+                write_segments=write_segments,
+            )
 
 
 def prepare_csj(
@@ -1449,26 +1407,35 @@ def prepare_csj(
     create_trans_dir(corpus_dir, transcript_dir)
 
     # Parse transcript
-    if not configs:
-        prepare_transcripts(
-            corpus_dir=corpus_dir,
-            transcript_dir=transcript_dir,
-            config=DEFAULT_CONFIG,
-            nj=nj,
-            write_segments=True,
-            use_segments=False,
+    if (transcript_dir / ".done").exists():
+        logging.info(
+            f"{transcript_dir} already parsed. "
+            f"Delete {transcript_dir / '.done'} to parse again."
         )
     else:
-        for i, config in enumerate(configs):
-            config = Path(config).read_text(encoding="utf8")
+        if not configs:
             prepare_transcripts(
                 corpus_dir=corpus_dir,
                 transcript_dir=transcript_dir,
-                config=config,
+                config=DEFAULT_CONFIG,
                 nj=nj,
-                write_segments=(not bool(i)),
-                use_segments=bool(i),
+                write_segments=True,
+                use_segments=False,
             )
+        else:
+            for i, config in enumerate(configs):
+                config = Path(config).read_text(encoding="utf8")
+                prepare_transcripts(
+                    corpus_dir=corpus_dir,
+                    transcript_dir=transcript_dir,
+                    config=config,
+                    nj=nj,
+                    write_segments=(not bool(i)),
+                    use_segments=bool(i),
+                )
+
+        logging.info("Transcripts are prepared.")
+        (transcript_dir / ".done").touch()
 
     # Prepare manifests
     return prepare_manifests(
