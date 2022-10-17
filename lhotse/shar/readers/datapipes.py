@@ -6,10 +6,9 @@ import numpy as np
 import torch
 import torchaudio
 
-from lhotse import CutSet, Recording
-from lhotse.array import Array, TemporalArray
+from lhotse import CutSet
 from lhotse.cut import Cut
-from lhotse.features import Features
+from lhotse.shar.readers.utils import fill_shar_placeholder
 from lhotse.utils import Pathlike, is_module_available
 from lhotse.workarounds import AltGzipFile
 
@@ -91,38 +90,10 @@ class SharReader(IterDataPipe):
                     item_id == cut.id
                 ), f"Mismatched elements: cut.id='{cut.id}' != item_id='{item_id}'"
                 field = tarpath.parent.stem.split(".")[0]  # TODO: explain the format
-                fill_placeholder(
+                fill_shar_placeholder(
                     cut=cut, field=field, data=tarstream.read(), tarpath=tarpath
                 )
             yield cut
-
-
-def fill_placeholder(cut: Cut, field: str, data: bytes, tarpath: Path) -> None:
-    manifest = getattr(cut, field)
-    if isinstance(manifest, Recording):
-        assert (
-            len(manifest.sources) == 1
-        ), "Multiple AudioSources are not supported yet."
-        manifest.sources[0].type = "memory"
-        manifest.sources[0].source = data
-    elif isinstance(manifest, (Features, Array)):
-        manifest.storage_key = data
-        if tarpath.suffix == ".llc":
-            manifest.storage_type = "memory_lilcom"
-        elif tarpath.suffix == ".npy":
-            manifest.storage_type = "memory_npy"
-        else:
-            raise RuntimeError(f"Unknown array/tensor format: {tarpath}")
-    elif isinstance(manifest, TemporalArray):
-        manifest.array.storage_key = data
-        if tarpath.suffix == ".llc":
-            manifest.array.storage_type = "memory_lilcom"
-        elif tarpath.suffix == ".npy":
-            manifest.array.storage_type = "memory_npy"
-        else:
-            raise RuntimeError(f"Unknown array/tensor format: {tarpath}")
-    else:
-        raise RuntimeError(f"Unknown manifest type: {type(manifest).__name__}")
 
 
 def tar_datapipe(in_dir: str, pattern: str) -> TarArchiveLoader:
@@ -142,7 +113,12 @@ def cut_datapipe(in_dir: str) -> CutsReader:
     return dp
 
 
-def load_shar(in_dir: Pathlike) -> SharReader:
+def load_shar_datapipe(in_dir: Pathlike) -> SharReader:
+    assert is_module_available("torchdata"), (
+        "To use datapipe-based Shar reading API, you need to have torchdata installed "
+        "(and a recent enough version of PyTorch, e.g. 1.12)."
+    )
+
     # TODO: figure out how to make it work with cloud storage
     fields = set(p.stem.split(".")[0] for p in Path(in_dir).glob("*"))
     assert "cuts" in fields

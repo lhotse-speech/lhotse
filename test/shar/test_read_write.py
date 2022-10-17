@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 
 from lhotse import CutSet
-from lhotse.shar.readers import load_shar
+from lhotse.shar.readers import load_shar_datapipe
 from lhotse.shar.writers.shar import SharWriter
 from lhotse.testing.dummies import DummyManifest
 from lhotse.utils import is_module_available
@@ -113,7 +113,7 @@ def test_shar_reader(tmpdir: str):
             writer.write(c)
 
     # Prepare system under test
-    cuts_iter = load_shar(tmpdir)
+    cuts_iter = load_shar_datapipe(tmpdir)
 
     # Actual test
     for c_test, c_ref in zip(cuts_iter, cuts):

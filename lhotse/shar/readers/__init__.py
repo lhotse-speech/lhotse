@@ -1,1 +1,1 @@
-from .datapipes import load_shar
+from .datapipes import load_shar_datapipe
