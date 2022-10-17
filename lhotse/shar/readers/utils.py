@@ -3,9 +3,11 @@ from pathlib import Path
 from lhotse import Features, Recording
 from lhotse.array import Array, TemporalArray
 from lhotse.cut import Cut
+from lhotse.utils import Pathlike
 
 
-def fill_shar_placeholder(cut: Cut, field: str, data: bytes, tarpath: Path) -> None:
+def fill_shar_placeholder(cut: Cut, field: str, data: bytes, tarpath: Pathlike) -> None:
+    tarpath = Path(tarpath)
     manifest = getattr(cut, field)
     if isinstance(manifest, Recording):
         assert (

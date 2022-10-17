@@ -190,7 +190,7 @@ class AudioSource:
         elif self.type == "memory":
             assert isinstance(self.source, bytes), (
                 "Corrupted manifest: specified AudioSource type is 'memory', "
-                "but 'self.source' attribute is not of type 'bytes'."
+                f"but 'self.source' attribute is not of type 'bytes' (found: '{type(self.source).__name__}')."
             )
             source = BytesIO(self.source)
             samples, sampling_rate = read_audio(

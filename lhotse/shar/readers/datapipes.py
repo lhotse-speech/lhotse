@@ -6,8 +6,8 @@ import numpy as np
 import torch
 import torchaudio
 
-from lhotse import CutSet
 from lhotse.cut import Cut
+from lhotse.lazy import LazyJsonlIterator
 from lhotse.shar.readers.utils import fill_shar_placeholder
 from lhotse.utils import Pathlike, is_module_available
 from lhotse.workarounds import AltGzipFile
@@ -58,7 +58,7 @@ class CutsReader(IterDataPipe):
 
     def __iter__(self) -> Generator[Cut, None, None]:
         for path in self.dp:
-            self.cuts = CutSet.from_jsonl_lazy(path)
+            self.cuts = LazyJsonlIterator(path)
             yield from self.cuts
 
 
