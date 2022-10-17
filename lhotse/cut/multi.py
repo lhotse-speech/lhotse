@@ -76,7 +76,7 @@ class MultiCut(DataCut):
 
     @property
     def num_channels(self) -> int:
-        return len(self.channel)
+        return len(self.channel) if isinstance(self.channel, list) else 1
 
     @rich_exception_info
     def load_features(
