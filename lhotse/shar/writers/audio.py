@@ -10,6 +10,24 @@ from lhotse.shar.writers.tar import TarWriter
 
 
 class AudioTarWriter:
+    """
+    AudioTarWriter writes audio examples in numpy arrays or PyTorch tensors into a tar archive
+    that is automatically sharded.
+
+    It is different from :class:`~lhotse.shar.writers.array.ArrayTarWriter` in that it supports
+    audio-specific compression mechanisms, such as ``flac`` or ``mp3``.
+
+    Example::
+
+        >>> with AudioTarWriter("some_dir/audio.%06d.tar", shard_size=100, format="mp3") as w:
+        ...     w.write("audio1", audio1_array)
+        ...     w.write("audio2", audio2_array)  # etc.
+
+    It would create files such as ``some_dir/audio.000000.tar``, ``some_dir/audio.000001.tar``, etc.
+
+    See also: :class:`~lhotse.shar.writers.tar.TarWriter`, :class:`~lhotse.shar.writers.array.ArrayTarWriter`
+    """
+
     def __init__(
         self,
         pattern: str,

@@ -1,8 +1,31 @@
 import tarfile
 from io import BytesIO
 
+from lhotse.serialization import open_best
+
 
 class TarWriter:
+    """
+    TarWriter is a convenience wrapper over :class:`tarfile.TarFile` that
+    allows writing binary data into tar files that are automatically segmented.
+    Each segment is a separate tar file called a "shard."
+
+    Shards are useful in training of deep learning models that require a substantial
+    amount of data. Each shard can be read sequentially, which allows faster reads
+    from magnetic disks, NFS, or otherwise slow storage.
+
+    Example::
+
+        >>> with TarWriter("some_dir/data.%06d.tar", shard_size=100) as w:
+        ...     w.write("blob1", binary_blob1)
+        ...     w.write("blob2", binary_blob2)  # etc.
+
+    It would create files such as ``some_dir/data.000000.tar``, ``some_dir/data.000001.tar``, etc.
+
+    This class is heavily inspired by the WebDataset library:
+    https://github.com/webdataset/webdataset
+    """
+
     def __init__(self, pattern: str, shard_size: int):
         self.pattern = pattern
         assert "%" in self.pattern
@@ -34,10 +57,7 @@ class TarWriter:
         self.close()
 
         self.fname = self.pattern % self.num_shards
-
-        # TODO: support gopen-like capabilities
-        self.stream = open(self.fname, "wb")
-
+        self.stream = open_best(self.fname, "wb")
         self.tarstream = tarfile.open(
             fileobj=self.stream, mode="w|gz" if self.gzip else "w"
         )

@@ -114,6 +114,43 @@ def cut_datapipe(in_dir: str) -> CutsReader:
 
 
 def load_shar_datapipe(in_dir: Pathlike) -> SharReader:
+    """
+    ``load_shar_datapipe`` reads cuts and their corresponding data from multiple shards,
+    also recognized as the Lhotse Shar format.
+    Each shard is numbered and represented as a collection of one text manifest and
+    one or more binary tarfiles.
+    Each tarfile contains a single type of data, e.g., recordings, features, or custom fields.
+
+    .. note:: This function is experimental and uses the ``torchdata`` library
+        to return a datapipe over cuts with attached data.
+
+    Given an example directory named ``some_dir`, its expected layout is
+    ``some_dir/cuts.000000.jsonl.gz``, ``some_dir/recording.000000.tar``,
+    ``some_dir/features.000000.tar``, and then the same names but numbered with ``000001``, etc.
+    There may also be other files if the cuts have custom data attached to them.
+
+    The main idea behind Lhotse Shar format is to optimize dataloading with sequential reads,
+    while keeping the data composition more flexible than e.g. WebDataset tar archives do.
+    To achieve this, Lhotse Shar keeps each data type in a separate archive, along a single
+    CutSet JSONL manifest.
+    This way, the metadata can be investigated without iterating through the binary data.
+    The format also allows iteration over a subset of fields, or extension of existing data
+    with new fields.
+
+    Example::
+
+        >>> cuts = load_shar_datapipe("some_dir")
+        ... for cut in cuts:
+        ...     print("Cut", cut.id, "has duration of", cut.duration)
+        ...     audio = cut.load_audio()
+        ...     fbank = cut.load_features()
+
+    You can also use all of the ``torchdata`` datapipe methods, e.g.::
+
+        >>> cuts = load_shar_datapipe("some_dir").shuffle().batch(10)
+
+    See also: :class:`~lhotse.shar.writers.shar.SharWriter`, :class:`~lhotse.shar.readers.lazy.LazySharIterator`.
+    """
     assert is_module_available("torchdata"), (
         "To use datapipe-based Shar reading API, you need to have torchdata installed "
         "(and a recent enough version of PyTorch, e.g. 1.12)."

@@ -8,6 +8,25 @@ from lhotse.shar.writers.tar import TarWriter
 
 
 class ArrayTarWriter:
+    """
+    ArrayTarWriter writes numpy arrays or PyTorch tensors into a tar archive
+    that is automatically sharded.
+
+    For floating point tensors, we support the option to use `lilcom` compression.
+    Note that `lilcom` is only suitable for log-space features such as log-Mel filter banks.
+
+    Example::
+
+        >>> with ArrayTarWriter("some_dir/fbank.%06d.tar", shard_size=100, compression="lilcom") as w:
+        ...     w.write("fbank1", fbank1_array)
+        ...     w.write("fbank2", fbank2_array)  # etc.
+
+
+    It would create files such as ``some_dir/fbank.000000.tar``, ``some_dir/fbank.000001.tar``, etc.
+
+    See also: :class:`~lhotse.shar.writers.tar.TarWriter`, :class:`~lhotse.shar.writers.audio.AudioTarWriter`
+    """
+
     def __init__(
         self,
         pattern: str,

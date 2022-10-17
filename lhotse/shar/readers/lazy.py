@@ -15,7 +15,40 @@ from lhotse.utils import Pathlike
 
 class LazySharIterator(ImitatesDict):
     """
-    TODO: describe LazySharIterator
+    LazySharIterator reads cuts and their corresponding data from multiple shards,
+    also recognized as the Lhotse Shar format.
+    Each shard is numbered and represented as a collection of one text manifest and
+    one or more binary tarfiles.
+    Each tarfile contains a single type of data, e.g., recordings, features, or custom fields.
+
+    Given an example directory named ``some_dir`, its expected layout is
+    ``some_dir/cuts.000000.jsonl.gz``, ``some_dir/recording.000000.tar``,
+    ``some_dir/features.000000.tar``, and then the same names but numbered with ``000001``, etc.
+    There may also be other files if the cuts have custom data attached to them.
+
+    The main idea behind Lhotse Shar format is to optimize dataloading with sequential reads,
+    while keeping the data composition more flexible than e.g. WebDataset tar archives do.
+    To achieve this, Lhotse Shar keeps each data type in a separate archive, along a single
+    CutSet JSONL manifest.
+    This way, the metadata can be investigated without iterating through the binary data.
+    The format also allows iteration over a subset of fields, or extension of existing data
+    with new fields.
+
+    As you iterate over cuts from ``LazySharIterator``, it keeps a file handle open for the
+    JSONL manifest and all of the tar files that correspond to the current shard.
+    The tar files are read item by item together, and their binary data is attached to
+    the cuts.
+    It can be normally accessed using methods such as ``cut.load_audio()``.
+
+    Example::
+
+    >>> cuts = LazySharIterator("some_dir")
+    ... for cut in cuts:
+    ...     print("Cut", cut.id, "has duration of", cut.duration)
+    ...     audio = cut.load_audio()
+    ...     fbank = cut.load_features()
+
+    See also: :class:`~lhotse.shar.writers.shar.SharWriter`
     """
 
     def __init__(

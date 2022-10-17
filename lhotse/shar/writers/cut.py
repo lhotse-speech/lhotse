@@ -3,6 +3,21 @@ from lhotse.cut import Cut
 
 
 class CutShardWriter:
+    """
+    CutShardWriter writes Cuts into multiple JSONL file shards.
+    The JSONL can be compressed with gzip if the file extension ends with ``.gz``.
+
+    Example::
+
+        >>> with CutShardWriter("some_dir/cuts.%06d.jsonl.gz", shard_size=100) as w:
+        ...     for cut in ...:
+        ...         w.write(cut)
+
+    It would create files such as ``some_dir/cuts.000000.jsonl.gz``, ``some_dir/cuts.000001.jsonl.gz``, etc.
+
+    See also: :class:`~lhotse.shar.writers.tar.TarWriter`
+    """
+
     def __init__(self, pattern: str, shard_size: int = 1000):
         self.pattern = pattern
         self.shard_size = shard_size

@@ -19,6 +19,40 @@ FieldWriter = Type[FieldWriterInstance]
 
 
 class SharWriter:
+    """
+    SharWriter writes cuts and their corresponding data into multiple shards,
+    also recognized as the Lhotse Shar format.
+    Each shard is numbered and represented as a collection of one text manifest and
+    one or more binary tarfiles.
+    Each tarfile contains a single type of data, e.g., recordings, features, or custom fields.
+
+    The main idea behind Lhotse Shar format is to optimize dataloading with sequential reads,
+    while keeping the data composition more flexible than e.g. WebDataset tar archives do.
+    To achieve this, Lhotse Shar keeps each data type in a separate archive, along a single
+    CutSet JSONL manifest.
+    This way, the metadata can be investigated without iterating through the binary data.
+    The format also allows iteration over a subset of fields, or extension of existing data
+    with new fields.
+
+    The user has to specify which fields should be saved, and what compression to use for each of them.
+    Currently we support ``wav``, ``flac``, and ``mp3`` compression for ``recording`` and custom audio fields,
+    and ``lilcom`` or ``numpy`` for ``features`` and custom array fields.
+
+    Example::
+
+        >>> cuts = CutSet(...)  # cuts have 'recording' and 'features'
+        >>> with SharWriter("some_dir", shard_size=100, fields={"recording": "mp3", "features": "lilcom"}) as w:
+        ...     for cut in cuts:
+        ...         w.write(cut)
+
+    It would create a directory ``some_dir`` with files such as ``some_dir/cuts.000000.jsonl.gz``,
+    ``some_dir/recording.000000.tar``, ``some_dir/features.000000.tar``,
+    and then the same names but numbered with ``000001``, etc.
+
+    See also: :class:`~lhotse.shar.writers.tar.TarWriter`, :class:`~lhotse.shar.writers.audio.AudioTarWriter`,
+        :class:`~lhotse.shar.writers.array.ArrayTarWriter`.
+    """
+
     def __init__(
         self,
         output_dir: Pathlike,
