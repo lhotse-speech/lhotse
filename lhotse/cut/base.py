@@ -444,7 +444,10 @@ class Cut:
             the trimmed cut will have the same channels as the supervision.
         :return: a list of cuts.
         """
+        # TODO (@desh2608): This function should probably be implemented separately for each Cut type.
+
         from .mixed import MixedCut
+        from .multi import MultiCut
         from .set import CutSet
 
         cuts = []
@@ -481,6 +484,10 @@ class Cut:
                     "to retain only 1 supervision per trimmed cut."
                 )
                 trimmed.channel = trimmed.supervisions[0].channel
+
+                # If we have a single-channel MultiCut, we will convert it into a MonoCut.
+                if isinstance(trimmed, MultiCut) and trimmed.num_channels == 1:
+                    trimmed = trimmed.to_mono()[0]
             cuts.append(trimmed)
         return CutSet.from_cuts(cuts)
 
