@@ -124,9 +124,9 @@ def _make_discard_symbols_regex(labels: Sequence[str]) -> re.Pattern:
 def _normalize_text(text: str, discard_symbols: re.Pattern) -> str:
     from lhotse.utils import is_module_available
     
-    assert is_module_available("num2words"), (
-        "To align with torchaudio, please run 'pip install num2words' for number to word normalization."
-    )
+    assert is_module_available(
+        "num2words"
+    ), "To align with torchaudio, please run 'pip install num2words' for number to word normalization."
     from num2words import num2words
     
     text = re.sub(r"(\d+)", lambda x: num2words(int(x.group(0))), text)
