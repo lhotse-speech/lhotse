@@ -431,7 +431,9 @@ class Cut:
 
         :param keep_overlapping: when ``False``, it will discard parts of other supervisions that overlap with the
             main supervision. In the illustration above, it would discard ``Sup2`` in ``Cut1`` and ``Sup1`` in ``Cut2``.
-            In this mode, we guarantee that there will always be exactly one supervision per cut.
+            In this mode, we guarantee that there will always be exactly one supervision per cut, and we set the ``id``
+            of output cut to the ``id`` of this supervision, for better compatibility with downstream tools, e.g.
+            comparing the hypothesis of ASR with the reference in icefall.
         :param min_duration: An optional duration in seconds; specifying this argument will extend the cuts
             that would have been shorter than ``min_duration`` with actual acoustic context in the recording/features.
             If there are supervisions present in the context, they are kept when ``keep_overlapping`` is true.
