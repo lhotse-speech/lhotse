@@ -429,11 +429,16 @@ class Cut:
         as the supervision) or ignore the channels (in which case output cut has the same channels
         as the input cut).
 
+        .. hint:: If the resulting trimmed cut contains a single supervision, we set the cut id to
+            the ``id`` of this supervision, for better compatibility with downstream tools, e.g.
+            comparing the hypothesis of ASR with the reference in icefall.
+
+        .. hint:: If a MultiCut is trimmed and the resulting trimmed cut contains a single channel,
+            we convert it to a MonoCut.
+
         :param keep_overlapping: when ``False``, it will discard parts of other supervisions that overlap with the
             main supervision. In the illustration above, it would discard ``Sup2`` in ``Cut1`` and ``Sup1`` in ``Cut2``.
-            In this mode, we guarantee that there will always be exactly one supervision per cut, and we set the ``id``
-            of output cut to the ``id`` of this supervision, for better compatibility with downstream tools, e.g.
-            comparing the hypothesis of ASR with the reference in icefall.
+            In this mode, we guarantee that there will always be exactly one supervision per cut.
         :param min_duration: An optional duration in seconds; specifying this argument will extend the cuts
             that would have been shorter than ``min_duration`` with actual acoustic context in the recording/features.
             If there are supervisions present in the context, they are kept when ``keep_overlapping`` is true.
@@ -447,6 +452,7 @@ class Cut:
         :return: a list of cuts.
         """
         from .mixed import MixedCut
+        from .multi import MultiCut
         from .set import CutSet
 
         cuts = []
@@ -469,10 +475,11 @@ class Cut:
                 keep_excessive_supervisions=keep_overlapping,
                 _supervisions_index=supervisions_index,
             )
+
             if not keep_overlapping:
                 # Ensure that there is exactly one supervision per cut.
                 trimmed = trimmed.filter_supervisions(lambda s: s.id == segment.id)
-                trimmed.id = segment.id
+
             if not keep_all_channels and not isinstance(trimmed, MixedCut):
                 # For MixedCut, we can't change the channels since it is defined by the
                 # number of channels in underlying tracks.
@@ -484,6 +491,15 @@ class Cut:
                     "to retain only 1 supervision per trimmed cut."
                 )
                 trimmed.channel = trimmed.supervisions[0].channel
+
+                # If we have a single-channel MultiCut, we will convert it into a MonoCut.
+                if isinstance(trimmed, MultiCut) and trimmed.num_channels == 1:
+                    trimmed = trimmed.to_mono()[0]
+
+            if len(trimmed.supervisions) == 1:
+                # If the trimmed cut contains a single supervision, we set the cut id to
+                # the id of this supervision.
+                trimmed.id = segment.id
             cuts.append(trimmed)
         return CutSet.from_cuts(cuts)
 
