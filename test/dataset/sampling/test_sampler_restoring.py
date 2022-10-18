@@ -310,3 +310,44 @@ def test_e2e_restore_with_dataloader(num_workers, create_sampler):
     restored_dloader.sampler.set_epoch(2)
     ep2_batches = list(restored_dloader)
     assert len(ep2_batches) == 10
+
+
+@pytest.mark.parametrize("create_samplers", SAMPLERS_TO_TEST)
+@pytest.mark.parametrize("advance_epoch", [True, False])
+def test_epoch_diagnostics_reset_on_start_of_iteration(create_samplers, advance_epoch):
+    # We only need one sampler for this test to check that it properly
+    # resets the cut/batch counter if we re-iterate over the same epoch
+    sampler, _ = create_samplers()
+
+    assert sampler.diagnostics.current_epoch == 0
+    assert sampler.diagnostics.total_cuts == 0
+    assert sampler.diagnostics.total_batches == 0
+
+    # Iterate a single epoch
+    for _ in sampler:
+        pass
+
+    assert sampler.diagnostics.current_epoch == 0
+    total_cuts_pass1 = sampler.diagnostics.total_cuts
+    total_batches_pass1 = sampler.diagnostics.total_batches
+
+    if advance_epoch:
+        sampler.set_epoch(1)
+
+    # if advance_epoch:
+    #   Iterate the next epoch, which should increment the next epoch stats
+    #   We expect the total sampler stats to be incremented
+    # else:
+    #   Iterate a single epoch again, which should reset the current stats
+    #   We expect the total sampler stats to be identical
+    for _ in sampler:
+        pass
+
+    if advance_epoch:
+        assert sampler.diagnostics.current_epoch == 1
+        assert sampler.diagnostics.total_cuts > total_cuts_pass1
+        assert sampler.diagnostics.total_batches > total_batches_pass1
+    else:
+        assert sampler.diagnostics.current_epoch == 0
+        assert sampler.diagnostics.total_cuts == total_cuts_pass1
+        assert sampler.diagnostics.total_batches == total_batches_pass1
