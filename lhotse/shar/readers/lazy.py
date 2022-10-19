@@ -65,6 +65,17 @@ class LazySharIterator(ImitatesDict):
     ...     audio = cut.load_audio()
     ...     fbank = cut.load_features()
 
+    We also support providing shell commands as shard sources, inspired by WebDataset.
+    Example::
+
+    >>> cuts = LazySharIterator({
+    ...     "cuts": ["pipe:curl https://my.page/cuts.000000.jsonl.gz"],
+    ...     "recording": ["pipe:curl https://my.page/recording.000000.tar"],
+    ... })
+    ... for cut in cuts:
+    ...     print("Cut", cut.id, "has duration of", cut.duration)
+    ...     audio = cut.load_audio()
+
     See also: :class:`~lhotse.shar.writers.shar.SharWriter`
     """
 
@@ -75,7 +86,6 @@ class LazySharIterator(ImitatesDict):
         shuffle_shards: bool = False,
         seed: int = 42,
     ) -> None:
-        # TODO: make it work with cloud storage
         assert exactly_one_not_null(
             fields, in_dir
         ), "To read Lhotse Shar format, provide either 'in_dir' or 'fields' argument."
