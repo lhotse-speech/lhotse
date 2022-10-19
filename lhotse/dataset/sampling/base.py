@@ -353,7 +353,7 @@ class TimeConstraint:
 
     def exceeded(self) -> bool:
         """Is the constraint exceeded or not."""
-        if self.max_cuts is not None and self.num_cuts >= self.max_cuts:
+        if self.max_cuts is not None and self.num_cuts > self.max_cuts:
             return True
         constraint = self.active_constraint
         if constraint is None:

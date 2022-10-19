@@ -76,6 +76,22 @@ class LazySharIterator(ImitatesDict):
     ...     print("Cut", cut.id, "has duration of", cut.duration)
     ...     audio = cut.load_audio()
 
+    :param fields: a dict whose keys specify which fields to load,
+        and values are lists of shards (either paths or shell commands).
+        The field "cuts" pointing to CutSet shards always has to be present.
+    :param in_dir: path to a directory created with ``SharWriter`` with
+        all the shards in a single place. Can be used instead of ``fields``.
+    :param split_for_dataloading: bool, by default ``False`` which does nothing.
+        Setting it to ``True`` is intended for PyTorch training with multiple
+        dataloader workers and possibly multiple DDP nodes.
+        It results in each node+worker combination receiving a unique subset
+        of shards from which to read data to avoid data duplication.
+    :param shuffle_shards: bool, by default ``False``. When ``True``, the shards
+        are shuffled (in case of multi-node training, the shuffling is the same
+        on each node given the same seed).
+    :param seed: When ``shuffle_shards`` is ``True``, we use this number to
+        seed the RNG.
+
     See also: :class:`~lhotse.shar.writers.shar.SharWriter`
     """
 
@@ -83,6 +99,7 @@ class LazySharIterator(ImitatesDict):
         self,
         fields: Optional[Dict[str, Sequence[Pathlike]]] = None,
         in_dir: Optional[Pathlike] = None,
+        split_for_dataloading: bool = False,
         shuffle_shards: bool = False,
         seed: int = 42,
     ) -> None:
@@ -90,6 +107,7 @@ class LazySharIterator(ImitatesDict):
             fields, in_dir
         ), "To read Lhotse Shar format, provide either 'in_dir' or 'fields' argument."
 
+        self.split_for_dataloading = split_for_dataloading
         self._len = None
         if in_dir is not None:
             self._init_from_dir(in_dir)
@@ -138,8 +156,17 @@ class LazySharIterator(ImitatesDict):
                 p for p in all_paths if p.name.split(".")[0] == field
             )
 
+    @property
+    def shards_for_dataloading(self):
+        from .utils import split_by_node, split_by_worker
+
+        return split_by_worker(split_by_node(self.shards))
+
     def __iter__(self):
-        for shard in self.shards:
+        shards = (
+            self.shards_for_dataloading if self.split_for_dataloading else self.shards
+        )
+        for shard in shards:
             # TODO: more careful open/close using some ctxmanager and with statement
             cuts = LazyJsonlIterator(shard["cuts"])
             tarpaths = {field: path for field, path in shard.items() if field != "cuts"}
