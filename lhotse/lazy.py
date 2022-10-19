@@ -188,7 +188,7 @@ class LazyJsonlIterator(ImitatesDict):
         assert extension_contains(".jsonl", self.path) or str(self.path) == "-"
 
     def __iter__(self):
-        with open_best(self.path) as f:
+        with open_best(self.path, "r") as f:
             for line in f:
                 data = decode_json_line(line)
                 item = deserialize_item(data)

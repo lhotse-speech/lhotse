@@ -19,7 +19,12 @@ def open_best(path: Pathlike, mode: str = "r"):
     """
     Auto-determine the best way to open the input path or URI.
     Uses ``smart_open`` when available to handle URLs and URIs.
+
     Supports providing "-" as input to read from stdin or save to stdout.
+
+    If the input is prefixed with "pipe:", it will open a subprocess and redirect
+    either stdin or stdout depending on the mode.
+    The concept is similar to Kaldi's "generalized pipes", but uses WebDataset syntax.
     """
     if str(path) == "-":
         if mode == "r":
@@ -30,6 +35,9 @@ def open_best(path: Pathlike, mode: str = "r"):
             raise ValueError(
                 f"Cannot open stream for '-' with mode other 'r' or 'w' (got: '{mode}')"
             )
+
+    if str(path).startswith("pipe:"):
+        return open_pipe(path[5:], mode)
 
     if is_module_available("smart_open"):
         from smart_open import smart_open
@@ -46,6 +54,16 @@ def open_best(path: Pathlike, mode: str = "r"):
     return open_fn(path, mode)
 
 
+def open_pipe(cmd: str, mode: str):
+    """
+    Runs the command and redirects stdin/stdout depending on the mode.
+    Returns a file-like object that can be read from or written to.
+    """
+    from lhotse.utils import Pipe
+
+    return Pipe(cmd, mode=mode, shell=True, bufsize=8092)
+
+
 def save_to_yaml(data: Any, path: Pathlike) -> None:
     with open_best(path, "w") as f:
         try:
@@ -56,7 +74,7 @@ def save_to_yaml(data: Any, path: Pathlike) -> None:
 
 
 def load_yaml(path: Pathlike) -> dict:
-    with open_best(path) as f:
+    with open_best(path, "r") as f:
         try:
             # When pyyaml is installed with C extensions, it can speed up the (de)serialization noticeably
             return yaml.load(stream=f, Loader=yaml.CSafeLoader)
@@ -82,7 +100,7 @@ def save_to_json(data: Any, path: Pathlike) -> None:
 
 def load_json(path: Pathlike) -> Union[dict, list]:
     """Load a JSON file. Also supports compressed JSON with a ``.gz`` extension."""
-    with open_best(path) as f:
+    with open_best(path, "r") as f:
         return json.load(f)
 
 
@@ -105,7 +123,7 @@ def save_to_jsonl(data: Iterable[Dict[str, Any]], path: Pathlike) -> None:
 
 def load_jsonl(path: Pathlike) -> Generator[Dict[str, Any], None, None]:
     """Load a JSON file. Also supports compressed JSON with a ``.gz`` extension."""
-    with open_best(path) as f:
+    with open_best(path, "r") as f:
         for line in f:
             # The temporary variable helps fail fast
             ret = decode_json_line(line)
@@ -159,7 +177,7 @@ class SequentialJsonlWriter:
         self.ignore_ids = set()
         if Path(self.path).is_file() and not overwrite:
             self.mode = "a"
-            with open_best(self.path) as f:
+            with open_best(self.path, "r") as f:
                 self.ignore_ids = {
                     data["id"]
                     for data in (decode_json_line(line) for line in f)

@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 
 import numpy as np
@@ -169,7 +170,7 @@ def test_shar_lazy_reader_from_dir(cuts: CutSet, shar_dir: Path):
         )
 
 
-def test_shar_lazy_reader_from_dict(cuts: CutSet, shar_dir: Path):
+def test_shar_lazy_reader_from_fields(cuts: CutSet, shar_dir: Path):
     # Prepare system under test
     cuts_iter = LazySharIterator(
         fields={
@@ -180,6 +181,28 @@ def test_shar_lazy_reader_from_dict(cuts: CutSet, shar_dir: Path):
             "recording": [
                 shar_dir / "recording.000000.tar",
                 shar_dir / "recording.000001.tar",
+            ],
+        }
+    )
+
+    # Actual test
+    for c_test, c_ref in zip(cuts_iter, cuts):
+        assert c_test.id == c_ref.id
+        np.testing.assert_allclose(c_ref.load_audio(), c_test.load_audio(), rtol=1e-3)
+
+
+@pytest.mark.skipif(os.name == "nt", reason="This test cannot run on Windows.")
+def test_shar_lazy_reader_from_fields_using_pipes(cuts: CutSet, shar_dir: Path):
+    # Prepare system under test
+    cuts_iter = LazySharIterator(
+        fields={
+            "cuts": [
+                f"pipe:gunzip -c {shar_dir}/cuts.000000.jsonl.gz",
+                f"pipe:gunzip -c {shar_dir}/cuts.000001.jsonl.gz",
+            ],
+            "recording": [
+                f"pipe:cat {shar_dir}/recording.000000.tar",
+                f"pipe:cat {shar_dir}/recording.000001.tar",
             ],
         }
     )
