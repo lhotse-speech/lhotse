@@ -1184,3 +1184,18 @@ class MemoryNpyReader(FeaturesReader):
         stream = BytesIO(raw_data)
         arr = np.load(stream)
         return arr[left_offset_frames:right_offset_frames]
+
+
+@register_reader
+class DummySharReader(FeaturesReader):
+    """ """
+
+    name = "shar"
+
+    def __init__(self, *args, **kwargs):
+        pass
+
+    def read(self, *args, **kwargs) -> np.ndarray:
+        raise RuntimeError(
+            "Inconsistent state: found a Lhotse Shar placeholder array that was not filled during deserialization."
+        )

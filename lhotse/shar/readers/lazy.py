@@ -1,6 +1,7 @@
 import random
 import tarfile
 from pathlib import Path
+from typing import Dict, Optional, Sequence
 
 from lhotse.lazy import (
     ImitatesDict,
@@ -10,7 +11,7 @@ from lhotse.lazy import (
 )
 from lhotse.serialization import extension_contains, open_best
 from lhotse.shar.readers.utils import fill_shar_placeholder
-from lhotse.utils import Pathlike
+from lhotse.utils import Pathlike, exactly_one_not_null
 
 
 class LazySharIterator(ImitatesDict):
@@ -40,9 +41,25 @@ class LazySharIterator(ImitatesDict):
     the cuts.
     It can be normally accessed using methods such as ``cut.load_audio()``.
 
+    We can simply load a directory created by :class:`~lhotse.shar.writers.shar.SharWriter`.
     Example::
 
-    >>> cuts = LazySharIterator("some_dir")
+    >>> cuts = LazySharIterator(in_dir="some_dir")
+    ... for cut in cuts:
+    ...     print("Cut", cut.id, "has duration of", cut.duration)
+    ...     audio = cut.load_audio()
+    ...     fbank = cut.load_features()
+
+    :class:`.LazySharIterator` can also be initialized from a dict, where the keys
+    indicate fields to be read, and the values point to actual shard locations.
+    This is useful when only a subset of data is needed, or it is stored in different
+    directories. Example::
+
+    >>> cuts = LazySharIterator({
+    ...     "cuts": ["some_dir/cuts.000000.jsonl.gz"],
+    ...     "recording": ["another_dir/recording.000000.tar"],
+    ...     "features": ["yet_another_dir/features.000000.tar"],
+    ... })
     ... for cut in cuts:
     ...     print("Cut", cut.id, "has duration of", cut.duration)
     ...     audio = cut.load_audio()
@@ -52,12 +69,48 @@ class LazySharIterator(ImitatesDict):
     """
 
     def __init__(
-        self, in_dir: Pathlike, shuffle_shards: bool = False, seed: int = 42
+        self,
+        fields: Optional[Dict[str, Sequence[Pathlike]]] = None,
+        in_dir: Optional[Pathlike] = None,
+        shuffle_shards: bool = False,
+        seed: int = 42,
     ) -> None:
-        self.in_dir = Path(in_dir)
-        self._len = None
-
         # TODO: make it work with cloud storage
+        assert exactly_one_not_null(
+            fields, in_dir
+        ), "To read Lhotse Shar format, provide either 'in_dir' or 'fields' argument."
+
+        self._len = None
+        if in_dir is not None:
+            self._init_from_dir(in_dir)
+        else:
+            self._init_from_inputs(fields)
+
+        self.num_shards = len(self.streams["cuts"])
+        for field in self.fields:
+            assert (
+                len(self.streams[field]) == self.num_shards
+            ), f"Expected {self.num_shards} shards available for field '{field}' but found {len(self.streams[field])}"
+
+        self.shards = [
+            {field: self.streams[field][shard_idx] for field in self.streams}
+            for shard_idx in range(self.num_shards)
+        ]
+
+        if shuffle_shards:
+            random.Random(seed).shuffle(self.shards)
+
+    def _init_from_inputs(self, fields: Optional[Dict[str, Sequence[str]]] = None):
+        assert (
+            "cuts" in fields
+        ), "To initialize Shar reader, please provide the value for key 'cuts' in 'fields'."
+        self.fields = set(fields.keys())
+        self.fields.remove("cuts")
+        self.streams = fields
+
+    def _init_from_dir(self, in_dir: Pathlike):
+        self.in_dir = Path(in_dir)
+
         all_paths = list(self.in_dir.glob("*"))
         self.fields = set(p.stem.split(".")[0] for p in all_paths)
         assert "cuts" in self.fields
@@ -70,21 +123,10 @@ class LazySharIterator(ImitatesDict):
                 if p.name.split(".")[0] == "cuts" and extension_contains(".jsonl", p)
             )
         }
-        num_shards = len(self.streams["cuts"])
         for field in self.fields:
             self.streams[field] = sorted(
                 p for p in all_paths if p.name.split(".")[0] == field
             )
-            assert (
-                len(self.streams[field]) == num_shards
-            ), f"Expected {num_shards} shards available for field '{field}' but found {len(self.streams[field])}"
-
-        self.shards = [
-            {field: self.streams[field][shard_idx] for field in self.streams}
-            for shard_idx in range(num_shards)
-        ]
-        if shuffle_shards:
-            random.Random(seed).shuffle(self.shards)
 
     def __iter__(self):
         for shard in self.shards:

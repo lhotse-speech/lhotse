@@ -68,19 +68,19 @@ def test_shar_writer(tmpdir: str):
             cut.load_audio()
 
         assert cut.features.storage_type == "shar"
-        with pytest.raises(TypeError):
+        with pytest.raises(RuntimeError):
             cut.load_features()
 
         assert cut.custom_embedding.storage_type == "shar"
-        with pytest.raises(TypeError):
+        with pytest.raises(RuntimeError):
             cut.load_custom_embedding()
 
         assert cut.custom_features.array.storage_type == "shar"
-        with pytest.raises(TypeError):
+        with pytest.raises(RuntimeError):
             cut.load_custom_features()
 
         assert cut.custom_indexes.array.storage_type == "shar"
-        with pytest.raises(TypeError):
+        with pytest.raises(RuntimeError):
             cut.load_custom_indexes()
 
         assert cut.custom_recording.sources[0].type == "shar"
@@ -88,33 +88,40 @@ def test_shar_writer(tmpdir: str):
             cut.load_custom_recording()
 
 
+@pytest.fixture
+def cuts():
+    return DummyManifest(CutSet, begin_id=0, end_id=20, with_data=True)
+
+
+@pytest.fixture
+def shar_dir(tmpdir, cuts):
+    tmpdir = Path(tmpdir)
+    # Prepare data
+    writer = SharWriter(
+        tmpdir,
+        fields={
+            "recording": "wav",
+            "features": "lilcom",
+            "custom_embedding": "numpy",
+            "custom_features": "lilcom",
+            "custom_indexes": "numpy",
+            "custom_recording": "wav",
+        },
+        shard_size=10,
+    )
+    with writer:
+        for c in cuts:
+            writer.write(c)
+    return tmpdir
+
+
 @pytest.mark.skipif(
     not is_module_available("torchdata"),
     reason="This test requires torchdata to be installed.",
 )
-def test_shar_datapipe_reader(tmpdir: str):
-    tmpdir = Path(tmpdir)
-
-    # Prepare data
-    cuts = DummyManifest(CutSet, begin_id=0, end_id=20, with_data=True)
-    writer = SharWriter(
-        tmpdir,
-        fields={
-            "recording": "wav",
-            "features": "lilcom",
-            "custom_embedding": "numpy",
-            "custom_features": "lilcom",
-            "custom_indexes": "numpy",
-            "custom_recording": "wav",
-        },
-        shard_size=10,
-    )
-    with writer:
-        for c in cuts:
-            writer.write(c)
-
+def test_shar_datapipe_reader(cuts: CutSet, shar_dir: Path):
     # Prepare system under test
-    cuts_iter = load_shar_datapipe(tmpdir)
+    cuts_iter = load_shar_datapipe(shar_dir)
 
     # Actual test
     for c_test, c_ref in zip(cuts_iter, cuts):
@@ -137,29 +144,9 @@ def test_shar_datapipe_reader(tmpdir: str):
         )
 
 
-def test_shar_lazy_reader(tmpdir: str):
-    tmpdir = Path(tmpdir)
-
-    # Prepare data
-    cuts = DummyManifest(CutSet, begin_id=0, end_id=20, with_data=True)
-    writer = SharWriter(
-        tmpdir,
-        fields={
-            "recording": "wav",
-            "features": "lilcom",
-            "custom_embedding": "numpy",
-            "custom_features": "lilcom",
-            "custom_indexes": "numpy",
-            "custom_recording": "wav",
-        },
-        shard_size=10,
-    )
-    with writer:
-        for c in cuts:
-            writer.write(c)
-
+def test_shar_lazy_reader_from_dir(cuts: CutSet, shar_dir: Path):
     # Prepare system under test
-    cuts_iter = LazySharIterator(tmpdir)
+    cuts_iter = LazySharIterator(in_dir=shar_dir)
 
     # Actual test
     for c_test, c_ref in zip(cuts_iter, cuts):
@@ -180,3 +167,54 @@ def test_shar_lazy_reader(tmpdir: str):
         np.testing.assert_almost_equal(
             c_ref.load_custom_indexes(), c_test.load_custom_indexes(), decimal=1
         )
+
+
+def test_shar_lazy_reader_from_dict(cuts: CutSet, shar_dir: Path):
+    # Prepare system under test
+    cuts_iter = LazySharIterator(
+        fields={
+            "cuts": [
+                shar_dir / "cuts.000000.jsonl.gz",
+                shar_dir / "cuts.000001.jsonl.gz",
+            ],
+            "recording": [
+                shar_dir / "recording.000000.tar",
+                shar_dir / "recording.000001.tar",
+            ],
+        }
+    )
+
+    # Actual test
+    for c_test, c_ref in zip(cuts_iter, cuts):
+        assert c_test.id == c_ref.id
+        np.testing.assert_allclose(c_ref.load_audio(), c_test.load_audio(), rtol=1e-3)
+
+
+def test_shar_lazy_reader_raises_error_on_missing_field(cuts: CutSet, shar_dir: Path):
+    # Prepare system under test
+    cuts_iter = LazySharIterator(
+        fields={
+            "cuts": [
+                shar_dir / "cuts.000000.jsonl.gz",
+                shar_dir / "cuts.000001.jsonl.gz",
+            ],
+            "recording": [
+                shar_dir / "recording.000000.tar",
+                shar_dir / "recording.000001.tar",
+            ],
+        }
+    )
+
+    # Actual test
+    for c_test, c_ref in zip(cuts_iter, cuts):
+        assert c_test.id == c_ref.id
+        with pytest.raises(RuntimeError):
+            c_test.load_custom_recording()
+        with pytest.raises(RuntimeError):
+            c_test.load_features()
+        with pytest.raises(RuntimeError):
+            c_test.load_custom_features()
+        with pytest.raises(RuntimeError):
+            c_test.load_custom_indexes()
+        with pytest.raises(RuntimeError):
+            c_test.load_custom_embedding()
