@@ -241,7 +241,7 @@ def prepare_fisher_english(
                         writer.write(s)
                     pbar.update()
         supervisions = writer.open_manifest()
-        if err_recos:
+        if err_sups:
             warnings.warn(
                 f"Out of {len(create_supervisions_input)} transcript files, "
                 f"{err_sups} had errors and were omitted."

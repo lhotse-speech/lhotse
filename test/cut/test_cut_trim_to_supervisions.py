@@ -274,8 +274,8 @@ def test_cut_trim_to_supervisions_extend_handles_end_of_recording(mono_cut):
         duration=10.0,
         channel=0,
         supervisions=[
-            SupervisionSegment(id="X", recording_id="X", start=0.0, duration=4.0),
-            SupervisionSegment(id="X", recording_id="X", start=7.0, duration=3.0),
+            SupervisionSegment(id="X1", recording_id="X", start=0.0, duration=4.0),
+            SupervisionSegment(id="X2", recording_id="X", start=7.0, duration=3.0),
         ],
         recording=Recording(
             id="X", sources=[], sampling_rate=8000, num_samples=80000, duration=10.0
@@ -287,6 +287,7 @@ def test_cut_trim_to_supervisions_extend_handles_end_of_recording(mono_cut):
     assert len(cuts) == 2
     c1, c2 = cuts
 
+    assert c1.id == "X1"
     assert c1.start == 0
     assert c1.duration == 4.0
     assert len(c1.supervisions) == 1
@@ -294,6 +295,7 @@ def test_cut_trim_to_supervisions_extend_handles_end_of_recording(mono_cut):
     assert c1_s1.start == 0.0
     assert c1_s1.duration == 4.0
 
+    assert c2.id == "X2"
     assert c2.start == 6.5
     assert c2.duration == 3.5
     assert len(c2.supervisions) == 1
@@ -324,6 +326,7 @@ def test_multi_cut_trim_to_supervisions_do_not_keep_all_channels(multi_cut):
     )
     assert len(cuts) == 2
     for cut, original_sup in zip(cuts, multi_cut.supervisions):
+        assert isinstance(cut, MonoCut)
         assert cut.start == original_sup.start
         assert cut.duration == original_sup.duration
         assert len(cut.supervisions) == 1

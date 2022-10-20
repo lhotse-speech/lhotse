@@ -661,6 +661,11 @@ def ifnone(item: Optional[Any], alt_item: Any) -> Any:
     return alt_item if item is None else item
 
 
+def to_list(item: Union[Any, Sequence[Any]]) -> List[Any]:
+    """Convert ``item`` to a list if it is not already a list."""
+    return item if isinstance(item, list) else [item]
+
+
 def lens_to_mask(lens: torch.IntTensor) -> torch.Tensor:
     """
     Create a 2-D mask tensor of shape (batch_size, max_length) and dtype float32

@@ -511,6 +511,9 @@ class SamplingDiagnostics:
             self.stats_per_epoch = {}
             self.set_epoch(self.current_epoch)
 
+    def reset_current_epoch(self) -> None:
+        self.stats_per_epoch[self.current_epoch] = EpochDiagnostics(self.current_epoch)
+
     def set_epoch(self, epoch: int) -> None:
         self.current_epoch = epoch
         if epoch not in self.stats_per_epoch:
