@@ -15,9 +15,11 @@ from lhotse.supervision import SupervisionSegment
 from lhotse.utils import (
     add_durations,
     fastcopy,
+    is_equal_or_contains,
     merge_items_with_delimiter,
     overlaps,
     rich_exception_info,
+    to_list,
 )
 
 
@@ -76,7 +78,7 @@ class MultiCut(DataCut):
 
     @property
     def num_channels(self) -> int:
-        return len(self.channel)
+        return len(to_list(self.channel))
 
     @rich_exception_info
     def load_features(
@@ -237,7 +239,7 @@ class MultiCut(DataCut):
             # Merge all supervisions into a single segment.
             all_channels = set()
             for s in sups:
-                c = set([s.channel] if isinstance(s.channel, int) else s.channel)
+                c = set(to_list(s.channel))
                 all_channels.update(c)
             all_channels = sorted(all_channels)
             sups_by_channel = {tuple(all_channels): sups}  # `set` is not hashable
@@ -370,10 +372,10 @@ class MultiCut(DataCut):
                 supervisions=[
                     fastcopy(s, channel=channel)
                     for s in self.supervisions
-                    if channel in s.channel
+                    if is_equal_or_contains(s.channel, channel)
                 ],
             )
-            for channel in self.channel
+            for channel in to_list(self.channel)
         ]
 
     @staticmethod

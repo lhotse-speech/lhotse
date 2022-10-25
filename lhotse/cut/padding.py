@@ -63,6 +63,10 @@ class PaddingCut(Cut):
         return []
 
     @property
+    def channel(self) -> int:
+        return 0
+
+    @property
     def has_features(self) -> bool:
         return self.num_frames is not None
 

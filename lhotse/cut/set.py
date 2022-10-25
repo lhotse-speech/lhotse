@@ -669,6 +669,7 @@ class CutSet(Serializable, AlgorithmMixin):
         keep_overlapping: bool = True,
         min_duration: Optional[Seconds] = None,
         context_direction: Literal["center", "left", "right", "random"] = "center",
+        keep_all_channels: bool = False,
         num_jobs: int = 1,
     ) -> "CutSet":
         """
@@ -697,6 +698,11 @@ class CutSet(Serializable, AlgorithmMixin):
                     Sup2
                |-----------|
 
+        For the case of a multi-channel cut with multiple supervisions, we can either trim
+        while respecting the supervision channels (in which case output cut has the same channels
+        as the supervision) or ignore the channels (in which case output cut has the same channels
+        as the input cut).
+
         :param keep_overlapping: when ``False``, it will discard parts of other supervisions that overlap with the
             main supervision. In the illustration above, it would discard ``Sup2`` in ``Cut1`` and ``Sup1`` in ``Cut2``.
             In this mode, we guarantee that there will always be exactly one supervision per cut.
@@ -708,6 +714,8 @@ class CutSet(Serializable, AlgorithmMixin):
         :param context_direction: Which direction should the cut be expanded towards to include context.
             The value of "center" implies equal expansion to left and right;
             random uniformly samples a value between "left" and "right".
+        :param keep_all_channels: If ``True``, the output cut will have the same channels as the input cut. By default,
+            the trimmed cut will have the same channels as the supervision.
         :param num_jobs: Number of parallel workers to process the cuts.
         :return: a ``CutSet``.
         """
@@ -724,6 +732,7 @@ class CutSet(Serializable, AlgorithmMixin):
                             keep_overlapping=keep_overlapping,
                             min_duration=min_duration,
                             context_direction=context_direction,
+                            keep_all_channels=keep_all_channels,
                         ),
                     )
                 )
@@ -738,6 +747,7 @@ class CutSet(Serializable, AlgorithmMixin):
             keep_overlapping=keep_overlapping,
             min_duration=min_duration,
             context_direction=context_direction,
+            keep_all_channels=keep_all_channels,
         )
         return result
 
@@ -1409,14 +1419,13 @@ class CutSet(Serializable, AlgorithmMixin):
             for parallel computation).
         :return: Returns a new ``CutSet`` with ``Features`` manifests attached to the cuts.
         """
-        from cytoolz import identity
-
+        from lhotse.lazy import LazySlicer
         from lhotse.manipulation import combine
 
         # Pre-conditions and args setup
         progress = (
-            identity  # does nothing, unless we overwrite it with an actual prog bar
-        )
+            lambda x: x
+        )  # does nothing, unless we overwrite it with an actual prog bar
         if num_jobs is None:
             num_jobs = 1
         if num_jobs == 1 and executor is not None:
@@ -1473,7 +1482,9 @@ class CutSet(Serializable, AlgorithmMixin):
                 return storage_path / f"feats-{idx}"
 
         # Parallel execution: prepare the CutSet splits
-        cut_sets = self.split(num_jobs, shuffle=True)
+        # We use LazySlicer to pick every k element out of n
+        # (e.g. with 2 jobs, job 1 picks every 0th elem, job 2 picks every 1st elem)
+        cut_sets = [CutSet(LazySlicer(self, k=i, n=num_jobs)) for i in range(num_jobs)]
 
         # Initialize the default executor if None was given
         if executor is None:
@@ -1645,7 +1656,7 @@ class CutSet(Serializable, AlgorithmMixin):
                         num_features=feat_mat.shape[1],
                         frame_shift=frame_shift,
                         sampling_rate=cut.sampling_rate,
-                        channels=0,
+                        channels=cut.channel,
                         storage_type=feats_writer.name,
                         storage_path=str(feats_writer.storage_path),
                         storage_key=storage_key,
@@ -2688,12 +2699,17 @@ def _cut_into_windows_single(
 
 
 def _trim_to_supervisions_single(
-    cuts: CutSet, keep_overlapping, min_duration, context_direction
+    cuts: CutSet,
+    keep_overlapping,
+    min_duration,
+    context_direction,
+    keep_all_channels,
 ) -> CutSet:
     return cuts.trim_to_supervisions(
         keep_overlapping=keep_overlapping,
         min_duration=min_duration,
         context_direction=context_direction,
+        keep_all_channels=keep_all_channels,
     ).to_eager()
 
 
