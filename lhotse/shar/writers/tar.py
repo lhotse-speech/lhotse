@@ -43,6 +43,7 @@ class TarWriter:
 
     def __enter__(self):
         self.reset()
+        return self
 
     def __exit__(self, *args, **kwargs):
         self.close()
@@ -59,7 +60,7 @@ class TarWriter:
         self.fname = self.pattern % self.num_shards
         self.stream = open_best(self.fname, "wb")
         self.tarstream = tarfile.open(
-            fileobj=self.stream, mode="w|gz" if self.gzip else "w"
+            fileobj=self.stream, mode="w|gz" if self.gzip else "w|"
         )
 
         self.num_shards += 1
