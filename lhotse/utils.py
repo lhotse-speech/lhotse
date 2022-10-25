@@ -806,3 +806,8 @@ def streaming_shuffle(
         yield sample
     for sample in buf:
         yield sample
+
+
+def quantize(val: float, n: int) -> int:
+    """Quantize a value to the nearest integer k in the range [0, n-1] that satisfies val * n >= k."""
+    return min(math.floor(val * n), n - 1)

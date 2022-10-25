@@ -18,6 +18,7 @@ from lhotse.utils import (
     compute_start_duration_for_extended_cut,
     overlaps,
     overspans,
+    quantize,
 )
 
 
@@ -165,3 +166,37 @@ def test_add_durations():
 )
 def test_compute_num_windows(params, expected_n_win):
     assert compute_num_windows(params[0], params[1], params[2]) == expected_n_win
+
+
+@pytest.mark.parametrize(
+    ["val", "n", "expected"],
+    [
+        (0, 1, 0),
+        (0.1, 1, 0),
+        (0.5, 1, 0),
+        (0.7, 1, 0),
+        (1.0, 1, 0),
+        (0, 2, 0),
+        (0.1, 2, 0),
+        (0.5, 2, 1),
+        (0.7, 2, 1),
+        (1.0, 2, 1),
+        (0, 3, 0),
+        (0.1, 3, 0),
+        (0.5, 3, 1),
+        (0.7, 3, 2),
+        (1.0, 3, 2),
+        (0, 10, 0),
+        (0.1, 10, 1),
+        (0.5, 10, 5),
+        (0.7, 10, 7),
+        (1.0, 10, 9),
+        (0, 30, 0),
+        (0.1, 30, 3),
+        (0.5, 30, 15),
+        (0.7, 30, 21),
+        (1.0, 30, 29),
+    ],
+)
+def test_quantize(val, n, expected):
+    assert quantize(val, n) == expected

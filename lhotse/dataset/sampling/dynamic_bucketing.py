@@ -16,7 +16,7 @@ from lhotse.dataset.sampling.base import (
     TimeConstraint,
 )
 from lhotse.dataset.sampling.dynamic import DurationBatcher, Filter
-from lhotse.utils import ifnone, streaming_shuffle
+from lhotse.utils import ifnone, quantize, streaming_shuffle
 
 
 class DynamicBucketingSampler(CutSampler):
@@ -126,7 +126,7 @@ class DynamicBucketingSampler(CutSampler):
         self.num_cuts_for_bins_estimate = num_cuts_for_bins_estimate
         self.buffer_size = buffer_size
         self.shuffle_buffer_size = shuffle_buffer_size
-        self.rng = None
+        self.bucket_rng = random.Random(self.seed + self.epoch)
 
         if strict is not None:
             warnings.warn(
@@ -158,6 +158,7 @@ class DynamicBucketingSampler(CutSampler):
                 "buffer_size": self.buffer_size,
                 "num_cuts_for_bins_estimate": self.num_cuts_for_bins_estimate,
                 "shuffle_buffer_size": self.shuffle_buffer_size,
+                "bucket_rng_state": self.bucket_rng.getstate(),
             }
         )
         return sd
@@ -169,6 +170,7 @@ class DynamicBucketingSampler(CutSampler):
         self.num_cuts_for_bins_estimate = sd.pop("num_cuts_for_bins_estimate")
         self.buffer_size = sd.pop("buffer_size")
         self.shuffle_buffer_size = sd.pop("shuffle_buffer_size")
+        self.bucket_rng.setstate(sd.pop("bucket_rng_state"))
         sd.pop("strict", None)  # backward compatibility
         super().load_state_dict(sd)
         self._fast_forward()
@@ -193,7 +195,7 @@ class DynamicBucketingSampler(CutSampler):
     def __iter__(self) -> "DynamicBucketingSampler":
         if self._just_restored_state:
             return self
-        self.rng = random.Random(self.seed + self.epoch)
+        self.bucket_rng = random.Random(self.seed + self.epoch)
         # Why reset the current epoch?
         # Either we are iterating the epoch for the first time and it's a no-op,
         # or we are iterating the same epoch again, in which case setting more steps
@@ -227,7 +229,7 @@ class DynamicBucketingSampler(CutSampler):
             max_cuts=self.max_cuts,
             drop_last=self.drop_last,
             buffer_size=self.buffer_size,
-            rng=self.rng,
+            bucket_rng=self.bucket_rng,
             diagnostics=self.diagnostics,
         )
         self.cuts_iter = iter(self.cuts_iter)
@@ -302,7 +304,7 @@ class DynamicBucketer:
         max_cuts: Optional[int] = None,
         drop_last: bool = False,
         buffer_size: int = 10000,
-        rng: random.Random = None,
+        bucket_rng: random.Random = None,
         diagnostics: Optional[SamplingDiagnostics] = None,
     ) -> None:
         self.cuts = cuts
@@ -312,9 +314,9 @@ class DynamicBucketer:
         self.drop_last = drop_last
         self.buffer_size = buffer_size
         self.diagnostics = ifnone(diagnostics, SamplingDiagnostics())
-        if rng is None:
-            rng = random.Random()
-        self.rng = rng
+        if bucket_rng is None:
+            bucket_rng = random.Random()
+        self.bucket_rng = bucket_rng
 
         assert duration_bins == sorted(duration_bins), (
             f"Argument list for 'duration_bins' is expected to be in "
@@ -369,7 +371,8 @@ class DynamicBucketer:
                         ready_buckets = non_empty_buckets
                 # Choose a bucket to sample from.
                 # We'll only select from the buckets that have a full batch available.
-                sampling_bucket = self.rng.choice(ready_buckets)
+                bucket_idx = quantize(self.bucket_rng.random(), len(ready_buckets))
+                sampling_bucket = ready_buckets[bucket_idx]
                 # Sample one batch from that bucket and yield it to the caller.
                 batcher = DurationBatcher(
                     sampling_bucket,
