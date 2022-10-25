@@ -29,8 +29,9 @@ from lhotse.dataset.sampling.base import (
     SamplingDiagnostics,
     TimeConstraint,
 )
+
 from lhotse.dataset.sampling.dynamic import DurationBatcher, Filter, check_constraint
-from lhotse.utils import ifnone
+from lhotse.utils import ifnone, quantize
 
 
 class DynamicBucketingSampler(CutSampler):
@@ -146,9 +147,10 @@ class DynamicBucketingSampler(CutSampler):
         self.consistent_ids = consistent_ids
         self.num_cuts_for_bins_estimate = num_cuts_for_bins_estimate
         self.buffer_size = buffer_size
+
         self.quadratic_duration = quadratic_duration
-        self.rng = None
         check_constraint(constraint, max_duration, max_cuts)
+        self.bucket_rng = random.Random(self.seed + self.epoch)
 
         if strict is not None:
             warnings.warn(
@@ -197,6 +199,7 @@ class DynamicBucketingSampler(CutSampler):
                 "buffer_size": self.buffer_size,
                 "num_cuts_for_bins_estimate": self.num_cuts_for_bins_estimate,
                 "quadratic_duration": self.quadratic_duration,
+                "bucket_rng_state": self.bucket_rng.getstate(),
             }
         )
         return sd
@@ -212,6 +215,7 @@ class DynamicBucketingSampler(CutSampler):
             shuffle_buffer_size = sd.pop("shuffle_buffer_size")
             self.buffer_size += shuffle_buffer_size
         self.quadratic_duration = sd.pop("quadratic_duration", None)
+        self.bucket_rng.setstate(sd.pop("bucket_rng_state"))
         sd.pop("strict", None)  # backward compatibility
         super().load_state_dict(sd)
         self._fast_forward()
@@ -237,7 +241,7 @@ class DynamicBucketingSampler(CutSampler):
         if self._just_restored_state:
             return self
         seed = resolve_seed(self.seed)
-        self.rng = random.Random(seed + self.epoch)
+        self.bucket_rng = random.Random(seed + self.epoch)
         # Why reset the current epoch?
         # Either we are iterating the epoch for the first time and it's a no-op,
         # or we are iterating the same epoch again, in which case setting more steps
@@ -262,7 +266,7 @@ class DynamicBucketingSampler(CutSampler):
             buffer_size=self.buffer_size,
             quadratic_duration=self.quadratic_duration,
             shuffle=self.shuffle,
-            rng=self.rng,
+            bucket_rng=self.bucket_rng,
             diagnostics=self.diagnostics,
         )
         self.cuts_iter = iter(cuts_iter)
@@ -349,7 +353,7 @@ class DynamicBucketer:
         buffer_size: int = 10000,
         quadratic_duration: Optional[Seconds] = None,
         shuffle: bool = False,
-        rng: random.Random = None,
+        bucket_rng: random.Random = None,
         diagnostics: Optional[SamplingDiagnostics] = None,
     ) -> None:
         self.cuts = cuts
@@ -361,10 +365,10 @@ class DynamicBucketer:
         self.buffer_size = buffer_size
         self.quadratic_duration = quadratic_duration
         self.diagnostics = ifnone(diagnostics, SamplingDiagnostics())
-        if rng is None:
-            rng = random.Random()
-        self.rng = rng
         self.shuffle = shuffle
+        if bucket_rng is None:
+            bucket_rng = random.Random()
+        self.bucket_rng = bucket_rng
 
         assert duration_bins == sorted(duration_bins), (
             f"Argument list for 'duration_bins' is expected to be in "
@@ -427,7 +431,9 @@ class DynamicBucketer:
                         ready_buckets = non_empty_buckets
                 # Choose a bucket to sample from.
                 # We'll only select from the buckets that have a full batch available.
-                sampling_bucket = self.rng.choice(ready_buckets)
+                bucket_idx = quantize(self.bucket_rng.random(), len(ready_buckets))
+                sampling_bucket = ready_buckets[bucket_idx]
+
                 # Apply random shuffling if requested: we'll shuffle the items present within the bucket.
                 maybe_shuffled = sampling_bucket
                 indexes_used = []
@@ -435,6 +441,7 @@ class DynamicBucketer:
                     maybe_shuffled = pick_at_random(
                         maybe_shuffled, rng=self.rng, out_indexes_used=indexes_used
                     )
+
                 # Sample one batch from that bucket and yield it to the caller.
                 batcher = DurationBatcher(
                     maybe_shuffled,

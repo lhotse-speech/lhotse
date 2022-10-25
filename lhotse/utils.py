@@ -1099,3 +1099,8 @@ _LHOTSE_DILL_ENABLED = False
 
 def is_dill_enabled() -> bool:
     return _LHOTSE_DILL_ENABLED or os.environ["LHOTSE_DILL_ENABLED"]
+
+
+def quantize(val: float, n: int) -> int:
+    """Quantize a value to the nearest integer k in the range [0, n-1] that satisfies val * n >= k."""
+    return min(math.floor(val * n), n - 1)
