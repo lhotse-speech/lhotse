@@ -965,9 +965,13 @@ class KaldiReader(FeaturesReader):
 
         super().__init__()
         self.storage_path = storage_path
-        self.storage = kaldi_native_io.RandomAccessFloatMatrixReader(
-            f"scp:{self.storage_path}"
-        )
+        if storage_path.endswith(".scp"):
+            self.storage = kaldi_native_io.RandomAccessFloatMatrixReader(
+                f"scp:{self.storage_path}"
+            )
+        else:
+            self.storage = None
+            self.reader = kaldi_native_io.FloatMatrix
 
     @dynamic_lru_cache
     def read(
@@ -976,7 +980,11 @@ class KaldiReader(FeaturesReader):
         left_offset_frames: int = 0,
         right_offset_frames: Optional[int] = None,
     ) -> np.ndarray:
-        arr = np.copy(self.storage[key])
+        if self.storage is not None:
+            arr = np.copy(self.storage[key])
+        else:
+            arr = self.reader.read(self.storage_path).numpy()
+
         return arr[left_offset_frames:right_offset_frames]
 
 
