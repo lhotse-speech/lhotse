@@ -56,3 +56,57 @@ to a directory with Lhotse manifests called ``train_manifests``:
 
 
 .. _kaldi_native_io: https://pypi.org/project/kaldi_native_io/
+
+Example
+*******
+
+In the following, we demonstrate how to import a Kaldi data directory using
+the ``yesno`` dataset.
+
+Assume you have run the following commands with Kaldi:
+
+.. code-block:: bash
+
+   cd kaldi/egs/yesno/s5
+   ./run.sh
+
+Take the ``data/train_yesno`` directory as an example:
+
+.. code-block::
+
+  ls data/train_yesno/
+  cmvn.scp  conf  feats.scp  frame_shift  spk2utt  split1  text  utt2dur  utt2num_frames  utt2spk  wav.scp
+
+You can use the following command to import it into lhotse:
+
+.. code-block::
+
+   lhotse kaldi import \
+     --frame-shift 0.01 \
+     ./data/train_yesno \
+     8000 \
+     ./data/train_manifests/
+
+.. hint::
+
+    You can use ``lhotse kaldi import --help`` to view the help information.
+    In the above, ``8000`` is the sampling rate for the ``yesno`` dataset.
+
+It will generate the following files:
+
+.. code-block:: bash
+
+  $ ls data/train_manifests/
+  features.jsonl.gz  recordings.jsonl.gz  supervisions.jsonl.gz
+
+To create a ``CutSet`` from the above files, you can use:
+
+.. code-block:: bash
+
+  lhotse cut simple \
+    -r ./data/train_manifests/recordings.jsonl.gz \
+    -f ./data/train_manifests/features.jsonl.gz \
+    -s ./data/train_manifests/supervisions.jsonl.gz \
+    ./yesno_train.jsonl.gz
+
+Now you can use ``./yesno_train.jsonl.gz`` for training.
