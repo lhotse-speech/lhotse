@@ -808,6 +808,11 @@ def streaming_shuffle(
         yield sample
 
 
+def quantize(val: float, n: int) -> int:
+    """Quantize a value to the nearest integer k in the range [0, n-1] that satisfies val * n >= k."""
+    return min(math.floor(val * n), n - 1)
+
+
 def pairwise(iterable):
     "s -> (s0,s1), (s1,s2), (s2, s3), ..."
     from itertools import tee
