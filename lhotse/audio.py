@@ -151,7 +151,7 @@ class AudioSource:
         :param force_opus_sampling_rate: This parameter is only used when we detect an OPUS file.
             It will tell ffmpeg to resample OPUS to this sampling rate.
         """
-        assert self.type in ("file", "command", "url", "memory")
+        assert self.type in ("file", "command", "url", "memory", "shar")
 
         # TODO: refactor when another source type is added
         source = self.source
@@ -190,11 +190,16 @@ class AudioSource:
         elif self.type == "memory":
             assert isinstance(self.source, bytes), (
                 "Corrupted manifest: specified AudioSource type is 'memory', "
-                "but 'self.source' attribute is not of type 'bytes'."
+                f"but 'self.source' attribute is not of type 'bytes' (found: '{type(self.source).__name__}')."
             )
             source = BytesIO(self.source)
             samples, sampling_rate = read_audio(
                 source, offset=offset, duration=duration
+            )
+        elif self.type == "shar":
+            raise RuntimeError(
+                "Inconsistent state: found an AudioSource with Lhotse Shar placeholder "
+                "that was not filled during deserialization."
             )
 
         else:  # self.type == 'file'
@@ -470,13 +475,7 @@ class Recording:
             channels=channels, offset=ifnone(offset, 0), duration=duration
         )
         stream = BytesIO()
-        if torchaudio_soundfile_supports_format() and format in (
-            "wav",
-            "ogg",
-            "vorbis",
-            "flac",
-            "sph",
-        ):
+        if torchaudio_soundfile_supports_format() and format == "flac":
             # Prefer saving with soundfile backend whenever possible to avoid issue:
             # https://github.com/pytorch/audio/issues/2662
             # Saving with sox_io backend to FLAC may corrupt the file, IDK about other

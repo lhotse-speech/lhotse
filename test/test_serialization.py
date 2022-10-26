@@ -1,3 +1,4 @@
+import os
 from tempfile import NamedTemporaryFile
 
 import pytest
@@ -16,7 +17,7 @@ from lhotse import (
     load_manifest,
     store_manifest,
 )
-from lhotse.serialization import load_manifest_lazy
+from lhotse.serialization import load_manifest_lazy, open_best
 from lhotse.supervision import AlignmentItem
 from lhotse.testing.dummies import DummyManifest
 from lhotse.utils import fastcopy
@@ -469,3 +470,34 @@ def test_manifest_is_lazy(manifests, manifest_type):
         # Muxing of eager + lazy manifests is lazy
         lazy_lazy_mux = cls.mux(lazy, lazy)
         assert lazy_lazy_mux.is_lazy
+
+
+@pytest.mark.skipif(os.name == "nt", reason="This test cannot be run on Windows.")
+def test_open_pipe(tmp_path):
+    data = "text"
+    with open_best(f"pipe:gzip -c > {tmp_path}/text.gz", mode="w") as f:
+        print(data, file=f)
+
+    with open_best(f"pipe:gunzip -c {tmp_path}/text.gz", mode="r") as f:
+        data_read = f.read().strip()
+
+    assert data_read == data
+
+
+@pytest.mark.skipif(os.name == "nt", reason="This test cannot be run on Windows.")
+def test_open_pipe_iter(tmp_path):
+    lines = [
+        "line0",
+        "line1",
+        "line2",
+    ]
+    with open_best(f"pipe:gzip -c > {tmp_path}/text.gz", mode="w") as f:
+        for l in lines:
+            print(l, file=f)
+
+    lines_read = []
+    with open_best(f"pipe:gunzip -c {tmp_path}/text.gz", mode="r") as f:
+        for l in f:
+            lines_read.append(l.strip())
+
+    assert lines_read == lines
