@@ -1,3 +1,4 @@
+import random
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 
@@ -18,6 +19,7 @@ from lhotse.utils import (
     compute_start_duration_for_extended_cut,
     overlaps,
     overspans,
+    streaming_shuffle,
 )
 
 
@@ -165,3 +167,23 @@ def test_add_durations():
 )
 def test_compute_num_windows(params, expected_n_win):
     assert compute_num_windows(params[0], params[1], params[2]) == expected_n_win
+
+
+@pytest.mark.parametrize(
+    ["input_size", "bufsize", "expected"],
+    [
+        (0, 0, True),
+        (0, 1, True),
+        (1, 0, True),
+        (1, 1, True),
+        (1, 10000, True),
+        (32, 0, True),
+        (32, 1, False),
+        (32, 10000, False),
+    ],
+)
+def test_streaming_shuffle(input_size, bufsize, expected):
+    input = range(input_size)
+    output = [x for x in streaming_shuffle(iter(input), bufsize)]
+    assert len(list(input)) == len(output)
+    assert expected == (list(input) == output)

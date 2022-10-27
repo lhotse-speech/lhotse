@@ -17,6 +17,7 @@ from typing import (
     Dict,
     Generator,
     Iterable,
+    Iterator,
     List,
     Optional,
     Sequence,
@@ -763,7 +764,7 @@ class suppress_and_warn:
 
 
 def streaming_shuffle(
-    data: Iterable[T],
+    data: Iterator[T],
     bufsize: int = 10000,
     rng: Optional[random.Random] = None,
 ) -> Generator[T, None, None]:
