@@ -797,8 +797,9 @@ def streaming_shuffle(
                 buf.append(next(data))
             except StopIteration:
                 pass
-        k = rng.randint(0, len(buf) - 1)
-        sample, buf[k] = buf[k], sample
+        if len(buf) > 0:
+            k = rng.randint(0, len(buf) - 1)
+            sample, buf[k] = buf[k], sample
         if startup and len(buf) < bufsize:
             buf.append(sample)
             continue
