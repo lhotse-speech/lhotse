@@ -66,8 +66,8 @@ class TarWriter:
         self.num_shards += 1
         self.num_items = 0
 
-    def write(self, key: str, data: BytesIO):
-        if (
+    def write(self, key: str, data: BytesIO, count: bool = True):
+        if count and (
             # the first item written
             self.num_items_total == 0
             or (
@@ -82,5 +82,6 @@ class TarWriter:
         data.seek(0)
         ti.size = len(data.getvalue())
         self.tarstream.addfile(ti, data)
-        self.num_items += 1
-        self.num_items_total += 1
+        if count:
+            self.num_items += 1
+            self.num_items_total += 1

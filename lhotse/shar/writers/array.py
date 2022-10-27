@@ -1,9 +1,15 @@
+import codecs
+import json
 from io import BytesIO
+from typing import Optional, Union
 
 import lilcom
 import numpy as np
 from typing_extensions import Literal
 
+from lhotse import Features
+from lhotse.array import Array, TemporalArray
+from lhotse.serialization import save_to_jsonl
 from lhotse.shar.writers.tar import TarWriter
 
 
@@ -48,8 +54,14 @@ class ArrayTarWriter:
     def close(self):
         self.tar_writer.close()
 
-    def write(self, key: str, value: np.ndarray) -> str:
+    def write(
+        self,
+        key: str,
+        value: np.ndarray,
+        manifest: Union[Features, Array, TemporalArray],
+    ) -> None:
 
+        # Write binary data
         if self.compression == "lilcom":
             assert np.issubdtype(
                 value.dtype, np.floating
@@ -63,3 +75,12 @@ class ArrayTarWriter:
             ext = ".npy"
 
         self.tar_writer.write(key + ext, stream)
+
+        # Write text manifest afterwards
+        json_stream = BytesIO()
+        print(
+            json.dumps(manifest.to_dict()),
+            file=codecs.getwriter("utf-8")(json_stream),
+        )
+        json_stream.seek(0)
+        self.tar_writer.write(f"{key}.json", json_stream, count=False)

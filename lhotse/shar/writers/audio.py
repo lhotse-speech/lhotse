@@ -1,11 +1,16 @@
+import codecs
+import json
 from functools import partial
-from io import BytesIO
+from io import BytesIO, StringIO
+from typing import Optional
 
 import numpy as np
 import torch
 import torchaudio
 from typing_extensions import Literal
 
+from lhotse import Recording
+from lhotse.serialization import save_to_jsonl
 from lhotse.shar.writers.tar import TarWriter
 
 
@@ -52,7 +57,14 @@ class AudioTarWriter:
     def close(self):
         self.tar_writer.close()
 
-    def write(self, key: str, value: np.ndarray, sampling_rate: int) -> str:
+    def write(
+        self,
+        key: str,
+        value: np.ndarray,
+        sampling_rate: int,
+        manifest: Recording,
+    ) -> None:
+        # Write binary data
         stream = BytesIO()
         self.save_fn(
             stream,
@@ -61,3 +73,12 @@ class AudioTarWriter:
             format=self.format,
         )
         self.tar_writer.write(f"{key}.{self.format}", stream)
+
+        # Write text manifest afterwards
+        json_stream = BytesIO()
+        print(
+            json.dumps(manifest.to_dict()),
+            file=codecs.getwriter("utf-8")(json_stream),
+        )
+        json_stream.seek(0)
+        self.tar_writer.write(f"{key}.json", json_stream, count=False)

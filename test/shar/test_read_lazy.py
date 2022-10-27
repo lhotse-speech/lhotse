@@ -54,7 +54,8 @@ def test_shar_lazy_reader_from_fields(cuts: CutSet, shar_dir: Path):
         np.testing.assert_allclose(c_ref.load_audio(), c_test.load_audio(), rtol=1e-3)
 
 
-@pytest.mark.skipif(os.name == "nt", reason="This test cannot run on Windows.")
+# @pytest.mark.skipif(os.name == "nt", reason="This test cannot run on Windows.")
+@pytest.mark.skip(reason="We don't support datapipes for now.")
 def test_shar_lazy_reader_from_fields_using_pipes(cuts: CutSet, shar_dir: Path):
     # Prepare system under test
     cuts_iter = LazySharIterator(

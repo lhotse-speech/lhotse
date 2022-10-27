@@ -82,14 +82,14 @@ class Array:
         """
         return fastcopy(self, storage_path=str(Path(path) / self.storage_path))
 
-    def move_to_memory(self) -> "Array":
+    def move_to_memory(self, lilcom: bool = False) -> "Array":
         from lhotse.features.io import get_memory_writer
 
         if self.storage_type in ("memory_lilcom", "memory_writer"):
             return self  # nothing to do
 
         arr = self.load()
-        if issubclass(arr.dtype.type, np.float):
+        if issubclass(arr.dtype.type, np.float) and lilcom:
             writer = get_memory_writer("memory_lilcom")()
         else:
             writer = get_memory_writer("memory_raw")()
@@ -247,6 +247,7 @@ class TemporalArray:
         self,
         start: Seconds = 0,
         duration: Optional[Seconds] = None,
+        lilcom: bool = False,
     ) -> "TemporalArray":
         from lhotse.features.io import get_memory_writer
 
@@ -254,7 +255,7 @@ class TemporalArray:
             return self  # nothing to do
 
         arr = self.load(start=start, duration=duration)
-        if issubclass(arr.dtype.type, np.float):
+        if issubclass(arr.dtype.type, np.float) and lilcom:
             writer = get_memory_writer("memory_lilcom")()
         else:
             writer = get_memory_writer("memory_raw")()

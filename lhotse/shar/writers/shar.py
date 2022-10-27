@@ -95,10 +95,12 @@ class SharWriter:
 
         # handle audio
         if cut.has_recording and "recording" in self.fields:
-            # TODO: with/without transcoding
             data = cut.load_audio()
-            self.writers["recording"].write(cut.id, data, cut.sampling_rate)
-            cut = fastcopy(cut, recording=to_placeholder(cut.recording))
+            recording = to_placeholder(cut.recording)
+            self.writers["recording"].write(
+                cut.id, data, cut.sampling_rate, manifest=recording
+            )
+            cut = fastcopy(cut, recording=recording)
         elif cut.has_recording and self.warn_unused_fields:
             warnings.warn(
                 "Found cut with 'recording' field that is not specified for Shar writing."
@@ -107,8 +109,9 @@ class SharWriter:
         # handle features
         if cut.has_features and "features" in self.fields:
             data = cut.load_features()
-            self.writers["features"].write(cut.id, data)
-            cut = fastcopy(cut, features=to_placeholder(cut.features))
+            features = to_placeholder(cut.features)
+            self.writers["features"].write(cut.id, data, manifest=features)
+            cut = fastcopy(cut, features=features)
         elif cut.has_features and self.warn_unused_fields:
             warnings.warn(
                 "Found cut with 'features' field that is not specified for Shar writing."
@@ -128,12 +131,15 @@ class SharWriter:
                     continue
 
                 data = cut.load_custom(key)
+                placeholder_obj = to_placeholder(getattr(cut, key))
                 kwargs = {}
                 if isinstance(val, Recording):
                     kwargs["sampling_rate"] = val.sampling_rate
-                self.writers[key].write(cut.id, data, **kwargs)
+                self.writers[key].write(
+                    cut.id, data, manifest=placeholder_obj, **kwargs
+                )
                 cut = fastcopy(cut, custom=cut.custom.copy())
-                setattr(cut, key, to_placeholder(getattr(cut, key)))
+                setattr(cut, key, placeholder_obj)
 
         self.writers["cut"].write(cut)
 
@@ -146,6 +152,7 @@ def to_placeholder(manifest: Manifest) -> Manifest:
         assert (
             len(manifest.sources) == 1
         ), "Multiple AudioSources are not supported yet."
+        # TODO: modify Recording's start/duration/num_samples if needed to match the Cut (in case we read subset of audio)
         return fastcopy(
             manifest,
             sources=[
@@ -153,6 +160,7 @@ def to_placeholder(manifest: Manifest) -> Manifest:
                 for src in manifest.sources
             ],
         )
+    # TODO: modify Features/TemporalArray's start/duration/num_frames if needed to match the Cut (in case we read subset of array)
     elif isinstance(manifest, (Array, Features)):
         return fastcopy(manifest, storage_type="shar", storage_path="", storage_key="")
     elif isinstance(manifest, TemporalArray):
