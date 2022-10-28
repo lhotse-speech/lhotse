@@ -187,10 +187,6 @@ class LazySharIterator(ImitatesDict):
                 for field, path in tarpaths.items()
             }
 
-            # f = list(tars.values())[0]
-            # for x in f:
-            #     print(f.extractfile(x).read())
-
             # *tardata contains all fields for a single cut (recording, features, array, etc.)
             for cut, *tardata in zip(
                 cuts, *map(iterate_tarfile_pairwise, tars.values())
@@ -207,13 +203,13 @@ class LazySharIterator(ImitatesDict):
                     tars.values(),
                     tardata,
                 ):
+                    assert (
+                        data_path.stem == cut.id
+                    ), f"Mismatched IDs: cut ID is '{cut.id}' but found data with name '{data_path}'"
                     manifest = deserialize_item(
                         decode_json_line(manifest_bytes.decode("utf-8"))
                     )
                     setattr(cut, field, manifest)
-                    assert (
-                        data_path.stem == cut.id
-                    ), f"Mismatched IDs: cut ID is '{cut.id}' but found data with name '{data_path}'"
                     fill_shar_placeholder(
                         cut,
                         field=field,
