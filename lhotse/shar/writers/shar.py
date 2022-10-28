@@ -1,6 +1,6 @@
 import warnings
 from functools import partial
-from typing import Any, Callable, Dict, Type, TypeVar, Union
+from typing import Any, Callable, Dict, List, Type, TypeVar, Union
 
 from typing_extensions import Literal
 
@@ -69,7 +69,7 @@ class SharWriter:
         self.warn_unused_fields = warn_unused_fields
 
         self.writers = {
-            "cut": CutShardWriter(
+            "cuts": CutShardWriter(
                 pattern=f"{self.output_dir}/cuts.%06d.jsonl.gz", shard_size=shard_size
             ),
         }
@@ -78,6 +78,10 @@ class SharWriter:
             self.writers[field] = writer_type(
                 pattern=f"{self.output_dir}/{field}.%06d.tar", shard_size=shard_size
             )
+
+    @property
+    def output_paths(self) -> Dict[str, List[str]]:
+        return {k: w.output_paths for k, w in self.writers.items()}
 
     def __enter__(self):
         for w in self.writers.values():
@@ -141,7 +145,7 @@ class SharWriter:
                 cut = fastcopy(cut, custom=cut.custom.copy())
                 setattr(cut, key, placeholder_obj)
 
-        self.writers["cut"].write(cut)
+        self.writers["cuts"].write(cut)
 
 
 Manifest = TypeVar("Manifest", Recording, Features, Array, TemporalArray)

@@ -1,7 +1,7 @@
 import codecs
 import json
 from io import BytesIO
-from typing import Optional, Union
+from typing import List, Union
 
 import lilcom
 import numpy as np
@@ -9,7 +9,6 @@ from typing_extensions import Literal
 
 from lhotse import Features
 from lhotse.array import Array, TemporalArray
-from lhotse.serialization import save_to_jsonl
 from lhotse.shar.writers.tar import TarWriter
 
 
@@ -53,6 +52,10 @@ class ArrayTarWriter:
 
     def close(self):
         self.tar_writer.close()
+
+    @property
+    def output_paths(self) -> List[str]:
+        return self.tar_writer.output_paths
 
     def write(
         self,

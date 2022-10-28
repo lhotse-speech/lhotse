@@ -1,3 +1,5 @@
+from typing import List
+
 from lhotse import CutSet
 from lhotse.cut import Cut
 
@@ -43,14 +45,17 @@ class CutShardWriter:
     def _next_stream(self):
         self.close()
 
-        # TODO: support gopen-like capabilities
         self.fname = self.pattern % self.num_shards
         self.stream = CutSet.open_writer(self.fname)
 
         self.num_shards += 1
         self.num_items = 0
 
-    def write(self, cut: Cut, flush: bool = False) -> bool:
+    @property
+    def output_paths(self) -> List[str]:
+        return [self.pattern % i for i in range(self.num_shards)]
+
+    def write(self, cut: Cut, flush: bool = False) -> None:
         if (
             # the first item written
             self.num_items_total == 0
@@ -65,6 +70,3 @@ class CutShardWriter:
         self.stream.write(cut, flush=flush)
         self.num_items += 1
         self.num_items_total += 1
-
-    def open_manifest(self):
-        raise NotImplemented

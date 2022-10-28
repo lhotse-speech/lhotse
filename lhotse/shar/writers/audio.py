@@ -1,8 +1,8 @@
 import codecs
 import json
 from functools import partial
-from io import BytesIO, StringIO
-from typing import Optional
+from io import BytesIO
+from typing import List
 
 import numpy as np
 import torch
@@ -10,7 +10,6 @@ import torchaudio
 from typing_extensions import Literal
 
 from lhotse import Recording
-from lhotse.serialization import save_to_jsonl
 from lhotse.shar.writers.tar import TarWriter
 
 
@@ -56,6 +55,10 @@ class AudioTarWriter:
 
     def close(self):
         self.tar_writer.close()
+
+    @property
+    def output_paths(self) -> List[str]:
+        return self.tar_writer.output_paths
 
     def write(
         self,

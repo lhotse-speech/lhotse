@@ -1,5 +1,6 @@
 import tarfile
 from io import BytesIO
+from typing import List
 
 from lhotse.serialization import open_best
 
@@ -65,6 +66,10 @@ class TarWriter:
 
         self.num_shards += 1
         self.num_items = 0
+
+    @property
+    def output_paths(self) -> List[str]:
+        return [self.pattern % i for i in range(self.num_shards)]
 
     def write(self, key: str, data: BytesIO, count: bool = True):
         if count and (

@@ -13,6 +13,8 @@ def test_tar_writer(tmp_path: Path):
     with TarWriter(str(tmp_path / "test.%06d.tar"), shard_size=10) as writer:
         writer.write("test.txt", BytesIO(b"test"))
 
+    assert writer.output_paths == [str(tmp_path / "test.000000.tar")]
+
     with tarfile.open(tmp_path / "test.000000.tar") as f:
         f2 = f.extractfile(f.getmember("test.txt"))
         assert f2.read() == b"test"
@@ -21,6 +23,8 @@ def test_tar_writer(tmp_path: Path):
 def test_tar_writer_pipe(tmp_path: Path):
     with TarWriter(f"pipe:cat > {tmp_path}/test.%06d.tar", shard_size=10) as writer:
         writer.write("test.txt", BytesIO(b"test"))
+
+    assert writer.output_paths == [f"pipe:cat > {tmp_path}/test.000000.tar"]
 
     with tarfile.open(tmp_path / "test.000000.tar") as f:
         f2 = f.extractfile(f.getmember("test.txt"))
@@ -51,6 +55,37 @@ def test_shar_writer(tmp_path: Path):
             writer.write(c)
 
     # Post-conditions
+
+    assert writer.output_paths == {
+        "cuts": [
+            str(tmp_path / "cuts.000000.jsonl.gz"),
+            str(tmp_path / "cuts.000001.jsonl.gz"),
+        ],
+        "recording": [
+            str(tmp_path / "recording.000000.tar"),
+            str(tmp_path / "recording.000001.tar"),
+        ],
+        "features": [
+            str(tmp_path / "features.000000.tar"),
+            str(tmp_path / "features.000001.tar"),
+        ],
+        "custom_embedding": [
+            str(tmp_path / "custom_embedding.000000.tar"),
+            str(tmp_path / "custom_embedding.000001.tar"),
+        ],
+        "custom_features": [
+            str(tmp_path / "custom_features.000000.tar"),
+            str(tmp_path / "custom_features.000001.tar"),
+        ],
+        "custom_indexes": [
+            str(tmp_path / "custom_indexes.000000.tar"),
+            str(tmp_path / "custom_indexes.000001.tar"),
+        ],
+        "custom_recording": [
+            str(tmp_path / "custom_recording.000000.tar"),
+            str(tmp_path / "custom_recording.000001.tar"),
+        ],
+    }
 
     # - we created 2 shards with cutsets and a separate file for each data field
     for fname in (
