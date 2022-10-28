@@ -11,7 +11,7 @@ from lhotse.cut import Cut
 from lhotse.shar.writers.array import ArrayTarWriter
 from lhotse.shar.writers.audio import AudioTarWriter
 from lhotse.shar.writers.cut import CutShardWriter
-from lhotse.utils import Pathlike
+from lhotse.utils import Pathlike, ifnone
 
 WriterName = Literal["wav", "flac", "mp3", "lilcom", "numpy"]
 FieldWriterInstance = Union[AudioTarWriter, ArrayTarWriter]
@@ -108,44 +108,48 @@ class SharWriter:
     def write(self, cut: Cut) -> None:
 
         # handle audio
-        if cut.has_recording and "recording" in self.fields:
-            data = cut.load_audio()
-            recording = to_placeholder(cut.recording)
-            self.writers["recording"].write(
-                cut.id, data, cut.sampling_rate, manifest=recording
-            )
-            cut = fastcopy(cut, recording=recording)
+        if "recording" in self.fields:
+            if cut.has_recording:
+                data = cut.load_audio()
+                recording = to_placeholder(cut.recording)
+                self.writers["recording"].write(
+                    cut.id, data, cut.sampling_rate, manifest=recording
+                )
+                cut = fastcopy(cut, recording=recording)
+            else:
+                self.writers["recording"].write_placeholder(cut.id)
         elif cut.has_recording and self.warn_unused_fields:
             warnings.warn(
                 "Found cut with 'recording' field that is not specified for Shar writing."
             )
 
         # handle features
-        if cut.has_features and "features" in self.fields:
-            data = cut.load_features()
-            features = to_placeholder(cut.features)
-            self.writers["features"].write(cut.id, data, manifest=features)
-            cut = fastcopy(cut, features=features)
+        if "features" in self.fields:
+            if cut.has_features:
+                data = cut.load_features()
+                features = to_placeholder(cut.features)
+                self.writers["features"].write(cut.id, data, manifest=features)
+                cut = fastcopy(cut, features=features)
+            else:
+                self.writers["features"].write_placeholder(cut.id)
         elif cut.has_features and self.warn_unused_fields:
             warnings.warn(
                 "Found cut with 'features' field that is not specified for Shar writing."
             )
 
         # handle custom
-        if hasattr(cut, "custom"):
-            for key, val in cut.custom.items():
+        for key in self.fields:
+            if key in ["recording", "features"]:
+                continue
+            if cut.has_custom(key):
+                val = getattr(cut, key)
                 if not isinstance(val, (Array, TemporalArray, Recording)):
-                    continue
-
-                if key not in self.fields:
-                    if self.warn_unused_fields:
-                        warnings.warn(
-                            f"Found cut with '{key}' field that is not specified for Shar writing."
-                        )
-                    continue
-
+                    raise RuntimeError(
+                        f"Expected custom field to be Array, TemporalArray, or Recording, "
+                        f"but got {type(val)} instead."
+                    )
                 data = cut.load_custom(key)
-                placeholder_obj = to_placeholder(getattr(cut, key))
+                placeholder_obj = to_placeholder(val)
                 kwargs = {}
                 if isinstance(val, Recording):
                     kwargs["sampling_rate"] = val.sampling_rate
@@ -154,6 +158,19 @@ class SharWriter:
                 )
                 cut = fastcopy(cut, custom=cut.custom.copy())
                 setattr(cut, key, placeholder_obj)
+            else:
+                self.writers[key].write_placeholder(cut.id)
+
+        # Warn in case there is some data that wasn't requested to be saved.
+        for key, val in ifnone(cut.custom, {}).items():
+            if not isinstance(val, (Array, TemporalArray, Recording)):
+                continue
+            if key not in self.fields:
+                if self.warn_unused_fields:
+                    warnings.warn(
+                        f"Found cut with '{key}' field that is not specified for Shar writing."
+                    )
+                continue
 
         self.writers["cuts"].write(cut)
 

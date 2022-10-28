@@ -13,11 +13,10 @@ from lhotse.serialization import (
     decode_json_line,
     deserialize_item,
     extension_contains,
-    load_jsonl,
     open_best,
 )
 from lhotse.shar.readers.utils import fill_shar_placeholder
-from lhotse.utils import Pathlike, exactly_one_not_null, pairwise
+from lhotse.utils import Pathlike, exactly_one_not_null
 
 
 class LazySharIterator(ImitatesDict):
@@ -124,7 +123,7 @@ class LazySharIterator(ImitatesDict):
         for field in self.fields:
             assert (
                 len(self.streams[field]) == self.num_shards
-            ), f"Expected {self.num_shards} shards available for field '{field}' but found {len(self.streams[field])}"
+            ), f"Expected {self.num_shards} shards available for field '{field}' but found {len(self.streams[field])}: {self.streams[field]}"
 
         self.shards = [
             {field: self.streams[field][shard_idx] for field in self.streams}
@@ -195,25 +194,27 @@ class LazySharIterator(ImitatesDict):
                     field,
                     tar_f,
                     (
-                        (data_bytes, data_path),
-                        (manifest_bytes, manifest_path),
+                        (maybe_data_bytes, data_path),
+                        (maybe_manifest_bytes, manifest_path),
                     ),
                 ) in zip(
                     tars.keys(),
                     tars.values(),
                     tardata,
                 ):
+                    if maybe_data_bytes is None or maybe_manifest_bytes is None:
+                        continue  # No value available for the current field for this cut.
                     assert (
                         data_path.stem == cut.id
                     ), f"Mismatched IDs: cut ID is '{cut.id}' but found data with name '{data_path}'"
                     manifest = deserialize_item(
-                        decode_json_line(manifest_bytes.decode("utf-8"))
+                        decode_json_line(maybe_manifest_bytes.decode("utf-8"))
                     )
                     setattr(cut, field, manifest)
                     fill_shar_placeholder(
                         cut,
                         field=field,
-                        data=data_bytes,
+                        data=maybe_data_bytes,
                         tarpath=data_path,
                     )
                 yield cut
@@ -231,7 +232,7 @@ class LazySharIterator(ImitatesDict):
 
 def iterate_tarfile_pairwise(
     tar_file: tarfile.TarFile,
-) -> Generator[Tuple[bytes, Path], None, None]:
+) -> Generator[Tuple[Optional[bytes], Path], None, None]:
     result = []
     for tarinfo in tar_file:
         if len(result) == 2:
@@ -250,10 +251,12 @@ def iterate_tarfile_pairwise(
 
 def parse_tarinfo(
     tarinfo: tarfile.TarInfo, tar_file: tarfile.TarFile
-) -> Tuple[bytes, Path]:
+) -> Tuple[Optional[bytes], Path]:
     """
     Parse a tarinfo object and return the data it points to as well as the internal path.
     """
-    data = tar_file.extractfile(tarinfo).read()
     path = Path(tarinfo.path)
+    if path.suffix == ".nodata" or path.suffix == ".nometa":
+        return None, path
+    data = tar_file.extractfile(tarinfo).read()
     return data, path

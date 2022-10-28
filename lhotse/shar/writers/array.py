@@ -62,6 +62,10 @@ class ArrayTarWriter:
     def output_paths(self) -> List[str]:
         return self.tar_writer.output_paths
 
+    def write_placeholder(self, key: str) -> None:
+        self.tar_writer.write(f"{key}.nodata", BytesIO())
+        self.tar_writer.write(f"{key}.nometa", BytesIO(), count=False)
+
     def write(
         self,
         key: str,
