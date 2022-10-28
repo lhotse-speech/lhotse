@@ -169,6 +169,80 @@ def test_shar_writer(tmp_path: Path):
             cut.load_custom_recording()
 
 
+def test_cut_set_to_shar(tmp_path: Path):
+    # Prepare data
+    cuts = DummyManifest(CutSet, begin_id=0, end_id=20, with_data=True)
+
+    # Prepare system under test
+    output_paths = cuts.to_shar(
+        tmp_path,
+        fields={
+            "recording": "wav",
+            "features": "lilcom",
+            "custom_embedding": "numpy",
+            "custom_features": "lilcom",
+            "custom_indexes": "numpy",
+            "custom_recording": "wav",
+        },
+        shard_size=10,
+    )
+
+    # Post-conditions
+
+    assert output_paths == {
+        "cuts": [
+            str(tmp_path / "cuts.000000.jsonl.gz"),
+            str(tmp_path / "cuts.000001.jsonl.gz"),
+        ],
+        "recording": [
+            str(tmp_path / "recording.000000.tar"),
+            str(tmp_path / "recording.000001.tar"),
+        ],
+        "features": [
+            str(tmp_path / "features.000000.tar"),
+            str(tmp_path / "features.000001.tar"),
+        ],
+        "custom_embedding": [
+            str(tmp_path / "custom_embedding.000000.tar"),
+            str(tmp_path / "custom_embedding.000001.tar"),
+        ],
+        "custom_features": [
+            str(tmp_path / "custom_features.000000.tar"),
+            str(tmp_path / "custom_features.000001.tar"),
+        ],
+        "custom_indexes": [
+            str(tmp_path / "custom_indexes.000000.tar"),
+            str(tmp_path / "custom_indexes.000001.tar"),
+        ],
+        "custom_recording": [
+            str(tmp_path / "custom_recording.000000.tar"),
+            str(tmp_path / "custom_recording.000001.tar"),
+        ],
+    }
+
+    # - we created 2 shards with cutsets and a separate file for each data field
+    for fname in (
+        "cuts.000000.jsonl.gz",
+        "cuts.000001.jsonl.gz",
+        "recording.000000.tar",
+        "recording.000001.tar",
+        "features.000000.tar",
+        "features.000001.tar",
+        "custom_embedding.000000.tar",
+        "custom_embedding.000001.tar",
+        "custom_features.000000.tar",
+        "custom_features.000001.tar",
+        "custom_indexes.000000.tar",
+        "custom_indexes.000001.tar",
+        "custom_recording.000000.tar",
+        "custom_recording.000001.tar",
+    ):
+        assert (tmp_path / fname).is_file()
+
+    # - we didn't create a third shard
+    assert not (tmp_path / "cuts.000002.jsonl.gz").exists()
+
+
 def test_shar_writer_not_sharded(tmp_path: Path):
     # Prepare data
     cuts = DummyManifest(CutSet, begin_id=0, end_id=20, with_data=True)

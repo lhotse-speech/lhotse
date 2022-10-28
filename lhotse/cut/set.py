@@ -482,7 +482,7 @@ class CutSet(Serializable, AlgorithmMixin):
         fields: Dict[str, str],
         shard_size: Optional[int] = 1000,
         warn_unused_fields: bool = True,
-    ) -> None:
+    ) -> Dict[str, List[str]]:
         """
         Writes cuts and their corresponding data into multiple shards,
         also recognized as the Lhotse Shar format.
@@ -505,11 +505,14 @@ class CutSet(Serializable, AlgorithmMixin):
         Example::
 
             >>> cuts = CutSet(...)  # cuts have 'recording' and 'features'
-            >>> cuts.to_shar("some_dir", shard_size=100, fields={"recording": "mp3", "features": "lilcom"})
+            >>> output_paths = cuts.to_shar(
+            ...     "some_dir", shard_size=100, fields={"recording": "mp3", "features": "lilcom"}
+            ... )
 
         It would create a directory ``some_dir`` with files such as ``some_dir/cuts.000000.jsonl.gz``,
         ``some_dir/recording.000000.tar``, ``some_dir/features.000000.tar``,
         and then the same names but numbered with ``000001``, etc.
+        The function returns a dict that maps field names to lists of saved shard paths.
 
         When ``shard_size`` is set to ``None``, we will disable automatic sharding and the
         shard number suffix will be omitted from the file names.
@@ -527,6 +530,8 @@ class CutSet(Serializable, AlgorithmMixin):
         ) as writer:
             for cut in self:
                 writer.write(cut)
+
+        return writer.output_paths
 
     def to_dicts(self) -> Iterable[dict]:
         return (cut.to_dict() for cut in self)
