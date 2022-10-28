@@ -1,6 +1,6 @@
 import warnings
 from functools import partial
-from typing import Any, Callable, Dict, List, Type, TypeVar, Union
+from typing import Any, Callable, Dict, List, Optional, Type, TypeVar, Union
 
 from typing_extensions import Literal
 
@@ -49,6 +49,9 @@ class SharWriter:
     ``some_dir/recording.000000.tar``, ``some_dir/features.000000.tar``,
     and then the same names but numbered with ``000001``, etc.
 
+    When ``shard_size`` is set to ``None``, we will disable automatic sharding and the
+    shard number suffix will be omitted from the file names.
+
     See also: :class:`~lhotse.shar.writers.tar.TarWriter`, :class:`~lhotse.shar.writers.audio.AudioTarWriter`,
         :class:`~lhotse.shar.writers.array.ArrayTarWriter`.
     """
@@ -60,24 +63,31 @@ class SharWriter:
             str,
             Union[str, FieldWriter, Callable[[Any], FieldWriterInstance]],
         ],
-        shard_size: int = 1000,
+        shard_size: Optional[int] = 1000,
         warn_unused_fields: bool = True,
     ) -> None:
-        self.output_dir = output_dir
+        self.output_dir = str(output_dir)
         self.shard_size = shard_size
         self.fields = fields
         self.warn_unused_fields = warn_unused_fields
+        self.shard_suffix = ".%06d" if self.sharding_enabled else ""
 
         self.writers = {
             "cuts": CutShardWriter(
-                pattern=f"{self.output_dir}/cuts.%06d.jsonl.gz", shard_size=shard_size
+                pattern=f"{self.output_dir}/cuts{self.shard_suffix}.jsonl.gz",
+                shard_size=self.shard_size,
             ),
         }
         for field, writer_type in self.fields.items():
             writer_type = resolve_writer(writer_type)
             self.writers[field] = writer_type(
-                pattern=f"{self.output_dir}/{field}.%06d.tar", shard_size=shard_size
+                pattern=f"{self.output_dir}/{field}{self.shard_suffix}.tar",
+                shard_size=self.shard_size,
             )
+
+    @property
+    def sharding_enabled(self) -> bool:
+        return self.shard_size is not None and self.shard_size > 0
 
     @property
     def output_paths(self) -> Dict[str, List[str]]:

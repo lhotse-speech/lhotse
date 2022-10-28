@@ -26,8 +26,13 @@ class ArrayTarWriter:
         ...     w.write("fbank1", fbank1_array)
         ...     w.write("fbank2", fbank2_array)  # etc.
 
-
     It would create files such as ``some_dir/fbank.000000.tar``, ``some_dir/fbank.000001.tar``, etc.
+
+    It's also possible to use ``ArrayTarWriter`` with automatic sharding disabled::
+
+        >>> with ArrayTarWriter("some_dir/fbank.tar", shard_size=None, compression="numpy") as w:
+        ...     w.write("fbank1", fbank1_array)
+        ...     w.write("fbank2", fbank2_array)  # etc.
 
     See also: :class:`~lhotse.shar.writers.tar.TarWriter`, :class:`~lhotse.shar.writers.audio.AudioTarWriter`
     """

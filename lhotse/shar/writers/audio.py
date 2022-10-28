@@ -29,6 +29,12 @@ class AudioTarWriter:
 
     It would create files such as ``some_dir/audio.000000.tar``, ``some_dir/audio.000001.tar``, etc.
 
+    It's also possible to use ``AudioTarWriter`` with automatic sharding disabled::
+
+        >>> with AudioTarWriter("some_dir/audio.tar", shard_size=None, format="flac") as w:
+        ...     w.write("audio1", audio1_array)
+        ...     w.write("audio2", audio2_array)  # etc.
+
     See also: :class:`~lhotse.shar.writers.tar.TarWriter`, :class:`~lhotse.shar.writers.array.ArrayTarWriter`
     """
 
