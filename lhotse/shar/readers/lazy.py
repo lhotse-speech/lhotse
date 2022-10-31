@@ -1,7 +1,6 @@
 import random
-import tarfile
 from pathlib import Path
-from typing import Dict, Generator, Optional, Sequence, Tuple
+from typing import Dict, Optional, Sequence
 
 from lhotse.lazy import (
     ImitatesDict,
@@ -9,13 +8,8 @@ from lhotse.lazy import (
     LazyJsonlIterator,
     count_newlines_fast,
 )
-from lhotse.serialization import (
-    decode_json_line,
-    deserialize_item,
-    extension_contains,
-    open_best,
-)
-from lhotse.shar.readers.utils import fill_shar_placeholder
+from lhotse.serialization import extension_contains
+from lhotse.shar.readers.tar import TarIterator
 from lhotse.utils import Pathlike, exactly_one_not_null
 
 
@@ -172,8 +166,6 @@ class LazySharIterator(ImitatesDict):
             self.shards_for_dataloading if self.split_for_dataloading else self.shards
         )
         for shard in shards:
-            # TODO: more careful open/close using some ctxmanager and with statement
-
             # Iterate over cuts for the current shard
             cuts = LazyJsonlIterator(shard["cuts"])
 
@@ -182,44 +174,25 @@ class LazySharIterator(ImitatesDict):
 
             # Open every tarfile so it's ready for streaming
             tars = {
-                field: tarfile.open(fileobj=open_best(path, mode="rb"), mode="r|*")
+                # field: tarfile.open(fileobj=open_best(path, mode="rb"), mode="r|*")
+                field: TarIterator(path)
                 for field, path in tarpaths.items()
             }
 
             # *tardata contains all fields for a single cut (recording, features, array, etc.)
-            for cut, *tardata in zip(
-                cuts, *map(iterate_tarfile_pairwise, tars.values())
-            ):
-                for (
-                    field,
-                    tar_f,
-                    (
-                        (maybe_data_bytes, data_path),
-                        (maybe_manifest_bytes, manifest_path),
-                    ),
-                ) in zip(
+            for cut, *tardata in zip(cuts, *tars.values()):
+                for (field, tar_f, (maybe_manifest, data_path)) in zip(
                     tars.keys(),
                     tars.values(),
                     tardata,
                 ):
-                    if maybe_data_bytes is None or maybe_manifest_bytes is None:
+                    if maybe_manifest is None:
                         continue  # No value available for the current field for this cut.
                     assert (
                         data_path.stem == cut.id
                     ), f"Mismatched IDs: cut ID is '{cut.id}' but found data with name '{data_path}'"
-                    manifest = deserialize_item(
-                        decode_json_line(maybe_manifest_bytes.decode("utf-8"))
-                    )
-                    setattr(cut, field, manifest)
-                    fill_shar_placeholder(
-                        cut,
-                        field=field,
-                        data=maybe_data_bytes,
-                        tarpath=data_path,
-                    )
+                    setattr(cut, field, maybe_manifest)
                 yield cut
-            for tar_f in tars.values():
-                tar_f.close()
 
     def __len__(self) -> int:
         if self._len is None:
@@ -228,35 +201,3 @@ class LazySharIterator(ImitatesDict):
 
     def __add__(self, other) -> "LazyIteratorChain":
         return LazyIteratorChain(self, other)
-
-
-def iterate_tarfile_pairwise(
-    tar_file: tarfile.TarFile,
-) -> Generator[Tuple[Optional[bytes], Path], None, None]:
-    result = []
-    for tarinfo in tar_file:
-        if len(result) == 2:
-            yield tuple(result)
-            result = []
-        result.append(parse_tarinfo(tarinfo, tar_file))
-
-    if len(result) == 2:
-        yield tuple(result)
-
-    if len(result) == 1:
-        raise RuntimeError(
-            "Uneven number of files in the tarfile (expected to iterate pairs of binary data + JSON metadata."
-        )
-
-
-def parse_tarinfo(
-    tarinfo: tarfile.TarInfo, tar_file: tarfile.TarFile
-) -> Tuple[Optional[bytes], Path]:
-    """
-    Parse a tarinfo object and return the data it points to as well as the internal path.
-    """
-    path = Path(tarinfo.path)
-    if path.suffix == ".nodata" or path.suffix == ".nometa":
-        return None, path
-    data = tar_file.extractfile(tarinfo).read()
-    return data, path

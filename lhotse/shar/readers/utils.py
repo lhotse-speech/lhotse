@@ -1,6 +1,7 @@
 import os
 from itertools import islice
 from pathlib import Path
+from typing import Optional, Union
 
 from lhotse import Features, Recording
 from lhotse.array import Array, TemporalArray
@@ -8,15 +9,30 @@ from lhotse.cut import Cut
 from lhotse.utils import Pathlike
 
 
-def fill_shar_placeholder(cut: Cut, field: str, data: bytes, tarpath: Pathlike) -> None:
+def fill_shar_placeholder(
+    manifest: Union[Cut, Recording, Features, Array, TemporalArray],
+    data: bytes,
+    tarpath: Pathlike,
+    field: Optional[str] = None,
+) -> None:
+    if isinstance(manifest, Cut):
+        assert (
+            field is not None
+        ), "'field' argument must be provided when filling a Shar placeholder in a Cut."
+        manifest = getattr(manifest, field)
+        fill_shar_placeholder(
+            manifest=manifest, field=field, data=data, tarpath=tarpath
+        )
+
     tarpath = Path(tarpath)
-    manifest = getattr(cut, field)
+
     if isinstance(manifest, Recording):
         assert (
             len(manifest.sources) == 1
         ), "Multiple AudioSources are not supported yet."
         manifest.sources[0].type = "memory"
         manifest.sources[0].source = data
+
     elif isinstance(manifest, (Features, Array)):
         manifest.storage_key = data
         if tarpath.suffix == ".llc":
@@ -25,6 +41,7 @@ def fill_shar_placeholder(cut: Cut, field: str, data: bytes, tarpath: Pathlike) 
             manifest.storage_type = "memory_npy"
         else:
             raise RuntimeError(f"Unknown array/tensor format: {tarpath}")
+
     elif isinstance(manifest, TemporalArray):
         manifest.array.storage_key = data
         if tarpath.suffix == ".llc":
@@ -33,6 +50,7 @@ def fill_shar_placeholder(cut: Cut, field: str, data: bytes, tarpath: Pathlike) 
             manifest.array.storage_type = "memory_npy"
         else:
             raise RuntimeError(f"Unknown array/tensor format: {tarpath}")
+
     else:
         raise RuntimeError(f"Unknown manifest type: {type(manifest).__name__}")
 
