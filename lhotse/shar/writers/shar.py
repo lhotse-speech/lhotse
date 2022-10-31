@@ -74,7 +74,7 @@ class SharWriter:
 
         self.writers = {
             "cuts": CutShardWriter(
-                pattern=f"{self.output_dir}/cuts{self.shard_suffix}.jsonl.gz",
+                pattern=_create_cuts_output_url(self.output_dir, self.shard_suffix),
                 shard_size=self.shard_size,
             ),
         }
@@ -220,3 +220,12 @@ def resolve_writer(
         name_or_callable in opts
     ), f"Unknown field type (got: '{name_or_callable}', we support only: {', '.join(opts)}"
     return opts[name_or_callable]
+
+
+def _create_cuts_output_url(base_output_url: str, shard_suffix: str) -> str:
+
+    # special case where we want to ensure the CutSet actually gets gzipped
+    if base_output_url.startswith("pipe:"):
+        base_output_url = base_output_url.replace("pipe:", "pipe:gzip -c | ")
+
+    return f"{base_output_url}/cuts{shard_suffix}.jsonl.gz"

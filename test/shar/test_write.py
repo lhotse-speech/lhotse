@@ -378,3 +378,30 @@ def test_shar_writer_pipe(tmp_path: Path):
         "custom_recording.000001.tar",
     ):
         assert (tmp_path / fname).is_file()
+
+    # - the cuts do not have any data actually attached to them,
+    #   so it's impossible to load it if we open it as a normal CutSet
+    for cut in CutSet.from_file(tmp_path / "cuts.000000.jsonl.gz"):
+        assert cut.recording.sources[0].type == "shar"
+        with pytest.raises(RuntimeError):
+            cut.load_audio()
+
+        assert cut.features.storage_type == "shar"
+        with pytest.raises(RuntimeError):
+            cut.load_features()
+
+        assert cut.custom_embedding.storage_type == "shar"
+        with pytest.raises(RuntimeError):
+            cut.load_custom_embedding()
+
+        assert cut.custom_features.array.storage_type == "shar"
+        with pytest.raises(RuntimeError):
+            cut.load_custom_features()
+
+        assert cut.custom_indexes.array.storage_type == "shar"
+        with pytest.raises(RuntimeError):
+            cut.load_custom_indexes()
+
+        assert cut.custom_recording.sources[0].type == "shar"
+        with pytest.raises(RuntimeError):
+            cut.load_custom_recording()

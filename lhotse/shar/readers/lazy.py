@@ -173,11 +173,7 @@ class LazySharIterator(ImitatesDict):
             tarpaths = {field: path for field, path in shard.items() if field != "cuts"}
 
             # Open every tarfile so it's ready for streaming
-            tars = {
-                # field: tarfile.open(fileobj=open_best(path, mode="rb"), mode="r|*")
-                field: TarIterator(path)
-                for field, path in tarpaths.items()
-            }
+            tars = {field: TarIterator(path) for field, path in tarpaths.items()}
 
             # *tardata contains all fields for a single cut (recording, features, array, etc.)
             for cut, *tardata in zip(cuts, *tars.values()):
