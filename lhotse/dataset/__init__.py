@@ -11,10 +11,7 @@ from .source_separation import (
     PreMixedSourceSeparationDataset,
     SourceSeparationDataset,
 )
-from .speech_recognition import (
-    K2AlignmentRestrictedTrasducerDataset,
-    K2SpeechRecognitionDataset,
-)
+from .speech_recognition import K2SpeechRecognitionDataset
 from .speech_synthesis import SpeechSynthesisDataset
 from .unsupervised import (
     DynamicUnsupervisedDataset,
