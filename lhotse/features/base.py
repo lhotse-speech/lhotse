@@ -582,8 +582,6 @@ class FeatureSet(Serializable, AlgorithmMixin):
 
     def __init__(self, features: List[Features] = None) -> None:
         self.features = ifnone(features, [])
-        if isinstance(self.features, list):
-            self.features = sorted(self.features)
 
     def __eq__(self, other: "FeatureSet") -> bool:
         return self.features == other.features
