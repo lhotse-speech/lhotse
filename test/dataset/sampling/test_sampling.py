@@ -38,6 +38,20 @@ def libri_cut_set():
     )
 
 
+def test_dynamic_cut_sampler_max_cuts():
+    # The dummy cuts have a duration of 1 second each
+    cut_set = DummyManifest(CutSet, begin_id=0, end_id=20)
+
+    sampler = DynamicCutSampler(cut_set, max_cuts=5)
+
+    tot = 0
+    for batch in sampler:
+        assert len(batch) == 5
+        tot += 1
+
+    assert tot == 4
+
+
 # Tests both aliases of SimpleCutSampler
 @pytest.mark.parametrize(
     "sampler_cls", [SimpleCutSampler, SingleCutSampler, DynamicCutSampler]

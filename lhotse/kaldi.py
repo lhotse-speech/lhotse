@@ -173,27 +173,31 @@ def load_kaldi_data_dir(
 
             from lhotse.features.io import KaldiReader
 
-            feature_set = FeatureSet.from_features(
-                Features(
-                    type="kaldi_native_io",
-                    num_frames=mat_shape.num_rows,
-                    num_features=mat_shape.num_cols,
-                    frame_shift=frame_shift,
-                    sampling_rate=sampling_rate,
-                    start=0,
-                    duration=mat_shape.num_rows * frame_shift,
-                    storage_type=KaldiReader.name,
-                    storage_path=str(feats_scp),
-                    storage_key=utt_id,
-                    recording_id=supervision_set[fix_id(utt_id)].recording_id
-                    if supervision_set is not None
-                    else utt_id,
-                    channels=0,
-                )
-                for utt_id, mat_shape in kaldi_native_io.SequentialMatrixShapeReader(
-                    f"scp:{feats_scp}"
-                )
-            )
+            features = []
+            with open(feats_scp) as f:
+                for line in f:
+                    utt_id, ark = line.strip().split(maxsplit=1)
+                    mat_shape = kaldi_native_io.MatrixShape.read(ark)
+
+                    features.append(
+                        Features(
+                            type="kaldi_native_io",
+                            num_frames=mat_shape.num_rows,
+                            num_features=mat_shape.num_cols,
+                            frame_shift=frame_shift,
+                            sampling_rate=sampling_rate,
+                            start=0,
+                            duration=mat_shape.num_rows * frame_shift,
+                            storage_type=KaldiReader.name,
+                            storage_path=ark,
+                            storage_key=utt_id,
+                            recording_id=supervision_set[fix_id(utt_id)].recording_id
+                            if supervision_set is not None
+                            else utt_id,
+                            channels=0,
+                        )
+                    )
+            feature_set = FeatureSet.from_features(features)
         else:
             warnings.warn(
                 "Failed to import Kaldi 'feats.scp' to Lhotse: "

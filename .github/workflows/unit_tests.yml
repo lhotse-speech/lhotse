@@ -23,7 +23,7 @@ jobs:
           - python-version: "3.9"
             torch-install-cmd: "pip install torch==1.8.2+cpu torchaudio==0.8.2 -f https://download.pytorch.org/whl/lts/1.8/torch_lts.html"
           - python-version: "3.10"
-            torch-install-cmd: "pip install torch==1.12.0 torchaudio==0.12.0 --extra-index-url https://download.pytorch.org/whl/cpu"
+            torch-install-cmd: "pip install torch==1.12.1 torchaudio==0.12.1 torchdata==0.4.1 --extra-index-url https://download.pytorch.org/whl/cpu"
 
       fail-fast: false
 
@@ -44,19 +44,12 @@ jobs:
     - name: Install Python dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install wheel
-        pip install numpy
+        pip install wheel numpy
         # Force the installation of a CPU-only PyTorch
         ${{ matrix.torch-install-cmd }}
         pip install '.[tests]'
-        pip install h5py  # for HDF5 storage tests
-        pip install dill # for dill lambda pickling tests
-        pip install smart_open[http]  # for URL audio downloading test
-        pip install kaldifeat  # for running kaldifeat tests
-        pip install opensmile  # for running opensmile tests
-        pip install kaldi_native_io  # for running kaldi_native_io tests
-        pip install webdataset==0.2.5 # for running webdataset tests
-        pip install git+https://github.com/fgnt/nara_wpe  # for running WPE tests
+        # Enable some optional tests
+        pip install h5py dill smart_open[http] kaldifeat kaldi_native_io webdataset==0.2.5
     - name: Install sph2pipe
       run: |
         lhotse install-sph2pipe  # Handle sphere files.

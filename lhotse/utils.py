@@ -17,6 +17,7 @@ from typing import (
     Dict,
     Generator,
     Iterable,
+    Iterator,
     List,
     Optional,
     Sequence,
@@ -772,7 +773,7 @@ class suppress_and_warn:
 
 
 def streaming_shuffle(
-    data: Iterable[T],
+    data: Iterator[T],
     bufsize: int = 10000,
     rng: Optional[random.Random] = None,
 ) -> Generator[T, None, None]:
@@ -806,8 +807,9 @@ def streaming_shuffle(
                 buf.append(next(data))
             except StopIteration:
                 pass
-        k = rng.randint(0, len(buf) - 1)
-        sample, buf[k] = buf[k], sample
+        if len(buf) > 0:
+            k = rng.randint(0, len(buf) - 1)
+            sample, buf[k] = buf[k], sample
         if startup and len(buf) < bufsize:
             buf.append(sample)
             continue
@@ -815,3 +817,120 @@ def streaming_shuffle(
         yield sample
     for sample in buf:
         yield sample
+
+
+def pairwise(iterable):
+    "s -> (s0,s1), (s1,s2), (s2, s3), ..."
+    from itertools import tee
+
+    a, b = tee(iterable)
+    next(b, None)
+    return zip(a, b)
+
+
+class Pipe:
+    """Wrapper class for subprocess.Pipe.
+
+    This class looks like a stream from the outside, but it checks
+    subprocess status and handles timeouts with exceptions.
+    This way, clients of the class do not need to know that they are
+    dealing with subprocesses.
+
+    Note: This class is based on WebDataset and modified here.
+    Original source is in https://github.com/webdataset/webdataset
+
+    :param *args: passed to `subprocess.Pipe`
+    :param **kw: passed to `subprocess.Pipe`
+    :param timeout: timeout for closing/waiting
+    :param ignore_errors: don't raise exceptions on subprocess errors
+    :param ignore_status: list of status codes to ignore
+    """
+
+    def __init__(
+        self,
+        *args,
+        mode: str,
+        timeout: float = 7200.0,
+        ignore_errors: bool = False,
+        ignore_status: Optional[List] = None,
+        **kw,
+    ):
+        """Create an IO Pipe."""
+        from subprocess import PIPE, Popen
+
+        self.ignore_errors = ignore_errors
+        # 0 => correct program exit
+        # 141 => broken pipe (e.g. because the main program was terminated)
+        self.ignore_status = [0, 141] + ifnone(ignore_status, [])
+        self.timeout = timeout
+        self.args = (args, kw)
+        if mode[0] == "r":
+            self.proc = Popen(*args, stdout=PIPE, text="b" not in mode, **kw)
+            self.stream = self.proc.stdout
+            if self.stream is None:
+                raise ValueError(f"{args}: couldn't open")
+        elif mode[0] == "w":
+            self.proc = Popen(*args, stdin=PIPE, text="b" not in mode, **kw)
+            self.stream = self.proc.stdin
+            if self.stream is None:
+                raise ValueError(f"{args}: couldn't open")
+        self.status = None
+
+    def __str__(self):
+        return f"<Pipe {self.args}>"
+
+    def check_status(self):
+        """Poll the process and handle any errors."""
+        status = self.proc.poll()
+        if status is not None:
+            self.wait_for_child()
+
+    def is_running(self) -> bool:
+        return self.proc.poll() is None
+
+    def wait_for_child(self):
+        """Check the status variable and raise an exception if necessary."""
+        if self.status is not None:
+            return
+        self.status = self.proc.wait()
+        if self.status not in self.ignore_status and not self.ignore_errors:
+            raise Exception(f"{self.args}: exit {self.status} (read)")
+
+    def read(self, *args, **kw):
+        """Wrap stream.read and checks status."""
+        result = self.stream.read(*args, **kw)
+        self.check_status()
+        return result
+
+    def write(self, *args, **kw):
+        """Wrap stream.write and checks status."""
+        result = self.stream.write(*args, **kw)
+        self.check_status()
+        return result
+
+    def readline(self, *args, **kw):
+        """Wrap stream.readLine and checks status."""
+        result = self.stream.readline(*args, **kw)
+        self.status = self.proc.poll()
+        self.check_status()
+        return result
+
+    def close(self):
+        """Wrap stream.close, wait for the subprocess, and handle errors."""
+        self.stream.close()
+        self.status = self.proc.wait(self.timeout)
+        self.wait_for_child()
+
+    def __iter__(self):
+        retval = self.readline()
+        while retval:
+            yield retval
+            retval = self.readline()
+
+    def __enter__(self):
+        """Context handler."""
+        return self
+
+    def __exit__(self, etype, value, traceback):
+        """Context handler."""
+        self.close()
