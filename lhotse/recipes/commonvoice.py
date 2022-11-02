@@ -22,7 +22,12 @@ from tqdm.auto import tqdm
 from lhotse import load_manifest, validate_recordings_and_supervisions
 from lhotse.audio import Recording, RecordingSet
 from lhotse.supervision import SupervisionSegment, SupervisionSet
-from lhotse.utils import Pathlike, is_module_available, urlretrieve_progress
+from lhotse.utils import (
+    Pathlike,
+    is_module_available,
+    safe_extract,
+    urlretrieve_progress,
+)
 
 DEFAULT_COMMONVOICE_URL = "https://voice-prod-bundler-ee1969a6ce8178826482b88e843c335139bd3fb4.s3.amazonaws.com"
 DEFAULT_COMMONVOICE_RELEASE = "cv-corpus-5.1-2020-06-22"
@@ -94,7 +99,7 @@ def download_commonvoice(
         logging.info(f"Unpacking archive: {lang}")
         shutil.rmtree(part_dir, ignore_errors=True)
         with tarfile.open(tar_path) as tar:
-            tar.extractall(path=target_dir)
+            safe_extract(tar, path=target_dir)
         completed_detector.touch()
 
 
