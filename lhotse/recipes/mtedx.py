@@ -43,7 +43,12 @@ from lhotse.qa import (
     remove_missing_recordings_and_supervisions,
     trim_supervisions_to_recordings,
 )
-from lhotse.utils import Pathlike, is_module_available, urlretrieve_progress
+from lhotse.utils import (
+    Pathlike,
+    is_module_available,
+    safe_extract,
+    urlretrieve_progress,
+)
 
 # Keep Markings such as vowel signs, all letters, and decimal numbers
 VALID_CATEGORIES = ("Mc", "Mn", "Ll", "Lm", "Lo", "Lt", "Lu", "Nd", "Zs")
@@ -113,7 +118,7 @@ def download_mtedx(
             desc=f"Downloading MTEDx {lang}",
         )
         with tarfile.open(tar_path) as tar:
-            tar.extractall(path=target_dir)
+            safe_extract(tar, path=target_dir)
         completed_detector.touch()
 
     return target_dir

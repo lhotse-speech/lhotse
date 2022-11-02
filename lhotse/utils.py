@@ -461,6 +461,35 @@ def urlretrieve_progress(url, filename=None, data=None, desc=None):
         return urlretrieve(url=url, filename=filename, reporthook=reporthook, data=data)
 
 
+def safe_extract(
+    tar: Any,
+    path: Pathlike = ".",
+    members: Optional[List[str]] = None,
+    *,
+    numeric_owner: bool = False,
+) -> None:
+    """
+    Extracts a tar file in a safe way, avoiding path traversal attacks.
+    See: https://github.com/lhotse-speech/lhotse/pull/872
+    """
+
+    def _is_within_directory(directory, target):
+
+        abs_directory = directory.resolve()
+        abs_target = target.resolve()
+
+        return abs_directory in abs_target.parents
+
+    path = Path(path)
+
+    for member in tar.getmembers():
+        member_path = path / member.name
+        if not _is_within_directory(path, member_path):
+            raise Exception("Attempted Path Traversal in Tar File")
+
+    tar.extractall(path, members, numeric_owner=numeric_owner)
+
+
 class nullcontext(AbstractContextManager):
     """Context manager that does no additional processing.
 
@@ -625,8 +654,12 @@ def is_none_or_gt(value, threshold) -> bool:
     return value is None or value > threshold
 
 
-def is_equal_or_contains(value: Union[T, Sequence[T]], other: T) -> bool:
-    return value == other or (isinstance(value, Sequence) and other in value)
+def is_equal_or_contains(
+    value: Union[T, Sequence[T]], other: Union[T, Sequence[T]]
+) -> bool:
+    value = to_list(value)
+    other = to_list(other)
+    return set(other).issubset(set(value))
 
 
 def is_module_available(*modules: str) -> bool:
@@ -665,6 +698,11 @@ def ifnone(item: Optional[Any], alt_item: Any) -> Any:
 def to_list(item: Union[Any, Sequence[Any]]) -> List[Any]:
     """Convert ``item`` to a list if it is not already a list."""
     return item if isinstance(item, list) else [item]
+
+
+def to_hashable(item: Any) -> Any:
+    """Convert ``item`` to a hashable type if it is not already hashable."""
+    return tuple(item) if isinstance(item, list) else item
 
 
 def lens_to_mask(lens: torch.IntTensor) -> torch.Tensor:

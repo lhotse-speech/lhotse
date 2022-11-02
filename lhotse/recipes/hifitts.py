@@ -36,7 +36,7 @@ from lhotse import (
 )
 from lhotse.recipes.utils import manifests_exist, read_manifests_if_cached
 from lhotse.serialization import load_jsonl
-from lhotse.utils import Pathlike, urlretrieve_progress
+from lhotse.utils import Pathlike, safe_extract, urlretrieve_progress
 
 ID2SPEAKER = {
     "92": "Cori Samuel",
@@ -97,7 +97,7 @@ def download_hifitts(
         )
     shutil.rmtree(part_dir, ignore_errors=True)
     with tarfile.open(tar_path) as tar:
-        tar.extractall(path=target_dir)
+        safe_extract(tar, path=target_dir)
     completed_detector.touch()
 
     return part_dir
