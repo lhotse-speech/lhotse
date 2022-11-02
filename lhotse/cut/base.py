@@ -456,6 +456,8 @@ class Cut:
         from .set import CutSet
 
         cuts = []
+        # Remove zero-duration supervisions from the cut, since these cannot be indexed.
+        self.supervisions = [s for s in self.supervisions if s.duration > 0]
         supervisions_index = self.index_supervisions(index_mixed_tracks=True)
         for segment in self.supervisions:
             if min_duration is None:
