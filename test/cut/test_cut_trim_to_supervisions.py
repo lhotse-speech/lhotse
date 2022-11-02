@@ -39,7 +39,7 @@ def mono_cut():
 
 
 @pytest.fixture
-def multi_cut_with_single_channel_supervisions():
+def multi_cut():
     """
     Scenario::
                   ╔══════════════════════════════  MultiCut  ═════════════════╗
@@ -345,10 +345,7 @@ def test_cut_trim_to_supervisions_extend_handles_end_of_recording(mono_cut):
     assert c2_s1.duration == 3.0
 
 
-def test_multi_cut_trim_to_supervisions_keep_all_channels(
-    multi_cut_with_single_channel_supervisions,
-):
-    multi_cut = multi_cut_with_single_channel_supervisions
+def test_multi_cut_trim_to_supervisions_keep_all_channels(multi_cut):
     cuts = multi_cut.trim_to_supervisions(
         keep_overlapping=False, keep_all_channels=True
     )
@@ -364,10 +361,7 @@ def test_multi_cut_trim_to_supervisions_keep_all_channels(
         assert cut.channel == multi_cut.channel
 
 
-def test_multi_cut_trim_to_supervisions_do_not_keep_all_channels(
-    multi_cut_with_single_channel_supervisions,
-):
-    multi_cut = multi_cut_with_single_channel_supervisions
+def test_multi_cut_trim_to_supervisions_do_not_keep_all_channels(multi_cut):
     cuts = multi_cut.trim_to_supervisions(
         keep_overlapping=False, keep_all_channels=False
     )
@@ -404,10 +398,7 @@ def test_multi_cut_with_multi_channel_sup_trim_to_supervisions_do_not_keep_all_c
         assert cut.channel == original_sup.channel
 
 
-def test_multi_cut_trim_to_supervisions_do_not_keep_all_channels_raises(
-    multi_cut_with_single_channel_supervisions,
-):
-    multi_cut = multi_cut_with_single_channel_supervisions
+def test_multi_cut_trim_to_supervisions_do_not_keep_all_channels_raises(multi_cut):
     with pytest.raises(AssertionError):
         cuts = multi_cut.trim_to_supervisions(
             keep_overlapping=True, keep_all_channels=False
