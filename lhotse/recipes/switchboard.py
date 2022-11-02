@@ -18,7 +18,7 @@ from typing import Dict, Optional, Union
 from lhotse import fix_manifests, validate_recordings_and_supervisions
 from lhotse.audio import Recording, RecordingSet
 from lhotse.supervision import SupervisionSegment, SupervisionSet
-from lhotse.utils import Pathlike, check_and_rglob, urlretrieve_progress
+from lhotse.utils import Pathlike, check_and_rglob, safe_extract, urlretrieve_progress
 
 SWBD_TEXT_URL = "http://www.isip.piconepress.com/projects/switchboard/releases/switchboard_word_alignments.tar.gz"
 
@@ -129,7 +129,7 @@ def download_and_untar(
     if force_download or not tar_path.is_file():
         urlretrieve_progress(url, filename=tar_path, desc=f"Downloading {tar_name}")
     with tarfile.open(tar_path) as tar:
-        tar.extractall(path=target_dir)
+        safe_extract(tar, path=target_dir)
     return transcript_dir
 
 

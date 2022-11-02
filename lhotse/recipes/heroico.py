@@ -8,7 +8,7 @@ from typing import Any, Dict, NamedTuple, Optional, Union
 from lhotse import validate_recordings_and_supervisions
 from lhotse.audio import AudioSource, Recording, RecordingSet
 from lhotse.supervision import SupervisionSegment, SupervisionSet
-from lhotse.utils import Pathlike, urlretrieve_progress
+from lhotse.utils import Pathlike, safe_extract, urlretrieve_progress
 
 # files containing transcripts
 heroico_dataset_answers = "heroico-answers.txt"
@@ -36,7 +36,7 @@ def download_heroico(
             f"{url}/{tar_name}", filename=tar_path, desc="Downloading Heroico"
         )
     with tarfile.open(tar_path) as tar:
-        tar.extractall(path=target_dir)
+        safe_extract(tar, path=target_dir)
     completed_detector.touch()
 
     return target_dir

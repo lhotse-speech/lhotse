@@ -461,6 +461,35 @@ def urlretrieve_progress(url, filename=None, data=None, desc=None):
         return urlretrieve(url=url, filename=filename, reporthook=reporthook, data=data)
 
 
+def safe_extract(
+    tar: Any,
+    path: Pathlike = ".",
+    members: Optional[List[str]] = None,
+    *,
+    numeric_owner: bool = False,
+) -> None:
+    """
+    Extracts a tar file in a safe way, avoiding path traversal attacks.
+    See: https://github.com/lhotse-speech/lhotse/pull/872
+    """
+
+    def _is_within_directory(directory, target):
+
+        abs_directory = directory.resolve()
+        abs_target = target.resolve()
+
+        return abs_directory in abs_target.parents
+
+    path = Path(path)
+
+    for member in tar.getmembers():
+        member_path = path / member.name
+        if not _is_within_directory(path, member_path):
+            raise Exception("Attempted Path Traversal in Tar File")
+
+    tar.extractall(path, members, numeric_owner=numeric_owner)
+
+
 class nullcontext(AbstractContextManager):
     """Context manager that does no additional processing.
 
