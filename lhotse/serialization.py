@@ -2,6 +2,8 @@ import itertools
 import json
 import sys
 import warnings
+from codecs import StreamReader, StreamWriter
+from io import BytesIO, StringIO
 from pathlib import Path
 from typing import Any, Dict, Generator, Iterable, Optional, Type, Union
 
@@ -35,6 +37,9 @@ def open_best(path: Pathlike, mode: str = "r"):
             raise ValueError(
                 f"Cannot open stream for '-' with mode other 'r' or 'w' (got: '{mode}')"
             )
+
+    if isinstance(path, (BytesIO, StringIO, StreamWriter, StreamReader)):
+        return path
 
     if str(path).startswith("pipe:"):
         return open_pipe(path[5:], mode)

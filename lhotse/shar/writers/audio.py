@@ -1,11 +1,15 @@
+import codecs
+import json
 from functools import partial
 from io import BytesIO
+from typing import List
 
 import numpy as np
 import torch
 import torchaudio
 from typing_extensions import Literal
 
+from lhotse import Recording
 from lhotse.shar.writers.tar import TarWriter
 
 
@@ -24,6 +28,12 @@ class AudioTarWriter:
         ...     w.write("audio2", audio2_array)  # etc.
 
     It would create files such as ``some_dir/audio.000000.tar``, ``some_dir/audio.000001.tar``, etc.
+
+    It's also possible to use ``AudioTarWriter`` with automatic sharding disabled::
+
+        >>> with AudioTarWriter("some_dir/audio.tar", shard_size=None, format="flac") as w:
+        ...     w.write("audio1", audio1_array)
+        ...     w.write("audio2", audio2_array)  # etc.
 
     See also: :class:`~lhotse.shar.writers.tar.TarWriter`, :class:`~lhotse.shar.writers.array.ArrayTarWriter`
     """
@@ -52,7 +62,22 @@ class AudioTarWriter:
     def close(self):
         self.tar_writer.close()
 
-    def write(self, key: str, value: np.ndarray, sampling_rate: int) -> str:
+    @property
+    def output_paths(self) -> List[str]:
+        return self.tar_writer.output_paths
+
+    def write_placeholder(self, key: str) -> None:
+        self.tar_writer.write(f"{key}.nodata", BytesIO())
+        self.tar_writer.write(f"{key}.nometa", BytesIO(), count=False)
+
+    def write(
+        self,
+        key: str,
+        value: np.ndarray,
+        sampling_rate: int,
+        manifest: Recording,
+    ) -> None:
+        # Write binary data
         stream = BytesIO()
         self.save_fn(
             stream,
@@ -61,3 +86,12 @@ class AudioTarWriter:
             format=self.format,
         )
         self.tar_writer.write(f"{key}.{self.format}", stream)
+
+        # Write text manifest afterwards
+        json_stream = BytesIO()
+        print(
+            json.dumps(manifest.to_dict()),
+            file=codecs.getwriter("utf-8")(json_stream),
+        )
+        json_stream.seek(0)
+        self.tar_writer.write(f"{key}.json", json_stream, count=False)

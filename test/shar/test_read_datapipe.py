@@ -9,6 +9,7 @@ from lhotse.shar import load_shar_datapipe
 dp = pytest.importorskip("torchdata")
 
 
+@pytest.mark.skip(reason="We don't support datapipes for now.")
 def test_shar_datapipe_reader(cuts: CutSet, shar_dir: Path):
     # Prepare system under test
     cuts_iter = load_shar_datapipe(shar_dir)

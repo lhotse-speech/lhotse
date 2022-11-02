@@ -1,3 +1,6 @@
+import logging
+from typing import List, Optional
+
 from lhotse import CutSet
 from lhotse.cut import Cut
 
@@ -18,10 +21,19 @@ class CutShardWriter:
     See also: :class:`~lhotse.shar.writers.tar.TarWriter`
     """
 
-    def __init__(self, pattern: str, shard_size: int = 1000):
+    def __init__(self, pattern: str, shard_size: Optional[int] = 1000):
         self.pattern = pattern
+        if not self.sharding_enabled and shard_size is not None:
+            logging.warning(
+                "Sharding is disabled because `pattern` doesn't contain a formatting marker (e.g., '%06d'), "
+                "but shard_size is not None - ignoring shard_size."
+            )
         self.shard_size = shard_size
         self.reset()
+
+    @property
+    def sharding_enabled(self) -> bool:
+        return "%" in self.pattern
 
     def reset(self):
         self.fname = None
@@ -43,20 +55,30 @@ class CutShardWriter:
     def _next_stream(self):
         self.close()
 
-        # TODO: support gopen-like capabilities
-        self.fname = self.pattern % self.num_shards
+        if self.sharding_enabled:
+            self.fname = self.pattern % self.num_shards
+            self.num_shards += 1
+        else:
+            self.fname = self.pattern
+
         self.stream = CutSet.open_writer(self.fname)
 
-        self.num_shards += 1
         self.num_items = 0
 
-    def write(self, cut: Cut, flush: bool = False) -> bool:
+    @property
+    def output_paths(self) -> List[str]:
+        if self.sharding_enabled:
+            return [self.pattern % i for i in range(self.num_shards)]
+        return [self.pattern]
+
+    def write(self, cut: Cut, flush: bool = False) -> None:
         if (
             # the first item written
             self.num_items_total == 0
             or (
                 # desired shard size achieved
-                self.num_items > 0
+                self.sharding_enabled
+                and self.num_items > 0
                 and self.num_items % self.shard_size == 0
             )
         ):
@@ -65,6 +87,3 @@ class CutShardWriter:
         self.stream.write(cut, flush=flush)
         self.num_items += 1
         self.num_items_total += 1
-
-    def open_manifest(self):
-        raise NotImplemented

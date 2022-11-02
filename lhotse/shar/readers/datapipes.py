@@ -64,6 +64,8 @@ class CutsReader(IterDataPipe):
 
 class SharReader(IterDataPipe):
     def __init__(self, *component_datapipes: IterDataPipe) -> None:
+        raise NotImplementedError("We don't support this yet.")
+
         self.dps = sorted(
             component_datapipes, key=lambda dp: isinstance(dp, CutsReader), reverse=True
         )
@@ -83,6 +85,7 @@ class SharReader(IterDataPipe):
 
     def __iter__(self):
         for cut, *items in self.zipped:
+            # TODO: add support for changes in Shar that require pairwise iteration over items in tarfiles
             for tarpath, tarstream in items:
                 tarpath = Path(tarpath)
                 item_id = tarpath.stem

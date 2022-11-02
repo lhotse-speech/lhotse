@@ -1,5 +1,7 @@
+import logging
 import tarfile
 from io import BytesIO
+from typing import List, Optional
 
 from lhotse.serialization import open_best
 
@@ -22,16 +24,34 @@ class TarWriter:
 
     It would create files such as ``some_dir/data.000000.tar``, ``some_dir/data.000001.tar``, etc.
 
+    It's also possible to use ``TarWriter`` with automatic sharding disabled::
+
+        >>> with TarWriter("some_dir/data.tar", shard_size=None) as w:
+        ...     w.write("blob1", binary_blob1)
+        ...     w.write("blob2", binary_blob2)  # etc.
+
     This class is heavily inspired by the WebDataset library:
     https://github.com/webdataset/webdataset
     """
 
-    def __init__(self, pattern: str, shard_size: int):
+    def __init__(self, pattern: str, shard_size: Optional[int]):
         self.pattern = pattern
-        assert "%" in self.pattern
+        if self.sharding_enabled and shard_size is None:
+            raise RuntimeError(
+                "shard_size must be specified when sharding is enabled via a formatting marker such as '%06d'"
+            )
+        if not self.sharding_enabled and shard_size is not None:
+            logging.warning(
+                "Sharding is disabled because `pattern` doesn't contain a formatting marker (e.g., '%06d'), "
+                "but shard_size is not None - ignoring shard_size."
+            )
         self.shard_size = shard_size
         self.gzip = pattern.endswith(".gz")
         self.reset()
+
+    @property
+    def sharding_enabled(self) -> bool:
+        return "%" in self.pattern
 
     def reset(self):
         self.fname = None
@@ -57,22 +77,33 @@ class TarWriter:
     def _next_stream(self):
         self.close()
 
-        self.fname = self.pattern % self.num_shards
+        if self.sharding_enabled:
+            self.fname = self.pattern % self.num_shards
+            self.num_shards += 1
+        else:
+            self.fname = self.pattern
+
         self.stream = open_best(self.fname, "wb")
         self.tarstream = tarfile.open(
             fileobj=self.stream, mode="w|gz" if self.gzip else "w|"
         )
 
-        self.num_shards += 1
         self.num_items = 0
 
-    def write(self, key: str, data: BytesIO):
-        if (
+    @property
+    def output_paths(self) -> List[str]:
+        if self.sharding_enabled:
+            return [self.pattern % i for i in range(self.num_shards)]
+        return [self.pattern]
+
+    def write(self, key: str, data: BytesIO, count: bool = True):
+        if count and (
             # the first item written
             self.num_items_total == 0
             or (
                 # desired shard size achieved
-                self.num_items > 0
+                self.sharding_enabled
+                and self.num_items > 0
                 and self.num_items % self.shard_size == 0
             )
         ):
@@ -82,5 +113,6 @@ class TarWriter:
         data.seek(0)
         ti.size = len(data.getvalue())
         self.tarstream.addfile(ti, data)
-        self.num_items += 1
-        self.num_items_total += 1
+        if count:
+            self.num_items += 1
+            self.num_items_total += 1

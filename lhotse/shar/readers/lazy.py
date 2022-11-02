@@ -1,5 +1,4 @@
 import random
-import tarfile
 from pathlib import Path
 from typing import Dict, Optional, Sequence
 
@@ -9,8 +8,8 @@ from lhotse.lazy import (
     LazyJsonlIterator,
     count_newlines_fast,
 )
-from lhotse.serialization import extension_contains, open_best
-from lhotse.shar.readers.utils import fill_shar_placeholder
+from lhotse.serialization import extension_contains
+from lhotse.shar.readers.tar import TarIterator
 from lhotse.utils import Pathlike, exactly_one_not_null
 
 
@@ -118,7 +117,7 @@ class LazySharIterator(ImitatesDict):
         for field in self.fields:
             assert (
                 len(self.streams[field]) == self.num_shards
-            ), f"Expected {self.num_shards} shards available for field '{field}' but found {len(self.streams[field])}"
+            ), f"Expected {self.num_shards} shards available for field '{field}' but found {len(self.streams[field])}: {self.streams[field]}"
 
         self.shards = [
             {field: self.streams[field][shard_idx] for field in self.streams}
@@ -167,27 +166,29 @@ class LazySharIterator(ImitatesDict):
             self.shards_for_dataloading if self.split_for_dataloading else self.shards
         )
         for shard in shards:
-            # TODO: more careful open/close using some ctxmanager and with statement
+            # Iterate over cuts for the current shard
             cuts = LazyJsonlIterator(shard["cuts"])
+
+            # Iterate over tarfiles containing data for specific fields of each cut
             tarpaths = {field: path for field, path in shard.items() if field != "cuts"}
-            tars = {
-                field: tarfile.open(fileobj=open_best(path, mode="rb"), mode="r|*")
-                for field, path in tarpaths.items()
-            }
-            for cut, *tarinfos in zip(cuts, *tars.values()):
-                for field, tar_f, tarinfo in zip(tars.keys(), tars.values(), tarinfos):
+
+            # Open every tarfile so it's ready for streaming
+            tars = {field: TarIterator(path) for field, path in tarpaths.items()}
+
+            # *tardata contains all fields for a single cut (recording, features, array, etc.)
+            for cut, *tardata in zip(cuts, *tars.values()):
+                for (field, tar_f, (maybe_manifest, data_path)) in zip(
+                    tars.keys(),
+                    tars.values(),
+                    tardata,
+                ):
+                    if maybe_manifest is None:
+                        continue  # No value available for the current field for this cut.
                     assert (
-                        Path(tarinfo.path).stem == cut.id
-                    ), f"Mismatched IDs: cut ID is '{cut.id}' but found data with name '{tarinfo.path}'"
-                    fill_shar_placeholder(
-                        cut,
-                        field=field,
-                        data=tar_f.extractfile(tarinfo).read(),
-                        tarpath=tarinfo.path,
-                    )
+                        data_path.stem == cut.id
+                    ), f"Mismatched IDs: cut ID is '{cut.id}' but found data with name '{data_path}'"
+                    setattr(cut, field, maybe_manifest)
                 yield cut
-            for tar_f in tars.values():
-                tar_f.close()
 
     def __len__(self) -> int:
         if self._len is None:

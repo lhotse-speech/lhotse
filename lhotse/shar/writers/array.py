@@ -1,9 +1,14 @@
+import codecs
+import json
 from io import BytesIO
+from typing import List, Union
 
 import lilcom
 import numpy as np
 from typing_extensions import Literal
 
+from lhotse import Features
+from lhotse.array import Array, TemporalArray
 from lhotse.shar.writers.tar import TarWriter
 
 
@@ -21,8 +26,13 @@ class ArrayTarWriter:
         ...     w.write("fbank1", fbank1_array)
         ...     w.write("fbank2", fbank2_array)  # etc.
 
-
     It would create files such as ``some_dir/fbank.000000.tar``, ``some_dir/fbank.000001.tar``, etc.
+
+    It's also possible to use ``ArrayTarWriter`` with automatic sharding disabled::
+
+        >>> with ArrayTarWriter("some_dir/fbank.tar", shard_size=None, compression="numpy") as w:
+        ...     w.write("fbank1", fbank1_array)
+        ...     w.write("fbank2", fbank2_array)  # etc.
 
     See also: :class:`~lhotse.shar.writers.tar.TarWriter`, :class:`~lhotse.shar.writers.audio.AudioTarWriter`
     """
@@ -48,8 +58,22 @@ class ArrayTarWriter:
     def close(self):
         self.tar_writer.close()
 
-    def write(self, key: str, value: np.ndarray) -> str:
+    @property
+    def output_paths(self) -> List[str]:
+        return self.tar_writer.output_paths
 
+    def write_placeholder(self, key: str) -> None:
+        self.tar_writer.write(f"{key}.nodata", BytesIO())
+        self.tar_writer.write(f"{key}.nometa", BytesIO(), count=False)
+
+    def write(
+        self,
+        key: str,
+        value: np.ndarray,
+        manifest: Union[Features, Array, TemporalArray],
+    ) -> None:
+
+        # Write binary data
         if self.compression == "lilcom":
             assert np.issubdtype(
                 value.dtype, np.floating
@@ -63,3 +87,12 @@ class ArrayTarWriter:
             ext = ".npy"
 
         self.tar_writer.write(key + ext, stream)
+
+        # Write text manifest afterwards
+        json_stream = BytesIO()
+        print(
+            json.dumps(manifest.to_dict()),
+            file=codecs.getwriter("utf-8")(json_stream),
+        )
+        json_stream.seek(0)
+        self.tar_writer.write(f"{key}.json", json_stream, count=False)
