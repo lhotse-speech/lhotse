@@ -654,8 +654,12 @@ def is_none_or_gt(value, threshold) -> bool:
     return value is None or value > threshold
 
 
-def is_equal_or_contains(value: Union[T, Sequence[T]], other: T) -> bool:
-    return value == other or (isinstance(value, Sequence) and other in value)
+def is_equal_or_contains(
+    value: Union[T, Sequence[T]], other: Union[T, Sequence[T]]
+) -> bool:
+    value = to_list(value)
+    other = to_list(other)
+    return set(other).issubset(set(value))
 
 
 def is_module_available(*modules: str) -> bool:
@@ -694,6 +698,11 @@ def ifnone(item: Optional[Any], alt_item: Any) -> Any:
 def to_list(item: Union[Any, Sequence[Any]]) -> List[Any]:
     """Convert ``item`` to a list if it is not already a list."""
     return item if isinstance(item, list) else [item]
+
+
+def to_hashable(item: Any) -> Any:
+    """Convert ``item`` to a hashable type if it is not already hashable."""
+    return tuple(item) if isinstance(item, list) else item
 
 
 def lens_to_mask(lens: torch.IntTensor) -> torch.Tensor:
