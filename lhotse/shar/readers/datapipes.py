@@ -8,7 +8,7 @@ import torchaudio
 
 from lhotse.cut import Cut
 from lhotse.lazy import LazyManifestIterator
-from lhotse.shar.readers.utils import fill_shar_placeholder
+from lhotse.shar.utils import fill_shar_placeholder
 from lhotse.utils import Pathlike, is_module_available
 from lhotse.workarounds import AltGzipFile
 

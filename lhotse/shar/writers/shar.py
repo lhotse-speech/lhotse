@@ -8,6 +8,7 @@ from lhotse import AudioSource, Features, fastcopy
 from lhotse.array import Array, TemporalArray
 from lhotse.audio import Recording
 from lhotse.cut import Cut
+from lhotse.shar.utils import to_shar_placeholder
 from lhotse.shar.writers.array import ArrayTarWriter
 from lhotse.shar.writers.audio import AudioTarWriter
 from lhotse.shar.writers.cut import JsonlShardWriter
@@ -108,7 +109,7 @@ class SharWriter:
         if "recording" in self.fields:
             if cut.has_recording:
                 data = cut.load_audio()
-                recording = to_placeholder(cut.recording)
+                recording = to_shar_placeholder(cut.recording)
                 self.writers["recording"].write(
                     cut.id, data, cut.sampling_rate, manifest=recording
                 )
@@ -124,7 +125,7 @@ class SharWriter:
         if "features" in self.fields:
             if cut.has_features:
                 data = cut.load_features()
-                features = to_placeholder(cut.features)
+                features = to_shar_placeholder(cut.features)
                 self.writers["features"].write(cut.id, data, manifest=features)
                 cut = fastcopy(cut, features=features)
             else:
@@ -151,7 +152,7 @@ class SharWriter:
                     self.writers[key].write({"cut_id": cut.id, key: val})
                 else:
                     data = cut.load_custom(key)
-                    placeholder_obj = to_placeholder(val)
+                    placeholder_obj = to_shar_placeholder(val)
                     kwargs = {}
                     if isinstance(val, Recording):
                         kwargs["sampling_rate"] = val.sampling_rate
@@ -175,34 +176,6 @@ class SharWriter:
                 continue
 
         self.writers["cuts"].write(cut)
-
-
-Manifest = TypeVar("Manifest", Recording, Features, Array, TemporalArray)
-
-
-def to_placeholder(manifest: Manifest) -> Manifest:
-    if isinstance(manifest, Recording):
-        assert (
-            len(manifest.sources) == 1
-        ), "Multiple AudioSources are not supported yet."
-        # TODO: modify Recording's start/duration/num_samples if needed to match the Cut (in case we read subset of audio)
-        return fastcopy(
-            manifest,
-            sources=[
-                AudioSource(type="shar", channels=src.channels, source="")
-                for src in manifest.sources
-            ],
-        )
-    # TODO: modify Features/TemporalArray's start/duration/num_frames if needed to match the Cut (in case we read subset of array)
-    elif isinstance(manifest, (Array, Features)):
-        return fastcopy(manifest, storage_type="shar", storage_path="", storage_key="")
-    elif isinstance(manifest, TemporalArray):
-        return fastcopy(
-            manifest,
-            array=fastcopy(
-                manifest.array, storage_type="shar", storage_path="", storage_key=""
-            ),
-        )
 
 
 def resolve_writer(name: str) -> Tuple[FieldWriter, str]:

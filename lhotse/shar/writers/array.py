@@ -9,6 +9,7 @@ from typing_extensions import Literal
 
 from lhotse import Features
 from lhotse.array import Array, TemporalArray
+from lhotse.shar.utils import to_shar_placeholder
 from lhotse.shar.writers.tar import TarWriter
 
 
@@ -89,6 +90,7 @@ class ArrayTarWriter:
         self.tar_writer.write(key + ext, stream)
 
         # Write text manifest afterwards
+        manifest = to_shar_placeholder(manifest)
         json_stream = BytesIO()
         print(
             json.dumps(manifest.to_dict()),
