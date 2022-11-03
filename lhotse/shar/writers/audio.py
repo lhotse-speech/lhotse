@@ -2,7 +2,7 @@ import codecs
 import json
 from functools import partial
 from io import BytesIO
-from typing import List
+from typing import List, Optional
 
 import numpy as np
 import torch
@@ -41,7 +41,7 @@ class AudioTarWriter:
     def __init__(
         self,
         pattern: str,
-        shard_size: int,
+        shard_size: Optional[int] = 1000,
         format: Literal["wav", "flac", "mp3"] = "flac",
     ):
         self.format = format

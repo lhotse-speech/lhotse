@@ -1,7 +1,7 @@
 import codecs
 import json
 from io import BytesIO
-from typing import List, Union
+from typing import List, Optional, Union
 
 import lilcom
 import numpy as np
@@ -40,7 +40,7 @@ class ArrayTarWriter:
     def __init__(
         self,
         pattern: str,
-        shard_size: int,
+        shard_size: Optional[int] = 1000,
         compression: Literal["numpy", "lilcom"] = "numpy",
         lilcom_tick_power: int = -5,
     ):

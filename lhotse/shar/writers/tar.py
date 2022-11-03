@@ -34,7 +34,7 @@ class TarWriter:
     https://github.com/webdataset/webdataset
     """
 
-    def __init__(self, pattern: str, shard_size: Optional[int]):
+    def __init__(self, pattern: str, shard_size: Optional[int] = 1000):
         self.pattern = pattern
         if self.sharding_enabled and shard_size is None:
             raise RuntimeError(
