@@ -1,11 +1,12 @@
 import random
 from pathlib import Path
-from typing import Dict, Optional, Sequence
+from typing import Dict, Generator, Optional, Sequence, Tuple
 
 from lhotse.lazy import (
     ImitatesDict,
     LazyIteratorChain,
     LazyJsonlIterator,
+    LazyManifestIterator,
     count_newlines_fast,
 )
 from lhotse.serialization import extension_contains
@@ -167,20 +168,26 @@ class LazySharIterator(ImitatesDict):
         )
         for shard in shards:
             # Iterate over cuts for the current shard
-            cuts = LazyJsonlIterator(shard["cuts"])
+            cuts = LazyManifestIterator(shard["cuts"])
 
-            # Iterate over tarfiles containing data for specific fields of each cut
-            tarpaths = {field: path for field, path in shard.items() if field != "cuts"}
+            # Iterate over tarfiles/jsonl containing data for specific fields of each cut
+            field_paths = {
+                field: path for field, path in shard.items() if field != "cuts"
+            }
 
-            # Open every tarfile so it's ready for streaming
-            tars = {field: TarIterator(path) for field, path in tarpaths.items()}
+            # Open every tarfile/jsonl so it's ready for streaming
+            field_iters = {
+                field: TarIterator(path)
+                if extension_contains(".tar", path)
+                else _jsonl_tar_adaptor(LazyJsonlIterator(path), field=field)
+                for field, path in field_paths.items()
+            }
 
-            # *tardata contains all fields for a single cut (recording, features, array, etc.)
-            for cut, *tardata in zip(cuts, *tars.values()):
-                for (field, tar_f, (maybe_manifest, data_path)) in zip(
-                    tars.keys(),
-                    tars.values(),
-                    tardata,
+            # *field_data contains all fields for a single cut (recording, features, array, etc.)
+            for cut, *field_data in zip(cuts, *field_iters.values()):
+                for (field, (maybe_manifest, data_path)) in zip(
+                    field_iters.keys(),
+                    field_data,
                 ):
                     if maybe_manifest is None:
                         continue  # No value available for the current field for this cut.
@@ -197,3 +204,20 @@ class LazySharIterator(ImitatesDict):
 
     def __add__(self, other) -> "LazyIteratorChain":
         return LazyIteratorChain(self, other)
+
+
+def _jsonl_tar_adaptor(
+    jsonl_iter: LazyJsonlIterator, field: str
+) -> Generator[Tuple[Optional[dict], Path], None, None]:
+    """
+    Used to adapt the iteration output of LazyJsonlIterator to mimic that of TarIterator.
+    """
+    for item in jsonl_iter:
+        # Add extension to make sure Path.stem works OK...
+        pseudo_path = Path(f"{item['cut_id']}.dummy")
+        if field not in item:
+            # We got a placeholder
+            item = None
+        else:
+            item = item[field]
+        yield item, pseudo_path

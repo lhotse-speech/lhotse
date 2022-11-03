@@ -1,7 +1,7 @@
 import codecs
 import json
 from io import BytesIO
-from typing import List, Union
+from typing import List, Optional, Union
 
 import lilcom
 import numpy as np
@@ -9,6 +9,7 @@ from typing_extensions import Literal
 
 from lhotse import Features
 from lhotse.array import Array, TemporalArray
+from lhotse.shar.utils import to_shar_placeholder
 from lhotse.shar.writers.tar import TarWriter
 
 
@@ -40,7 +41,7 @@ class ArrayTarWriter:
     def __init__(
         self,
         pattern: str,
-        shard_size: int,
+        shard_size: Optional[int] = 1000,
         compression: Literal["numpy", "lilcom"] = "numpy",
         lilcom_tick_power: int = -5,
     ):
@@ -89,6 +90,7 @@ class ArrayTarWriter:
         self.tar_writer.write(key + ext, stream)
 
         # Write text manifest afterwards
+        manifest = to_shar_placeholder(manifest)
         json_stream = BytesIO()
         print(
             json.dumps(manifest.to_dict()),

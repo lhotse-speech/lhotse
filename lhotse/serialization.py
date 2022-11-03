@@ -232,7 +232,9 @@ class SequentialJsonlWriter:
         except AttributeError:
             pass
         self._maybe_open()
-        print(json.dumps(manifest.to_dict(), ensure_ascii=False), file=self.file)
+        if not isinstance(manifest, dict):
+            manifest = manifest.to_dict()
+        print(json.dumps(manifest, ensure_ascii=False), file=self.file)
         if flush:
             self.file.flush()
 
@@ -392,9 +394,9 @@ class LazyMixin:
         .. warning:: Opening the manifest in this way might cause some methods that
             rely on random access to fail.
         """
-        from lhotse.lazy import LazyJsonlIterator
+        from lhotse.lazy import LazyManifestIterator
 
-        return cls(LazyJsonlIterator(path))
+        return cls(LazyManifestIterator(path))
 
 
 def grouper(n, iterable):
@@ -500,9 +502,13 @@ def resolve_manifest_set_class(item):
         return CutSet
     if isinstance(item, Features):
         return FeatureSet
-    raise ValueError(
+    raise NotALhotseManifest(
         f"No corresponding 'Set' class is known for item of type: {type(item)}"
     )
+
+
+class NotALhotseManifest(Exception):
+    pass
 
 
 def store_manifest(manifest: Manifest, path: Pathlike) -> None:

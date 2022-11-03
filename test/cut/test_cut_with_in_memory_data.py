@@ -171,8 +171,6 @@ def test_cut_move_to_memory_audio_serialization():
 
     cut_with_audio = cut.move_to_memory()
 
-    assert cut.custom is None  # original cut is unmodified
-
     data = cut_with_audio.to_dict()
     cut_deserialized = MonoCut.from_dict(data)
 

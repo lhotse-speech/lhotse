@@ -1,18 +1,18 @@
 import logging
-from typing import List, Optional
+from typing import List, Optional, Union
 
-from lhotse import CutSet
 from lhotse.cut import Cut
+from lhotse.serialization import SequentialJsonlWriter
 
 
-class CutShardWriter:
+class JsonlShardWriter:
     """
-    CutShardWriter writes Cuts into multiple JSONL file shards.
+    JsonlShardWriter writes Cuts or dicts into multiple JSONL file shards.
     The JSONL can be compressed with gzip if the file extension ends with ``.gz``.
 
     Example::
 
-        >>> with CutShardWriter("some_dir/cuts.%06d.jsonl.gz", shard_size=100) as w:
+        >>> with JsonlShardWriter("some_dir/cuts.%06d.jsonl.gz", shard_size=100) as w:
         ...     for cut in ...:
         ...         w.write(cut)
 
@@ -44,6 +44,7 @@ class CutShardWriter:
 
     def __enter__(self):
         self.reset()
+        return self
 
     def __exit__(self, *args, **kwargs):
         self.close()
@@ -61,7 +62,7 @@ class CutShardWriter:
         else:
             self.fname = self.pattern
 
-        self.stream = CutSet.open_writer(self.fname)
+        self.stream = SequentialJsonlWriter(self.fname)
 
         self.num_items = 0
 
@@ -71,7 +72,7 @@ class CutShardWriter:
             return [self.pattern % i for i in range(self.num_shards)]
         return [self.pattern]
 
-    def write(self, cut: Cut, flush: bool = False) -> None:
+    def write(self, data: Union[Cut, dict], flush: bool = False) -> None:
         if (
             # the first item written
             self.num_items_total == 0
@@ -84,6 +85,9 @@ class CutShardWriter:
         ):
             self._next_stream()
 
-        self.stream.write(cut, flush=flush)
+        self.stream.write(data, flush=flush)
         self.num_items += 1
         self.num_items_total += 1
+
+    def write_placeholder(self, cut_id: str, flush: bool = False) -> None:
+        self.write({"cut_id": cut_id}, flush=flush)

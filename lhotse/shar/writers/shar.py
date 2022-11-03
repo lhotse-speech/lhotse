@@ -1,6 +1,6 @@
 import warnings
 from functools import partial
-from typing import Any, Callable, Dict, List, Optional, Type, TypeVar, Union
+from typing import Dict, List, Optional, Tuple, Type, TypeVar, Union
 
 from typing_extensions import Literal
 
@@ -8,12 +8,13 @@ from lhotse import AudioSource, Features, fastcopy
 from lhotse.array import Array, TemporalArray
 from lhotse.audio import Recording
 from lhotse.cut import Cut
+from lhotse.shar.utils import to_shar_placeholder
 from lhotse.shar.writers.array import ArrayTarWriter
 from lhotse.shar.writers.audio import AudioTarWriter
-from lhotse.shar.writers.cut import CutShardWriter
+from lhotse.shar.writers.cut import JsonlShardWriter
 from lhotse.utils import Pathlike, ifnone
 
-WriterName = Literal["wav", "flac", "mp3", "lilcom", "numpy"]
+WriterName = Literal["wav", "flac", "mp3", "lilcom", "numpy", "jsonl"]
 FieldWriterInstance = Union[AudioTarWriter, ArrayTarWriter]
 FieldWriter = Type[FieldWriterInstance]
 
@@ -59,10 +60,7 @@ class SharWriter:
     def __init__(
         self,
         output_dir: Pathlike,
-        fields: Dict[
-            str,
-            Union[str, FieldWriter, Callable[[Any], FieldWriterInstance]],
-        ],
+        fields: Dict[str, str],
         shard_size: Optional[int] = 1000,
         warn_unused_fields: bool = True,
     ) -> None:
@@ -73,15 +71,15 @@ class SharWriter:
         self.shard_suffix = ".%06d" if self.sharding_enabled else ""
 
         self.writers = {
-            "cuts": CutShardWriter(
+            "cuts": JsonlShardWriter(
                 pattern=_create_cuts_output_url(self.output_dir, self.shard_suffix),
                 shard_size=self.shard_size,
             ),
         }
         for field, writer_type in self.fields.items():
-            writer_type = resolve_writer(writer_type)
-            self.writers[field] = writer_type(
-                pattern=f"{self.output_dir}/{field}{self.shard_suffix}.tar",
+            make_writer_fn, ext = resolve_writer(writer_type)
+            self.writers[field] = make_writer_fn(
+                pattern=f"{self.output_dir}/{field}{self.shard_suffix}{ext}",
                 shard_size=self.shard_size,
             )
 
@@ -107,11 +105,11 @@ class SharWriter:
 
     def write(self, cut: Cut) -> None:
 
-        # handle audio
+        # Handle audio.
         if "recording" in self.fields:
             if cut.has_recording:
                 data = cut.load_audio()
-                recording = to_placeholder(cut.recording)
+                recording = to_shar_placeholder(cut.recording)
                 self.writers["recording"].write(
                     cut.id, data, cut.sampling_rate, manifest=recording
                 )
@@ -123,11 +121,11 @@ class SharWriter:
                 "Found cut with 'recording' field that is not specified for Shar writing."
             )
 
-        # handle features
+        # Handle features.
         if "features" in self.fields:
             if cut.has_features:
                 data = cut.load_features()
-                features = to_placeholder(cut.features)
+                features = to_shar_placeholder(cut.features)
                 self.writers["features"].write(cut.id, data, manifest=features)
                 cut = fastcopy(cut, features=features)
             else:
@@ -137,27 +135,32 @@ class SharWriter:
                 "Found cut with 'features' field that is not specified for Shar writing."
             )
 
-        # handle custom
+        # Handle custom data and non-data attributes.
         for key in self.fields:
+
+            # Skip fields already taken care of.
             if key in ["recording", "features"]:
                 continue
+
+            # Check if the custom attribute is available: if yes
             if cut.has_custom(key):
                 val = getattr(cut, key)
                 if not isinstance(val, (Array, TemporalArray, Recording)):
-                    raise RuntimeError(
-                        f"Expected custom field to be Array, TemporalArray, or Recording, "
-                        f"but got {type(val)} instead."
+                    assert isinstance(
+                        self.writers[key], JsonlShardWriter
+                    ), f"Expected writer type 'jsonl' (got '{self.fields[key]}') for non-data field '{key}'."
+                    self.writers[key].write({"cut_id": cut.id, key: val})
+                else:
+                    data = cut.load_custom(key)
+                    placeholder_obj = to_shar_placeholder(val)
+                    kwargs = {}
+                    if isinstance(val, Recording):
+                        kwargs["sampling_rate"] = val.sampling_rate
+                    self.writers[key].write(
+                        cut.id, data, manifest=placeholder_obj, **kwargs
                     )
-                data = cut.load_custom(key)
-                placeholder_obj = to_placeholder(val)
-                kwargs = {}
-                if isinstance(val, Recording):
-                    kwargs["sampling_rate"] = val.sampling_rate
-                self.writers[key].write(
-                    cut.id, data, manifest=placeholder_obj, **kwargs
-                )
-                cut = fastcopy(cut, custom=cut.custom.copy())
-                setattr(cut, key, placeholder_obj)
+                    cut = fastcopy(cut, custom=cut.custom.copy())
+                    setattr(cut, key, placeholder_obj)
             else:
                 self.writers[key].write_placeholder(cut.id)
 
@@ -175,51 +178,19 @@ class SharWriter:
         self.writers["cuts"].write(cut)
 
 
-Manifest = TypeVar("Manifest", Recording, Features, Array, TemporalArray)
-
-
-def to_placeholder(manifest: Manifest) -> Manifest:
-    if isinstance(manifest, Recording):
-        assert (
-            len(manifest.sources) == 1
-        ), "Multiple AudioSources are not supported yet."
-        # TODO: modify Recording's start/duration/num_samples if needed to match the Cut (in case we read subset of audio)
-        return fastcopy(
-            manifest,
-            sources=[
-                AudioSource(type="shar", channels=src.channels, source="")
-                for src in manifest.sources
-            ],
-        )
-    # TODO: modify Features/TemporalArray's start/duration/num_frames if needed to match the Cut (in case we read subset of array)
-    elif isinstance(manifest, (Array, Features)):
-        return fastcopy(manifest, storage_type="shar", storage_path="", storage_key="")
-    elif isinstance(manifest, TemporalArray):
-        return fastcopy(
-            manifest,
-            array=fastcopy(
-                manifest.array, storage_type="shar", storage_path="", storage_key=""
-            ),
-        )
-
-
-def resolve_writer(
-    name_or_callable: Union[str, FieldWriter, Callable[[Any], FieldWriterInstance]]
-) -> FieldWriter:
-    if not isinstance(name_or_callable, str):
-        return name_or_callable
-
+def resolve_writer(name: str) -> Tuple[FieldWriter, str]:
     opts = {
-        "wav": partial(AudioTarWriter, format="wav"),
-        "flac": partial(AudioTarWriter, format="flac"),
-        "mp3": partial(AudioTarWriter, format="mp3"),
-        "lilcom": partial(ArrayTarWriter, compression="lilcom"),
-        "numpy": partial(ArrayTarWriter, compression="numpy"),
+        "wav": (partial(AudioTarWriter, format="wav"), ".tar"),
+        "flac": (partial(AudioTarWriter, format="flac"), ".tar"),
+        "mp3": (partial(AudioTarWriter, format="mp3"), ".tar"),
+        "lilcom": (partial(ArrayTarWriter, compression="lilcom"), ".tar"),
+        "numpy": (partial(ArrayTarWriter, compression="numpy"), ".tar"),
+        "jsonl": (JsonlShardWriter, ".jsonl.gz"),
     }
     assert (
-        name_or_callable in opts
-    ), f"Unknown field type (got: '{name_or_callable}', we support only: {', '.join(opts)}"
-    return opts[name_or_callable]
+        name in opts
+    ), f"Unknown field type (got: '{name}', we support only: {', '.join(opts)}"
+    return opts[name]
 
 
 def _create_cuts_output_url(base_output_url: str, shard_suffix: str) -> str:

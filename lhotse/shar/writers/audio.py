@@ -2,7 +2,7 @@ import codecs
 import json
 from functools import partial
 from io import BytesIO
-from typing import List
+from typing import List, Optional
 
 import numpy as np
 import torch
@@ -10,6 +10,7 @@ import torchaudio
 from typing_extensions import Literal
 
 from lhotse import Recording
+from lhotse.shar.utils import to_shar_placeholder
 from lhotse.shar.writers.tar import TarWriter
 
 
@@ -41,7 +42,7 @@ class AudioTarWriter:
     def __init__(
         self,
         pattern: str,
-        shard_size: int,
+        shard_size: Optional[int] = 1000,
         format: Literal["wav", "flac", "mp3"] = "flac",
     ):
         self.format = format
@@ -88,6 +89,7 @@ class AudioTarWriter:
         self.tar_writer.write(f"{key}.{self.format}", stream)
 
         # Write text manifest afterwards
+        manifest = to_shar_placeholder(manifest)
         json_stream = BytesIO()
         print(
             json.dumps(manifest.to_dict()),

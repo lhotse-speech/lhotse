@@ -5,7 +5,7 @@ from typing import Generator, Optional, Tuple, Union
 from lhotse import Features, Recording
 from lhotse.array import Array, TemporalArray
 from lhotse.serialization import decode_json_line, deserialize_item, open_best
-from lhotse.shar.readers.utils import fill_shar_placeholder
+from lhotse.shar.utils import fill_shar_placeholder
 from lhotse.utils import Pathlike
 
 Manifest = Union[Recording, Array, TemporalArray, Features]

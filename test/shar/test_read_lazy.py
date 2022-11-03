@@ -5,6 +5,7 @@ import numpy as np
 import pytest
 
 from lhotse import CutSet
+from lhotse.shar import JsonlShardWriter
 from lhotse.shar.readers.lazy import LazySharIterator
 
 
@@ -119,6 +120,7 @@ def test_shar_lazy_reader_raises_error_on_missing_field(cuts: CutSet, shar_dir: 
     # Actual test
     for c_test, c_ref in zip(cuts_iter, cuts):
         assert c_test.id == c_ref.id
+        np.testing.assert_allclose(c_test.load_audio(), c_ref.load_audio())
         with pytest.raises(RuntimeError):
             c_test.load_custom_recording()
         with pytest.raises(RuntimeError):
@@ -129,3 +131,66 @@ def test_shar_lazy_reader_raises_error_on_missing_field(cuts: CutSet, shar_dir: 
             c_test.load_custom_indexes()
         with pytest.raises(RuntimeError):
             c_test.load_custom_embedding()
+
+
+def test_shar_lazy_reader_with_attached_attributes(cuts: CutSet, shar_dir: Path):
+
+    # Create a custom attribute shards that we will dynamically attach
+    cuts = cuts.from_shar(in_dir=shar_dir)
+    with JsonlShardWriter(
+        f"{shar_dir}/my_attributes.%06d.jsonl.gz", shard_size=10
+    ) as w1, JsonlShardWriter(
+        f"{shar_dir}/a_number.%06d.jsonl.gz", shard_size=10
+    ) as w2:
+        for idx, cut in enumerate(cuts):
+            w1.write(
+                {
+                    "cut_id": cut.id,
+                    "my_attributes": {
+                        "attr1": idx,
+                        "attr2": str(idx**2),
+                    },
+                }
+            )
+            if idx > 7:
+                w2.write({"cut_id": cut.id, "a_number": 10})
+            else:
+                w2.write_placeholder(cut.id)
+
+    # Prepare system under test
+    cuts_iter = LazySharIterator(
+        fields={
+            "cuts": [
+                shar_dir / "cuts.000000.jsonl.gz",
+                shar_dir / "cuts.000001.jsonl.gz",
+            ],
+            "recording": [
+                shar_dir / "recording.000000.tar",
+                shar_dir / "recording.000001.tar",
+            ],
+            "my_attributes": [
+                shar_dir / "my_attributes.000000.jsonl.gz",
+                shar_dir / "my_attributes.000001.jsonl.gz",
+            ],
+            "a_number": [
+                shar_dir / "a_number.000000.jsonl.gz",
+                shar_dir / "a_number.000001.jsonl.gz",
+            ],
+        }
+    )
+
+    # Actual test
+    for idx, (c_test, c_ref) in enumerate(zip(cuts_iter, cuts)):
+        assert c_test.id == c_ref.id
+
+        # the recording is there
+        np.testing.assert_allclose(c_ref.load_audio(), c_test.load_audio(), rtol=1e-3)
+
+        # custom non-data attributes are attached
+        attrs = c_test.my_attributes
+        assert attrs["attr1"] == idx
+        assert attrs["attr2"] == str(idx**2)
+        if idx > 7:
+            assert c_test.a_number == 10
+        else:
+            assert not c_test.has_custom("a_number")
