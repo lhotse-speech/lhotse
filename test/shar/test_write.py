@@ -355,6 +355,54 @@ def test_cut_set_to_shar(tmp_path: Path):
     assert not (tmp_path / "cuts.000002.jsonl.gz").exists()
 
 
+def test_cut_set_to_shar_not_include_cuts(tmp_path: Path):
+    # Prepare data
+    cuts = DummyManifest(CutSet, begin_id=0, end_id=20, with_data=True)
+
+    # Prepare system under test
+    output_paths = cuts.to_shar(
+        tmp_path,
+        fields={"recording": "wav"},
+        shard_size=10,
+        include_cuts=False,
+    )
+
+    # Post-conditions
+
+    # - we created 2 shards only for recordings
+    assert output_paths == {
+        "recording": [
+            str(tmp_path / "recording.000000.tar"),
+            str(tmp_path / "recording.000001.tar"),
+        ],
+    }
+    for fname in (
+        "recording.000000.tar",
+        "recording.000001.tar",
+    ):
+        assert (tmp_path / fname).is_file()
+
+    # - we did not create the shards for any other field, including cuts
+    for fname in (
+        "cuts.000000.jsonl.gz",
+        "cuts.000001.jsonl.gz",
+        "features.000000.tar",
+        "features.000001.tar",
+        "custom_embedding.000000.tar",
+        "custom_embedding.000001.tar",
+        "custom_features.000000.tar",
+        "custom_features.000001.tar",
+        "custom_indexes.000000.tar",
+        "custom_indexes.000001.tar",
+        "custom_recording.000000.tar",
+        "custom_recording.000001.tar",
+    ):
+        assert not (tmp_path / fname).is_file()
+
+    # - we didn't create a third shard
+    assert not (tmp_path / "recording.000002.tar").exists()
+
+
 def test_shar_writer_not_sharded(tmp_path: Path):
     # Prepare data
     cuts = DummyManifest(CutSet, begin_id=0, end_id=20, with_data=True)

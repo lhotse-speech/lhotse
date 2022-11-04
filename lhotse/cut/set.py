@@ -482,6 +482,7 @@ class CutSet(Serializable, AlgorithmMixin):
         fields: Dict[str, str],
         shard_size: Optional[int] = 1000,
         warn_unused_fields: bool = True,
+        include_cuts: bool = True,
     ) -> Dict[str, List[str]]:
         """
         Writes cuts and their corresponding data into multiple shards,
@@ -517,6 +518,13 @@ class CutSet(Serializable, AlgorithmMixin):
         When ``shard_size`` is set to ``None``, we will disable automatic sharding and the
         shard number suffix will be omitted from the file names.
 
+        The option ``warn_unused_fields`` will emit a warning when cuts have some data attached to them
+        (e.g., recording, features, or custom arrays) but saving it was not specified via ``fields``.
+
+        The option ``include_cuts`` controls whether we store the cuts alongside ``fields`` (true by default).
+        Turning it off is useful when extending existing dataset with new fields/feature types,
+        but the original cuts do not require any modification.
+
         See also: :class:`~lhotse.shar.writers.shar.SharWriter`,
             :meth:`~lhotse.cut.set.CutSet.to_shar`.
         """
@@ -527,6 +535,7 @@ class CutSet(Serializable, AlgorithmMixin):
             fields=fields,
             shard_size=shard_size,
             warn_unused_fields=warn_unused_fields,
+            include_cuts=include_cuts,
         ) as writer:
             for cut in self:
                 writer.write(cut)
