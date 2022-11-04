@@ -235,6 +235,21 @@ def dummy_cut(
     supervisions=None,
     with_data: bool = False,
 ):
+    custom = {
+        "custom_attribute": "dummy-value",
+        "custom_attribute_other": "dummy-value-other",
+    }
+    if with_data:
+        custom.update(
+            {
+                "custom_embedding": dummy_array(),
+                "custom_features": dummy_temporal_array(start),
+                "custom_recording": dummy_recording(
+                    unique_id, duration=duration, with_data=True
+                ),
+                "custom_indexes": dummy_temporal_array_uint8(start=start),
+            }
+        )
     return MonoCut(
         id=f"dummy-mono-cut-{unique_id:04d}",
         start=start,
@@ -247,16 +262,7 @@ def dummy_cut(
         if features
         else dummy_features(unique_id, with_data=with_data),
         supervisions=supervisions if supervisions is not None else [],
-        custom={
-            "custom_embedding": dummy_array(),
-            "custom_features": dummy_temporal_array(start),
-            "custom_recording": dummy_recording(
-                unique_id, duration=duration, with_data=True
-            ),
-            "custom_indexes": dummy_temporal_array_uint8(start=start),
-        }
-        if with_data
-        else None,
+        custom=custom,
     )
 
 

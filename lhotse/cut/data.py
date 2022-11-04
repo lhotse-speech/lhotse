@@ -75,13 +75,18 @@ class DataCut(Cut, metaclass=ABCMeta):
         This magic function is called when the user tries to set an attribute.
         We use it as syntactic sugar to store custom attributes in ``self.custom``
         field, so that they can be (de)serialized later.
+        Setting a ``None`` value will remove the attribute from ``custom``.
         """
         if key in self.__dataclass_fields__:
             super().__setattr__(key, value)
         else:
             custom = ifnone(self.custom, {})
-            custom[key] = value
-            self.custom = custom
+            if value is None:
+                custom.pop(key, None)
+            else:
+                custom[key] = value
+            if custom:
+                self.custom = custom
 
     def __getattr__(self, name: str) -> Any:
         """
@@ -149,6 +154,17 @@ class DataCut(Cut, metaclass=ABCMeta):
                 f"To load {name}, the cut needs to have field {name} (or cut.custom['{name}']) "
                 f"defined, and its value has to be a manifest of type Array or TemporalArray."
             )
+
+    def has_custom(self, name: str) -> bool:
+        """
+        Check if the Cut has a custom attribute with name ``name``.
+
+        :param name: name of the custom attribute.
+        :return: a boolean.
+        """
+        if self.custom is None:
+            return False
+        return name in self.custom
 
     @property
     def recording_id(self) -> str:

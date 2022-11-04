@@ -17,7 +17,8 @@ from lhotse import (
     load_manifest,
     store_manifest,
 )
-from lhotse.serialization import load_manifest_lazy, open_best
+from lhotse.lazy import LazyJsonlIterator
+from lhotse.serialization import SequentialJsonlWriter, load_manifest_lazy, open_best
 from lhotse.supervision import AlignmentItem
 from lhotse.testing.dummies import DummyManifest
 from lhotse.utils import fastcopy
@@ -389,6 +390,20 @@ def test_sequential_jsonl_writer(manifests, manifest_type, format, compressed):
         assert type(manifest) == type(restored)
         # Equal under iteration
         assert list(manifest) == list(restored)
+
+
+def test_sequential_jsonl_writer_with_dict_input():
+    data = [{"key": "value", "other_key": "other_value"}, {"key": "value2"}]
+    with NamedTemporaryFile(suffix=".jsonl") as jsonl_f:
+        with SequentialJsonlWriter(jsonl_f.name) as writer:
+            for item in data:
+                writer.write(item)
+
+        restored = list(LazyJsonlIterator(jsonl_f.name))
+
+        assert len(restored) == 2
+        assert data[0] == restored[0]
+        assert data[1] == restored[1]
 
 
 @pytest.mark.parametrize(

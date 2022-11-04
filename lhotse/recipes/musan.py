@@ -26,7 +26,7 @@ from lhotse import (
     validate,
     validate_recordings_and_supervisions,
 )
-from lhotse.utils import Pathlike, urlretrieve_progress
+from lhotse.utils import Pathlike, safe_extract, urlretrieve_progress
 
 MUSAN_URL = "https://www.openslr.org/resources/17/musan.tar.gz"
 
@@ -56,7 +56,7 @@ def download_musan(
     if force_download or not tar_path.is_file():
         urlretrieve_progress(url, filename=tar_path, desc=f"Downloading {tar_name}")
     with tarfile.open(tar_path) as tar:
-        tar.extractall(path=target_dir)
+        safe_extract(tar, path=target_dir)
         completed_detector.touch()
     return corpus_dir
 
