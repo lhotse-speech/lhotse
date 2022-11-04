@@ -195,6 +195,7 @@ class LazySharIterator(ImitatesDict):
                         data_path.stem == cut.id
                     ), f"Mismatched IDs: cut ID is '{cut.id}' but found data with name '{data_path}'"
                     setattr(cut, field, maybe_manifest)
+                cut.shard_origin = shard["cuts"]
                 yield cut
 
     def __len__(self) -> int:
