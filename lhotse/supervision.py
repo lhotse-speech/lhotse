@@ -620,6 +620,8 @@ class SupervisionSet(Serializable, AlgorithmMixin):
                     parts = line.strip().split()
                     assert len(parts) == 10, f"Invalid RTTM line in file {file}: {line}"
                     recording_id = parts[1]
+                    if float(parts[4]) == 0:  # skip empty segments
+                        continue
                     segments.append(
                         SupervisionSegment(
                             id=f"{recording_id}-{idx:06d}",
