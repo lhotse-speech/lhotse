@@ -19,6 +19,8 @@ class S3PRLSSLConfig:
     sampling_rate: int = 16000
     ssl_model: str = "wav2vec2_large_ll60k"
     layer: int = -1
+    frame_shift: float = 0.02
+    feature_dim: int = 1024
     device: str = "cpu"
 
     def to_dict(self) -> Dict[str, Any]:
@@ -44,28 +46,31 @@ class S3PRLSSL(FeatureExtractor):
         assert self.config.ssl_model in dir(
             hub
         ), f"S3PRL dose not suport model: {self.config.ssl_model}."
+        assert (
+            self.config.sampling_rate == 16000
+        ), f"All the upstream models in S3PRL now only support 16 kHz audio."
 
         ssl_model = getattr(hub, self.config.ssl_model)()
         self.ssl_model = ssl_model.to(self.config.device)
+
+    @property
+    def frame_shift(self) -> Seconds:
+        return self.config.frame_shift
 
     def feature_dim(self, sampling_rate: int) -> int:
         assert (
             sampling_rate == 16000
         ), f"All the upstream models in S3PRL now only support 16 kHz audio."
-        feature_dim = 1024
-        return feature_dim
-
-    @property
-    def frame_shift(self) -> Seconds:
-        frame_shift = 0.02
-        return frame_shift
+        return self.config.feature_dim
 
     def extract(self, samples: np.ndarray, sampling_rate: int) -> np.ndarray:
         assert (
             sampling_rate == 16000
         ), f"All the upstream models in S3PRL now only support 16 kHz audio."
+
         samples = torch.from_numpy(samples).to(self.config.device)
 
+        self.ssl_model.eval()
         with torch.no_grad():
             feats = self.ssl_model(samples)["hidden_states"][self.config.layer]
         feats = feats.squeeze()
