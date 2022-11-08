@@ -1,7 +1,8 @@
 import random
 from pathlib import Path
-from typing import Dict, Generator, Optional, Sequence, Tuple
+from typing import Callable, Dict, Generator, Optional, Sequence, Tuple
 
+from lhotse.cut import Cut
 from lhotse.lazy import (
     ImitatesDict,
     LazyIteratorChain,
@@ -11,7 +12,7 @@ from lhotse.lazy import (
 )
 from lhotse.serialization import extension_contains
 from lhotse.shar.readers.tar import TarIterator
-from lhotse.utils import Pathlike, exactly_one_not_null
+from lhotse.utils import Pathlike, exactly_one_not_null, ifnone
 
 
 class LazySharIterator(ImitatesDict):
@@ -91,6 +92,10 @@ class LazySharIterator(ImitatesDict):
         on each node given the same seed).
     :param seed: When ``shuffle_shards`` is ``True``, we use this number to
         seed the RNG.
+    :param cut_map_fns: optional sequence of callables that accept cuts and return cuts.
+        It's expected to have the same length as the number of shards, so each function
+        corresponds to a specific shard.
+        It can be used to attach shard-specific custom attributes to cuts.
 
     See also: :class:`~lhotse.shar.writers.shar.SharWriter`
     """
@@ -102,6 +107,7 @@ class LazySharIterator(ImitatesDict):
         split_for_dataloading: bool = False,
         shuffle_shards: bool = False,
         seed: int = 42,
+        cut_map_fns: Optional[Sequence[Callable[[Cut], Cut]]] = None,
     ) -> None:
         assert exactly_one_not_null(
             fields, in_dir
@@ -124,6 +130,8 @@ class LazySharIterator(ImitatesDict):
             {field: self.streams[field][shard_idx] for field in self.streams}
             for shard_idx in range(self.num_shards)
         ]
+
+        self.cut_map_fns = ifnone(cut_map_fns, [None] * self.num_shards)
 
         if shuffle_shards:
             random.Random(seed).shuffle(self.shards)
@@ -166,7 +174,7 @@ class LazySharIterator(ImitatesDict):
         shards = (
             self.shards_for_dataloading if self.split_for_dataloading else self.shards
         )
-        for shard in shards:
+        for shard, cut_map_fn in zip(shards, self.cut_map_fns):
             # Iterate over cuts for the current shard
             cuts = LazyManifestIterator(shard["cuts"])
 
@@ -195,7 +203,10 @@ class LazySharIterator(ImitatesDict):
                         data_path.stem == cut.id
                     ), f"Mismatched IDs: cut ID is '{cut.id}' but found data with name '{data_path}'"
                     setattr(cut, field, maybe_manifest)
+
                 cut.shard_origin = shard["cuts"]
+                if cut_map_fn is not None:
+                    cut = cut_map_fn(cut)
                 yield cut
 
     def __len__(self) -> int:
