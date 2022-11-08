@@ -16,6 +16,17 @@ from lhotse.utils import (
 
 @dataclass
 class S3PRLSSLConfig:
+    """
+    In general, the output feature dimension of base model (e.g., wav2vec2) and
+    large model (e.g., wav2vec2_large_ll60k) are 768 and 1024, repectively. The
+    frame shift (stride) is 0.02s (20ms).
+
+    Please check
+        https://github.com/s3prl/s3prl/blob/main/s3prl/upstream/README.md and
+        https://s3prl.github.io/s3prl/tutorial/upstream_collection.html
+    for details of available self-supervised models.
+    """
+
     sampling_rate: int = 16000
     ssl_model: str = "wav2vec2_large_ll60k"
     layer: int = -1

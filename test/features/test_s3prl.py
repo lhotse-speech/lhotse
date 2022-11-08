@@ -11,7 +11,7 @@ def recording():
 
 
 @pytest.mark.skipif(
-    not is_module_available("s3prl.hub"), reason="The test requires s3prl to run."
+    not is_module_available("s3prl"), reason="The test requires s3prl to run."
 )
 def test_s3prl_feature_extractor_default_config(recording):
     feature_extractor = S3PRLSSL()
@@ -20,7 +20,7 @@ def test_s3prl_feature_extractor_default_config(recording):
 
 
 @pytest.mark.skipif(
-    not is_module_available("s3prl.hub"), reason="The test requires s3prl to run."
+    not is_module_available("s3prl"), reason="The test requires s3prl to run."
 )
 def test_s3prl_feature_extractor_config(recording):
     config = S3PRLSSLConfig(
