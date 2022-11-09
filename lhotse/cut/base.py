@@ -491,9 +491,9 @@ class Cut:
                 assert (
                     len(set(to_hashable(s.channel) for s in trimmed.supervisions)) == 1
                 ), (
-                    "Trimmed cut has supervisions with different channels. Either set "
-                    "`ignore_channel=True` to keep original channels or `keep_overlapping=False` "
-                    "to retain only 1 supervision per trimmed cut."
+                    f"Trimmed cut has supervisions with different channels. Either set "
+                    f"`ignore_channel=True` to keep original channels or `keep_overlapping=False` "
+                    f"to retain only 1 supervision per trimmed cut. Offending cut: {trimmed}"
                 )
                 trimmed.channel = trimmed.supervisions[0].channel
 

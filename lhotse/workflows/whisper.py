@@ -2,6 +2,7 @@ import logging
 from typing import Any, Generator, List, Optional, Union
 
 import torch
+from tqdm import tqdm
 
 from lhotse import (
     CutSet,
@@ -61,7 +62,7 @@ def _annotate_recordings(
 
     model = whisper.load_model(model_name, device=device)
 
-    for recording in recordings:
+    for recording in tqdm(recordings):
         if recording.num_channels > 1:
             logging.warning(
                 f"Skipping recording '{recording.id}'. It has {recording.num_channels} channels, "
@@ -102,7 +103,7 @@ def _annotate_cuts(cuts: CutSet, language: str, model_name: str, device: str):
 
     model = whisper.load_model(model_name, device=device)
 
-    for cut in cuts:
+    for cut in tqdm(cuts):
         if cut.num_channels > 1:
             logging.warning(
                 f"Skipping cut '{cut.id}'. It has {cut.num_channels} channels, "

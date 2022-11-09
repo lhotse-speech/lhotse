@@ -644,15 +644,15 @@ def prepare_ami(
             lambda x: x.recording_id in dataset_parts[part]
         )
 
+        audio_part, supervision_part = fix_manifests(audio_part, supervision_part)
+        validate_recordings_and_supervisions(audio_part, supervision_part)
+
         # Write to output directory if a path is provided
         if output_dir is not None:
             audio_part.to_file(output_dir / f"ami-{mic}_recordings_{part}.jsonl.gz")
             supervision_part.to_file(
                 output_dir / f"ami-{mic}_supervisions_{part}.jsonl.gz"
             )
-
-        audio_part, supervision_part = fix_manifests(audio_part, supervision_part)
-        validate_recordings_and_supervisions(audio_part, supervision_part)
 
         # Combine all manifests into one dictionary
         manifests[part] = {"recordings": audio_part, "supervisions": supervision_part}
