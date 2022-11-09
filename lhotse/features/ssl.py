@@ -97,6 +97,6 @@ class S3PRLSSL(FeatureExtractor):
         assert num_frames_diff <= 1
         if num_frames_diff == 1:
             pad = torch.zeros([1, num_features]).to(self.config.device)
-            feats = torch.concat([feats, pad], dim=0)
+            feats = torch.cat([feats, pad], dim=0)
 
         return feats.cpu().numpy()
