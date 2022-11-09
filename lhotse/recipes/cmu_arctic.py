@@ -36,7 +36,7 @@ from lhotse import (
     validate_recordings_and_supervisions,
 )
 from lhotse.qa import remove_missing_recordings_and_supervisions
-from lhotse.utils import Pathlike, urlretrieve_progress
+from lhotse.utils import Pathlike, safe_extract, urlretrieve_progress
 
 BASE_URL = "http://festvox.org/cmu_arctic/packed/"
 
@@ -118,7 +118,7 @@ def download_cmu_arctic(
             )
         shutil.rmtree(part_dir, ignore_errors=True)
         with tarfile.open(tar_path) as tar:
-            tar.extractall(path=target_dir)
+            safe_extract(tar, path=target_dir)
         completed_detector.touch()
 
     return target_dir

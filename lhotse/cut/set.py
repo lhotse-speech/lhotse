@@ -376,6 +376,172 @@ class CutSet(Serializable, AlgorithmMixin):
 
         return CutSet(cuts=LazyWebdatasetIterator(path, **wds_kwargs))
 
+    @staticmethod
+    def from_shar(
+        fields: Optional[Dict[str, Sequence[Pathlike]]] = None,
+        in_dir: Optional[Pathlike] = None,
+        split_for_dataloading: bool = False,
+        shuffle_shards: bool = False,
+        seed: int = 42,
+    ) -> "CutSet":
+        """
+        Reads cuts and their corresponding data from multiple shards,
+        also recognized as the Lhotse Shar format.
+        Each shard is numbered and represented as a collection of one text manifest and
+        one or more binary tarfiles.
+        Each tarfile contains a single type of data, e.g., recordings, features, or custom fields.
+
+        Given an example directory named ``some_dir`, its expected layout is
+        ``some_dir/cuts.000000.jsonl.gz``, ``some_dir/recording.000000.tar``,
+        ``some_dir/features.000000.tar``, and then the same names but numbered with ``000001``, etc.
+        There may also be other files if the cuts have custom data attached to them.
+
+        The main idea behind Lhotse Shar format is to optimize dataloading with sequential reads,
+        while keeping the data composition more flexible than e.g. WebDataset tar archives do.
+        To achieve this, Lhotse Shar keeps each data type in a separate archive, along a single
+        CutSet JSONL manifest.
+        This way, the metadata can be investigated without iterating through the binary data.
+        The format also allows iteration over a subset of fields, or extension of existing data
+        with new fields.
+
+        As you iterate over cuts from ``LazySharIterator``, it keeps a file handle open for the
+        JSONL manifest and all of the tar files that correspond to the current shard.
+        The tar files are read item by item together, and their binary data is attached to
+        the cuts.
+        It can be normally accessed using methods such as ``cut.load_audio()``.
+
+        We can simply load a directory created by :class:`~lhotse.shar.writers.shar.SharWriter`.
+        Example::
+
+        >>> cuts = LazySharIterator(in_dir="some_dir")
+        ... for cut in cuts:
+        ...     print("Cut", cut.id, "has duration of", cut.duration)
+        ...     audio = cut.load_audio()
+        ...     fbank = cut.load_features()
+
+        :class:`.LazySharIterator` can also be initialized from a dict, where the keys
+        indicate fields to be read, and the values point to actual shard locations.
+        This is useful when only a subset of data is needed, or it is stored in different
+        locations. Example::
+
+        >>> cuts = LazySharIterator({
+        ...     "cuts": ["some_dir/cuts.000000.jsonl.gz"],
+        ...     "recording": ["another_dir/recording.000000.tar"],
+        ...     "features": ["yet_another_dir/features.000000.tar"],
+        ... })
+        ... for cut in cuts:
+        ...     print("Cut", cut.id, "has duration of", cut.duration)
+        ...     audio = cut.load_audio()
+        ...     fbank = cut.load_features()
+
+        We also support providing shell commands as shard sources, inspired by WebDataset.
+        Example::
+
+        >>> cuts = LazySharIterator({
+        ...     "cuts": ["pipe:curl https://my.page/cuts.000000.jsonl.gz"],
+        ...     "recording": ["pipe:curl https://my.page/recording.000000.tar"],
+        ... })
+        ... for cut in cuts:
+        ...     print("Cut", cut.id, "has duration of", cut.duration)
+        ...     audio = cut.load_audio()
+
+        :param fields: a dict whose keys specify which fields to load,
+            and values are lists of shards (either paths or shell commands).
+            The field "cuts" pointing to CutSet shards always has to be present.
+        :param in_dir: path to a directory created with ``SharWriter`` with
+            all the shards in a single place. Can be used instead of ``fields``.
+        :param split_for_dataloading: bool, by default ``False`` which does nothing.
+            Setting it to ``True`` is intended for PyTorch training with multiple
+            dataloader workers and possibly multiple DDP nodes.
+            It results in each node+worker combination receiving a unique subset
+            of shards from which to read data to avoid data duplication.
+        :param shuffle_shards: bool, by default ``False``. When ``True``, the shards
+            are shuffled (in case of multi-node training, the shuffling is the same
+            on each node given the same seed).
+        :param seed: When ``shuffle_shards`` is ``True``, we use this number to
+            seed the RNG.
+
+        See also: :class:`~lhotse.shar.readers.lazy.LazySharIterator`,
+            :meth:`~lhotse.cut.set.CutSet.to_shar`.
+        """
+        from lhotse.shar import LazySharIterator
+
+        return CutSet(
+            cuts=LazySharIterator(
+                fields=fields,
+                in_dir=in_dir,
+                split_for_dataloading=split_for_dataloading,
+                shuffle_shards=shuffle_shards,
+                seed=seed,
+            )
+        )
+
+    def to_shar(
+        self,
+        output_dir: Pathlike,
+        fields: Dict[str, str],
+        shard_size: Optional[int] = 1000,
+        warn_unused_fields: bool = True,
+        include_cuts: bool = True,
+    ) -> Dict[str, List[str]]:
+        """
+        Writes cuts and their corresponding data into multiple shards,
+        also recognized as the Lhotse Shar format.
+        Each shard is numbered and represented as a collection of one text manifest and
+        one or more binary tarfiles.
+        Each tarfile contains a single type of data, e.g., recordings, features, or custom fields.
+
+        The main idea behind Lhotse Shar format is to optimize dataloading with sequential reads,
+        while keeping the data composition more flexible than e.g. WebDataset tar archives do.
+        To achieve this, Lhotse Shar keeps each data type in a separate archive, along a single
+        CutSet JSONL manifest.
+        This way, the metadata can be investigated without iterating through the binary data.
+        The format also allows iteration over a subset of fields, or extension of existing data
+        with new fields.
+
+        The user has to specify which fields should be saved, and what compression to use for each of them.
+        Currently we support ``wav``, ``flac``, and ``mp3`` compression for ``recording`` and custom audio fields,
+        and ``lilcom`` or ``numpy`` for ``features`` and custom array fields.
+
+        Example::
+
+            >>> cuts = CutSet(...)  # cuts have 'recording' and 'features'
+            >>> output_paths = cuts.to_shar(
+            ...     "some_dir", shard_size=100, fields={"recording": "mp3", "features": "lilcom"}
+            ... )
+
+        It would create a directory ``some_dir`` with files such as ``some_dir/cuts.000000.jsonl.gz``,
+        ``some_dir/recording.000000.tar``, ``some_dir/features.000000.tar``,
+        and then the same names but numbered with ``000001``, etc.
+        The function returns a dict that maps field names to lists of saved shard paths.
+
+        When ``shard_size`` is set to ``None``, we will disable automatic sharding and the
+        shard number suffix will be omitted from the file names.
+
+        The option ``warn_unused_fields`` will emit a warning when cuts have some data attached to them
+        (e.g., recording, features, or custom arrays) but saving it was not specified via ``fields``.
+
+        The option ``include_cuts`` controls whether we store the cuts alongside ``fields`` (true by default).
+        Turning it off is useful when extending existing dataset with new fields/feature types,
+        but the original cuts do not require any modification.
+
+        See also: :class:`~lhotse.shar.writers.shar.SharWriter`,
+            :meth:`~lhotse.cut.set.CutSet.to_shar`.
+        """
+        from lhotse.shar import SharWriter
+
+        with SharWriter(
+            output_dir=output_dir,
+            fields=fields,
+            shard_size=shard_size,
+            warn_unused_fields=warn_unused_fields,
+            include_cuts=include_cuts,
+        ) as writer:
+            for cut in self:
+                writer.write(cut)
+
+        return writer.output_paths
+
     def to_dicts(self) -> Iterable[dict]:
         return (cut.to_dict() for cut in self)
 

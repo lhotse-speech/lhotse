@@ -13,7 +13,12 @@ from lhotse import validate_recordings_and_supervisions
 from lhotse.audio import Recording, RecordingSet
 from lhotse.recipes.utils import manifests_exist, read_manifests_if_cached
 from lhotse.supervision import AlignmentItem, SupervisionSegment, SupervisionSet
-from lhotse.utils import Pathlike, is_module_available, urlretrieve_progress
+from lhotse.utils import (
+    Pathlike,
+    is_module_available,
+    safe_extract,
+    urlretrieve_progress,
+)
 
 LIBRISPEECH = (
     "dev-clean",
@@ -89,7 +94,7 @@ def download_librispeech(
         # Remove partial unpacked files, if any, and unpack everything.
         shutil.rmtree(part_dir, ignore_errors=True)
         with tarfile.open(tar_path) as tar:
-            tar.extractall(path=target_dir)
+            safe_extract(tar, path=target_dir)
         completed_detector.touch()
 
     if alignments:

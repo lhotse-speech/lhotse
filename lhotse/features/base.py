@@ -483,6 +483,7 @@ class Features:
         self,
         start: Seconds = 0,
         duration: Optional[Seconds] = None,
+        lilcom: bool = False,
     ) -> "Features":
         from lhotse.features.io import get_memory_writer
 
@@ -490,7 +491,7 @@ class Features:
             return self  # nothing to do
 
         arr = self.load(start=start, duration=duration)
-        if issubclass(arr.dtype.type, np.floating):
+        if issubclass(arr.dtype.type, np.floating) and lilcom:
             writer = get_memory_writer("memory_lilcom")()
         else:
             writer = get_memory_writer("memory_raw")()

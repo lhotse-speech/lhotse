@@ -384,7 +384,7 @@ def validate_cut(c: Cut, read_data: bool = False) -> None:
     # Conditions related to recording
     if c.has_recording:
         validate_recording(c.recording)
-        assert c.channel in c.recording.channel_ids
+        assert is_equal_or_contains(c.recording.channel_ids, c.channel)
         if read_data:
             # We are not passing "read_data" to "validate_recording" to avoid loading audio twice;
             # we'll just validate the subset of the recording relevant for the cut.
