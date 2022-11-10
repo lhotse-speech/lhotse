@@ -1,3 +1,4 @@
+from collections import defaultdict
 from typing import Any, Callable, Dict, List, Union
 
 import torch
@@ -64,6 +65,7 @@ class K2SpeechRecognitionDataset(torch.utils.data.Dataset):
         cut_transforms: List[Callable[[CutSet], CutSet]] = None,
         input_transforms: List[Callable[[torch.Tensor], torch.Tensor]] = None,
         input_strategy: BatchIO = PrecomputedFeatures(),
+        bpe_model: Any = None,
     ):
         """
         k2 ASR IterableDataset constructor.
@@ -78,6 +80,7 @@ class K2SpeechRecognitionDataset(torch.utils.data.Dataset):
             Examples: normalization, SpecAugment, etc.
         :param input_strategy: Converts cuts into a collated batch of audio/features.
             By default, reads pre-computed features from disk.
+        :param bpe_model: A BPE model to use for tokenization.
         """
         super().__init__()
         # Initialize the fields
@@ -85,6 +88,7 @@ class K2SpeechRecognitionDataset(torch.utils.data.Dataset):
         self.cut_transforms = ifnone(cut_transforms, [])
         self.input_transforms = ifnone(input_transforms, [])
         self.input_strategy = input_strategy
+        self.bpe_model = bpe_model
 
         # This attribute is a workaround to constantly growing HDF5 memory
         # throughout the epoch. It regularly closes open file handles to
@@ -195,7 +199,46 @@ class K2SpeechRecognitionDataset(torch.utils.data.Dataset):
             batch["supervisions"]["word_start"] = starts
             batch["supervisions"]["word_end"] = ends
 
+        if self.bpe_model is not None and has_word_alignments:
+            tokens_dict = bpe_encode_word_alignments(
+                batch["supervisions"]["word"],
+                batch["supervisions"]["word_start"],
+                batch["supervisions"]["word_end"],
+                self.bpe_model,
+            )
+            batch["supervisions"].update(tokens_dict)
+
         return batch
+
+
+def bpe_encode_word_alignments(
+    words: List[List[str]],
+    starts: List[List[int]],
+    ends: List[List[int]],
+    bpe_model: Any,
+) -> Dict[str, List[List[int]]]:
+    tokens, token_starts, token_ends = [], [], []
+    for words_i, starts_i, ends_i in zip(words, starts, ends):
+        tokens_i, token_starts_i, token_ends_i = [], [], []
+        for word, start, end in zip(words_i, starts_i, ends_i):
+            if word == "":
+                continue
+            bpe_tokens = bpe_model.encode(word, out_type=int)
+            duration_per_token = (end - start) // len(bpe_tokens)
+            for i, token in enumerate(bpe_tokens):
+                st = start + i * duration_per_token
+                en = start + (i + 1) * duration_per_token
+                tokens_i.append(token)
+                token_starts_i.append(st)
+                token_ends_i.append(en)
+        tokens.append(tokens_i)
+        token_starts.append(token_starts_i)
+        token_ends.append(token_ends_i)
+    return {
+        "token": tokens,
+        "token_start": token_starts,
+        "token_end": token_ends,
+    }
 
 
 def validate_for_asr(cuts: CutSet) -> None:
