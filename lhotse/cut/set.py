@@ -383,6 +383,7 @@ class CutSet(Serializable, AlgorithmMixin):
         split_for_dataloading: bool = False,
         shuffle_shards: bool = False,
         seed: int = 42,
+        cut_map_fns: Optional[Sequence[Callable[[Cut], Cut]]] = None,
     ) -> "CutSet":
         """
         Reads cuts and their corresponding data from multiple shards,
@@ -460,6 +461,10 @@ class CutSet(Serializable, AlgorithmMixin):
             on each node given the same seed).
         :param seed: When ``shuffle_shards`` is ``True``, we use this number to
             seed the RNG.
+        :param cut_map_fns: optional sequence of callables that accept cuts and return cuts.
+            It's expected to have the same length as the number of shards, so each function
+            corresponds to a specific shard.
+            It can be used to attach shard-specific custom attributes to cuts.
 
         See also: :class:`~lhotse.shar.readers.lazy.LazySharIterator`,
             :meth:`~lhotse.cut.set.CutSet.to_shar`.
@@ -473,6 +478,7 @@ class CutSet(Serializable, AlgorithmMixin):
                 split_for_dataloading=split_for_dataloading,
                 shuffle_shards=shuffle_shards,
                 seed=seed,
+                cut_map_fns=cut_map_fns,
             )
         )
 
