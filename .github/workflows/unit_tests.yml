@@ -51,7 +51,7 @@ jobs:
         ${{ matrix.torch-install-cmd }}
         pip install '.[tests]'
         # Enable some optional tests
-        pip install h5py dill smart_open[http] kaldifeat kaldi_native_io webdataset==0.2.5
+        pip install h5py dill smart_open[http] kaldifeat kaldi_native_io webdataset==0.2.5 s3prl
     - name: Install sph2pipe
       run: |
         lhotse install-sph2pipe  # Handle sphere files.

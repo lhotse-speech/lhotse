@@ -1754,7 +1754,7 @@ def torchaudio_info(
         return LibsndfileCompatibleAudioInfo(
             channels=info.num_channels,
             frames=tot_samples,
-            samplerate=info.sample_rate,
+            samplerate=int(info.sample_rate),
             duration=tot_samples / info.sample_rate,
         )
 
@@ -1762,7 +1762,7 @@ def torchaudio_info(
     return LibsndfileCompatibleAudioInfo(
         channels=info.num_channels,
         frames=info.num_frames,
-        samplerate=info.sample_rate,
+        samplerate=int(info.sample_rate),
         duration=info.num_frames / info.sample_rate,
     )
 
@@ -1790,7 +1790,7 @@ def torchaudio_load(
         frame_offset=frame_offset,
         num_frames=num_frames,
     )
-    return audio.numpy(), sampling_rate
+    return audio.numpy(), int(sampling_rate)
 
 
 def torchaudio_ffmpeg_load(
@@ -1852,7 +1852,7 @@ def soundfile_load(
         # Load the target number of frames, and transpose to match librosa form
         return (
             sf_desc.read(frames=frame_duration, dtype=np.float32, always_2d=False).T,
-            sampling_rate,
+            int(sampling_rate),
         )
 
 
@@ -1876,7 +1876,7 @@ def audioread_info(path: Pathlike) -> LibsndfileCompatibleAudioInfo:
         return LibsndfileCompatibleAudioInfo(
             channels=input_file.channels,
             frames=num_samples,
-            samplerate=input_file.samplerate,
+            samplerate=int(input_file.samplerate),
             duration=num_samples / input_file.samplerate,
         )
 
@@ -1963,7 +1963,7 @@ def audioread_load(
     else:
         y = np.empty(0, dtype=dtype)
 
-    return y, sr_native
+    return y, int(sr_native)
 
 
 def _buf_to_float(x, n_bytes=2, dtype=np.float32):
@@ -2044,7 +2044,7 @@ def opus_info(
     return LibsndfileCompatibleAudioInfo(
         channels=samples.shape[0],
         frames=samples.shape[1],
-        samplerate=sampling_rate,
+        samplerate=int(sampling_rate),
         duration=samples.shape[1] / sampling_rate,
     )
 
@@ -2193,7 +2193,7 @@ def sph_info(path: Pathlike) -> LibsndfileCompatibleAudioInfo:
     return LibsndfileCompatibleAudioInfo(
         channels=samples.shape[0],
         frames=samples.shape[1],
-        samplerate=sampling_rate,
+        samplerate=int(sampling_rate),
         duration=samples.shape[1] / sampling_rate,
     )
 

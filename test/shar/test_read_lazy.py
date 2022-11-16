@@ -1,4 +1,5 @@
 import os
+from functools import partial
 from pathlib import Path
 
 import numpy as np
@@ -194,3 +195,39 @@ def test_shar_lazy_reader_with_attached_attributes(cuts: CutSet, shar_dir: Path)
             assert c_test.a_number == 10
         else:
             assert not c_test.has_custom("a_number")
+
+
+def test_shar_lazy_reader_with_cut_map_fns(cuts: CutSet, shar_dir: Path):
+    # Prepare system under test
+
+    def cut_map_fn(cut, dset_name):
+        cut.dataset = dset_name
+        return cut
+
+    cut_map_fns = []
+    for dataset_name in (
+        "dataset_corresponding_to_shard_0",
+        "dataset_corresponding_to_shard_1",
+    ):
+        cut_map_fns.append(partial(cut_map_fn, dset_name=dataset_name))
+
+    cuts_iter = LazySharIterator(
+        fields={
+            "cuts": [
+                shar_dir / "cuts.000000.jsonl.gz",
+                shar_dir / "cuts.000001.jsonl.gz",
+            ],
+        },
+        cut_map_fns=cut_map_fns,
+    )
+
+    # Actual test
+    for c_test, c_ref in zip(cuts_iter, cuts):
+        assert c_test.id == c_ref.id
+
+        if c_test.shard_origin == shar_dir / "cuts.000000.jsonl.gz":
+            assert c_test.dataset == "dataset_corresponding_to_shard_0"
+        elif c_test.shard_origin == shar_dir / "cuts.000001.jsonl.gz":
+            assert c_test.dataset == "dataset_corresponding_to_shard_1"
+        else:
+            raise RuntimeError(f"Unexpected shard_origin: {c_test.shard_origin}")

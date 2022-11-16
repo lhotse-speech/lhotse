@@ -53,6 +53,13 @@ class SharWriter:
     When ``shard_size`` is set to ``None``, we will disable automatic sharding and the
     shard number suffix will be omitted from the file names.
 
+    The option ``warn_unused_fields`` will emit a warning when cuts have some data attached to them
+    (e.g., recording, features, or custom arrays) but saving it was not specified via ``fields``.
+
+    The option ``include_cuts`` controls whether we store the cuts alongside ``fields`` (true by default).
+    Turning it off is useful when extending existing dataset with new fields/feature types,
+    but the original cuts do not require any modification.
+
     See also: :class:`~lhotse.shar.writers.tar.TarWriter`, :class:`~lhotse.shar.writers.audio.AudioTarWriter`,
         :class:`~lhotse.shar.writers.array.ArrayTarWriter`.
     """
@@ -63,19 +70,21 @@ class SharWriter:
         fields: Dict[str, str],
         shard_size: Optional[int] = 1000,
         warn_unused_fields: bool = True,
+        include_cuts: bool = True,
     ) -> None:
         self.output_dir = str(output_dir)
         self.shard_size = shard_size
         self.fields = fields
         self.warn_unused_fields = warn_unused_fields
+        self.include_cuts = include_cuts
         self.shard_suffix = ".%06d" if self.sharding_enabled else ""
 
-        self.writers = {
-            "cuts": JsonlShardWriter(
+        self.writers = {}
+        if include_cuts:
+            self.writers["cuts"] = JsonlShardWriter(
                 pattern=_create_cuts_output_url(self.output_dir, self.shard_suffix),
                 shard_size=self.shard_size,
-            ),
-        }
+            )
         for field, writer_type in self.fields.items():
             make_writer_fn, ext = resolve_writer(writer_type)
             self.writers[field] = make_writer_fn(
@@ -175,7 +184,8 @@ class SharWriter:
                     )
                 continue
 
-        self.writers["cuts"].write(cut)
+        if "cuts" in self.writers:
+            self.writers["cuts"].write(cut)
 
 
 def resolve_writer(name: str) -> Tuple[FieldWriter, str]:

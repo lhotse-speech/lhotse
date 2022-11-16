@@ -383,6 +383,7 @@ class CutSet(Serializable, AlgorithmMixin):
         split_for_dataloading: bool = False,
         shuffle_shards: bool = False,
         seed: int = 42,
+        cut_map_fns: Optional[Sequence[Callable[[Cut], Cut]]] = None,
     ) -> "CutSet":
         """
         Reads cuts and their corresponding data from multiple shards,
@@ -460,6 +461,10 @@ class CutSet(Serializable, AlgorithmMixin):
             on each node given the same seed).
         :param seed: When ``shuffle_shards`` is ``True``, we use this number to
             seed the RNG.
+        :param cut_map_fns: optional sequence of callables that accept cuts and return cuts.
+            It's expected to have the same length as the number of shards, so each function
+            corresponds to a specific shard.
+            It can be used to attach shard-specific custom attributes to cuts.
 
         See also: :class:`~lhotse.shar.readers.lazy.LazySharIterator`,
             :meth:`~lhotse.cut.set.CutSet.to_shar`.
@@ -473,6 +478,7 @@ class CutSet(Serializable, AlgorithmMixin):
                 split_for_dataloading=split_for_dataloading,
                 shuffle_shards=shuffle_shards,
                 seed=seed,
+                cut_map_fns=cut_map_fns,
             )
         )
 
@@ -482,6 +488,7 @@ class CutSet(Serializable, AlgorithmMixin):
         fields: Dict[str, str],
         shard_size: Optional[int] = 1000,
         warn_unused_fields: bool = True,
+        include_cuts: bool = True,
     ) -> Dict[str, List[str]]:
         """
         Writes cuts and their corresponding data into multiple shards,
@@ -517,6 +524,13 @@ class CutSet(Serializable, AlgorithmMixin):
         When ``shard_size`` is set to ``None``, we will disable automatic sharding and the
         shard number suffix will be omitted from the file names.
 
+        The option ``warn_unused_fields`` will emit a warning when cuts have some data attached to them
+        (e.g., recording, features, or custom arrays) but saving it was not specified via ``fields``.
+
+        The option ``include_cuts`` controls whether we store the cuts alongside ``fields`` (true by default).
+        Turning it off is useful when extending existing dataset with new fields/feature types,
+        but the original cuts do not require any modification.
+
         See also: :class:`~lhotse.shar.writers.shar.SharWriter`,
             :meth:`~lhotse.cut.set.CutSet.to_shar`.
         """
@@ -527,6 +541,7 @@ class CutSet(Serializable, AlgorithmMixin):
             fields=fields,
             shard_size=shard_size,
             warn_unused_fields=warn_unused_fields,
+            include_cuts=include_cuts,
         ) as writer:
             for cut in self:
                 writer.write(cut)
