@@ -19,6 +19,7 @@ from .csj import *
 from .cslu_kids import *
 from .daily_talk import *
 from .dihard3 import *
+from .dipco import *
 from .earnings21 import *
 from .earnings22 import *
 from .eval2000 import *
