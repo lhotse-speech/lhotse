@@ -105,7 +105,7 @@ def prepare_dipco(
                         AudioSource(type="file", channels=[idx], source=str(audio_path))
                     )
                     spk_id = audio_path.stem.split("_")[1]
-                    global_spk_channel_map[spk_id] = idx
+                    global_spk_channel_map[(session, spk_id)] = idx
 
                 audio_sf = sf.SoundFile(str(audio_paths[0]))
 
@@ -154,7 +154,7 @@ def prepare_dipco(
                 for idx, segment in enumerate(transcript):
                     spk_id = segment["speaker_id"]
                     channel = (
-                        global_spk_channel_map[spk_id]
+                        global_spk_channel_map[(session, spk_id)]
                         if mic == "ihm"
                         else list(range(35))
                     )
