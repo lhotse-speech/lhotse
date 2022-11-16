@@ -14,7 +14,7 @@ __all__ = ["dipco"]
     "--mic",
     type=click.Choice(["ihm", "mdm"], case_sensitive=False),
     default="mdm",
-    help="AMI microphone setting.",
+    help="DiPCo microphone setting.",
 )
 def dipco(
     corpus_dir: Pathlike,
