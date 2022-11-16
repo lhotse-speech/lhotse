@@ -17,6 +17,7 @@ from .csj import prepare_csj
 from .cslu_kids import prepare_cslu_kids
 from .daily_talk import download_daily_talk, prepare_daily_talk
 from .dihard3 import prepare_dihard3
+from .dipco import download_dipco, prepare_dipco
 from .eval2000 import prepare_eval2000
 from .fisher_english import prepare_fisher_english
 from .fisher_spanish import prepare_fisher_spanish

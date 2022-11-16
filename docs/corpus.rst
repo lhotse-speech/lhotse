@@ -81,6 +81,8 @@ a CLI tool that create the manifests given a corpus directory.
     - :func:`lhotse.recipes.prepare_daily_talk`
   * - DIHARD III
     - :func:`lhotse.recipes.prepare_dihard3`
+  * - DiPCo
+    - :func:`lhotse.recipes.prepare_dipco`
   * - English Broadcast News 1997
     - :func:`lhotse.recipes.prepare_broadcast_news`
   * - Fisher English Part 1, 2
