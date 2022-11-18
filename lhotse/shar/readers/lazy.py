@@ -224,6 +224,7 @@ class LazySharIterator(ImitatesDict):
                     setattr(cut, field, maybe_manifest)
 
                 cut.shard_origin = shard["cuts"]
+                cut.shar_epoch = self.epoch
                 if cut_map_fn is not None:
                     cut = cut_map_fn(cut)
                 yield cut

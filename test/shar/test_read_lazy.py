@@ -17,6 +17,9 @@ def test_shar_lazy_reader_from_dir(cuts: CutSet, shar_dir: Path):
     # Actual test
     for c_test, c_ref in zip(cuts_iter, cuts):
         assert c_test.id == c_ref.id
+        assert c_test.has_custom("shard_origin")
+        assert c_test.has_custom("shar_epoch")
+        assert c_test.shar_epoch == 0
         np.testing.assert_allclose(c_ref.load_audio(), c_test.load_audio(), rtol=1e-3)
         np.testing.assert_allclose(
             c_ref.load_custom_recording(), c_test.load_custom_recording(), rtol=1e-3
