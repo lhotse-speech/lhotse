@@ -35,6 +35,41 @@ def test_shar_lazy_reader_from_dir(cuts: CutSet, shar_dir: Path):
         )
 
 
+@pytest.mark.parametrize("shuffle", [True, False])
+def test_shar_lazy_reader_shuffle(shar_dir: Path, shuffle: bool):
+    reference = LazySharIterator(in_dir=shar_dir)
+    # seed manually tweaked to get different order when shuffling 2 shards
+    shuffled = LazySharIterator(in_dir=shar_dir, shuffle_shards=shuffle, seed=3)
+
+    ref_paths = [cut.shard_origin for cut in reference]
+    shf_paths = [cut.shard_origin for cut in shuffled]
+
+    assert set(ref_paths) == set(shf_paths)
+    assert len(ref_paths) == len(shf_paths)
+    if shuffle:
+        assert ref_paths != shf_paths  # different order
+    else:
+        assert ref_paths == shf_paths  # same order
+
+
+@pytest.mark.parametrize("stateful", [True, False])
+def test_shar_lazy_reader_shuffle_stateful(shar_dir: Path, stateful: bool):
+    # seed 0 yields different shuffling in ep0 and ep1 for two shards
+    shuffled = LazySharIterator(
+        in_dir=shar_dir, shuffle_shards=True, stateful_shuffle=stateful, seed=0
+    )
+
+    ep0 = [c.shard_origin for c in shuffled]
+    ep1 = [c.shard_origin for c in shuffled]
+
+    assert set(ep0) == set(ep1)
+    assert len(ep0) == len(ep1)
+    if stateful:
+        assert ep0 != ep1  # different order
+    else:
+        assert ep0 == ep1  # same order
+
+
 def test_cut_set_from_shar(cuts: CutSet, shar_dir: Path):
     # Prepare system under test
     cuts_iter = CutSet.from_shar(in_dir=shar_dir)
