@@ -187,7 +187,7 @@ def prepare_chime6(
             num_workers=num_threads_per_job,
         )
 
-        num_jobs = min(num_jobs, 20)  # since there are 20 sessions
+        num_jobs = min(num_jobs, len(sessions))  # since there are 20 sessions
         logging.info(
             f"Performing array synchronization with {num_jobs} jobs. This may "
             "take a long time."
