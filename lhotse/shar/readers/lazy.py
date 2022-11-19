@@ -1,6 +1,6 @@
 import random
 from pathlib import Path
-from typing import Callable, Dict, Generator, Optional, Sequence, Tuple
+from typing import Callable, Dict, Generator, List, Optional, Sequence, Tuple
 
 from lhotse.cut import Cut
 from lhotse.lazy import (
@@ -92,6 +92,10 @@ class LazySharIterator(ImitatesDict):
         on each node given the same seed).
     :param seed: When ``shuffle_shards`` is ``True``, we use this number to
         seed the RNG.
+    :param stateful_shuffle: bool, by default ``False``. When ``True``, every
+        time this object is fully iterated, it increments an internal epoch counter
+        and triggers shard reshuffling with RNG seeded by ``seed`` + ``epoch``.
+        Doesn't have any effect when ``shuffle_shards`` is ``False``.
     :param cut_map_fns: optional sequence of callables that accept cuts and return cuts.
         It's expected to have the same length as the number of shards, so each function
         corresponds to a specific shard.
@@ -106,6 +110,7 @@ class LazySharIterator(ImitatesDict):
         in_dir: Optional[Pathlike] = None,
         split_for_dataloading: bool = False,
         shuffle_shards: bool = False,
+        stateful_shuffle: bool = False,
         seed: int = 42,
         cut_map_fns: Optional[Sequence[Callable[[Cut], Cut]]] = None,
     ) -> None:
@@ -114,6 +119,11 @@ class LazySharIterator(ImitatesDict):
         ), "To read Lhotse Shar format, provide either 'in_dir' or 'fields' argument."
 
         self.split_for_dataloading = split_for_dataloading
+        self.shuffle_shards = shuffle_shards
+        self.stateful_shuffle = stateful_shuffle
+        self.seed = seed
+        self.epoch = 0
+
         self._len = None
         if in_dir is not None:
             self._init_from_dir(in_dir)
@@ -132,9 +142,6 @@ class LazySharIterator(ImitatesDict):
         ]
 
         self.cut_map_fns = ifnone(cut_map_fns, [None] * self.num_shards)
-
-        if shuffle_shards:
-            random.Random(seed).shuffle(self.shards)
 
     def _init_from_inputs(self, fields: Optional[Dict[str, Sequence[str]]] = None):
         assert (
@@ -164,16 +171,28 @@ class LazySharIterator(ImitatesDict):
                 p for p in all_paths if p.name.split(".")[0] == field
             )
 
-    @property
-    def shards_for_dataloading(self):
+    def _maybe_split_for_dataloading(self, shards: List[Dict]) -> List[Dict]:
         from .utils import split_by_node, split_by_worker
 
-        return split_by_worker(split_by_node(self.shards))
+        if self.split_for_dataloading:
+            return split_by_worker(split_by_node(shards))
+        else:
+            return shards
+
+    def _maybe_shuffle_shards(self, shards: List[Dict]) -> List[Dict]:
+        if self.shuffle_shards:
+            shards = shards.copy()
+            seed = self.seed
+            if self.stateful_shuffle:
+                seed += self.epoch
+            random.Random(seed).shuffle(shards)
+        return shards
 
     def __iter__(self):
-        shards = (
-            self.shards_for_dataloading if self.split_for_dataloading else self.shards
-        )
+        shards = self.shards
+        shards = self._maybe_shuffle_shards(shards)
+        shards = self._maybe_split_for_dataloading(shards)
+
         for shard, cut_map_fn in zip(shards, self.cut_map_fns):
             # Iterate over cuts for the current shard
             cuts = LazyManifestIterator(shard["cuts"])
@@ -205,9 +224,12 @@ class LazySharIterator(ImitatesDict):
                     setattr(cut, field, maybe_manifest)
 
                 cut.shard_origin = shard["cuts"]
+                cut.shar_epoch = self.epoch
                 if cut_map_fn is not None:
                     cut = cut_map_fn(cut)
                 yield cut
+
+        self.epoch += 1
 
     def __len__(self) -> int:
         if self._len is None:
