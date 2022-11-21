@@ -1964,7 +1964,7 @@ class CutSet(Serializable, AlgorithmMixin):
             subdir = Path(storage_path) / cut.id[:3]
             subdir.mkdir(exist_ok=True, parents=True)
             # Adding default format to fix the issue that `cut.id` contains `.`.
-            return (subdir / cut.id / ".wav").with_suffix(f".{format}")
+            return (subdir / (cut.id + ".wav")).with_suffix(f".{format}")
 
         # Non-parallel execution
         if executor is None and num_jobs == 1:
