@@ -430,7 +430,7 @@ def _create_buckets_equal_duration_single(
         if i % 2:
             if buckets_dict[first_bucket] + duration > bucket_duration:
                 if middle_bucket is not None and first_bucket == middle_bucket:
-                    first_bucket = min(middle_bucket - 1, num_buckets - 1)
+                    first_bucket = max(0, min(middle_bucket - 1, num_buckets - 1))
                 else:
                     first_bucket = min(first_bucket + 1, num_buckets - 1)
             buckets_dict[first_bucket] += duration

@@ -431,6 +431,16 @@ def test_bucketing_sampler_single_cuts():
     assert set(cut_set.ids) == set(c.id for c in sampled_cuts)
 
 
+def test_bucketing_sampler_no_issue_with_first_bucket_index_being_minus_one():
+    rng = random.Random(42)
+    cut_set = DummyManifest(CutSet, begin_id=0, end_id=11)
+    for c in cut_set:
+        c.duration = rng.randint(1, 10)
+    sampler = BucketingSampler(cut_set, num_buckets=2)
+    for batch in sampler:
+        pass  # does not raise
+
+
 def test_bucketing_sampler_single_cuts_equal_duration():
     cut_set = DummyManifest(CutSet, begin_id=0, end_id=1000)
     for idx, c in enumerate(cut_set):
