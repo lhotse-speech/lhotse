@@ -52,7 +52,7 @@ from lhotse.utils import (
     Decibels,
     Pathlike,
     Seconds,
-    add_durations,
+    TimeSpan,
     compute_num_frames,
     compute_num_samples,
     deprecated,
@@ -60,7 +60,6 @@ from lhotse.utils import (
     fastcopy,
     ifnone,
     index_by_id_and_check,
-    overlaps,
     split_manifest_lazy,
     split_sequence,
     uuid4,
@@ -629,57 +628,184 @@ class CutSet(Serializable, AlgorithmMixin):
             max     5415.0
             dtype: float64
         """
+        from tabulate import tabulate
 
-        def convert(hours: float) -> Tuple[int, int, int]:
-            hours, seconds = divmod(hours, 3600)
+        def convert_(seconds: float) -> Tuple[int, int, int]:
+            hours, seconds = divmod(seconds, 3600)
             minutes, seconds = divmod(seconds, 60)
             return int(hours), int(minutes), ceil(seconds)
 
+        def time_as_str_(seconds: float) -> str:
+            h, m, s = convert_(seconds)
+            return f"{h:02d}:{m:02d}:{s:02d}"
+
         cntrs = defaultdict(int)
         cut_custom, sup_custom = Counter(), Counter()
-        durations, speech_durations = [], []
+        cut_durations = []
+
+        # The following is to store statistics about speaker times in the cuts
+        speaking_time_durations = []
+        durations_by_num_speakers = defaultdict(list)
+        single_durations, overlapped_durations = [], []
+
         for c in self:
-            durations.append(c.duration)
+            cut_durations.append(c.duration)
             if hasattr(c, "custom"):
                 for key in ifnone(c.custom, ()):
                     cut_custom[key] += 1
             cntrs["recordings"] += int(c.has_recording)
             cntrs["features"] += int(c.has_features)
+
+            # Total speaking time duration is computed by summing the duration of all
+            # supervisions in the cut.
             for s in c.trimmed_supervisions:
-                speech_durations.append(s.duration)
+                speaking_time_durations.append(s.duration)
                 cntrs["supervisions"] += 1
                 for key in ifnone(s.custom, ()):
                     sup_custom[key] += 1
-        print("Cuts count:", len(durations))
-        total_sum = np.array(durations).sum()
-        hh, mm, ss = convert(total_sum)
-        print(f"Total duration (hh:mm:ss): {hh:02d}:{mm:02d}:{ss:02d}")
-        hh, mm, ss = convert(total_sum)
-        speech_sum = np.array(speech_durations).sum()
-        print(
-            f"Speech duration (hh:mm:ss): {hh:02d}:{mm:02d}:{ss:02d} ({speech_sum / total_sum:.1%})"
-        )
-        print("Duration statistics (seconds):")
-        print(f"mean\t{np.mean(durations):.1f}")
-        print(f"std\t{np.std(durations):.1f}")
-        print(f"min\t{np.min(durations):.1f}")
-        print(f"25%\t{np.percentile(durations, 25):.1f}")
-        print(f"50%\t{np.median(durations):.1f}")
-        print(f"75%\t{np.percentile(durations, 75):.1f}")
-        print(f"99%\t{np.percentile(durations, 99):.1f}")
-        print(f"99.5%\t{np.percentile(durations, 99.5):.1f}")
-        print(f"99.9%\t{np.percentile(durations, 99.9):.1f}")
-        print(f"max\t{np.max(durations):.1f}")
+
+            # Duration of single-speaker segments
+            single_durations.append(
+                sum(
+                    [
+                        s.duration
+                        for s in find_segments_with_speaker_count(
+                            c, min_speakers=1, max_speakers=1
+                        )
+                    ]
+                )
+            )
+
+            # Duration of overlapped segments
+            overlapped_durations.append(
+                sum(
+                    [
+                        s.duration
+                        for s in find_segments_with_speaker_count(
+                            c, min_speakers=2, max_speakers=None
+                        )
+                    ]
+                )
+            )
+
+            # Durations by number of speakers (we assume that overlaps can happen between
+            # at most 4 speakers. This is a reasonable assumption for most datasets.)
+            durations_by_num_speakers[1].append(single_durations[-1])
+            for num_spk in range(2, 5):
+                durations_by_num_speakers[num_spk].append(
+                    sum(
+                        [
+                            s.duration
+                            for s in find_segments_with_speaker_count(
+                                c, min_speakers=num_spk, max_speakers=num_spk
+                            )
+                        ]
+                    )
+                )
+
+        total_sum = np.array(cut_durations).sum()
+
+        cut_stats = []
+        cut_stats.append(["Cuts count:", len(cut_durations)])
+        cut_stats.append(["Total duration (hh:mm:ss)", time_as_str_(total_sum)])
+        cut_stats.append(["mean", f"{np.mean(cut_durations):.1f}"])
+        cut_stats.append(["std", f"{np.std(cut_durations):.1f}"])
+        cut_stats.append(["min", f"{np.min(cut_durations):.1f}"])
+        cut_stats.append(["25%", f"{np.percentile(cut_durations, 25):.1f}"])
+        cut_stats.append(["50%", f"{np.median(cut_durations):.1f}"])
+        cut_stats.append(["75%", f"{np.percentile(cut_durations, 75):.1f}"])
+        cut_stats.append(["99%", f"{np.percentile(cut_durations, 99):.1f}"])
+        cut_stats.append(["99.5%", f"{np.percentile(cut_durations, 99.5):.1f}"])
+        cut_stats.append(["99.9%", f"{np.percentile(cut_durations, 99.9):.1f}"])
+        cut_stats.append(["max", f"{np.max(cut_durations):.1f}"])
+
         for key, val in cntrs.items():
-            print(f"{key.title()} available: {val}")
+            cut_stats.append([f"{key.title()} available:", val])
+
+        print("Cut statistics:")
+        print(tabulate(cut_stats, tablefmt="fancy_grid"))
+
         if cut_custom:
             print("CUT custom fields:")
             for key, val in cut_custom.most_common():
                 print(f"- {key} (in {val} cuts)")
+
         if sup_custom:
             print("SUPERVISION custom fields:")
             for key, val in sup_custom.most_common():
-                print(f"- {key} (in {val} cuts)")
+                cut_stats.append(f"- {key} (in {val} cuts)")
+
+        total_single = np.array(single_durations).sum()
+        total_overlap = np.array(overlapped_durations).sum()
+        total_speech = total_single + total_overlap
+        total_silence = total_sum - total_speech
+        speech_stats = []
+        speech_stats.append(
+            [
+                "Total speech duration",
+                time_as_str_(total_speech),
+                f"{total_speech / total_sum:.2%} of recording",
+            ]
+        )
+        speech_stats.append(
+            [
+                "Single-speaker duration",
+                time_as_str_(total_single),
+                f"{total_single / total_sum:.2%} ({total_single / total_speech:.2%} of speech)",
+            ]
+        )
+        speech_stats.append(
+            [
+                "Overlapped speech duration",
+                time_as_str_(total_overlap),
+                f"{total_overlap / total_sum:.2%} ({total_overlap / total_speech:.2%} of speech)",
+            ]
+        )
+        speech_stats.append(
+            [
+                "Total silence duration",
+                time_as_str_(total_silence),
+                f"{total_silence / total_sum:.2%} of recording",
+            ]
+        )
+        print("Speech duration statistics:")
+        print(tabulate(speech_stats, tablefmt="fancy_grid"))
+
+        total_speaking_time = np.array(speaking_time_durations).sum()
+        speaker_stats = [
+            [
+                "Number of speakers",
+                "Duration (hh:mm:ss)",
+                "Speaking time (hh:mm:ss)",
+                "% of speech",
+                "% of speaking time",
+            ]
+        ]
+        for num_spk, durations in durations_by_num_speakers.items():
+            speaker_sum = np.array(durations).sum()
+            speaking_time = num_spk * speaker_sum
+            speaker_stats.append(
+                [
+                    num_spk,
+                    time_as_str_(speaker_sum),
+                    time_as_str_(speaking_time),
+                    f"{speaker_sum / total_speech:.2%}",
+                    f"{speaking_time / total_speaking_time:.2%}",
+                ]
+            )
+
+        speaker_stats.append(
+            [
+                "Total",
+                time_as_str_(total_speech),
+                time_as_str_(total_speaking_time),
+                "100.00%",
+                "100.00%",
+            ]
+        )
+
+        print("Speech duration statistics by number of speakers:")
+        print(tabulate(speaker_stats, headers="firstrow", tablefmt="fancy_grid"))
 
     def split(
         self, num_splits: int, shuffle: bool = False, drop_last: bool = False
@@ -930,28 +1056,13 @@ class CutSet(Serializable, AlgorithmMixin):
 
         :return: a ``CutSet``.
         """
-        from cytoolz import sliding_window
-
         cuts = []
         for cut in self:
-            segments = []
-            supervisions = sorted(cut.supervisions, key=lambda s: s.start)
-            # Check if there is an unsupervised segment at the start of the cut,
-            # before the first supervision.
-            if supervisions[0].start > 0:
-                segments.append((0, supervisions[0].start))
-            # Check if there are unsupervised segments between the supervisions.
-            for left, right in sliding_window(2, supervisions):
-                if overlaps(left, right) or left.end == right.start:
-                    continue
-                segments.append((left.end, right.start))
-            # Check if there is an unsupervised segment after the last supervision,
-            # before the cut ends.
-            if supervisions[-1].end < cut.duration:
-                segments.append((supervisions[-1].end, cut.duration))
-            # Create cuts from all found unsupervised segments.
-            for start, end in segments:
-                cuts.append(cut.truncate(offset=start, duration=end - start))
+            segments = find_segments_with_speaker_count(
+                cut, min_speakers=0, max_speakers=0
+            )
+            for span in segments:
+                cuts.append(cut.truncate(offset=span.start, duration=span.duration))
         return CutSet.from_cuts(cuts)
 
     @deprecated(
@@ -2858,6 +2969,63 @@ def deserialize_cut(raw_cut: dict) -> Cut:
     if cut_type == "MixedCut":
         return MixedCut.from_dict(raw_cut)
     raise ValueError(f"Unexpected cut type during deserialization: '{cut_type}'")
+
+
+def find_segments_with_speaker_count(
+    cut: Cut, min_speakers: int = 0, max_speakers: Optional[int] = None
+) -> List[TimeSpan]:
+    """
+    Given a Cut, find a list of intervals that contain the specified number of speakers.
+
+    :param cuts: the Cut to search.
+    :param min_speakers: the minimum number of speakers.
+    :param max_speakers: the maximum number of speakers.
+    :return: a list of TimeSpans.
+    """
+    if max_speakers is None:
+        max_speakers = float("inf")
+
+    assert (
+        min_speakers >= 0 and min_speakers <= max_speakers
+    ), f"min_speakers={min_speakers} and max_speakers={max_speakers} are not valid."
+
+    # First take care of trivial cases.
+    if min_speakers == 0 and max_speakers == float("inf"):
+        return [TimeSpan(0, cut.duration)]
+    if len(cut.supervisions) == 0:
+        return [] if min_speakers > 0 else [TimeSpan(0, cut.duration)]
+
+    # We collect all the timestamps of the supervisions in the cut.
+    timestamps = []
+    for segment in cut.supervisions:
+        timestamps.append((segment.start, True))
+        timestamps.append((segment.end, False))
+    # Sort the timestamps by time.
+    timestamps.sort(key=lambda t: (t[0], not t[1]))
+
+    # Now we iterate over the timestamps and count the number of speakers in any
+    # given time interval. If the number of speakers is in the desired range,
+    # we keep the interval.
+    num_speakers = 0
+    seg_start = 0.0
+    intervals = []
+    for timestamp, is_start in timestamps:
+        if num_speakers >= min_speakers and num_speakers <= max_speakers:
+            intervals.append((seg_start, timestamp))
+        num_speakers += 1 if is_start else -1
+        seg_start = timestamp
+
+    # Merge consecutive intervals and remove empty intervals.
+    merged_intervals = []
+    for start, end in intervals:
+        if start == end:
+            continue
+        if merged_intervals and merged_intervals[-1][1] == start:
+            merged_intervals[-1] = (merged_intervals[-1][0], end)
+        else:
+            merged_intervals.append((start, end))
+
+    return [TimeSpan(start, end) for start, end in merged_intervals]
 
 
 def _cut_into_windows_single(

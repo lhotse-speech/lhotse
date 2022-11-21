@@ -180,6 +180,10 @@ class TimeSpan:
     start: Seconds
     end: Seconds
 
+    @property
+    def duration(self) -> Seconds:
+        return self.end - self.start
+
 
 # TODO: Ugh, Protocols are only in Python 3.8+...
 def overlaps(lhs: Any, rhs: Any) -> bool:
