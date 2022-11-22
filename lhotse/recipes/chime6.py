@@ -44,7 +44,6 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Union
 
 import numpy as np
-import soundfile as sf
 from tqdm import tqdm
 
 from lhotse import fix_manifests, validate_recordings_and_supervisions
@@ -133,6 +132,8 @@ def prepare_chime6(
         approximately 160G of storage. We will also create a temporary directory for
         processing, so the required storage in total will be approximately 300G.
     """
+    import soundfile as sf
+
     assert mic in ["ihm", "mdm"], "mic must be either 'ihm' or 'mdm'."
 
     if output_dir:
@@ -520,6 +521,8 @@ class Chime6ArraySynchronizer:
     def _apply_edits_to_wav(
         self, in_wavs: Pathlike, out_wavs: Pathlike, edits: List[List[int]]
     ) -> None:
+        import soundfile as sf
+
         x = np.concatenate(
             [Recording.from_file(wav).load_audio() for wav in in_wavs], axis=0
         )
