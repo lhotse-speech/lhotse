@@ -1911,6 +1911,8 @@ class CutSet(Serializable, AlgorithmMixin):
         self,
         storage_path: Pathlike,
         format: str = "wav",
+        encoding: Optional[str] = None,
+        bits_per_sample: Optional[int] = None,
         num_jobs: Optional[int] = None,
         executor: Optional[Executor] = None,
         augment_fn: Optional[AugmentFn] = None,
@@ -1924,6 +1926,12 @@ class CutSet(Serializable, AlgorithmMixin):
             characters of the cut's ID. The audio recording is then stored in the sub-directory
             using filename ``{cut.id}.{format}``
         :param format: Audio format argument supported by ``torchaudio.save``. Default is ``wav``.
+        :param encoding: Audio encoding argument supported by ``torchaudio.save``. See
+            https://pytorch.org/audio/stable/backend.html#save (sox_io backend) and
+            https://pytorch.org/audio/stable/backend.html#id3 (soundfile backend) for more details.
+        :param bits_per_sample: Audio bits_per_sample argument supported by ``torchaudio.save``. See
+            https://pytorch.org/audio/stable/backend.html#save (sox_io backend) and
+            https://pytorch.org/audio/stable/backend.html#id3 (soundfile backend) for more details.
         :param num_jobs: The number of parallel processes used to store the audio recordings.
             We will internally split the CutSet into this many chunks
             and process each chunk in parallel.
@@ -1963,8 +1971,7 @@ class CutSet(Serializable, AlgorithmMixin):
             # too many files in a single directory.
             subdir = Path(storage_path) / cut.id[:3]
             subdir.mkdir(exist_ok=True, parents=True)
-            # Adding default format to fix the issue that `cut.id` contains `.`.
-            return (subdir / (cut.id + ".wav")).with_suffix(f".{format}")
+            return (subdir / (cut.id + "." + format))
 
         # Non-parallel execution
         if executor is None and num_jobs == 1:
@@ -1976,6 +1983,8 @@ class CutSet(Serializable, AlgorithmMixin):
                 progress(
                     cut.save_audio(
                         storage_path=file_storage_path(cut, storage_path),
+                        encoding=encoding,
+                        bits_per_sample=bits_per_sample,
                         augment_fn=augment_fn,
                     )
                     for cut in self
