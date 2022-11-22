@@ -979,7 +979,7 @@ class CutSet(Serializable, AlgorithmMixin):
         from cytoolz.itertoolz import groupby
 
         groups = groupby(lambda cut: (cut.recording.id, cut.start, cut.end), self)
-        return CutSet.from_cuts(MultiCut.from_mono(cuts) for cuts in groups.values())
+        return CutSet.from_cuts(MultiCut.from_mono(*cuts) for cuts in groups.values())
 
     def sort_by_duration(self, ascending: bool = False) -> "CutSet":
         """
