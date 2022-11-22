@@ -24,6 +24,7 @@ from tqdm import tqdm
 
 from lhotse import fix_manifests, validate_recordings_and_supervisions
 from lhotse.audio import AudioSource, Recording, RecordingSet
+from lhotse.recipes.utils import normalize_text_chime6
 from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import Pathlike, add_durations, safe_extract, urlretrieve_progress
 
@@ -62,6 +63,7 @@ def prepare_dipco(
     corpus_dir: Pathlike,
     output_dir: Optional[Pathlike] = None,
     mic: Optional[str] = "mdm",
+    normalize_text: Optional[str] = "kaldi",
 ) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet]]]:
     """
     Returns the manifests which consist of the Recordings and Supervisions
@@ -70,6 +72,9 @@ def prepare_dipco(
     :param mic: str, the microphone type to use, choose from "ihm" (close-talk) or "mdm"
         (multi-microphone array) settings. For MDM, there are 5 array devices with 7
         channels each, so the resulting recordings will have 35 channels.
+    :param normalize_text: str, the text normalization to apply. Choose from "none",
+        "upper", or "kaldi". "kaldi" is the default and is the same normalization
+        used in Kaldi's CHiME-6 recipe.
     :return: a Dict whose key is the dataset part ("dev" and "eval"), and the value is
         Dicts with the keys 'recordings' and 'supervisions'.
     """
@@ -167,7 +172,9 @@ def prepare_dipco(
                             start=start,
                             duration=add_durations(end, -start, sampling_rate=16000),
                             channel=channel,
-                            text=segment["words"].upper(),
+                            text=normalize_text_chime6(
+                                segment["words"], normalize=normalize_text
+                            ),
                             language="English",
                             speaker=spk_id,
                             gender=segment["gender"],

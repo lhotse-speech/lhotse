@@ -16,16 +16,25 @@ __all__ = ["dipco"]
     default="mdm",
     help="DiPCo microphone setting.",
 )
+@click.option(
+    "--normalize-text",
+    type=click.Choice(["none", "upper", "kaldi"], case_sensitive=False),
+    default="kaldi",
+    help="Text normalization method.",
+    show_default=True,
+)
 def dipco(
     corpus_dir: Pathlike,
     output_dir: Pathlike,
     mic: str,
+    normalize_text: str,
 ):
     """DiPCo data preparation."""
     prepare_dipco(
         corpus_dir,
         output_dir=output_dir,
         mic=mic,
+        normalize_text=normalize_text,
     )
 
 
