@@ -60,6 +60,7 @@ from lhotse.utils import (
     fastcopy,
     ifnone,
     index_by_id_and_check,
+    is_module_available,
     split_manifest_lazy,
     split_sequence,
     uuid4,
@@ -676,6 +677,11 @@ class CutSet(Serializable, AlgorithmMixin):
             │ Total                │ 64:59:51              │ 74:33:09                   │ 100.00%       │ 100.00%              │
             ╘══════════════════════╧═══════════════════════╧════════════════════════════╧═══════════════╧══════════════════════╛
         """
+        if not is_module_available("tabulate"):
+            raise ValueError(
+                "Since Lhotse v1.11, this function requires the `tabulate` package to be "
+                "installed. Please run 'pip install tabulate' to continue."
+            )
         from tabulate import tabulate
 
         def convert_(seconds: float) -> Tuple[int, int, int]:
