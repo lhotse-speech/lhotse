@@ -576,27 +576,6 @@ class Cut:
                     )
         return indexed
 
-    @deprecated(
-        "Cut.compute_and_store_recording will be removed in a future release. Please use save_audio() instead."
-    )
-    def compute_and_store_recording(
-        self,
-        storage_path: Pathlike,
-        augment_fn: Optional[AugmentFn] = None,
-    ) -> "Cut":
-        """
-        Store this cut's waveform as audio recording to disk.
-
-        :param storage_path: The path to location where we will store the audio recordings.
-        :param augment_fn: an optional callable used for audio augmentation.
-            Be careful with the types of augmentations used: if they modify
-            the start/end/duration times of the cut and its supervisions,
-            you will end up with incorrect supervision information when using this API.
-            E.g. for speed perturbation, use ``CutSet.perturb_speed()`` instead.
-        :return: a new MonoCut instance.
-        """
-        return self.save_audio(storage_path=storage_path, augment_fn=augment_fn)
-
     def save_audio(
         self,
         storage_path: Pathlike,
