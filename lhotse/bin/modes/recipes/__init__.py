@@ -11,6 +11,7 @@ from .broadcast_news import *
 from .bvcc import *
 from .callhome_egyptian import *
 from .callhome_english import *
+from .chime6 import *
 from .cmu_arctic import *
 from .cmu_indic import *
 from .cmu_kids import *
