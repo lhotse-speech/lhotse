@@ -605,28 +605,76 @@ class CutSet(Serializable, AlgorithmMixin):
 
         return rw.open_manifest(), sw.open_manifest(), fw.open_manifest()
 
-    def describe(self) -> None:
+    def describe(self, full: bool = False) -> None:
         """
         Print a message describing details about the ``CutSet`` - the number of cuts and the
         duration statistics, including the total duration and the percentage of speech segments.
 
-        Example output:
-            Cuts count: 547
-            Total duration (hours): 326.4
-            Speech duration (hours): 79.6 (24.4%)
-            ***
-            Duration statistics (seconds):
-            mean    2148.0
-            std      870.9
-            min      477.0
-            25%     1523.0
-            50%     2157.0
-            75%     2423.0
-            99%     2500.0
-            99.5%   2523.0
-            99.9%   2601.0
-            max     5415.0
-            dtype: float64
+        :param full: when ``True``, prints the full duration statistics, including % of speech
+            by speaker count.
+
+        Example output (for AMI train set):
+
+        >>> cs.describe(full=True)
+
+            Cut statistics:
+            ╒═══════════════════════════╤══════════╕
+            │ Cuts count:               │ 133      │
+            ├───────────────────────────┼──────────┤
+            │ Total duration (hh:mm:ss) │ 79:23:03 │
+            ├───────────────────────────┼──────────┤
+            │ mean                      │ 2148.7   │
+            ├───────────────────────────┼──────────┤
+            │ std                       │ 867.4    │
+            ├───────────────────────────┼──────────┤
+            │ min                       │ 477.9    │
+            ├───────────────────────────┼──────────┤
+            │ 25%                       │ 1509.8   │
+            ├───────────────────────────┼──────────┤
+            │ 50%                       │ 2181.7   │
+            ├───────────────────────────┼──────────┤
+            │ 75%                       │ 2439.9   │
+            ├───────────────────────────┼──────────┤
+            │ 99%                       │ 5300.7   │
+            ├───────────────────────────┼──────────┤
+            │ 99.5%                     │ 5355.3   │
+            ├───────────────────────────┼──────────┤
+            │ 99.9%                     │ 5403.2   │
+            ├───────────────────────────┼──────────┤
+            │ max                       │ 5415.2   │
+            ├───────────────────────────┼──────────┤
+            │ Recordings available:     │ 133      │
+            ├───────────────────────────┼──────────┤
+            │ Features available:       │ 0        │
+            ├───────────────────────────┼──────────┤
+            │ Supervisions available:   │ 102222   │
+            ╘═══════════════════════════╧══════════╛
+            Speech duration statistics:
+            ╒══════════════════════════════╤══════════╤═══════════════════════════╕
+            │ Total speech duration        │ 64:59:51 │ 81.88% of recording       │
+            ├──────────────────────────────┼──────────┼───────────────────────────┤
+            │ Total speaking time duration │ 74:33:09 │ 93.91% of recording       │
+            ├──────────────────────────────┼──────────┼───────────────────────────┤
+            │ Total silence duration       │ 14:23:12 │ 18.12% of recording       │
+            ├──────────────────────────────┼──────────┼───────────────────────────┤
+            │ Single-speaker duration      │ 56:18:24 │ 70.93% (86.63% of speech) │
+            ├──────────────────────────────┼──────────┼───────────────────────────┤
+            │ Overlapped speech duration   │ 08:41:28 │ 10.95% (13.37% of speech) │
+            ╘══════════════════════════════╧══════════╧═══════════════════════════╛
+            Speech duration statistics by number of speakers:
+            ╒══════════════════════╤═══════════════════════╤════════════════════════════╤═══════════════╤══════════════════════╕
+            │ Number of speakers   │ Duration (hh:mm:ss)   │ Speaking time (hh:mm:ss)   │ % of speech   │ % of speaking time   │
+            ╞══════════════════════╪═══════════════════════╪════════════════════════════╪═══════════════╪══════════════════════╡
+            │ 1                    │ 56:18:24              │ 56:18:24                   │ 86.63%        │ 75.53%               │
+            ├──────────────────────┼───────────────────────┼────────────────────────────┼───────────────┼──────────────────────┤
+            │ 2                    │ 07:51:44              │ 15:43:28                   │ 12.10%        │ 21.09%               │
+            ├──────────────────────┼───────────────────────┼────────────────────────────┼───────────────┼──────────────────────┤
+            │ 3                    │ 00:47:36              │ 02:22:47                   │ 1.22%         │ 3.19%                │
+            ├──────────────────────┼───────────────────────┼────────────────────────────┼───────────────┼──────────────────────┤
+            │ 4                    │ 00:02:08              │ 00:08:31                   │ 0.05%         │ 0.19%                │
+            ├──────────────────────┼───────────────────────┼────────────────────────────┼───────────────┼──────────────────────┤
+            │ Total                │ 64:59:51              │ 74:33:09                   │ 100.00%       │ 100.00%              │
+            ╘══════════════════════╧═══════════════════════╧════════════════════════════╧═══════════════╧══════════════════════╛
         """
         from tabulate import tabulate
 
@@ -639,14 +687,19 @@ class CutSet(Serializable, AlgorithmMixin):
             h, m, s = convert_(seconds)
             return f"{h:02d}:{m:02d}:{s:02d}"
 
+        def total_duration_(segments: List[TimeSpan]) -> float:
+            return sum(segment.duration for segment in segments)
+
         cntrs = defaultdict(int)
         cut_custom, sup_custom = Counter(), Counter()
         cut_durations = []
 
         # The following is to store statistics about speaker times in the cuts
-        speaking_time_durations = []
-        durations_by_num_speakers = defaultdict(list)
-        single_durations, overlapped_durations = [], []
+        speaking_time_durations, speech_durations = [], []
+
+        if full:
+            durations_by_num_speakers = defaultdict(list)
+            single_durations, overlapped_durations = [], []
 
         for c in self:
             cut_durations.append(c.duration)
@@ -664,44 +717,40 @@ class CutSet(Serializable, AlgorithmMixin):
                 for key in ifnone(s.custom, ()):
                     sup_custom[key] += 1
 
-            # Duration of single-speaker segments
-            single_durations.append(
-                sum(
-                    [
-                        s.duration
-                        for s in find_segments_with_speaker_count(
+            # Total speech duration is the sum of intervals where 1 or more speakers are
+            # active.
+            speech_durations.append(
+                total_duration_(find_segments_with_speaker_count(c, min_speakers=1))
+            )
+
+            if full:
+                # Duration of single-speaker segments
+                single_durations.append(
+                    total_duration_(
+                        find_segments_with_speaker_count(
                             c, min_speakers=1, max_speakers=1
                         )
-                    ]
-                )
-            )
-
-            # Duration of overlapped segments
-            overlapped_durations.append(
-                sum(
-                    [
-                        s.duration
-                        for s in find_segments_with_speaker_count(
-                            c, min_speakers=2, max_speakers=None
-                        )
-                    ]
-                )
-            )
-
-            # Durations by number of speakers (we assume that overlaps can happen between
-            # at most 4 speakers. This is a reasonable assumption for most datasets.)
-            durations_by_num_speakers[1].append(single_durations[-1])
-            for num_spk in range(2, 5):
-                durations_by_num_speakers[num_spk].append(
-                    sum(
-                        [
-                            s.duration
-                            for s in find_segments_with_speaker_count(
-                                c, min_speakers=num_spk, max_speakers=num_spk
-                            )
-                        ]
                     )
                 )
+                # Duration of overlapped segments
+                overlapped_durations.append(
+                    total_duration_(
+                        find_segments_with_speaker_count(
+                            c, min_speakers=2, max_speakers=None
+                        )
+                    )
+                )
+                # Durations by number of speakers (we assume that overlaps can happen between
+                # at most 4 speakers. This is a reasonable assumption for most datasets.)
+                durations_by_num_speakers[1].append(single_durations[-1])
+                for num_spk in range(2, 5):
+                    durations_by_num_speakers[num_spk].append(
+                        total_duration_(
+                            find_segments_with_speaker_count(
+                                c, min_speakers=num_spk, max_speakers=num_spk
+                            )
+                        )
+                    )
 
         total_sum = np.array(cut_durations).sum()
 
@@ -735,9 +784,8 @@ class CutSet(Serializable, AlgorithmMixin):
             for key, val in sup_custom.most_common():
                 cut_stats.append(f"- {key} (in {val} cuts)")
 
-        total_single = np.array(single_durations).sum()
-        total_overlap = np.array(overlapped_durations).sum()
-        total_speech = total_single + total_overlap
+        total_speech = np.array(speech_durations).sum()
+        total_speaking_time = np.array(speaking_time_durations).sum()
         total_silence = total_sum - total_speech
         speech_stats = []
         speech_stats.append(
@@ -749,16 +797,9 @@ class CutSet(Serializable, AlgorithmMixin):
         )
         speech_stats.append(
             [
-                "Single-speaker duration",
-                time_as_str_(total_single),
-                f"{total_single / total_sum:.2%} ({total_single / total_speech:.2%} of speech)",
-            ]
-        )
-        speech_stats.append(
-            [
-                "Overlapped speech duration",
-                time_as_str_(total_overlap),
-                f"{total_overlap / total_sum:.2%} ({total_overlap / total_speech:.2%} of speech)",
+                "Total speaking time duration",
+                time_as_str_(total_speaking_time),
+                f"{total_speaking_time / total_sum:.2%} of recording",
             ]
         )
         speech_stats.append(
@@ -768,10 +809,30 @@ class CutSet(Serializable, AlgorithmMixin):
                 f"{total_silence / total_sum:.2%} of recording",
             ]
         )
+        if full:
+            total_single = np.array(single_durations).sum()
+            total_overlap = np.array(overlapped_durations).sum()
+            speech_stats.append(
+                [
+                    "Single-speaker duration",
+                    time_as_str_(total_single),
+                    f"{total_single / total_sum:.2%} ({total_single / total_speech:.2%} of speech)",
+                ]
+            )
+            speech_stats.append(
+                [
+                    "Overlapped speech duration",
+                    time_as_str_(total_overlap),
+                    f"{total_overlap / total_sum:.2%} ({total_overlap / total_speech:.2%} of speech)",
+                ]
+            )
         print("Speech duration statistics:")
         print(tabulate(speech_stats, tablefmt="fancy_grid"))
 
-        total_speaking_time = np.array(speaking_time_durations).sum()
+        if not full:
+            return
+
+        # Additional statistics for full report
         speaker_stats = [
             [
                 "Number of speakers",
