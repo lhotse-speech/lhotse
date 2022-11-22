@@ -1132,37 +1132,6 @@ class CutSet(Serializable, AlgorithmMixin):
                 cuts.append(cut.truncate(offset=span.start, duration=span.duration))
         return CutSet.from_cuts(cuts)
 
-    @deprecated(
-        "Cut.mix_same_recording_channels will be removed in a future release. Please use "
-        "`combine_same_recording_channels()` instead."
-    )
-    def mix_same_recording_channels(self) -> "CutSet":
-        """
-        Find cuts that come from the same recording and have matching start and end times, but
-        represent different channels. Then, mix them together (in matching groups) and return
-        a new ``CutSet`` that contains their mixes. This is useful for processing microphone array
-        recordings.
-
-        It is intended to be used as the first operation after creating a new ``CutSet`` (but
-        might also work in other circumstances, e.g. if it was cut to windows first).
-
-        Example:
-            >>> ami = prepare_ami('path/to/ami')
-            >>> cut_set = CutSet.from_manifests(recordings=ami['train']['recordings'])
-            >>> multi_channel_cut_set = cut_set.mix_same_recording_channels()
-
-        In the AMI example, the ``multi_channel_cut_set`` will yield MixedCuts that hold all single-channel
-        Cuts together.
-        """
-        if self.mixed_cuts:
-            raise ValueError(
-                "This operation is not applicable to CutSet's containing MixedCut's."
-            )
-        from cytoolz.itertoolz import groupby
-
-        groups = groupby(lambda cut: (cut.recording.id, cut.start, cut.end), self)
-        return CutSet.from_cuts(mix_cuts(cuts) for cuts in groups.values())
-
     def combine_same_recording_channels(self) -> "CutSet":
         """
         Find cuts that come from the same recording and have matching start and end times, but
@@ -1180,8 +1149,6 @@ class CutSet(Serializable, AlgorithmMixin):
 
         In the AMI example, the ``multi_channel_cut_set`` will yield MultiCuts that hold all single-channel
         Cuts together.
-
-        .. note:: See also :func:`CutSet.mix_same_recording_channels`, which is now deprecated.
         """
         if self.mixed_cuts or self.multi_cuts:
             raise ValueError(
@@ -1190,7 +1157,7 @@ class CutSet(Serializable, AlgorithmMixin):
         from cytoolz.itertoolz import groupby
 
         groups = groupby(lambda cut: (cut.recording.id, cut.start, cut.end), self)
-        return CutSet.from_cuts(MultiCut.from_mono(cuts) for cuts in groups.values())
+        return CutSet.from_cuts(MultiCut.from_mono(*cuts) for cuts in groups.values())
 
     def sort_by_duration(self, ascending: bool = False) -> "CutSet":
         """
@@ -2042,48 +2009,6 @@ class CutSet(Serializable, AlgorithmMixin):
         # If ``manifest_path`` was provided, this is a lazy manifest;
         # otherwise everything is in memory.
         return cuts_writer.open_manifest()
-
-    @deprecated(
-        "CutSet.compute_and_store_recordings will be removed in a future release. Please use save_audios() instead."
-    )
-    def compute_and_store_recordings(
-        self,
-        storage_path: Pathlike,
-        num_jobs: Optional[int] = None,
-        executor: Optional[Executor] = None,
-        augment_fn: Optional[AugmentFn] = None,
-        progress_bar: bool = True,
-    ) -> "CutSet":
-        """
-        Store waveforms of all cuts as audio recordings to disk.
-
-        :param storage_path: The path to location where we will store the audio recordings.
-            For each cut, a sub-directory will be created that starts with the first 3
-            characters of the cut's ID. The audio recording is then stored in the sub-directory
-            using the cut ID as filename and '.flac' as suffix.
-        :param num_jobs: The number of parallel processes used to store the audio recordings.
-            We will internally split the CutSet into this many chunks
-            and process each chunk in parallel.
-        :param augment_fn: an optional callable used for audio augmentation.
-            Be careful with the types of augmentations used: if they modify
-            the start/end/duration times of the cut and its supervisions,
-            you will end up with incorrect supervision information when using this API.
-            E.g. for speed perturbation, use ``CutSet.perturb_speed()`` instead.
-        :param executor: when provided, will be used to parallelize the process.
-            By default, we will instantiate a ProcessPoolExecutor.
-            Learn more about the ``Executor`` API at
-            https://lhotse.readthedocs.io/en/latest/parallelism.html
-        :param progress_bar: Should a progress bar be displayed (automatically turned off
-            for parallel computation).
-        :return: Returns a new ``CutSet``.
-        """
-        return self.save_audios(
-            storage_path,
-            num_jobs=num_jobs,
-            executor=executor,
-            augment_fn=augment_fn,
-            progress_bar=progress_bar,
-        )
 
     def save_audios(
         self,

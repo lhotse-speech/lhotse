@@ -17,7 +17,7 @@ from lhotse import (
     load_manifest,
 )
 from lhotse.audio import AudioSource
-from lhotse.cut import CutSet, MixedCut, MixTrack, MonoCut
+from lhotse.cut import CutSet, MixedCut, MixTrack, MonoCut, MultiCut
 from lhotse.serialization import load_jsonl
 from lhotse.testing.dummies import (
     DummyManifest,
@@ -416,7 +416,7 @@ def test_mixed_cut_set_prefix(cut_with_relative_paths):
             assert t.cut.features.storage_path == "/data/storage_dir"
 
 
-def test_mix_same_recording_channels():
+def test_combine_same_recording_channels():
     recording = Recording(
         "rec",
         sampling_rate=8000,
@@ -434,14 +434,12 @@ def test_mix_same_recording_channels():
         ]
     )
 
-    mixed = cut_set.mix_same_recording_channels()
-    assert len(mixed) == 1
+    multi = cut_set.combine_same_recording_channels()
+    assert len(multi) == 1
 
-    cut = mixed[0]
-    assert isinstance(cut, MixedCut)
-    assert len(cut.tracks) == 2
-    assert cut.tracks[0].cut == cut_set[0]
-    assert cut.tracks[1].cut == cut_set[1]
+    cut = multi[0]
+    assert isinstance(cut, MultiCut)
+    assert cut.num_channels == 2
 
 
 def test_cut_set_filter_supervisions(cut_set):
