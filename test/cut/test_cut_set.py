@@ -351,11 +351,12 @@ def test_trim_to_supervisions_mixed_cuts_keep_overlapping_true(
     assert sup.duration == 18
 
 
-@pytest.mark.skipif(
-    not is_module_available("pandas"), reason="Requires pandas to be installed."
-)
-def test_cut_set_describe_runs(cut_set):
-    cut_set.describe()
+@pytest.mark.parametrize("full", [True, False])
+def test_cut_set_describe_runs(cut_set, full, capfd):
+    cut_set.describe(full=full)
+    out, err = capfd.readouterr()
+    assert out != ""
+    assert err == ""
 
 
 def test_cut_map_supervisions(cut_set):
