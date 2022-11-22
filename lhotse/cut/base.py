@@ -629,8 +629,11 @@ class Cut:
             samples = augment_fn(samples, self.sampling_rate)
 
         torchaudio.save(
-            str(storage_path), torch.as_tensor(samples), sample_rate=self.sampling_rate,
-            encoding=encoding, bits_per_sample=bits_per_sample
+            str(storage_path),
+            torch.as_tensor(samples),
+            sample_rate=self.sampling_rate,
+            encoding=encoding,
+            bits_per_sample=bits_per_sample,
         )
         recording = Recording(
             id=storage_path.stem,

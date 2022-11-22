@@ -1971,7 +1971,7 @@ class CutSet(Serializable, AlgorithmMixin):
             # too many files in a single directory.
             subdir = Path(storage_path) / cut.id[:3]
             subdir.mkdir(exist_ok=True, parents=True)
-            return (subdir / (cut.id + "." + format))
+            return subdir / (cut.id + "." + format)
 
         # Non-parallel execution
         if executor is None and num_jobs == 1:
