@@ -37,6 +37,7 @@ from tqdm.auto import tqdm
 from lhotse import validate_recordings_and_supervisions
 from lhotse.audio import AudioSource, Recording, RecordingSet
 from lhotse.qa import fix_manifests
+from lhotse.recipes.utils import normalize_text_ami
 from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import Pathlike, Seconds, urlretrieve_progress
 
@@ -357,7 +358,7 @@ def parse_ami_annotations(
                 start, end, text = subseg
                 annotations[key].append(
                     AmiSegmentAnnotation(
-                        text=normalize_text(text, normalize=normalize),
+                        text=normalize_text_ami(text, normalize=normalize),
                         speaker=key[1],
                         gender=key[1][0],
                         start_time=start,
@@ -420,29 +421,6 @@ def split_segment(
         for subseg in filter(lambda s: len(s) > 0, subsegments)
     ]
     return subsegments
-
-
-def normalize_text(text: str, normalize: str = "upper") -> str:
-    if normalize == "none":
-        return text
-    elif normalize == "upper":
-        return text.upper()
-    elif normalize == "kaldi":
-        # Kaldi style text normalization
-        import re
-
-        # convert text to uppercase
-        text = text.upper()
-        # remove punctuations
-        text = re.sub(r"[^A-Z0-9']+", " ", text)
-        # remove multiple spaces
-        text = re.sub(r"\s+", " ", text)
-        # apply few exception for dashed phrases, Mm-Hmm, Uh-Huh, OK etc. those are frequent in AMI
-        # and will be added to dictionary
-        text = re.sub(r"MM HMM", "MM-HMM", text)
-        text = re.sub(r"UH HUH", "UH-HUH", text)
-        text = re.sub(r"(\b)O K(\b)", r"\g<1>OK\g<2>", text)
-        return text
 
 
 # IHM and MDM audio requires grouping multiple channels of AudioSource into

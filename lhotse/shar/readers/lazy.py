@@ -110,7 +110,7 @@ class LazySharIterator(ImitatesDict):
         in_dir: Optional[Pathlike] = None,
         split_for_dataloading: bool = False,
         shuffle_shards: bool = False,
-        stateful_shuffle: bool = False,
+        stateful_shuffle: bool = True,
         seed: int = 42,
         cut_map_fns: Optional[Sequence[Callable[[Cut], Cut]]] = None,
     ) -> None:
@@ -220,7 +220,7 @@ class LazySharIterator(ImitatesDict):
                         continue  # No value available for the current field for this cut.
                     assert (
                         data_path.stem == cut.id
-                    ), f"Mismatched IDs: cut ID is '{cut.id}' but found data with name '{data_path}'"
+                    ), f"Mismatched IDs: cut ID is '{cut.id}' but found data with name '{data_path}' fsor field {field}"
                     setattr(cut, field, maybe_manifest)
 
                 cut.shard_origin = shard["cuts"]
