@@ -3056,13 +3056,26 @@ def find_segments_with_speaker_count(
     if len(cut.supervisions) == 0:
         return [] if min_speakers > 0 else [TimeSpan(0, cut.duration)]
 
-    # We collect all the timestamps of the supervisions in the cut.
+    # We collect all the timestamps of the supervisions in the cut. Each timestamp is
+    # a tuple of (time, is_speaker_start).
     timestamps = []
+    # Add timestamp for cut start
+    timestamps.append((0.0, None))
     for segment in cut.supervisions:
         timestamps.append((segment.start, True))
         timestamps.append((segment.end, False))
-    # Sort the timestamps by time.
-    timestamps.sort(key=lambda t: (t[0], not t[1]))
+    # Add timestamp for cut end
+    timestamps.append((cut.duration, None))
+
+    # Sort the timestamps. We need the following priority order:
+    # 1. Time mark of the timestamp: lower time mark comes first.
+    # 2. For timestamps with the same time mark, None < False < True.
+    timestamps.sort(key=lambda x: (x[0], x[1] is not None, x[1] is True))
+
+    # We remove the timestamps that are not relevant for the search. The desired range
+    # is given by the range of the cut start and end timestamps.
+    cut_start_idx, cut_end_idx = [i for i, t in enumerate(timestamps) if t[1] is None]
+    timestamps = timestamps[cut_start_idx : cut_end_idx + 1]
 
     # Now we iterate over the timestamps and count the number of speakers in any
     # given time interval. If the number of speakers is in the desired range,
@@ -3070,10 +3083,11 @@ def find_segments_with_speaker_count(
     num_speakers = 0
     seg_start = 0.0
     intervals = []
-    for timestamp, is_start in timestamps:
+    for timestamp, is_start in timestamps[1:]:
         if num_speakers >= min_speakers and num_speakers <= max_speakers:
             intervals.append((seg_start, timestamp))
-        num_speakers += 1 if is_start else -1
+        if is_start is not None:
+            num_speakers += 1 if is_start else -1
         seg_start = timestamp
 
     # Merge consecutive intervals and remove empty intervals.
