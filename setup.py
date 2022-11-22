@@ -150,6 +150,7 @@ install_requires = [
     "numpy>=1.18.1",
     "packaging",
     "pyyaml>=5.3.1",
+    "tabulate>=0.8.1",
     "tqdm",
 ]
 
