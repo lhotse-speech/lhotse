@@ -1,6 +1,8 @@
 import logging
+import warnings
 from dataclasses import dataclass
-from functools import partial
+from functools import partial, reduce
+from operator import add
 from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple, Union
 
 import numpy as np
@@ -9,7 +11,7 @@ from intervaltree import IntervalTree
 from lhotse.audio import AudioMixer, Recording, audio_energy
 from lhotse.augmentation import AugmentFn
 from lhotse.cut.base import Cut
-from lhotse.cut.mono import MonoCut
+from lhotse.cut.data import DataCut
 from lhotse.cut.padding import PaddingCut
 from lhotse.features import (
     FeatureExtractor,
@@ -29,6 +31,8 @@ from lhotse.utils import (
     compute_num_frames,
     compute_num_samples,
     fastcopy,
+    merge_items_with_delimiter,
+    overlaps,
     perturb_num_samples,
     rich_exception_info,
     uuid4,
@@ -38,31 +42,34 @@ from lhotse.utils import (
 @dataclass
 class MixTrack:
     """
-    Represents a single track in a mix of Cuts. Points to a specific MonoCut and holds information on
+    Represents a single track in a mix of Cuts. Points to a specific DataCut or PaddingCut and holds information on
     how to mix it with other Cuts, relative to the first track in a mix.
     """
 
-    cut: Union[MonoCut, PaddingCut]
+    cut: Union[DataCut, PaddingCut]
+    type: str = None
     offset: Seconds = 0.0
     snr: Optional[Decibels] = None
 
+    def __post_init__(self):
+        self.type = type(self.cut).__name__
+
     @staticmethod
     def from_dict(data: dict):
-        raw_cut = data.pop("cut")
-        try:
-            cut = MonoCut.from_dict(raw_cut)
-        except TypeError:
-            cut = PaddingCut.from_dict(raw_cut)
-        return MixTrack(cut, **data)
+        from .set import deserialize_cut
+
+        # Take out `type` from data dict and put it into the `cut` dict.
+        cut_dict = data.pop("cut")
+        cut_dict["type"] = data.pop("type")
+        return MixTrack(deserialize_cut(cut_dict), **data)
 
 
 @dataclass
 class MixedCut(Cut):
     """
     :class:`~lhotse.cut.MixedCut` is a :class:`~lhotse.cut.Cut` that actually consists of multiple other cuts.
-    It can be interpreted as a multi-channel cut, but its primary purpose is to allow
-    time-domain and feature-domain augmentation via mixing the training cuts with noise, music, and babble cuts.
-    The actual mixing operations are performed on-the-fly.
+    Its primary purpose is to allow time-domain and feature-domain augmentation via mixing the training cuts
+    with noise, music, and babble cuts. The actual mixing operations are performed on-the-fly.
 
     Internally, :class:`~lhotse.cut.MixedCut` holds other cuts in multiple trakcs (:class:`~lhotse.cut.MixTrack`),
     each with its own offset and SNR that is relative to the first track.
@@ -79,10 +86,16 @@ class MixedCut(Cut):
         >>> # Now, the first dimension is the channel.
         >>> assert len(multi_features.shape) == 3
 
+    .. note:: MixedCut is different from MultiCut, which is intended to represent multi-channel recordings
+        that share the same supervisions.
+
+    .. note:: Each track in a MixedCut can be either a MonoCut, MultiCut, or PaddingCut.
+
     See also:
 
         - :class:`lhotse.cut.Cut`
         - :class:`lhotse.cut.MonoCut`
+        - :class:`lhotse.cut.MultiCut`
         - :class:`lhotse.cut.CutSet`
     """
 
@@ -109,6 +122,11 @@ class MixedCut(Cut):
     def duration(self) -> Seconds:
         track_durations = (track.offset + track.cut.duration for track in self.tracks)
         return round(max(track_durations), ndigits=8)
+
+    @property
+    def channel(self) -> Union[int, List[int]]:
+        num_channels = self.num_channels
+        return list(range(num_channels)) if num_channels > 1 else 0
 
     @property
     def has_features(self) -> bool:
@@ -146,6 +164,11 @@ class MixedCut(Cut):
     @property
     def num_features(self) -> Optional[int]:
         return self.tracks[0].cut.num_features
+
+    @property
+    def num_channels(self) -> Optional[int]:
+        # PaddingCut and MonoCut have 1 channel each, MultiCut has N. We don't support MixedCut with MixedCut tracks.
+        return max(track.cut.num_channels for track in self.tracks)
 
     @property
     def features_type(self) -> Optional[str]:
@@ -190,7 +213,7 @@ class MixedCut(Cut):
             (
                 non_padding_idx,
                 mono_cut,
-            ) = self._assert_one_mono_cut_with_attr_and_return_it_with_track_index(name)
+            ) = self._assert_one_data_cut_with_attr_and_return_it_with_track_index(name)
             return getattr(mono_cut, name)
         except AssertionError:
             raise AttributeError(
@@ -221,7 +244,7 @@ class MixedCut(Cut):
         (
             non_padding_idx,
             mono_cut,
-        ) = self._assert_one_mono_cut_with_attr_and_return_it_with_track_index(name)
+        ) = self._assert_one_data_cut_with_attr_and_return_it_with_track_index(name)
 
         # Use getattr to propagate AttributeError if "name" is not defined.
         manifest = getattr(mono_cut, name)
@@ -267,16 +290,16 @@ class MixedCut(Cut):
             pad_value=pad_value,
         )
 
-    def _assert_one_mono_cut_with_attr_and_return_it_with_track_index(
+    def _assert_one_data_cut_with_attr_and_return_it_with_track_index(
         self,
         attr_name: str,
-    ) -> Tuple[int, MonoCut]:
+    ) -> Tuple[int, DataCut]:
         # TODO(pzelasko): consider relaxing this condition to
         #                 supporting mixed cuts that are not overlapping
         non_padding_cuts = [
             (idx, t.cut)
             for idx, t in enumerate(self.tracks)
-            if isinstance(t.cut, MonoCut)
+            if isinstance(t.cut, DataCut)
         ]
         non_padding_cuts_with_custom_attr = [
             (idx, cut)
@@ -286,7 +309,7 @@ class MixedCut(Cut):
         assert len(non_padding_cuts_with_custom_attr) == 1, (
             f"This MixedCut has {len(non_padding_cuts_with_custom_attr)} non-padding cuts "
             f"with a custom attribute '{attr_name}'. We currently don't support mixing custom attributes. "
-            f"Consider dropping the attribute on all but one of MonoCuts. Problematic cut:\n{self}"
+            f"Consider dropping the attribute on all but one of DataCuts. Problematic cut:\n{self}"
         )
         non_padding_idx, mono_cut = non_padding_cuts_with_custom_attr[0]
         return non_padding_idx, mono_cut
@@ -349,7 +372,7 @@ class MixedCut(Cut):
             )
 
             if track_end < offset:
-                # Omit a MonoCut that ends before the truncation offset.
+                # Omit a Cut that ends before the truncation offset.
                 continue
 
             cut_duration_decrease = 0
@@ -363,7 +386,7 @@ class MixedCut(Cut):
                         track_end, -old_duration, sampling_rate=self.sampling_rate
                     )
 
-            # Compute the new MonoCut's duration after trimming the start and the end.
+            # Compute the new Cut's duration after trimming the start and the end.
             new_duration = add_durations(
                 track.cut.duration,
                 -cut_offset,
@@ -371,7 +394,7 @@ class MixedCut(Cut):
                 sampling_rate=self.sampling_rate,
             )
             if new_duration <= 0:
-                # Omit a MonoCut that is completely outside the time span of the new truncated MixedCut.
+                # Omit a Cut that is completely outside the time span of the new truncated MixedCut.
                 continue
 
             new_tracks.append(
@@ -513,7 +536,7 @@ class MixedCut(Cut):
         # Pre-conditions
         assert (
             self.has_recording
-        ), "Cannot perturb speed on a MonoCut without Recording."
+        ), "Cannot perturb speed on a MixedCut without Recording."
         if self.has_features:
             logging.warning(
                 "Attempting to perturb speed on a MixedCut that references pre-computed features. "
@@ -523,7 +546,8 @@ class MixedCut(Cut):
         return MixedCut(
             id=f"{self.id}_sp{factor}" if affix_id else self.id,
             tracks=[
-                MixTrack(
+                fastcopy(
+                    track,
                     cut=track.cut.perturb_speed(factor=factor, affix_id=affix_id),
                     offset=round(
                         perturb_num_samples(
@@ -535,7 +559,6 @@ class MixedCut(Cut):
                         / self.sampling_rate,
                         ndigits=8,
                     ),
-                    snr=track.snr,
                 )
                 for track in self.tracks
             ],
@@ -560,7 +583,7 @@ class MixedCut(Cut):
         # Pre-conditions
         assert (
             self.has_recording
-        ), "Cannot perturb tempo on a MonoCut without Recording."
+        ), "Cannot perturb tempo on a MixedCut without Recording."
         if self.has_features:
             logging.warning(
                 "Attempting to perturb tempo on a MixedCut that references pre-computed features. "
@@ -570,7 +593,8 @@ class MixedCut(Cut):
         return MixedCut(
             id=f"{self.id}_tp{factor}" if affix_id else self.id,
             tracks=[
-                MixTrack(
+                fastcopy(
+                    track,
                     cut=track.cut.perturb_tempo(factor=factor, affix_id=affix_id),
                     offset=round(
                         perturb_num_samples(
@@ -582,7 +606,6 @@ class MixedCut(Cut):
                         / self.sampling_rate,
                         ndigits=8,
                     ),
-                    snr=track.snr,
                 )
                 for track in self.tracks
             ],
@@ -601,7 +624,7 @@ class MixedCut(Cut):
         # Pre-conditions
         assert (
             self.has_recording
-        ), "Cannot perturb volume on a MonoCut without Recording."
+        ), "Cannot perturb volume on a MixedCut without Recording."
         if self.has_features:
             logging.warning(
                 "Attempting to perturb volume on a MixedCut that references pre-computed features. "
@@ -657,9 +680,10 @@ class MixedCut(Cut):
         assert rir_recording is None or all(
             c < rir_recording.num_channels for c in rir_channels
         ), "Invalid channel index in `rir_channels`."
+
         assert len(rir_channels) == 1 or len(rir_channels) == len(
             self.tracks
-        ), "Invalid number of channels in `rir_channels`. Must be 1 or equal to number of tracks."
+        ), "Invalid number of channels in `rir_channels`, must be either 1 or equal to the number of tracks."
 
         if len(rir_channels) == 1:
             rir_channels = rir_channels * len(self.tracks)
@@ -691,8 +715,12 @@ class MixedCut(Cut):
         """
         Loads the features of the source cuts and mixes them on-the-fly.
 
-        :param mixed: when True (default), returns a 2D array of features mixed in the feature domain.
-            Otherwise returns a 3D array with the first dimension equal to the number of tracks.
+        :param mixed: when True (default), the features are mixed together (as defined in
+            the mixing function for the extractor). This could result in either a 2D or 3D
+            array. For example, if all underlying tracks are single-channel, the output
+            will be a 2D array of shape (num_frames, num_features). If any of the tracks
+            are multi-channel, the output may be a 3D array of shape (num_frames, num_features,
+            num_channels).
         :return: A numpy ndarray with features and with shape ``(num_frames, num_features)``,
             or ``(num_tracks, num_frames, num_features)``
         """
@@ -707,8 +735,19 @@ class MixedCut(Cut):
         # but don't actually care about feature-domain mixing; just want to pad.
         if mixed and all(isinstance(t.cut, PaddingCut) for t in self.tracks[1:]):
             padding_val = self.tracks[1].cut.feat_value
-            feats = np.ones((self.num_frames, self.num_features)) * padding_val
-            feats[: first_cut.num_frames, :] = first_cut.load_features()
+            first_cut_feats = first_cut.load_features()
+            if first_cut_feats.ndim == 2:
+                # 2D features
+                feats = np.ones((self.num_frames, self.num_features)) * padding_val
+            else:
+                # 3D features
+                feats = (
+                    np.ones(
+                        (self.num_frames, self.num_features, first_cut_feats.shape[-1])
+                    )
+                    * padding_val
+                )
+            feats[: first_cut.num_frames, ...] = first_cut_feats
             return feats
 
         # When there is more than one "regular" cut, we will perform an actual mix.
@@ -752,7 +791,8 @@ class MixedCut(Cut):
                 )
             except NonPositiveEnergyError as e:
                 logging.warning(
-                    str(e) + f' MonoCut with id "{track.cut.id}" will not be mixed in.'
+                    str(e)
+                    + f' {type(track.cut).__name__} with id "{track.cut.id}" will not be mixed in.'
                 )
 
         if mixed:
@@ -782,12 +822,22 @@ class MixedCut(Cut):
             return mixer.unmixed_feats
 
     @rich_exception_info
-    def load_audio(self, mixed: bool = True) -> Optional[np.ndarray]:
+    def load_audio(
+        self, mixed: bool = True, mono_downmix: bool = False
+    ) -> Optional[np.ndarray]:
         """
         Loads the audios of the source cuts and mix them on-the-fly.
 
-        :param mixed: When True (default), returns a mono mix of the underlying tracks.
-            Otherwise returns a numpy array with the number of channels equal to the number of tracks.
+        :param mixed: When True (default), returns a mix of the underlying tracks. This will
+            return a numpy array with shape ``(num_channels, num_samples)``, where ``num_channels``
+            is determined by the ``num_channels`` property of the MixedCut. Otherwise returns a
+            numpy array with the number of channels equal to the total number of channels
+            across all tracks in the MixedCut. For example, if it contains a MultiCut with 2
+            channels and a MonoCut with 1 channel, the returned array will have shape
+            ``(3, num_samples)``.
+        :param mono_downmix: If the MixedCut contains > 1 channels (for e.g. when one of its tracks
+            is a MultiCut), this parameter controls whether the returned array will be down-mixed
+            to a single channel. This down-mixing is done by summing the channels together.
         :return: A numpy ndarray with audio samples and with shape ``(num_channels, num_samples)``
         """
         if not self.has_recording:
@@ -833,13 +883,21 @@ class MixedCut(Cut):
                 )
             except NonPositiveEnergyError as e:
                 logging.warning(
-                    f'{e} MonoCut with id "{track.cut.id}" will not be mixed in.'
+                    f'{e} {type(track.cut).__name__} with id "{track.cut.id}" will not be mixed in.'
                 )
+
+        # Flattening a MixedCut without MultiCut tracks has no effect
+        mono_downmix = mono_downmix and any(
+            track.type == "MultiCut" for track in self.tracks
+        )
+
+        # Flattening a MixedCut without mixed=True has no effect
+        mono_downmix = mono_downmix and mixed
 
         if mixed:
             # Off-by-one errors can happen during mixing due to imperfect float arithmetic and rounding;
             # we will fix them on-the-fly so that the manifest does not lie about the num_samples.
-            audio = mixer.mixed_audio
+            audio = mixer.mixed_mono_audio if mono_downmix else mixer.mixed_audio
             if audio.shape[1] - self.num_samples == 1:
                 audio = audio[:, : self.num_samples]
             if audio.shape[1] - self.num_samples == -1:
@@ -919,7 +977,7 @@ class MixedCut(Cut):
         storage: FeaturesWriter,
         augment_fn: Optional[AugmentFn] = None,
         mix_eagerly: bool = True,
-    ) -> Cut:
+    ) -> DataCut:
         """
         Compute the features from this cut, store them on disk, and create a new `MonoCut` object with the
         feature manifest attached. This cut has to be able to load audio.
@@ -935,6 +993,8 @@ class MixedCut(Cut):
             with each of the tracks containing the ``Features`` manifests.
         """
         if mix_eagerly:
+            from .mono import MonoCut
+
             features_info = extractor.extract_from_samples_and_store(
                 samples=self.load_audio(),
                 storage=storage,
@@ -998,7 +1058,7 @@ class MixedCut(Cut):
             if not add_empty:
                 return self
             first_non_padding_idx = [
-                idx for idx, t in enumerate(self.tracks) if isinstance(t.cut, MonoCut)
+                idx for idx, t in enumerate(self.tracks) if isinstance(t.cut, DataCut)
             ][0]
             new_tracks = [
                 fastcopy(
@@ -1090,7 +1150,7 @@ class MixedCut(Cut):
 
         .. note:: If you're using individual tracks of a mixed cut, note that this transform
              drops all the supervisions in individual tracks and assigns the merged supervision
-             in the first :class:`.MonoCut` found in ``self.tracks``.
+             in the first :class:`.DataCut` found in ``self.tracks``.
 
         :param custom_merge_fn: a function that will be called to merge custom fields values.
             We expect ``custom_merge_fn`` to handle all possible custom keys.
@@ -1098,9 +1158,82 @@ class MixedCut(Cut):
             It will be called roughly like:
             ``custom_merge_fn(custom_key, [s.custom[custom_key] for s in sups])``
         """
-        from .set import merge_supervisions
+        # "m" stands for merged in variable names below
 
-        return merge_supervisions(self, custom_merge_fn=custom_merge_fn)
+        if custom_merge_fn is not None:
+            # Merge custom fields with the user-provided function.
+            merge_custom = custom_merge_fn
+        else:
+            # Merge the string representations of custom fields.
+            merge_custom = lambda k, vs: merge_items_with_delimiter(map(str, vs))
+
+        sups = sorted(self.supervisions, key=lambda s: s.start)
+
+        if len(sups) <= 1:
+            return self
+
+        # the sampling rate is arbitrary, ensures there are no float precision errors
+        mstart = sups[0].start
+        mend = sups[-1].end
+        mduration = add_durations(mend, -mstart, sampling_rate=self.sampling_rate)
+
+        custom_keys = set(
+            k for s in sups if s.custom is not None for k in s.custom.keys()
+        )
+        alignment_keys = set(
+            k for s in sups if s.alignment is not None for k in s.alignment.keys()
+        )
+
+        if any(overlaps(s1, s2) for s1, s2 in zip(sups, sups[1:])) and any(
+            s.text is not None for s in sups
+        ):
+            warnings.warn(
+                "You are merging overlapping supervisions that have text transcripts. "
+                "The result is likely to be unusable if you are going to train speech "
+                f"recognition models (cut id: {self.id})."
+            )
+
+        msup = SupervisionSegment(
+            id=merge_items_with_delimiter(s.id for s in sups),
+            # Make merged recording_id is a mix of recording_ids.
+            recording_id=merge_items_with_delimiter(s.recording_id for s in sups),
+            start=mstart,
+            duration=mduration,
+            # Hardcode -1 to indicate no specific channel, as the supervisions might have
+            # come from different channels in their original recordings.
+            channel=-1,
+            text=" ".join(s.text for s in sups if s.text),
+            speaker=merge_items_with_delimiter(s.speaker for s in sups if s.speaker),
+            language=merge_items_with_delimiter(s.language for s in sups if s.language),
+            gender=merge_items_with_delimiter(s.gender for s in sups if s.gender),
+            custom={
+                k: merge_custom(
+                    k,
+                    (
+                        s.custom[k]
+                        for s in sups
+                        if s.custom is not None and k in s.custom
+                    ),
+                )
+                for k in custom_keys
+            },
+            alignment={
+                # Concatenate the lists of alignment units.
+                k: reduce(
+                    add,
+                    (
+                        s.alignment[k]
+                        for s in sups
+                        if s.alignment is not None and k in s.alignment
+                    ),
+                )
+                for k in alignment_keys
+            },
+        )
+
+        new_cut = self.drop_supervisions()
+        new_cut._first_non_padding_cut.supervisions = [msup]
+        return new_cut
 
     def filter_supervisions(
         self, predicate: Callable[[SupervisionSegment], bool]
@@ -1114,7 +1247,7 @@ class MixedCut(Cut):
             >>> cut = cut.filter_supervisions(lambda s: s.text is not None)
 
         :param predicate: A callable that accepts `SupervisionSegment` and returns bool
-        :return: a modified MonoCut
+        :return: a modified MixedCut
         """
         new_mixed_cut = fastcopy(
             self,
@@ -1157,7 +1290,7 @@ class MixedCut(Cut):
         )
 
     @property
-    def _first_non_padding_cut(self) -> MonoCut:
+    def _first_non_padding_cut(self) -> DataCut:
         return self._first_non_padding_track.cut
 
     @property

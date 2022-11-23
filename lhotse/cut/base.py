@@ -23,6 +23,8 @@ from lhotse.utils import (
     deprecated,
     fastcopy,
     ifnone,
+    overlaps,
+    to_hashable,
 )
 
 # One of the design principles for Cuts is a maximally "lazy" implementation, e.g. when mixing Cuts,
@@ -199,6 +201,20 @@ class Cut:
         return {**d, "type": type(self).__name__}
 
     @property
+    def has_overlapping_supervisions(self) -> bool:
+        if len(self.supervisions) < 2:
+            return False
+
+        from cytoolz import sliding_window
+
+        for left, right in sliding_window(
+            2, sorted(self.supervisions, key=lambda s: s.start)
+        ):
+            if overlaps(left, right):
+                return True
+        return False
+
+    @property
     def trimmed_supervisions(self) -> List[SupervisionSegment]:
         """
         Return the supervisions in this Cut that have modified time boundaries so as not to exceed
@@ -336,10 +352,11 @@ class Cut:
         ), f"Cannot plot alignment: missing alignment field or alignment type '{alignment_type}'"
 
         fbank = Fbank()
+        sampling_rate = fbank.extractor.sampling_rate
 
-        feats = self.compute_features(fbank)
-        speaker = sup.speaker
-        language = sup.language
+        feats = self.resample(sampling_rate).compute_features(fbank)
+        speaker = sup.speaker or "<unknown>"
+        language = sup.language or "<unknown>"
 
         fig = plt.matshow(np.flip(feats.transpose(1, 0), 0))
         plt.title(
@@ -359,7 +376,7 @@ class Cut:
             end_frame = compute_num_frames(
                 item.end,
                 frame_shift=fbank.frame_shift,
-                sampling_rate=self.sampling_rate,
+                sampling_rate=sampling_rate,
             )
             plt.text(
                 end_frame - 4,
@@ -378,6 +395,7 @@ class Cut:
         keep_overlapping: bool = True,
         min_duration: Optional[Seconds] = None,
         context_direction: Literal["center", "left", "right", "random"] = "center",
+        keep_all_channels: bool = False,
     ) -> "CutSet":  # noqa: F821
         """
         Splits the current :class:`.Cut` into as many cuts as there are supervisions (:class:`.SupervisionSegment`).
@@ -407,6 +425,18 @@ class Cut:
                     Sup2
                |-----------|
 
+        For the case of a multi-channel cut with multiple supervisions, we can either trim
+        while respecting the supervision channels (in which case output cut has the same channels
+        as the supervision) or ignore the channels (in which case output cut has the same channels
+        as the input cut).
+
+        .. hint:: If the resulting trimmed cut contains a single supervision, we set the cut id to
+            the ``id`` of this supervision, for better compatibility with downstream tools, e.g.
+            comparing the hypothesis of ASR with the reference in icefall.
+
+        .. hint:: If a MultiCut is trimmed and the resulting trimmed cut contains a single channel,
+            we convert it to a MonoCut.
+
         :param keep_overlapping: when ``False``, it will discard parts of other supervisions that overlap with the
             main supervision. In the illustration above, it would discard ``Sup2`` in ``Cut1`` and ``Sup1`` in ``Cut2``.
             In this mode, we guarantee that there will always be exactly one supervision per cut.
@@ -418,8 +448,12 @@ class Cut:
         :param context_direction: Which direction should the cut be expanded towards to include context.
             The value of "center" implies equal expansion to left and right;
             random uniformly samples a value between "left" and "right".
+        :param keep_all_channels: If ``True``, the output cut will have the same channels as the input cut. By default,
+            the trimmed cut will have the same channels as the supervision.
         :return: a list of cuts.
         """
+        from .mixed import MixedCut
+        from .multi import MultiCut
         from .set import CutSet
 
         cuts = []
@@ -442,9 +476,33 @@ class Cut:
                 keep_excessive_supervisions=keep_overlapping,
                 _supervisions_index=supervisions_index,
             )
+
             if not keep_overlapping:
                 # Ensure that there is exactly one supervision per cut.
                 trimmed = trimmed.filter_supervisions(lambda s: s.id == segment.id)
+
+            if not keep_all_channels and not isinstance(trimmed, MixedCut):
+                # For MixedCut, we can't change the channels since it is defined by the
+                # number of channels in underlying tracks.
+
+                # Ensure that all supervisions have the same channel.
+                assert (
+                    len(set(to_hashable(s.channel) for s in trimmed.supervisions)) == 1
+                ), (
+                    "Trimmed cut has supervisions with different channels. Either set "
+                    "`ignore_channel=True` to keep original channels or `keep_overlapping=False` "
+                    "to retain only 1 supervision per trimmed cut."
+                )
+                trimmed.channel = trimmed.supervisions[0].channel
+
+                # If we have a single-channel MultiCut, we will convert it into a MonoCut.
+                if isinstance(trimmed, MultiCut) and trimmed.num_channels == 1:
+                    trimmed = trimmed.to_mono()[0]
+
+            if len(trimmed.supervisions) == 1:
+                # If the trimmed cut contains a single supervision, we set the cut id to
+                # the id of this supervision.
+                trimmed.id = segment.id
             cuts.append(trimmed)
         return CutSet.from_cuts(cuts)
 
@@ -518,46 +576,31 @@ class Cut:
                     )
         return indexed
 
-    @deprecated(
-        "Cut.compute_and_store_recording will be removed in a future release. Please use save_audio() instead."
-    )
-    def compute_and_store_recording(
-        self,
-        storage_path: Pathlike,
-        augment_fn: Optional[AugmentFn] = None,
-    ) -> "Cut":
-        """
-        Store this cut's waveform as audio recording to disk.
-
-        :param storage_path: The path to location where we will store the audio recordings.
-        :param augment_fn: an optional callable used for audio augmentation.
-            Be careful with the types of augmentations used: if they modify
-            the start/end/duration times of the cut and its supervisions,
-            you will end up with incorrect supervision information when using this API.
-            E.g. for speed perturbation, use ``CutSet.perturb_speed()`` instead.
-        :return: a new MonoCut instance.
-        """
-        return self.save_audio(storage_path=storage_path, augment_fn=augment_fn)
-
     def save_audio(
         self,
         storage_path: Pathlike,
+        encoding: Optional[str] = None,
+        bits_per_sample: Optional[int] = None,
         augment_fn: Optional[AugmentFn] = None,
     ) -> "Cut":
         """
         Store this cut's waveform as audio recording to disk.
 
         :param storage_path: The path to location where we will store the audio recordings.
+        :param encoding: Audio encoding argument supported by ``torchaudio.save``. See
+            https://pytorch.org/audio/stable/backend.html#save (sox_io backend) and
+            https://pytorch.org/audio/stable/backend.html#id3 (soundfile backend) for more details.
+        :param bits_per_sample: Audio bits_per_sample argument supported by ``torchaudio.save``. See
+            https://pytorch.org/audio/stable/backend.html#save (sox_io backend) and
+            https://pytorch.org/audio/stable/backend.html#id3 (soundfile backend) for more details.
         :param augment_fn: an optional callable used for audio augmentation.
             Be careful with the types of augmentations used: if they modify
             the start/end/duration times of the cut and its supervisions,
             you will end up with incorrect supervision information when using this API.
             E.g. for speed perturbation, use ``CutSet.perturb_speed()`` instead.
-        :return: a new MonoCut instance.
+        :return: a new Cut instance.
         """
         import torchaudio
-
-        from .mono import MonoCut
 
         storage_path = Path(storage_path)
         samples = self.load_audio()
@@ -565,7 +608,11 @@ class Cut:
             samples = augment_fn(samples, self.sampling_rate)
 
         torchaudio.save(
-            str(storage_path), torch.as_tensor(samples), sample_rate=self.sampling_rate
+            str(storage_path),
+            torch.as_tensor(samples),
+            sample_rate=self.sampling_rate,
+            encoding=encoding,
+            bits_per_sample=bits_per_sample,
         )
         recording = Recording(
             id=storage_path.stem,
@@ -575,18 +622,14 @@ class Cut:
             sources=[
                 AudioSource(
                     type="file",
-                    channels=[0],
+                    channels=list(range(self.num_channels)),
                     source=str(storage_path),
                 )
             ],
         )
-        return MonoCut(
-            id=self.id,
-            start=0,
-            duration=recording.duration,
-            channel=0,
+        return fastcopy(
+            recording.to_cut(),
             supervisions=self.supervisions,
-            recording=recording,
             custom=self.custom if hasattr(self, "custom") else None,
         )
 

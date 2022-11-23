@@ -14,7 +14,7 @@ from lhotse.audio import (
 from lhotse.cut import Cut, CutSet, MixedCut, MonoCut, PaddingCut
 from lhotse.features import Features, FeatureSet
 from lhotse.supervision import SupervisionSegment, SupervisionSet
-from lhotse.utils import compute_num_frames, overlaps
+from lhotse.utils import compute_num_frames, is_equal_or_contains, overlaps
 
 _VALIDATORS: Dict[str, Callable] = {}
 
@@ -65,13 +65,16 @@ def fix_manifests(
     recordings, supervisions = remove_missing_recordings_and_supervisions(
         recordings, supervisions
     )
-    if len(recordings) == 0 or len(supervisions) == 0:
-        raise ValueError(
-            "There are no matching recordings and supervisions in the input manifests."
-        )
+    # We don't use len(recordings) or len(supervisions) here because recordings and supervisions can be lazy.
+    assert (
+        len(frozenset(r.id for r in recordings)) > 0
+    ), "No recordings left after fixing the manifests."
+
     supervisions = trim_supervisions_to_recordings(recordings, supervisions)
-    if len(supervisions) == 0:
-        raise ValueError("All supervisions exceed the recordings duration.")
+    assert (
+        len(frozenset(s.id for s in supervisions)) > 0
+    ), "No supervisions left after fixing the manifests."
+
     return recordings, supervisions
 
 
@@ -107,7 +110,7 @@ def validate_recordings_and_supervisions(
             f"Supervision {s.id}: exceeded the bounds of its corresponding recording "
             f"(supervision spans [{s.start}, {s.end}]; recording spans [0, {r.duration}])"
         )
-        assert s.channel in r.channel_ids, (
+        assert is_equal_or_contains(r.channel_ids, s.channel), (
             f"Supervision {s.id}: channel {s.channel} does not exist in its corresponding Recording "
             f"(recording channels: {r.channel_ids})"
         )
@@ -150,11 +153,12 @@ def remove_missing_recordings_and_supervisions(
         )
     only_in_supervisions = recording_ids_in_sups - recording_ids
     if only_in_supervisions:
-        n_orig_sups = len(supervisions)
+        supervision_ids = frozenset(s.id for s in supervisions)
         supervisions = supervisions.filter(
             lambda s: s.recording_id not in only_in_supervisions
         )
-        n_removed_sups = n_orig_sups - len(supervisions)
+        supervision_ids_after = frozenset(s.id for s in supervisions)
+        n_removed_sups = len(supervision_ids) - len(supervision_ids_after)
         logging.warning(
             f"Removed {n_removed_sups} supervisions with no corresponding recordings "
             f"(for a total of {len(only_in_supervisions)} recording IDs)."
@@ -380,7 +384,7 @@ def validate_cut(c: Cut, read_data: bool = False) -> None:
     # Conditions related to recording
     if c.has_recording:
         validate_recording(c.recording)
-        assert c.channel in c.recording.channel_ids
+        assert is_equal_or_contains(c.recording.channel_ids, c.channel)
         if read_data:
             # We are not passing "read_data" to "validate_recording" to avoid loading audio twice;
             # we'll just validate the subset of the recording relevant for the cut.
@@ -453,7 +457,9 @@ def validate_supervision_set(supervisions: SupervisionSet, **kwargs) -> None:
     for rid, sups in supervisions._segments_by_recording_id.items():
         cntr_per_channel = defaultdict(int)
         for s in sups:
-            cntr_per_channel[s.channel] += int(s.start == 0)
+            # channel can be an int or a list (in which case we convert it to a tuple)
+            c = s.channel if isinstance(s.channel, int) else tuple(s.channel)
+            cntr_per_channel[c] += int(s.start == 0)
         for channel, count in cntr_per_channel.items():
             if count > 1:
                 logging.warning(

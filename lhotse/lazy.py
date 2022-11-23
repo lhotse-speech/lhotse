@@ -171,9 +171,31 @@ class ImitatesDict(Dillable):
         return ((item.id, item) for item in self)
 
 
-class LazyJsonlIterator(ImitatesDict):
+class LazyJsonlIterator:
     """
-    LazyJsonlIterator provides the ability to read Lhotse objects from a
+    LazyJsonlIterator provides the ability to read JSON lines as Python dicts.
+    It can also provide the number of lines via __len__ via fast newlines counting.
+    """
+
+    def __init__(self, path: Pathlike) -> None:
+        self.path = path
+        self._len = None
+
+    def __iter__(self):
+        with open_best(self.path, "r") as f:
+            for line in f:
+                data = decode_json_line(line)
+                yield data
+
+    def __len__(self) -> int:
+        if self._len is None:
+            self._len = count_newlines_fast(self.path)
+        return self._len
+
+
+class LazyManifestIterator(ImitatesDict):
+    """
+    LazyManifestIterator provides the ability to read Lhotse objects from a
     JSONL file on-the-fly, without reading its full contents into memory.
 
     This class is designed to be a partial "drop-in" replacement for ordinary dicts
@@ -183,21 +205,18 @@ class LazyJsonlIterator(ImitatesDict):
     """
 
     def __init__(self, path: Pathlike) -> None:
-        self.path = path
-        self._len = None
-        assert extension_contains(".jsonl", self.path) or str(self.path) == "-"
+        assert extension_contains(".jsonl", path) or str(path) == "-"
+        self.source = LazyJsonlIterator(path)
+
+    @property
+    def path(self) -> Pathlike:
+        return self.source.path
 
     def __iter__(self):
-        with open_best(self.path) as f:
-            for line in f:
-                data = decode_json_line(line)
-                item = deserialize_item(data)
-                yield item
+        yield from map(deserialize_item, self.source)
 
     def __len__(self) -> int:
-        if self._len is None:
-            self._len = count_newlines_fast(self.path)
-        return self._len
+        return len(self.source)
 
     def __add__(self, other) -> "LazyIteratorChain":
         return LazyIteratorChain(self, other)
@@ -469,6 +488,36 @@ class LazyRepeater(ImitatesDict):
 
     def __add__(self, other) -> "LazyIteratorChain":
         return LazyIteratorChain(self, other)
+
+
+class LazySlicer(ImitatesDict):
+    """
+    A wrapper over an iterable that enables selecting k-th element every n elements.
+    """
+
+    def __init__(self, iterator: Iterable, k: int, n: int) -> None:
+        self.iterator = iterator
+        assert (
+            k < n
+        ), f"When selecting k-th element every n elements, k must be less than n (got k={k} n={n})."
+        self.k = k
+        self.n = n
+
+    def __iter__(self):
+        for idx, item in enumerate(self.iterator):
+            if idx % self.n == self.k:
+                yield item
+
+    def __add__(self, other) -> "LazyIteratorChain":
+        return LazyIteratorChain(self, other)
+
+    def __len__(self) -> int:
+        raise NotImplementedError(
+            "LazySlicer does not support __len__ because it would require "
+            "iterating over the whole iterator, which is not possible in a lazy fashion. "
+            "If you really need to know the length, convert to eager mode first using "
+            "`.to_eager()`. Note that this will require loading the whole iterator into memory."
+        )
 
 
 def attach_repeat_idx_to_id(item: Any, idx: int) -> Any:

@@ -7,6 +7,7 @@ from lhotse.cut import MixedCut, PaddingCut
 from lhotse.testing.dummies import (
     dummy_cut,
     dummy_features,
+    dummy_multi_cut,
     dummy_recording,
     dummy_temporal_array,
 )
@@ -15,6 +16,7 @@ from lhotse.utils import LOG_EPSILON, uuid4
 
 @pytest.mark.parametrize(
     [
+        "cut_type",
         "cut_start",
         "cut_duration",
         "extend_duration",
@@ -24,19 +26,30 @@ from lhotse.utils import LOG_EPSILON, uuid4
         "expected_end",
     ],
     [
-        (0.0, 0.5, 0.3, "right", False, 0.0, 0.8),
-        (0.0, 0.5, 0.3, "both", False, 0.0, 0.8),
-        (0.2, 0.5, 0.3, "left", False, 0.0, 0.7),
-        (0.2, 0.5, 0.1, "both", False, 0.1, 0.8),
-        (0.0, 0.8, 0.3, "both", False, 0.0, 1.0),
-        (0.0, 0.5, 0.3, "right", True, 0.0, 0.8),
-        (0.0, 0.5, 0.3, "both", True, 0.0, 1.1),
-        (0.2, 0.5, 0.3, "left", True, 0.0, 0.8),
-        (0.2, 0.5, 0.1, "both", True, 0.1, 0.8),
-        (0.0, 0.8, 0.3, "both", True, 0.0, 1.4),
+        ("mono", 0.0, 0.5, 0.3, "right", False, 0.0, 0.8),
+        ("mono", 0.0, 0.5, 0.3, "both", False, 0.0, 0.8),
+        ("mono", 0.2, 0.5, 0.3, "left", False, 0.0, 0.7),
+        ("mono", 0.2, 0.5, 0.1, "both", False, 0.1, 0.8),
+        ("mono", 0.0, 0.8, 0.3, "both", False, 0.0, 1.0),
+        ("mono", 0.0, 0.5, 0.3, "right", True, 0.0, 0.8),
+        ("mono", 0.0, 0.5, 0.3, "both", True, 0.0, 1.1),
+        ("mono", 0.2, 0.5, 0.3, "left", True, 0.0, 0.8),
+        ("mono", 0.2, 0.5, 0.1, "both", True, 0.1, 0.8),
+        ("mono", 0.0, 0.8, 0.3, "both", True, 0.0, 1.4),
+        ("multi", 0.0, 0.5, 0.3, "right", False, 0.0, 0.8),
+        ("multi", 0.0, 0.5, 0.3, "both", False, 0.0, 0.8),
+        ("multi", 0.2, 0.5, 0.3, "left", False, 0.0, 0.7),
+        ("multi", 0.2, 0.5, 0.1, "both", False, 0.1, 0.8),
+        ("multi", 0.0, 0.8, 0.3, "both", False, 0.0, 1.0),
+        ("multi", 0.0, 0.5, 0.3, "right", True, 0.0, 0.8),
+        ("multi", 0.0, 0.5, 0.3, "both", True, 0.0, 1.1),
+        ("multi", 0.2, 0.5, 0.3, "left", True, 0.0, 0.8),
+        ("multi", 0.2, 0.5, 0.1, "both", True, 0.1, 0.8),
+        ("multi", 0.0, 0.8, 0.3, "both", True, 0.0, 1.4),
     ],
 )
 def test_extend_by_cut(
+    cut_type,
     cut_start,
     cut_duration,
     extend_duration,
@@ -45,7 +58,12 @@ def test_extend_by_cut(
     expected_start,
     expected_end,
 ):
-    cut = dummy_cut(int(uuid4()), start=cut_start, duration=cut_duration)
+    if cut_type == "mono":
+        cut = dummy_cut(int(uuid4()), start=cut_start, duration=cut_duration)
+    elif cut_type == "multi":
+        cut = dummy_multi_cut(int(uuid4()), start=cut_start, duration=cut_duration)
+    else:
+        raise ValueError(f"Invalid cut_type: {cut_type}")
     extended_cut = cut.extend_by(
         duration=extend_duration, direction=extend_direction, pad_silence=pad_silence
     )

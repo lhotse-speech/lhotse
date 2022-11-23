@@ -1,12 +1,18 @@
 import contextlib
+from io import BytesIO
 from tempfile import NamedTemporaryFile
 from typing import Dict, List, Optional, Type, Union
 
-from lhotse import AudioSource
+import numpy as np
+import torch
+import torchaudio.backend.no_backend
+
+from lhotse import AudioSource, compute_num_samples
 from lhotse.array import Array, TemporalArray
 from lhotse.audio import Recording, RecordingSet
-from lhotse.cut import CutSet, MonoCut
+from lhotse.cut import CutSet, MonoCut, MultiCut
 from lhotse.features import Features, FeatureSet
+from lhotse.features.io import MemoryRawWriter
 from lhotse.manipulation import Manifest
 from lhotse.supervision import AlignmentItem, SupervisionSegment, SupervisionSet
 from lhotse.utils import fastcopy
@@ -25,10 +31,12 @@ def as_lazy(manifest):
 
 
 # noinspection PyPep8Naming
-def DummyManifest(type_: Type, *, begin_id: int, end_id: int) -> Manifest:
+def DummyManifest(
+    type_: Type, *, begin_id: int, end_id: int, with_data: bool = False
+) -> Manifest:
     if type_ == RecordingSet:
         return RecordingSet.from_recordings(
-            dummy_recording(idx) for idx in range(begin_id, end_id)
+            dummy_recording(idx, with_data=with_data) for idx in range(begin_id, end_id)
         )
     if type_ == SupervisionSet:
         return SupervisionSet.from_segments(
@@ -37,21 +45,65 @@ def DummyManifest(type_: Type, *, begin_id: int, end_id: int) -> Manifest:
     if type_ == FeatureSet:
         # noinspection PyTypeChecker
         return FeatureSet.from_features(
-            dummy_features(idx) for idx in range(begin_id, end_id)
+            dummy_features(idx, with_data=with_data) for idx in range(begin_id, end_id)
         )
     if type_ == CutSet:
         # noinspection PyTypeChecker
         return CutSet.from_cuts(
-            dummy_cut(idx, supervisions=[dummy_supervision(idx)])
+            dummy_cut(idx, supervisions=[dummy_supervision(idx)], with_data=with_data)
             for idx in range(begin_id, end_id)
         )
 
 
-def dummy_recording(unique_id: int, duration: float = 1.0) -> Recording:
+def dummy_recording(
+    unique_id: int,
+    duration: float = 1.0,
+    sampling_rate: int = 16000,
+    with_data: bool = False,
+) -> Recording:
+    num_samples = compute_num_samples(duration, sampling_rate)
     return Recording(
         id=f"dummy-recording-{unique_id:04d}",
         sources=[
-            AudioSource(type="command", channels=[0], source='echo "dummy waveform"')
+            dummy_audio_source(
+                sampling_rate=sampling_rate,
+                num_samples=num_samples,
+                with_data=with_data,
+            )
+        ],
+        sampling_rate=sampling_rate,
+        num_samples=num_samples,
+        duration=duration,
+    )
+
+
+def dummy_audio_source(
+    num_samples: int = 16000,
+    sampling_rate: int = 16000,
+    with_data: bool = False,
+) -> AudioSource:
+    if not with_data:
+        return AudioSource(type="command", channels=[0], source='echo "dummy waveform"')
+    else:
+        # 1kHz sine wave
+        data = torch.sin(2 * np.pi * 1000 * torch.arange(num_samples)).unsqueeze(0)
+        binary_data = BytesIO()
+        torchaudio.save(binary_data, data, sample_rate=sampling_rate, format="wav")
+        binary_data.seek(0)
+        return AudioSource(type="memory", channels=[0], source=binary_data.getvalue())
+
+
+def dummy_multi_channel_recording(
+    unique_id: int, duration: float = 1.0, channel_ids: Optional[List[int]] = None
+) -> Recording:
+    if channel_ids is None:
+        channel_ids = [0, 1]
+    return Recording(
+        id=f"dummy-multi-channel-recording-{unique_id:04d}",
+        sources=[
+            AudioSource(
+                type="command", channels=channel_ids, source='echo "dummy waveform"'
+            )
         ],
         sampling_rate=16000,
         num_samples=16000,
@@ -61,7 +113,7 @@ def dummy_recording(unique_id: int, duration: float = 1.0) -> Recording:
 
 def dummy_alignment(
     text: str = "irrelevant", start: float = 0.0, duration: float = 1.0
-) -> AlignmentItem:
+) -> Dict[str, List[AlignmentItem]]:
     subwords = [
         text[i : i + 3] for i in range(0, len(text), 3)
     ]  # Create subwords of 3 chars
@@ -77,6 +129,7 @@ def dummy_supervision(
     unique_id: int,
     start: float = 0.0,
     duration: float = 1.0,
+    channel: Union[int, List[int]] = 0,
     text: str = "irrelevant",
     alignment: Optional[Dict[str, List[AlignmentItem]]] = dummy_alignment(),
 ) -> SupervisionSegment:
@@ -85,6 +138,7 @@ def dummy_supervision(
         recording_id=f"dummy-recording-{unique_id:04d}",
         start=start,
         duration=duration,
+        channel=channel,
         text=text,
         speaker="irrelevant",
         language="irrelevant",
@@ -95,8 +149,9 @@ def dummy_supervision(
 
 
 def dummy_features(
-    unique_id: int, start: float = 0.0, duration: float = 1.0
+    unique_id: int, start: float = 0.0, duration: float = 1.0, with_data: bool = False
 ) -> Features:
+    # Note: with_data is ignored as this always has real data attached
     return Features(
         recording_id=f"dummy-recording-{unique_id:04d}",
         channels=0,
@@ -113,17 +168,61 @@ def dummy_features(
     )
 
 
-def dummy_temporal_array(start: float = 0.0) -> TemporalArray:
+def dummy_multi_channel_features(
+    unique_id: int,
+    start: float = 0.0,
+    duration: float = 1.0,
+    channels: Optional[List[int]] = None,
+) -> Features:
+    if channels is None:
+        channels = [0, 1]
+    return Features(
+        recording_id=f"dummy-multi-channel-recording-{unique_id:04d}",
+        channels=channels,
+        start=start,
+        duration=duration,
+        type="fbank",
+        num_frames=100,
+        num_features=23,
+        frame_shift=0.01,
+        sampling_rate=16000,
+        storage_type="lilcom_files",
+        storage_path="test/fixtures/dummy_feats/storage",
+        storage_key="dbf9a0ec-f79d-4eb8-ae83-143a6d5de64d.llc",
+    )
+
+
+def dummy_temporal_array(
+    start: float = 0.0, num_frames: int = 100, frame_shift: float = 0.01
+) -> TemporalArray:
     return TemporalArray(
         array=Array(
             storage_type="lilcom_files",
             storage_path="test/fixtures/dummy_feats/storage",
             storage_key="dbf9a0ec-f79d-4eb8-ae83-143a6d5de64d.llc",
-            shape=[100, 23],
+            shape=[num_frames, 23],
         ),
         temporal_dim=0,
         start=start,
-        frame_shift=0.01,
+        frame_shift=frame_shift,
+    )
+
+
+def dummy_array() -> Array:
+    data = np.random.rand(128).astype(np.float32)
+    return MemoryRawWriter().store_array("vector-float32", data)
+
+
+def dummy_temporal_array_uint8(
+    start: float = 0.0, num_frames: int = 100, frame_shift: float = 0.01
+) -> TemporalArray:
+    data = np.random.randint(0, 255, num_frames, dtype=np.uint8)
+    return MemoryRawWriter().store_array(
+        "temporal-array-int8",
+        data,
+        frame_shift=frame_shift,
+        temporal_dim=0,
+        start=start,
     )
 
 
@@ -134,14 +233,57 @@ def dummy_cut(
     recording: Recording = None,
     features: Features = None,
     supervisions=None,
+    with_data: bool = False,
 ):
+    custom = {
+        "custom_attribute": "dummy-value",
+        "custom_attribute_other": "dummy-value-other",
+    }
+    if with_data:
+        custom.update(
+            {
+                "custom_embedding": dummy_array(),
+                "custom_features": dummy_temporal_array(start),
+                "custom_recording": dummy_recording(
+                    unique_id, duration=duration, with_data=True
+                ),
+                "custom_indexes": dummy_temporal_array_uint8(start=start),
+            }
+        )
     return MonoCut(
-        id=f"dummy-cut-{unique_id:04d}",
+        id=f"dummy-mono-cut-{unique_id:04d}",
         start=start,
         duration=duration,
         channel=0,
-        recording=recording if recording else dummy_recording(unique_id),
-        features=features if features else dummy_features(unique_id),
+        recording=recording
+        if recording
+        else dummy_recording(unique_id, with_data=with_data),
+        features=features
+        if features
+        else dummy_features(unique_id, with_data=with_data),
+        supervisions=supervisions if supervisions is not None else [],
+        custom=custom,
+    )
+
+
+def dummy_multi_cut(
+    unique_id: int,
+    start: float = 0.0,
+    duration: float = 1.0,
+    recording: Recording = None,
+    features: Features = None,
+    supervisions: SupervisionSet = None,
+    channel: Optional[List[int]] = None,
+):
+    if channel is None:
+        channel = [0, 1]
+    return MultiCut(
+        id=f"dummy-multi-cut-{unique_id:04d}",
+        start=start,
+        duration=duration,
+        channel=channel,
+        recording=recording if recording else dummy_multi_channel_recording(unique_id),
+        features=features if features else dummy_multi_channel_features(unique_id),
         supervisions=supervisions if supervisions is not None else [],
     )
 

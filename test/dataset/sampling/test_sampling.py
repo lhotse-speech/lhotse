@@ -38,6 +38,20 @@ def libri_cut_set():
     )
 
 
+def test_dynamic_cut_sampler_max_cuts():
+    # The dummy cuts have a duration of 1 second each
+    cut_set = DummyManifest(CutSet, begin_id=0, end_id=20)
+
+    sampler = DynamicCutSampler(cut_set, max_cuts=5)
+
+    tot = 0
+    for batch in sampler:
+        assert len(batch) == 5
+        tot += 1
+
+    assert tot == 4
+
+
 # Tests both aliases of SimpleCutSampler
 @pytest.mark.parametrize(
     "sampler_cls", [SimpleCutSampler, SingleCutSampler, DynamicCutSampler]
@@ -417,6 +431,16 @@ def test_bucketing_sampler_single_cuts():
     assert set(cut_set.ids) == set(c.id for c in sampled_cuts)
 
 
+def test_bucketing_sampler_no_issue_with_first_bucket_index_being_minus_one():
+    rng = random.Random(42)
+    cut_set = DummyManifest(CutSet, begin_id=0, end_id=11)
+    for c in cut_set:
+        c.duration = rng.randint(1, 10)
+    sampler = BucketingSampler(cut_set, num_buckets=2)
+    for batch in sampler:
+        pass  # does not raise
+
+
 def test_bucketing_sampler_single_cuts_equal_duration():
     cut_set = DummyManifest(CutSet, begin_id=0, end_id=1000)
     for idx, c in enumerate(cut_set):
@@ -703,7 +727,7 @@ def test_sampler_filter(sampler_cls):
         # a full epoch.
         max_duration=10.0,
     )
-    removed_cut_id = "dummy-cut-0010"
+    removed_cut_id = "dummy-mono-cut-0010"
     sampler.filter(lambda cut: cut.id != removed_cut_id)
     sampled_cuts = []
     for batch in sampler:
@@ -731,7 +755,7 @@ def test_cut_pairs_sampler_filter():
         # a full epoch.
         max_source_frames=1000,
     )
-    removed_cut_id = "dummy-cut-0010"
+    removed_cut_id = "dummy-mono-cut-0010"
     sampler.filter(lambda cut: cut.id != removed_cut_id)
 
     source_cuts, target_cuts = [], []

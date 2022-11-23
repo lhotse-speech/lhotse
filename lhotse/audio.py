@@ -151,7 +151,7 @@ class AudioSource:
         :param force_opus_sampling_rate: This parameter is only used when we detect an OPUS file.
             It will tell ffmpeg to resample OPUS to this sampling rate.
         """
-        assert self.type in ("file", "command", "url", "memory")
+        assert self.type in ("file", "command", "url", "memory", "shar")
 
         # TODO: refactor when another source type is added
         source = self.source
@@ -190,11 +190,16 @@ class AudioSource:
         elif self.type == "memory":
             assert isinstance(self.source, bytes), (
                 "Corrupted manifest: specified AudioSource type is 'memory', "
-                "but 'self.source' attribute is not of type 'bytes'."
+                f"but 'self.source' attribute is not of type 'bytes' (found: '{type(self.source).__name__}')."
             )
             source = BytesIO(self.source)
             samples, sampling_rate = read_audio(
                 source, offset=offset, duration=duration
+            )
+        elif self.type == "shar":
+            raise RuntimeError(
+                "Inconsistent state: found an AudioSource with Lhotse Shar placeholder "
+                "that was not filled during deserialization."
             )
 
         else:  # self.type == 'file'
@@ -315,7 +320,18 @@ class Recording:
     sampling_rate: int
     num_samples: int
     duration: Seconds
+    channel_ids: Optional[List[int]] = None
     transforms: Optional[List[Dict]] = None
+
+    def __post_init__(self):
+        if self.channel_ids is None:
+            self.channel_ids = sorted(
+                cid for source in self.sources for cid in source.channels
+            )
+
+    @property
+    def num_channels(self):
+        return len(self.channel_ids)
 
     @staticmethod
     def from_file(
@@ -459,13 +475,7 @@ class Recording:
             channels=channels, offset=ifnone(offset, 0), duration=duration
         )
         stream = BytesIO()
-        if torchaudio_soundfile_supports_format() and format in (
-            "wav",
-            "ogg",
-            "vorbis",
-            "flac",
-            "sph",
-        ):
+        if torchaudio_soundfile_supports_format() and format == "flac":
             # Prefer saving with soundfile backend whenever possible to avoid issue:
             # https://github.com/pytorch/audio/issues/2662
             # Saving with sox_io backend to FLAC may corrupt the file, IDK about other
@@ -499,48 +509,19 @@ class Recording:
 
     def to_cut(self):
         """
-        Create a Cut out of this recording.
-
-        For single-channel recordings, we return a :class:`MonoCut`.
-        For multi-channel recordings, we return a :class:`MixedCut` with as
-        many tracks as the number of channels.
-        The implementation of the multi-channel case may change in the future...
+        Create a Cut out of this recording --- MonoCut or MultiCut, depending on the
+        number of channels.
         """
-        from lhotse.cut import MixedCut, MixTrack, MonoCut
+        from lhotse.cut import MonoCut, MultiCut
 
-        if self.num_channels == 1:
-            return MonoCut(
-                id=self.id,
-                start=0.0,
-                duration=self.duration,
-                channel=self.channel_ids[0],
-                recording=self,
-            )
-        else:
-            # TODO: if we ever have "MultiCut" we may replace this implementation
-            return MixedCut(
-                id=self.id,
-                tracks=[
-                    MixTrack(
-                        cut=MonoCut(
-                            id=f"{self.id}_ch{cidx}",
-                            start=0.0,
-                            duration=self.duration,
-                            channel=cidx,
-                            recording=self,
-                        )
-                    )
-                    for cidx in self.channel_ids
-                ],
-            )
-
-    @property
-    def num_channels(self):
-        return sum(len(source.channels) for source in self.sources)
-
-    @property
-    def channel_ids(self):
-        return sorted(cid for source in self.sources for cid in source.channels)
+        cls = MonoCut if self.num_channels == 1 else MultiCut
+        return cls(
+            id=self.id,
+            start=0.0,
+            duration=self.duration,
+            channel=self.channel_ids[0] if self.num_channels == 1 else self.channel_ids,
+            recording=self,
+        )
 
     @rich_exception_info
     def load_audio(
@@ -756,6 +737,23 @@ class Recording:
             provided, we will generate one with as many channels as this argument specifies.
         :return: the perturbed ``Recording``.
         """
+
+        # We may need to change the `channel_ids` field according to whether we are convolving
+        # with a multi-channel RIR or not.
+        # The following cases are possible:
+        # Case 1: input is mono, rir is mono -> mono output, no need to change
+        # Case 2: input is mono, rir is multi-channel -> multi-channel output, change channel_ids
+        # Case 3: input is multi-channel, rir is mono -> multi-channel output, no need to change
+        # Case 4: input is multi-channel, rir is multi-channel -> multi-channel output,
+        #   no need to change (since we assume that the RIR has the same number of channels as the input)
+
+        if self.num_channels > 1 or rir_channels is None or len(rir_channels) == 1:
+            # Case 1, 3 or 4
+            new_channel_ids = self.channel_ids
+        else:
+            # Case 2
+            new_channel_ids = list(range(len(rir_channels)))
+
         transforms = self.transforms.copy() if self.transforms is not None else []
         transforms.append(
             ReverbWithImpulseResponse(
@@ -768,6 +766,7 @@ class Recording:
         return fastcopy(
             self,
             id=f"{self.id}_rvb" if affix_id else self.id,
+            channel_ids=new_channel_ids,
             transforms=transforms,
         )
 
@@ -1195,6 +1194,16 @@ class AudioMixer:
     The time offset is relative to the start of the reference signal
     (only positive values are supported).
     The SNR is relative to the energy of the signal used to initialize the ``AudioMixer``.
+
+    .. note:: Both single-channel and multi-channel signals are supported as reference
+        and added signals. The only requirement is that the when mixing 2 multi-channel
+        signals, they must have the same number of channels.
+
+    .. note:: When the AudioMixer contains multi-channel tracks, 2 types of mixed signals
+        can be generated:
+        - `mixed_audio` mixes each channel independently, and returns a multi-channel signal.
+          If there is a mono track, it is added to all the channels.
+        - `mixed_mono_audio` mixes all channels together, and returns a single-channel signal.
     """
 
     def __init__(
@@ -1215,6 +1224,7 @@ class AudioMixer:
         self.tracks = [base_audio]
         self.offsets = [0]
         self.sampling_rate = sampling_rate
+        self.num_channels = base_audio.shape[0]
         self.dtype = self.tracks[0].dtype
 
         # Keep a pre-computed energy value of the audio that we initialize the Mixer with;
@@ -1252,7 +1262,7 @@ class AudioMixer:
     @property
     def unmixed_audio(self) -> List[np.ndarray]:
         """
-        Return a list of numpy arrays with the shape (1, num_samples), where each track is
+        Return a list of numpy arrays with the shape (C, num_samples), where each track is
         zero padded and scaled adequately to the offsets and SNR used in ``add_to_mix`` call.
         """
         total = self.num_samples_total
@@ -1264,12 +1274,33 @@ class AudioMixer:
     @property
     def mixed_audio(self) -> np.ndarray:
         """
-        Return a numpy ndarray with the shape (1, num_samples) - a mono mix of the tracks
+        Return a numpy ndarray with the shape (num_channels, num_samples) - a mix of the tracks
+        supplied with ``add_to_mix`` calls.
+        """
+        total = self.num_samples_total
+        mixed = np.zeros((self.num_channels, total), dtype=self.dtype)
+        for offset, track in zip(self.offsets, self.tracks):
+            # Only two cases are possible here: either the track is mono, or it has the same
+            # number of channels as the mixer. For the latter case, we don't need to do anything
+            # special, as we can just add the track to the mix. For the former case, we need to
+            # add the mono track to all channels by repeating it.
+            if track.shape[0] == 1 and self.num_channels > 1:
+                track = np.tile(track, (self.num_channels, 1))
+            mixed[:, offset : offset + track.shape[1]] += track
+        return mixed
+
+    @property
+    def mixed_mono_audio(self) -> np.ndarray:
+        """
+        Return a numpy ndarray with the shape (1, num_samples) - a mix of the tracks
         supplied with ``add_to_mix`` calls.
         """
         total = self.num_samples_total
         mixed = np.zeros((1, total), dtype=self.dtype)
         for offset, track in zip(self.offsets, self.tracks):
+            if track.shape[0] > 1:
+                # Sum all channels of the track
+                track = np.sum(track, axis=0, keepdims=True)
             mixed[:, offset : offset + track.shape[1]] += track
         return mixed
 
@@ -1280,7 +1311,7 @@ class AudioMixer:
         offset: Seconds = 0.0,
     ):
         """
-        Add audio (only support mono-channel) of a new track into the mix.
+        Add audio of a new track into the mix.
         :param audio: An array of audio samples to be mixed in.
         :param snr: Signal-to-noise ratio, assuming `audio` represents noise (positive SNR - lower `audio` energy,
         negative SNR - higher `audio` energy)
@@ -1288,10 +1319,9 @@ class AudioMixer:
         the start with low energy values.
         :return:
         """
-        if len(audio) == 0:
+        if audio.size == 0:
             return  # do nothing for empty arrays
 
-        assert audio.shape[0] == 1  # TODO: support multi-channels
         assert offset >= 0.0, "Negative offset in mixing is not supported."
 
         num_samples_offset = compute_num_samples(offset, self.sampling_rate)
@@ -1312,6 +1342,16 @@ class AudioMixer:
 
         self.tracks.append(gain * audio)
         self.offsets.append(num_samples_offset)
+        # We cannot mix 2 multi-channel audios with different number of channels.
+        if (
+            audio.shape[0] != self.num_channels
+            and self.num_channels != 1
+            and audio.shape[0] != 1
+        ):
+            raise ValueError(
+                f"Cannot mix audios with {audio.shape[0]} and {self.num_channels} channels."
+            )
+        self.num_channels = max(self.num_channels, audio.shape[0])
 
 
 def audio_energy(audio: np.ndarray) -> float:
@@ -1714,7 +1754,7 @@ def torchaudio_info(
         return LibsndfileCompatibleAudioInfo(
             channels=info.num_channels,
             frames=tot_samples,
-            samplerate=info.sample_rate,
+            samplerate=int(info.sample_rate),
             duration=tot_samples / info.sample_rate,
         )
 
@@ -1722,7 +1762,7 @@ def torchaudio_info(
     return LibsndfileCompatibleAudioInfo(
         channels=info.num_channels,
         frames=info.num_frames,
-        samplerate=info.sample_rate,
+        samplerate=int(info.sample_rate),
         duration=info.num_frames / info.sample_rate,
     )
 
@@ -1750,7 +1790,7 @@ def torchaudio_load(
         frame_offset=frame_offset,
         num_frames=num_frames,
     )
-    return audio.numpy(), sampling_rate
+    return audio.numpy(), int(sampling_rate)
 
 
 def torchaudio_ffmpeg_load(
@@ -1812,7 +1852,7 @@ def soundfile_load(
         # Load the target number of frames, and transpose to match librosa form
         return (
             sf_desc.read(frames=frame_duration, dtype=np.float32, always_2d=False).T,
-            sampling_rate,
+            int(sampling_rate),
         )
 
 
@@ -1836,7 +1876,7 @@ def audioread_info(path: Pathlike) -> LibsndfileCompatibleAudioInfo:
         return LibsndfileCompatibleAudioInfo(
             channels=input_file.channels,
             frames=num_samples,
-            samplerate=input_file.samplerate,
+            samplerate=int(input_file.samplerate),
             duration=num_samples / input_file.samplerate,
         )
 
@@ -1923,7 +1963,7 @@ def audioread_load(
     else:
         y = np.empty(0, dtype=dtype)
 
-    return y, sr_native
+    return y, int(sr_native)
 
 
 def _buf_to_float(x, n_bytes=2, dtype=np.float32):
@@ -2004,7 +2044,7 @@ def opus_info(
     return LibsndfileCompatibleAudioInfo(
         channels=samples.shape[0],
         frames=samples.shape[1],
-        samplerate=sampling_rate,
+        samplerate=int(sampling_rate),
         duration=samples.shape[1] / sampling_rate,
     )
 
@@ -2153,7 +2193,7 @@ def sph_info(path: Pathlike) -> LibsndfileCompatibleAudioInfo:
     return LibsndfileCompatibleAudioInfo(
         channels=samples.shape[0],
         frames=samples.shape[1],
-        samplerate=sampling_rate,
+        samplerate=int(sampling_rate),
         duration=samples.shape[1] / sampling_rate,
     )
 

@@ -1,7 +1,7 @@
 import pickle
-import threading
 from abc import ABCMeta, abstractmethod
 from functools import lru_cache
+from io import BytesIO
 from math import ceil, floor
 from pathlib import Path
 from typing import List, Optional, Type, Union
@@ -11,7 +11,7 @@ import numpy as np
 
 from lhotse.array import Array, TemporalArray
 from lhotse.caching import dynamic_lru_cache
-from lhotse.utils import Pathlike, Seconds, SmartOpen, is_module_available
+from lhotse.utils import Pathlike, Seconds, SmartOpen, is_module_available, pairwise
 
 
 class FeaturesWriter(metaclass=ABCMeta):
@@ -965,9 +965,13 @@ class KaldiReader(FeaturesReader):
 
         super().__init__()
         self.storage_path = storage_path
-        self.storage = kaldi_native_io.RandomAccessFloatMatrixReader(
-            f"scp:{self.storage_path}"
-        )
+        if storage_path.endswith(".scp"):
+            self.storage = kaldi_native_io.RandomAccessFloatMatrixReader(
+                f"scp:{self.storage_path}"
+            )
+        else:
+            self.storage = None
+            self.reader = kaldi_native_io.FloatMatrix
 
     @dynamic_lru_cache
     def read(
@@ -976,7 +980,11 @@ class KaldiReader(FeaturesReader):
         left_offset_frames: int = 0,
         right_offset_frames: Optional[int] = None,
     ) -> np.ndarray:
-        arr = np.copy(self.storage[key])
+        if self.storage is not None:
+            arr = np.copy(self.storage[key])
+        else:
+            arr = self.reader.read(self.storage_path).numpy()
+
         return arr[left_offset_frames:right_offset_frames]
 
 
@@ -1091,8 +1099,13 @@ class MemoryLilcomWriter(FeaturesWriter):
 
     name = "memory_lilcom"
 
-    def __init__(self, *args, **kwargs):
-        pass
+    def __init__(
+        self,
+        *args,
+        lilcom_tick_power: int = -5,
+        **kwargs,
+    ) -> None:
+        self.lilcom_tick_power = lilcom_tick_power
 
     @property
     def storage_path(self) -> None:
@@ -1102,7 +1115,7 @@ class MemoryLilcomWriter(FeaturesWriter):
         assert np.issubdtype(
             value.dtype, np.floating
         ), "Lilcom compression supports only floating-point arrays."
-        return lilcom.compress(value)
+        return lilcom.compress(value, tick_power=self.lilcom_tick_power)
 
     def close(self) -> None:
         pass
@@ -1160,10 +1173,37 @@ class MemoryRawWriter(FeaturesWriter):
         pass
 
 
-def pairwise(iterable):
-    "s -> (s0,s1), (s1,s2), (s2, s3), ..."
-    from itertools import tee
+@register_reader
+class MemoryNpyReader(FeaturesReader):
+    """ """
 
-    a, b = tee(iterable)
-    next(b, None)
-    return zip(a, b)
+    name = "memory_npy"
+
+    def __init__(self, *args, **kwargs):
+        pass
+
+    @dynamic_lru_cache
+    def read(
+        self,
+        raw_data: bytes,
+        left_offset_frames: int = 0,
+        right_offset_frames: Optional[int] = None,
+    ) -> np.ndarray:
+        stream = BytesIO(raw_data)
+        arr = np.load(stream)
+        return arr[left_offset_frames:right_offset_frames]
+
+
+@register_reader
+class DummySharReader(FeaturesReader):
+    """ """
+
+    name = "shar"
+
+    def __init__(self, *args, **kwargs):
+        pass
+
+    def read(self, *args, **kwargs) -> np.ndarray:
+        raise RuntimeError(
+            "Inconsistent state: found a Lhotse Shar placeholder array that was not filled during deserialization."
+        )

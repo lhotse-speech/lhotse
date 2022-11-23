@@ -10,11 +10,11 @@ from lhotse.utils import Pathlike
 @click.argument("output_dir", type=click.Path())
 @click.option(
     "--type",
-    type=click.Choice(["ihm", "ihm-mix", "mdm"]),
+    type=click.Choice(["ihm", "ihm-mix", "sdm", "mdm"]),
     default="mdm",
     help="Type of the corpus to prepare",
 )
-def libricss(corpus_dir: Pathlike, output_dir: Pathlike, type: str = "replay"):
+def libricss(corpus_dir: Pathlike, output_dir: Pathlike, type: str):
     """
     LibriCSS recording and supervision manifest preparation.
     """

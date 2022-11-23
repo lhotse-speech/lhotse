@@ -19,7 +19,7 @@ from lhotse import (
     validate_recordings_and_supervisions,
 )
 from lhotse.audio import Recording
-from lhotse.utils import Pathlike
+from lhotse.utils import Pathlike, fastcopy
 
 # fmt: off
 # The following mapping is courtesy Zhuo Chen (Microsoft). It is not available in the original
@@ -141,9 +141,7 @@ def prepare_libricss(
     :return: a Dict whose key is the dataset part, and the value is Dicts with the keys 'audio' and 'supervisions'.
 
     """
-    assert type in ["mdm", "ihm-mix", "ihm"]
-
-    manifests = {}
+    assert type in ["mdm", "sdm", "ihm-mix", "ihm"]
 
     corpus_dir = Path(corpus_dir)
     corpus_dir = (
@@ -165,12 +163,22 @@ def prepare_libricss(
                 if type == "ihm"
                 else session / "record" / "raw_recording.wav"
             )
-            recordings.append(
-                Recording.from_file(audio_path, recording_id=recording_id)
-            )
+            recording = Recording.from_file(audio_path, recording_id=recording_id)
+
+            if type == "sdm":
+                recordings.append(fastcopy(recording, channel_ids=[0]))
+            else:
+                recordings.append(recording)
+
             for idx, seg in enumerate(
                 parse_transcript(session / "transcription" / "meeting_info.txt")
             ):
+                if type == "ihm-mix" or type == "sdm":
+                    channel = 0
+                elif type == "ihm":
+                    channel = SPK_TO_CHANNEL_MAP[session.name][seg[2]]
+                else:
+                    channel = list(range(7))
                 segments.append(
                     SupervisionSegment(
                         id=f"{recording_id}-{idx}",
@@ -180,9 +188,7 @@ def prepare_libricss(
                         text=seg[4],
                         language="English",
                         speaker=seg[2],
-                        channel=SPK_TO_CHANNEL_MAP[session.name][seg[2]]
-                        if type == "ihm"
-                        else 0,
+                        channel=channel,
                     )
                 )
 
@@ -193,8 +199,8 @@ def prepare_libricss(
     if output_dir is not None:
         output_dir = Path(output_dir)
         output_dir.mkdir(exist_ok=True, parents=True)
-        recordings.to_file(output_dir / "libricss_recordings_all.jsonl.gz")
-        supervisions.to_file(output_dir / "libricss_supervisions_all.jsonl.gz")
+        recordings.to_file(output_dir / f"libricss-{type}_recordings_all.jsonl.gz")
+        supervisions.to_file(output_dir / f"libricss-{type}_supervisions_all.jsonl.gz")
 
     return {"recordings": recordings, "supervisions": supervisions}
 

@@ -1,3 +1,4 @@
+import os
 from tempfile import NamedTemporaryFile
 
 import pytest
@@ -8,6 +9,7 @@ from lhotse import (
     Features,
     FeatureSet,
     MonoCut,
+    MultiCut,
     Recording,
     RecordingSet,
     SupervisionSegment,
@@ -15,7 +17,8 @@ from lhotse import (
     load_manifest,
     store_manifest,
 )
-from lhotse.serialization import load_manifest_lazy
+from lhotse.lazy import LazyJsonlIterator
+from lhotse.serialization import SequentialJsonlWriter, load_manifest_lazy, open_best
 from lhotse.supervision import AlignmentItem
 from lhotse.testing.dummies import DummyManifest
 from lhotse.utils import fastcopy
@@ -29,6 +32,7 @@ from lhotse.utils import nullcontext as does_not_raise
         ("test/fixtures/supervision.json", does_not_raise()),
         ("test/fixtures/dummy_feats/feature_manifest.json", does_not_raise()),
         ("test/fixtures/libri/cuts.json", does_not_raise()),
+        ("test/fixtures/libri/cuts_multi.json", does_not_raise()),
         ("test/fixtures/feature_config.yml", pytest.raises(ValueError)),
         ("no/such/path.xd", pytest.raises(ValueError)),
     ],
@@ -45,6 +49,7 @@ def test_load_any_lhotse_manifest(path, exception_expectation):
         ("test/fixtures/supervision.json", does_not_raise()),
         ("test/fixtures/dummy_feats/feature_manifest.json", does_not_raise()),
         ("test/fixtures/libri/cuts.json", does_not_raise()),
+        ("test/fixtures/libri/cuts_multi.json", does_not_raise()),
         ("test/fixtures/feature_config.yml", pytest.raises(ValueError)),
         ("no/such/path.xd", pytest.raises(ValueError)),
     ],
@@ -169,6 +174,28 @@ def cut_set():
             ),
         ],
     )
+    multi_cut = MultiCut(
+        id="cut-2",
+        start=0.0,
+        duration=10.0,
+        channel=0,
+        recording=Recording(
+            id="rec-2",
+            sampling_rate=16000,
+            num_samples=160000,
+            duration=10.0,
+            channel_ids=[0, 1],
+            sources=[AudioSource(type="file", channels=[0, 1], source="irrelevant")],
+        ),
+        supervisions=[
+            SupervisionSegment(
+                id="sup-3", recording_id="irrelevant", start=0.5, duration=6.0
+            ),
+            SupervisionSegment(
+                id="sup-4", recording_id="irrelevant", start=7.0, duration=2.0
+            ),
+        ],
+    )
     return CutSet.from_cuts(
         [
             cut,
@@ -179,6 +206,7 @@ def cut_set():
             cut.pad(duration=30.0, direction="right"),
             cut.pad(duration=30.0, direction="both"),
             cut.mix(cut, offset_other_by=5.0, snr=8),
+            multi_cut,
         ]
     )
 
@@ -364,6 +392,20 @@ def test_sequential_jsonl_writer(manifests, manifest_type, format, compressed):
         assert list(manifest) == list(restored)
 
 
+def test_sequential_jsonl_writer_with_dict_input():
+    data = [{"key": "value", "other_key": "other_value"}, {"key": "value2"}]
+    with NamedTemporaryFile(suffix=".jsonl") as jsonl_f:
+        with SequentialJsonlWriter(jsonl_f.name) as writer:
+            for item in data:
+                writer.write(item)
+
+        restored = list(LazyJsonlIterator(jsonl_f.name))
+
+        assert len(restored) == 2
+        assert data[0] == restored[0]
+        assert data[1] == restored[1]
+
+
 @pytest.mark.parametrize(
     "manifest_type", ["recording_set", "supervision_set", "cut_set", "feature_set"]
 )
@@ -443,3 +485,34 @@ def test_manifest_is_lazy(manifests, manifest_type):
         # Muxing of eager + lazy manifests is lazy
         lazy_lazy_mux = cls.mux(lazy, lazy)
         assert lazy_lazy_mux.is_lazy
+
+
+@pytest.mark.skipif(os.name == "nt", reason="This test cannot be run on Windows.")
+def test_open_pipe(tmp_path):
+    data = "text"
+    with open_best(f"pipe:gzip -c > {tmp_path}/text.gz", mode="w") as f:
+        print(data, file=f)
+
+    with open_best(f"pipe:gunzip -c {tmp_path}/text.gz", mode="r") as f:
+        data_read = f.read().strip()
+
+    assert data_read == data
+
+
+@pytest.mark.skipif(os.name == "nt", reason="This test cannot be run on Windows.")
+def test_open_pipe_iter(tmp_path):
+    lines = [
+        "line0",
+        "line1",
+        "line2",
+    ]
+    with open_best(f"pipe:gzip -c > {tmp_path}/text.gz", mode="w") as f:
+        for l in lines:
+            print(l, file=f)
+
+    lines_read = []
+    with open_best(f"pipe:gunzip -c {tmp_path}/text.gz", mode="r") as f:
+        for l in f:
+            lines_read.append(l.strip())
+
+    assert lines_read == lines

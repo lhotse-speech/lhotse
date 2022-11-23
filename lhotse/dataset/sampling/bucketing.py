@@ -276,6 +276,11 @@ class BucketingSampler(CutSampler):
         # Restored state with load_state_dict()? Skip resetting.
         if self._just_restored_state:
             return self
+        # Why reset the current epoch?
+        # Either we are iterating the epoch for the first time and it's a no-op,
+        # or we are iterating the same epoch again, in which case setting more steps
+        # than are actually available per epoch would have broken the checkpoint restoration.
+        self.diagnostics.reset_current_epoch()
         # Reset the state to the beginning of the epoch.
         self.bucket_rng.seed(self.seed + self.epoch)
         for b in self.bucket_samplers:
@@ -425,7 +430,7 @@ def _create_buckets_equal_duration_single(
         if i % 2:
             if buckets_dict[first_bucket] + duration > bucket_duration:
                 if middle_bucket is not None and first_bucket == middle_bucket:
-                    first_bucket = min(middle_bucket - 1, num_buckets - 1)
+                    first_bucket = max(0, min(middle_bucket - 1, num_buckets - 1))
                 else:
                     first_bucket = min(first_bucket + 1, num_buckets - 1)
             buckets_dict[first_bucket] += duration

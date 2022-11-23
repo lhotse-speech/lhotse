@@ -24,21 +24,20 @@ NOTE on mic settings: AMI comes with 4 different microphone settings:
 These can be specified using the `mic` argument.
 """
 
-import html
 import itertools
 import logging
 import urllib.request
 import xml.etree.ElementTree as ET
-import zipfile
 from collections import defaultdict
 from pathlib import Path
-from typing import Dict, List, NamedTuple, Optional, Union
+from typing import Dict, List, NamedTuple, Optional, Tuple, Union
 
 from tqdm.auto import tqdm
 
 from lhotse import validate_recordings_and_supervisions
 from lhotse.audio import AudioSource, Recording, RecordingSet
 from lhotse.qa import fix_manifests
+from lhotse.recipes.utils import normalize_text_ami
 from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import Pathlike, Seconds, urlretrieve_progress
 
@@ -179,7 +178,9 @@ def download_audio(
                 wav_path = wav_dir / wav_name
                 if force_download or not wav_path.is_file():
                     urlretrieve_progress(
-                        wav_url, filename=wav_path, desc=f"Downloading {wav_name}"
+                        wav_url,
+                        filename=wav_path,
+                        desc=f"Downloading {wav_name}",
                     )
         elif mic == "ihm-mix":
             wav_name = f"{item}.Mix-Headset.wav"
@@ -211,7 +212,9 @@ def download_audio(
                     wav_path = wav_dir / wav_name
                     if force_download or not wav_path.is_file():
                         urlretrieve_progress(
-                            wav_url, filename=wav_path, desc=f"Downloading {wav_name}"
+                            wav_url,
+                            filename=wav_path,
+                            desc=f"Downloading {wav_name}",
                         )
 
 
@@ -269,9 +272,10 @@ class AmiSegmentAnnotation(NamedTuple):
 
 
 def parse_ami_annotations(
-    annotations_dir: Pathlike, normalize: str = "upper"
+    annotations_dir: Pathlike,
+    normalize: str = "upper",
+    max_words_per_segment: int = None,
 ) -> Dict[str, List[SupervisionSegment]]:
-    annotations = defaultdict(dict)
 
     # Extract if zipped file
     if str(annotations_dir).endswith(".zip"):
@@ -293,94 +297,130 @@ def parse_ami_annotations(
                 global_spk_id[local_id] = speaker.attrib["global_name"]
                 channel_id[local_id] = int(speaker.attrib["channel"])
 
-    # Now we parse all the words and save their ids (since segments only contain
-    # word ids instead of words)
-    wid_to_word = {}
-    for file in (annotations_dir / "words").iterdir():
-        with open(file) as f:
-            tree = ET.parse(f)
-            for word in tree.getroot():
-                if word.tag != "w" or "punc" in word.attrib:
-                    continue
-                wid_to_word[word.attrib["{http://nite.sourceforge.net/}id"]] = word.text
-
-    def _parse_href(href, wid_to_word):
-        # The href argument is originally a string of the form "ES2002b.B.words.xml#id(ES2002b.B.words0)..id(ES2002b.B.words4)".
-        # We need to extract the word ids and return a string containing the corresponding words.
-        href = href.split("#")[1]
-        word_ids = href.split("..")
-        word_ids = [x.split("(")[1].split(")")[0] for x in word_ids]
-        if len(word_ids) == 1:
-            return wid_to_word[word_ids[0]] if word_ids[0] in wid_to_word else ""
-        start_id, end_id = word_ids[0], word_ids[1]
-        meeting_stem, word_start = start_id.split("words")
-        _, word_end = end_id.split("words")
-        return " ".join(
-            wid_to_word[f"{meeting_stem}words{i}"]
-            for i in range(int(word_start), int(word_end) + 1)
-            if f"{meeting_stem}words{i}" in wid_to_word
-        )
-
-    # Now iterate over all segments and create transcripts
+    # Get the speaker segment times from the segments file
+    segments = {}
     for file in (annotations_dir / "segments").iterdir():
         meet_id, local_spkid, _ = file.stem.split(".")
         if (meet_id, local_spkid) not in global_spk_id:
             logging.warning(
-                f"No speaker {meet_id}.{local_spkid} found! Skipping annotation."
+                f"No speaker {meet_id}.{local_spkid} found! Skipping" " annotation."
             )
             continue
+        spk = global_spk_id[(meet_id, local_spkid)]
+        channel = channel_id[(meet_id, local_spkid)]
+        key = (meet_id, spk, channel)
+        segments[key] = []
         with open(file) as f:
-            spk = global_spk_id[(meet_id, local_spkid)]
-            channel = channel_id[(meet_id, local_spkid)]
             tree = ET.parse(f)
-            key = (meet_id, spk, channel)
-            if key not in annotations:
-                annotations[key] = []
             for seg in tree.getroot():
                 if seg.tag != "segment":
                     continue
                 start_time = float(seg.attrib["transcriber_start"])
                 end_time = float(seg.attrib["transcriber_end"])
-                assert len(seg) == 1, "Multiple child segments found"
-                seg_child = next(iter(seg))
-                if "href" in seg_child.attrib:
-                    text = _parse_href(seg_child.attrib["href"], wid_to_word)
-                    text = normalize_text(text, normalize)
-                if len(text) > 0:
-                    annotations[key].append(
-                        AmiSegmentAnnotation(
-                            text=text,
-                            speaker=spk,
-                            gender=spk[0],
-                            start_time=start_time,
-                            end_time=end_time,
-                        )
+                segments[key].append((start_time, end_time))
+
+    # Now we go through each speaker's word-level annotations and store them
+    words = {}
+    for file in (annotations_dir / "words").iterdir():
+        meet_id, local_spkid, _ = file.stem.split(".")
+        if (meet_id, local_spkid) not in global_spk_id:
+            continue
+        spk = global_spk_id[(meet_id, local_spkid)]
+        channel = channel_id[(meet_id, local_spkid)]
+        key = (meet_id, spk, channel)
+        if key not in segments:
+            continue
+        words[key] = []
+        with open(file) as f:
+            tree = ET.parse(f)
+            for word in tree.getroot():
+                if word.tag != "w" or "starttime" not in word.attrib:
+                    continue
+                start_time = float(word.attrib["starttime"])
+                end_time = float(word.attrib["endtime"])
+                words[key].append((start_time, end_time, word.text))
+
+    # Now we create segment-level annotations by combining the word-level
+    # annotations with the speaker segment times. We also normalize the text
+    # and break-up long segments (if requested).
+    annotations = defaultdict(list)
+
+    for key, segs in segments.items():
+        # Get the words for this speaker
+        spk_words = words[key]
+        # Now iterate over the speaker segments and create segment annotations
+        for seg_start, seg_end in segs:
+            seg_words = list(
+                filter(lambda w: w[0] >= seg_start and w[1] <= seg_end, spk_words)
+            )
+            subsegments = split_segment(seg_words, max_words_per_segment)
+            for subseg in subsegments:
+                start, end, text = subseg
+                annotations[key].append(
+                    AmiSegmentAnnotation(
+                        text=normalize_text_ami(text, normalize=normalize),
+                        speaker=key[1],
+                        gender=key[1][0],
+                        start_time=start,
+                        end_time=end,
                     )
+                )
 
     return annotations
 
 
-def normalize_text(text: str, normalize: str = "upper") -> str:
-    if normalize == "none":
-        return text
-    elif normalize == "upper":
-        return text.upper()
-    elif normalize == "kaldi":
-        # Kaldi style text normalization
-        import re
+def split_segment(
+    words: List[Tuple[float, float, str]], max_words_per_segment: Optional[int]
+):
+    def split_(sequence, sep):
+        chunk = []
+        for val in sequence:
+            if val[-1] == sep:
+                yield chunk
+                chunk = []
+            else:
+                chunk.append(val)
+        yield chunk
 
-        # convert text to uppercase
-        text = text.upper()
-        # remove punctuations
-        text = re.sub(r"[^A-Z0-9']+", " ", text)
-        # remove multiple spaces
-        text = re.sub(r"\s+", " ", text)
-        # apply few exception for dashed phrases, Mm-Hmm, Uh-Huh, OK etc. those are frequent in AMI
-        # and will be added to dictionary
-        text = re.sub(r"MM HMM", "MM-HMM", text)
-        text = re.sub(r"UH HUH", "UH-HUH", text)
-        text = re.sub(r"(\b)O K(\b)", "\g<1>OK\g<2>", text)
-        return text
+    def split_on_fullstop_(sequence):
+        return split_(sequence, ".")
+
+    def split_on_comma_(segment, max_words_per_segment):
+        # This function smartly splits a segment on commas such that the number of words
+        # in each subsegment is as close to max_words_per_segment as possible.
+        # First we create subsegments by splitting on commas
+        subsegs = list(split_(segment, ","))
+        # Now we merge subsegments while ensuring that the number of words in each
+        # subsegment is less than max_words_per_segment
+        merged_subsegs = [subsegs[0]]
+        for subseg in subsegs[1:]:
+            if len(merged_subsegs[-1]) + len(subseg) <= max_words_per_segment:
+                merged_subsegs[-1].extend(subseg)
+            else:
+                merged_subsegs.append(subseg)
+        return merged_subsegs
+
+    # First we split the list based on full-stops.
+    subsegments = list(split_on_fullstop_(words))
+
+    if max_words_per_segment is not None:
+        # Now we split each subsegment based on commas to get at most max_words_per_segment
+        # words per subsegment.
+        subsegments = [
+            list(split_on_comma_(subseg, max_words_per_segment))
+            if len(subseg) > max_words_per_segment
+            else [subseg]
+            for subseg in subsegments
+        ]
+        # flatten the list of lists
+        subsegments = [item for sublist in subsegments for item in sublist]
+
+    # For each subsegment, we create a tuple of (start_time, end_time, text)
+    subsegments = [
+        (subseg[0][0], subseg[-1][1], " ".join([w[2] for w in subseg]))
+        for subseg in filter(lambda s: len(s) > 0, subsegments)
+    ]
+    return subsegments
 
 
 # IHM and MDM audio requires grouping multiple channels of AudioSource into
@@ -410,7 +450,8 @@ def prepare_audio_grouped(
             audio = sf.SoundFile(str(audio_path))
             if audio.channels > 1:
                 logging.warning(
-                    f"Skipping recording {session_name} since it has a stereo channel"
+                    f"Skipping recording {session_name} since it has a stereo"
+                    " channel"
                 )
                 all_mono = False
                 break
@@ -497,7 +538,7 @@ def prepare_supervision_ihm(
                 if seg_info.end_time > recording.duration:
                     logging.warning(
                         f"Segment {recording.id}-{channel}-{seg_idx} exceeds "
-                        f"recording duration. Not adding to supervisions."
+                        "recording duration. Not adding to supervisions."
                     )
                     continue
                 if duration > 0:
@@ -537,7 +578,7 @@ def prepare_supervision_other(
         if any(len(source.channels) > 1 for source in recording.sources):
             logging.warning(
                 f"More than 1 channels in recording {recording.id}. "
-                f"Skipping this recording."
+                "Skipping this recording."
             )
             continue
 
@@ -550,7 +591,7 @@ def prepare_supervision_other(
                         recording_id=recording.id,
                         start=seg_info.start_time,
                         duration=duration,
-                        channel=0,
+                        channel=recording.channel_ids,
                         language="English",
                         speaker=seg_info.speaker,
                         gender=seg_info.gender,
@@ -567,6 +608,7 @@ def prepare_ami(
     mic: Optional[str] = "ihm",
     partition: Optional[str] = "full-corpus",
     normalize_text: str = "kaldi",
+    max_words_per_segment: Optional[int] = None,
 ) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet]]]:
     """
     Returns the manifests which consist of the Recordings and Supervisions
@@ -576,6 +618,8 @@ def prepare_ami(
     :param mic: str {'ihm','ihm-mix','sdm','mdm'}, type of mic to use.
     :param partition: str {'full-corpus','full-corpus-asr','scenario-only'}, AMI official data split
     :param normalize_text: str {'none', 'upper', 'kaldi'} normalization of text
+    :param max_words_per_segment: int, maximum number of words per segment. If not None, we will split
+        longer segments similar to Kaldi's data prep scripts, i.e., split on full-stop and comma.
     :return: a Dict whose key is ('train', 'dev', 'eval'), and the values are dicts of manifests under keys
         'recordings' and 'supervisions'.
 
@@ -602,10 +646,15 @@ def prepare_ami(
             annotations_dir = data_dir / "ami_public_manual_1.6.2.zip"
         else:
             raise ValueError(
-                f"No annotations directory specified and no zip file found in {data_dir}"
+                "No annotations directory specified and no zip file found in"
+                f" {data_dir}"
             )
     # Prepare annotations which is a list of segment-level transcriptions
-    annotations = parse_ami_annotations(annotations_dir, normalize=normalize_text)
+    annotations = parse_ami_annotations(
+        annotations_dir,
+        normalize=normalize_text,
+        max_words_per_segment=max_words_per_segment,
+    )
 
     # Audio
     logging.info("Preparing recording manifests")
@@ -644,6 +693,9 @@ def prepare_ami(
             lambda x: x.recording_id in dataset_parts[part]
         )
 
+        audio_part, supervision_part = fix_manifests(audio_part, supervision_part)
+        validate_recordings_and_supervisions(audio_part, supervision_part)
+
         # Write to output directory if a path is provided
         if output_dir is not None:
             audio_part.to_file(output_dir / f"ami-{mic}_recordings_{part}.jsonl.gz")
@@ -651,10 +703,10 @@ def prepare_ami(
                 output_dir / f"ami-{mic}_supervisions_{part}.jsonl.gz"
             )
 
-        audio_part, supervision_part = fix_manifests(audio_part, supervision_part)
-        validate_recordings_and_supervisions(audio_part, supervision_part)
-
         # Combine all manifests into one dictionary
-        manifests[part] = {"recordings": audio_part, "supervisions": supervision_part}
+        manifests[part] = {
+            "recordings": audio_part,
+            "supervisions": supervision_part,
+        }
 
     return dict(manifests)

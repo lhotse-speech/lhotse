@@ -43,7 +43,7 @@ def test_cut_set_mux():
     cuts_mux = CutSet.mux(cuts1, cuts2, seed=0)
 
     def cid(i: int) -> str:
-        return f"dummy-cut-{i:04d}"
+        return f"dummy-mono-cut-{i:04d}"
 
     assert sorted([c.id for c in cuts_mux]) == [
         cid(i) for i in (0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 1000, 1001, 1002, 1003, 1004)
@@ -58,7 +58,7 @@ def test_cut_set_mux_stop_early():
     cuts_mux = CutSet.mux(cuts1, cuts2, seed=0, stop_early=True)
 
     def cid(i: int) -> str:
-        return f"dummy-cut-{i:04d}"
+        return f"dummy-mono-cut-{i:04d}"
 
     assert sorted([c.id for c in cuts_mux]) == [
         cid(i) for i in (0, 1, 2, 3, 4, 1000, 1001, 1002, 1003, 1004)

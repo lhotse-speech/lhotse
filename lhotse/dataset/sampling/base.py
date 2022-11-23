@@ -353,7 +353,7 @@ class TimeConstraint:
 
     def exceeded(self) -> bool:
         """Is the constraint exceeded or not."""
-        if self.max_cuts is not None and self.num_cuts >= self.max_cuts:
+        if self.max_cuts is not None and self.num_cuts > self.max_cuts:
             return True
         constraint = self.active_constraint
         if constraint is None:
@@ -510,6 +510,9 @@ class SamplingDiagnostics:
         if self.stats_per_epoch is None:
             self.stats_per_epoch = {}
             self.set_epoch(self.current_epoch)
+
+    def reset_current_epoch(self) -> None:
+        self.stats_per_epoch[self.current_epoch] = EpochDiagnostics(self.current_epoch)
 
     def set_epoch(self, epoch: int) -> None:
         self.current_epoch = epoch

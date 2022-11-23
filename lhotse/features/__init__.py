@@ -39,3 +39,4 @@ from .mfcc import TorchaudioMfcc, TorchaudioMfccConfig
 from .mixer import FeatureMixer
 from .opensmile import OpenSmileConfig, OpenSmileExtractor
 from .spectrogram import Spectrogram, SpectrogramConfig
+from .ssl import S3PRLSSL, S3PRLSSLConfig

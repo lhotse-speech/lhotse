@@ -74,7 +74,9 @@ def prepare_ali_meeting(
     Returns the manifests which consist of the Recordings and Supervisions
     :param corpus_dir: Pathlike, the path of the data dir.
     :param output_dir: Pathlike, the path where to write the manifests.
-    :param mic: str, "near" or "far", specifies whether to prepare the near-field or far-field data.
+    :param mic: str, "near" or "far", specifies whether to prepare the near-field or far-field data. May
+        also specify "ihm", "sdm", "mdm" (similar to AMI recipe), where "ihm" and "mdm" are the same as "near"
+        and "far" respectively, and "sdm" is the same as "far" with a single channel.
     :return: a Dict whose key is the dataset part, and the value is Dicts with the keys 'recordings' and 'supervisions'.
     """
     if not is_module_available("textgrid"):
@@ -82,6 +84,9 @@ def prepare_ali_meeting(
             "To prepare AliMeeting data, please 'pip install textgrid' first."
         )
     import textgrid
+
+    mic_orig = mic
+    mic = "near" if mic_orig in ["ihm", "near"] else "far"
 
     corpus_dir = Path(corpus_dir)
     assert corpus_dir.is_dir(), f"No such directory: {corpus_dir}"
@@ -156,7 +161,9 @@ def prepare_ali_meeting(
                             recording_id=recording.id,
                             start=start,
                             duration=round(end - start, 4),
-                            channel=0,
+                            channel=0
+                            if mic_orig in ["near", "ihm", "sdm"]
+                            else list(range(8)),
                             language="Chinese",
                             speaker=spk_id,
                             gender=gender,
@@ -173,10 +180,11 @@ def prepare_ali_meeting(
 
         if output_dir is not None:
             supervision_set.to_file(
-                output_dir / f"alimeeting_supervisions_{part.lower()}.jsonl.gz"
+                output_dir
+                / f"alimeeting-{mic_orig}_supervisions_{part.lower()}.jsonl.gz"
             )
             recording_set.to_file(
-                output_dir / f"alimeeting_recordings_{part.lower()}.jsonl.gz"
+                output_dir / f"alimeeting-{mic_orig}_recordings_{part.lower()}.jsonl.gz"
             )
 
         manifests[part.lower()] = {

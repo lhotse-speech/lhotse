@@ -4,7 +4,12 @@ from typing import Dict, List
 import pytest
 
 from lhotse.supervision import AlignmentItem, SupervisionSegment, SupervisionSet
-from lhotse.testing.dummies import DummyManifest, remove_spaces_from_segment_text
+from lhotse.testing.dummies import (
+    DummyManifest,
+    dummy_alignment,
+    dummy_supervision,
+    remove_spaces_from_segment_text,
+)
 from lhotse.utils import fastcopy
 
 
@@ -44,6 +49,31 @@ def test_supervision_transform_alignment(external_supervision_set, type="word"):
     for s in external_supervision_set.transform_alignment(lambda symbol: "dummy"):
         if s.alignment is not None:
             assert all([a.symbol == "dummy" for a in s.alignment[type]])
+
+
+def test_supervision_with_alignment(external_supervision_set, type="word"):
+    sup = dummy_supervision(0, alignment=None)
+    ali = [AlignmentItem("irrelevant", 0, 1.0)]
+    sup_ali = sup.with_alignment("word", ali)
+    assert sup.alignment is None
+    assert isinstance(sup_ali.alignment, dict)
+    assert "word" in sup_ali.alignment
+    assert sup_ali.alignment["word"] == ali
+
+
+def test_alignment_serialize_deserialize():
+    item = AlignmentItem("ciao", start=0, duration=2.0, score=0.96)
+    item_rec = AlignmentItem.deserialize(item.serialize())
+
+    assert item == item_rec
+
+
+def test_supervision_with_alignment_serialize_deserialize():
+    ali = dummy_alignment()
+    sup = dummy_supervision(0, alignment=ali)
+    sup_rec = SupervisionSegment.from_dict(sup.to_dict())
+
+    assert sup == sup_rec
 
 
 def test_supervision_segment_with_full_metadata(

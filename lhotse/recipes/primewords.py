@@ -16,7 +16,7 @@ from tqdm.auto import tqdm
 from lhotse import validate_recordings_and_supervisions
 from lhotse.audio import Recording, RecordingSet
 from lhotse.supervision import SupervisionSegment, SupervisionSet
-from lhotse.utils import Pathlike, urlretrieve_progress
+from lhotse.utils import Pathlike, safe_extract, urlretrieve_progress
 
 
 def download_primewords(
@@ -51,7 +51,7 @@ def download_primewords(
             )
         shutil.rmtree(extracted_dir, ignore_errors=True)
         with tarfile.open(tar_path) as tar:
-            tar.extractall(path=corpus_dir)
+            safe_extract(tar, path=corpus_dir)
         completed_detector.touch()
     return corpus_dir
 

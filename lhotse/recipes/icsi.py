@@ -105,7 +105,7 @@ from tqdm.auto import tqdm
 from lhotse import validate_recordings_and_supervisions
 from lhotse.audio import AudioSource, Recording, RecordingSet, read_sph
 from lhotse.qa import fix_manifests
-from lhotse.recipes.ami import normalize_text
+from lhotse.recipes.utils import normalize_text_ami
 from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import Pathlike, Seconds, urlretrieve_progress
 
@@ -282,7 +282,7 @@ def parse_icsi_annotations(
                             end_time = float(segment.attrib["EndTime"])
                             speaker = segment.attrib["Participant"]
                             channel = spk_to_channel_map[meeting_id][speaker]
-                            text = normalize_text(
+                            text = normalize_text_ami(
                                 segment.text.strip(), normalize=normalize
                             )
                             annotations[(meeting_id, speaker, channel)].append(
@@ -469,7 +469,7 @@ def prepare_supervision_other(
                         recording_id=recording.id,
                         start=seg_info.start_time,
                         duration=duration,
-                        channel=source.channels[0],
+                        channel=recording.channel_ids,
                         language="English",
                         speaker=seg_info.speaker,
                         gender=seg_info.gender,

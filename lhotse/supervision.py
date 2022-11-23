@@ -2,7 +2,17 @@ import logging
 from collections import defaultdict
 from dataclasses import dataclass
 from itertools import groupby, islice
-from typing import Any, Callable, Dict, Iterable, List, Mapping, Optional, Union
+from typing import (
+    Any,
+    Callable,
+    Dict,
+    Iterable,
+    List,
+    Mapping,
+    NamedTuple,
+    Optional,
+    Union,
+)
 
 from lhotse.lazy import AlgorithmMixin
 from lhotse.serialization import Serializable
@@ -17,6 +27,7 @@ from lhotse.utils import (
     fastcopy,
     ifnone,
     index_by_id_and_check,
+    is_equal_or_contains,
     overspans,
     perturb_num_samples,
     split_manifest_lazy,
@@ -24,22 +35,31 @@ from lhotse.utils import (
 )
 
 
-@dataclass
-class AlignmentItem:
+class AlignmentItem(NamedTuple):
     """
     This class contains an alignment item, for example a word, along with its
     start time (w.r.t. the start of recording) and duration. It can potentially
     be used to store other kinds of alignment items, such as subwords, pdfid's etc.
-
-    We use dataclasses instead of namedtuples (even though they are potentially slower)
-    because of a serialization bug in nested namedtuples and dataclasses in Python 3.7
-    (see this: https://alexdelorenzo.dev/programming/2018/08/09/bug-in-dataclass.html).
-    We can revert to namedtuples if we bump up the Python requirement to 3.8+.
     """
 
     symbol: str
     start: Seconds
     duration: Seconds
+
+    # Score is an optional aligner-specific measure of confidence.
+    # A simple measure can be an average probability of "symbol" across
+    # frames covered by the AlignmentItem.
+    score: Optional[float] = None
+
+    @staticmethod
+    def deserialize(data: Union[List, Dict]) -> "AlignmentItem":
+        if isinstance(data, dict):
+            # Support loading alignments stored in the format we had before Lhotse v1.8
+            return AlignmentItem(*list(data.values()))
+        return AlignmentItem(*data)
+
+    def serialize(self) -> list:
+        return list(self)
 
     @property
     def end(self) -> Seconds:
@@ -48,7 +68,10 @@ class AlignmentItem:
     def with_offset(self, offset: Seconds) -> "AlignmentItem":
         """Return an identical ``AlignmentItem``, but with the ``offset`` added to the ``start`` field."""
         return AlignmentItem(
-            self.symbol, round(self.start + offset, ndigits=8), self.duration
+            start=add_durations(self.start, offset, sampling_rate=48000),
+            duration=self.duration,
+            symbol=self.symbol,
+            score=self.score,
         )
 
     def perturb_speed(self, factor: float, sampling_rate: int) -> "AlignmentItem":
@@ -61,7 +84,9 @@ class AlignmentItem:
         num_samples = compute_num_samples(self.duration, sampling_rate)
         new_start = perturb_num_samples(start_sample, factor) / sampling_rate
         new_duration = perturb_num_samples(num_samples, factor) / sampling_rate
-        return AlignmentItem(self.symbol, new_start, new_duration)
+        return AlignmentItem(
+            symbol=self.symbol, start=new_start, duration=new_duration, score=self.score
+        )
 
     def trim(self, end: Seconds, start: Seconds = 0) -> "AlignmentItem":
         """
@@ -71,16 +96,23 @@ class AlignmentItem:
         start_exceeds_by = abs(min(0, self.start - start))
         end_exceeds_by = max(0, self.end - end)
         return AlignmentItem(
-            self.symbol,
-            max(start, self.start),
-            self.duration - end_exceeds_by - start_exceeds_by,
+            symbol=self.symbol,
+            start=max(start, self.start),
+            duration=add_durations(
+                self.duration, -end_exceeds_by, -start_exceeds_by, sampling_rate=48000
+            ),
         )
 
     def transform(self, transform_fn: Callable[[str], str]) -> "AlignmentItem":
         """
         Perform specified transformation on the alignment content.
         """
-        return AlignmentItem(transform_fn(self.symbol), self.start, self.duration)
+        return AlignmentItem(
+            symbol=transform_fn(self.symbol),
+            start=self.start,
+            duration=self.duration,
+            score=self.score,
+        )
 
 
 @dataclass
@@ -90,7 +122,9 @@ class SupervisionSegment:
     supervision labels and/or metadata, such as the transcription, the speaker identity, the language, etc.
 
     Each supervision has unique ``id`` and always refers to a specific recording (via ``recording_id``)
-    and a specific ``channel`` (by default, 0).
+    and one or more ``channel`` (by default, 0). Note that multiple channels of the recording
+    may share the same supervision, in which case the ``channel`` field will be a list of integers.
+
     It's also characterized by the start time (relative to the beginning of a :class:`~lhotse.audio.Recording`
     or a :class:`~lhotse.cut.Cut`) and a duration, both expressed in seconds.
 
@@ -155,6 +189,15 @@ class SupervisionSegment:
             ...     }
             ... )
 
+        A supervision shared across multiple channels of a recording (e.g. a microphone array)::
+
+            >>> sup5 = SupervisionSegment(
+            ...     id='rec00001-sup00005', recording_id='rec00001',
+            ...     start=33.0, duration=1.0, channel=[0, 1],
+            ...     text="ice",
+            ...     speaker='Maryla Zechariah',
+            ... )
+
         Converting :class:`~lhotse.supervsion.SupervisionSegment` to a ``dict``::
 
             >>> sup0.to_dict()
@@ -167,7 +210,7 @@ class SupervisionSegment:
     recording_id: str
     start: Seconds
     duration: Seconds
-    channel: int = 0
+    channel: Union[int, List[int]] = 0
     text: Optional[str] = None
     language: Optional[str] = None
     speaker: Optional[str] = None
@@ -178,6 +221,15 @@ class SupervisionSegment:
     @property
     def end(self) -> Seconds:
         return round(self.start + self.duration, ndigits=8)
+
+    def with_alignment(
+        self, kind: str, alignment: List[AlignmentItem]
+    ) -> "SupervisionSegment":
+        alis = self.alignment
+        if alis is None:
+            alis = {}
+        alis[kind] = alignment
+        return fastcopy(self, alignment=alis)
 
     def with_offset(self, offset: Seconds) -> "SupervisionSegment":
         """Return an identical ``SupervisionSegment``, but with the ``offset`` added to the ``start`` field."""
@@ -282,7 +334,9 @@ class SupervisionSegment:
             else self.recording_id,
         )
 
-    def reverb_rir(self, affix_id: bool = True) -> "SupervisionSegment":
+    def reverb_rir(
+        self, affix_id: bool = True, channel: Optional[Union[int, List[int]]] = None
+    ) -> "SupervisionSegment":
         """
         Return a ``SupervisionSegment`` with modified ids.
 
@@ -295,6 +349,7 @@ class SupervisionSegment:
             self,
             id=f"{self.id}_rvb" if affix_id else self.id,
             recording_id=f"{self.recording_id}_rvb" if affix_id else self.recording_id,
+            channel=channel if channel is not None else self.channel,
         )
 
     def trim(self, end: Seconds, start: Seconds = 0) -> "SupervisionSegment":
@@ -375,7 +430,16 @@ class SupervisionSegment:
         )
 
     def to_dict(self) -> dict:
-        return asdict_nonull(self)
+        if self.alignment is None:
+            return asdict_nonull(self)
+        else:
+            alis = {
+                kind: [item.serialize() for item in ali]
+                for kind, ali in self.alignment.items()
+            }
+            data = asdict_nonull(fastcopy(self, alignment=None))
+            data["alignment"] = alis
+            return data
 
     @staticmethod
     def from_dict(data: dict) -> "SupervisionSegment":
@@ -386,7 +450,8 @@ class SupervisionSegment:
 
         if "alignment" in data:
             data["alignment"] = {
-                k: [AlignmentItem(**x) for x in v] for k, v in data["alignment"].items()
+                k: [AlignmentItem.deserialize(x) for x in v]
+                for k, v in data["alignment"].items()
             }
 
         return SupervisionSegment(**data)
@@ -555,6 +620,8 @@ class SupervisionSet(Serializable, AlgorithmMixin):
                     parts = line.strip().split()
                     assert len(parts) == 10, f"Invalid RTTM line in file {file}: {line}"
                     recording_id = parts[1]
+                    if float(parts[4]) == 0:  # skip empty segments
+                        continue
                     segments.append(
                         SupervisionSegment(
                             id=f"{recording_id}-{idx:06d}",
@@ -622,8 +689,9 @@ class SupervisionSet(Serializable, AlgorithmMixin):
             for s in self:
                 if type in s.alignment:
                     for ali in s.alignment[type]:
+                        c = s.channel[0] if isinstance(s.channel, list) else s.channel
                         f.write(
-                            f"{s.recording_id} {s.channel} {ali.start:.02f} {ali.duration:.02f} {ali.symbol}\n"
+                            f"{s.recording_id} {c} {ali.start:.02f} {ali.duration:.02f} {ali.symbol}\n"
                         )
 
     def to_dicts(self) -> Iterable[dict]:
@@ -770,7 +838,7 @@ class SupervisionSet(Serializable, AlgorithmMixin):
             # relative to the Cut's start, and not truncating anything.
             segment.with_offset(-start_after) if adjust_offset else segment
             for segment in segment_by_recording_id.get(recording_id, [])
-            if (channel is None or segment.channel == channel)
+            if (channel is None or is_equal_or_contains(segment.channel, channel))
             and segment.start >= start_after - tolerance
             and (end_before is None or segment.end <= end_before + tolerance)
         )
