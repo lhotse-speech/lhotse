@@ -59,3 +59,4 @@ from .vctk import *
 from .voxceleb import *
 from .wenet_speech import *
 from .yesno import *
+from .xbmu_amdo31 import *
