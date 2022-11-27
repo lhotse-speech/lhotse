@@ -22,8 +22,6 @@ from lhotse.utils import Pathlike, safe_extract, urlretrieve_progress
 
 def download_xbmu_amdo31(
     target_dir: Pathlike = ".",
-    force_download: bool = False,
-    base_url: str = "https://huggingface.co/datasets/syzym",
 ) -> Path:
     """
     Downdload and untar the dataset
@@ -32,31 +30,25 @@ def download_xbmu_amdo31(
     :param base_url: str, the url of the OpenSLR resources.
     :return: the path to downloaded and extracted directory with data.
     """
-    url = f"{base_url}/xbmu_amdo31"
     target_dir = Path(target_dir)
-    target_dir.mkdir(parents=True, exist_ok=True)
     corpus_dir = target_dir / "xbmu_amdo31"
-    tar_path = "xbmu_amdo31.tar.gz"
-    extracted_dir = corpus_dir / "xbmu_amdo31"
+    wav_dir = corpus_dir / "data" / "wav"
+    train_tar_name = "train.tar.gz"
+    dev_tar_name = "dev.tar.gz"
+    test_tar_name = "test.tar.gz"
 
-    completed_detector = extracted_dir / ".completed"
-    if completed_detector.is_file():
-        logging.info(f"Skipping download of because {completed_detector} exists.")
-        return extracted_dir
+    for tar_name in [train_tar_name, dev_tar_name, test_tar_name]:
+        tar_path = wav_dir / tar_name
+        extracted_dir = wav_dir / tar_name[:-7]
+        completed_detector = extracted_dir / ".completed"
+        if completed_detector.is_file():
+            logging.info(f"Skipping tar of because {completed_detector} exists.")
+            continue
 
-    if force_download or not tar_path.is_file():
-        urlretrieve_progress(
-            f"{url}/{tar_path}", filename=tar_path, desc=f"Downloading {tar_path}"
-        )
-    shutil.rmtree(extracted_dir, ignore_errors=True)
-    with tarfile.open(tar_path) as tar:
-        safe_extract(tar, path=corpus_dir)
-
-    wav_dir = extracted_dir / "wav"
-    for sub_tar_name in os.listdir(wav_dir):
-        with tarfile.open(wav_dir / sub_tar_name) as tar:
+        shutil.rmtree(extracted_dir, ignore_errors=True)
+        with tarfile.open(tar_path) as tar:
             safe_extract(tar, path=wav_dir)
-    completed_detector.touch()
+        completed_detector.touch()
 
     return corpus_dir
 
