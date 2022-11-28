@@ -1,19 +1,10 @@
 import os
 import random
 from pathlib import Path
-from typing import (
-    Callable,
-    Dict,
-    Generator,
-    List,
-    Literal,
-    Optional,
-    Sequence,
-    Tuple,
-    Union,
-)
+from typing import Callable, Dict, Generator, List, Optional, Sequence, Tuple, Union
 
 import torch
+from typing_extensions import Literal
 
 from lhotse.cut import Cut
 from lhotse.dataset.dataloading import LHOTSE_PROCESS_SEED
