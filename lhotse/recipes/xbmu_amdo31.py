@@ -15,9 +15,9 @@ The dataset has three splits: train, evaluation (dev) and test.Each speaker had 
 with a small number of individuals having fewer than 200 sen.
 
 Subset	Hours	Male	Female	Remarks
-Train	25.41	27	    27	    18539 sentences recorded by 54 speakers
-Dev	    2.81	2	    4	    2050 sentences recorded by 6 speakers
-Test	2.85	3	    3	    2041 sentences recorded by 6 speakers
+Train   25.41   27      27      18539 sentences recorded by 54 speakers
+Dev     2.81    2       4       2050 sentences recorded by 6 speakers
+Test    2.85    3       3       2041 sentences recorded by 6 speakers
 
 Licensing Information
 This dataset is distributed under CC BY-SA 4.0.
