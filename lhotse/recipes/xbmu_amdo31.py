@@ -2,6 +2,25 @@
 About the XBMU-AMDO31 corpus
 XBMU-AMDO31 is an open-source Amdo Tibetan speech corpus published by Northwest Minzu University.
 publicly available on https://huggingface.co/datasets/syzym/xbmu_amdo31
+
+XBMU-AMDO31 dataset is a speech recognition corpus of Amdo Tibetan dialect. 
+The open source corpus contains 31 hours of speech data and resources related 
+to build speech recognition systems,including transcribed texts and a Tibetan 
+pronunciation lexicon.
+(The lexicon is a Tibetan lexicon of the Lhasa dialect, which has been reused 
+for the Amdo dialect because of the uniformity of the Tibetan language)
+The dataset can be used to train a model for Amdo Tibetan Automatic Speech Recognition (ASR). 
+It was recorded by 66 native speakers of Amdo Tibetan, and the recorded audio was processed and manually inspected. 
+The dataset has three splits: train, evaluation (dev) and test.Each speaker had approximately 450 sentences,
+with a small number of individuals having fewer than 200 sen.
+
+Subset	Hours	Male	Female	Remarks
+Train	25.41	27	    27	    18539 sentences recorded by 54 speakers
+Dev	    2.81	2	    4	    2050 sentences recorded by 6 speakers
+Test	2.85	3	    3	    2041 sentences recorded by 6 speakers
+
+Licensing Information
+This dataset is distributed under CC BY-SA 4.0.
 """
 
 import logging
@@ -17,8 +36,7 @@ from tqdm.auto import tqdm
 from lhotse import validate_recordings_and_supervisions
 from lhotse.audio import Recording, RecordingSet
 from lhotse.supervision import SupervisionSegment, SupervisionSet
-from lhotse.utils import Pathlike, safe_extract, urlretrieve_progress
-
+from lhotse.utils import Pathlike, safe_extract,  is_module_available
 
 def download_xbmu_amdo31(
     target_dir: Pathlike = ".",
@@ -26,16 +44,32 @@ def download_xbmu_amdo31(
     """
     Downdload and untar the dataset
     :param target_dir: Pathlike, the path of the dir to storage the dataset.
-    :param force_download: Bool, if True, download the tars no matter if the tars exist.
-    :param base_url: str, the url of the OpenSLR resources.
     :return: the path to downloaded and extracted directory with data.
     """
+    url = f"https://huggingface.co/datasets/syzym/xbmu_amdo31"
     target_dir = Path(target_dir)
+    target_dir.mkdir(parents=True, exist_ok=True)
     corpus_dir = target_dir / "xbmu_amdo31"
     wav_dir = corpus_dir / "data" / "wav"
     train_tar_name = "train.tar.gz"
     dev_tar_name = "dev.tar.gz"
     test_tar_name = "test.tar.gz"
+
+    if not corpus_dir.is_file():
+        if is_module_available("git"):
+            from git import Repo
+        else:
+            raise ImportError(
+                "In order to download the xbmu-amdo31 corpus from huggingface, please install the relevant dependencies: pip install gitpython"
+            )
+        
+        logging.info("Start downloading the xbmu-amdo31 corpus")
+        try:
+            Repo.clone_from(url, corpus_dir)
+        except Exception as error:
+            print(error)
+            raise
+        logging.info("Done")
 
     for tar_name in [train_tar_name, dev_tar_name, test_tar_name]:
         tar_path = wav_dir / tar_name
@@ -44,7 +78,6 @@ def download_xbmu_amdo31(
         if completed_detector.is_file():
             logging.info(f"Skipping tar of because {completed_detector} exists.")
             continue
-
         shutil.rmtree(extracted_dir, ignore_errors=True)
         with tarfile.open(tar_path) as tar:
             safe_extract(tar, path=wav_dir)
@@ -124,3 +157,4 @@ def prepare_xbmu_amdo31(
         manifests[part] = {"recordings": recording_set, "supervisions": supervision_set}
 
     return manifests
+
