@@ -551,7 +551,6 @@ def test_store_audio(num_jobs):
             )
             stored_cut_set = stored_cut_set.sort_by_duration()
             for cut1, cut2 in zip(cut_set, stored_cut_set):
-                print (cut1.id, cut2.id)
                 samples1 = cut1.load_audio()
                 samples2 = cut2.load_audio()
                 assert np.array_equal(samples1, samples2)
