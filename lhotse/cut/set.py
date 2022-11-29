@@ -383,7 +383,7 @@ class CutSet(Serializable, AlgorithmMixin):
         split_for_dataloading: bool = False,
         shuffle_shards: bool = False,
         stateful_shuffle: bool = True,
-        seed: int = 42,
+        seed: Union[int, Literal["randomized"]] = 42,
         cut_map_fns: Optional[Sequence[Callable[[Cut], Cut]]] = None,
     ) -> "CutSet":
         """
@@ -457,15 +457,21 @@ class CutSet(Serializable, AlgorithmMixin):
             dataloader workers and possibly multiple DDP nodes.
             It results in each node+worker combination receiving a unique subset
             of shards from which to read data to avoid data duplication.
+            This is mutually exclusive with ``seed='randomized'``.
         :param shuffle_shards: bool, by default ``False``. When ``True``, the shards
             are shuffled (in case of multi-node training, the shuffling is the same
             on each node given the same seed).
+        :param seed: When ``shuffle_shards`` is ``True``, we use this number to
+            seed the RNG.
+            Seed can be set to ``'randomized'`` in which case we expect that the user provided
+            :func:`lhotse.dataset.dataloading.worker_init_fn` as DataLoader's ``worker_init_fn``
+            argument. It will cause the iterator to shuffle shards differently on each node
+            and dataloading worker in PyTorch training. This is mutually exclusive with
+            ``split_for_dataloading=True``.
         :param stateful_shuffle: bool, by default ``False``. When ``True``, every
             time this object is fully iterated, it increments an internal epoch counter
             and triggers shard reshuffling with RNG seeded by ``seed`` + ``epoch``.
             Doesn't have any effect when ``shuffle_shards`` is ``False``.
-        :param seed: When ``shuffle_shards`` is ``True``, we use this number to
-            seed the RNG.
         :param cut_map_fns: optional sequence of callables that accept cuts and return cuts.
             It's expected to have the same length as the number of shards, so each function
             corresponds to a specific shard.
