@@ -58,4 +58,5 @@ from .timit import *
 from .vctk import *
 from .voxceleb import *
 from .wenet_speech import *
+from .xbmu_amdo31 import *
 from .yesno import *

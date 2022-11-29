@@ -149,6 +149,8 @@ a CLI tool that create the manifests given a corpus directory.
     - :func:`lhotse.recipes.prepare_eval2000`
   * - MGB2
     - :func:`lhotse.recipes.prepare_mgb2`
+  * - XBMU-AMDO31
+    - :func:`lhotse.recipes.xbmu_amdo31`
 
 
 Adding new corpora
