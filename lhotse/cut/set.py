@@ -2120,6 +2120,8 @@ class CutSet(Serializable, AlgorithmMixin):
                 CutSet.save_audios,
                 cs,
                 storage_path=storage_path,
+                encoding=encoding,
+                bits_per_sample=bits_per_sample,
                 augment_fn=augment_fn,
                 # Disable individual workers progress bars for readability
                 progress_bar=False,
