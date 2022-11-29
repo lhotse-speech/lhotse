@@ -36,7 +36,8 @@ from tqdm.auto import tqdm
 from lhotse import validate_recordings_and_supervisions
 from lhotse.audio import Recording, RecordingSet
 from lhotse.supervision import SupervisionSegment, SupervisionSet
-from lhotse.utils import Pathlike, safe_extract,  is_module_available
+from lhotse.utils import Pathlike, is_module_available, safe_extract
+
 
 def download_xbmu_amdo31(
     target_dir: Pathlike = ".",
@@ -62,7 +63,7 @@ def download_xbmu_amdo31(
             raise ImportError(
                 "In order to download the xbmu-amdo31 corpus from huggingface, please install the relevant dependencies: pip install gitpython"
             )
-        
+
         logging.info("Start downloading the xbmu-amdo31 corpus")
         try:
             Repo.clone_from(url, corpus_dir)
@@ -84,6 +85,7 @@ def download_xbmu_amdo31(
         completed_detector.touch()
 
     return corpus_dir
+
 
 def prepare_xbmu_amdo31(
     corpus_dir: Pathlike, output_dir: Optional[Pathlike] = None
@@ -133,8 +135,8 @@ def prepare_xbmu_amdo31(
             recordings.append(recording)
             count += 1
             segment = SupervisionSegment(
-                id=str(count) +  "_" + idx,
-                recording_id=speaker + "-" +idx,
+                id=str(count) + "_" + idx,
+                recording_id=speaker + "-" + idx,
                 start=0.0,
                 duration=recording.duration,
                 channel=0,
@@ -152,9 +154,10 @@ def prepare_xbmu_amdo31(
             supervision_set.to_file(
                 output_dir / f"xbmu_amdo31_supervisions_{part}.jsonl.gz"
             )
-            recording_set.to_file(output_dir / f"xbmu_amdo31_recordings_{part}.jsonl.gz")
+            recording_set.to_file(
+                output_dir / f"xbmu_amdo31_recordings_{part}.jsonl.gz"
+            )
 
         manifests[part] = {"recordings": recording_set, "supervisions": supervision_set}
 
     return manifests
-
