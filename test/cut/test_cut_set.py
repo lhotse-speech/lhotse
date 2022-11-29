@@ -521,8 +521,10 @@ def test_map_cut_set_rejects_noncut(cut_set_with_mixed_cut):
         cut_set = cut_set_with_mixed_cut.map(lambda cut: "not-a-cut")
 
 
-def test_store_audio():
-    cut_set = CutSet.from_json("test/fixtures/libri/cuts.json")
+@pytest.mark.parametrize("num_jobs", [1, 2])
+def test_store_audio(num_jobs):
+    cut_set = CutSet.from_json("test/fixtures/ljspeech/cuts.json")
+    cut_set = cut_set.sort_by_duration()
     with TemporaryDirectory() as tmpdir:
         for enc, bits in (
             ("PCM_S", 16),
@@ -532,8 +534,10 @@ def test_store_audio():
             (None, None),
         ):
             stored_cut_set = cut_set.save_audios(
-                tmpdir, encoding=enc, bits_per_sample=bits
+                tmpdir, encoding=enc, bits_per_sample=bits, num_jobs=num_jobs
             )
+
+            stored_cut_set = stored_cut_set.sort_by_duration()
             for cut1, cut2 in zip(cut_set, stored_cut_set):
                 samples1 = cut1.load_audio()
                 samples2 = cut2.load_audio()
@@ -543,8 +547,9 @@ def test_store_audio():
     with TemporaryDirectory() as tmpdir:
         for bits in (16, 24, None):
             stored_cut_set = cut_set.save_audios(
-                tmpdir, format="flac", bits_per_sample=bits
+                tmpdir, format="flac", bits_per_sample=bits, num_jobs=num_jobs
             )
+            stored_cut_set = stored_cut_set.sort_by_duration()
             for cut1, cut2 in zip(cut_set, stored_cut_set):
                 samples1 = cut1.load_audio()
                 samples2 = cut2.load_audio()
