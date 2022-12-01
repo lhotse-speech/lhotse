@@ -235,19 +235,19 @@ def test_shar_lazy_reader_with_attached_attributes(cuts: CutSet, shar_dir: Path)
             assert not c_test.has_custom("a_number")
 
 
-def test_shar_lazy_reader_with_cut_map_fns(cuts: CutSet, shar_dir: Path):
+@pytest.mark.parametrize("shuffle", [True, False])
+def test_shar_lazy_reader_with_cut_map_fns(cuts: CutSet, shar_dir: Path, shuffle):
     # Prepare system under test
 
-    def cut_map_fn(cut, dset_name):
-        cut.dataset = dset_name
+    def cut_map_fn_0(cut):
+        cut.dataset = "dataset_corresponding_to_shard_0"
         return cut
 
-    cut_map_fns = []
-    for dataset_name in (
-        "dataset_corresponding_to_shard_0",
-        "dataset_corresponding_to_shard_1",
-    ):
-        cut_map_fns.append(partial(cut_map_fn, dset_name=dataset_name))
+    def cut_map_fn_1(cut):
+        cut.dataset = "dataset_corresponding_to_shard_1"
+        return cut
+
+    cut_map_fns = [cut_map_fn_0, cut_map_fn_1]
 
     cuts_iter = LazySharIterator(
         fields={
@@ -257,11 +257,18 @@ def test_shar_lazy_reader_with_cut_map_fns(cuts: CutSet, shar_dir: Path):
             ],
         },
         cut_map_fns=cut_map_fns,
+        shuffle_shards=shuffle,
     )
 
     # Actual test
     for c_test, c_ref in zip(cuts_iter, cuts):
-        assert c_test.id == c_ref.id
+
+        # when not shuffling, check the cut ID is correct;
+        # when shuffling; check that the shuffle actually happened
+        if shuffle:
+            assert c_test.id != c_ref.id
+        else:
+            assert c_test.id == c_ref.id
 
         if c_test.shard_origin == shar_dir / "cuts.000000.jsonl.gz":
             assert c_test.dataset == "dataset_corresponding_to_shard_0"
