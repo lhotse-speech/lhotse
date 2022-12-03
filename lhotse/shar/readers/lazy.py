@@ -187,7 +187,7 @@ class LazySharIterator(ImitatesDict):
                 p for p in all_paths if p.name.split(".")[0] == field
             )
 
-    def _maybe_split_for_dataloading(self, shards: List[Dict]) -> List[Dict]:
+    def _maybe_split_for_dataloading(self, shards: List) -> List:
         from .utils import split_by_node, split_by_worker
 
         if self.split_for_dataloading:
@@ -195,7 +195,7 @@ class LazySharIterator(ImitatesDict):
         else:
             return shards
 
-    def _maybe_shuffle_shards(self, shards: List[Dict]) -> List[Dict]:
+    def _maybe_shuffle_shards(self, shards: List) -> List:
         if self.shuffle_shards:
             shards = shards.copy()
 
@@ -222,11 +222,15 @@ class LazySharIterator(ImitatesDict):
         return shards
 
     def __iter__(self):
-        shards = self.shards
+        shards, map_fns = self.shards, self.cut_map_fns
         shards = self._maybe_shuffle_shards(shards)
         shards = self._maybe_split_for_dataloading(shards)
+        if map_fns is not None:
+            # The functions also need to be shuffled/split, if present.
+            map_fns = self._maybe_shuffle_shards(map_fns)
+            map_fns = self._maybe_split_for_dataloading(map_fns)
 
-        for shard, cut_map_fn in zip(shards, self.cut_map_fns):
+        for shard, cut_map_fn in zip(shards, map_fns):
             # Iterate over cuts for the current shard
             cuts = LazyManifestIterator(shard["cuts"])
 
