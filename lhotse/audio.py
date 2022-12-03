@@ -628,7 +628,7 @@ class Recording:
                     s = np.pad(s, ((0, 0), (0, max_samples - s.shape[1])), "constant")
                     samples_per_source[i] = s
                 else:
-                    raise ValueError(
+                    raise DurationMismatchError(
                         f"The mismatch between the number of samples in the "
                         f"different channels of the recording {self.id} is "
                         f"greater than the allowed tolerance {LHOTSE_AUDIO_DURATION_MISMATCH_TOLERANCE}."
