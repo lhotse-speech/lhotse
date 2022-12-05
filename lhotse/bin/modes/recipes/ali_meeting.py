@@ -17,7 +17,7 @@ __all__ = ["ali_meeting"]
     "--normalize-text",
     type=click.Choice(["none", "m2met"], case_sensitive=False),
     default="none",
-    help="Type of text normalization to apply (M2MeT style, by default)",
+    help="Type of text normalization to apply (M2MeT style is from the official challenge)",
 )
 def ali_meeting(
     corpus_dir: Pathlike, output_dir: Pathlike, mic: str, normalize_text: str
