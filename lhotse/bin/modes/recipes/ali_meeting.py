@@ -13,9 +13,19 @@ __all__ = ["ali_meeting"]
 @click.option(
     "--mic", type=click.Choice(["near", "far", "ihm", "sdm", "mdm"]), default="far"
 )
-def ali_meeting(corpus_dir: Pathlike, output_dir: Pathlike, mic: str):
+@click.option(
+    "--normalize-text",
+    type=click.Choice(["none", "m2met"], case_sensitive=False),
+    default="none",
+    help="Type of text normalization to apply (M2MeT style, by default)",
+)
+def ali_meeting(
+    corpus_dir: Pathlike, output_dir: Pathlike, mic: str, normalize_text: str
+):
     """AliMeeting data preparation."""
-    prepare_ali_meeting(corpus_dir, output_dir=output_dir, mic=mic)
+    prepare_ali_meeting(
+        corpus_dir, output_dir=output_dir, mic=mic, normalize_text=normalize_text
+    )
 
 
 @download.command(context_settings=dict(show_default=True))
