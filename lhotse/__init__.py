@@ -34,7 +34,7 @@ except:
     # NOTE: REMEMBER TO UPDATE THE ACTUAL VERSION IN setup.py WHEN RELEASING #
     # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! #
     # Use a default placeholder when the version is unavailable...
-    __version__ = "1.10.0.dev+missing.version.file"
+    __version__ = "1.11.0.dev+missing.version.file"
 
 from . import augmentation, dataset, features, recipes
 

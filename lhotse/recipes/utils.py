@@ -83,3 +83,111 @@ def manifests_exist(
         if not path.is_file():
             return False
     return True
+
+
+def normalize_text_alimeeting(text: str, normalize: str = "m2met") -> str:
+    """
+    Text normalization similar to M2MeT challenge baseline.
+    See: https://github.com/yufan-aslp/AliMeeting/blob/main/asr/local/text_normalize.pl
+    """
+    if normalize == "none":
+        return text
+    elif normalize == "m2met":
+        import re
+
+        text = text.replace("<sil>", "")
+        text = text.replace("<%>", "")
+        text = text.replace("<->", "")
+        text = text.replace("<$>", "")
+        text = text.replace("<#>", "")
+        text = text.replace("<_>", "")
+        text = text.replace("<space>", "")
+        text = text.replace("`", "")
+        text = text.replace("&", "")
+        text = text.replace(",", "")
+        if re.search("[a-zA-Z]", text):
+            text = text.upper()
+        text = text.replace("Ａ", "A")
+        text = text.replace("ａ", "A")
+        text = text.replace("ｂ", "B")
+        text = text.replace("ｃ", "C")
+        text = text.replace("ｋ", "K")
+        text = text.replace("ｔ", "T")
+        text = text.replace("，", "")
+        text = text.replace("丶", "")
+        text = text.replace("。", "")
+        text = text.replace("、", "")
+        text = text.replace("？", "")
+        return text
+
+
+def normalize_text_ami(text: str, normalize: str = "upper") -> str:
+    """
+    Text normalization similar to Kaldi's AMI recipe.
+    """
+    if normalize == "none":
+        return text
+    elif normalize == "upper":
+        return text.upper()
+    elif normalize == "kaldi":
+        # Kaldi style text normalization
+        import re
+
+        # convert text to uppercase
+        text = text.upper()
+        # remove punctuations
+        text = re.sub(r"[^A-Z0-9']+", " ", text)
+        # remove multiple spaces
+        text = re.sub(r"\s+", " ", text)
+        # apply few exception for dashed phrases, Mm-Hmm, Uh-Huh, OK etc. those are frequent in AMI
+        # and will be added to dictionary
+        text = re.sub(r"MM HMM", "MM-HMM", text)
+        text = re.sub(r"UH HUH", "UH-HUH", text)
+        text = re.sub(r"(\b)O K(\b)", r"\g<1>OK\g<2>", text)
+        return text
+
+
+def normalize_text_chime6(text: str, normalize: str = "upper") -> str:
+    """
+    Text normalization similar to Kaldi's CHiME-6 recipe.
+    """
+    if normalize == "none":
+        return text
+    elif normalize == "upper":
+        return text.upper()
+    elif normalize == "kaldi":
+        # Kaldi style text normalization
+        import re
+
+        if "[redacted]" in text:
+            return ""
+
+        # convert text to lowercase
+        text = text.lower()
+        # remove punctuations: " . ? , : ; !
+        text = re.sub(r"[.?,:;!]", "", text)
+        # remove multiple spaces
+        text = re.sub(r"\s+", " ", text)
+        # replace multiple consecutive [inaudible] with a single one
+        text = re.sub(r"\[inaudible[- 0-9]*\]", "[inaudible]", text)
+        # replace stranded dash with space
+        text = re.sub(r" - ", " ", text)
+        # replace mm- with mm
+        text = re.sub(r"mm-", "mm", text)
+        return text
+
+
+class TimeFormatConverter:
+    @staticmethod
+    def hms_to_seconds(time: str) -> float:
+        """Converts time in HH:MM:SS.mmm format to seconds"""
+        h, m, s = time.split(":")
+        return int(h) * 3600 + int(m) * 60 + float(s)
+
+    @staticmethod
+    def seconds_to_hms(time: float) -> str:
+        """Converts time in seconds to HH:MM:SS.mmm format"""
+        h = int(time // 3600)
+        m = int((time % 3600) // 60)
+        s = time % 60
+        return f"{h:02d}:{m:02d}:{s:06.3f}"

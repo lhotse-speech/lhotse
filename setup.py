@@ -53,7 +53,7 @@ project_root = Path(__file__).parent
 # NOTE: REMEMBER TO UPDATE THE FALLBACK VERSION IN lhotse/__init__.py WHEN RELEASING #
 # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! #
 MAJOR_VERSION = 1
-MINOR_VERSION = 10
+MINOR_VERSION = 11
 PATCH_VERSION = 0
 IS_DEV_VERSION = True  # False = public release, True = otherwise
 
@@ -150,6 +150,7 @@ install_requires = [
     "numpy>=1.18.1",
     "packaging",
     "pyyaml>=5.3.1",
+    "tabulate>=0.8.1",
     "tqdm",
 ]
 

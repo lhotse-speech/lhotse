@@ -26,6 +26,7 @@ from tqdm import tqdm
 
 from lhotse import fix_manifests, validate_recordings_and_supervisions
 from lhotse.audio import AudioSource, Recording, RecordingSet
+from lhotse.recipes.utils import normalize_text_alimeeting
 from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import Pathlike, is_module_available, urlretrieve_progress
 
@@ -69,6 +70,7 @@ def prepare_ali_meeting(
     corpus_dir: Pathlike,
     output_dir: Optional[Pathlike] = None,
     mic: Optional[str] = "far",
+    normalize_text: str = "none",
 ) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet]]]:
     """
     Returns the manifests which consist of the Recordings and Supervisions
@@ -77,6 +79,7 @@ def prepare_ali_meeting(
     :param mic: str, "near" or "far", specifies whether to prepare the near-field or far-field data. May
         also specify "ihm", "sdm", "mdm" (similar to AMI recipe), where "ihm" and "mdm" are the same as "near"
         and "far" respectively, and "sdm" is the same as "far" with a single channel.
+    :param normalize_text: str, the text normalization method, "m2met" or "none".
     :return: a Dict whose key is the dataset part, and the value is Dicts with the keys 'recordings' and 'supervisions'.
     """
     if not is_module_available("textgrid"):
@@ -167,7 +170,9 @@ def prepare_ali_meeting(
                             language="Chinese",
                             speaker=spk_id,
                             gender=gender,
-                            text=text.strip(),
+                            text=normalize_text_alimeeting(
+                                text.strip(), normalize=normalize_text
+                            ),
                         )
                         supervisions.append(segment)
 

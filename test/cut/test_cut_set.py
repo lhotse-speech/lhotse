@@ -17,7 +17,7 @@ from lhotse import (
     load_manifest,
 )
 from lhotse.audio import AudioSource
-from lhotse.cut import CutSet, MixedCut, MixTrack, MonoCut
+from lhotse.cut import CutSet, MixedCut, MixTrack, MonoCut, MultiCut
 from lhotse.serialization import load_jsonl
 from lhotse.testing.dummies import (
     DummyManifest,
@@ -351,11 +351,12 @@ def test_trim_to_supervisions_mixed_cuts_keep_overlapping_true(
     assert sup.duration == 18
 
 
-@pytest.mark.skipif(
-    not is_module_available("pandas"), reason="Requires pandas to be installed."
-)
-def test_cut_set_describe_runs(cut_set):
-    cut_set.describe()
+@pytest.mark.parametrize("full", [True, False])
+def test_cut_set_describe_runs(cut_set, full, capfd):
+    cut_set.describe(full=full)
+    out, err = capfd.readouterr()
+    assert out != ""
+    assert err == ""
 
 
 def test_cut_map_supervisions(cut_set):
@@ -415,7 +416,7 @@ def test_mixed_cut_set_prefix(cut_with_relative_paths):
             assert t.cut.features.storage_path == "/data/storage_dir"
 
 
-def test_mix_same_recording_channels():
+def test_combine_same_recording_channels():
     recording = Recording(
         "rec",
         sampling_rate=8000,
@@ -433,14 +434,12 @@ def test_mix_same_recording_channels():
         ]
     )
 
-    mixed = cut_set.mix_same_recording_channels()
-    assert len(mixed) == 1
+    multi = cut_set.combine_same_recording_channels()
+    assert len(multi) == 1
 
-    cut = mixed[0]
-    assert isinstance(cut, MixedCut)
-    assert len(cut.tracks) == 2
-    assert cut.tracks[0].cut == cut_set[0]
-    assert cut.tracks[1].cut == cut_set[1]
+    cut = multi[0]
+    assert isinstance(cut, MultiCut)
+    assert cut.num_channels == 2
 
 
 def test_cut_set_filter_supervisions(cut_set):
@@ -522,15 +521,40 @@ def test_map_cut_set_rejects_noncut(cut_set_with_mixed_cut):
         cut_set = cut_set_with_mixed_cut.map(lambda cut: "not-a-cut")
 
 
-def test_store_audio():
-    cut_set = CutSet.from_json("test/fixtures/libri/cuts.json")
+@pytest.mark.parametrize("num_jobs", [1, 2])
+def test_store_audio(num_jobs):
+    cut_set = CutSet.from_json("test/fixtures/ljspeech/cuts.json")
+    cut_set = cut_set.sort_by_duration()
     with TemporaryDirectory() as tmpdir:
-        stored_cut_set = cut_set.save_audios(tmpdir)
-        for cut1, cut2 in zip(cut_set, stored_cut_set):
-            samples1 = cut1.load_audio()
-            samples2 = cut2.load_audio()
-            assert np.array_equal(samples1, samples2)
-        assert len(stored_cut_set) == len(cut_set)
+        for enc, bits in (
+            ("PCM_S", 16),
+            ("PCM_F", 32),
+            (None, 16),
+            ("PCM_S", None),
+            (None, None),
+        ):
+            stored_cut_set = cut_set.save_audios(
+                tmpdir, encoding=enc, bits_per_sample=bits, num_jobs=num_jobs
+            )
+
+            stored_cut_set = stored_cut_set.sort_by_duration()
+            for cut1, cut2 in zip(cut_set, stored_cut_set):
+                samples1 = cut1.load_audio()
+                samples2 = cut2.load_audio()
+                assert np.array_equal(samples1, samples2)
+            assert len(stored_cut_set) == len(cut_set)
+
+    with TemporaryDirectory() as tmpdir:
+        for bits in (16, 24, None):
+            stored_cut_set = cut_set.save_audios(
+                tmpdir, format="flac", bits_per_sample=bits, num_jobs=num_jobs
+            )
+            stored_cut_set = stored_cut_set.sort_by_duration()
+            for cut1, cut2 in zip(cut_set, stored_cut_set):
+                samples1 = cut1.load_audio()
+                samples2 = cut2.load_audio()
+                assert np.array_equal(samples1, samples2)
+            assert len(stored_cut_set) == len(cut_set)
 
 
 def test_cut_set_subset_cut_ids_preserves_order():

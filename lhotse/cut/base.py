@@ -576,30 +576,11 @@ class Cut:
                     )
         return indexed
 
-    @deprecated(
-        "Cut.compute_and_store_recording will be removed in a future release. Please use save_audio() instead."
-    )
-    def compute_and_store_recording(
-        self,
-        storage_path: Pathlike,
-        augment_fn: Optional[AugmentFn] = None,
-    ) -> "Cut":
-        """
-        Store this cut's waveform as audio recording to disk.
-
-        :param storage_path: The path to location where we will store the audio recordings.
-        :param augment_fn: an optional callable used for audio augmentation.
-            Be careful with the types of augmentations used: if they modify
-            the start/end/duration times of the cut and its supervisions,
-            you will end up with incorrect supervision information when using this API.
-            E.g. for speed perturbation, use ``CutSet.perturb_speed()`` instead.
-        :return: a new MonoCut instance.
-        """
-        return self.save_audio(storage_path=storage_path, augment_fn=augment_fn)
-
     def save_audio(
         self,
         storage_path: Pathlike,
+        encoding: Optional[str] = None,
+        bits_per_sample: Optional[int] = None,
         augment_fn: Optional[AugmentFn] = None,
         **kwargs,
     ) -> "Cut":
@@ -607,6 +588,12 @@ class Cut:
         Store this cut's waveform as audio recording to disk.
 
         :param storage_path: The path to location where we will store the audio recordings.
+        :param encoding: Audio encoding argument supported by ``torchaudio.save``. See
+            https://pytorch.org/audio/stable/backend.html#save (sox_io backend) and
+            https://pytorch.org/audio/stable/backend.html#id3 (soundfile backend) for more details.
+        :param bits_per_sample: Audio bits_per_sample argument supported by ``torchaudio.save``. See
+            https://pytorch.org/audio/stable/backend.html#save (sox_io backend) and
+            https://pytorch.org/audio/stable/backend.html#id3 (soundfile backend) for more details.
         :param augment_fn: an optional callable used for audio augmentation.
             Be careful with the types of augmentations used: if they modify
             the start/end/duration times of the cut and its supervisions,
@@ -628,7 +615,11 @@ class Cut:
             samples = augment_fn(samples, self.sampling_rate)
 
         torchaudio.save(
-            str(storage_path), torch.as_tensor(samples), sample_rate=self.sampling_rate
+            str(storage_path),
+            torch.as_tensor(samples),
+            sample_rate=self.sampling_rate,
+            encoding=encoding,
+            bits_per_sample=bits_per_sample,
         )
         recording = Recording(
             id=storage_path.stem,

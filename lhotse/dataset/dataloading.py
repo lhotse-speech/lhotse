@@ -1,7 +1,10 @@
+import os
 from functools import partial
 from typing import Callable, Optional
 
 from lhotse.utils import fix_random_seed
+
+LHOTSE_PROCESS_SEED = "LHOTSE_PROCESS_SEED"
 
 
 def make_worker_init_fn(
@@ -40,6 +43,7 @@ def worker_init_fn(
         if rank is not None:
             process_seed += 1000 * rank
         fix_random_seed(process_seed)
+        os.environ[LHOTSE_PROCESS_SEED] = str(process_seed)
 
     if rank is None and world_size is None:
         return
@@ -51,7 +55,5 @@ def worker_init_fn(
     # This sets the rank/world_size info for WebDataset to read it in worker subprocesses.
     # If we didn't do it, WebDataset will "think" this is always single-node training,
     # because DataLoader workers did not initialize torch.distributed.
-    import os
-
     os.environ["RANK"] = str(rank)
     os.environ["WORLD_SIZE"] = str(world_size)
