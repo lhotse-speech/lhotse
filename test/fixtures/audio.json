@@ -52,5 +52,27 @@
         "source": "test/fixtures/stereo.sph"
       }
     ]
+  },
+  {
+    "id": "recording-4",
+    "sampling_rate": 8000,
+    "num_samples": 4444,
+    "duration": 0.56,
+    "sources": [
+      {
+        "type": "file",
+        "channels": [
+          0
+        ],
+        "source": "test/fixtures/mono_c0.wav"
+      },
+      {
+        "type": "command",
+        "channels": [
+          1
+        ],
+        "source": "sox test/fixtures/mono_c1.wav -t wav - speed 0.9 | cat"
+      }
+    ]
   }
 ]

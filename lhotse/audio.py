@@ -623,11 +623,12 @@ class Recording:
                 s[None, :] if s.ndim == 1 else s for s in samples_per_source
             ]
             max_samples = max(s.shape[1] for s in samples_per_source)
-            for s in samples_per_source:
+            for i, s in enumerate(samples_per_source):
                 if max_samples - s.shape[1] <= allowed_diff:
                     s = np.pad(s, ((0, 0), (0, max_samples - s.shape[1])), "constant")
+                    samples_per_source[i] = s
                 else:
-                    raise ValueError(
+                    raise DurationMismatchError(
                         f"The mismatch between the number of samples in the "
                         f"different channels of the recording {self.id} is "
                         f"greater than the allowed tolerance {LHOTSE_AUDIO_DURATION_MISMATCH_TOLERANCE}."
