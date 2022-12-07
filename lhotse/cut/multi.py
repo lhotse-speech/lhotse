@@ -89,6 +89,8 @@ class MultiCut(DataCut):
         [begin, duration] region of the current MultiCut.
 
         :param channel: The channel to load the features for. If None, all channels will be loaded.
+            This is useful for the case when we have features extracted for each channel of
+            the multi-cut, and we want to selectively load them.
         """
         if self.has_features:
             feats = self.features.load(

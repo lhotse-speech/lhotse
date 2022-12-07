@@ -446,6 +446,7 @@ class Features:
         self,
         start: Optional[Seconds] = None,
         duration: Optional[Seconds] = None,
+        channel_id: Union[int, List[int]] = 0,
     ) -> np.ndarray:
         # noinspection PyArgumentList
         storage = get_reader(self.storage_type)(self.storage_path)

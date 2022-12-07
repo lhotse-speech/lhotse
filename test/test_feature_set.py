@@ -161,7 +161,9 @@ def test_compute_global_stats():
     ],
 )
 def test_feature_set_builder(storage_fn):
-    recordings: RecordingSet = RecordingSet.from_json("test/fixtures/audio.json")
+    recordings: RecordingSet = RecordingSet.from_json(
+        "test/fixtures/audio.json"
+    ).filter(lambda r: r.id != "recording-4")
     extractor = Fbank(FbankConfig(sampling_rate=8000))
     with storage_fn() as storage:
         builder = FeatureSetBuilder(
