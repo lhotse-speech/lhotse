@@ -1600,9 +1600,9 @@ class CutSet(Serializable, AlgorithmMixin):
                 continue
             to_mix = cuts.sample()
             # Determine the SNR - either it's specified or we need to sample one.
-            snr = random.uniform(*snr) if isinstance(snr, (list, tuple)) else snr
+            cut_snr = random.uniform(*snr) if isinstance(snr, (list, tuple)) else snr
             # Actual mixing
-            mixed = cut.mix(other=to_mix, snr=snr, preserve_id=preserve_id)
+            mixed = cut.mix(other=to_mix, snr=cut_snr, preserve_id=preserve_id)
             # Did the user specify a duration?
             # If yes, we will ensure that shorter cuts have more noise mixed in
             # to "pad" them with at the end.
@@ -1619,7 +1619,7 @@ class CutSet(Serializable, AlgorithmMixin):
                 # Keep the SNR constant for each cut from "self".
                 mixed = mixed.mix(
                     other=to_mix,
-                    snr=snr,
+                    snr=cut_snr,
                     offset_other_by=mixed_in_duration,
                     allow_padding=allow_padding,
                     preserve_id=preserve_id,
