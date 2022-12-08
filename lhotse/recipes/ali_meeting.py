@@ -17,6 +17,7 @@ More details and download link: https://openslr.org/119/
 """
 
 import logging
+import subprocess
 import tarfile
 from collections import defaultdict
 from pathlib import Path
@@ -28,7 +29,7 @@ from lhotse import fix_manifests, validate_recordings_and_supervisions
 from lhotse.audio import Recording, RecordingSet
 from lhotse.recipes.utils import normalize_text_alimeeting
 from lhotse.supervision import SupervisionSegment, SupervisionSet
-from lhotse.utils import Pathlike, is_module_available, urlretrieve_progress
+from lhotse.utils import Pathlike, fastcopy, is_module_available, urlretrieve_progress
 
 
 def download_ali_meeting(
@@ -161,12 +162,15 @@ def prepare_ali_meeting(
 
             wav_path = list(wav_paths.rglob(f"{session_id}*.wav"))[0]
 
-            recording = Recording.from_file(wav_path, recording_id=session_id)
-
             if save_mono:
-                reco_cut = recording.to_cut().to_mono()[0]
-                _ = reco_cut.save_audio(output_dir_mono / f"{session_id}.wav")
-                recording = Recording.from_file(output_dir_mono / f"{session_id}.wav")
+                # use sox to extract first channel of the wav file
+                wav_path_mono = output_dir_mono / wav_path.name
+                if not wav_path_mono.is_file():
+                    cmd = f"sox {wav_path} -c 1 {wav_path_mono}"
+                    subprocess.run(cmd, shell=True, check=True)
+                recording = Recording.from_file(wav_path_mono, recording_id=session_id)
+            else:
+                recording = Recording.from_file(wav_path, recording_id=session_id)
 
             recordings.append(recording)
 
