@@ -55,7 +55,7 @@ project_root = Path(__file__).parent
 MAJOR_VERSION = 1
 MINOR_VERSION = 11
 PATCH_VERSION = 0
-IS_DEV_VERSION = True  # False = public release, True = otherwise
+IS_DEV_VERSION = False  # False = public release, True = otherwise
 
 
 if sys.version_info < (3,):
