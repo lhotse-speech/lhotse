@@ -1551,6 +1551,7 @@ class CutSet(Serializable, AlgorithmMixin):
         snr: Optional[Union[Decibels, Sequence[Decibels]]] = 20,
         preserve_id: Optional[str] = None,
         mix_prob: float = 1.0,
+        seed: int = 42,
     ) -> "CutSet":
         """
         Mix cuts in this ``CutSet`` with randomly sampled cuts from another ``CutSet``.
@@ -1576,6 +1577,7 @@ class CutSet(Serializable, AlgorithmMixin):
         :param mix_prob: an optional float in range [0, 1].
             Specifies the probability of performing a mix.
             Values lower than 1.0 mean that some cuts in the output will be unchanged.
+        :param seed: an optional int. Random seed for choosing the cuts to mix and the SNR.
         :return: a new ``CutSet`` with mixed cuts.
         """
         assert 0.0 <= mix_prob <= 1.0
@@ -1591,16 +1593,17 @@ class CutSet(Serializable, AlgorithmMixin):
             "as it would be extremely inefficient. "
             "You can use 'cuts.to_eager()' on the function argument to fix this."
         )
+        rng = random.Random(seed)
         mixed_cuts = []
         for cut in self:
             # Check whether we're going to mix something into the current cut
             # or pass it through unchanged.
-            if random.uniform(0.0, 1.0) > mix_prob:
+            if rng.uniform(0.0, 1.0) > mix_prob:
                 mixed_cuts.append(cut)
                 continue
             to_mix = cuts.sample()
             # Determine the SNR - either it's specified or we need to sample one.
-            cut_snr = random.uniform(*snr) if isinstance(snr, (list, tuple)) else snr
+            cut_snr = rng.uniform(*snr) if isinstance(snr, (list, tuple)) else snr
             # Actual mixing
             mixed = cut.mix(other=to_mix, snr=cut_snr, preserve_id=preserve_id)
             # Did the user specify a duration?
