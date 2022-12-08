@@ -12,6 +12,7 @@ from lhotse.audio import (
     DurationMismatchError,
     Recording,
     RecordingSet,
+    set_audio_duration_mismatch_tolerance,
 )
 from lhotse.testing.dummies import DummyManifest
 from lhotse.utils import INT16MAX, fastcopy
@@ -97,6 +98,18 @@ def test_get_audio_multichannel(
     with exception_expectation:
         loaded_audio = recording_set.load_audio("recording-1", channels=channels)
         np.testing.assert_almost_equal(loaded_audio, expected_audio)
+
+
+@mark.parametrize(
+    ["duration_tolerance", "exception_expectation"],
+    [(0.025, raises(DurationMismatchError)), (0.2, does_not_raise())],
+)
+def test_get_audio_multichannel_duration_mismatch(
+    recording_set, duration_tolerance, exception_expectation
+):
+    set_audio_duration_mismatch_tolerance(duration_tolerance)
+    with exception_expectation:
+        recording_set.load_audio("recording-4", channels=[0, 1])
 
 
 @mark.parametrize(
