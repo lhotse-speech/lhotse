@@ -6,7 +6,7 @@ import pytest
 from lhotse.audio import Recording
 from lhotse.cut import CutSet, MixedCut, MonoCut, MultiCut
 from lhotse.supervision import SupervisionSegment
-from lhotse.testing.dummies import remove_spaces_from_segment_text
+from lhotse.testing.dummies import DummyManifest, remove_spaces_from_segment_text
 from lhotse.utils import nullcontext as does_not_raise
 
 # Note:
@@ -343,3 +343,46 @@ def test_mix_cut_snr_pad_both(libri_cut):
     assert E(feats_snr) > E(feats)
     assert E(feats_nosnr) > E(feats)
     assert E(feats_nosnr) > E(feats_snr)
+
+
+def test_cut_set_mix_snr_is_deterministic():
+    cuts = DummyManifest(CutSet, begin_id=0, end_id=2)
+
+    mixed = cuts.mix(cuts, snr=10, mix_prob=1.0, seed=0)
+    assert len(mixed) == 2
+
+    c0 = mixed[0]
+    assert isinstance(c0, MixedCut)
+    assert len(c0.tracks) == 2
+    assert c0.tracks[0].snr is None
+    assert c0.tracks[1].snr == 10
+
+    c1 = mixed[1]
+    assert isinstance(c1, MixedCut)
+    assert len(c1.tracks) == 2
+    assert c1.tracks[0].snr is None
+    assert c1.tracks[1].snr == 10
+
+    # redundant but make it obvious
+    assert c0.tracks[1].snr == c1.tracks[1].snr
+
+
+def test_cut_set_mix_snr_is_randomized():
+    cuts = DummyManifest(CutSet, begin_id=0, end_id=2)
+
+    mixed = cuts.mix(cuts, snr=[0, 10], mix_prob=1.0, seed=0)
+    assert len(mixed) == 2
+
+    c0 = mixed[0]
+    assert isinstance(c0, MixedCut)
+    assert len(c0.tracks) == 2
+    assert c0.tracks[0].snr is None
+    assert 0 <= c0.tracks[1].snr <= 10
+
+    c1 = mixed[1]
+    assert isinstance(c1, MixedCut)
+    assert len(c1.tracks) == 2
+    assert c1.tracks[0].snr is None
+    assert 0 <= c1.tracks[1].snr <= 10
+
+    assert c0.tracks[1].snr != c1.tracks[1].snr

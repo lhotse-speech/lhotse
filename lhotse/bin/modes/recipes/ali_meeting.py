@@ -19,12 +19,26 @@ __all__ = ["ali_meeting"]
     default="none",
     help="Type of text normalization to apply (M2MeT style is from the official challenge)",
 )
+@click.option(
+    "--save-mono",
+    is_flag=True,
+    default=False,
+    help="If True and `mic` is sdm, extract first channel and save as new recording.",
+)
 def ali_meeting(
-    corpus_dir: Pathlike, output_dir: Pathlike, mic: str, normalize_text: str
+    corpus_dir: Pathlike,
+    output_dir: Pathlike,
+    mic: str,
+    normalize_text: str,
+    save_mono: bool,
 ):
     """AliMeeting data preparation."""
     prepare_ali_meeting(
-        corpus_dir, output_dir=output_dir, mic=mic, normalize_text=normalize_text
+        corpus_dir,
+        output_dir=output_dir,
+        mic=mic,
+        normalize_text=normalize_text,
+        save_mono=save_mono,
     )
 
 
