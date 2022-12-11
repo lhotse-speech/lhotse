@@ -172,12 +172,6 @@ class MultiCut(DataCut):
                 "We do not support reverberation simulation for multi-channel recordings. "
                 "Please provide an impulse response."
             )
-            rir_channels = [0]
-
-            if rir_generator is None:
-                from lhotse.augmentation.utils import FastRandomRIRGenerator
-
-                rir_generator = FastRandomRIRGenerator(sr=self.sampling_rate)
         else:
             assert all(
                 c < rir_recording.num_channels for c in rir_channels
