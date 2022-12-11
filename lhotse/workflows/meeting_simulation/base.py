@@ -96,5 +96,11 @@ def reverberate_cuts(cuts: CutSet, *rirs: Optional[RecordingSet]) -> CutSet:
             for track, rir in zip(cut.tracks, rir_group):
                 tracks.append(fastcopy(track, cut=track.cut.reverb_rir(rir)))
         else:
-            # Generate a fast randomized RIR with as many sources as there are speakers.
+            # Create a random RIR generator and use it to reverberate all tracks.
             rir_generator = FastRandomRIRGenerator()
+            for track in cut.tracks:
+                tracks.append(
+                    fastcopy(
+                        track, cut=track.cut.reverb_rir(rir_generator=rir_generator)
+                    )
+                )
