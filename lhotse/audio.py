@@ -718,6 +718,7 @@ class Recording:
     def reverb_rir(
         self,
         rir_recording: Optional["Recording"] = None,
+        rir_generator: Optional[Callable] = None,
         normalize_output: bool = True,
         early_only: bool = False,
         affix_id: bool = True,
@@ -729,6 +730,7 @@ class Recording:
         generate an RIR using a fast random generator (https://arxiv.org/abs/2208.04101).
 
         :param rir_recording: The impulse response to be used.
+        :param rir_generator: A callable that generates an impulse response.
         :param normalize_output: When true, output will be normalized to have energy as input.
         :param early_only: When true, only the early reflections (first 50 ms) will be used.
         :param affix_id: When true, we will modify the ``Recording.id`` field
@@ -1117,6 +1119,7 @@ class RecordingSet(Serializable, AlgorithmMixin):
     def reverb_rir(
         self,
         rir_recordings: Optional["RecordingSet"] = None,
+        rir_generator: Optional[Callable] = None,
         normalize_output: bool = True,
         early_only: bool = False,
         affix_id: bool = True,
@@ -1128,6 +1131,7 @@ class RecordingSet(Serializable, AlgorithmMixin):
         generate a set of impulse responses using a fast random generator (https://arxiv.org/abs/2208.04101).
 
         :param rir_recordings: The impulse responses to be used.
+        :param rir_generator: A function that generates a random impulse response.
         :param normalize_output: When true, output will be normalized to have energy as input.
         :param early_only: When true, only the early reflections (first 50 ms) will be used.
         :param affix_id: When true, we will modify the ``Recording.id`` field
@@ -1141,6 +1145,7 @@ class RecordingSet(Serializable, AlgorithmMixin):
         return RecordingSet.from_recordings(
             r.reverb_rir(
                 rir_recording=random.choice(rir_recordings) if rir_recordings else None,
+                rir_generator=rir_generator,
                 normalize_output=normalize_output,
                 early_only=early_only,
                 affix_id=affix_id,
