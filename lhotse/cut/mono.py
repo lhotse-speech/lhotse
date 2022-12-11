@@ -84,6 +84,7 @@ class MonoCut(DataCut):
         early_only: bool = False,
         affix_id: bool = True,
         rir_channels: List[int] = [0],
+        rir_generator: Optional[Callable] = None,
     ) -> DataCut:
         """
         Return a new ``DataCut`` that will convolve the audio with the provided impulse response.
@@ -102,6 +103,7 @@ class MonoCut(DataCut):
             by affixing it with "_rvb".
         :param rir_channels: The channels of the impulse response to use. First channel is used by default.
             If multiple channels are specified, this will produce a MultiCut instead of a MonoCut.
+        :param rir_generator: A callable that generates a random impulse response.
         :return: a modified copy of the current ``MonoCut``.
         """
         # Pre-conditions
@@ -124,10 +126,16 @@ class MonoCut(DataCut):
             # Set rir_channels to 0 since we can only generate a single-channel RIR.
             rir_channels = [0]
 
+            if rir_generator is None:
+                from lhotse.augmentation.utils import FastRandomRIRGenerator
+
+                rir_generator = FastRandomRIRGenerator(sr=self.sampling_rate)
+
         if len(rir_channels) == 1:
             # reverberation will return a MonoCut
             recording_rvb = self.recording.reverb_rir(
                 rir_recording=rir_recording,
+                rir_generator=rir_generator,
                 normalize_output=normalize_output,
                 early_only=early_only,
                 affix_id=affix_id,
@@ -155,6 +163,7 @@ class MonoCut(DataCut):
             # with a single channel of the RIR
             recording_rvb = self.recording.reverb_rir(
                 rir_recording=rir_recording,
+                rir_generator=rir_generator,
                 normalize_output=normalize_output,
                 early_only=early_only,
                 affix_id=affix_id,

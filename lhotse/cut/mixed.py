@@ -649,6 +649,7 @@ class MixedCut(Cut):
         early_only: bool = False,
         affix_id: bool = True,
         rir_channels: List[int] = [0],
+        rir_generator: Optional[Callable] = None,
     ) -> "MixedCut":
         """
         Return a new ``MixedCut`` that will convolve the audio with the provided impulse response.
@@ -688,10 +689,10 @@ class MixedCut(Cut):
         if len(rir_channels) == 1:
             rir_channels = rir_channels * len(self.tracks)
 
-        # NOTE: Currently, if no RIR is provided, this method will generate a
-        # random one for each track in the MixedCut. This is not ideal since the room
-        # configuration for all the RIRs should be the same. But we ignore this for now
-        # since it simplifies the implementation considerably.
+        if rir_recording is None and rir_generator is None:
+            from lhotse.augmentation.utils import FastRandomRIRGenerator
+
+            rir_generator = FastRandomRIRGenerator(sr=self.sampling_rate)
 
         return MixedCut(
             id=f"{self.id}_rvb" if affix_id else self.id,
@@ -700,6 +701,7 @@ class MixedCut(Cut):
                     track,
                     cut=track.cut.reverb_rir(
                         rir_recording=rir_recording,
+                        rir_generator=rir_generator,
                         normalize_output=normalize_output,
                         early_only=early_only,
                         affix_id=affix_id,

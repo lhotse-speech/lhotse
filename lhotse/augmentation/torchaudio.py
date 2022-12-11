@@ -1,13 +1,13 @@
 import warnings
 from dataclasses import dataclass, field
 from decimal import ROUND_HALF_UP
-from typing import Dict, List, Optional, Tuple, Union
+from typing import Callable, Dict, List, Optional, Tuple, Union
 
 import numpy as np
 import torch
 
 from lhotse.augmentation.transform import AudioTransform
-from lhotse.augmentation.utils import convolve1d, generate_fast_random_rir
+from lhotse.augmentation.utils import FastRandomRIRGenerator, convolve1d
 from lhotse.utils import (
     Seconds,
     compute_num_samples,
@@ -337,6 +337,7 @@ class ReverbWithImpulseResponse(AudioTransform):
     normalize_output: bool = True
     early_only: bool = False
     rir_channels: List[int] = field(default_factory=lambda: [0])
+    rir_generator: Optional[Callable] = None
 
     RIR_SCALING_FACTOR: float = 0.5**15
 
@@ -346,6 +347,7 @@ class ReverbWithImpulseResponse(AudioTransform):
 
             # Pass a shallow copy of the RIR dict since `from_dict()` pops the `sources` key.
             self.rir = Recording.from_dict(self.rir.copy())
+
         if self.rir is not None:
             assert all(
                 c < self.rir.num_channels for c in self.rir_channels
@@ -389,7 +391,9 @@ class ReverbWithImpulseResponse(AudioTransform):
 
         # Generate a random RIR if not provided.
         if self.rir is None:
-            rir_ = generate_fast_random_rir(nsource=1, sr=sampling_rate)
+            if self.rir_generator is None:
+                self.rir_generator = FastRandomRIRGenerator(sr=sampling_rate)
+            rir_ = self.rir_generator(nsource=1)
         else:
             rir_ = (
                 self.rir.load_audio(channels=self.rir_channels)

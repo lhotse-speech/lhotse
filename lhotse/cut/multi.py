@@ -130,6 +130,7 @@ class MultiCut(DataCut):
     def reverb_rir(
         self,
         rir_recording: Optional["Recording"] = None,
+        rir_generator: Optional[Callable] = None,
         normalize_output: bool = True,
         early_only: bool = False,
         affix_id: bool = True,
@@ -145,6 +146,7 @@ class MultiCut(DataCut):
         At the moment we do not support simulation of multi-channel impulse responses.
 
         :param rir_recording: The impulse response to use for convolving.
+        :param rir_generator: A callable that generates a random impulse response.
         :param normalize_output: When true, output will be normalized to have energy as input.
         :param early_only: When true, only the early reflections (first 50 ms) will be used.
         :param affix_id: When true, we will modify the ``MonoCut.id`` field
@@ -171,6 +173,11 @@ class MultiCut(DataCut):
                 "Please provide an impulse response."
             )
             rir_channels = [0]
+
+            if rir_generator is None:
+                from lhotse.augmentation.utils import FastRandomRIRGenerator
+
+                rir_generator = FastRandomRIRGenerator(sr=self.sampling_rate)
         else:
             assert all(
                 c < rir_recording.num_channels for c in rir_channels
@@ -178,6 +185,7 @@ class MultiCut(DataCut):
 
         recording_rvb = self.recording.reverb_rir(
             rir_recording=rir_recording,
+            rir_generator=rir_generator,
             normalize_output=normalize_output,
             early_only=early_only,
             affix_id=affix_id,
