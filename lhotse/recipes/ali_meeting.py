@@ -17,6 +17,7 @@ More details and download link: https://openslr.org/119/
 """
 
 import logging
+import subprocess
 import tarfile
 from collections import defaultdict
 from pathlib import Path
@@ -25,10 +26,10 @@ from typing import Dict, Optional, Union
 from tqdm import tqdm
 
 from lhotse import fix_manifests, validate_recordings_and_supervisions
-from lhotse.audio import AudioSource, Recording, RecordingSet
+from lhotse.audio import Recording, RecordingSet
 from lhotse.recipes.utils import normalize_text_alimeeting
 from lhotse.supervision import SupervisionSegment, SupervisionSet
-from lhotse.utils import Pathlike, is_module_available, urlretrieve_progress
+from lhotse.utils import Pathlike, fastcopy, is_module_available, urlretrieve_progress
 
 
 def download_ali_meeting(
@@ -71,6 +72,7 @@ def prepare_ali_meeting(
     output_dir: Optional[Pathlike] = None,
     mic: Optional[str] = "far",
     normalize_text: str = "none",
+    save_mono: bool = False,
 ) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet]]]:
     """
     Returns the manifests which consist of the Recordings and Supervisions
@@ -79,7 +81,9 @@ def prepare_ali_meeting(
     :param mic: str, "near" or "far", specifies whether to prepare the near-field or far-field data. May
         also specify "ihm", "sdm", "mdm" (similar to AMI recipe), where "ihm" and "mdm" are the same as "near"
         and "far" respectively, and "sdm" is the same as "far" with a single channel.
-    :param normalize_text: str, the text normalization method, "m2met" or "none".
+    :param normalize_text: str, the text normalization type. Available options: "none", "m2met".
+    :param save_mono: bool, if True, save the mono recordings for sdm mic. This can speed up
+        feature extraction since all channels will not be loaded.
     :return: a Dict whose key is the dataset part, and the value is Dicts with the keys 'recordings' and 'supervisions'.
     """
     if not is_module_available("textgrid"):
@@ -87,6 +91,18 @@ def prepare_ali_meeting(
             "To prepare AliMeeting data, please 'pip install textgrid' first."
         )
     import textgrid
+
+    if save_mono and mic != "sdm":
+        logging.warning(
+            "save_mono is True, but mic is not 'sdm'. Ignoring save_mono option."
+        )
+        save_mono = False
+
+    if save_mono and not output_dir:
+        raise ValueError(
+            "save_mono is True, but output_dir is not specified. "
+            "Please specify output_dir to save the mono recordings."
+        )
 
     mic_orig = mic
     mic = "near" if mic_orig in ["ihm", "near"] else "far"
@@ -100,6 +116,10 @@ def prepare_ali_meeting(
         output_dir.mkdir(parents=True, exist_ok=True)
 
     for part in ["Train", "Eval", "Test"]:
+        if save_mono:
+            output_dir_mono = output_dir / "alimeeting_sdm" / part
+            output_dir_mono.mkdir(parents=True, exist_ok=True)
+
         recordings = []
         supervisions = []
         # Eval and Test may further be inside another folder (since the "far" and "near" are grouped together)
@@ -142,7 +162,16 @@ def prepare_ali_meeting(
 
             wav_path = list(wav_paths.rglob(f"{session_id}*.wav"))[0]
 
-            recording = Recording.from_file(wav_path, recording_id=session_id)
+            if save_mono:
+                # use sox to extract first channel of the wav file
+                wav_path_mono = output_dir_mono / wav_path.name
+                if not wav_path_mono.is_file():
+                    cmd = f"sox {wav_path} -c 1 {wav_path_mono}"
+                    subprocess.run(cmd, shell=True, check=True)
+                recording = Recording.from_file(wav_path_mono, recording_id=session_id)
+            else:
+                recording = Recording.from_file(wav_path, recording_id=session_id)
+
             recordings.append(recording)
 
             for tier in tg.tiers:

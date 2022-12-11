@@ -19,6 +19,7 @@ class CutMix:
         prob: Optional[float] = None,
         pad_to_longest: bool = True,
         preserve_id: bool = False,
+        seed: int = 42,
     ) -> None:
         """
         CutMix's constructor.
@@ -51,6 +52,7 @@ class CutMix:
             self.p = prob
         self.pad_to_longest = pad_to_longest
         self.preserve_id = preserve_id
+        self.seed = seed
 
     def __call__(self, cuts: CutSet) -> CutSet:
 
@@ -67,4 +69,5 @@ class CutMix:
             snr=self.snr,
             mix_prob=self.p,
             preserve_id="left" if self.preserve_id else None,
+            seed=self.seed,
         )
