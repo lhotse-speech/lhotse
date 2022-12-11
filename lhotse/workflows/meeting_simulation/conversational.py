@@ -9,7 +9,10 @@ from lhotse import RecordingSet, SupervisionSet
 from lhotse.cut import CutSet, MixedCut, MixTrack, MonoCut
 from lhotse.cut.set import mix
 from lhotse.utils import uuid4
-from lhotse.workflows.meeting_simulation.base import BaseMeetingSimulator
+from lhotse.workflows.meeting_simulation.base import (
+    BaseMeetingSimulator,
+    reverberate_cuts,
+)
 
 
 class ConversationalMeetingSimulator(BaseMeetingSimulator):
@@ -272,4 +275,4 @@ class ConversationalMeetingSimulator(BaseMeetingSimulator):
         return CutSet.from_cuts(mixtures)
 
     def reverberate(self, cuts: CutSet, rirs: Optional[RecordingSet] = None) -> CutSet:
-        raise NotImplementedError
+        return reverberate_cuts(cuts, rirs)

@@ -6,6 +6,7 @@ import abc
 from typing import Optional
 
 from lhotse import RecordingSet, SupervisionSet
+from lhotse.augmentation.utils import FastRandomRIRGenerator, fastcopy
 from lhotse.cut import CutSet
 
 
@@ -67,3 +68,33 @@ class BaseMeetingSimulator(abc.ABC):
         Apply a reverberation effect to each track.
         """
         raise NotImplementedError
+
+
+def reverberate_cuts(cuts: CutSet, *rirs: Optional[RecordingSet]) -> CutSet:
+    """
+    Use provided RIRs to convolve each track of the input CutSet. The cuts here are
+    MixedCut objects containing different speakers in different tracks. To reverberate,
+    we choose a random RIR containing as many Recording objects as there are tracks
+    in the MixedCut.
+
+    If impulse responses are not provided, we use the fast randomized approximation
+    method to simulate artificial single-channel RIRs.
+
+    :param cuts: a CutSet containing MixedCut objects.
+    :param rirs: one or more RecordingSet (each set is a group of RIRs from the same room).
+    :return: a CutSet containing MixedCut objects reverberated with the provided RIRs.
+    """
+    out_cuts = []
+    max_sources = max(len(rir_group) for rir_group in rirs) if rirs is not None else 0
+    for cut in cuts:
+        tracks = []
+        num_speakers = len(cut.tracks)
+        if num_speakers <= max_sources:
+            # Choose a random RIR group containing as many recordings as there are
+            # speakers (sources) in the mixed cut.
+            rir_group = rirs.filter(lambda r: len(r) == num_speakers).random()
+            for track, rir in zip(cut.tracks, rir_group):
+                tracks.append(fastcopy(track, cut=track.cut.reverb_rir(rir)))
+        else:
+            # Generate a fast randomized RIR with as many sources as there are speakers.
+            rir_generator = FastRandomRIRGenerator()
