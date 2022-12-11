@@ -1508,6 +1508,7 @@ class CutSet(Serializable, AlgorithmMixin):
     def reverb_rir(
         self,
         rir_recordings: Optional["RecordingSet"] = None,
+        rir_generator: Optional[Callable] = None,
         normalize_output: bool = True,
         early_only: bool = False,
         affix_id: bool = True,
@@ -1523,6 +1524,7 @@ class CutSet(Serializable, AlgorithmMixin):
         generator (https://arxiv.org/abs/2208.04101).
 
         :param rir_recordings: RecordingSet containing the room impulse responses.
+        :param rir_generator: A callable that generates a random RIR.
         :param normalize_output: When true, output will be normalized to have energy as input.
         :param early_only: When true, only the early reflections (first 50 ms) will be used.
         :param affix_id: Should we modify the ID (useful if both versions of the same
@@ -1536,6 +1538,7 @@ class CutSet(Serializable, AlgorithmMixin):
         return self.map(
             lambda cut: cut.reverb_rir(
                 rir_recording=random.choice(rir_recordings) if rir_recordings else None,
+                rir_generator=rir_generator,
                 normalize_output=normalize_output,
                 early_only=early_only,
                 affix_id=affix_id,

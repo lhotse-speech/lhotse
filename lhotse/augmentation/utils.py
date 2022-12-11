@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Optional
 
 import numpy as np
 import torch
@@ -85,6 +85,7 @@ class FastRandomRIRGenerator:
         a: float = -2.0,
         b: float = 2.0,
         tau: float = 0.2,
+        direct_dist: Optional[torch.FloatTensor] = None,
     ):
         """
         The fast random approximation of room impulse response (FRA-RIR) method.
@@ -94,6 +95,7 @@ class FastRandomRIRGenerator:
         :param alpha: controlling the probability distribution to sample the distance of the virtual sound sources from. Default: 0.25.
         :param a, b: controlling the random pertubation added to each virtual sound source. Default: -2, 2.
         :param tau: controlling the relationship between the distance and the number of reflections of each virtual sound source. Default: 0.25.
+        :param direct_dist: the distance between the virtual sound sources and the receiver. Default: None.
         """
         self.sr = sr
         self.direct_range = direct_range
@@ -101,6 +103,7 @@ class FastRandomRIRGenerator:
         self.a = a
         self.b = b
         self.tau = tau
+        self.direct_dist = direct_dist
 
         # sample T60 of the room
         self.T60 = torch.FloatTensor(1).uniform_(0.1, max_T60)[0].data
@@ -127,8 +130,12 @@ class FastRandomRIRGenerator:
 
         eps = np.finfo(np.float16).eps
 
-        # sample distance between the sound sources and the receiver (d_0)
-        direct_dist = torch.FloatTensor(nsource).uniform_(0.2, 12)
+        # sample distance between the sound sources and the receiver (d_0) if not given
+        direct_dist = (
+            torch.FloatTensor(nsource).uniform_(0.2, 12)
+            if self.direct_dist is None
+            else self.direct_dist
+        )
 
         # number of virtual sound sources
         image = self.sr * 2

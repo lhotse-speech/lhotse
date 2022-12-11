@@ -645,11 +645,12 @@ class MixedCut(Cut):
     def reverb_rir(
         self,
         rir_recording: Optional["Recording"] = None,
+        rir_generator: Optional[Callable] = None,
         normalize_output: bool = True,
         early_only: bool = False,
         affix_id: bool = True,
         rir_channels: List[int] = [0],
-        rir_generator: Optional[Callable] = None,
+        same_source_all_tracks: bool = False,
     ) -> "MixedCut":
         """
         Return a new ``MixedCut`` that will convolve the audio with the provided impulse response.
@@ -657,6 +658,7 @@ class MixedCut(Cut):
         generator (https://arxiv.org/abs/2208.04101).
 
         :param rir_recording: The impulse response to use for convolving.
+        :param rir_generator: A function that generates an impulse response.
         :param normalize_output: When true, output will be normalized to have energy as input.
         :param early_only: When true, only the early reflections (first 50 ms) will be used.
         :param affix_id: When true, we will modify the ``MixedCut.id`` field
@@ -665,6 +667,9 @@ class MixedCut(Cut):
             If only one channel is specified, all tracks will be convolved with this channel. If a list
             is provided, it must contain as many channels as there are tracks such that each track will
             be convolved with one of the specified channels.
+        :param same_source_all_tracks: When true, the same impulse response will be used for all tracks.
+            This is useful when the tracks are from the same source, for example, padded
+            or concatenated utterances from the same speaker.
         :return: a modified copy of the current ``MixedCut``.
         """
         # Pre-conditions
@@ -690,9 +695,16 @@ class MixedCut(Cut):
             rir_channels = rir_channels * len(self.tracks)
 
         if rir_recording is None and rir_generator is None:
+            import torch
+
             from lhotse.augmentation.utils import FastRandomRIRGenerator
 
-            rir_generator = FastRandomRIRGenerator(sr=self.sampling_rate)
+            rir_generator = FastRandomRIRGenerator(
+                sr=self.sampling_rate,
+                direct_dist=torch.FloatTensor(1).uniform_(0.2, 12)
+                if same_source_all_tracks
+                else None,
+            )
 
         return MixedCut(
             id=f"{self.id}_rvb" if affix_id else self.id,
