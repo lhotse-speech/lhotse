@@ -108,7 +108,7 @@ def ami(
     """AMI download."""
     download_ami(
         target_dir,
-        annotations_dir=annotations,
+        annotations=annotations,
         mic=mic,
         url=url,
         force_download=force_download,
