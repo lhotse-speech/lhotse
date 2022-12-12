@@ -87,20 +87,15 @@ def reverberate_cuts(cuts: CutSet, *rirs: Optional[RecordingSet]) -> CutSet:
     out_cuts = []
     max_sources = max(len(rir_group) for rir_group in rirs) if rirs is not None else 0
     for cut in cuts:
-        tracks = []
         num_speakers = len(cut.tracks)
         if num_speakers <= max_sources:
+            tracks = []
             # Choose a random RIR group containing as many recordings as there are
             # speakers (sources) in the mixed cut.
             rir_group = rirs.filter(lambda r: len(r) == num_speakers).random()
             for track, rir in zip(cut.tracks, rir_group):
                 tracks.append(fastcopy(track, cut=track.cut.reverb_rir(rir)))
+            out_cuts.append(fastcopy(cut, tracks=tracks))
         else:
-            # Create a random RIR generator and use it to reverberate all tracks.
-            rir_generator = FastRandomRIRGenerator()
-            for track in cut.tracks:
-                tracks.append(
-                    fastcopy(
-                        track, cut=track.cut.reverb_rir(rir_generator=rir_generator)
-                    )
-                )
+            # We will use a fast random approximation to generate RIRs.
+            out_cuts.append(cut.reverb_rir())
