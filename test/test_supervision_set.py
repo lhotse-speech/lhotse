@@ -180,8 +180,8 @@ def test_supervision_set_with_alignment_from_ctm(
 ):
     segment = external_supervision_set["segment-1"]
     assert external_alignment == segment.alignment
-    assert external_supervision_set["segment-2"].alignment == {'word': []}
-    assert external_supervision_set["segment-3"].alignment == {'word': []}
+    assert external_supervision_set["segment-2"].alignment == {"word": []}
+    assert external_supervision_set["segment-3"].alignment == {"word": []}
     for seg in external_supervision_set:
         assert type(seg) == SupervisionSegment
 
