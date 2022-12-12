@@ -120,7 +120,7 @@ class FeatureMixer:
         """
         if len(feats) == 0:
             return  # do nothing for empty arrays
-        
+
         if self.reference_energy <= 0.0:
             return
 
@@ -182,6 +182,8 @@ class FeatureMixer:
                 target_energy = self.reference_energy * (10.0 ** (-snr / 10))
                 gain = target_energy / added_feats_energy
             else :
-                logging.warning("Non-positive energy audio feature to mix, will not scale it with snr.")
+                logging.warning(
+                    "Non-positive energy audio feature to mix, will not scale it with snr."
+                )
         self.tracks.append(feats_to_add)
         self.gains.append(gain)

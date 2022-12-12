@@ -1322,7 +1322,7 @@ class AudioMixer:
         """
         if audio.size == 0:
             return  # do nothing for empty arrays
-        
+
         if self.reference_energy <= 0.0:
             return
 
@@ -1341,7 +1341,9 @@ class AudioMixer:
                 # we need to take a square root of the energy ratio.
                 gain = sqrt(target_energy / added_audio_energy)
             else :
-                logging.warning("Non-positive energy audio track to mix, will not scale it with snr.")
+                logging.warning(
+                    "Non-positive energy audio track to mix, will not scale it with snr."
+                )
         self.tracks.append(gain * audio)
         self.offsets.append(num_samples_offset)
         # We cannot mix 2 multi-channel audios with different number of channels.
