@@ -671,8 +671,7 @@ class SupervisionSet(Serializable, AlgorithmMixin):
                     num_overspanned += len(alignment)
                     segments.append(fastcopy(seg, alignment={type: alignment}))
             else:
-                for s in self.find(recording_id=reco_id):
-                    segments.append(s)
+                segments.extend([fastcopy(s, alignment={type: []}) for s in self.find(recording_id=reco_id)])
         logging.info(
             f"{num_overspanned} alignments added out of {num_total} total. If there are several"
             " missing, there could be a mismatch problem."
