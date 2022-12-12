@@ -348,6 +348,10 @@ class ReverbWithImpulseResponse(AudioTransform):
             # Pass a shallow copy of the RIR dict since `from_dict()` pops the `sources` key.
             self.rir = Recording.from_dict(self.rir.copy())
 
+        assert (
+            self.rir is not None or self.rir_generator is not None
+        ), "Either `rir` or `rir_generator` must be provided."
+
         if self.rir is not None:
             assert all(
                 c < self.rir.num_channels for c in self.rir_channels
@@ -391,8 +395,6 @@ class ReverbWithImpulseResponse(AudioTransform):
 
         # Generate a random RIR if not provided.
         if self.rir is None:
-            if self.rir_generator is None:
-                self.rir_generator = FastRandomRIRGenerator(sr=sampling_rate)
             rir_ = self.rir_generator(nsource=1)
         else:
             rir_ = (

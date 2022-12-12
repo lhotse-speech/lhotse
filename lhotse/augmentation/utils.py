@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Optional
 
 import numpy as np
 import torch
@@ -85,6 +85,8 @@ class FastRandomRIRGenerator:
         a: float = -2.0,
         b: float = 2.0,
         tau: float = 0.2,
+        room_seed: Optional[int] = None,
+        source_seed: Optional[int] = None,
     ):
         """
         The fast random approximation of room impulse response (FRA-RIR) method.
@@ -94,19 +96,26 @@ class FastRandomRIRGenerator:
         :param alpha: controlling the probability distribution to sample the distance of the virtual sound sources from. Default: 0.25.
         :param a, b: controlling the random pertubation added to each virtual sound source. Default: -2, 2.
         :param tau: controlling the relationship between the distance and the number of reflections of each virtual sound source. Default: 0.25.
+        :param room_seed: random seed for room configuration.
+        :param source_seed: random seed for virtual sound sources.
         """
         self.sr = sr
         self.direct_range = direct_range
+        self.max_T60 = max_T60
         self.alpha = alpha
         self.a = a
         self.b = b
         self.tau = tau
-
-        # sample T60 of the room
-        self.T60 = torch.FloatTensor(1).uniform_(0.1, max_T60)[0].data
-
-        # sample room-related statistics for calculating the reflection coefficient R
-        self.R = torch.FloatTensor(1).uniform_(0.1, 1.2)[0].data
+        self.room_rng = (
+            np.random.default_rng(room_seed)
+            if source_seed is not None
+            else np.random.default_rng()
+        )
+        self.source_rng = (
+            np.random.default_rng(source_seed)
+            if source_seed is not None
+            else np.random.default_rng()
+        )
 
     def __call__(self, nsource: int = 1) -> np.ndarray:
         """
@@ -127,8 +136,18 @@ class FastRandomRIRGenerator:
 
         eps = np.finfo(np.float16).eps
 
-        # sample distance between the sound sources and the receiver (d_0)
-        direct_dist = torch.FloatTensor(nsource).uniform_(0.2, 12)
+        # sample T60 of the room
+        T60 = torch.from_numpy(self.room_rng.uniform(0.1, self.max_T60, size=(1,)))[
+            0
+        ].data
+
+        # sample room-related statistics for calculating the reflection coefficient R
+        R = torch.from_numpy(self.room_rng.uniform(0.1, 1.2, size=(1,)))[0].data
+
+        # sample distance between the sound sources and the receiver (d_0) if not given
+        direct_dist = torch.from_numpy(
+            self.source_rng.uniform(0.2, 12.0, size=(nsource,))
+        )
 
         # number of virtual sound sources
         image = self.sr * 2
@@ -140,14 +159,14 @@ class FastRandomRIRGenerator:
         direct_idx = torch.ceil(direct_dist * sample_sr / velocity).long()
 
         # length of the RIR filter based on the sampled T60
-        rir_length = int(np.ceil(sample_sr * self.T60))
+        rir_length = int(np.ceil(sample_sr * T60))
 
         # calculate the reflection coefficient based on the Eyring's empirical equation
-        reflect_coef = (1 - (1 - torch.exp(-0.16 * self.R / self.T60)).pow(2)).sqrt()
+        reflect_coef = (1 - (1 - torch.exp(-0.16 * R / T60)).pow(2)).sqrt()
 
         # randomly sample the propagation distance for all the virtual sound sources
         dist_range = [
-            torch.linspace(1.0, velocity * self.T60 / direct_dist[i] - 1, image)
+            torch.linspace(1.0, velocity * T60 / direct_dist[i] - 1, image)
             for i in range(nsource)
         ]
         # a simple quadratic function
@@ -165,18 +184,18 @@ class FastRandomRIRGenerator:
         # sample the number of reflections (can be nonintegers)
         # calculate the maximum number of reflections
         reflect_max = (
-            torch.log10(velocity * self.T60) - torch.log10(direct_dist) - 3
+            torch.log10(velocity * T60) - torch.log10(direct_dist) - 3
         ) / torch.log10(reflect_coef + eps)
         # calculate the number of reflections based on the assumption that
         # virtual sound sources which have longer propagation distances may reflect more frequently
-        reflect_ratio = (dist / (velocity * self.T60)).pow(2) * (
+        reflect_ratio = (dist / (velocity * T60)).pow(2) * (
             reflect_max.view(nsource, -1) - 1
         ) + 1
         # add a random pertubation based on the assumption that
         # virtual sound sources which have similar propagation distances can have different routes and reflection patterns
-        reflect_pertub = torch.FloatTensor(nsource, image).uniform_(
-            self.a, self.b
-        ) * dist_ratio.pow(self.tau)
+        reflect_pertub = torch.from_numpy(
+            self.source_rng.uniform(self.a, self.b, size=(nsource, image))
+        ) * (dist_ratio.pow(self.tau))
         # all virtual sound sources should reflect for at least once
         reflect_ratio = torch.maximum(reflect_ratio + reflect_pertub, torch.ones(1))
 
