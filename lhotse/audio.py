@@ -1236,8 +1236,8 @@ class AudioMixer:
             self.reference_energy = reference_energy
 
         if self.reference_energy <= 0.0:
-            raise NonPositiveEnergyError(
-                f"To perform mix, energy must be non-zero and non-negative (got {self.reference_energy})"
+            logging.warning(
+                f"To perform mix, energy must be non-zero and non-negative (got {self.reference_energy}), ignore mix operation."
             )
 
     def _pad_track(
@@ -1322,6 +1322,9 @@ class AudioMixer:
         """
         if audio.size == 0:
             return  # do nothing for empty arrays
+        
+        if self.reference_energy <= 0.0:
+            return
 
         assert offset >= 0.0, "Negative offset in mixing is not supported."
 
@@ -1331,16 +1334,14 @@ class AudioMixer:
         gain = 1.0
         if snr is not None:
             added_audio_energy = audio_energy(audio)
-            if added_audio_energy <= 0.0:
-                raise NonPositiveEnergyError(
-                    f"To perform mix, energy must be non-zero and non-negative (got {added_audio_energy}). "
-                )
-            target_energy = self.reference_energy * (10.0 ** (-snr / 10))
-            # When mixing time-domain signals, we are working with root-power (field) quantities,
-            # whereas the energy ratio applies to power quantities. To compute the gain correctly,
-            # we need to take a square root of the energy ratio.
-            gain = sqrt(target_energy / added_audio_energy)
-
+            if added_audio_energy > 0.0:
+                target_energy = self.reference_energy * (10.0 ** (-snr / 10))
+                # When mixing time-domain signals, we are working with root-power (field) quantities,
+                # whereas the energy ratio applies to power quantities. To compute the gain correctly,
+                # we need to take a square root of the energy ratio.
+                gain = sqrt(target_energy / added_audio_energy)
+            else :
+                logging.warning("Non-positive energy audio track to mix, will not scale it with snr.")
         self.tracks.append(gain * audio)
         self.offsets.append(num_samples_offset)
         # We cannot mix 2 multi-channel audios with different number of channels.

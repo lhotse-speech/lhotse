@@ -778,22 +778,16 @@ class MixedCut(Cut):
             reference_energy=reference_energy,
         )
         for pos, track in enumerate(self.tracks[1:], start=1):
-            try:
-                if pos == reference_pos and reference_feats is not None:
-                    feats = reference_feats  # manual caching to avoid duplicated I/O
-                else:
-                    feats = track.cut.load_features()
-                mixer.add_to_mix(
-                    feats=feats,
-                    snr=track.snr,
-                    offset=track.offset,
-                    sampling_rate=track.cut.sampling_rate,
-                )
-            except NonPositiveEnergyError as e:
-                logging.warning(
-                    str(e)
-                    + f' {type(track.cut).__name__} with id "{track.cut.id}" will not be mixed in.'
-                )
+            if pos == reference_pos and reference_feats is not None:
+                feats = reference_feats  # manual caching to avoid duplicated I/O
+            else:
+                feats = track.cut.load_features()
+            mixer.add_to_mix(
+                feats=feats,
+                snr=track.snr,
+                offset=track.offset,
+                sampling_rate=track.cut.sampling_rate,
+            )
 
         if mixed:
             # Checking for some edge cases below.
@@ -857,34 +851,22 @@ class MixedCut(Cut):
             reference_audio = reference_cut.load_audio()
             reference_energy = audio_energy(reference_audio)
 
-        try:
-            mixer = AudioMixer(
-                self.tracks[0].cut.load_audio(),
-                sampling_rate=self.tracks[0].cut.sampling_rate,
-                reference_energy=reference_energy,
-            )
-        except NonPositiveEnergyError as e:
-            logging.warning(
-                f"{e}\nNote: we cannot mix signal with a given SNR to the reference audio with zero energy. "
-                f'Cut ID: "{self.tracks[0].cut.id}"'
-            )
-            raise
+        mixer = AudioMixer(
+            self.tracks[0].cut.load_audio(),
+            sampling_rate=self.tracks[0].cut.sampling_rate,
+            reference_energy=reference_energy,
+        )
 
         for pos, track in enumerate(self.tracks[1:], start=1):
-            try:
-                if pos == reference_pos and reference_audio is not None:
-                    audio = reference_audio  # manual caching to avoid duplicated I/O
-                else:
-                    audio = track.cut.load_audio()
-                mixer.add_to_mix(
-                    audio=audio,
-                    snr=track.snr,
-                    offset=track.offset,
-                )
-            except NonPositiveEnergyError as e:
-                logging.warning(
-                    f'{e} {type(track.cut).__name__} with id "{track.cut.id}" will not be mixed in.'
-                )
+            if pos == reference_pos and reference_audio is not None:
+                audio = reference_audio  # manual caching to avoid duplicated I/O
+            else:
+                audio = track.cut.load_audio()
+            mixer.add_to_mix(
+                audio=audio,
+                snr=track.snr,
+                offset=track.offset,
+            )
 
         # Flattening a MixedCut without MultiCut tracks has no effect
         mono_downmix = mono_downmix and any(
