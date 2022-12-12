@@ -31,6 +31,7 @@ from lhotse.utils import (
     compute_num_frames,
     compute_num_samples,
     fastcopy,
+    hash_str_to_int,
     merge_items_with_delimiter,
     overlaps,
     perturb_num_samples,
@@ -645,12 +646,12 @@ class MixedCut(Cut):
     def reverb_rir(
         self,
         rir_recording: Optional["Recording"] = None,
-        rir_generator: Optional[Callable] = None,
         normalize_output: bool = True,
         early_only: bool = False,
         affix_id: bool = True,
         rir_channels: List[int] = [0],
-        same_source_all_tracks: bool = False,
+        room_rng_seed: Optional[int] = None,
+        source_rng_seed: Optional[int] = None,
     ) -> "MixedCut":
         """
         Return a new ``MixedCut`` that will convolve the audio with the provided impulse response.
@@ -658,7 +659,6 @@ class MixedCut(Cut):
         generator (https://arxiv.org/abs/2208.04101).
 
         :param rir_recording: The impulse response to use for convolving.
-        :param rir_generator: A function that generates an impulse response.
         :param normalize_output: When true, output will be normalized to have energy as input.
         :param early_only: When true, only the early reflections (first 50 ms) will be used.
         :param affix_id: When true, we will modify the ``MixedCut.id`` field
@@ -667,9 +667,8 @@ class MixedCut(Cut):
             If only one channel is specified, all tracks will be convolved with this channel. If a list
             is provided, it must contain as many channels as there are tracks such that each track will
             be convolved with one of the specified channels.
-        :param same_source_all_tracks: When true, the same impulse response will be used for all tracks.
-            This is useful when the tracks are from the same source, for example, padded
-            or concatenated utterances from the same speaker.
+        :param room_rng_seed: Seed for the room configuration.
+        :param source_rng_seed: Seed for the source position.
         :return: a modified copy of the current ``MixedCut``.
         """
         # Pre-conditions
@@ -694,17 +693,19 @@ class MixedCut(Cut):
         if len(rir_channels) == 1:
             rir_channels = rir_channels * len(self.tracks)
 
-        if rir_recording is None and rir_generator is None:
-            import torch
-
-            from lhotse.augmentation.utils import FastRandomRIRGenerator
-
-            rir_generator = FastRandomRIRGenerator(
-                sr=self.sampling_rate,
-                direct_dist=torch.FloatTensor(1).uniform_(0.2, 12)
-                if same_source_all_tracks
-                else None,
-            )
+        source_rng_seeds = [source_rng_seed] * len(self.tracks)
+        if rir_recording is None:
+            uuid4_str = str(uuid4())
+            # The room RNG seed is based on the cut ID. This ensures that all tracks in the
+            # mixed cut will have the same room configuration.
+            if room_rng_seed is None:
+                room_rng_seed = hash_str_to_int(uuid4_str + self.id)
+            # The source RNG seed is based on the track ID. This ensures that each track
+            # will have a different source position.
+            if source_rng_seed is None:
+                source_rng_seeds = [
+                    hash_str_to_int(uuid4_str + track.cut.id) for track in self.tracks
+                ]
 
         return MixedCut(
             id=f"{self.id}_rvb" if affix_id else self.id,
@@ -713,14 +714,17 @@ class MixedCut(Cut):
                     track,
                     cut=track.cut.reverb_rir(
                         rir_recording=rir_recording,
-                        rir_generator=rir_generator,
                         normalize_output=normalize_output,
                         early_only=early_only,
                         affix_id=affix_id,
                         rir_channels=[channel],
+                        room_rng_seed=room_rng_seed,
+                        source_rng_seed=seed,
                     ),
                 )
-                for track, channel in zip(self.tracks, rir_channels)
+                for track, channel, seed in zip(
+                    self.tracks, rir_channels, source_rng_seeds
+                )
             ],
         )
 

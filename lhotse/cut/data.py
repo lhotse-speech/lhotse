@@ -911,6 +911,7 @@ class DataCut(Cut, metaclass=ABCMeta):
     def reverb_rir(
         self,
         rir_recording: Optional["Recording"] = None,
+        rng_seed: Optional[int] = None,
         normalize_output: bool = True,
         early_only: bool = False,
         affix_id: bool = True,

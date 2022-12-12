@@ -15,11 +15,13 @@ from lhotse.supervision import SupervisionSegment
 from lhotse.utils import (
     add_durations,
     fastcopy,
+    hash_str_to_int,
     is_equal_or_contains,
     merge_items_with_delimiter,
     overlaps,
     rich_exception_info,
     to_list,
+    uuid4,
 )
 
 
@@ -130,11 +132,12 @@ class MultiCut(DataCut):
     def reverb_rir(
         self,
         rir_recording: Optional["Recording"] = None,
-        rir_generator: Optional[Callable] = None,
         normalize_output: bool = True,
         early_only: bool = False,
         affix_id: bool = True,
         rir_channels: List[int] = [0],
+        room_rng_seed: Optional[int] = None,
+        source_rng_seed: Optional[int] = None,
     ) -> "MultiCut":
         """
         Return a new ``MultiCut`` that will convolve the audio with the provided impulse response.
@@ -146,13 +149,14 @@ class MultiCut(DataCut):
         At the moment we do not support simulation of multi-channel impulse responses.
 
         :param rir_recording: The impulse response to use for convolving.
-        :param rir_generator: A callable that generates a random impulse response.
         :param normalize_output: When true, output will be normalized to have energy as input.
         :param early_only: When true, only the early reflections (first 50 ms) will be used.
         :param affix_id: When true, we will modify the ``MonoCut.id`` field
             by affixing it with "_rvb".
         :param rir_channels: The channels of the impulse response to use. First channel is used by default.
             If multiple channels are specified, this will produce a MixedCut instead of a MonoCut.
+        :param room_rng_seed: The seed for the room configuration.
+        :param source_rng_seed: The seed for the source positions.
         :return: a modified copy of the current ``MonoCut``.
         """
         # Pre-conditions
@@ -172,6 +176,10 @@ class MultiCut(DataCut):
                 "We do not support reverberation simulation for multi-channel recordings. "
                 "Please provide an impulse response."
             )
+            if room_rng_seed is None:
+                room_rng_seed = hash_str_to_int(str(uuid4()) + self.id)
+            if source_rng_seed is None:
+                source_rng_seed = room_rng_seed
         else:
             assert all(
                 c < rir_recording.num_channels for c in rir_channels
@@ -179,11 +187,12 @@ class MultiCut(DataCut):
 
         recording_rvb = self.recording.reverb_rir(
             rir_recording=rir_recording,
-            rir_generator=rir_generator,
             normalize_output=normalize_output,
             early_only=early_only,
             affix_id=affix_id,
             rir_channels=rir_channels,
+            room_rng_seed=room_rng_seed,
+            source_rng_seed=source_rng_seed,
         )
         # Match the supervision's id (and it's underlying recording id).
         supervisions_rvb = [
