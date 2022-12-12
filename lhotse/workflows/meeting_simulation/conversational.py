@@ -1,6 +1,8 @@
 import functools
+import itertools
 import logging
 import random
+from collections import defaultdict
 from typing import Any, List, Optional, Union
 
 import numpy as np
@@ -50,7 +52,7 @@ class ConversationalMeetingSimulator(BaseMeetingSimulator):
         for duration in [same_spk_pause, diff_spk_pause, diff_spk_overlap]:
             assert duration is None or duration > 0, "Durations must be > 0."
 
-        self.same_spk_pause = same_spk_pause
+        self.same_spk_pause_dist = same_spk_pause
         self.diff_spk_pause = diff_spk_pause
         self.diff_spk_overlap = diff_spk_overlap
 
@@ -156,26 +158,56 @@ class ConversationalMeetingSimulator(BaseMeetingSimulator):
             .cuts.values()
         )
 
-    def _create_mixture(
-        self, utterances: List[List[MonoCut]], silence_durations: List[np.array]
-    ) -> MixedCut:
+    def _create_mixture(self, utterances: List[MonoCut]) -> MixedCut:
         """
-        Create a MixedCut object from a list of speaker-wise MonoCuts and silence intervals.
-        Each `track` in the resulting MixedCut represents a different speaker. Each `track`
-        itself can be a MonoCut or a MixedCut (if the speaker has multiple utterances).
+        Create a MixedCut object from a list of MonoCuts (utterances).
+        We sample pauses and/or overlaps from the initilized or learned distributions.
+        Then, we create a MixedCut where each track represents a different speaker.
         """
-        tracks = []
-        for i, (spk_utterances, spk_silences) in enumerate(
-            zip(utterances, silence_durations)
-        ):
-            track = spk_utterances[0]
-            for sil, utt in zip(spk_silences[1:], spk_utterances[1:]):
-                track = mix(track, utt, offset=track.duration + sil, allow_padding=True)
-            # NOTE: First track must have an offset of 0.0.
-            track = MixTrack(
-                cut=track, type=type(track), offset=(0 if i == 0 else spk_silences[0])
+        # First sample offsets for each utterance.
+        offsets = []
+        for i in range(1, len(utterances) + 1):
+            if (
+                utterances[i].supervisions[0].speaker
+                == utterances[i - 1].supervisions[0].speaker
+            ):
+                offsets.append(self.same_spk_pause_dist.rvs())
+            else:
+                if self.bernoulli.rvs():
+                    offsets.append(self.diff_spk_pause_dist.rvs())
+                else:
+                    offsets.append(-self.diff_spk_overlap_dist.rvs())
+
+        # Group utterances by speaker and compute net offset (i.e. offset w.r.t previous
+        # utterance of the same speaker).
+        spk_tracks = defaultdict(list)
+        # Add first cut to the dictionary. Each dictionary element contains a list of
+        # tracks belonging to a specific speaker. List elements are tuples of the form
+        # (cut, start_time).
+        spk_tracks[utterances[0].supervisions[0].speaker].append(
+            (
+                utterances[0],
+                0.0,
             )
+        )
+        cur_end = utterances[0].duration
+
+        # Iterate over the rest of the cuts
+        for offset, utt in zip(offsets, utterances[1:]):
+            spk = utt.supervisions[0].speaker
+            cur_start = max(0, cur_end + offset)
+            spk_tracks[spk].append((utt, cur_start))
+            cur_end = max(cur_start + utt.duration, cur_end)
+
+        # Now create speaker-wise tracks by mixing their utterances with silence padding.
+        tracks = []
+        for spk, spk_utts in spk_tracks.items():
+            track, start = spk_utts[0]
+            for utt, offset in spk_utts[1:]:
+                track = mix(track, utt, offset=offset, allow_padding=True)
+            track = MixTrack(cut=track, type=type(track), offset=start)
             tracks.append(track)
+
         return MixedCut(id=str(uuid4()), tracks=tracks)
 
     def simulate(
@@ -233,6 +265,8 @@ class ConversationalMeetingSimulator(BaseMeetingSimulator):
         # Reset speaker bucket cache.
         self._get_speaker_cuts.cache_clear()
 
+        self.bernoulli = npr.binomial(1, 0.5)
+
         mixtures = []
 
         for _ in range(num_meetings):
@@ -261,18 +295,16 @@ class ConversationalMeetingSimulator(BaseMeetingSimulator):
                 for speaker in speakers
             ]
 
-            # Sample the silence durations between utterances for each speaker.
-            silence_durations = [
-                self.loc + npr.exponential(scale=self.scale, size=len(utterances[i]))
-                for i in range(len(utterances))
-            ]
+            # Flatten the list of lists and randomly permute the utterances.
+            utterances = list(itertools.chain(*utterances))
+            rand.shuffle(utterances)
 
             # Create the meeting.
-            mixture = self._create_mixture(utterances, silence_durations)
+            mixture = self._create_mixture(utterances)
 
             mixtures.append(mixture)
 
         return CutSet.from_cuts(mixtures)
 
-    def reverberate(self, cuts: CutSet, rirs: Optional[RecordingSet] = None) -> CutSet:
-        return reverberate_cuts(cuts, rirs)
+    def reverberate(self, cuts: CutSet, *rirs: RecordingSet) -> CutSet:
+        return reverberate_cuts(cuts, *rirs)

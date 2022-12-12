@@ -214,5 +214,5 @@ class SpeakerIndependentMeetingSimulator(BaseMeetingSimulator):
 
         return CutSet.from_cuts(mixtures)
 
-    def reverberate(self, cuts: CutSet, rirs: Optional[RecordingSet] = None) -> CutSet:
-        return reverberate_cuts(cuts, rirs)
+    def reverberate(self, cuts: CutSet, *rirs: RecordingSet) -> CutSet:
+        return reverberate_cuts(cuts, *rirs)

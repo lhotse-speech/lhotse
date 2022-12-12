@@ -63,14 +63,14 @@ class BaseMeetingSimulator(abc.ABC):
         raise NotImplementedError
 
     @abc.abstractmethod
-    def reverberate(self, cuts: CutSet, rirs: Optional[RecordingSet] = None) -> CutSet:
+    def reverberate(self, cuts: CutSet, *rirs: RecordingSet) -> CutSet:
         """
         Apply a reverberation effect to each track.
         """
         raise NotImplementedError
 
 
-def reverberate_cuts(cuts: CutSet, *rirs: Optional[RecordingSet]) -> CutSet:
+def reverberate_cuts(cuts: CutSet, *rirs: RecordingSet) -> CutSet:
     """
     Use provided RIRs to convolve each track of the input CutSet. The cuts here are
     MixedCut objects containing different speakers in different tracks. To reverberate,
@@ -85,7 +85,7 @@ def reverberate_cuts(cuts: CutSet, *rirs: Optional[RecordingSet]) -> CutSet:
     :return: a CutSet containing MixedCut objects reverberated with the provided RIRs.
     """
     out_cuts = []
-    max_sources = max(len(rir_group) for rir_group in rirs) if rirs is not None else 0
+    max_sources = max(len(rir_group) for rir_group in rirs) if len(rirs) > 0 else 0
     for cut in cuts:
         num_speakers = len(cut.tracks)
         if num_speakers <= max_sources:
