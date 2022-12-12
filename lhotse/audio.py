@@ -1340,7 +1340,7 @@ class AudioMixer:
                 # whereas the energy ratio applies to power quantities. To compute the gain correctly,
                 # we need to take a square root of the energy ratio.
                 gain = sqrt(target_energy / added_audio_energy)
-            else :
+            else:
                 logging.warning(
                     "Non-positive energy audio track to mix, will not scale it with snr."
                 )

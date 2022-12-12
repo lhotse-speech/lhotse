@@ -181,7 +181,7 @@ class FeatureMixer:
             if added_feats_energy > 0.0:
                 target_energy = self.reference_energy * (10.0 ** (-snr / 10))
                 gain = target_energy / added_feats_energy
-            else :
+            else:
                 logging.warning(
                     "Non-positive energy audio feature to mix, will not scale it with snr."
                 )
