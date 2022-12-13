@@ -551,7 +551,7 @@ class Cut:
                 or not segment.alignment[type]
             ):
                 continue
-            alignments = segment.alignment[type]
+            alignments = sorted(segment.alignment[type], key=lambda a: a.start)
 
             # Merge the alignments if needed. We also keep track of the indices of the
             # merged alignments in the original list. This is needed to create the
