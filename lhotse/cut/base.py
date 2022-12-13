@@ -506,6 +506,92 @@ class Cut:
             cuts.append(trimmed)
         return CutSet.from_cuts(cuts)
 
+    def trim_to_alignments(
+        self,
+        type: str,
+        max_pause: Seconds = 0.0,
+        delimiter: str = " ",
+        keep_all_channels: bool = False,
+    ) -> "CutSet":  # noqa: F821
+        """
+        Splits the current :class:`.Cut` into its constituent alignment items (:class:`.AlignmentItem`).
+        These cuts have identical start times and durations as the alignment item. Additionally,
+        the `max_pause` option can be used to merge alignment items that are separated by a pause
+        shorter than `max_pause`.
+
+        For the case of a multi-channel cut with multiple alignments, we can either trim
+        while respecting the supervision channels (in which case output cut has the same channels
+        as the supervision) or ignore the channels (in which case output cut has the same channels
+        as the input cut).
+
+        .. hint:: If the resulting trimmed cut contains a single supervision, we set the cut id to
+            the ``id`` of this supervision, for better compatibility with downstream tools, e.g.
+            comparing the hypothesis of ASR with the reference in icefall.
+
+        .. hint:: If a MultiCut is trimmed and the resulting trimmed cut contains a single channel,
+            we convert it to a MonoCut.
+
+        :param type: The type of the alignment to trim to (e.g. "word").
+        :param max_pause: The maximum pause allowed between the alignments to merge them.
+        :param delimiter: The delimiter to use when joining the alignment items.
+        :param keep_all_channels: If ``True``, the output cut will have the same channels as the input cut. By default,
+            the trimmed cut will have the same channels as the supervision.
+        :param num_jobs: Number of parallel workers to process the cuts.
+        :return: a CutSet object.
+        """
+        from lhotse.supervision import AlignmentItem
+
+        # For the implementation, we first create new supervisions for the cut, and then
+        # use the `trim_to_supervisions` method to do the actual trimming.
+        new_supervisions = []
+        for segment in self.supervisions:
+            if (
+                segment.alignment is None
+                or type not in segment.alignment
+                or not segment.alignment[type]
+            ):
+                continue
+            alignments = segment.alignment[type]
+
+            # Merge the alignments if needed. We also keep track of the indices of the
+            # merged alignments in the original list. This is needed to create the
+            # `alignment` field in the new supervisions.
+            merged_alignments = [(alignments[0], [0])]
+            for i, item in enumerate(alignments[1:]):
+                prev_item, prev_indices = merged_alignments[-1]
+                if item.start - prev_item.end <= max_pause:
+                    new_item = AlignmentItem(
+                        symbol=delimiter.join([prev_item.symbol, item.symbol]),
+                        start=prev_item.start,
+                        duration=item.end - prev_item.start,
+                    )
+                    merged_alignments[-1] = (new_item, prev_indices + [i + 1])
+                else:
+                    merged_alignments.append((item, [i + 1]))
+
+            # Create new supervisions for the merged alignments.
+            for i, (item, indices) in enumerate(merged_alignments):
+                new_supervisions.append(
+                    SupervisionSegment(
+                        id=f"{segment.id}-{i}",
+                        recording_id=segment.recording_id,
+                        start=item.start,
+                        duration=item.duration,
+                        channel=segment.channel,
+                        text=item.symbol,
+                        language=segment.language,
+                        speaker=segment.speaker,
+                        gender=segment.gender,
+                        alignment={type: [alignments[j] for j in indices]},
+                    )
+                )
+
+        self.supervisions = new_supervisions
+        return self.trim_to_supervisions(
+            keep_overlapping=False,
+            keep_all_channels=keep_all_channels,
+        )
+
     def cut_into_windows(
         self,
         duration: Seconds,
