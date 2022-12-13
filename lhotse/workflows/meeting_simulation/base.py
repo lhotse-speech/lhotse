@@ -56,7 +56,12 @@ class BaseMeetingSimulator(abc.ABC):
         raise NotImplementedError
 
     @abc.abstractmethod
-    def simulate(self, *cuts: CutSet, num_meetings: int = 1) -> CutSet:
+    def simulate(
+        self,
+        *cuts: CutSet,
+        num_meetings: Optional[int] = None,
+        num_repeats: Optional[int] = None,
+    ) -> CutSet:
         """
         Simulate the desired number of multi-speaker meetings.
         """

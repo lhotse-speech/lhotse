@@ -213,7 +213,8 @@ class ConversationalMeetingSimulator(BaseMeetingSimulator):
     def simulate(
         self,
         *cuts: CutSet,
-        num_meetings: int = 1,
+        num_meetings: Optional[int] = None,
+        num_repeats: Optional[int] = None,
         num_speakers_per_meeting: Union[int, List[int]] = 2,
         speaker_count_probs: Optional[List[float]] = None,
         min_utts_per_speaker: int = 5,
@@ -227,6 +228,8 @@ class ConversationalMeetingSimulator(BaseMeetingSimulator):
             a specific CutSet. This may be useful when we want to simulate mixtures with
             cuts from the same recording.
         :param num_meetings: the number of meetings to simulate.
+        :param num_repeats: the number of times to repeat the provided cuts. This means that
+            the number of simulated meetings depends on how many cuts are available.
         :param num_speakers_per_meeting: the number of speakers per meeting. If a list is
             provided, the number of speakers per meeting is sampled from this list.
             [Default: 2]
@@ -239,6 +242,9 @@ class ConversationalMeetingSimulator(BaseMeetingSimulator):
         :param seed: the random seed to be used for simulation. [Default: 0]
         """
         assert len(cuts) > 0, "At least one CutSet must be provided."
+
+        if num_meetings is None and num_repeats is None:
+            raise ValueError("Either num_meetings or num_repeats must be provided.")
 
         if isinstance(num_speakers_per_meeting, int):
             num_speakers_per_meeting = [num_speakers_per_meeting]
