@@ -435,7 +435,9 @@ def test_multi_cut_trim_to_supervisions_do_not_keep_all_channels_raises(multi_cu
         )
 
 
-@pytest.mark.parametrize(["max_pause", "expected_cuts"], [(0.0, 5), (0.2, 4)])
-def test_cut_trim_to_alignments(mono_cut, max_pause, expected_cuts):
+@pytest.mark.parametrize(
+    ["num_jobs", "max_pause", "expected_cuts"], [(1, 0.0, 5), (2, 0.2, 4)]
+)
+def test_cut_trim_to_alignments(mono_cut, num_jobs, max_pause, expected_cuts):
     cuts = mono_cut.trim_to_alignments("word", max_pause=max_pause)
     assert len(cuts) == expected_cuts
