@@ -586,8 +586,9 @@ class Cut:
                     )
                 )
 
-        self.supervisions = new_supervisions
-        return self.trim_to_supervisions(
+        # Create a copy of this CutSet so that original supervisions do not get modified.
+        new_cuts = fastcopy(self, supervisions=new_supervisions)
+        return new_cuts.trim_to_supervisions(
             keep_overlapping=False,
             keep_all_channels=keep_all_channels,
         )
