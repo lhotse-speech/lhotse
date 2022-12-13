@@ -28,6 +28,7 @@ def mono_cut():
             alignment={
                 "word": [
                     AlignmentItem(symbol="Hey", start=0.0, duration=0.5),
+                    AlignmentItem(symbol="", start=0.5, duration=0.4),
                     AlignmentItem(symbol="Matt", start=0.9, duration=2.0),
                 ]
             },

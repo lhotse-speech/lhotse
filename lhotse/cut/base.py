@@ -558,6 +558,10 @@ class Cut:
             # `alignment` field in the new supervisions.
             merged_alignments = [(alignments[0], [0])]
             for i, item in enumerate(alignments[1:]):
+                # If alignment item is blank, skip it. Sometimes, blank alignment items
+                # are used to denote pauses in the utterance.
+                if item.symbol.strip() == "":
+                    continue
                 prev_item, prev_indices = merged_alignments[-1]
                 if item.start - prev_item.end <= max_pause:
                     new_item = AlignmentItem(
