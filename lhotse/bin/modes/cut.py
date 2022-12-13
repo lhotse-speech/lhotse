@@ -174,7 +174,7 @@ def trim_to_supervisions(
 @click.argument("cuts", type=click.Path(exists=True, dir_okay=False, allow_dash=True))
 @click.argument("output_cuts", type=click.Path(allow_dash=True))
 @click.option(
-    "type", type=str, default="word", help="Alignment type to use for trimming"
+    "--type", type=str, default="word", help="Alignment type to use for trimming"
 )
 @click.option(
     "--max-pause",
