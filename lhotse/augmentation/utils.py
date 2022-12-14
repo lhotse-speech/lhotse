@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Optional
 
 import numpy as np
 import torch
@@ -75,134 +75,164 @@ def convolve1d(signal: torch.Tensor, kernel: torch.Tensor) -> torch.Tensor:
 
 
 # The following is based on: https://github.com/yluo42/FRA-RIR/blob/main/FRA-RIR.py
-def generate_fast_random_rir(
-    nsource: int = 1,
-    sr: int = 16000,
-    direct_range: List = [-6, 50],
-    max_T60: float = 0.8,
-    alpha: float = 0.25,
-    a: float = -2.0,
-    b: float = 2.0,
-    tau: float = 0.2,
-) -> np.ndarray:
-    """
-    The fast random approximation of room impulse response (FRA-RIR) method.
-    :param nsource: number of sources (RIR filters) to simulate. Default: 1.
-    :param sr: target sample rate. Default: 16000.
-    :param direct_range: the context range (at milliseconds) at the first peak of the RIR filter to define the direct-path RIR. Default: [-6, 50] ms.
-    :param max_T60: the maximum range of T60 to sample from. Default: 0.8.
-    :param alpha: controlling the probability distribution to sample the distance of the virtual sound sources from. Default: 0.25.
-    :param a, b: controlling the random pertubation added to each virtual sound source. Default: -2, 2.
-    :param tau: controlling the relationship between the distance and the number of reflections of each virtual sound source. Default: 0.25.
-    :return: simulated RIR filter for all sources, shape: (nsource, nsample)
-    """
-    from torchaudio.functional import highpass_biquad
+class FastRandomRIRGenerator:
+    def __init__(
+        self,
+        sr: int = 16000,
+        direct_range: List = [-6, 50],
+        max_T60: float = 0.8,
+        alpha: float = 0.25,
+        a: float = -2.0,
+        b: float = 2.0,
+        tau: float = 0.2,
+        room_seed: Optional[int] = None,
+        source_seed: Optional[int] = None,
+    ):
+        """
+        The fast random approximation of room impulse response (FRA-RIR) method.
+        :param sr: target sample rate. Default: 16000.
+        :param direct_range: the context range (at milliseconds) at the first peak of the RIR filter to define the direct-path RIR. Default: [-6, 50] ms.
+        :param max_T60: the maximum range of T60 to sample from. Default: 0.8.
+        :param alpha: controlling the probability distribution to sample the distance of the virtual sound sources from. Default: 0.25.
+        :param a, b: controlling the random pertubation added to each virtual sound source. Default: -2, 2.
+        :param tau: controlling the relationship between the distance and the number of reflections of each virtual sound source. Default: 0.25.
+        :param room_seed: random seed for room configuration.
+        :param source_seed: random seed for virtual sound sources.
+        """
+        self.sr = sr
+        self.direct_range = direct_range
+        self.max_T60 = max_T60
+        self.alpha = alpha
+        self.a = a
+        self.b = b
+        self.tau = tau
+        self.room_rng = (
+            np.random.default_rng(room_seed)
+            if source_seed is not None
+            else np.random.default_rng()
+        )
+        self.source_rng = (
+            np.random.default_rng(source_seed)
+            if source_seed is not None
+            else np.random.default_rng()
+        )
 
-    from lhotse.augmentation.torchaudio import get_or_create_resampler
+    def __call__(self, nsource: int = 1) -> np.ndarray:
+        """
+        :param nsource: number of sources (RIR filters) to simulate. Default: 1.
+        :return: simulated RIR filter for all sources, shape: (nsource, nsample)
+        """
+        from torchaudio.functional import highpass_biquad
 
-    # the sample rate at which the original RIR filter is generated
-    ratio = 64
-    sample_sr = sr * ratio
+        from lhotse.augmentation.torchaudio import get_or_create_resampler
 
-    # two resampling operations
-    resample1 = get_or_create_resampler(sample_sr, sample_sr // int(np.sqrt(ratio)))
-    resample2 = get_or_create_resampler(sample_sr // int(np.sqrt(ratio)), sr)
+        # the sample rate at which the original RIR filter is generated
+        ratio = 64
+        sample_sr = self.sr * ratio
 
-    eps = np.finfo(np.float16).eps
+        # two resampling operations
+        resample1 = get_or_create_resampler(sample_sr, sample_sr // int(np.sqrt(ratio)))
+        resample2 = get_or_create_resampler(sample_sr // int(np.sqrt(ratio)), self.sr)
 
-    # sample distance between the sound sources and the receiver (d_0)
-    direct_dist = torch.FloatTensor(nsource).uniform_(0.2, 12)
+        eps = np.finfo(np.float16).eps
 
-    # sample T60 of the room
-    T60 = torch.FloatTensor(1).uniform_(0.1, max_T60)[0].data
+        # sample T60 of the room
+        T60 = torch.from_numpy(self.room_rng.uniform(0.1, self.max_T60, size=(1,)))[
+            0
+        ].data
 
-    # sample room-related statistics for calculating the reflection coefficient R
-    R = torch.FloatTensor(1).uniform_(0.1, 1.2)[0].data
+        # sample room-related statistics for calculating the reflection coefficient R
+        R = torch.from_numpy(self.room_rng.uniform(0.1, 1.2, size=(1,)))[0].data
 
-    # number of virtual sound sources
-    image = sr * 2
+        # sample distance between the sound sources and the receiver (d_0) if not given
+        direct_dist = torch.from_numpy(
+            self.source_rng.uniform(0.2, 12.0, size=(nsource,))
+        )
 
-    # sound velocity
-    velocity = 340.0
+        # number of virtual sound sources
+        image = self.sr * 2
 
-    # indices of direct-path signals based on the sampled d_0
-    direct_idx = torch.ceil(direct_dist * sample_sr / velocity).long()
+        # sound velocity
+        velocity = 340.0
 
-    # length of the RIR filter based on the sampled T60
-    rir_length = int(np.ceil(sample_sr * T60))
+        # indices of direct-path signals based on the sampled d_0
+        direct_idx = torch.ceil(direct_dist * sample_sr / velocity).long()
 
-    # calculate the reflection coefficient based on the Eyring's empirical equation
-    reflect_coef = (1 - (1 - torch.exp(-0.16 * R / T60)).pow(2)).sqrt()
+        # length of the RIR filter based on the sampled T60
+        rir_length = int(np.ceil(sample_sr * T60))
 
-    # randomly sample the propagation distance for all the virtual sound sources
-    dist_range = [
-        torch.linspace(1.0, velocity * T60 / direct_dist[i] - 1, image)
-        for i in range(nsource)
-    ]
-    # a simple quadratic function
-    dist_prob = torch.linspace(alpha, 1.0, image).pow(2)
-    dist_prob = dist_prob / dist_prob.sum()
-    dist_select_idx = dist_prob.multinomial(
-        num_samples=image * nsource, replacement=True
-    ).view(nsource, image)
-    # the distance is sampled as a ratio between d_0 and each virtual sound sources
-    dist_ratio = torch.stack(
-        [dist_range[i][dist_select_idx[i]] for i in range(nsource)], 0
-    )
-    dist = direct_dist.view(-1, 1) * dist_ratio
+        # calculate the reflection coefficient based on the Eyring's empirical equation
+        reflect_coef = (1 - (1 - torch.exp(-0.16 * R / T60)).pow(2)).sqrt()
 
-    # sample the number of reflections (can be nonintegers)
-    # calculate the maximum number of reflections
-    reflect_max = (
-        torch.log10(velocity * T60) - torch.log10(direct_dist) - 3
-    ) / torch.log10(reflect_coef + eps)
-    # calculate the number of reflections based on the assumption that
-    # virtual sound sources which have longer propagation distances may reflect more frequently
-    reflect_ratio = (dist / (velocity * T60)).pow(2) * (
-        reflect_max.view(nsource, -1) - 1
-    ) + 1
-    # add a random pertubation based on the assumption that
-    # virtual sound sources which have similar propagation distances can have different routes and reflection patterns
-    reflect_pertub = torch.FloatTensor(nsource, image).uniform_(a, b) * dist_ratio.pow(
-        tau
-    )
-    # all virtual sound sources should reflect for at least once
-    reflect_ratio = torch.maximum(reflect_ratio + reflect_pertub, torch.ones(1))
+        # randomly sample the propagation distance for all the virtual sound sources
+        dist_range = [
+            torch.linspace(1.0, velocity * T60 / direct_dist[i] - 1, image)
+            for i in range(nsource)
+        ]
+        # a simple quadratic function
+        dist_prob = torch.linspace(self.alpha, 1.0, image).pow(2)
+        dist_prob = dist_prob / dist_prob.sum()
+        dist_select_idx = dist_prob.multinomial(
+            num_samples=image * nsource, replacement=True
+        ).view(nsource, image)
+        # the distance is sampled as a ratio between d_0 and each virtual sound sources
+        dist_ratio = torch.stack(
+            [dist_range[i][dist_select_idx[i]] for i in range(nsource)], 0
+        )
+        dist = direct_dist.view(-1, 1) * dist_ratio
 
-    # calculate the rescaled dirac comb as RIR filter
-    dist = torch.cat([direct_dist.reshape(-1, 1), dist], 1)
-    reflect_ratio = torch.cat([torch.zeros(nsource, 1), reflect_ratio], 1)
-    rir = torch.zeros(nsource, rir_length)
-    delta_idx = torch.minimum(
-        torch.ceil(dist * sample_sr / velocity), torch.ones(1) * rir_length - 1
-    ).long()
-    delta_decay = reflect_coef.pow(reflect_ratio) / dist
-    for i in range(nsource):
-        rir[i][delta_idx[i]] += delta_decay[i]
+        # sample the number of reflections (can be nonintegers)
+        # calculate the maximum number of reflections
+        reflect_max = (
+            torch.log10(velocity * T60) - torch.log10(direct_dist) - 3
+        ) / torch.log10(reflect_coef + eps)
+        # calculate the number of reflections based on the assumption that
+        # virtual sound sources which have longer propagation distances may reflect more frequently
+        reflect_ratio = (dist / (velocity * T60)).pow(2) * (
+            reflect_max.view(nsource, -1) - 1
+        ) + 1
+        # add a random pertubation based on the assumption that
+        # virtual sound sources which have similar propagation distances can have different routes and reflection patterns
+        reflect_pertub = torch.from_numpy(
+            self.source_rng.uniform(self.a, self.b, size=(nsource, image))
+        ) * (dist_ratio.pow(self.tau))
+        # all virtual sound sources should reflect for at least once
+        reflect_ratio = torch.maximum(reflect_ratio + reflect_pertub, torch.ones(1))
 
-    # a binary mask for direct-path RIR
-    direct_mask = torch.zeros(nsource, rir_length).float()
-    for i in range(nsource):
-        direct_mask[
-            i,
-            max(direct_idx[i] + sample_sr * direct_range[0] // 1000, 0) : min(
-                direct_idx[i] + sample_sr * direct_range[1] // 1000, rir_length
-            ),
-        ] = 1.0
-    rir_direct = rir * direct_mask
+        # calculate the rescaled dirac comb as RIR filter
+        dist = torch.cat([direct_dist.reshape(-1, 1), dist], 1)
+        reflect_ratio = torch.cat([torch.zeros(nsource, 1), reflect_ratio], 1)
+        rir = torch.zeros(nsource, rir_length)
+        delta_idx = torch.minimum(
+            torch.ceil(dist * sample_sr / velocity), torch.ones(1) * rir_length - 1
+        ).long()
+        delta_decay = reflect_coef.pow(reflect_ratio) / dist
+        for i in range(nsource):
+            rir[i][delta_idx[i]] += delta_decay[i]
 
-    # downsample
-    all_rir = torch.stack([rir, rir_direct], 1).view(nsource * 2, -1)
-    rir_downsample = resample1(all_rir)
+        # a binary mask for direct-path RIR
+        direct_mask = torch.zeros(nsource, rir_length).float()
+        for i in range(nsource):
+            direct_mask[
+                i,
+                max(direct_idx[i] + sample_sr * self.direct_range[0] // 1000, 0) : min(
+                    direct_idx[i] + sample_sr * self.direct_range[1] // 1000, rir_length
+                ),
+            ] = 1.0
+        rir_direct = rir * direct_mask
 
-    # apply high-pass filter
-    rir_hp = highpass_biquad(rir_downsample, sample_sr // int(np.sqrt(ratio)), 80.0)
+        # downsample
+        all_rir = torch.stack([rir, rir_direct], 1).view(nsource * 2, -1)
+        rir_downsample = resample1(all_rir)
 
-    # downsample again
-    rir = resample2(rir_hp).float().view(nsource, 2, -1)
+        # apply high-pass filter
+        rir_hp = highpass_biquad(rir_downsample, sample_sr // int(np.sqrt(ratio)), 80.0)
 
-    # RIR filter and direct-path RIR filter at target sample rate
-    rir_filter = rir[:, 0]  # nsource, nsample
+        # downsample again
+        rir = resample2(rir_hp).float().view(nsource, 2, -1)
 
-    # convert to numpy array
-    return rir_filter.numpy()
+        # RIR filter and direct-path RIR filter at target sample rate
+        rir_filter = rir[:, 0]  # nsource, nsample
+
+        # convert to numpy array
+        return rir_filter.numpy()
