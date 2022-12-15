@@ -122,7 +122,11 @@ def test_reverb_does_not_change_num_samples(mono_audio, mono_rir, early_only):
 
 
 def test_reverb_with_fast_rir_does_not_change_num_samples(mono_audio):
-    augment_fn = ReverbWithImpulseResponse(rir=None)
+    from lhotse.augmentation.utils import FastRandomRIRGenerator
+
+    augment_fn = ReverbWithImpulseResponse(
+        rir=None, rir_generator=FastRandomRIRGenerator()
+    )
     for _ in range(10):
         augmented_audio = augment_fn(mono_audio, sampling_rate=SAMPLING_RATE)
         assert augmented_audio.shape == (1, 16000)

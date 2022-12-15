@@ -15,11 +15,13 @@ from lhotse.supervision import SupervisionSegment
 from lhotse.utils import (
     add_durations,
     fastcopy,
+    hash_str_to_int,
     is_equal_or_contains,
     merge_items_with_delimiter,
     overlaps,
     rich_exception_info,
     to_list,
+    uuid4,
 )
 
 
@@ -134,6 +136,8 @@ class MultiCut(DataCut):
         early_only: bool = False,
         affix_id: bool = True,
         rir_channels: List[int] = [0],
+        room_rng_seed: Optional[int] = None,
+        source_rng_seed: Optional[int] = None,
     ) -> "MultiCut":
         """
         Return a new ``MultiCut`` that will convolve the audio with the provided impulse response.
@@ -151,6 +155,8 @@ class MultiCut(DataCut):
             by affixing it with "_rvb".
         :param rir_channels: The channels of the impulse response to use. First channel is used by default.
             If multiple channels are specified, this will produce a MixedCut instead of a MonoCut.
+        :param room_rng_seed: The seed for the room configuration.
+        :param source_rng_seed: The seed for the source positions.
         :return: a modified copy of the current ``MonoCut``.
         """
         # Pre-conditions
@@ -170,7 +176,10 @@ class MultiCut(DataCut):
                 "We do not support reverberation simulation for multi-channel recordings. "
                 "Please provide an impulse response."
             )
-            rir_channels = [0]
+            if room_rng_seed is None:
+                room_rng_seed = hash_str_to_int(str(uuid4()) + self.id)
+            if source_rng_seed is None:
+                source_rng_seed = room_rng_seed
         else:
             assert all(
                 c < rir_recording.num_channels for c in rir_channels
@@ -182,6 +191,8 @@ class MultiCut(DataCut):
             early_only=early_only,
             affix_id=affix_id,
             rir_channels=rir_channels,
+            room_rng_seed=room_rng_seed,
+            source_rng_seed=source_rng_seed,
         )
         # Match the supervision's id (and it's underlying recording id).
         supervisions_rvb = [
