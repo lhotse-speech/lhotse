@@ -509,7 +509,7 @@ class Cut:
     def trim_to_alignments(
         self,
         type: str,
-        max_pause: Seconds = 0.0,
+        max_pause: Optional[Seconds] = None,
         delimiter: str = " ",
         keep_all_channels: bool = False,
     ) -> "CutSet":  # noqa: F821
@@ -532,7 +532,8 @@ class Cut:
             we convert it to a MonoCut.
 
         :param type: The type of the alignment to trim to (e.g. "word").
-        :param max_pause: The maximum pause allowed between the alignments to merge them.
+        :param max_pause: The maximum pause allowed between the alignments to merge them. If ``None``,
+            no merging will be performed. [default: None]
         :param delimiter: The delimiter to use when joining the alignment items.
         :param keep_all_channels: If ``True``, the output cut will have the same channels as the input cut. By default,
             the trimmed cut will have the same channels as the supervision.
@@ -540,6 +541,10 @@ class Cut:
         :return: a CutSet object.
         """
         from lhotse.supervision import AlignmentItem
+
+        if max_pause is None:
+            # Set to a negative value so that no merging is performed.
+            max_pause = -1.0
 
         # For the implementation, we first create new supervisions for the cut, and then
         # use the `trim_to_supervisions` method to do the actual trimming.
