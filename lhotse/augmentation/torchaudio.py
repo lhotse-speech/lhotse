@@ -337,7 +337,7 @@ class ReverbWithImpulseResponse(AudioTransform):
     normalize_output: bool = True
     early_only: bool = False
     rir_channels: List[int] = field(default_factory=lambda: [0])
-    rir_generator: Optional[Callable] = None
+    rir_generator: Optional[Union[dict, Callable]] = None
 
     RIR_SCALING_FACTOR: float = 0.5**15
 
@@ -356,6 +356,9 @@ class ReverbWithImpulseResponse(AudioTransform):
             assert all(
                 c < self.rir.num_channels for c in self.rir_channels
             ), "Invalid channel index in `rir_channels`"
+
+        if self.rir_generator is not None and isinstance(self.rir_generator, dict):
+            self.rir_generator = FastRandomRIRGenerator(**self.rir_generator)
 
     def __call__(
         self,
