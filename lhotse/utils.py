@@ -1,8 +1,10 @@
 import functools
+import hashlib
 import inspect
 import logging
 import math
 import random
+import sys
 import uuid
 import warnings
 from contextlib import AbstractContextManager, contextmanager
@@ -707,6 +709,13 @@ def to_list(item: Union[Any, Sequence[Any]]) -> List[Any]:
 def to_hashable(item: Any) -> Any:
     """Convert ``item`` to a hashable type if it is not already hashable."""
     return tuple(item) if isinstance(item, list) else item
+
+
+def hash_str_to_int(s: str, max_value: Optional[int] = None) -> int:
+    """Hash a string to an integer in the range [0, max_value)."""
+    if max_value is None:
+        max_value = sys.maxsize
+    return int(hashlib.sha1(s.encode("utf-8")).hexdigest(), 16) % max_value
 
 
 def lens_to_mask(lens: torch.IntTensor) -> torch.Tensor:
