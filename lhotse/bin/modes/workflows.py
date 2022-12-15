@@ -227,7 +227,7 @@ def align_with_torchaudio(
 )
 @click.option(
     "--reverberate/--dont-reverberate",
-    default=True,
+    default=False,
     help="If True, the simulated meetings will be reverberated.",
 )
 @click.option(

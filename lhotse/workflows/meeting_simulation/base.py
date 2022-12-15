@@ -6,11 +6,9 @@ import abc
 from collections import defaultdict
 from typing import Optional
 
-from torch.utils.data import Dataset
-
 from lhotse import RecordingSet, SupervisionSet
 from lhotse.cut import CutSet
-from lhotse.dataset.sampling import RoundRobinSampler, SimpleCutSampler
+from lhotse.dataset.sampling import DynamicCutSampler
 from lhotse.utils import fastcopy
 
 
@@ -114,7 +112,7 @@ def reverberate_cuts(cuts: CutSet, *rirs: RecordingSet) -> CutSet:
 
 def create_sampler(
     cuts: CutSet, max_duration: float = None, max_cuts: int = None, seed: int = 0
-) -> RoundRobinSampler:
+) -> DynamicCutSampler:
     """
     Create a sampler that will be used to sample cuts from the input CutSet. The cuts
     are partitioned into speaker-wise buckets, and a DynamicCutSampler is created for
@@ -125,7 +123,7 @@ def create_sampler(
     :param max_duration: the maximum duration of the cuts in each batch.
     :param max_cuts: the maximum number of cuts in each batch.
     :param seed: the random seed.
-    :return: a RoundRobinSampler object.
+    :return: a DynamicCutSampler object.
     """
     # Create buckets by speaker.
     buckets = defaultdict(list)
@@ -134,29 +132,15 @@ def create_sampler(
 
     buckets = [CutSet.from_cuts(cuts) for cuts in buckets.values()]
 
-    # Create samplers.
-    samplers = []
-    for bucket in buckets:
-        samplers.append(
-            SimpleCutSampler(
-                bucket,
-                max_duration=max_duration,
-                max_cuts=max_cuts,
-                shuffle=True,
-                seed=seed,
-            )
-        )
-    sampler = RoundRobinSampler(*samplers)
-    return sampler
+    # Mux the cuts in each bucket. This means that all the speaker-wise cut-sets will
+    # be multiplexed together at iteration time.
+    muxed_cuts = CutSet.mux(*buckets)
 
-
-class CutReservoirDataset(Dataset):
-    """
-    A PyTorch Dataset that samples cuts from a CutSet using a sampler.
-    """
-
-    def __init__(self) -> None:
-        super().__init__()
-
-    def __getitem__(self, cuts: CutSet) -> CutSet:
-        return cuts
+    # Create sampler.
+    return DynamicCutSampler(
+        muxed_cuts,
+        max_duration=max_duration,
+        max_cuts=max_cuts,
+        shuffle=True,
+        seed=seed,
+    )

@@ -6,6 +6,8 @@ from collections import defaultdict
 from typing import Any, List, Optional, Union
 
 import numpy as np
+from torch.utils.data import DataLoader
+from tqdm import tqdm
 
 from lhotse import RecordingSet, SupervisionSet
 from lhotse.cut import CutSet, MixedCut, MixTrack, MonoCut
@@ -13,6 +15,7 @@ from lhotse.cut.set import mix
 from lhotse.utils import uuid4
 from lhotse.workflows.meeting_simulation.base import (
     BaseMeetingSimulator,
+    create_sampler,
     reverberate_cuts,
 )
 
@@ -52,7 +55,7 @@ class ConversationalMeetingSimulator(BaseMeetingSimulator):
         for duration in [same_spk_pause, diff_spk_pause, diff_spk_overlap]:
             assert duration is None or duration > 0, "Durations must be > 0."
 
-        self.same_spk_pause_dist = same_spk_pause
+        self.same_spk_pause = same_spk_pause
         self.diff_spk_pause = diff_spk_pause
         self.diff_spk_overlap = diff_spk_overlap
 
@@ -166,14 +169,14 @@ class ConversationalMeetingSimulator(BaseMeetingSimulator):
         """
         # First sample offsets for each utterance.
         offsets = []
-        for i in range(1, len(utterances) + 1):
+        for i in range(1, len(utterances)):
             if (
                 utterances[i].supervisions[0].speaker
                 == utterances[i - 1].supervisions[0].speaker
             ):
                 offsets.append(self.same_spk_pause_dist.rvs())
             else:
-                if self.bernoulli.rvs():
+                if self.bernoulli.rvs(p=0.5):
                     offsets.append(self.diff_spk_pause_dist.rvs())
                 else:
                     offsets.append(-self.diff_spk_overlap_dist.rvs())
@@ -212,21 +215,18 @@ class ConversationalMeetingSimulator(BaseMeetingSimulator):
 
     def simulate(
         self,
-        *cuts: CutSet,
+        cuts: CutSet,
         num_meetings: Optional[int] = None,
         num_repeats: Optional[int] = None,
         num_speakers_per_meeting: Union[int, List[int]] = 2,
         speaker_count_probs: Optional[List[float]] = None,
-        min_utts_per_speaker: int = 5,
-        max_utts_per_speaker: int = 10,
+        max_duration_per_speaker: Optional[float] = 20.0,
+        max_utterances_per_speaker: Optional[int] = 5,
         seed: int = 0,
     ) -> CutSet:
         """
         Simulate the desired number of multi-speaker meetings.
-        :param cuts: one or more CutSet containing the MonoCut objects to be used for simulation.
-            If multiple CutSets are provided, each mixture will contain cuts sampled from
-            a specific CutSet. This may be useful when we want to simulate mixtures with
-            cuts from the same recording.
+        :param cuts: CutSet containing the MonoCut objects to be used for simulation.
         :param num_meetings: the number of meetings to simulate.
         :param num_repeats: the number of times to repeat the provided cuts. This means that
             the number of simulated meetings depends on how many cuts are available.
@@ -235,13 +235,13 @@ class ConversationalMeetingSimulator(BaseMeetingSimulator):
             [Default: 2]
         :param speaker_count_probs: the probability of each number of speakers per meeting.
             [Default: None]
-        :param min_utts_per_speaker: the minimum number of utterances per speaker to be
-            used for simulation. [Default: 5]
-        :param max_utts_per_speaker: the maximum number of utterances per speaker to be
-            used for simulation. [Default: 10]
+        :param max_duration_per_speaker: the maximum duration of each speaker in a meeting.
+            [Default: 20.0]
+        :param max_utterances_per_speaker: the maximum number of utterances per speaker in a
+            meeting. [Default: 5]
         :param seed: the random seed to be used for simulation. [Default: 0]
         """
-        assert len(cuts) > 0, "At least one CutSet must be provided."
+        from scipy.stats import bernoulli
 
         if num_meetings is None and num_repeats is None:
             raise ValueError("Either num_meetings or num_repeats must be provided.")
@@ -258,48 +258,58 @@ class ConversationalMeetingSimulator(BaseMeetingSimulator):
             speaker_count_probs
         ), "The number of speakers per meeting and the number of probabilities must be the same."
 
-        self.cuts = cuts
-        # Make sure there are only MonoCuts in the CutSets.
-        assert all(
-            len(base_cuts.simple_cuts) == len(base_cuts) for base_cuts in cuts
-        ), "The CutSets must contain only MonoCuts. "
+        # Make sure there are only MonoCuts in the CutSet.
+        assert len(cuts) == len(cuts.simple_cuts), "Only MonoCuts are supported."
+
+        # Initialize default distributions if not provided.
+        if getattr(self, "same_spk_pause_dist", None) is None:
+            self._init_defaults()
+
+        cuts = cuts.repeat(times=num_repeats)
+
+        # Create cuts sampler
+        sampler = create_sampler(
+            cuts,
+            max_duration=max_duration_per_speaker,
+            max_cuts=max_utterances_per_speaker,
+            seed=seed,
+        )
+        # Create an iterator from the sampler
+        sampler_iter = iter(sampler)
 
         # Create random number generators with the given seed.
-        npr = np.random.RandomState(seed)
         rand = random.Random(seed)
+        npr = np.random.RandomState(seed)
 
-        # Reset speaker bucket cache.
-        self._get_speaker_cuts.cache_clear()
-
-        self.bernoulli = npr.binomial(1, 0.5)
+        self.bernoulli = bernoulli
 
         mixtures = []
 
-        for _ in range(num_meetings):
+        pbar = tqdm(total=num_meetings)
+        while True:
+            pbar.update(1)
 
-            # Sample the cut-set that this meeting will be generated from.
-            base_cuts_idx = npr.randint(len(cuts))
-            base_cuts = cuts[base_cuts_idx]
+            # If the number of meetings is provided, stop when we reach that number.
+            if num_meetings is not None and len(mixtures) >= num_meetings:
+                break
 
             # Sample the number of speakers for this meeting.
             num_speakers = npr.choice(num_speakers_per_meeting, p=speaker_count_probs)
 
-            # Sample the speakers for this meeting.
-            speakers = rand.sample(
-                base_cuts.speakers,
-                k=min(num_speakers, len(base_cuts.speakers)),
-            )
+            # Sample from the sampler to get 1 batch per desired number of speakers.
+            utterances = []
+            finished = False
+            for _ in range(num_speakers):
+                try:
+                    this_batch = next(sampler_iter).data
+                except StopIteration:
+                    # If we run out of data, finish simulation.
+                    finished = True
+                    break
+                utterances.append(list(this_batch.values()))
 
-            # Sample the utterances for each speaker. We use `replace=True` here because
-            # we may need to use the same utterance multiple times to get the desired
-            # number of utterances per speaker.
-            utterances = [
-                rand.choices(
-                    self._get_speaker_cuts(base_cuts_idx, speaker),
-                    k=npr.randint(min_utts_per_speaker, max_utts_per_speaker + 1),
-                )
-                for speaker in speakers
-            ]
+            if finished:
+                break
 
             # Flatten the list of lists and randomly permute the utterances.
             utterances = list(itertools.chain(*utterances))

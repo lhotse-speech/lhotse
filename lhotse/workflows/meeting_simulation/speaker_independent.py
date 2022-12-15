@@ -1,5 +1,4 @@
 import logging
-import random
 from typing import List, Optional, Union
 
 import numpy as np
@@ -12,7 +11,6 @@ from lhotse.cut.set import mix
 from lhotse.utils import uuid4
 from lhotse.workflows.meeting_simulation.base import (
     BaseMeetingSimulator,
-    CutReservoirDataset,
     create_sampler,
     reverberate_cuts,
 )
@@ -159,22 +157,15 @@ class SpeakerIndependentMeetingSimulator(BaseMeetingSimulator):
 
         cuts = cuts.repeat(times=num_repeats)
 
-        # Create sampler and dataloader
-        dataset = CutReservoirDataset()
+        # Create cuts sampler
         sampler = create_sampler(
             cuts,
             max_duration=max_duration_per_speaker,
             max_cuts=max_utterances_per_speaker,
             seed=seed,
         )
-        dataloader = DataLoader(
-            dataset=dataset,
-            sampler=sampler,
-            batch_size=None,
-            persistent_workers=False,
-        )
-        # Create an iterator from the dataloader.
-        dataloader = iter(dataloader)
+        # Create an iterator from the sampler
+        sampler_iter = iter(sampler)
 
         # Create random number generators with the given seed.
         npr = np.random.RandomState(seed)
@@ -197,7 +188,7 @@ class SpeakerIndependentMeetingSimulator(BaseMeetingSimulator):
             finished = False
             for _ in range(num_speakers):
                 try:
-                    this_batch = next(dataloader).data
+                    this_batch = next(sampler_iter).data
                 except StopIteration:
                     # If we run out of data, finish simulation.
                     finished = True
