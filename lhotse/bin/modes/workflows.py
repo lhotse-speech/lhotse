@@ -194,7 +194,7 @@ def align_with_torchaudio(
 @click.option(
     "--num-repeats",
     type=int,
-    default=None,
+    default=1,
     help="Number of times to repeat each input cut. The resulting cuts will be used as a finite "
     "set of utterances to use for simulation. Either this of `num_meetings` must be provided.",
 )
@@ -295,6 +295,9 @@ def simulate_meetings(
         )
     else:
         raise ValueError(f"Unknown meeting simulation method: {method}")
+
+    if num_meetings is not None:
+        num_repeats = None
 
     simulator = MeetingSimulator()
     if fit_to_supervisions is not None:

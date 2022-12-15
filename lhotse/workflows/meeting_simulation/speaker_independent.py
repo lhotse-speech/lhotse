@@ -173,6 +173,8 @@ class SpeakerIndependentMeetingSimulator(BaseMeetingSimulator):
             batch_size=None,
             persistent_workers=False,
         )
+        # Create an iterator from the dataloader.
+        dataloader = iter(dataloader)
 
         # Create random number generators with the given seed.
         npr = np.random.RandomState(seed)
@@ -192,8 +194,18 @@ class SpeakerIndependentMeetingSimulator(BaseMeetingSimulator):
 
             # Sample from the sampler to get 1 batch per desired number of speakers.
             utterances = []
-            for _ in num_speakers:
-                utterances.append(dataloader.next().data)
+            finished = False
+            for _ in range(num_speakers):
+                try:
+                    this_batch = next(dataloader).data
+                except StopIteration:
+                    # If we run out of data, finish simulation.
+                    finished = True
+                    break
+                utterances.append(list(this_batch.values()))
+
+            if finished:
+                break
 
             # Sample the silence durations between utterances for each speaker.
             silence_durations = [

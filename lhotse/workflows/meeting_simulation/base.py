@@ -4,14 +4,14 @@ a CutSet containing MonoCut objects.
 """
 import abc
 from collections import defaultdict
-from typing import Dict, List, Optional, Tuple
+from typing import Optional
 
 from torch.utils.data import Dataset
 
 from lhotse import RecordingSet, SupervisionSet
-from lhotse.augmentation.utils import fastcopy
-from lhotse.cut import Cut, CutSet
-from lhotse.dataset.sampling import DynamicCutSampler, RoundRobinSampler
+from lhotse.cut import CutSet
+from lhotse.dataset.sampling import RoundRobinSampler, SimpleCutSampler
+from lhotse.utils import fastcopy
 
 
 class BaseMeetingSimulator(abc.ABC):
@@ -109,6 +109,8 @@ def reverberate_cuts(cuts: CutSet, *rirs: RecordingSet) -> CutSet:
             # We will use a fast random approximation to generate RIRs.
             out_cuts.append(cut.reverb_rir())
 
+    return CutSet.from_cuts(out_cuts)
+
 
 def create_sampler(
     cuts: CutSet, max_duration: float = None, max_cuts: int = None, seed: int = 0
@@ -136,7 +138,7 @@ def create_sampler(
     samplers = []
     for bucket in buckets:
         samplers.append(
-            DynamicCutSampler(
+            SimpleCutSampler(
                 bucket,
                 max_duration=max_duration,
                 max_cuts=max_cuts,
