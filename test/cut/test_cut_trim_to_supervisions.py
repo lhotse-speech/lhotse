@@ -1,6 +1,7 @@
 import pytest
 
 from lhotse import MonoCut, MultiCut, Recording, SupervisionSegment
+from lhotse.supervision import AlignmentItem
 
 
 @pytest.fixture
@@ -19,13 +20,43 @@ def mono_cut():
     )
     sups = [
         SupervisionSegment(
-            id="sup1", recording_id="rec1", start=0.0, duration=3.37, text="Hey, Matt!"
+            id="sup1",
+            recording_id="rec1",
+            start=0.0,
+            duration=3.37,
+            text="Hey, Matt!",
+            alignment={
+                "word": [
+                    AlignmentItem(symbol="Hey", start=0.0, duration=0.5),
+                    AlignmentItem(symbol="", start=0.5, duration=0.4),
+                    AlignmentItem(symbol="Matt", start=0.9, duration=2.0),
+                ]
+            },
         ),
         SupervisionSegment(
-            id="sup2", recording_id="rec1", start=4.5, duration=0.9, text="Yes?"
+            id="sup2",
+            recording_id="rec1",
+            start=4.5,
+            duration=0.9,
+            text="Yes?",
+            alignment={
+                "word": [
+                    AlignmentItem(symbol="Yes", start=4.6, duration=0.5),
+                ]
+            },
         ),
         SupervisionSegment(
-            id="sup3", recording_id="rec1", start=4.9, duration=4.3, text="Oh, nothing"
+            id="sup3",
+            recording_id="rec1",
+            start=4.9,
+            duration=4.3,
+            text="Oh, nothing",
+            alignment={
+                "word": [
+                    AlignmentItem(symbol="Oh", start=4.9, duration=0.5),
+                    AlignmentItem(symbol="nothing", start=5.5, duration=3.0),
+                ]
+            },
         ),
     ]
     return MonoCut(
@@ -403,3 +434,16 @@ def test_multi_cut_trim_to_supervisions_do_not_keep_all_channels_raises(multi_cu
         cuts = multi_cut.trim_to_supervisions(
             keep_overlapping=True, keep_all_channels=False
         )
+
+
+@pytest.mark.parametrize(["max_pause", "expected_cuts"], [(0.0, 5), (0.2, 4)])
+def test_cut_trim_to_alignments(mono_cut, max_pause, expected_cuts):
+    cuts = mono_cut.trim_to_alignments("word", max_pause=max_pause)
+    assert len(cuts) == expected_cuts
+
+
+@pytest.mark.parametrize("num_jobs", [1, 2])
+def test_cut_set_trim_to_alignments(mono_cut, num_jobs):
+    cuts = mono_cut.trim_to_supervisions(keep_overlapping=False)
+    cuts = cuts.trim_to_alignments("word", max_pause=0.2, num_jobs=num_jobs).to_eager()
+    assert len(cuts) == 4
