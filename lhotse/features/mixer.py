@@ -59,10 +59,6 @@ class FeatureMixer:
             self.reference_energy = feature_extractor.compute_energy(base_feats)
         else:
             self.reference_energy = reference_energy
-        if self.reference_energy <= 0.0:
-            logging.warning(
-                f"To perform mix, energy must be non-zero and non-negative (got {self.reference_energy}), ignore mix operation."
-            )
 
     @property
     def num_features(self):
@@ -121,9 +117,6 @@ class FeatureMixer:
         if len(feats) == 0:
             return  # do nothing for empty arrays
 
-        if self.reference_energy <= 0.0:
-            return
-
         assert offset >= 0.0, "Negative offset in mixing is not supported."
 
         assert (
@@ -175,7 +168,7 @@ class FeatureMixer:
 
         # When SNR is requested, find what gain is needed to satisfy the SNR
         gain = 1.0
-        if snr is not None:
+        if snr is not None and self.reference_energy > 0.0:
             # Compute the added signal energy before it was padded
             added_feats_energy = self.feature_extractor.compute_energy(feats)
             if added_feats_energy > 0.0:

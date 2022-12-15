@@ -17,8 +17,8 @@ class TestMixZeroEnergyCuts(RandomCutTestCase):
 
         mixed = zero_cut.mix(rand_cut, snr=snr)
 
-        with pytest.raises(NonPositiveEnergyError):
-            mixed.load_audio()
+        mix_cut_samples = mixed.load_audio()
+        assert mix_cut_samples.shape[1] == sr
 
     @pytest.mark.parametrize("snr", [None, 10])
     def test_fault_tolerant_loading_skips_cut(self, snr):
@@ -34,5 +34,5 @@ class TestMixZeroEnergyCuts(RandomCutTestCase):
         cuts_all = CutSet.from_cuts([zero_mixed, rand_mixed])
 
         audio, audio_lens, cuts_ok = collate_audio(cuts_all, fault_tolerant=True)
-        assert len(cuts_ok) == 1
-        assert cuts_ok[0] == rand_mixed
+        assert cuts_ok[0] == zero_mixed
+        assert cuts_ok[1] == rand_mixed
