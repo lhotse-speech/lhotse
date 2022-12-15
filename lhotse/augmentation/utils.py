@@ -1,3 +1,4 @@
+from dataclasses import dataclass, field
 from typing import List, Optional
 
 import numpy as np
@@ -75,45 +76,27 @@ def convolve1d(signal: torch.Tensor, kernel: torch.Tensor) -> torch.Tensor:
 
 
 # The following is based on: https://github.com/yluo42/FRA-RIR/blob/main/FRA-RIR.py
+@dataclass
 class FastRandomRIRGenerator:
-    def __init__(
-        self,
-        sr: int = 16000,
-        direct_range: List = [-6, 50],
-        max_T60: float = 0.8,
-        alpha: float = 0.25,
-        a: float = -2.0,
-        b: float = 2.0,
-        tau: float = 0.2,
-        room_seed: Optional[int] = None,
-        source_seed: Optional[int] = None,
-    ):
-        """
-        The fast random approximation of room impulse response (FRA-RIR) method.
-        :param sr: target sample rate. Default: 16000.
-        :param direct_range: the context range (at milliseconds) at the first peak of the RIR filter to define the direct-path RIR. Default: [-6, 50] ms.
-        :param max_T60: the maximum range of T60 to sample from. Default: 0.8.
-        :param alpha: controlling the probability distribution to sample the distance of the virtual sound sources from. Default: 0.25.
-        :param a, b: controlling the random pertubation added to each virtual sound source. Default: -2, 2.
-        :param tau: controlling the relationship between the distance and the number of reflections of each virtual sound source. Default: 0.25.
-        :param room_seed: random seed for room configuration.
-        :param source_seed: random seed for virtual sound sources.
-        """
-        self.sr = sr
-        self.direct_range = direct_range
-        self.max_T60 = max_T60
-        self.alpha = alpha
-        self.a = a
-        self.b = b
-        self.tau = tau
+    sr: int = 16000
+    direct_range: List = field(default_factory=lambda: [-6, 50])
+    max_T60: float = 0.8
+    alpha: float = 0.25
+    a: float = -2.0
+    b: float = 2.0
+    tau: float = 0.2
+    room_seed: Optional[int] = None
+    source_seed: Optional[int] = None
+
+    def __post_init__(self):
         self.room_rng = (
-            np.random.default_rng(room_seed)
-            if source_seed is not None
+            np.random.default_rng(self.room_seed)
+            if self.room_seed is not None
             else np.random.default_rng()
         )
         self.source_rng = (
-            np.random.default_rng(source_seed)
-            if source_seed is not None
+            np.random.default_rng(self.source_seed)
+            if self.source_seed is not None
             else np.random.default_rng()
         )
 
