@@ -3,11 +3,15 @@ This is an experimental workflow that can be used to simulate multi-speaker meet
 a CutSet containing MonoCut objects.
 """
 import abc
-from typing import Optional
+from collections import defaultdict
+from typing import Dict, List, Optional, Tuple
+
+from torch.utils.data import Dataset
 
 from lhotse import RecordingSet, SupervisionSet
-from lhotse.augmentation.utils import FastRandomRIRGenerator, fastcopy
-from lhotse.cut import CutSet
+from lhotse.augmentation.utils import fastcopy
+from lhotse.cut import Cut, CutSet
+from lhotse.dataset.sampling import DynamicCutSampler, RoundRobinSampler
 
 
 class BaseMeetingSimulator(abc.ABC):
@@ -58,7 +62,7 @@ class BaseMeetingSimulator(abc.ABC):
     @abc.abstractmethod
     def simulate(
         self,
-        *cuts: CutSet,
+        cuts: CutSet,
         num_meetings: Optional[int] = None,
         num_repeats: Optional[int] = None,
     ) -> CutSet:
@@ -104,3 +108,53 @@ def reverberate_cuts(cuts: CutSet, *rirs: RecordingSet) -> CutSet:
         else:
             # We will use a fast random approximation to generate RIRs.
             out_cuts.append(cut.reverb_rir())
+
+
+def create_sampler(
+    cuts: CutSet, max_duration: float = None, max_cuts: int = None, seed: int = 0
+) -> RoundRobinSampler:
+    """
+    Create a sampler that will be used to sample cuts from the input CutSet. The cuts
+    are partitioned into speaker-wise buckets, and a DynamicCutSampler is created for
+    each bucket. The samplers are then combined into a RoundRobinSampler, which will
+    sample cuts from each bucket in a round-robin fashion.
+
+    :param cuts: a CutSet containing MonoCut objects.
+    :param max_duration: the maximum duration of the cuts in each batch.
+    :param max_cuts: the maximum number of cuts in each batch.
+    :param seed: the random seed.
+    :return: a RoundRobinSampler object.
+    """
+    # Create buckets by speaker.
+    buckets = defaultdict(list)
+    for cut in cuts:
+        buckets[cut.supervisions[0].speaker].append(cut)
+
+    buckets = [CutSet.from_cuts(cuts) for cuts in buckets.values()]
+
+    # Create samplers.
+    samplers = []
+    for bucket in buckets:
+        samplers.append(
+            DynamicCutSampler(
+                bucket,
+                max_duration=max_duration,
+                max_cuts=max_cuts,
+                shuffle=True,
+                seed=seed,
+            )
+        )
+    sampler = RoundRobinSampler(*samplers)
+    return sampler
+
+
+class CutReservoirDataset(Dataset):
+    """
+    A PyTorch Dataset that samples cuts from a CutSet using a sampler.
+    """
+
+    def __init__(self) -> None:
+        super().__init__()
+
+    def __getitem__(self, cuts: CutSet) -> CutSet:
+        return cuts
