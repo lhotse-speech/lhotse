@@ -190,7 +190,7 @@ def trim_supervisions_to_recordings(
             continue
         if s.end > end:
             trimmed += 1
-            s = s.trim(recordings[s.recording_id].duration)
+            s = s.trim(end=end)
         sups.append(s)
     if verbose and removed:
         logging.warning(

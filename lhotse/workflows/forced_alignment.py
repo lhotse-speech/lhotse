@@ -57,10 +57,6 @@ def align_with_torchaudio(
     discard_symbols = _make_discard_symbols_regex(labels)
 
     for cut in cuts:
-        assert not cut.has_overlapping_supervisions, (
-            f"We don't support forced alignment of cuts with overlapping supervisions "
-            f"(cut ID: '{cut.id}')"
-        )
 
         for idx, subcut in enumerate(cut.trim_to_supervisions(keep_overlapping=False)):
             sup = subcut.supervisions[0]
