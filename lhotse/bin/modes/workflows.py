@@ -188,49 +188,10 @@ def align_with_torchaudio(
 )
 @click.option(
     "--fit-to-supervisions",
+    "-f",
     type=click.Path(exists=True, dir_okay=False),
     default=None,
     help="Path to a supervision set to learn the distributions for simulation.",
-)
-@click.option(
-    "--num-meetings",
-    type=int,
-    default=None,
-    help="Number of meetings to simulate. Either this of `num_repeats` must be provided.",
-)
-@click.option(
-    "--num-repeats",
-    type=int,
-    default=1,
-    help="Number of times to repeat each input cut. The resulting cuts will be used as a finite "
-    "set of utterances to use for simulation. Either this of `num_meetings` must be provided.",
-)
-@click.option(
-    "--num-speakers-per-meeting",
-    cls=PythonLiteralOption,
-    default="2",
-    help="Number of speakers per meeting. One or more integers can be provided (comma-separated). "
-    "In this case, the number of speakers will be sampled uniformly from the provided list, "
-    "or using the distribution provided in `speaker-count-probs`.",
-)
-@click.option(
-    "--speaker-count-probs",
-    cls=PythonLiteralOption,
-    default=None,
-    help="A list of probabilities for each speaker count. The length of the list must be "
-    "equal to the number of elements in `num-speakers-per-meeting`.",
-)
-@click.option(
-    "--max-duration-per-speaker",
-    type=float,
-    default=20.0,
-    help="Maximum duration of a single speaker in a meeting.",
-)
-@click.option(
-    "--max-utterances-per-speaker",
-    type=int,
-    default=5,
-    help="Maximum number of utterances per speaker in a meeting.",
 )
 @click.option(
     "--reverberate/--dont-reverberate",
@@ -239,11 +200,64 @@ def align_with_torchaudio(
 )
 @click.option(
     "--rir-recordings",
+    "--rir",
     type=click.Path(exists=True, dir_okay=True),
     default=None,
     help="Path to a recording set containing RIRs. If provided, the simulated meetings will be "
     "reverberated using the RIRs from this set. A directory containing recording sets can also "
     "be provided, in which case each meeting will use a recording set sampled from this directory.",
+)
+@click.option(
+    "--num-meetings",
+    "-n",
+    type=int,
+    default=None,
+    help="Number of meetings to simulate. Either this of `num_repeats` must be provided.",
+)
+@click.option(
+    "--num-repeats",
+    "-r",
+    type=int,
+    default=1,
+    help="Number of times to repeat each input cut. The resulting cuts will be used as a finite "
+    "set of utterances to use for simulation. Either this of `num_meetings` must be provided.",
+)
+@click.option(
+    "--num-speakers-per-meeting",
+    "-s",
+    cls=PythonLiteralOption,
+    default="2",
+    help="Number of speakers per meeting. One or more integers can be provided (comma-separated). "
+    "In this case, the number of speakers will be sampled uniformly from the provided list, "
+    "or using the distribution provided in `speaker-count-probs`.",
+)
+@click.option(
+    "--speaker-count-probs",
+    "-p",
+    cls=PythonLiteralOption,
+    default=None,
+    help="A list of probabilities for each speaker count. The length of the list must be "
+    "equal to the number of elements in `num-speakers-per-meeting`.",
+)
+@click.option(
+    "--max-duration-per-speaker",
+    "-d",
+    type=float,
+    default=20.0,
+    help="Maximum duration of a single speaker in a meeting.",
+)
+@click.option(
+    "--max-utterances-per-speaker",
+    "-u",
+    type=int,
+    default=5,
+    help="Maximum number of utterances per speaker in a meeting.",
+)
+@click.option(
+    "--allow-3fold-overlap/--no-3fold-overlap",
+    default=False,
+    help="If True, the simulated meetings will allow more than 2 speakers to overlap. This "
+    "is only relevant for the `conversational` method.",
 )
 @click.option(
     "--seed",
@@ -256,15 +270,9 @@ def simulate_meetings(
     out_cuts: str,
     method: str,
     fit_to_supervisions: Optional[str],
-    num_meetings: Optional[int],
-    num_repeats: Optional[int],
-    num_speakers_per_meeting: Union[int, List[int]],
-    speaker_count_probs: Optional[List[float]],
-    max_duration_per_speaker: float,
-    max_utterances_per_speaker: int,
     reverberate: bool,
     rir_recordings: Optional[str],
-    seed: int,
+    **kwargs,
 ):
     """
     Simulate meeting-style mixtures using a provided CutSet containing single-channel
@@ -296,15 +304,15 @@ def simulate_meetings(
         from lhotse.workflows.meeting_simulation import (
             SpeakerIndependentMeetingSimulator as MeetingSimulator,
         )
+
+        # Remove options that are not relevant for the independent method.
+        kwargs.pop("allow_3fold_overlap")
     elif method == "conversational":
         from lhotse.workflows.meeting_simulation import (
             ConversationalMeetingSimulator as MeetingSimulator,
         )
     else:
         raise ValueError(f"Unknown meeting simulation method: {method}")
-
-    if num_meetings is not None:
-        num_repeats = None
 
     simulator = MeetingSimulator()
     if fit_to_supervisions is not None:
@@ -318,13 +326,7 @@ def simulate_meetings(
     print("Simulating meetings...")
     mixed_cuts = simulator.simulate(
         cuts,
-        num_meetings=num_meetings,
-        num_repeats=num_repeats,
-        num_speakers_per_meeting=num_speakers_per_meeting,
-        speaker_count_probs=speaker_count_probs,
-        max_duration_per_speaker=max_duration_per_speaker,
-        max_utterances_per_speaker=max_utterances_per_speaker,
-        seed=seed,
+        **kwargs,
     )
 
     if reverberate:

@@ -1,3 +1,4 @@
+import random
 from functools import reduce
 from operator import add
 from typing import Any, Callable, Dict, Optional, Tuple, Union
@@ -30,7 +31,13 @@ class RoundRobinSampler(CutSampler):
         ...     pass  # profit
     """
 
-    def __init__(self, *samplers: CutSampler, stop_early: bool = False) -> None:
+    def __init__(
+        self,
+        *samplers: CutSampler,
+        stop_early: bool = False,
+        randomize: bool = False,
+        seed: int = 0,
+    ) -> None:
         """
         RoundRobinSampler's constructor.
 
@@ -39,10 +46,15 @@ class RoundRobinSampler(CutSampler):
             depleted.
             By default, we will keep iterating until all of the samplers are exhausted.
             This setting can be used to balance datasets of different sizes.
+        :param randomize: If True, select the next sampler randomly instead of in order.
+        :param seed: Random seed used to select the next sampler (only used if ``randomize`` is True)
         """
         super().__init__(rank=0, world_size=1)
         self.samplers = samplers
         self.stop_early = stop_early
+        self.randomize = randomize
+        self.rng = None
+
         self._nondepleted_samplers_indices = list(range(len(self.samplers)))
         self._cur_sampler_idx = 0
 
@@ -100,6 +112,7 @@ class RoundRobinSampler(CutSampler):
             {
                 "samplers": [s.state_dict() for s in self.samplers],
                 "stop_early": self.stop_early,
+                "randomize": self.randomize,
                 "_cur_sampler_idx": self._cur_sampler_idx,
                 # Explicit list copy below allows to restore within the same process.
                 "_nondepleted_samplers_indices": list(
@@ -141,6 +154,7 @@ class RoundRobinSampler(CutSampler):
         super().load_state_dict(state_dict)
 
     def __iter__(self):
+        self.rng = random.Random(self.seed + self.epoch)
         for sampler in self.samplers:
             iter(sampler)
         if self._just_restored_state:
@@ -163,16 +177,24 @@ class RoundRobinSampler(CutSampler):
             self._nondepleted_samplers_indices.pop(self._cur_sampler_idx)
             if self.stop_early or len(self._nondepleted_samplers_indices) == 0:
                 raise
+            self._set_next_idx()
+            return self._next_batch()
+
+        self._set_next_idx()
+        return batch
+
+    def _set_next_idx(self) -> None:
+        if self.randomize and len(self._nondepleted_samplers_indices) > 1:
+            self._cur_sampler_idx = self.rng.choice(
+                list(
+                    set(range(len(self._nondepleted_samplers_indices)))
+                    - set([self._cur_sampler_idx])
+                )
+            )
+        else:
             self._cur_sampler_idx = (self._cur_sampler_idx + 1) % len(
                 self._nondepleted_samplers_indices
             )
-            return self._next_batch()
-
-        self._cur_sampler_idx = (self._cur_sampler_idx + 1) % len(
-            self._nondepleted_samplers_indices
-        )
-
-        return batch
 
     def set_epoch(self, epoch: int) -> None:
         """

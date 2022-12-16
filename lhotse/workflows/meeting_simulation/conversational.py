@@ -1,4 +1,3 @@
-import functools
 import itertools
 import logging
 import random
@@ -6,7 +5,6 @@ from collections import defaultdict
 from typing import Any, List, Optional, Union
 
 import numpy as np
-from torch.utils.data import DataLoader
 from tqdm import tqdm
 
 from lhotse import RecordingSet, SupervisionSet
@@ -150,64 +148,80 @@ class ConversationalMeetingSimulator(BaseMeetingSimulator):
 
         print(f"Learned parameters: {self}")
 
-    @functools.lru_cache(maxsize=128)
-    def _get_speaker_cuts(self, base_cuts_idx: int, speaker: str) -> CutSet:
-        """
-        Return all cuts for the given speaker.
-        """
-        return list(
-            self.cuts[base_cuts_idx]
-            .filter(lambda cut: cut.supervisions[0].speaker == speaker)
-            .cuts.values()
-        )
-
-    def _create_mixture(self, utterances: List[MonoCut]) -> MixedCut:
+    def _create_mixture(
+        self, utterances: CutSet, allow_3fold_overlap: bool = False
+    ) -> MixedCut:
         """
         Create a MixedCut object from a list of MonoCuts (utterances).
         We sample pauses and/or overlaps from the initilized or learned distributions.
         Then, we create a MixedCut where each track represents a different speaker.
+
+        :param utterances: a CutSet containing the utterances to be mixed.
+        :param allow_3fold_overlap: if True, allow 3-fold overlaps between speakers.
+            [Default: False]
+        :return: a MixedCut object.
         """
-        # First sample offsets for each utterance.
-        offsets = []
+        # We keep track of the end time of the last utterance for each speaker.
+        speakers = utterances.speakers
+        last_utt_end = {spkr: 0.0 for spkr in speakers}
+        last_utt_end_times = sorted(list(last_utt_end.values()), reverse=True)
+
+        # Generate pause/overlap timings for all utterances.
+        N = len(utterances)
+        same_spk_pauses = self.same_spk_pause_dist.rvs(size=N)
+        diff_spk_pauses = self.diff_spk_pause_dist.rvs(size=N)
+        diff_spk_overlaps = self.diff_spk_overlap_dist.rvs(size=N)
+        diff_spk_bernoulli = self.bernoulli.rvs(p=0.5, size=N)
+
+        utterances = list(utterances.data.values())
+        # First sample offsets for each utterance. These are w.r.t. start of the meeting.
+        offsets = [0.0]
+        cur_offset = utterances[0].duration
+
         for i in range(1, len(utterances)):
-            if (
-                utterances[i].supervisions[0].speaker
-                == utterances[i - 1].supervisions[0].speaker
-            ):
-                offsets.append(self.same_spk_pause_dist.rvs())
+            cur_spk = utterances[i].supervisions[0].speaker
+            prev_spk = utterances[i - 1].supervisions[0].speaker
+            if cur_spk == prev_spk:
+                ot = same_spk_pauses[i]
             else:
-                if self.bernoulli.rvs(p=0.5):
-                    offsets.append(self.diff_spk_pause_dist.rvs())
+                if diff_spk_bernoulli[i] == 1:
+                    # No overlap between speakers.
+                    ot = diff_spk_pauses[i]
                 else:
-                    offsets.append(-self.diff_spk_overlap_dist.rvs())
+                    # Overlap between speakers.
+                    ot = diff_spk_overlaps[i]
+                    if len(last_utt_end_times) > 1 and not allow_3fold_overlap:
+                        # second term for ensuring same speaker's utterances do not overlap.
+                        # third term for ensuring the maximum number of overlaps is two.
+                        ot = min(
+                            ot,
+                            cur_offset - last_utt_end[cur_spk],
+                            cur_offset - last_utt_end_times[1],
+                        )
+                    else:
+                        ot = min(ot, cur_offset - last_utt_end[cur_spk])
+                    ot = -ot
 
-        # Group utterances by speaker and compute net offset (i.e. offset w.r.t previous
-        # utterance of the same speaker).
+            cur_offset += ot
+            offsets.append(cur_offset)
+            cur_offset += utterances[i].duration
+
+            # Update last_utt_end and last_utt_end_times.
+            last_utt_end[cur_spk] = cur_offset
+            last_utt_end_times = sorted(list(last_utt_end.values()), reverse=True)
+            cur_offset = last_utt_end_times[0]
+
+        # Group utterances (and offsets) by speaker.
         spk_tracks = defaultdict(list)
-        # Add first cut to the dictionary. Each dictionary element contains a list of
-        # tracks belonging to a specific speaker. List elements are tuples of the form
-        # (cut, start_time).
-        spk_tracks[utterances[0].supervisions[0].speaker].append(
-            (
-                utterances[0],
-                0.0,
-            )
-        )
-        cur_end = utterances[0].duration
-
-        # Iterate over the rest of the cuts
-        for offset, utt in zip(offsets, utterances[1:]):
-            spk = utt.supervisions[0].speaker
-            cur_start = max(0, cur_end + offset)
-            spk_tracks[spk].append((utt, cur_start))
-            cur_end = max(cur_start + utt.duration, cur_end)
+        for utt, offset in zip(utterances, offsets):
+            spk_tracks[utt.supervisions[0].speaker].append((utt, offset))
 
         # Now create speaker-wise tracks by mixing their utterances with silence padding.
         tracks = []
         for spk, spk_utts in spk_tracks.items():
             track, start = spk_utts[0]
             for utt, offset in spk_utts[1:]:
-                track = mix(track, utt, offset=offset, allow_padding=True)
+                track = mix(track, utt, offset=offset - start, allow_padding=True)
             track = MixTrack(cut=track, type=type(track), offset=start)
             tracks.append(track)
 
@@ -222,6 +236,7 @@ class ConversationalMeetingSimulator(BaseMeetingSimulator):
         speaker_count_probs: Optional[List[float]] = None,
         max_duration_per_speaker: Optional[float] = 20.0,
         max_utterances_per_speaker: Optional[int] = 5,
+        allow_3fold_overlap: bool = False,
         seed: int = 0,
     ) -> CutSet:
         """
@@ -239,12 +254,17 @@ class ConversationalMeetingSimulator(BaseMeetingSimulator):
             [Default: 20.0]
         :param max_utterances_per_speaker: the maximum number of utterances per speaker in a
             meeting. [Default: 5]
+        :param allow_3fold_overlap: if True, allow 3-fold overlaps between speakers.
+            [Default: False]
         :param seed: the random seed to be used for simulation. [Default: 0]
         """
         from scipy.stats import bernoulli
 
         if num_meetings is None and num_repeats is None:
             raise ValueError("Either num_meetings or num_repeats must be provided.")
+
+        if num_meetings is not None:
+            num_repeats = None
 
         if isinstance(num_speakers_per_meeting, int):
             num_speakers_per_meeting = [num_speakers_per_meeting]
@@ -254,11 +274,22 @@ class ConversationalMeetingSimulator(BaseMeetingSimulator):
                 num_speakers_per_meeting
             )
 
+        # Some basic checks
+        assert all(n > 1 for n in num_speakers_per_meeting), (
+            "The number of speakers per meeting must be greater than 1. "
+            f"Got: {num_speakers_per_meeting}"
+        )
+        assert all(p > 0.0 for p in speaker_count_probs), (
+            "The probabilities of the number of speakers per meeting must be greater than 0. "
+            f"Got: {speaker_count_probs}"
+        )
+        assert sum(speaker_count_probs) == 1.0, (
+            "The probabilities of the number of speakers per meeting must sum to 1. "
+            f"Got: {speaker_count_probs}"
+        )
         assert len(num_speakers_per_meeting) == len(
             speaker_count_probs
         ), "The number of speakers per meeting and the number of probabilities must be the same."
-
-        # Make sure there are only MonoCuts in the CutSet.
         assert len(cuts) == len(cuts.simple_cuts), "Only MonoCuts are supported."
 
         # Initialize default distributions if not provided.
@@ -297,26 +328,27 @@ class ConversationalMeetingSimulator(BaseMeetingSimulator):
             num_speakers = npr.choice(num_speakers_per_meeting, p=speaker_count_probs)
 
             # Sample from the sampler to get 1 batch per desired number of speakers.
-            utterances = []
+            utterances = CutSet.from_cuts([])
             finished = False
-            for _ in range(num_speakers):
+            while len(utterances.speakers) < num_speakers:
                 try:
-                    this_batch = next(sampler_iter).data
+                    this_batch = next(sampler_iter)
                 except StopIteration:
                     # If we run out of data, finish simulation.
                     finished = True
                     break
-                utterances.append(list(this_batch.values()))
+                utterances += this_batch
 
             if finished:
                 break
 
-            # Flatten the list of lists and randomly permute the utterances.
-            utterances = list(itertools.chain(*utterances))
-            rand.shuffle(utterances)
+            # Randomly shuffle the utterances
+            utterances = utterances.shuffle()
 
             # Create the meeting.
-            mixture = self._create_mixture(utterances)
+            mixture = self._create_mixture(
+                utterances, allow_3fold_overlap=allow_3fold_overlap
+            )
 
             mixtures.append(mixture)
 

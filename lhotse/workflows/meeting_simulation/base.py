@@ -8,7 +8,7 @@ from typing import Optional
 
 from lhotse import RecordingSet, SupervisionSet
 from lhotse.cut import CutSet
-from lhotse.dataset.sampling import DynamicCutSampler
+from lhotse.dataset.sampling import DynamicCutSampler, RoundRobinSampler
 from lhotse.utils import fastcopy
 
 
@@ -132,15 +132,17 @@ def create_sampler(
 
     buckets = [CutSet.from_cuts(cuts) for cuts in buckets.values()]
 
-    # Mux the cuts in each bucket. This means that all the speaker-wise cut-sets will
-    # be multiplexed together at iteration time.
-    muxed_cuts = CutSet.mux(*buckets)
+    # Create samplers for each bucket.
+    samplers = [
+        DynamicCutSampler(
+            cuts,
+            max_duration=max_duration,
+            max_cuts=max_cuts,
+            shuffle=True,
+            seed=seed,
+        )
+        for cuts in buckets
+    ]
 
-    # Create sampler.
-    return DynamicCutSampler(
-        muxed_cuts,
-        max_duration=max_duration,
-        max_cuts=max_cuts,
-        shuffle=True,
-        seed=seed,
-    )
+    # Combine samplers into a round-robin sampler.
+    return RoundRobinSampler(*samplers, randomize=True, seed=seed)

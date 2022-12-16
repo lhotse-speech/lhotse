@@ -1,8 +1,8 @@
 import logging
+from collections import defaultdict
 from typing import List, Optional, Union
 
 import numpy as np
-from torch.utils.data import DataLoader
 from tqdm import tqdm
 
 from lhotse import RecordingSet, SupervisionSet
@@ -87,7 +87,7 @@ class SpeakerIndependentMeetingSimulator(BaseMeetingSimulator):
         print(f"Learned parameters: loc={self.loc:.2f}, scale={self.scale:.2f}")
 
     def _create_mixture(
-        self, utterances: List[List[MonoCut]], silence_durations: List[np.array]
+        self, utterances: List[CutSet], silence_durations: List[np.array]
     ) -> MixedCut:
         """
         Create a MixedCut object from a list of speaker-wise MonoCuts and silence intervals.
@@ -98,6 +98,8 @@ class SpeakerIndependentMeetingSimulator(BaseMeetingSimulator):
         for i, (spk_utterances, spk_silences) in enumerate(
             zip(utterances, silence_durations)
         ):
+            # Get list of cuts from CutSet
+            spk_utterances = list(spk_utterances.data.values())
             track = spk_utterances[0]
             for sil, utt in zip(spk_silences[1:], spk_utterances[1:]):
                 track = mix(track, utt, offset=track.duration + sil, allow_padding=True)
@@ -140,6 +142,9 @@ class SpeakerIndependentMeetingSimulator(BaseMeetingSimulator):
         if num_meetings is None and num_repeats is None:
             raise ValueError("Either num_meetings or num_repeats must be provided.")
 
+        if num_meetings is not None:
+            num_repeats = None
+
         if isinstance(num_speakers_per_meeting, int):
             num_speakers_per_meeting = [num_speakers_per_meeting]
 
@@ -148,11 +153,22 @@ class SpeakerIndependentMeetingSimulator(BaseMeetingSimulator):
                 num_speakers_per_meeting
             )
 
+        # Some basic checks
+        assert all(n > 1 for n in num_speakers_per_meeting), (
+            "The number of speakers per meeting must be greater than 1. "
+            f"Got: {num_speakers_per_meeting}"
+        )
+        assert all(p > 0.0 for p in speaker_count_probs), (
+            "The probabilities of the number of speakers per meeting must be greater than 0. "
+            f"Got: {speaker_count_probs}"
+        )
+        assert sum(speaker_count_probs) == 1.0, (
+            "The probabilities of the number of speakers per meeting must sum to 1. "
+            f"Got: {speaker_count_probs}"
+        )
         assert len(num_speakers_per_meeting) == len(
             speaker_count_probs
         ), "The number of speakers per meeting and the number of probabilities must be the same."
-
-        # Make sure there are only MonoCuts in the CutSet.
         assert len(cuts) == len(cuts.simple_cuts), "Only MonoCuts are supported."
 
         cuts = cuts.repeat(times=num_repeats)
@@ -184,19 +200,26 @@ class SpeakerIndependentMeetingSimulator(BaseMeetingSimulator):
             num_speakers = npr.choice(num_speakers_per_meeting, p=speaker_count_probs)
 
             # Sample from the sampler to get 1 batch per desired number of speakers.
-            utterances = []
+            utterances = CutSet.from_cuts([])
             finished = False
-            for _ in range(num_speakers):
+            while len(utterances.speakers) < num_speakers:
                 try:
-                    this_batch = next(sampler_iter).data
+                    this_batch = next(sampler_iter)
                 except StopIteration:
                     # If we run out of data, finish simulation.
                     finished = True
                     break
-                utterances.append(list(this_batch.values()))
+                utterances += this_batch
 
             if finished:
                 break
+
+            # Group the cuts by speaker.
+            utts_by_speaker = defaultdict(list)
+            for utt in utterances:
+                utts_by_speaker[utt.supervisions[0].speaker].append(utt)
+
+            utterances = [CutSet.from_cuts(cuts) for cuts in utts_by_speaker.values()]
 
             # Sample the silence durations between utterances for each speaker.
             silence_durations = [
