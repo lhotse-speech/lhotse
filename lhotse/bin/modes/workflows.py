@@ -56,6 +56,11 @@ def workflows():
     "-d", "--device", default="cpu", help="Device on which to run the inference."
 )
 @click.option("-j", "--jobs", default=1, help="Number of jobs for audio scanning.")
+@click.option(
+    "--force-nonoverlapping/--keep-overlapping",
+    default=False,
+    help="If True, the Whisper segment time-stamps will be processed to make sure they are non-overlapping.",
+)
 def annotate_with_whisper(
     out_cuts: str,
     recordings_manifest: Optional[str],
@@ -66,6 +71,7 @@ def annotate_with_whisper(
     language: Optional[str],
     device: str,
     jobs: int,
+    force_nonoverlapping: bool,
 ):
     """
     Use OpenAI Whisper model to annotate either RECORDINGS_MANIFEST, RECORDINGS_DIR, or CUTS_MANIFEST.
@@ -100,6 +106,7 @@ def annotate_with_whisper(
                 language=language,
                 model_name=model_name,
                 device=device,
+                force_nonoverlapping=force_nonoverlapping,
             ),
             total=len(manifest),
             desc="Annotating with Whisper",
