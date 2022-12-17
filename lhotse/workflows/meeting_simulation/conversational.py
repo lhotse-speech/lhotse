@@ -1,6 +1,4 @@
-import itertools
 import logging
-import random
 from collections import defaultdict
 from typing import Any, List, Optional, Union
 
@@ -64,10 +62,10 @@ class ConversationalMeetingSimulator(BaseMeetingSimulator):
     def __repr__(self) -> str:
         return (
             f"{self.__class__.__name__} "
-            f"(same_spk_pause={self.same_spk_pause}, "
-            f"diff_spk_pause={self.diff_spk_pause}, "
-            f"diff_spk_overlap={self.diff_spk_overlap}), "
-            f"prob_diff_spk_overlap={self.prob_diff_spk_overlap})"
+            f"(same_spk_pause={self.same_spk_pause:.2f}, "
+            f"diff_spk_pause={self.diff_spk_pause:.2f}, "
+            f"diff_spk_overlap={self.diff_spk_overlap:.2f}), "
+            f"prob_diff_spk_overlap={self.prob_diff_spk_overlap:.2f})"
         )
 
     def _init_defaults(self):
@@ -156,6 +154,11 @@ class ConversationalMeetingSimulator(BaseMeetingSimulator):
             if (len(diff_spk_pause_values) + len(diff_spk_overlap_values)) > 0
             else 0.5
         )
+
+        # Update the parameters.
+        self.same_spk_pause = self.same_spk_pause_dist.mean()
+        self.diff_spk_pause = self.diff_spk_pause_dist.mean()
+        self.diff_spk_overlap = self.diff_spk_overlap_dist.mean()
 
         print(f"Learned parameters: {self}")
 
@@ -321,7 +324,6 @@ class ConversationalMeetingSimulator(BaseMeetingSimulator):
         sampler_iter = iter(sampler)
 
         # Create random number generators with the given seed.
-        rand = random.Random(seed)
         npr = np.random.RandomState(seed)
 
         self.bernoulli = bernoulli

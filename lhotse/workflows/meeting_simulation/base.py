@@ -45,17 +45,17 @@ class BaseMeetingSimulator(abc.ABC):
     """
 
     def __init__(self):
-        pass
-
-    def __repr__(self):
-        return f"{self.__class__.__name__}()"
+        if isinstance(self, BaseMeetingSimulator):
+            raise TypeError(
+                "BaseMeetingSimulator is an abstract class and cannot be instantiated."
+            )
 
     @abc.abstractmethod
     def fit(self, meetings: Optional[SupervisionSet] = None) -> None:
         """
         Learn the distribution of the meeting parameters from a given dataset.
         """
-        raise NotImplementedError
+        ...
 
     @abc.abstractmethod
     def simulate(
@@ -67,14 +67,14 @@ class BaseMeetingSimulator(abc.ABC):
         """
         Simulate the desired number of multi-speaker meetings.
         """
-        raise NotImplementedError
+        ...
 
     @abc.abstractmethod
     def reverberate(self, cuts: CutSet, *rirs: RecordingSet) -> CutSet:
         """
         Apply a reverberation effect to each track.
         """
-        raise NotImplementedError
+        ...
 
 
 def reverberate_cuts(cuts: CutSet, *rirs: RecordingSet) -> CutSet:
