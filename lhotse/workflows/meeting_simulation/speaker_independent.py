@@ -173,11 +173,10 @@ class SpeakerIndependentMeetingSimulator(BaseMeetingSimulator):
             isinstance(cut, MonoCut) for cut in cuts
         ), "Only MonoCuts are supported."
 
-        cuts = cuts.repeat(times=num_repeats)
-
         # Create cuts sampler
         sampler = create_sampler(
             cuts,
+            num_repeats=num_repeats,
             max_duration=max_duration_per_speaker,
             max_cuts=max_utterances_per_speaker,
             seed=seed,
@@ -189,17 +188,18 @@ class SpeakerIndependentMeetingSimulator(BaseMeetingSimulator):
         npr = np.random.RandomState(seed)
 
         mixtures = []
+        N = len(cuts.speakers)
 
         pbar = tqdm(total=num_meetings)
         while True:
-            pbar.update(1)
-
             # If the number of meetings is provided, stop when we reach that number.
             if num_meetings is not None and len(mixtures) >= num_meetings:
                 break
 
             # Sample the number of speakers for this meeting.
-            num_speakers = npr.choice(num_speakers_per_meeting, p=speaker_count_probs)
+            num_speakers = min(
+                npr.choice(num_speakers_per_meeting, p=speaker_count_probs), N
+            )
 
             # Sample from the sampler to get 1 batch per desired number of speakers.
             utterances = CutSet.from_cuts([])
@@ -233,6 +233,7 @@ class SpeakerIndependentMeetingSimulator(BaseMeetingSimulator):
             mixture = self._create_mixture(utterances, silence_durations)
 
             mixtures.append(mixture)
+            pbar.update(1)
 
         return CutSet.from_cuts(mixtures)
 

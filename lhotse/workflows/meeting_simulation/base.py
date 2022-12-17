@@ -111,7 +111,11 @@ def reverberate_cuts(cuts: CutSet, *rirs: RecordingSet) -> CutSet:
 
 
 def create_sampler(
-    cuts: CutSet, max_duration: float = None, max_cuts: int = None, seed: int = 0
+    cuts: CutSet,
+    num_repeats: Optional[int] = None,
+    max_duration: float = None,
+    max_cuts: int = None,
+    seed: int = 0,
 ) -> DynamicCutSampler:
     """
     Create a sampler that will be used to sample cuts from the input CutSet. The cuts
@@ -120,6 +124,8 @@ def create_sampler(
     sample cuts from each bucket in a round-robin fashion.
 
     :param cuts: a CutSet containing MonoCut objects.
+    :param num_repeats: the number of times each cut will be repeated (by default, they
+        are repeated infinitely).
     :param max_duration: the maximum duration of the cuts in each batch.
     :param max_cuts: the maximum number of cuts in each batch.
     :param seed: the random seed.
@@ -135,7 +141,7 @@ def create_sampler(
     # Create samplers for each bucket.
     samplers = [
         DynamicCutSampler(
-            cuts,
+            cuts.repeat(times=num_repeats),
             max_duration=max_duration,
             max_cuts=max_cuts,
             shuffle=True,

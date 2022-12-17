@@ -37,9 +37,10 @@ class ConversationalMeetingSimulator(BaseMeetingSimulator):
 
     def __init__(
         self,
-        same_spk_pause: float = 2.0,
-        diff_spk_pause: float = 3.0,
+        same_spk_pause: float = 1.0,
+        diff_spk_pause: float = 1.0,
         diff_spk_overlap: float = 2.0,
+        prob_diff_spk_overlap: float = 0.5,
     ):
         """
         :param same_spk_pause: the mean pause duration between utterances of the same
@@ -48,6 +49,8 @@ class ConversationalMeetingSimulator(BaseMeetingSimulator):
             speakers. [Default: 3.0]
         :param diff_spk_overlap: the mean overlap duration between utterances of
             different speakers. [Default: 2.0]
+        :param prob_diff_spk_overlap: the probability of overlap between utterances of
+            different speakers. [Default: 0.5]
         """
         super().__init__()
         for duration in [same_spk_pause, diff_spk_pause, diff_spk_overlap]:
@@ -56,17 +59,19 @@ class ConversationalMeetingSimulator(BaseMeetingSimulator):
         self.same_spk_pause = same_spk_pause
         self.diff_spk_pause = diff_spk_pause
         self.diff_spk_overlap = diff_spk_overlap
+        self.prob_diff_spk_overlap = prob_diff_spk_overlap
 
     def __repr__(self) -> str:
         return (
             f"{self.__class__.__name__} "
             f"(same_spk_pause={self.same_spk_pause}, "
             f"diff_spk_pause={self.diff_spk_pause}, "
-            f"diff_spk_overlap={self.diff_spk_overlap})"
+            f"diff_spk_overlap={self.diff_spk_overlap}), "
+            f"prob_diff_spk_overlap={self.prob_diff_spk_overlap})"
         )
 
     def _init_defaults(self):
-        from scipy.stats import gamma
+        from scipy.stats import bernoulli, gamma
 
         self.same_spk_pause_dist = gamma(a=1.0, scale=1.0, loc=self.same_spk_pause)
         self.diff_spk_pause_dist = gamma(a=1.0, scale=1.0, loc=self.diff_spk_pause)
@@ -145,6 +150,12 @@ class ConversationalMeetingSimulator(BaseMeetingSimulator):
         self.diff_spk_overlap_dist = self._compute_histogram_dist(
             np.array(diff_spk_overlap_values)
         )
+        self.prob_diff_spk_overlap = (
+            len(diff_spk_overlap_values)
+            / (len(diff_spk_pause_values) + len(diff_spk_overlap_values))
+            if (len(diff_spk_pause_values) + len(diff_spk_overlap_values)) > 0
+            else 0.5
+        )
 
         print(f"Learned parameters: {self}")
 
@@ -171,7 +182,7 @@ class ConversationalMeetingSimulator(BaseMeetingSimulator):
         same_spk_pauses = self.same_spk_pause_dist.rvs(size=N)
         diff_spk_pauses = self.diff_spk_pause_dist.rvs(size=N)
         diff_spk_overlaps = self.diff_spk_overlap_dist.rvs(size=N)
-        diff_spk_bernoulli = self.bernoulli.rvs(p=0.5, size=N)
+        diff_spk_bernoulli = self.bernoulli.rvs(p=self.prob_diff_spk_overlap, size=N)
 
         utterances = list(utterances.data.values())
         # First sample offsets for each utterance. These are w.r.t. start of the meeting.
@@ -184,7 +195,7 @@ class ConversationalMeetingSimulator(BaseMeetingSimulator):
             if cur_spk == prev_spk:
                 ot = same_spk_pauses[i]
             else:
-                if diff_spk_bernoulli[i] == 1:
+                if diff_spk_bernoulli[i] == 0:
                     # No overlap between speakers.
                     ot = diff_spk_pauses[i]
                 else:
@@ -298,11 +309,10 @@ class ConversationalMeetingSimulator(BaseMeetingSimulator):
         if getattr(self, "same_spk_pause_dist", None) is None:
             self._init_defaults()
 
-        cuts = cuts.repeat(times=num_repeats)
-
         # Create cuts sampler
         sampler = create_sampler(
             cuts,
+            num_repeats=num_repeats,
             max_duration=max_duration_per_speaker,
             max_cuts=max_utterances_per_speaker,
             seed=seed,
@@ -317,17 +327,18 @@ class ConversationalMeetingSimulator(BaseMeetingSimulator):
         self.bernoulli = bernoulli
 
         mixtures = []
+        N = len(cuts.speakers)
 
         pbar = tqdm(total=num_meetings)
         while True:
-            pbar.update(1)
-
             # If the number of meetings is provided, stop when we reach that number.
             if num_meetings is not None and len(mixtures) >= num_meetings:
                 break
 
             # Sample the number of speakers for this meeting.
-            num_speakers = npr.choice(num_speakers_per_meeting, p=speaker_count_probs)
+            num_speakers = min(
+                npr.choice(num_speakers_per_meeting, p=speaker_count_probs), N
+            )
 
             # Sample from the sampler to get 1 batch per desired number of speakers.
             utterances = CutSet.from_cuts([])
@@ -353,6 +364,7 @@ class ConversationalMeetingSimulator(BaseMeetingSimulator):
             )
 
             mixtures.append(mixture)
+            pbar.update(1)
 
         return CutSet.from_cuts(mixtures)
 

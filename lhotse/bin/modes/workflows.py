@@ -186,6 +186,54 @@ def align_with_torchaudio(
     "conversational - the speakers are simulated as a group, "
     "using overall silence/overlap statistics.",
 )
+# Options used with the "independent" method
+@click.option(
+    "--loc",
+    type=float,
+    default=0.0,
+    help="The minimum silence duration between two consecutive utterances from the same speaker.",
+    show_default=True,
+)
+@click.option(
+    "--scale",
+    type=float,
+    default=2.0,
+    help="The scale parameter of the exponential distribution used to sample the silence "
+    "duration between two consecutive utterances from a speaker.",
+    show_default=True,
+)
+# Options used with the "conversational" method
+
+
+@click.option(
+    "--same-spk-pause",
+    type=float,
+    default=1.0,
+    help="The mean pause duration between utterances of the same speaker",
+    show_default=True,
+)
+@click.option(
+    "--diff-spk-pause",
+    type=float,
+    default=1.0,
+    help="The mean pause duration between utterances of different speakers",
+    show_default=True,
+)
+@click.option(
+    "--diff-spk-overlap",
+    type=float,
+    default=2.0,
+    help="The mean overlap duration between utterances of different speakers",
+    show_default=True,
+)
+@click.option(
+    "--prob-diff-spk-overlap",
+    type=float,
+    default=0.5,
+    help="The probability of overlap between utterances of different speakers",
+    show_default=True,
+)
+# Common options
 @click.option(
     "--fit-to-supervisions",
     "-f",
@@ -269,6 +317,12 @@ def simulate_meetings(
     in_cuts: str,
     out_cuts: str,
     method: str,
+    loc: float,
+    scale: float,
+    same_spk_pause: float,
+    diff_spk_pause: float,
+    diff_spk_overlap: float,
+    prob_diff_spk_overlap: float,
     fit_to_supervisions: Optional[str],
     reverberate: bool,
     rir_recordings: Optional[str],
@@ -302,19 +356,25 @@ def simulate_meetings(
     """
     if method == "independent":
         from lhotse.workflows.meeting_simulation import (
-            SpeakerIndependentMeetingSimulator as MeetingSimulator,
+            SpeakerIndependentMeetingSimulator,
         )
+
+        simulator = SpeakerIndependentMeetingSimulator(loc=loc, scale=scale)
 
         # Remove options that are not relevant for the independent method.
         kwargs.pop("allow_3fold_overlap")
     elif method == "conversational":
-        from lhotse.workflows.meeting_simulation import (
-            ConversationalMeetingSimulator as MeetingSimulator,
+        from lhotse.workflows.meeting_simulation import ConversationalMeetingSimulator
+
+        simulator = ConversationalMeetingSimulator(
+            same_spk_pause=same_spk_pause,
+            diff_spk_pause=diff_spk_pause,
+            diff_spk_overlap=diff_spk_overlap,
+            prob_diff_spk_overlap=prob_diff_spk_overlap,
         )
     else:
         raise ValueError(f"Unknown meeting simulation method: {method}")
 
-    simulator = MeetingSimulator()
     if fit_to_supervisions is not None:
         print("Fitting the meeting simulator to the provided supervisions...")
         sups = load_manifest_lazy_or_eager(
