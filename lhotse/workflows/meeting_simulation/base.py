@@ -9,7 +9,7 @@ from typing import Optional
 from lhotse import RecordingSet, SupervisionSet
 from lhotse.cut import CutSet
 from lhotse.dataset.sampling import DynamicCutSampler, RoundRobinSampler
-from lhotse.utils import fastcopy
+from lhotse.utils import fastcopy, is_module_available
 
 
 class BaseMeetingSimulator(abc.ABC):
@@ -49,6 +49,9 @@ class BaseMeetingSimulator(abc.ABC):
             raise TypeError(
                 "BaseMeetingSimulator is an abstract base class and should not be instantiated."
             )
+
+        if not is_module_available("scipy"):
+            raise ImportError("Please 'pip install scipy' first.")
 
     def __repr__(self) -> str:
         return f"{type(self).__name__}()"
