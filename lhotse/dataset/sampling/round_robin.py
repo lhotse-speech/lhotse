@@ -141,6 +141,7 @@ class RoundRobinSampler(CutSampler):
             handled in ``__iter__`` to make it avoid resetting the just-restored state (only once).
         """
         self.stop_early = state_dict.pop("stop_early")
+        self.randomize = state_dict.pop("randomize")
         self._cur_sampler_idx = state_dict.pop("_cur_sampler_idx")
         self._nondepleted_samplers_indices = state_dict.pop(
             "_nondepleted_samplers_indices"
@@ -186,10 +187,11 @@ class RoundRobinSampler(CutSampler):
     def _set_next_idx(self) -> None:
         if self.randomize and len(self._nondepleted_samplers_indices) > 1:
             self._cur_sampler_idx = self.rng.choice(
-                list(
-                    set(range(len(self._nondepleted_samplers_indices)))
-                    - set([self._cur_sampler_idx])
-                )
+                [
+                    i
+                    for i in range(len(self._nondepleted_samplers_indices))
+                    if i != self._cur_sampler_idx
+                ]
             )
         else:
             self._cur_sampler_idx = (self._cur_sampler_idx + 1) % len(

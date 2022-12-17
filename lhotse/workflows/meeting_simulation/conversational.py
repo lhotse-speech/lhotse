@@ -290,7 +290,9 @@ class ConversationalMeetingSimulator(BaseMeetingSimulator):
         assert len(num_speakers_per_meeting) == len(
             speaker_count_probs
         ), "The number of speakers per meeting and the number of probabilities must be the same."
-        assert len(cuts) == len(cuts.simple_cuts), "Only MonoCuts are supported."
+        assert all(
+            isinstance(cut, MonoCut) for cut in cuts
+        ), "Only MonoCuts are supported."
 
         # Initialize default distributions if not provided.
         if getattr(self, "same_spk_pause_dist", None) is None:
