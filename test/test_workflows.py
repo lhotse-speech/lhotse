@@ -1,7 +1,7 @@
 from typing import Optional
 
 import pytest
-from hypothesis import Verbosity, given, settings
+from hypothesis import given, settings
 from hypothesis import strategies as st
 
 from lhotse import CutSet
@@ -10,6 +10,8 @@ from lhotse.workflows.meeting_simulation import (
     ConversationalMeetingSimulator,
     SpeakerIndependentMeetingSimulator,
 )
+
+scipy = pytest.importorskip("scipy", reason="These tests require scipy package to run.")
 
 
 @pytest.fixture(scope="module")
