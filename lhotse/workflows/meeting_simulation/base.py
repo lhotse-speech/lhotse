@@ -45,10 +45,13 @@ class BaseMeetingSimulator(abc.ABC):
     """
 
     def __init__(self):
-        if isinstance(self, BaseMeetingSimulator):
+        if type(self) is BaseMeetingSimulator:
             raise TypeError(
-                "BaseMeetingSimulator is an abstract class and cannot be instantiated."
+                "BaseMeetingSimulator is an abstract base class and should not be instantiated."
             )
+
+    def __repr__(self) -> str:
+        return f"{type(self).__name__}()"
 
     @abc.abstractmethod
     def fit(self, meetings: Optional[SupervisionSet] = None) -> None:
