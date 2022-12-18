@@ -4,7 +4,7 @@ import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
-from lhotse import CutSet
+from lhotse import CutSet, SupervisionSet
 from lhotse.workflows.meeting_simulation import (
     BaseMeetingSimulator,
     ConversationalMeetingSimulator,
@@ -21,9 +21,15 @@ def cuts():
     return (libri_cuts + ami_cuts).cut_into_windows(duration=3.0).to_eager()
 
 
-@settings(deadline=None, print_blob=True, max_examples=100)
+@pytest.fixture(scope="module")
+def sups():
+    return SupervisionSet.from_file("test/fixtures/ami/ES2011a_sups.jsonl.gz")
+
+
+@settings(deadline=None, print_blob=True, max_examples=50)
 @given(
     method=st.one_of([st.just(m) for m in ["independent", "conversational"]]),
+    fit_to_supervisions=st.booleans(),
     num_meetings=st.integers(min_value=0, max_value=10),
     num_repeats=st.integers(min_value=1, max_value=5),
     num_speakers_per_meeting=st.integers(min_value=2, max_value=4),
@@ -34,7 +40,9 @@ def cuts():
 )
 def test_simulate_meetings(
     cuts: CutSet,
+    sups: SupervisionSet,
     method: str,
+    fit_to_supervisions: bool,
     num_meetings: Optional[int],
     num_repeats: int,
     num_speakers_per_meeting: int,
@@ -49,6 +57,9 @@ def test_simulate_meetings(
         simulator = ConversationalMeetingSimulator()
     else:
         raise ValueError(f"Unknown method: {method}")
+
+    if fit_to_supervisions:
+        simulator.fit(sups)
 
     mixed_cuts = simulator.simulate(
         cuts,
