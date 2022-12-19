@@ -20,5 +20,4 @@ class TestMixZeroEnergyCuts(RandomCutTestCase):
         mixed = zero_cut.mix(rand_cut, snr=snr)
 
         mix_cut_samples = mixed.load_audio()
-        assert mix_cut_samples.shape[1] == sr
-        assert np.testing.assert_equal(rand_cut.load_audio(), mix_cut_samples)
+        np.testing.assert_equal(rand_cut.load_audio(), mix_cut_samples)
