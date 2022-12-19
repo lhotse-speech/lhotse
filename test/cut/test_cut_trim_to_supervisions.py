@@ -447,3 +447,16 @@ def test_cut_set_trim_to_alignments(mono_cut, num_jobs):
     cuts = mono_cut.trim_to_supervisions(keep_overlapping=False)
     cuts = cuts.trim_to_alignments("word", max_pause=0.2, num_jobs=num_jobs).to_eager()
     assert len(cuts) == 4
+
+
+@pytest.mark.parametrize(["max_pause", "expected"], [(0.1, 2), (1.5, 1)])
+def test_cut_trim_to_supervision_groups(mono_cut, max_pause, expected):
+    cuts = mono_cut.trim_to_supervision_groups(max_pause=max_pause).to_eager()
+    assert len(cuts) == expected
+
+
+@pytest.mark.parametrize("num_jobs", [1, 2])
+def test_cut_set_trim_to_supervision_groups(mono_cut, num_jobs):
+    cuts = mono_cut.trim_to_supervisions(keep_overlapping=False)
+    cuts = cuts.trim_to_supervision_groups(max_pause=0.1, num_jobs=num_jobs).to_eager()
+    assert len(cuts) == 3
