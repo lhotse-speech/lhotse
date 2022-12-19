@@ -1,6 +1,6 @@
+import numpy as np
 import pytest
 
-import numpy as np
 from lhotse import CutSet
 from lhotse.dataset.collation import collate_audio
 from lhotse.testing.fixtures import RandomCutTestCase
@@ -14,8 +14,7 @@ class TestMixZeroEnergyCuts(RandomCutTestCase):
         zero_cut = self.with_cut(
             sampling_rate=sr, num_samples=sr, features=False, use_zeroes=True
         )
-        rand_cut = self.with_cut(
-            sampling_rate=sr, num_samples=sr, features=False)
+        rand_cut = self.with_cut(sampling_rate=sr, num_samples=sr, features=False)
 
         mixed = zero_cut.mix(rand_cut, snr=snr)
 
