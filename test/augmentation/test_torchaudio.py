@@ -23,6 +23,7 @@ from lhotse.augmentation import (
     speed,
     volume,
 )
+from lhotse.augmentation.utils import FastRandomRIRGenerator
 
 SAMPLING_RATE = 16000
 
@@ -227,11 +228,17 @@ def test_serialize_deserialize_transform_volume(mono_audio):
 
 
 @pytest.mark.parametrize("recording_to_dict", [True, False])
-def test_serialize_deserialize_transform_reverb(
-    mono_audio, mono_rir, recording_to_dict
-):
+def test_serialize_deserialize_transform_reverb(mono_rir, recording_to_dict):
     mono_rir = mono_rir.to_dict() if recording_to_dict else mono_rir
     reverb_orig = ReverbWithImpulseResponse(rir=mono_rir)
+    data_reverb = reverb_orig.to_dict()
+    reverb = ReverbWithImpulseResponse.from_dict(data_reverb)
+    assert reverb_orig == reverb
+
+
+def test_serialize_deserialize_transform_reverb_without_rir():
+    rir_generator = FastRandomRIRGenerator()
+    reverb_orig = ReverbWithImpulseResponse(rir_generator=rir_generator)
     data_reverb = reverb_orig.to_dict()
     reverb = ReverbWithImpulseResponse.from_dict(data_reverb)
     assert reverb_orig == reverb

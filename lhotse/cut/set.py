@@ -1128,6 +1128,64 @@ class CutSet(Serializable, AlgorithmMixin):
         )
         return result
 
+    def trim_to_alignments(
+        self,
+        type: str,
+        max_pause: Seconds = 0.0,
+        delimiter: str = " ",
+        keep_all_channels: bool = False,
+        num_jobs: int = 1,
+    ) -> "CutSet":
+        """
+        Return a new CutSet with Cuts that have identical spans as the alignments of
+        type `type`. An additional `max_pause` is allowed between the alignments to
+        merge contiguous alignment items.
+
+        For the case of a multi-channel cut with multiple alignments, we can either trim
+        while respecting the supervision channels (in which case output cut has the same channels
+        as the supervision) or ignore the channels (in which case output cut has the same channels
+        as the input cut).
+
+        :param type: The type of the alignment to trim to (e.g. "word").
+        :param max_pause: The maximum pause allowed between the alignments to merge them.
+        :param delimiter: The delimiter to use when concatenating the alignment items.
+        :param keep_all_channels: If ``True``, the output cut will have the same channels as the input cut. By default,
+            the trimmed cut will have the same channels as the supervision.
+        :param num_jobs: Number of parallel workers to process the cuts.
+        :return: a ``CutSet``.
+        """
+
+        if num_jobs == 1:
+            from lhotse.lazy import LazyFlattener, LazyMapper
+
+            return CutSet(
+                LazyFlattener(
+                    LazyMapper(
+                        self,
+                        partial(
+                            _trim_to_alignments_single,
+                            type=type,
+                            max_pause=max_pause,
+                            delimiter=delimiter,
+                            keep_all_channels=keep_all_channels,
+                        ),
+                    )
+                )
+            )
+
+        from lhotse.manipulation import split_parallelize_combine
+
+        result = split_parallelize_combine(
+            num_jobs,
+            self,
+            _trim_to_alignments_single,
+            type=type,
+            max_pause=max_pause,
+            delimiter=delimiter,
+            keep_all_channels=keep_all_channels,
+        )
+        return result
+
     def trim_to_unsupervised_segments(self) -> "CutSet":
         """
         Return a new CutSet with Cuts created from segments that have no supervisions (likely
@@ -1143,6 +1201,75 @@ class CutSet(Serializable, AlgorithmMixin):
             for span in segments:
                 cuts.append(cut.truncate(offset=span.start, duration=span.duration))
         return CutSet.from_cuts(cuts)
+
+    def trim_to_supervision_groups(
+        self,
+        max_pause: Optional[Seconds] = None,
+        num_jobs: int = 1,
+    ) -> "CutSet":
+        """
+        Return a new CutSet with Cuts based on supervision groups. A supervision group is
+        a set of supervisions with no gaps between them (or gaps shorter than ``max_pause``).
+        This is similar to the concept of an `utterance group` as described in this paper:
+        https://arxiv.org/abs/2211.00482
+
+        For example, the following cut::
+
+                                                Cut
+        ╔═════════════════════════════════════════════════════════════════════════════════╗
+        ║┌──────────────────────┐                              ┌────────┐                 ║
+        ║│ Hello this is John.  │                              │   Hi   │                 ║
+        ║└──────────────────────┘                              └────────┘                 ║
+        ║            ┌──────────────────────────────────┐            ┌───────────────────┐║
+        ║            │     Hey, John. How are you?      │            │  What do you do?  │║
+        ║            └──────────────────────────────────┘            └───────────────────┘║
+        ╚═════════════════════════════════════════════════════════════════════════════════╝
+
+        is transformed into two cuts::
+
+                            Cut 1                                       Cut 2
+        ╔════════════════════════════════════════════════╗    ╔═══════════════════════════╗
+        ║┌──────────────────────┐                        ║    ║┌────────┐                 ║
+        ║│ Hello this is John.  │                        ║    ║│   Hi   │                 ║
+        ║└──────────────────────┘                        ║    ║└────────┘                 ║
+        ║            ┌──────────────────────────────────┐║    ║      ┌───────────────────┐║
+        ║            │     Hey, John. How are you?      │║    ║      │  What do you do?  │║
+        ║            └──────────────────────────────────┘║    ║      └───────────────────┘║
+        ╚════════════════════════════════════════════════╝    ╚═══════════════════════════╝
+
+        For the case of a multi-channel cut with multiple supervisions, we keep all the channels
+        in the recording.
+
+        :param max_pause: An optional duration in seconds; if the gap between two supervisions
+            is longer than this, they will be treated as separate groups.
+        :param num_jobs: Number of parallel workers to process the cuts.
+        :return: a ``CutSet``.
+        """
+
+        if num_jobs == 1:
+            from lhotse.lazy import LazyFlattener, LazyMapper
+
+            return CutSet(
+                LazyFlattener(
+                    LazyMapper(
+                        self,
+                        partial(
+                            _trim_to_supervision_groups_single,
+                            max_pause=max_pause,
+                        ),
+                    )
+                )
+            )
+
+        from lhotse.manipulation import split_parallelize_combine
+
+        result = split_parallelize_combine(
+            num_jobs,
+            self,
+            _trim_to_supervision_groups_single,
+            max_pause=max_pause,
+        )
+        return result
 
     def combine_same_recording_channels(self) -> "CutSet":
         """
@@ -3083,6 +3210,30 @@ def _trim_to_supervisions_single(
         min_duration=min_duration,
         context_direction=context_direction,
         keep_all_channels=keep_all_channels,
+    ).to_eager()
+
+
+def _trim_to_alignments_single(
+    cuts: CutSet,
+    type,
+    max_pause,
+    delimiter,
+    keep_all_channels,
+) -> CutSet:
+    return cuts.trim_to_alignments(
+        type=type,
+        max_pause=max_pause,
+        delimiter=delimiter,
+        keep_all_channels=keep_all_channels,
+    ).to_eager()
+
+
+def _trim_to_supervision_groups_single(
+    cuts: CutSet,
+    max_pause: Seconds,
+) -> CutSet:
+    return cuts.trim_to_supervision_groups(
+        max_pause=max_pause,
     ).to_eager()
 
 
