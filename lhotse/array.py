@@ -89,7 +89,7 @@ class Array:
             return self  # nothing to do
 
         arr = self.load()
-        if issubclass(arr.dtype.type, np.float) and lilcom:
+        if np.issubdtype(arr.dtype, np.floating) and lilcom:
             writer = get_memory_writer("memory_lilcom")()
         else:
             writer = get_memory_writer("memory_raw")()
@@ -255,7 +255,7 @@ class TemporalArray:
             return self  # nothing to do
 
         arr = self.load(start=start, duration=duration)
-        if issubclass(arr.dtype.type, np.float) and lilcom:
+        if np.issubdtype(arr.dtype, np.floating) and lilcom:
             writer = get_memory_writer("memory_lilcom")()
         else:
             writer = get_memory_writer("memory_raw")()

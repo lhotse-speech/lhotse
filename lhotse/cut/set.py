@@ -1202,6 +1202,75 @@ class CutSet(Serializable, AlgorithmMixin):
                 cuts.append(cut.truncate(offset=span.start, duration=span.duration))
         return CutSet.from_cuts(cuts)
 
+    def trim_to_supervision_groups(
+        self,
+        max_pause: Optional[Seconds] = None,
+        num_jobs: int = 1,
+    ) -> "CutSet":
+        """
+        Return a new CutSet with Cuts based on supervision groups. A supervision group is
+        a set of supervisions with no gaps between them (or gaps shorter than ``max_pause``).
+        This is similar to the concept of an `utterance group` as described in this paper:
+        https://arxiv.org/abs/2211.00482
+
+        For example, the following cut::
+
+                                                Cut
+        ╔═════════════════════════════════════════════════════════════════════════════════╗
+        ║┌──────────────────────┐                              ┌────────┐                 ║
+        ║│ Hello this is John.  │                              │   Hi   │                 ║
+        ║└──────────────────────┘                              └────────┘                 ║
+        ║            ┌──────────────────────────────────┐            ┌───────────────────┐║
+        ║            │     Hey, John. How are you?      │            │  What do you do?  │║
+        ║            └──────────────────────────────────┘            └───────────────────┘║
+        ╚═════════════════════════════════════════════════════════════════════════════════╝
+
+        is transformed into two cuts::
+
+                            Cut 1                                       Cut 2
+        ╔════════════════════════════════════════════════╗    ╔═══════════════════════════╗
+        ║┌──────────────────────┐                        ║    ║┌────────┐                 ║
+        ║│ Hello this is John.  │                        ║    ║│   Hi   │                 ║
+        ║└──────────────────────┘                        ║    ║└────────┘                 ║
+        ║            ┌──────────────────────────────────┐║    ║      ┌───────────────────┐║
+        ║            │     Hey, John. How are you?      │║    ║      │  What do you do?  │║
+        ║            └──────────────────────────────────┘║    ║      └───────────────────┘║
+        ╚════════════════════════════════════════════════╝    ╚═══════════════════════════╝
+
+        For the case of a multi-channel cut with multiple supervisions, we keep all the channels
+        in the recording.
+
+        :param max_pause: An optional duration in seconds; if the gap between two supervisions
+            is longer than this, they will be treated as separate groups.
+        :param num_jobs: Number of parallel workers to process the cuts.
+        :return: a ``CutSet``.
+        """
+
+        if num_jobs == 1:
+            from lhotse.lazy import LazyFlattener, LazyMapper
+
+            return CutSet(
+                LazyFlattener(
+                    LazyMapper(
+                        self,
+                        partial(
+                            _trim_to_supervision_groups_single,
+                            max_pause=max_pause,
+                        ),
+                    )
+                )
+            )
+
+        from lhotse.manipulation import split_parallelize_combine
+
+        result = split_parallelize_combine(
+            num_jobs,
+            self,
+            _trim_to_supervision_groups_single,
+            max_pause=max_pause,
+        )
+        return result
+
     def combine_same_recording_channels(self) -> "CutSet":
         """
         Find cuts that come from the same recording and have matching start and end times, but
@@ -3156,6 +3225,15 @@ def _trim_to_alignments_single(
         max_pause=max_pause,
         delimiter=delimiter,
         keep_all_channels=keep_all_channels,
+    ).to_eager()
+
+
+def _trim_to_supervision_groups_single(
+    cuts: CutSet,
+    max_pause: Seconds,
+) -> CutSet:
+    return cuts.trim_to_supervision_groups(
+        max_pause=max_pause,
     ).to_eager()
 
 
