@@ -38,6 +38,8 @@ def read_manifests_if_cached(
     :param types: Which types of manifests are searched for (default: 'recordings' and 'supervisions').
     :return: A dict with manifest (``d[dataset_part]['recording'|'manifest']``) or ``None``.
     """
+    if isinstance(dataset_parts, str):
+        dataset_parts = [dataset_parts]
     if output_dir is None:
         return None
     if prefix and not prefix.endswith("_"):
