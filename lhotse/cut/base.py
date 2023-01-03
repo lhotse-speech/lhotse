@@ -602,6 +602,86 @@ class Cut:
             keep_all_channels=keep_all_channels,
         )
 
+    def trim_to_supervision_groups(
+        self,
+        max_pause: Seconds = 0.0,
+    ) -> "CutSet":  # noqa: F821
+        """
+        Return a new CutSet with Cuts based on supervision groups. A supervision group is
+        a set of supervisions with no gaps between them (or gaps shorter than ``max_pause``).
+        This is similar to the concept of an `utterance group` as described in this paper:
+        https://arxiv.org/abs/2211.00482
+
+        For example, the following cut::
+
+                                                Cut
+        ╔═════════════════════════════════════════════════════════════════════════════════╗
+        ║┌──────────────────────┐                              ┌────────┐                 ║
+        ║│ Hello this is John.  │                              │   Hi   │                 ║
+        ║└──────────────────────┘                              └────────┘                 ║
+        ║            ┌──────────────────────────────────┐            ┌───────────────────┐║
+        ║            │     Hey, John. How are you?      │            │  What do you do?  │║
+        ║            └──────────────────────────────────┘            └───────────────────┘║
+        ╚═════════════════════════════════════════════════════════════════════════════════╝
+
+        is transformed into two cuts::
+
+                            Cut 1                                       Cut 2
+        ╔════════════════════════════════════════════════╗    ╔═══════════════════════════╗
+        ║┌──────────────────────┐                        ║    ║┌────────┐                 ║
+        ║│ Hello this is John.  │                        ║    ║│   Hi   │                 ║
+        ║└──────────────────────┘                        ║    ║└────────┘                 ║
+        ║            ┌──────────────────────────────────┐║    ║      ┌───────────────────┐║
+        ║            │     Hey, John. How are you?      │║    ║      │  What do you do?  │║
+        ║            └──────────────────────────────────┘║    ║      └───────────────────┘║
+        ╚════════════════════════════════════════════════╝    ╚═══════════════════════════╝
+
+        For the case of a multi-channel cut with multiple supervisions, we keep all the channels
+        in the recording.
+
+        :param max_pause: An optional duration in seconds; if the gap between two supervisions
+            is longer than this, they will be treated as separate groups. By default, this is
+            set to 0.0, which means that no gaps are allowed between supervisions.
+        :param num_jobs: Number of parallel workers to process the cuts.
+        :return: a ``CutSet``.
+        """
+        from .set import CutSet
+
+        if not self.supervisions:
+            return self
+        supervisions = sorted(self.supervisions, key=lambda s: s.start)
+        supervision_group = [supervisions[0]]
+        cur_end = supervisions[0].end
+        new_cuts = []
+        for sup in supervisions[1:]:
+            if sup.start - cur_end <= max_pause:
+                supervision_group.append(sup)
+                cur_end = max(cur_end, sup.end)
+            else:
+                offset = supervision_group[0].start
+                duration = supervision_group[-1].end - offset
+                new_cuts.append(
+                    self.truncate(
+                        offset=offset,
+                        duration=duration,
+                        keep_excessive_supervisions=False,
+                    )
+                )
+                supervision_group = [sup]
+                cur_end = sup.end
+
+        # Add the last group.
+        offset = supervision_group[0].start
+        duration = supervision_group[-1].end - offset
+        new_cuts.append(
+            self.truncate(
+                offset=offset,
+                duration=duration,
+                keep_excessive_supervisions=False,
+            )
+        )
+        return CutSet.from_cuts(new_cuts)
+
     def cut_into_windows(
         self,
         duration: Seconds,

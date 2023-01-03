@@ -227,6 +227,34 @@ def trim_to_alignments(
 
 
 @cut.command()
+@click.argument("cuts", type=click.Path(exists=True, dir_okay=False, allow_dash=True))
+@click.argument("output_cuts", type=click.Path(allow_dash=True))
+@click.option(
+    "--max-pause",
+    type=float,
+    default=0.0,
+    help="Merge supervision groups separated by a pause shorter than this value",
+)
+def trim_to_supervision_groups(
+    cuts: Pathlike,
+    output_cuts: Pathlike,
+    max_pause: float,
+):
+    """
+    Return a new CutSet with Cuts that have identical spans as the supervision groups.
+    An additional `max_pause` is allowed to merge contiguous supervision groups.
+
+    A supervision group is defined as a set of supervisions that are overlapping or
+    separated by a pause shorter than `max_pause`.
+    """
+    cuts = CutSet.from_file(cuts)
+
+    with CutSet.open_writer(output_cuts) as writer:
+        for cut in cuts.trim_to_supervision_groups(max_pause=max_pause):
+            writer.write(cut)
+
+
+@cut.command()
 @click.argument("cut_manifests", nargs=-1, type=click.Path(exists=True, dir_okay=False))
 @click.argument("output_cut_manifest", type=click.Path())
 def mix_sequential(cut_manifests: List[Pathlike], output_cut_manifest: Pathlike):
@@ -358,7 +386,7 @@ def pad(
     is placed after the signal ends.
     """
     cut_set = CutSet.from_file(cut_manifest)
-    padded_cut_set = cut_set.pad(desired_duration=duration)
+    padded_cut_set = cut_set.pad(duration=duration)
     padded_cut_set.to_file(output_cut_manifest)
 
 
