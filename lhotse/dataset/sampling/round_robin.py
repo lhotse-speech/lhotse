@@ -1,7 +1,8 @@
-import random
 from functools import reduce
 from operator import add
-from typing import Any, Callable, Dict, Optional, Tuple, Union
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union
+
+import numpy as np
 
 from lhotse import CutSet
 from lhotse.cut import Cut
@@ -35,7 +36,7 @@ class RoundRobinSampler(CutSampler):
         self,
         *samplers: CutSampler,
         stop_early: bool = False,
-        randomize: bool = False,
+        randomize: Union[bool, List[float]] = False,
         seed: int = 0,
     ) -> None:
         """
@@ -46,17 +47,26 @@ class RoundRobinSampler(CutSampler):
             depleted.
             By default, we will keep iterating until all of the samplers are exhausted.
             This setting can be used to balance datasets of different sizes.
-        :param randomize: If True, select the next sampler randomly instead of in order.
+        :param randomize: Select the next sampler according to a distribution, instead of
+            in order. If a list of floats is provided, it must contain the same number of
+            elements as the number of samplers, and the values will be used as probabilities.
+            If ``True`` is provided, the probabilities will be uniform. If ``False`` is provided,
+            the samplers will be selected in order.
         :param seed: Random seed used to select the next sampler (only used if ``randomize`` is True)
         """
         super().__init__(rank=0, world_size=1)
         self.samplers = samplers
         self.stop_early = stop_early
-        self.randomize = randomize
         self.rng = None
 
         self._nondepleted_samplers_indices = list(range(len(self.samplers)))
         self._cur_sampler_idx = 0
+
+        if isinstance(randomize, list):
+            assert len(randomize) == len(self.samplers)
+        elif randomize == True:
+            randomize = [1.0 / len(self.samplers)] * len(self.samplers)
+        self.randomize = randomize
 
     @property
     def remaining_duration(self) -> Optional[float]:
@@ -155,7 +165,7 @@ class RoundRobinSampler(CutSampler):
         super().load_state_dict(state_dict)
 
     def __iter__(self):
-        self.rng = random.Random(self.seed + self.epoch)
+        self.rng = np.random.default_rng(seed=self.seed + self.epoch)
         for sampler in self.samplers:
             iter(sampler)
         if self._just_restored_state:
@@ -185,14 +195,16 @@ class RoundRobinSampler(CutSampler):
         return batch
 
     def _set_next_idx(self) -> None:
-        if self.randomize and len(self._nondepleted_samplers_indices) > 1:
-            self._cur_sampler_idx = self.rng.choice(
-                [
-                    i
-                    for i in range(len(self._nondepleted_samplers_indices))
-                    if i != self._cur_sampler_idx
-                ]
-            )
+        if self.randomize is not False and len(self._nondepleted_samplers_indices) > 1:
+            N = [
+                i
+                for i in range(len(self._nondepleted_samplers_indices))
+                if i != self._cur_sampler_idx
+            ]
+            p = [x for i, x in enumerate(self.randomize) if i != self._cur_sampler_idx]
+            # Normalize the probabilities
+            p = [x / sum(p) for x in p]
+            self._cur_sampler_idx = self.rng.choice(N, size=1, replace=False, p=p)[0]
         else:
             self._cur_sampler_idx = (self._cur_sampler_idx + 1) % len(
                 self._nondepleted_samplers_indices
