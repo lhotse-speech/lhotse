@@ -196,12 +196,8 @@ class RoundRobinSampler(CutSampler):
 
     def _set_next_idx(self) -> None:
         if self.randomize is not False and len(self._nondepleted_samplers_indices) > 1:
-            N = [
-                i
-                for i in range(len(self._nondepleted_samplers_indices))
-                if i != self._cur_sampler_idx
-            ]
-            p = [x for i, x in enumerate(self.randomize) if i != self._cur_sampler_idx]
+            N = range(len(self._nondepleted_samplers_indices))
+            p = [self.randomize[i] for i in self._nondepleted_samplers_indices]
             # Normalize the probabilities
             p = [x / sum(p) for x in p]
             self._cur_sampler_idx = self.rng.choice(N, size=1, replace=False, p=p)[0]
