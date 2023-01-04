@@ -197,12 +197,14 @@ webdataset_requires = ["webdataset==0.2.5"]
 dill_requires = ["dill"]
 h5py_requires = ["h5py"]
 kaldi_requires = ["kaldi_native_io", "kaldifeat"]
+workflow_requires = ["scipy"]
 dev_requires = sorted(
     docs_require
     + tests_require
     + orjson_requires
     + webdataset_requires
     + dill_requires
+    + workflow_requires
     + ["jupyterlab", "matplotlib"]
 )
 all_requires = sorted(dev_requires)

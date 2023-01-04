@@ -758,6 +758,7 @@ class Cut:
         encoding: Optional[str] = None,
         bits_per_sample: Optional[int] = None,
         augment_fn: Optional[AugmentFn] = None,
+        **kwargs,
     ) -> "Cut":
         """
         Store this cut's waveform as audio recording to disk.
@@ -774,12 +775,18 @@ class Cut:
             the start/end/duration times of the cut and its supervisions,
             you will end up with incorrect supervision information when using this API.
             E.g. for speed perturbation, use ``CutSet.perturb_speed()`` instead.
+        :param kwargs: additional arguments passed to ``Cut.load_audio()``. Example, if
+            saving a MixedCut, we can specify `mono_downmix=True` to downmix the tracks
+            to mono before saving.
         :return: a new Cut instance.
         """
         import torchaudio
 
         storage_path = Path(storage_path)
-        samples = self.load_audio()
+        samples = self.load_audio(**kwargs)
+        # TODO(@desh2608): Here, `samples` may be a list of arrays (for example, the case
+        # when cut is a MixedCut and we specify `mixed=False`). For such a case, we should
+        # save all tracks separately.
         if augment_fn is not None:
             samples = augment_fn(samples, self.sampling_rate)
 

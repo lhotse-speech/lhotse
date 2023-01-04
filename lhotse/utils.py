@@ -1,3 +1,4 @@
+import ast
 import functools
 import hashlib
 import inspect
@@ -28,6 +29,7 @@ from typing import (
     Union,
 )
 
+import click
 import numpy as np
 import torch
 from tqdm.auto import tqdm
@@ -976,3 +978,16 @@ class Pipe:
     def __exit__(self, etype, value, traceback):
         """Context handler."""
         self.close()
+
+
+# Class to accept list of arguments as Click option
+class PythonLiteralOption(click.Option):
+    def type_cast_value(self, ctx, value):
+        try:
+            val = ast.literal_eval(value)
+            if isinstance(val, list) or isinstance(val, tuple):
+                return val[0] if len(val) == 1 else val
+            else:
+                return val
+        except:
+            return None
