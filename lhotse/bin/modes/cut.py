@@ -386,7 +386,7 @@ def pad(
     is placed after the signal ends.
     """
     cut_set = CutSet.from_file(cut_manifest)
-    padded_cut_set = cut_set.pad(desired_duration=duration)
+    padded_cut_set = cut_set.pad(duration=duration)
     padded_cut_set.to_file(output_cut_manifest)
 
 
