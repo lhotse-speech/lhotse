@@ -31,24 +31,18 @@ sessions chosen for validation are listed in this script.
 This script does the following in sequence:-
 
 **MOVE**
+0. This stage is skipped if `--transcript-dir` is not provided.
 1. Copies each .sdb files from /SDB into its own directory in the designated
-  `trans_dir`, i.e. {trans_dir}/{spk_id}/{spk_id}.sdb
+  `transcript_dir`, i.e. {transcript_dir}/{spk_id}/{spk_id}.sdb
 2. Verifies that the corresponding wav file exists in the /WAV directory, and
    outputs that absolute path into {spk_id}-wav.list
 3. Moves the predefined datasets for eval1, eval2, eval3, and excluded, into
    its own dataset directory
-4. Touches a .done_mv in `trans_dir`.
-NOTE: If a .done_mv exists already in `trans_dir`, then this stage is skipped.
-
-**PARSE**
-1. Takes in an .ini file which - among others - contains the behaviour for each
-   tag and the segment details.
-2. Parses all .sdb files it can find within `trans_dir`, and optionally outputs
-   a segment file.
-3. Touches a .done in `trans_dir`.
+4. Touches a .done_mv in `transcript_dir`.
+NOTE: If a .done_mv exists already in `transcript_dir`, then this stage is skipped.
 
 **PREPARE MANIFESTS**
-1. Parses all .sdb files it can find within `trans_dir`.
+1. Parses all .sdb files it can find within `transcript_dir` in disfluent mode.
 2. Globs through all transcript files and generates supervisions and
    recordings manifests for each dataset part.
 
@@ -58,8 +52,12 @@ Differences to kaldi include:-
 2. A validation dataset is explicitly specified.
 3. Utterances with "×" are not removed. You will need to remove them in a
    later stage.
+4. Segments are not concatenated, unless an F-tag, D-tag, L-tag, or A-tag
+   spans between two segments.
+5. Multi-segment M-tags, R-tags, and O-tags are removed, while M-tags,
+   R-tags, and O-tags within a segment are retained.
 
-Structure of SupervisionSegment.custom:
+Example structure of SupervisionSegment.custom:-
 {
   "raw": (
       "(F_えー)+感動詞+(F_エー) (M_(F_うーん)+感動詞+(M_(F_(W_ウー;ウーン)) "
@@ -70,11 +68,14 @@ Structure of SupervisionSegment.custom:
   "disfluent": "えーうーんそれだったらというのはえー",
   "disfluent_tag": "F,F,M/F,M/F,M/F,M,M,M,M,M,M,,,,,,F,F"
 }
+NOTE:
+1. XX_tag is guaranteed to be the same length as XX. It labels the tag to which each
+   character belongs. It is useful for evaluation.
+2. The SupervisionSegment.text field is populated with 'disfluent', i.e.
+   SupervisionSegment.text == SupervisionSegment.custom['dislfuent'], so that this
+   supervision is compatible with other recipes.
 
-XX_tag is guaranteed to be the same length as XX. It labels the tag to which each
-character belongs. It is useful for evaluation.
-
-The transcript directory will have this structure:-
+The transcript directory, if generated, has this structure:-
 {transcript_dir}
  - excluded
    - ...
@@ -774,11 +775,10 @@ def read_one_sdb(sdb: Path) -> List[CSJSDBSegment]:
 
 def process_one_recording(
     segments: List[CSJSDBSegment],
-    wavlist_path: Path,
+    wav: Path,
     recording_id: str,
     parser: CSJSDBParser,
 ) -> Tuple[Recording, List[SupervisionSegment]]:
-    wav = wavlist_path.read_text()
     recording = Recording.from_file(wav, recording_id=recording_id)
 
     supervision_segments = []
@@ -809,13 +809,17 @@ def process_one_recording(
 
 def process_one(sdb: Path, parser: CSJSDBParser):
     segments = read_one_sdb(sdb)
-    (sdb.parent / f"{sdb.stem}-trans.txt").write_text(
-        "\n".join(s.to_line() for s in segments)
-    )
     spk = sdb.stem
-    wavlist = sdb.parent / (spk + "-wav.list")
-    assert wavlist.exists(), wavlist
-    return process_one_recording(segments, wavlist, spk, parser)
+    try:
+        wavfile = Path((sdb.parent / (spk + "-wav.list")).read_text())
+        (sdb.parent / f"{sdb.stem}-trans.txt").write_text(
+            "\n".join(s.to_line() for s in segments)
+        )
+    except FileNotFoundError:
+        part = sdb.parent.name
+        wavfile = sdb.parents[3] / (f"WAV/{part}/{spk}.wav")
+        assert wavfile.exists()
+    return process_one_recording(segments, wavfile, spk, parser)
 
 
 def prepare_manifests(
@@ -829,9 +833,7 @@ def prepare_manifests(
     When all the manifests are available in the ``output_dir``, it will
     simply read and return them.
 
-    :param transcript_dir: Path, the path to the transcripts.
-        Assumes that that the transcripts were processed by
-        csj_make_transcript.py.
+    :param transcript_dir: Path, the path to the .sdb transcripts.
     :param dataset_parts: string or sequence of strings representing
         dataset part names, e.g. 'eval1', 'core', 'eval2'. This defaults to the
         full dataset - core, noncore, eval1, eval2, and eval3.
@@ -847,6 +849,8 @@ def prepare_manifests(
         dataset_parts = FULL_DATA_PARTS
     elif isinstance(dataset_parts, str):
         dataset_parts = [dataset_parts]
+
+    glob_pattern = "*.sdb" if transcript_dir.name == "SDB" else "*/*.sdb"
 
     manifests = {}
 
@@ -868,7 +872,7 @@ def prepare_manifests(
             if manifests_exist(part=part, output_dir=manifest_dir, prefix="csj"):
                 logging.info(f"CSJ subset: {part} already prepared - skipping.")
                 continue
-            for sdb in transcript_dir.glob(f"{part}/*/*.sdb"):
+            for sdb in transcript_dir.glob(f"{part}/{glob_pattern}"):
                 futures.append(ex.submit(process_one, sdb, parser))
 
             recordings = []
@@ -899,18 +903,26 @@ def prepare_manifests(
 
 def prepare_csj(
     corpus_dir: Pathlike,
-    transcript_dir: Pathlike,
+    transcript_dir: Pathlike = None,
     manifest_dir: Pathlike = None,
     dataset_parts: Union[str, Sequence[str]] = None,
     nj: int = 16,
 ):
     corpus_dir = Path(corpus_dir)
     assert corpus_dir.is_dir()
-    transcript_dir = Path(transcript_dir)
-    transcript_dir.mkdir(parents=True, exist_ok=True)
-
-    logging.info("Creating transcript directories now.")
-    create_trans_dir(corpus_dir, transcript_dir)
+    if transcript_dir:
+        transcript_dir = Path(transcript_dir)
+        transcript_dir.mkdir(parents=True, exist_ok=True)
+        logging.info("Creating transcript directories now.")
+        create_trans_dir(corpus_dir, transcript_dir)
+    else:
+        transcript_dir = corpus_dir / "MORPH" / "SDB"
+        logging.info(
+            "Preparing manifests without saving transcripts. Only core and "
+            "noncore can be created. "
+        )
+        if not dataset_parts:
+            dataset_parts = ["core", "noncore"]
     return prepare_manifests(
         transcript_dir=transcript_dir,
         dataset_parts=dataset_parts,
