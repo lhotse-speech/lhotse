@@ -43,8 +43,7 @@ NOTE: If a .done_mv exists already in `transcript_dir`, then this stage is skipp
 
 **PREPARE MANIFESTS**
 1. Parses all .sdb files it can find within `transcript_dir` in disfluent mode.
-2. Globs through all transcript files and generates supervisions and
-   recordings manifests for each dataset part.
+2. Generates supervisions and recordings manifests for each dataset part.
 
 Differences to kaldi include:-
 1. The evaluation datasets do not follow `trans_dir`/eval/eval{i}, but are
@@ -96,9 +95,9 @@ The transcript directory, if generated, has this structure:-
    - ...
    - D03M0038
      - D03M0038.sdb
-     - D03M0038-L-tran.txt
+     - D03M0038-L-trans.txt
      - D03M0038-L-wav.list
-     - D03M0038-R-tran.txt
+     - D03M0038-R-trans.txt
      - D03M0038-R-wav.list
  - valid
      - ...
