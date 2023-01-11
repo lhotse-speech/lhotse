@@ -104,6 +104,7 @@ The transcript directory, if generated, has this structure:-
 
 """
 
+import copy
 import logging
 import re
 from collections import defaultdict
@@ -123,10 +124,10 @@ from lhotse.utils import Pathlike
 #    Prepare transcripts from SDB    #
 
 
-FULL_DATA_PARTS = ["eval1", "eval2", "eval3", "excluded", "valid", "core", "noncore"]
+_FULL_DATA_PARTS = ["eval1", "eval2", "eval3", "excluded", "valid", "core", "noncore"]
 
 # Exclude speaker ID
-A01M0056 = [
+_A01M0056 = [
     "S05M0613",
     "R00M0187",
     "D01M0019",
@@ -135,7 +136,7 @@ A01M0056 = [
     "D03M0017",
 ]
 
-VALID = [
+_VALID = [
     "A01M0264",
     "A01M0377",
     "A01M0776",
@@ -178,7 +179,7 @@ VALID = [
 ]
 
 # Evaluation set ID
-EVAL = [
+_EVAL = [
     # eval1
     [
         "A01M0110",
@@ -221,7 +222,7 @@ EVAL = [
 ]
 
 
-def create_trans_dir(corpus_dir: Path, trans_dir: Path):
+def _create_trans_dir(corpus_dir: Path, trans_dir: Path):
 
     if (trans_dir / ".done_mv").exists():
         logging.info(
@@ -271,7 +272,7 @@ def create_trans_dir(corpus_dir: Path, trans_dir: Path):
             assert wav.is_file(), f"{spk_id}.wav cannot be found"
             (new_dir / f"{spk_id}-wav.list").write_text(wav.as_posix(), encoding="utf8")
 
-    for ori_files in A01M0056:
+    for ori_files in _A01M0056:
         ori_files = list(trans_dir.glob(f"*/{ori_files}/{ori_files}*"))
 
         for ori_file in ori_files:
@@ -281,7 +282,7 @@ def create_trans_dir(corpus_dir: Path, trans_dir: Path):
             ori_file.rename(new_dir / filename)
         ori_files[0].parent.rmdir()
 
-    for i, eval_list in enumerate(EVAL, start=1):
+    for i, eval_list in enumerate(_EVAL, start=1):
         for ori_files in eval_list:
             ori_files = list(trans_dir.glob(f"*/{ori_files}/{ori_files}*"))
 
@@ -292,7 +293,7 @@ def create_trans_dir(corpus_dir: Path, trans_dir: Path):
                 ori_file.rename(new_dir / filename)
             ori_files[0].parent.rmdir()
 
-    for ori_files in VALID:
+    for ori_files in _VALID:
         ori_files = list(trans_dir.glob(f"*/{ori_files}/{ori_files}*"))
 
         for ori_file in ori_files:
@@ -309,7 +310,7 @@ def create_trans_dir(corpus_dir: Path, trans_dir: Path):
 # ----------------------------
 
 INTERNAL_SEP = " "
-FIELDS = {
+_FIELDS = {
     "time": 3,
     "surface": 5,
     "notag": 9,
@@ -323,9 +324,9 @@ FIELDS = {
     "spkid": 2,
 }
 
-MORPH = ["pos1", "cForm", "cType2", "pos2"]
+_MORPH = ["pos1", "cForm", "cType2", "pos2"]
 
-REPLACEMENTS = [
+_REPLACEMENTS = [
     "<FV>",
     "<VN>",
     "<H>",
@@ -364,27 +365,8 @@ DECISIONS = {
     "L": 0,
 }
 
-JPN_NUM = [
-    "ゼロ",
-    "０",
-    "零",
-    "一",
-    "二",
-    "三",
-    "四",
-    "五",
-    "六",
-    "七",
-    "八",
-    "九",
-    "十",
-    "百",
-    "千",
-    "．",
-]
 
-# @dataclass
-class CSJSDBWord:
+class _CSJSDBWord:
     time = ""
     surface = ""
     notag = ""
@@ -403,10 +385,10 @@ class CSJSDBWord:
 
     @staticmethod
     def from_line(line=""):
-        word = CSJSDBWord()
+        word = _CSJSDBWord()
         line = line.strip().split("\t")
 
-        for f, i in FIELDS.items():
+        for f, i in _FIELDS.items():
             try:
                 attr = line[i]
             except IndexError:
@@ -419,7 +401,7 @@ class CSJSDBWord:
                 word.pron = word.pron.replace(c, r)
                 word.surface = word.surface.replace(c, r)
 
-        for r in REPLACEMENTS:
+        for r in _REPLACEMENTS:
             word.pron = word.pron.replace(r, "")
             word.surface = word.surface.replace(r, "")
         word.pron = word.pron.replace(INTERNAL_SEP, "_")
@@ -432,7 +414,7 @@ class CSJSDBWord:
         word.surface = word.surface.rstrip("・")
 
         # Make morph
-        morph = [getattr(word, s) for s in MORPH]
+        morph = [getattr(word, s) for s in _MORPH]
         word.morph = "/".join(m for m in morph if m)
         for c in ["Ａ", "１", "２", "３", "４"]:
             word.morph = word.morph.replace(c, "")
@@ -453,7 +435,7 @@ class CSJSDBWord:
         return bool(self.surface or self.pron)
 
 
-class Transcript:
+class _Transcript:
     text: str = ""
     shape0: List[int]
     shape1: List[int]
@@ -496,15 +478,15 @@ class Transcript:
         return (self.shape0[pos], self.shape1[pos], self.shape2[pos] - adjust)
 
 
-class CSJSDBSegment:
+class _CSJSDBSegment:
     text: str
     start: float
     end: float
     sgid: str
 
     @staticmethod
-    def from_words(words: List[CSJSDBWord]):
-        ret = CSJSDBSegment()
+    def from_words(words: List[_CSJSDBWord]):
+        ret = _CSJSDBSegment()
         ret.text = INTERNAL_SEP.join(str(w) for w in words)
         ret.start = words[0].start
         ret.end = words[-1].end
@@ -522,7 +504,7 @@ class CSJSDBSegment:
 
     @staticmethod
     def from_line(line: str):
-        ret = CSJSDBSegment()
+        ret = _CSJSDBSegment()
         ret.sgid, ret.start, ret.end, text = line.strip().split("\t")
         ret.start = float(ret.start)
         ret.end = float(ret.end)
@@ -533,6 +515,24 @@ class CSJSDBSegment:
 class CSJSDBParser:
 
     tag_regex = re.compile(r"( )|([\x00-\x7F])")
+    JPN_NUM = [
+        "ゼロ",
+        "０",
+        "零",
+        "一",
+        "二",
+        "三",
+        "四",
+        "五",
+        "六",
+        "七",
+        "八",
+        "九",
+        "十",
+        "百",
+        "千",
+        "．",
+    ]
 
     def __default_preprocess(self, x: str):
         ret = []
@@ -593,7 +593,7 @@ class CSJSDBParser:
                 print(f"{open_bracket}, {i}, {choices}, {tag}, {text}")
                 return {"string": choices[-1], "end": i, "tag": choices_tag[-1]}
             elif c == ")":
-                if tag == "A" and choices[0] and choices[0][0] in JPN_NUM:
+                if tag == "A" and choices[0] and choices[0][0] in self.JPN_NUM:
                     tag = "A_num"
 
                 result, result_tag = self._decide(
@@ -645,8 +645,8 @@ class CSJSDBParser:
         raise NotImplementedError(f"Unknown tag {tag} encountered.")
 
 
-class CSJSDBTagSegment:
-    segments: List[List[CSJSDBWord]]
+class _CSJSDBTagSegment:
+    segments: List[List[_CSJSDBWord]]
     surface_open_brackets: Dict
     pron_open_brackets: Dict
 
@@ -655,17 +655,17 @@ class CSJSDBTagSegment:
         self.surface_open_brackets = {}
         self.pron_open_brackets = {}
 
-    def append(self, word: CSJSDBWord):
+    def append(self, word: _CSJSDBWord):
         if self.segments:
             self.segments[-1].append(word)
         else:
             self.segments = [[word]]
 
-    def flatten(self) -> CSJSDBSegment:
-        return CSJSDBSegment.from_words(words=[w for s in self.segments for w in s])
+    def flatten(self) -> _CSJSDBSegment:
+        return _CSJSDBSegment.from_words(words=[w for s in self.segments for w in s])
 
-    def split(self) -> List[CSJSDBSegment]:
-        return [CSJSDBSegment.from_words(words=s) for s in self.segments if s]
+    def split(self) -> List[_CSJSDBSegment]:
+        return [_CSJSDBSegment.from_words(words=s) for s in self.segments if s]
 
     def __getitem__(self, pos):
         return self.segments[pos]
@@ -703,19 +703,19 @@ class CSJSDBTagSegment:
         return bool(self.segments and self.segments[0])
 
 
-def read_one_sdb(sdb: Path) -> List[CSJSDBSegment]:
+def _read_one_sdb(sdb: Path) -> List[_CSJSDBSegment]:
     lines = sdb.read_text(encoding="shift_jis").split("\n")
     sgid = lines[0].split("\t")[3].split(" ")[0]
 
-    words_until_now = CSJSDBTagSegment()
-    segments: List[CSJSDBSegment] = []
+    words_until_now = _CSJSDBTagSegment()
+    segments: List[_CSJSDBSegment] = []
 
     for line in lines:
         if not line:
             # Last line is always empty
-            word = CSJSDBWord()
+            word = _CSJSDBWord()
         else:
-            word = CSJSDBWord.from_line(line)
+            word = _CSJSDBWord.from_line(line)
 
         if not word and line:
             continue
@@ -732,8 +732,8 @@ def read_one_sdb(sdb: Path) -> List[CSJSDBSegment]:
         elif not words_until_now:
             pass
         elif len(words_until_now.segments) > 1:
-            surface = Transcript(words_until_now, "surface")
-            pron = Transcript(words_until_now, "pron")
+            surface = _Transcript(words_until_now, "surface")
+            pron = _Transcript(words_until_now, "pron")
 
             for pos, linking_tag in words_until_now.pron_open_brackets.items():
                 if linking_tag in ["R", "M", "O"]:
@@ -762,18 +762,18 @@ def read_one_sdb(sdb: Path) -> List[CSJSDBSegment]:
                 segments.extend(words_until_now.split())
             else:
                 segments.append(words_until_now.flatten())
-            words_until_now = CSJSDBTagSegment()
+            words_until_now = _CSJSDBTagSegment()
         else:
             segments.append(words_until_now.flatten())
-            words_until_now = CSJSDBTagSegment()
+            words_until_now = _CSJSDBTagSegment()
 
         words_until_now.append(word)
 
     return segments
 
 
-def process_one_recording(
-    segments: List[CSJSDBSegment],
+def _process_one_recording(
+    segments: List[_CSJSDBSegment],
     wav: Path,
     recording_id: str,
     parser: CSJSDBParser,
@@ -806,8 +806,8 @@ def process_one_recording(
     return recording, supervision_segments
 
 
-def process_one(sdb: Path, parser: CSJSDBParser):
-    segments = read_one_sdb(sdb)
+def _process_one(sdb: Path, parser: CSJSDBParser):
+    segments = _read_one_sdb(sdb)
     spk = sdb.stem
     try:
         wavfile = Path((sdb.parent / (spk + "-wav.list")).read_text())
@@ -818,7 +818,7 @@ def process_one(sdb: Path, parser: CSJSDBParser):
         part = sdb.parent.name
         wavfile = sdb.parents[3] / (f"WAV/{part}/{spk}.wav")
         assert wavfile.exists()
-    return process_one_recording(segments, wavfile, spk, parser)
+    return _process_one_recording(segments, wavfile, spk, parser)
 
 
 def prepare_manifests(
@@ -845,7 +845,7 @@ def prepare_manifests(
         transcript_dir.is_dir()
     ), f"No such directory for transcript_dir: {transcript_dir}"
     if not dataset_parts:
-        dataset_parts = FULL_DATA_PARTS
+        dataset_parts = _FULL_DATA_PARTS
     elif isinstance(dataset_parts, str):
         dataset_parts = [dataset_parts]
 
@@ -872,7 +872,7 @@ def prepare_manifests(
                 logging.info(f"CSJ subset: {part} already prepared - skipping.")
                 continue
             for sdb in transcript_dir.glob(f"{part}/{glob_pattern}"):
-                futures.append(ex.submit(process_one, sdb, parser))
+                futures.append(ex.submit(_process_one, sdb, parser))
 
             recordings = []
             supervisions = []
@@ -913,7 +913,7 @@ def prepare_csj(
         transcript_dir = Path(transcript_dir)
         transcript_dir.mkdir(parents=True, exist_ok=True)
         logging.info("Creating transcript directories now.")
-        create_trans_dir(corpus_dir, transcript_dir)
+        _create_trans_dir(corpus_dir, transcript_dir)
     else:
         transcript_dir = corpus_dir / "MORPH" / "SDB"
         logging.info(
@@ -928,3 +928,68 @@ def prepare_csj(
         manifest_dir=manifest_dir,
         num_jobs=nj,
     )
+
+
+def concat_csj_supervisions(
+    supervisions: SupervisionSet,
+    gap: float,
+    maxlen: float,
+    max_extend_right=0.0,
+) -> SupervisionSet:
+    """Concatenates supervisions according to the permissible gap and maximum length
+    of an utterance. This function is not called in this script, but is provided as
+    a utility function for users to concatenate supervisions themselves.
+
+    Args:
+        supervisions (SupervisionSet): The list of `SupervisionSegments` to concatenate.
+        gap (float): Maximum length of permissible silence in an utterance.
+        maxlen (float): Maximum length of one utterance.
+        max_extend_right (float, optional): Since the immediate right context is silence,
+        optionally extends the supervision to include some silence on the right. Included
+        for endpointing training. Defaults to 0.0.
+
+    Returns:
+        SupervisionSet: Concatenated supervisions
+    """
+    grouped_supervisions = []
+    supervisions = copy.deepcopy(supervisions)
+    tmp_sp = []
+    for long_sp0 in supervisions:
+        if "×" in long_sp0.custom["raw"]:
+            if tmp_sp:
+                grouped_supervisions.append(tmp_sp)
+                tmp_sp = []
+        elif not tmp_sp:
+            tmp_sp.append(long_sp0)
+        elif long_sp0.speaker != tmp_sp[0].speaker:
+            grouped_supervisions.append(tmp_sp)
+            tmp_sp = [long_sp0]
+        elif (long_sp0.end - tmp_sp[0].start) >= maxlen:
+            grouped_supervisions.append(tmp_sp)
+            tmp_sp = [long_sp0]
+        elif (long_sp0.start - tmp_sp[-1].end) >= gap:
+            tmp_sp[-1].duration += min(
+                max_extend_right, long_sp0.start - tmp_sp[-1].end
+            )
+            grouped_supervisions.append(tmp_sp)
+            tmp_sp = [long_sp0]
+        else:
+            tmp_sp.append(long_sp0)
+    if tmp_sp:
+        grouped_supervisions.append(tmp_sp)
+    ret = []
+    for long_sp in grouped_supervisions:
+        long_sp0 = long_sp[0]
+        long_sp0.duration = long_sp[-1].end - long_sp0.start
+        for k in long_sp0.custom:
+            if k == "raw":
+                long_sp0.custom[k] = " ".join(sp.custom[k] for sp in long_sp)
+            elif "_tag" in k:
+                long_sp0.custom[k] = ",".join(sp.custom[k] for sp in long_sp)
+            else:
+                long_sp0.custom[k] = "".join(sp.custom[k] for sp in long_sp)
+        long_sp0.text = "".join(sp.text for sp in long_sp)
+
+        ret.append(long_sp0)
+
+    return SupervisionSet.from_segments(ret)
