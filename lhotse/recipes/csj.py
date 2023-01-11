@@ -550,7 +550,7 @@ class CSJSDBParser:
             self.preprocess = preprocess
 
     def parse(
-        self, text: str, sep=" ", with_tags=False
+        self, text: str, sep="", with_tags=False
     ) -> Union[str, List[Tuple[str, ...]]]:
         processed_text = self.preprocess(text)
         ret = self._parse(processed_text, -1)
