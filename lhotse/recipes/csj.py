@@ -597,7 +597,7 @@ class CSJSDBParser:
                     tag = "A_num"
 
                 result, result_tag = self._decide(
-                    tag, choices + [""], choices_tag + [[""]]
+                    tag, choices + [""], choices_tag + [[]]
                 )
                 return {"string": result, "end": i, "tag": result_tag}
 
@@ -619,7 +619,11 @@ class CSJSDBParser:
                 choices[-1] += c
                 choices_tag[-1].extend(t)
             i += 1
-        return {"string": choices[-1], "end": i, "tag": choices_tag[-1]}
+        return {
+            "string": choices[-1],
+            "end": i,
+            "tag": choices_tag[-1] if choices[-1] else [],
+        }
 
     def _decide(self, tag, choices, choices_tag) -> Tuple[str, List[str]]:
         assert len(choices) > 1
