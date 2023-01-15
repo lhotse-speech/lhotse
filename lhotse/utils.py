@@ -388,6 +388,19 @@ def compute_num_frames(
     return num_frames
 
 
+def compute_num_frames_from_samples(
+    num_samples: int,
+    frame_shift: Seconds,
+    sampling_rate: int,
+) -> int:
+    """
+    Compute the number of frames from number of samples and frame_shift in a safe way.
+    """
+    window_hop = round(frame_shift * sampling_rate)
+    num_frames = int((num_samples + window_hop // 2) // window_hop)
+    return num_frames
+
+
 def compute_num_windows(sig_len: Seconds, win_len: Seconds, hop: Seconds) -> int:
     """
     Return a number of windows obtained from signal of length equal to ``sig_len``
