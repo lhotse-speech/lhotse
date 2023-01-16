@@ -82,7 +82,7 @@ class CutSampler(Sampler):
 
         self._maybe_init_distributed(world_size=world_size, rank=rank)
         # By default, self._filter_fn passes every Cut through.
-        self._filter_fn: Callable[[Cut], bool] = _filter_nothing
+        self._filter_fn: Callable[[Cut], bool] = _filter_nothing()
 
     @property
     def diagnostics(self):
@@ -134,7 +134,10 @@ class CutSampler(Sampler):
             ... # Retain only the cuts that have at least 1s and at most 20s duration.
             ... sampler.filter(lambda cut: 1.0 <= cut.duration <= 20.0)
         """
-        self._filter_fn = predicate
+        if isinstance(self._filter_fn, _filter_nothing):
+            self._filter_fn = predicate
+        else:
+            self._filter_fn = _and(self._filter_fn, predicate)
 
     def state_dict(self) -> Dict[str, Any]:
         """
@@ -623,5 +626,15 @@ class SamplingDiagnostics:
         )
 
 
-def _filter_nothing(cut: Cut) -> bool:
-    return True
+class _filter_nothing:
+    def __call__(self, cut: Cut) -> bool:
+        return True
+
+
+def _and(
+    fn1: Callable[[Cut], bool], fn2: Callable[[Cut], bool]
+) -> Callable[[Cut], bool]:
+    def _and_wrapper(cut: Cut) -> bool:
+        return fn1(cut) and fn2(cut)
+
+    return _and_wrapper
