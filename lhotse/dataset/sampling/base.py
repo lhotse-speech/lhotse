@@ -8,10 +8,11 @@ from torch import distributed as dist
 from torch.utils.data import Sampler
 
 from lhotse.cut import Cut, CutSet
+from lhotse.lazy import Dillable
 from lhotse.utils import Seconds, exactly_one_not_null, is_none_or_gt
 
 
-class CutSampler(Sampler):
+class CutSampler(Sampler, Dillable):
     """
     ``CutSampler`` is responsible for collecting batches of cuts, given specified criteria.
     It implements correct handling of distributed sampling in ``DataLoader``,
