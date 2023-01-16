@@ -35,7 +35,12 @@ from typing import Dict, Optional, Union
 from lhotse import validate_recordings_and_supervisions
 from lhotse.audio import Recording, RecordingSet
 from lhotse.supervision import SupervisionSegment, SupervisionSet
-from lhotse.utils import Pathlike, is_module_available, urlretrieve_progress
+from lhotse.utils import (
+    Pathlike,
+    is_module_available,
+    safe_extract,
+    urlretrieve_progress,
+)
 
 
 def download_aishell4(
@@ -66,7 +71,7 @@ def download_aishell4(
                 f"{url}/{tar_name}", filename=tar_path, desc=f"Downloading {tar_name}"
             )
         with tarfile.open(tar_path) as tar:
-            tar.extractall(path=target_dir)
+            safe_extract(tar, path=target_dir)
 
     return target_dir
 
