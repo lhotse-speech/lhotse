@@ -9,6 +9,7 @@ import pytest
 import torch
 
 from lhotse import (
+    S3PRLSSL,
     CutSet,
     Fbank,
     FbankConfig,
@@ -210,6 +211,15 @@ def test_extract_and_store_features_from_cut_set(
                 pytest.mark.skipif(
                     not is_module_available("librosa"),
                     reason="Requires librosa to run.",
+                ),
+            ],
+        ),
+        pytest.param(
+            S3PRLSSL,
+            marks=[
+                pytest.mark.skipif(
+                    not is_module_available("s3prl"),
+                    reason="Requires s3prl to run.",
                 ),
             ],
         ),
