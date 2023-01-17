@@ -33,7 +33,7 @@ from typing import Dict, List, Optional, Tuple, Union
 from lhotse import validate_recordings_and_supervisions
 from lhotse.audio import Recording, RecordingSet
 from lhotse.supervision import SupervisionSegment, SupervisionSet
-from lhotse.utils import Pathlike, urlretrieve_progress
+from lhotse.utils import Pathlike, safe_extract, urlretrieve_progress
 
 _DEFAULT_URL = "http://www.openslr.org/resources/1/waves_yesno.tar.gz"
 
@@ -70,7 +70,7 @@ def download_yesno(
     shutil.rmtree(extracted_dir, ignore_errors=True)
 
     with tarfile.open(tar_path) as tar:
-        tar.extractall(path=target_dir)
+        safe_extract(tar, path=target_dir)
 
     completed_detector.touch()
 
