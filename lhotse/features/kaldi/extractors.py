@@ -35,6 +35,7 @@ class FbankConfig:
     num_filters: int = 80
     num_mel_bins: Optional[int] = None  # do not use
     norm_filters: bool = False
+    device: str = "cpu"
 
     def __post_init__(self):
         # This is to help users transition to a different Fbank implementation
@@ -64,6 +65,10 @@ class Fbank(FeatureExtractor):
     def __init__(self, config: Optional[FbankConfig] = None):
         super().__init__(config=config)
         self.extractor = Wav2LogFilterBank(**self.config.to_dict()).eval()
+
+    @property
+    def device(self) -> Union[str, torch.device]:
+        return self.config.device
 
     @property
     def frame_shift(self) -> Seconds:
@@ -145,6 +150,7 @@ class MfccConfig:
     norm_filters: bool = False
     num_ceps: int = 13
     cepstral_lifter: int = 22
+    device: str = "cpu"
 
     def __post_init__(self):
         # This is to help users transition to a different Mfcc implementation
@@ -174,6 +180,10 @@ class Mfcc(FeatureExtractor):
     def __init__(self, config: Optional[MfccConfig] = None):
         super().__init__(config=config)
         self.extractor = Wav2MFCC(**self.config.to_dict()).eval()
+
+    @property
+    def device(self) -> Union[str, torch.device]:
+        return self.config.device
 
     @property
     def frame_shift(self) -> Seconds:
@@ -232,6 +242,7 @@ class SpectrogramConfig:
     raw_energy: bool = True
     use_energy: bool = False
     use_fft_mag: bool = False
+    device: str = "cpu"
 
     def __post_init__(self):
         if self.snip_edges:
@@ -254,7 +265,13 @@ class Spectrogram(FeatureExtractor):
 
     def __init__(self, config: Optional[SpectrogramConfig] = None):
         super().__init__(config=config)
-        self.extractor = Wav2Spec(**self.config.to_dict()).eval()
+        config_dict = self.config.to_dict()
+        config_dict.pop("device")
+        self.extractor = Wav2Spec(**config_dict).to(self.device).eval()
+
+    @property
+    def device(self) -> Union[str, torch.device]:
+        return self.config.device
 
     @property
     def frame_shift(self) -> Seconds:
@@ -281,12 +298,12 @@ class Spectrogram(FeatureExtractor):
         if samples.ndim == 1:
             samples = samples.unsqueeze(0)
 
-        feats = self.extractor(samples)[0]
+        feats = self.extractor(samples.to(self.device))[0]
 
         if is_numpy:
             return feats.cpu().numpy()
         else:
-            return feats
+            return feats.cpu()
 
     def extract_batch(
         self,
@@ -295,7 +312,9 @@ class Spectrogram(FeatureExtractor):
         ],
         sampling_rate: int,
     ) -> Union[np.ndarray, torch.Tensor, List[np.ndarray], List[torch.Tensor]]:
-        return _extract_batch(self.extractor, samples, sampling_rate)
+        return _extract_batch(
+            self.extractor, samples, sampling_rate, device=self.device
+        )
 
     @staticmethod
     def mix(
@@ -310,6 +329,7 @@ def _extract_batch(
         np.ndarray, torch.Tensor, Sequence[np.ndarray], Sequence[torch.Tensor]
     ],
     sampling_rate: int,
+    device: Union[str, torch.device] = "cpu",
 ) -> Union[np.ndarray, torch.Tensor, List[np.ndarray], List[torch.Tensor]]:
     input_is_list = False
     input_is_torch = False
@@ -340,7 +360,7 @@ def _extract_batch(
         for x in samples
     ]
     samples = torch.nn.utils.rnn.pad_sequence(samples, batch_first=True)
-    feats = extractor(samples)
+    feats = extractor(samples.to(device)).cpu()
     result = [feats[i, : feat_lens[i]] for i in range(len(samples))]
 
     if not input_is_torch:
