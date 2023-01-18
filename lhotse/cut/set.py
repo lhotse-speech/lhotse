@@ -1985,6 +1985,7 @@ class CutSet(Serializable, AlgorithmMixin):
         num_workers: int = 4,
         collate: bool = False,
         num_buckets: int = 20,
+        buffer_size: int = 10000,
         augment_fn: Optional[AugmentFn] = None,
         storage_type: Type[FW] = LilcomChunkyWriter,
         overwrite: bool = False,
@@ -2033,6 +2034,10 @@ class CutSet(Serializable, AlgorithmMixin):
         :param num_buckets: If ``collate`` is ``True``, we will use a bucketing sampler
             to group similar-length waveforms into batches. This parameter controls
             the number of buckets.
+        :param buffer_size: If ``collate`` is ``True``, we will use a bucketing sampler
+            to group similar-length waveforms into batches. This parameter controls
+            the buffer size, i.e., how many cuts are kept in the buffer across all buckets
+            at any given time.
         :param augment_fn: an optional callable used for audio augmentation.
             Be careful with the types of augmentations used: if they modify
             the start/end/duration times of the cut and its supervisions,
@@ -2071,6 +2076,7 @@ class CutSet(Serializable, AlgorithmMixin):
             else DynamicBucketingSampler(
                 self,
                 num_buckets=num_buckets,
+                buffer_size=buffer_size,
                 max_duration=batch_duration,
             )
         )
