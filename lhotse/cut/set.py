@@ -2069,6 +2069,7 @@ class CutSet(Serializable, AlgorithmMixin):
             SimpleCutSampler(self, max_duration=batch_duration)
             if not collate
             else BucketingSampler(
+                self,
                 sampler_type=SimpleCutSampler,
                 num_buckets=num_buckets,
                 max_duration=batch_duration,
