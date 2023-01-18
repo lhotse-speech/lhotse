@@ -21,6 +21,7 @@ from lhotse import (
     Mfcc,
     MonoCut,
     Recording,
+    Spectrogram,
     SupervisionSegment,
     TorchaudioFbank,
     TorchaudioMfcc,
@@ -189,6 +190,7 @@ def test_extract_and_store_features_from_cut_set(
     [
         Fbank,
         Mfcc,
+        Spectrogram,
         TorchaudioFbank,
         TorchaudioMfcc,
         pytest.param(
