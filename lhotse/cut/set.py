@@ -1984,8 +1984,6 @@ class CutSet(Serializable, AlgorithmMixin):
         batch_duration: Seconds = 600.0,
         num_workers: int = 4,
         collate: bool = False,
-        num_buckets: int = 20,
-        buffer_size: int = 10000,
         augment_fn: Optional[AugmentFn] = None,
         storage_type: Type[FW] = LilcomChunkyWriter,
         overwrite: bool = False,
@@ -2031,13 +2029,6 @@ class CutSet(Serializable, AlgorithmMixin):
             padded tensor before being passed to the feature extractor. Some extractors
             can be faster this way (for e.g., see ``lhotse.features.kaldi.extractors``).
             If you are using ``kaldifeat`` extractors, you should set this to ``False``.
-        :param num_buckets: If ``collate`` is ``True``, we will use a bucketing sampler
-            to group similar-length waveforms into batches. This parameter controls
-            the number of buckets.
-        :param buffer_size: If ``collate`` is ``True``, we will use a bucketing sampler
-            to group similar-length waveforms into batches. This parameter controls
-            the buffer size, i.e., how many cuts are kept in the buffer across all buckets
-            at any given time.
         :param augment_fn: an optional callable used for audio augmentation.
             Be careful with the types of augmentations used: if they modify
             the start/end/duration times of the cut and its supervisions,
@@ -2050,14 +2041,12 @@ class CutSet(Serializable, AlgorithmMixin):
             By default, this method will append to these files if they exist.
         :return: Returns a new ``CutSet`` with ``Features`` manifests attached to the cuts.
         """
+        from concurrent.futures import ThreadPoolExecutor
+
         import torch
         from torch.utils.data import DataLoader
 
-        from lhotse.dataset import (
-            DynamicBucketingSampler,
-            SimpleCutSampler,
-            UnsupervisedWaveformDataset,
-        )
+        from lhotse.dataset import SimpleCutSampler, UnsupervisedWaveformDataset
         from lhotse.qa import validate_features
 
         frame_shift = extractor.frame_shift
@@ -2070,27 +2059,78 @@ class CutSet(Serializable, AlgorithmMixin):
 
         # We tell the sampler to ignore cuts that were already processed.
         # It will avoid I/O for reading them in the DataLoader.
-        sampler = (
-            SimpleCutSampler(self, max_duration=batch_duration)
-            if not collate
-            else DynamicBucketingSampler(
-                self,
-                num_buckets=num_buckets,
-                buffer_size=buffer_size,
-                max_duration=batch_duration,
-            )
-        )
+        sampler = SimpleCutSampler(self, max_duration=batch_duration)
         sampler.filter(lambda cut: cut.id not in cuts_writer.ignore_ids)
         dataset = UnsupervisedWaveformDataset(collate=collate)
         dloader = DataLoader(
             dataset, batch_size=None, sampler=sampler, num_workers=num_workers
         )
 
+        # Background worker to save features to disk.
+        def _save_worker(cuts: List[Cut], features: List[np.ndarray]) -> None:
+            for cut, feat_mat in zip(cuts, features):
+                if isinstance(cut, PaddingCut):
+                    # For padding cuts, just fill out the fields in the manifest
+                    # and don't store anything.
+                    cuts_writer.write(
+                        fastcopy(
+                            cut,
+                            num_frames=feat_mat.shape[0],
+                            num_features=feat_mat.shape[1],
+                            frame_shift=frame_shift,
+                        )
+                    )
+                    continue
+                # Store the computed features and describe them in a manifest.
+                if isinstance(feat_mat, torch.Tensor):
+                    feat_mat = feat_mat.cpu().numpy()
+                storage_key = feats_writer.write(cut.id, feat_mat)
+                feat_manifest = Features(
+                    start=cut.start,
+                    duration=cut.duration,
+                    type=extractor.name,
+                    num_frames=feat_mat.shape[0],
+                    num_features=feat_mat.shape[1],
+                    frame_shift=frame_shift,
+                    sampling_rate=cut.sampling_rate,
+                    channels=cut.channel,
+                    storage_type=feats_writer.name,
+                    storage_path=str(feats_writer.storage_path),
+                    storage_key=storage_key,
+                )
+                validate_features(feat_manifest, feats_data=feat_mat)
+
+                # Update the cut manifest.
+                if isinstance(cut, DataCut):
+                    feat_manifest.recording_id = cut.recording_id
+                    cut = fastcopy(cut, features=feat_manifest)
+                if isinstance(cut, MixedCut):
+                    # If this was a mixed cut, we will just discard its
+                    # recordings and create a new mono cut that has just
+                    # the features attached.
+                    feat_manifest.recording_id = cut.id
+                    cut = MonoCut(
+                        id=cut.id,
+                        start=0,
+                        duration=cut.duration,
+                        channel=0,
+                        # Update supervisions recording_id for consistency
+                        supervisions=[
+                            fastcopy(s, recording_id=cut.id) for s in cut.supervisions
+                        ],
+                        features=feat_manifest,
+                        recording=None,
+                    )
+                cuts_writer.write(cut, flush=True)
+
+        futures = []
         with cuts_writer, storage_type(
             storage_path, mode="w" if overwrite else "a"
         ) as feats_writer, tqdm(
             desc="Computing features in batches", total=sampler.num_cuts
-        ) as progress:
+        ) as progress, ThreadPoolExecutor(
+            max_workers=1  # We only want one background worker so that serialization is deterministic.
+        ) as executor:
             # Display progress bar correctly.
             progress.update(len(cuts_writer.ignore_ids))
             for batch in dloader:
@@ -2118,62 +2158,7 @@ class CutSet(Serializable, AlgorithmMixin):
                         waves, sampling_rate=cuts[0].sampling_rate, lengths=wave_lens
                     )
 
-                for cut, feat_mat in zip(cuts, features):
-                    if isinstance(cut, PaddingCut):
-                        # For padding cuts, just fill out the fields in the manifest
-                        # and don't store anything.
-                        cuts_writer.write(
-                            fastcopy(
-                                cut,
-                                num_frames=feat_mat.shape[0],
-                                num_features=feat_mat.shape[1],
-                                frame_shift=frame_shift,
-                            )
-                        )
-                        continue
-                    # Store the computed features and describe them in a manifest.
-                    if isinstance(feat_mat, torch.Tensor):
-                        feat_mat = feat_mat.cpu().numpy()
-                    storage_key = feats_writer.write(cut.id, feat_mat)
-                    feat_manifest = Features(
-                        start=cut.start,
-                        duration=cut.duration,
-                        type=extractor.name,
-                        num_frames=feat_mat.shape[0],
-                        num_features=feat_mat.shape[1],
-                        frame_shift=frame_shift,
-                        sampling_rate=cut.sampling_rate,
-                        channels=cut.channel,
-                        storage_type=feats_writer.name,
-                        storage_path=str(feats_writer.storage_path),
-                        storage_key=storage_key,
-                    )
-                    validate_features(feat_manifest, feats_data=feat_mat)
-
-                    # Update the cut manifest.
-                    if isinstance(cut, DataCut):
-                        feat_manifest.recording_id = cut.recording_id
-                        cut = fastcopy(cut, features=feat_manifest)
-                    if isinstance(cut, MixedCut):
-                        # If this was a mixed cut, we will just discard its
-                        # recordings and create a new mono cut that has just
-                        # the features attached.
-                        feat_manifest.recording_id = cut.id
-                        cut = MonoCut(
-                            id=cut.id,
-                            start=0,
-                            duration=cut.duration,
-                            channel=0,
-                            # Update supervisions recording_id for consistency
-                            supervisions=[
-                                fastcopy(s, recording_id=cut.id)
-                                for s in cut.supervisions
-                            ],
-                            features=feat_manifest,
-                            recording=None,
-                        )
-                    cuts_writer.write(cut, flush=True)
-
+                futures.append(executor.submit(_save_worker, cuts, features))
                 progress.update(len(cuts))
 
         # If ``manifest_path`` was provided, this is a lazy manifest;
