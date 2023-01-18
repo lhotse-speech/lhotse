@@ -1,3 +1,4 @@
+import warnings
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Sequence, Union
 
@@ -41,6 +42,11 @@ class FbankConfig:
         if self.num_mel_bins is not None:
             self.num_filters = self.num_mel_bins
             self.num_mel_bins = None
+
+        if self.snip_edges:
+            warnings.warn(
+                "`snip_edges` is set to True, which may cause issues in duration to num-frames conversion in Lhotse."
+            )
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict_nonull(self)
@@ -147,6 +153,11 @@ class MfccConfig:
             self.num_filters = self.num_mel_bins
             self.num_mel_bins = None
 
+        if self.snip_edges:
+            warnings.warn(
+                "`snip_edges` is set to True, which may cause issues in duration to num-frames conversion in Lhotse."
+            )
+
     def to_dict(self) -> Dict[str, Any]:
         return asdict_nonull(self)
 
@@ -221,6 +232,12 @@ class SpectrogramConfig:
     raw_energy: bool = True
     use_energy: bool = False
     use_fft_mag: bool = False
+
+    def __post_init__(self):
+        if self.snip_edges:
+            warnings.warn(
+                "`snip_edges` is set to True, which may cause issues in duration to num-frames conversion in Lhotse."
+            )
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict_nonull(self)

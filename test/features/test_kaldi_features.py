@@ -114,10 +114,12 @@ def test_kaldi_spectrogram_extractor(recording):
 
 def test_kaldi_spectrogram_extractor_vs_torchaudio(recording):
     audio = recording.load_audio()
-    spec = Spectrogram()
+    spec = Spectrogram(SpectrogramConfig(use_energy=True))
     spec_ta = TorchaudioSpectrogram()
     feats = spec.extract(audio, recording.sampling_rate)
     feats_ta = spec_ta.extract(audio, recording.sampling_rate)
     # Torchaudio returns log power spectrum, while kaldi-spectrogram returns power
-    # spectrum, so we need to take log
-    torch.testing.assert_allclose(np.log(feats), feats_ta)
+    # spectrum, so we need to exponentiate the torchaudio features. Also, the first
+    # coefficient is the log energy, so we need to compare it separately.
+    torch.testing.assert_allclose(feats[:, 0], feats_ta[:, 0])
+    torch.testing.assert_allclose(feats[:, 1:], np.exp(feats_ta[:, 1:]))
