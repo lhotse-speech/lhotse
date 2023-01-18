@@ -1,10 +1,11 @@
+import numpy as np
 import pytest
 import torch
 
-from lhotse import TorchaudioFbank, TorchaudioMfcc
+from lhotse import TorchaudioFbank, TorchaudioMfcc, TorchaudioSpectrogram
 from lhotse.audio import Recording
-from lhotse.features.kaldi.extractors import Fbank, Mfcc
-from lhotse.features.kaldi.layers import Wav2LogFilterBank, Wav2MFCC
+from lhotse.features.kaldi.extractors import Fbank, Mfcc, Spectrogram, SpectrogramConfig
+from lhotse.features.kaldi.layers import Wav2LogFilterBank, Wav2MFCC, Wav2Spec
 
 
 @pytest.fixture()
@@ -44,11 +45,32 @@ def test_kaldi_mfcc_layer(recording):
     audio.requires_grad = True
     assert audio.requires_grad
     # Test batch processing
-    fbank = Wav2MFCC(
+    mfcc = Wav2MFCC(
         sampling_rate=recording.sampling_rate,
     )
-    feats = fbank(audio)
+    feats = mfcc(audio)
     assert feats.shape == (4, 1604, 13)
+    # Test backprop
+    feats.sum().backward()
+    assert audio.grad is not None
+
+
+def test_kaldi_spec_layer(recording):
+    # Prepare a batch of recordings
+    audio = torch.from_numpy(recording.load_audio())
+    audio = torch.cat([audio] * 4, dim=0)
+    assert audio.shape == (4, recording.num_samples)
+    # We'll test the Kaldi feature extraction layers
+    # by checking if they can process batched audio and
+    # backprop gradients.
+    audio.requires_grad = True
+    assert audio.requires_grad
+    # Test batch processing
+    spec = Wav2Spec(
+        sampling_rate=recording.sampling_rate,
+    )
+    feats = spec(audio)
+    assert feats.shape == (4, 1604, 257)
     # Test backprop
     feats.sum().backward()
     assert audio.grad is not None
@@ -77,8 +99,27 @@ def test_kaldi_mfcc_extractor(recording):
 
 def test_kaldi_mfcc_extractor_vs_torchaudio(recording):
     audio = recording.load_audio()
-    fbank = Mfcc()
-    fbank_ta = TorchaudioMfcc()
-    feats = fbank.extract(audio, recording.sampling_rate)
-    feats_ta = fbank_ta.extract(audio, recording.sampling_rate)
+    mfcc = Mfcc()
+    mfcc_ta = TorchaudioMfcc()
+    feats = mfcc.extract(audio, recording.sampling_rate)
+    feats_ta = mfcc_ta.extract(audio, recording.sampling_rate)
     torch.testing.assert_allclose(feats, feats_ta)
+
+
+def test_kaldi_spectrogram_extractor(recording):
+    spec = Spectrogram()
+    feats = spec.extract(recording.load_audio(), recording.sampling_rate)
+    assert feats.shape == (1604, 257)
+
+
+def test_kaldi_spectrogram_extractor_vs_torchaudio(recording):
+    audio = recording.load_audio()
+    spec = Spectrogram(SpectrogramConfig(use_energy=True))
+    spec_ta = TorchaudioSpectrogram()
+    feats = spec.extract(audio, recording.sampling_rate)
+    feats_ta = spec_ta.extract(audio, recording.sampling_rate)
+    # Torchaudio returns log power spectrum, while kaldi-spectrogram returns power
+    # spectrum, so we need to exponentiate the torchaudio features. Also, the first
+    # coefficient is the log energy, so we need to compare it separately.
+    torch.testing.assert_allclose(feats[:, 0], feats_ta[:, 0])
+    torch.testing.assert_allclose(feats[:, 1:], np.exp(feats_ta[:, 1:]))
