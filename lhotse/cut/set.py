@@ -1983,6 +1983,7 @@ class CutSet(Serializable, AlgorithmMixin):
         manifest_path: Optional[Pathlike] = None,
         batch_duration: Seconds = 600.0,
         num_workers: int = 4,
+        collate: bool = False,
         augment_fn: Optional[AugmentFn] = None,
         storage_type: Type[FW] = LilcomChunkyWriter,
         overwrite: bool = False,
@@ -2024,6 +2025,10 @@ class CutSet(Serializable, AlgorithmMixin):
             Determines batch size dynamically.
         :param num_workers: How many background dataloading workers should be used
             for reading the audio.
+        :param collate: If ``True``, the waveforms will be collated into a single
+            padded tensor before being passed to the feature extractor. Some extractors
+            can be faster this way (for e.g., see ``lhotse.features.kaldi.extractors``).
+            If you are using ``kaldifeat`` extractors, you should set this to ``False``.
         :param augment_fn: an optional callable used for audio augmentation.
             Be careful with the types of augmentations used: if they modify
             the start/end/duration times of the cut and its supervisions,
@@ -2054,7 +2059,7 @@ class CutSet(Serializable, AlgorithmMixin):
         # It will avoid I/O for reading them in the DataLoader.
         sampler = SingleCutSampler(self, max_duration=batch_duration)
         sampler.filter(lambda cut: cut.id not in cuts_writer.ignore_ids)
-        dataset = UnsupervisedWaveformDataset(collate=False)
+        dataset = UnsupervisedWaveformDataset(collate=collate)
         dloader = DataLoader(
             dataset, batch_size=None, sampler=sampler, num_workers=num_workers
         )
@@ -2069,6 +2074,7 @@ class CutSet(Serializable, AlgorithmMixin):
             for batch in dloader:
                 cuts = batch["cuts"]
                 waves = batch["audio"]
+                wave_lens = batch["audio_lens"] if collate else None
 
                 if len(cuts) == 0:
                     # Fault-tolerant audio loading filtered out everything.
@@ -2087,7 +2093,7 @@ class CutSet(Serializable, AlgorithmMixin):
                     # Note: chunk_size option limits the memory consumption
                     # for very long cuts.
                     features = extractor.extract_batch(
-                        waves, sampling_rate=cuts[0].sampling_rate
+                        waves, sampling_rate=cuts[0].sampling_rate, lengths=wave_lens
                     )
 
                 for cut, feat_mat in zip(cuts, features):
