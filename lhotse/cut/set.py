@@ -2049,7 +2049,7 @@ class CutSet(Serializable, AlgorithmMixin):
         from torch.utils.data import DataLoader
 
         from lhotse.dataset import (
-            BucketingSampler,
+            DynamicBucketingSampler,
             SimpleCutSampler,
             UnsupervisedWaveformDataset,
         )
@@ -2068,9 +2068,8 @@ class CutSet(Serializable, AlgorithmMixin):
         sampler = (
             SimpleCutSampler(self, max_duration=batch_duration)
             if not collate
-            else BucketingSampler(
+            else DynamicBucketingSampler(
                 self,
-                sampler_type=SimpleCutSampler,
                 num_buckets=num_buckets,
                 max_duration=batch_duration,
             )
