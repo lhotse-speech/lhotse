@@ -114,9 +114,15 @@ class Fbank(FeatureExtractor):
             np.ndarray, torch.Tensor, Sequence[np.ndarray], Sequence[torch.Tensor]
         ],
         sampling_rate: int,
+        lengths: Optional[Union[np.ndarray, torch.Tensor]] = None,
     ) -> Union[np.ndarray, torch.Tensor, List[np.ndarray], List[torch.Tensor]]:
         return _extract_batch(
-            self.extractor, samples, sampling_rate, device=self.device
+            self.extractor,
+            samples,
+            sampling_rate,
+            frame_shift=self.frame_shift,
+            lengths=lengths,
+            device=self.device,
         )
 
     @staticmethod
@@ -237,9 +243,15 @@ class Mfcc(FeatureExtractor):
             np.ndarray, torch.Tensor, Sequence[np.ndarray], Sequence[torch.Tensor]
         ],
         sampling_rate: int,
+        lengths: Optional[Union[np.ndarray, torch.Tensor]] = None,
     ) -> Union[np.ndarray, torch.Tensor, List[np.ndarray], List[torch.Tensor]]:
         return _extract_batch(
-            self.extractor, samples, sampling_rate, device=self.device
+            self.extractor,
+            samples,
+            sampling_rate,
+            frame_shift=self.frame_shift,
+            lengths=lengths,
+            device=self.device,
         )
 
 
@@ -327,9 +339,15 @@ class Spectrogram(FeatureExtractor):
             np.ndarray, torch.Tensor, Sequence[np.ndarray], Sequence[torch.Tensor]
         ],
         sampling_rate: int,
+        lengths: Optional[Union[np.ndarray, torch.Tensor]] = None,
     ) -> Union[np.ndarray, torch.Tensor, List[np.ndarray], List[torch.Tensor]]:
         return _extract_batch(
-            self.extractor, samples, sampling_rate, device=self.device
+            self.extractor,
+            samples,
+            sampling_rate,
+            frame_shift=self.frame_shift,
+            lengths=lengths,
+            device=self.device,
         )
 
     @staticmethod
@@ -345,37 +363,50 @@ def _extract_batch(
         np.ndarray, torch.Tensor, Sequence[np.ndarray], Sequence[torch.Tensor]
     ],
     sampling_rate: int,
+    frame_shift: Seconds = 0.01,
+    lengths: Optional[Union[np.ndarray, torch.Tensor]] = None,
     device: Union[str, torch.device] = "cpu",
 ) -> Union[np.ndarray, torch.Tensor, List[np.ndarray], List[torch.Tensor]]:
     input_is_list = False
     input_is_torch = False
 
-    if isinstance(samples, list):
-        input_is_list = True
-        pass  # nothing to do with `samples`
-    elif samples.ndim > 1:
-        samples = list(samples)
+    if lengths is not None:
+        feat_lens = [
+            compute_num_frames_from_samples(l, frame_shift, sampling_rate)
+            for l in lengths
+        ]
+        assert isinstance(
+            samples, torch.Tensor
+        ), "If `lengths` is provided, `samples` must be a batched and padded torch.Tensor."
     else:
-        # The user passed an array/tensor of shape (num_samples,)
-        samples = [samples.reshape(1, -1)]
+        if isinstance(samples, list):
+            input_is_list = True
+            pass  # nothing to do with `samples`
+        elif samples.ndim > 1:
+            samples = list(samples)
+        else:
+            # The user passed an array/tensor of shape (num_samples,)
+            samples = [samples.reshape(1, -1)]
 
-    if any(isinstance(x, torch.Tensor) for x in samples):
-        samples = [x.numpy() for x in samples]
-        input_is_torch = True
+        if any(isinstance(x, torch.Tensor) for x in samples):
+            samples = [x.numpy() for x in samples]
+            input_is_torch = True
 
-    samples = [
-        torch.from_numpy(x).squeeze() if isinstance(x, np.ndarray) else x.squeeze()
-        for x in samples
-    ]
-    feat_lens = [
-        compute_num_frames_from_samples(
-            num_samples=len(x),
-            frame_shift=extractor.frame_shift,
-            sampling_rate=sampling_rate,
-        )
-        for x in samples
-    ]
-    samples = torch.nn.utils.rnn.pad_sequence(samples, batch_first=True)
+        samples = [
+            torch.from_numpy(x).squeeze() if isinstance(x, np.ndarray) else x.squeeze()
+            for x in samples
+        ]
+        feat_lens = [
+            compute_num_frames_from_samples(
+                num_samples=len(x),
+                frame_shift=extractor.frame_shift,
+                sampling_rate=sampling_rate,
+            )
+            for x in samples
+        ]
+        samples = torch.nn.utils.rnn.pad_sequence(samples, batch_first=True)
+
+    # Perform feature extraction
     feats = extractor(samples.to(device)).cpu()
     result = [feats[i, : feat_lens[i]] for i in range(len(samples))]
 
