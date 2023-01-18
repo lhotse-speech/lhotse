@@ -1984,6 +1984,7 @@ class CutSet(Serializable, AlgorithmMixin):
         batch_duration: Seconds = 600.0,
         num_workers: int = 4,
         collate: bool = False,
+        num_buckets: int = 20,
         augment_fn: Optional[AugmentFn] = None,
         storage_type: Type[FW] = LilcomChunkyWriter,
         overwrite: bool = False,
@@ -2029,6 +2030,9 @@ class CutSet(Serializable, AlgorithmMixin):
             padded tensor before being passed to the feature extractor. Some extractors
             can be faster this way (for e.g., see ``lhotse.features.kaldi.extractors``).
             If you are using ``kaldifeat`` extractors, you should set this to ``False``.
+        :param num_buckets: If ``collate`` is ``True``, we will use a bucketing sampler
+            to group similar-length waveforms into batches. This parameter controls
+            the number of buckets.
         :param augment_fn: an optional callable used for audio augmentation.
             Be careful with the types of augmentations used: if they modify
             the start/end/duration times of the cut and its supervisions,
@@ -2044,7 +2048,11 @@ class CutSet(Serializable, AlgorithmMixin):
         import torch
         from torch.utils.data import DataLoader
 
-        from lhotse.dataset import SingleCutSampler, UnsupervisedWaveformDataset
+        from lhotse.dataset import (
+            BucketingSampler,
+            SimpleCutSampler,
+            UnsupervisedWaveformDataset,
+        )
         from lhotse.qa import validate_features
 
         frame_shift = extractor.frame_shift
@@ -2057,7 +2065,15 @@ class CutSet(Serializable, AlgorithmMixin):
 
         # We tell the sampler to ignore cuts that were already processed.
         # It will avoid I/O for reading them in the DataLoader.
-        sampler = SingleCutSampler(self, max_duration=batch_duration)
+        sampler = (
+            SimpleCutSampler(self, max_duration=batch_duration)
+            if not collate
+            else BucketingSampler(
+                sampler_type=SimpleCutSampler,
+                num_buckets=num_buckets,
+                max_duration=batch_duration,
+            )
+        )
         sampler.filter(lambda cut: cut.id not in cuts_writer.ignore_ids)
         dataset = UnsupervisedWaveformDataset(collate=collate)
         dloader = DataLoader(
