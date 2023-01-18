@@ -64,7 +64,13 @@ class Fbank(FeatureExtractor):
 
     def __init__(self, config: Optional[FbankConfig] = None):
         super().__init__(config=config)
-        self.extractor = Wav2LogFilterBank(**self.config.to_dict()).eval()
+        config_dict = self.config.to_dict()
+        config_dict.pop("device")
+        self.extractor = Wav2LogFilterBank(**config_dict).to(self.device).eval()
+
+    @property
+    def device(self) -> Union[str, torch.device]:
+        return self.config.device
 
     @property
     def device(self) -> Union[str, torch.device]:
@@ -95,7 +101,7 @@ class Fbank(FeatureExtractor):
         if samples.ndim == 1:
             samples = samples.unsqueeze(0)
 
-        feats = self.extractor(samples)[0]
+        feats = self.extractor(samples.to(self.device))[0]
 
         if is_numpy:
             return feats.cpu().numpy()
@@ -109,7 +115,9 @@ class Fbank(FeatureExtractor):
         ],
         sampling_rate: int,
     ) -> Union[np.ndarray, torch.Tensor, List[np.ndarray], List[torch.Tensor]]:
-        return _extract_batch(self.extractor, samples, sampling_rate)
+        return _extract_batch(
+            self.extractor, samples, sampling_rate, device=self.device
+        )
 
     @staticmethod
     def mix(
@@ -179,7 +187,13 @@ class Mfcc(FeatureExtractor):
 
     def __init__(self, config: Optional[MfccConfig] = None):
         super().__init__(config=config)
-        self.extractor = Wav2MFCC(**self.config.to_dict()).eval()
+        config_dict = self.config.to_dict()
+        config_dict.pop("device")
+        self.extractor = Wav2MFCC(**config_dict).to(self.device).eval()
+
+    @property
+    def device(self) -> Union[str, torch.device]:
+        return self.config.device
 
     @property
     def device(self) -> Union[str, torch.device]:
@@ -210,7 +224,7 @@ class Mfcc(FeatureExtractor):
         if samples.ndim == 1:
             samples = samples.unsqueeze(0)
 
-        feats = self.extractor(samples)[0]
+        feats = self.extractor(samples.to(self.device))[0]
 
         if is_numpy:
             return feats.cpu().numpy()
@@ -224,7 +238,9 @@ class Mfcc(FeatureExtractor):
         ],
         sampling_rate: int,
     ) -> Union[np.ndarray, torch.Tensor, List[np.ndarray], List[torch.Tensor]]:
-        return _extract_batch(self.extractor, samples, sampling_rate)
+        return _extract_batch(
+            self.extractor, samples, sampling_rate, device=self.device
+        )
 
 
 @dataclass
