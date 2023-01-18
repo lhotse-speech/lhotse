@@ -4,7 +4,14 @@ import torch
 
 from lhotse import TorchaudioFbank, TorchaudioMfcc, TorchaudioSpectrogram
 from lhotse.audio import Recording
-from lhotse.features.kaldi.extractors import Fbank, Mfcc, Spectrogram, SpectrogramConfig
+from lhotse.features.kaldi.extractors import (
+    Fbank,
+    FbankConfig,
+    Mfcc,
+    MfccConfig,
+    Spectrogram,
+    SpectrogramConfig,
+)
 from lhotse.features.kaldi.layers import Wav2LogFilterBank, Wav2MFCC, Wav2Spec
 
 
@@ -123,3 +130,16 @@ def test_kaldi_spectrogram_extractor_vs_torchaudio(recording):
     # coefficient is the log energy, so we need to compare it separately.
     torch.testing.assert_allclose(feats[:, 0], feats_ta[:, 0])
     torch.testing.assert_allclose(feats[:, 1:], np.exp(feats_ta[:, 1:]))
+
+
+@pytest.mark.parametrize(
+    "extractor_type",
+    [
+        lambda: Fbank(FbankConfig(snip_edges=True)),
+        lambda: Mfcc(MfccConfig(snip_edges=True)),
+        lambda: Spectrogram(SpectrogramConfig(snip_edges=True)),
+    ],
+)
+def test_kaldi_extractors_snip_edges_warning(extractor_type):
+    with pytest.warns(UserWarning):
+        extractor = extractor_type()

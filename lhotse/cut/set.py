@@ -2161,6 +2161,10 @@ class CutSet(Serializable, AlgorithmMixin):
                 futures.append(executor.submit(_save_worker, cuts, features))
                 progress.update(len(cuts))
 
+        # Wait for all background workers to finish.
+        for future in futures:
+            future.result()
+
         # If ``manifest_path`` was provided, this is a lazy manifest;
         # otherwise everything is in memory.
         return cuts_writer.open_manifest()
