@@ -1,9 +1,12 @@
+from tempfile import NamedTemporaryFile
+
 import numpy as np
 import pytest
 import torch
 
 from lhotse import TorchaudioFbank, TorchaudioMfcc, TorchaudioSpectrogram
 from lhotse.audio import Recording
+from lhotse.features import create_default_feature_extractor
 from lhotse.features.kaldi.extractors import (
     Fbank,
     FbankConfig,
@@ -143,3 +146,14 @@ def test_kaldi_spectrogram_extractor_vs_torchaudio(recording):
 def test_kaldi_extractors_snip_edges_warning(extractor_type):
     with pytest.warns(UserWarning):
         extractor = extractor_type()
+
+
+@pytest.mark.parametrize(
+    "feature_type", ["kaldi-fbank", "kaldi-mfcc", "kaldi-spectrogram"]
+)
+def test_feature_extractor_serialization(feature_type):
+    fe = create_default_feature_extractor(feature_type)
+    with NamedTemporaryFile() as f:
+        fe.to_yaml(f.name)
+        fe_deserialized = type(fe).from_yaml(f.name)
+    assert fe_deserialized.config == fe.config

@@ -249,6 +249,15 @@ def test_cut_set_batch_feature_extraction(cut_set, extractor_type):
                 reason="Requires kaldifeat to run.",
             ),
         ),
+        pytest.param(
+            S3PRLSSL,
+            marks=[
+                pytest.mark.skipif(
+                    not is_module_available("s3prl"),
+                    reason="Requires s3prl to run.",
+                ),
+            ],
+        ),
     ],
 )
 def test_cut_set_batch_feature_extraction_with_collation(cut_set, extractor_type):
