@@ -100,7 +100,11 @@ class S3PRLSSL(FeatureExtractor):
             np.ndarray, torch.Tensor, Sequence[np.ndarray], Sequence[torch.Tensor]
         ],
         sampling_rate: int,
+        lengths: Optional[Union[np.ndarray, torch.Tensor]] = None,
     ) -> Union[np.ndarray, torch.Tensor, List[np.ndarray], List[torch.Tensor]]:
+        # S3PRL expects a list of 1D torch tensors.
+        if lengths is not None:
+            samples = [x[:l] for x, l in zip(samples, lengths)]
         return self.extract(samples=samples, sampling_rate=sampling_rate)
 
     def extract(
