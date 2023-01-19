@@ -354,7 +354,7 @@ class Spectrogram(FeatureExtractor):
     def mix(
         features_a: np.ndarray, features_b: np.ndarray, energy_scaling_factor_b: float
     ) -> np.ndarray:
-        return np.exp(features_a) + energy_scaling_factor_b * np.exp(features_b)
+        return features_a + energy_scaling_factor_b * features_b
 
     @staticmethod
     def compute_energy(features: np.ndarray) -> float:
