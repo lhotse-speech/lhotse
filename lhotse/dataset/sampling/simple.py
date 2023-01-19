@@ -30,8 +30,6 @@ class SimpleCutSampler(CutSampler):
     def __init__(
         self,
         cuts: CutSet,
-        max_frames: int = None,
-        max_samples: int = None,
         max_duration: Seconds = None,
         max_cuts: Optional[int] = None,
         shuffle: bool = False,
@@ -39,14 +37,11 @@ class SimpleCutSampler(CutSampler):
         world_size: Optional[int] = None,
         rank: Optional[int] = None,
         seed: int = 0,
-        strict=None,
     ):
         """
         SimpleCutSampler's constructor.
 
         :param cuts: the ``CutSet`` to sample data from.
-        :param max_frames: The maximum total number of feature frames from ``cuts``.
-        :param max_samples: The maximum total number of audio samples from ``cuts``.
         :param max_duration: The maximum total recording duration from ``cuts``.
         :param max_cuts: The maximum number of cuts sampled to form a mini-batch.
             By default, this constraint is off.
@@ -69,16 +64,8 @@ class SimpleCutSampler(CutSampler):
         self.data_source = DataSource(cuts)
         self.time_constraint = TimeConstraint(
             max_duration=max_duration,
-            max_frames=max_frames,
-            max_samples=max_samples,
             max_cuts=max_cuts,
         )
-        if strict is not None:
-            warnings.warn(
-                "In Lhotse v1.4 all samplers act as if 'strict=True'. "
-                "Sampler's argument 'strict' will be removed in a future Lhotse release.",
-                category=DeprecationWarning,
-            )
 
     @property
     def remaining_duration(self) -> Optional[float]:

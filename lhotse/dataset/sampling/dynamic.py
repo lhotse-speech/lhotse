@@ -235,11 +235,10 @@ class DurationBatcher:
     def __init__(
         self,
         datapipe: Iterable[Union[Cut, Tuple[Cut]]],
-        max_frames: int = None,
-        max_samples: int = None,
         max_duration: Seconds = None,
         max_cuts: Optional[int] = None,
         drop_last: bool = False,
+        quadratic_duration: Optional[Seconds] = None,
         diagnostics: Optional[SamplingDiagnostics] = None,
     ) -> None:
         self.datapipe = datapipe
@@ -248,9 +247,8 @@ class DurationBatcher:
         self.diagnostics = ifnone(diagnostics, SamplingDiagnostics())
         self.time_constraint = TimeConstraint(
             max_duration=max_duration,
-            max_frames=max_frames,
-            max_samples=max_samples,
             max_cuts=max_cuts,
+            quadratic_duration=quadratic_duration,
         )
 
     def __iter__(self) -> Generator[Union[CutSet, Tuple[CutSet]], None, None]:

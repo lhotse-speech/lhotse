@@ -295,74 +295,65 @@ class CutSampler(Sampler, Dillable):
 class TimeConstraint:
     """
     Represents a time-based constraint for sampler classes.
-    It can be defined either as maximum total batch duration (in seconds),
-    number of frames, or number of samples.
-    These options are mutually exclusive and this class checks for that.
+    It is defined as maximum total batch duration (in seconds) and/or the total number of cuts.
 
     :class:`TimeConstraint` can be used for tracking whether the criterion has been exceeded
     via the `add(cut)`, `exceeded()` and `reset()` methods.
-    It will automatically track the right criterion (i.e. select frames/samples/duration from the cut).
+    It will automatically track the right criterion (i.e. select duration from the cut).
     It can also be a null constraint (never exceeded).
+
+    When ``quadratic_duration`` is set, we will try to compensate for models that have a
+    quadratic complexity w.r.t. the input sequence length. We use the following formula
+    to determine the effective duration for each cut::
+
+        effective_duration = duration + (duration ** 2) / quadratic_duration
+
+    We recomend setting quadratic_duration to something between 15 and 40 for transformer architectures.
     """
 
     max_duration: Optional[Seconds] = None
-    max_samples: Optional[int] = None
-    max_frames: Optional[int] = None
     max_cuts: Optional[int] = None
     current: Union[int, Seconds] = 0
     num_cuts: int = 0
     longest_seen: Union[int, float] = 0
+    quadratic_duration: Optional[Seconds] = None
 
     def __post_init__(self) -> None:
-        assert exactly_one_not_null(*self._constraints) or all(
-            x is None for x in self._constraints
-        )
-        for c in self._constraints:
-            assert is_none_or_gt(c, 0)
+        assert is_none_or_gt(self.max_duration, 0)
         assert is_none_or_gt(self.max_cuts, 0)
-
-    @property
-    def _constraints(self) -> Tuple:
-        return self.max_duration, self.max_frames, self.max_samples
-
-    @property
-    def active_constraint(self) -> Union[int, float, None]:
-        if self.max_frames is not None:
-            return self.max_frames
-        if self.max_samples is not None:
-            return self.max_samples
-        if self.max_duration is not None:
-            return self.max_duration
-        return None
+        assert is_none_or_gt(self.quadratic_duration, 0)
 
     def is_active(self) -> bool:
         """Is it an actual constraint, or a dummy one (i.e. never exceeded)."""
-        return any(x is not None for x in self._constraints + (self.max_cuts,))
+        return self.max_duration is not None or self.max_cuts is not None
 
     def add(self, cut: Cut) -> None:
         """
         Increment the internal counter for the time constraint,
         selecting the right property from the input ``cut`` object.
         """
-        if self.max_frames is not None:
-            self.current += cut.num_frames
-            self.longest_seen = max(self.longest_seen, cut.num_frames)
-        if self.max_samples is not None:
-            self.current += cut.num_samples
-            self.longest_seen = max(self.longest_seen, cut.num_samples)
         if self.max_duration is not None:
-            self.current += cut.duration
-            self.longest_seen = max(self.longest_seen, cut.duration)
+            duration = self._maybe_apply_quadratic_correction(cut.duration)
+            self.current += duration
+            self.longest_seen = max(self.longest_seen, duration)
         self.num_cuts += 1
+
+    def _maybe_apply_quadratic_correction(self, duration: Seconds) -> Seconds:
+        if self.quadratic_duration is None:
+            return duration
+        # For the quadratic complexity case, we add a term that accounts for
+        # extra memory occupied by the model. The 1/quadratic_duration term causes
+        # the effective duration to be doubled when it's equal to quadratic_duration.
+        return duration + (duration**2) / self.quadratic_duration
 
     def exceeded(self) -> bool:
         """Is the constraint exceeded or not."""
         if self.max_cuts is not None and self.num_cuts > self.max_cuts:
             return True
-        constraint = self.active_constraint
-        if constraint is None:
+        if self.max_duration is None:
             return False
-        return self.num_cuts * self.longest_seen > constraint
+        effective_duration = self.num_cuts * self.longest_seen
+        return effective_duration > self.max_duration
 
     def close_to_exceeding(self) -> bool:
         """
@@ -376,10 +367,6 @@ class TimeConstraint:
 
         thresh = self.longest_seen
 
-        if self.max_frames is not None:
-            return self.current + thresh >= self.max_frames
-        if self.max_samples is not None:
-            return self.current + thresh >= self.max_samples
         if self.max_duration is not None:
             return self.current + thresh >= self.max_duration - 1e-3  # float precision
         return False
@@ -398,20 +385,22 @@ class TimeConstraint:
 
     def load_state_dict(self, state_dict: Dict[str, Any]) -> None:
         self.max_duration = state_dict.pop("max_duration")
-        self.max_samples = state_dict.pop("max_samples")
-        self.max_frames = state_dict.pop("max_frames")
         self.max_cuts = state_dict.pop("max_cuts")
         self.current = state_dict.pop("current")
         self.num_cuts = state_dict.pop("num_cuts")
         self.longest_seen = state_dict.pop("longest_seen", 0)
-        state_dict.pop("strict", None)  # backward compatibility
+        self.quadratic_duration = state_dict.pop("quadratic_duration", None)
+        # backward compatibility
+        state_dict.pop("strict", None)
+        state_dict.pop("max_samples", None)
+        state_dict.pop("max_frames", None)
         assert len(state_dict) == 0, (
             "Error in TimeConstraint.load_state_dict(): Unexpected keys:\n- "
             + "\n- ".join(state_dict.keys())
         )
 
     def __add__(self, other: "TimeConstraint") -> "TimeConstraint":
-        for key in ("max_duration", "max_frames", "max_samples", "max_cuts"):
+        for key in ("max_duration", "max_cuts", "quadratic_duration"):
             self_attr = getattr(self, key)
             other_attr = getattr(other, key)
             is_none = self_attr is None and other_attr is None
@@ -421,20 +410,18 @@ class TimeConstraint:
             )
         return TimeConstraint(
             max_duration=self.max_duration,
-            max_frames=self.max_frames,
-            max_samples=self.max_samples,
             max_cuts=self.max_cuts,
             current=self.current + other.current,
             num_cuts=self.num_cuts + other.num_cuts,
             longest_seen=max(self.longest_seen, other.longest_seen),
+            quadratic_duration=self.quadratic_duration,
         )
 
     def __eq__(self, other: "TimeConstraint") -> bool:
         return (
             self.max_duration == other.max_duration
-            and self.max_samples == other.max_samples
-            and self.max_frames == other.max_frames
             and self.max_cuts == other.max_cuts
+            and self.quadratic_duration == other.quadratic_duration
         )
 
 
