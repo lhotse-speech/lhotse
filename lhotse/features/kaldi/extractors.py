@@ -348,6 +348,10 @@ class Spectrogram(FeatureExtractor):
     ) -> np.ndarray:
         return np.exp(features_a) + energy_scaling_factor_b * np.exp(features_b)
 
+    @staticmethod
+    def compute_energy(features: np.ndarray) -> float:
+        return float(np.sum(features))
+
 
 def _extract_batch(
     extractor: FeatureExtractor,
