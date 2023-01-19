@@ -73,10 +73,6 @@ class Fbank(FeatureExtractor):
         return self.config.device
 
     @property
-    def device(self) -> Union[str, torch.device]:
-        return self.config.device
-
-    @property
     def frame_shift(self) -> Seconds:
         return self.config.frame_shift
 
@@ -196,10 +192,6 @@ class Mfcc(FeatureExtractor):
         config_dict = self.config.to_dict()
         config_dict.pop("device")
         self.extractor = Wav2MFCC(**config_dict).to(self.device).eval()
-
-    @property
-    def device(self) -> Union[str, torch.device]:
-        return self.config.device
 
     @property
     def device(self) -> Union[str, torch.device]:
