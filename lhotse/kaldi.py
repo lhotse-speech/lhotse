@@ -125,13 +125,18 @@ def load_kaldi_data_dir(
         genders = load_kaldi_text_mapping(path / "spk2gender")
         languages = load_kaldi_text_mapping(path / "utt2lang")
 
+        # to support <end-time> == -1 in segments file
+        # https://kaldi-asr.org/doc/extract-segments_8cc.html
+        # <end-time> of -1 means the segment runs till the end of the WAV file
         supervision_set = SupervisionSet.from_segments(
             SupervisionSegment(
                 id=fix_id(segment_id),
                 recording_id=recording_id,
                 start=float(start),
                 duration=add_durations(
-                    float(end), -float(start), sampling_rate=sampling_rate
+                    float(end) if end != "-1" else float(get_duration(durations[recording_id])), 
+                    -float(start),
+                    sampling_rate=sampling_rate
                 ),
                 channel=0,
                 text=texts[segment_id],
