@@ -171,6 +171,90 @@ def trim_to_supervisions(
 
 
 @cut.command()
+@click.argument("cuts", type=click.Path(exists=True, dir_okay=False, allow_dash=True))
+@click.argument("output_cuts", type=click.Path(allow_dash=True))
+@click.option(
+    "--type", type=str, default="word", help="Alignment type to use for trimming"
+)
+@click.option(
+    "--max-pause",
+    type=float,
+    default=0.0,
+    help="Merge alignments separated by a pause shorter than this value",
+)
+@click.option(
+    "--delimiter",
+    "-d",
+    type=str,
+    default=" ",
+    help="Delimiter to use for concatenating alignment symbols for merging",
+)
+@click.option(
+    "--keep-all-channels/--discard-extra-channels",
+    type=bool,
+    default=False,
+    help="""If ``True``, the output cut will have the same channels as the input cut. By default,
+            the trimmed cut will have the same channels as the supervision.""",
+)
+def trim_to_alignments(
+    cuts: Pathlike,
+    output_cuts: Pathlike,
+    type: str,
+    max_pause: float,
+    delimiter: str,
+    keep_all_channels: bool,
+):
+    """
+    Return a new CutSet with Cuts that have identical spans as the alignments of
+    type `type`. An additional `max_pause` is allowed between the alignments to
+    merge contiguous alignment items.
+
+    For the case of a multi-channel cut with multiple alignments, we can either trim
+    while respecting the supervision channels (in which case output cut has the same channels
+    as the supervision) or ignore the channels (in which case output cut has the same channels
+    as the input cut).
+    """
+    cuts = CutSet.from_file(cuts)
+
+    with CutSet.open_writer(output_cuts) as writer:
+        for cut in cuts.trim_to_alignments(
+            type=type,
+            max_pause=max_pause,
+            delimiter=delimiter,
+            keep_all_channels=keep_all_channels,
+        ):
+            writer.write(cut)
+
+
+@cut.command()
+@click.argument("cuts", type=click.Path(exists=True, dir_okay=False, allow_dash=True))
+@click.argument("output_cuts", type=click.Path(allow_dash=True))
+@click.option(
+    "--max-pause",
+    type=float,
+    default=0.0,
+    help="Merge supervision groups separated by a pause shorter than this value",
+)
+def trim_to_supervision_groups(
+    cuts: Pathlike,
+    output_cuts: Pathlike,
+    max_pause: float,
+):
+    """
+    Return a new CutSet with Cuts that have identical spans as the supervision groups.
+    An additional `max_pause` is allowed to merge contiguous supervision groups.
+
+    A supervision group is defined as a set of supervisions that are overlapping or
+    separated by a pause shorter than `max_pause`.
+    """
+    cuts = CutSet.from_file(cuts)
+
+    with CutSet.open_writer(output_cuts) as writer:
+        for cut in cuts.trim_to_supervision_groups(max_pause=max_pause):
+            writer.write(cut)
+
+
+@cut.command()
 @click.argument("cut_manifests", nargs=-1, type=click.Path(exists=True, dir_okay=False))
 @click.argument("output_cut_manifest", type=click.Path())
 def mix_sequential(cut_manifests: List[Pathlike], output_cut_manifest: Pathlike):
@@ -302,7 +386,7 @@ def pad(
     is placed after the signal ends.
     """
     cut_set = CutSet.from_file(cut_manifest)
-    padded_cut_set = cut_set.pad(desired_duration=duration)
+    padded_cut_set = cut_set.pad(duration=duration)
     padded_cut_set.to_file(output_cut_manifest)
 
 

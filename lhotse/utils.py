@@ -1,8 +1,11 @@
+import ast
 import functools
+import hashlib
 import inspect
 import logging
 import math
 import random
+import sys
 import uuid
 import warnings
 from contextlib import AbstractContextManager, contextmanager
@@ -26,6 +29,7 @@ from typing import (
     Union,
 )
 
+import click
 import numpy as np
 import torch
 from tqdm.auto import tqdm
@@ -384,6 +388,19 @@ def compute_num_frames(
     return num_frames
 
 
+def compute_num_frames_from_samples(
+    num_samples: int,
+    frame_shift: Seconds,
+    sampling_rate: int,
+) -> int:
+    """
+    Compute the number of frames from number of samples and frame_shift in a safe way.
+    """
+    window_hop = round(frame_shift * sampling_rate)
+    num_frames = int((num_samples + window_hop // 2) // window_hop)
+    return num_frames
+
+
 def compute_num_windows(sig_len: Seconds, win_len: Seconds, hop: Seconds) -> int:
     """
     Return a number of windows obtained from signal of length equal to ``sig_len``
@@ -709,6 +726,13 @@ def to_hashable(item: Any) -> Any:
     return tuple(item) if isinstance(item, list) else item
 
 
+def hash_str_to_int(s: str, max_value: Optional[int] = None) -> int:
+    """Hash a string to an integer in the range [0, max_value)."""
+    if max_value is None:
+        max_value = sys.maxsize
+    return int(hashlib.sha1(s.encode("utf-8")).hexdigest(), 16) % max_value
+
+
 def lens_to_mask(lens: torch.IntTensor) -> torch.Tensor:
     """
     Create a 2-D mask tensor of shape (batch_size, max_length) and dtype float32
@@ -967,3 +991,16 @@ class Pipe:
     def __exit__(self, etype, value, traceback):
         """Context handler."""
         self.close()
+
+
+# Class to accept list of arguments as Click option
+class PythonLiteralOption(click.Option):
+    def type_cast_value(self, ctx, value):
+        try:
+            val = ast.literal_eval(value)
+            if isinstance(val, list) or isinstance(val, tuple):
+                return val[0] if len(val) == 1 else val
+            else:
+                return val
+        except:
+            return None

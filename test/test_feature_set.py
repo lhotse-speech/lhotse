@@ -15,7 +15,8 @@ from lhotse.features import (
     FeatureSet,
     FeatureSetBuilder,
     Mfcc,
-    Spectrogram,
+    TorchaudioSpectrogram,
+    TorchaudioSpectrogramConfig,
 )
 from lhotse.features.io import (
     ChunkedLilcomHdf5Writer,
@@ -243,7 +244,6 @@ def test_add_feature_sets():
     ["feature_extractor", "decimal", "exception_expectation"],
     [
         (Fbank(FbankConfig(num_filters=40, sampling_rate=8000)), 0, does_not_raise()),
-        (Spectrogram(), -1, does_not_raise()),
         (Mfcc(MfccConfig(sampling_rate=8000)), None, raises(ValueError)),
     ],
 )

@@ -722,6 +722,8 @@ class Recording:
         early_only: bool = False,
         affix_id: bool = True,
         rir_channels: Optional[List[int]] = None,
+        room_rng_seed: Optional[int] = None,
+        source_rng_seed: Optional[int] = None,
     ) -> "Recording":
         """
         Return a new ``Recording`` that will lazily apply reverberation based on provided
@@ -736,6 +738,8 @@ class Recording:
         :param rir_channels: The channels of the impulse response to be used (in case of multi-channel
             impulse responses). By default, only the first channel is used. If no RIR is
             provided, we will generate one with as many channels as this argument specifies.
+        :param room_rng_seed: The seed to be used for the room configuration.
+        :param source_rng_seed: The seed to be used for the source position.
         :return: the perturbed ``Recording``.
         """
 
@@ -755,6 +759,17 @@ class Recording:
             # Case 2
             new_channel_ids = list(range(len(rir_channels)))
 
+        if rir_recording is None:
+            from lhotse.augmentation.utils import FastRandomRIRGenerator
+
+            rir_generator = FastRandomRIRGenerator(
+                sr=self.sampling_rate,
+                room_seed=room_rng_seed,
+                source_seed=source_rng_seed,
+            )
+        else:
+            rir_generator = None
+
         transforms = self.transforms.copy() if self.transforms is not None else []
         transforms.append(
             ReverbWithImpulseResponse(
@@ -762,6 +777,7 @@ class Recording:
                 normalize_output=normalize_output,
                 early_only=early_only,
                 rir_channels=rir_channels if rir_channels is not None else [0],
+                rir_generator=rir_generator,
             ).to_dict()
         )
         return fastcopy(
@@ -1121,6 +1137,8 @@ class RecordingSet(Serializable, AlgorithmMixin):
         early_only: bool = False,
         affix_id: bool = True,
         rir_channels: List[int] = [0],
+        room_rng_seed: Optional[int] = None,
+        source_rng_seed: Optional[int] = None,
     ) -> "RecordingSet":
         """
         Return a new ``RecordingSet`` that will lazily apply reverberation based on provided
@@ -1135,6 +1153,8 @@ class RecordingSet(Serializable, AlgorithmMixin):
         :param rir_channels: The channels to be used for the RIRs (if multi-channel). Uses first
             channel by default. If no RIR is provided, we will generate one with as many channels
             as this argument specifies.
+        :param room_rng_seed: The seed to be used for the room configuration.
+        :param source_rng_seed: The seed to be used for the source positions.
         :return: a ``RecordingSet`` containing the perturbed ``Recording`` objects.
         """
         rir_recordings = list(rir_recordings)
@@ -1145,6 +1165,8 @@ class RecordingSet(Serializable, AlgorithmMixin):
                 early_only=early_only,
                 affix_id=affix_id,
                 rir_channels=rir_channels,
+                room_rng_seed=room_rng_seed,
+                source_rng_seed=source_rng_seed,
             )
             for r in self
         )
@@ -1235,11 +1257,6 @@ class AudioMixer:
         else:
             self.reference_energy = reference_energy
 
-        if self.reference_energy <= 0.0:
-            raise NonPositiveEnergyError(
-                f"To perform mix, energy must be non-zero and non-negative (got {self.reference_energy})"
-            )
-
     def _pad_track(
         self, audio: np.ndarray, offset: int, total: Optional[int] = None
     ) -> np.ndarray:
@@ -1329,18 +1346,14 @@ class AudioMixer:
 
         # When SNR is requested, find what gain is needed to satisfy the SNR
         gain = 1.0
-        if snr is not None:
+        if snr is not None and self.reference_energy > 0:
             added_audio_energy = audio_energy(audio)
-            if added_audio_energy <= 0.0:
-                raise NonPositiveEnergyError(
-                    f"To perform mix, energy must be non-zero and non-negative (got {added_audio_energy}). "
-                )
-            target_energy = self.reference_energy * (10.0 ** (-snr / 10))
-            # When mixing time-domain signals, we are working with root-power (field) quantities,
-            # whereas the energy ratio applies to power quantities. To compute the gain correctly,
-            # we need to take a square root of the energy ratio.
-            gain = sqrt(target_energy / added_audio_energy)
-
+            if added_audio_energy > 0.0:
+                target_energy = self.reference_energy * (10.0 ** (-snr / 10))
+                # When mixing time-domain signals, we are working with root-power (field) quantities,
+                # whereas the energy ratio applies to power quantities. To compute the gain correctly,
+                # we need to take a square root of the energy ratio.
+                gain = sqrt(target_energy / added_audio_energy)
         self.tracks.append(gain * audio)
         self.offsets.append(num_samples_offset)
         # We cannot mix 2 multi-channel audios with different number of channels.

@@ -38,6 +38,8 @@ def read_manifests_if_cached(
     :param types: Which types of manifests are searched for (default: 'recordings' and 'supervisions').
     :return: A dict with manifest (``d[dataset_part]['recording'|'manifest']``) or ``None``.
     """
+    if isinstance(dataset_parts, str):
+        dataset_parts = [dataset_parts]
     if output_dir is None:
         return None
     if prefix and not prefix.endswith("_"):
@@ -83,6 +85,42 @@ def manifests_exist(
         if not path.is_file():
             return False
     return True
+
+
+def normalize_text_alimeeting(text: str, normalize: str = "m2met") -> str:
+    """
+    Text normalization similar to M2MeT challenge baseline.
+    See: https://github.com/yufan-aslp/AliMeeting/blob/main/asr/local/text_normalize.pl
+    """
+    if normalize == "none":
+        return text
+    elif normalize == "m2met":
+        import re
+
+        text = text.replace("<sil>", "")
+        text = text.replace("<%>", "")
+        text = text.replace("<->", "")
+        text = text.replace("<$>", "")
+        text = text.replace("<#>", "")
+        text = text.replace("<_>", "")
+        text = text.replace("<space>", "")
+        text = text.replace("`", "")
+        text = text.replace("&", "")
+        text = text.replace(",", "")
+        if re.search("[a-zA-Z]", text):
+            text = text.upper()
+        text = text.replace("Ａ", "A")
+        text = text.replace("ａ", "A")
+        text = text.replace("ｂ", "B")
+        text = text.replace("ｃ", "C")
+        text = text.replace("ｋ", "K")
+        text = text.replace("ｔ", "T")
+        text = text.replace("，", "")
+        text = text.replace("丶", "")
+        text = text.replace("。", "")
+        text = text.replace("、", "")
+        text = text.replace("？", "")
+        return text
 
 
 def normalize_text_ami(text: str, normalize: str = "upper") -> str:
