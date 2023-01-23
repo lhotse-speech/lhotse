@@ -17,10 +17,10 @@ from lhotse.utils import fastcopy, is_module_available
 
 def annotate_with_whisper(
     manifest: Union[RecordingSet, CutSet],
-    language: Optional[str] = None,
     model_name: str = "base",
     device: str = "cpu",
     force_nonoverlapping: bool = False,
+    **decode_options,
 ) -> Generator[MonoCut, None, None]:
     """
     Use OpenAI Whisper model to annotate either RECORDINGS_MANIFEST, RECORDINGS_DIR, or CUTS_MANIFEST.
@@ -48,11 +48,11 @@ def annotate_with_whisper(
 
     if isinstance(manifest, RecordingSet):
         yield from _annotate_recordings(
-            manifest, language, model_name, device, force_nonoverlapping
+            manifest, model_name, device, force_nonoverlapping, **decode_options
         )
     elif isinstance(manifest, CutSet):
         yield from _annotate_cuts(
-            manifest, language, model_name, device, force_nonoverlapping
+            manifest, model_name, device, force_nonoverlapping, **decode_options
         )
     else:
         raise ValueError("The ``manifest`` must be either a RecordingSet or a CutSet.")
@@ -60,10 +60,10 @@ def annotate_with_whisper(
 
 def _annotate_recordings(
     recordings: RecordingSet,
-    language: str,
     model_name: str,
     device: str,
     force_nonoverlapping: bool,
+    **decode_options,
 ):
     """
     Helper function that annotates a RecordingSet with Whisper.
@@ -80,7 +80,7 @@ def _annotate_recordings(
             )
             continue
         audio = torch.from_numpy(recording.resample(16000).load_audio()).squeeze(0)
-        result = whisper.transcribe(model=model, audio=audio, language=language)
+        result = whisper.transcribe(model=model, audio=audio, **decode_options)
         # Create supervisions from segments while filtering out those with negative duration.
         supervisions = [
             SupervisionSegment(
@@ -113,10 +113,10 @@ def _annotate_recordings(
 
 def _annotate_cuts(
     cuts: CutSet,
-    language: str,
     model_name: str,
     device: str,
     force_nonoverlapping: bool,
+    **decode_options,
 ):
     """
     Helper function that annotates a CutSet with Whisper.
@@ -133,7 +133,7 @@ def _annotate_cuts(
             )
             continue
         audio = torch.from_numpy(cut.resample(16000).load_audio()).squeeze(0)
-        result = whisper.transcribe(model=model, audio=audio, language=language)
+        result = whisper.transcribe(model=model, audio=audio, **decode_options)
         # Create supervisions from segments while filtering out those with negative duration.
         supervisions = [
             SupervisionSegment(
