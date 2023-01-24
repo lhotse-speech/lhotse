@@ -17,10 +17,11 @@ from lhotse.utils import fastcopy, is_module_available
 
 def annotate_with_whisper(
     manifest: Union[RecordingSet, CutSet],
-    language: Optional[str] = None,
     model_name: str = "base",
     device: str = "cpu",
     force_nonoverlapping: bool = False,
+    download_root: Optional[str] = None,
+    **decode_options,
 ) -> Generator[MonoCut, None, None]:
     """
     Use OpenAI Whisper model to annotate either RECORDINGS_MANIFEST, RECORDINGS_DIR, or CUTS_MANIFEST.
@@ -38,6 +39,9 @@ def annotate_with_whisper(
     :param device: Where to run the inference (cpu, cuda, etc.).
     :param force_nonoverlapping: if True, the Whisper segment time-stamps will be processed to make
         sure they are non-overlapping.
+    :param download_root: if specified, the model will be downloaded to this directory. Otherwise,
+        it will be downloaded to the default location specfied by whisper.
+    :param decode_options: additional options to pass to the ``whisper.transcribe`` function.
     :return: a generator of cuts (use ``CutSet.open_writer()`` to write them).
     """
     assert is_module_available("whisper"), (
@@ -48,11 +52,11 @@ def annotate_with_whisper(
 
     if isinstance(manifest, RecordingSet):
         yield from _annotate_recordings(
-            manifest, language, model_name, device, force_nonoverlapping
+            manifest, model_name, device, force_nonoverlapping, download_root, **decode_options
         )
     elif isinstance(manifest, CutSet):
         yield from _annotate_cuts(
-            manifest, language, model_name, device, force_nonoverlapping
+            manifest, model_name, device, force_nonoverlapping, download_root, **decode_options
         )
     else:
         raise ValueError("The ``manifest`` must be either a RecordingSet or a CutSet.")
@@ -60,17 +64,18 @@ def annotate_with_whisper(
 
 def _annotate_recordings(
     recordings: RecordingSet,
-    language: str,
     model_name: str,
     device: str,
     force_nonoverlapping: bool,
+    download_root: Optional[str] = None,
+    **decode_options,
 ):
     """
     Helper function that annotates a RecordingSet with Whisper.
     """
     import whisper
 
-    model = whisper.load_model(model_name, device=device)
+    model = whisper.load_model(model_name, device=device, download_root=download_root)
 
     for recording in recordings:
         if recording.num_channels > 1:
@@ -80,7 +85,7 @@ def _annotate_recordings(
             )
             continue
         audio = torch.from_numpy(recording.resample(16000).load_audio()).squeeze(0)
-        result = whisper.transcribe(model=model, audio=audio, language=language)
+        result = whisper.transcribe(model=model, audio=audio, **decode_options)
         # Create supervisions from segments while filtering out those with negative duration.
         supervisions = [
             SupervisionSegment(
@@ -113,17 +118,18 @@ def _annotate_recordings(
 
 def _annotate_cuts(
     cuts: CutSet,
-    language: str,
     model_name: str,
     device: str,
     force_nonoverlapping: bool,
+    download_root: Optional[str] = None,
+    **decode_options,
 ):
     """
     Helper function that annotates a CutSet with Whisper.
     """
     import whisper
 
-    model = whisper.load_model(model_name, device=device)
+    model = whisper.load_model(model_name, device=device, download_root=download_root)
 
     for cut in cuts:
         if cut.num_channels > 1:
@@ -133,7 +139,7 @@ def _annotate_cuts(
             )
             continue
         audio = torch.from_numpy(cut.resample(16000).load_audio()).squeeze(0)
-        result = whisper.transcribe(model=model, audio=audio, language=language)
+        result = whisper.transcribe(model=model, audio=audio, **decode_options)
         # Create supervisions from segments while filtering out those with negative duration.
         supervisions = [
             SupervisionSegment(
