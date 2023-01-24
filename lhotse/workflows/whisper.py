@@ -20,6 +20,7 @@ def annotate_with_whisper(
     model_name: str = "base",
     device: str = "cpu",
     force_nonoverlapping: bool = False,
+    download_root: Optional[str] = None,
     **decode_options,
 ) -> Generator[MonoCut, None, None]:
     """
@@ -48,11 +49,11 @@ def annotate_with_whisper(
 
     if isinstance(manifest, RecordingSet):
         yield from _annotate_recordings(
-            manifest, model_name, device, force_nonoverlapping, **decode_options
+            manifest, model_name, device, force_nonoverlapping, download_root, **decode_options
         )
     elif isinstance(manifest, CutSet):
         yield from _annotate_cuts(
-            manifest, model_name, device, force_nonoverlapping, **decode_options
+            manifest, model_name, device, force_nonoverlapping, download_root, **decode_options
         )
     else:
         raise ValueError("The ``manifest`` must be either a RecordingSet or a CutSet.")
@@ -63,6 +64,7 @@ def _annotate_recordings(
     model_name: str,
     device: str,
     force_nonoverlapping: bool,
+    download_root: Optional[str] = None,
     **decode_options,
 ):
     """
@@ -70,7 +72,7 @@ def _annotate_recordings(
     """
     import whisper
 
-    model = whisper.load_model(model_name, device=device)
+    model = whisper.load_model(model_name, device=device, download_root=download_root)
 
     for recording in recordings:
         if recording.num_channels > 1:
@@ -116,6 +118,7 @@ def _annotate_cuts(
     model_name: str,
     device: str,
     force_nonoverlapping: bool,
+    download_root: Optional[str] = None,
     **decode_options,
 ):
     """
@@ -123,7 +126,7 @@ def _annotate_cuts(
     """
     import whisper
 
-    model = whisper.load_model(model_name, device=device)
+    model = whisper.load_model(model_name, device=device, download_root=download_root)
 
     for cut in cuts:
         if cut.num_channels > 1:
