@@ -39,6 +39,9 @@ def annotate_with_whisper(
     :param device: Where to run the inference (cpu, cuda, etc.).
     :param force_nonoverlapping: if True, the Whisper segment time-stamps will be processed to make
         sure they are non-overlapping.
+    :param download_root: if specified, the model will be downloaded to this directory. Otherwise,
+        it will be downloaded to the default location specfied by whisper.
+    :param decode_options: additional options to pass to the ``whisper.transcribe`` function.
     :return: a generator of cuts (use ``CutSet.open_writer()`` to write them).
     """
     assert is_module_available("whisper"), (
