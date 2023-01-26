@@ -52,11 +52,21 @@ def annotate_with_whisper(
 
     if isinstance(manifest, RecordingSet):
         yield from _annotate_recordings(
-            manifest, model_name, device, force_nonoverlapping, download_root, **decode_options
+            manifest,
+            model_name,
+            device,
+            force_nonoverlapping,
+            download_root,
+            **decode_options,
         )
     elif isinstance(manifest, CutSet):
         yield from _annotate_cuts(
-            manifest, model_name, device, force_nonoverlapping, download_root, **decode_options
+            manifest,
+            model_name,
+            device,
+            force_nonoverlapping,
+            download_root,
+            **decode_options,
         )
     else:
         raise ValueError("The ``manifest`` must be either a RecordingSet or a CutSet.")
