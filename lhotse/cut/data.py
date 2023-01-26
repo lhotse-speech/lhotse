@@ -570,6 +570,8 @@ class DataCut(Cut, metaclass=ABCMeta):
         direction: str = "both",
         preserve_id: bool = False,
         pad_silence: bool = True,
+        pad_feat_value: float = LOG_EPSILON,
+        pad_value_dict: Optional[Dict[str, Union[int, float]]] = None,
     ) -> Cut:
         """
         Returns a new Cut (DataCut or MixedCut) that is an extended region of the current DataCut by extending
@@ -608,6 +610,9 @@ class DataCut(Cut, metaclass=ABCMeta):
         :param pad_silence: bool. Should the cut be padded with silence if the recording is shorter than
             the desired duration. If False, the cut will be extended only as much as allowed within the
             recording's boundary.
+        :param pad_feat_value: A float value that's used for padding the features.
+        :param pad_value_dict: Optional dict that specifies what value should be used
+            for padding arrays in custom attributes.
         :return: a new MonoCut instance.
         """
         from lhotse.array import TemporalArray
@@ -636,52 +641,14 @@ class DataCut(Cut, metaclass=ABCMeta):
             for segment in self.supervisions
         )
 
-        def _this_exceeds_duration(attribute: Union[Features, TemporalArray]) -> bool:
-            # We compare in terms of frames, not seconds, to avoid rounding errors.
-            # We also allow a tolerance of 1 frame on either side.
-            new_start_frames = compute_num_frames(
-                new_start, attribute.frame_shift, self.sampling_rate
-            )
-            new_end_frames = compute_num_frames(
-                new_end, attribute.frame_shift, self.sampling_rate
-            )
-            attribute_start = compute_num_frames(
-                attribute.start, attribute.frame_shift, self.sampling_rate
-            )
-            attribute_end = attribute_start + attribute.num_frames
-            return (new_start_frames < attribute_start - 1) or (
-                new_end_frames > attribute_end + 1
-            )
-
-        feature_kwargs = {}
-        if self.has_features:
-            if _this_exceeds_duration(self.features):
-                logging.warning(
-                    "Attempting to extend a MonoCut that exceeds the range of pre-computed features. "
-                    "The feature manifest will be detached."
-                )
-                feature_kwargs["features"] = None
-
-        custom_kwargs = {}
-        if self.custom is not None:
-            for name, array in self.custom.items():
-                custom_kwargs[name] = array
-                if isinstance(array, TemporalArray):
-                    if _this_exceeds_duration(array):
-                        logging.warning(
-                            f"Attempting to extend a MonoCut that exceeds the range of pre-computed custom data '{name}'. "
-                            "The custom data will be detached."
-                        )
-                        custom_kwargs[name] = None
-
         cut = fastcopy(
             self,
             id=self.id if preserve_id else str(uuid4()),
             start=new_start,
             duration=new_duration,
             supervisions=sorted(new_supervisions, key=lambda s: s.start),
-            **feature_kwargs,
-            custom=custom_kwargs,
+            features=self.features,
+            custom=self.custom,
         )
 
         # Now pad the cut on either side if needed
@@ -690,12 +657,16 @@ class DataCut(Cut, metaclass=ABCMeta):
                 duration=cut.duration + pad_left,
                 direction="left",
                 preserve_id=preserve_id,
+                pad_feat_value=pad_feat_value,
+                pad_value_dict=pad_value_dict,
             )
         if pad_right > 0:
             cut = cut.pad(
                 duration=cut.duration + pad_right,
                 direction="right",
                 preserve_id=preserve_id,
+                pad_feat_value=pad_feat_value,
+                pad_value_dict=pad_value_dict,
             )
         return cut
 
