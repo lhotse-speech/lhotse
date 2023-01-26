@@ -1,3 +1,5 @@
+from typing import Sequence
+
 import click
 
 from lhotse.bin.modes import download, prepare
@@ -27,9 +29,19 @@ __all__ = ["libritts"]
         "66% of utterances have previous utterance."
     ),
 )
+@click.option(
+    "-p",
+    "--dataset-parts",
+    type=str,
+    default=["auto"],
+    multiple=True,
+    help="List of dataset parts to prepare. To prepare multiple parts, pass each with `-p` "
+    "Example: `-p train-clean-360 -p dev-other`",
+)
 def libritts(
     corpus_dir: Pathlike,
     output_dir: Pathlike,
+    dataset_parts: Sequence[str],
     num_jobs: int,
     link_previous_utterance: bool,
 ):
@@ -38,14 +50,25 @@ def libritts(
         corpus_dir,
         output_dir=output_dir,
         num_jobs=num_jobs,
+        dataset_parts=dataset_parts,
         link_previous_utt=link_previous_utterance,
     )
 
 
 @download.command(context_settings=dict(show_default=True))
 @click.argument("target_dir", type=click.Path())
+@click.option(
+    "-p",
+    "--dataset-parts",
+    type=str,
+    default=["auto"],
+    multiple=True,
+    help="List of dataset parts to download. To prepare multiple parts, pass each with `-p` "
+    "Example: `-p train-clean-360 -p dev-other`",
+)
 def libritts(
     target_dir: Pathlike,
+    dataset_parts: Sequence[str],
 ):
     """LibriTTS data download."""
-    download_libritts(target_dir)
+    download_libritts(target_dir, dataset_parts=dataset_parts)
