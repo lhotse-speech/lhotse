@@ -387,6 +387,7 @@ class MultiCut(DataCut):
                     for s in self.supervisions
                     if is_equal_or_contains(s.channel, channel)
                 ],
+                custom=self.custom,
             )
             for channel in to_list(self.channel)
         ]
