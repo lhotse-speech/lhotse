@@ -388,13 +388,7 @@ class OnTheFlyFeatures(BatchIO):
         features_batch = collate_matrices(features_single, padding_value=LOG_EPSILON)
 
         feature_lens = torch.tensor(
-            [
-                compute_num_frames(
-                    cut.duration, self.extractor.frame_shift, cut.sampling_rate
-                )
-                for cut in cuts
-            ],
-            dtype=torch.int64,
+            [f.size(0) for f in features_single], dtype=torch.int64
         )
 
         out = (features_batch, feature_lens)
