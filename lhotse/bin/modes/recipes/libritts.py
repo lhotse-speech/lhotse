@@ -33,7 +33,7 @@ __all__ = ["libritts"]
     "-p",
     "--dataset-parts",
     type=str,
-    default=["auto"],
+    default=["all"],
     multiple=True,
     help="List of dataset parts to prepare. To prepare multiple parts, pass each with `-p` "
     "Example: `-p train-clean-360 -p dev-other`",
@@ -61,7 +61,7 @@ def libritts(
     "-p",
     "--dataset-parts",
     type=str,
-    default=["auto"],
+    default=["all"],
     multiple=True,
     help="List of dataset parts to download. To prepare multiple parts, pass each with `-p` "
     "Example: `-p train-clean-360 -p dev-other`",
