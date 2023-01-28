@@ -234,11 +234,6 @@ def export_to_kaldi(
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    assert all(len(r.sources) == 1 for r in recordings), (
-        "Kaldi export of Recordings with multiple audio sources "
-        "is currently not supported."
-    )
-
     if map_underscores_to is not None:
         supervisions = supervisions.map(
             lambda s: fastcopy(
