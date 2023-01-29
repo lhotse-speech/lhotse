@@ -276,6 +276,34 @@ def export_to_kaldi(
             path=output_dir / "reco2dur",
         )
 
+        # text
+        save_kaldi_text_mapping(
+            data={sup.id: sup.text for sup in supervisions},
+            path=output_dir / "text",
+        )
+        # utt2spk
+        save_kaldi_text_mapping(
+            data={sup.id: sup.speaker for sup in supervisions},
+            path=output_dir / "utt2spk",
+        )
+        # utt2dur
+        save_kaldi_text_mapping(
+            data={sup.id: sup.duration for sup in supervisions},
+            path=output_dir / "utt2dur",
+        )
+        # utt2lang [optional]
+        if all(s.language is not None for s in supervisions):
+            save_kaldi_text_mapping(
+                data={sup.id: sup.language for sup in supervisions},
+                path=output_dir / "utt2lang",
+            )
+        # utt2gender [optional]
+        if all(s.gender is not None for s in supervisions):
+            save_kaldi_text_mapping(
+                data={sup.id: sup.gender for sup in supervisions},
+                path=output_dir / "utt2gender",
+            )
+
     else:
         # wav.scp
         save_kaldi_text_mapping(
@@ -303,39 +331,39 @@ def export_to_kaldi(
         # segments
         save_kaldi_text_mapping(
             data={
-                sup.id: f"{sup.recording_id}_{sup.channel} {sup.start} {sup.end}"
-                for sup in supervisions
+                sup.id + f"-{channel}": f"{sup.recording_id}_{channel} {sup.start} {sup.end}"
+                for sup in supervisions for channel in sup.channel
             },
             path=output_dir / "segments",
         )
 
-    # text
-    save_kaldi_text_mapping(
-        data={sup.id: sup.text for sup in supervisions},
-        path=output_dir / "text",
-    )
-    # utt2spk
-    save_kaldi_text_mapping(
-        data={sup.id: sup.speaker for sup in supervisions},
-        path=output_dir / "utt2spk",
-    )
-    # utt2dur
-    save_kaldi_text_mapping(
-        data={sup.id: sup.duration for sup in supervisions},
-        path=output_dir / "utt2dur",
-    )
-    # utt2lang [optional]
-    if all(s.language is not None for s in supervisions):
+        # text
         save_kaldi_text_mapping(
-            data={sup.id: sup.language for sup in supervisions},
-            path=output_dir / "utt2lang",
+            data={sup.id + f"-{channel}": sup.text for sup in supervisions for channel in sup.channel},
+            path=output_dir / "text",
         )
-    # utt2gender [optional]
-    if all(s.gender is not None for s in supervisions):
+        # utt2spk
         save_kaldi_text_mapping(
-            data={sup.id: sup.gender for sup in supervisions},
-            path=output_dir / "utt2gender",
+            data={sup.id  + f"-{channel}": sup.speaker for sup in supervisions for channel in sup.channel},
+            path=output_dir / "utt2spk",
         )
+        # utt2dur
+        save_kaldi_text_mapping(
+            data={sup.id  + f"-{channel}" : sup.duration for sup in supervisions for channel in sup.channel},
+            path=output_dir / "utt2dur",
+        )
+        # utt2lang [optional]
+        if all(s.language is not None for s in supervisions):
+            save_kaldi_text_mapping(
+                data={sup.id  + f"-{channel}" : sup.language for sup in supervisions for channel in sup.channel},
+                path=output_dir / "utt2lang",
+            )
+        # utt2gender [optional]
+        if all(s.gender is not None for s in supervisions):
+            save_kaldi_text_mapping(
+                data={sup.id  + f"-{channel}" : sup.gender for sup in supervisions for channel in sup.channel},
+                path=output_dir / "utt2gender",
+            )
 
 
 def load_kaldi_text_mapping(
