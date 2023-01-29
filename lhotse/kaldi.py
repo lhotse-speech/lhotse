@@ -289,6 +289,17 @@ def export_to_kaldi(
             },
             path=output_dir / "wav.scp",
         )
+
+        # reco2dur
+        save_kaldi_text_mapping(
+            data={
+                f"{recording.id}_{channel}": recording.duration
+                for recording in recordings
+                for source in recording.sources
+                for channel in source.channels},
+            path=output_dir / "reco2dur"
+        )
+
         # segments
         save_kaldi_text_mapping(
             data={
@@ -297,15 +308,7 @@ def export_to_kaldi(
             },
             path=output_dir / "segments",
         )
-        # reco2dur
-        save_kaldi_text_mapping(
-            data={
-                f"{recording.id}_{channel}": recording.duration
-                for recording in recordings
-                for channel in recording.sources[0].channels
-            },
-            path=output_dir / "reco2dur",
-        )
+
     # text
     save_kaldi_text_mapping(
         data={sup.id: sup.text for sup in supervisions},
