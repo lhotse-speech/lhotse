@@ -305,7 +305,7 @@ def export_to_kaldi(
             )
 
     else:
-        # wav.scp
+
         save_kaldi_text_mapping(
             data={
                 f"{recording.id}_{channel}": make_wavscp_channel_string_map(
