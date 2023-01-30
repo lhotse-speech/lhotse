@@ -1785,6 +1785,12 @@ class CutSet(Serializable, AlgorithmMixin):
         """
         return self.map(lambda cut: cut.drop_supervisions())
 
+    def drop_alignments(self) -> "CutSet":
+        """
+        Return a new :class:`.CutSet`, where each :class:`.Cut` is copied and detached from the alignments present in its supervisions.
+        """
+        return self.map(lambda cut: cut.drop_alignments())
+
     def compute_and_store_features(
         self,
         extractor: FeatureExtractor,

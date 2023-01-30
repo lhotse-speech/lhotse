@@ -8,11 +8,10 @@ from torch import distributed as dist
 from torch.utils.data import Sampler
 
 from lhotse.cut import Cut, CutSet
-from lhotse.lazy import Dillable
 from lhotse.utils import Seconds, exactly_one_not_null, is_none_or_gt
 
 
-class CutSampler(Sampler, Dillable):
+class CutSampler(Sampler):
     """
     ``CutSampler`` is responsible for collecting batches of cuts, given specified criteria.
     It implements correct handling of distributed sampling in ``DataLoader``,
@@ -83,7 +82,7 @@ class CutSampler(Sampler, Dillable):
 
         self._maybe_init_distributed(world_size=world_size, rank=rank)
         # By default, self._filter_fn passes every Cut through.
-        self._filter_fn: Callable[[Cut], bool] = _filter_nothing()
+        self._filter_fn: Callable[[Cut], bool] = _filter_nothing
 
     @property
     def diagnostics(self):
@@ -135,10 +134,7 @@ class CutSampler(Sampler, Dillable):
             ... # Retain only the cuts that have at least 1s and at most 20s duration.
             ... sampler.filter(lambda cut: 1.0 <= cut.duration <= 20.0)
         """
-        if isinstance(self._filter_fn, _filter_nothing):
-            self._filter_fn = predicate
-        else:
-            self._filter_fn = _and(self._filter_fn, predicate)
+        self._filter_fn = predicate
 
     def state_dict(self) -> Dict[str, Any]:
         """
@@ -627,15 +623,5 @@ class SamplingDiagnostics:
         )
 
 
-class _filter_nothing:
-    def __call__(self, cut: Cut) -> bool:
-        return True
-
-
-def _and(
-    fn1: Callable[[Cut], bool], fn2: Callable[[Cut], bool]
-) -> Callable[[Cut], bool]:
-    def _and_wrapper(cut: Cut) -> bool:
-        return fn1(cut) and fn2(cut)
-
-    return _and_wrapper
+def _filter_nothing(cut: Cut) -> bool:
+    return True

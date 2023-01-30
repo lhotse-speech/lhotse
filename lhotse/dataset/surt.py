@@ -32,23 +32,16 @@ class K2SurtDataset(torch.utils.data.Dataset):
                         - features: (B, T, F)
                         - audio: (B, T)
                       - multi-channel: currently not supported
-            'supervisions': [
-                {
-                    'sequence_idx': Tensor[int] of shape (S,)
-                    'text': List[str] of len S
-
-                    # For feature input strategies
-                    'start_frame': Tensor[int] of shape (S,)
-                    'num_frames': Tensor[int] of shape (S,)
-
-                    # For audio input strategies
-                    'start_sample': Tensor[int] of shape (S,)
-                    'num_samples': Tensor[int] of shape (S,)
-
-                    # Optionally, when return_cuts=True
-                    'cut': List[AnyCut] of len S
-                }
-            ]
+            'input_lens': int tensor of shape (B,)
+            'supervisions': list of lists of supervision segments, where the outer list is
+                        batch, and the inner list is indexed by channel. So ``len(supervisions) == B``,
+                        and ``len(supervisions[i]) == num_channels``. Note that some channels may
+                        have no supervision segments.
+            'text': list of lists of strings, where the outer list is batch, and the inner list
+                    is indexed by channel. So ``len(text) == B``, and ``len(text[i]) == num_channels``.
+                    Each element contains the text of the supervision segments in that channel,
+                    joined by the :attr:`text_delimiter`. Note that some channels may have no
+                    supervision segments, so the corresponding text will be an empty string.
         }
 
     Dimension symbols legend:
@@ -63,6 +56,7 @@ class K2SurtDataset(torch.utils.data.Dataset):
     def __init__(
         self,
         return_cuts: bool = False,
+        return_alignments: bool = False,
         num_channels: int = 2,
         text_delimiter: str = " ",
         cut_transforms: List[Callable[[CutSet], CutSet]] = None,
@@ -74,6 +68,8 @@ class K2SurtDataset(torch.utils.data.Dataset):
 
         :param return_cuts: When ``True``, will additionally return a "cut" field in each batch with the Cut
             objects used to create that batch.
+        :param return_alignments: When ``True``, will keep the supervision alignments if they
+            are present in the cuts.
         :param num_channels: Number of output branches. The supervision utterances will be
             split into the channels based on their start times.
         :param text_delimiter: The delimiter used to join the text of the supervision segments in
@@ -88,6 +84,7 @@ class K2SurtDataset(torch.utils.data.Dataset):
         super().__init__()
         # Initialize the fields
         self.return_cuts = return_cuts
+        self.return_alignments = return_alignments
         self.num_channels = num_channels
         self.text_delimiter = text_delimiter
         self.cut_transforms = ifnone(cut_transforms, [])
@@ -98,8 +95,6 @@ class K2SurtDataset(torch.utils.data.Dataset):
         # throughout the epoch. It regularly closes open file handles to
         # reset the internal HDF5 caches.
         self.hdf5_fix = Hdf5MemoryIssueFix(reset_interval=100)
-
-        assert num_channels == 2, "Only 2 channels are supported for now."
 
     def __getitem__(self, cuts: CutSet) -> Dict[str, Union[torch.Tensor, List[str]]]:
         """
@@ -112,6 +107,8 @@ class K2SurtDataset(torch.utils.data.Dataset):
 
         # Sort the cuts by duration so that the first one determines the batch time dimensions.
         cuts = cuts.sort_by_duration(ascending=False)
+        if not self.return_alignments:
+            cuts = cuts.drop_alignments()
 
         # Optional CutSet transforms - e.g. padding, or speed perturbation that adjusts
         # the supervision boundaries.
@@ -130,37 +127,48 @@ class K2SurtDataset(torch.utils.data.Dataset):
             inputs, input_lens = input_tpl
 
         # Assign supervisions to channels based on their start times.
-        supervisions_ch0 = defaultdict(list)
-        supervisions_ch1 = defaultdict(list)
+        # ``supervisions`` is a dict indexed by cut id, and each value is a list of
+        # lists of supervisions. The outer list is indexed by channel, and the inner
+        # list contains the supervisions for that channel.
+        supervisions = defaultdict(list)
         for cut in cuts:
-            supervisions_ch0[cut.id] = []
-            supervisions_ch1[cut.id] = []
-            for sup in cut.supervisions:
-                if (
-                    len(supervisions_ch0[cut.id]) == 0
-                    or supervisions_ch0[cut.id][-1].end < sup.start
-                ):
-                    supervisions_ch0[cut.id].append(sup)
-                else:
-                    supervisions_ch1[cut.id].append(sup)
+            cut_sups = [[] for _ in range(self.num_channels)]
+            last_sup_end = [0.0 for _ in range(self.num_channels)]
+
+            for sup in sorted(cut.supervisions, key=lambda s: s.start):
+                # Assign the supervision to the first channel that is either empty or
+                # has a supervision that ends before the current supervision starts.
+                assigned = False
+                for i in range(self.num_channels):
+                    if len(cut_sups[i]) == 0 or cut_sups[i][-1].end < sup.start:
+                        cut_sups[i].append(sup)
+                        last_sup_end[i] = max(last_sup_end[i], sup.end)
+                        assigned = True
+                        break
+
+                if not assigned:
+                    # If we reach here, it means that there is no channel that is empty
+                    # or has a supervision that ends before the current supervision starts.
+                    # This is possible if number of overlapping speakers is more than the
+                    # number of available channels. In this case, we assign the supervision
+                    # so as to minimize the overlapping part. For this, we select the
+                    # channel which ends the earliest.
+                    min_end_channel = last_sup_end.index(min(last_sup_end))
+                    cut_sups[min_end_channel].append(sup)
+
+            supervisions[cut.id] = cut_sups
 
         batch = {
             "inputs": inputs,
             "input_lens": input_lens,
-            "supervisions_ch0": list(supervisions_ch0.values()),
-            "supervisions_ch1": list(supervisions_ch1.values()),
-            "text_ch0": default_collate(
+            "supervisions": list(supervisions.values()),
+            "text": [
                 [
-                    self.text_delimiter.join([sup.text for sup in cut_sups])
-                    for cut_sups in supervisions_ch0.values()
+                    self.text_delimiter.join([sup.text.strip() for sup in sups_ch])
+                    for sups_ch in cut_sups
                 ]
-            ),
-            "text_ch1": default_collate(
-                [
-                    self.text_delimiter.join([sup.text for sup in cut_sups])
-                    for cut_sups in supervisions_ch1.values()
-                ]
-            ),
+                for cut_sups in supervisions.values()
+            ],
         }
         if self.return_cuts:
             batch["cuts"] = cuts
