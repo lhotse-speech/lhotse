@@ -324,44 +324,67 @@ def export_to_kaldi(
                 f"{recording.id}_{channel}": recording.duration
                 for recording in recordings
                 for source in recording.sources
-                for channel in source.channels},
-            path=output_dir / "reco2dur"
+                for channel in source.channels
+            },
+            path=output_dir / "reco2dur",
         )
 
         # segments
         save_kaldi_text_mapping(
             data={
-                sup.id + f"-{channel}": f"{sup.recording_id}_{channel} {sup.start} {sup.end}"
-                for sup in supervisions for channel in sup.channel
+                sup.id
+                + f"-{channel}": f"{sup.recording_id}_{channel} {sup.start} {sup.end}"
+                for sup in supervisions
+                for channel in sup.channel
             },
             path=output_dir / "segments",
         )
 
         # text
         save_kaldi_text_mapping(
-            data={sup.id + f"-{channel}": sup.text for sup in supervisions for channel in sup.channel},
+            data={
+                sup.id + f"-{channel}": sup.text
+                for sup in supervisions
+                for channel in sup.channel
+            },
             path=output_dir / "text",
         )
         # utt2spk
         save_kaldi_text_mapping(
-            data={sup.id  + f"-{channel}": sup.speaker for sup in supervisions for channel in sup.channel},
+            data={
+                sup.id + f"-{channel}": sup.speaker
+                for sup in supervisions
+                for channel in sup.channel
+            },
             path=output_dir / "utt2spk",
         )
         # utt2dur
         save_kaldi_text_mapping(
-            data={sup.id  + f"-{channel}" : sup.duration for sup in supervisions for channel in sup.channel},
+            data={
+                sup.id + f"-{channel}": sup.duration
+                for sup in supervisions
+                for channel in sup.channel
+            },
             path=output_dir / "utt2dur",
         )
         # utt2lang [optional]
         if all(s.language is not None for s in supervisions):
             save_kaldi_text_mapping(
-                data={sup.id  + f"-{channel}" : sup.language for sup in supervisions for channel in sup.channel},
+                data={
+                    sup.id + f"-{channel}": sup.language
+                    for sup in supervisions
+                    for channel in sup.channel
+                },
                 path=output_dir / "utt2lang",
             )
         # utt2gender [optional]
         if all(s.gender is not None for s in supervisions):
             save_kaldi_text_mapping(
-                data={sup.id  + f"-{channel}" : sup.gender for sup in supervisions for channel in sup.channel},
+                data={
+                    sup.id + f"-{channel}": sup.gender
+                    for sup in supervisions
+                    for channel in sup.channel
+                },
                 path=output_dir / "utt2gender",
             )
 
