@@ -42,11 +42,10 @@ def download_libritts(
     base_url: Optional[str] = "http://www.openslr.org/resources",
 ) -> Path:
     """
-    Download and untar the dataset, supporting both LibriSpeech and MiniLibrispeech
+    Download and untar the dataset
 
     :param target_dir: Pathlike, the path of the dir to storage the dataset.
-    :param dataset_parts: "librispeech", "mini_librispeech",
-        or a list of splits (e.g. "dev-clean") to download.
+    :param dataset_parts: "all", or a list of splits (e.g. "dev-clean") to download.
     :param force_download: Bool, if True, download the tars no matter if the tars exist.
     :param base_url: str, the url of the OpenSLR resources.
     :return: the path to downloaded and extracted directory with data.
@@ -54,10 +53,12 @@ def download_libritts(
     target_dir = Path(target_dir)
     target_dir.mkdir(parents=True, exist_ok=True)
 
-    if dataset_parts == "all":
+    if dataset_parts == "all" or dataset_parts[0] == "all":
         dataset_parts = LIBRITTS
+    elif isinstance(dataset_parts, str):
+        dataset_parts = [dataset_parts]
 
-    for part in tqdm(dataset_parts, desc="Downloading LibriSpeech parts"):
+    for part in tqdm(dataset_parts, desc="Downloading LibriTTS parts"):
         if part not in LIBRITTS:
             logging.warning(f"Skipping invalid dataset part name: {part}")
         url = f"{base_url}/60"
@@ -82,7 +83,7 @@ def download_libritts(
 
 def prepare_libritts(
     corpus_dir: Pathlike,
-    dataset_parts: Union[str, Sequence[str]] = "auto",
+    dataset_parts: Union[str, Sequence[str]] = "all",
     output_dir: Optional[Pathlike] = None,
     num_jobs: int = 1,
     link_previous_utt: bool = False,
@@ -104,7 +105,7 @@ def prepare_libritts(
     corpus_dir = Path(corpus_dir)
     assert corpus_dir.is_dir(), f"No such directory: {corpus_dir}"
 
-    if dataset_parts == "auto":
+    if dataset_parts == "all" or dataset_parts[0] == "all":
         dataset_parts = LIBRITTS
     elif isinstance(dataset_parts, str):
         assert dataset_parts in LIBRITTS
