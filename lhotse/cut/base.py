@@ -659,7 +659,7 @@ class Cut:
                 cur_end = max(cur_end, sup.end)
             else:
                 offset = supervision_group[0].start
-                duration = supervision_group[-1].end - offset
+                duration = cur_end - offset
                 new_cuts.append(
                     self.truncate(
                         offset=offset,
@@ -671,15 +671,16 @@ class Cut:
                 cur_end = sup.end
 
         # Add the last group.
-        offset = supervision_group[0].start
-        duration = supervision_group[-1].end - offset
-        new_cuts.append(
-            self.truncate(
-                offset=offset,
-                duration=duration,
-                keep_excessive_supervisions=False,
+        if len(supervision_group) > 0:
+            offset = supervision_group[0].start
+            duration = cur_end - offset
+            new_cuts.append(
+                self.truncate(
+                    offset=offset,
+                    duration=duration,
+                    keep_excessive_supervisions=False,
+                )
             )
-        )
         return CutSet.from_cuts(new_cuts)
 
     def cut_into_windows(
