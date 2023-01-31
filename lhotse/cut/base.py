@@ -659,7 +659,9 @@ class Cut:
                 cur_end = max(cur_end, sup.end)
             else:
                 offset = supervision_group[0].start
-                duration = cur_end - offset
+                duration = add_durations(
+                    cur_end, -offset, sampling_rate=self.sampling_rate
+                )
                 new_cuts.append(
                     self.truncate(
                         offset=offset,
@@ -673,7 +675,7 @@ class Cut:
         # Add the last group.
         if len(supervision_group) > 0:
             offset = supervision_group[0].start
-            duration = cur_end - offset
+            duration = add_durations(cur_end, -offset, sampling_rate=self.sampling_rate)
             new_cuts.append(
                 self.truncate(
                     offset=offset,
@@ -681,6 +683,15 @@ class Cut:
                     keep_excessive_supervisions=False,
                 )
             )
+        # The total number of supervisions should be the same.
+        assert sum(len(c.supervisions) for c in new_cuts) == len(self.supervisions), (
+            "The total number of supervisions decreased after trimming to supervision groups.\n"
+            f"{sum(len(c.supervisions) for c in new_cuts)} != {len(self.supervisions)}\n"
+            "This is likely a bug. Please report it here: https://github.com/lhotse-speech/lhotse/issues/new,"
+            "and provide the following information:\n"
+            f"original cut: {self},\n"
+            f"new cuts: {new_cuts}"
+        )
         return CutSet.from_cuts(new_cuts)
 
     def cut_into_windows(
