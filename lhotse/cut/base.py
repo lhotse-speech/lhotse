@@ -687,7 +687,7 @@ class Cut:
         assert sum(len(c.supervisions) for c in new_cuts) == len(self.supervisions), (
             "The total number of supervisions decreased after trimming to supervision groups.\n"
             f"{sum(len(c.supervisions) for c in new_cuts)} != {len(self.supervisions)}\n"
-            "This is likely a bug. Please report it here: https://github.com/lhotse-speech/lhotse/issues/new,"
+            "This is likely a bug. Please report it here: https://github.com/lhotse-speech/lhotse/issues/new, "
             "and provide the following information:\n"
             f"original cut: {self},\n"
             f"new cuts: {new_cuts}"
