@@ -14,6 +14,7 @@ from lhotse.utils import (
     compute_num_samples,
     fastcopy,
     is_module_available,
+    to_list,
 )
 
 
@@ -67,10 +68,18 @@ def load_kaldi_data_dir(
     All the other files (text, utt2spk, etc.) are optional, and some of them might
     not be handled yet. In particular, feats.scp files are ignored.
 
+    :param path: Path to the Kaldi data directory.
+    :param sampling_rate: Sampling rate of the recordings.
+    :param frame_shift: Optional, if specified, we will create a Features manifest
+        and store the frame_shift value in it.
     :param map_string_to_underscores: optional string, when specified, we will replace
         all instances of this string in SupervisonSegment IDs to underscores.
         This is to help with handling underscores in Kaldi
         (see :func:`.export_to_kaldi`). This is also done for speaker IDs.
+    :param use_reco2dur: If True, we will use the reco2dur file to read the durations
+        of the recordings. If False, we will read the durations from the audio files
+        themselves.
+    :param num_jobs: Number of parallel jobs to use when reading the audio files.
     """
     path = Path(path)
     assert path.is_dir()
@@ -125,13 +134,18 @@ def load_kaldi_data_dir(
         genders = load_kaldi_text_mapping(path / "spk2gender")
         languages = load_kaldi_text_mapping(path / "utt2lang")
 
+        # to support <end-time> == -1 in segments file
+        # https://kaldi-asr.org/doc/extract-segments_8cc.html
+        # <end-time> of -1 means the segment runs till the end of the WAV file
         supervision_set = SupervisionSet.from_segments(
             SupervisionSegment(
                 id=fix_id(segment_id),
                 recording_id=recording_id,
                 start=float(start),
                 duration=add_durations(
-                    float(end), -float(start), sampling_rate=sampling_rate
+                    float(end) if end != "-1" else durations[recording_id],
+                    -float(start),
+                    sampling_rate=sampling_rate,
                 ),
                 channel=0,
                 text=texts[segment_id],
@@ -230,6 +244,12 @@ def export_to_kaldi(
         underscores. This helps avoid issues with Kaldi data dir sorting.
     :param prefix_spk_id: add speaker_id as a prefix of utterance_id (this is to
         ensure correct sorting inside files which is required by Kaldi)
+
+    .. note:: If you export a ``RecordingSet`` with multiple channels, then the
+        resulting Kaldi data directory may not be back-compatible with Lhotse
+        (i.e. you won't be able to import it back to Lhotse in the same form).
+        This is because Kaldi does not inherently support multi-channel recordings,
+        so we have to break them down into single-channel recordings.
     """
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -251,6 +271,7 @@ def export_to_kaldi(
         # the channel id affix to retain back compatibility
         # and the ability to receive back the same utterances after
         # importing the exported directory back
+
         # wav.scp
         save_kaldi_text_mapping(
             data={
@@ -335,7 +356,7 @@ def export_to_kaldi(
                 sup.id
                 + f"-{channel}": f"{sup.recording_id}_{channel} {sup.start} {sup.end}"
                 for sup in supervisions
-                for channel in sup.channel
+                for channel in to_list(sup.channel)
             },
             path=output_dir / "segments",
         )
@@ -345,7 +366,7 @@ def export_to_kaldi(
             data={
                 sup.id + f"-{channel}": sup.text
                 for sup in supervisions
-                for channel in sup.channel
+                for channel in to_list(sup.channel)
             },
             path=output_dir / "text",
         )
@@ -354,7 +375,7 @@ def export_to_kaldi(
             data={
                 sup.id + f"-{channel}": sup.speaker
                 for sup in supervisions
-                for channel in sup.channel
+                for channel in to_list(sup.channel)
             },
             path=output_dir / "utt2spk",
         )
@@ -363,7 +384,7 @@ def export_to_kaldi(
             data={
                 sup.id + f"-{channel}": sup.duration
                 for sup in supervisions
-                for channel in sup.channel
+                for channel in to_list(sup.channel)
             },
             path=output_dir / "utt2dur",
         )
@@ -373,7 +394,7 @@ def export_to_kaldi(
                 data={
                     sup.id + f"-{channel}": sup.language
                     for sup in supervisions
-                    for channel in sup.channel
+                    for channel in to_list(sup.channel)
                 },
                 path=output_dir / "utt2lang",
             )
@@ -383,7 +404,7 @@ def export_to_kaldi(
                 data={
                     sup.id + f"-{channel}": sup.gender
                     for sup in supervisions
-                    for channel in sup.channel
+                    for channel in to_list(sup.channel)
                 },
                 path=output_dir / "utt2gender",
             )

@@ -7,12 +7,15 @@ Z. Chen et al., "Continuous speech separation: dataset and analysis,"
 ICASSP 2020 - 2020 IEEE International Conference on Acoustics, Speech and Signal Processing (ICASSP),
 Barcelona, Spain, 2020
 """
+import json
 import logging
 import subprocess
+from collections import defaultdict
 from pathlib import Path
 from typing import Dict, Union
 
 from lhotse import (
+    CutSet,
     RecordingSet,
     SupervisionSegment,
     SupervisionSet,
@@ -125,7 +128,8 @@ def prepare_libricss(
     corpus_dir: Pathlike,
     output_dir: Pathlike = None,
     type: str = "mdm",
-) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet]]]:
+    segmented_cuts: bool = False,
+) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet, CutSet]]]:
     """
     Returns the manifests which consist of the Recordings and Supervisions.
     When all the manifests are available in the ``output_dir``, it will simply read and return them.
@@ -138,6 +142,9 @@ def prepare_libricss(
     :param output_dir: Pathlike, the path where to write the manifests.
     :param type: str, the type of data to prepare ('mdm', 'sdm', 'ihm-mix', or 'ihm'). These settings
         are similar to the ones in AMI and ICSI recipes.
+    :param segmented_cuts: bool, if True, it will return 1-minute (as described in the original paper)
+        in the form of a CutSet. These are saved under the index ``segments`` in the returned Dict.
+        May be useful for evaluating multi-talker ASR systems, e.g., in this paper: https://arxiv.org/abs/2109.08555.
     :return: a Dict whose key is the dataset part, and the value is Dicts with the keys 'audio' and 'supervisions'.
 
     """
@@ -150,12 +157,14 @@ def prepare_libricss(
 
     recordings = []
     segments = []
+    session_name_map = {}  # Map from original session name to simplified name
 
     for ov in OVERLAP_RATIOS:
         for session in (corpus_dir / ov).iterdir():
             _, _, _, _, _, name, actual_ov = session.name.split("_")
             actual_ov = float(actual_ov.split("actual")[1])
             recording_id = f"{ov}_{name}"
+            session_name_map[session.name] = recording_id
             audio_path = (
                 session / "clean" / "mix.wav"
                 if type == "ihm-mix"
@@ -196,13 +205,59 @@ def prepare_libricss(
     recordings = RecordingSet.from_recordings(recordings)
     validate_recordings_and_supervisions(recordings, supervisions)
 
+    result_dict = {"recordings": recordings, "supervisions": supervisions}
+
+    if segmented_cuts:
+        segments = defaultdict(list)
+        # Read the segments from the JSON file. The JSON file is a dictionary
+        # with the session name as the key and the value is a list of tuples
+        # with the start and end time of the segments.
+        with open(corpus_dir / "all_res.json", "r") as f:
+            res = json.load(f)
+            for session, segs in res.items():
+                segments[session_name_map[session]].extend(segs)
+
+        # Create recording-level cuts. We will then truncate them to create
+        # the 1-minute segments.
+        cuts_reco = CutSet.from_manifests(
+            recordings=recordings,
+            supervisions=supervisions,
+        )
+
+        # Now create the 1-minute segments.
+        cuts_segmented = []
+        for session, session_segments in segments.items():
+            # Get the recording-level cut
+            session_cut = cuts_reco.filter(
+                lambda c: c.recording_id == session
+            ).to_eager()[0]
+
+            # Iterate over all the segments and create a new cut for each
+            for idx, seg in enumerate(session_segments):
+                start = seg[0] / 16000
+                duration = (seg[1] - seg[0]) / 16000
+                new_cut = session_cut.truncate(
+                    offset=start,
+                    duration=duration,
+                    keep_excessive_supervisions=False,
+                ).with_id(f"{session}-{idx}")
+                cuts_segmented.append(new_cut)
+
+        # Add the segmented cuts to the result dict
+        cuts_segmented = CutSet.from_cuts(cuts_segmented)
+        result_dict["segments"] = cuts_segmented
+
     if output_dir is not None:
         output_dir = Path(output_dir)
         output_dir.mkdir(exist_ok=True, parents=True)
         recordings.to_file(output_dir / f"libricss-{type}_recordings_all.jsonl.gz")
         supervisions.to_file(output_dir / f"libricss-{type}_supervisions_all.jsonl.gz")
+        if segmented_cuts:
+            cuts_segmented.to_file(
+                output_dir / f"libricss-{type}_segments_all.jsonl.gz"
+            )
 
-    return {"recordings": recordings, "supervisions": supervisions}
+    return result_dict
 
 
 def parse_transcript(file_name):
