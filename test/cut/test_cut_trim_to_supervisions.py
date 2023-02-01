@@ -70,6 +70,72 @@ def mono_cut():
 
 
 @pytest.fixture
+def mono_cut2():
+    """
+    Scenario::
+
+
+    ■───────────────────Recording───────────────────────■
+
+    ○─────────Hey, Matt!─────────────○    ○───Hello─────○
+
+        ○───────────Hi───────○
+
+    """
+    rec = Recording(
+        id="rec1", duration=6.0, sampling_rate=8000, num_samples=80000, sources=[]
+    )
+    sups = [
+        SupervisionSegment(
+            id="sup1",
+            recording_id="rec1",
+            start=0.0,
+            duration=3.37,
+            text="Hey, Matt!",
+            alignment={
+                "word": [
+                    AlignmentItem(symbol="Hey", start=0.0, duration=0.5),
+                    AlignmentItem(symbol="", start=0.5, duration=0.4),
+                    AlignmentItem(symbol="Matt", start=0.9, duration=2.0),
+                ]
+            },
+        ),
+        SupervisionSegment(
+            id="sup2",
+            recording_id="rec1",
+            start=1.2,
+            duration=1.0,
+            text="Hi",
+            alignment={
+                "word": [
+                    AlignmentItem(symbol="Yes", start=1.2, duration=1.0),
+                ]
+            },
+        ),
+        SupervisionSegment(
+            id="sup3",
+            recording_id="rec1",
+            start=4.0,
+            duration=2.0,
+            text="Hello",
+            alignment={
+                "word": [
+                    AlignmentItem(symbol="Hello", start=4.0, duration=2.0),
+                ]
+            },
+        ),
+    ]
+    return MonoCut(
+        id="rec1-cut1",
+        start=0.0,
+        duration=6.0,
+        channel=0,
+        recording=rec,
+        supervisions=sups,
+    )
+
+
+@pytest.fixture
 def multi_cut():
     """
     Scenario::
@@ -460,3 +526,10 @@ def test_cut_set_trim_to_supervision_groups(mono_cut, num_jobs):
     cuts = mono_cut.trim_to_supervisions(keep_overlapping=False)
     cuts = cuts.trim_to_supervision_groups(max_pause=0.1, num_jobs=num_jobs).to_eager()
     assert len(cuts) == 3
+
+
+def test_cut_set_trim_to_supervision_groups_edge_case1(mono_cut2):
+    cuts = mono_cut2.trim_to_supervision_groups(max_pause=0.1).to_eager()
+    assert len(cuts) == 2
+    assert cuts[0].duration == 3.37
+    assert cuts[1].duration == 2.0

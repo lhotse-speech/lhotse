@@ -642,7 +642,6 @@ class Cut:
         :param max_pause: An optional duration in seconds; if the gap between two supervisions
             is longer than this, they will be treated as separate groups. By default, this is
             set to 0.0, which means that no gaps are allowed between supervisions.
-        :param num_jobs: Number of parallel workers to process the cuts.
         :return: a ``CutSet``.
         """
         from .set import CutSet
@@ -659,7 +658,9 @@ class Cut:
                 cur_end = max(cur_end, sup.end)
             else:
                 offset = supervision_group[0].start
-                duration = supervision_group[-1].end - offset
+                duration = add_durations(
+                    cur_end, -offset, sampling_rate=self.sampling_rate
+                )
                 new_cuts.append(
                     self.truncate(
                         offset=offset,
@@ -671,14 +672,24 @@ class Cut:
                 cur_end = sup.end
 
         # Add the last group.
-        offset = supervision_group[0].start
-        duration = supervision_group[-1].end - offset
-        new_cuts.append(
-            self.truncate(
-                offset=offset,
-                duration=duration,
-                keep_excessive_supervisions=False,
+        if len(supervision_group) > 0:
+            offset = supervision_group[0].start
+            duration = add_durations(cur_end, -offset, sampling_rate=self.sampling_rate)
+            new_cuts.append(
+                self.truncate(
+                    offset=offset,
+                    duration=duration,
+                    keep_excessive_supervisions=False,
+                )
             )
+        # The total number of supervisions should be the same.
+        assert sum(len(c.supervisions) for c in new_cuts) == len(self.supervisions), (
+            "The total number of supervisions decreased after trimming to supervision groups.\n"
+            f"{sum(len(c.supervisions) for c in new_cuts)} != {len(self.supervisions)}\n"
+            "This is likely a bug. Please report it here: https://github.com/lhotse-speech/lhotse/issues/new, "
+            "and provide the following information:\n"
+            f"original cut: {self},\n"
+            f"new cuts: {new_cuts}"
         )
         return CutSet.from_cuts(new_cuts)
 
