@@ -642,7 +642,6 @@ class Cut:
         :param max_pause: An optional duration in seconds; if the gap between two supervisions
             is longer than this, they will be treated as separate groups. By default, this is
             set to 0.0, which means that no gaps are allowed between supervisions.
-        :param num_jobs: Number of parallel workers to process the cuts.
         :return: a ``CutSet``.
         """
         from .set import CutSet
