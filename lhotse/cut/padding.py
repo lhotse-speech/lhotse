@@ -375,6 +375,10 @@ class PaddingCut(Cut):
         """Return a copy of the current :class:`.PaddingCut`, detached from ``supervisions``."""
         return self
 
+    def drop_alignments(self) -> "PaddingCut":
+        """Return a copy of the current :class:`.PaddingCut`, detached from ``alignments``."""
+        return self
+
     def compute_and_store_features(
         self, extractor: FeatureExtractor, *args, **kwargs
     ) -> Cut:
