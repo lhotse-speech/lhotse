@@ -447,10 +447,17 @@ def make_wavscp_channel_string_map(
             # Handles non-WAVE audio formats and multi-channel WAVEs.
             audios = dict()
             for channel in source.channels:
-                audios[channel] = (
-                    f"ffmpeg -threads 1 -i {source.source} -ar {sampling_rate} "
-                    f"-map_channel 0.0.{channel}  -f wav -threads 1 pipe:1 |"
-                )
+                if len(source.channels) == 1:
+                    # it is single channel
+                    audios[channel] = (
+                        f"ffmpeg -threads 1 -i {source.source} -ar {sampling_rate} "
+                        f"-map_channel 0.0.0  -f wav -threads 1 pipe:1 |"
+                    )
+                else:
+                    audios[channel] = (
+                        f"ffmpeg -threads 1 -i {source.source} -ar {sampling_rate} "
+                        f"-map_channel 0.0.{channel}  -f wav -threads 1 pipe:1 |"
+                    )
             return audios
 
     else:
