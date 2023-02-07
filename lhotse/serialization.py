@@ -173,7 +173,7 @@ class SequentialJsonlWriter:
     def __init__(self, path: Pathlike, overwrite: bool = True) -> None:
         self.path = path
         self.file = None
-        if not extension_contains(".jsonl", self.path):
+        if not (extension_contains(".jsonl", self.path) or (self.path == "-")):
             raise InvalidPathExtension(
                 f"SequentialJsonlWriter supports only JSONL format (one JSON item per line), "
                 f"but path='{path}'."
