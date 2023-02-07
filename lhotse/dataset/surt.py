@@ -105,10 +105,11 @@ class K2SurtDataset(torch.utils.data.Dataset):
 
         self.hdf5_fix.update()
 
-        # Sort the cuts by duration so that the first one determines the batch time dimensions.
-        cuts = cuts.sort_by_duration(ascending=False)
         if not self.return_alignments:
             cuts = cuts.drop_alignments()
+
+        # Sort the cuts by duration so that the first one determines the batch time dimensions.
+        cuts = cuts.sort_by_duration(ascending=False)
 
         # Optional CutSet transforms - e.g. padding, or speed perturbation that adjusts
         # the supervision boundaries.
