@@ -3,7 +3,7 @@ This is an experimental workflow that can be used to simulate multi-speaker meet
 a CutSet containing MonoCut objects.
 """
 import abc
-import logging
+import random
 from itertools import groupby
 from typing import Dict, List, Optional, Union
 
@@ -12,7 +12,7 @@ from tqdm import tqdm
 
 from lhotse import RecordingSet, SupervisionSet
 from lhotse.cut import CutSet
-from lhotse.dataset.sampling import SimpleCutSampler
+from lhotse.dataset.sampling import DynamicCutSampler
 from lhotse.utils import fastcopy, is_module_available
 
 MAX_TASKS_WAITING = 1000
@@ -137,34 +137,38 @@ class MeetingSampler:
             speaker_count_probs
         ), "The number of speakers per meeting and the number of probabilities must be the same."
 
-        # Create samplers for each bucket.
-        self.samplers = []
+        # Create samplers for each bucket. We create this as a dict so that we can
+        # efficiently remove items and also randomly sample items in constant time.
+        # It also supports the len() function in constant time.
+        # Note that a Python list is not a good choice here, because removing items
+        # from a list is O(n). A set is also not a good choice, because randomly
+        # sampling items from a set is O(n).
+        self.samplers = {}
         for spk, spk_cuts in tqdm(
             groupby(cuts, lambda cut: cut.supervisions[0].speaker),
             desc="Creating samplers for each speaker...",
         ):
-            sampler = SimpleCutSampler(
+            sampler = DynamicCutSampler(
                 CutSet.from_cuts(list(spk_cuts)).repeat(
-                    times=num_repeats, preserve_id=True
+                    times=num_repeats, preserve_id=False
                 ),
                 max_duration=max_duration_per_speaker,
                 max_cuts=max_utterances_per_speaker,
                 shuffle=True,
                 seed=seed,
             )
-            self.samplers.append(sampler)
+            self.samplers[spk] = sampler
 
         self.num_speakers_per_meeting = num_speakers_per_meeting
         self.speaker_count_probs = speaker_count_probs
 
         self.npr = np.random.RandomState(seed)
+        self.rng = random.Random(seed)
         self._remaining_meetings = num_meetings
-        self._nondepleted_samplers_indices = list(range(len(self.samplers)))
 
     def __iter__(self):
-        for sampler in self.samplers:
+        for sampler in self.samplers.values():
             iter(sampler)
-        self._nondepleted_samplers_indices = list(range(len(self.samplers)))
         return self
 
     def __next__(self):
@@ -173,33 +177,26 @@ class MeetingSampler:
             raise StopIteration()
 
         # If we don't have enough speakers, stop.
-        if len(self._nondepleted_samplers_indices) < min(self.num_speakers_per_meeting):
+        if len(self.samplers) < min(self.num_speakers_per_meeting):
             raise StopIteration()
 
         # Sample the number of speakers for this meeting.
         N = min(
             self.npr.choice(self.num_speakers_per_meeting, p=self.speaker_count_probs),
-            len(self._nondepleted_samplers_indices),
+            len(self.samplers),
         )
 
-        this_batch_spk_ids = []
+        # Sample speakers.
+        this_batch_spk_ids = self.rng.sample(list(self.samplers.keys()), N)
         utterances = CutSet.from_cuts([])
-        while (
-            len(this_batch_spk_ids) < N and len(self._nondepleted_samplers_indices) > 0
-        ):
-            # Sample a speaker index.
-            idx = self.npr.choice(self._nondepleted_samplers_indices)
-            if idx in this_batch_spk_ids:
-                continue
-
-            sampler = self.samplers[idx]
+        for spk_id in this_batch_spk_ids:
+            sampler = self.samplers[spk_id]
             try:
                 this_batch = next(sampler)
                 utterances += this_batch
             except StopIteration:
-                self._nondepleted_samplers_indices.remove(idx)
+                del self.samplers[spk_id]
                 continue
-            this_batch_spk_ids.append(idx)
 
         if self._remaining_meetings is not None:
             self._remaining_meetings -= 1
