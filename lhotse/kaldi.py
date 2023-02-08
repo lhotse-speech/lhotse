@@ -22,21 +22,20 @@ from lhotse.utils import (
 def floor_duration_to_milliseconds(
     duration: float,
 ) -> float:
-    """ Floor the duration to multiplies of 0.001 seconds.
-        This is to avoid float precision problems with workflows like:
-          lhotse kaldi import ...
-          lhotse fix ...
-          ./local/compute_fbank_imported.py (from icefal)
-          lhotse cut trim-to-supervisions ...
-          ./local/validate_manifest.py ... (from icefall)
+    """
+    Floor the duration to multiplies of 0.001 seconds.
+    This is to avoid float precision problems with workflows like:
+      lhotse kaldi import ...
+      lhotse fix ...
+      ./local/compute_fbank_imported.py (from icefall)
+      lhotse cut trim-to-supervisions ...
+      ./local/validate_manifest.py ... (from icefall)
 
-        Without flooring, there were different lengths:
-          Supervision end time 1093.33995833 is larger than cut end time 1093.3399375
+    Without flooring, there were different lengths:
+      Supervision end time 1093.33995833 is larger than cut end time 1093.3399375
 
-        This is till within the tolerance in K2SpeechRecognitionDataset::validate_for_asr:
-          https://github.com/lhotse-speech/lhotse/blob/master/lhotse/dataset/speech_recognition.py#L201
-        But the librispeech data verification was failing:
-          https://github.com/k2-fsa/icefall/blob/master/egs/librispeech/ASR/local/validate_manifest.py
+    This is still within the 2ms tolerance in K2SpeechRecognitionDataset::validate_for_asr():
+      https://github.com/lhotse-speech/lhotse/blob/master/lhotse/dataset/speech_recognition.py#L201
     """
     return math.floor(1000 * duration) / 1000
 
