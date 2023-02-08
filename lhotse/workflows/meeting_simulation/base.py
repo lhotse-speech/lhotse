@@ -91,11 +91,11 @@ class BaseMeetingSimulator(abc.ABC):
 
 class MeetingSampler:
     """
-    Create a sampler that will be used to sample cuts from the input CutSet. The cuts
-    are partitioned into speaker-wise buckets, and a DynamicCutSampler is created for
-    each bucket. The samplers are then combined into a RoundRobinSampler, which will
-    sample cuts from each bucket in a round-robin fashion. When we iterate over the
-    sampler, we get batches of cuts from each bucket.
+    Create a sampler that will be used to sample groups of utterances from the sources.
+    The cuts are partitioned into speaker-wise buckets, and a SimpleCutSampler is created
+    for each bucket. When we sample a group of utterances, we first sample the number of
+    speakers in the meeting, and then sample the utterances of each speaker. This is done
+    by sampling a batch from the corresponding SimpleCutSampler.
 
     :param cuts: a CutSet containing MonoCut objects.
     :param num_repeats: the number of times each cut will be repeated (by default, they
