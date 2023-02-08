@@ -145,12 +145,15 @@ class MeetingSampler:
         # sampling items from a set is O(n).
         self.samplers = {}
         for spk, spk_cuts in tqdm(
-            groupby(cuts, lambda cut: cut.supervisions[0].speaker),
+            groupby(
+                sorted(cuts, key=lambda cut: cut.supervisions[0].speaker),
+                lambda cut: cut.supervisions[0].speaker,
+            ),
             desc="Creating samplers for each speaker...",
         ):
             sampler = DynamicCutSampler(
                 CutSet.from_cuts(list(spk_cuts)).repeat(
-                    times=num_repeats, preserve_id=False
+                    times=num_repeats, preserve_id=True
                 ),
                 max_duration=max_duration_per_speaker,
                 max_cuts=max_utterances_per_speaker,
@@ -197,6 +200,9 @@ class MeetingSampler:
             except StopIteration:
                 del self.samplers[spk_id]
                 continue
+
+        # shuffle the utterances
+        utterances = utterances.shuffle()
 
         if self._remaining_meetings is not None:
             self._remaining_meetings -= 1
