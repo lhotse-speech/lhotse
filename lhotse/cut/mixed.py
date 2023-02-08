@@ -315,6 +315,37 @@ class MixedCut(Cut):
         non_padding_idx, mono_cut = non_padding_cuts_with_custom_attr[0]
         return non_padding_idx, mono_cut
 
+    def move_to_memory(
+        self,
+        audio_format: str = "flac",
+        load_audio: bool = True,
+        load_features: bool = True,
+        load_custom: bool = True,
+    ) -> "MixedCut":
+        """
+        Load data (audio, features, or custom arrays) into memory and attach them
+        to a copy of the manifest. This is useful when you want to store cuts together
+        with the actual data in some binary format that enables sequential data reads.
+
+        Audio is encoded with ``audio_format`` (compatible with ``torchaudio.save``),
+        floating point features are encoded with lilcom, and other arrays are pickled.
+        """
+        return fastcopy(
+            self,
+            tracks=[
+                fastcopy(
+                    t,
+                    cut=t.cut.move_to_memory(
+                        audio_format=audio_format,
+                        load_audio=load_audio,
+                        load_features=load_features,
+                        load_custom=load_custom,
+                    ),
+                )
+                for t in self.tracks
+            ],
+        )
+
     def truncate(
         self,
         *,
