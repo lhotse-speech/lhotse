@@ -1,7 +1,7 @@
 from typing import Optional
 
 import pytest
-from hypothesis import given, settings
+from hypothesis import given, reproduce_failure, settings
 from hypothesis import strategies as st
 
 from lhotse import CutSet, SupervisionSet
@@ -37,6 +37,7 @@ def sups():
     max_utterances_per_speaker=st.integers(min_value=0, max_value=5),
     reverberate=st.booleans(),
     seed=st.integers(min_value=0, max_value=2**16 - 1),
+    num_jobs=st.integers(min_value=1, max_value=4),
 )
 def test_simulate_meetings(
     cuts: CutSet,
@@ -50,6 +51,7 @@ def test_simulate_meetings(
     max_utterances_per_speaker: int,
     reverberate: bool,
     seed: int,
+    num_jobs: int,
 ):
     if method == "independent":
         simulator = SpeakerIndependentMeetingSimulator()
@@ -71,6 +73,7 @@ def test_simulate_meetings(
         if max_utterances_per_speaker > 0
         else None,
         seed=seed,
+        num_jobs=num_jobs,
     )
 
     if reverberate:
