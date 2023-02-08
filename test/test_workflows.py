@@ -79,9 +79,12 @@ def test_simulate_meetings(
     if reverberate:
         mixed_cuts = simulator.reverberate(mixed_cuts)
 
-    assert len(mixed_cuts) > 0
-    mixed_cut = mixed_cuts[0]
-    assert mixed_cut.load_audio().shape[1] == mixed_cut.num_samples
+    if len(cuts.speakers) >= num_speakers_per_meeting:
+        assert len(mixed_cuts) > 0
+        mixed_cut = mixed_cuts[0]
+        assert mixed_cut.load_audio().shape[1] == mixed_cut.num_samples
+    else:
+        assert len(mixed_cuts) == 0
 
 
 def test_base_meeting_simulator_raises():

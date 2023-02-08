@@ -11,7 +11,8 @@
         "start": 0,
         "duration": 10.0,
         "channel": 0,
-        "text": "EXAMPLE OF TEXT"
+        "text": "EXAMPLE OF TEXT",
+        "speaker": "libri-spk1"
       }
     ],
     "features": {

@@ -153,7 +153,7 @@ class MeetingSampler:
         ):
             sampler = DynamicCutSampler(
                 CutSet.from_cuts(list(spk_cuts)).repeat(
-                    times=num_repeats, preserve_id=True
+                    times=num_repeats, preserve_id=False
                 ),
                 max_duration=max_duration_per_speaker,
                 max_cuts=max_utterances_per_speaker,
