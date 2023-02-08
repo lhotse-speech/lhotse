@@ -5,7 +5,7 @@ import numpy as np
 
 from lhotse import CutSet, MonoCut, NumpyFilesWriter, Recording
 from lhotse.array import Array
-from lhotse.cut import PaddingCut
+from lhotse.cut import MixedCut, PaddingCut
 from lhotse.testing.dummies import dummy_cut
 from lhotse.utils import compute_num_frames
 
@@ -182,7 +182,8 @@ def test_padding_cut_move_to_memory():
     cut = PaddingCut(
         "dummy", duration=10.0, sampling_rate=16000, feat_value=-23, num_samples=160000
     )
-    cut.move_to_memory()
+    cut_mem = cut.move_to_memory()
+    assert isinstance(cut_mem, PaddingCut)
 
 
 def test_mixed_cut_move_to_memory():
@@ -191,6 +192,7 @@ def test_mixed_cut_move_to_memory():
     cut = cut.pad(duration=cut.duration + 2.0).append(cut)
 
     cut_mem = cut.move_to_memory(audio_format="wav")
+    assert isinstance(cut_mem, MixedCut)
 
     audio = cut.load_audio()
     audio_mem = cut_mem.load_audio()
