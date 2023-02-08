@@ -201,3 +201,35 @@ def test_mixed_cut_move_to_memory():
     feats = cut.load_features()
     feats_mem = cut_mem.load_features()
     np.testing.assert_almost_equal(feats, feats_mem, decimal=1)
+
+
+def test_mixed_cut_to_mono():
+    path = "test/fixtures/libri/cuts.json"
+    cut = CutSet.from_file(path)[0]
+    cut = cut.pad(duration=cut.duration + 2.0).append(cut)
+
+    cut_mem = cut.to_mono("wav")
+    assert isinstance(cut_mem, MonoCut)
+    assert not cut_mem.has_features
+
+    audio = cut.load_audio()
+    audio_mem = cut_mem.load_audio()
+    np.testing.assert_almost_equal(audio, audio_mem, decimal=1)
+
+
+def test_mixed_cut_to_mono_with_custom():
+    path = "test/fixtures/libri/cuts.json"
+    cut = CutSet.from_file(path)[0]
+    cut.custom_str = "custom_str"
+    cut = cut.pad(duration=cut.duration + 2.0).append(cut)
+
+    cut_mem = cut.to_mono("wav")
+    assert isinstance(cut_mem, MonoCut)
+    assert not cut_mem.has_features
+    assert cut_mem.custom is not None
+    assert "custom_str" in cut_mem.custom
+    assert cut_mem.custom_str == "custom_str"
+
+    audio = cut.load_audio()
+    audio_mem = cut_mem.load_audio()
+    np.testing.assert_almost_equal(audio, audio_mem, decimal=1)
