@@ -30,7 +30,9 @@ from lhotse.utils import (
 )
 
 DEFAULT_COMMONVOICE_URL = "https://voice-prod-bundler-ee1969a6ce8178826482b88e843c335139bd3fb4.s3.amazonaws.com"
-DEFAULT_COMMONVOICE_URL = "https://mozilla-common-voice-datasets.s3.dualstack.us-west-2.amazonaws.com"
+DEFAULT_COMMONVOICE_URL = (
+    "https://mozilla-common-voice-datasets.s3.dualstack.us-west-2.amazonaws.com"
+)
 
 
 COMMONVOICE_LANGS = "en de fr cy tt kab ca zh-TW it fa eu es ru tr nl eo zh-CN rw pt zh-HK cs pl uk".split()
@@ -62,11 +64,11 @@ def download_commonvoice(
     # note(pzelasko): This code should work in general if we supply the right URL,
     # but the URL stopped working during the development of this script --
     # I'm not going to fight this, maybe somebody else would be interested to pick it up.
-    #raise NotImplementedError(
+    # raise NotImplementedError(
     #    "CommonVoice requires you to enter e-mail to download the data"
     #    "-- please download it manually for now. "
     #    "We are open to contributions to support downloading CV via lhotse."
-    #)
+    # )
     target_dir = Path(target_dir)
     target_dir.mkdir(parents=True, exist_ok=True)
     url = f"{base_url}/{release}"
@@ -94,16 +96,18 @@ def download_commonvoice(
         tar_path = target_dir / tar_name
         if force_download or not tar_path.is_file():
             # After version 7.0, the commonvoice download address has changed
-            if float(release.split("-")[2])<8.0:
+            if float(release.split("-")[2]) < 8.0:
                 raise NotImplementedError(
                     "When the version is less than 8.0, CommonVoice requires you to enter e-mail to download the data.\n"
-                    "Please download it manually for now.\n" 
+                    "Please download it manually for now.\n"
                     "Or you can choose a version greater than 8.0.\n"
-            )
+                )
             else:
                 # https://mozilla-common-voice-datasets.s3.dualstack.us-west-2.amazonaws.com/cv-corpus-7.0-2021-07-21/cv-corpus-7.0-2021-07-21-zh-CN.tar.gz
                 single_url = url + f"/{release}-{lang}.tar.gz"
-            urlretrieve_progress(single_url, filename=tar_path, desc=f"Downloading {tar_name}")
+            urlretrieve_progress(
+                single_url, filename=tar_path, desc=f"Downloading {tar_name}"
+            )
             logging.info(f"Downloading finished: {lang}")
         # Remove partial unpacked files, if any, and unpack everything.
         logging.info(f"Unpacking archive: {lang}")
