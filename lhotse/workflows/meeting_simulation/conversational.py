@@ -1,17 +1,20 @@
 import logging
 from collections import defaultdict
+from multiprocessing import Pool
 from typing import Any, List, Optional, Union
 
 import numpy as np
 from tqdm import tqdm
 
 from lhotse import RecordingSet, SupervisionSet
-from lhotse.cut import CutSet, MixedCut, MixTrack, MonoCut
+from lhotse.cut import CutSet, MixedCut, MixTrack
 from lhotse.cut.set import mix
+from lhotse.parallel import parallel_map
 from lhotse.utils import uuid4
 from lhotse.workflows.meeting_simulation.base import (
+    MAX_TASKS_WAITING,
     BaseMeetingSimulator,
-    create_sampler,
+    MeetingSampler,
     reverberate_cuts,
 )
 
@@ -252,6 +255,7 @@ class ConversationalMeetingSimulator(BaseMeetingSimulator):
         max_utterances_per_speaker: Optional[int] = 5,
         allow_3fold_overlap: bool = False,
         seed: int = 0,
+        num_jobs: int = 1,
     ) -> CutSet:
         """
         Simulate the desired number of multi-speaker meetings.
@@ -271,6 +275,8 @@ class ConversationalMeetingSimulator(BaseMeetingSimulator):
         :param allow_3fold_overlap: if True, allow 3-fold overlaps between speakers.
             [Default: False]
         :param seed: the random seed to be used for simulation. [Default: 0]
+        :param num_jobs: the number of jobs to use for simulation. Use more jobs to speed up
+            simulation when you have large number of source utterances. [Default: 1]
         """
         from scipy.stats import bernoulli
 
@@ -288,85 +294,54 @@ class ConversationalMeetingSimulator(BaseMeetingSimulator):
                 num_speakers_per_meeting
             )
 
-        # Some basic checks
-        assert all(n > 1 for n in num_speakers_per_meeting), (
-            "The number of speakers per meeting must be greater than 1. "
-            f"Got: {num_speakers_per_meeting}"
-        )
-        assert all(p > 0.0 for p in speaker_count_probs), (
-            "The probabilities of the number of speakers per meeting must be greater than 0. "
-            f"Got: {speaker_count_probs}"
-        )
-        assert sum(speaker_count_probs) == 1.0, (
-            "The probabilities of the number of speakers per meeting must sum to 1. "
-            f"Got: {speaker_count_probs}"
-        )
-        assert len(num_speakers_per_meeting) == len(
-            speaker_count_probs
-        ), "The number of speakers per meeting and the number of probabilities must be the same."
-        assert all(
-            isinstance(cut, MonoCut) for cut in cuts
-        ), "Only MonoCuts are supported."
-
         # Initialize default distributions if not provided.
         if getattr(self, "same_spk_pause_dist", None) is None:
             self._init_defaults()
 
-        # Create cuts sampler
-        sampler = create_sampler(
-            cuts,
-            num_repeats=num_repeats,
-            max_duration=max_duration_per_speaker,
-            max_cuts=max_utterances_per_speaker,
-            seed=seed,
-        )
-        # Create an iterator from the sampler
-        sampler_iter = iter(sampler)
-
         # Create random number generators with the given seed.
-        npr = np.random.RandomState(seed)
-
         self.bernoulli = bernoulli
 
-        mixtures = []
-        N = len(cuts.speakers)
+        # Create cuts sampler
+        sampler = MeetingSampler(
+            cuts,
+            num_repeats=num_repeats,
+            num_meetings=num_meetings,
+            max_duration_per_speaker=max_duration_per_speaker,
+            max_utterances_per_speaker=max_utterances_per_speaker,
+            num_speakers_per_meeting=num_speakers_per_meeting,
+            speaker_count_probs=speaker_count_probs,
+            seed=seed,
+        )
+        sampler_iter = iter(sampler)
 
-        pbar = tqdm(total=num_meetings)
-        while True:
-            # If the number of meetings is provided, stop when we reach that number.
-            if num_meetings is not None and len(mixtures) >= num_meetings:
-                break
+        global _simulate_worker
 
-            # Sample the number of speakers for this meeting.
-            num_speakers = min(
-                npr.choice(num_speakers_per_meeting, p=speaker_count_probs), N
-            )
-
-            # Sample from the sampler to get 1 batch per desired number of speakers.
-            utterances = CutSet.from_cuts([])
-            finished = False
-            while len(utterances.speakers) < num_speakers:
-                try:
-                    this_batch = next(sampler_iter)
-                except StopIteration:
-                    # If we run out of data, finish simulation.
-                    finished = True
-                    break
-                utterances += this_batch
-
-            if finished:
-                break
-
-            # Randomly shuffle the utterances
-            utterances = utterances.shuffle()
-
-            # Create the meeting.
-            mixture = self._create_mixture(
+        def _simulate_worker(utterances):
+            return self._create_mixture(
                 utterances, allow_3fold_overlap=allow_3fold_overlap
             )
 
-            mixtures.append(mixture)
-            pbar.update(1)
+        mixtures = []
+        if num_jobs == 1:
+            # Don't use multiprocessing if num_jobs == 1.
+            for mixture in tqdm(
+                map(_simulate_worker, sampler_iter),
+                total=num_meetings,
+                desc="Simulating meetings",
+            ):
+                mixtures.append(mixture)
+        else:
+            for mixture in tqdm(
+                parallel_map(
+                    _simulate_worker,
+                    sampler_iter,
+                    num_jobs=num_jobs,
+                    queue_size=num_jobs * MAX_TASKS_WAITING,
+                ),
+                total=num_meetings,
+                desc="Simulating meetings",
+            ):
+                mixtures.append(mixture)
 
         return CutSet.from_cuts(mixtures)
 
