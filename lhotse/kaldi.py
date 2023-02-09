@@ -14,6 +14,7 @@ from lhotse.utils import (
     compute_num_samples,
     fastcopy,
     is_module_available,
+    to_list,
 )
 
 
@@ -67,10 +68,18 @@ def load_kaldi_data_dir(
     All the other files (text, utt2spk, etc.) are optional, and some of them might
     not be handled yet. In particular, feats.scp files are ignored.
 
+    :param path: Path to the Kaldi data directory.
+    :param sampling_rate: Sampling rate of the recordings.
+    :param frame_shift: Optional, if specified, we will create a Features manifest
+        and store the frame_shift value in it.
     :param map_string_to_underscores: optional string, when specified, we will replace
         all instances of this string in SupervisonSegment IDs to underscores.
         This is to help with handling underscores in Kaldi
         (see :func:`.export_to_kaldi`). This is also done for speaker IDs.
+    :param use_reco2dur: If True, we will use the reco2dur file to read the durations
+        of the recordings. If False, we will read the durations from the audio files
+        themselves.
+    :param num_jobs: Number of parallel jobs to use when reading the audio files.
     """
     path = Path(path)
     assert path.is_dir()
@@ -235,14 +244,15 @@ def export_to_kaldi(
         underscores. This helps avoid issues with Kaldi data dir sorting.
     :param prefix_spk_id: add speaker_id as a prefix of utterance_id (this is to
         ensure correct sorting inside files which is required by Kaldi)
+
+    .. note:: If you export a ``RecordingSet`` with multiple channels, then the
+        resulting Kaldi data directory may not be back-compatible with Lhotse
+        (i.e. you won't be able to import it back to Lhotse in the same form).
+        This is because Kaldi does not inherently support multi-channel recordings,
+        so we have to break them down into single-channel recordings.
     """
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
-
-    assert all(len(r.sources) == 1 for r in recordings), (
-        "Kaldi export of Recordings with multiple audio sources "
-        "is currently not supported."
-    )
 
     if map_underscores_to is not None:
         supervisions = supervisions.map(
@@ -261,6 +271,7 @@ def export_to_kaldi(
         # the channel id affix to retain back compatibility
         # and the ability to receive back the same utterances after
         # importing the exported directory back
+
         # wav.scp
         save_kaldi_text_mapping(
             data={
@@ -286,8 +297,36 @@ def export_to_kaldi(
             path=output_dir / "reco2dur",
         )
 
+        # text
+        save_kaldi_text_mapping(
+            data={sup.id: sup.text for sup in supervisions},
+            path=output_dir / "text",
+        )
+        # utt2spk
+        save_kaldi_text_mapping(
+            data={sup.id: sup.speaker for sup in supervisions},
+            path=output_dir / "utt2spk",
+        )
+        # utt2dur
+        save_kaldi_text_mapping(
+            data={sup.id: sup.duration for sup in supervisions},
+            path=output_dir / "utt2dur",
+        )
+        # utt2lang [optional]
+        if all(s.language is not None for s in supervisions):
+            save_kaldi_text_mapping(
+                data={sup.id: sup.language for sup in supervisions},
+                path=output_dir / "utt2lang",
+            )
+        # utt2gender [optional]
+        if all(s.gender is not None for s in supervisions):
+            save_kaldi_text_mapping(
+                data={sup.id: sup.gender for sup in supervisions},
+                path=output_dir / "utt2gender",
+            )
+
     else:
-        # wav.scp
+
         save_kaldi_text_mapping(
             data={
                 f"{recording.id}_{channel}": make_wavscp_channel_string_map(
@@ -299,50 +338,76 @@ def export_to_kaldi(
             },
             path=output_dir / "wav.scp",
         )
-        # segments
-        save_kaldi_text_mapping(
-            data={
-                sup.id: f"{sup.recording_id}_{sup.channel} {sup.start} {sup.end}"
-                for sup in supervisions
-            },
-            path=output_dir / "segments",
-        )
+
         # reco2dur
         save_kaldi_text_mapping(
             data={
                 f"{recording.id}_{channel}": recording.duration
                 for recording in recordings
-                for channel in recording.sources[0].channels
+                for source in recording.sources
+                for channel in source.channels
             },
             path=output_dir / "reco2dur",
         )
-    # text
-    save_kaldi_text_mapping(
-        data={sup.id: sup.text for sup in supervisions},
-        path=output_dir / "text",
-    )
-    # utt2spk
-    save_kaldi_text_mapping(
-        data={sup.id: sup.speaker for sup in supervisions},
-        path=output_dir / "utt2spk",
-    )
-    # utt2dur
-    save_kaldi_text_mapping(
-        data={sup.id: sup.duration for sup in supervisions},
-        path=output_dir / "utt2dur",
-    )
-    # utt2lang [optional]
-    if all(s.language is not None for s in supervisions):
+
+        # segments
         save_kaldi_text_mapping(
-            data={sup.id: sup.language for sup in supervisions},
-            path=output_dir / "utt2lang",
+            data={
+                sup.id
+                + f"-{channel}": f"{sup.recording_id}_{channel} {sup.start} {sup.end}"
+                for sup in supervisions
+                for channel in to_list(sup.channel)
+            },
+            path=output_dir / "segments",
         )
-    # utt2gender [optional]
-    if all(s.gender is not None for s in supervisions):
+
+        # text
         save_kaldi_text_mapping(
-            data={sup.id: sup.gender for sup in supervisions},
-            path=output_dir / "utt2gender",
+            data={
+                sup.id + f"-{channel}": sup.text
+                for sup in supervisions
+                for channel in to_list(sup.channel)
+            },
+            path=output_dir / "text",
         )
+        # utt2spk
+        save_kaldi_text_mapping(
+            data={
+                sup.id + f"-{channel}": sup.speaker
+                for sup in supervisions
+                for channel in to_list(sup.channel)
+            },
+            path=output_dir / "utt2spk",
+        )
+        # utt2dur
+        save_kaldi_text_mapping(
+            data={
+                sup.id + f"-{channel}": sup.duration
+                for sup in supervisions
+                for channel in to_list(sup.channel)
+            },
+            path=output_dir / "utt2dur",
+        )
+        # utt2lang [optional]
+        if all(s.language is not None for s in supervisions):
+            save_kaldi_text_mapping(
+                data={
+                    sup.id + f"-{channel}": sup.language
+                    for sup in supervisions
+                    for channel in to_list(sup.channel)
+                },
+                path=output_dir / "utt2lang",
+            )
+        # utt2gender [optional]
+        if all(s.gender is not None for s in supervisions):
+            save_kaldi_text_mapping(
+                data={
+                    sup.id + f"-{channel}": sup.gender
+                    for sup in supervisions
+                    for channel in to_list(sup.channel)
+                },
+                path=output_dir / "utt2gender",
+            )
 
 
 def load_kaldi_text_mapping(
@@ -403,10 +468,17 @@ def make_wavscp_channel_string_map(
             # Handles non-WAVE audio formats and multi-channel WAVEs.
             audios = dict()
             for channel in source.channels:
-                audios[channel] = (
-                    f"ffmpeg -threads 1 -i {source.source} -ar {sampling_rate} "
-                    f"-map_channel 0.0.{channel}  -f wav -threads 1 pipe:1 |"
-                )
+                if len(source.channels) == 1:
+                    # it is single channel
+                    audios[channel] = (
+                        f"ffmpeg -threads 1 -i {source.source} -ar {sampling_rate} "
+                        f"-map_channel 0.0.0  -f wav -threads 1 pipe:1 |"
+                    )
+                else:
+                    audios[channel] = (
+                        f"ffmpeg -threads 1 -i {source.source} -ar {sampling_rate} "
+                        f"-map_channel 0.0.{channel}  -f wav -threads 1 pipe:1 |"
+                    )
             return audios
 
     else:

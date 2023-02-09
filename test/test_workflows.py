@@ -37,6 +37,7 @@ def sups():
     max_utterances_per_speaker=st.integers(min_value=0, max_value=5),
     reverberate=st.booleans(),
     seed=st.integers(min_value=0, max_value=2**16 - 1),
+    num_jobs=st.integers(min_value=1, max_value=4),
 )
 def test_simulate_meetings(
     cuts: CutSet,
@@ -50,6 +51,7 @@ def test_simulate_meetings(
     max_utterances_per_speaker: int,
     reverberate: bool,
     seed: int,
+    num_jobs: int,
 ):
     if method == "independent":
         simulator = SpeakerIndependentMeetingSimulator()
@@ -71,14 +73,18 @@ def test_simulate_meetings(
         if max_utterances_per_speaker > 0
         else None,
         seed=seed,
+        num_jobs=num_jobs,
     )
 
     if reverberate:
         mixed_cuts = simulator.reverberate(mixed_cuts)
 
-    assert len(mixed_cuts) > 0
-    mixed_cut = mixed_cuts[0]
-    assert mixed_cut.load_audio().shape[1] == mixed_cut.num_samples
+    if len(cuts.speakers) >= num_speakers_per_meeting:
+        assert len(mixed_cuts) > 0
+        mixed_cut = mixed_cuts[0]
+        assert mixed_cut.load_audio().shape[1] == mixed_cut.num_samples
+    else:
+        assert len(mixed_cuts) == 0
 
 
 def test_base_meeting_simulator_raises():

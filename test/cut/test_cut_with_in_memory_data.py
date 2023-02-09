@@ -5,6 +5,7 @@ import numpy as np
 
 from lhotse import CutSet, MonoCut, NumpyFilesWriter, Recording
 from lhotse.array import Array
+from lhotse.cut import MixedCut, PaddingCut
 from lhotse.testing.dummies import dummy_cut
 from lhotse.utils import compute_num_frames
 
@@ -175,3 +176,60 @@ def test_cut_move_to_memory_audio_serialization():
     cut_deserialized = MonoCut.from_dict(data)
 
     np.testing.assert_equal(cut_deserialized.load_audio(), cut_with_audio.load_audio())
+
+
+def test_padding_cut_move_to_memory():
+    cut = PaddingCut(
+        "dummy", duration=10.0, sampling_rate=16000, feat_value=-23, num_samples=160000
+    )
+    cut_mem = cut.move_to_memory()
+    assert isinstance(cut_mem, PaddingCut)
+
+
+def test_mixed_cut_move_to_memory():
+    path = "test/fixtures/libri/cuts.json"
+    cut = CutSet.from_file(path)[0]
+    cut = cut.pad(duration=cut.duration + 2.0).append(cut)
+
+    cut_mem = cut.move_to_memory(audio_format="wav")
+    assert isinstance(cut_mem, MixedCut)
+
+    audio = cut.load_audio()
+    audio_mem = cut_mem.load_audio()
+    np.testing.assert_almost_equal(audio, audio_mem, decimal=1)
+
+    feats = cut.load_features()
+    feats_mem = cut_mem.load_features()
+    np.testing.assert_almost_equal(feats, feats_mem, decimal=1)
+
+
+def test_mixed_cut_to_mono():
+    path = "test/fixtures/libri/cuts.json"
+    cut = CutSet.from_file(path)[0]
+    cut = cut.pad(duration=cut.duration + 2.0).append(cut)
+
+    cut_mem = cut.to_mono("wav")
+    assert isinstance(cut_mem, MonoCut)
+    assert not cut_mem.has_features
+
+    audio = cut.load_audio()
+    audio_mem = cut_mem.load_audio()
+    np.testing.assert_almost_equal(audio, audio_mem, decimal=1)
+
+
+def test_mixed_cut_to_mono_with_custom():
+    path = "test/fixtures/libri/cuts.json"
+    cut = CutSet.from_file(path)[0]
+    cut.custom_str = "custom_str"
+    cut = cut.pad(duration=cut.duration + 2.0).append(cut)
+
+    cut_mem = cut.to_mono("wav")
+    assert isinstance(cut_mem, MonoCut)
+    assert not cut_mem.has_features
+    assert cut_mem.custom is not None
+    assert "custom_str" in cut_mem.custom
+    assert cut_mem.custom_str == "custom_str"
+
+    audio = cut.load_audio()
+    audio_mem = cut_mem.load_audio()
+    np.testing.assert_almost_equal(audio, audio_mem, decimal=1)
