@@ -542,7 +542,7 @@ class CSJSDBParser:
                 ret.append(a)
         return INTERNAL_SEP.join(ret)
 
-    def __init__(self, decisions: Dict, preprocess: Callable = None):
+    def __init__(self, decisions: Dict = DECISIONS, preprocess: Callable = None):
         self.decisions = decisions
         if not preprocess:
             self.preprocess: Callable[[str], str] = self.__default_preprocess
