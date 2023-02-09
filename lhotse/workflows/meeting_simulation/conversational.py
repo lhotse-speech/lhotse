@@ -72,7 +72,7 @@ class ConversationalMeetingSimulator(BaseMeetingSimulator):
         )
 
     def _init_defaults(self):
-        from scipy.stats import bernoulli, gamma
+        from scipy.stats import gamma
 
         self.same_spk_pause_dist = gamma(a=1.0, scale=1.0, loc=self.same_spk_pause)
         self.diff_spk_pause_dist = gamma(a=1.0, scale=1.0, loc=self.diff_spk_pause)
@@ -104,38 +104,21 @@ class ConversationalMeetingSimulator(BaseMeetingSimulator):
 
         from cytoolz.itertoolz import groupby
 
-        # Generate same speaker pause distribution.
         same_spk_pause_values = []
-
-        speaker_segments = groupby(
-            lambda s: (s.recording_id, s.speaker),
-            sorted(meetings, key=lambda s: (s.recording_id, s.speaker)),
-        )
-
-        for segments in speaker_segments.values():
-            segments = sorted(segments, key=lambda s: s.start)
-            for i in range(1, len(segments)):
-                same_spk_pause_values.append(
-                    max(0, segments[i].start - segments[i - 1].end)
-                )
-
-        self.same_spk_pause_dist = self._compute_histogram_dist(
-            np.array(same_spk_pause_values)
-        )
-
-        # Generate different speaker pause and overlap distributions.
         diff_spk_pause_values = []
         diff_spk_overlap_values = []
 
         recording_segments = groupby(
             lambda s: s.recording_id,
-            sorted(meetings, key=lambda s: s.recording_id),
+            sorted(meetings, key=lambda s: (s.recording_id, s.start)),
         )
+
         for segments in recording_segments.values():
-            segments = sorted(segments, key=lambda s: s.start)
             for i in range(1, len(segments)):
                 if segments[i].speaker == segments[i - 1].speaker:
-                    continue
+                    same_spk_pause_values.append(
+                        segments[i].start - segments[i - 1].end
+                    )
                 if segments[i].start > segments[i - 1].end:
                     diff_spk_pause_values.append(
                         segments[i].start - segments[i - 1].end
@@ -145,6 +128,11 @@ class ConversationalMeetingSimulator(BaseMeetingSimulator):
                         segments[i - 1].end - segments[i].start
                     )
 
+        # Generate histogram distributions.
+
+        self.same_spk_pause_dist = self._compute_histogram_dist(
+            np.array(same_spk_pause_values)
+        )
         self.diff_spk_pause_dist = self._compute_histogram_dist(
             np.array(diff_spk_pause_values)
         )
