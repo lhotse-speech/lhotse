@@ -100,7 +100,7 @@ def test_k2_speech_recognition_iterable_dataset_shuffling():
         # Set an effective batch size of 10 cuts, as all have 1s duration == 100 frames
         # This way we're testing that it works okay when returning multiple batches in
         # a full epoch.
-        max_frames=1000,
+        max_duration=10.0,
     )
     dloader = DataLoader(dataset, batch_size=None, sampler=sampler, num_workers=2)
     dloader_cut_ids = []
@@ -117,9 +117,9 @@ def test_k2_speech_recognition_iterable_dataset_shuffling():
     assert dloader_cut_ids != [c.id for c in cut_set]
 
 
-def test_k2_speech_recognition_iterable_dataset_low_max_frames(k2_cut_set):
+def test_k2_speech_recognition_iterable_dataset_low_max_duration(k2_cut_set):
     dataset = K2SpeechRecognitionDataset()
-    sampler = SimpleCutSampler(k2_cut_set, shuffle=False, max_frames=2)
+    sampler = SimpleCutSampler(k2_cut_set, shuffle=False, max_duration=0.02)
     dloader = DataLoader(dataset, sampler=sampler, batch_size=None)
     # Check that it does not crash
     for batch in dloader:
@@ -225,7 +225,7 @@ def test_k2_speech_recognition_audio_inputs(k2_cut_set):
         input_strategy=AudioSamples(),
     )
     # all cuts in one batch
-    sampler = SimpleCutSampler(k2_cut_set, shuffle=False, max_frames=10000000)
+    sampler = SimpleCutSampler(k2_cut_set, shuffle=False)
     cut_ids = next(iter(sampler))
     batch = on_the_fly_dataset[cut_ids]
     assert batch["inputs"].shape == (4, 320000)

@@ -72,6 +72,7 @@ class DynamicBucketingSampler(CutSampler):
         num_cuts_for_bins_estimate: int = 10000,
         buffer_size: int = 10000,
         shuffle_buffer_size: int = 20000,
+        quadratic_duration: Optional[Seconds] = None,
         world_size: Optional[int] = None,
         rank: Optional[int] = None,
         seed: int = 0,
@@ -105,6 +106,9 @@ class DynamicBucketingSampler(CutSampler):
         :param shuffle_buffer_size: How many cuts (or cut pairs, triplets) are being held in memory
             a buffer used for streaming shuffling. Larger number means better randomness at the cost
             of higher memory usage.
+        :param quadratic_duration: When set, it adds an extra penalty that's quadratic in size w.r.t.
+            a cuts duration. This helps get a more even GPU utilization across different input lengths
+            when models have quadratic input complexity. Set between 15 and 40 for transformers.
         :param world_size: Total number of distributed nodes. We will try to infer it by default.
         :param rank: Index of distributed node. We will try to infer it by default.
         :param seed: Random seed used to consistently shuffle the dataset across different processes.
@@ -126,6 +130,7 @@ class DynamicBucketingSampler(CutSampler):
         self.num_cuts_for_bins_estimate = num_cuts_for_bins_estimate
         self.buffer_size = buffer_size
         self.shuffle_buffer_size = shuffle_buffer_size
+        self.quadratic_duration = quadratic_duration
         self.rng = None
 
         if strict is not None:
@@ -158,6 +163,7 @@ class DynamicBucketingSampler(CutSampler):
                 "buffer_size": self.buffer_size,
                 "num_cuts_for_bins_estimate": self.num_cuts_for_bins_estimate,
                 "shuffle_buffer_size": self.shuffle_buffer_size,
+                "quadratic_duration": self.quadratic_duration,
             }
         )
         return sd
@@ -169,6 +175,7 @@ class DynamicBucketingSampler(CutSampler):
         self.num_cuts_for_bins_estimate = sd.pop("num_cuts_for_bins_estimate")
         self.buffer_size = sd.pop("buffer_size")
         self.shuffle_buffer_size = sd.pop("shuffle_buffer_size")
+        self.quadratic_duration = sd.pop("quadratic_duration", None)
         sd.pop("strict", None)  # backward compatibility
         super().load_state_dict(sd)
         self._fast_forward()
@@ -227,6 +234,7 @@ class DynamicBucketingSampler(CutSampler):
             max_cuts=self.max_cuts,
             drop_last=self.drop_last,
             buffer_size=self.buffer_size,
+            quadratic_duration=self.quadratic_duration,
             rng=self.rng,
             diagnostics=self.diagnostics,
         )
@@ -302,6 +310,7 @@ class DynamicBucketer:
         max_cuts: Optional[int] = None,
         drop_last: bool = False,
         buffer_size: int = 10000,
+        quadratic_duration: Optional[Seconds] = None,
         rng: random.Random = None,
         diagnostics: Optional[SamplingDiagnostics] = None,
     ) -> None:
@@ -311,6 +320,7 @@ class DynamicBucketer:
         self.max_cuts = max_cuts
         self.drop_last = drop_last
         self.buffer_size = buffer_size
+        self.quadratic_duration = quadratic_duration
         self.diagnostics = ifnone(diagnostics, SamplingDiagnostics())
         if rng is None:
             rng = random.Random()
@@ -346,6 +356,7 @@ class DynamicBucketer:
             tot = TimeConstraint(
                 max_duration=self.max_duration,
                 max_cuts=self.max_cuts,
+                quadratic_duration=self.quadratic_duration,
             )
             for c in bucket:
                 tot.add(c[0] if isinstance(c, tuple) else c)
@@ -375,6 +386,7 @@ class DynamicBucketer:
                     sampling_bucket,
                     max_duration=self.max_duration,
                     max_cuts=self.max_cuts,
+                    quadratic_duration=self.quadratic_duration,
                     diagnostics=self.diagnostics,
                 )
                 batch = next(iter(batcher))

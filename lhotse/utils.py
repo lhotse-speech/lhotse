@@ -200,9 +200,15 @@ def overlaps(lhs: Any, rhs: Any) -> bool:
     )
 
 
-def overspans(spanning: Any, spanned: Any) -> bool:
+def overspans(spanning: Any, spanned: Any, tolerance: float = 1e-3) -> bool:
     """Indicates whether the left-hand-side time-span/segment covers the whole right-hand-side time-span/segment."""
-    return spanning.start <= spanned.start <= spanned.end <= spanning.end
+    # We add a small epsilon to the comparison to avoid floating-point precision issues.
+    return (
+        spanning.start - tolerance
+        <= spanned.start
+        <= spanned.end
+        <= spanning.end + tolerance
+    )
 
 
 def time_diff_to_num_frames(
@@ -383,6 +389,19 @@ def compute_num_frames(
     Compute the number of frames from duration and frame_shift in a safe way.
     """
     num_samples = round(duration * sampling_rate)
+    window_hop = round(frame_shift * sampling_rate)
+    num_frames = int((num_samples + window_hop // 2) // window_hop)
+    return num_frames
+
+
+def compute_num_frames_from_samples(
+    num_samples: int,
+    frame_shift: Seconds,
+    sampling_rate: int,
+) -> int:
+    """
+    Compute the number of frames from number of samples and frame_shift in a safe way.
+    """
     window_hop = round(frame_shift * sampling_rate)
     num_frames = int((num_samples + window_hop // 2) // window_hop)
     return num_frames
