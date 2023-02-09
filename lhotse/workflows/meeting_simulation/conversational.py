@@ -67,7 +67,7 @@ class ConversationalMeetingSimulator(BaseMeetingSimulator):
             f"{self.__class__.__name__} "
             f"(same_spk_pause={self.same_spk_pause:.2f}, "
             f"diff_spk_pause={self.diff_spk_pause:.2f}, "
-            f"diff_spk_overlap={self.diff_spk_overlap:.2f}), "
+            f"diff_spk_overlap={self.diff_spk_overlap:.2f}, "
             f"prob_diff_spk_overlap={self.prob_diff_spk_overlap:.2f})"
         )
 
@@ -119,6 +119,7 @@ class ConversationalMeetingSimulator(BaseMeetingSimulator):
                     same_spk_pause_values.append(
                         segments[i].start - segments[i - 1].end
                     )
+                    continue
                 if segments[i].start > segments[i - 1].end:
                     diff_spk_pause_values.append(
                         segments[i].start - segments[i - 1].end
