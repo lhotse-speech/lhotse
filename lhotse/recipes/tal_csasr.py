@@ -39,7 +39,9 @@ def text_normalize(line: str):
     line = line.replace("Ｙ", "Y")
     line = line.replace("ａ", "a")
     line = line.replace("Ｉ", "I")
-    line = re.sub(f'#|[=]|；|，|？|。|[/]|！|[!]|[.]|[?]|：|,|"|:|@|-|、|~|《|》|[|]|、', "", line)
+    line = re.sub(
+        f'#|[=]|；|，|？|。|[/]|！|[!]|[.]|[?]|：|,|"|:|@|-|、|~|《|》|[|]|、', "", line
+    )
     line = line.replace("Ｅ", "E")
     line = line.replace("Ｎ", "N")
     line = line.upper()
@@ -66,7 +68,7 @@ def prepare_tal_csasr(
     dataset_parts = ["train_set", "dev_set", "test_set"]
     transcript_dict = {}
     for part in dataset_parts:
-        transcript_path = corpus_dir / "TALCS_corpus" / f"{part}"/ "label.txt"
+        transcript_path = corpus_dir / "TALCS_corpus" / f"{part}" / "label.txt"
         with open(transcript_path, "r", encoding="utf-8") as f:
             for line in f.readlines():
                 idx_transcript = line.split()
