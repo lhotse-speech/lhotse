@@ -40,7 +40,7 @@
         "id": "ES2011a.Headset-0-40s-46s-0-3",
         "language": "English",
         "recording_id": "ES2011a.Headset-0-40s-46s.wav",
-        "speaker": "ES2011a.Headset",
+        "speaker": "ES2011a.Headset-1",
         "start": 1.46,
         "text": "I'M ABIGAIL CLAFLIN"
       },
@@ -50,7 +50,7 @@
         "id": "ES2011a.Headset-0-40s-46s-0-4",
         "language": "English",
         "recording_id": "ES2011a.Headset-0-40s-46s.wav",
-        "speaker": "ES2011a.Headset",
+        "speaker": "ES2011a.Headset-2",
         "start": 3.36,
         "text": "YOU CAN CALL ME ABBIE"
       }
