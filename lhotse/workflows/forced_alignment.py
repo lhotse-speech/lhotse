@@ -59,7 +59,7 @@ def align_with_torchaudio(
     for cut in cuts:
 
         for idx, subcut in enumerate(cut.trim_to_supervisions(keep_overlapping=False)):
-            sup = subcut.supervisions[0]
+            sup = subcut.supervisions[idx]
             waveform = torch.as_tensor(
                 subcut.resample(sampling_rate).load_audio(), device=device
             )
