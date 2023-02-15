@@ -3,13 +3,19 @@ This is an experimental workflow that can be used to simulate multi-speaker meet
 a CutSet containing MonoCut objects.
 """
 import abc
-from collections import defaultdict
-from typing import Optional
+import random
+from itertools import groupby
+from typing import Dict, List, Optional, Union
+
+import numpy as np
+from tqdm import tqdm
 
 from lhotse import RecordingSet, SupervisionSet
 from lhotse.cut import CutSet
-from lhotse.dataset.sampling import DynamicCutSampler, RoundRobinSampler
+from lhotse.dataset.sampling import DynamicCutSampler
 from lhotse.utils import fastcopy, is_module_available
+
+MAX_TASKS_WAITING = 1000
 
 
 class BaseMeetingSimulator(abc.ABC):
@@ -83,6 +89,126 @@ class BaseMeetingSimulator(abc.ABC):
         ...
 
 
+class MeetingSampler:
+    """
+    Create a sampler that will be used to sample groups of utterances from the sources.
+    The cuts are partitioned into speaker-wise buckets, and a SimpleCutSampler is created
+    for each bucket. When we sample a group of utterances, we first sample the number of
+    speakers in the meeting, and then sample the utterances of each speaker. This is done
+    by sampling a batch from the corresponding SimpleCutSampler.
+
+    :param cuts: a CutSet containing MonoCut objects.
+    :param num_repeats: the number of times each cut will be repeated (by default, they
+        are repeated infinitely).
+    :param num_meetings: the number of meetings to simulate.
+    :param num_speakers_per_meeting: the number of speakers per meeting.
+    :param speaker_count_probs: the probabilities of the number of speakers per meeting.
+    :param max_duration_per_speaker: the maximum duration of a speaker in a meeting.
+    :param max_utterances_per_speaker: the maximum number of utterances of a speaker in a meeting.
+    :param seed: the random seed.
+    :return: a DynamicCutSampler object.
+    """
+
+    def __init__(
+        self,
+        cuts: CutSet,
+        num_repeats: Optional[int] = None,
+        num_meetings: Optional[int] = None,
+        num_speakers_per_meeting: Union[int, List[int]] = 2,
+        speaker_count_probs: Optional[List[float]] = None,
+        max_duration_per_speaker: Optional[float] = 20.0,
+        max_utterances_per_speaker: Optional[int] = 5,
+        seed: int = 0,
+    ):
+        # Some basic checks
+        assert all(n > 1 for n in num_speakers_per_meeting), (
+            "The number of speakers per meeting must be greater than 1. "
+            f"Got: {num_speakers_per_meeting}"
+        )
+        assert all(p > 0.0 for p in speaker_count_probs), (
+            "The probabilities of the number of speakers per meeting must be greater than 0. "
+            f"Got: {speaker_count_probs}"
+        )
+        assert sum(speaker_count_probs) == 1.0, (
+            "The probabilities of the number of speakers per meeting must sum to 1. "
+            f"Got: {speaker_count_probs}"
+        )
+        assert len(num_speakers_per_meeting) == len(
+            speaker_count_probs
+        ), "The number of speakers per meeting and the number of probabilities must be the same."
+
+        # Create samplers for each bucket. We create this as a dict so that we can
+        # efficiently remove items and also randomly sample items in constant time.
+        # It also supports the len() function in constant time.
+        # Note that a Python list is not a good choice here, because removing items
+        # from a list is O(n). A set is also not a good choice, because randomly
+        # sampling items from a set is O(n).
+        self.samplers = {}
+        for spk, spk_cuts in tqdm(
+            groupby(
+                sorted(cuts, key=lambda cut: cut.supervisions[0].speaker),
+                lambda cut: cut.supervisions[0].speaker,
+            ),
+            desc="Creating samplers for each speaker...",
+        ):
+            sampler = DynamicCutSampler(
+                CutSet.from_cuts(list(spk_cuts)).repeat(
+                    times=num_repeats, preserve_id=False
+                ),
+                max_duration=max_duration_per_speaker,
+                max_cuts=max_utterances_per_speaker,
+                shuffle=True,
+                seed=seed,
+            )
+            self.samplers[spk] = sampler
+
+        self.num_speakers_per_meeting = num_speakers_per_meeting
+        self.speaker_count_probs = speaker_count_probs
+
+        self.npr = np.random.RandomState(seed)
+        self.rng = random.Random(seed)
+        self._remaining_meetings = num_meetings
+
+    def __iter__(self):
+        for sampler in self.samplers.values():
+            iter(sampler)
+        return self
+
+    def __next__(self):
+        # If we have sampled enough meetings, stop.
+        if self._remaining_meetings is not None and self._remaining_meetings == 0:
+            raise StopIteration()
+
+        # If we don't have enough speakers, stop.
+        if len(self.samplers) < min(self.num_speakers_per_meeting):
+            raise StopIteration()
+
+        # Sample the number of speakers for this meeting.
+        N = min(
+            self.npr.choice(self.num_speakers_per_meeting, p=self.speaker_count_probs),
+            len(self.samplers),
+        )
+
+        # Sample speakers.
+        this_batch_spk_ids = self.rng.sample(list(self.samplers.keys()), N)
+        utterances = CutSet.from_cuts([])
+        for spk_id in this_batch_spk_ids:
+            sampler = self.samplers[spk_id]
+            try:
+                this_batch = next(sampler)
+                utterances += this_batch
+            except StopIteration:
+                del self.samplers[spk_id]
+                continue
+
+        # shuffle the utterances
+        utterances = utterances.shuffle()
+
+        if self._remaining_meetings is not None:
+            self._remaining_meetings -= 1
+        return utterances if len(utterances) > 0 else next(self)
+
+
 def reverberate_cuts(cuts: CutSet, *rirs: RecordingSet) -> CutSet:
     """
     Use provided RIRs to convolve each track of the input CutSet. The cuts here are
@@ -114,47 +240,3 @@ def reverberate_cuts(cuts: CutSet, *rirs: RecordingSet) -> CutSet:
             out_cuts.append(cut.reverb_rir())
 
     return CutSet.from_cuts(out_cuts)
-
-
-def create_sampler(
-    cuts: CutSet,
-    num_repeats: Optional[int] = None,
-    max_duration: float = None,
-    max_cuts: int = None,
-    seed: int = 0,
-) -> DynamicCutSampler:
-    """
-    Create a sampler that will be used to sample cuts from the input CutSet. The cuts
-    are partitioned into speaker-wise buckets, and a DynamicCutSampler is created for
-    each bucket. The samplers are then combined into a RoundRobinSampler, which will
-    sample cuts from each bucket in a round-robin fashion.
-
-    :param cuts: a CutSet containing MonoCut objects.
-    :param num_repeats: the number of times each cut will be repeated (by default, they
-        are repeated infinitely).
-    :param max_duration: the maximum duration of the cuts in each batch.
-    :param max_cuts: the maximum number of cuts in each batch.
-    :param seed: the random seed.
-    :return: a DynamicCutSampler object.
-    """
-    # Create buckets by speaker.
-    buckets = defaultdict(list)
-    for cut in cuts:
-        buckets[cut.supervisions[0].speaker].append(cut)
-
-    buckets = [CutSet.from_cuts(cuts) for cuts in buckets.values()]
-
-    # Create samplers for each bucket.
-    samplers = [
-        DynamicCutSampler(
-            cuts.repeat(times=num_repeats),
-            max_duration=max_duration,
-            max_cuts=max_cuts,
-            shuffle=True,
-            seed=seed,
-        )
-        for cuts in buckets
-    ]
-
-    # Combine samplers into a round-robin sampler.
-    return RoundRobinSampler(*samplers, randomize=True, seed=seed)

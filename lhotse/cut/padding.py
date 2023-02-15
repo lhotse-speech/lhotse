@@ -399,6 +399,12 @@ class PaddingCut(Cut):
         """
         return self
 
+    def move_to_memory(self, *args, **kwargs) -> "PaddingCut":
+        """
+        Just for consistency with :class`.MonoCut` and :class:`.MixedCut`.
+        """
+        return self
+
     def map_supervisions(self, transform_fn: Callable[[Any], Any]) -> "PaddingCut":
         """
         Just for consistency with :class:`.MonoCut` and :class:`.MixedCut`.

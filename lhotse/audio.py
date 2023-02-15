@@ -475,18 +475,9 @@ class Recording:
             channels=channels, offset=ifnone(offset, 0), duration=duration
         )
         stream = BytesIO()
-        if torchaudio_soundfile_supports_format() and format == "flac":
-            # Prefer saving with soundfile backend whenever possible to avoid issue:
-            # https://github.com/pytorch/audio/issues/2662
-            # Saving with sox_io backend to FLAC may corrupt the file, IDK about other
-            # formats but would rather be on the safe side.
-            torchaudio.backend.soundfile_backend.save(
-                stream, torch.from_numpy(audio), self.sampling_rate, format=format
-            )
-        else:
-            torchaudio.backend.sox_io_backend.save(
-                stream, torch.from_numpy(audio), self.sampling_rate, format=format
-            )
+        torchaudio_save_flac_safe(
+            stream, torch.from_numpy(audio), self.sampling_rate, format=format
+        )
         channels = (ifnone(channels, self.channel_ids),)
         if isinstance(channels, int):
             channels = [channels]
@@ -2253,6 +2244,38 @@ def read_sph(
         audio = audio.reshape(1, -1) if sf_desc.channels == 1 else audio.T
 
     return audio, sampling_rate
+
+
+def torchaudio_save_flac_safe(
+    dest: Union[str, Path, BytesIO],
+    src: Union[torch.Tensor, np.ndarray],
+    sample_rate: int,
+    *args,
+    **kwargs,
+):
+    import torchaudio
+
+    src = torch.as_tensor(src)
+    saving_flac = kwargs.get("format") == "flac" or (
+        not isinstance(dest, BytesIO) and str(dest).endswith(".flac")
+    )
+    if torchaudio_soundfile_supports_format() and saving_flac:
+        # Prefer saving with soundfile backend whenever possible to avoid issue:
+        # https://github.com/pytorch/audio/issues/2662
+        # Saving with sox_io backend to FLAC may corrupt the file.
+        torchaudio.backend.soundfile_backend.save(
+            dest,
+            src,
+            sample_rate=sample_rate,
+            format=kwargs.pop("format", "flac"),
+            bits_per_sample=kwargs.pop("bits_per_sample", 16),
+            *args,
+            **kwargs,
+        )
+    else:
+        torchaudio.backend.sox_io_backend.save(
+            dest, src, sample_rate=sample_rate, *args, **kwargs
+        )
 
 
 class AudioLoadingError(Exception):

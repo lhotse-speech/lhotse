@@ -207,7 +207,12 @@ def validate_for_asr(cuts: CutSet) -> None:
                 f"Supervisions starting before the cut are not supported for ASR"
                 f" (sup id: {supervision.id}, cut id: {cut.id})"
             )
-            assert supervision.duration <= cut.duration + tol, (
+
+            # Supervision start time is relative to Cut ...
+            # https://lhotse.readthedocs.io/en/v0.10_e/cuts.html
+            #
+            # 'supervision.end' is end of supervision inside the Cut
+            assert supervision.end <= cut.duration + tol, (
                 f"Supervisions ending after the cut "
                 f"are not supported for ASR"
                 f" (sup id: {supervision.id}, cut id: {cut.id})"
