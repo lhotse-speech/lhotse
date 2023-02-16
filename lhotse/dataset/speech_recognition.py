@@ -107,6 +107,9 @@ class K2SpeechRecognitionDataset(torch.utils.data.Dataset):
         # the supervision boundaries.
         for tnfm in self.cut_transforms:
             cuts = tnfm(cuts)
+        
+        # Sort the cuts again after transforms    
+        cuts = cuts.sort_by_duration(ascending=False)
 
         # Get a tensor with batched feature matrices, shape (B, T, F)
         # Collation performs auto-padding, if necessary.
