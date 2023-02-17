@@ -2,13 +2,14 @@ import logging
 import warnings
 from dataclasses import dataclass
 from functools import partial, reduce
+from io import BytesIO
 from operator import add
 from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple, Union
 
 import numpy as np
 from intervaltree import IntervalTree
 
-from lhotse.audio import AudioMixer, Recording, audio_energy
+from lhotse.audio import AudioMixer, Recording, audio_energy, torchaudio_save_flac_safe
 from lhotse.augmentation import AugmentFn
 from lhotse.cut.base import Cut
 from lhotse.cut.data import DataCut
@@ -314,6 +315,75 @@ class MixedCut(Cut):
         )
         non_padding_idx, mono_cut = non_padding_cuts_with_custom_attr[0]
         return non_padding_idx, mono_cut
+
+    def move_to_memory(
+        self,
+        audio_format: str = "flac",
+        load_audio: bool = True,
+        load_features: bool = True,
+        load_custom: bool = True,
+    ) -> "MixedCut":
+        """
+        Load data (audio, features, or custom arrays) into memory and attach them
+        to a copy of the manifest. This is useful when you want to store cuts together
+        with the actual data in some binary format that enables sequential data reads.
+
+        Audio is encoded with ``audio_format`` (compatible with ``torchaudio.save``),
+        floating point features are encoded with lilcom, and other arrays are pickled.
+        """
+        return fastcopy(
+            self,
+            tracks=[
+                fastcopy(
+                    t,
+                    cut=t.cut.move_to_memory(
+                        audio_format=audio_format,
+                        load_audio=load_audio,
+                        load_features=load_features,
+                        load_custom=load_custom,
+                    ),
+                )
+                for t in self.tracks
+            ],
+        )
+
+    def to_mono(
+        self,
+        encoding: str = "flac",
+        bits_per_sample: Optional[int] = 16,
+        **kwargs,
+    ) -> "Cut":
+        """
+        Convert this MixedCut to a MonoCut by mixing all tracks and channels into a single one.
+        The result audio array is stored in memory, and can be saved to disk by calling
+        ``cut.save_audio(path, ...)`` on the result.
+
+        .. hint:: the resulting MonoCut will have ``custom`` field populated with the
+            ``custom`` value from the first track of the MixedCut.
+
+        :param encoding: Audio encoding argument supported by ``torchaudio.save``. See
+            https://pytorch.org/audio/stable/backend.html#save (sox_io backend) and
+            https://pytorch.org/audio/stable/backend.html#id3 (soundfile backend) for more details.
+        :param bits_per_sample: Audio bits_per_sample argument supported by ``torchaudio.save``. See
+            https://pytorch.org/audio/stable/backend.html#save (sox_io backend) and
+            https://pytorch.org/audio/stable/backend.html#id3 (soundfile backend) for more details.
+        :return: a new MonoCut instance.
+        """
+        samples = self.load_audio(mono_downmix=True)
+        stream = BytesIO()
+        torchaudio_save_flac_safe(
+            stream,
+            samples,
+            self.sampling_rate,
+            format=encoding,
+            bits_per_sample=bits_per_sample,
+        )
+        recording = Recording.from_bytes(stream.getvalue(), recording_id=self.id)
+        return fastcopy(
+            recording.to_cut(),
+            supervisions=[fastcopy(s, channel=0) for s in self.supervisions],
+            custom=self.tracks[0].cut.custom,
+        )
 
     def truncate(
         self,
