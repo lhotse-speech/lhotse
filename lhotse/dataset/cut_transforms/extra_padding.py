@@ -55,7 +55,9 @@ class ExtraPadding:
             extra_frames, extra_samples, extra_seconds
         ), "For ExtraPadding, you have to specify exactly one of: frames, samples, or duration."
         assert direction in [
-            "both", "left", "right"
+            "both",
+            "left",
+            "right",
         ], "Only three padding modes are supported"
         self.extra_frames = extra_frames
         self.extra_samples = extra_samples
