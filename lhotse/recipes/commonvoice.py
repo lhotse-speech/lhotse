@@ -29,7 +29,6 @@ from lhotse.utils import (
     urlretrieve_progress,
 )
 
-DEFAULT_COMMONVOICE_URL = "https://voice-prod-bundler-ee1969a6ce8178826482b88e843c335139bd3fb4.s3.amazonaws.com"
 DEFAULT_COMMONVOICE_URL = (
     "https://mozilla-common-voice-datasets.s3.dualstack.us-west-2.amazonaws.com"
 )
@@ -48,7 +47,7 @@ def download_commonvoice(
     languages: Union[str, Iterable[str]] = "all",
     force_download: bool = False,
     base_url: str = DEFAULT_COMMONVOICE_URL,
-    release: Optional[str] = "",
+    release: Optional[str] = "cv-corpus-8.0-2022-01-19",
 ) -> None:
     """
     Download and untar the CommonVoice dataset.
@@ -58,17 +57,12 @@ def download_commonvoice(
         or a list of language codes.
     :param force_download: Bool, if True, download the tars no matter if the tars exist.
     :param base_url: str, the base URL for CommonVoice.
-    :param release: str, the name of the CommonVoice release (e.g., "cv-corpus-5.1-2020-06-22").
+    :param release: str, the name of the CommonVoice release (e.g., "cv-corpus-8.0-2022-01-19").
         It is used as part of the download URL.
     """
     # note(pzelasko): This code should work in general if we supply the right URL,
     # but the URL stopped working during the development of this script --
     # I'm not going to fight this, maybe somebody else would be interested to pick it up.
-    # raise NotImplementedError(
-    #    "CommonVoice requires you to enter e-mail to download the data"
-    #    "-- please download it manually for now. "
-    #    "We are open to contributions to support downloading CV via lhotse."
-    # )
     target_dir = Path(target_dir)
     target_dir.mkdir(parents=True, exist_ok=True)
     url = f"{base_url}/{release}"

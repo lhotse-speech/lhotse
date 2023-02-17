@@ -65,7 +65,7 @@ def commonvoice(
     "-v",
     "--release",
     default="cv-corpus-8.0-2022-01-19",
-    help="the name of the CommonVoice release (e.g., 'cv-corpus-5.1-2020-06-22').It is used as part of the download URL.",
+    help="the name of the CommonVoice release (e.g., 'cv-corpus-8.0-2022-01-19').It is used as part of the download URL.",
 )
 def commonvoice(
     target_dir: Pathlike,
