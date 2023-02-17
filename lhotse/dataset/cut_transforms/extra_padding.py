@@ -31,6 +31,7 @@ class ExtraPadding:
         pad_feat_value: float = LOG_EPSILON,
         randomized: bool = False,
         preserve_id: bool = False,
+        direction: str = "both",
     ) -> None:
         """
         ExtraPadding's constructor.
@@ -48,16 +49,23 @@ class ExtraPadding:
             for duration -- sample a float).
         :param preserve_id: When ``True``, preserves the IDs the cuts had before augmentation.
             Otherwise, new random IDs are generated for the augmented cuts (default).
+        :param direction: The padding direction.
         """
         assert exactly_one_not_null(
             extra_frames, extra_samples, extra_seconds
         ), "For ExtraPadding, you have to specify exactly one of: frames, samples, or duration."
+        assert direction in [
+            "both",
+            "left",
+            "right",
+        ], "Only three padding modes are supported"
         self.extra_frames = extra_frames
         self.extra_samples = extra_samples
         self.extra_seconds = extra_seconds
         self.pad_feat_value = pad_feat_value
         self.randomized = randomized
         self.preserve_id = preserve_id
+        self.direction = direction
 
     def __call__(self, cuts: CutSet) -> CutSet:
         if self.extra_frames is not None:
@@ -66,7 +74,7 @@ class ExtraPadding:
                     num_frames=c.num_frames
                     + maybe_sample_int(value=self.extra_frames, sample=self.randomized),
                     pad_feat_value=self.pad_feat_value,
-                    direction="both",
+                    direction=self.direction,
                     preserve_id=self.preserve_id,
                 )
                 for c in cuts
@@ -78,7 +86,7 @@ class ExtraPadding:
                     + maybe_sample_int(
                         value=self.extra_samples, sample=self.randomized
                     ),
-                    direction="both",
+                    direction=self.direction,
                     preserve_id=self.preserve_id,
                 )
                 for c in cuts
@@ -92,7 +100,7 @@ class ExtraPadding:
                         sample=self.randomized,
                     ),
                     pad_feat_value=self.pad_feat_value,
-                    direction="both",
+                    direction=self.direction,
                     preserve_id=self.preserve_id,
                 )
                 for c in cuts
