@@ -9,7 +9,10 @@ This project is an effort to bridge the digital speech divide. Voice recognition
 How does it work?
 We’re crowdsourcing an open-source dataset of voices. Donate your voice, validate the accuracy of other people’s clips, make the dataset better for everyone.
 """
+import csv
 import logging
+import math
+import numbers
 import shutil
 import tarfile
 import warnings
@@ -234,7 +237,7 @@ def prepare_single_commonvoice_tsv(
     tsv_path = lang_path / f"{part}.tsv"
 
     # Read the metadata
-    df = pd.read_csv(tsv_path, sep="\t")
+    df = pd.read_csv(tsv_path, sep="\t", quoting=csv.QUOTE_NONE)
     # Scan all the audio files
     with RecordingSet.open_writer(
         output_dir / f"cv-{lang}_recordings_{part}.jsonl.gz",
@@ -270,6 +273,18 @@ def prepare_single_commonvoice_tsv(
 def parse_utterance(
     row: Any, lang_path: Path, language: str
 ) -> Tuple[Recording, SupervisionSegment]:
+    def read_row_optional_field(fieldname: str):
+        # defaulting instead of raising exception
+        if fieldname not in row:
+            return None
+        cell_val = row[fieldname]
+        if cell_val == "nan" or (
+            isinstance(cell_val, numbers.Number) and math.isnan(cell_val)
+        ):
+            return None
+        else:
+            return cell_val
+
     # Create the Recording first
     audio_path = lang_path / "clips" / row.path
     if not audio_path.is_file():
@@ -278,9 +293,9 @@ def parse_utterance(
     recording = Recording.from_file(audio_path, recording_id=recording_id)
     # Handling accent(s) in different versions of CommonVoice
     if "accents" in row:
-        accents = row.accents if row.accents != "nan" else None
+        accents = read_row_optional_field("accents")
     else:
-        accents = row.accent if row.accent != "nan" else None
+        accents = read_row_optional_field("accent")
     # Then, create the corresponding supervisions
     segment = SupervisionSegment(
         id=recording_id,
@@ -293,9 +308,9 @@ def parse_utterance(
         language=COMMONVOICE_CODE2LANG.get(language, language),
         speaker=row.client_id,
         text=row.sentence.strip(),
-        gender=row.gender if row.gender != "nan" else None,
+        gender=read_row_optional_field("gender"),
         custom={
-            "age": row.age if row.age != "nan" else None,
+            "age": read_row_optional_field("age"),
             "accents": accents,
         },
     )

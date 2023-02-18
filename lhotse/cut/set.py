@@ -1947,7 +1947,11 @@ class CutSet(Serializable, AlgorithmMixin):
 
         # Initialize the default executor if None was given
         if executor is None:
-            executor = ProcessPoolExecutor(num_jobs)
+            import multiprocessing
+
+            executor = ProcessPoolExecutor(
+                num_jobs, mp_context=multiprocessing.get_context("spawn")
+            )
 
         # Submit the chunked tasks to parallel workers.
         # Each worker runs the non-parallel version of this function inside.
@@ -2254,7 +2258,11 @@ class CutSet(Serializable, AlgorithmMixin):
 
         # Initialize the default executor if None was given
         if executor is None:
-            executor = ProcessPoolExecutor(num_jobs)
+            import multiprocessing
+
+            executor = ProcessPoolExecutor(
+                num_jobs, mp_context=multiprocessing.get_context("spawn")
+            )
 
         # Submit the chunked tasks to parallel workers.
         # Each worker runs the non-parallel version of this function inside.
