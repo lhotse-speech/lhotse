@@ -32,8 +32,9 @@ from lhotse.utils import (
     urlretrieve_progress,
 )
 
-DEFAULT_COMMONVOICE_URL = "https://voice-prod-bundler-ee1969a6ce8178826482b88e843c335139bd3fb4.s3.amazonaws.com"
-DEFAULT_COMMONVOICE_RELEASE = "cv-corpus-5.1-2020-06-22"
+DEFAULT_COMMONVOICE_URL = (
+    "https://mozilla-common-voice-datasets.s3.dualstack.us-west-2.amazonaws.com"
+)
 
 
 COMMONVOICE_LANGS = "en de fr cy tt kab ca zh-TW it fa eu es ru tr nl eo zh-CN rw pt zh-HK cs pl uk".split()
@@ -49,7 +50,7 @@ def download_commonvoice(
     languages: Union[str, Iterable[str]] = "all",
     force_download: bool = False,
     base_url: str = DEFAULT_COMMONVOICE_URL,
-    release: str = DEFAULT_COMMONVOICE_RELEASE,
+    release: Optional[str] = "cv-corpus-8.0-2022-01-19",
 ) -> None:
     """
     Download and untar the CommonVoice dataset.
@@ -59,17 +60,12 @@ def download_commonvoice(
         or a list of language codes.
     :param force_download: Bool, if True, download the tars no matter if the tars exist.
     :param base_url: str, the base URL for CommonVoice.
-    :param release: str, the name of the CommonVoice release (e.g., "cv-corpus-5.1-2020-06-22").
+    :param release: str, the name of the CommonVoice release (e.g., "cv-corpus-8.0-2022-01-19").
         It is used as part of the download URL.
     """
     # note(pzelasko): This code should work in general if we supply the right URL,
     # but the URL stopped working during the development of this script --
     # I'm not going to fight this, maybe somebody else would be interested to pick it up.
-    raise NotImplementedError(
-        "CommonVoice requires you to enter e-mail to download the data"
-        "-- please download it manually for now. "
-        "We are open to contributions to support downloading CV via lhotse."
-    )
     target_dir = Path(target_dir)
     target_dir.mkdir(parents=True, exist_ok=True)
     url = f"{base_url}/{release}"
@@ -96,7 +92,19 @@ def download_commonvoice(
         tar_name = f"{lang}.tar.gz"
         tar_path = target_dir / tar_name
         if force_download or not tar_path.is_file():
-            urlretrieve_progress(url, filename=tar_path, desc=f"Downloading {tar_name}")
+            # After version 7.0, the commonvoice download address has changed
+            if float(release.split("-")[2]) < 8.0:
+                raise NotImplementedError(
+                    "When the version is less than 8.0, CommonVoice requires you to enter e-mail to download the data.\n"
+                    "Please download it manually for now.\n"
+                    "Or you can choose a version greater than 8.0.\n"
+                )
+            else:
+                # https://mozilla-common-voice-datasets.s3.dualstack.us-west-2.amazonaws.com/cv-corpus-7.0-2021-07-21/cv-corpus-7.0-2021-07-21-zh-CN.tar.gz
+                single_url = url + f"/{release}-{lang}.tar.gz"
+            urlretrieve_progress(
+                single_url, filename=tar_path, desc=f"Downloading {tar_name}"
+            )
             logging.info(f"Downloading finished: {lang}")
         # Remove partial unpacked files, if any, and unpack everything.
         logging.info(f"Unpacking archive: {lang}")
