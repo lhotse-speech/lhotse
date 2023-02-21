@@ -3,6 +3,7 @@ import torch
 from torch.utils.data import DataLoader
 
 from lhotse import RecordingSet, Seconds, compute_num_samples
+from lhotse.audio import torchaudio_supports_ffmpeg
 from lhotse.dataset.unsupervised import (
     RecordingChunkIterableDataset,
     audio_chunk_collate,
@@ -10,6 +11,9 @@ from lhotse.dataset.unsupervised import (
 )
 
 
+@pytest.mark.skipif(
+    not torchaudio_supports_ffmpeg(), reason="Requires torchaudio 0.12.0+ to run."
+)
 @pytest.mark.parametrize("CHUNK_SHIFT", [10.0, 8.0])
 def test_audio_chunk_dataset_usage(CHUNK_SHIFT: Seconds):
     CHUNK_SIZE: Seconds = 10.0
