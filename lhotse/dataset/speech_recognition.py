@@ -108,6 +108,9 @@ class K2SpeechRecognitionDataset(torch.utils.data.Dataset):
         for tnfm in self.cut_transforms:
             cuts = tnfm(cuts)
 
+        # Sort the cuts again after transforms
+        cuts = cuts.sort_by_duration(ascending=False)
+
         # Get a tensor with batched feature matrices, shape (B, T, F)
         # Collation performs auto-padding, if necessary.
         input_tpl = self.input_strategy(cuts)
@@ -207,7 +210,12 @@ def validate_for_asr(cuts: CutSet) -> None:
                 f"Supervisions starting before the cut are not supported for ASR"
                 f" (sup id: {supervision.id}, cut id: {cut.id})"
             )
-            assert supervision.duration <= cut.duration + tol, (
+
+            # Supervision start time is relative to Cut ...
+            # https://lhotse.readthedocs.io/en/v0.10_e/cuts.html
+            #
+            # 'supervision.end' is end of supervision inside the Cut
+            assert supervision.end <= cut.duration + tol, (
                 f"Supervisions ending after the cut "
                 f"are not supported for ASR"
                 f" (sup id: {supervision.id}, cut id: {cut.id})"

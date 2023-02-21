@@ -1,3 +1,4 @@
+import math
 import warnings
 from collections import defaultdict
 from concurrent.futures import ProcessPoolExecutor
@@ -16,6 +17,27 @@ from lhotse.utils import (
     is_module_available,
     to_list,
 )
+
+
+def floor_duration_to_milliseconds(
+    duration: float,
+) -> float:
+    """
+    Floor the duration to multiplies of 0.001 seconds.
+    This is to avoid float precision problems with workflows like:
+      lhotse kaldi import ...
+      lhotse fix ...
+      ./local/compute_fbank_imported.py (from icefall)
+      lhotse cut trim-to-supervisions ...
+      ./local/validate_manifest.py ... (from icefall)
+
+    Without flooring, there were different lengths:
+      Supervision end time 1093.33995833 is larger than cut end time 1093.3399375
+
+    This is still within the 2ms tolerance in K2SpeechRecognitionDataset::validate_for_asr():
+      https://github.com/lhotse-speech/lhotse/blob/master/lhotse/dataset/speech_recognition.py#L201
+    """
+    return math.floor(1000 * duration) / 1000
 
 
 def get_duration(
@@ -39,7 +61,7 @@ def get_duration(
         wave = kaldi_native_io.read_wave(path)
         assert wave.data.shape[0] == 1, f"Expect 1 channel. Given {wave.data.shape[0]}"
 
-        return wave.duration
+        return floor_duration_to_milliseconds(wave.duration)
     try:
         # Try to parse the file using pysoundfile first.
         import soundfile
@@ -48,7 +70,7 @@ def get_duration(
     except Exception:
         # Try to parse the file using audioread as a fallback.
         info = audioread_info(path)
-    return info.duration
+    return floor_duration_to_milliseconds(info.duration)
 
 
 def load_kaldi_data_dir(
