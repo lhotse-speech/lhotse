@@ -3,7 +3,7 @@ import warnings
 from typing import Any, Dict, List, Optional, Tuple
 
 import torch
-from torch.utils.data import IterableDataset, default_collate
+from torch.utils.data import IterableDataset
 
 from lhotse import RecordingSet, Seconds, compute_num_samples, validate
 from lhotse.audio import suppress_audio_loading_errors, torchaudio_supports_ffmpeg
@@ -282,6 +282,8 @@ def _buffer_push(
 
 
 def audio_chunk_collate(batch: List[Dict]):
+    from torch.utils.data import default_collate
+
     audios = [d.pop("audio") for d in batch]
     out = default_collate(batch)
 
