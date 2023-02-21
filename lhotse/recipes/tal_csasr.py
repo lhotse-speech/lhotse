@@ -39,7 +39,9 @@ def text_normalize(line: str):
     line = line.replace("Ｙ", "Y")
     line = line.replace("ａ", "a")
     line = line.replace("Ｉ", "I")
-    line = re.sub(f'#|=|；|，|？|。|/|！|!|.|?|：|,|"|:|@|-|、|~|《|》|[|]|、', "", line)
+    line = re.sub(
+        f'#|[=]|；|，|？|。|[/]|！|[!]|[.]|[?]|：|,|"|:|@|-|、|~|《|》|[|]|、', "", line
+    )
     line = line.replace("Ｅ", "E")
     line = line.replace("Ｎ", "N")
     line = line.upper()
@@ -63,17 +65,18 @@ def prepare_tal_csasr(
         output_dir = Path(output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
 
-    transcript_path = corpus_dir / "TAL_CSASR" / "label"
+    dataset_parts = ["train_set", "dev_set", "test_set"]
     transcript_dict = {}
-    with open(transcript_path, "r", encoding="utf-8") as f:
-        for line in f.readlines():
-            idx_transcript = line.split()
-            content = " ".join(idx_transcript[1:])
-            content = text_normalize(content)
-            transcript_dict[idx_transcript[0]] = content
+    for part in dataset_parts:
+        transcript_path = corpus_dir / "TALCS_corpus" / f"{part}" / "label.txt"
+        with open(transcript_path, "r", encoding="utf-8") as f:
+            for line in f.readlines():
+                idx_transcript = line.split()
+                content = " ".join(idx_transcript[1:])
+                content = text_normalize(content)
+                transcript_dict[idx_transcript[0]] = content
 
     manifests = defaultdict(dict)
-    dataset_parts = ["train"]
     for part in tqdm(
         dataset_parts,
         desc="Process tal_csasr audio, it takes about 4 minutes using 40 cpu jobs.",
@@ -82,7 +85,7 @@ def prepare_tal_csasr(
         # Generate a mapping: utt_id -> (audio_path, audio_info, speaker, text)
 
         supervisions = []
-        wav_path = corpus_dir / "TAL_CSASR" / "cs_wav"
+        wav_path = corpus_dir / "TALCS_corpus" / f"{part}" / "wav"
         recordings = RecordingSet.from_dir(
             path=wav_path, pattern="*.wav", num_jobs=num_jobs
         )
