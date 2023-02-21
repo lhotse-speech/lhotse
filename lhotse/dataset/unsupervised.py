@@ -259,28 +259,6 @@ class ShiftingBuffer:
         return out
 
 
-def _buffer_push(
-    prev_samples: torch.Tensor, new_samples: torch.Tensor, chunk_num_samples: int
-) -> Tuple[torch.Tensor, torch.Tensor]:
-    # Case 1: when old + new context is not enough to satisfy chunk_num_samples,
-    # just return whatever we have.
-    if prev_samples.shape[0] + new_samples.shape[0] < chunk_num_samples:
-        return torch.cat([prev_samples, new_samples]), torch.tensor([])
-
-    # Case 2: we have enough samples from old context to satisfy chunk_num_samples
-    if prev_samples.shape[0] > chunk_num_samples:
-        return prev_samples[:chunk_num_samples], torch.cat(
-            [prev_samples[chunk_num_samples:], new_samples]
-        )
-
-    # Case 3: we have some samples in the old context and add some samples from the new context
-    num_new_samples = chunk_num_samples - prev_samples.shape[0]
-    return (
-        torch.cat([prev_samples, new_samples[:num_new_samples]]),
-        num_new_samples[num_new_samples:],
-    )
-
-
 def audio_chunk_collate(batch: List[Dict]):
     from torch.utils.data import default_collate
 
