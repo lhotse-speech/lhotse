@@ -209,12 +209,13 @@ class RecordingChunkIterableDataset(IterableDataset):
                     begin_time += self.chunk_shift
                     end_time = begin_time + self.chunk_size
             remainder = buffer.flush()
-            yield {
-                "recording_id": r.id,
-                "begin_time": torch.as_tensor(begin_time, dtype=torch.float32),
-                "end_time": torch.as_tensor(end_time, dtype=torch.float32),
-                "audio": remainder,
-            }
+            if remainder.shape[0] > 0:
+                yield {
+                    "recording_id": r.id,
+                    "begin_time": torch.as_tensor(begin_time, dtype=torch.float32),
+                    "end_time": torch.as_tensor(end_time, dtype=torch.float32),
+                    "audio": remainder,
+                }
 
 
 class ShiftingBuffer:
