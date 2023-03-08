@@ -88,7 +88,7 @@ def prepare_ljspeech(
                 language="English",
                 gender="female",
                 text=text,
-                custom={"normalized_text": normalized},
+                custom={"normalized_text": normalized.strip()},
             )
             recordings.append(recording)
             supervisions.append(segment)
