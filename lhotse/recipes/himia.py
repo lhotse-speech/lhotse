@@ -25,7 +25,6 @@ from lhotse.audio import Recording, RecordingSet
 from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import Pathlike, safe_extract, urlretrieve_progress
 
-
 # HI_MIA contains train.tar.gz, dev.tar.gz, test.tar.gz and test_v2.tar.gz
 # According to https://www.openslr.org/85,
 # test.tar.gz is deprecated because of corrupted audio files.
