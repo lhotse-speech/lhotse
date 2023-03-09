@@ -16,7 +16,7 @@ import shutil
 import tarfile
 from collections import defaultdict
 from pathlib import Path
-from typing import Dict, Optional, Tuple, Union
+from typing import Dict, Optional, Sequence, Tuple, Union
 
 from tqdm.auto import tqdm
 
@@ -26,14 +26,83 @@ from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import Pathlike, safe_extract, urlretrieve_progress
 
 
+# HI_MIA contains train.tar.gz, dev.tar.gz, test.tar.gz and test_v2.tar.gz
+# According to https://www.openslr.org/85,
+# test.tar.gz is deprecated because of corrupted audio files.
+# So here we download test_v2.tar.gz instead of test.tar.gz
+# Following three files are going to be downloaded:
+#   https://us.openslr.org/resources/85/train.tar.gz
+#   https://us.openslr.org/resources/85/dev.tar.gz
+#   https://us.openslr.org/resources/85/test_v2.tar.gz
+#
+# The extracted folder of test_v2.tar.gz is "test" rather than "test_v2".
+
+# HI_MIA_CW contains data.tgz and resource.tgz
+# https://us.openslr.org/resources/120/data.tgz
+# will be extracted to folder "16k_wav_file"
+#
+# Transcriptions.
+# https://us.openslr.org/resources/120/resource.tgz
+# will be extracted to folder "resource"
+
+SOURCE_FILE = {
+    "train": "train.tar.gz",
+    "dev": "dev.tar.gz",
+    "test": "test_v2.tar.gz",
+    # "cw_test" contains following two entries.
+    "data": "data.tgz",
+    "resource": "resource.tgz",
+}
+
+EXTRACTED_FOLDER = {
+    "train": "train",
+    "dev": "dev",
+    "test": "test",
+    # "cw_test" contains following two entries.
+    "data": "16k_wav_file",
+    "resource": "resource",
+}
+
+CW_PARTS = ["cw_test"]
+CW_SOURCE_FILE_LIST = ["data", "resource"]
+CW_FILES = ["data.tgz", "resource.tgz"]
+
+HI_MIA_PARTS = ["train", "dev", "test"]
+HI_MIA_AND_CW_PARTS = HI_MIA_PARTS + CW_PARTS
+
+
+def _validate_dataset_parts(
+    dataset_parts: Optional[Union[str, Sequence[str]]] = "auto",
+) -> bool:
+    valid_dataset_parts = HI_MIA_AND_CW_PARTS + ["auto", "himia"]
+
+    def validate_a_dataset(dataset_name: str) -> bool:
+        assert dataset_name in valid_dataset_parts, (
+            f"{dataset_name} is not a valid subset. "
+            f"You may want to select one from {valid_dataset_parts}"
+        )
+        return True
+
+    if isinstance(dataset_parts, str):
+        validate_a_dataset(dataset_parts)
+        return True
+    assert isinstance(dataset_parts, tuple)
+    for dataset_name in dataset_parts:
+        validate_a_dataset(dataset_name)
+    return True
+
+
 def download_himia(
     target_dir: Pathlike = ".",
+    dataset_parts: Optional[Union[str, Sequence[str]]] = "auto",
     force_download: bool = False,
     base_url: str = "http://www.openslr.org/resources",
 ) -> Path:
     """
     Downdload and untar HI_MIA and HI_MIA_CW datasets.
     :param target_dir: Pathlike, the path of the dir to storage the dataset.
+    :param dataset_parts: "auto", "himia"
+        or a list of splits (e.g. "train", "dev", "test", "cw_test") to download.
     :param force_download: Bool, if True, download the tars no matter if the tars exist.
     :param base_url: str, the url of the OpenSLR resources.
     :return: the path to extracted directory with data.
@@ -41,37 +110,33 @@ def download_himia(
     target_dir = Path(target_dir)
     corpus_dir = target_dir / "HiMia"
 
-    # HI_MIA contains train.tar.gz, dev.tar.gz, test.tar.gz and test_v2.tar.gz
-    # According to https://www.openslr.org/85,
-    # test.tar.gz is deprecated because of corrupted audio files.
-    # So here we download test_v2.tar.gz instead of test.tar.gz
-    # Following three files are going to be downloaded:
-    #   https://us.openslr.org/resources/85/train.tar.gz
-    #   https://us.openslr.org/resources/85/dev.tar.gz
-    #   https://us.openslr.org/resources/85/test_v2.tar.gz
-    #
-    # The extracted folder of test_v2.tar.gz is "test" rather than "test_v2".
+    _validate_dataset_parts(dataset_parts)
+    if dataset_parts == "auto":
+        dataset_parts = HI_MIA_PARTS + CW_SOURCE_FILE_LIST
+    elif dataset_parts == "himia":
+        dataset_parts = HI_MIA_PARTS
+    elif isinstance(dataset_parts, str):
+        dataset_parts = [dataset_parts]
 
-    # HI_MIA_CW contains data.tgz and resource.tgz
-    # https://us.openslr.org/resources/120/data.tgz
-    # will be extracted to folder "16k_wav_file"
-    #
-    # Transcriptions.
-    # https://us.openslr.org/resources/120/resource.tgz
-    # will be extracted to folder "resource"
+    files_to_download = []
+    # Example: when command with `-p test -p cw_test`
+    # All previous if/elif/elif branches are not executed.
+    # We need following loop to expand "cw_test" to CW_SOURCE_FILE_LIST
+    for dataset_name in dataset_parts:
+        if dataset_name == "cw_test":
+            files_to_download += CW_SOURCE_FILE_LIST
+        else:
+            files_to_download.append(dataset_name)
 
-    cw_files = ["data.tgz", "resource.tgz"]
-    # ext is short for extracted folders
-    cw_ext_folders = ["16k_wav_file", "resource"]
-    tar_files = ["test_v2.tar.gz", "train.tar.gz", "dev.tar.gz"] + cw_files
-    ext_folders = ["test", "train", "dev"] + cw_ext_folders
+    tar_files = [SOURCE_FILE[part] for part in files_to_download]
+    ext_folders = [EXTRACTED_FOLDER[part] for part in files_to_download]
 
     for tar_name, ext_name in zip(tar_files, ext_folders):
         # HI_MIA_CW is from
         # https://us.openslr.org/resources/120/
         # HI_MIA is from
         # https://us.openslr.org/resources/85/
-        is_cw = True if tar_name in cw_files else False
+        is_cw = True if tar_name in CW_FILES else False
         url_suffix_index = 120 if is_cw else 85
         url = f"{base_url}/{url_suffix_index}"
 
@@ -93,6 +158,7 @@ def download_himia(
             )
             continue
         if force_download or not tar_path.is_file():
+            logging.info(f"Downloading {url}/{tar_name}")
             urlretrieve_progress(
                 f"{url}/{tar_name}", filename=tar_path, desc=f"Downloading {tar_name}"
             )
@@ -172,6 +238,7 @@ def _prepare_cw_test(corpus_path: Path) -> Tuple[RecordingSet, SupervisionSet]:
     :param corpus_dir: Pathlike, the path of the data dir.
     :return: the RecodingSet and SupervisionSet of test dataset.
     """
+    logging.info("Processing HI_MIA_CW dataset")
     recordings = []
     supervisions = []
     cw_test_path = corpus_path / "cw_test/16k_wav_file"
@@ -220,23 +287,36 @@ def _prepare_cw_test(corpus_path: Path) -> Tuple[RecordingSet, SupervisionSet]:
 
 def prepare_himia(
     corpus_dir: Pathlike,
+    dataset_parts: Union[str, Sequence[str]] = "auto",
     output_dir: Optional[Pathlike] = None,
 ) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet]]]:
     """
     Returns the manifests which consist of the Recordings and Supervisions
     :param corpus_dir: Pathlike, the path of the data dir.
+    :param dataset_parts: "auto", "himia"
+        or a list of splits (e.g. "train", "dev", "test", "cw_test") to download.
     :param output_dir: Pathlike, the path where to write the manifests.
     :return: a Dict whose key is the dataset part, and the value is Dicts with the keys 'recordings' and 'supervisions'.
     """
+    _validate_dataset_parts(dataset_parts)
     corpus_dir = Path(corpus_dir)
     assert corpus_dir.is_dir(), f"No such directory: {corpus_dir}"
     if output_dir is not None:
         output_dir = Path(output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
     manifests = defaultdict(dict)
-    train_dev_dataset_parts = ["train", "dev", "test", "cw_test"]
+    if dataset_parts == "auto":
+        dataset_parts = HI_MIA_AND_CW_PARTS
+    elif dataset_parts == "himia":
+        dataset_parts = HI_MIA_PARTS
+    elif isinstance(dataset_parts, str):
+        if dataset_parts == "cw_test":
+            dataset_parts = CW_PARTS
+        else:
+            dataset_parts = [dataset_parts]
+
     for part in tqdm(
-        train_dev_dataset_parts,
+        dataset_parts,
         desc="Process HI_MIA and HI_MIA_CW dataset.",
     ):
         if "cw_test" == part:
