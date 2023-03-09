@@ -101,6 +101,8 @@ a CLI tool that create the manifests given a corpus directory.
     - :func:`lhotse.recipes.prepare_heroico`
   * - HiFiTTS
     - :func:`lhotse.recipes.prepare_hifitts`
+  * - HI-MIA (including HI-MIA-CW)
+    - :func:`lhotse.recipes.prepare_himia`
   * - ICSI
     - :func:`lhotse.recipes.prepare_icsi`
   * - L2 Arctic

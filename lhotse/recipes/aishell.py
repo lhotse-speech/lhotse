@@ -60,7 +60,9 @@ def download_aishell(
         extracted_dir = corpus_dir / tar_name[:-4]
         completed_detector = extracted_dir / ".completed"
         if completed_detector.is_file():
-            logging.info(f"Skipping download of because {completed_detector} exists.")
+            logging.info(
+                f"Skipping download of {tar_name} because {completed_detector} exists."
+            )
             continue
         if force_download or not tar_path.is_file():
             urlretrieve_progress(
