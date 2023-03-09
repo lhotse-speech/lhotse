@@ -853,7 +853,7 @@ def _get_strided_batch_streaming(
 
     if snip_edges:
         if num_samples < window_length:
-            return torch.empty((batch_size, 0, 0)), torch.empty(batch_size, 0)
+            return torch.empty((batch_size, 0, 0)), waveform
         num_frames = 1 + (num_samples - window_length) // window_shift
     else:
         window_remainder = window_length - window_shift

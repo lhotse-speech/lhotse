@@ -388,14 +388,14 @@ class OnTheFlyFeatures(BatchIO):
         features_batch = collate_matrices(features_single, padding_value=LOG_EPSILON)
 
         feature_lens = torch.tensor(
-            [f.size(0) for f in features_single], dtype=torch.int64
+            [f.shape[0] for f in features_single], dtype=torch.int64
         )
 
         out = (features_batch, feature_lens)
 
         if self.return_audio:
             audios = [a.squeeze(0) for a in audios]  # (1, T) -> (T, )
-            audio_lens = torch.tensor([a.size(0) for a in audios], dtype=torch.int64)
+            audio_lens = torch.tensor([a.shape[0] for a in audios], dtype=torch.int64)
             audios = collate_vectors(audios, padding_value=0)
 
             out = out + (audios, audio_lens)

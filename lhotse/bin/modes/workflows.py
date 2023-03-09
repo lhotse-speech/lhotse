@@ -313,6 +313,13 @@ def align_with_torchaudio(
     default=1234,
     help="Random seed for reproducibility.",
 )
+@click.option(
+    "--num-jobs",
+    "-j",
+    type=int,
+    default=1,
+    help="Number of parallel jobs to run.",
+)
 def simulate_meetings(
     in_cuts: str,
     out_cuts: str,
