@@ -167,9 +167,7 @@ def _prepare_train_valid(
     valid_paths.append(os.path.join(BACKGROUND_NOISE, "running_tap.wav"))
 
     # The paths for the train set is just whichever paths that do not exist in either the test or validation splits.
-    print(len(train_paths), len(valid_paths), len(train_test_paths))
     train_paths = set(train_paths) - set(valid_paths) - set(train_test_paths)
-    print(len(train_paths), len(valid_paths))
 
     train_recordings = []
     train_supervisions = []
