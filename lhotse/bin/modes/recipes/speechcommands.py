@@ -4,53 +4,41 @@ import click
 
 from lhotse.bin.modes import download, prepare
 from lhotse.recipes.speechcommands import (
-    download_speechcommands1,
-    download_speechcommands2,
+    download_speechcommands,
     prepare_speechcommands,
 )
 from lhotse.utils import Pathlike
 
 
 @prepare.command(context_settings=dict(show_default=True))
+@click.argument("speechcommands_version", type=str)
+@click.argument("corpus_dir", type=click.Path(exists=True, dir_okay=True)
 @click.argument("output_dir", type=click.Path())
-@click.option(
-    "--speechcommands1",
-    "-v1",
-    type=click.Path(),
-    default=None,
-    help="Path to Speech Commands v0.01 dataset.",
-)
-@click.option(
-    "--speechcommands2",
-    "-v2",
-    type=click.Path(),
-    default=None,
-    help="Path to Speech Commands v0.02 dataset.",
-)
 def speechcommands(
-    speechcommands1: Optional[Pathlike],
-    speechcommands2: Optional[Pathlike],
-    output_dir: Pathlike,
+    speechcommands_version: str,
+    corpus_dir: Pathlike,
+    output_dir: Optional[Pathlike] = None,
 ):
-    """Speech Commands v1 or v2 data preparation."""
+    """Speech Commands v0.01 or v0.02 data preparation."""
     prepare_speechcommands(
-        speechcommands1_root=speechcommands1,
-        speechcommands2_root=speechcommands2,
+        speechcommands_version=speechcommands_version,
+        corpus_dir=corpus_dir,
         output_dir=output_dir,
     )
 
 
 @download.command(context_settings=dict(show_default=True))
+@click.argument("speechcommands_version", type=str)
 @click.argument("target_dir", type=click.Path())
 @click.option("--force-download", is_flag=True, default=False, help="Force download")
-def speechcommands1(target_dir: Pathlike, force_download: Optional[bool] = False):
-    """Speech Commands v0.01 download."""
-    download_speechcommands1(target_dir, force_download=force_download)
-
-
-@download.command(context_settings=dict(show_default=True))
-@click.argument("target_dir", type=click.Path())
-@click.option("--force-download", is_flag=True, default=False, help="Force download")
-def speechcommands2(target_dir: Pathlike, force_download: Optional[bool] = False):
-    """Speech Commands v0.02 download."""
-    download_speechcommands2(target_dir, force_download=force_download)
+def speechcommands(
+    speechcommands_version: str,
+    target_dir: Pathlike,
+    force_download: Optional[bool] = False,
+):
+    """Speech Commands v0.01 or v0.02 download."""
+    download_speechcommands1(
+        speechcommands_version=speechcommands_version,
+        target_dir=target_dir,
+        force_download=force_download,
+    )

@@ -47,8 +47,8 @@ UNKNOWN = "_unknown_"
 BACKGROUND_NOISE = "_background_noise_"
 
 
-def _download_speechcommands(
-    speechcommands_version: str,
+def download_speechcommands(
+    speechcommands_version: str = "2",
     target_dir: Pathlike = ".",
     force_download: bool = False,
 ) -> Path:
@@ -97,51 +97,15 @@ def _download_speechcommands(
     return corpus_dir
 
 
-def download_speechcommands1(
-    target_dir: Pathlike = ".",
-    force_download: bool = False,
-) -> Path:
-    """
-    Download and unzip the Speech Commands v0.01 data.
-    :param target_dir: Pathlike, the path of the dir to store the dataset.
-    :param force_download: bool, if True, download the archive even if it already exists.
-    :return: the path to downloaded and extracted directory with data.
-    """
-
-    return _download_speechcommands(
-        speechcommands_version="1",
-        target_dir=target_dir,
-        force_download=force_download,
-    )
-
-
-def download_speechcommands2(
-    target_dir: Pathlike = ".",
-    force_download: bool = False,
-) -> Path:
-    """
-    Download and unzip the Speech Commands v0.02 data.
-    :param target_dir: Pathlike, the path of the dir to store the dataset.
-    :param force_download: bool, if True, download the archive even if it already exists.
-    :return: the path to downloaded and extracted directory with data.
-    """
-
-    return _download_speechcommands(
-        speechcommands_version="2",
-        target_dir=target_dir,
-        force_download=force_download,
-    )
-
-
-def _prepare_train_valid(
+def _split_train_valid(
     speechcommands_version: str,
     corpus_dir: Pathlike,
-) -> Tuple[RecordingSet, SupervisionSet]:
+) -> Tuple[set, set]:
     """
-    Returns the RecodingSet and SupervisionSet given a dataset part.
+    Returns the train_paths and valid_paths given a dataset part.
     :param speechcommands_version: str, dataset version.
     :param corpus_dir: Pathlike, the path of the data dir.
-    :return: the RecodingSet and SupervisionSet for train and valid.
+    :return: the train_paths and valid_paths. 
     """
     corpus_dir = Path(corpus_dir)
     part_path = corpus_dir / f"speech_commands_v0.0{speechcommands_version}"
@@ -168,6 +132,24 @@ def _prepare_train_valid(
 
     # The paths for the train set is just whichever paths that do not exist in either the test or validation splits.
     train_paths = set(train_paths) - set(valid_paths) - set(train_test_paths)
+
+    return train_paths, valid_paths
+
+
+def _prepare_train(
+    speechcommands_version: str,
+    train_paths: set,
+    corpus_dir: Pathlike,
+) -> Tuple[RecordingSet, SupervisionSet]:
+    """
+    Returns the RecodingSet and SupervisionSet given a dataset part.
+    :param speechcommands_version: str, dataset version.
+    :param train_paths: set, the train subset paths.
+    :param corpus_dir: Pathlike, the path of the data dir.
+    :return: the RecodingSet and SupervisionSet for train and valid.
+    """
+    corpus_dir = Path(corpus_dir)
+    part_path = corpus_dir / f"speech_commands_v0.0{speechcommands_version}"
 
     train_recordings = []
     train_supervisions = []
@@ -206,7 +188,23 @@ def _prepare_train_valid(
     train_recording_set = RecordingSet.from_recordings(train_recordings)
     train_supervision_set = SupervisionSet.from_segments(train_supervisions)
 
-    yield train_recording_set, train_supervision_set
+    return train_recording_set, train_supervision_set
+
+
+def _prepare_valid(
+    speechcommands_version: str,
+    valid_paths: set,
+    corpus_dir: Pathlike,
+) -> Tuple[RecordingSet, SupervisionSet]:
+    """
+    Returns the RecodingSet and SupervisionSet given a dataset part.
+    :param speechcommands_version: str, dataset version.
+    :param valid_paths: set, the valid subset paths.
+    :param corpus_dir: Pathlike, the path of the data dir.
+    :return: the RecodingSet and SupervisionSet for train and valid.
+    """
+    corpus_dir = Path(corpus_dir)
+    part_path = corpus_dir / f"speech_commands_v0.0{speechcommands_version}"
 
     valid_recordings = []
     valid_supervisions = []
@@ -246,7 +244,7 @@ def _prepare_train_valid(
     valid_recording_set = RecordingSet.from_recordings(valid_recordings)
     valid_supervision_set = SupervisionSet.from_segments(valid_supervisions)
 
-    yield valid_recording_set, valid_supervision_set
+    return valid_recording_set, valid_supervision_set
 
 
 def _prepare_test(
@@ -318,148 +316,74 @@ def _prepare_test(
     return test_recording_set, test_supervision_set
 
 
-def _prepare_speechcommands1(
-    corpus_dir: Pathlike,
-    output_dir: Optional[Pathlike] = None,
-) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet]]]:
-    """
-    Prepare manifests for the Speech Commands v0.01 corpus.
-    :param corpus_dir: Path to the Speech Commands v0.01 dataset.
-    :param output_dir: Pathlike, the path where to write the manifests.
-    :return: a Dict whose key is the dataset part, and the value is Dicts with the keys 'recordings' and 'supervisions'.
-    """
-    speechcommands_version = "1"
-    corpus_dir = Path(corpus_dir)
-    assert corpus_dir.is_dir(), f"No such directory: {corpus_dir}"
-
-    dataset_parts = ("speech_commands_v0.01", "speech_commands_test_set_v0.01")
-    subsets = _SPLITS
-
-    if output_dir is not None:
-        output_dir = Path(output_dir)
-        output_dir.mkdir(parents=True, exist_ok=True)
-
-    manifests = defaultdict(dict)
-
-    for part in tqdm(subsets, desc="Dataset parts"):
-        logging.info(f"Processing Speech Commands v0.01 subset: {part}")
-        if manifests_exist(
-            part=part,
-            output_dir=output_dir,
-            prefix="speechcommands1",
-            suffix="jsonl.gz",
-        ):
-            logging.info(
-                f"Speech Commands v0.01 subset: {part} already prepared - skipping."
-            )
-            continue
-        if part == "train":
-            g = _prepare_train_valid(speechcommands_version, corpus_dir)
-            recording_set, supervision_set = next(g)
-        elif part == "valid":
-            recording_set, supervision_set = next(g)
-        elif part == "test":
-            recording_set, supervision_set = _prepare_test(
-                speechcommands_version, corpus_dir
-            )
-
-        if output_dir is not None:
-            supervision_set.to_file(
-                output_dir / f"speechcommands1_supervisions_{part}.jsonl.gz"
-            )
-            recording_set.to_file(
-                output_dir / f"speechcommands1_recordings_{part}.jsonl.gz"
-            )
-
-        manifests[part] = {"recordings": recording_set, "supervisions": supervision_set}
-
-    return manifests
-
-
-def _prepare_speechcommands2(
-    corpus_dir: Pathlike,
-    output_dir: Optional[Pathlike] = None,
-) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet]]]:
-    """
-    Prepare manifests for the Speech Commands v0.02 corpus.
-    :param corpus_dir: Path to the Speech Commands v0.02 dataset.
-    :param output_dir: Pathlike, the path where to write the manifests.
-    :return: a Dict whose key is the dataset part, and the value is Dicts with the keys 'recordings' and 'supervisions'.
-    """
-    speechcommands_version = "2"
-    corpus_dir = Path(corpus_dir)
-    assert corpus_dir.is_dir(), f"No such directory: {corpus_dir}"
-
-    dataset_parts = ("speech_commands_v0.02", "speech_commands_test_set_v0.02")
-    subsets = _SPLITS
-
-    if output_dir is not None:
-        output_dir = Path(output_dir)
-        output_dir.mkdir(parents=True, exist_ok=True)
-
-    manifests = defaultdict(dict)
-
-    for part in tqdm(subsets, desc="Dataset parts"):
-        logging.info(f"Processing Speech Commands v0.02 subset: {part}")
-        if manifests_exist(
-            part=part,
-            output_dir=output_dir,
-            prefix="speechcommands2",
-            suffix="jsonl.gz",
-        ):
-            logging.info(
-                f"Speech Commands v0.02 subset: {part} already prepared - skipping."
-            )
-            continue
-        if part == "train":
-            g = _prepare_train_valid(speechcommands_version, corpus_dir)
-            recording_set, supervision_set = next(g)
-        elif part == "valid":
-            recording_set, supervision_set = next(g)
-        elif part == "test":
-            recording_set, supervision_set = _prepare_test(
-                speechcommands_version, corpus_dir
-            )
-
-        if output_dir is not None:
-            supervision_set.to_file(
-                output_dir / f"speechcommands2_supervisions_{part}.jsonl.gz"
-            )
-            recording_set.to_file(
-                output_dir / f"speechcommands2_recordings_{part}.jsonl.gz"
-            )
-
-        manifests[part] = {"recordings": recording_set, "supervisions": supervision_set}
-
-    return manifests
-
-
 def prepare_speechcommands(
-    speechcommands1_root: Optional[Pathlike] = None,
-    speechcommands2_root: Optional[Pathlike] = None,
+    speechcommands_version: str,
+    corpus_dir: Pathlike,
     output_dir: Optional[Pathlike] = None,
 ) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet]]]:
     """
     Returns the manifests which consist of the Recordings and Supervisions
-    :param speechcommands1_root: Path to the Speech Commands v0.01 dataset.
-    :param speechcommands2_root: Path to the Speech Commands v0.02 dataset.
+    :param speechcommands_version: str, dataset version.
+    :param corpus_dir: Path to the Speech Commands dataset.
     :param output_dir: Pathlike, the path where to write the manifests.
     :return: a Dict whose key is the dataset part, and the value is Dicts with the keys 'recordings' and 'supervisions'.
     """
-    speechcommands1_root = Path(speechcommands1_root) if speechcommands1_root else None
-    speechcommands2_root = Path(speechcommands2_root) if speechcommands2_root else None
-    if not (speechcommands1_root or speechcommands2_root):
-        raise ValueError(
-            "Either Speech Commands v0.01 or Speech Commands v0.02 path must be provided."
-        )
-
+    corpus_dir = Path(corpus_dir)
     output_dir = Path(output_dir) if output_dir is not None else None
+
+    assert corpus_dir.is_dir(), f"No such directory: {corpus_dir}"
+
+    logging.info("Preparing Speech Commands v0.0{speechcommands_version}...")
+    dataset_parts = (
+        f"speech_commands_v0.0{speechcommands_version}",
+        f"speech_commands_test_set_v0.0{speechcommands_version}",
+    )
+    subsets = _SPLITS
+
+    if output_dir is not None:
+        output_dir = Path(output_dir)
+        output_dir.mkdir(parents=True, exist_ok=True)
+
     manifests = defaultdict(dict)
-    if speechcommands1_root:
-        logging.info("Preparing Speech Commands v0.01...")
-        manifests.update(_prepare_speechcommands1(speechcommands1_root, output_dir))
-    if speechcommands2_root:
-        logging.info("Preparing Speech Commands v0.02...")
-        manifests.update(_prepare_speechcommands2(speechcommands2_root, output_dir))
+
+    for part in tqdm(subsets, desc="Dataset parts"):
+        logging.info(
+            f"Processing Speech Commands v0.0{speechcommands_version} subset: {part}"
+        )
+        if manifests_exist(
+            part=part,
+            output_dir=output_dir,
+            prefix=f"speechcommands{speechcommands_version}",
+            suffix="jsonl.gz",
+        ):
+            logging.info(
+                f"Speech Commands v0.0{speechcommands_version} subset: {part} already prepared - skipping."
+            )
+            continue
+        if part == "train":
+            train_paths, valid_paths = _split_train_valid(
+                speechcommands_version, corpus_dir
+            )
+            recording_set, supervision_set = _prepare_train(
+                speechcommands_version, train_paths, corpus_dir
+            )
+        elif part == "valid":
+            recording_set, supervision_set = _prepare_valid(
+                speechcommands_version, valid_paths, corpus_dir
+            )
+        elif part == "test":
+            recording_set, supervision_set = _prepare_test(
+                speechcommands_version, corpus_dir
+            )
+
+        if output_dir is not None:
+            supervision_set.to_file(
+                output_dir / f"speechcommands{speechcommands_version}_supervisions_{part}.jsonl.gz"
+            )
+            recording_set.to_file(
+                output_dir / f"speechcommands{speechcommands_version}_recordings_{part}.jsonl.gz"
+            )
+
+        manifests[part] = {"recordings": recording_set, "supervisions": supervision_set}
 
     return manifests
