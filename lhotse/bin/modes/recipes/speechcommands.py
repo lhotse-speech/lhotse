@@ -12,7 +12,7 @@ from lhotse.utils import Pathlike
 
 @prepare.command(context_settings=dict(show_default=True))
 @click.argument("speechcommands_version", type=str)
-@click.argument("corpus_dir", type=click.Path(exists=True, dir_okay=True)
+@click.argument("corpus_dir", type=click.Path(exists=True, dir_okay=True))
 @click.argument("output_dir", type=click.Path())
 def speechcommands(
     speechcommands_version: str,
