@@ -37,7 +37,7 @@ def speechcommands(
     force_download: Optional[bool] = False,
 ):
     """Speech Commands v0.01 or v0.02 download."""
-    download_speechcommands1(
+    download_speechcommands(
         speechcommands_version=speechcommands_version,
         target_dir=target_dir,
         force_download=force_download,

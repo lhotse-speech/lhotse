@@ -105,7 +105,7 @@ def _split_train_valid(
     Returns the train_paths and valid_paths given a dataset part.
     :param speechcommands_version: str, dataset version.
     :param corpus_dir: Pathlike, the path of the data dir.
-    :return: the train_paths and valid_paths. 
+    :return: the train_paths and valid_paths.
     """
     corpus_dir = Path(corpus_dir)
     part_path = corpus_dir / f"speech_commands_v0.0{speechcommands_version}"
@@ -378,10 +378,12 @@ def prepare_speechcommands(
 
         if output_dir is not None:
             supervision_set.to_file(
-                output_dir / f"speechcommands{speechcommands_version}_supervisions_{part}.jsonl.gz"
+                output_dir
+                / f"speechcommands{speechcommands_version}_supervisions_{part}.jsonl.gz"
             )
             recording_set.to_file(
-                output_dir / f"speechcommands{speechcommands_version}_recordings_{part}.jsonl.gz"
+                output_dir
+                / f"speechcommands{speechcommands_version}_recordings_{part}.jsonl.gz"
             )
 
         manifests[part] = {"recordings": recording_set, "supervisions": supervision_set}
