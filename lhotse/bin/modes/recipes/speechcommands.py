@@ -1,4 +1,4 @@
-from typing import Sequence
+from typing import Dict, List, Optional, Tuple, Union
 
 import click
 
