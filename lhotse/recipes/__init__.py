@@ -44,7 +44,11 @@ from .musan import download_musan, prepare_musan
 from .nsc import prepare_nsc
 from .peoples_speech import prepare_peoples_speech
 from .rir_noise import download_rir_noise, prepare_rir_noise
-from .speechcommands import download_speechcommands1, download_speechcommands2, prepare_speechcommands
+from .speechcommands import (
+    download_speechcommands1,
+    download_speechcommands2,
+    prepare_speechcommands,
+)
 from .spgispeech import download_spgispeech, prepare_spgispeech
 from .stcmds import download_stcmds, prepare_stcmds
 from .switchboard import prepare_switchboard
