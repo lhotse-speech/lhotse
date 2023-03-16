@@ -34,8 +34,8 @@ def speechcommands(
 ):
     """Speech Commands v1 or v2 data preparation."""
     prepare_speechcommands(
-        speechcommands1_root=speechcommands1
-        speechcommands2_root=speechcommands2
+        speechcommands1_root=speechcommands1,
+        speechcommands2_root=speechcommands2,
         output_dir=output_dir,
     )
 
