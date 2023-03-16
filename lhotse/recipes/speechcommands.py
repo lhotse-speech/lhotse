@@ -41,18 +41,7 @@ _TEST_DOWNLOAD_PATH_V2 = (
 
 _SPLITS = ["train", "valid", "test"]
 
-WORDS = [
-    "down",
-    "go",
-    "left",
-    "no",
-    "off",
-    "on",
-    "right",
-    "stop",
-    "up",
-    "yes"
-]
+WORDS = ["down", "go", "left", "no", "off", "on", "right", "stop", "up", "yes"]
 SILENCE = "_silence_"
 UNKNOWN = "_unknown_"
 BACKGROUND_NOISE = "_background_noise_"
@@ -82,8 +71,7 @@ def _download_speechcommands(
     )
 
     for part in tqdm(
-        dataset_parts,
-        desc=f"Downloading Speech Commands v0.0{speechcommands_version}"
+        dataset_parts, desc=f"Downloading Speech Commands v0.0{speechcommands_version}"
     ):
         logging.info(f"Processing split: {part}")
         part_dir = corpus_dir / part
@@ -373,7 +361,9 @@ def _prepare_speechcommands1(
         elif part == "valid":
             recording_set, supervision_set = next(g)
         elif part == "test":
-            recording_set, supervision_set = _prepare_test(speechcommands_version, corpus_dir)
+            recording_set, supervision_set = _prepare_test(
+                speechcommands_version, corpus_dir
+            )
 
         if output_dir is not None:
             supervision_set.to_file(
@@ -429,7 +419,9 @@ def _prepare_speechcommands2(
         elif part == "valid":
             recording_set, supervision_set = next(g)
         elif part == "test":
-            recording_set, supervision_set = _prepare_test(speechcommands_version, corpus_dir)
+            recording_set, supervision_set = _prepare_test(
+                speechcommands_version, corpus_dir
+            )
 
         if output_dir is not None:
             supervision_set.to_file(
@@ -473,7 +465,3 @@ def prepare_speechcommands(
         manifests.update(_prepare_speechcommands2(speechcommands2_root, output_dir))
 
     return manifests
-
-
-if __name__ == "__main__":
-    prepare_speechcommands(speechcommands2_root="SpeechCommands2", output_dir=".")
