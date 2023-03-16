@@ -33,7 +33,6 @@ aishell3 = (
     "train",
 )
 
-# to do 
 def download_aishell3(
     target_dir: Pathlike = ".",
     force_download: Optional[bool] = False,
@@ -43,7 +42,6 @@ def download_aishell3(
     Download and untar the dataset
 
     :param target_dir: Pathlike, the path of the dir to storage the dataset.
-    :param dataset_parts: "all", or a list of splits (e.g. "dev-clean") to download.
     :param force_download: Bool, if True, download the tars no matter if the tars exist.
     :param base_url: str, the url of the OpenSLR resources.
     :return: the path to downloaded and extracted directory with data.
@@ -54,7 +52,7 @@ def download_aishell3(
     url = f"{base_url}/93"
     tar_name = "data_aishell3.tgz"
     tar_path = target_dir / tar_name
-    completed_detector = tar_path / ".completed"
+    completed_detector = target_dir / ".completed"
     if completed_detector.is_file():
         logging.info(f"Skipping {tar_name} because {completed_detector} exists.")
         return
@@ -77,16 +75,10 @@ def prepare_aishell3(
     When all the manifests are available in the ``output_dir``, it will simply read and return them.
 
     :param corpus_dir: Pathlike, the path of the data dir.
-    :param dataset_parts: string or sequence of strings representing dataset part names, e.g. 'train-clean-100', 'train-clean-5', 'dev-clean'.
-        By default we will infer which parts are available in ``corpus_dir``.
     :param output_dir: Pathlike, the path where to write the manifests.
-    :param num_jobs: the number of parallel workers parsing the data.
-    :param link_previous_utt: If true adds previous utterance id to supervisions.
-        Useful for reconstructing chains of utterances as they were read.
-        If previous utterance was skipped from aishell3 datasets previous_utt label is None.
     :return: a Dict whose key is the dataset part, and the value is Dicts with the keys 'audio' and 'supervisions'.
     """
-    corpus_dir = Path(corpus_dir) / "data_aishell3"
+    corpus_dir = Path(corpus_dir)
     assert corpus_dir.is_dir(), f"No such directory: {corpus_dir}"
 
     dataset_parts = aishell3
