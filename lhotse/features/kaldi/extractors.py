@@ -76,6 +76,10 @@ class Fbank(FeatureExtractor):
     def frame_shift(self) -> Seconds:
         return self.config.frame_shift
 
+    def to(self, device: str):
+        self.config.device = device
+        self.extractor.to(device)
+
     def feature_dim(self, sampling_rate: int) -> int:
         return self.config.num_filters
 
@@ -385,7 +389,6 @@ def _extract_batch(
             samples = [samples.reshape(1, -1)]
 
         if any(isinstance(x, torch.Tensor) for x in samples):
-            samples = [x.numpy() for x in samples]
             input_is_torch = True
 
         samples = [
@@ -403,7 +406,9 @@ def _extract_batch(
         samples = torch.nn.utils.rnn.pad_sequence(samples, batch_first=True)
 
     # Perform feature extraction
-    feats = extractor(samples.to(device)).cpu()
+    input_device = samples.device
+    feats = extractor(samples.to(device))
+    feats.to(input_device)
     result = [feats[i, : feat_lens[i]] for i in range(len(samples))]
 
     if not input_is_torch:
