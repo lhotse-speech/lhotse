@@ -231,6 +231,20 @@ def test_recording_perturb_speed(recording, factor, affix_id):
     assert samples.shape[1] == rec_sp.num_samples
 
 
+@pytest.mark.parametrize("affix_id", [True, False])
+def test_recording_dereverb_wpe(recording, affix_id):
+    rec_wpe = recording.dereverb_wpe(affix_id=affix_id)
+    if affix_id:
+        assert rec_wpe.id == f"{recording.id}_wpe"
+    else:
+        assert rec_wpe.id == recording.id
+    samples = recording.load_audio()
+    samples_wpe = rec_wpe.load_audio()
+    assert samples_wpe.shape[0] == rec_wpe.num_channels
+    assert samples_wpe.shape[1] == rec_wpe.num_samples
+    assert (samples != samples_wpe).any()
+
+
 @pytest.mark.parametrize(
     ["factor", "affix_id"],
     [

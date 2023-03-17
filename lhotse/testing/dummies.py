@@ -80,31 +80,46 @@ def dummy_recording(
 def dummy_audio_source(
     num_samples: int = 16000,
     sampling_rate: int = 16000,
+    channels: List[int] = None,
     with_data: bool = False,
 ) -> AudioSource:
+    if channels is None:
+        channels = [0]
     if not with_data:
-        return AudioSource(type="command", channels=[0], source='echo "dummy waveform"')
+        return AudioSource(
+            type="command", channels=channels, source='echo "dummy waveform"'
+        )
     else:
         # 1kHz sine wave
         data = torch.sin(2 * np.pi * 1000 * torch.arange(num_samples)).unsqueeze(0)
+        if len(channels) > 1:
+            data = data.expand(len(channels), -1)
         binary_data = BytesIO()
         torchaudio.save(binary_data, data, sample_rate=sampling_rate, format="wav")
         binary_data.seek(0)
-        return AudioSource(type="memory", channels=[0], source=binary_data.getvalue())
+        return AudioSource(
+            type="memory", channels=channels, source=binary_data.getvalue()
+        )
 
 
 def dummy_multi_channel_recording(
-    unique_id: int, duration: float = 1.0, channel_ids: Optional[List[int]] = None
+    unique_id: int,
+    duration: float = 1.0,
+    channel_ids: Optional[List[int]] = None,
+    source_per_channel: bool = False,
+    with_data: bool = False,
 ) -> Recording:
     if channel_ids is None:
         channel_ids = [0, 1]
+    if source_per_channel:
+        sources = [dummy_audio_source(channels=channel_ids, with_data=with_data)]
+    else:
+        sources = [
+            dummy_audio_source(channels=[i], with_data=with_data) for i in channel_ids
+        ]
     return Recording(
         id=f"dummy-multi-channel-recording-{unique_id:04d}",
-        sources=[
-            AudioSource(
-                type="command", channels=channel_ids, source='echo "dummy waveform"'
-            )
-        ],
+        sources=sources,
         sampling_rate=16000,
         num_samples=16000,
         duration=duration,
@@ -274,6 +289,8 @@ def dummy_multi_cut(
     features: Features = None,
     supervisions: SupervisionSet = None,
     channel: Optional[List[int]] = None,
+    source_per_channel: bool = False,
+    with_data: bool = False,
 ):
     if channel is None:
         channel = [0, 1]
@@ -282,8 +299,17 @@ def dummy_multi_cut(
         start=start,
         duration=duration,
         channel=channel,
-        recording=recording if recording else dummy_multi_channel_recording(unique_id),
-        features=features if features else dummy_multi_channel_features(unique_id),
+        recording=recording
+        if recording
+        else dummy_multi_channel_recording(
+            unique_id,
+            channel_ids=channel,
+            with_data=with_data,
+            source_per_channel=source_per_channel,
+        ),
+        features=features
+        if features
+        else dummy_multi_channel_features(unique_id, channels=channel),
         supervisions=supervisions if supervisions is not None else [],
     )
 
