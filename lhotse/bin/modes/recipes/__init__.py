@@ -31,6 +31,7 @@ from .gale_mandarin import *
 from .gigaspeech import *
 from .heroico import *
 from .hifitts import *
+from .himia import *
 from .icsi import *
 from .l2_arctic import *
 from .libricss import *
@@ -47,6 +48,7 @@ from .nsc import *
 from .peoples_speech import *
 from .primewords import *
 from .rir_noise import *
+from .speechcommands import *
 from .spgispeech import *
 from .stcmds import *
 from .switchboard import *
