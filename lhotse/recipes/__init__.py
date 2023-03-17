@@ -1,5 +1,6 @@
 from .adept import download_adept, prepare_adept
 from .aishell import download_aishell, prepare_aishell
+from .aishell3 import download_aishell3, prepare_aishell3
 from .aishell4 import download_aishell4, prepare_aishell4
 from .ali_meeting import download_ali_meeting, prepare_ali_meeting
 from .ami import download_ami, prepare_ami
