@@ -33,6 +33,7 @@ aishell3 = (
     "train",
 )
 
+
 def download_aishell3(
     target_dir: Pathlike = ".",
     force_download: Optional[bool] = False,
@@ -103,11 +104,11 @@ def prepare_aishell3(
         supervisions = []
         with open(scripts_path) as f:
             for line in tqdm(f):
-                id, text = line.strip().split('\t')
+                id, text = line.strip().split("\t")
                 audio_path = part_path / "wav" / id[:7] / id
-                id = id.split('.')[0]
-                text = ''.join([x for i, x in enumerate(text.split()) if i % 2 == 0])
-                pinyin = ' '.join([x for i, x in enumerate(text.split()) if i % 2 == 1])
+                id = id.split(".")[0]
+                text = "".join([x for i, x in enumerate(text.split()) if i % 2 == 0])
+                pinyin = " ".join([x for i, x in enumerate(text.split()) if i % 2 == 1])
                 if not audio_path.is_file():
                     logging.warning(f"No such file: {audio_path}")
                     continue
@@ -124,8 +125,7 @@ def prepare_aishell3(
                     custom={"pinyin": pinyin.strip()},
                 )
                 recordings.append(recording)
-                supervisions.append(segment)
-                
+                supervisions.append(segment)    
 
         recording_set = RecordingSet.from_recordings(recordings)
         supervision_set = SupervisionSet.from_segments(supervisions)
@@ -133,8 +133,12 @@ def prepare_aishell3(
         validate_recordings_and_supervisions(recording_set, supervision_set)
 
         if output_dir is not None:
-            supervision_set.to_file(output_dir / f"aishell3_supervisions_{part}.jsonl.gz")
-            recording_set.to_file(output_dir / f"aishell3_recordings_{part}.jsonl.gz")
+            supervision_set.to_file(
+                output_dir / f"aishell3_supervisions_{part}.jsonl.gz"
+            )
+            recording_set.to_file(
+                output_dir / f"aishell3_recordings_{part}.jsonl.gz"
+            )
 
         manifests[part] = {"recordings": supervision_set, "supervisions": recording_set}
 
