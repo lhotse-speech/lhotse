@@ -49,6 +49,8 @@ a CLI tool that create the manifests given a corpus directory.
     - :func:`lhotse.recipes.prepare_aidatatang_200zh`
   * - Aishell
     - :func:`lhotse.recipes.prepare_aishell`
+  * - Aishell-3
+    - :func:`lhotse.recipes.prepare_aishell3`
   * - AISHELL-4
     - :func:`lhotse.recipes.prepare_aishell4`
   * - AliMeeting
