@@ -125,7 +125,7 @@ def prepare_aishell3(
                     custom={"pinyin": pinyin.strip()},
                 )
                 recordings.append(recording)
-                supervisions.append(segment)    
+                supervisions.append(segment)
 
         recording_set = RecordingSet.from_recordings(recordings)
         supervision_set = SupervisionSet.from_segments(supervisions)
@@ -136,9 +136,7 @@ def prepare_aishell3(
             supervision_set.to_file(
                 output_dir / f"aishell3_supervisions_{part}.jsonl.gz"
             )
-            recording_set.to_file(
-                output_dir / f"aishell3_recordings_{part}.jsonl.gz"
-            )
+            recording_set.to_file(output_dir / f"aishell3_recordings_{part}.jsonl.gz")
 
         manifests[part] = {"recordings": supervision_set, "supervisions": recording_set}
 

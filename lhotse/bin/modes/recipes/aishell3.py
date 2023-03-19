@@ -20,4 +20,3 @@ def aishell3(corpus_dir: Pathlike, output_dir: Pathlike):
 def aishell3(target_dir: Pathlike):
     """aishell3 download."""
     download_aishell3(target_dir)
-    
