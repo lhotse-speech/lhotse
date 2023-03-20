@@ -2,6 +2,7 @@ from .adept import *
 from .aidatatang_200zh import *
 from .aishell import *
 from .aishell2 import *
+from .aishell3 import *
 from .aishell4 import *
 from .ali_meeting import *
 from .ami import *
@@ -31,6 +32,7 @@ from .gale_mandarin import *
 from .gigaspeech import *
 from .heroico import *
 from .hifitts import *
+from .himia import *
 from .icsi import *
 from .l2_arctic import *
 from .libricss import *
@@ -47,6 +49,7 @@ from .nsc import *
 from .peoples_speech import *
 from .primewords import *
 from .rir_noise import *
+from .speechcommands import *
 from .spgispeech import *
 from .stcmds import *
 from .switchboard import *

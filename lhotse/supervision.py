@@ -180,7 +180,7 @@ class SupervisionSegment:
             ...     id='rec00001-sup00004', recording_id='rec00001',
             ...     start=33.0, duration=1.0, channel=0,
             ...     text="ice",
-            ...     speaker='Maryla Zechariah', language='English', gender='F'
+            ...     speaker='Maryla Zechariah', language='English', gender='F',
             ...     alignment={
             ...         'phone': [
             ...             AlignmentItem(symbol='AY0', start=33.0, duration=0.6),
