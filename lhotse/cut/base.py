@@ -1001,7 +1001,7 @@ class Cut:
                     et = (
                         round(ali.end * self.sampling_rate)
                         if ali.end < self.duration
-                        else self.duration * self.sampling_rate
+                        else round(self.duration * self.sampling_rate)
                     )
                     mask[st:et] = 1.0
             else:
@@ -1013,7 +1013,7 @@ class Cut:
                 et = (
                     round(supervision.end * self.sampling_rate)
                     if supervision.end < self.duration
-                    else self.duration * self.sampling_rate
+                    else round(self.duration * self.sampling_rate)
                 )
                 mask[st:et] = 1.0
         return mask
