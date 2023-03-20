@@ -141,7 +141,7 @@ class K2SurtDataset(torch.utils.data.Dataset):
                 # has a supervision that ends before the current supervision starts.
                 assigned = False
                 for i in range(self.num_channels):
-                    if len(cut_sups[i]) == 0 or cut_sups[i][-1].end < sup.start:
+                    if len(cut_sups[i]) == 0 or last_sup_end[i] <= sup.start:
                         cut_sups[i].append(sup)
                         last_sup_end[i] = max(last_sup_end[i], sup.end)
                         assigned = True
