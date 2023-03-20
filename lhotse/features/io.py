@@ -942,6 +942,26 @@ class LilcomURLWriter(FeaturesWriter):
 Kaldi-compatible feature reader
 """
 
+def check_kaldi_native_io_installed():
+    if not is_module_available("kaldi_native_io"):
+        raise ValueError(
+            "To read Kaldi feats.scp, please 'pip install kaldi_native_io' first."
+        )
+
+
+@lru_cache(maxsize=None)
+def lookup_reader_cache_or_open(storage_path: str):
+    """
+    Helper internal function used in KaldiReader.
+    It opens kaldi scp files and keeps their handles open in a global program cache
+    to avoid excessive amount of syscalls when the Reader class is instantiated
+    and destroyed in a loop repeatedly (frequent use-case).
+    """
+    check_kaldi_native_io_installed()
+    import kaldi_native_io
+
+    return kaldi_native_io.RandomAccessFloatMatrixReader(f"scp:{storage_path}")
+
 
 @register_reader
 class KaldiReader(FeaturesReader):
@@ -957,19 +977,13 @@ class KaldiReader(FeaturesReader):
     name = "kaldiio"
 
     def __init__(self, storage_path: Pathlike, *args, **kwargs):
-        if not is_module_available("kaldi_native_io"):
-            raise ValueError(
-                "To read Kaldi feats.scp, please 'pip install kaldi_native_io' first."
-            )
-        import kaldi_native_io
-
         super().__init__()
         self.storage_path = storage_path
         if storage_path.endswith(".scp"):
-            self.storage = kaldi_native_io.RandomAccessFloatMatrixReader(
-                f"scp:{self.storage_path}"
-            )
+            self.storage = lookup_reader_cache_or_open(self.storage_path)
         else:
+            check_kaldi_native_io_installed()
+            import kaldi_native_io
             self.storage = None
             self.reader = kaldi_native_io.FloatMatrix
 
