@@ -1,3 +1,5 @@
+import sys
+
 import numpy as np
 import pytest
 import torch
@@ -5,6 +7,12 @@ import torch
 from lhotse import S3PRLSSL, Recording, S3PRLSSLConfig
 
 s3prl = pytest.importorskip("s3prl", reason="The test requires s3prl to run.")
+
+
+if sys.version_info[:2] > (3, 10):
+    pytest.skip(
+        "S3PRL does not support Python 3.11 as of 21-Mar-2023.", allow_module_level=True
+    )
 
 
 @pytest.fixture()
