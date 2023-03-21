@@ -387,9 +387,13 @@ def lookup_chunk_size(h5_file_handle) -> int:
 
 
 def close_cached_file_handles() -> None:
-    """Closes the cached file handles in ``lookup_cache_or_open`` (see its docs for more details)."""
+    """
+    Closes the cached file handles in ``lookup_cache_or_open`` and
+    ``lookup_reader_cache_or_open`` (see respective docs for more details).
+    """
     lookup_cache_or_open.cache_clear()
     lookup_chunk_size.cache_clear()
+    lookup_reader_cache_or_open.cache_clear()
 
 
 @register_reader
@@ -956,6 +960,8 @@ def lookup_reader_cache_or_open(storage_path: str):
     It opens kaldi scp files and keeps their handles open in a global program cache
     to avoid excessive amount of syscalls when the Reader class is instantiated
     and destroyed in a loop repeatedly (frequent use-case).
+
+    The file handles can be freed at any time by calling ``close_cached_file_handles()``.
     """
     check_kaldi_native_io_installed()
     import kaldi_native_io
