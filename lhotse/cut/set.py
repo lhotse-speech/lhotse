@@ -52,7 +52,7 @@ from lhotse.utils import (
     Decibels,
     Pathlike,
     Seconds,
-    add_durations,
+    TimeSpan,
     compute_num_frames,
     compute_num_samples,
     deprecated,
@@ -60,7 +60,7 @@ from lhotse.utils import (
     fastcopy,
     ifnone,
     index_by_id_and_check,
-    overlaps,
+    is_module_available,
     split_manifest_lazy,
     split_sequence,
     uuid4,
@@ -382,7 +382,8 @@ class CutSet(Serializable, AlgorithmMixin):
         in_dir: Optional[Pathlike] = None,
         split_for_dataloading: bool = False,
         shuffle_shards: bool = False,
-        seed: int = 42,
+        stateful_shuffle: bool = True,
+        seed: Union[int, Literal["randomized"]] = 42,
         cut_map_fns: Optional[Sequence[Callable[[Cut], Cut]]] = None,
     ) -> "CutSet":
         """
@@ -456,11 +457,21 @@ class CutSet(Serializable, AlgorithmMixin):
             dataloader workers and possibly multiple DDP nodes.
             It results in each node+worker combination receiving a unique subset
             of shards from which to read data to avoid data duplication.
+            This is mutually exclusive with ``seed='randomized'``.
         :param shuffle_shards: bool, by default ``False``. When ``True``, the shards
             are shuffled (in case of multi-node training, the shuffling is the same
             on each node given the same seed).
         :param seed: When ``shuffle_shards`` is ``True``, we use this number to
             seed the RNG.
+            Seed can be set to ``'randomized'`` in which case we expect that the user provided
+            :func:`lhotse.dataset.dataloading.worker_init_fn` as DataLoader's ``worker_init_fn``
+            argument. It will cause the iterator to shuffle shards differently on each node
+            and dataloading worker in PyTorch training. This is mutually exclusive with
+            ``split_for_dataloading=True``.
+        :param stateful_shuffle: bool, by default ``False``. When ``True``, every
+            time this object is fully iterated, it increments an internal epoch counter
+            and triggers shard reshuffling with RNG seeded by ``seed`` + ``epoch``.
+            Doesn't have any effect when ``shuffle_shards`` is ``False``.
         :param cut_map_fns: optional sequence of callables that accept cuts and return cuts.
             It's expected to have the same length as the number of shards, so each function
             corresponds to a specific shard.
@@ -477,6 +488,7 @@ class CutSet(Serializable, AlgorithmMixin):
                 in_dir=in_dir,
                 split_for_dataloading=split_for_dataloading,
                 shuffle_shards=shuffle_shards,
+                stateful_shuffle=stateful_shuffle,
                 seed=seed,
                 cut_map_fns=cut_map_fns,
             )
@@ -606,80 +618,273 @@ class CutSet(Serializable, AlgorithmMixin):
 
         return rw.open_manifest(), sw.open_manifest(), fw.open_manifest()
 
-    def describe(self) -> None:
+    def describe(self, full: bool = False) -> None:
         """
         Print a message describing details about the ``CutSet`` - the number of cuts and the
         duration statistics, including the total duration and the percentage of speech segments.
 
-        Example output:
-            Cuts count: 547
-            Total duration (hours): 326.4
-            Speech duration (hours): 79.6 (24.4%)
-            ***
-            Duration statistics (seconds):
-            mean    2148.0
-            std      870.9
-            min      477.0
-            25%     1523.0
-            50%     2157.0
-            75%     2423.0
-            99%     2500.0
-            99.5%   2523.0
-            99.9%   2601.0
-            max     5415.0
-            dtype: float64
-        """
+        :param full: when ``True``, prints the full duration statistics, including % of speech
+            by speaker count.
 
-        def convert(hours: float) -> Tuple[int, int, int]:
-            hours, seconds = divmod(hours, 3600)
+        Example output (for AMI train set):
+
+        >>> cs.describe(full=True)
+
+            Cut statistics:
+            ╒═══════════════════════════╤══════════╕
+            │ Cuts count:               │ 133      │
+            ├───────────────────────────┼──────────┤
+            │ Total duration (hh:mm:ss) │ 79:23:03 │
+            ├───────────────────────────┼──────────┤
+            │ mean                      │ 2148.7   │
+            ├───────────────────────────┼──────────┤
+            │ std                       │ 867.4    │
+            ├───────────────────────────┼──────────┤
+            │ min                       │ 477.9    │
+            ├───────────────────────────┼──────────┤
+            │ 25%                       │ 1509.8   │
+            ├───────────────────────────┼──────────┤
+            │ 50%                       │ 2181.7   │
+            ├───────────────────────────┼──────────┤
+            │ 75%                       │ 2439.9   │
+            ├───────────────────────────┼──────────┤
+            │ 99%                       │ 5300.7   │
+            ├───────────────────────────┼──────────┤
+            │ 99.5%                     │ 5355.3   │
+            ├───────────────────────────┼──────────┤
+            │ 99.9%                     │ 5403.2   │
+            ├───────────────────────────┼──────────┤
+            │ max                       │ 5415.2   │
+            ├───────────────────────────┼──────────┤
+            │ Recordings available:     │ 133      │
+            ├───────────────────────────┼──────────┤
+            │ Features available:       │ 0        │
+            ├───────────────────────────┼──────────┤
+            │ Supervisions available:   │ 102222   │
+            ╘═══════════════════════════╧══════════╛
+            Speech duration statistics:
+            ╒══════════════════════════════╤══════════╤═══════════════════════════╕
+            │ Total speech duration        │ 64:59:51 │ 81.88% of recording       │
+            ├──────────────────────────────┼──────────┼───────────────────────────┤
+            │ Total speaking time duration │ 74:33:09 │ 93.91% of recording       │
+            ├──────────────────────────────┼──────────┼───────────────────────────┤
+            │ Total silence duration       │ 14:23:12 │ 18.12% of recording       │
+            ├──────────────────────────────┼──────────┼───────────────────────────┤
+            │ Single-speaker duration      │ 56:18:24 │ 70.93% (86.63% of speech) │
+            ├──────────────────────────────┼──────────┼───────────────────────────┤
+            │ Overlapped speech duration   │ 08:41:28 │ 10.95% (13.37% of speech) │
+            ╘══════════════════════════════╧══════════╧═══════════════════════════╛
+            Speech duration statistics by number of speakers:
+            ╒══════════════════════╤═══════════════════════╤════════════════════════════╤═══════════════╤══════════════════════╕
+            │ Number of speakers   │ Duration (hh:mm:ss)   │ Speaking time (hh:mm:ss)   │ % of speech   │ % of speaking time   │
+            ╞══════════════════════╪═══════════════════════╪════════════════════════════╪═══════════════╪══════════════════════╡
+            │ 1                    │ 56:18:24              │ 56:18:24                   │ 86.63%        │ 75.53%               │
+            ├──────────────────────┼───────────────────────┼────────────────────────────┼───────────────┼──────────────────────┤
+            │ 2                    │ 07:51:44              │ 15:43:28                   │ 12.10%        │ 21.09%               │
+            ├──────────────────────┼───────────────────────┼────────────────────────────┼───────────────┼──────────────────────┤
+            │ 3                    │ 00:47:36              │ 02:22:47                   │ 1.22%         │ 3.19%                │
+            ├──────────────────────┼───────────────────────┼────────────────────────────┼───────────────┼──────────────────────┤
+            │ 4                    │ 00:02:08              │ 00:08:31                   │ 0.05%         │ 0.19%                │
+            ├──────────────────────┼───────────────────────┼────────────────────────────┼───────────────┼──────────────────────┤
+            │ Total                │ 64:59:51              │ 74:33:09                   │ 100.00%       │ 100.00%              │
+            ╘══════════════════════╧═══════════════════════╧════════════════════════════╧═══════════════╧══════════════════════╛
+        """
+        if not is_module_available("tabulate"):
+            raise ValueError(
+                "Since Lhotse v1.11, this function requires the `tabulate` package to be "
+                "installed. Please run 'pip install tabulate' to continue."
+            )
+        from tabulate import tabulate
+
+        def convert_(seconds: float) -> Tuple[int, int, int]:
+            hours, seconds = divmod(seconds, 3600)
             minutes, seconds = divmod(seconds, 60)
             return int(hours), int(minutes), ceil(seconds)
 
+        def time_as_str_(seconds: float) -> str:
+            h, m, s = convert_(seconds)
+            return f"{h:02d}:{m:02d}:{s:02d}"
+
+        def total_duration_(segments: List[TimeSpan]) -> float:
+            return sum(segment.duration for segment in segments)
+
         cntrs = defaultdict(int)
         cut_custom, sup_custom = Counter(), Counter()
-        durations, speech_durations = [], []
+        cut_durations = []
+
+        # The following is to store statistics about speaker times in the cuts
+        speaking_time_durations, speech_durations = [], []
+
+        if full:
+            durations_by_num_speakers = defaultdict(list)
+            single_durations, overlapped_durations = [], []
+
         for c in self:
-            durations.append(c.duration)
+            cut_durations.append(c.duration)
             if hasattr(c, "custom"):
                 for key in ifnone(c.custom, ()):
                     cut_custom[key] += 1
             cntrs["recordings"] += int(c.has_recording)
             cntrs["features"] += int(c.has_features)
+
+            # Total speaking time duration is computed by summing the duration of all
+            # supervisions in the cut.
             for s in c.trimmed_supervisions:
-                speech_durations.append(s.duration)
+                speaking_time_durations.append(s.duration)
                 cntrs["supervisions"] += 1
                 for key in ifnone(s.custom, ()):
                     sup_custom[key] += 1
-        print("Cuts count:", len(durations))
-        total_sum = np.array(durations).sum()
-        hh, mm, ss = convert(total_sum)
-        print(f"Total duration (hh:mm:ss): {hh:02d}:{mm:02d}:{ss:02d}")
-        hh, mm, ss = convert(total_sum)
-        speech_sum = np.array(speech_durations).sum()
-        print(
-            f"Speech duration (hh:mm:ss): {hh:02d}:{mm:02d}:{ss:02d} ({speech_sum / total_sum:.1%})"
-        )
-        print("Duration statistics (seconds):")
-        print(f"mean\t{np.mean(durations):.1f}")
-        print(f"std\t{np.std(durations):.1f}")
-        print(f"min\t{np.min(durations):.1f}")
-        print(f"25%\t{np.percentile(durations, 25):.1f}")
-        print(f"50%\t{np.median(durations):.1f}")
-        print(f"75%\t{np.percentile(durations, 75):.1f}")
-        print(f"99%\t{np.percentile(durations, 99):.1f}")
-        print(f"99.5%\t{np.percentile(durations, 99.5):.1f}")
-        print(f"99.9%\t{np.percentile(durations, 99.9):.1f}")
-        print(f"max\t{np.max(durations):.1f}")
+
+            # Total speech duration is the sum of intervals where 1 or more speakers are
+            # active.
+            speech_durations.append(
+                total_duration_(find_segments_with_speaker_count(c, min_speakers=1))
+            )
+
+            if full:
+                # Duration of single-speaker segments
+                single_durations.append(
+                    total_duration_(
+                        find_segments_with_speaker_count(
+                            c, min_speakers=1, max_speakers=1
+                        )
+                    )
+                )
+                # Duration of overlapped segments
+                overlapped_durations.append(
+                    total_duration_(
+                        find_segments_with_speaker_count(
+                            c, min_speakers=2, max_speakers=None
+                        )
+                    )
+                )
+                # Durations by number of speakers (we assume that overlaps can happen between
+                # at most 4 speakers. This is a reasonable assumption for most datasets.)
+                durations_by_num_speakers[1].append(single_durations[-1])
+                for num_spk in range(2, 5):
+                    durations_by_num_speakers[num_spk].append(
+                        total_duration_(
+                            find_segments_with_speaker_count(
+                                c, min_speakers=num_spk, max_speakers=num_spk
+                            )
+                        )
+                    )
+
+        total_sum = np.array(cut_durations).sum()
+
+        cut_stats = []
+        cut_stats.append(["Cuts count:", len(cut_durations)])
+        cut_stats.append(["Total duration (hh:mm:ss)", time_as_str_(total_sum)])
+        cut_stats.append(["mean", f"{np.mean(cut_durations):.1f}"])
+        cut_stats.append(["std", f"{np.std(cut_durations):.1f}"])
+        cut_stats.append(["min", f"{np.min(cut_durations):.1f}"])
+        cut_stats.append(["25%", f"{np.percentile(cut_durations, 25):.1f}"])
+        cut_stats.append(["50%", f"{np.median(cut_durations):.1f}"])
+        cut_stats.append(["75%", f"{np.percentile(cut_durations, 75):.1f}"])
+        cut_stats.append(["99%", f"{np.percentile(cut_durations, 99):.1f}"])
+        cut_stats.append(["99.5%", f"{np.percentile(cut_durations, 99.5):.1f}"])
+        cut_stats.append(["99.9%", f"{np.percentile(cut_durations, 99.9):.1f}"])
+        cut_stats.append(["max", f"{np.max(cut_durations):.1f}"])
+
         for key, val in cntrs.items():
-            print(f"{key.title()} available: {val}")
+            cut_stats.append([f"{key.title()} available:", val])
+
+        print("Cut statistics:")
+        print(tabulate(cut_stats, tablefmt="fancy_grid"))
+
         if cut_custom:
             print("CUT custom fields:")
             for key, val in cut_custom.most_common():
                 print(f"- {key} (in {val} cuts)")
+
         if sup_custom:
             print("SUPERVISION custom fields:")
             for key, val in sup_custom.most_common():
-                print(f"- {key} (in {val} cuts)")
+                cut_stats.append(f"- {key} (in {val} cuts)")
+
+        total_speech = np.array(speech_durations).sum()
+        total_speaking_time = np.array(speaking_time_durations).sum()
+        total_silence = total_sum - total_speech
+        speech_stats = []
+        speech_stats.append(
+            [
+                "Total speech duration",
+                time_as_str_(total_speech),
+                f"{total_speech / total_sum:.2%} of recording",
+            ]
+        )
+        speech_stats.append(
+            [
+                "Total speaking time duration",
+                time_as_str_(total_speaking_time),
+                f"{total_speaking_time / total_sum:.2%} of recording",
+            ]
+        )
+        speech_stats.append(
+            [
+                "Total silence duration",
+                time_as_str_(total_silence),
+                f"{total_silence / total_sum:.2%} of recording",
+            ]
+        )
+        if full:
+            total_single = np.array(single_durations).sum()
+            total_overlap = np.array(overlapped_durations).sum()
+            speech_stats.append(
+                [
+                    "Single-speaker duration",
+                    time_as_str_(total_single),
+                    f"{total_single / total_sum:.2%} ({total_single / total_speech:.2%} of speech)",
+                ]
+            )
+            speech_stats.append(
+                [
+                    "Overlapped speech duration",
+                    time_as_str_(total_overlap),
+                    f"{total_overlap / total_sum:.2%} ({total_overlap / total_speech:.2%} of speech)",
+                ]
+            )
+        print("Speech duration statistics:")
+        print(tabulate(speech_stats, tablefmt="fancy_grid"))
+
+        if not full:
+            return
+
+        # Additional statistics for full report
+        speaker_stats = [
+            [
+                "Number of speakers",
+                "Duration (hh:mm:ss)",
+                "Speaking time (hh:mm:ss)",
+                "% of speech",
+                "% of speaking time",
+            ]
+        ]
+        for num_spk, durations in durations_by_num_speakers.items():
+            speaker_sum = np.array(durations).sum()
+            speaking_time = num_spk * speaker_sum
+            speaker_stats.append(
+                [
+                    num_spk,
+                    time_as_str_(speaker_sum),
+                    time_as_str_(speaking_time),
+                    f"{speaker_sum / total_speech:.2%}",
+                    f"{speaking_time / total_speaking_time:.2%}",
+                ]
+            )
+
+        speaker_stats.append(
+            [
+                "Total",
+                time_as_str_(total_speech),
+                time_as_str_(total_speaking_time),
+                "100.00%",
+                "100.00%",
+            ]
+        )
+
+        print("Speech duration statistics by number of speakers:")
+        print(tabulate(speaker_stats, headers="firstrow", tablefmt="fancy_grid"))
 
     def split(
         self, num_splits: int, shuffle: bool = False, drop_last: bool = False
@@ -923,6 +1128,64 @@ class CutSet(Serializable, AlgorithmMixin):
         )
         return result
 
+    def trim_to_alignments(
+        self,
+        type: str,
+        max_pause: Seconds = 0.0,
+        delimiter: str = " ",
+        keep_all_channels: bool = False,
+        num_jobs: int = 1,
+    ) -> "CutSet":
+        """
+        Return a new CutSet with Cuts that have identical spans as the alignments of
+        type `type`. An additional `max_pause` is allowed between the alignments to
+        merge contiguous alignment items.
+
+        For the case of a multi-channel cut with multiple alignments, we can either trim
+        while respecting the supervision channels (in which case output cut has the same channels
+        as the supervision) or ignore the channels (in which case output cut has the same channels
+        as the input cut).
+
+        :param type: The type of the alignment to trim to (e.g. "word").
+        :param max_pause: The maximum pause allowed between the alignments to merge them.
+        :param delimiter: The delimiter to use when concatenating the alignment items.
+        :param keep_all_channels: If ``True``, the output cut will have the same channels as the input cut. By default,
+            the trimmed cut will have the same channels as the supervision.
+        :param num_jobs: Number of parallel workers to process the cuts.
+        :return: a ``CutSet``.
+        """
+
+        if num_jobs == 1:
+            from lhotse.lazy import LazyFlattener, LazyMapper
+
+            return CutSet(
+                LazyFlattener(
+                    LazyMapper(
+                        self,
+                        partial(
+                            _trim_to_alignments_single,
+                            type=type,
+                            max_pause=max_pause,
+                            delimiter=delimiter,
+                            keep_all_channels=keep_all_channels,
+                        ),
+                    )
+                )
+            )
+
+        from lhotse.manipulation import split_parallelize_combine
+
+        result = split_parallelize_combine(
+            num_jobs,
+            self,
+            _trim_to_alignments_single,
+            type=type,
+            max_pause=max_pause,
+            delimiter=delimiter,
+            keep_all_channels=keep_all_channels,
+        )
+        return result
+
     def trim_to_unsupervised_segments(self) -> "CutSet":
         """
         Return a new CutSet with Cuts created from segments that have no supervisions (likely
@@ -930,60 +1193,83 @@ class CutSet(Serializable, AlgorithmMixin):
 
         :return: a ``CutSet``.
         """
-        from cytoolz import sliding_window
-
         cuts = []
         for cut in self:
-            segments = []
-            supervisions = sorted(cut.supervisions, key=lambda s: s.start)
-            # Check if there is an unsupervised segment at the start of the cut,
-            # before the first supervision.
-            if supervisions[0].start > 0:
-                segments.append((0, supervisions[0].start))
-            # Check if there are unsupervised segments between the supervisions.
-            for left, right in sliding_window(2, supervisions):
-                if overlaps(left, right) or left.end == right.start:
-                    continue
-                segments.append((left.end, right.start))
-            # Check if there is an unsupervised segment after the last supervision,
-            # before the cut ends.
-            if supervisions[-1].end < cut.duration:
-                segments.append((supervisions[-1].end, cut.duration))
-            # Create cuts from all found unsupervised segments.
-            for start, end in segments:
-                cuts.append(cut.truncate(offset=start, duration=end - start))
+            segments = find_segments_with_speaker_count(
+                cut, min_speakers=0, max_speakers=0
+            )
+            for span in segments:
+                cuts.append(cut.truncate(offset=span.start, duration=span.duration))
         return CutSet.from_cuts(cuts)
 
-    @deprecated(
-        "Cut.mix_same_recording_channels will be removed in a future release. Please use "
-        "`combine_same_recording_channels()` instead."
-    )
-    def mix_same_recording_channels(self) -> "CutSet":
+    def trim_to_supervision_groups(
+        self,
+        max_pause: Optional[Seconds] = None,
+        num_jobs: int = 1,
+    ) -> "CutSet":
         """
-        Find cuts that come from the same recording and have matching start and end times, but
-        represent different channels. Then, mix them together (in matching groups) and return
-        a new ``CutSet`` that contains their mixes. This is useful for processing microphone array
-        recordings.
+        Return a new CutSet with Cuts based on supervision groups. A supervision group is
+        a set of supervisions with no gaps between them (or gaps shorter than ``max_pause``).
+        This is similar to the concept of an `utterance group` as described in this paper:
+        https://arxiv.org/abs/2211.00482
 
-        It is intended to be used as the first operation after creating a new ``CutSet`` (but
-        might also work in other circumstances, e.g. if it was cut to windows first).
+        For example, the following cut::
 
-        Example:
-            >>> ami = prepare_ami('path/to/ami')
-            >>> cut_set = CutSet.from_manifests(recordings=ami['train']['recordings'])
-            >>> multi_channel_cut_set = cut_set.mix_same_recording_channels()
+                                                Cut
+        ╔═════════════════════════════════════════════════════════════════════════════════╗
+        ║┌──────────────────────┐                              ┌────────┐                 ║
+        ║│ Hello this is John.  │                              │   Hi   │                 ║
+        ║└──────────────────────┘                              └────────┘                 ║
+        ║            ┌──────────────────────────────────┐            ┌───────────────────┐║
+        ║            │     Hey, John. How are you?      │            │  What do you do?  │║
+        ║            └──────────────────────────────────┘            └───────────────────┘║
+        ╚═════════════════════════════════════════════════════════════════════════════════╝
 
-        In the AMI example, the ``multi_channel_cut_set`` will yield MixedCuts that hold all single-channel
-        Cuts together.
+        is transformed into two cuts::
+
+                            Cut 1                                       Cut 2
+        ╔════════════════════════════════════════════════╗    ╔═══════════════════════════╗
+        ║┌──────────────────────┐                        ║    ║┌────────┐                 ║
+        ║│ Hello this is John.  │                        ║    ║│   Hi   │                 ║
+        ║└──────────────────────┘                        ║    ║└────────┘                 ║
+        ║            ┌──────────────────────────────────┐║    ║      ┌───────────────────┐║
+        ║            │     Hey, John. How are you?      │║    ║      │  What do you do?  │║
+        ║            └──────────────────────────────────┘║    ║      └───────────────────┘║
+        ╚════════════════════════════════════════════════╝    ╚═══════════════════════════╝
+
+        For the case of a multi-channel cut with multiple supervisions, we keep all the channels
+        in the recording.
+
+        :param max_pause: An optional duration in seconds; if the gap between two supervisions
+            is longer than this, they will be treated as separate groups.
+        :param num_jobs: Number of parallel workers to process the cuts.
+        :return: a ``CutSet``.
         """
-        if self.mixed_cuts:
-            raise ValueError(
-                "This operation is not applicable to CutSet's containing MixedCut's."
+
+        if num_jobs == 1:
+            from lhotse.lazy import LazyFlattener, LazyMapper
+
+            return CutSet(
+                LazyFlattener(
+                    LazyMapper(
+                        self,
+                        partial(
+                            _trim_to_supervision_groups_single,
+                            max_pause=max_pause,
+                        ),
+                    )
+                )
             )
-        from cytoolz.itertoolz import groupby
 
-        groups = groupby(lambda cut: (cut.recording.id, cut.start, cut.end), self)
-        return CutSet.from_cuts(mix_cuts(cuts) for cuts in groups.values())
+        from lhotse.manipulation import split_parallelize_combine
+
+        result = split_parallelize_combine(
+            num_jobs,
+            self,
+            _trim_to_supervision_groups_single,
+            max_pause=max_pause,
+        )
+        return result
 
     def combine_same_recording_channels(self) -> "CutSet":
         """
@@ -1002,8 +1288,6 @@ class CutSet(Serializable, AlgorithmMixin):
 
         In the AMI example, the ``multi_channel_cut_set`` will yield MultiCuts that hold all single-channel
         Cuts together.
-
-        .. note:: See also :func:`CutSet.mix_same_recording_channels`, which is now deprecated.
         """
         if self.mixed_cuts or self.multi_cuts:
             raise ValueError(
@@ -1012,7 +1296,7 @@ class CutSet(Serializable, AlgorithmMixin):
         from cytoolz.itertoolz import groupby
 
         groups = groupby(lambda cut: (cut.recording.id, cut.start, cut.end), self)
-        return CutSet.from_cuts(MultiCut.from_mono(cuts) for cuts in groups.values())
+        return CutSet.from_cuts(MultiCut.from_mono(*cuts) for cuts in groups.values())
 
     def sort_by_duration(self, ascending: bool = False) -> "CutSet":
         """
@@ -1394,6 +1678,7 @@ class CutSet(Serializable, AlgorithmMixin):
         snr: Optional[Union[Decibels, Sequence[Decibels]]] = 20,
         preserve_id: Optional[str] = None,
         mix_prob: float = 1.0,
+        seed: int = 42,
     ) -> "CutSet":
         """
         Mix cuts in this ``CutSet`` with randomly sampled cuts from another ``CutSet``.
@@ -1419,6 +1704,7 @@ class CutSet(Serializable, AlgorithmMixin):
         :param mix_prob: an optional float in range [0, 1].
             Specifies the probability of performing a mix.
             Values lower than 1.0 mean that some cuts in the output will be unchanged.
+        :param seed: an optional int. Random seed for choosing the cuts to mix and the SNR.
         :return: a new ``CutSet`` with mixed cuts.
         """
         assert 0.0 <= mix_prob <= 1.0
@@ -1434,18 +1720,19 @@ class CutSet(Serializable, AlgorithmMixin):
             "as it would be extremely inefficient. "
             "You can use 'cuts.to_eager()' on the function argument to fix this."
         )
+        rng = random.Random(seed)
         mixed_cuts = []
         for cut in self:
             # Check whether we're going to mix something into the current cut
             # or pass it through unchanged.
-            if random.uniform(0.0, 1.0) > mix_prob:
+            if rng.uniform(0.0, 1.0) > mix_prob:
                 mixed_cuts.append(cut)
                 continue
             to_mix = cuts.sample()
             # Determine the SNR - either it's specified or we need to sample one.
-            snr = random.uniform(*snr) if isinstance(snr, (list, tuple)) else snr
+            cut_snr = rng.uniform(*snr) if isinstance(snr, (list, tuple)) else snr
             # Actual mixing
-            mixed = cut.mix(other=to_mix, snr=snr, preserve_id=preserve_id)
+            mixed = cut.mix(other=to_mix, snr=cut_snr, preserve_id=preserve_id)
             # Did the user specify a duration?
             # If yes, we will ensure that shorter cuts have more noise mixed in
             # to "pad" them with at the end.
@@ -1462,7 +1749,7 @@ class CutSet(Serializable, AlgorithmMixin):
                 # Keep the SNR constant for each cut from "self".
                 mixed = mixed.mix(
                     other=to_mix,
-                    snr=snr,
+                    snr=cut_snr,
                     offset_other_by=mixed_in_duration,
                     allow_padding=allow_padding,
                     preserve_id=preserve_id,
@@ -1660,7 +1947,11 @@ class CutSet(Serializable, AlgorithmMixin):
 
         # Initialize the default executor if None was given
         if executor is None:
-            executor = ProcessPoolExecutor(num_jobs)
+            import multiprocessing
+
+            executor = ProcessPoolExecutor(
+                num_jobs, mp_context=multiprocessing.get_context("spawn")
+            )
 
         # Submit the chunked tasks to parallel workers.
         # Each worker runs the non-parallel version of this function inside.
@@ -1696,6 +1987,7 @@ class CutSet(Serializable, AlgorithmMixin):
         manifest_path: Optional[Pathlike] = None,
         batch_duration: Seconds = 600.0,
         num_workers: int = 4,
+        collate: bool = False,
         augment_fn: Optional[AugmentFn] = None,
         storage_type: Type[FW] = LilcomChunkyWriter,
         overwrite: bool = False,
@@ -1737,6 +2029,10 @@ class CutSet(Serializable, AlgorithmMixin):
             Determines batch size dynamically.
         :param num_workers: How many background dataloading workers should be used
             for reading the audio.
+        :param collate: If ``True``, the waveforms will be collated into a single
+            padded tensor before being passed to the feature extractor. Some extractors
+            can be faster this way (for e.g., see ``lhotse.features.kaldi.extractors``).
+            If you are using ``kaldifeat`` extractors, you should set this to ``False``.
         :param augment_fn: an optional callable used for audio augmentation.
             Be careful with the types of augmentations used: if they modify
             the start/end/duration times of the cut and its supervisions,
@@ -1749,10 +2045,12 @@ class CutSet(Serializable, AlgorithmMixin):
             By default, this method will append to these files if they exist.
         :return: Returns a new ``CutSet`` with ``Features`` manifests attached to the cuts.
         """
+        from concurrent.futures import ThreadPoolExecutor
+
         import torch
         from torch.utils.data import DataLoader
 
-        from lhotse.dataset import SingleCutSampler, UnsupervisedWaveformDataset
+        from lhotse.dataset import SimpleCutSampler, UnsupervisedWaveformDataset
         from lhotse.qa import validate_features
 
         frame_shift = extractor.frame_shift
@@ -1765,23 +2063,84 @@ class CutSet(Serializable, AlgorithmMixin):
 
         # We tell the sampler to ignore cuts that were already processed.
         # It will avoid I/O for reading them in the DataLoader.
-        sampler = SingleCutSampler(self, max_duration=batch_duration)
+        sampler = SimpleCutSampler(self, max_duration=batch_duration)
         sampler.filter(lambda cut: cut.id not in cuts_writer.ignore_ids)
-        dataset = UnsupervisedWaveformDataset(collate=False)
+        dataset = UnsupervisedWaveformDataset(collate=collate)
         dloader = DataLoader(
             dataset, batch_size=None, sampler=sampler, num_workers=num_workers
         )
 
+        # Background worker to save features to disk.
+        def _save_worker(cuts: List[Cut], features: List[np.ndarray]) -> None:
+            for cut, feat_mat in zip(cuts, features):
+                if isinstance(cut, PaddingCut):
+                    # For padding cuts, just fill out the fields in the manifest
+                    # and don't store anything.
+                    cuts_writer.write(
+                        fastcopy(
+                            cut,
+                            num_frames=feat_mat.shape[0],
+                            num_features=feat_mat.shape[1],
+                            frame_shift=frame_shift,
+                        )
+                    )
+                    continue
+                # Store the computed features and describe them in a manifest.
+                if isinstance(feat_mat, torch.Tensor):
+                    feat_mat = feat_mat.cpu().numpy()
+                storage_key = feats_writer.write(cut.id, feat_mat)
+                feat_manifest = Features(
+                    start=cut.start,
+                    duration=cut.duration,
+                    type=extractor.name,
+                    num_frames=feat_mat.shape[0],
+                    num_features=feat_mat.shape[1],
+                    frame_shift=frame_shift,
+                    sampling_rate=cut.sampling_rate,
+                    channels=cut.channel,
+                    storage_type=feats_writer.name,
+                    storage_path=str(feats_writer.storage_path),
+                    storage_key=storage_key,
+                )
+                validate_features(feat_manifest, feats_data=feat_mat)
+
+                # Update the cut manifest.
+                if isinstance(cut, DataCut):
+                    feat_manifest.recording_id = cut.recording_id
+                    cut = fastcopy(cut, features=feat_manifest)
+                if isinstance(cut, MixedCut):
+                    # If this was a mixed cut, we will just discard its
+                    # recordings and create a new mono cut that has just
+                    # the features attached.
+                    feat_manifest.recording_id = cut.id
+                    cut = MonoCut(
+                        id=cut.id,
+                        start=0,
+                        duration=cut.duration,
+                        channel=0,
+                        # Update supervisions recording_id for consistency
+                        supervisions=[
+                            fastcopy(s, recording_id=cut.id) for s in cut.supervisions
+                        ],
+                        features=feat_manifest,
+                        recording=None,
+                    )
+                cuts_writer.write(cut, flush=True)
+
+        futures = []
         with cuts_writer, storage_type(
             storage_path, mode="w" if overwrite else "a"
         ) as feats_writer, tqdm(
             desc="Computing features in batches", total=sampler.num_cuts
-        ) as progress:
+        ) as progress, ThreadPoolExecutor(
+            max_workers=1  # We only want one background worker so that serialization is deterministic.
+        ) as executor:
             # Display progress bar correctly.
             progress.update(len(cuts_writer.ignore_ids))
             for batch in dloader:
                 cuts = batch["cuts"]
                 waves = batch["audio"]
+                wave_lens = batch["audio_lens"] if collate else None
 
                 if len(cuts) == 0:
                     # Fault-tolerant audio loading filtered out everything.
@@ -1800,117 +2159,22 @@ class CutSet(Serializable, AlgorithmMixin):
                     # Note: chunk_size option limits the memory consumption
                     # for very long cuts.
                     features = extractor.extract_batch(
-                        waves, sampling_rate=cuts[0].sampling_rate
+                        waves, sampling_rate=cuts[0].sampling_rate, lengths=wave_lens
                     )
 
-                for cut, feat_mat in zip(cuts, features):
-                    if isinstance(cut, PaddingCut):
-                        # For padding cuts, just fill out the fields in the manifest
-                        # and don't store anything.
-                        cuts_writer.write(
-                            fastcopy(
-                                cut,
-                                num_frames=feat_mat.shape[0],
-                                num_features=feat_mat.shape[1],
-                                frame_shift=frame_shift,
-                            )
-                        )
-                        continue
-                    # Store the computed features and describe them in a manifest.
-                    if isinstance(feat_mat, torch.Tensor):
-                        feat_mat = feat_mat.cpu().numpy()
-                    storage_key = feats_writer.write(cut.id, feat_mat)
-                    feat_manifest = Features(
-                        start=cut.start,
-                        duration=cut.duration,
-                        type=extractor.name,
-                        num_frames=feat_mat.shape[0],
-                        num_features=feat_mat.shape[1],
-                        frame_shift=frame_shift,
-                        sampling_rate=cut.sampling_rate,
-                        channels=cut.channel,
-                        storage_type=feats_writer.name,
-                        storage_path=str(feats_writer.storage_path),
-                        storage_key=storage_key,
-                    )
-                    validate_features(feat_manifest, feats_data=feat_mat)
-
-                    # Update the cut manifest.
-                    if isinstance(cut, DataCut):
-                        feat_manifest.recording_id = cut.recording_id
-                        cut = fastcopy(cut, features=feat_manifest)
-                    if isinstance(cut, MixedCut):
-                        # If this was a mixed cut, we will just discard its
-                        # recordings and create a new mono cut that has just
-                        # the features attached.
-                        feat_manifest.recording_id = cut.id
-                        cut = MonoCut(
-                            id=cut.id,
-                            start=0,
-                            duration=cut.duration,
-                            channel=0,
-                            # Update supervisions recording_id for consistency
-                            supervisions=[
-                                fastcopy(s, recording_id=cut.id)
-                                for s in cut.supervisions
-                            ],
-                            features=feat_manifest,
-                            recording=None,
-                        )
-                    cuts_writer.write(cut, flush=True)
-
+                futures.append(executor.submit(_save_worker, cuts, features))
                 progress.update(len(cuts))
 
         # If ``manifest_path`` was provided, this is a lazy manifest;
         # otherwise everything is in memory.
         return cuts_writer.open_manifest()
 
-    @deprecated(
-        "CutSet.compute_and_store_recordings will be removed in a future release. Please use save_audios() instead."
-    )
-    def compute_and_store_recordings(
-        self,
-        storage_path: Pathlike,
-        num_jobs: Optional[int] = None,
-        executor: Optional[Executor] = None,
-        augment_fn: Optional[AugmentFn] = None,
-        progress_bar: bool = True,
-    ) -> "CutSet":
-        """
-        Store waveforms of all cuts as audio recordings to disk.
-
-        :param storage_path: The path to location where we will store the audio recordings.
-            For each cut, a sub-directory will be created that starts with the first 3
-            characters of the cut's ID. The audio recording is then stored in the sub-directory
-            using the cut ID as filename and '.flac' as suffix.
-        :param num_jobs: The number of parallel processes used to store the audio recordings.
-            We will internally split the CutSet into this many chunks
-            and process each chunk in parallel.
-        :param augment_fn: an optional callable used for audio augmentation.
-            Be careful with the types of augmentations used: if they modify
-            the start/end/duration times of the cut and its supervisions,
-            you will end up with incorrect supervision information when using this API.
-            E.g. for speed perturbation, use ``CutSet.perturb_speed()`` instead.
-        :param executor: when provided, will be used to parallelize the process.
-            By default, we will instantiate a ProcessPoolExecutor.
-            Learn more about the ``Executor`` API at
-            https://lhotse.readthedocs.io/en/latest/parallelism.html
-        :param progress_bar: Should a progress bar be displayed (automatically turned off
-            for parallel computation).
-        :return: Returns a new ``CutSet``.
-        """
-        return self.save_audios(
-            storage_path,
-            num_jobs=num_jobs,
-            executor=executor,
-            augment_fn=augment_fn,
-            progress_bar=progress_bar,
-        )
-
     def save_audios(
         self,
         storage_path: Pathlike,
         format: str = "wav",
+        encoding: Optional[str] = None,
+        bits_per_sample: Optional[int] = None,
         num_jobs: Optional[int] = None,
         executor: Optional[Executor] = None,
         augment_fn: Optional[AugmentFn] = None,
@@ -1924,6 +2188,12 @@ class CutSet(Serializable, AlgorithmMixin):
             characters of the cut's ID. The audio recording is then stored in the sub-directory
             using filename ``{cut.id}.{format}``
         :param format: Audio format argument supported by ``torchaudio.save``. Default is ``wav``.
+        :param encoding: Audio encoding argument supported by ``torchaudio.save``. See
+            https://pytorch.org/audio/stable/backend.html#save (sox_io backend) and
+            https://pytorch.org/audio/stable/backend.html#id3 (soundfile backend) for more details.
+        :param bits_per_sample: Audio bits_per_sample argument supported by ``torchaudio.save``. See
+            https://pytorch.org/audio/stable/backend.html#save (sox_io backend) and
+            https://pytorch.org/audio/stable/backend.html#id3 (soundfile backend) for more details.
         :param num_jobs: The number of parallel processes used to store the audio recordings.
             We will internally split the CutSet into this many chunks
             and process each chunk in parallel.
@@ -1963,7 +2233,7 @@ class CutSet(Serializable, AlgorithmMixin):
             # too many files in a single directory.
             subdir = Path(storage_path) / cut.id[:3]
             subdir.mkdir(exist_ok=True, parents=True)
-            return (subdir / cut.id).with_suffix(f".{format}")
+            return subdir / (cut.id + "." + format)
 
         # Non-parallel execution
         if executor is None and num_jobs == 1:
@@ -1975,6 +2245,8 @@ class CutSet(Serializable, AlgorithmMixin):
                 progress(
                     cut.save_audio(
                         storage_path=file_storage_path(cut, storage_path),
+                        encoding=encoding,
+                        bits_per_sample=bits_per_sample,
                         augment_fn=augment_fn,
                     )
                     for cut in self
@@ -1986,7 +2258,11 @@ class CutSet(Serializable, AlgorithmMixin):
 
         # Initialize the default executor if None was given
         if executor is None:
-            executor = ProcessPoolExecutor(num_jobs)
+            import multiprocessing
+
+            executor = ProcessPoolExecutor(
+                num_jobs, mp_context=multiprocessing.get_context("spawn")
+            )
 
         # Submit the chunked tasks to parallel workers.
         # Each worker runs the non-parallel version of this function inside.
@@ -1995,6 +2271,8 @@ class CutSet(Serializable, AlgorithmMixin):
                 CutSet.save_audios,
                 cs,
                 storage_path=storage_path,
+                encoding=encoding,
+                bits_per_sample=bits_per_sample,
                 augment_fn=augment_fn,
                 # Disable individual workers progress bars for readability
                 progress_bar=False,
@@ -2860,6 +3138,77 @@ def deserialize_cut(raw_cut: dict) -> Cut:
     raise ValueError(f"Unexpected cut type during deserialization: '{cut_type}'")
 
 
+def find_segments_with_speaker_count(
+    cut: Cut, min_speakers: int = 0, max_speakers: Optional[int] = None
+) -> List[TimeSpan]:
+    """
+    Given a Cut, find a list of intervals that contain the specified number of speakers.
+
+    :param cuts: the Cut to search.
+    :param min_speakers: the minimum number of speakers.
+    :param max_speakers: the maximum number of speakers.
+    :return: a list of TimeSpans.
+    """
+    if max_speakers is None:
+        max_speakers = float("inf")
+
+    assert (
+        min_speakers >= 0 and min_speakers <= max_speakers
+    ), f"min_speakers={min_speakers} and max_speakers={max_speakers} are not valid."
+
+    # First take care of trivial cases.
+    if min_speakers == 0 and max_speakers == float("inf"):
+        return [TimeSpan(0, cut.duration)]
+    if len(cut.supervisions) == 0:
+        return [] if min_speakers > 0 else [TimeSpan(0, cut.duration)]
+
+    # We collect all the timestamps of the supervisions in the cut. Each timestamp is
+    # a tuple of (time, is_speaker_start).
+    timestamps = []
+    # Add timestamp for cut start
+    timestamps.append((0.0, None))
+    for segment in cut.supervisions:
+        timestamps.append((segment.start, True))
+        timestamps.append((segment.end, False))
+    # Add timestamp for cut end
+    timestamps.append((cut.duration, None))
+
+    # Sort the timestamps. We need the following priority order:
+    # 1. Time mark of the timestamp: lower time mark comes first.
+    # 2. For timestamps with the same time mark, None < False < True.
+    timestamps.sort(key=lambda x: (x[0], x[1] is not None, x[1] is True))
+
+    # We remove the timestamps that are not relevant for the search. The desired range
+    # is given by the range of the cut start and end timestamps.
+    cut_start_idx, cut_end_idx = [i for i, t in enumerate(timestamps) if t[1] is None]
+    timestamps = timestamps[cut_start_idx : cut_end_idx + 1]
+
+    # Now we iterate over the timestamps and count the number of speakers in any
+    # given time interval. If the number of speakers is in the desired range,
+    # we keep the interval.
+    num_speakers = 0
+    seg_start = 0.0
+    intervals = []
+    for timestamp, is_start in timestamps[1:]:
+        if num_speakers >= min_speakers and num_speakers <= max_speakers:
+            intervals.append((seg_start, timestamp))
+        if is_start is not None:
+            num_speakers += 1 if is_start else -1
+        seg_start = timestamp
+
+    # Merge consecutive intervals and remove empty intervals.
+    merged_intervals = []
+    for start, end in intervals:
+        if start == end:
+            continue
+        if merged_intervals and merged_intervals[-1][1] == start:
+            merged_intervals[-1] = (merged_intervals[-1][0], end)
+        else:
+            merged_intervals.append((start, end))
+
+    return [TimeSpan(start, end) for start, end in merged_intervals]
+
+
 def _cut_into_windows_single(
     cuts: CutSet, duration, hop, keep_excessive_supervisions
 ) -> CutSet:
@@ -2882,6 +3231,30 @@ def _trim_to_supervisions_single(
         min_duration=min_duration,
         context_direction=context_direction,
         keep_all_channels=keep_all_channels,
+    ).to_eager()
+
+
+def _trim_to_alignments_single(
+    cuts: CutSet,
+    type,
+    max_pause,
+    delimiter,
+    keep_all_channels,
+) -> CutSet:
+    return cuts.trim_to_alignments(
+        type=type,
+        max_pause=max_pause,
+        delimiter=delimiter,
+        keep_all_channels=keep_all_channels,
+    ).to_eager()
+
+
+def _trim_to_supervision_groups_single(
+    cuts: CutSet,
+    max_pause: Seconds,
+) -> CutSet:
+    return cuts.trim_to_supervision_groups(
+        max_pause=max_pause,
     ).to_eager()
 
 

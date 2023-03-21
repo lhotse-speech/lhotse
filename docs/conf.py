@@ -24,7 +24,7 @@ copyright = "2020-2021, Lhotse development team"
 author = "Lhotse development team"
 
 # The full version, including alpha/beta/rc tags
-release = "1.10.0.dev"
+release = "1.13.0.dev"
 
 # -- General configuration ---------------------------------------------------
 

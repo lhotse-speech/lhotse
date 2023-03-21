@@ -1,8 +1,13 @@
+import os
 import random
 from pathlib import Path
-from typing import Callable, Dict, Generator, Optional, Sequence, Tuple
+from typing import Callable, Dict, Generator, List, Optional, Sequence, Tuple, Union
+
+import torch
+from typing_extensions import Literal
 
 from lhotse.cut import Cut
+from lhotse.dataset.dataloading import LHOTSE_PROCESS_SEED
 from lhotse.lazy import (
     ImitatesDict,
     LazyIteratorChain,
@@ -87,11 +92,21 @@ class LazySharIterator(ImitatesDict):
         dataloader workers and possibly multiple DDP nodes.
         It results in each node+worker combination receiving a unique subset
         of shards from which to read data to avoid data duplication.
+        This is mutually exclusive with ``seed='randomized'``.
     :param shuffle_shards: bool, by default ``False``. When ``True``, the shards
         are shuffled (in case of multi-node training, the shuffling is the same
         on each node given the same seed).
     :param seed: When ``shuffle_shards`` is ``True``, we use this number to
         seed the RNG.
+        Seed can be set to ``'randomized'`` in which case we expect that the user provided
+        :func:`lhotse.dataset.dataloading.worker_init_fn` as DataLoader's ``worker_init_fn``
+        argument. It will cause the iterator to shuffle shards differently on each node
+        and dataloading worker in PyTorch training. This is mutually exclusive with
+        ``split_for_dataloading=True``.
+    :param stateful_shuffle: bool, by default ``False``. When ``True``, every
+        time this object is fully iterated, it increments an internal epoch counter
+        and triggers shard reshuffling with RNG seeded by ``seed`` + ``epoch``.
+        Doesn't have any effect when ``shuffle_shards`` is ``False``.
     :param cut_map_fns: optional sequence of callables that accept cuts and return cuts.
         It's expected to have the same length as the number of shards, so each function
         corresponds to a specific shard.
@@ -106,14 +121,25 @@ class LazySharIterator(ImitatesDict):
         in_dir: Optional[Pathlike] = None,
         split_for_dataloading: bool = False,
         shuffle_shards: bool = False,
-        seed: int = 42,
+        stateful_shuffle: bool = True,
+        seed: Union[int, Literal["randomized"]] = 42,
         cut_map_fns: Optional[Sequence[Callable[[Cut], Cut]]] = None,
     ) -> None:
         assert exactly_one_not_null(
             fields, in_dir
         ), "To read Lhotse Shar format, provide either 'in_dir' or 'fields' argument."
+        if split_for_dataloading:
+            assert seed != "randomized", (
+                "Error: seed='randomized' and split_for_dataloading=True are mutually exclusive options "
+                "as they would result in data loss."
+            )
 
         self.split_for_dataloading = split_for_dataloading
+        self.shuffle_shards = shuffle_shards
+        self.stateful_shuffle = stateful_shuffle
+        self.seed = seed
+        self.epoch = 0
+
         self._len = None
         if in_dir is not None:
             self._init_from_dir(in_dir)
@@ -132,9 +158,6 @@ class LazySharIterator(ImitatesDict):
         ]
 
         self.cut_map_fns = ifnone(cut_map_fns, [None] * self.num_shards)
-
-        if shuffle_shards:
-            random.Random(seed).shuffle(self.shards)
 
     def _init_from_inputs(self, fields: Optional[Dict[str, Sequence[str]]] = None):
         assert (
@@ -164,17 +187,50 @@ class LazySharIterator(ImitatesDict):
                 p for p in all_paths if p.name.split(".")[0] == field
             )
 
-    @property
-    def shards_for_dataloading(self):
+    def _maybe_split_for_dataloading(self, shards: List) -> List:
         from .utils import split_by_node, split_by_worker
 
-        return split_by_worker(split_by_node(self.shards))
+        if self.split_for_dataloading:
+            return split_by_worker(split_by_node(shards))
+        else:
+            return shards
+
+    def _maybe_shuffle_shards(self, shards: List) -> List:
+        if self.shuffle_shards:
+            shards = shards.copy()
+
+            seed = self.seed
+
+            if seed == "randomized":
+                worker_info = torch.utils.data.get_worker_info()
+                if worker_info is None:
+                    # not in a dataloader sub-process: get python global random seed
+                    seed = random.getstate()[1][0]
+                else:
+                    # in a dataloader sub-process: read out the seed we assigned to it
+                    assert LHOTSE_PROCESS_SEED in os.environ, (
+                        "Requested seed='randomized' for shuffling shards differently "
+                        "on each DataLoader node and worker, "
+                        "but lhotse.dataset.dataloading.worker_init_fn was not called."
+                    )
+                    seed = int(os.environ[LHOTSE_PROCESS_SEED])
+
+            if self.stateful_shuffle:
+                seed += self.epoch
+
+            random.Random(seed).shuffle(shards)
+        return shards
 
     def __iter__(self):
-        shards = (
-            self.shards_for_dataloading if self.split_for_dataloading else self.shards
-        )
-        for shard, cut_map_fn in zip(shards, self.cut_map_fns):
+        shards, map_fns = self.shards, self.cut_map_fns
+        shards = self._maybe_shuffle_shards(shards)
+        shards = self._maybe_split_for_dataloading(shards)
+        if map_fns is not None:
+            # The functions also need to be shuffled/split, if present.
+            map_fns = self._maybe_shuffle_shards(map_fns)
+            map_fns = self._maybe_split_for_dataloading(map_fns)
+
+        for shard, cut_map_fn in zip(shards, map_fns):
             # Iterate over cuts for the current shard
             cuts = LazyManifestIterator(shard["cuts"])
 
@@ -201,13 +257,16 @@ class LazySharIterator(ImitatesDict):
                         continue  # No value available for the current field for this cut.
                     assert (
                         data_path.stem == cut.id
-                    ), f"Mismatched IDs: cut ID is '{cut.id}' but found data with name '{data_path}'"
+                    ), f"Mismatched IDs: cut ID is '{cut.id}' but found data with name '{data_path}' fsor field {field}"
                     setattr(cut, field, maybe_manifest)
 
                 cut.shard_origin = shard["cuts"]
+                cut.shar_epoch = self.epoch
                 if cut_map_fn is not None:
                     cut = cut_map_fn(cut)
                 yield cut
+
+        self.epoch += 1
 
     def __len__(self) -> int:
         if self._len is None:

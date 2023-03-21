@@ -117,6 +117,7 @@ def download_librispeech(
 
 def prepare_librispeech(
     corpus_dir: Pathlike,
+    alignments_dir: Optional[Pathlike] = None,
     dataset_parts: Union[str, Sequence[str]] = "auto",
     output_dir: Optional[Pathlike] = None,
     num_jobs: int = 1,
@@ -126,12 +127,15 @@ def prepare_librispeech(
     When all the manifests are available in the ``output_dir``, it will simply read and return them.
 
     :param corpus_dir: Pathlike, the path of the data dir.
+    :param alignments_dir: Pathlike, the path of the alignments dir. By default, it is
+        the same as ``corpus_dir``.
     :param dataset_parts: string or sequence of strings representing dataset part names, e.g. 'train-clean-100', 'train-clean-5', 'dev-clean'.
         By default we will infer which parts are available in ``corpus_dir``.
     :param output_dir: Pathlike, the path where to write the manifests.
     :return: a Dict whose key is the dataset part, and the value is Dicts with the keys 'audio' and 'supervisions'.
     """
     corpus_dir = Path(corpus_dir)
+    alignments_dir = Path(alignments_dir) if alignments_dir is not None else corpus_dir
     assert corpus_dir.is_dir(), f"No such directory: {corpus_dir}"
 
     if dataset_parts == "mini_librispeech":
@@ -175,8 +179,10 @@ def prepare_librispeech(
                 part_path.rglob("*.trans.txt"), desc="Distributing tasks", leave=False
             ):
                 alignments = {}
-                ali_path = trans_path.parent / (
-                    trans_path.stem.split(".")[0] + ".alignment.txt"
+                ali_path = (
+                    alignments_dir
+                    / trans_path.parent.relative_to(corpus_dir)
+                    / (trans_path.stem.split(".")[0] + ".alignment.txt")
                 )
                 if ali_path.exists():
                     alignments = parse_alignments(ali_path)

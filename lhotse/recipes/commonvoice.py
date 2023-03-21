@@ -9,7 +9,10 @@ This project is an effort to bridge the digital speech divide. Voice recognition
 How does it work?
 We’re crowdsourcing an open-source dataset of voices. Donate your voice, validate the accuracy of other people’s clips, make the dataset better for everyone.
 """
+import csv
 import logging
+import math
+import numbers
 import shutil
 import tarfile
 import warnings
@@ -29,8 +32,9 @@ from lhotse.utils import (
     urlretrieve_progress,
 )
 
-DEFAULT_COMMONVOICE_URL = "https://voice-prod-bundler-ee1969a6ce8178826482b88e843c335139bd3fb4.s3.amazonaws.com"
-DEFAULT_COMMONVOICE_RELEASE = "cv-corpus-5.1-2020-06-22"
+DEFAULT_COMMONVOICE_URL = (
+    "https://mozilla-common-voice-datasets.s3.dualstack.us-west-2.amazonaws.com"
+)
 
 
 COMMONVOICE_LANGS = "en de fr cy tt kab ca zh-TW it fa eu es ru tr nl eo zh-CN rw pt zh-HK cs pl uk".split()
@@ -46,7 +50,7 @@ def download_commonvoice(
     languages: Union[str, Iterable[str]] = "all",
     force_download: bool = False,
     base_url: str = DEFAULT_COMMONVOICE_URL,
-    release: str = DEFAULT_COMMONVOICE_RELEASE,
+    release: Optional[str] = "cv-corpus-8.0-2022-01-19",
 ) -> None:
     """
     Download and untar the CommonVoice dataset.
@@ -56,17 +60,12 @@ def download_commonvoice(
         or a list of language codes.
     :param force_download: Bool, if True, download the tars no matter if the tars exist.
     :param base_url: str, the base URL for CommonVoice.
-    :param release: str, the name of the CommonVoice release (e.g., "cv-corpus-5.1-2020-06-22").
+    :param release: str, the name of the CommonVoice release (e.g., "cv-corpus-8.0-2022-01-19").
         It is used as part of the download URL.
     """
     # note(pzelasko): This code should work in general if we supply the right URL,
     # but the URL stopped working during the development of this script --
     # I'm not going to fight this, maybe somebody else would be interested to pick it up.
-    raise NotImplementedError(
-        "CommonVoice requires you to enter e-mail to download the data"
-        "-- please download it manually for now. "
-        "We are open to contributions to support downloading CV via lhotse."
-    )
     target_dir = Path(target_dir)
     target_dir.mkdir(parents=True, exist_ok=True)
     url = f"{base_url}/{release}"
@@ -93,7 +92,19 @@ def download_commonvoice(
         tar_name = f"{lang}.tar.gz"
         tar_path = target_dir / tar_name
         if force_download or not tar_path.is_file():
-            urlretrieve_progress(url, filename=tar_path, desc=f"Downloading {tar_name}")
+            # After version 7.0, the commonvoice download address has changed
+            if float(release.split("-")[2]) < 8.0:
+                raise NotImplementedError(
+                    "When the version is less than 8.0, CommonVoice requires you to enter e-mail to download the data.\n"
+                    "Please download it manually for now.\n"
+                    "Or you can choose a version greater than 8.0.\n"
+                )
+            else:
+                # https://mozilla-common-voice-datasets.s3.dualstack.us-west-2.amazonaws.com/cv-corpus-7.0-2021-07-21/cv-corpus-7.0-2021-07-21-zh-CN.tar.gz
+                single_url = url + f"/{release}-{lang}.tar.gz"
+            urlretrieve_progress(
+                single_url, filename=tar_path, desc=f"Downloading {tar_name}"
+            )
             logging.info(f"Downloading finished: {lang}")
         # Remove partial unpacked files, if any, and unpack everything.
         logging.info(f"Unpacking archive: {lang}")
@@ -226,7 +237,7 @@ def prepare_single_commonvoice_tsv(
     tsv_path = lang_path / f"{part}.tsv"
 
     # Read the metadata
-    df = pd.read_csv(tsv_path, sep="\t")
+    df = pd.read_csv(tsv_path, sep="\t", quoting=csv.QUOTE_NONE)
     # Scan all the audio files
     with RecordingSet.open_writer(
         output_dir / f"cv-{lang}_recordings_{part}.jsonl.gz",
@@ -262,6 +273,18 @@ def prepare_single_commonvoice_tsv(
 def parse_utterance(
     row: Any, lang_path: Path, language: str
 ) -> Tuple[Recording, SupervisionSegment]:
+    def read_row_optional_field(fieldname: str):
+        # defaulting instead of raising exception
+        if fieldname not in row:
+            return None
+        cell_val = row[fieldname]
+        if cell_val == "nan" or (
+            isinstance(cell_val, numbers.Number) and math.isnan(cell_val)
+        ):
+            return None
+        else:
+            return cell_val
+
     # Create the Recording first
     audio_path = lang_path / "clips" / row.path
     if not audio_path.is_file():
@@ -270,9 +293,9 @@ def parse_utterance(
     recording = Recording.from_file(audio_path, recording_id=recording_id)
     # Handling accent(s) in different versions of CommonVoice
     if "accents" in row:
-        accents = row.accents if row.accents != "nan" else None
+        accents = read_row_optional_field("accents")
     else:
-        accents = row.accent if row.accent != "nan" else None
+        accents = read_row_optional_field("accent")
     # Then, create the corresponding supervisions
     segment = SupervisionSegment(
         id=recording_id,
@@ -285,9 +308,9 @@ def parse_utterance(
         language=COMMONVOICE_CODE2LANG.get(language, language),
         speaker=row.client_id,
         text=row.sentence.strip(),
-        gender=row.gender if row.gender != "nan" else None,
+        gender=read_row_optional_field("gender"),
         custom={
-            "age": row.age if row.age != "nan" else None,
+            "age": read_row_optional_field("age"),
             "accents": accents,
         },
     )

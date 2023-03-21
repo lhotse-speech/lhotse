@@ -2,8 +2,8 @@ from typing import List
 
 import click
 
-from lhotse.bin.modes import prepare
-from lhotse.recipes.commonvoice import prepare_commonvoice
+from lhotse.bin.modes import download, prepare
+from lhotse.recipes.commonvoice import download_commonvoice, prepare_commonvoice
 from lhotse.utils import Pathlike
 
 
@@ -50,4 +50,31 @@ def commonvoice(
         splits=split,
         output_dir=output_dir,
         num_jobs=num_jobs,
+    )
+
+
+@download.command(context_settings=dict(show_default=True))
+@click.argument("target_dir", type=click.Path())
+@click.option(
+    "-l",
+    "--languages",
+    default="all",
+    help="Languages to prepare (scans CORPUS_DIR for language codes by default).",
+)
+@click.option(
+    "-v",
+    "--release",
+    default="cv-corpus-8.0-2022-01-19",
+    help="the name of the CommonVoice release (e.g., 'cv-corpus-8.0-2022-01-19').It is used as part of the download URL.",
+)
+def commonvoice(
+    target_dir: Pathlike,
+    languages: List[str],
+    release: str,
+):
+    """Commonvoice download."""
+    download_commonvoice(
+        target_dir=target_dir,
+        languages=languages,
+        release=release,
     )

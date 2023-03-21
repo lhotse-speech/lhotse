@@ -3,7 +3,9 @@ from io import BytesIO
 from pathlib import Path
 from tempfile import NamedTemporaryFile, TemporaryDirectory
 
+import click
 import pytest
+from click.testing import CliRunner
 
 from lhotse.serialization import (
     load_json,
@@ -14,6 +16,7 @@ from lhotse.serialization import (
     save_to_yaml,
 )
 from lhotse.utils import (
+    PythonLiteralOption,
     TimeSpan,
     add_durations,
     compute_num_windows,
@@ -221,3 +224,17 @@ def test_extract_unsafe_tar_file(unsafe_tar_file):
     with TemporaryDirectory() as tmpdir, tarfile.open(unsafe_tar_file) as tar:
         with pytest.raises(Exception):
             safe_extract(tar, tmpdir)
+
+
+@pytest.mark.parametrize(
+    ["value", "expected"], [(2, None), ("3", 3), ("(4, 5)", (4, 5)), ("[6, 7]", [6, 7])]
+)
+def test_click_literal_option(value, expected):
+    @click.command()
+    @click.option("--num", "-n", cls=PythonLiteralOption, default=2)
+    def echo(num):
+        click.echo("Value: {}".format(num))
+
+    runner = CliRunner()
+    result = runner.invoke(echo, ["-n", value])
+    assert result.output == "Value: {}\n".format(expected)

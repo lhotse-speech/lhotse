@@ -49,6 +49,8 @@ a CLI tool that create the manifests given a corpus directory.
     - :func:`lhotse.recipes.prepare_aidatatang_200zh`
   * - Aishell
     - :func:`lhotse.recipes.prepare_aishell`
+  * - Aishell-3
+    - :func:`lhotse.recipes.prepare_aishell3`
   * - AISHELL-4
     - :func:`lhotse.recipes.prepare_aishell4`
   * - AliMeeting
@@ -65,6 +67,8 @@ a CLI tool that create the manifests given a corpus directory.
     - :func:`lhotse.recipes.prepare_callhome_egyptian`
   * - CallHome English
     - :func:`lhotse.recipes.prepare_callhome_english`
+  * - CHiME-6
+    - :func:`lhotse.recipes.prepare_chime6`
   * - CMU Arctic
     - :func:`lhotse.recipes.prepare_cmu_arctic`
   * - CMU Indic
@@ -81,6 +85,8 @@ a CLI tool that create the manifests given a corpus directory.
     - :func:`lhotse.recipes.prepare_daily_talk`
   * - DIHARD III
     - :func:`lhotse.recipes.prepare_dihard3`
+  * - DiPCo
+    - :func:`lhotse.recipes.prepare_dipco`
   * - English Broadcast News 1997
     - :func:`lhotse.recipes.prepare_broadcast_news`
   * - Fisher English Part 1, 2
@@ -97,6 +103,8 @@ a CLI tool that create the manifests given a corpus directory.
     - :func:`lhotse.recipes.prepare_heroico`
   * - HiFiTTS
     - :func:`lhotse.recipes.prepare_hifitts`
+  * - HI-MIA (including HI-MIA-CW)
+    - :func:`lhotse.recipes.prepare_himia`
   * - ICSI
     - :func:`lhotse.recipes.prepare_icsi`
   * - L2 Arctic
@@ -125,6 +133,8 @@ a CLI tool that create the manifests given a corpus directory.
     - :func:`lhotse.recipes.prepare_peoples_speech`
   * - RIRs and Noises Corpus (OpenSLR 28)
     - :func:`lhotse.recipes.prepare_rir_noise`
+  * - Speech Commands
+    - :func:`lhotse.recipes.prepare_speechcommands`
   * - SPGISpeech
     - :func:`lhotse.recipes.prepare_spgispeech`
   * - Switchboard
@@ -145,6 +155,8 @@ a CLI tool that create the manifests given a corpus directory.
     - :func:`lhotse.recipes.prepare_eval2000`
   * - MGB2
     - :func:`lhotse.recipes.prepare_mgb2`
+  * - XBMU-AMDO31
+    - :func:`lhotse.recipes.xbmu_amdo31`
 
 
 Adding new corpora

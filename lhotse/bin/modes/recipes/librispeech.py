@@ -13,6 +13,12 @@ __all__ = ["librispeech"]
 @click.argument("corpus_dir", type=click.Path(exists=True, dir_okay=True))
 @click.argument("output_dir", type=click.Path())
 @click.option(
+    "--alignments-dir",
+    type=click.Path(exists=True, dir_okay=True),
+    default=None,
+    help="Path to the directory with the alignments (optional).",
+)
+@click.option(
     "-p",
     "--dataset-parts",
     type=str,
@@ -31,6 +37,7 @@ __all__ = ["librispeech"]
 def librispeech(
     corpus_dir: Pathlike,
     output_dir: Pathlike,
+    alignments_dir: Pathlike,
     dataset_parts: Sequence[str],
     num_jobs: int,
 ):
@@ -40,6 +47,7 @@ def librispeech(
     prepare_librispeech(
         corpus_dir,
         output_dir=output_dir,
+        alignments_dir=alignments_dir,
         num_jobs=num_jobs,
         dataset_parts=dataset_parts,
     )
