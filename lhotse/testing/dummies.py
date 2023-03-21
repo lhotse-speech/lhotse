@@ -80,7 +80,7 @@ def dummy_recording(
 def dummy_audio_source(
     num_samples: int = 16000,
     sampling_rate: int = 16000,
-    channels: List[int] = None,
+    channels: Optional[List[int]] = None,
     with_data: bool = False,
 ) -> AudioSource:
     if channels is None:

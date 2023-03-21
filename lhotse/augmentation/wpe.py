@@ -46,6 +46,10 @@ def dereverb_wpe_numpy(
     iterations: int = 3,
     statistics_mode: str = "full",
 ) -> np.ndarray:
+    """
+    Applies WPE-based dereverberation using nara_wpe's wpe_v8 function with numpy backend.
+    The parameter defaults follow the ones in nara_wpe.
+    """
     if not is_module_available("nara_wpe"):
         raise ImportError(
             "Please install nara_wpe first using 'pip install git+https://github.com/fgnt/nara_wpe'"
@@ -53,7 +57,7 @@ def dereverb_wpe_numpy(
 
     from nara_wpe.wpe import wpe_v8
 
-    assert audio.ndim == 2
+    assert audio.ndim == 2, f"Expected 2D audio shape, got: {audio.shape}"
 
     window = torch.blackman_window(n_fft)
     Y = torch.stft(
@@ -89,6 +93,12 @@ def dereverb_wpe_torch(
     iterations: int = 3,
     statistics_mode: str = "full",
 ) -> torch.Tensor:
+    """
+    Applies WPE-based dereverberation using nara_wpe's wpe_v6 function with PyTorch backend.
+    The parameter defaults follow the ones in nara_wpe.
+
+    .. caution:: The PyTorch backend is known to sometimes be less stable than the numpy backend.
+    """
     if not is_module_available("nara_wpe"):
         raise ImportError(
             "Please install nara_wpe first using 'pip install git+https://github.com/fgnt/nara_wpe'"
