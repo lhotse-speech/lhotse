@@ -15,7 +15,7 @@ from lhotse.audio import (
     set_audio_duration_mismatch_tolerance,
 )
 from lhotse.testing.dummies import DummyManifest
-from lhotse.utils import INT16MAX, fastcopy
+from lhotse.utils import INT16MAX, fastcopy, is_module_available
 from lhotse.utils import nullcontext as does_not_raise
 
 
@@ -231,6 +231,10 @@ def test_recording_perturb_speed(recording, factor, affix_id):
     assert samples.shape[1] == rec_sp.num_samples
 
 
+@pytest.mark.skipif(
+    not is_module_available("nara_wpe"),
+    reason="This test requires nara_wpe to be installed.",
+)
 @pytest.mark.parametrize("affix_id", [True, False])
 def test_recording_dereverb_wpe(recording, affix_id):
     rec_wpe = recording.dereverb_wpe(affix_id=affix_id)

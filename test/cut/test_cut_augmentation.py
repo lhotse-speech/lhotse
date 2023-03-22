@@ -6,7 +6,7 @@ from lhotse import AudioSource, CutSet, MonoCut, Recording, SupervisionSegment
 from lhotse.audio import RecordingSet
 from lhotse.cut import PaddingCut
 from lhotse.testing.dummies import dummy_cut, dummy_multi_cut
-from lhotse.utils import fastcopy
+from lhotse.utils import fastcopy, is_module_available
 
 
 @pytest.fixture
@@ -449,6 +449,10 @@ def test_mixed_cut_start01_reverb_rir_multi_channel(
             mixed_cut.reverb_rir(multi_channel_rir, rir_channels=rir_channels)
 
 
+@pytest.mark.skipif(
+    not is_module_available("nara_wpe"),
+    reason="This test requires nara_wpe to be installed.",
+)
 @pytest.mark.parametrize("affix_id", [True, False])
 def test_mono_cut_dereverb_wpe(affix_id):
     cut = dummy_cut(0, with_data=True)
@@ -464,6 +468,10 @@ def test_mono_cut_dereverb_wpe(affix_id):
     assert (samples != samples_wpe).any()
 
 
+@pytest.mark.skipif(
+    not is_module_available("nara_wpe"),
+    reason="This test requires nara_wpe to be installed.",
+)
 @pytest.mark.parametrize("affix_id", [True, False])
 def test_multi_cut_dereverb_wpe(affix_id):
     cut = dummy_multi_cut(0, with_data=True)
