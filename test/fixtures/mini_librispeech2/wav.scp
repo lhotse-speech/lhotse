@@ -1,0 +1,3 @@
+lbi-3536-23268-0000   sox  -r  16000  -b16  -c  1  --null  -t  wav  -  synth  318240s  sine  300-3300  |
+lbi-6241-61943-0000   sox  -r  16000  -b16  -c  1  --null  -t  wav  -  synth  111200s  sine  300-3300  |
+lbi-8842-304647-0000  sox  -r  16000  -b16  -c  1  --null  -t  wav  -  synth  155360s  sine  300-3300  |
