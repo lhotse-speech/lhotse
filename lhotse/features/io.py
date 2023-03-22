@@ -946,6 +946,7 @@ class LilcomURLWriter(FeaturesWriter):
 Kaldi-compatible feature reader
 """
 
+
 def check_kaldi_native_io_installed():
     if not is_module_available("kaldi_native_io"):
         raise ValueError(
@@ -990,6 +991,7 @@ class KaldiReader(FeaturesReader):
         else:
             check_kaldi_native_io_installed()
             import kaldi_native_io
+
             self.storage = None
             self.reader = kaldi_native_io.FloatMatrix
 
