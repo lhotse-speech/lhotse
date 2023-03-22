@@ -5,7 +5,8 @@ import torch
 from lhotse import AudioSource, CutSet, MonoCut, Recording, SupervisionSegment
 from lhotse.audio import RecordingSet
 from lhotse.cut import PaddingCut
-from lhotse.utils import fastcopy
+from lhotse.testing.dummies import dummy_cut, dummy_multi_cut
+from lhotse.utils import fastcopy, is_module_available
 
 
 @pytest.fixture
@@ -446,6 +447,44 @@ def test_mixed_cut_start01_reverb_rir_multi_channel(
     else:
         with pytest.raises(AssertionError):
             mixed_cut.reverb_rir(multi_channel_rir, rir_channels=rir_channels)
+
+
+@pytest.mark.skipif(
+    not is_module_available("nara_wpe"),
+    reason="This test requires nara_wpe to be installed.",
+)
+@pytest.mark.parametrize("affix_id", [True, False])
+def test_mono_cut_dereverb_wpe(affix_id):
+    cut = dummy_cut(0, with_data=True)
+    cut_wpe = cut.dereverb_wpe(affix_id=affix_id)
+    if affix_id:
+        assert cut_wpe.id == f"{cut.id}_wpe"
+    else:
+        assert cut_wpe.id == cut.id
+    samples = cut.load_audio()
+    samples_wpe = cut_wpe.load_audio()
+    assert samples_wpe.shape[0] == cut_wpe.num_channels
+    assert samples_wpe.shape[1] == cut_wpe.num_samples
+    assert (samples != samples_wpe).any()
+
+
+@pytest.mark.skipif(
+    not is_module_available("nara_wpe"),
+    reason="This test requires nara_wpe to be installed.",
+)
+@pytest.mark.parametrize("affix_id", [True, False])
+def test_multi_cut_dereverb_wpe(affix_id):
+    cut = dummy_multi_cut(0, with_data=True)
+    cut_wpe = cut.dereverb_wpe(affix_id=affix_id)
+    if affix_id:
+        assert cut_wpe.id == f"{cut.id}_wpe"
+    else:
+        assert cut_wpe.id == cut.id
+    samples = cut.load_audio()
+    samples_wpe = cut_wpe.load_audio()
+    assert samples_wpe.shape[0] == cut_wpe.num_channels
+    assert samples_wpe.shape[1] == cut_wpe.num_samples
+    assert (samples != samples_wpe).any()
 
 
 def test_padding_cut_perturb_speed():

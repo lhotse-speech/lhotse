@@ -907,6 +907,20 @@ class DataCut(Cut, metaclass=ABCMeta):
             supervisions=supervisions_vp,
         )
 
+    def dereverb_wpe(self, affix_id: bool = True) -> "DataCut":
+        """
+        Return a new ``DataCut`` that will lazily apply WPE dereverberation.
+
+        :param affix_id: When true, we will modify the ``DataCut.id`` field
+            by affixing it with "_wpe".
+        :return: a modified copy of the current ``DataCut``.
+        """
+        return fastcopy(
+            self,
+            id=f"{self.id}_wpe" if affix_id else self.id,
+            recording=self.recording.dereverb_wpe(affix_id=affix_id),
+        )
+
     @abstractmethod
     def reverb_rir(
         self,
