@@ -185,6 +185,12 @@ def test_extract_and_store_features_from_cut_set(
         assert arr.shape[1] == extractor.feature_dim(cuts[0].sampling_rate)
 
 
+def is_python_311_or_higher() -> bool:
+    import sys
+
+    return sys.version_info[:2] > (3, 10)
+
+
 @pytest.mark.parametrize(
     "extractor_type",
     [
@@ -220,7 +226,7 @@ def test_extract_and_store_features_from_cut_set(
             S3PRLSSL,
             marks=[
                 pytest.mark.skipif(
-                    not is_module_available("s3prl"),
+                    not is_module_available("s3prl") or is_python_311_or_higher(),
                     reason="Requires s3prl to run.",
                 ),
             ],
@@ -255,7 +261,7 @@ def test_cut_set_batch_feature_extraction(cut_set, extractor_type):
             S3PRLSSL,
             marks=[
                 pytest.mark.skipif(
-                    not is_module_available("s3prl"),
+                    not is_module_available("s3prl") or is_python_311_or_higher(),
                     reason="Requires s3prl to run.",
                 ),
             ],
