@@ -10,7 +10,7 @@ from lhotse import RecordingSet, SupervisionSet
 from lhotse.cut import CutSet, MixedCut, MixTrack
 from lhotse.cut.set import mix
 from lhotse.parallel import parallel_map
-from lhotse.utils import uuid4
+from lhotse.utils import add_durations, uuid4
 from lhotse.workflows.meeting_simulation.base import (
     MAX_TASKS_WAITING,
     BaseMeetingSimulator,
@@ -167,22 +167,31 @@ class ConversationalMeetingSimulator(BaseMeetingSimulator):
             [Default: False]
         :return: a MixedCut object.
         """
-        # We keep track of the end time of the last utterance for each speaker.
         speakers = utterances.speakers
-        last_utt_end = {spkr: 0.0 for spkr in speakers}
-        last_utt_end_times = sorted(list(last_utt_end.values()), reverse=True)
 
         # Generate pause/overlap timings for all utterances.
         N = len(utterances)
-        same_spk_pauses = self.same_spk_pause_dist.rvs(size=N)
-        diff_spk_pauses = self.diff_spk_pause_dist.rvs(size=N)
-        diff_spk_overlaps = self.diff_spk_overlap_dist.rvs(size=N)
+        same_spk_pauses = [round(x, 2) for x in self.same_spk_pause_dist.rvs(size=N)]
+        diff_spk_pauses = [round(x, 2) for x in self.diff_spk_pause_dist.rvs(size=N)]
+        diff_spk_overlaps = [
+            round(x, 2) for x in self.diff_spk_overlap_dist.rvs(size=N)
+        ]
         diff_spk_bernoulli = self.bernoulli.rvs(p=self.prob_diff_spk_overlap, size=N)
 
         utterances = list(utterances.data.values())
         # First sample offsets for each utterance. These are w.r.t. start of the meeting.
+        # For each subsequent utterance, we sample a pause or overlap time from the
+        # corresponding distribution. Then, we add the pause/overlap time to the offset
+        # of the previous utterance to get the offset of the current utterance.
         offsets = [0.0]
         cur_offset = utterances[0].duration
+
+        # We keep track of the end time of the last utterance for each speaker.
+        first_spk = utterances[0].supervisions[0].speaker
+        last_utt_end = {spkr: 0.0 for spkr in speakers}
+        last_utt_end[first_spk] = cur_offset
+        last_utt_end_times = sorted(list(last_utt_end.values()), reverse=True)
+        sr = utterances[0].sampling_rate
 
         for i in range(1, len(utterances)):
             cur_spk = utterances[i].supervisions[0].speaker
@@ -201,36 +210,55 @@ class ConversationalMeetingSimulator(BaseMeetingSimulator):
                         # third term for ensuring the maximum number of overlaps is two.
                         ot = min(
                             ot,
-                            cur_offset - last_utt_end[cur_spk],
-                            cur_offset - last_utt_end_times[1],
+                            add_durations(
+                                cur_offset, -last_utt_end[cur_spk], sampling_rate=sr
+                            ),
+                            add_durations(
+                                cur_offset, -last_utt_end_times[1], sampling_rate=sr
+                            ),
                         )
                     else:
-                        ot = min(ot, cur_offset - last_utt_end[cur_spk])
+                        ot = min(
+                            ot,
+                            add_durations(
+                                cur_offset, -last_utt_end[cur_spk], sampling_rate=sr
+                            ),
+                        )
                     ot = -ot
 
-            cur_offset += ot
+            cur_offset = add_durations(cur_offset, ot, sampling_rate=sr)
             offsets.append(cur_offset)
-            cur_offset += utterances[i].duration
+            cur_offset = add_durations(
+                cur_offset, utterances[i].duration, sampling_rate=sr
+            )
 
             # Update last_utt_end and last_utt_end_times.
             last_utt_end[cur_spk] = cur_offset
             last_utt_end_times = sorted(list(last_utt_end.values()), reverse=True)
             cur_offset = last_utt_end_times[0]
 
-        # Group utterances (and offsets) by speaker.
+        # Group utterances (and offsets) by speaker. First, we will sort the utterances
+        # by their offsets.
+        utterances, offsets = zip(*sorted(zip(utterances, offsets), key=lambda x: x[1]))
         spk_tracks = defaultdict(list)
         for utt, offset in zip(utterances, offsets):
             spk_tracks[utt.supervisions[0].speaker].append((utt, offset))
 
-        # Now create speaker-wise tracks by mixing their utterances with silence padding.
         tracks = []
         for spk, spk_utts in spk_tracks.items():
             track, start = spk_utts[0]
             for utt, offset in spk_utts[1:]:
-                track = mix(track, utt, offset=offset - start, allow_padding=True)
+                track = mix(
+                    track,
+                    utt,
+                    offset=add_durations(offset, -start, sampling_rate=sr),
+                    allow_padding=True,
+                )
             track = MixTrack(cut=track, type=type(track), offset=start)
             tracks.append(track)
 
+        # sort tracks by track offset
+        tracks = sorted(tracks, key=lambda x: x.offset)
         return MixedCut(id=str(uuid4()), tracks=tracks)
 
     def simulate(
