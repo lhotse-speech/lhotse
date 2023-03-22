@@ -147,7 +147,17 @@ def load_kaldi_data_dir(
     supervision_set = None
     segments = path / "segments"
     utt2spk_f = path / "utt2spk"
+    feats_scp = path / "feats.scp"
+
+    # load mapping from utt_id to start and duration
+    utt_id_to_start_and_duration = load_start_and_duration(
+        segments_path=segments,
+        feats_path=feats_scp,
+        frame_shift=frame_shift,
+    )
+
     if segments.is_file():
+        supervisions = []
         with segments.open() as f:
             supervision_segments = [sup_string.strip().split() for sup_string in f]
 
@@ -156,27 +166,33 @@ def load_kaldi_data_dir(
         genders = load_kaldi_text_mapping(path / "spk2gender")
         languages = load_kaldi_text_mapping(path / "utt2lang")
 
-        # to support <end-time> == -1 in segments file
-        # https://kaldi-asr.org/doc/extract-segments_8cc.html
-        # <end-time> of -1 means the segment runs till the end of the WAV file
-        supervision_set = SupervisionSet.from_segments(
-            SupervisionSegment(
-                id=fix_id(segment_id),
-                recording_id=recording_id,
-                start=float(start),
-                duration=add_durations(
+        for segment_id, recording_id, start, end in supervision_segments:
+            if utt_id_to_start_and_duration:
+                # use duration computed from feats.scp
+                _, duration = utt_id_to_start_and_duration[segment_id]
+            else:
+                # to support <end-time> == -1 in segments file
+                # https://kaldi-asr.org/doc/extract-segments_8cc.html
+                # <end-time> of -1 means the segment runs till the end of the WAV file
+                duration = add_durations(
                     float(end) if end != "-1" else durations[recording_id],
                     -float(start),
                     sampling_rate=sampling_rate,
-                ),
-                channel=0,
-                text=texts[segment_id],
-                language=languages[segment_id],
-                speaker=fix_id(speakers[segment_id]),
-                gender=genders[speakers[segment_id]],
+                )
+            supervisions.append(
+                SupervisionSegment(
+                    id=fix_id(segment_id),
+                    recording_id=recording_id,
+                    start=float(start),
+                    duration=duration,
+                    channel=0,
+                    text=texts[segment_id],
+                    language=languages[segment_id],
+                    speaker=fix_id(speakers[segment_id]),
+                    gender=genders[speakers[segment_id]],
+                )
             )
-            for segment_id, recording_id, start, end in supervision_segments
-        )
+        supervision_set = SupervisionSet.from_segments(supervisions)
     elif utt2spk_f.is_file():
         # segments file does not exist => provided supervision
         # corresponds to whole recordings
@@ -202,7 +218,6 @@ def load_kaldi_data_dir(
         )
 
     feature_set = None
-    feats_scp = path / "feats.scp"
     if feats_scp.exists() and is_module_available("kaldi_native_io"):
         if frame_shift is not None:
             import kaldi_native_io
@@ -215,6 +230,13 @@ def load_kaldi_data_dir(
                     utt_id, ark = line.strip().split(maxsplit=1)
                     mat_shape = kaldi_native_io.MatrixShape.read(ark)
 
+                    # start time is from segments
+                    if utt_id_to_start_and_duration:
+                        start, duration = utt_id_to_start_and_duration[utt_id]
+                    else:
+                        start = 0
+                        duration = mat_shape.num_rows * frame_shift
+
                     features.append(
                         Features(
                             type="kaldi_native_io",
@@ -222,8 +244,8 @@ def load_kaldi_data_dir(
                             num_features=mat_shape.num_cols,
                             frame_shift=frame_shift,
                             sampling_rate=sampling_rate,
-                            start=0,
-                            duration=mat_shape.num_rows * frame_shift,
+                            start=start,
+                            duration=duration,
                             storage_type=KaldiReader.name,
                             storage_path=ark,
                             storage_key=utt_id,
@@ -430,6 +452,41 @@ def export_to_kaldi(
                 },
                 path=output_dir / "utt2gender",
             )
+
+
+def load_start_and_duration(
+    segments_path: Path = None,
+    feats_path: Path = None,
+    frame_shift: Optional[Seconds] = None,
+) -> Dict[Tuple, None]:
+    """
+    Load start time from segments and duration from feats,
+    when both segments and feats.scp are available.
+    """
+    utt_id_to_start_and_duration = {}
+    if (
+        segments_path.is_file()
+        and feats_path.is_file()
+        and is_module_available("kaldi_native_io")
+        and frame_shift is not None
+    ):
+        import kaldi_native_io
+
+        with segments_path.open() as segments_f, feats_path.open() as feats_f:
+            for segments_line, feats_line in zip(segments_f, feats_f):
+                segment_id, _, start, _ = segments_line.strip().split()
+                utt_id, ark = feats_line.strip().split(maxsplit=1)
+                if segment_id != utt_id:
+                    raise ValueError(f"{segments_path} and {feats_path} not aligned.")
+
+                mat_shape = kaldi_native_io.MatrixShape.read(ark)
+                duration = mat_shape.num_rows * frame_shift
+
+                utt_id_to_start_and_duration[utt_id] = (
+                    float(start),
+                    duration,
+                )
+    return utt_id_to_start_and_duration
 
 
 def load_kaldi_text_mapping(
