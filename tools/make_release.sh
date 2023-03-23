@@ -7,6 +7,8 @@ set -x  # show executed commands
 # Clean up old builds.
 rm -rf dist/ build/ lhotse.egg_info/
 
+export LHOTSE_PREPARING_RELEASE=1
+
 # Build wheels and package current source code
 python setup.py sdist bdist_wheel
 
