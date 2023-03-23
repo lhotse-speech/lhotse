@@ -60,7 +60,7 @@ feature-space cut mixing to make the best of both worlds.
 
 ## Installation
 
-Lhotse supports Python version 3.6 and later.
+Lhotse supports Python version 3.7 and later.
 
 ### Pip
 
