@@ -38,7 +38,7 @@ except:
     if _base_version_path.is_file():
         _base_version = open(_base_version_path).read().strip()
         _dev_marker = ""
-        if not _environ.get("LHOTSE_PREPARING_RELEASE", True):
+        if not _environ.get("LHOTSE_PREPARING_RELEASE", False):
             _dev_marker = ".dev"
         __version__ = f"{_base_version}{_dev_marker}+missing.version.file"
     else:

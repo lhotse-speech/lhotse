@@ -30,7 +30,7 @@ author = "Lhotse development team"
 
 VERSION = open(Path(".").parent / "VERSION").read().strip()
 dev_marker = ""
-if not os.environ.get("LHOTSE_PREPARING_RELEASE", True):
+if not os.environ.get("LHOTSE_PREPARING_RELEASE", False):
     dev_marker = ".dev"
 release = f"{VERSION}{dev_marker}"
 
