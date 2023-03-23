@@ -54,7 +54,7 @@ project_root = Path(__file__).parent
 # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! #
 VERSION = open(project_root / "VERSION").read().strip()
 IS_DEV_VERSION = not bool(
-    os.environ.get("LHOTSE_PREPARING_RELEASE", True)
+    os.environ.get("LHOTSE_PREPARING_RELEASE", False)
 )  # False = public release, True = otherwise
 
 
