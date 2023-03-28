@@ -162,7 +162,7 @@ def _prepare_train(
 
         if train_path_splits[0] == BACKGROUND_NOISE:
             speaker = None
-            text = None
+            text = ""
         else:
             speaker = audio_file_name_splits[0]
             text = train_path_splits[0].strip()
@@ -217,7 +217,7 @@ def _prepare_valid(
 
         if valid_path_splits[0] == BACKGROUND_NOISE:
             speaker = None
-            text = None
+            text = ""
         else:
             speaker = audio_file_name_splits[0]
             text = valid_path_splits[0].strip()
@@ -285,7 +285,7 @@ def _prepare_test(
             text = test_path_splits[0].strip()
         elif test_path_splits[0] == SILENCE:
             speaker = None
-            text = None
+            text = ""
         elif test_path_splits[0] == UNKNOWN:
             speaker = audio_file_name_splits[1]
             text = audio_file_name_splits[0].strip()
