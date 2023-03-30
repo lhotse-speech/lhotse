@@ -21,7 +21,7 @@ from lhotse.utils import Pathlike
 _SPLITS = ["small", "medium", "large"]
 
 
-def _prepare_split(
+def _prepare_subset(
     subset: str,
     corpus_dir: Pathlike,
 ) -> Tuple[RecordingSet, SupervisionSet]:
@@ -111,7 +111,7 @@ def prepare_librilight(
             logging.info(f"LibriLight subset: {part} already prepared - skipping.")
             continue
 
-        recording_set, supervision_set = _prepare_split(part, corpus_dir)
+        recording_set, supervision_set = _prepare_subset(part, corpus_dir)
 
         if output_dir is not None:
             supervision_set.to_file(
