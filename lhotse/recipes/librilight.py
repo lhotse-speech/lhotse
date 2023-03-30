@@ -122,6 +122,3 @@ def prepare_librilight(
         manifests[part] = {"recordings": recording_set, "supervisions": supervision_set}
 
     return manifests
-
-
-prepare_librilight("/data/LibriLight", ".")

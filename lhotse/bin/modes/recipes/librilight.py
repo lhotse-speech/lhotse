@@ -4,7 +4,6 @@ import click
 
 from lhotse.bin.modes import download, prepare
 from lhotse.recipes.librilight import prepare_librilight
-)
 from lhotse.utils import Pathlike
 
 
