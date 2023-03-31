@@ -15,8 +15,8 @@ This data is very huge - please download manually at LIBRILIGHT_URL.
 
 import logging
 import os
-from concurrent.futures.thread import ThreadPoolExecutor
 from collections import defaultdict
+from concurrent.futures.thread import ThreadPoolExecutor
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Tuple, Union
 
@@ -32,7 +32,7 @@ LIBRILIGHT = ("small", "medium", "large")
 LIBRILIGHT_URL = (
     "https://dl.fbaipublicfiles.com/librilight/data/small.tar",
     "https://dl.fbaipublicfiles.com/librilight/data/medium.tar",
-    "https://dl.fbaipublicfiles.com/librilight/data/large.tar",   
+    "https://dl.fbaipublicfiles.com/librilight/data/large.tar",
 )
 
 
