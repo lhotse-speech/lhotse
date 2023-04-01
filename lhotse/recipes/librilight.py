@@ -78,7 +78,7 @@ def _prepare_subset(
     """
     corpus_dir = Path(corpus_dir)
     part_path = corpus_dir / subset
-    audio_paths = list(part_path.rglob('*.flac'))
+    audio_paths = list(part_path.rglob("*.flac"))
 
     with ThreadPoolExecutor(num_jobs) as ex:
         futures = []
