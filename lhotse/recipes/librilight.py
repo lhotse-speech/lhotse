@@ -40,9 +40,9 @@ def _parse_utterance(
     corpus_dir: Pathlike,
     audio_path: Pathlike,
 ) -> Optional[Tuple[Recording, SupervisionSegment]]:
-    file_name = audio_path.replace(".flac", "").replace(str(corpus_dir) + "/", "")
-    speaker = audio_path.split("/")[-3]
-    audio_path = Path(audio_path).resolve()
+    file_name = str(audio_path).replace(".flac", "").replace(str(corpus_dir) + "/", "")
+    speaker = str(audio_path).split("/")[-3]
+    audio_path = audio_path.resolve()
 
     if not audio_path.is_file():
         logging.warning(f"No such file: {audio_path}")
@@ -78,14 +78,7 @@ def _prepare_subset(
     """
     corpus_dir = Path(corpus_dir)
     part_path = corpus_dir / subset
-    audio_paths = []
-    for root, dirs, files in os.walk(part_path):
-        if len(dirs) == 0:
-            audio_paths += [
-                os.path.join(root, file_path)
-                for file_path in files
-                if file_path.endswith(".flac")
-            ]
+    audio_paths = list(part_path.rglob('*.flac'))
 
     with ThreadPoolExecutor(num_jobs) as ex:
         futures = []
