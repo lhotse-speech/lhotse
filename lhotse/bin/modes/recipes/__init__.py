@@ -36,6 +36,7 @@ from .himia import *
 from .icsi import *
 from .l2_arctic import *
 from .libricss import *
+from .librilight import *
 from .librimix import *
 from .librispeech import *
 from .libritts import *

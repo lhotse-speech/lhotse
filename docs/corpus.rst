@@ -111,6 +111,8 @@ a CLI tool that create the manifests given a corpus directory.
     - :func:`lhotse.recipes.prepare_l2_arctic`
   * - LibriCSS
     - :func:`lhotse.recipes.prepare_libricss`
+  * - LibriLight
+    - :func:`lhotse.recipes.prepare_librilight`
   * - LibriSpeech (including "mini")
     - :func:`lhotse.recipes.prepare_librispeech`
   * - LibriTTS
