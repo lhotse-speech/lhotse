@@ -10,7 +10,7 @@ from lhotse import RecordingSet, SupervisionSet
 from lhotse.cut import CutSet, MixedCut, MixTrack
 from lhotse.cut.set import mix
 from lhotse.parallel import parallel_map
-from lhotse.utils import add_durations, fix_random_seed, uuid4
+from lhotse.utils import add_durations, uuid4
 from lhotse.workflows.meeting_simulation.base import (
     MAX_TASKS_WAITING,
     BaseMeetingSimulator,
@@ -237,22 +237,15 @@ class ConversationalMeetingSimulator(BaseMeetingSimulator):
             last_utt_end_times = sorted(list(last_utt_end.values()), reverse=True)
             cur_offset = last_utt_end_times[0]
 
-        # Group utterances (and offsets) by speaker. At this point, all utterances for
-        # a given speaker are sorted by offset.
+        # Group utterances (and offsets) by speaker. First, we will sort the utterances
+        # by their offsets.
+        utterances, offsets = zip(*sorted(zip(utterances, offsets), key=lambda x: x[1]))
         spk_tracks = defaultdict(list)
         for utt, offset in zip(utterances, offsets):
             spk_tracks[utt.supervisions[0].speaker].append((utt, offset))
 
-        # Now create speaker-wise tracks by mixing their utterances with silence padding.
-        # We sort the speakers by the offset of their first utterance.
-        spk_tracks = [
-            (spk, spk_utts)
-            for spk, spk_utts in sorted(
-                spk_tracks.items(), key=lambda x: (x[0], x[1][0][1])
-            )
-        ]
         tracks = []
-        for spk, spk_utts in spk_tracks:
+        for spk, spk_utts in spk_tracks.items():
             track, start = spk_utts[0]
             for utt, offset in spk_utts[1:]:
                 track = mix(
@@ -264,6 +257,8 @@ class ConversationalMeetingSimulator(BaseMeetingSimulator):
             track = MixTrack(cut=track, type=type(track), offset=start)
             tracks.append(track)
 
+        # sort tracks by track offset
+        tracks = sorted(tracks, key=lambda x: x.offset)
         return MixedCut(id=str(uuid4()), tracks=tracks)
 
     def simulate(
@@ -320,7 +315,6 @@ class ConversationalMeetingSimulator(BaseMeetingSimulator):
         if getattr(self, "same_spk_pause_dist", None) is None:
             self._init_defaults()
 
-        fix_random_seed(seed)
         # Create random number generators with the given seed.
         self.bernoulli = bernoulli
 

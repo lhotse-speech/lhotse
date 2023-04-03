@@ -1,13 +1,14 @@
 from collections import defaultdict
 from typing import Callable, Dict, List, Union
 
+import numpy as np
 import torch
-from torch.utils.data.dataloader import default_collate
+import torch.nn.functional as F
 
 from lhotse import validate
 from lhotse.cut import CutSet
 from lhotse.dataset.input_strategies import BatchIO, PrecomputedFeatures
-from lhotse.utils import ifnone
+from lhotse.utils import compute_num_frames, ifnone
 from lhotse.workarounds import Hdf5MemoryIssueFix
 
 
@@ -56,18 +57,26 @@ class K2SurtDataset(torch.utils.data.Dataset):
     def __init__(
         self,
         return_cuts: bool = False,
+        return_sources: bool = False,
         return_alignments: bool = False,
         num_channels: int = 2,
         text_delimiter: str = " ",
         cut_transforms: List[Callable[[CutSet], CutSet]] = None,
         input_transforms: List[Callable[[torch.Tensor], torch.Tensor]] = None,
         input_strategy: BatchIO = PrecomputedFeatures(),
+        pad_value: float = -1000.0,
+        strict: bool = False,
     ):
         """
         k2 ASR IterableDataset constructor.
 
         :param return_cuts: When ``True``, will additionally return a "cut" field in each batch with the Cut
             objects used to create that batch.
+        :param return_sources: When ``True``, will additionally return a "source_feats" field and a "source_boundaries"
+            field in each batch. The "source_feats" field contains the features of the source cuts from
+            which the mixture was created, and "source_boundaries" contains the boundaries of the source cuts
+            in the mixture (in number of frames). This requires that the cuts contain additional fields
+            ``source_feats`` (which is a TemporalArray) and ``source_feat_offsets`` (which is a list of ints).
         :param return_alignments: When ``True``, will keep the supervision alignments if they
             are present in the cuts.
         :param num_channels: Number of output branches. The supervision utterances will be
@@ -80,16 +89,23 @@ class K2SurtDataset(torch.utils.data.Dataset):
         :param input_transforms: A list of transforms to be applied on each sampled batch,
             after the cuts are converted to audio/features.
             Examples: normalization, SpecAugment, etc.
+        :param input_strategy: The strategy used to convert the cuts to audio/features.
+        :param pad_value: The value used to pad the source features to resolve one-off errors.
+        :param strict: If ``True``, we will remove cuts that have more simultaneous supervisions
+            than the number of channels. If ``False``, we will keep them.
         """
         super().__init__()
         # Initialize the fields
         self.return_cuts = return_cuts
+        self.return_sources = return_sources
         self.return_alignments = return_alignments
         self.num_channels = num_channels
         self.text_delimiter = text_delimiter
         self.cut_transforms = ifnone(cut_transforms, [])
         self.input_transforms = ifnone(input_transforms, [])
         self.input_strategy = input_strategy
+        self.pad_value = pad_value
+        self.strict = strict
 
         # This attribute is a workaround to constantly growing HDF5 memory
         # throughout the epoch. It regularly closes open file handles to
@@ -116,25 +132,22 @@ class K2SurtDataset(torch.utils.data.Dataset):
         for tnfm in self.cut_transforms:
             cuts = tnfm(cuts)
 
-        # Get a tensor with batched feature matrices, shape (B, T, F)
-        # Collation performs auto-padding, if necessary.
-        input_tpl = self.input_strategy(cuts)
-        if len(input_tpl) == 3:
-            # An input strategy with fault tolerant audio reading mode.
-            # "cuts" may be a subset of the original "cuts" variable,
-            # that only has cuts for which we succesfully read the audio.
-            inputs, input_lens, cuts = input_tpl
-        else:
-            inputs, input_lens = input_tpl
-
         # Assign supervisions to channels based on their start times.
         # ``supervisions`` is a dict indexed by cut id, and each value is a list of
         # lists of supervisions. The outer list is indexed by channel, and the inner
         # list contains the supervisions for that channel.
         supervisions = defaultdict(list)
+        invalid_cuts = []
+        source_feats = []
+        source_boundaries = []
+
         for cut in cuts:
             cut_sups = [[] for _ in range(self.num_channels)]
             last_sup_end = [0.0 for _ in range(self.num_channels)]
+
+            cut_sources = []
+            cut_source_boundaries = []
+            invalid_cut = False
 
             for sup in sorted(cut.supervisions, key=lambda s: s.start):
                 # Assign the supervision to the first channel that is either empty or
@@ -154,10 +167,68 @@ class K2SurtDataset(torch.utils.data.Dataset):
                     # number of available channels. In this case, we assign the supervision
                     # so as to minimize the overlapping part. For this, we select the
                     # channel which ends the earliest.
+                    invalid_cut = True
                     min_end_channel = last_sup_end.index(min(last_sup_end))
                     cut_sups[min_end_channel].append(sup)
+                    last_sup_end[min_end_channel] = max(
+                        last_sup_end[min_end_channel], sup.end
+                    )
 
+            if self.return_sources:
+                source_feat_offsets = cut.source_feat_offsets
+                assert len(source_feat_offsets) == len(cut.supervisions), (
+                    "The number of source feature offsets should be equal to the number of supervisions."
+                    f"Got {len(source_feat_offsets)} offsets for {len(cut.supervisions)} supervisions."
+                )
+                # To get cut_sources, we split the source_feats into a list of tensors
+                # based on the source_feat_offsets.
+                cut_sources = [
+                    torch.from_numpy(x)
+                    for x in np.split(cut.load_source_feats(), source_feat_offsets[1:])
+                ]
+                # To get cut_source_boundaries, we create (start, end) tuples based on
+                # the supervision start and end times.
+                cut_source_boundaries = [
+                    (
+                        compute_num_frames(
+                            sup.start, cut.frame_shift, cut.sampling_rate
+                        ),
+                        compute_num_frames(sup.end, cut.frame_shift, cut.sampling_rate),
+                    )
+                    for sup in sorted(
+                        cut.supervisions, key=lambda s: (s.start, s.speaker)
+                    )
+                ]
+                # Adjust the source feats to fix one-off errors in the source_feat_offsets.
+                cut_sources = [
+                    adjust_source_feats(x, end - start, padding_value=self.pad_value)
+                    for x, (start, end) in zip(cut_sources, cut_source_boundaries)
+                ]
+
+            if invalid_cut and self.strict:
+                invalid_cuts.append(cut.id)
+                continue
             supervisions[cut.id] = cut_sups
+            source_feats.append(cut_sources)
+            source_boundaries.append(cut_source_boundaries)
+
+        # Remove invalid cuts.
+        if len(invalid_cuts) > 0:
+            print(
+                f"WARNING: {len(invalid_cuts)} cuts were removed out of {len(cuts)} due to more overlapping speakers than channels."
+            )
+            cuts = cuts.filter(lambda cut: cut.id not in invalid_cuts)
+
+        # Get a tensor with batched feature matrices, shape (B, T, F)
+        # Collation performs auto-padding, if necessary.
+        input_tpl = self.input_strategy(cuts)
+        if len(input_tpl) == 3:
+            # An input strategy with fault tolerant audio reading mode.
+            # "cuts" may be a subset of the original "cuts" variable,
+            # that only has cuts for which we succesfully read the audio.
+            inputs, input_lens, cuts = input_tpl
+        else:
+            inputs, input_lens = input_tpl
 
         batch = {
             "inputs": inputs,
@@ -173,7 +244,41 @@ class K2SurtDataset(torch.utils.data.Dataset):
         }
         if self.return_cuts:
             batch["cuts"] = cuts
+        if self.return_sources:
+            batch["source_feats"] = source_feats
+            batch["source_boundaries"] = source_boundaries
         return batch
+
+
+def adjust_source_feats(feats, num_frames, padding_value=0.0, tol=2):
+    """
+    Adjust the number of frames in the source features to match the supervision.
+    If the source features have fewer frames than the supervision, we pad them
+    to match the supervision. If the source features have more frames than the
+    supervision, we trim them to match the supervision.
+
+    Args:
+        feats: Source features.
+        num_frames: Number of frames in the supervision.
+        padding_value: Value to use for padding.
+        tol: Tolerance for checking if the number of frames in the source features
+            is close to the number of frames in the supervision.
+    """
+    if feats.shape[0] == num_frames:
+        return feats
+    elif abs(feats.shape[0] - num_frames) > tol:
+        raise ValueError(
+            f"Number of frames in the source features ({feats.shape[0]}) is not close to "
+            f"the number of frames in the supervision ({num_frames})."
+        )
+    elif feats.shape[0] < num_frames:
+        # If the source features have fewer frames than the supervision,
+        # we pad them to match the supervision.
+        return F.pad(feats, (0, 0, 0, num_frames - feats.shape[0]), value=padding_value)
+    else:
+        # If the source features have more frames than the supervision,
+        # we trim them to match the supervision.
+        return feats[:num_frames]
 
 
 def validate_for_asr(cuts: CutSet) -> None:

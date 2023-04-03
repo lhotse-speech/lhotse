@@ -28,7 +28,7 @@ class LazySharIterator(ImitatesDict):
     one or more binary tarfiles.
     Each tarfile contains a single type of data, e.g., recordings, features, or custom fields.
 
-    Given an example directory named ``some_dir`, its expected layout is
+    Given an example directory named ``some_dir``, its expected layout is
     ``some_dir/cuts.000000.jsonl.gz``, ``some_dir/recording.000000.tar``,
     ``some_dir/features.000000.tar``, and then the same names but numbered with ``000001``, etc.
     There may also be other files if the cuts have custom data attached to them.
@@ -50,37 +50,49 @@ class LazySharIterator(ImitatesDict):
     We can simply load a directory created by :class:`~lhotse.shar.writers.shar.SharWriter`.
     Example::
 
-    >>> cuts = LazySharIterator(in_dir="some_dir")
-    ... for cut in cuts:
-    ...     print("Cut", cut.id, "has duration of", cut.duration)
-    ...     audio = cut.load_audio()
-    ...     fbank = cut.load_features()
+        >>> cuts = LazySharIterator(in_dir="some_dir")
+        ... for cut in cuts:
+        ...     print("Cut", cut.id, "has duration of", cut.duration)
+        ...     audio = cut.load_audio()
+        ...     fbank = cut.load_features()
 
     :class:`.LazySharIterator` can also be initialized from a dict, where the keys
     indicate fields to be read, and the values point to actual shard locations.
     This is useful when only a subset of data is needed, or it is stored in different
     directories. Example::
 
-    >>> cuts = LazySharIterator({
-    ...     "cuts": ["some_dir/cuts.000000.jsonl.gz"],
-    ...     "recording": ["another_dir/recording.000000.tar"],
-    ...     "features": ["yet_another_dir/features.000000.tar"],
-    ... })
-    ... for cut in cuts:
-    ...     print("Cut", cut.id, "has duration of", cut.duration)
-    ...     audio = cut.load_audio()
-    ...     fbank = cut.load_features()
+        >>> cuts = LazySharIterator({
+        ...     "cuts": ["some_dir/cuts.000000.jsonl.gz"],
+        ...     "recording": ["another_dir/recording.000000.tar"],
+        ...     "features": ["yet_another_dir/features.000000.tar"],
+        ... })
+        ... for cut in cuts:
+        ...     print("Cut", cut.id, "has duration of", cut.duration)
+        ...     audio = cut.load_audio()
+        ...     fbank = cut.load_features()
 
     We also support providing shell commands as shard sources, inspired by WebDataset.
     Example::
 
-    >>> cuts = LazySharIterator({
-    ...     "cuts": ["pipe:curl https://my.page/cuts.000000.jsonl.gz"],
-    ...     "recording": ["pipe:curl https://my.page/recording.000000.tar"],
-    ... })
-    ... for cut in cuts:
-    ...     print("Cut", cut.id, "has duration of", cut.duration)
-    ...     audio = cut.load_audio()
+        >>> cuts = LazySharIterator({
+        ...     "cuts": ["pipe:curl https://my.page/cuts.000000.jsonl.gz"],
+        ...     "recording": ["pipe:curl https://my.page/recording.000000.tar"],
+        ... })
+        ... for cut in cuts:
+        ...     print("Cut", cut.id, "has duration of", cut.duration)
+        ...     audio = cut.load_audio()
+
+    Finally, we allow specifying URLs or cloud storage URIs for the shard sources.
+    We defer to ``smart_open`` library to handle those.
+    Example::
+
+        >>> cuts = LazySharIterator({
+        ...     "cuts": ["s3://my-bucket/cuts.000000.jsonl.gz"],
+        ...     "recording": ["s3://my-bucket/recording.000000.tar"],
+        ... })
+        ... for cut in cuts:
+        ...     print("Cut", cut.id, "has duration of", cut.duration)
+        ...     audio = cut.load_audio()
 
     :param fields: a dict whose keys specify which fields to load,
         and values are lists of shards (either paths or shell commands).

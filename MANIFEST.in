@@ -1,4 +1,4 @@
-include LICENSE README.md
+include LICENSE README.md VERSION
 include docs/requirements.txt
 recursive-exclude * __pycache__
 recursive-exclude * *.pyc

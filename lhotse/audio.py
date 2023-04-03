@@ -35,6 +35,7 @@ from tqdm.auto import tqdm
 
 from lhotse.augmentation import (
     AudioTransform,
+    DereverbWPE,
     Resample,
     ReverbWithImpulseResponse,
     Speed,
@@ -703,6 +704,22 @@ class Recording:
         return fastcopy(
             self,
             id=f"{self.id}_vp{factor}" if affix_id else self.id,
+            transforms=transforms,
+        )
+
+    def dereverb_wpe(self, affix_id: bool = True) -> "Recording":
+        """
+        Return a new ``Recording`` that will lazily apply WPE dereverberation.
+
+        :param affix_id: When true, we will modify the ``Recording.id`` field
+            by affixing it with "_wpe".
+        :return: a modified copy of the current ``Recording``.
+        """
+        transforms = self.transforms.copy() if self.transforms is not None else []
+        transforms.append(DereverbWPE().to_dict())
+        return fastcopy(
+            self,
+            id=f"{self.id}_wpe" if affix_id else self.id,
             transforms=transforms,
         )
 
