@@ -921,10 +921,32 @@ class DataCut(Cut, metaclass=ABCMeta):
             by affixing it with "_wpe".
         :return: a modified copy of the current ``DataCut``.
         """
+        # Pre-conditions
+        assert self.has_recording, "Cannot apply WPE on a MonoCut without Recording."
+        if self.has_features:
+            logging.warning(
+                "Attempting to reverberate a MonoCut that references pre-computed features. "
+                "The feature manifest will be detached, as we do not support feature-domain "
+                "reverberation."
+            )
+            self.features = None
+
+        # Add WPE to the recording.
+        recording_wpe = self.recording.dereverb_wpe(affix_id=affix_id)
+        # Match the supervision's id (and it's underlying recording id).
+        supervisions_wpe = [
+            fastcopy(
+                s,
+                id=f"{s.id}_wpe" if affix_id else s.id,
+                recording_id=f"{s.recording_id}_wpe" if affix_id else s.recording_id,
+            )
+            for s in self.supervisions
+        ]
         return fastcopy(
             self,
             id=f"{self.id}_wpe" if affix_id else self.id,
-            recording=self.recording.dereverb_wpe(affix_id=affix_id),
+            recording=recording_wpe,
+            supervisions=supervisions_wpe,
         )
 
     @abstractmethod
