@@ -1505,6 +1505,16 @@ class CutSet(Serializable, AlgorithmMixin):
             lambda cut: cut.perturb_volume(factor=factor, affix_id=affix_id)
         )
 
+    def dereverb_wpe(self, affix_id: bool = True) -> "CutSet":
+        """
+        Return a new :class:`~lhotse.cut.CutSet` that will lazily apply WPE dereverberation.
+
+        :param affix_id: When true, we will modify the ``Cut.id`` field
+            by affixing it with "_wpe".
+        :return: a modified copy of the current ``CutSet``.
+        """
+        return self.map(lambda cut: cut.dereverb_wpe(affix_id=affix_id))
+
     def reverb_rir(
         self,
         rir_recordings: Optional["RecordingSet"] = None,
