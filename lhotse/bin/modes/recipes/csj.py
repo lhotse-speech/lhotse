@@ -11,21 +11,17 @@ __all__ = ["csj"]
 
 @prepare.command(context_settings=dict(show_default=True))
 @click.argument("corpus_dir", type=click.Path(exists=True, dir_okay=True))
-@click.argument("transcript_dir", type=click.Path())
 @click.argument("manifest_dir", type=click.Path())
 @click.option(
-    "-c",
-    "--configs",
-    type=click.Path(exists=True, file_okay=True),
+    "-t",
+    "--transcript-dir",
+    type=click.Path(),
     default=None,
-    multiple=True,
     help=(
-        "List of .ini config files to use when parsing transcripts. "
-        "Pass each with `-c`. Example: "
-        "`-c local/config/disfluent.ini -c local/config/fluent.ini` "
-        "NOTE: Only the segment specifications in the first config file are "
-        "used. The remaining config files that come after will inherit "
-        "the segment boundaries of the first config file. "
+        "Directory to save parsed transcripts in txt format, with "
+        "valid and eval sets created from the core and noncore datasets. "
+        "If not provided, this script will not create valid and eval "
+        "sets."
     ),
 )
 @click.option(
@@ -49,19 +45,17 @@ __all__ = ["csj"]
 )
 def csj(
     corpus_dir: Pathlike,
-    transcript_dir: Pathlike,
     manifest_dir: Pathlike,
-    configs: Union[Pathlike, Sequence[Pathlike]],
     dataset_parts: Union[str, Sequence[str]],
+    transcript_dir: Pathlike,
     num_jobs: int,
 ):
     "Prepare Corpus of Spontaneous Japanese"
 
     prepare_csj(
         corpus_dir=corpus_dir,
-        transcript_dir=transcript_dir,
         manifest_dir=manifest_dir,
         dataset_parts=dataset_parts,
-        configs=configs,
+        transcript_dir=transcript_dir,
         nj=num_jobs,
     )

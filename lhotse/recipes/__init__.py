@@ -1,5 +1,6 @@
 from .adept import download_adept, prepare_adept
 from .aishell import download_aishell, prepare_aishell
+from .aishell3 import download_aishell3, prepare_aishell3
 from .aishell4 import download_aishell4, prepare_aishell4
 from .ali_meeting import download_ali_meeting, prepare_ali_meeting
 from .ami import download_ami, prepare_ami
@@ -27,9 +28,11 @@ from .gale_mandarin import prepare_gale_mandarin
 from .gigaspeech import prepare_gigaspeech
 from .heroico import download_heroico, prepare_heroico
 from .hifitts import download_hifitts, prepare_hifitts
+from .himia import download_himia, prepare_himia
 from .icsi import download_icsi, prepare_icsi
 from .l2_arctic import prepare_l2_arctic
 from .libricss import download_libricss, prepare_libricss
+from .librilight import prepare_librilight
 from .librimix import download_librimix, prepare_librimix
 from .librispeech import download_librispeech, prepare_librispeech
 from .libritts import download_libritts, prepare_libritts
@@ -43,6 +46,7 @@ from .musan import download_musan, prepare_musan
 from .nsc import prepare_nsc
 from .peoples_speech import prepare_peoples_speech
 from .rir_noise import download_rir_noise, prepare_rir_noise
+from .speechcommands import download_speechcommands, prepare_speechcommands
 from .spgispeech import download_spgispeech, prepare_spgispeech
 from .stcmds import download_stcmds, prepare_stcmds
 from .switchboard import prepare_switchboard

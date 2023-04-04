@@ -9,6 +9,7 @@ import pytest
 import torch
 
 from lhotse import (
+    S3PRLSSL,
     CutSet,
     Fbank,
     FbankConfig,
@@ -20,6 +21,7 @@ from lhotse import (
     Mfcc,
     MonoCut,
     Recording,
+    Spectrogram,
     SupervisionSegment,
     TorchaudioFbank,
     TorchaudioMfcc,
@@ -183,11 +185,18 @@ def test_extract_and_store_features_from_cut_set(
         assert arr.shape[1] == extractor.feature_dim(cuts[0].sampling_rate)
 
 
+def is_python_311_or_higher() -> bool:
+    import sys
+
+    return sys.version_info[:2] > (3, 10)
+
+
 @pytest.mark.parametrize(
     "extractor_type",
     [
         Fbank,
         Mfcc,
+        Spectrogram,
         TorchaudioFbank,
         TorchaudioMfcc,
         pytest.param(
@@ -213,6 +222,15 @@ def test_extract_and_store_features_from_cut_set(
                 ),
             ],
         ),
+        pytest.param(
+            S3PRLSSL,
+            marks=[
+                pytest.mark.skipif(
+                    not is_module_available("s3prl") or is_python_311_or_higher(),
+                    reason="Requires s3prl to run.",
+                ),
+            ],
+        ),
     ],
 )
 def test_cut_set_batch_feature_extraction(cut_set, extractor_type):
@@ -223,6 +241,42 @@ def test_cut_set_batch_feature_extraction(cut_set, extractor_type):
             extractor=extractor,
             storage_path=tmpf.name,
             num_workers=0,
+        )
+        validate(cut_set_with_feats, read_data=True)
+
+
+@pytest.mark.parametrize(
+    "extractor_type",
+    [
+        Fbank,
+        TorchaudioFbank,
+        pytest.param(
+            KaldifeatFbank,
+            marks=pytest.mark.skipif(
+                not is_module_available("kaldifeat"),
+                reason="Requires kaldifeat to run.",
+            ),
+        ),
+        pytest.param(
+            S3PRLSSL,
+            marks=[
+                pytest.mark.skipif(
+                    not is_module_available("s3prl") or is_python_311_or_higher(),
+                    reason="Requires s3prl to run.",
+                ),
+            ],
+        ),
+    ],
+)
+def test_cut_set_batch_feature_extraction_with_collation(cut_set, extractor_type):
+    extractor = extractor_type()
+    cut_set = cut_set.resample(16000)
+    with NamedTemporaryFile() as tmpf:
+        cut_set_with_feats = cut_set.compute_and_store_features_batch(
+            extractor=extractor,
+            storage_path=tmpf.name,
+            num_workers=0,
+            collate=True,
         )
         validate(cut_set_with_feats, read_data=True)
 

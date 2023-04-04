@@ -951,6 +951,8 @@ class DataCut(Cut, metaclass=ABCMeta):
         early_only: bool = False,
         affix_id: bool = True,
         rir_channels: List[int] = [0],
+        room_rng_seed: Optional[int] = None,
+        source_rng_seed: Optional[int] = None,
     ) -> "DataCut":
         ...
 

@@ -1,8 +1,11 @@
+import ast
 import functools
+import hashlib
 import inspect
 import logging
 import math
 import random
+import sys
 import uuid
 import warnings
 from contextlib import AbstractContextManager, contextmanager
@@ -26,6 +29,7 @@ from typing import (
     Union,
 )
 
+import click
 import numpy as np
 import torch
 from tqdm.auto import tqdm
@@ -196,9 +200,15 @@ def overlaps(lhs: Any, rhs: Any) -> bool:
     )
 
 
-def overspans(spanning: Any, spanned: Any) -> bool:
+def overspans(spanning: Any, spanned: Any, tolerance: float = 1e-3) -> bool:
     """Indicates whether the left-hand-side time-span/segment covers the whole right-hand-side time-span/segment."""
-    return spanning.start <= spanned.start <= spanned.end <= spanning.end
+    # We add a small epsilon to the comparison to avoid floating-point precision issues.
+    return (
+        spanning.start - tolerance
+        <= spanned.start
+        <= spanned.end
+        <= spanning.end + tolerance
+    )
 
 
 def time_diff_to_num_frames(
@@ -379,6 +389,19 @@ def compute_num_frames(
     Compute the number of frames from duration and frame_shift in a safe way.
     """
     num_samples = round(duration * sampling_rate)
+    window_hop = round(frame_shift * sampling_rate)
+    num_frames = int((num_samples + window_hop // 2) // window_hop)
+    return num_frames
+
+
+def compute_num_frames_from_samples(
+    num_samples: int,
+    frame_shift: Seconds,
+    sampling_rate: int,
+) -> int:
+    """
+    Compute the number of frames from number of samples and frame_shift in a safe way.
+    """
     window_hop = round(frame_shift * sampling_rate)
     num_frames = int((num_samples + window_hop // 2) // window_hop)
     return num_frames
@@ -709,6 +732,13 @@ def to_hashable(item: Any) -> Any:
     return tuple(item) if isinstance(item, list) else item
 
 
+def hash_str_to_int(s: str, max_value: Optional[int] = None) -> int:
+    """Hash a string to an integer in the range [0, max_value)."""
+    if max_value is None:
+        max_value = sys.maxsize
+    return int(hashlib.sha1(s.encode("utf-8")).hexdigest(), 16) % max_value
+
+
 def lens_to_mask(lens: torch.IntTensor) -> torch.Tensor:
     """
     Create a 2-D mask tensor of shape (batch_size, max_length) and dtype float32
@@ -967,3 +997,16 @@ class Pipe:
     def __exit__(self, etype, value, traceback):
         """Context handler."""
         self.close()
+
+
+# Class to accept list of arguments as Click option
+class PythonLiteralOption(click.Option):
+    def type_cast_value(self, ctx, value):
+        try:
+            val = ast.literal_eval(value)
+            if isinstance(val, list) or isinstance(val, tuple):
+                return val[0] if len(val) == 1 else val
+            else:
+                return val
+        except:
+            return None

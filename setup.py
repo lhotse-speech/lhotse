@@ -52,10 +52,10 @@ project_root = Path(__file__).parent
 # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! #
 # NOTE: REMEMBER TO UPDATE THE FALLBACK VERSION IN lhotse/__init__.py WHEN RELEASING #
 # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! #
-MAJOR_VERSION = 1
-MINOR_VERSION = 12
-PATCH_VERSION = 0
-IS_DEV_VERSION = True  # False = public release, True = otherwise
+VERSION = open(project_root / "VERSION").read().strip()
+IS_DEV_VERSION = not bool(
+    os.environ.get("LHOTSE_PREPARING_RELEASE", False)
+)  # False = public release, True = otherwise
 
 
 if sys.version_info < (3,):
@@ -87,7 +87,7 @@ def discover_lhotse_version() -> str:
     from there later. If it's not detected, the version will be 0.0.0.dev.
     """
 
-    version = f"{MAJOR_VERSION}.{MINOR_VERSION}.{PATCH_VERSION}"
+    version = VERSION
     if not IS_DEV_VERSION:
         # This is a PyPI public release -- return a clean version string.
         return version
@@ -197,12 +197,14 @@ webdataset_requires = ["webdataset==0.2.5"]
 dill_requires = ["dill"]
 h5py_requires = ["h5py"]
 kaldi_requires = ["kaldi_native_io", "kaldifeat"]
+workflow_requires = ["scipy"]
 dev_requires = sorted(
     docs_require
     + tests_require
     + orjson_requires
     + webdataset_requires
     + dill_requires
+    + workflow_requires
     + ["jupyterlab", "matplotlib"]
 )
 all_requires = sorted(dev_requires)
@@ -247,11 +249,12 @@ setup(
         "all": all_requires,
     },
     classifiers=[
-        "Development Status :: 4 - Beta",
+        "Development Status :: 5 - Production/Stable",
         "Programming Language :: Python :: 3.7",
         "Programming Language :: Python :: 3.8",
         "Programming Language :: Python :: 3.9",
         "Programming Language :: Python :: 3.10",
+        "Programming Language :: Python :: 3.11",
         "Intended Audience :: Science/Research",
         "Operating System :: POSIX :: Linux",
         "Operating System :: MacOS :: MacOS X",

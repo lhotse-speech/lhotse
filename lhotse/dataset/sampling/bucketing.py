@@ -54,9 +54,6 @@ class BucketingSampler(CutSampler):
         num_buckets: int = 10,
         drop_last: bool = False,
         seed: int = 0,
-        strict=None,
-        bucket_method=None,
-        proportional_sampling=None,
         **kwargs: Any,
     ) -> None:
         """
@@ -90,25 +87,6 @@ class BucketingSampler(CutSampler):
                 "those opened with 'load_manifest_lazy', 'CutSet.from_jsonl_lazy', or "
                 "'CutSet.from_webdataset'). "
                 "Please use lhotse.dataset.DynamicBucketingSampler instead."
-            )
-
-        if strict is not None:
-            warnings.warn(
-                "In Lhotse v1.4 all samplers act as if 'strict=True'. "
-                "Sampler's argument 'strict' will be removed in a future Lhotse release.",
-                category=DeprecationWarning,
-            )
-        if proportional_sampling is not None:
-            warnings.warn(
-                "In Lhotse v1.4 BucketingSampler always performs proportional sampling."
-                "Argument 'proportional_sampling' will be removed in a future Lhotse release.",
-                category=DeprecationWarning,
-            )
-        if bucket_method is not None:
-            warnings.warn(
-                "In Lhotse v1.4 BucketingSampler always uses 'equal_duration' bucketing method."
-                "Argument 'bucket_method' will be removed in a future Lhotse release.",
-                category=DeprecationWarning,
             )
 
         # Split data into buckets.

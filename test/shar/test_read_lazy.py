@@ -1,4 +1,5 @@
 import os
+import shutil
 from functools import partial
 from pathlib import Path
 
@@ -276,3 +277,28 @@ def test_shar_lazy_reader_with_cut_map_fns(cuts: CutSet, shar_dir: Path, shuffle
             assert c_test.dataset == "dataset_corresponding_to_shard_1"
         else:
             raise RuntimeError(f"Unexpected shard_origin: {c_test.shard_origin}")
+
+
+def test_shar_lazy_reader_from_fields_with_random_tar_name(
+    cuts: CutSet, shar_dir: Path
+):
+    path0 = shar_dir / "random_name_y.tar"
+    path1 = shar_dir / "random_another_name_x.tar"
+    shutil.copy(shar_dir / "recording.000000.tar", path0)
+    shutil.copy(shar_dir / "recording.000001.tar", path1)
+
+    # Prepare system under test
+    cuts_shar = CutSet.from_shar(
+        fields={
+            "cuts": [
+                shar_dir / "cuts.000000.jsonl.gz",
+                shar_dir / "cuts.000001.jsonl.gz",
+            ],
+            "recording": [path0, path1],
+        }
+    )
+
+    # Actual test
+    for c_test, c_ref in zip(cuts_shar, cuts):
+        assert c_test.id == c_ref.id
+        np.testing.assert_allclose(c_ref.load_audio(), c_test.load_audio(), rtol=1e-3)

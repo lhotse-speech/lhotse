@@ -393,7 +393,7 @@ class CutSet(Serializable, AlgorithmMixin):
         one or more binary tarfiles.
         Each tarfile contains a single type of data, e.g., recordings, features, or custom fields.
 
-        Given an example directory named ``some_dir`, its expected layout is
+        Given an example directory named ``some_dir``, its expected layout is
         ``some_dir/cuts.000000.jsonl.gz``, ``some_dir/recording.000000.tar``,
         ``some_dir/features.000000.tar``, and then the same names but numbered with ``000001``, etc.
         There may also be other files if the cuts have custom data attached to them.
@@ -415,37 +415,49 @@ class CutSet(Serializable, AlgorithmMixin):
         We can simply load a directory created by :class:`~lhotse.shar.writers.shar.SharWriter`.
         Example::
 
-        >>> cuts = LazySharIterator(in_dir="some_dir")
-        ... for cut in cuts:
-        ...     print("Cut", cut.id, "has duration of", cut.duration)
-        ...     audio = cut.load_audio()
-        ...     fbank = cut.load_features()
+            >>> cuts = LazySharIterator(in_dir="some_dir")
+            ... for cut in cuts:
+            ...     print("Cut", cut.id, "has duration of", cut.duration)
+            ...     audio = cut.load_audio()
+            ...     fbank = cut.load_features()
 
         :class:`.LazySharIterator` can also be initialized from a dict, where the keys
         indicate fields to be read, and the values point to actual shard locations.
         This is useful when only a subset of data is needed, or it is stored in different
         locations. Example::
 
-        >>> cuts = LazySharIterator({
-        ...     "cuts": ["some_dir/cuts.000000.jsonl.gz"],
-        ...     "recording": ["another_dir/recording.000000.tar"],
-        ...     "features": ["yet_another_dir/features.000000.tar"],
-        ... })
-        ... for cut in cuts:
-        ...     print("Cut", cut.id, "has duration of", cut.duration)
-        ...     audio = cut.load_audio()
-        ...     fbank = cut.load_features()
+            >>> cuts = LazySharIterator({
+            ...     "cuts": ["some_dir/cuts.000000.jsonl.gz"],
+            ...     "recording": ["another_dir/recording.000000.tar"],
+            ...     "features": ["yet_another_dir/features.000000.tar"],
+            ... })
+            ... for cut in cuts:
+            ...     print("Cut", cut.id, "has duration of", cut.duration)
+            ...     audio = cut.load_audio()
+            ...     fbank = cut.load_features()
 
         We also support providing shell commands as shard sources, inspired by WebDataset.
         Example::
 
-        >>> cuts = LazySharIterator({
-        ...     "cuts": ["pipe:curl https://my.page/cuts.000000.jsonl.gz"],
-        ...     "recording": ["pipe:curl https://my.page/recording.000000.tar"],
-        ... })
-        ... for cut in cuts:
-        ...     print("Cut", cut.id, "has duration of", cut.duration)
-        ...     audio = cut.load_audio()
+            >>> cuts = LazySharIterator({
+            ...     "cuts": ["pipe:curl https://my.page/cuts.000000.jsonl.gz"],
+            ...     "recording": ["pipe:curl https://my.page/recording.000000.tar"],
+            ... })
+            ... for cut in cuts:
+            ...     print("Cut", cut.id, "has duration of", cut.duration)
+            ...     audio = cut.load_audio()
+
+        Finally, we allow specifying URLs or cloud storage URIs for the shard sources.
+        We defer to ``smart_open`` library to handle those.
+        Example::
+
+            >>> cuts = LazySharIterator({
+            ...     "cuts": ["s3://my-bucket/cuts.000000.jsonl.gz"],
+            ...     "recording": ["s3://my-bucket/recording.000000.tar"],
+            ... })
+            ... for cut in cuts:
+            ...     print("Cut", cut.id, "has duration of", cut.duration)
+            ...     audio = cut.load_audio()
 
         :param fields: a dict whose keys specify which fields to load,
             and values are lists of shards (either paths or shell commands).
@@ -1128,6 +1140,64 @@ class CutSet(Serializable, AlgorithmMixin):
         )
         return result
 
+    def trim_to_alignments(
+        self,
+        type: str,
+        max_pause: Seconds = 0.0,
+        delimiter: str = " ",
+        keep_all_channels: bool = False,
+        num_jobs: int = 1,
+    ) -> "CutSet":
+        """
+        Return a new CutSet with Cuts that have identical spans as the alignments of
+        type `type`. An additional `max_pause` is allowed between the alignments to
+        merge contiguous alignment items.
+
+        For the case of a multi-channel cut with multiple alignments, we can either trim
+        while respecting the supervision channels (in which case output cut has the same channels
+        as the supervision) or ignore the channels (in which case output cut has the same channels
+        as the input cut).
+
+        :param type: The type of the alignment to trim to (e.g. "word").
+        :param max_pause: The maximum pause allowed between the alignments to merge them.
+        :param delimiter: The delimiter to use when concatenating the alignment items.
+        :param keep_all_channels: If ``True``, the output cut will have the same channels as the input cut. By default,
+            the trimmed cut will have the same channels as the supervision.
+        :param num_jobs: Number of parallel workers to process the cuts.
+        :return: a ``CutSet``.
+        """
+
+        if num_jobs == 1:
+            from lhotse.lazy import LazyFlattener, LazyMapper
+
+            return CutSet(
+                LazyFlattener(
+                    LazyMapper(
+                        self,
+                        partial(
+                            _trim_to_alignments_single,
+                            type=type,
+                            max_pause=max_pause,
+                            delimiter=delimiter,
+                            keep_all_channels=keep_all_channels,
+                        ),
+                    )
+                )
+            )
+
+        from lhotse.manipulation import split_parallelize_combine
+
+        result = split_parallelize_combine(
+            num_jobs,
+            self,
+            _trim_to_alignments_single,
+            type=type,
+            max_pause=max_pause,
+            delimiter=delimiter,
+            keep_all_channels=keep_all_channels,
+        )
+        return result
+
     def trim_to_unsupervised_segments(self) -> "CutSet":
         """
         Return a new CutSet with Cuts created from segments that have no supervisions (likely
@@ -1143,6 +1213,75 @@ class CutSet(Serializable, AlgorithmMixin):
             for span in segments:
                 cuts.append(cut.truncate(offset=span.start, duration=span.duration))
         return CutSet.from_cuts(cuts)
+
+    def trim_to_supervision_groups(
+        self,
+        max_pause: Optional[Seconds] = None,
+        num_jobs: int = 1,
+    ) -> "CutSet":
+        """
+        Return a new CutSet with Cuts based on supervision groups. A supervision group is
+        a set of supervisions with no gaps between them (or gaps shorter than ``max_pause``).
+        This is similar to the concept of an `utterance group` as described in this paper:
+        https://arxiv.org/abs/2211.00482
+
+        For example, the following cut::
+
+                                                Cut
+        ╔═════════════════════════════════════════════════════════════════════════════════╗
+        ║┌──────────────────────┐                              ┌────────┐                 ║
+        ║│ Hello this is John.  │                              │   Hi   │                 ║
+        ║└──────────────────────┘                              └────────┘                 ║
+        ║            ┌──────────────────────────────────┐            ┌───────────────────┐║
+        ║            │     Hey, John. How are you?      │            │  What do you do?  │║
+        ║            └──────────────────────────────────┘            └───────────────────┘║
+        ╚═════════════════════════════════════════════════════════════════════════════════╝
+
+        is transformed into two cuts::
+
+                            Cut 1                                       Cut 2
+        ╔════════════════════════════════════════════════╗    ╔═══════════════════════════╗
+        ║┌──────────────────────┐                        ║    ║┌────────┐                 ║
+        ║│ Hello this is John.  │                        ║    ║│   Hi   │                 ║
+        ║└──────────────────────┘                        ║    ║└────────┘                 ║
+        ║            ┌──────────────────────────────────┐║    ║      ┌───────────────────┐║
+        ║            │     Hey, John. How are you?      │║    ║      │  What do you do?  │║
+        ║            └──────────────────────────────────┘║    ║      └───────────────────┘║
+        ╚════════════════════════════════════════════════╝    ╚═══════════════════════════╝
+
+        For the case of a multi-channel cut with multiple supervisions, we keep all the channels
+        in the recording.
+
+        :param max_pause: An optional duration in seconds; if the gap between two supervisions
+            is longer than this, they will be treated as separate groups.
+        :param num_jobs: Number of parallel workers to process the cuts.
+        :return: a ``CutSet``.
+        """
+
+        if num_jobs == 1:
+            from lhotse.lazy import LazyFlattener, LazyMapper
+
+            return CutSet(
+                LazyFlattener(
+                    LazyMapper(
+                        self,
+                        partial(
+                            _trim_to_supervision_groups_single,
+                            max_pause=max_pause,
+                        ),
+                    )
+                )
+            )
+
+        from lhotse.manipulation import split_parallelize_combine
+
+        result = split_parallelize_combine(
+            num_jobs,
+            self,
+            _trim_to_supervision_groups_single,
+            max_pause=max_pause,
+        )
+        return result
 
     def combine_same_recording_channels(self) -> "CutSet":
         """
@@ -1830,7 +1969,11 @@ class CutSet(Serializable, AlgorithmMixin):
 
         # Initialize the default executor if None was given
         if executor is None:
-            executor = ProcessPoolExecutor(num_jobs)
+            import multiprocessing
+
+            executor = ProcessPoolExecutor(
+                num_jobs, mp_context=multiprocessing.get_context("spawn")
+            )
 
         # Submit the chunked tasks to parallel workers.
         # Each worker runs the non-parallel version of this function inside.
@@ -1866,6 +2009,7 @@ class CutSet(Serializable, AlgorithmMixin):
         manifest_path: Optional[Pathlike] = None,
         batch_duration: Seconds = 600.0,
         num_workers: int = 4,
+        collate: bool = False,
         augment_fn: Optional[AugmentFn] = None,
         storage_type: Type[FW] = LilcomChunkyWriter,
         overwrite: bool = False,
@@ -1907,6 +2051,10 @@ class CutSet(Serializable, AlgorithmMixin):
             Determines batch size dynamically.
         :param num_workers: How many background dataloading workers should be used
             for reading the audio.
+        :param collate: If ``True``, the waveforms will be collated into a single
+            padded tensor before being passed to the feature extractor. Some extractors
+            can be faster this way (for e.g., see ``lhotse.features.kaldi.extractors``).
+            If you are using ``kaldifeat`` extractors, you should set this to ``False``.
         :param augment_fn: an optional callable used for audio augmentation.
             Be careful with the types of augmentations used: if they modify
             the start/end/duration times of the cut and its supervisions,
@@ -1919,10 +2067,12 @@ class CutSet(Serializable, AlgorithmMixin):
             By default, this method will append to these files if they exist.
         :return: Returns a new ``CutSet`` with ``Features`` manifests attached to the cuts.
         """
+        from concurrent.futures import ThreadPoolExecutor
+
         import torch
         from torch.utils.data import DataLoader
 
-        from lhotse.dataset import SingleCutSampler, UnsupervisedWaveformDataset
+        from lhotse.dataset import SimpleCutSampler, UnsupervisedWaveformDataset
         from lhotse.qa import validate_features
 
         frame_shift = extractor.frame_shift
@@ -1935,23 +2085,84 @@ class CutSet(Serializable, AlgorithmMixin):
 
         # We tell the sampler to ignore cuts that were already processed.
         # It will avoid I/O for reading them in the DataLoader.
-        sampler = SingleCutSampler(self, max_duration=batch_duration)
+        sampler = SimpleCutSampler(self, max_duration=batch_duration)
         sampler.filter(lambda cut: cut.id not in cuts_writer.ignore_ids)
-        dataset = UnsupervisedWaveformDataset(collate=False)
+        dataset = UnsupervisedWaveformDataset(collate=collate)
         dloader = DataLoader(
             dataset, batch_size=None, sampler=sampler, num_workers=num_workers
         )
 
+        # Background worker to save features to disk.
+        def _save_worker(cuts: List[Cut], features: List[np.ndarray]) -> None:
+            for cut, feat_mat in zip(cuts, features):
+                if isinstance(cut, PaddingCut):
+                    # For padding cuts, just fill out the fields in the manifest
+                    # and don't store anything.
+                    cuts_writer.write(
+                        fastcopy(
+                            cut,
+                            num_frames=feat_mat.shape[0],
+                            num_features=feat_mat.shape[1],
+                            frame_shift=frame_shift,
+                        )
+                    )
+                    continue
+                # Store the computed features and describe them in a manifest.
+                if isinstance(feat_mat, torch.Tensor):
+                    feat_mat = feat_mat.cpu().numpy()
+                storage_key = feats_writer.write(cut.id, feat_mat)
+                feat_manifest = Features(
+                    start=cut.start,
+                    duration=cut.duration,
+                    type=extractor.name,
+                    num_frames=feat_mat.shape[0],
+                    num_features=feat_mat.shape[1],
+                    frame_shift=frame_shift,
+                    sampling_rate=cut.sampling_rate,
+                    channels=cut.channel,
+                    storage_type=feats_writer.name,
+                    storage_path=str(feats_writer.storage_path),
+                    storage_key=storage_key,
+                )
+                validate_features(feat_manifest, feats_data=feat_mat)
+
+                # Update the cut manifest.
+                if isinstance(cut, DataCut):
+                    feat_manifest.recording_id = cut.recording_id
+                    cut = fastcopy(cut, features=feat_manifest)
+                if isinstance(cut, MixedCut):
+                    # If this was a mixed cut, we will just discard its
+                    # recordings and create a new mono cut that has just
+                    # the features attached.
+                    feat_manifest.recording_id = cut.id
+                    cut = MonoCut(
+                        id=cut.id,
+                        start=0,
+                        duration=cut.duration,
+                        channel=0,
+                        # Update supervisions recording_id for consistency
+                        supervisions=[
+                            fastcopy(s, recording_id=cut.id) for s in cut.supervisions
+                        ],
+                        features=feat_manifest,
+                        recording=None,
+                    )
+                cuts_writer.write(cut, flush=True)
+
+        futures = []
         with cuts_writer, storage_type(
             storage_path, mode="w" if overwrite else "a"
         ) as feats_writer, tqdm(
             desc="Computing features in batches", total=sampler.num_cuts
-        ) as progress:
+        ) as progress, ThreadPoolExecutor(
+            max_workers=1  # We only want one background worker so that serialization is deterministic.
+        ) as executor:
             # Display progress bar correctly.
             progress.update(len(cuts_writer.ignore_ids))
             for batch in dloader:
                 cuts = batch["cuts"]
                 waves = batch["audio"]
+                wave_lens = batch["audio_lens"] if collate else None
 
                 if len(cuts) == 0:
                     # Fault-tolerant audio loading filtered out everything.
@@ -1970,65 +2181,10 @@ class CutSet(Serializable, AlgorithmMixin):
                     # Note: chunk_size option limits the memory consumption
                     # for very long cuts.
                     features = extractor.extract_batch(
-                        waves, sampling_rate=cuts[0].sampling_rate
+                        waves, sampling_rate=cuts[0].sampling_rate, lengths=wave_lens
                     )
 
-                for cut, feat_mat in zip(cuts, features):
-                    if isinstance(cut, PaddingCut):
-                        # For padding cuts, just fill out the fields in the manifest
-                        # and don't store anything.
-                        cuts_writer.write(
-                            fastcopy(
-                                cut,
-                                num_frames=feat_mat.shape[0],
-                                num_features=feat_mat.shape[1],
-                                frame_shift=frame_shift,
-                            )
-                        )
-                        continue
-                    # Store the computed features and describe them in a manifest.
-                    if isinstance(feat_mat, torch.Tensor):
-                        feat_mat = feat_mat.cpu().numpy()
-                    storage_key = feats_writer.write(cut.id, feat_mat)
-                    feat_manifest = Features(
-                        start=cut.start,
-                        duration=cut.duration,
-                        type=extractor.name,
-                        num_frames=feat_mat.shape[0],
-                        num_features=feat_mat.shape[1],
-                        frame_shift=frame_shift,
-                        sampling_rate=cut.sampling_rate,
-                        channels=cut.channel,
-                        storage_type=feats_writer.name,
-                        storage_path=str(feats_writer.storage_path),
-                        storage_key=storage_key,
-                    )
-                    validate_features(feat_manifest, feats_data=feat_mat)
-
-                    # Update the cut manifest.
-                    if isinstance(cut, DataCut):
-                        feat_manifest.recording_id = cut.recording_id
-                        cut = fastcopy(cut, features=feat_manifest)
-                    if isinstance(cut, MixedCut):
-                        # If this was a mixed cut, we will just discard its
-                        # recordings and create a new mono cut that has just
-                        # the features attached.
-                        feat_manifest.recording_id = cut.id
-                        cut = MonoCut(
-                            id=cut.id,
-                            start=0,
-                            duration=cut.duration,
-                            channel=0,
-                            # Update supervisions recording_id for consistency
-                            supervisions=[
-                                fastcopy(s, recording_id=cut.id)
-                                for s in cut.supervisions
-                            ],
-                            features=feat_manifest,
-                            recording=None,
-                        )
-                    cuts_writer.write(cut, flush=True)
-
+                futures.append(executor.submit(_save_worker, cuts, features))
                 progress.update(len(cuts))
 
         # If ``manifest_path`` was provided, this is a lazy manifest;
@@ -2124,7 +2280,11 @@ class CutSet(Serializable, AlgorithmMixin):
 
         # Initialize the default executor if None was given
         if executor is None:
-            executor = ProcessPoolExecutor(num_jobs)
+            import multiprocessing
+
+            executor = ProcessPoolExecutor(
+                num_jobs, mp_context=multiprocessing.get_context("spawn")
+            )
 
         # Submit the chunked tasks to parallel workers.
         # Each worker runs the non-parallel version of this function inside.
@@ -3093,6 +3253,30 @@ def _trim_to_supervisions_single(
         min_duration=min_duration,
         context_direction=context_direction,
         keep_all_channels=keep_all_channels,
+    ).to_eager()
+
+
+def _trim_to_alignments_single(
+    cuts: CutSet,
+    type,
+    max_pause,
+    delimiter,
+    keep_all_channels,
+) -> CutSet:
+    return cuts.trim_to_alignments(
+        type=type,
+        max_pause=max_pause,
+        delimiter=delimiter,
+        keep_all_channels=keep_all_channels,
+    ).to_eager()
+
+
+def _trim_to_supervision_groups_single(
+    cuts: CutSet,
+    max_pause: Seconds,
+) -> CutSet:
+    return cuts.trim_to_supervision_groups(
+        max_pause=max_pause,
     ).to_eager()
 
 

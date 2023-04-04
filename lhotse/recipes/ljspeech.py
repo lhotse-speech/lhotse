@@ -73,7 +73,7 @@ def prepare_ljspeech(
     supervisions = []
     with open(metadata_csv_path) as f:
         for line in f:
-            recording_id, text, _ = line.split("|")
+            recording_id, text, normalized = line.split("|")
             audio_path = corpus_dir / "wavs" / f"{recording_id}.wav"
             if not audio_path.is_file():
                 logging.warning(f"No such file: {audio_path}")
@@ -88,6 +88,7 @@ def prepare_ljspeech(
                 language="English",
                 gender="female",
                 text=text,
+                custom={"normalized_text": normalized.strip()},
             )
             recordings.append(recording)
             supervisions.append(segment)

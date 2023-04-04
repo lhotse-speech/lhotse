@@ -21,6 +21,23 @@ Data structures used for describing supervisions in a dataset.
   :members:
   :inherited-members:
 
+Lhotse Shar -- sequential storage
+---------------------------------
+
+Lhotse Shar readers
+*******************
+
+.. automodule:: lhotse.shar.readers
+  :members:
+  :inherited-members:
+
+Lhotse Shar writers
+*******************
+
+.. automodule:: lhotse.shar.writers
+  :members:
+  :inherited-members:
+
 Feature extraction and manifests
 --------------------------------
 
@@ -125,4 +142,3 @@ Helper methods used throughout the codebase.
 .. automodule:: lhotse.manipulation
   :members:
   :inherited-members:
-

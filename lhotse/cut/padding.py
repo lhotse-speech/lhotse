@@ -339,6 +339,8 @@ class PaddingCut(Cut):
         early_only: bool = False,
         affix_id: bool = True,
         rir_channels: List[int] = [0],
+        room_rng_seed: Optional[int] = None,
+        source_rng_seed: Optional[int] = None,
     ) -> "PaddingCut":
         """
         Return a new ``PaddingCut`` that will "mimic" the effect of reverberation with impulse response
@@ -392,6 +394,12 @@ class PaddingCut(Cut):
         )
 
     def fill_supervision(self, *args, **kwargs) -> "PaddingCut":
+        """
+        Just for consistency with :class`.MonoCut` and :class:`.MixedCut`.
+        """
+        return self
+
+    def move_to_memory(self, *args, **kwargs) -> "PaddingCut":
         """
         Just for consistency with :class`.MonoCut` and :class:`.MixedCut`.
         """

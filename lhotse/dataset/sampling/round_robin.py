@@ -1,6 +1,8 @@
 from functools import reduce
 from operator import add
-from typing import Any, Callable, Dict, Optional, Tuple, Union
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union
+
+import numpy as np
 
 from lhotse import CutSet
 from lhotse.cut import Cut
@@ -30,7 +32,13 @@ class RoundRobinSampler(CutSampler):
         ...     pass  # profit
     """
 
-    def __init__(self, *samplers: CutSampler, stop_early: bool = False) -> None:
+    def __init__(
+        self,
+        *samplers: CutSampler,
+        stop_early: bool = False,
+        randomize: Union[bool, List[float]] = False,
+        seed: int = 0,
+    ) -> None:
         """
         RoundRobinSampler's constructor.
 
@@ -39,12 +47,26 @@ class RoundRobinSampler(CutSampler):
             depleted.
             By default, we will keep iterating until all of the samplers are exhausted.
             This setting can be used to balance datasets of different sizes.
+        :param randomize: Select the next sampler according to a distribution, instead of
+            in order. If a list of floats is provided, it must contain the same number of
+            elements as the number of samplers, and the values will be used as probabilities.
+            If ``True`` is provided, the probabilities will be uniform. If ``False`` is provided,
+            the samplers will be selected in order.
+        :param seed: Random seed used to select the next sampler (only used if ``randomize`` is True)
         """
         super().__init__(rank=0, world_size=1)
         self.samplers = samplers
         self.stop_early = stop_early
+        self.rng = None
+
         self._nondepleted_samplers_indices = list(range(len(self.samplers)))
         self._cur_sampler_idx = 0
+
+        if isinstance(randomize, list):
+            assert len(randomize) == len(self.samplers)
+        elif randomize == True:
+            randomize = [1.0 / len(self.samplers)] * len(self.samplers)
+        self.randomize = randomize
 
     @property
     def remaining_duration(self) -> Optional[float]:
@@ -100,6 +122,7 @@ class RoundRobinSampler(CutSampler):
             {
                 "samplers": [s.state_dict() for s in self.samplers],
                 "stop_early": self.stop_early,
+                "randomize": self.randomize,
                 "_cur_sampler_idx": self._cur_sampler_idx,
                 # Explicit list copy below allows to restore within the same process.
                 "_nondepleted_samplers_indices": list(
@@ -128,6 +151,7 @@ class RoundRobinSampler(CutSampler):
             handled in ``__iter__`` to make it avoid resetting the just-restored state (only once).
         """
         self.stop_early = state_dict.pop("stop_early")
+        self.randomize = state_dict.pop("randomize")
         self._cur_sampler_idx = state_dict.pop("_cur_sampler_idx")
         self._nondepleted_samplers_indices = state_dict.pop(
             "_nondepleted_samplers_indices"
@@ -141,6 +165,7 @@ class RoundRobinSampler(CutSampler):
         super().load_state_dict(state_dict)
 
     def __iter__(self):
+        self.rng = np.random.default_rng(seed=self.seed + self.epoch)
         for sampler in self.samplers:
             iter(sampler)
         if self._just_restored_state:
@@ -163,16 +188,23 @@ class RoundRobinSampler(CutSampler):
             self._nondepleted_samplers_indices.pop(self._cur_sampler_idx)
             if self.stop_early or len(self._nondepleted_samplers_indices) == 0:
                 raise
+            self._set_next_idx()
+            return self._next_batch()
+
+        self._set_next_idx()
+        return batch
+
+    def _set_next_idx(self) -> None:
+        if self.randomize is not False and len(self._nondepleted_samplers_indices) > 1:
+            N = range(len(self._nondepleted_samplers_indices))
+            p = [self.randomize[i] for i in self._nondepleted_samplers_indices]
+            # Normalize the probabilities
+            p = [x / sum(p) for x in p]
+            self._cur_sampler_idx = self.rng.choice(N, size=1, replace=False, p=p)[0]
+        else:
             self._cur_sampler_idx = (self._cur_sampler_idx + 1) % len(
                 self._nondepleted_samplers_indices
             )
-            return self._next_batch()
-
-        self._cur_sampler_idx = (self._cur_sampler_idx + 1) % len(
-            self._nondepleted_samplers_indices
-        )
-
-        return batch
 
     def set_epoch(self, epoch: int) -> None:
         """

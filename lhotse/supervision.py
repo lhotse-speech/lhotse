@@ -180,7 +180,7 @@ class SupervisionSegment:
             ...     id='rec00001-sup00004', recording_id='rec00001',
             ...     start=33.0, duration=1.0, channel=0,
             ...     text="ice",
-            ...     speaker='Maryla Zechariah', language='English', gender='F'
+            ...     speaker='Maryla Zechariah', language='English', gender='F',
             ...     alignment={
             ...         'phone': [
             ...             AlignmentItem(symbol='AY0', start=33.0, duration=0.6),
@@ -671,7 +671,12 @@ class SupervisionSet(Serializable, AlgorithmMixin):
                     num_overspanned += len(alignment)
                     segments.append(fastcopy(seg, alignment={type: alignment}))
             else:
-                segments.append([s for s in self.find(recording_id=reco_id)])
+                segments.extend(
+                    [
+                        fastcopy(s, alignment={type: []})
+                        for s in self.find(recording_id=reco_id)
+                    ]
+                )
         logging.info(
             f"{num_overspanned} alignments added out of {num_total} total. If there are several"
             " missing, there could be a mismatch problem."
