@@ -1,4 +1,5 @@
 from .common import AugmentFn
+from .rir import ReverbWithImpulseResponse
 from .torchaudio import *
 from .transform import AudioTransform
 from .utils import FastRandomRIRGenerator, convolve1d
