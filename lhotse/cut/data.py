@@ -916,12 +916,12 @@ class DataCut(Cut, metaclass=ABCMeta):
         :return: a modified copy of the current ``DataCut``.
         """
         # Pre-conditions
-        assert self.has_recording, "Cannot apply WPE on a MonoCut without Recording."
+        assert self.has_recording, "Cannot apply WPE on a DataCut without Recording."
         if self.has_features:
             logging.warning(
-                "Attempting to reverberate a MonoCut that references pre-computed features. "
+                "Attempting to de-reverberate a DataCut that references pre-computed features. "
                 "The feature manifest will be detached, as we do not support feature-domain "
-                "reverberation."
+                "de-reverberation."
             )
             self.features = None
 
