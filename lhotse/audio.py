@@ -36,6 +36,7 @@ from tqdm.auto import tqdm
 from lhotse.augmentation import (
     AudioTransform,
     DereverbWPE,
+    LoudnessNormalization,
     Resample,
     ReverbWithImpulseResponse,
     Speed,
@@ -704,6 +705,23 @@ class Recording:
         return fastcopy(
             self,
             id=f"{self.id}_vp{factor}" if affix_id else self.id,
+            transforms=transforms,
+        )
+
+    def normalize_loudness(self, target: float, affix_id: bool = False) -> "Recording":
+        """
+        Return a new ``Recording`` that will lazily apply WPE dereverberation.
+
+        :param target: The target loudness (in dB) to normalize to.
+        :param affix_id: When true, we will modify the ``Recording.id`` field
+            by affixing it with "_ln{factor}".
+        :return: a modified copy of the current ``Recording``.
+        """
+        transforms = self.transforms.copy() if self.transforms is not None else []
+        transforms.append(LoudnessNormalization(target=target).to_dict())
+        return fastcopy(
+            self,
+            id=f"{self.id}_ln{target}" if affix_id else self.id,
             transforms=transforms,
         )
 

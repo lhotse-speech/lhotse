@@ -913,6 +913,49 @@ class DataCut(Cut, metaclass=ABCMeta):
             supervisions=supervisions_vp,
         )
 
+    def normalize_loudness(self, target: float, affix_id: bool = False) -> "DataCut":
+        """
+        Return a new ``DataCut`` that will lazily apply loudness normalization.
+
+        :param target: The target loudness in dBFS.
+        :param affix_id: When true, we will modify the ``DataCut.id`` field
+            by affixing it with "_ln{target}".
+        :return: a modified copy of the current ``DataCut``.
+        """
+        # Pre-conditions
+        assert (
+            self.has_recording
+        ), "Cannot apply loudness normalization on a DataCut without Recording."
+        if self.has_features:
+            logging.warning(
+                "Attempting to normalize loudness on a DataCut that references pre-computed features. "
+                "The feature manifest will be detached, as we do not support feature-domain "
+                "loudness normalization."
+            )
+            self.features = None
+
+        # Add loudness normalization to the recording.
+        recording_ln = self.recording.normalize_loudness(
+            target=target, affix_id=affix_id
+        )
+        # Match the supervision's id (and it's underlying recording id).
+        supervisions_ln = [
+            fastcopy(
+                s,
+                id=f"{s.id}_ln{target}" if affix_id else s.id,
+                recording_id=f"{s.recording_id}_ln{target}"
+                if affix_id
+                else s.recording_id,
+            )
+            for s in self.supervisions
+        ]
+        return fastcopy(
+            self,
+            id=f"{self.id}_ln{target}" if affix_id else self.id,
+            recording=recording_ln,
+            supervisions=supervisions_ln,
+        )
+
     def dereverb_wpe(self, affix_id: bool = True) -> "DataCut":
         """
         Return a new ``DataCut`` that will lazily apply WPE dereverberation.
@@ -922,12 +965,12 @@ class DataCut(Cut, metaclass=ABCMeta):
         :return: a modified copy of the current ``DataCut``.
         """
         # Pre-conditions
-        assert self.has_recording, "Cannot apply WPE on a MonoCut without Recording."
+        assert self.has_recording, "Cannot apply WPE on a DataCut without Recording."
         if self.has_features:
             logging.warning(
-                "Attempting to reverberate a MonoCut that references pre-computed features. "
+                "Attempting to de-reverberate a DataCut that references pre-computed features. "
                 "The feature manifest will be detached, as we do not support feature-domain "
-                "reverberation."
+                "de-reverberation."
             )
             self.features = None
 
