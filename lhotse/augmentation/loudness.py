@@ -48,7 +48,7 @@ def normalize_loudness(
     """
     if not is_module_available("pyloudnorm"):
         raise ImportError(
-            "Please install nara_wpe first using 'pip install pyloudnorm'"
+            "Please install pyloudnorm first using 'pip install pyloudnorm'"
         )
 
     import pyloudnorm as pyln
