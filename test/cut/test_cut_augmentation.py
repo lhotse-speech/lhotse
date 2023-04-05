@@ -588,8 +588,8 @@ def test_cut_perturb_volume(cut_set, cut_id, scale):
 
 
 @pytest.mark.parametrize("target", [-15.0, -20.0, -25.0])
-def test_cut_normalize_loudness(cut_set, target):
-    cut_set_ln = cut_set.normalize_loudness(target)
+def test_cut_normalize_loudness(libri_cut_set, target):
+    cut_set_ln = libri_cut_set.normalize_loudness(target)
 
     import pyloudnorm as pyln
 
@@ -597,7 +597,7 @@ def test_cut_normalize_loudness(cut_set, target):
     for c in cut_set_ln:
         meter = pyln.Meter(c.sampling_rate)  # create BS.1770 meter
         loudness = meter.integrated_loudness(c.load_audio().T)
-        assert np.isclose(loudness, target, atol=0.5)
+        assert loudness == pytest.approx(target, abs=0.5)
 
 
 def test_cut_reverb_rir(libri_cut_with_supervision, libri_recording_rvb, rir):
