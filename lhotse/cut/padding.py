@@ -41,7 +41,7 @@ class PaddingCut(Cut):
     id: str
     duration: Seconds
     sampling_rate: int
-    feat_value: float
+    feat_value: Optional[float] = None
 
     # For frequency domain
     num_frames: Optional[int] = None
@@ -187,7 +187,7 @@ class PaddingCut(Cut):
         duration: Seconds = None,
         num_frames: int = None,
         num_samples: int = None,
-        pad_feat_value: float = LOG_EPSILON,
+        pad_feat_value: Optional[float] = None,
         direction: str = "right",
         preserve_id: bool = False,
         pad_value_dict: Optional[Dict[str, Union[int, float]]] = None,
@@ -202,7 +202,8 @@ class PaddingCut(Cut):
         :param num_frames: The cut's total number of frames after padding.
         :param num_samples: The cut's total number of samples after padding.
         :param pad_feat_value: A float value that's used for padding the features.
-            By default we assume a log-energy floor of approx. -23 (1e-10 after exp).
+            By default, we will use the value defined in the `FeatureExtractor.padding_value`
+            for the feature type.
         :param direction: string, 'left', 'right' or 'both'. Determines whether the padding is added before or after
             the cut.
         :param preserve_id: When ``True``, preserves the cut ID from before padding.
@@ -388,6 +389,7 @@ class PaddingCut(Cut):
         """
         return fastcopy(
             self,
+            feat_value=extractor.padding_value,
             num_features=extractor.feature_dim(self.sampling_rate),
             num_frames=compute_num_frames(
                 duration=self.duration,

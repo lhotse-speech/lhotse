@@ -53,7 +53,7 @@ class FeatureMixer:
         if self.padding_value is None:
             raise ValueError(
                 f"FeatureMixer requires `padding_value` to be set, since {feature_extractor}"
-                " does not define a default one."
+                f" does not define a default one."
             )
         self.dtype = self.tracks[0].dtype
 

@@ -534,7 +534,7 @@ class MixedCut(Cut):
         duration: Seconds = None,
         num_frames: int = None,
         num_samples: int = None,
-        pad_feat_value: float = LOG_EPSILON,
+        pad_feat_value: Optional[float] = None,
         direction: str = "right",
         preserve_id: bool = False,
         pad_value_dict: Optional[Dict[str, Union[int, float]]] = None,
@@ -549,7 +549,8 @@ class MixedCut(Cut):
         :param num_frames: The cut's total number of frames after padding.
         :param num_samples: The cut's total number of samples after padding.
         :param pad_feat_value: A float value that's used for padding the features.
-            By default we assume a log-energy floor of approx. -23 (1e-10 after exp).
+            By default, we will use the value defined in the `FeatureExtractor.padding_value`
+            for the feature type.
         :param direction: string, 'left', 'right' or 'both'. Determines whether the padding is added before or after
             the cut.
         :param preserve_id: When ``True``, preserves the cut ID from before padding.
@@ -870,6 +871,7 @@ class MixedCut(Cut):
                 feats = reference_feats  # manual caching to avoid duplicated I/O
             else:
                 feats = track.cut.load_features()
+
             mixer.add_to_mix(
                 feats=feats,
                 snr=track.snr,
