@@ -7,7 +7,7 @@ import numpy as np
 import torch
 
 from lhotse.features.base import FeatureExtractor, register_extractor
-from lhotse.utils import EPSILON, Seconds, is_module_available
+from lhotse.utils import EPSILON, LOG_EPSILON, Seconds, is_module_available
 
 
 @dataclass
@@ -195,7 +195,7 @@ class KaldifeatFbank(KaldifeatExtractor):
 
     @property
     def padding_value(self) -> float:
-        return -1000.0 if self.config.use_log_fbank else EPSILON
+        return LOG_EPSILON if self.config.use_log_fbank else EPSILON
 
     @staticmethod
     def mix(
@@ -266,4 +266,4 @@ class KaldifeatMfcc(KaldifeatExtractor):
 
     @property
     def padding_value(self) -> float:
-        return -1000.0
+        return LOG_EPSILON

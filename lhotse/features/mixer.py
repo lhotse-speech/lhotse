@@ -29,7 +29,7 @@ class FeatureMixer:
         feature_extractor: FeatureExtractor,
         base_feats: np.ndarray,
         frame_shift: Seconds,
-        padding_value: float = -1000.0,
+        padding_value: Optional[float] = None,
         reference_energy: Optional[float] = None,
     ):
         """
@@ -40,9 +40,7 @@ class FeatureMixer:
             in terms of energy and offset for all features mixed into them.
         :param frame_shift: Required to correctly compute offset and padding during the mix.
         :param padding_value: The value used to pad the shorter features during the mix.
-            This value is adequate only for log space features. For non-log space features,
-            e.g. energies, use either 0 or a small positive value like 1e-5. This value will be
-            ignore if the ``feature_extractor`` has a ``padding_value`` attribute.
+            If not provided, we will default to ``feature_extractor.padding_value``.
         :param reference_energy: Optionally pass a reference energy value to compute SNRs against.
             This might be required when ``base_feats`` correspond to padding energies.
         """
@@ -51,11 +49,12 @@ class FeatureMixer:
         self.num_channels = 1 if base_feats.ndim == 2 else base_feats.shape[-1]
         self.gains = []
         self.frame_shift = frame_shift
-        self.padding_value = (
-            feature_extractor.padding_value
-            if feature_extractor.padding_value is not None
-            else padding_value
-        )
+        self.padding_value = padding_value or feature_extractor.padding_value
+        if self.padding_value is None:
+            raise ValueError(
+                f"FeatureMixer requires `padding_value` to be set, since {feature_extractor}"
+                " does not define a default one."
+            )
         self.dtype = self.tracks[0].dtype
 
         # Keep a pre-computed energy value of the features that we initialize the Mixer with;

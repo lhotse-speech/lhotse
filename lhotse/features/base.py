@@ -94,7 +94,7 @@ class FeatureExtractor(metaclass=ABCMeta):
         ...
 
     @property
-    def padding_value(self) -> float:
+    def padding_value(self) -> Optional[float]:
         return None
 
     @property

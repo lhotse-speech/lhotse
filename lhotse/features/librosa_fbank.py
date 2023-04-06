@@ -148,6 +148,10 @@ class LibrosaFbank(FeatureExtractor):
     def frame_shift(self) -> Seconds:
         return self.config.hop_size / self.config.sampling_rate
 
+    @property
+    def padding_value(self) -> float:
+        return LOG_EPSILON
+
     def feature_dim(self, sampling_rate: int) -> int:
         return self.config.num_mel_bins
 
