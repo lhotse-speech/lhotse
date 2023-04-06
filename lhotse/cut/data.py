@@ -382,6 +382,12 @@ class DataCut(Cut, metaclass=ABCMeta):
         """Return a copy of the current :class:`.DataCut`, detached from ``supervisions``."""
         return fastcopy(self, supervisions=[])
 
+    def drop_alignments(self) -> "DataCut":
+        """Return a copy of the current :class:`.DataCut`, detached from ``alignments``."""
+        return fastcopy(
+            self, supervisions=[fastcopy(s, alignment={}) for s in self.supervisions]
+        )
+
     def fill_supervision(
         self, add_empty: bool = True, shrink_ok: bool = False
     ) -> "DataCut":
