@@ -73,6 +73,17 @@ def test_drop_supervisions(cut):
     assert len(cut_drop.supervisions) == 0
 
 
+@parametrize_on_cut_types
+def test_drop_alignments(cut):
+    assert all(len(s.alignment) > 0 for s in cut.supervisions) or isinstance(
+        cut, PaddingCut
+    )
+    cut_drop = cut.drop_alignments()
+    assert all(
+        s.alignment is None or len(s.alignment) == 0 for s in cut_drop.supervisions
+    )
+
+
 @pytest.fixture()
 def cutset():
     return CutSet.from_cuts(
@@ -126,3 +137,13 @@ def test_drop_supervisions_cutset(cutset):
     cutset_drop = cutset.drop_supervisions()
     assert any(len(cut.supervisions) > 0 for cut in cutset)
     assert all(len(cut.supervisions) == 0 for cut in cutset_drop)
+
+
+def test_drop_alignments_cutset(cutset):
+    assert any(all(len(s.alignment) > 0 for s in cut.supervisions) for cut in cutset)
+    cutset_drop = cutset.drop_alignments()
+    assert any(all(len(s.alignment) > 0 for s in cut.supervisions) for cut in cutset)
+    assert all(
+        all(s.alignment is None or len(s.alignment) == 0 for s in cut.supervisions)
+        for cut in cutset_drop
+    )
