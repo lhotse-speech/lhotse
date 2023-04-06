@@ -69,6 +69,11 @@ class S3PRLSSL(FeatureExtractor):
         return self.config.frame_shift
 
     @property
+    def padding_value(self) -> float:
+        """Return the value that should be used to pad these features."""
+        return EPSILON
+
+    @property
     def sampling_rate(self) -> int:
         return self.config.sampling_rate
 
