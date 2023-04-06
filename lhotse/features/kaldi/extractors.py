@@ -9,6 +9,7 @@ from lhotse.features.base import FeatureExtractor, register_extractor
 from lhotse.features.kaldi.layers import Wav2LogFilterBank, Wav2MFCC, Wav2Spec
 from lhotse.utils import (
     EPSILON,
+    LOG_EPSILON,
     Seconds,
     asdict_nonull,
     compute_num_frames_from_samples,
@@ -79,6 +80,11 @@ class Fbank(FeatureExtractor):
     def to(self, device: str):
         self.config.device = device
         self.extractor.to(device)
+
+    @property
+    def padding_value(self) -> float:
+        """Return the value that should be used to pad these features."""
+        return LOG_EPSILON
 
     def feature_dim(self, sampling_rate: int) -> int:
         return self.config.num_filters
@@ -204,6 +210,11 @@ class Mfcc(FeatureExtractor):
     @property
     def frame_shift(self) -> Seconds:
         return self.config.frame_shift
+
+    @property
+    def padding_value(self) -> float:
+        """Return the value that should be used to pad these features."""
+        return LOG_EPSILON
 
     def feature_dim(self, sampling_rate: int) -> int:
         return self.config.num_ceps
