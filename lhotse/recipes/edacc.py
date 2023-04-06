@@ -21,26 +21,24 @@ Recordings, linguistic backgrounds, data statement, and evaluation scripts are r
 Source: https://datashare.ed.ac.uk/handle/10283/4836
 """
 import logging
-import re
+import math
 import shutil
 import tarfile
 import zipfile
-from concurrent.futures.thread import ThreadPoolExecutor
 from pathlib import Path
-from typing import Dict, List, Optional, Sequence, Tuple, Union
+from typing import Dict, Optional, Union
 
-from tqdm.auto import tqdm
-
-from lhotse import validate_recordings_and_supervisions
-from lhotse.audio import Recording, RecordingSet
-from lhotse.recipes.utils import manifests_exist, read_manifests_if_cached
-from lhotse.supervision import AlignmentItem, SupervisionSegment, SupervisionSet
+from lhotse import fix_manifests, validate_recordings_and_supervisions
+from lhotse.audio import RecordingSet
+from lhotse.supervision import SupervisionSet
 from lhotse.utils import (
     Pathlike,
     is_module_available,
     safe_extract,
     urlretrieve_progress,
 )
+
+_EDACC_SAMPLING_RATE = 32000
 
 
 def download_edacc(
@@ -81,123 +79,125 @@ def download_edacc(
     with zipfile.ZipFile(archive_path) as zip:
         zip.extractall(path=corpus_dir)
     tar_name = "edacc_v1.0.tar.gz"
-    actual_corpus_dir = corpus_dir / tar_name.replace(".tar.gz", "")
     with tarfile.open(corpus_dir / tar_name) as tar:
-        safe_extract(tar, actual_corpus_dir)
+        safe_extract(tar, corpus_dir)
     completed_detector.touch()
 
-    return actual_corpus_dir
+    return corpus_dir
 
 
 def prepare_edacc(
     corpus_dir: Pathlike,
-    alignments_dir: Optional[Pathlike] = None,
-    dataset_parts: Union[str, Sequence[str]] = "auto",
     output_dir: Optional[Pathlike] = None,
-    num_jobs: int = 1,
 ) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet]]]:
     """
     Returns the manifests which consist of the Recordings and Supervisions.
-    When all the manifests are available in the ``output_dir``, it will simply read and return them.
 
-    :param corpus_dir: Pathlike, the path of the data dir.
-    :param alignments_dir: Pathlike, the path of the alignments dir. By default, it is
-        the same as ``corpus_dir``.
-    :param dataset_parts: string or sequence of strings representing dataset part names, e.g. 'train-clean-100', 'train-clean-5', 'dev-clean'.
-        By default we will infer which parts are available in ``corpus_dir``.
-    :param output_dir: Pathlike, the path where to write the manifests.
-    :return: a Dict whose key is the dataset part, and the value is Dicts with the keys 'audio' and 'supervisions'.
+    :param corpus_dir: a path to the unzipped EDACC directory (has ``edacc_v1.0`` inside).
+    :param output_dir: an optional path where to write the manifests.
+    :return: a dict with structure ``{"dev|test": {"recordings|supervisions": <manifest>}}``
     """
-    raise NotImplementedError()
-    # corpus_dir = Path(corpus_dir)
-    # alignments_dir = Path(alignments_dir) if alignments_dir is not None else corpus_dir
-    # assert corpus_dir.is_dir(), f"No such directory: {corpus_dir}"
-    #
-    # if dataset_parts == "mini_librispeech":
-    #     dataset_parts = set(MINI_LIBRISPEECH).intersection(
-    #         path.name for path in corpus_dir.glob("*")
-    #     )
-    # elif dataset_parts == "auto":
-    #     dataset_parts = (
-    #         set(LIBRISPEECH)
-    #         .union(MINI_LIBRISPEECH)
-    #         .intersection(path.name for path in corpus_dir.glob("*"))
-    #     )
-    #     if not dataset_parts:
-    #         raise ValueError(
-    #             f"Could not find any of librispeech or mini_librispeech splits in: {corpus_dir}"
-    #         )
-    # elif isinstance(dataset_parts, str):
-    #     dataset_parts = [dataset_parts]
-    #
-    # manifests = {}
-    #
-    # if output_dir is not None:
-    #     output_dir = Path(output_dir)
-    #     output_dir.mkdir(parents=True, exist_ok=True)
-    #     # Maybe the manifests already exist: we can read them and save a bit of preparation time.
-    #     manifests = read_manifests_if_cached(
-    #         dataset_parts=dataset_parts, output_dir=output_dir
-    #     )
-    #
-    # with ThreadPoolExecutor(num_jobs) as ex:
-    #     for part in tqdm(dataset_parts, desc="Dataset parts"):
-    #         logging.info(f"Processing LibriSpeech subset: {part}")
-    #         if manifests_exist(part=part, output_dir=output_dir):
-    #             logging.info(f"LibriSpeech subset: {part} already prepared - skipping.")
-    #             continue
-    #         recordings = []
-    #         supervisions = []
-    #         part_path = corpus_dir / part
-    #         futures = []
-    #         for trans_path in tqdm(
-    #             part_path.rglob("*.trans.txt"), desc="Distributing tasks", leave=False
-    #         ):
-    #             alignments = {}
-    #             ali_path = (
-    #                 alignments_dir
-    #                 / trans_path.parent.relative_to(corpus_dir)
-    #                 / (trans_path.stem.split(".")[0] + ".alignment.txt")
-    #             )
-    #             if ali_path.exists():
-    #                 alignments = parse_alignments(ali_path)
-    #             # "trans_path" file contains lines like:
-    #             #
-    #             #   121-121726-0000 ALSO A POPULAR CONTRIVANCE
-    #             #   121-121726-0001 HARANGUE THE TIRESOME PRODUCT OF A TIRELESS TONGUE
-    #             #   121-121726-0002 ANGOR PAIN PAINFUL TO HEAR
-    #             #
-    #             # We will create a separate Recording and SupervisionSegment for those.
-    #             with open(trans_path) as f:
-    #                 for line in f:
-    #                     futures.append(
-    #                         ex.submit(parse_utterance, part_path, line, alignments)
-    #                     )
-    #
-    #         for future in tqdm(futures, desc="Processing", leave=False):
-    #             result = future.result()
-    #             if result is None:
-    #                 continue
-    #             recording, segment = result
-    #             recordings.append(recording)
-    #             supervisions.append(segment)
-    #
-    #         recording_set = RecordingSet.from_recordings(recordings)
-    #         supervision_set = SupervisionSet.from_segments(supervisions)
-    #
-    #         validate_recordings_and_supervisions(recording_set, supervision_set)
-    #
-    #         if output_dir is not None:
-    #             supervision_set.to_file(
-    #                 output_dir / f"librispeech_supervisions_{part}.jsonl.gz"
-    #             )
-    #             recording_set.to_file(
-    #                 output_dir / f"librispeech_recordings_{part}.jsonl.gz"
-    #             )
-    #
-    #         manifests[part] = {
-    #             "recordings": recording_set,
-    #             "supervisions": supervision_set,
-    #         }
-    #
-    # return manifests
+    from lhotse.kaldi import load_kaldi_data_dir
+
+    if not is_module_available("pandas"):
+        raise ValueError("Please install pandas via 'pip install pandas'.")
+
+    corpus_dir = Path(corpus_dir) / "edacc_v1.0"
+    audio_dir = corpus_dir / "data"
+    if output_dir is not None:
+        output_dir = Path(output_dir)
+        output_dir.mkdir(parents=True, exist_ok=True)
+    manifests = {}
+
+    # Read extra metadata
+    spk2meta = parse_linguistic_background(corpus_dir / "linguistic_background.csv")
+
+    # Create recordings manifest and prepare data to create wav.scp files later.
+    recordings = RecordingSet.from_dir(audio_dir, "*.wav")
+    for r in recordings:
+        assert r.num_channels == 1, f"Unexpected multi-channel recording: {r}"
+        assert r.sampling_rate == _EDACC_SAMPLING_RATE
+    wav_scp = {r.id: f"{r.id} {r.sources[0].source}" for r in recordings}
+
+    for split in ("dev", "test"):
+        data_dir = corpus_dir / split
+
+        # First, create wav.scp in Kaldi data dir, and then just import it.
+        with open(data_dir / "segments") as f:
+            split_rec_ids = set(l.split()[1] for l in f)
+        with open(data_dir / "wav.scp", "w") as f:
+            for rid, rstr in sorted(wav_scp.items()):
+                if rid in split_rec_ids:
+                    print(rstr, file=f)
+        recordings, supervisions, _ = load_kaldi_data_dir(
+            data_dir, sampling_rate=_EDACC_SAMPLING_RATE
+        )
+
+        # Add extra metadata available.
+        with open(data_dir / "conv.list") as f:
+            conv_rec_ids = set(map(str.strip, f))
+        for s in supervisions:
+            s.language = "English"
+            s.is_conversational = s.recording_id in conv_rec_ids
+            for key, val in spk2meta[s.speaker].items():
+                setattr(s, key, val)
+
+        # Fix, validate, and save manifests.
+        recordings, supervisions = fix_manifests(recordings, supervisions)
+        validate_recordings_and_supervisions(recordings, supervisions)
+        manifests[split] = {"recordings": recordings, "supervisions": supervisions}
+        if output_dir is not None:
+            recordings.to_file(output_dir / f"edacc_recordings_{split}.jsonl.gz")
+            supervisions.to_file(output_dir / f"edacc_supervisions_{split}.jsonl.gz")
+
+    return manifests
+
+
+def parse_linguistic_background(path: Pathlike) -> Dict:
+    import pandas as pd
+
+    df = pd.read_csv(path)
+    df = df.rename(
+        columns={
+            "What is your gender?": "gender",
+            "What’s your ethnic background? ": "ethnicity",
+            "What is your higher level of education?": "education",
+            "How would you describe your accent in English? (e.g. Italian, Glaswegian)": "accent",
+            "Do you speak any second languages? separate them with commas  (e.g., Mandarin,Catalan,French )": "other_languages",
+            "What’s your year of birth? (e.g., 1992)": "birth_year",
+            "What year did you start learning English? (e.g., 1999)": "start_english_year",
+        }
+    )
+    df["age"] = 2022 - df.birth_year
+    df["years_speaking_english"] = 2022 - df.start_english_year
+
+    def parse(key, val) -> Optional:
+        if key == "years_speaking_english":
+            if math.isnan(val):
+                return None
+            return int(val)
+        if key == "other_languages":
+            if isinstance(val, float) and math.isnan(val):
+                return []
+            return [v.strip() for v in val.split(",")]
+        if isinstance(val, str):
+            return val.strip()
+        return val
+
+    spk2meta = {
+        row["PARTICIPANT_ID"]: {
+            m: parse(m, row[m])
+            for m in (
+                "gender",
+                "ethnicity",
+                "education",
+                "accent",
+                "other_languages",
+                "age",
+                "years_speaking_english",
+            )
+        }
+        for _, row in df.iterrows()
+    }
+
+    return spk2meta
