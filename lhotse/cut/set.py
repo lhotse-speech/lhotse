@@ -437,15 +437,24 @@ class CutSet(Serializable, AlgorithmMixin):
             ...     fbank = cut.load_features()
 
         We also support providing shell commands as shard sources, inspired by WebDataset.
+        The "cuts" field expects a .jsonl stream, while the other fields expect a .tar stream.
         Example::
 
             >>> cuts = LazySharIterator({
-            ...     "cuts": ["pipe:curl https://my.page/cuts.000000.jsonl.gz"],
+            ...     "cuts": ["pipe:curl https://my.page/cuts.000000.jsonl"]
             ...     "recording": ["pipe:curl https://my.page/recording.000000.tar"],
             ... })
             ... for cut in cuts:
             ...     print("Cut", cut.id, "has duration of", cut.duration)
             ...     audio = cut.load_audio()
+
+        The shell command can also contain pipes, which can be used to e.g. decompressing.
+        Example::
+
+            >>> cuts = LazySharIterator({
+            ...     "cuts": ["pipe:curl https://my.page/cuts.000000.jsonl.gz | gunzip -c -"],
+                    (...)
+            ... })
 
         Finally, we allow specifying URLs or cloud storage URIs for the shard sources.
         We defer to ``smart_open`` library to handle those.
