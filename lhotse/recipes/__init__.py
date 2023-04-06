@@ -32,6 +32,7 @@ from .himia import download_himia, prepare_himia
 from .icsi import download_icsi, prepare_icsi
 from .l2_arctic import prepare_l2_arctic
 from .libricss import download_libricss, prepare_libricss
+from .librilight import prepare_librilight
 from .librimix import download_librimix, prepare_librimix
 from .librispeech import download_librispeech, prepare_librispeech
 from .libritts import download_libritts, prepare_libritts
