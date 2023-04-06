@@ -7,7 +7,16 @@ Sanabria, Ramon; Markl, Nina; Carmantini, Andrea; Klejch, Ondrej; Bell, Peter; B
 
 Description
 
-English is the most widely spoken language in the world, used daily by millions of people as a first or second language in many different contexts. As a result, there are many varieties of English. Although the great many advances in English automatic speech recognition (ASR) over the past decades, results are usually reported based on test datasets which fail to represent the diversity of English as spoken today around the globe. We present the first release of The Edinburgh International Accents of English Corpus (EdAcc). This dataset attempts to better represent the wide diversity of English, encompassing almost 40 hours of dyadic video call conversations between friends. Unlike other datasets, EdAcc includes a wide range of first and second-language varieties of English and a linguistic background profile of each speaker. Results on latest public, and commercial models show that EdAcc highlights shortcomings of current English ASR models. The best performing model, trained on 680 thousand hours of transcribed data, obtains an average of 19.7% WER -- in contrast to the the 2.7% WER obtained when evaluated on US English clean read speech. Across all models, we observe a drop in performance on Jamaican, Indonesian, Nigerian, and Kenyan English speakers. Recordings, linguistic backgrounds, data statement, and evaluation scripts are released on our website under CC-BY-SA.
+English is the most widely spoken language in the world, used daily by millions of people as a first or second language in many different contexts.
+As a result, there are many varieties of English.
+Although the great many advances in English automatic speech recognition (ASR) over the past decades, results are usually reported based on test datasets which fail to represent the diversity of English as spoken today around the globe.
+We present the first release of The Edinburgh International Accents of English Corpus (EdAcc).
+This dataset attempts to better represent the wide diversity of English, encompassing almost 40 hours of dyadic video call conversations between friends.
+Unlike other datasets, EdAcc includes a wide range of first and second-language varieties of English and a linguistic background profile of each speaker.
+Results on latest public, and commercial models show that EdAcc highlights shortcomings of current English ASR models.
+The best performing model, trained on 680 thousand hours of transcribed data, obtains an average of 19.7% WER -- in contrast to the the 2.7% WER obtained when evaluated on US English clean read speech.
+Across all models, we observe a drop in performance on Jamaican, Indonesian, Nigerian, and Kenyan English speakers.
+Recordings, linguistic backgrounds, data statement, and evaluation scripts are released on our website under CC-BY-SA.
 
 Source: https://datashare.ed.ac.uk/handle/10283/4836
 """
@@ -71,9 +80,13 @@ def download_edacc(
     shutil.rmtree(corpus_dir, ignore_errors=True)
     with zipfile.ZipFile(archive_path) as zip:
         zip.extractall(path=corpus_dir)
+    tar_name = "edacc_v1.0.tar.gz"
+    actual_corpus_dir = corpus_dir / tar_name.replace(".tar.gz", "")
+    with tarfile.open(corpus_dir / tar_name) as tar:
+        safe_extract(tar, actual_corpus_dir)
     completed_detector.touch()
 
-    return corpus_dir
+    return actual_corpus_dir
 
 
 def prepare_edacc(
