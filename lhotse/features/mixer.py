@@ -41,7 +41,8 @@ class FeatureMixer:
         :param frame_shift: Required to correctly compute offset and padding during the mix.
         :param padding_value: The value used to pad the shorter features during the mix.
             This value is adequate only for log space features. For non-log space features,
-            e.g. energies, use either 0 or a small positive value like 1e-5.
+            e.g. energies, use either 0 or a small positive value like 1e-5. This value will be
+            ignore if the ``feature_extractor`` has a ``padding_value`` attribute.
         :param reference_energy: Optionally pass a reference energy value to compute SNRs against.
             This might be required when ``base_feats`` correspond to padding energies.
         """
@@ -52,7 +53,7 @@ class FeatureMixer:
         self.frame_shift = frame_shift
         self.padding_value = (
             feature_extractor.padding_value
-            if hasattr(feature_extractor, "padding_value")
+            if feature_extractor.padding_value is not None
             else padding_value
         )
         self.dtype = self.tracks[0].dtype
