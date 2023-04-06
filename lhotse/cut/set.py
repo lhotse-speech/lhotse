@@ -1644,6 +1644,20 @@ class CutSet(Serializable, AlgorithmMixin):
             lambda cut: cut.perturb_volume(factor=factor, affix_id=affix_id)
         )
 
+    def normalize_loudness(self, target: float, affix_id: bool = True) -> "CutSet":
+        """
+        Return a new :class:`~lhotse.cut.CutSet` that will lazily apply loudness normalization
+        to the desired ``target`` loudness (in dBFS).
+
+        :param target: The target loudness in dBFS.
+        :param affix_id: When true, we will modify the ``Cut.id`` field
+            by affixing it with "_ln{target}".
+        :return: a modified copy of the current ``CutSet``.
+        """
+        return self.map(
+            lambda cut: cut.normalize_loudness(target=target, affix_id=affix_id)
+        )
+
     def dereverb_wpe(self, affix_id: bool = True) -> "CutSet":
         """
         Return a new :class:`~lhotse.cut.CutSet` that will lazily apply WPE dereverberation.
