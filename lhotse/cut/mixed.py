@@ -1041,6 +1041,13 @@ class MixedCut(Cut):
             tracks=[fastcopy(t, cut=t.cut.drop_supervisions()) for t in self.tracks],
         )
 
+    def drop_alignments(self) -> "MixedCut":
+        """Return a copy of the current :class:`.MixedCut`, detached from ``supervisions``."""
+        return fastcopy(
+            self,
+            tracks=[fastcopy(t, cut=t.cut.drop_alignments()) for t in self.tracks],
+        )
+
     def compute_and_store_features(
         self,
         extractor: FeatureExtractor,
