@@ -42,7 +42,7 @@ def pad_or_truncate_features(
     feats: np.ndarray,
     expected_num_frames: int,
     abs_tol: int = 1,
-    pad_value: float = LOG_EPSILON,
+    pad_value: float = -1000,
 ):
     frames_diff = feats.shape[0] - expected_num_frames
 
@@ -53,7 +53,7 @@ def pad_or_truncate_features(
             feats,
             ((0, -frames_diff), (0, 0)),
             mode="constant",
-            constant_values=LOG_EPSILON,
+            constant_values=-1000,
         )
     elif abs(frames_diff) > abs_tol:
         raise ValueError(
@@ -150,7 +150,7 @@ class LibrosaFbank(FeatureExtractor):
 
     @property
     def padding_value(self) -> float:
-        return LOG_EPSILON
+        return -1000.0
 
     def feature_dim(self, sampling_rate: int) -> int:
         return self.config.num_mel_bins

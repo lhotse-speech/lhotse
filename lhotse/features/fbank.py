@@ -4,7 +4,7 @@ from typing import Any, Dict
 import numpy as np
 
 from lhotse.features.base import TorchaudioFeatureExtractor, register_extractor
-from lhotse.utils import EPSILON, LOG_EPSILON, Seconds
+from lhotse.utils import EPSILON, Seconds
 
 
 @dataclass
@@ -56,7 +56,7 @@ class TorchaudioFbank(TorchaudioFeatureExtractor):
 
     @property
     def padding_value(self) -> float:
-        return LOG_EPSILON
+        return -1000.0
 
     @staticmethod
     def mix(

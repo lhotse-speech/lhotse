@@ -2,7 +2,7 @@ from dataclasses import asdict, dataclass
 from typing import Any, Dict
 
 from lhotse.features.base import TorchaudioFeatureExtractor, register_extractor
-from lhotse.utils import EPSILON, LOG_EPSILON, Seconds
+from lhotse.utils import EPSILON, Seconds
 
 
 @dataclass
@@ -56,4 +56,4 @@ class TorchaudioMfcc(TorchaudioFeatureExtractor):
 
     @property
     def padding_value(self) -> float:
-        return LOG_EPSILON
+        return -1000.0
