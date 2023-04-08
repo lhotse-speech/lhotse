@@ -133,7 +133,9 @@ def _read_cv_manifests_if_cached(
 
 
 def _parse_utterance(
-    lang_path: Path, language: str, audio_info: list,
+    lang_path: Path,
+    language: str,
+    audio_info: list,
 ) -> Optional[Tuple[Recording, SupervisionSegment]]:
     audio_path = lang_path / "clips" / audio_info[1]
 
@@ -142,10 +144,7 @@ def _parse_utterance(
         return None
 
     recording_id = Path(audio_info[1]).stem
-    recording = Recording.from_file(
-        path=audio_path,
-        recording_id=recording_id
-    )
+    recording = Recording.from_file(path=audio_path, recording_id=recording_id)
 
     segment = SupervisionSegment(
         id=recording_id,
@@ -192,7 +191,7 @@ def _prepare_part(
         supervisions = []
 
         with open(tsv_path) as f:
-            tsvreader = csv.reader(f, delimiter='\t')
+            tsvreader = csv.reader(f, delimiter="\t")
             audio_infos = list(tsvreader)
 
         for audio_info in tqdm(audio_infos, desc="Distributing tasks"):
@@ -297,9 +296,7 @@ def prepare_commonvoice(
             supervision_set.to_file(
                 output_dir / f"cv-{lang}_supervisions_{part}.jsonl.gz"
             )
-            recording_set.to_file(
-                output_dir / f"cv-{lang}_recordings_{part}.jsonl.gz"
-            )
+            recording_set.to_file(output_dir / f"cv-{lang}_recordings_{part}.jsonl.gz")
 
             lang_manifests[part] = {
                 "supervisions": supervision_set,
@@ -309,6 +306,3 @@ def prepare_commonvoice(
         manifests[lang] = lang_manifests
 
     return manifests
-
-
-prepare_commonvoice("/k2-dev/yangyifan/cv-corpus-13.0-2023-03-09", ".", "en", num_jobs=16)
