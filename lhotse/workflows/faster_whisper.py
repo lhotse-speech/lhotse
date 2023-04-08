@@ -66,6 +66,11 @@ def annotate_with_faster_whisper(
     )
     if not isinstance(manifest, RecordingSet) and not isinstance(manifest, CutSet):
         raise ValueError("The ``manifest`` must be either a RecordingSet or a CutSet.")
+    assert not vad_filter or is_module_available("onnxruntime"), (
+        "Use of VAD requires onnxruntime to be installed. "
+        "You can install it via 'pip install onnxruntime' "
+        "(see https://github.com/guillaumekln/faster-whisper/ for details)."
+    )
 
     model = _initialize_model(
         model_name, device, compute_type, num_workers, download_root

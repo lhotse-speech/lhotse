@@ -66,7 +66,8 @@ def workflows():
     "--faster-whisper-use-vad",
     is_flag=True,
     default=False,
-    help="If True, use faster-whisper's built-in voice activity detection (SileroVAD).",
+    help="If True, use faster-whisper's built-in voice activity detection (SileroVAD)."
+    "Note: This requires onnxruntime to be installed.",
 )
 @click.option(
     "--faster-whisper-add-alignments",
