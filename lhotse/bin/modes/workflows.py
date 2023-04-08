@@ -80,6 +80,11 @@ def workflows():
     default="float16",
     help="Type to use for computation. See https://opennmt.net/CTranslate2/quantization.html.",
 )
+@click.option(
+    "--faster-whisper-num-workers",
+    default=1,
+    help="Number of workers for parallelization across multiple GPUs.",
+)
 @click.option("-j", "--jobs", default=1, help="Number of jobs for audio scanning.")
 @click.option(
     "--force-nonoverlapping/--keep-overlapping",
@@ -95,12 +100,13 @@ def annotate_with_whisper(
     model_name: str,
     language: Optional[str],
     device: str,
+    jobs: int,
+    force_nonoverlapping: bool,
     faster_whisper: bool,
     faster_whisper_use_vad: bool,
     faster_whisper_compute_type: str,
     faster_whisper_add_alignments: bool,
-    jobs: int,
-    force_nonoverlapping: bool,
+    faster_whisper_num_workers: int,
 ):
     """
     Use OpenAI Whisper model to annotate either RECORDINGS_MANIFEST, RECORDINGS_DIR, or CUTS_MANIFEST.
@@ -118,7 +124,7 @@ def annotate_with_whisper(
         annotate_with_whisper_ = partial(
             annotate_with_faster_whisper,
             compute_type=faster_whisper_compute_type,
-            num_workers=jobs,
+            num_workers=faster_whisper_num_workers,
             vad_filter=faster_whisper_use_vad,
             add_alignments=faster_whisper_add_alignments,
         )
