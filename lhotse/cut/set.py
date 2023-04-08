@@ -996,7 +996,8 @@ class CutSet(Serializable, AlgorithmMixin):
                     f"CutSet has only {len(self)} items but last {last} required; not doing anything."
                 )
                 return self
-            return CutSet.from_cuts(islice(self, len(self) - last, len(self)))
+            N = len(self)
+            return CutSet.from_cuts(islice(self, N - last, N))
 
         if supervision_ids is not None:
             # Remove cuts without supervisions
