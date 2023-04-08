@@ -7,7 +7,7 @@ Mozilla Common Voice is an initiative to help teach machines how real people spe
 This project is an effort to bridge the digital speech divide. Voice recognition technologies bring a human dimension to our devices, but developers need an enormous amount of voice data to build them. Currently, most of that data is expensive and proprietary. We want to make voice data freely and publicly available, and make sure the data represents the diversity of real people. Together we can make voice recognition better for everyone.
 
 How does it work?
-We’re crowdsourcing an open-source dataset of voices. Donate your voice, validate the accuracy of other people’s clips, make the dataset better for everyone.
+We are crowdsourcing an open-source dataset of voices. Donate your voice, validate the accuracy of other people's clips, make the dataset better for everyone.
 """
 import csv
 import logging
@@ -17,8 +17,9 @@ import shutil
 import tarfile
 import warnings
 from collections import defaultdict
+from concurrent.futures.thread import ThreadPoolExecutor
 from pathlib import Path
-from typing import Any, Dict, Iterable, Optional, Sequence, Tuple, Union
+from typing import Dict, List, Optional, Sequence, Tuple, Union, Iterable
 
 from tqdm.auto import tqdm
 
@@ -41,16 +42,13 @@ COMMONVOICE_LANGS = "en de fr cy tt kab ca zh-TW it fa eu es ru tr nl eo zh-CN r
 COMMONVOICE_SPLITS = ("train", "dev", "test", "validated", "invalidated", "other")
 COMMONVOICE_DEFAULT_SPLITS = ("train", "dev", "test")
 
-# TODO: a list of mapping from language codes (e.g., "en") to actual language names (e.g., "US English")
-COMMONVOICE_CODE2LANG = {}
-
 
 def download_commonvoice(
     target_dir: Pathlike = ".",
     languages: Union[str, Iterable[str]] = "all",
     force_download: bool = False,
     base_url: str = DEFAULT_COMMONVOICE_URL,
-    release: Optional[str] = "cv-corpus-8.0-2022-01-19",
+    release: Optional[str] = "cv-corpus-13.0-2023-03-09",
 ) -> None:
     """
     Download and untar the CommonVoice dataset.
@@ -60,7 +58,7 @@ def download_commonvoice(
         or a list of language codes.
     :param force_download: Bool, if True, download the tars no matter if the tars exist.
     :param base_url: str, the base URL for CommonVoice.
-    :param release: str, the name of the CommonVoice release (e.g., "cv-corpus-8.0-2022-01-19").
+    :param release: str, the name of the CommonVoice release (e.g., "cv-corpus-13.0-2023-03-09").
         It is used as part of the download URL.
     """
     # note(pzelasko): This code should work in general if we supply the right URL,
@@ -100,7 +98,7 @@ def download_commonvoice(
                     "Or you can choose a version greater than 8.0.\n"
                 )
             else:
-                # https://mozilla-common-voice-datasets.s3.dualstack.us-west-2.amazonaws.com/cv-corpus-7.0-2021-07-21/cv-corpus-7.0-2021-07-21-zh-CN.tar.gz
+                # https://mozilla-common-voice-datasets.s3.dualstack.us-west-2.amazonaws.com/cv-corpus-13.0-2023-03-09/cv-corpus-13.0-2023-03-09-zh-CN.tar.gz
                 single_url = url + f"/{release}-{lang}.tar.gz"
             urlretrieve_progress(
                 single_url, filename=tar_path, desc=f"Downloading {tar_name}"
@@ -112,6 +110,112 @@ def download_commonvoice(
         with tarfile.open(tar_path) as tar:
             safe_extract(tar, path=target_dir)
         completed_detector.touch()
+
+
+def _read_cv_manifests_if_cached(
+    output_dir: Optional[Pathlike],
+    language: str,
+) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet]]]:
+    """
+    Returns:
+        {'train': {'recordings': ..., 'supervisions': ...}, 'dev': ..., 'test': ...}
+    """
+    if output_dir is None:
+        return {}
+    manifests = defaultdict(dict)
+    for part in ["train", "dev", "test"]:
+        for manifest in ["recordings", "supervisions"]:
+            path = output_dir / f"cv_{manifest}_{language}_{part}.jsonl.gz"
+            if not path.is_file():
+                continue
+            manifests[part][manifest] = load_manifest(path)
+    return manifests
+
+
+def _parse_utterance(
+    lang_path: Path, language: str, audio_info: list,
+) -> Optional[Tuple[Recording, SupervisionSegment]]:
+    audio_path = lang_path / "clips" / audio_info[1]
+
+    if not audio_path.is_file():
+        logging.info(f"No such file: {audio_path}")
+        return None
+
+    recording_id = Path(audio_info[1]).stem
+    recording = Recording.from_file(
+        path=audio_path,
+        recording_id=recording_id
+    )
+
+    segment = SupervisionSegment(
+        id=recording_id,
+        recording_id=recording_id,
+        start=0.0,
+        duration=recording.duration,
+        channel=0,
+        language=language,
+        speaker=audio_info[0],
+        text=audio_info[2].strip(),
+        gender=audio_info[6],
+        custom={
+            "age": audio_info[5],
+            "accents": audio_info[7],
+        },
+    )
+    return recording, segment
+
+
+def _prepare_part(
+    lang: str,
+    part: str,
+    lang_path: Pathlike,
+    num_jobs: int = 1,
+) -> Tuple[RecordingSet, SupervisionSet]:
+    """
+    Prepares part of CommonVoice data.
+
+    :param lang: string language code (e.g., "en").
+    :param part: which split to prepare (e.g., "train", "validated", etc.).
+    :param lang_path: path to a CommonVoice directory for a specific language
+        (e.g., "/path/to/cv-corpus-13.0-2023-03-09/pl").
+    :param num_jobs: How many concurrent workers to use for scanning of the audio files.
+    :return: a tuple of (RecordingSet, SupervisionSet) objects opened in lazy mode,
+        as CommonVoice manifests may be fairly large in memory.
+    """
+
+    lang_path = Path(lang_path)
+    tsv_path = lang_path / f"{part}.tsv"
+
+    with ThreadPoolExecutor(num_jobs) as ex:
+        futures = []
+        recordings = []
+        supervisions = []
+
+        with open(tsv_path) as f:
+            tsvreader = csv.reader(f, delimiter='\t')
+            audio_infos = list(tsvreader)
+
+        for audio_info in tqdm(audio_infos, desc="Distributing tasks"):
+            futures.append(
+                ex.submit(
+                    _parse_utterance,
+                    lang_path,
+                    lang,
+                    audio_info,
+                )
+            )
+
+        for future in tqdm(futures, desc="Processing"):
+            result = future.result()
+            if result is None:
+                continue
+            recording, segment = result
+            recordings.append(recording)
+
+    recording_set = RecordingSet.from_recordings(recordings)
+    supervision_set = SupervisionSet.from_segments(supervisions)
+
+    return recording_set, supervision_set
 
 
 def prepare_commonvoice(
@@ -128,9 +232,9 @@ def prepare_commonvoice(
     This function expects the input directory structure of::
 
         >>> metadata_path = corpus_dir / language_code / "{train,dev,test}.tsv"
-        >>> # e.g. pl_train_metadata_path = "/path/to/cv-corpus-7.0-2021-07-21/pl/train.tsv"
+        >>> # e.g. pl_train_metadata_path = "/path/to/cv-corpus-13.0-2023-03-09/pl/train.tsv"
         >>> audio_path = corpus_dir / language_code / "clips"
-        >>> # e.g. pl_audio_path = "/path/to/cv-corpus-7.0-2021-07-21/pl/clips"
+        >>> # e.g. pl_audio_path = "/path/to/cv-corpus-13.0-2023-03-09/pl/clips"
 
     Returns a dict with 3-level structure (lang -> split -> manifest-type)::
 
@@ -144,16 +248,6 @@ def prepare_commonvoice(
     :param num_jobs: How many concurrent workers to use for scanning of the audio files.
     :return: a dict with manifests for all specified languagues and their train/dev/test splits.
     """
-    if not is_module_available("pandas"):
-        raise ValueError(
-            "To prepare CommonVoice data, please 'pip install pandas' first."
-        )
-    if num_jobs > 1:
-        warnings.warn(
-            "num_jobs>1 currently not supported for CommonVoice data prep;"
-            "setting to 1."
-        )
-
     corpus_dir = Path(corpus_dir)
     assert corpus_dir.is_dir(), f"No such directory: {corpus_dir}"
     assert output_dir is not None, (
@@ -182,23 +276,31 @@ def prepare_commonvoice(
 
         # Maybe the manifests already exist: we can read them and save a bit of preparation time.
         # Pattern: "cv_recordings_en_train.jsonl.gz" / "cv_supervisions_en_train.jsonl.gz"
-        lang_manifests = read_cv_manifests_if_cached(
+        lang_manifests = _read_cv_manifests_if_cached(
             output_dir=output_dir, language=lang
         )
 
-        for part in splits:
-            logging.info(f"Split: {part}")
+        for part in tqdm(splits, desc=f"Spliting"):
+            logging.info(f"Spliting {part}")
             if part in lang_manifests:
                 logging.info(
-                    f"CommonVoice language: {lang} already prepared - skipping."
+                    f"{part} split of CommonVoice-{lang} already prepared - skipping."
                 )
                 continue
-            recording_set, supervision_set = prepare_single_commonvoice_tsv(
+            recording_set, supervision_set = _prepare_part(
                 lang=lang,
                 part=part,
-                output_dir=output_dir,
                 lang_path=lang_path,
+                num_jobs=num_jobs,
             )
+
+            supervision_set.to_file(
+                output_dir / f"cv-{lang}_supervisions_{part}.jsonl.gz"
+            )
+            recording_set.to_file(
+                output_dir / f"cv-{lang}_recordings_{part}.jsonl.gz"
+            )
+
             lang_manifests[part] = {
                 "supervisions": supervision_set,
                 "recordings": recording_set,
@@ -209,129 +311,4 @@ def prepare_commonvoice(
     return manifests
 
 
-def prepare_single_commonvoice_tsv(
-    lang: str,
-    part: str,
-    output_dir: Pathlike,
-    lang_path: Pathlike,
-) -> Tuple[RecordingSet, SupervisionSet]:
-    """
-    Prepares part of CommonVoice data from a single TSV file.
-
-    :param lang: string language code (e.g., "en").
-    :param part: which split to prepare (e.g., "train", "validated", etc.).
-    :param output_dir: path to directory where we will store the manifests.
-    :param lang_path: path to a CommonVoice directory for a specific language
-        (e.g., "/path/to/cv-corpus-7.0-2021-07-21/pl").
-    :return: a tuple of (RecordingSet, SupervisionSet) objects opened in lazy mode,
-        as CommonVoice manifests may be fairly large in memory.
-    """
-    if not is_module_available("pandas"):
-        raise ValueError(
-            "To prepare CommonVoice data, please 'pip install pandas' first."
-        )
-    import pandas as pd
-
-    lang_path = Path(lang_path)
-    output_dir = Path(output_dir)
-    tsv_path = lang_path / f"{part}.tsv"
-
-    # Read the metadata
-    df = pd.read_csv(tsv_path, sep="\t", quoting=csv.QUOTE_NONE)
-    # Scan all the audio files
-    with RecordingSet.open_writer(
-        output_dir / f"cv-{lang}_recordings_{part}.jsonl.gz",
-        overwrite=False,
-    ) as recs_writer, SupervisionSet.open_writer(
-        output_dir / f"cv-{lang}_supervisions_{part}.jsonl.gz",
-        overwrite=False,
-    ) as sups_writer:
-        for idx, row in tqdm(
-            df.iterrows(),
-            desc="Processing audio files",
-            total=len(df),
-        ):
-            try:
-                result = parse_utterance(row, lang_path, lang)
-                if result is None:
-                    continue
-                recording, segment = result
-                validate_recordings_and_supervisions(recording, segment)
-                recs_writer.write(recording)
-                sups_writer.write(segment)
-            except Exception as e:
-                logging.error(
-                    f"Error when processing TSV file: line no. {idx}: '{row}'.\n"
-                    f"Original error type: '{type(e)}' and message: {e}"
-                )
-                continue
-    recordings = RecordingSet.from_jsonl_lazy(recs_writer.path)
-    supervisions = SupervisionSet.from_jsonl_lazy(sups_writer.path)
-    return recordings, supervisions
-
-
-def parse_utterance(
-    row: Any, lang_path: Path, language: str
-) -> Tuple[Recording, SupervisionSegment]:
-    def read_row_optional_field(fieldname: str):
-        # defaulting instead of raising exception
-        if fieldname not in row:
-            return None
-        cell_val = row[fieldname]
-        if cell_val == "nan" or (
-            isinstance(cell_val, numbers.Number) and math.isnan(cell_val)
-        ):
-            return None
-        else:
-            return cell_val
-
-    # Create the Recording first
-    audio_path = lang_path / "clips" / row.path
-    if not audio_path.is_file():
-        raise ValueError(f"No such file: {audio_path}")
-    recording_id = Path(row.path).stem
-    recording = Recording.from_file(audio_path, recording_id=recording_id)
-    # Handling accent(s) in different versions of CommonVoice
-    if "accents" in row:
-        accents = read_row_optional_field("accents")
-    else:
-        accents = read_row_optional_field("accent")
-    # Then, create the corresponding supervisions
-    segment = SupervisionSegment(
-        id=recording_id,
-        recording_id=recording_id,
-        start=0.0,
-        duration=recording.duration,
-        channel=0,
-        # Look up language code => language name mapping (it is empty at the time of writing this comment)
-        # if the language code is unknown, fall back to using the language code.
-        language=COMMONVOICE_CODE2LANG.get(language, language),
-        speaker=row.client_id,
-        text=row.sentence.strip(),
-        gender=read_row_optional_field("gender"),
-        custom={
-            "age": read_row_optional_field("age"),
-            "accents": accents,
-        },
-    )
-    return recording, segment
-
-
-def read_cv_manifests_if_cached(
-    output_dir: Optional[Pathlike],
-    language: str,
-) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet]]]:
-    """
-    Returns:
-        {'train': {'recordings': ..., 'supervisions': ...}, 'dev': ..., 'test': ...}
-    """
-    if output_dir is None:
-        return {}
-    manifests = defaultdict(dict)
-    for part in ["train", "dev", "test"]:
-        for manifest in ["recordings", "supervisions"]:
-            path = output_dir / f"cv_{manifest}_{language}_{part}.jsonl.gz"
-            if not path.is_file():
-                continue
-            manifests[part][manifest] = load_manifest(path)
-    return manifests
+prepare_commonvoice("/k2-dev/yangyifan/cv-corpus-13.0-2023-03-09", ".", "en", num_jobs=16)
