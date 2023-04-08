@@ -19,7 +19,7 @@ import warnings
 from collections import defaultdict
 from concurrent.futures.thread import ThreadPoolExecutor
 from pathlib import Path
-from typing import Dict, List, Optional, Sequence, Tuple, Union, Iterable
+from typing import Dict, Iterable, List, Optional, Sequence, Tuple, Union
 
 from tqdm.auto import tqdm
 
