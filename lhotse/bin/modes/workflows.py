@@ -118,6 +118,7 @@ def annotate_with_whisper(
         annotate_with_whisper_ = partial(
             annotate_with_faster_whisper,
             compute_type=faster_whisper_compute_type,
+            num_workers=jobs,
             vad_filter=faster_whisper_use_vad,
             add_alignments=faster_whisper_add_alignments,
         )

@@ -44,7 +44,7 @@ def annotate_with_faster_whisper(
     :param manifest: a ``RecordingSet`` or ``CutSet`` object.
     :param language: specify the language if known upfront, otherwise it will be auto-detected.
     :param model_name: one of available Whisper variants (base, medium, large, etc.).
-    :param device: Where to run the inference (cpu, cuda, cuda:1, etc.).
+    :param device: Where to run the inference (cpu, cuda, etc.).
     :param force_nonoverlapping: if True, the Whisper segment time-stamps will be processed to make
         sure they are non-overlapping.
     :param download_root: Not supported by faster-whisper. Argument kept to maintain compatibility
@@ -95,11 +95,13 @@ def _initialize_model(
     num_workers: int = 1,
     download_root: Optional[str] = None,
 ):
+    import torch
     from faster_whisper import WhisperModel
 
-    # Split device into device type and index (for CTranslate2)
-    device, _, device_index = device.partition(":")
-    device_index = 0 if len(device_index) == 0 else int(device_index)
+    if num_workers > 1:
+        # Limit num_workers to available GPUs
+        num_workers = min(num_workers, torch.cuda.device_count())
+    device_index = list(range(num_workers))
     return WhisperModel(
         model_name,
         device=device,
