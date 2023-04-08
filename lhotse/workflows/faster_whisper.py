@@ -1,4 +1,6 @@
 import logging
+from concurrent.futures import as_completed
+from concurrent.futures.thread import ThreadPoolExecutor
 from typing import Any, Generator, List, Optional, Union
 
 import numpy as np
@@ -12,25 +14,27 @@ from lhotse import (
     add_durations,
 )
 from lhotse.qa import trim_supervisions_to_recordings
-from lhotse.utils import fastcopy, is_module_available
 from lhotse.supervision import AlignmentItem
+from lhotse.utils import fastcopy, is_module_available
 
 
 def annotate_with_faster_whisper(
     manifest: Union[RecordingSet, CutSet],
     model_name: str = "base",
     device: str = "cpu",
-    device_index: int = 0,
     force_nonoverlapping: bool = False,
+    download_root: Optional[str] = None,
     compute_type: str = "default",
-    cpu_threads: int = 0,
     num_workers: int = 1,
+    vad_filter: bool = False,
+    add_alignments: bool = False,
     **decode_options,
 ) -> Generator[MonoCut, None, None]:
     """
-    Use OpenAI Whisper model to annotate either RECORDINGS_MANIFEST, RECORDINGS_DIR, or CUTS_MANIFEST.
-    It will perform automatic segmentation, transcription, and language identification. If
-    the first argument is a CutSet, it will overwrite the supervisions with the results of the inference.
+    Use OpenAI Whisper model via faster-whisper and CTranslate2 to annotate either
+    RECORDINGS_MANIFEST, RECORDINGS_DIR, or CUTS_MANIFEST. It will perform automatic segmentation,
+    transcription, and language identification. If the first argument is a CutSet, it will
+    overwrite the supervisions with the results of the inference.
 
     Note: this is an experimental feature of Lhotse, and is not guaranteed to yield
     high quality of data.
@@ -40,11 +44,18 @@ def annotate_with_faster_whisper(
     :param manifest: a ``RecordingSet`` or ``CutSet`` object.
     :param language: specify the language if known upfront, otherwise it will be auto-detected.
     :param model_name: one of available Whisper variants (base, medium, large, etc.).
-    :param device: Where to run the inference (cpu, cuda, etc.).
+    :param device: Where to run the inference (cpu, cuda, cuda:1, etc.).
     :param force_nonoverlapping: if True, the Whisper segment time-stamps will be processed to make
         sure they are non-overlapping.
-    :param download_root: if specified, the model will be downloaded to this directory. Otherwise,
-        it will be downloaded to the default location specfied by whisper.
+    :param download_root: Not supported by faster-whisper. Argument kept to maintain compatibility
+        with annotate_with_whisper. Faster-whisper uses
+    :param compute_type: Type to use for computation.
+        See https://opennmt.net/CTranslate2/quantization.html.
+    :param num_workers: Increasing the number of workers can improve the global throughput at the
+        cost of increased memory usage.
+    :param vad_filter: If True, use faster-whisper's built-in voice activity detection (SileroVAD).
+    :param add_alignments: if True, add word alignments using timestamps obtained using the cross-
+        attention pattern and dynamic time warping (Note: Less accurate than forced alignment).
     :param decode_options: additional options to pass to the ``whisper.transcribe`` function.
     :return: a generator of cuts (use ``CutSet.open_writer()`` to write them).
     """
@@ -53,74 +64,83 @@ def annotate_with_faster_whisper(
         "You can install it via 'pip install faster-whisper' "
         "(see https://github.com/guillaumekln/faster-whisper/ for details)."
     )
-
-    if isinstance(manifest, RecordingSet):
-        yield from _annotate_recordings(
-            manifest,
-            model_name,
-            device,
-            device_index,
-            force_nonoverlapping,
-            compute_type=compute_type,
-            cpu_threads=cpu_threads,
-            num_workers=num_workers,
-            **decode_options,
-        )
-    elif isinstance(manifest, CutSet):
-        yield from _annotate_cuts(
-            manifest,
-            model_name,
-            device,
-            device_index,
-            force_nonoverlapping,
-            compute_type=compute_type,
-            cpu_threads=cpu_threads,
-            num_workers=num_workers,
-            **decode_options,
-        )
-    else:
+    if not isinstance(manifest, RecordingSet) and not isinstance(manifest, CutSet):
         raise ValueError("The ``manifest`` must be either a RecordingSet or a CutSet.")
 
+    model = _initialize_model(
+        model_name, device, compute_type, num_workers, download_root
+    )
+    with ThreadPoolExecutor(num_workers) as ex:
+        futures = []
+        for item in manifest:
+            futures.append(
+                ex.submit(
+                    _process_single_manifest,
+                    item,
+                    model,
+                    force_nonoverlapping,
+                    vad_filter,
+                    add_alignments,
+                    **decode_options,
+                )
+            )
+        for item in as_completed(futures):
+            yield item.result()
 
-def _annotate_recordings(
-    recordings: RecordingSet,
+
+def _initialize_model(
     model_name: str,
     device: str,
-    device_index: int,
-    force_nonoverlapping: bool,
     compute_type: str = "default",
-    cpu_threads: int = 0,
     num_workers: int = 1,
-    **decode_options,
+    download_root: Optional[str] = None,
 ):
-    """
-    Helper function that annotates a RecordingSet with Whisper.
-    """
     from faster_whisper import WhisperModel
 
-    model = WhisperModel(
+    # Split device into device type and index (for CTranslate2)
+    device, _, device_index = device.partition(":")
+    device_index = 0 if len(device_index) == 0 else int(device_index)
+    return WhisperModel(
         model_name,
         device=device,
         device_index=device_index,
         compute_type=compute_type,
-        cpu_threads=cpu_threads,
         num_workers=num_workers,
+        # download_root=download_root,
     )
 
-    for recording in recordings:
-        if recording.num_channels > 1:
+
+def _process_single_manifest(
+    manifest: Union[Recording, MonoCut],
+    model,
+    force_nonoverlapping: bool,
+    vad_filter: bool,
+    add_alignments: bool = False,
+    **decode_options,
+) -> MonoCut:
+    if isinstance(manifest, Recording):
+        if manifest.num_channels > 1:
             logging.warning(
-                f"Skipping recording '{recording.id}'. It has {recording.num_channels} channels, "
+                f"Skipping recording '{manifest.id}'. It has {manifest.num_channels} channels, "
                 f"but we currently only support mono input."
             )
-            continue
-        audio = np.squeeze(recording.resample(16000).load_audio())
-        segments, info = model.transcribe(audio=audio, word_timestamps=True, vad_filter=True, **decode_options)
-        # Create supervisions from segments while filtering out those with negative duration.
+            return []
+        recording_id = manifest.id
+    else:
+        recording_id = manifest.recording_id
+    audio = np.squeeze(manifest.resample(16000).load_audio())
+    segments, info = model.transcribe(
+        audio=audio,
+        word_timestamps=add_alignments,
+        vad_filter=vad_filter,
+        **decode_options,
+    )
+    # Create supervisions from segments while filtering out those with negative duration.
+    if add_alignments:
         supervisions = [
             SupervisionSegment(
-                id=f"{recording.id}-{segment_id:06d}",
-                recording_id=recording.id,
+                id=f"{manifest.id}-{segment_id:06d}",
+                recording_id=recording_id,
                 start=round(segment.start, ndigits=8),
                 duration=add_durations(
                     segment.end, -segment.start, sampling_rate=16000
@@ -132,17 +152,34 @@ def _annotate_recordings(
                 [
                     AlignmentItem(
                         symbol=ws.word.strip(),
-                        start=ws.start,
-                        duration=(ws.end - ws.start),
-                        score=ws.probability,
+                        start=round(ws.start, ndigits=8),
+                        duration=round(ws.end - ws.start, ndigits=8),
+                        score=round(ws.probability, ndigits=3),
                     )
                     for ws in segment.words
-                ]            
+                ],
             )
             for segment_id, segment in enumerate(segments)
             if segment.end - segment.start > 0
         ]
-        cut = recording.to_cut()
+    else:
+        supervisions = [
+            SupervisionSegment(
+                id=f"{manifest.id}-{segment_id:06d}",
+                recording_id=recording_id,
+                start=round(segment.start, ndigits=8),
+                duration=add_durations(
+                    segment.end, -segment.start, sampling_rate=16000
+                ),
+                text=segment.text.strip(),
+                language=info.language,
+            )
+            for segment_id, segment in enumerate(segments)
+            if segment.end - segment.start > 0
+        ]
+
+    if isinstance(manifest, Recording):
+        cut = manifest.to_cut()
         if supervisions:
             supervisions = (
                 _postprocess_timestamps(supervisions)
@@ -151,79 +188,18 @@ def _annotate_recordings(
             )
             cut.supervisions = list(
                 trim_supervisions_to_recordings(
-                    recordings=recording, supervisions=supervisions, verbose=False
+                    recordings=manifest, supervisions=supervisions, verbose=False
                 )
             )
-        yield cut
-
-
-def _annotate_cuts(
-    cuts: CutSet,
-    model_name: str,
-    device: str,
-    device_index: int,
-    force_nonoverlapping: bool,
-    download_root: Optional[str] = None,
-    **decode_options,
-):
-    """
-    Helper function that annotates a CutSet with Whisper.
-    """
-    from faster_whisper import WhisperModel
-
-    model = WhisperModel(
-        model_name,
-        device=device,
-        device_index=device_index,
-        compute_type=compute_type,
-        cpu_threads=cpu_threads,
-        num_workers=num_workers,
-    )
-
-    for cut in cuts:
-        if cut.num_channels > 1:
-            logging.warning(
-                f"Skipping cut '{cut.id}'. It has {cut.num_channels} channels, "
-                f"but we currently only support mono input."
-            )
-            continue
-        audio = np.squeeze(cut.resample(16000).load_audio())
-        segments, info = model.transcribe(audio=audio, word_timestamps=True, **decode_options)
-        # Create supervisions from segments while filtering out those with negative duration.
-        supervisions = [
-            SupervisionSegment(
-                id=f"{cut.id}-{segment_id:06d}",
-                recording_id=cut.recording_id,
-                start=round(segment.start, ndigits=8),
-                duration=add_durations(
-                    min(segment.end, cut.duration),
-                    -segment.start,
-                    sampling_rate=16000,
-                ),
-                text=segment.text.strip(),
-                language=info.language,
-            ).with_alignment(
-                "word",
-                [
-                    AlignmentItem(
-                        symbol=ws.word.strip(),
-                        start=ws.start,
-                        duration=(ws.end - ws.start),
-                        score=ws.probability,
-                    )
-                    for ws in segment.words
-                ]            
-            )
-            for segment_id, segment in enumerate(segments)
-            if segment.end - segment.start > 0
-        ]
-        new_cut = fastcopy(
-            cut,
+    else:
+        cut = fastcopy(
+            manifest,
             supervisions=_postprocess_timestamps(supervisions)
             if force_nonoverlapping
             else supervisions,
         )
-        yield new_cut
+
+    return cut
 
 
 def _postprocess_timestamps(supervisions: List[SupervisionSegment]):
