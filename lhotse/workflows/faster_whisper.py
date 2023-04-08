@@ -113,7 +113,7 @@ def _initialize_model(
         device_index=device_index,
         compute_type=compute_type,
         num_workers=num_workers,
-        # download_root=download_root,
+        download_root=download_root,
     )
 
 
