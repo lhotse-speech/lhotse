@@ -210,6 +210,7 @@ def _prepare_part(
                 continue
             recording, segment = result
             recordings.append(recording)
+            supervisions.append(segment)
 
     recording_set = RecordingSet.from_recordings(recordings)
     supervision_set = SupervisionSet.from_segments(supervisions)
