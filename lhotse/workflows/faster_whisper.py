@@ -107,7 +107,7 @@ def _initialize_model(
         # Limit num_workers to available GPUs
         num_workers = min(num_workers, torch.cuda.device_count())
     device_index = list(range(num_workers))
-    return WhisperModel(
+    model = WhisperModel(
         model_name,
         device=device,
         device_index=device_index,
@@ -115,6 +115,8 @@ def _initialize_model(
         num_workers=num_workers,
         download_root=download_root,
     )
+    model.logger.setLevel(logging.WARNING)
+    return model
 
 
 def _process_single_manifest(
