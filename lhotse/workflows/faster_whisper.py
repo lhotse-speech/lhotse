@@ -109,10 +109,16 @@ def _initialize_model(
     import torch
     from faster_whisper import WhisperModel
 
-    if num_workers > 1:
+    # Parse device index
+    device, _, idx = device.partition(":")
+    if len(idx) > 0:
+        device_index = int(idx)
+    elif num_workers > 1 and device == "cuda":
         # Limit num_workers to available GPUs
         num_workers = min(num_workers, torch.cuda.device_count())
-    device_index = list(range(num_workers))
+        device_index = list(range(num_workers))
+    else:
+        device_index = 0
     model = WhisperModel(
         model_name,
         device=device,
