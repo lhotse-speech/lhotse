@@ -20,6 +20,9 @@ from .cslu_kids import prepare_cslu_kids
 from .daily_talk import download_daily_talk, prepare_daily_talk
 from .dihard3 import prepare_dihard3
 from .dipco import download_dipco, prepare_dipco
+from .earnings21 import download_earnings21, prepare_earnings21
+from .earnings22 import download_earnings22, prepare_earnings22
+from .edacc import download_edacc, prepare_edacc
 from .eval2000 import prepare_eval2000
 from .fisher_english import prepare_fisher_english
 from .fisher_spanish import prepare_fisher_spanish
