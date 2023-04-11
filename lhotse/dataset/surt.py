@@ -8,7 +8,7 @@ import torch.nn.functional as F
 from lhotse import validate
 from lhotse.cut import CutSet
 from lhotse.dataset.input_strategies import BatchIO, PrecomputedFeatures
-from lhotse.utils import compute_num_frames, ifnone
+from lhotse.utils import LOG_EPSILON, compute_num_frames, ifnone
 from lhotse.workarounds import Hdf5MemoryIssueFix
 
 
@@ -64,7 +64,7 @@ class K2SurtDataset(torch.utils.data.Dataset):
         cut_transforms: List[Callable[[CutSet], CutSet]] = None,
         input_transforms: List[Callable[[torch.Tensor], torch.Tensor]] = None,
         input_strategy: BatchIO = PrecomputedFeatures(),
-        pad_value: float = -1000.0,
+        pad_value: float = LOG_EPSILON,
         strict: bool = False,
     ):
         """

@@ -349,7 +349,7 @@ def test_mixed_cut_start01_perturb_volume(cut_with_supervision_start01):
 def test_mixed_cut_start01_reverb_rir(cut_with_supervision_start01, rir):
     mixed_rvb = cut_with_supervision_start01.append(
         cut_with_supervision_start01
-    ).reverb_rir(rir_recording=rir)
+    ).reverb_rir(rir_recording=rir, mix_first=False)
     assert mixed_rvb.start == 0  # MixedCut always starts at 0
     assert mixed_rvb.duration == cut_with_supervision_start01.duration * 2
     assert mixed_rvb.end == cut_with_supervision_start01.duration * 2
@@ -396,12 +396,30 @@ def test_mixed_cut_start01_reverb_rir(cut_with_supervision_start01, rir):
     )
 
 
+def test_mixed_cut_start01_reverb_rir_mix_first(cut_with_supervision_start01, rir):
+    mixed_rvb = cut_with_supervision_start01.pad(duration=0.5).reverb_rir(
+        rir_recording=rir, mix_first=True
+    )
+    assert mixed_rvb.start == 0  # MixedCut always starts at 0
+    assert mixed_rvb.duration == 0.5
+    assert mixed_rvb.end == 0.5
+    assert mixed_rvb.num_samples == 4000
+
+    # Check that the padding part should not be all zeros afte
+    np.testing.assert_raises(
+        AssertionError,
+        np.testing.assert_array_almost_equal,
+        mixed_rvb.load_audio()[:, 3200:],
+        np.zeros((1, 800)),
+    )
+
+
 def test_mixed_cut_start01_reverb_rir_with_fast_random(
     cut_with_supervision_start01, rir
 ):
     mixed_rvb = cut_with_supervision_start01.append(
         cut_with_supervision_start01
-    ).reverb_rir()
+    ).reverb_rir(mix_first=False)
     assert mixed_rvb.start == 0  # MixedCut always starts at 0
     assert mixed_rvb.duration == cut_with_supervision_start01.duration * 2
     assert mixed_rvb.end == cut_with_supervision_start01.duration * 2
