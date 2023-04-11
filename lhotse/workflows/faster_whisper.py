@@ -1,4 +1,5 @@
 import logging
+import warnings
 from concurrent.futures import as_completed
 from concurrent.futures.thread import ThreadPoolExecutor
 from typing import Any, Generator, List, Optional, Union
@@ -26,7 +27,7 @@ def annotate_with_faster_whisper(
     download_root: Optional[str] = None,
     compute_type: str = "default",
     num_workers: int = 1,
-    vad_filter: bool = False,
+    vad_filter: bool = True,
     add_alignments: bool = False,
     **decode_options,
 ) -> Generator[MonoCut, None, None]:
@@ -71,6 +72,11 @@ def annotate_with_faster_whisper(
         "You can install it via 'pip install onnxruntime' "
         "(see https://github.com/guillaumekln/faster-whisper/ for details)."
     )
+    if vad_filter and add_alignments:
+        warnings.warn(
+            "Word timestamps can be very inaccurate when using VAD. We don't recommend using both "
+            f"options together. See https://github.com/guillaumekln/faster-whisper/issues/125."
+        )
 
     model = _initialize_model(
         model_name, device, compute_type, num_workers, download_root

@@ -59,13 +59,13 @@ def workflows():
 @click.option(
     "--faster-whisper",
     is_flag=True,
-    default=False,
+    default=True,
     help="If True, use faster-whisper's implementation based on CTranslate2.",
 )
 @click.option(
     "--faster-whisper-use-vad",
     is_flag=True,
-    default=False,
+    default=True,
     help="If True, use faster-whisper's built-in voice activity detection (SileroVAD)."
     "Note: This requires onnxruntime to be installed.",
 )
