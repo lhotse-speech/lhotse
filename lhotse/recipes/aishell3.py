@@ -93,6 +93,17 @@ def prepare_aishell3(
             dataset_parts=dataset_parts, output_dir=output_dir, prefix="aishell3"
         )
 
+    speaker_info = {}
+    speaker_info_path = corpus_dir / "spk-info.txt"
+    assert speaker_info_path.is_file(), f"No such file: {speaker_info_path}"
+    with open(speaker_info_path, 'r') as f:
+        for k in f.readlines():
+            k = k.strip()
+            if k.startswith('#') or len(k) == 0: continue
+            k = k.split('\t')
+            speaker, gender = k[0], k[2]
+            speaker_info[speaker] = gender
+
     for part in tqdm(dataset_parts, desc="Preparing aishell3 parts"):
         if manifests_exist(part=part, output_dir=output_dir, prefix="aishell3"):
             logging.info(f"aishell3 subset: {part} already prepared - skipping.")
@@ -107,6 +118,7 @@ def prepare_aishell3(
                 id, text = line.strip().split("\t")
                 audio_path = part_path / "wav" / id[:7] / id
                 id = id.split(".")[0]
+                speaker = id[:7]
                 text = "".join([x for i, x in enumerate(text.split()) if i % 2 == 0])
                 pinyin = " ".join([x for i, x in enumerate(text.split()) if i % 2 == 1])
                 if not audio_path.is_file():
@@ -120,7 +132,8 @@ def prepare_aishell3(
                     duration=recording.duration,
                     channel=0,
                     language="Chinese",
-                    gender="female",
+                    speaker=speaker,
+                    gender=speaker_info.get(speaker, "female"),
                     text=text,
                     custom={"pinyin": pinyin.strip()},
                 )
