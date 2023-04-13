@@ -435,7 +435,7 @@ def create_shard_shuffler(epoch: int):
         def run(self, src):
             self.epoch_ += 1
             rng = random.Random()
-            rng.seed((self.seed_, self.epoch_))
+            rng.seed(hash((self.seed_, self.epoch_)))
             items = list(src)
             rng.shuffle(items)
             return items

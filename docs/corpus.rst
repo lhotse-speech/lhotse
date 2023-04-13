@@ -87,6 +87,12 @@ a CLI tool that create the manifests given a corpus directory.
     - :func:`lhotse.recipes.prepare_dihard3`
   * - DiPCo
     - :func:`lhotse.recipes.prepare_dipco`
+  * - Earnings'21
+    - :func:`lhotse.recipes.prepare_earnings21`
+  * - Earnings'22
+    - :func:`lhotse.recipes.prepare_earnings22`
+  * - The Edinburgh International Accents of English Corpus
+    - :func:`lhotse.recipes.prepare_edacc`
   * - English Broadcast News 1997
     - :func:`lhotse.recipes.prepare_broadcast_news`
   * - Fisher English Part 1, 2
@@ -111,6 +117,8 @@ a CLI tool that create the manifests given a corpus directory.
     - :func:`lhotse.recipes.prepare_l2_arctic`
   * - LibriCSS
     - :func:`lhotse.recipes.prepare_libricss`
+  * - LibriLight
+    - :func:`lhotse.recipes.prepare_librilight`
   * - LibriSpeech (including "mini")
     - :func:`lhotse.recipes.prepare_librispeech`
   * - LibriTTS

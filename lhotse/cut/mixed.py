@@ -73,7 +73,7 @@ class MixedCut(Cut):
     Its primary purpose is to allow time-domain and feature-domain augmentation via mixing the training cuts
     with noise, music, and babble cuts. The actual mixing operations are performed on-the-fly.
 
-    Internally, :class:`~lhotse.cut.MixedCut` holds other cuts in multiple trakcs (:class:`~lhotse.cut.MixTrack`),
+    Internally, :class:`~lhotse.cut.MixedCut` holds other cuts in multiple tracks (:class:`~lhotse.cut.MixTrack`),
     each with its own offset and SNR that is relative to the first track.
 
     Please refer to the documentation of :class:`~lhotse.cut.Cut` to learn more about using cuts.
@@ -1039,6 +1039,13 @@ class MixedCut(Cut):
         return fastcopy(
             self,
             tracks=[fastcopy(t, cut=t.cut.drop_supervisions()) for t in self.tracks],
+        )
+
+    def drop_alignments(self) -> "MixedCut":
+        """Return a copy of the current :class:`.MixedCut`, detached from ``supervisions``."""
+        return fastcopy(
+            self,
+            tracks=[fastcopy(t, cut=t.cut.drop_alignments()) for t in self.tracks],
         )
 
     def compute_and_store_features(

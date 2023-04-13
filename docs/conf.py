@@ -14,6 +14,9 @@
 # import sys
 # sys.path.insert(0, os.path.abspath('.'))
 
+import os
+from pathlib import Path
+
 # noinspection PyUnresolvedReferences
 import sphinx_rtd_theme
 
@@ -24,7 +27,12 @@ copyright = "2020-2021, Lhotse development team"
 author = "Lhotse development team"
 
 # The full version, including alpha/beta/rc tags
-release = "1.13.0.dev"
+
+VERSION = open(Path(".").parent / "VERSION").read().strip()
+dev_marker = ""
+if not os.environ.get("LHOTSE_PREPARING_RELEASE", False):
+    dev_marker = ".dev"
+release = f"{VERSION}{dev_marker}"
 
 # -- General configuration ---------------------------------------------------
 

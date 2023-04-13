@@ -19,6 +19,7 @@ from lhotse import (
     RecordingSet,
     SupervisionSegment,
     SupervisionSet,
+    fix_manifests,
     validate_recordings_and_supervisions,
 )
 from lhotse.audio import Recording
@@ -203,6 +204,7 @@ def prepare_libricss(
 
     supervisions = SupervisionSet.from_segments(segments)
     recordings = RecordingSet.from_recordings(recordings)
+    recordings, supervisions = fix_manifests(recordings, supervisions)
     validate_recordings_and_supervisions(recordings, supervisions)
 
     result_dict = {"recordings": recordings, "supervisions": supervisions}

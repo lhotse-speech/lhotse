@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 
 from lhotse import CutSet
-from lhotse.shar import load_shar_datapipe
+from lhotse.shar.readers.datapipes import load_shar_datapipe
 
 dp = pytest.importorskip("torchdata")
 

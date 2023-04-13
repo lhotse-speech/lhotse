@@ -393,7 +393,7 @@ class CutSet(Serializable, AlgorithmMixin):
         one or more binary tarfiles.
         Each tarfile contains a single type of data, e.g., recordings, features, or custom fields.
 
-        Given an example directory named ``some_dir`, its expected layout is
+        Given an example directory named ``some_dir``, its expected layout is
         ``some_dir/cuts.000000.jsonl.gz``, ``some_dir/recording.000000.tar``,
         ``some_dir/features.000000.tar``, and then the same names but numbered with ``000001``, etc.
         There may also be other files if the cuts have custom data attached to them.
@@ -415,37 +415,58 @@ class CutSet(Serializable, AlgorithmMixin):
         We can simply load a directory created by :class:`~lhotse.shar.writers.shar.SharWriter`.
         Example::
 
-        >>> cuts = LazySharIterator(in_dir="some_dir")
-        ... for cut in cuts:
-        ...     print("Cut", cut.id, "has duration of", cut.duration)
-        ...     audio = cut.load_audio()
-        ...     fbank = cut.load_features()
+            >>> cuts = LazySharIterator(in_dir="some_dir")
+            ... for cut in cuts:
+            ...     print("Cut", cut.id, "has duration of", cut.duration)
+            ...     audio = cut.load_audio()
+            ...     fbank = cut.load_features()
 
         :class:`.LazySharIterator` can also be initialized from a dict, where the keys
         indicate fields to be read, and the values point to actual shard locations.
         This is useful when only a subset of data is needed, or it is stored in different
         locations. Example::
 
-        >>> cuts = LazySharIterator({
-        ...     "cuts": ["some_dir/cuts.000000.jsonl.gz"],
-        ...     "recording": ["another_dir/recording.000000.tar"],
-        ...     "features": ["yet_another_dir/features.000000.tar"],
-        ... })
-        ... for cut in cuts:
-        ...     print("Cut", cut.id, "has duration of", cut.duration)
-        ...     audio = cut.load_audio()
-        ...     fbank = cut.load_features()
+            >>> cuts = LazySharIterator({
+            ...     "cuts": ["some_dir/cuts.000000.jsonl.gz"],
+            ...     "recording": ["another_dir/recording.000000.tar"],
+            ...     "features": ["yet_another_dir/features.000000.tar"],
+            ... })
+            ... for cut in cuts:
+            ...     print("Cut", cut.id, "has duration of", cut.duration)
+            ...     audio = cut.load_audio()
+            ...     fbank = cut.load_features()
 
         We also support providing shell commands as shard sources, inspired by WebDataset.
+        The "cuts" field expects a .jsonl stream, while the other fields expect a .tar stream.
         Example::
 
-        >>> cuts = LazySharIterator({
-        ...     "cuts": ["pipe:curl https://my.page/cuts.000000.jsonl.gz"],
-        ...     "recording": ["pipe:curl https://my.page/recording.000000.tar"],
-        ... })
-        ... for cut in cuts:
-        ...     print("Cut", cut.id, "has duration of", cut.duration)
-        ...     audio = cut.load_audio()
+            >>> cuts = LazySharIterator({
+            ...     "cuts": ["pipe:curl https://my.page/cuts.000000.jsonl"]
+            ...     "recording": ["pipe:curl https://my.page/recording.000000.tar"],
+            ... })
+            ... for cut in cuts:
+            ...     print("Cut", cut.id, "has duration of", cut.duration)
+            ...     audio = cut.load_audio()
+
+        The shell command can also contain pipes, which can be used to e.g. decompressing.
+        Example::
+
+            >>> cuts = LazySharIterator({
+            ...     "cuts": ["pipe:curl https://my.page/cuts.000000.jsonl.gz | gunzip -c -"],
+                    (...)
+            ... })
+
+        Finally, we allow specifying URLs or cloud storage URIs for the shard sources.
+        We defer to ``smart_open`` library to handle those.
+        Example::
+
+            >>> cuts = LazySharIterator({
+            ...     "cuts": ["s3://my-bucket/cuts.000000.jsonl.gz"],
+            ...     "recording": ["s3://my-bucket/recording.000000.tar"],
+            ... })
+            ... for cut in cuts:
+            ...     print("Cut", cut.id, "has duration of", cut.duration)
+            ...     audio = cut.load_audio()
 
         :param fields: a dict whose keys specify which fields to load,
             and values are lists of shards (either paths or shell commands).
@@ -975,8 +996,8 @@ class CutSet(Serializable, AlgorithmMixin):
                     f"CutSet has only {len(self)} items but last {last} required; not doing anything."
                 )
                 return self
-            cut_ids = list(self.ids)[-last:]
-            return CutSet.from_cuts(self[cid] for cid in cut_ids)
+            N = len(self)
+            return CutSet.from_cuts(islice(self, N - last, N))
 
         if supervision_ids is not None:
             # Remove cuts without supervisions
@@ -1632,6 +1653,30 @@ class CutSet(Serializable, AlgorithmMixin):
             lambda cut: cut.perturb_volume(factor=factor, affix_id=affix_id)
         )
 
+    def normalize_loudness(self, target: float, affix_id: bool = True) -> "CutSet":
+        """
+        Return a new :class:`~lhotse.cut.CutSet` that will lazily apply loudness normalization
+        to the desired ``target`` loudness (in dBFS).
+
+        :param target: The target loudness in dBFS.
+        :param affix_id: When true, we will modify the ``Cut.id`` field
+            by affixing it with "_ln{target}".
+        :return: a modified copy of the current ``CutSet``.
+        """
+        return self.map(
+            lambda cut: cut.normalize_loudness(target=target, affix_id=affix_id)
+        )
+
+    def dereverb_wpe(self, affix_id: bool = True) -> "CutSet":
+        """
+        Return a new :class:`~lhotse.cut.CutSet` that will lazily apply WPE dereverberation.
+
+        :param affix_id: When true, we will modify the ``Cut.id`` field
+            by affixing it with "_wpe".
+        :return: a modified copy of the current ``CutSet``.
+        """
+        return self.map(lambda cut: cut.dereverb_wpe(affix_id=affix_id))
+
     def reverb_rir(
         self,
         rir_recordings: Optional["RecordingSet"] = None,
@@ -1784,6 +1829,12 @@ class CutSet(Serializable, AlgorithmMixin):
         Return a new :class:`.CutSet`, where each :class:`.Cut` is copied and detached from its supervisions.
         """
         return self.map(lambda cut: cut.drop_supervisions())
+
+    def drop_alignments(self) -> "CutSet":
+        """
+        Return a new :class:`.CutSet`, where each :class:`.Cut` is copied and detached from the alignments present in its supervisions.
+        """
+        return self.map(lambda cut: cut.drop_alignments())
 
     def compute_and_store_features(
         self,
