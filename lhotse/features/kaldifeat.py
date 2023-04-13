@@ -1,5 +1,6 @@
 from abc import ABC
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
+from functools import partial
 from typing import Any, Dict, List, Optional, Sequence, Union
 
 import numpy as np
@@ -146,8 +147,8 @@ class KaldifeatExtractor(FeatureExtractor, ABC):
 
 @dataclass
 class KaldifeatFbankConfig:
-    frame_opts: KaldifeatFrameOptions = KaldifeatFrameOptions()
-    mel_opts: KaldifeatMelOptions = KaldifeatMelOptions()
+    frame_opts: KaldifeatFrameOptions = field(default_factory=KaldifeatFrameOptions)
+    mel_opts: KaldifeatMelOptions = field(default_factory=KaldifeatMelOptions)
     use_energy: bool = False
     energy_floor: float = EPSILON  # default was 0.0
     raw_energy: bool = True
@@ -211,8 +212,10 @@ class KaldifeatFbank(KaldifeatExtractor):
 
 @dataclass
 class KaldifeatMfccConfig:
-    frame_opts: KaldifeatFrameOptions = KaldifeatFrameOptions()
-    mel_opts: KaldifeatMelOptions = KaldifeatMelOptions(num_bins=23)
+    frame_opts: KaldifeatFrameOptions = field(default_factory=KaldifeatFrameOptions)
+    mel_opts: KaldifeatMelOptions = field(
+        default_factory=partial(KaldifeatMelOptions, num_bins=23)
+    )
     num_ceps: int = 13
     use_energy: bool = False
     energy_floor: float = EPSILON  # default was 0.0
