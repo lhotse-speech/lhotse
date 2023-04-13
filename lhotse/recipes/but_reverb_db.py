@@ -4,12 +4,12 @@ https://speech.fit.vutbr.cz/software/but-speech-fit-reverb-database
 
 The following description is taken from the official website:
 
-This is the first release of BUT Speech@FIT Reverb Database. The database is being built 
-with respect to collect a large number of various Room Impulse Responses, 
-Room environmental noises (or "silences"), Retransmitted speech (for ASR and SID testing), 
+This is the first release of BUT Speech@FIT Reverb Database. The database is being built
+with respect to collect a large number of various Room Impulse Responses,
+Room environmental noises (or "silences"), Retransmitted speech (for ASR and SID testing),
 and meta-data (positions of microphones, speakers etc.).
 
-The goal is to provide speech community with a dataset for data enhancement and distant 
+The goal is to provide speech community with a dataset for data enhancement and distant
 microphone or microphone array experiments in ASR and SID.
 
 The BUT Speech@FIT Reverb Dataset consists of 9 rooms:
@@ -25,19 +25,19 @@ E112	11.5x20.1x4.8*	~900	31 x 2	0	Lect. room	Yes	No
 D105	17.2x22.8x6.9*	~2000	31 x 6	1	Lect. room	Yes	Yes
 C236	7.0x4.1x3.6	102	31 x 10	0	Meeting room	Yes	No
 
-We placed 31 microphones in both rooms. The source (a Hi-Fi loudspeaker) was placed on 5 
-positions in average. We measured RIRs (using exponential sine sweep method) for each 
-speaker position. Next we recorded environmental noise (silence). There was a radio at 
+We placed 31 microphones in both rooms. The source (a Hi-Fi loudspeaker) was placed on 5
+positions in average. We measured RIRs (using exponential sine sweep method) for each
+speaker position. Next we recorded environmental noise (silence). There was a radio at
 background playing in one speaker position in the office.
 
-All microphone positions are measured and stored in meta-files. We pre-calculated positions 
+All microphone positions are measured and stored in meta-files. We pre-calculated positions
 of microphones and speakers in Cartesian and polar coordinates as absolute and relative (to the speaker).
 
 The corpus can be cited as follows:
 @ARTICLE{8717722,
   author={Szöke, Igor and Skácel, Miroslav and Mošner, Ladislav and Paliesek, Jakub and Černocký, Jan},
-  journal={IEEE Journal of Selected Topics in Signal Processing}, 
-  title={Building and evaluation of a real room impulse response dataset}, 
+  journal={IEEE Journal of Selected Topics in Signal Processing},
+  title={Building and evaluation of a real room impulse response dataset},
   year={2019},
   volume={13},
   number={4},
@@ -48,13 +48,16 @@ import logging
 import tarfile
 from collections import defaultdict
 from pathlib import Path
-from tqdm import tqdm
 from typing import Dict, Optional, Sequence, Union
+
+from tqdm import tqdm
 
 from lhotse import CutSet, Recording, RecordingSet
 from lhotse.utils import Pathlike, urlretrieve_progress
 
-BUT_REVERB_DB_URL = "http://merlin.fit.vutbr.cz/ReverbDB/BUT_ReverbDB_rel_19_06_RIR-Only.tgz"
+BUT_REVERB_DB_URL = (
+    "http://merlin.fit.vutbr.cz/ReverbDB/BUT_ReverbDB_rel_19_06_RIR-Only.tgz"
+)
 
 
 def download_but_reverb_db(
@@ -72,7 +75,7 @@ def download_but_reverb_db(
     target_dir = Path(target_dir)
     target_dir.mkdir(parents=True, exist_ok=True)
 
-    tgz_name = "BUT_ReverbDB.tgz" 
+    tgz_name = "BUT_ReverbDB.tgz"
     tgz_path = target_dir / tgz_name
     if tgz_path.exists() and not force_download:
         logging.info(f"Skipping {tgz_name} because file exists.")
@@ -126,7 +129,7 @@ def prepare_but_reverb_db(
     manifests = defaultdict(dict)
     for part in parts:
         manifests[part]["recordings"] = RecordingSet.from_recordings(recordings[part])
-    
+
     if output_dir is not None:
         output_dir = Path(output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
