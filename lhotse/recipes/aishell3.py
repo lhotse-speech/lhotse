@@ -104,6 +104,17 @@ def prepare_aishell3(
             speaker, gender = k[0], k[2]
             speaker_info[speaker] = gender
 
+    label_path = corpus_dir / "train" / "label_train-set.txt"
+    assert label_path.is_file(), f"No such file: {label_path}"
+    with open(label_path, 'r') as f:
+        tone_labels = {}
+        for k in f.readlines():
+            k = k.strip()
+            if k.startswith('#') or len(k) == 0: continue
+            k = k.split('|')
+            assert len(k) == 3
+            tone_labels[k[0]] = k[1:]
+
     for part in tqdm(dataset_parts, desc="Preparing aishell3 parts"):
         if manifests_exist(part=part, output_dir=output_dir, prefix="aishell3"):
             logging.info(f"aishell3 subset: {part} already prepared - skipping.")
@@ -118,6 +129,7 @@ def prepare_aishell3(
                 id, text = line.strip().split("\t")
                 audio_path = part_path / "wav" / id[:7] / id
                 id = id.split(".")[0]
+                tones = tone_labels.get(id, (None, None))
                 speaker = id[:7]
                 text = "".join([x for i, x in enumerate(text.split()) if i % 2 == 0])
                 pinyin = " ".join([x for i, x in enumerate(text.split()) if i % 2 == 1])
@@ -135,7 +147,7 @@ def prepare_aishell3(
                     speaker=speaker,
                     gender=speaker_info.get(speaker, "female"),
                     text=text,
-                    custom={"pinyin": pinyin.strip()},
+                    custom={"pinyin": pinyin.strip(), "tones_pinyin": tones[0], "tones_text": tones[1]},
                 )
                 recordings.append(recording)
                 supervisions.append(segment)
