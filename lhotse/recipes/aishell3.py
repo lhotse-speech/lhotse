@@ -99,9 +99,9 @@ def prepare_aishell3(
     with open(speaker_info_path, "r") as f:
         for k in f.readlines():
             k = k.strip()
-            if k.startswith('#') or len(k) == 0: 
+            if k.startswith("#") or len(k) == 0: 
                 continue
-            k = k.split('\t')
+            k = k.split("\t")
             speaker, gender = k[0], k[2]
             speaker_info[speaker] = gender
 
@@ -111,9 +111,9 @@ def prepare_aishell3(
         tone_labels = {}
         for k in f.readlines():
             k = k.strip()
-            if k.startswith('#') or len(k) == 0: 
+            if k.startswith("#") or len(k) == 0: 
                 continue
-            k = k.split('|')
+            k = k.split("|")
             assert len(k) == 3
             tone_labels[k[0]] = k[1:]
 
@@ -152,7 +152,7 @@ def prepare_aishell3(
                     custom={
                         "pinyin": pinyin.strip(),
                         "tones_pinyin": tones[0],
-                        "tones_text": tones[1]
+                        "tones_text": tones[1],
                     },
                 )
                 recordings.append(recording)
