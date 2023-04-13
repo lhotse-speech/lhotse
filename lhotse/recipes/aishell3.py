@@ -99,7 +99,7 @@ def prepare_aishell3(
     with open(speaker_info_path, "r") as f:
         for k in f.readlines():
             k = k.strip()
-            if k.startswith("#") or len(k) == 0: 
+            if k.startswith("#") or len(k) == 0:
                 continue
             k = k.split("\t")
             speaker, gender = k[0], k[2]
@@ -111,7 +111,7 @@ def prepare_aishell3(
         tone_labels = {}
         for k in f.readlines():
             k = k.strip()
-            if k.startswith("#") or len(k) == 0: 
+            if k.startswith("#") or len(k) == 0:
                 continue
             k = k.split("|")
             assert len(k) == 3
