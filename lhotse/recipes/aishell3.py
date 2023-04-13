@@ -96,21 +96,23 @@ def prepare_aishell3(
     speaker_info = {}
     speaker_info_path = corpus_dir / "spk-info.txt"
     assert speaker_info_path.is_file(), f"No such file: {speaker_info_path}"
-    with open(speaker_info_path, 'r') as f:
+    with open(speaker_info_path, "r") as f:
         for k in f.readlines():
             k = k.strip()
-            if k.startswith('#') or len(k) == 0: continue
+            if k.startswith('#') or len(k) == 0: 
+                continue
             k = k.split('\t')
             speaker, gender = k[0], k[2]
             speaker_info[speaker] = gender
 
     label_path = corpus_dir / "train" / "label_train-set.txt"
     assert label_path.is_file(), f"No such file: {label_path}"
-    with open(label_path, 'r') as f:
+    with open(label_path, "r") as f:
         tone_labels = {}
         for k in f.readlines():
             k = k.strip()
-            if k.startswith('#') or len(k) == 0: continue
+            if k.startswith('#') or len(k) == 0: 
+                continue
             k = k.split('|')
             assert len(k) == 3
             tone_labels[k[0]] = k[1:]
@@ -147,7 +149,11 @@ def prepare_aishell3(
                     speaker=speaker,
                     gender=speaker_info.get(speaker, "female"),
                     text=text,
-                    custom={"pinyin": pinyin.strip(), "tones_pinyin": tones[0], "tones_text": tones[1]},
+                    custom={
+                        "pinyin": pinyin.strip(),
+                        "tones_pinyin": tones[0],
+                        "tones_text": tones[1]
+                    },
                 )
                 recordings.append(recording)
                 supervisions.append(segment)
