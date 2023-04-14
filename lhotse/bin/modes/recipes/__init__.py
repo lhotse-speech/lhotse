@@ -9,6 +9,7 @@ from .ami import *
 from .aspire import *
 from .babel import *
 from .broadcast_news import *
+from .but_reverb_db import *
 from .bvcc import *
 from .callhome_egyptian import *
 from .callhome_english import *
