@@ -23,7 +23,7 @@ class LoudnessNormalization(AudioTransform):
         if torch.is_tensor(samples):
             samples = samples.cpu().numpy()
         augmented = normalize_loudness(
-            samples, **asdict(self), sampling_rate=sampling_rate
+            samples, target=self.target, sampling_rate=sampling_rate
         )
         return augmented
 
