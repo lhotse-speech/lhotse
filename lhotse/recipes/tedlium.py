@@ -87,7 +87,7 @@ def download_tedlium(
 def prepare_tedlium(
     tedlium_root: Pathlike,
     output_dir: Optional[Pathlike] = None,
-    dataset_parts: Union[str, Sequence[str]] = "all",
+    dataset_parts: Union[str, Sequence[str]] = TEDLIUM_PARTS,
     num_jobs: int = 1,
 ) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet]]]:
     """
