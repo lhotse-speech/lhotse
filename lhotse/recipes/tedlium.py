@@ -44,17 +44,20 @@ https://arxiv.org/abs/1805.04699
 import logging
 import shutil
 import tarfile
+from concurrent.futures.thread import ThreadPoolExecutor
 from pathlib import Path
-from typing import Dict, Optional, Union
+from typing import Dict, Optional, Sequence, Union
 
 from lhotse import (
-    Recording,
     RecordingSet,
     SupervisionSegment,
     SupervisionSet,
     validate_recordings_and_supervisions,
 )
+from lhotse.qa import fix_manifests
 from lhotse.utils import Pathlike, safe_extract, urlretrieve_progress
+
+TEDLIUM_PARTS = ("train", "dev", "test")
 
 
 def download_tedlium(
@@ -82,7 +85,10 @@ def download_tedlium(
 
 
 def prepare_tedlium(
-    tedlium_root: Pathlike, output_dir: Optional[Pathlike] = None
+    tedlium_root: Pathlike,
+    output_dir: Optional[Pathlike] = None,
+    dataset_parts: Union[str, Sequence[str]] = "all",
+    num_jobs: int = 1,
 ) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet]]]:
     """
     Prepare manifests for the TED-LIUM v3 corpus.
@@ -91,50 +97,74 @@ def prepare_tedlium(
     Each split contains a RecordingSet and SupervisionSet in a dict under keys 'recordings' and 'supervisions'.
 
     :param tedlium_root: Path to the unpacked TED-LIUM data.
+    :param output_dir: Path where the manifests should be written.
+    :param dataset_parts: Which parts of the dataset to prepare.
+        By default, all parts are prepared.
+    :param num_jobs: Number of parallel jobs to use.
     :return: A dict with standard corpus splits containing the manifests.
     """
     tedlium_root = Path(tedlium_root)
     output_dir = Path(output_dir) if output_dir is not None else None
     corpus = {}
-    for split in ("train", "dev", "test"):
-        root = tedlium_root / "legacy" / split
-        recordings = RecordingSet.from_recordings(
-            Recording.from_file(p) for p in (root / "sph").glob("*.sph")
-        )
-        stms = list((root / "stm").glob("*.stm"))
-        assert len(stms) == len(recordings), (
-            f"Mismatch: found {len(recordings)} "
-            f"sphere files and {len(stms)} STM files. "
-            f"You might be missing some parts of TEDLIUM..."
-        )
-        segments = []
-        for p in stms:
-            with p.open() as f:
-                for idx, l in enumerate(f):
-                    rec_id, _, _, start, end, _, *words = l.split()
-                    start, end = float(start), float(end)
-                    text = " ".join(words).replace("{NOISE}", "[NOISE]")
-                    if text == "ignore_time_segment_in_scoring":
-                        continue
-                    segments.append(
-                        SupervisionSegment(
-                            id=f"{rec_id}-{idx}",
-                            recording_id=rec_id,
-                            start=start,
-                            duration=round(end - start, ndigits=8),
-                            channel=0,
-                            text=text,
-                            language="English",
-                            speaker=rec_id,
-                        )
-                    )
-        supervisions = SupervisionSet.from_segments(segments)
-        corpus[split] = {"recordings": recordings, "supervisions": supervisions}
 
-        validate_recordings_and_supervisions(**corpus[split])
+    dataset_parts = [dataset_parts] if isinstance(dataset_parts, str) else dataset_parts
 
-        if output_dir is not None:
-            recordings.to_file(output_dir / f"tedlium_recordings_{split}.jsonl.gz")
-            supervisions.to_file(output_dir / f"tedlium_supervisions_{split}.jsonl.gz")
+    with ThreadPoolExecutor(num_jobs) as ex:
+        for split in dataset_parts:
+            logging.info(f"Processing {split} split...")
+            root = tedlium_root / "legacy" / split
+            recordings = RecordingSet.from_dir(
+                root / "sph", pattern="*.sph", num_jobs=num_jobs
+            )
+            stms = list((root / "stm").glob("*.stm"))
+            assert len(stms) == len(recordings), (
+                f"Mismatch: found {len(recordings)} "
+                f"sphere files and {len(stms)} STM files. "
+                f"You might be missing some parts of TEDLIUM..."
+            )
+            futures = []
+            for stm in stms:
+                futures.append(ex.submit(_parse_stm_file, stm))
+
+            segments = []
+            for future in futures:
+                segments.extend(future.result())
+
+            supervisions = SupervisionSet.from_segments(segments)
+            recordings, supervisions = fix_manifests(recordings, supervisions)
+
+            corpus[split] = {"recordings": recordings, "supervisions": supervisions}
+            validate_recordings_and_supervisions(**corpus[split])
+
+            if output_dir is not None:
+                recordings.to_file(output_dir / f"tedlium_recordings_{split}.jsonl.gz")
+                supervisions.to_file(
+                    output_dir / f"tedlium_supervisions_{split}.jsonl.gz"
+                )
 
     return corpus
+
+
+def _parse_stm_file(stm: str) -> SupervisionSegment:
+    """Helper function to parse a single STM file."""
+    segments = []
+    with stm.open() as f:
+        for idx, l in enumerate(f):
+            rec_id, _, _, start, end, _, *words = l.split()
+            start, end = float(start), float(end)
+            text = " ".join(words).replace("{NOISE}", "[NOISE]")
+            if text == "ignore_time_segment_in_scoring":
+                continue
+            segments.append(
+                SupervisionSegment(
+                    id=f"{rec_id}-{idx}",
+                    recording_id=rec_id,
+                    start=start,
+                    duration=round(end - start, ndigits=8),
+                    channel=0,
+                    text=text,
+                    language="English",
+                    speaker=rec_id,
+                )
+            )
+    return segments
