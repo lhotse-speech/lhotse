@@ -1,6 +1,6 @@
 import warnings
 from functools import partial
-from typing import Any, Callable, Dict, Type, TypeVar, Union
+from typing import Dict, List, Optional, Tuple, Type, TypeVar, Union
 
 from typing_extensions import Literal
 
@@ -8,12 +8,13 @@ from lhotse import AudioSource, Features, fastcopy
 from lhotse.array import Array, TemporalArray
 from lhotse.audio import Recording
 from lhotse.cut import Cut
+from lhotse.shar.utils import to_shar_placeholder
 from lhotse.shar.writers.array import ArrayTarWriter
 from lhotse.shar.writers.audio import AudioTarWriter
-from lhotse.shar.writers.cut import CutShardWriter
-from lhotse.utils import Pathlike
+from lhotse.shar.writers.cut import JsonlShardWriter
+from lhotse.utils import Pathlike, ifnone
 
-WriterName = Literal["wav", "flac", "mp3", "lilcom", "numpy"]
+WriterName = Literal["wav", "flac", "mp3", "lilcom", "numpy", "jsonl"]
 FieldWriterInstance = Union[AudioTarWriter, ArrayTarWriter]
 FieldWriter = Type[FieldWriterInstance]
 
@@ -49,6 +50,16 @@ class SharWriter:
     ``some_dir/recording.000000.tar``, ``some_dir/features.000000.tar``,
     and then the same names but numbered with ``000001``, etc.
 
+    When ``shard_size`` is set to ``None``, we will disable automatic sharding and the
+    shard number suffix will be omitted from the file names.
+
+    The option ``warn_unused_fields`` will emit a warning when cuts have some data attached to them
+    (e.g., recording, features, or custom arrays) but saving it was not specified via ``fields``.
+
+    The option ``include_cuts`` controls whether we store the cuts alongside ``fields`` (true by default).
+    Turning it off is useful when extending existing dataset with new fields/feature types,
+    but the original cuts do not require any modification.
+
     See also: :class:`~lhotse.shar.writers.tar.TarWriter`, :class:`~lhotse.shar.writers.audio.AudioTarWriter`,
         :class:`~lhotse.shar.writers.array.ArrayTarWriter`.
     """
@@ -56,28 +67,38 @@ class SharWriter:
     def __init__(
         self,
         output_dir: Pathlike,
-        fields: Dict[
-            str,
-            Union[str, FieldWriter, Callable[[Any], FieldWriterInstance]],
-        ],
-        shard_size: int = 1000,
+        fields: Dict[str, str],
+        shard_size: Optional[int] = 1000,
         warn_unused_fields: bool = True,
+        include_cuts: bool = True,
     ) -> None:
-        self.output_dir = output_dir
+        self.output_dir = str(output_dir)
         self.shard_size = shard_size
         self.fields = fields
         self.warn_unused_fields = warn_unused_fields
+        self.include_cuts = include_cuts
+        self.shard_suffix = ".%06d" if self.sharding_enabled else ""
 
-        self.writers = {
-            "cut": CutShardWriter(
-                pattern=f"{self.output_dir}/cuts.%06d.jsonl.gz", shard_size=shard_size
-            ),
-        }
-        for field, writer_type in self.fields.items():
-            writer_type = resolve_writer(writer_type)
-            self.writers[field] = writer_type(
-                pattern=f"{self.output_dir}/{field}.%06d.tar", shard_size=shard_size
+        self.writers = {}
+        if include_cuts:
+            self.writers["cuts"] = JsonlShardWriter(
+                pattern=_create_cuts_output_url(self.output_dir, self.shard_suffix),
+                shard_size=self.shard_size,
             )
+        for field, writer_type in self.fields.items():
+            make_writer_fn, ext = resolve_writer(writer_type)
+            self.writers[field] = make_writer_fn(
+                pattern=f"{self.output_dir}/{field}{self.shard_suffix}{ext}",
+                shard_size=self.shard_size,
+            )
+
+    @property
+    def sharding_enabled(self) -> bool:
+        return self.shard_size is not None and self.shard_size > 0
+
+    @property
+    def output_paths(self) -> Dict[str, List[str]]:
+        return {k: w.output_paths for k, w in self.writers.items()}
 
     def __enter__(self):
         for w in self.writers.values():
@@ -93,91 +114,99 @@ class SharWriter:
 
     def write(self, cut: Cut) -> None:
 
-        # handle audio
-        if cut.has_recording and "recording" in self.fields:
-            # TODO: with/without transcoding
-            data = cut.load_audio()
-            self.writers["recording"].write(cut.id, data, cut.sampling_rate)
-            cut = fastcopy(cut, recording=to_placeholder(cut.recording))
+        # Handle audio.
+        if "recording" in self.fields:
+            if cut.has_recording:
+                data = cut.load_audio()
+                recording = to_shar_placeholder(cut.recording)
+                self.writers["recording"].write(
+                    cut.id, data, cut.sampling_rate, manifest=recording
+                )
+                cut = fastcopy(cut, recording=recording)
+            else:
+                self.writers["recording"].write_placeholder(cut.id)
         elif cut.has_recording and self.warn_unused_fields:
             warnings.warn(
                 "Found cut with 'recording' field that is not specified for Shar writing."
             )
 
-        # handle features
-        if cut.has_features and "features" in self.fields:
-            data = cut.load_features()
-            self.writers["features"].write(cut.id, data)
-            cut = fastcopy(cut, features=to_placeholder(cut.features))
+        # Handle features.
+        if "features" in self.fields:
+            if cut.has_features:
+                data = cut.load_features()
+                features = to_shar_placeholder(cut.features)
+                self.writers["features"].write(cut.id, data, manifest=features)
+                cut = fastcopy(cut, features=features)
+            else:
+                self.writers["features"].write_placeholder(cut.id)
         elif cut.has_features and self.warn_unused_fields:
             warnings.warn(
                 "Found cut with 'features' field that is not specified for Shar writing."
             )
 
-        # handle custom
-        if hasattr(cut, "custom"):
-            for key, val in cut.custom.items():
+        # Handle custom data and non-data attributes.
+        for key in self.fields:
+
+            # Skip fields already taken care of.
+            if key in ["recording", "features"]:
+                continue
+
+            # Check if the custom attribute is available: if yes
+            if cut.has_custom(key):
+                val = getattr(cut, key)
                 if not isinstance(val, (Array, TemporalArray, Recording)):
-                    continue
+                    assert isinstance(
+                        self.writers[key], JsonlShardWriter
+                    ), f"Expected writer type 'jsonl' (got '{self.fields[key]}') for non-data field '{key}'."
+                    self.writers[key].write({"cut_id": cut.id, key: val})
+                else:
+                    data = cut.load_custom(key)
+                    placeholder_obj = to_shar_placeholder(val)
+                    kwargs = {}
+                    if isinstance(val, Recording):
+                        kwargs["sampling_rate"] = val.sampling_rate
+                    self.writers[key].write(
+                        cut.id, data, manifest=placeholder_obj, **kwargs
+                    )
+                    cut = fastcopy(cut, custom=cut.custom.copy())
+                    setattr(cut, key, placeholder_obj)
+            else:
+                self.writers[key].write_placeholder(cut.id)
 
-                if key not in self.fields:
-                    if self.warn_unused_fields:
-                        warnings.warn(
-                            f"Found cut with '{key}' field that is not specified for Shar writing."
-                        )
-                    continue
+        # Warn in case there is some data that wasn't requested to be saved.
+        for key, val in ifnone(cut.custom, {}).items():
+            if not isinstance(val, (Array, TemporalArray, Recording)):
+                continue
+            if key not in self.fields:
+                if self.warn_unused_fields:
+                    warnings.warn(
+                        f"Found cut with '{key}' field that is not specified for Shar writing."
+                    )
+                continue
 
-                data = cut.load_custom(key)
-                kwargs = {}
-                if isinstance(val, Recording):
-                    kwargs["sampling_rate"] = val.sampling_rate
-                self.writers[key].write(cut.id, data, **kwargs)
-                cut = fastcopy(cut, custom=cut.custom.copy())
-                setattr(cut, key, to_placeholder(getattr(cut, key)))
-
-        self.writers["cut"].write(cut)
-
-
-Manifest = TypeVar("Manifest", Recording, Features, Array, TemporalArray)
-
-
-def to_placeholder(manifest: Manifest) -> Manifest:
-    if isinstance(manifest, Recording):
-        assert (
-            len(manifest.sources) == 1
-        ), "Multiple AudioSources are not supported yet."
-        return fastcopy(
-            manifest,
-            sources=[
-                AudioSource(type="shar", channels=src.channels, source="")
-                for src in manifest.sources
-            ],
-        )
-    elif isinstance(manifest, (Array, Features)):
-        return fastcopy(manifest, storage_type="shar", storage_path="", storage_key="")
-    elif isinstance(manifest, TemporalArray):
-        return fastcopy(
-            manifest,
-            array=fastcopy(
-                manifest.array, storage_type="shar", storage_path="", storage_key=""
-            ),
-        )
+        if "cuts" in self.writers:
+            self.writers["cuts"].write(cut)
 
 
-def resolve_writer(
-    name_or_callable: Union[str, FieldWriter, Callable[[Any], FieldWriterInstance]]
-) -> FieldWriter:
-    if not isinstance(name_or_callable, str):
-        return name_or_callable
-
+def resolve_writer(name: str) -> Tuple[FieldWriter, str]:
     opts = {
-        "wav": partial(AudioTarWriter, format="wav"),
-        "flac": partial(AudioTarWriter, format="flac"),
-        "mp3": partial(AudioTarWriter, format="mp3"),
-        "lilcom": partial(ArrayTarWriter, compression="lilcom"),
-        "numpy": partial(ArrayTarWriter, compression="numpy"),
+        "wav": (partial(AudioTarWriter, format="wav"), ".tar"),
+        "flac": (partial(AudioTarWriter, format="flac"), ".tar"),
+        "mp3": (partial(AudioTarWriter, format="mp3"), ".tar"),
+        "lilcom": (partial(ArrayTarWriter, compression="lilcom"), ".tar"),
+        "numpy": (partial(ArrayTarWriter, compression="numpy"), ".tar"),
+        "jsonl": (JsonlShardWriter, ".jsonl.gz"),
     }
     assert (
-        name_or_callable in opts
-    ), f"Unknown field type (got: '{name_or_callable}', we support only: {', '.join(opts)}"
-    return opts[name_or_callable]
+        name in opts
+    ), f"Unknown field type (got: '{name}', we support only: {', '.join(opts)}"
+    return opts[name]
+
+
+def _create_cuts_output_url(base_output_url: str, shard_suffix: str) -> str:
+
+    # special case where we want to ensure the CutSet actually gets gzipped
+    if base_output_url.startswith("pipe:"):
+        base_output_url = base_output_url.replace("pipe:", "pipe:gzip -c | ")
+
+    return f"{base_output_url}/cuts{shard_suffix}.jsonl.gz"

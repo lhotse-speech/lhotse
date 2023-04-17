@@ -75,13 +75,18 @@ class DataCut(Cut, metaclass=ABCMeta):
         This magic function is called when the user tries to set an attribute.
         We use it as syntactic sugar to store custom attributes in ``self.custom``
         field, so that they can be (de)serialized later.
+        Setting a ``None`` value will remove the attribute from ``custom``.
         """
         if key in self.__dataclass_fields__:
             super().__setattr__(key, value)
         else:
             custom = ifnone(self.custom, {})
-            custom[key] = value
-            self.custom = custom
+            if value is None:
+                custom.pop(key, None)
+            else:
+                custom[key] = value
+            if custom:
+                self.custom = custom
 
     def __getattr__(self, name: str) -> Any:
         """
@@ -149,6 +154,17 @@ class DataCut(Cut, metaclass=ABCMeta):
                 f"To load {name}, the cut needs to have field {name} (or cut.custom['{name}']) "
                 f"defined, and its value has to be a manifest of type Array or TemporalArray."
             )
+
+    def has_custom(self, name: str) -> bool:
+        """
+        Check if the Cut has a custom attribute with name ``name``.
+
+        :param name: name of the custom attribute.
+        :return: a boolean.
+        """
+        if self.custom is None:
+            return False
+        return name in self.custom
 
     @property
     def recording_id(self) -> str:
@@ -365,6 +381,12 @@ class DataCut(Cut, metaclass=ABCMeta):
     def drop_supervisions(self) -> "DataCut":
         """Return a copy of the current :class:`.DataCut`, detached from ``supervisions``."""
         return fastcopy(self, supervisions=[])
+
+    def drop_alignments(self) -> "DataCut":
+        """Return a copy of the current :class:`.DataCut`, detached from ``alignments``."""
+        return fastcopy(
+            self, supervisions=[fastcopy(s, alignment={}) for s in self.supervisions]
+        )
 
     def fill_supervision(
         self, add_empty: bool = True, shrink_ok: bool = False
@@ -891,6 +913,85 @@ class DataCut(Cut, metaclass=ABCMeta):
             supervisions=supervisions_vp,
         )
 
+    def normalize_loudness(self, target: float, affix_id: bool = False) -> "DataCut":
+        """
+        Return a new ``DataCut`` that will lazily apply loudness normalization.
+
+        :param target: The target loudness in dBFS.
+        :param affix_id: When true, we will modify the ``DataCut.id`` field
+            by affixing it with "_ln{target}".
+        :return: a modified copy of the current ``DataCut``.
+        """
+        # Pre-conditions
+        assert (
+            self.has_recording
+        ), "Cannot apply loudness normalization on a DataCut without Recording."
+        if self.has_features:
+            logging.warning(
+                "Attempting to normalize loudness on a DataCut that references pre-computed features. "
+                "The feature manifest will be detached, as we do not support feature-domain "
+                "loudness normalization."
+            )
+            self.features = None
+
+        # Add loudness normalization to the recording.
+        recording_ln = self.recording.normalize_loudness(
+            target=target, affix_id=affix_id
+        )
+        # Match the supervision's id (and it's underlying recording id).
+        supervisions_ln = [
+            fastcopy(
+                s,
+                id=f"{s.id}_ln{target}" if affix_id else s.id,
+                recording_id=f"{s.recording_id}_ln{target}"
+                if affix_id
+                else s.recording_id,
+            )
+            for s in self.supervisions
+        ]
+        return fastcopy(
+            self,
+            id=f"{self.id}_ln{target}" if affix_id else self.id,
+            recording=recording_ln,
+            supervisions=supervisions_ln,
+        )
+
+    def dereverb_wpe(self, affix_id: bool = True) -> "DataCut":
+        """
+        Return a new ``DataCut`` that will lazily apply WPE dereverberation.
+
+        :param affix_id: When true, we will modify the ``DataCut.id`` field
+            by affixing it with "_wpe".
+        :return: a modified copy of the current ``DataCut``.
+        """
+        # Pre-conditions
+        assert self.has_recording, "Cannot apply WPE on a DataCut without Recording."
+        if self.has_features:
+            logging.warning(
+                "Attempting to de-reverberate a DataCut that references pre-computed features. "
+                "The feature manifest will be detached, as we do not support feature-domain "
+                "de-reverberation."
+            )
+            self.features = None
+
+        # Add WPE to the recording.
+        recording_wpe = self.recording.dereverb_wpe(affix_id=affix_id)
+        # Match the supervision's id (and it's underlying recording id).
+        supervisions_wpe = [
+            fastcopy(
+                s,
+                id=f"{s.id}_wpe" if affix_id else s.id,
+                recording_id=f"{s.recording_id}_wpe" if affix_id else s.recording_id,
+            )
+            for s in self.supervisions
+        ]
+        return fastcopy(
+            self,
+            id=f"{self.id}_wpe" if affix_id else self.id,
+            recording=recording_wpe,
+            supervisions=supervisions_wpe,
+        )
+
     @abstractmethod
     def reverb_rir(
         self,
@@ -899,6 +1000,8 @@ class DataCut(Cut, metaclass=ABCMeta):
         early_only: bool = False,
         affix_id: bool = True,
         rir_channels: List[int] = [0],
+        room_rng_seed: Optional[int] = None,
+        source_rng_seed: Optional[int] = None,
     ) -> "DataCut":
         ...
 

@@ -10,10 +10,36 @@ __all__ = ["ali_meeting"]
 @prepare.command(context_settings=dict(show_default=True))
 @click.argument("corpus_dir", type=click.Path(exists=True, dir_okay=True))
 @click.argument("output_dir", type=click.Path())
-@click.option("--mic", type=click.Choice(["near", "far"]), default="far")
-def ali_meeting(corpus_dir: Pathlike, output_dir: Pathlike, mic: str):
+@click.option(
+    "--mic", type=click.Choice(["near", "far", "ihm", "sdm", "mdm"]), default="far"
+)
+@click.option(
+    "--normalize-text",
+    type=click.Choice(["none", "m2met"], case_sensitive=False),
+    default="none",
+    help="Type of text normalization to apply (M2MeT style is from the official challenge)",
+)
+@click.option(
+    "--save-mono",
+    is_flag=True,
+    default=False,
+    help="If True and `mic` is sdm, extract first channel and save as new recording.",
+)
+def ali_meeting(
+    corpus_dir: Pathlike,
+    output_dir: Pathlike,
+    mic: str,
+    normalize_text: str,
+    save_mono: bool,
+):
     """AliMeeting data preparation."""
-    prepare_ali_meeting(corpus_dir, output_dir=output_dir, mic=mic)
+    prepare_ali_meeting(
+        corpus_dir,
+        output_dir=output_dir,
+        mic=mic,
+        normalize_text=normalize_text,
+        save_mono=save_mono,
+    )
 
 
 @download.command(context_settings=dict(show_default=True))

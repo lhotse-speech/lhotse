@@ -7,8 +7,8 @@ import torch
 import torchaudio
 
 from lhotse.cut import Cut
-from lhotse.lazy import LazyJsonlIterator
-from lhotse.shar.readers.utils import fill_shar_placeholder
+from lhotse.lazy import LazyManifestIterator
+from lhotse.shar.utils import fill_shar_placeholder
 from lhotse.utils import Pathlike, is_module_available
 from lhotse.workarounds import AltGzipFile
 
@@ -58,12 +58,14 @@ class CutsReader(IterDataPipe):
 
     def __iter__(self) -> Generator[Cut, None, None]:
         for path in self.dp:
-            self.cuts = LazyJsonlIterator(path)
+            self.cuts = LazyManifestIterator(path)
             yield from self.cuts
 
 
 class SharReader(IterDataPipe):
     def __init__(self, *component_datapipes: IterDataPipe) -> None:
+        raise NotImplementedError("We don't support this yet.")
+
         self.dps = sorted(
             component_datapipes, key=lambda dp: isinstance(dp, CutsReader), reverse=True
         )
@@ -83,6 +85,7 @@ class SharReader(IterDataPipe):
 
     def __iter__(self):
         for cut, *items in self.zipped:
+            # TODO: add support for changes in Shar that require pairwise iteration over items in tarfiles
             for tarpath, tarstream in items:
                 tarpath = Path(tarpath)
                 item_id = tarpath.stem

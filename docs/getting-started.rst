@@ -37,6 +37,8 @@ We currently have the following tutorials available in `examples` directory:
 
 * How to combine multiple datasets |tutorial03|
 
+* Lhotse Shar: storage format optimized for sequential I/O and modularity |tutorial04|
+
 .. |tutorial00| image:: https://colab.research.google.com/assets/colab-badge.svg
     :target: https://colab.research.google.com/github/lhotse-speech/lhotse/blob/master/examples/00-basic-workflow.ipynb
 .. |tutorial01| image:: https://colab.research.google.com/assets/colab-badge.svg
@@ -45,6 +47,8 @@ We currently have the following tutorials available in `examples` directory:
     :target: https://colab.research.google.com/github/lhotse-speech/lhotse/blob/master/examples/02-webdataset-integration.ipynb
 .. |tutorial03| image:: https://colab.research.google.com/assets/colab-badge.svg
     :target: https://colab.research.google.com/github/lhotse-speech/lhotse/blob/master/examples/03-combining-datasets.ipynb
+.. |tutorial04| image:: https://colab.research.google.com/assets/colab-badge.svg
+    :target: https://colab.research.google.com/github/lhotse-speech/lhotse/blob/master/examples/04-lhotse-shar.ipynb
 
 
 Examples of use
@@ -73,7 +77,7 @@ Lhotse introduces the notion of audio cuts, designed to ease the training data c
 Installation
 ------------
 
-Lhotse supports Python version 3.6 and later.
+Lhotse supports Python version 3.7 and later.
 
 Pip
 ***

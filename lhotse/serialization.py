@@ -2,6 +2,8 @@ import itertools
 import json
 import sys
 import warnings
+from codecs import StreamReader, StreamWriter
+from io import BytesIO, StringIO
 from pathlib import Path
 from typing import Any, Dict, Generator, Iterable, Optional, Type, Union
 
@@ -35,6 +37,9 @@ def open_best(path: Pathlike, mode: str = "r"):
             raise ValueError(
                 f"Cannot open stream for '-' with mode other 'r' or 'w' (got: '{mode}')"
             )
+
+    if isinstance(path, (BytesIO, StringIO, StreamWriter, StreamReader)):
+        return path
 
     if str(path).startswith("pipe:"):
         return open_pipe(path[5:], mode)
@@ -168,7 +173,7 @@ class SequentialJsonlWriter:
     def __init__(self, path: Pathlike, overwrite: bool = True) -> None:
         self.path = path
         self.file = None
-        if not extension_contains(".jsonl", self.path):
+        if not (extension_contains(".jsonl", self.path) or (self.path == "-")):
             raise InvalidPathExtension(
                 f"SequentialJsonlWriter supports only JSONL format (one JSON item per line), "
                 f"but path='{path}'."
@@ -227,7 +232,9 @@ class SequentialJsonlWriter:
         except AttributeError:
             pass
         self._maybe_open()
-        print(json.dumps(manifest.to_dict(), ensure_ascii=False), file=self.file)
+        if not isinstance(manifest, dict):
+            manifest = manifest.to_dict()
+        print(json.dumps(manifest, ensure_ascii=False), file=self.file)
         if flush:
             self.file.flush()
 
@@ -387,9 +394,9 @@ class LazyMixin:
         .. warning:: Opening the manifest in this way might cause some methods that
             rely on random access to fail.
         """
-        from lhotse.lazy import LazyJsonlIterator
+        from lhotse.lazy import LazyManifestIterator
 
-        return cls(LazyJsonlIterator(path))
+        return cls(LazyManifestIterator(path))
 
 
 def grouper(n, iterable):
@@ -495,9 +502,13 @@ def resolve_manifest_set_class(item):
         return CutSet
     if isinstance(item, Features):
         return FeatureSet
-    raise ValueError(
+    raise NotALhotseManifest(
         f"No corresponding 'Set' class is known for item of type: {type(item)}"
     )
+
+
+class NotALhotseManifest(Exception):
+    pass
 
 
 def store_manifest(manifest: Manifest, path: Pathlike) -> None:

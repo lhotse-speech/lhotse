@@ -5,7 +5,8 @@ import torch
 from lhotse import AudioSource, CutSet, MonoCut, Recording, SupervisionSegment
 from lhotse.audio import RecordingSet
 from lhotse.cut import PaddingCut
-from lhotse.utils import fastcopy
+from lhotse.testing.dummies import dummy_cut, dummy_multi_cut
+from lhotse.utils import fastcopy, is_module_available
 
 
 @pytest.fixture
@@ -395,6 +396,43 @@ def test_mixed_cut_start01_reverb_rir(cut_with_supervision_start01, rir):
     )
 
 
+def test_mixed_cut_start01_reverb_rir_with_fast_random(
+    cut_with_supervision_start01, rir
+):
+    mixed_rvb = cut_with_supervision_start01.append(
+        cut_with_supervision_start01
+    ).reverb_rir()
+    assert mixed_rvb.start == 0  # MixedCut always starts at 0
+    assert mixed_rvb.duration == cut_with_supervision_start01.duration * 2
+    assert mixed_rvb.end == cut_with_supervision_start01.duration * 2
+    assert mixed_rvb.num_samples == cut_with_supervision_start01.num_samples * 2
+
+    assert (
+        mixed_rvb.supervisions[0].start
+        == cut_with_supervision_start01.supervisions[0].start
+    )
+    assert (
+        mixed_rvb.supervisions[0].duration
+        == cut_with_supervision_start01.supervisions[0].duration
+    )
+    assert (
+        mixed_rvb.supervisions[0].end
+        == cut_with_supervision_start01.supervisions[0].end
+    )
+    assert mixed_rvb.supervisions[1].start == (
+        cut_with_supervision_start01.duration
+        + cut_with_supervision_start01.supervisions[0].start
+    )
+    assert (
+        mixed_rvb.supervisions[1].duration
+        == cut_with_supervision_start01.supervisions[0].duration
+    )
+    assert mixed_rvb.supervisions[1].end == (
+        cut_with_supervision_start01.duration
+        + cut_with_supervision_start01.supervisions[0].end
+    )
+
+
 @pytest.mark.parametrize(
     "rir_channels, expected_num_tracks",
     [([0], 2), ([0, 1], 2), ([0, 1, 2], None)],
@@ -409,6 +447,44 @@ def test_mixed_cut_start01_reverb_rir_multi_channel(
     else:
         with pytest.raises(AssertionError):
             mixed_cut.reverb_rir(multi_channel_rir, rir_channels=rir_channels)
+
+
+@pytest.mark.skipif(
+    not is_module_available("nara_wpe"),
+    reason="This test requires nara_wpe to be installed.",
+)
+@pytest.mark.parametrize("affix_id", [True, False])
+def test_mono_cut_dereverb_wpe(affix_id):
+    cut = dummy_cut(0, with_data=True)
+    cut_wpe = cut.dereverb_wpe(affix_id=affix_id)
+    if affix_id:
+        assert cut_wpe.id == f"{cut.id}_wpe"
+    else:
+        assert cut_wpe.id == cut.id
+    samples = cut.load_audio()
+    samples_wpe = cut_wpe.load_audio()
+    assert samples_wpe.shape[0] == cut_wpe.num_channels
+    assert samples_wpe.shape[1] == cut_wpe.num_samples
+    assert (samples != samples_wpe).any()
+
+
+@pytest.mark.skipif(
+    not is_module_available("nara_wpe"),
+    reason="This test requires nara_wpe to be installed.",
+)
+@pytest.mark.parametrize("affix_id", [True, False])
+def test_multi_cut_dereverb_wpe(affix_id):
+    cut = dummy_multi_cut(0, with_data=True)
+    cut_wpe = cut.dereverb_wpe(affix_id=affix_id)
+    if affix_id:
+        assert cut_wpe.id == f"{cut.id}_wpe"
+    else:
+        assert cut_wpe.id == cut.id
+    samples = cut.load_audio()
+    samples_wpe = cut_wpe.load_audio()
+    assert samples_wpe.shape[0] == cut_wpe.num_channels
+    assert samples_wpe.shape[1] == cut_wpe.num_samples
+    assert (samples != samples_wpe).any()
 
 
 def test_padding_cut_perturb_speed():
@@ -509,6 +585,19 @@ def test_cut_perturb_volume(cut_set, cut_id, scale):
     np.testing.assert_array_almost_equal(
         cut_vp.recording.load_audio(), cut.recording.load_audio() * scale
     )
+
+
+@pytest.mark.parametrize("target", [-15.0, -20.0, -25.0])
+def test_cut_normalize_loudness(libri_cut_set, target):
+    cut_set_ln = libri_cut_set.normalize_loudness(target)
+
+    import pyloudnorm as pyln
+
+    # check if loudness is correct
+    for c in cut_set_ln:
+        meter = pyln.Meter(c.sampling_rate)  # create BS.1770 meter
+        loudness = meter.integrated_loudness(c.load_audio().T)
+        assert loudness == pytest.approx(target, abs=0.5)
 
 
 def test_cut_reverb_rir(libri_cut_with_supervision, libri_recording_rvb, rir):

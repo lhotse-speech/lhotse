@@ -12,9 +12,10 @@ from lhotse.audio import (
     DurationMismatchError,
     Recording,
     RecordingSet,
+    set_audio_duration_mismatch_tolerance,
 )
 from lhotse.testing.dummies import DummyManifest
-from lhotse.utils import INT16MAX, fastcopy
+from lhotse.utils import INT16MAX, fastcopy, is_module_available
 from lhotse.utils import nullcontext as does_not_raise
 
 
@@ -97,6 +98,18 @@ def test_get_audio_multichannel(
     with exception_expectation:
         loaded_audio = recording_set.load_audio("recording-1", channels=channels)
         np.testing.assert_almost_equal(loaded_audio, expected_audio)
+
+
+@mark.parametrize(
+    ["duration_tolerance", "exception_expectation"],
+    [(0.025, raises(DurationMismatchError)), (0.2, does_not_raise())],
+)
+def test_get_audio_multichannel_duration_mismatch(
+    recording_set, duration_tolerance, exception_expectation
+):
+    set_audio_duration_mismatch_tolerance(duration_tolerance)
+    with exception_expectation:
+        recording_set.load_audio("recording-4", channels=[0, 1])
 
 
 @mark.parametrize(
@@ -216,6 +229,24 @@ def test_recording_perturb_speed(recording, factor, affix_id):
     samples = rec_sp.load_audio()
     assert samples.shape[0] == rec_sp.num_channels
     assert samples.shape[1] == rec_sp.num_samples
+
+
+@pytest.mark.skipif(
+    not is_module_available("nara_wpe"),
+    reason="This test requires nara_wpe to be installed.",
+)
+@pytest.mark.parametrize("affix_id", [True, False])
+def test_recording_dereverb_wpe(recording, affix_id):
+    rec_wpe = recording.dereverb_wpe(affix_id=affix_id)
+    if affix_id:
+        assert rec_wpe.id == f"{recording.id}_wpe"
+    else:
+        assert rec_wpe.id == recording.id
+    samples = recording.load_audio()
+    samples_wpe = rec_wpe.load_audio()
+    assert samples_wpe.shape[0] == rec_wpe.num_channels
+    assert samples_wpe.shape[1] == rec_wpe.num_samples
+    assert (samples != samples_wpe).any()
 
 
 @pytest.mark.parametrize(

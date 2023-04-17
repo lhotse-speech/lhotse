@@ -17,7 +17,7 @@ from tqdm.auto import tqdm
 from lhotse import validate_recordings_and_supervisions
 from lhotse.audio import Recording, RecordingSet
 from lhotse.supervision import SupervisionSegment, SupervisionSet
-from lhotse.utils import Pathlike, urlretrieve_progress
+from lhotse.utils import Pathlike, safe_extract, urlretrieve_progress
 
 
 def text_normalize(line: str):
@@ -60,7 +60,9 @@ def download_aishell(
         extracted_dir = corpus_dir / tar_name[:-4]
         completed_detector = extracted_dir / ".completed"
         if completed_detector.is_file():
-            logging.info(f"Skipping download of because {completed_detector} exists.")
+            logging.info(
+                f"Skipping download of {tar_name} because {completed_detector} exists."
+            )
             continue
         if force_download or not tar_path.is_file():
             urlretrieve_progress(
@@ -68,12 +70,12 @@ def download_aishell(
             )
         shutil.rmtree(extracted_dir, ignore_errors=True)
         with tarfile.open(tar_path) as tar:
-            tar.extractall(path=corpus_dir)
+            safe_extract(tar, path=corpus_dir)
         if tar_name == dataset_tar_name:
             wav_dir = extracted_dir / "wav"
             for sub_tar_name in os.listdir(wav_dir):
                 with tarfile.open(wav_dir / sub_tar_name) as tar:
-                    tar.extractall(path=wav_dir)
+                    safe_extract(tar, path=wav_dir)
         completed_detector.touch()
 
     return corpus_dir

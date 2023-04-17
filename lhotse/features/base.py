@@ -24,6 +24,7 @@ from lhotse.utils import (
     Seconds,
     asdict_nonull,
     compute_num_frames,
+    compute_num_frames_from_samples,
     exactly_one_not_null,
     fastcopy,
     ifnone,
@@ -139,12 +140,15 @@ class FeatureExtractor(metaclass=ABCMeta):
             np.ndarray, torch.Tensor, Sequence[np.ndarray], Sequence[torch.Tensor]
         ],
         sampling_rate: int,
+        lengths: Optional[Union[np.ndarray, torch.Tensor]] = None,
     ) -> Union[np.ndarray, torch.Tensor, List[np.ndarray], List[torch.Tensor]]:
         """
         Performs batch extraction. It is not guaranteed to be faster
         than :meth:`FeatureExtractor.extract` -- it depends on whether
         the implementation of a particular feature extractor supports
-        accelerated batch computation.
+        accelerated batch computation. If `lengths` is provided, it is
+        assumed that the input is a batch of padded sequences, so we will
+        not perform any further collation.
 
         .. note::
             Unless overridden by child classes, it defaults to sequentially
@@ -156,22 +160,34 @@ class FeatureExtractor(metaclass=ABCMeta):
         input_is_list = False
         input_is_torch = False
 
-        if isinstance(samples, list):
-            input_is_list = True
-            pass  # nothing to do with `samples`
-        elif samples.ndim > 1:
-            samples = list(samples)
+        if lengths is not None:
+            feat_lens = [
+                compute_num_frames_from_samples(l, self.frame_shift, sampling_rate)
+                for l in lengths
+            ]
+            assert isinstance(
+                samples, torch.Tensor
+            ), "If `lengths` is provided, `samples` must be a batched and padded torch.Tensor."
         else:
-            # The user passed an array/tensor of shape (num_samples,)
-            samples = [samples.reshape(1, -1)]
+            if isinstance(samples, list):
+                input_is_list = True
+                pass  # nothing to do with `samples`
+            elif samples.ndim > 1:
+                samples = list(samples)
+            else:
+                # The user passed an array/tensor of shape (num_samples,)
+                samples = [samples.reshape(1, -1)]
 
-        if any(isinstance(x, torch.Tensor) for x in samples):
-            samples = [x.numpy() for x in samples]
-            input_is_torch = True
+            if any(isinstance(x, torch.Tensor) for x in samples):
+                samples = [x.numpy() for x in samples]
+                input_is_torch = True
 
         result = []
         for item in samples:
-            result.append(self.extract(item, sampling_rate=sampling_rate))
+            res = self.extract(item, sampling_rate=sampling_rate)
+            if lengths is not None:
+                res = res[: feat_lens[len(result)]]
+            result.append(res)
 
         if input_is_torch:
             result = [torch.from_numpy(x) for x in result]
@@ -446,6 +462,7 @@ class Features:
         self,
         start: Optional[Seconds] = None,
         duration: Optional[Seconds] = None,
+        channel_id: Union[int, List[int]] = 0,
     ) -> np.ndarray:
         # noinspection PyArgumentList
         storage = get_reader(self.storage_type)(self.storage_path)
@@ -483,6 +500,7 @@ class Features:
         self,
         start: Seconds = 0,
         duration: Optional[Seconds] = None,
+        lilcom: bool = False,
     ) -> "Features":
         from lhotse.features.io import get_memory_writer
 
@@ -490,7 +508,7 @@ class Features:
             return self  # nothing to do
 
         arr = self.load(start=start, duration=duration)
-        if issubclass(arr.dtype.type, np.floating):
+        if issubclass(arr.dtype.type, np.floating) and lilcom:
             writer = get_memory_writer("memory_lilcom")()
         else:
             writer = get_memory_writer("memory_raw")()

@@ -35,6 +35,8 @@ from tqdm.auto import tqdm
 
 from lhotse.augmentation import (
     AudioTransform,
+    DereverbWPE,
+    LoudnessNormalization,
     Resample,
     ReverbWithImpulseResponse,
     Speed,
@@ -475,18 +477,9 @@ class Recording:
             channels=channels, offset=ifnone(offset, 0), duration=duration
         )
         stream = BytesIO()
-        if torchaudio_soundfile_supports_format() and format == "flac":
-            # Prefer saving with soundfile backend whenever possible to avoid issue:
-            # https://github.com/pytorch/audio/issues/2662
-            # Saving with sox_io backend to FLAC may corrupt the file, IDK about other
-            # formats but would rather be on the safe side.
-            torchaudio.backend.soundfile_backend.save(
-                stream, torch.from_numpy(audio), self.sampling_rate, format=format
-            )
-        else:
-            torchaudio.backend.sox_io_backend.save(
-                stream, torch.from_numpy(audio), self.sampling_rate, format=format
-            )
+        torchaudio_save_flac_safe(
+            stream, torch.from_numpy(audio), self.sampling_rate, format=format
+        )
         channels = (ifnone(channels, self.channel_ids),)
         if isinstance(channels, int):
             channels = [channels]
@@ -623,11 +616,12 @@ class Recording:
                 s[None, :] if s.ndim == 1 else s for s in samples_per_source
             ]
             max_samples = max(s.shape[1] for s in samples_per_source)
-            for s in samples_per_source:
+            for i, s in enumerate(samples_per_source):
                 if max_samples - s.shape[1] <= allowed_diff:
                     s = np.pad(s, ((0, 0), (0, max_samples - s.shape[1])), "constant")
+                    samples_per_source[i] = s
                 else:
-                    raise ValueError(
+                    raise DurationMismatchError(
                         f"The mismatch between the number of samples in the "
                         f"different channels of the recording {self.id} is "
                         f"greater than the allowed tolerance {LHOTSE_AUDIO_DURATION_MISMATCH_TOLERANCE}."
@@ -714,6 +708,39 @@ class Recording:
             transforms=transforms,
         )
 
+    def normalize_loudness(self, target: float, affix_id: bool = False) -> "Recording":
+        """
+        Return a new ``Recording`` that will lazily apply WPE dereverberation.
+
+        :param target: The target loudness (in dB) to normalize to.
+        :param affix_id: When true, we will modify the ``Recording.id`` field
+            by affixing it with "_ln{factor}".
+        :return: a modified copy of the current ``Recording``.
+        """
+        transforms = self.transforms.copy() if self.transforms is not None else []
+        transforms.append(LoudnessNormalization(target=target).to_dict())
+        return fastcopy(
+            self,
+            id=f"{self.id}_ln{target}" if affix_id else self.id,
+            transforms=transforms,
+        )
+
+    def dereverb_wpe(self, affix_id: bool = True) -> "Recording":
+        """
+        Return a new ``Recording`` that will lazily apply WPE dereverberation.
+
+        :param affix_id: When true, we will modify the ``Recording.id`` field
+            by affixing it with "_wpe".
+        :return: a modified copy of the current ``Recording``.
+        """
+        transforms = self.transforms.copy() if self.transforms is not None else []
+        transforms.append(DereverbWPE().to_dict())
+        return fastcopy(
+            self,
+            id=f"{self.id}_wpe" if affix_id else self.id,
+            transforms=transforms,
+        )
+
     def reverb_rir(
         self,
         rir_recording: Optional["Recording"] = None,
@@ -721,6 +748,8 @@ class Recording:
         early_only: bool = False,
         affix_id: bool = True,
         rir_channels: Optional[List[int]] = None,
+        room_rng_seed: Optional[int] = None,
+        source_rng_seed: Optional[int] = None,
     ) -> "Recording":
         """
         Return a new ``Recording`` that will lazily apply reverberation based on provided
@@ -735,6 +764,8 @@ class Recording:
         :param rir_channels: The channels of the impulse response to be used (in case of multi-channel
             impulse responses). By default, only the first channel is used. If no RIR is
             provided, we will generate one with as many channels as this argument specifies.
+        :param room_rng_seed: The seed to be used for the room configuration.
+        :param source_rng_seed: The seed to be used for the source position.
         :return: the perturbed ``Recording``.
         """
 
@@ -754,6 +785,17 @@ class Recording:
             # Case 2
             new_channel_ids = list(range(len(rir_channels)))
 
+        if rir_recording is None:
+            from lhotse.augmentation.utils import FastRandomRIRGenerator
+
+            rir_generator = FastRandomRIRGenerator(
+                sr=self.sampling_rate,
+                room_seed=room_rng_seed,
+                source_seed=source_rng_seed,
+            )
+        else:
+            rir_generator = None
+
         transforms = self.transforms.copy() if self.transforms is not None else []
         transforms.append(
             ReverbWithImpulseResponse(
@@ -761,6 +803,7 @@ class Recording:
                 normalize_output=normalize_output,
                 early_only=early_only,
                 rir_channels=rir_channels if rir_channels is not None else [0],
+                rir_generator=rir_generator,
             ).to_dict()
         )
         return fastcopy(
@@ -1120,6 +1163,8 @@ class RecordingSet(Serializable, AlgorithmMixin):
         early_only: bool = False,
         affix_id: bool = True,
         rir_channels: List[int] = [0],
+        room_rng_seed: Optional[int] = None,
+        source_rng_seed: Optional[int] = None,
     ) -> "RecordingSet":
         """
         Return a new ``RecordingSet`` that will lazily apply reverberation based on provided
@@ -1134,6 +1179,8 @@ class RecordingSet(Serializable, AlgorithmMixin):
         :param rir_channels: The channels to be used for the RIRs (if multi-channel). Uses first
             channel by default. If no RIR is provided, we will generate one with as many channels
             as this argument specifies.
+        :param room_rng_seed: The seed to be used for the room configuration.
+        :param source_rng_seed: The seed to be used for the source positions.
         :return: a ``RecordingSet`` containing the perturbed ``Recording`` objects.
         """
         rir_recordings = list(rir_recordings)
@@ -1144,6 +1191,8 @@ class RecordingSet(Serializable, AlgorithmMixin):
                 early_only=early_only,
                 affix_id=affix_id,
                 rir_channels=rir_channels,
+                room_rng_seed=room_rng_seed,
+                source_rng_seed=source_rng_seed,
             )
             for r in self
         )
@@ -1234,11 +1283,6 @@ class AudioMixer:
         else:
             self.reference_energy = reference_energy
 
-        if self.reference_energy <= 0.0:
-            raise NonPositiveEnergyError(
-                f"To perform mix, energy must be non-zero and non-negative (got {self.reference_energy})"
-            )
-
     def _pad_track(
         self, audio: np.ndarray, offset: int, total: Optional[int] = None
     ) -> np.ndarray:
@@ -1328,18 +1372,14 @@ class AudioMixer:
 
         # When SNR is requested, find what gain is needed to satisfy the SNR
         gain = 1.0
-        if snr is not None:
+        if snr is not None and self.reference_energy > 0:
             added_audio_energy = audio_energy(audio)
-            if added_audio_energy <= 0.0:
-                raise NonPositiveEnergyError(
-                    f"To perform mix, energy must be non-zero and non-negative (got {added_audio_energy}). "
-                )
-            target_energy = self.reference_energy * (10.0 ** (-snr / 10))
-            # When mixing time-domain signals, we are working with root-power (field) quantities,
-            # whereas the energy ratio applies to power quantities. To compute the gain correctly,
-            # we need to take a square root of the energy ratio.
-            gain = sqrt(target_energy / added_audio_energy)
-
+            if added_audio_energy > 0.0:
+                target_energy = self.reference_energy * (10.0 ** (-snr / 10))
+                # When mixing time-domain signals, we are working with root-power (field) quantities,
+                # whereas the energy ratio applies to power quantities. To compute the gain correctly,
+                # we need to take a square root of the energy ratio.
+                gain = sqrt(target_energy / added_audio_energy)
         self.tracks.append(gain * audio)
         self.offsets.append(num_samples_offset)
         # We cannot mix 2 multi-channel audios with different number of channels.
@@ -1754,7 +1794,7 @@ def torchaudio_info(
         return LibsndfileCompatibleAudioInfo(
             channels=info.num_channels,
             frames=tot_samples,
-            samplerate=info.sample_rate,
+            samplerate=int(info.sample_rate),
             duration=tot_samples / info.sample_rate,
         )
 
@@ -1762,7 +1802,7 @@ def torchaudio_info(
     return LibsndfileCompatibleAudioInfo(
         channels=info.num_channels,
         frames=info.num_frames,
-        samplerate=info.sample_rate,
+        samplerate=int(info.sample_rate),
         duration=info.num_frames / info.sample_rate,
     )
 
@@ -1790,7 +1830,7 @@ def torchaudio_load(
         frame_offset=frame_offset,
         num_frames=num_frames,
     )
-    return audio.numpy(), sampling_rate
+    return audio.numpy(), int(sampling_rate)
 
 
 def torchaudio_ffmpeg_load(
@@ -1852,7 +1892,7 @@ def soundfile_load(
         # Load the target number of frames, and transpose to match librosa form
         return (
             sf_desc.read(frames=frame_duration, dtype=np.float32, always_2d=False).T,
-            sampling_rate,
+            int(sampling_rate),
         )
 
 
@@ -1876,7 +1916,7 @@ def audioread_info(path: Pathlike) -> LibsndfileCompatibleAudioInfo:
         return LibsndfileCompatibleAudioInfo(
             channels=input_file.channels,
             frames=num_samples,
-            samplerate=input_file.samplerate,
+            samplerate=int(input_file.samplerate),
             duration=num_samples / input_file.samplerate,
         )
 
@@ -1963,7 +2003,7 @@ def audioread_load(
     else:
         y = np.empty(0, dtype=dtype)
 
-    return y, sr_native
+    return y, int(sr_native)
 
 
 def _buf_to_float(x, n_bytes=2, dtype=np.float32):
@@ -2044,7 +2084,7 @@ def opus_info(
     return LibsndfileCompatibleAudioInfo(
         channels=samples.shape[0],
         frames=samples.shape[1],
-        samplerate=sampling_rate,
+        samplerate=int(sampling_rate),
         duration=samples.shape[1] / sampling_rate,
     )
 
@@ -2193,7 +2233,7 @@ def sph_info(path: Pathlike) -> LibsndfileCompatibleAudioInfo:
     return LibsndfileCompatibleAudioInfo(
         channels=samples.shape[0],
         frames=samples.shape[1],
-        samplerate=sampling_rate,
+        samplerate=int(sampling_rate),
         duration=samples.shape[1] / sampling_rate,
     )
 
@@ -2239,6 +2279,38 @@ def read_sph(
         audio = audio.reshape(1, -1) if sf_desc.channels == 1 else audio.T
 
     return audio, sampling_rate
+
+
+def torchaudio_save_flac_safe(
+    dest: Union[str, Path, BytesIO],
+    src: Union[torch.Tensor, np.ndarray],
+    sample_rate: int,
+    *args,
+    **kwargs,
+):
+    import torchaudio
+
+    src = torch.as_tensor(src)
+    saving_flac = kwargs.get("format") == "flac" or (
+        not isinstance(dest, BytesIO) and str(dest).endswith(".flac")
+    )
+    if torchaudio_soundfile_supports_format() and saving_flac:
+        # Prefer saving with soundfile backend whenever possible to avoid issue:
+        # https://github.com/pytorch/audio/issues/2662
+        # Saving with sox_io backend to FLAC may corrupt the file.
+        torchaudio.backend.soundfile_backend.save(
+            dest,
+            src,
+            sample_rate=sample_rate,
+            format=kwargs.pop("format", "flac"),
+            bits_per_sample=kwargs.pop("bits_per_sample", 16),
+            *args,
+            **kwargs,
+        )
+    else:
+        torchaudio.backend.sox_io_backend.save(
+            dest, src, sample_rate=sample_rate, *args, **kwargs
+        )
 
 
 class AudioLoadingError(Exception):

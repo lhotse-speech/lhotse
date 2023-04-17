@@ -14,5 +14,17 @@
     "recording_id": "recording-1",
     "start": 0.5,
     "duration": 0.4
+  },
+  {
+    "id": "segment-3",
+    "recording_id": "recording-2",
+    "start": 0.1,
+    "duration": 0.2
+  },
+  {
+    "id": "segment-4",
+    "recording_id": "recording-2",
+    "start": 0.3,
+    "duration": 0.2
   }
 ]

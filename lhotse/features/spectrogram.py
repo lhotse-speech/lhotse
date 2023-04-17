@@ -8,7 +8,7 @@ from lhotse.utils import EPSILON, Seconds
 
 
 @dataclass
-class SpectrogramConfig:
+class TorchaudioSpectrogramConfig:
     # Note that `snip_edges` parameter is missing from config: in order to simplify the relationship between
     #  the duration and the number of frames, we are always setting `snip_edges` to False.
     dither: float = 0.0
@@ -27,16 +27,16 @@ class SpectrogramConfig:
         return asdict(self)
 
     @staticmethod
-    def from_dict(data: Dict[str, Any]) -> "SpectrogramConfig":
-        return SpectrogramConfig(**data)
+    def from_dict(data: Dict[str, Any]) -> "TorchaudioSpectrogramConfig":
+        return TorchaudioSpectrogramConfig(**data)
 
 
 @register_extractor
-class Spectrogram(TorchaudioFeatureExtractor):
+class TorchaudioSpectrogram(TorchaudioFeatureExtractor):
     """Log spectrogram feature extractor based on ``torchaudio.compliance.kaldi.spectrogram`` function."""
 
     name = "spectrogram"
-    config_type = SpectrogramConfig
+    config_type = TorchaudioSpectrogramConfig
 
     def _feature_fn(self, *args, **kwargs):
         from torchaudio.compliance.kaldi import spectrogram

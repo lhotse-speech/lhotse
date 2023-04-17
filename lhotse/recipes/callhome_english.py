@@ -31,7 +31,7 @@ from tqdm.auto import tqdm
 
 from lhotse import Recording, RecordingSet, SupervisionSegment, SupervisionSet
 from lhotse.qa import fix_manifests, validate_recordings_and_supervisions
-from lhotse.utils import Pathlike, check_and_rglob, urlretrieve_progress
+from lhotse.utils import Pathlike, check_and_rglob, safe_extract, urlretrieve_progress
 
 
 def prepare_callhome_english(
@@ -236,7 +236,7 @@ def download_callhome_metadata(
     if force_download or not tar_path.is_file():
         urlretrieve_progress(url, filename=tar_path, desc=f"Downloading {tar_name}")
     with tarfile.open(tar_path) as tar:
-        tar.extractall(path=target_dir)
+        safe_extract(tar, path=target_dir)
     return sre_dir
 
 

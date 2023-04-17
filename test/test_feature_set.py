@@ -15,7 +15,8 @@ from lhotse.features import (
     FeatureSet,
     FeatureSetBuilder,
     Mfcc,
-    Spectrogram,
+    TorchaudioSpectrogram,
+    TorchaudioSpectrogramConfig,
 )
 from lhotse.features.io import (
     ChunkedLilcomHdf5Writer,
@@ -161,7 +162,9 @@ def test_compute_global_stats():
     ],
 )
 def test_feature_set_builder(storage_fn):
-    recordings: RecordingSet = RecordingSet.from_json("test/fixtures/audio.json")
+    recordings: RecordingSet = RecordingSet.from_json(
+        "test/fixtures/audio.json"
+    ).filter(lambda r: r.id != "recording-4")
     extractor = Fbank(FbankConfig(sampling_rate=8000))
     with storage_fn() as storage:
         builder = FeatureSetBuilder(
@@ -241,7 +244,6 @@ def test_add_feature_sets():
     ["feature_extractor", "decimal", "exception_expectation"],
     [
         (Fbank(FbankConfig(num_filters=40, sampling_rate=8000)), 0, does_not_raise()),
-        (Spectrogram(), -1, does_not_raise()),
         (Mfcc(MfccConfig(sampling_rate=8000)), None, raises(ValueError)),
     ],
 )

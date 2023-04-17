@@ -27,7 +27,14 @@ from .io import (
     available_storage_backends,
     close_cached_file_handles,
 )
-from .kaldi.extractors import Fbank, FbankConfig, Mfcc, MfccConfig
+from .kaldi.extractors import (
+    Fbank,
+    FbankConfig,
+    Mfcc,
+    MfccConfig,
+    Spectrogram,
+    SpectrogramConfig,
+)
 from .kaldifeat import (
     KaldifeatFbank,
     KaldifeatFbankConfig,
@@ -38,4 +45,5 @@ from .librosa_fbank import LibrosaFbank, LibrosaFbankConfig
 from .mfcc import TorchaudioMfcc, TorchaudioMfccConfig
 from .mixer import FeatureMixer
 from .opensmile import OpenSmileConfig, OpenSmileExtractor
-from .spectrogram import Spectrogram, SpectrogramConfig
+from .spectrogram import TorchaudioSpectrogram, TorchaudioSpectrogramConfig
+from .ssl import S3PRLSSL, S3PRLSSLConfig

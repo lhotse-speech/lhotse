@@ -21,7 +21,7 @@ from lhotse.audio import Recording, RecordingSet
 from lhotse.features import Fbank
 from lhotse.features.base import TorchaudioFeatureExtractor
 from lhotse.supervision import SupervisionSegment, SupervisionSet
-from lhotse.utils import Pathlike, fastcopy, urlretrieve_progress
+from lhotse.utils import Pathlike, fastcopy, safe_extract, urlretrieve_progress
 
 
 def download_ljspeech(
@@ -44,7 +44,7 @@ def download_ljspeech(
         )
     shutil.rmtree(corpus_dir, ignore_errors=True)
     with tarfile.open(tar_path) as tar:
-        tar.extractall(path=target_dir)
+        safe_extract(tar, path=target_dir)
     completed_detector.touch()
 
     return corpus_dir
@@ -73,7 +73,7 @@ def prepare_ljspeech(
     supervisions = []
     with open(metadata_csv_path) as f:
         for line in f:
-            recording_id, text, _ = line.split("|")
+            recording_id, text, normalized = line.split("|")
             audio_path = corpus_dir / "wavs" / f"{recording_id}.wav"
             if not audio_path.is_file():
                 logging.warning(f"No such file: {audio_path}")
@@ -88,6 +88,7 @@ def prepare_ljspeech(
                 language="English",
                 gender="female",
                 text=text,
+                custom={"normalized_text": normalized.strip()},
             )
             recordings.append(recording)
             supervisions.append(segment)

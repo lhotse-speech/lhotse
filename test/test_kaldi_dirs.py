@@ -13,6 +13,7 @@ pytest.importorskip(
 FIXTURE_PATH = Path(__file__).resolve().parent / "fixtures"
 
 MINILIB_PATH = FIXTURE_PATH / "mini_librispeech"
+MINILIB2_PATH = FIXTURE_PATH / "mini_librispeech2"
 
 
 @pytest.fixture
@@ -120,13 +121,12 @@ def multi_channel_kaldi_dir():
             "lbi-1272-135031-0000_1": "ffmpeg -threads 1 -i nonexistent.wav -ar 16000 -map_channel 0.0.1  -f wav -threads 1 pipe:1 |",
         },
         "segments": {
-            "lbi-1272-135031-0000-A": "lbi-1272-135031-0000_0 0.0 10.885",
-            "lbi-1272-135031-0000-B": "lbi-1272-135031-0000_1 0.0 10.885",
+            "lbi-1272-135031-0000-A-0": "lbi-1272-135031-0000_0 0.0 10.885",
+            "lbi-1272-135031-0000-B-1": "lbi-1272-135031-0000_1 0.0 10.885",
         },
     }
 
 
-@pytest.mark.xfail(reason="multi file recordings not supported yet")
 def test_multi_file_recording(tmp_path, multi_file_recording):
     with working_directory(tmp_path):
         lhotse.kaldi.export_to_kaldi(
@@ -190,6 +190,27 @@ def test_kaldi_import(replace):
 
     assert list(out[0]) == list(recording_set)
     assert out[1] == supervision_set
+
+
+def test_kaldi_import_with_feats_scp():
+    fixture_path = MINILIB2_PATH
+    with working_directory(fixture_path):
+        out = lhotse.kaldi.load_kaldi_data_dir(
+            fixture_path,
+            sampling_rate=16000,
+            frame_shift=0.01,
+            use_reco2dur=True,
+        )
+
+    lhotse_dir = "lhotse"
+    with working_directory(fixture_path / lhotse_dir):
+        recording_set = lhotse.RecordingSet.from_jsonl("recordings.jsonl.gz")
+        supervision_set = lhotse.SupervisionSet.from_jsonl("supervisions.jsonl.gz")
+        feature_set = lhotse.FeatureSet.from_jsonl("features.jsonl.gz")
+
+    assert out[0] == recording_set
+    assert out[1] == supervision_set
+    assert out[2] == feature_set
 
 
 def open_and_load(path):

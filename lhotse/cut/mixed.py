@@ -2,13 +2,14 @@ import logging
 import warnings
 from dataclasses import dataclass
 from functools import partial, reduce
+from io import BytesIO
 from operator import add
 from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple, Union
 
 import numpy as np
 from intervaltree import IntervalTree
 
-from lhotse.audio import AudioMixer, Recording, audio_energy
+from lhotse.audio import AudioMixer, Recording, audio_energy, torchaudio_save_flac_safe
 from lhotse.augmentation import AugmentFn
 from lhotse.cut.base import Cut
 from lhotse.cut.data import DataCut
@@ -31,6 +32,7 @@ from lhotse.utils import (
     compute_num_frames,
     compute_num_samples,
     fastcopy,
+    hash_str_to_int,
     merge_items_with_delimiter,
     overlaps,
     perturb_num_samples,
@@ -71,7 +73,7 @@ class MixedCut(Cut):
     Its primary purpose is to allow time-domain and feature-domain augmentation via mixing the training cuts
     with noise, music, and babble cuts. The actual mixing operations are performed on-the-fly.
 
-    Internally, :class:`~lhotse.cut.MixedCut` holds other cuts in multiple trakcs (:class:`~lhotse.cut.MixTrack`),
+    Internally, :class:`~lhotse.cut.MixedCut` holds other cuts in multiple tracks (:class:`~lhotse.cut.MixTrack`),
     each with its own offset and SNR that is relative to the first track.
 
     Please refer to the documentation of :class:`~lhotse.cut.Cut` to learn more about using cuts.
@@ -313,6 +315,75 @@ class MixedCut(Cut):
         )
         non_padding_idx, mono_cut = non_padding_cuts_with_custom_attr[0]
         return non_padding_idx, mono_cut
+
+    def move_to_memory(
+        self,
+        audio_format: str = "flac",
+        load_audio: bool = True,
+        load_features: bool = True,
+        load_custom: bool = True,
+    ) -> "MixedCut":
+        """
+        Load data (audio, features, or custom arrays) into memory and attach them
+        to a copy of the manifest. This is useful when you want to store cuts together
+        with the actual data in some binary format that enables sequential data reads.
+
+        Audio is encoded with ``audio_format`` (compatible with ``torchaudio.save``),
+        floating point features are encoded with lilcom, and other arrays are pickled.
+        """
+        return fastcopy(
+            self,
+            tracks=[
+                fastcopy(
+                    t,
+                    cut=t.cut.move_to_memory(
+                        audio_format=audio_format,
+                        load_audio=load_audio,
+                        load_features=load_features,
+                        load_custom=load_custom,
+                    ),
+                )
+                for t in self.tracks
+            ],
+        )
+
+    def to_mono(
+        self,
+        encoding: str = "flac",
+        bits_per_sample: Optional[int] = 16,
+        **kwargs,
+    ) -> "Cut":
+        """
+        Convert this MixedCut to a MonoCut by mixing all tracks and channels into a single one.
+        The result audio array is stored in memory, and can be saved to disk by calling
+        ``cut.save_audio(path, ...)`` on the result.
+
+        .. hint:: the resulting MonoCut will have ``custom`` field populated with the
+            ``custom`` value from the first track of the MixedCut.
+
+        :param encoding: Audio encoding argument supported by ``torchaudio.save``. See
+            https://pytorch.org/audio/stable/backend.html#save (sox_io backend) and
+            https://pytorch.org/audio/stable/backend.html#id3 (soundfile backend) for more details.
+        :param bits_per_sample: Audio bits_per_sample argument supported by ``torchaudio.save``. See
+            https://pytorch.org/audio/stable/backend.html#save (sox_io backend) and
+            https://pytorch.org/audio/stable/backend.html#id3 (soundfile backend) for more details.
+        :return: a new MonoCut instance.
+        """
+        samples = self.load_audio(mono_downmix=True)
+        stream = BytesIO()
+        torchaudio_save_flac_safe(
+            stream,
+            samples,
+            self.sampling_rate,
+            format=encoding,
+            bits_per_sample=bits_per_sample,
+        )
+        recording = Recording.from_bytes(stream.getvalue(), recording_id=self.id)
+        return fastcopy(
+            recording.to_cut(),
+            supervisions=[fastcopy(s, channel=0) for s in self.supervisions],
+            custom=self.tracks[0].cut.custom,
+        )
 
     def truncate(
         self,
@@ -649,6 +720,8 @@ class MixedCut(Cut):
         early_only: bool = False,
         affix_id: bool = True,
         rir_channels: List[int] = [0],
+        room_rng_seed: Optional[int] = None,
+        source_rng_seed: Optional[int] = None,
     ) -> "MixedCut":
         """
         Return a new ``MixedCut`` that will convolve the audio with the provided impulse response.
@@ -664,6 +737,8 @@ class MixedCut(Cut):
             If only one channel is specified, all tracks will be convolved with this channel. If a list
             is provided, it must contain as many channels as there are tracks such that each track will
             be convolved with one of the specified channels.
+        :param room_rng_seed: Seed for the room configuration.
+        :param source_rng_seed: Seed for the source position.
         :return: a modified copy of the current ``MixedCut``.
         """
         # Pre-conditions
@@ -688,10 +763,19 @@ class MixedCut(Cut):
         if len(rir_channels) == 1:
             rir_channels = rir_channels * len(self.tracks)
 
-        # NOTE: Currently, if no RIR is provided, this method will generate a
-        # random one for each track in the MixedCut. This is not ideal since the room
-        # configuration for all the RIRs should be the same. But we ignore this for now
-        # since it simplifies the implementation considerably.
+        source_rng_seeds = [source_rng_seed] * len(self.tracks)
+        if rir_recording is None:
+            uuid4_str = str(uuid4())
+            # The room RNG seed is based on the cut ID. This ensures that all tracks in the
+            # mixed cut will have the same room configuration.
+            if room_rng_seed is None:
+                room_rng_seed = hash_str_to_int(uuid4_str + self.id)
+            # The source RNG seed is based on the track ID. This ensures that each track
+            # will have a different source position.
+            if source_rng_seed is None:
+                source_rng_seeds = [
+                    hash_str_to_int(uuid4_str + track.cut.id) for track in self.tracks
+                ]
 
         return MixedCut(
             id=f"{self.id}_rvb" if affix_id else self.id,
@@ -704,9 +788,13 @@ class MixedCut(Cut):
                         early_only=early_only,
                         affix_id=affix_id,
                         rir_channels=[channel],
+                        room_rng_seed=room_rng_seed,
+                        source_rng_seed=seed,
                     ),
                 )
-                for track, channel in zip(self.tracks, rir_channels)
+                for track, channel, seed in zip(
+                    self.tracks, rir_channels, source_rng_seeds
+                )
             ],
         )
 
@@ -778,22 +866,16 @@ class MixedCut(Cut):
             reference_energy=reference_energy,
         )
         for pos, track in enumerate(self.tracks[1:], start=1):
-            try:
-                if pos == reference_pos and reference_feats is not None:
-                    feats = reference_feats  # manual caching to avoid duplicated I/O
-                else:
-                    feats = track.cut.load_features()
-                mixer.add_to_mix(
-                    feats=feats,
-                    snr=track.snr,
-                    offset=track.offset,
-                    sampling_rate=track.cut.sampling_rate,
-                )
-            except NonPositiveEnergyError as e:
-                logging.warning(
-                    str(e)
-                    + f' {type(track.cut).__name__} with id "{track.cut.id}" will not be mixed in.'
-                )
+            if pos == reference_pos and reference_feats is not None:
+                feats = reference_feats  # manual caching to avoid duplicated I/O
+            else:
+                feats = track.cut.load_features()
+            mixer.add_to_mix(
+                feats=feats,
+                snr=track.snr,
+                offset=track.offset,
+                sampling_rate=track.cut.sampling_rate,
+            )
 
         if mixed:
             # Checking for some edge cases below.
@@ -857,34 +939,22 @@ class MixedCut(Cut):
             reference_audio = reference_cut.load_audio()
             reference_energy = audio_energy(reference_audio)
 
-        try:
-            mixer = AudioMixer(
-                self.tracks[0].cut.load_audio(),
-                sampling_rate=self.tracks[0].cut.sampling_rate,
-                reference_energy=reference_energy,
-            )
-        except NonPositiveEnergyError as e:
-            logging.warning(
-                f"{e}\nNote: we cannot mix signal with a given SNR to the reference audio with zero energy. "
-                f'Cut ID: "{self.tracks[0].cut.id}"'
-            )
-            raise
+        mixer = AudioMixer(
+            self.tracks[0].cut.load_audio(),
+            sampling_rate=self.tracks[0].cut.sampling_rate,
+            reference_energy=reference_energy,
+        )
 
         for pos, track in enumerate(self.tracks[1:], start=1):
-            try:
-                if pos == reference_pos and reference_audio is not None:
-                    audio = reference_audio  # manual caching to avoid duplicated I/O
-                else:
-                    audio = track.cut.load_audio()
-                mixer.add_to_mix(
-                    audio=audio,
-                    snr=track.snr,
-                    offset=track.offset,
-                )
-            except NonPositiveEnergyError as e:
-                logging.warning(
-                    f'{e} {type(track.cut).__name__} with id "{track.cut.id}" will not be mixed in.'
-                )
+            if pos == reference_pos and reference_audio is not None:
+                audio = reference_audio  # manual caching to avoid duplicated I/O
+            else:
+                audio = track.cut.load_audio()
+            mixer.add_to_mix(
+                audio=audio,
+                snr=track.snr,
+                offset=track.offset,
+            )
 
         # Flattening a MixedCut without MultiCut tracks has no effect
         mono_downmix = mono_downmix and any(
@@ -969,6 +1039,13 @@ class MixedCut(Cut):
         return fastcopy(
             self,
             tracks=[fastcopy(t, cut=t.cut.drop_supervisions()) for t in self.tracks],
+        )
+
+    def drop_alignments(self) -> "MixedCut":
+        """Return a copy of the current :class:`.MixedCut`, detached from ``supervisions``."""
+        return fastcopy(
+            self,
+            tracks=[fastcopy(t, cut=t.cut.drop_alignments()) for t in self.tracks],
         )
 
     def compute_and_store_features(

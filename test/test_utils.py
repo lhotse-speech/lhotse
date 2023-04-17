@@ -1,8 +1,11 @@
-import random
+import tarfile
+from io import BytesIO
 from pathlib import Path
-from tempfile import NamedTemporaryFile
+from tempfile import NamedTemporaryFile, TemporaryDirectory
 
+import click
 import pytest
+from click.testing import CliRunner
 
 from lhotse.serialization import (
     load_json,
@@ -13,14 +16,36 @@ from lhotse.serialization import (
     save_to_yaml,
 )
 from lhotse.utils import (
+    PythonLiteralOption,
     TimeSpan,
     add_durations,
     compute_num_windows,
     compute_start_duration_for_extended_cut,
     overlaps,
     overspans,
+    safe_extract,
     streaming_shuffle,
 )
+
+
+@pytest.fixture
+def safe_tar_file():
+    with NamedTemporaryFile() as f:
+        with tarfile.open(f.name, "w:gz") as tar:
+            tar.add("test/fixtures/audio.json")
+        yield f.name
+
+
+@pytest.fixture
+def unsafe_tar_file():
+    def _change_name(tarinfo):
+        tarinfo.name = "../" + tarinfo.name
+        return tarinfo
+
+    with NamedTemporaryFile() as f:
+        with tarfile.open(f.name, "w:gz") as tar:
+            tar.add("test/fixtures/audio.json", filter=_change_name)
+        yield f.name
 
 
 @pytest.mark.parametrize(
@@ -187,3 +212,29 @@ def test_streaming_shuffle(input_size, bufsize, expected):
     output = [x for x in streaming_shuffle(iter(input), bufsize)]
     assert len(list(input)) == len(output)
     assert expected == (list(input) == output)
+
+
+def test_extract_safe_tar_file(safe_tar_file):
+    with TemporaryDirectory() as tmpdir, tarfile.open(safe_tar_file) as tar:
+        safe_extract(tar, path=tmpdir)
+        assert (Path(tmpdir) / "test/fixtures/audio.json").is_file()
+
+
+def test_extract_unsafe_tar_file(unsafe_tar_file):
+    with TemporaryDirectory() as tmpdir, tarfile.open(unsafe_tar_file) as tar:
+        with pytest.raises(Exception):
+            safe_extract(tar, tmpdir)
+
+
+@pytest.mark.parametrize(
+    ["value", "expected"], [(2, None), ("3", 3), ("(4, 5)", (4, 5)), ("[6, 7]", [6, 7])]
+)
+def test_click_literal_option(value, expected):
+    @click.command()
+    @click.option("--num", "-n", cls=PythonLiteralOption, default=2)
+    def echo(num):
+        click.echo("Value: {}".format(num))
+
+    runner = CliRunner()
+    result = runner.invoke(echo, ["-n", value])
+    assert result.output == "Value: {}\n".format(expected)
