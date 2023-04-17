@@ -16,14 +16,15 @@ class LoudnessNormalization(AudioTransform):
     """
 
     target: float
-    sampling_rate: int = 16000
 
     def __call__(
-        self, samples: Union[np.ndarray, torch.Tensor], *args, **kwargs
+        self, samples: Union[np.ndarray, torch.Tensor], sampling_rate: int
     ) -> np.ndarray:
         if torch.is_tensor(samples):
             samples = samples.cpu().numpy()
-        augmented = normalize_loudness(samples, **asdict(self))
+        augmented = normalize_loudness(
+            samples, target=self.target, sampling_rate=sampling_rate
+        )
         return augmented
 
     def reverse_timestamps(
