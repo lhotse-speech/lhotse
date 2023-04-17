@@ -457,8 +457,6 @@ class Cut:
         from .set import CutSet
 
         cuts = []
-        # Remove zero-duration supervisions from the cut, since these cannot be indexed.
-        self.supervisions = [s for s in self.supervisions if s.duration > 0]
         supervisions_index = self.index_supervisions(index_mixed_tracks=True)
         for segment in self.supervisions:
             if min_duration is None:
@@ -491,9 +489,9 @@ class Cut:
                 assert (
                     len(set(to_hashable(s.channel) for s in trimmed.supervisions)) == 1
                 ), (
-                    f"Trimmed cut has supervisions with different channels. Either set "
-                    f"`ignore_channel=True` to keep original channels or `keep_overlapping=False` "
-                    f"to retain only 1 supervision per trimmed cut. Offending cut: {trimmed}"
+                    "Trimmed cut has supervisions with different channels. Either set "
+                    "`ignore_channel=True` to keep original channels or `keep_overlapping=False` "
+                    "to retain only 1 supervision per trimmed cut."
                 )
                 trimmed.channel = trimmed.supervisions[0].channel
 
