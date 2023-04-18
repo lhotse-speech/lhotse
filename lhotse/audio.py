@@ -1756,6 +1756,10 @@ def torchaudio_supports_ffmpeg() -> bool:
     Returns ``True`` when torchaudio version is at least 0.12.0, which
     has support for FFMPEG streamer API.
     """
+    # If user has disabled ffmpeg-torchaudio, we don't need to check the version.
+    if not FFMPEG_TORCHAUDIO_INFO_ENABLED:
+        return False
+
     import torchaudio
     from packaging import version
 
