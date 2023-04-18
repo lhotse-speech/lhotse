@@ -73,6 +73,7 @@ _DEFAULT_LHOTSE_AUDIO_DURATION_MISMATCH_TOLERANCE: Seconds = 0.025
 LHOTSE_AUDIO_DURATION_MISMATCH_TOLERANCE: Seconds = (
     _DEFAULT_LHOTSE_AUDIO_DURATION_MISMATCH_TOLERANCE
 )
+FFMPEG_TORCHAUDIO_INFO_ENABLED: bool = True
 
 
 def set_audio_duration_mismatch_tolerance(delta: Seconds) -> None:
@@ -114,6 +115,30 @@ def set_audio_duration_mismatch_tolerance(delta: Seconds) -> None:
             f"We don't recommend this as it might break some data augmentation transforms."
         )
     LHOTSE_AUDIO_DURATION_MISMATCH_TOLERANCE = delta
+
+
+def set_ffmpeg_torchaudio_info_enabled(enabled: bool) -> None:
+    """
+    Override Lhotse's global setting for whether to use ffmpeg with torchaudio to
+    compute the duration of audio files.
+
+    .. note:: See this issue for more details: https://github.com/lhotse-speech/lhotse/issues/1026
+
+    Example::
+
+        >>> import lhotse
+        >>> lhotse.set_ffmpeg_torchaudio_info_enabled(False)  # don't use torchaudio
+
+    :param enabled: Whether to use torchaudio to compute audio file duration.
+    """
+    global FFMPEG_TORCHAUDIO_INFO_ENABLED
+    logging.info(
+        "The user overrided the global setting for whether to use ffmpeg-torchaudio "
+        "to compute the duration of audio files. "
+        f"Old setting: {FFMPEG_TORCHAUDIO_INFO_ENABLED}. "
+        f"New setting: {enabled}."
+    )
+    FFMPEG_TORCHAUDIO_INFO_ENABLED = enabled
 
 
 # TODO: document the dataclasses like this:
