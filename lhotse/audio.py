@@ -119,25 +119,27 @@ def set_audio_duration_mismatch_tolerance(delta: Seconds) -> None:
 
 def set_ffmpeg_torchaudio_info_enabled(enabled: bool) -> None:
     """
-    Override Lhotse's global setting for whether to use ffmpeg with torchaudio to
-    compute the duration of audio files.
+    Override Lhotse's global setting for whether to use ffmpeg-torchaudio to
+    compute the duration of audio files. If disabled, we fall back to using a different
+    backend such as sox_io or soundfile.
 
     .. note:: See this issue for more details: https://github.com/lhotse-speech/lhotse/issues/1026
 
     Example::
 
         >>> import lhotse
-        >>> lhotse.set_ffmpeg_torchaudio_info_enabled(False)  # don't use torchaudio
+        >>> lhotse.set_ffmpeg_torchaudio_info_enabled(False)  # don't use ffmpeg-torchaudio
 
     :param enabled: Whether to use torchaudio to compute audio file duration.
     """
     global FFMPEG_TORCHAUDIO_INFO_ENABLED
-    logging.info(
-        "The user overrided the global setting for whether to use ffmpeg-torchaudio "
-        "to compute the duration of audio files. "
-        f"Old setting: {FFMPEG_TORCHAUDIO_INFO_ENABLED}. "
-        f"New setting: {enabled}."
-    )
+    if enabled != FFMPEG_TORCHAUDIO_INFO_ENABLED:
+        logging.info(
+            "The user overrided the global setting for whether to use ffmpeg-torchaudio "
+            "to compute the duration of audio files. "
+            f"Old setting: {FFMPEG_TORCHAUDIO_INFO_ENABLED}. "
+            f"New setting: {enabled}."
+        )
     FFMPEG_TORCHAUDIO_INFO_ENABLED = enabled
 
 
