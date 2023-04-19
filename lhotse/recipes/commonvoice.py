@@ -25,8 +25,8 @@ from tqdm.auto import tqdm
 
 from lhotse import (
     load_manifest,
-    validate_recordings_and_supervisions,
     set_ffmpeg_torchaudio_info_enabled,
+    validate_recordings_and_supervisions,
 )
 from lhotse.audio import Recording, RecordingSet
 from lhotse.supervision import SupervisionSegment, SupervisionSet
