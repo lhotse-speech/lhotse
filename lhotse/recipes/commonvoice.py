@@ -178,8 +178,7 @@ def _prepare_part(
     :param lang_path: path to a CommonVoice directory for a specific language
         (e.g., "/path/to/cv-corpus-13.0-2023-03-09/pl").
     :param num_jobs: How many concurrent workers to use for scanning of the audio files.
-    :return: a tuple of (RecordingSet, SupervisionSet) objects opened in lazy mode,
-        as CommonVoice manifests may be fairly large in memory.
+    :return: a tuple of (RecordingSet, SupervisionSet) objects.
     """
 
     lang_path = Path(lang_path)
