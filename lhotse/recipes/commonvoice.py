@@ -24,7 +24,7 @@ from typing import Dict, Iterable, List, Optional, Sequence, Tuple, Union
 from tqdm.auto import tqdm
 
 from lhotse import load_manifest, validate_recordings_and_supervisions
-from lhotse.audio import Recording, RecordingSet
+from lhotse.audio import Recording, RecordingSet, set_ffmpeg_torchaudio_info_enabled
 from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import (
     Pathlike,
@@ -193,6 +193,7 @@ def _prepare_part(
             tsvreader = csv.reader(f, delimiter="\t")
             audio_infos = list(tsvreader)
 
+        set_ffmpeg_torchaudio_info_enabled(False)  # Don't use ffmpeg-torchaudio
         for audio_info in tqdm(audio_infos, desc="Distributing tasks"):
             futures.append(
                 ex.submit(
