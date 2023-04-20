@@ -10,7 +10,12 @@ import numpy as np
 from intervaltree import IntervalTree
 
 from lhotse.audio import AudioMixer, Recording, audio_energy, torchaudio_save_flac_safe
-from lhotse.augmentation import AugmentFn
+from lhotse.augmentation import (
+    AudioTransform,
+    AugmentFn,
+    LoudnessNormalization,
+    ReverbWithImpulseResponse,
+)
 from lhotse.cut.base import Cut
 from lhotse.cut.data import DataCut
 from lhotse.cut.padding import PaddingCut
@@ -93,6 +98,9 @@ class MixedCut(Cut):
 
     .. note:: Each track in a MixedCut can be either a MonoCut, MultiCut, or PaddingCut.
 
+    .. note:: The ``transforms`` field is a list of dictionaries that describe the transformations
+        that should be applied to the track after mixing.
+
     See also:
 
         - :class:`lhotse.cut.Cut`
@@ -103,6 +111,7 @@ class MixedCut(Cut):
 
     id: str
     tracks: List[MixTrack]
+    transforms: Optional[List[Dict]] = None
 
     @property
     def supervisions(self) -> List[SupervisionSegment]:
@@ -713,6 +722,35 @@ class MixedCut(Cut):
             ],
         )
 
+    def normalize_loudness(self, target: float, affix_id: bool = False) -> "DataCut":
+        """
+        Return a new ``MixedCut`` that will lazily apply loudness normalization.
+
+        :param target: The target loudness in dBFS.
+        :param affix_id: When true, we will modify the ``DataCut.id`` field
+            by affixing it with "_ln{target}".
+        :return: a modified copy of the current ``DataCut``.
+        """
+        # Pre-conditions
+        assert (
+            self.has_recording
+        ), "Cannot apply loudness normalization on a MixedCut without Recording."
+        if self.has_features:
+            logging.warning(
+                "Attempting to normalize loudness on a MixedCut that references pre-computed features. "
+                "The feature manifest will be detached, as we do not support feature-domain "
+                "loudness normalization."
+            )
+            self.features = None
+
+        transforms = self.transforms.copy() if self.transforms is not None else []
+        transforms.append(LoudnessNormalization(target=target).to_dict())
+        return fastcopy(
+            self,
+            id=f"{self.id}_ln{target}" if affix_id else self.id,
+            transforms=transforms,
+        )
+
     def reverb_rir(
         self,
         rir_recording: Optional["Recording"] = None,
@@ -722,6 +760,7 @@ class MixedCut(Cut):
         rir_channels: List[int] = [0],
         room_rng_seed: Optional[int] = None,
         source_rng_seed: Optional[int] = None,
+        mix_first: bool = True,
     ) -> "MixedCut":
         """
         Return a new ``MixedCut`` that will convolve the audio with the provided impulse response.
@@ -739,6 +778,9 @@ class MixedCut(Cut):
             be convolved with one of the specified channels.
         :param room_rng_seed: Seed for the room configuration.
         :param source_rng_seed: Seed for the source position.
+        :param mix_first: When true, the mixing will be done first before convolving with the RIR.
+            This effectively means that all tracks will be convolved with the same RIR. If you
+            are simulating multi-speaker mixtures, you should set this to False.
         :return: a modified copy of the current ``MixedCut``.
         """
         # Pre-conditions
@@ -760,22 +802,63 @@ class MixedCut(Cut):
             self.tracks
         ), "Invalid number of channels in `rir_channels`, must be either 1 or equal to the number of tracks."
 
+        # There are 2 ways to apply RIRs:
+        # 1. Mix the tracks first, then apply RIRs. This is same as applying the same RIR
+        #    to all tracks. It does not make sense if all tracks belong to different speakers,
+        #    but it is useful for cases when we have a mixture of MonoCut and PaddingCut,
+        #    and we want to apply the same RIR to all of them.
+        # 2. Apply RIRs to each track separately. This is useful when we want to simulate
+        #    different speakers in the same room.
+
+        # First simulate the room config (will only be used if RIR is not provided)
+        uuid4_str = str(uuid4())
+        # The room RNG seed is based on the cut ID. This ensures that all tracks in the
+        # mixed cut will have the same room configuration.
+        if room_rng_seed is None:
+            room_rng_seed = hash_str_to_int(uuid4_str + self.id)
+        # The source RNG seed is based on the track ID. This ensures that each track
+        # will have a different source position.
+        source_rng_seeds = [source_rng_seed] * len(self.tracks)
+        if source_rng_seed is None:
+            source_rng_seeds = [
+                hash_str_to_int(uuid4_str + track.cut.id) for track in self.tracks
+            ]
+            source_rng_seed = source_rng_seeds[0]
+
+        # Apply same RIR to all tracks after mixing (default)
+        if mix_first:
+            if rir_recording is None:
+                from lhotse.augmentation.utils import FastRandomRIRGenerator
+
+                rir_generator = FastRandomRIRGenerator(
+                    sr=self.sampling_rate,
+                    room_seed=room_rng_seed,
+                    source_seed=source_rng_seed,
+                )
+            else:
+                rir_generator = None
+
+            transforms = self.transforms.copy() if self.transforms is not None else []
+            transforms.append(
+                ReverbWithImpulseResponse(
+                    rir=rir_recording,
+                    normalize_output=normalize_output,
+                    early_only=early_only,
+                    rir_channels=rir_channels if rir_channels is not None else [0],
+                    rir_generator=rir_generator,
+                ).to_dict()
+            )
+            return fastcopy(
+                self,
+                id=f"{self.id}_rvb" if affix_id else self.id,
+                transforms=transforms,
+            )
+
+        # Apply RIRs to each track separately. Note that we do not pass a `mix_first`
+        # argument below since it is True by default.
+
         if len(rir_channels) == 1:
             rir_channels = rir_channels * len(self.tracks)
-
-        source_rng_seeds = [source_rng_seed] * len(self.tracks)
-        if rir_recording is None:
-            uuid4_str = str(uuid4())
-            # The room RNG seed is based on the cut ID. This ensures that all tracks in the
-            # mixed cut will have the same room configuration.
-            if room_rng_seed is None:
-                room_rng_seed = hash_str_to_int(uuid4_str + self.id)
-            # The source RNG seed is based on the track ID. This ensures that each track
-            # will have a different source position.
-            if source_rng_seed is None:
-                source_rng_seeds = [
-                    hash_str_to_int(uuid4_str + track.cut.id) for track in self.tracks
-                ]
 
         return MixedCut(
             id=f"{self.id}_rvb" if affix_id else self.id,
@@ -977,6 +1060,13 @@ class MixedCut(Cut):
                 f"this issue at https://github.com/lhotse-speech/lhotse/issues "
                 f"showing the cut below. MixedCut:\n{self}"
             )
+
+            # We'll apply the transforms now (if any).
+            transforms = [
+                AudioTransform.from_dict(params) for params in self.transforms or []
+            ]
+            for tfn in transforms:
+                audio = tfn(audio, self.sampling_rate)
         else:
             audio = mixer.unmixed_audio
 
