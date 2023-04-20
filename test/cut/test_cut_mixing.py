@@ -345,6 +345,28 @@ def test_mix_cut_snr_pad_both(libri_cut):
     assert E(feats_nosnr) > E(feats_snr)
 
 
+@pytest.mark.parametrize("mix_first", [True, False])
+def test_mix_cut_with_transform(libri_cut, mix_first):
+    # Create original mixed cut
+    padded = libri_cut.pad(duration=20, direction="right")
+    # Create transformed mixed cut
+    padded = padded.reverb_rir(mix_first=mix_first)
+    # Mix another cut
+    mixed1 = padded.mix(libri_cut)
+    mixed2 = libri_cut.mix(padded)
+
+    assert isinstance(padded, MixedCut)
+    assert len(padded.tracks) == 2
+    assert isinstance(mixed1, MixedCut)
+    assert isinstance(mixed2, MixedCut)
+    if mix_first:
+        assert len(mixed1.tracks) == 2
+        assert len(mixed2.tracks) == 2
+    else:
+        assert len(mixed1.tracks) == 3
+        assert len(mixed2.tracks) == 3
+
+
 def test_cut_set_mix_snr_is_deterministic():
     cuts = DummyManifest(CutSet, begin_id=0, end_id=2)
 
