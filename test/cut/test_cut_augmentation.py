@@ -471,17 +471,20 @@ def test_mixed_cut_start01_reverb_rir_multi_channel(
     not is_module_available("pyloudnorm"),
     reason="This test requires pyloudnorm to be installed.",
 )
-@pytest.mark.parametrize("target", [-15.0, -20.0, -25.0])
-def test_mixed_cut_normalize_loudness(cut_with_supervision_start01, target):
+@pytest.mark.parametrize(
+    "target, mix_first", [(-15.0, True), (-20.0, True), (-25.0, False)]
+)
+def test_mixed_cut_normalize_loudness(cut_with_supervision_start01, target, mix_first):
     mixed_cut = cut_with_supervision_start01.append(cut_with_supervision_start01)
-    mixed_cut_ln = mixed_cut.normalize_loudness(target)
+    mixed_cut_ln = mixed_cut.normalize_loudness(target, mix_first=mix_first)
 
     import pyloudnorm as pyln
 
     # check if loudness is correct
     meter = pyln.Meter(mixed_cut_ln.sampling_rate)  # create BS.1770 meter
     loudness = meter.integrated_loudness(mixed_cut_ln.load_audio().T)
-    assert loudness == pytest.approx(target, abs=0.5)
+    if mix_first:
+        assert loudness == pytest.approx(target, abs=0.5)
 
 
 @pytest.mark.skipif(

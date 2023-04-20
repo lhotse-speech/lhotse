@@ -722,11 +722,16 @@ class MixedCut(Cut):
             ],
         )
 
-    def normalize_loudness(self, target: float, affix_id: bool = False) -> "DataCut":
+    def normalize_loudness(
+        self, target: float, mix_first: bool = True, affix_id: bool = False
+    ) -> "DataCut":
         """
         Return a new ``MixedCut`` that will lazily apply loudness normalization.
 
         :param target: The target loudness in dBFS.
+        :param mix_first: If true, we will mix the underlying cuts before applying
+            loudness normalization. If false, we cannot guarantee that the resulting
+            cut will have the target loudness.
         :param affix_id: When true, we will modify the ``DataCut.id`` field
             by affixing it with "_ln{target}".
         :return: a modified copy of the current ``DataCut``.
@@ -743,13 +748,27 @@ class MixedCut(Cut):
             )
             self.features = None
 
-        transforms = self.transforms.copy() if self.transforms is not None else []
-        transforms.append(LoudnessNormalization(target=target).to_dict())
-        return fastcopy(
-            self,
-            id=f"{self.id}_ln{target}" if affix_id else self.id,
-            transforms=transforms,
-        )
+        if mix_first:
+            transforms = self.transforms.copy() if self.transforms is not None else []
+            transforms.append(LoudnessNormalization(target=target).to_dict())
+            return fastcopy(
+                self,
+                id=f"{self.id}_ln{target}" if affix_id else self.id,
+                transforms=transforms,
+            )
+        else:
+            return MixedCut(
+                id=f"{self.id}_ln{target}" if affix_id else self.id,
+                tracks=[
+                    fastcopy(
+                        track,
+                        cut=track.cut.normalize_loudness(
+                            target=target, affix_id=affix_id
+                        ),
+                    )
+                    for track in self.tracks
+                ],
+            )
 
     def reverb_rir(
         self,
