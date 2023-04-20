@@ -10,7 +10,12 @@ import numpy as np
 from intervaltree import IntervalTree
 
 from lhotse.audio import AudioMixer, Recording, audio_energy, torchaudio_save_flac_safe
-from lhotse.augmentation import AudioTransform, AugmentFn, ReverbWithImpulseResponse
+from lhotse.augmentation import (
+    AudioTransform,
+    AugmentFn,
+    LoudnessNormalization,
+    ReverbWithImpulseResponse,
+)
 from lhotse.cut.base import Cut
 from lhotse.cut.data import DataCut
 from lhotse.cut.padding import PaddingCut
@@ -716,6 +721,54 @@ class MixedCut(Cut):
                 for track in self.tracks
             ],
         )
+
+    def normalize_loudness(
+        self, target: float, mix_first: bool = True, affix_id: bool = False
+    ) -> "DataCut":
+        """
+        Return a new ``MixedCut`` that will lazily apply loudness normalization.
+
+        :param target: The target loudness in dBFS.
+        :param mix_first: If true, we will mix the underlying cuts before applying
+            loudness normalization. If false, we cannot guarantee that the resulting
+            cut will have the target loudness.
+        :param affix_id: When true, we will modify the ``DataCut.id`` field
+            by affixing it with "_ln{target}".
+        :return: a modified copy of the current ``DataCut``.
+        """
+        # Pre-conditions
+        assert (
+            self.has_recording
+        ), "Cannot apply loudness normalization on a MixedCut without Recording."
+        if self.has_features:
+            logging.warning(
+                "Attempting to normalize loudness on a MixedCut that references pre-computed features. "
+                "The feature manifest will be detached, as we do not support feature-domain "
+                "loudness normalization."
+            )
+            self.features = None
+
+        if mix_first:
+            transforms = self.transforms.copy() if self.transforms is not None else []
+            transforms.append(LoudnessNormalization(target=target).to_dict())
+            return fastcopy(
+                self,
+                id=f"{self.id}_ln{target}" if affix_id else self.id,
+                transforms=transforms,
+            )
+        else:
+            return MixedCut(
+                id=f"{self.id}_ln{target}" if affix_id else self.id,
+                tracks=[
+                    fastcopy(
+                        track,
+                        cut=track.cut.normalize_loudness(
+                            target=target, affix_id=affix_id
+                        ),
+                    )
+                    for track in self.tracks
+                ],
+            )
 
     def reverb_rir(
         self,
