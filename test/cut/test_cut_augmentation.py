@@ -193,7 +193,7 @@ def test_cut_set_perturb_volume_doesnt_duplicate_transforms(cut_with_supervision
 
 
 def test_cut_set_reverb_rir_doesnt_duplicate_transforms(cut_with_supervision, rir):
-    rirs = RecordingSet.from_recordings([rir])
+    rirs = RecordingSet.from_recordings([rir]).resample(8000)
     cuts = CutSet.from_cuts(
         [cut_with_supervision, cut_with_supervision.with_id("other-id")]
     )
@@ -347,6 +347,7 @@ def test_mixed_cut_start01_perturb_volume(cut_with_supervision_start01):
 
 
 def test_mixed_cut_start01_reverb_rir(cut_with_supervision_start01, rir):
+    rir = rir.resample(8000)
     mixed_rvb = cut_with_supervision_start01.append(
         cut_with_supervision_start01
     ).reverb_rir(rir_recording=rir)
@@ -622,6 +623,14 @@ def test_cut_reverb_rir(libri_cut_with_supervision, libri_recording_rvb, rir):
     rvb_audio_from_fixture = libri_recording_rvb.load_audio()
 
     np.testing.assert_array_almost_equal(cut_rvb.load_audio(), rvb_audio_from_fixture)
+
+
+def test_cut_reverb_rir_assert_sampling_rate(libri_cut_with_supervision, rir):
+    cut = libri_cut_with_supervision
+    rir_new = rir.resample(8000)
+    with pytest.raises(AssertionError):
+        cut = cut.reverb_rir(rir_new)
+        _ = cut.load_audio()
 
 
 def test_cut_reverb_fast_rir(libri_cut_with_supervision):
