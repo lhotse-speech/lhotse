@@ -284,20 +284,22 @@ def test_augmentation_chain_randomized(
     resample_first: bool,
     cut_duration: Seconds,
 ):
+    # Reverb should be first because it depends on sampling rate.
+    recording_aug = recording
+    if reverb:
+        recording_aug = recording_aug.reverb_rir(mono_rir)
     if resample_first:
         recording_aug = (
-            recording.resample(target_sampling_rate)
+            recording_aug.resample(target_sampling_rate)
             .perturb_speed(sp_factor)
             .perturb_volume(vp_factor)
         )
     else:
         recording_aug = (
-            recording.perturb_speed(sp_factor)
+            recording_aug.perturb_speed(sp_factor)
             .resample(target_sampling_rate)
             .perturb_volume(vp_factor)
         )
-    if reverb:
-        recording_aug = recording_aug.reverb_rir(mono_rir)
 
     audio_aug = recording_aug.load_audio()
     assert audio_aug.shape[1] == recording_aug.num_samples

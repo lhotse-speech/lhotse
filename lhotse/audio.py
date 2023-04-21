@@ -795,6 +795,10 @@ class Recording:
         :param source_rng_seed: The seed to be used for the source position.
         :return: the perturbed ``Recording``.
         """
+        if rir_recording is not None:
+            assert (
+                rir_recording.sampling_rate == self.sampling_rate
+            ), f"Sampling rate mismatch between RIR vs recording: {rir_recording.sampling_rate} vs {self.sampling_rate}."
 
         # We may need to change the `channel_ids` field according to whether we are convolving
         # with a multi-channel RIR or not.

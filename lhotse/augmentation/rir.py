@@ -78,11 +78,6 @@ class ReverbWithImpulseResponse(AudioTransform):
         #   must match the number of channels in the input.
 
         # Let us make some assertions based on the above.
-        if self.rir is not None:
-            assert (
-                self.rir.sampling_rate == sampling_rate
-            ), f"Sampling rate mismatch: {self.rir.sampling_rate} vs {sampling_rate}."
-
         if input_is_mono:
             assert (
                 self.rir is not None or len(self.rir_channels) == 1

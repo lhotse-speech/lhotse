@@ -442,6 +442,7 @@ def test_mixed_cut_start01_reverb_rir_multi_channel(
     cut_with_supervision_start01, multi_channel_rir, rir_channels, expected_num_tracks
 ):
     mixed_cut = cut_with_supervision_start01.append(cut_with_supervision_start01)
+    multi_channel_rir = multi_channel_rir.resample(8000)
     if expected_num_tracks is not None:
         mixed_rvb = mixed_cut.reverb_rir(multi_channel_rir, rir_channels=rir_channels)
         assert len(mixed_rvb.tracks) == expected_num_tracks
