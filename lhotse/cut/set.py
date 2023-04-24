@@ -2614,10 +2614,14 @@ def mix(
     if offset > reference_cut.duration:
         reference_cut = reference_cut.pad(duration=offset)
 
-    # When the left_cut is a MixedCut, take its existing tracks, otherwise create a new track.
-    if isinstance(reference_cut, MixedCut):
+    # When the left_cut is a MixedCut and it does not have existing transforms,
+    # take its existing tracks, otherwise create a new track.
+    if (
+        isinstance(reference_cut, MixedCut)
+        and len(ifnone(reference_cut.transforms, [])) == 0
+    ):
         old_tracks = reference_cut.tracks
-    elif isinstance(reference_cut, (DataCut, PaddingCut)):
+    elif isinstance(reference_cut, (DataCut, PaddingCut, MixedCut)):
         old_tracks = [MixTrack(cut=reference_cut)]
     else:
         raise ValueError(f"Unsupported type of cut in mix(): {type(reference_cut)}")
@@ -2625,27 +2629,32 @@ def mix(
     # When the right_cut is a MixedCut, adapt its existing tracks with the new offset and snr,
     # otherwise create a new track.
     if isinstance(mixed_in_cut, MixedCut):
-        new_tracks = [
-            MixTrack(
-                cut=track.cut,
-                offset=round(track.offset + offset, ndigits=8),
-                snr=(
-                    # When no new SNR is specified, retain whatever was there in the first place.
-                    track.snr
-                    if snr is None
-                    # When new SNR is specified but none was specified before, assign the new SNR value.
-                    else snr
-                    if track.snr is None
-                    # When both new and previous SNR were specified, assign their sum,
-                    # as the SNR for each track is defined with regard to the first track energy.
-                    else track.snr + snr
-                    if snr is not None and track is not None
-                    # When no SNR was specified whatsoever, use none.
-                    else None
-                ),
-            )
-            for track in mixed_in_cut.tracks
-        ]
+        # Similarly for mixed_in_cut, if it is a MixedCut and it does not have existing transforms,
+        # take its existing tracks, otherwise create a new track.
+        if len(ifnone(mixed_in_cut.transforms, [])) > 0:
+            new_tracks = [MixTrack(cut=mixed_in_cut, offset=offset, snr=snr)]
+        else:
+            new_tracks = [
+                MixTrack(
+                    cut=track.cut,
+                    offset=round(track.offset + offset, ndigits=8),
+                    snr=(
+                        # When no new SNR is specified, retain whatever was there in the first place.
+                        track.snr
+                        if snr is None
+                        # When new SNR is specified but none was specified before, assign the new SNR value.
+                        else snr
+                        if track.snr is None
+                        # When both new and previous SNR were specified, assign their sum,
+                        # as the SNR for each track is defined with regard to the first track energy.
+                        else track.snr + snr
+                        if snr is not None and track is not None
+                        # When no SNR was specified whatsoever, use none.
+                        else None
+                    ),
+                )
+                for track in mixed_in_cut.tracks
+            ]
     elif isinstance(mixed_in_cut, (DataCut, PaddingCut)):
         new_tracks = [MixTrack(cut=mixed_in_cut, offset=offset, snr=snr)]
     else:
