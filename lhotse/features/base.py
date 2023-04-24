@@ -598,7 +598,7 @@ class FeatureSet(Serializable, AlgorithmMixin):
     When a given recording/time-range/channel is unavailable, raises a KeyError.
     """
 
-    def __init__(self, features: List[Features] = None) -> None:
+    def __init__(self, features: Optional[List[Features]] = None) -> None:
         self.features = ifnone(features, [])
 
     def __eq__(self, other: "FeatureSet") -> bool:

@@ -957,7 +957,7 @@ class RecordingSet(Serializable, AlgorithmMixin):
             >>> recs_24k = recs.resample(24000)
     """
 
-    def __init__(self, recordings: Mapping[str, Recording] = None) -> None:
+    def __init__(self, recordings: Optional[Mapping[str, Recording]] = None) -> None:
         self.recordings = ifnone(recordings, {})
 
     def __eq__(self, other: "RecordingSet") -> bool:

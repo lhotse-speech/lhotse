@@ -539,7 +539,9 @@ class SupervisionSet(Serializable, AlgorithmMixin):
             >>> shuffled = sups.shuffle()
     """
 
-    def __init__(self, segments: Mapping[str, SupervisionSegment]) -> None:
+    def __init__(
+        self, segments: Optional[Mapping[str, SupervisionSegment]] = None
+    ) -> None:
         self.segments = ifnone(segments, {})
 
     def __eq__(self, other: "SupervisionSet") -> bool:
