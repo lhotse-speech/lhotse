@@ -213,6 +213,7 @@ class SequentialJsonlWriter:
     def close(self):
         if self.file is not None:
             self.file.close()
+            self.file = None
 
     def contains(self, item: Union[str, Any]) -> bool:
         return item in self
