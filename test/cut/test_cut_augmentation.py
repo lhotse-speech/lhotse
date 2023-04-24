@@ -350,7 +350,7 @@ def test_mixed_cut_start01_reverb_rir(cut_with_supervision_start01, rir):
     rir = rir.resample(8000)
     mixed_rvb = cut_with_supervision_start01.append(
         cut_with_supervision_start01
-    ).reverb_rir(rir_recording=rir)
+    ).reverb_rir(rir_recording=rir, mix_first=False)
     assert mixed_rvb.start == 0  # MixedCut always starts at 0
     assert mixed_rvb.duration == cut_with_supervision_start01.duration * 2
     assert mixed_rvb.end == cut_with_supervision_start01.duration * 2
@@ -394,6 +394,24 @@ def test_mixed_cut_start01_reverb_rir(cut_with_supervision_start01, rir):
         np.hstack(
             (cut_with_supervision_start01_samples, cut_with_supervision_start01_samples)
         ),
+    )
+
+
+def test_mixed_cut_start01_reverb_rir_mix_first(cut_with_supervision_start01, rir):
+    mixed_rvb = cut_with_supervision_start01.pad(duration=0.5).reverb_rir(
+        rir_recording=rir, mix_first=True
+    )
+    assert mixed_rvb.start == 0  # MixedCut always starts at 0
+    assert mixed_rvb.duration == 0.5
+    assert mixed_rvb.end == 0.5
+    assert mixed_rvb.num_samples == 4000
+
+    # Check that the padding part should not be all zeros afte
+    np.testing.assert_raises(
+        AssertionError,
+        np.testing.assert_array_almost_equal,
+        mixed_rvb.load_audio()[:, 3200:],
+        np.zeros((1, 800)),
     )
 
 
@@ -449,6 +467,26 @@ def test_mixed_cut_start01_reverb_rir_multi_channel(
     else:
         with pytest.raises(AssertionError):
             mixed_cut.reverb_rir(multi_channel_rir, rir_channels=rir_channels)
+
+
+@pytest.mark.skipif(
+    not is_module_available("pyloudnorm"),
+    reason="This test requires pyloudnorm to be installed.",
+)
+@pytest.mark.parametrize(
+    "target, mix_first", [(-15.0, True), (-20.0, True), (-25.0, False)]
+)
+def test_mixed_cut_normalize_loudness(cut_with_supervision_start01, target, mix_first):
+    mixed_cut = cut_with_supervision_start01.append(cut_with_supervision_start01)
+    mixed_cut_ln = mixed_cut.normalize_loudness(target, mix_first=mix_first)
+
+    import pyloudnorm as pyln
+
+    # check if loudness is correct
+    meter = pyln.Meter(mixed_cut_ln.sampling_rate)  # create BS.1770 meter
+    loudness = meter.integrated_loudness(mixed_cut_ln.load_audio().T)
+    if mix_first:
+        assert loudness == pytest.approx(target, abs=0.5)
 
 
 @pytest.mark.skipif(
@@ -589,6 +627,10 @@ def test_cut_perturb_volume(cut_set, cut_id, scale):
     )
 
 
+@pytest.mark.skipif(
+    not is_module_available("pyloudnorm"),
+    reason="This test requires pyloudnorm to be installed.",
+)
 @pytest.mark.parametrize("target", [-15.0, -20.0, -25.0])
 def test_cut_normalize_loudness(libri_cut_set, target):
     cut_set_ln = libri_cut_set.normalize_loudness(target)
