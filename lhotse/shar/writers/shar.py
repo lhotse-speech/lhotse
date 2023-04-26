@@ -71,13 +71,20 @@ class SharWriter:
         shard_size: Optional[int] = 1000,
         warn_unused_fields: bool = True,
         include_cuts: bool = True,
+        shard_suffix: Optional[str] = None,
     ) -> None:
         self.output_dir = str(output_dir)
         self.shard_size = shard_size
         self.fields = fields
         self.warn_unused_fields = warn_unused_fields
         self.include_cuts = include_cuts
-        self.shard_suffix = ".%06d" if self.sharding_enabled else ""
+        if self.sharding_enabled:
+            assert (
+                shard_suffix is None
+            ), f"shard_suffix must be None when shard_size is specified (got: '{shard_suffix}')."
+            self.shard_suffix = ".%06d"
+        else:
+            self.shard_suffix = ifnone(shard_suffix, "")
 
         self.writers = {}
         if include_cuts:
