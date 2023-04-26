@@ -50,6 +50,15 @@ def shar():
     help="Should we shuffle the cuts before splitting into shards.",
 )
 @click.option("--seed", default=0, type=int, help="Random seed.")
+@click.option(
+    "-j",
+    "--num-jobs",
+    default=1,
+    type=int,
+    help="Number of parallel workers. We recommend to keep this number low on machines "
+    "with slow disks as the speed of I/O will likely be the bottleneck.",
+)
+@click.option("-v", "--verbose", count=True)
 def export(
     cuts: str,
     outdir: str,
@@ -58,6 +67,8 @@ def export(
     shard_size: int,
     shuffle: bool,
     seed: int,
+    num_jobs: int,
+    verbose: bool,
 ):
     """
     Export CutSet from CUTS into Lhotse Shar format in OUTDIR.
@@ -82,11 +93,14 @@ def export(
     if features != "none":
         fields["features"] = features
 
-    # TODO(pzelasko): This might be very slow for very large data because of sequential execution.
-    #                 Would be nice to first split cutset into metadata shards and then export the
-    #                 recordings/features in parallel across pre-defined shards.
     Path(outdir).mkdir(parents=True, exist_ok=True)
-    cuts.to_shar(output_dir=outdir, fields=fields, shard_size=shard_size)
+    cuts.to_shar(
+        output_dir=outdir,
+        fields=fields,
+        shard_size=shard_size,
+        num_jobs=num_jobs,
+        verbose=verbose,
+    )
 
 
 @shar.command(context_settings=dict(show_default=True))
@@ -104,20 +118,22 @@ def export(
     default="lilcom",
     help="Which compression to use (lilcom is lossy, numpy is lossless).",
 )
-@click.option("-j", "--jobs", default=1, type=int, help="Number of parallel workers.")
+@click.option(
+    "-j", "--num-jobs", default=1, type=int, help="Number of parallel workers."
+)
 @click.option("-v", "--verbose", count=True)
 def compute_features(
     shar_dir: str,
     feature_config: Optional[str],
     compression: str,
-    jobs: int,
+    num_jobs: int,
     verbose: int,
 ):
     """
     Compute features for Lhotse Shar cuts stored in SHAR_DIR.
 
     The features are computed sequentially on CPU within shards,
-    and parallelized across shards up to JOBS concurrent workers.
+    and parallelized across shards up to NUM_JOBS concurrent workers.
 
     FEATURE_CONFIG defines the feature extractor type and settings.
     You can generate default feature extractor settings with:
@@ -130,7 +146,7 @@ def compute_features(
         progbar = partial(tqdm.tqdm, desc="Shard progress")
 
     futures = []
-    with ProcessPoolExecutor(jobs) as ex:
+    with ProcessPoolExecutor(num_jobs) as ex:
         for shard in shards:
             shard_idx = shard.name.split(".")[1]
             output_path = shard.with_name(f"features.{shard_idx}.tar")
