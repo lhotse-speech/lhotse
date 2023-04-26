@@ -1617,7 +1617,11 @@ class LibsndfileBackend(AudioBackend):
         )
 
     def handles_special_case(self, path_or_fd: Union[Pathlike, FileObject]) -> bool:
-        return not (sys.platform == "darwin") and isinstance(path_or_fd, BytesIO)
+        return (
+            not (sys.platform == "darwin")
+            and isinstance(path_or_fd, BytesIO)
+            and not torchaudio_2_0_ffmpeg_enabled()  # FFMPEG is preferable to this hack.
+        )
 
     def is_applicable(self, path_or_fd: Union[Pathlike, FileObject]) -> bool:
         # Technically it's applicable with regular files as well, but for now
