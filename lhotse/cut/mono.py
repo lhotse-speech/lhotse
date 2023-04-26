@@ -1,4 +1,5 @@
 import logging
+import math
 import warnings
 from dataclasses import dataclass
 from functools import reduce
@@ -75,7 +76,13 @@ class MonoCut(DataCut):
             return self.recording.load_audio(
                 channels=self.channel,
                 offset=self.start,
-                duration=self.duration,
+                # set duration=None when cut covers the whole recording
+                # to let the audio loading code "know" to read everything
+                duration=self.duration
+                if not math.isclose(
+                    self.duration, self.recording.duration, abs_tol=1e-3
+                )
+                else None,
             )
         return None
 

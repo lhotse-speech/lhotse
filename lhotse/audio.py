@@ -1906,13 +1906,14 @@ def torchaudio_load(
 
     # Need to grab the "info" about sampling rate before reading to compute
     # the number of samples provided in offset / num_frames.
-    audio_info = torchaudio_info(path_or_fd)
     frame_offset = 0
     num_frames = -1
-    if offset > 0:
-        frame_offset = compute_num_samples(offset, audio_info.samplerate)
-    if duration is not None:
-        num_frames = compute_num_samples(duration, audio_info.samplerate)
+    if offset > 0 or duration is not None:
+        audio_info = torchaudio_info(path_or_fd)
+        if offset > 0:
+            frame_offset = compute_num_samples(offset, audio_info.samplerate)
+        if duration is not None:
+            num_frames = compute_num_samples(duration, audio_info.samplerate)
     if isinstance(path_or_fd, IOBase):
         # Set seek pointer to the beginning of the file as torchaudio.info
         # might have left it at the end of the header
@@ -1932,13 +1933,14 @@ def torchaudio_2_ffmpeg_load(
 
     # Need to grab the "info" about sampling rate before reading to compute
     # the number of samples provided in offset / num_frames.
-    audio_info = torchaudio.info(path_or_fd, backend="ffmpeg")
     frame_offset = 0
     num_frames = -1
-    if offset > 0:
-        frame_offset = compute_num_samples(offset, audio_info.samplerate)
-    if duration is not None:
-        num_frames = compute_num_samples(duration, audio_info.samplerate)
+    if offset > 0 or duration is not None:
+        audio_info = torchaudio.info(path_or_fd, backend="ffmpeg")
+        if offset > 0:
+            frame_offset = compute_num_samples(offset, audio_info.samplerate)
+        if duration is not None:
+            num_frames = compute_num_samples(duration, audio_info.samplerate)
     if isinstance(path_or_fd, IOBase):
         # Set seek pointer to the beginning of the file as torchaudio.info
         # might have left it at the end of the header
