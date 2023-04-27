@@ -188,7 +188,9 @@ def test_cut_load_custom_recording():
     )
     audio /= np.abs(audio).max()  # normalize to [-1, 1]
     with NamedTemporaryFile(suffix=".wav") as f:
-        torchaudio.save(f.name, torch.from_numpy(audio), sampling_rate)
+        torchaudio.backend.soundfile_backend.save(
+            f.name, torch.from_numpy(audio), sampling_rate
+        )
         f.flush()
         os.fsync(f)
         recording = Recording.from_file(f.name)
@@ -211,7 +213,9 @@ def test_cut_load_custom_recording_truncate():
     )
     audio /= np.abs(audio).max()  # normalize to [-1, 1]
     with NamedTemporaryFile(suffix=".wav") as f:
-        torchaudio.save(f.name, torch.from_numpy(audio), sampling_rate)
+        torchaudio.backend.soundfile_backend.save(
+            f.name, torch.from_numpy(audio), sampling_rate
+        )
         f.flush()
         os.fsync(f)
         recording = Recording.from_file(f.name)
@@ -238,7 +242,9 @@ def test_cut_load_custom_recording_pad_right():
     )
     audio /= np.abs(audio).max()  # normalize to [-1, 1]
     with NamedTemporaryFile(suffix=".wav") as f:
-        torchaudio.save(f.name, torch.from_numpy(audio), sampling_rate)
+        torchaudio.backend.soundfile_backend.save(
+            f.name, torch.from_numpy(audio), sampling_rate
+        )
         f.flush()
         os.fsync(f)
         recording = Recording.from_file(f.name)
@@ -272,7 +278,9 @@ def test_cut_load_custom_recording_pad_left():
     )
     audio /= np.abs(audio).max()  # normalize to [-1, 1]
     with NamedTemporaryFile(suffix=".wav") as f:
-        torchaudio.save(f.name, torch.from_numpy(audio), sampling_rate)
+        torchaudio.backend.soundfile_backend.save(
+            f.name, torch.from_numpy(audio), sampling_rate
+        )
         f.flush()
         os.fsync(f)
         recording = Recording.from_file(f.name)
@@ -306,7 +314,9 @@ def test_cut_load_custom_recording_pad_both():
     )
     audio /= np.abs(audio).max()  # normalize to [-1, 1]
     with NamedTemporaryFile(suffix=".wav") as f:
-        torchaudio.save(f.name, torch.from_numpy(audio), sampling_rate)
+        torchaudio.backend.soundfile_backend.save(
+            f.name, torch.from_numpy(audio), sampling_rate
+        )
         f.flush()
         os.fsync(f)
         recording = Recording.from_file(f.name)
