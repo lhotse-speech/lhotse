@@ -21,7 +21,7 @@ from lhotse.audio import Recording, RecordingSet
 from lhotse.features import Fbank
 from lhotse.features.base import TorchaudioFeatureExtractor
 from lhotse.supervision import SupervisionSegment, SupervisionSet
-from lhotse.utils import Pathlike, fastcopy, safe_extract, urlretrieve_progress
+from lhotse.utils import Pathlike, fastcopy, resumable_download, safe_extract
 
 
 def download_ljspeech(
@@ -36,12 +36,11 @@ def download_ljspeech(
     if completed_detector.is_file():
         logging.info(f"Skipping {dataset_name} because {completed_detector} exists.")
         return corpus_dir
-    if force_download or not tar_path.is_file():
-        urlretrieve_progress(
-            f"http://data.keithito.com/data/speech/{dataset_name}.tar.bz2",
-            filename=tar_path,
-            desc="Downloading LJSpeech",
-        )
+    resumable_download(
+        f"http://data.keithito.com/data/speech/{dataset_name}.tar.bz2",
+        filename=tar_path,
+        force_download=force_download,
+    )
     shutil.rmtree(corpus_dir, ignore_errors=True)
     with tarfile.open(tar_path) as tar:
         safe_extract(tar, path=target_dir)

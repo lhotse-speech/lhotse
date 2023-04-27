@@ -55,7 +55,7 @@ from lhotse import (
     validate_recordings_and_supervisions,
 )
 from lhotse.qa import fix_manifests
-from lhotse.utils import Pathlike, safe_extract, urlretrieve_progress
+from lhotse.utils import Pathlike, resumable_download, safe_extract
 
 TEDLIUM_PARTS = ("train", "dev", "test")
 
@@ -71,12 +71,11 @@ def download_tedlium(
     if completed_detector.is_file():
         logging.info(f"Skipping {tar_path.name} because {completed_detector} exists.")
         return corpus_dir
-    if force_download or not tar_path.is_file():
-        urlretrieve_progress(
-            "http://www.openslr.org/resources/51/TEDLIUM_release-3.tgz",
-            filename=tar_path,
-            desc="Downloading TEDLIUM v3",
-        )
+    resumable_download(
+        "http://www.openslr.org/resources/51/TEDLIUM_release-3.tgz",
+        filename=tar_path,
+        force_download=force_download,
+    )
     shutil.rmtree(corpus_dir, ignore_errors=True)
     with tarfile.open(tar_path) as tar:
         safe_extract(tar, path=target_dir)

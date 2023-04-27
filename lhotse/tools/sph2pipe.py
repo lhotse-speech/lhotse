@@ -4,7 +4,7 @@ import tarfile
 from pathlib import Path
 
 from lhotse.tools.env import default_tools_cachedir
-from lhotse.utils import Pathlike, safe_extract, urlretrieve_progress
+from lhotse.utils import Pathlike, resumable_download, safe_extract
 
 SPH2PIPE_URL = "https://github.com/burrmill/sph2pipe/archive/2.5.tar.gz"
 
@@ -40,8 +40,7 @@ def download_and_untar_sph2pipe(
     target_dir.mkdir(parents=True, exist_ok=True)
     tar_name = "sph2pipe-2.5.tar.gz"
     tar_path = target_dir / tar_name
-    if force_download or not tar_path.is_file():
-        urlretrieve_progress(url, filename=tar_path, desc=f"Downloading {tar_name}")
+    resumable_download(url, filename=tar_path, force_download=force_download)
     with tarfile.open(tar_path) as tar:
         safe_extract(tar, path=target_dir)
     return sph2pipe_dir

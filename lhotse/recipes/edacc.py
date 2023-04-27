@@ -31,12 +31,7 @@ from typing import Dict, Optional, Union
 from lhotse import fix_manifests, validate_recordings_and_supervisions
 from lhotse.audio import RecordingSet
 from lhotse.supervision import SupervisionSet
-from lhotse.utils import (
-    Pathlike,
-    is_module_available,
-    safe_extract,
-    urlretrieve_progress,
-)
+from lhotse.utils import Pathlike, is_module_available, resumable_download, safe_extract
 
 _EDACC_SAMPLING_RATE = 32000
 
@@ -67,12 +62,11 @@ def download_edacc(
 
     # Maybe-download the archive.
     archive_path = target_dir / archive_name
-    if force_download or not archive_path.is_file():
-        urlretrieve_progress(
-            f"{base_url}/{archive_name}",
-            filename=archive_path,
-            desc=f"Downloading {archive_name}",
-        )
+    resumable_download(
+        f"{base_url}/{archive_name}",
+        filename=archive_path,
+        force_download=force_download,
+    )
 
     # Remove partial unpacked files, if any, and unpack everything.
     shutil.rmtree(corpus_dir, ignore_errors=True)
