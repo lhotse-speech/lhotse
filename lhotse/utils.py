@@ -273,7 +273,11 @@ def fastcopy(dataclass_obj: T, **kwargs) -> T:
 
 
 def split_manifest_lazy(
-    it: Iterable[Any], output_dir: Pathlike, chunk_size: int, prefix: str = ""
+    it: Iterable[Any],
+    output_dir: Pathlike,
+    chunk_size: int,
+    prefix: str = "",
+    num_digits: int = 8,
 ) -> List:
     """
     Splits a manifest (either lazily or eagerly opened) into chunks, each
@@ -290,6 +294,7 @@ def split_manifest_lazy(
         Each manifest is saved at: ``{output_dir}/{prefix}.{split_idx}.jsonl.gz``
     :param chunk_size: the number of items in each chunk.
     :param prefix: the prefix of each manifest.
+    :param num_digits: the width of ``split_idx``, which will be left padded with zeros to achieve it.
     :return: a list of lazily opened chunk manifests.
     """
     from lhotse.serialization import SequentialJsonlWriter
@@ -300,10 +305,8 @@ def split_manifest_lazy(
     if prefix == "":
         prefix = "split"
 
-    num_digits = 8
-
     items = iter(it)
-    split_idx = 1
+    split_idx = 0
     splits = []
     while True:
         try:

@@ -5,5 +5,6 @@ from .install_tools import *
 from .kaldi import *
 from .manipulation import *
 from .recipes import *
+from .shar import *
 from .validate import *
 from .workflows import *

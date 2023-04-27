@@ -193,7 +193,7 @@ def test_cut_set_perturb_volume_doesnt_duplicate_transforms(cut_with_supervision
 
 
 def test_cut_set_reverb_rir_doesnt_duplicate_transforms(cut_with_supervision, rir):
-    rirs = RecordingSet.from_recordings([rir])
+    rirs = RecordingSet.from_recordings([rir]).resample(8000)
     cuts = CutSet.from_cuts(
         [cut_with_supervision, cut_with_supervision.with_id("other-id")]
     )
@@ -347,9 +347,10 @@ def test_mixed_cut_start01_perturb_volume(cut_with_supervision_start01):
 
 
 def test_mixed_cut_start01_reverb_rir(cut_with_supervision_start01, rir):
+    rir = rir.resample(8000)
     mixed_rvb = cut_with_supervision_start01.append(
         cut_with_supervision_start01
-    ).reverb_rir(rir_recording=rir)
+    ).reverb_rir(rir_recording=rir, mix_first=False)
     assert mixed_rvb.start == 0  # MixedCut always starts at 0
     assert mixed_rvb.duration == cut_with_supervision_start01.duration * 2
     assert mixed_rvb.end == cut_with_supervision_start01.duration * 2
@@ -393,6 +394,24 @@ def test_mixed_cut_start01_reverb_rir(cut_with_supervision_start01, rir):
         np.hstack(
             (cut_with_supervision_start01_samples, cut_with_supervision_start01_samples)
         ),
+    )
+
+
+def test_mixed_cut_start01_reverb_rir_mix_first(cut_with_supervision_start01, rir):
+    mixed_rvb = cut_with_supervision_start01.pad(duration=0.5).reverb_rir(
+        rir_recording=rir, mix_first=True
+    )
+    assert mixed_rvb.start == 0  # MixedCut always starts at 0
+    assert mixed_rvb.duration == 0.5
+    assert mixed_rvb.end == 0.5
+    assert mixed_rvb.num_samples == 4000
+
+    # Check that the padding part should not be all zeros afte
+    np.testing.assert_raises(
+        AssertionError,
+        np.testing.assert_array_almost_equal,
+        mixed_rvb.load_audio()[:, 3200:],
+        np.zeros((1, 800)),
     )
 
 
@@ -441,12 +460,33 @@ def test_mixed_cut_start01_reverb_rir_multi_channel(
     cut_with_supervision_start01, multi_channel_rir, rir_channels, expected_num_tracks
 ):
     mixed_cut = cut_with_supervision_start01.append(cut_with_supervision_start01)
+    multi_channel_rir = multi_channel_rir.resample(8000)
     if expected_num_tracks is not None:
         mixed_rvb = mixed_cut.reverb_rir(multi_channel_rir, rir_channels=rir_channels)
         assert len(mixed_rvb.tracks) == expected_num_tracks
     else:
         with pytest.raises(AssertionError):
             mixed_cut.reverb_rir(multi_channel_rir, rir_channels=rir_channels)
+
+
+@pytest.mark.skipif(
+    not is_module_available("pyloudnorm"),
+    reason="This test requires pyloudnorm to be installed.",
+)
+@pytest.mark.parametrize(
+    "target, mix_first", [(-15.0, True), (-20.0, True), (-25.0, False)]
+)
+def test_mixed_cut_normalize_loudness(cut_with_supervision_start01, target, mix_first):
+    mixed_cut = cut_with_supervision_start01.append(cut_with_supervision_start01)
+    mixed_cut_ln = mixed_cut.normalize_loudness(target, mix_first=mix_first)
+
+    import pyloudnorm as pyln
+
+    # check if loudness is correct
+    meter = pyln.Meter(mixed_cut_ln.sampling_rate)  # create BS.1770 meter
+    loudness = meter.integrated_loudness(mixed_cut_ln.load_audio().T)
+    if mix_first:
+        assert loudness == pytest.approx(target, abs=0.5)
 
 
 @pytest.mark.skipif(
@@ -587,6 +627,10 @@ def test_cut_perturb_volume(cut_set, cut_id, scale):
     )
 
 
+@pytest.mark.skipif(
+    not is_module_available("pyloudnorm"),
+    reason="This test requires pyloudnorm to be installed.",
+)
 @pytest.mark.parametrize("target", [-15.0, -20.0, -25.0])
 def test_cut_normalize_loudness(libri_cut_set, target):
     cut_set_ln = libri_cut_set.normalize_loudness(target)
@@ -622,6 +666,14 @@ def test_cut_reverb_rir(libri_cut_with_supervision, libri_recording_rvb, rir):
     rvb_audio_from_fixture = libri_recording_rvb.load_audio()
 
     np.testing.assert_array_almost_equal(cut_rvb.load_audio(), rvb_audio_from_fixture)
+
+
+def test_cut_reverb_rir_assert_sampling_rate(libri_cut_with_supervision, rir):
+    cut = libri_cut_with_supervision
+    rir_new = rir.resample(8000)
+    with pytest.raises(AssertionError):
+        cut = cut.reverb_rir(rir_new)
+        _ = cut.load_audio()
 
 
 def test_cut_reverb_fast_rir(libri_cut_with_supervision):
