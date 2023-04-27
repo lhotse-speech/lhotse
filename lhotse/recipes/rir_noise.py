@@ -53,8 +53,7 @@ from pathlib import Path
 from typing import Dict, Optional, Sequence, Union
 
 from lhotse import CutSet, Recording, RecordingSet
-from lhotse.audio import AudioSource
-from lhotse.utils import Pathlike, urlretrieve_progress
+from lhotse.utils import Pathlike, resumable_download
 
 RIR_NOISE_ZIP_URL = "https://www.openslr.org/resources/28/rirs_noises.zip"
 
@@ -86,8 +85,7 @@ def download_rir_noise(
     if zip_path.exists() and not force_download:
         logging.info(f"Skipping {zip_name} because file exists.")
     else:
-        urlretrieve_progress(url, zip_path, desc=f"Downloading {zip_name}")
-        logging.info(f"Downloaded {zip_name}.")
+        resumable_download(url, zip_path, force_download=force_download)
     zip_dir = target_dir / "RIRS_NOISES"
     if not zip_dir.exists():
         logging.info(f"Unzipping {zip_name}.")
