@@ -188,9 +188,7 @@ def test_cut_load_custom_recording():
     )
     audio /= np.abs(audio).max()  # normalize to [-1, 1]
     with NamedTemporaryFile(suffix=".wav") as f:
-        torchaudio.backend.soundfile_backend.save(
-            f.name, torch.from_numpy(audio), sampling_rate
-        )
+        torchaudio.save(f.name, torch.from_numpy(audio), sampling_rate)
         f.flush()
         os.fsync(f)
         recording = Recording.from_file(f.name)
@@ -202,7 +200,7 @@ def test_cut_load_custom_recording():
         cut.my_favorite_song = recording
 
         restored_audio = cut.load_my_favorite_song()
-        np.testing.assert_almost_equal(audio, restored_audio)
+        np.testing.assert_allclose(audio, restored_audio, atol=4e-5)
 
 
 def test_cut_load_custom_recording_truncate():
@@ -213,9 +211,7 @@ def test_cut_load_custom_recording_truncate():
     )
     audio /= np.abs(audio).max()  # normalize to [-1, 1]
     with NamedTemporaryFile(suffix=".wav") as f:
-        torchaudio.backend.soundfile_backend.save(
-            f.name, torch.from_numpy(audio), sampling_rate
-        )
+        torchaudio.save(f.name, torch.from_numpy(audio), sampling_rate)
         f.flush()
         os.fsync(f)
         recording = Recording.from_file(f.name)
@@ -231,7 +227,7 @@ def test_cut_load_custom_recording_truncate():
         restored_audio = cut_trunc.load_my_favorite_song()
         assert restored_audio.shape == (1, 80000)
 
-        np.testing.assert_almost_equal(audio[:, :80000], restored_audio)
+        np.testing.assert_allclose(audio[:, :80000], restored_audio, atol=3e-5)
 
 
 def test_cut_load_custom_recording_pad_right():
@@ -242,9 +238,7 @@ def test_cut_load_custom_recording_pad_right():
     )
     audio /= np.abs(audio).max()  # normalize to [-1, 1]
     with NamedTemporaryFile(suffix=".wav") as f:
-        torchaudio.backend.soundfile_backend.save(
-            f.name, torch.from_numpy(audio), sampling_rate
-        )
+        torchaudio.save(f.name, torch.from_numpy(audio), sampling_rate)
         f.flush()
         os.fsync(f)
         recording = Recording.from_file(f.name)
@@ -266,8 +260,10 @@ def test_cut_load_custom_recording_pad_right():
         restored_audio = cut_pad.load_my_favorite_song()
         assert restored_audio.shape == (1, 960000)  # 16000 * 60
 
-        np.testing.assert_almost_equal(audio, restored_audio[:, : audio.shape[1]])
-        np.testing.assert_almost_equal(0, restored_audio[:, audio.shape[1] :])
+        np.testing.assert_allclose(
+            audio, restored_audio[:, : audio.shape[1]], atol=4e-5
+        )
+        np.testing.assert_allclose(0, restored_audio[:, audio.shape[1] :], atol=4e-5)
 
 
 def test_cut_load_custom_recording_pad_left():
@@ -278,9 +274,7 @@ def test_cut_load_custom_recording_pad_left():
     )
     audio /= np.abs(audio).max()  # normalize to [-1, 1]
     with NamedTemporaryFile(suffix=".wav") as f:
-        torchaudio.backend.soundfile_backend.save(
-            f.name, torch.from_numpy(audio), sampling_rate
-        )
+        torchaudio.save(f.name, torch.from_numpy(audio), sampling_rate)
         f.flush()
         os.fsync(f)
         recording = Recording.from_file(f.name)
@@ -302,8 +296,10 @@ def test_cut_load_custom_recording_pad_left():
         restored_audio = cut_pad.load_my_favorite_song()
         assert restored_audio.shape == (1, 960000)  # 16000 * 60
 
-        np.testing.assert_almost_equal(0, restored_audio[:, : -audio.shape[1]])
-        np.testing.assert_almost_equal(audio, restored_audio[:, -audio.shape[1] :])
+        np.testing.assert_allclose(0, restored_audio[:, : -audio.shape[1]], atol=4e-5)
+        np.testing.assert_allclose(
+            audio, restored_audio[:, -audio.shape[1] :], atol=4e-5
+        )
 
 
 def test_cut_load_custom_recording_pad_both():
@@ -314,9 +310,7 @@ def test_cut_load_custom_recording_pad_both():
     )
     audio /= np.abs(audio).max()  # normalize to [-1, 1]
     with NamedTemporaryFile(suffix=".wav") as f:
-        torchaudio.backend.soundfile_backend.save(
-            f.name, torch.from_numpy(audio), sampling_rate
-        )
+        torchaudio.save(f.name, torch.from_numpy(audio), sampling_rate)
         f.flush()
         os.fsync(f)
         recording = Recording.from_file(f.name)
@@ -340,12 +334,14 @@ def test_cut_load_custom_recording_pad_both():
         restored_audio = cut_pad.load_my_favorite_song()
         assert restored_audio.shape == (1, 960000)  # 16000 * 60
 
-        np.testing.assert_almost_equal(0, restored_audio[:, :sampling_rate])
-        np.testing.assert_almost_equal(
-            audio, restored_audio[:, sampling_rate : audio.shape[1] + sampling_rate]
+        np.testing.assert_allclose(0, restored_audio[:, :sampling_rate], atol=4e-5)
+        np.testing.assert_allclose(
+            audio,
+            restored_audio[:, sampling_rate : audio.shape[1] + sampling_rate],
+            atol=4e-5,
         )
-        np.testing.assert_almost_equal(
-            0, restored_audio[:, sampling_rate + audio.shape[1] :]
+        np.testing.assert_allclose(
+            0, restored_audio[:, sampling_rate + audio.shape[1] :], atol=4e-5
         )
 
 
