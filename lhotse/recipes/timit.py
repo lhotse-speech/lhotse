@@ -16,7 +16,7 @@ from tqdm import tqdm
 from lhotse import validate_recordings_and_supervisions
 from lhotse.audio import Recording, RecordingSet
 from lhotse.supervision import SupervisionSegment, SupervisionSet
-from lhotse.utils import Pathlike, urlretrieve_progress
+from lhotse.utils import Pathlike, resumable_download
 
 
 def download_timit(
@@ -40,10 +40,7 @@ def download_timit(
     if completed_detector.is_file():
         logging.info(f"Skipping {zip_name} because {completed_detector} exists.")
         return corpus_dir
-    if force_download or not zip_path.is_file():
-        urlretrieve_progress(
-            base_url, filename=zip_path, desc=f"Downloading {zip_name}"
-        )
+    resumable_download(base_url, filename=zip_path, force_download=force_download)
 
     with zipfile.ZipFile(zip_path) as zip_file:
         corpus_dir.mkdir(parents=True, exist_ok=True)

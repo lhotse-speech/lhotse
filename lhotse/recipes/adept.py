@@ -34,7 +34,7 @@ from lhotse import (
     SupervisionSet,
     validate_recordings_and_supervisions,
 )
-from lhotse.utils import Pathlike, urlretrieve_progress
+from lhotse.utils import Pathlike, resumable_download
 
 ADEPT_URL = "https://zenodo.org/record/5117102/files/ADEPT.zip"
 
@@ -61,10 +61,7 @@ def download_adept(
     # Maybe-download the archive.
     zip_name = "ADEPT.zip"
     zip_path = target_dir / zip_name
-    if force_download or not zip_path.is_file():
-        urlretrieve_progress(
-            ADEPT_URL, filename=zip_path, desc=f"Downloading {zip_name}"
-        )
+    resumable_download(ADEPT_URL, filename=zip_path, force_download=force_download)
     # Remove partial unpacked files, if any, and unpack everything.
     shutil.rmtree(corpus_dir, ignore_errors=True)
     with zipfile.ZipFile(zip_path) as zip_f:

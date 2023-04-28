@@ -36,7 +36,7 @@ from lhotse import (
 )
 from lhotse.recipes.utils import manifests_exist, read_manifests_if_cached
 from lhotse.serialization import load_jsonl
-from lhotse.utils import Pathlike, safe_extract, urlretrieve_progress
+from lhotse.utils import Pathlike, resumable_download, safe_extract
 
 ID2SPEAKER = {
     "92": "Cori Samuel",
@@ -91,10 +91,9 @@ def download_hifitts(
             f"Skipping HiFiTTS preparation because {completed_detector} exists."
         )
         return part_dir
-    if force_download or not tar_path.is_file():
-        urlretrieve_progress(
-            f"{url}/{tar_name}", filename=tar_path, desc=f"Downloading {tar_name}"
-        )
+    resumable_download(
+        f"{url}/{tar_name}", filename=tar_path, force_download=force_download
+    )
     shutil.rmtree(part_dir, ignore_errors=True)
     with tarfile.open(tar_path) as tar:
         safe_extract(tar, path=target_dir)

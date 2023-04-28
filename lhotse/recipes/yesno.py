@@ -33,7 +33,7 @@ from typing import Dict, List, Optional, Tuple, Union
 from lhotse import validate_recordings_and_supervisions
 from lhotse.audio import Recording, RecordingSet
 from lhotse.supervision import SupervisionSegment, SupervisionSet
-from lhotse.utils import Pathlike, safe_extract, urlretrieve_progress
+from lhotse.utils import Pathlike, resumable_download, safe_extract
 
 _DEFAULT_URL = "http://www.openslr.org/resources/1/waves_yesno.tar.gz"
 
@@ -62,10 +62,7 @@ def download_yesno(
         logging.info(f"Skipping - {completed_detector} exists.")
         return extracted_dir
 
-    if force_download or not tar_path.is_file():
-        urlretrieve_progress(
-            f"{url}", filename=tar_path, desc=f"Downloading waves_yesno.tar.gz"
-        )
+    resumable_download(url, filename=tar_path, force_download=force_download)
 
     shutil.rmtree(extracted_dir, ignore_errors=True)
 

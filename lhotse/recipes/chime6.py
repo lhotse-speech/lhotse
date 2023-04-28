@@ -50,7 +50,7 @@ from lhotse import fix_manifests, validate_recordings_and_supervisions
 from lhotse.audio import AudioSource, Recording, RecordingSet
 from lhotse.recipes.utils import TimeFormatConverter, normalize_text_chime6
 from lhotse.supervision import SupervisionSegment, SupervisionSet
-from lhotse.utils import Pathlike, add_durations, urlretrieve_progress
+from lhotse.utils import Pathlike, add_durations, resumable_download
 
 # fmt: off
 DATASET_PARTS = {
@@ -369,7 +369,7 @@ def _verify_md5_checksums(
     # First download checksum file and read it into a dictionary
     temp_dir = Path(tempfile.mkdtemp())
     checksum_file = temp_dir / "md5sums.txt"
-    urlretrieve_progress(
+    resumable_download(
         CHIME6_MD5SUM_FILE, str(checksum_file), desc="Downloading checksum file"
     )
     checksums = {}
@@ -426,11 +426,7 @@ class Chime6ArraySynchronizer:
 
         # Download the audio edits JSON file
         audio_edits_json = self.output_dir / "audio_edits.json"
-        urlretrieve_progress(
-            CHIME6_AUDIO_EDITS_JSON,
-            str(audio_edits_json),
-            desc="Downloading audio edits",
-        )
+        resumable_download(CHIME6_AUDIO_EDITS_JSON, str(audio_edits_json))
         with open(audio_edits_json) as f:
             self.audio_edits = dict(json.load(f))
 

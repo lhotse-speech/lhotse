@@ -31,7 +31,7 @@ from tqdm.auto import tqdm
 
 from lhotse import Recording, RecordingSet, SupervisionSegment, SupervisionSet
 from lhotse.qa import fix_manifests, validate_recordings_and_supervisions
-from lhotse.utils import Pathlike, check_and_rglob, safe_extract, urlretrieve_progress
+from lhotse.utils import Pathlike, check_and_rglob, resumable_download, safe_extract
 
 
 def prepare_callhome_english(
@@ -233,8 +233,7 @@ def download_callhome_metadata(
     target_dir.mkdir(parents=True, exist_ok=True)
     tar_name = "sre2000-key.tar.gz"
     tar_path = target_dir / tar_name
-    if force_download or not tar_path.is_file():
-        urlretrieve_progress(url, filename=tar_path, desc=f"Downloading {tar_name}")
+    resumable_download(url, filename=tar_path, force_download=force_download)
     with tarfile.open(tar_path) as tar:
         safe_extract(tar, path=target_dir)
     return sre_dir

@@ -4,7 +4,7 @@ import pickle
 import random
 import warnings
 from collections import Counter, defaultdict
-from concurrent.futures import Executor, ProcessPoolExecutor
+from concurrent.futures import Executor, ProcessPoolExecutor, as_completed
 from functools import partial, reduce
 from itertools import chain, islice
 from math import ceil
@@ -522,6 +522,8 @@ class CutSet(Serializable, AlgorithmMixin):
         shard_size: Optional[int] = 1000,
         warn_unused_fields: bool = True,
         include_cuts: bool = True,
+        num_jobs: int = 1,
+        verbose: bool = False,
     ) -> Dict[str, List[str]]:
         """
         Writes cuts and their corresponding data into multiple shards,
@@ -564,22 +566,59 @@ class CutSet(Serializable, AlgorithmMixin):
         Turning it off is useful when extending existing dataset with new fields/feature types,
         but the original cuts do not require any modification.
 
+        When ``num_jobs`` is greater than 1, we will first split the CutSet into shard CutSets,
+        and then export the ``fields`` in parallel using multiple subprocesses. Enabling ``verbose``
+        will display a progress bar.
+
+        .. note:: It is recommended not to set ``num_jobs`` too high on systems with slow disks,
+            as the export will likely be bottlenecked by I/O speed in these cases.
+            Try experimenting with 4-8 jobs first.
+
         See also: :class:`~lhotse.shar.writers.shar.SharWriter`,
             :meth:`~lhotse.cut.set.CutSet.to_shar`.
         """
-        from lhotse.shar import SharWriter
+        assert num_jobs > 0 and isinstance(
+            num_jobs, int
+        ), f"The number of jobs must be an integer greater than 0 (got {num_jobs})."
 
-        with SharWriter(
-            output_dir=output_dir,
-            fields=fields,
-            shard_size=shard_size,
-            warn_unused_fields=warn_unused_fields,
-            include_cuts=include_cuts,
-        ) as writer:
-            for cut in self:
-                writer.write(cut)
+        if num_jobs == 1:
+            return _export_to_shar_single(
+                cuts=self,
+                output_dir=output_dir,
+                shard_size=shard_size,
+                fields=fields,
+                warn_unused_fields=warn_unused_fields,
+                include_cuts=include_cuts,
+                shard_suffix=None,
+            )
 
-        return writer.output_paths
+        progbar = partial(tqdm, desc="Shard progress") if verbose else lambda x: x
+        shards = self.split_lazy(
+            output_dir=output_dir, chunk_size=shard_size, prefix="cuts", num_digits=6
+        )
+        with ProcessPoolExecutor(num_jobs) as ex:
+            futures = []
+            output_paths = defaultdict(list)
+            for idx, shard in enumerate(shards):
+                futures.append(
+                    ex.submit(
+                        _export_to_shar_single,
+                        cuts=shard,
+                        output_dir=output_dir,
+                        shard_size=None,  # already sharded
+                        fields=fields,
+                        warn_unused_fields=warn_unused_fields,
+                        include_cuts=True,
+                        shard_suffix=f".{idx:06d}",
+                    )
+                )
+            for f in progbar(as_completed(futures)):
+                partial_paths = f.result()
+                for k, v in partial_paths.items():
+                    output_paths[k].append(v)
+        for k in output_paths:
+            output_paths[k] = sorted(output_paths[k])
+        return output_paths
 
     def to_dicts(self) -> Iterable[dict]:
         return (cut.to_dict() for cut in self)
@@ -929,7 +968,11 @@ class CutSet(Serializable, AlgorithmMixin):
         ]
 
     def split_lazy(
-        self, output_dir: Pathlike, chunk_size: int, prefix: str = ""
+        self,
+        output_dir: Pathlike,
+        chunk_size: int,
+        prefix: str = "",
+        num_digits: int = 8,
     ) -> List["CutSet"]:
         """
         Splits a manifest (either lazily or eagerly opened) into chunks, each
@@ -946,10 +989,15 @@ class CutSet(Serializable, AlgorithmMixin):
             Each manifest is saved at: ``{output_dir}/{prefix}.{split_idx}.jsonl.gz``
         :param chunk_size: the number of items in each chunk.
         :param prefix: the prefix of each manifest.
+        :param num_digits: the width of ``split_idx``, which will be left padded with zeros to achieve it.
         :return: a list of lazily opened chunk manifests.
         """
         return split_manifest_lazy(
-            self, output_dir=output_dir, chunk_size=chunk_size, prefix=prefix
+            self,
+            output_dir=output_dir,
+            chunk_size=chunk_size,
+            prefix=prefix,
+            num_digits=num_digits,
         )
 
     def subset(
@@ -2614,10 +2662,14 @@ def mix(
     if offset > reference_cut.duration:
         reference_cut = reference_cut.pad(duration=offset)
 
-    # When the left_cut is a MixedCut, take its existing tracks, otherwise create a new track.
-    if isinstance(reference_cut, MixedCut):
+    # When the left_cut is a MixedCut and it does not have existing transforms,
+    # take its existing tracks, otherwise create a new track.
+    if (
+        isinstance(reference_cut, MixedCut)
+        and len(ifnone(reference_cut.transforms, [])) == 0
+    ):
         old_tracks = reference_cut.tracks
-    elif isinstance(reference_cut, (DataCut, PaddingCut)):
+    elif isinstance(reference_cut, (DataCut, PaddingCut, MixedCut)):
         old_tracks = [MixTrack(cut=reference_cut)]
     else:
         raise ValueError(f"Unsupported type of cut in mix(): {type(reference_cut)}")
@@ -2625,27 +2677,32 @@ def mix(
     # When the right_cut is a MixedCut, adapt its existing tracks with the new offset and snr,
     # otherwise create a new track.
     if isinstance(mixed_in_cut, MixedCut):
-        new_tracks = [
-            MixTrack(
-                cut=track.cut,
-                offset=round(track.offset + offset, ndigits=8),
-                snr=(
-                    # When no new SNR is specified, retain whatever was there in the first place.
-                    track.snr
-                    if snr is None
-                    # When new SNR is specified but none was specified before, assign the new SNR value.
-                    else snr
-                    if track.snr is None
-                    # When both new and previous SNR were specified, assign their sum,
-                    # as the SNR for each track is defined with regard to the first track energy.
-                    else track.snr + snr
-                    if snr is not None and track is not None
-                    # When no SNR was specified whatsoever, use none.
-                    else None
-                ),
-            )
-            for track in mixed_in_cut.tracks
-        ]
+        # Similarly for mixed_in_cut, if it is a MixedCut and it does not have existing transforms,
+        # take its existing tracks, otherwise create a new track.
+        if len(ifnone(mixed_in_cut.transforms, [])) > 0:
+            new_tracks = [MixTrack(cut=mixed_in_cut, offset=offset, snr=snr)]
+        else:
+            new_tracks = [
+                MixTrack(
+                    cut=track.cut,
+                    offset=round(track.offset + offset, ndigits=8),
+                    snr=(
+                        # When no new SNR is specified, retain whatever was there in the first place.
+                        track.snr
+                        if snr is None
+                        # When new SNR is specified but none was specified before, assign the new SNR value.
+                        else snr
+                        if track.snr is None
+                        # When both new and previous SNR were specified, assign their sum,
+                        # as the SNR for each track is defined with regard to the first track energy.
+                        else track.snr + snr
+                        if snr is not None and track is not None
+                        # When no SNR was specified whatsoever, use none.
+                        else None
+                    ),
+                )
+                for track in mixed_in_cut.tracks
+            ]
     elif isinstance(mixed_in_cut, (DataCut, PaddingCut)):
         new_tracks = [MixTrack(cut=mixed_in_cut, offset=offset, snr=snr)]
     else:
@@ -3319,3 +3376,28 @@ def _add_features_path_prefix_single(cut, path):
 
 def _call(obj, member_fn: str, *args, **kwargs) -> Callable:
     return getattr(obj, member_fn)(*args, **kwargs)
+
+
+def _export_to_shar_single(
+    cuts: CutSet,
+    output_dir: Pathlike,
+    shard_size: Optional[int],
+    fields: Dict[str, str],
+    warn_unused_fields: bool,
+    include_cuts: bool,
+    shard_suffix: Optional[str],
+) -> Dict[str, List[str]]:
+    from lhotse.shar import SharWriter
+
+    with SharWriter(
+        output_dir=output_dir,
+        fields=fields,
+        shard_size=shard_size,
+        warn_unused_fields=warn_unused_fields,
+        include_cuts=include_cuts,
+        shard_suffix=shard_suffix,
+    ) as writer:
+        for cut in cuts:
+            writer.write(cut)
+
+    return writer.output_paths

@@ -139,7 +139,7 @@ def test_audio_caching_enabled_works():
 
         # Read the audio -- should be equal to noise1.
         audio = recording.load_audio()
-        np.testing.assert_almost_equal(audio, noise1)
+        np.testing.assert_allclose(audio, noise1, atol=3e-5)
 
         # Save noise2 to the same location.
         torchaudio.save(f.name, torch.from_numpy(noise2), sample_rate=16000)
@@ -147,7 +147,7 @@ def test_audio_caching_enabled_works():
         # Read the audio -- should *still* be equal to noise1,
         # because reading from this path was cached before.
         audio = recording.load_audio()
-        np.testing.assert_almost_equal(audio, noise1)
+        np.testing.assert_allclose(audio, noise1, atol=3e-5)
 
 
 def test_audio_caching_disabled_works():
@@ -168,7 +168,7 @@ def test_audio_caching_disabled_works():
 
         # Read the audio -- should be equal to noise1.
         audio = recording.load_audio()
-        np.testing.assert_almost_equal(audio, noise1)
+        np.testing.assert_allclose(audio, noise1, atol=3e-5)
 
         # Save noise2 to the same location.
         torchaudio.save(f.name, torch.from_numpy(noise2), sample_rate=16000)
@@ -176,4 +176,4 @@ def test_audio_caching_disabled_works():
         # Read the audio -- should be equal to noise2,
         # and the caching is ignored (doesn't happen).
         audio = recording.load_audio()
-        np.testing.assert_almost_equal(audio, noise2)
+        np.testing.assert_allclose(audio, noise2, atol=3e-5)

@@ -39,7 +39,7 @@ from lhotse.audio import AudioSource, Recording, RecordingSet
 from lhotse.qa import fix_manifests
 from lhotse.recipes.utils import normalize_text_ami
 from lhotse.supervision import SupervisionSegment, SupervisionSet
-from lhotse.utils import Pathlike, Seconds, urlretrieve_progress
+from lhotse.utils import Pathlike, Seconds, resumable_download
 
 # fmt: off
 MEETINGS = {
@@ -176,32 +176,29 @@ def download_audio(
                 wav_dir = target_dir / "wav_db" / item / "audio"
                 wav_dir.mkdir(parents=True, exist_ok=True)
                 wav_path = wav_dir / wav_name
-                if force_download or not wav_path.is_file():
-                    urlretrieve_progress(
-                        wav_url,
-                        filename=wav_path,
-                        desc=f"Downloading {wav_name}",
-                    )
+                resumable_download(
+                    wav_url,
+                    filename=wav_path,
+                    force_download=force_download,
+                )
         elif mic == "ihm-mix":
             wav_name = f"{item}.Mix-Headset.wav"
             wav_url = f"{url}/AMICorpusMirror/amicorpus/{item}/audio/{wav_name}"
             wav_dir = target_dir / "wav_db" / item / "audio"
             wav_dir.mkdir(parents=True, exist_ok=True)
             wav_path = wav_dir / wav_name
-            if force_download or not wav_path.is_file():
-                urlretrieve_progress(
-                    wav_url, filename=wav_path, desc=f"Downloading {wav_name}"
-                )
+            resumable_download(
+                wav_url, filename=wav_path, force_download=force_download
+            )
         elif mic == "sdm":
             wav_name = f"{item}.Array1-01.wav"
             wav_url = f"{url}/AMICorpusMirror/amicorpus/{item}/audio/{wav_name}"
             wav_dir = target_dir / "wav_db" / item / "audio"
             wav_dir.mkdir(parents=True, exist_ok=True)
             wav_path = wav_dir / wav_name
-            if force_download or not wav_path.is_file():
-                urlretrieve_progress(
-                    wav_url, filename=wav_path, desc=f"Downloading {wav_name}"
-                )
+            resumable_download(
+                wav_url, filename=wav_path, force_download=force_download
+            )
         elif mic == "mdm":
             for array in MDM_ARRAYS:
                 for channel in MDM_CHANNELS:
@@ -210,22 +207,18 @@ def download_audio(
                     wav_dir = target_dir / "wav_db" / item / "audio"
                     wav_dir.mkdir(parents=True, exist_ok=True)
                     wav_path = wav_dir / wav_name
-                    if force_download or not wav_path.is_file():
-                        urlretrieve_progress(
-                            wav_url,
-                            filename=wav_path,
-                            desc=f"Downloading {wav_name}",
-                        )
+                    resumable_download(
+                        wav_url, filename=wav_path, force_download=force_download
+                    )
         elif mic == "mdm8-bf":
             wav_name = f"{item}_MDM8.wav"
             wav_url = f"{url}/AMICorpusMirror/amicorpus/beamformed/{item}/{wav_name}"
             wav_dir = target_dir / "wav_db" / item / "audio"
             wav_dir.mkdir(parents=True, exist_ok=True)
             wav_path = wav_dir / wav_name
-            if force_download or not wav_path.is_file():
-                urlretrieve_progress(
-                    wav_url, filename=wav_path, desc=f"Downloading {wav_name}"
-                )
+            resumable_download(
+                wav_url, filename=wav_path, force_download=force_download
+            )
 
 
 def download_ami(
@@ -267,8 +260,7 @@ def download_ami(
         logging.info(f"Skip downloading annotations as they exist in: {annotations}")
         return target_dir
     annotations_url = f"{url}/AMICorpusAnnotations/ami_public_manual_1.6.2.zip"
-    if force_download or not annotations.is_file():
-        urllib.request.urlretrieve(annotations_url, filename=annotations)
+    resumable_download(annotations_url, annotations, force_download=force_download)
 
     return target_dir
 
