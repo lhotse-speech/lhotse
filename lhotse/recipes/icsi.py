@@ -107,7 +107,7 @@ from lhotse.audio import AudioSource, Recording, RecordingSet, read_sph
 from lhotse.qa import fix_manifests
 from lhotse.recipes.utils import normalize_text_ami
 from lhotse.supervision import SupervisionSegment, SupervisionSet
-from lhotse.utils import Pathlike, Seconds, urlretrieve_progress
+from lhotse.utils import Pathlike, Seconds, resumable_download
 
 # fmt:off
 PARTITIONS = {
@@ -161,26 +161,20 @@ def download_audio(
                 wav_dir = target_dir / item
                 wav_dir.mkdir(parents=True, exist_ok=True)
                 wav_path = wav_dir / f"chan{channel}.sph"
-                if force_download or not wav_path.is_file():
-                    try:
-                        urlretrieve_progress(
-                            wav_url,
-                            filename=wav_path,
-                            desc=f"Downloading {item} chan{channel}.sph",
-                        )
-                    except urllib.error.HTTPError as e:
-                        pass
+                try:
+                    resumable_download(
+                        wav_url, filename=wav_path, force_download=force_download
+                    )
+                except urllib.error.HTTPError as e:
+                    logging.warning(f"Skipping failed download from {wav_url}")
         else:
             wav_url = f"{url}/ICSIsignals/NXT/{item}.interaction.wav"
             wav_dir = target_dir / item
             wav_dir.mkdir(parents=True, exist_ok=True)
             wav_path = wav_dir / f"Mix-Headset.wav"
-            if force_download or not wav_path.is_file():
-                urlretrieve_progress(
-                    wav_url,
-                    filename=wav_path,
-                    desc=f"Downloading {item} Mix-Headset.wav",
-                )
+            resumable_download(
+                wav_url, filename=wav_path, force_download=force_download
+            )
 
 
 def download_icsi(
@@ -213,17 +207,16 @@ def download_icsi(
     # Annotations
     logging.info("Downloading AMI annotations")
 
-    if (transcripts_dir).exists() and not force_download:
+    if transcripts_dir.exists() and not force_download:
         logging.info(
             f"Skip downloading transcripts as they exist in: {transcripts_dir}"
         )
         return target_dir
     annotations_url = f"{url}/ICSICorpusAnnotations/ICSI_original_transcripts.zip"
-
-    # The following is analogous to `wget --no-check-certificate``
-    context = ssl._create_unverified_context()
-    urllib.request.urlretrieve(
-        annotations_url, filename=target_dir / "ICSI_original_transcripts.zip"
+    resumable_download(
+        annotations_url,
+        filename=target_dir / "ICSI_original_transcripts.zip",
+        force_download=force_download,
     )
 
     # Unzip annotations zip file

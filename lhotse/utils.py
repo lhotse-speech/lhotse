@@ -4,8 +4,10 @@ import hashlib
 import inspect
 import logging
 import math
+import os
 import random
 import sys
+import urllib
 import uuid
 import warnings
 from contextlib import AbstractContextManager, contextmanager
@@ -273,7 +275,11 @@ def fastcopy(dataclass_obj: T, **kwargs) -> T:
 
 
 def split_manifest_lazy(
-    it: Iterable[Any], output_dir: Pathlike, chunk_size: int, prefix: str = ""
+    it: Iterable[Any],
+    output_dir: Pathlike,
+    chunk_size: int,
+    prefix: str = "",
+    num_digits: int = 8,
 ) -> List:
     """
     Splits a manifest (either lazily or eagerly opened) into chunks, each
@@ -290,6 +296,7 @@ def split_manifest_lazy(
         Each manifest is saved at: ``{output_dir}/{prefix}.{split_idx}.jsonl.gz``
     :param chunk_size: the number of items in each chunk.
     :param prefix: the prefix of each manifest.
+    :param num_digits: the width of ``split_idx``, which will be left padded with zeros to achieve it.
     :return: a list of lazily opened chunk manifests.
     """
     from lhotse.serialization import SequentialJsonlWriter
@@ -300,10 +307,8 @@ def split_manifest_lazy(
     if prefix == "":
         prefix = "split"
 
-    num_digits = 8
-
     items = iter(it)
-    split_idx = 1
+    split_idx = 0
     splits = []
     while True:
         try:
@@ -441,51 +446,47 @@ def during_docs_build() -> bool:
     return bool(os.environ.get("READTHEDOCS"))
 
 
-def tqdm_urlretrieve_hook(t):
-    """Wraps tqdm instance.
-    Don't forget to close() or __exit__()
-    the tqdm instance once you're done with it (easiest using `with` syntax).
-    Example
-    -------
-    >>> from urllib.request import urlretrieve
-    >>> with tqdm(...) as t:
-    ...     reporthook = tqdm_urlretrieve_hook(t)
-    ...     urlretrieve(..., reporthook=reporthook)
+def resumable_download(
+    url: str, filename: Pathlike, force_download: bool = False
+) -> None:
+    # Check if the file exists and get its size
+    if os.path.exists(filename):
+        if force_download:
+            logging.info(
+                f"Removing existing file and downloading from scratch because force_download=True: {filename}"
+            )
+            os.unlink(filename)
+        file_size = os.path.getsize(filename)
+    else:
+        file_size = 0
 
-    Source: https://github.com/tqdm/tqdm/blob/master/examples/tqdm_wget.py
-    """
-    last_b = [0]
+    # Set the request headers to resume downloading
+    headers = {"Range": "bytes={}-".format(file_size)}
 
-    def update_to(b=1, bsize=1, tsize=None):
-        """
-        b  : int, optional
-            Number of blocks transferred so far [default: 1].
-        bsize  : int, optional
-            Size of each block (in tqdm units) [default: 1].
-        tsize  : int, optional
-            Total size (in tqdm units). If [default: None] or -1,
-            remains unchanged.
-        """
-        if tsize not in (None, -1):
-            t.total = tsize
-        displayed = t.update((b - last_b[0]) * bsize)
-        last_b[0] = b
-        return displayed
+    # Create a request object with the URL and headers
+    req = urllib.request.Request(url, headers=headers)
 
-    return update_to
+    # Open the file for writing in binary mode and seek to the end
+    with open(filename, "ab") as f:
+        f.seek(file_size)
 
-
-def urlretrieve_progress(url, filename=None, data=None, desc=None):
-    """
-    Works exactly like urllib.request.urlretrieve, but attaches a tqdm hook to display
-    a progress bar of the download.
-    Use "desc" argument to display a user-readable string that informs what is being downloaded.
-    """
-    from urllib.request import urlretrieve
-
-    with tqdm(unit="B", unit_scale=True, unit_divisor=1024, miniters=1, desc=desc) as t:
-        reporthook = tqdm_urlretrieve_hook(t)
-        return urlretrieve(url=url, filename=filename, reporthook=reporthook, data=data)
+        # Open the URL and read the contents in chunks
+        with urllib.request.urlopen(req) as response:
+            chunk_size = 1024
+            total_size = int(response.headers.get("content-length", 0)) + file_size
+            with tqdm(
+                total=total_size,
+                initial=file_size,
+                unit="B",
+                unit_scale=True,
+                desc=str(filename),
+            ) as pbar:
+                while True:
+                    chunk = response.read(chunk_size)
+                    if not chunk:
+                        break
+                    f.write(chunk)
+                    pbar.update(len(chunk))
 
 
 def safe_extract(

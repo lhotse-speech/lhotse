@@ -20,7 +20,9 @@ __all__ = ["ami"]
 )
 @click.option(
     "--mic",
-    type=click.Choice(["ihm", "ihm-mix", "sdm", "mdm"], case_sensitive=False),
+    type=click.Choice(
+        ["ihm", "ihm-mix", "sdm", "mdm", "mdm8-bf"], case_sensitive=False
+    ),
     default="ihm",
     help="AMI microphone setting.",
 )
@@ -82,7 +84,9 @@ def ami(
 )
 @click.option(
     "--mic",
-    type=click.Choice(["ihm", "ihm-mix", "sdm", "mdm"], case_sensitive=False),
+    type=click.Choice(
+        ["ihm", "ihm-mix", "sdm", "mdm", "mdm8-bf"], case_sensitive=False
+    ),
     default="ihm",
     help="AMI microphone setting.",
 )

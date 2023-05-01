@@ -26,7 +26,7 @@ from lhotse import fix_manifests, validate_recordings_and_supervisions
 from lhotse.audio import AudioSource, Recording, RecordingSet
 from lhotse.recipes.utils import normalize_text_chime6
 from lhotse.supervision import SupervisionSegment, SupervisionSet
-from lhotse.utils import Pathlike, add_durations, safe_extract, urlretrieve_progress
+from lhotse.utils import Pathlike, add_durations, resumable_download, safe_extract
 
 CORPUS_URL = "https://s3.amazonaws.com/dipco/DiPCo.tgz"
 
@@ -49,10 +49,7 @@ def download_dipco(
     target_dir = Path(target_dir)
     target_dir.mkdir(parents=True, exist_ok=True)
     tar_path = target_dir / "DiPCo.tgz"
-    if force_download or not tar_path.is_file():
-        urlretrieve_progress(
-            CORPUS_URL, filename=tar_path, desc=f"Downloading {CORPUS_URL}"
-        )
+    resumable_download(CORPUS_URL, filename=tar_path, force_download=force_download)
     with tarfile.open(tar_path) as tar:
         safe_extract(tar, path=target_dir)
 

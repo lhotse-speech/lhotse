@@ -31,7 +31,7 @@ from lhotse import (
     validate_recordings_and_supervisions,
 )
 from lhotse.qa import remove_missing_recordings_and_supervisions
-from lhotse.utils import Pathlike, safe_extract, urlretrieve_progress
+from lhotse.utils import Pathlike, resumable_download, safe_extract
 
 BASE_URL = "http://festvox.org/h2r_indic/"
 
@@ -109,10 +109,7 @@ def download_cmu_indic(
         if completed_detector.is_file():
             logging.info(f"Skiping {spk} because {completed_detector} exists.")
             continue
-        if force_download or not tar_path.is_file():
-            urlretrieve_progress(
-                full_url, filename=tar_path, desc=f"Downloading {tar_name}"
-            )
+        resumable_download(full_url, filename=tar_path, force_download=force_download)
         shutil.rmtree(part_dir, ignore_errors=True)
         with tarfile.open(tar_path) as tar:
             safe_extract(tar, path=target_dir)

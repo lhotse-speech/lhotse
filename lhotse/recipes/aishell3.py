@@ -1,13 +1,13 @@
 """
-AISHELL-3 is a large-scale and high-fidelity multi-speaker Mandarin speech corpus 
-published by Beijing Shell Shell Technology Co.,Ltd. 
+AISHELL-3 is a large-scale and high-fidelity multi-speaker Mandarin speech corpus
+published by Beijing Shell Shell Technology Co.,Ltd.
 It can be used to train multi-speaker Text-to-Speech (TTS) systems.
-The corpus contains roughly 85 hours of emotion-neutral recordings spoken by 
-218 native Chinese mandarin speakers and total 88035 utterances. 
-Their auxiliary attributes such as gender, age group and native accents are 
-explicitly marked and provided in the corpus. Accordingly, transcripts in Chinese 
-character-level and pinyin-level are provided along with the recordings. 
-The word & tone transcription accuracy rate is above 98%, through professional 
+The corpus contains roughly 85 hours of emotion-neutral recordings spoken by
+218 native Chinese mandarin speakers and total 88035 utterances.
+Their auxiliary attributes such as gender, age group and native accents are
+explicitly marked and provided in the corpus. Accordingly, transcripts in Chinese
+character-level and pinyin-level are provided along with the recordings.
+The word & tone transcription accuracy rate is above 98%, through professional
 speech annotation and strict quality inspection for tone and prosody.
 """
 import logging
@@ -26,7 +26,7 @@ from lhotse import (
 )
 from lhotse.audio import Recording, RecordingSet
 from lhotse.recipes.utils import manifests_exist, read_manifests_if_cached
-from lhotse.utils import Pathlike, safe_extract, urlretrieve_progress
+from lhotse.utils import Pathlike, resumable_download, safe_extract
 
 aishell3 = (
     "test",
@@ -56,11 +56,10 @@ def download_aishell3(
     completed_detector = target_dir / ".completed"
     if completed_detector.is_file():
         logging.info(f"Skipping {tar_name} because {completed_detector} exists.")
-        return
-    if force_download or not tar_path.is_file():
-        urlretrieve_progress(
-            f"{url}/{tar_name}", filename=tar_path, desc=f"Downloading {tar_name}"
-        )
+        return target_dir
+    resumable_download(
+        f"{url}/{tar_name}", filename=tar_path, force_download=force_download
+    )
     with tarfile.open(tar_path) as tar:
         safe_extract(tar, path=target_dir)
     completed_detector.touch()

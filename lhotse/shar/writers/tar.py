@@ -35,7 +35,7 @@ class TarWriter:
     """
 
     def __init__(self, pattern: str, shard_size: Optional[int] = 1000):
-        self.pattern = pattern
+        self.pattern = str(pattern)
         if self.sharding_enabled and shard_size is None:
             raise RuntimeError(
                 "shard_size must be specified when sharding is enabled via a formatting marker such as '%06d'"
@@ -46,7 +46,7 @@ class TarWriter:
                 "but shard_size is not None - ignoring shard_size."
             )
         self.shard_size = shard_size
-        self.gzip = pattern.endswith(".gz")
+        self.gzip = self.pattern.endswith(".gz")
         self.reset()
 
     @property

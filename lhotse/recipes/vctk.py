@@ -93,7 +93,7 @@ from lhotse import (
     validate_recordings_and_supervisions,
 )
 from lhotse.qa import remove_missing_recordings_and_supervisions
-from lhotse.utils import Pathlike, urlretrieve_progress
+from lhotse.utils import Pathlike, resumable_download
 
 EDINBURGH_VCTK_URL = (
     "https://datashare.ed.ac.uk/bitstream/handle/10283/3443/VCTK-Corpus-0.92.zip"
@@ -124,10 +124,11 @@ def download_vctk(
     if completed_detector.is_file():
         logging.info(f"Skipping {archive_name} because {completed_detector} exists.")
         return part_dir
-    if force_download or not archive_path.is_file():
-        urlretrieve_progress(
-            url, filename=archive_path, desc=f"Downloading {archive_name}"
-        )
+    resumable_download(
+        url,
+        filename=archive_path,
+        force_download=force_download,
+    )
     shutil.rmtree(part_dir, ignore_errors=True)
     opener = zipfile.ZipFile if archive_name.endswith(".zip") else tarfile.open
     with opener(archive_path) as archive:

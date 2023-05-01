@@ -18,7 +18,7 @@ from tqdm.auto import tqdm
 from lhotse import validate_recordings_and_supervisions
 from lhotse.audio import Recording, RecordingSet
 from lhotse.supervision import SupervisionSegment, SupervisionSet
-from lhotse.utils import Pathlike, safe_extract, urlretrieve_progress
+from lhotse.utils import Pathlike, resumable_download, safe_extract
 
 
 def download_thchs_30(
@@ -47,10 +47,9 @@ def download_thchs_30(
                 f"Skipping download {tar_name} because {completed_detector} exists."
             )
             continue
-        if force_download or not tar_path.is_file():
-            urlretrieve_progress(
-                f"{url}/{tar_name}", filename=tar_path, desc=f"Downloading {tar_name}"
-            )
+        resumable_download(
+            f"{url}/{tar_name}", filename=tar_path, force_download=force_download
+        )
         shutil.rmtree(extracted_dir, ignore_errors=True)
         with tarfile.open(tar_path) as tar:
             safe_extract(tar, path=corpus_dir)

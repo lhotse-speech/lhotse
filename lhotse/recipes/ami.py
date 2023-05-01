@@ -39,7 +39,7 @@ from lhotse.audio import AudioSource, Recording, RecordingSet
 from lhotse.qa import fix_manifests
 from lhotse.recipes.utils import normalize_text_ami
 from lhotse.supervision import SupervisionSegment, SupervisionSet
-from lhotse.utils import Pathlike, Seconds, urlretrieve_progress
+from lhotse.utils import Pathlike, Seconds, resumable_download
 
 # fmt: off
 MEETINGS = {
@@ -151,7 +151,7 @@ PARTITIONS = {
     }
 }
 
-MICS = ['ihm','ihm-mix','sdm','mdm']
+MICS = ['ihm','ihm-mix','sdm','mdm','mdm8-bf']
 MDM_ARRAYS = ['Array1','Array2']
 MDM_CHANNELS = ['01','02','03','04','05','06','07','08']
 # fmt: on
@@ -176,32 +176,29 @@ def download_audio(
                 wav_dir = target_dir / "wav_db" / item / "audio"
                 wav_dir.mkdir(parents=True, exist_ok=True)
                 wav_path = wav_dir / wav_name
-                if force_download or not wav_path.is_file():
-                    urlretrieve_progress(
-                        wav_url,
-                        filename=wav_path,
-                        desc=f"Downloading {wav_name}",
-                    )
+                resumable_download(
+                    wav_url,
+                    filename=wav_path,
+                    force_download=force_download,
+                )
         elif mic == "ihm-mix":
             wav_name = f"{item}.Mix-Headset.wav"
             wav_url = f"{url}/AMICorpusMirror/amicorpus/{item}/audio/{wav_name}"
             wav_dir = target_dir / "wav_db" / item / "audio"
             wav_dir.mkdir(parents=True, exist_ok=True)
             wav_path = wav_dir / wav_name
-            if force_download or not wav_path.is_file():
-                urlretrieve_progress(
-                    wav_url, filename=wav_path, desc=f"Downloading {wav_name}"
-                )
+            resumable_download(
+                wav_url, filename=wav_path, force_download=force_download
+            )
         elif mic == "sdm":
             wav_name = f"{item}.Array1-01.wav"
             wav_url = f"{url}/AMICorpusMirror/amicorpus/{item}/audio/{wav_name}"
             wav_dir = target_dir / "wav_db" / item / "audio"
             wav_dir.mkdir(parents=True, exist_ok=True)
             wav_path = wav_dir / wav_name
-            if force_download or not wav_path.is_file():
-                urlretrieve_progress(
-                    wav_url, filename=wav_path, desc=f"Downloading {wav_name}"
-                )
+            resumable_download(
+                wav_url, filename=wav_path, force_download=force_download
+            )
         elif mic == "mdm":
             for array in MDM_ARRAYS:
                 for channel in MDM_CHANNELS:
@@ -210,12 +207,18 @@ def download_audio(
                     wav_dir = target_dir / "wav_db" / item / "audio"
                     wav_dir.mkdir(parents=True, exist_ok=True)
                     wav_path = wav_dir / wav_name
-                    if force_download or not wav_path.is_file():
-                        urlretrieve_progress(
-                            wav_url,
-                            filename=wav_path,
-                            desc=f"Downloading {wav_name}",
-                        )
+                    resumable_download(
+                        wav_url, filename=wav_path, force_download=force_download
+                    )
+        elif mic == "mdm8-bf":
+            wav_name = f"{item}_MDM8.wav"
+            wav_url = f"{url}/AMICorpusMirror/amicorpus/beamformed/{item}/{wav_name}"
+            wav_dir = target_dir / "wav_db" / item / "audio"
+            wav_dir.mkdir(parents=True, exist_ok=True)
+            wav_path = wav_dir / wav_name
+            resumable_download(
+                wav_url, filename=wav_path, force_download=force_download
+            )
 
 
 def download_ami(
@@ -238,7 +241,7 @@ def download_ami(
     :param annotations: Pathlike (default = None), path to save annotations zip file
     :param force_download: bool (default = False), if True, download even if file is present.
     :param url: str (default = 'http://groups.inf.ed.ac.uk/ami'), AMI download URL.
-    :param mic: str {'ihm','ihm-mix','sdm','mdm'}, type of mic setting.
+    :param mic: str {'ihm','ihm-mix','sdm','mdm','mdm8-bf'}, type of mic setting.
     :return: the path to downloaded and extracted directory with data.
     """
     target_dir = Path(target_dir)
@@ -257,8 +260,7 @@ def download_ami(
         logging.info(f"Skip downloading annotations as they exist in: {annotations}")
         return target_dir
     annotations_url = f"{url}/AMICorpusAnnotations/ami_public_manual_1.6.2.zip"
-    if force_download or not annotations.is_file():
-        urllib.request.urlretrieve(annotations_url, filename=annotations)
+    resumable_download(annotations_url, annotations, force_download=force_download)
 
     return target_dir
 
@@ -474,17 +476,20 @@ def prepare_audio_grouped(
     return RecordingSet.from_recordings(recordings)
 
 
-# SDM and IHM-Mix settings do not require any grouping
+# SDM, IHM-Mix, and mdm8-bf settings do not require any grouping
 
 
 def prepare_audio_single(
     audio_paths: List[Pathlike],
+    mic: Optional[str] = "ihm-mix",
 ) -> RecordingSet:
     import soundfile as sf
 
     recordings = []
     for audio_path in tqdm(audio_paths, desc="Processing audio files"):
-        session_name = audio_path.parts[-3]
+        session_name = (
+            audio_path.parts[-3] if mic != "mdm8-bf" else audio_path.parts[-2]
+        )
         audio_sf = sf.SoundFile(str(audio_path))
         recordings.append(
             Recording(
@@ -569,7 +574,7 @@ def prepare_supervision_other(
     segments = []
     for recording in tqdm(audio, desc="Preparing supervisions"):
         annotation = annotation_by_id.get(recording.id)
-        # In these mic settings, all sources (1 for ihm-mix and sdm and 16 for mdm)
+        # In these mic settings, all sources (1 for ihm-mix, sdm, and mdm8-bf and 16 for mdm)
         # will share supervision.
         if annotation is None:
             logging.warning(f"No annotation found for recording {recording.id}")
@@ -615,7 +620,7 @@ def prepare_ami(
     :param data_dir: Pathlike, the path of the data dir.
     :param annotations: Pathlike, the path of the annotations dir or zip file.
     :param output_dir: Pathlike, the path where to write the manifests.
-    :param mic: str {'ihm','ihm-mix','sdm','mdm'}, type of mic to use.
+    :param mic: str {'ihm','ihm-mix','sdm','mdm','mdm8-bf'}, type of mic to use.
     :param partition: str {'full-corpus','full-corpus-asr','scenario-only'}, AMI official data split
     :param normalize_text: str {'none', 'upper', 'kaldi'} normalization of text
     :param max_words_per_segment: int, maximum number of words per segment. If not None, we will split
@@ -649,6 +654,9 @@ def prepare_ami(
                 "No annotations directory specified and no zip file found in"
                 f" {data_dir}"
             )
+    else:
+        annotations_dir = Path(annotations_dir)
+
     # Prepare annotations which is a list of segment-level transcriptions
     annotations = parse_ami_annotations(
         annotations_dir,
@@ -667,13 +675,14 @@ def prepare_ami(
             else wav_dir.rglob("*Array?-0?.wav")
         )
         audio = prepare_audio_grouped(list(audio_paths))
-    elif mic in ["ihm-mix", "sdm"]:
-        audio_paths = (
-            wav_dir.rglob("*Mix-Headset.wav")
-            if mic == "ihm-mix"
-            else wav_dir.rglob("*Array1-01.wav")
-        )
-        audio = prepare_audio_single(list(audio_paths))
+    elif mic in ["ihm-mix", "sdm", "mdm8-bf"]:
+        if mic == "ihm-mix":
+            audio_paths = wav_dir.rglob("*Mix-Headset.wav")
+        elif mic == "sdm":
+            audio_paths = wav_dir.rglob("*Array1-01.wav")
+        elif mic == "mdm8-bf":
+            audio_paths = wav_dir.rglob("*MDM8.wav")
+        audio = prepare_audio_single(list(audio_paths), mic)
 
     # Supervisions
     logging.info("Preparing supervision manifests")
