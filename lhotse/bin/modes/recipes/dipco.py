@@ -23,11 +23,18 @@ __all__ = ["dipco"]
     help="Text normalization method.",
     show_default=True,
 )
+@click.option(
+    "--use-chime7-offset",
+    is_flag=True,
+    default=False,
+    help="If True, offset session IDs (from CHiME-7 challenge).",
+)
 def dipco(
     corpus_dir: Pathlike,
     output_dir: Pathlike,
     mic: str,
     normalize_text: str,
+    use_chime7_offset: bool,
 ):
     """DiPCo data preparation."""
     prepare_dipco(
@@ -35,6 +42,7 @@ def dipco(
         output_dir=output_dir,
         mic=mic,
         normalize_text=normalize_text,
+        use_chime7_offset=use_chime7_offset,
     )
 
 
