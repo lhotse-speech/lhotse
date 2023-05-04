@@ -1080,7 +1080,7 @@ class MixedCut(Cut):
             if 0 < num_samples_diff < tol_samples:
                 audio = audio[:, : self.num_samples]
             if -tol_samples < num_samples_diff < 0:
-                audio = np.pad(audio, [(0, 0), (0, num_samples_diff)], mode="reflect")
+                audio = np.pad(audio, [(0, 0), (0, -num_samples_diff)], mode="reflect")
             assert audio.shape[1] == self.num_samples, (
                 f"Inconsistent number of samples in a MixedCut. Expected {self.num_samples} "
                 f"but the output of mix has {audio.shape[1]}. Please report "
