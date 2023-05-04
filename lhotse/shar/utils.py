@@ -1,7 +1,7 @@
 from pathlib import Path
 from typing import Optional, TypeVar, Union
 
-from lhotse import AudioSource, Features, Recording, fastcopy
+from lhotse import AudioSource, Features, Recording, compute_num_samples, fastcopy
 from lhotse.array import Array, TemporalArray
 from lhotse.cut import Cut
 from lhotse.utils import Pathlike
@@ -9,18 +9,23 @@ from lhotse.utils import Pathlike
 Manifest = TypeVar("Manifest", Recording, Features, Array, TemporalArray)
 
 
-def to_shar_placeholder(manifest: Manifest) -> Manifest:
+def to_shar_placeholder(manifest: Manifest, cut: Optional[Cut] = None) -> Manifest:
     if isinstance(manifest, Recording):
-        assert (
-            len(manifest.sources) == 1
-        ), "Multiple AudioSources are not supported yet."
-        # TODO: modify Recording's start/duration/num_samples if needed to match the Cut (in case we read subset of audio)
+        kwargs = (
+            {}
+            if cut is None
+            else dict(
+                duration=cut.duration,
+                num_samples=compute_num_samples(cut.duration, manifest.sampling_rate),
+            )
+        )
         return fastcopy(
             manifest,
+            # creates a single AudioSource out of multiple ones
             sources=[
-                AudioSource(type="shar", channels=src.channels, source="")
-                for src in manifest.sources
+                AudioSource(type="shar", channels=manifest.channel_ids, source="")
             ],
+            **kwargs,
         )
     # TODO: modify Features/TemporalArray's start/duration/num_frames if needed to match the Cut (in case we read subset of array)
     elif isinstance(manifest, (Array, Features)):
@@ -54,7 +59,7 @@ def fill_shar_placeholder(
     if isinstance(manifest, Recording):
         assert (
             len(manifest.sources) == 1
-        ), "Multiple AudioSources are not supported yet."
+        ), "We expected a single (possibly multi-channel) AudioSource in Shar format."
         manifest.sources[0].type = "memory"
         manifest.sources[0].source = data
 

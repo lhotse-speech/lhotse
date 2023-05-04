@@ -7,7 +7,7 @@ import numpy as np
 import pytest
 
 from lhotse import CutSet
-from lhotse.shar import JsonlShardWriter
+from lhotse.shar import JsonlShardWriter, SharWriter
 from lhotse.shar.readers.lazy import LazySharIterator
 
 
@@ -302,3 +302,85 @@ def test_shar_lazy_reader_from_fields_with_random_tar_name(
     for c_test, c_ref in zip(cuts_shar, cuts):
         assert c_test.id == c_ref.id
         np.testing.assert_allclose(c_ref.load_audio(), c_test.load_audio(), rtol=1e-3)
+
+
+def test_shar_lazy_reader_from_dir_multi_cuts(
+    multi_cuts: CutSet, multi_cut_shar_dir: Path
+):
+    # Prepare system under test
+    cuts_iter = LazySharIterator(in_dir=multi_cut_shar_dir)
+
+    # Actual test
+    for c_test, c_ref in zip(cuts_iter, multi_cuts):
+        assert c_test.id == c_ref.id
+        assert c_test.has_custom("shard_origin")
+        assert c_test.has_custom("shar_epoch")
+        assert c_test.shar_epoch == 0
+        np.testing.assert_allclose(c_ref.load_audio(), c_test.load_audio(), rtol=1e-3)
+        np.testing.assert_almost_equal(
+            c_ref.load_features(), c_test.load_features(), decimal=1
+        )
+        np.testing.assert_equal(
+            c_ref.load_custom_indexes(), c_test.load_custom_indexes()
+        )
+
+
+def test_shar_lazy_reader_from_dir_multi_cuts_multi_audio_source(
+    multi_cuts_multi_audio_source: CutSet,
+    multi_cut_multi_audio_source_shar_dir: Path,
+):
+    # Prepare system under test
+    cuts_iter = LazySharIterator(in_dir=multi_cut_multi_audio_source_shar_dir)
+
+    # Actual test
+    for c_test, c_ref in zip(cuts_iter, multi_cuts_multi_audio_source):
+        assert c_test.id == c_ref.id
+        assert c_test.has_custom("shard_origin")
+        assert c_test.has_custom("shar_epoch")
+        assert c_test.shar_epoch == 0
+        np.testing.assert_allclose(c_ref.load_audio(), c_test.load_audio(), rtol=1e-3)
+        np.testing.assert_almost_equal(
+            c_ref.load_features(), c_test.load_features(), decimal=1
+        )
+        np.testing.assert_equal(
+            c_ref.load_custom_indexes(), c_test.load_custom_indexes()
+        )
+
+
+def test_shar_write_read_recordings_longer_than_cuts(cuts_from_long_recordings, tmpdir):
+    tmpdir = Path(tmpdir)
+    # Prepare data
+    writer = SharWriter(
+        tmpdir,
+        fields={
+            "recording": "wav",
+            "features": "lilcom",
+            "custom_features": "lilcom",
+            "custom_indexes": "numpy",
+            "custom_recording": "wav",
+        },
+        shard_size=10,
+    )
+    with writer:
+        for c in cuts_from_long_recordings:
+            writer.write(c)
+
+    # Prepare system under test
+    cuts_iter = LazySharIterator(in_dir=tmpdir)
+
+    # Actual test
+    for c_test, c_ref in zip(cuts_iter, cuts_from_long_recordings):
+        assert c_test.id == c_ref.id
+        assert c_test.has_custom("shard_origin")
+        assert c_test.has_custom("shar_epoch")
+        assert c_test.shar_epoch == 0
+        np.testing.assert_allclose(c_ref.load_audio(), c_test.load_audio(), rtol=1e-3)
+        np.testing.assert_almost_equal(
+            c_ref.load_features(), c_test.load_features(), decimal=1
+        )
+        np.testing.assert_almost_equal(
+            c_ref.load_custom_features(), c_test.load_custom_features(), decimal=1
+        )
+        np.testing.assert_equal(
+            c_ref.load_custom_indexes(), c_test.load_custom_indexes()
+        )
