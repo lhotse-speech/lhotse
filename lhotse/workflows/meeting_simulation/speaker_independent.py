@@ -89,6 +89,30 @@ class SpeakerIndependentMeetingSimulator(BaseMeetingSimulator):
 
         print(f"Learned parameters: loc={self.loc:.2f}, scale={self.scale:.2f}")
 
+    def _create_mixture(
+        self, utterances: List[CutSet], silence_durations: List[np.array]
+    ) -> MixedCut:
+        """
+        Create a MixedCut object from a list of speaker-wise MonoCuts and silence intervals.
+        Each `track` in the resulting MixedCut represents a different speaker. Each `track`
+        itself can be a MonoCut or a MixedCut (if the speaker has multiple utterances).
+        """
+        tracks = []
+        for i, (spk_utterances, spk_silences) in enumerate(
+            zip(utterances, silence_durations)
+        ):
+            # Get list of cuts from CutSet
+            spk_utterances = list(spk_utterances.data.values())
+            track = spk_utterances[0]
+            for sil, utt in zip(spk_silences[1:], spk_utterances[1:]):
+                track = mix(track, utt, offset=track.duration + sil, allow_padding=True)
+            # NOTE: First track must have an offset of 0.0.
+            track = MixTrack(
+                cut=track, type=type(track), offset=(0 if i == 0 else spk_silences[0])
+            )
+            tracks.append(track)
+        return MixedCut(id=str(uuid4()), tracks=tracks)
+
     def simulate(
         self,
         cuts: CutSet,
@@ -148,7 +172,7 @@ class SpeakerIndependentMeetingSimulator(BaseMeetingSimulator):
         )
         sampler_iter = iter(sampler)
 
-        work = partial(_simulate_worker, loc=self.loc, scale=self.scale, seed=seed)
+        work = partial(_simulate_worker, seed=seed, simulator=self)
 
         mixtures = []
         if num_jobs == 1:
@@ -176,9 +200,8 @@ class SpeakerIndependentMeetingSimulator(BaseMeetingSimulator):
 
 def _simulate_worker(
     utterances: CutSet,
-    loc: float,
-    scale: float,
     seed: int,
+    simulator: SpeakerIndependentMeetingSimulator,
 ) -> MixedCut:
     # Create random number generators with the given seed.
     npr = np.random.RandomState(seed)
@@ -192,35 +215,10 @@ def _simulate_worker(
 
     # Sample the silence durations between utterances for each speaker.
     silence_durations = [
-        loc + npr.exponential(scale=scale, size=len(utterances[i]))
+        simulator.loc + npr.exponential(scale=simulator.scale, size=len(utterances[i]))
         for i in range(len(utterances))
     ]
 
     # Create the meeting.
-    mixture = _create_mixture(utterances, silence_durations)
+    mixture = simulator._create_mixture(utterances, silence_durations)
     return mixture
-
-
-def _create_mixture(
-    utterances: List[CutSet], silence_durations: List[np.array]
-) -> MixedCut:
-    """
-    Create a MixedCut object from a list of speaker-wise MonoCuts and silence intervals.
-    Each `track` in the resulting MixedCut represents a different speaker. Each `track`
-    itself can be a MonoCut or a MixedCut (if the speaker has multiple utterances).
-    """
-    tracks = []
-    for i, (spk_utterances, spk_silences) in enumerate(
-        zip(utterances, silence_durations)
-    ):
-        # Get list of cuts from CutSet
-        spk_utterances = list(spk_utterances.data.values())
-        track = spk_utterances[0]
-        for sil, utt in zip(spk_silences[1:], spk_utterances[1:]):
-            track = mix(track, utt, offset=track.duration + sil, allow_padding=True)
-        # NOTE: First track must have an offset of 0.0.
-        track = MixTrack(
-            cut=track, type=type(track), offset=(0 if i == 0 else spk_silences[0])
-        )
-        tracks.append(track)
-    return MixedCut(id=str(uuid4()), tracks=tracks)
