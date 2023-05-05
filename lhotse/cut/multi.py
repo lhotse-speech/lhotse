@@ -369,13 +369,19 @@ class MultiCut(DataCut):
             }
         )
 
-    def to_mono(self) -> List["DataCut"]:
+    def to_mono(self, mono_downmix: bool = False) -> Union["DataCut", List["DataCut"]]:
         """
-        Convert a MultiCut to a list of MonoCuts, one for each channel.
+        Convert a MultiCut to either a list of MonoCuts (one per channel) or a single
+        MonoCut obtained by downmixing all channels.
+
+        :param mono_downmix: If true, we will downmix all channels into a single MonoCut.
+            If false, we will return a list of MonoCuts, one per channel.
+        :return: a list of MonoCuts or a single MonoCut.
         """
+        from .mixed import MixedCut, MixTrack
         from .mono import MonoCut
 
-        return [
+        mono_cuts = [
             MonoCut(
                 id=f"{self.id}-{channel}",
                 recording=self.recording,
@@ -391,6 +397,17 @@ class MultiCut(DataCut):
             )
             for channel in to_list(self.channel)
         ]
+        if not mono_downmix:
+            return mono_cuts
+
+        # Downmix the mono cuts into a single MixedCut.
+        mixed_cut = MixedCut(
+            id=self.id,
+            tracks=[
+                MixTrack(cut=mono_cut, offset=0.0, snr=None) for mono_cut in mono_cuts
+            ],
+        )
+        return mixed_cut.to_mono()
 
     @staticmethod
     def from_dict(data: dict) -> "MultiCut":
