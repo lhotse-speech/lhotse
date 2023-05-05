@@ -1024,6 +1024,8 @@ class MixedCut(Cut):
             to a single channel. This down-mixing is done by summing the channels together.
         :return: A numpy ndarray with audio samples and with shape ``(num_channels, num_samples)``
         """
+        from lhotse.audio import LHOTSE_AUDIO_DURATION_MISMATCH_TOLERANCE
+
         if not self.has_recording:
             return None
         first_cut = self.tracks[0].cut
@@ -1070,12 +1072,18 @@ class MixedCut(Cut):
             # Off-by-one errors can happen during mixing due to imperfect float arithmetic and rounding;
             # we will fix them on-the-fly so that the manifest does not lie about the num_samples.
             audio = mixer.mixed_mono_audio if mono_downmix else mixer.mixed_audio
-            if audio.shape[1] - self.num_samples == 1:
+            tol_samples = compute_num_samples(
+                LHOTSE_AUDIO_DURATION_MISMATCH_TOLERANCE,
+                sampling_rate=self.sampling_rate,
+            )
+            num_samples_diff = audio.shape[1] - self.num_samples
+            if 0 < num_samples_diff < tol_samples:
                 audio = audio[:, : self.num_samples]
-            if audio.shape[1] - self.num_samples == -1:
-                audio = np.concatenate((audio, audio[:, -1:]), axis=1)
+            if -tol_samples < num_samples_diff < 0:
+                audio = np.pad(audio, [(0, 0), (0, -num_samples_diff)], mode="reflect")
             assert audio.shape[1] == self.num_samples, (
-                f"Inconsistent number of samples in a MixedCut: please report "
+                f"Inconsistent number of samples in a MixedCut. Expected {self.num_samples} "
+                f"but the output of mix has {audio.shape[1]}. Please report "
                 f"this issue at https://github.com/lhotse-speech/lhotse/issues "
                 f"showing the cut below. MixedCut:\n{self}"
             )

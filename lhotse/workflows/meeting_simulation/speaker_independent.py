@@ -1,5 +1,6 @@
 import logging
 from collections import defaultdict
+from functools import partial
 from typing import List, Optional, Union
 
 import numpy as np
@@ -171,40 +172,17 @@ class SpeakerIndependentMeetingSimulator(BaseMeetingSimulator):
         )
         sampler_iter = iter(sampler)
 
-        # Create random number generators with the given seed.
-        npr = np.random.RandomState(seed)
-
-        global _simulate_worker
-
-        def _simulate_worker(utterances: CutSet) -> MixedCut:
-            # Group the cuts by speaker.
-            utts_by_speaker = defaultdict(list)
-            for utt in utterances:
-                utts_by_speaker[utt.supervisions[0].speaker].append(utt)
-
-            utterances = [CutSet.from_cuts(cuts) for cuts in utts_by_speaker.values()]
-
-            # Sample the silence durations between utterances for each speaker.
-            silence_durations = [
-                self.loc + npr.exponential(scale=self.scale, size=len(utterances[i]))
-                for i in range(len(utterances))
-            ]
-
-            # Create the meeting.
-            mixture = self._create_mixture(utterances, silence_durations)
-            return mixture
+        work = partial(_simulate_worker, seed=seed, simulator=self)
 
         mixtures = []
         if num_jobs == 1:
             # Don't use multiprocessing if num_jobs == 1.
-            for mixture in tqdm(
-                map(_simulate_worker, sampler_iter), total=num_meetings
-            ):
+            for mixture in tqdm(map(work, sampler_iter), total=num_meetings):
                 mixtures.append(mixture)
         else:
             for mixture in tqdm(
                 parallel_map(
-                    _simulate_worker,
+                    work,
                     sampler_iter,
                     num_jobs=num_jobs,
                     queue_size=num_jobs * MAX_TASKS_WAITING,
@@ -218,3 +196,29 @@ class SpeakerIndependentMeetingSimulator(BaseMeetingSimulator):
 
     def reverberate(self, cuts: CutSet, *rirs: RecordingSet) -> CutSet:
         return reverberate_cuts(cuts, *rirs)
+
+
+def _simulate_worker(
+    utterances: CutSet,
+    seed: int,
+    simulator: SpeakerIndependentMeetingSimulator,
+) -> MixedCut:
+    # Create random number generators with the given seed.
+    npr = np.random.RandomState(seed)
+
+    # Group the cuts by speaker.
+    utts_by_speaker = defaultdict(list)
+    for utt in utterances:
+        utts_by_speaker[utt.supervisions[0].speaker].append(utt)
+
+    utterances = [CutSet.from_cuts(cuts) for cuts in utts_by_speaker.values()]
+
+    # Sample the silence durations between utterances for each speaker.
+    silence_durations = [
+        simulator.loc + npr.exponential(scale=simulator.scale, size=len(utterances[i]))
+        for i in range(len(utterances))
+    ]
+
+    # Create the meeting.
+    mixture = simulator._create_mixture(utterances, silence_durations)
+    return mixture
