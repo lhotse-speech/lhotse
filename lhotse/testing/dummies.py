@@ -7,7 +7,7 @@ import numpy as np
 import torch
 import torchaudio.backend.no_backend
 
-from lhotse import AudioSource, compute_num_samples
+from lhotse import AudioSource, compute_num_frames, compute_num_samples
 from lhotse.array import Array, TemporalArray
 from lhotse.audio import Recording, RecordingSet
 from lhotse.cut import CutSet, MonoCut, MultiCut
@@ -183,6 +183,33 @@ def dummy_features(
     )
 
 
+def dummy_in_memory_features(
+    unique_id: int,
+    start: float = 0.0,
+    duration: float = 1.0,
+    sampling_rate: int = 16000,
+    frame_shift: float = 0.01,
+) -> Features:
+    num_frames = compute_num_frames(duration, frame_shift, sampling_rate)
+    num_features = 23
+    data = np.random.rand(num_frames, num_features).astype(np.float32)
+    bindata = MemoryRawWriter().write("dummy-features", data)
+    return Features(
+        recording_id=f"dummy-recording-{unique_id:04d}",
+        channels=0,
+        start=start,
+        duration=duration,
+        type="fbank",
+        num_frames=num_frames,
+        num_features=num_features,
+        frame_shift=frame_shift,
+        sampling_rate=sampling_rate,
+        storage_type=MemoryRawWriter.name,
+        storage_path="",
+        storage_key=bindata,
+    )
+
+
 def dummy_multi_channel_features(
     unique_id: int,
     start: float = 0.0,
@@ -208,18 +235,18 @@ def dummy_multi_channel_features(
 
 
 def dummy_temporal_array(
-    start: float = 0.0, num_frames: int = 100, frame_shift: float = 0.01
+    start: float = 0.0,
+    num_frames: int = 100,
+    num_features: int = 23,
+    frame_shift: float = 0.01,
 ) -> TemporalArray:
-    return TemporalArray(
-        array=Array(
-            storage_type="lilcom_files",
-            storage_path="test/fixtures/dummy_feats/storage",
-            storage_key="dbf9a0ec-f79d-4eb8-ae83-143a6d5de64d.llc",
-            shape=[num_frames, 23],
-        ),
+    data = np.random.rand(num_frames, num_features).astype(np.float32)
+    return MemoryRawWriter().store_array(
+        key="temporal-array-float32",
+        value=data,
+        frame_shift=frame_shift,
         temporal_dim=0,
         start=start,
-        frame_shift=frame_shift,
     )
 
 
