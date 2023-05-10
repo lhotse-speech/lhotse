@@ -16,7 +16,6 @@ from itertools import islice
 from math import ceil, sqrt
 from pathlib import Path
 from subprocess import PIPE, CalledProcessError, run
-from threading import Lock
 from typing import (
     Any,
     Callable,
@@ -44,7 +43,7 @@ from lhotse.augmentation import (
     Tempo,
     Volume,
 )
-from lhotse.caching import dynamic_lru_cache
+from lhotse.caching import AudioCache
 from lhotse.lazy import AlgorithmMixin
 from lhotse.serialization import Serializable
 from lhotse.utils import (
@@ -144,92 +143,6 @@ def set_ffmpeg_torchaudio_info_enabled(enabled: bool) -> None:
     FFMPEG_TORCHAUDIO_INFO_ENABLED = enabled
 
 
-class AudioCache:
-    """
-    Cache of 'bytes' objects with audio data.
-    It is used to cache the "command" type audio inputs.
-
-    By default it is enabled, to disable call `AudioCache.disable()`.
-    The cache size is limited to max 100 elements and 500MB of audio.
-
-    A global dict `__cache_dict` (static member variable of class AudioCache)
-    is holding the wavs as 'bytes' arrays.
-    The key is the 'source' identifier (i.e. the command for loading the data).
-
-    Thread-safety is ensured by a threading.Lock guard.
-    """
-
-    __enabled: bool = True
-
-    max_cache_memory: int = 500 * 1e6
-    max_cache_elements: int = 100
-
-    __cache_dict: Dict[str, bytes] = {}
-    __lock: Lock = Lock()
-
-    @classmethod
-    def disable(cls, value=False):
-        cls.__enabled = value
-
-    @classmethod
-    def enabled(cls) -> bool:
-        return cls.__enabled
-
-    @classmethod
-    def try_cache(cls, key: str) -> Union[bytes, None]:
-        """
-        Test if 'key' is in the chache. If yes return the bytes array,
-        otherwise return None.
-        """
-
-        if not cls.__enabled:
-            return None
-
-        with cls.__lock:
-            if key in cls.__cache_dict:
-                return cls.__cache_dict[key]
-            else:
-                return None
-
-    @classmethod
-    def add_to_cache(cls, key: str, value: bytes):
-        """
-        Add the new (key,value) pair to cache.
-        Possibly free some elements before adding the new pair.
-        """
-
-        if not cls.__enabled:
-            return None
-
-        if len(value) > cls.max_cache_memory:
-            return
-
-        with cls.__lock:
-            # limit cache elements
-            while len(cls.__cache_dict) > cls.max_cache_elements:
-                # remove oldest elements from cache
-                cls.__cache_dict.pop(next(iter(cls.__cache_dict)))
-
-            # limit cache memory
-            while len(value) + AudioCache.__cache_memory() > cls.max_cache_memory:
-                # remove oldest elements from cache
-                cls.__cache_dict.pop(next(iter(cls.__cache_dict)))
-
-            # store the new (key,value) pair
-            cls.__cache_dict[key] = value
-
-    @classmethod
-    def __cache_memory(cls) -> int:
-        """
-        Return size of AudioCache values in bytes.
-        (internal, not to be called from outside)
-        """
-        ans = 0
-        for key, value in cls.__cache_dict.items():
-            ans += len(value)
-        return ans
-
-
 # TODO: document the dataclasses like this:
 # https://stackoverflow.com/a/3051356/5285891
 
@@ -274,17 +187,15 @@ class AudioSource:
 
         if self.type == "command":
             if (offset != 0.0 or duration is not None) and not AudioCache.enabled():
-                # TODO(pzelasko): How should we support chunking for commands?
-                #                 We risk being very inefficient when reading many chunks from the same file
-                #                 without some caching scheme, because we'll be re-running commands.
                 warnings.warn(
                     "You requested a subset of a recording that is read from disk via a bash command. "
                     "Expect large I/O overhead if you are going to read many chunks like these, "
                     "since every time we will read the whole file rather than its subset."
-                    "You can enable caching by `AudioCache.enable()`."
+                    "You can enable caching by `AudioCache.enable()`, "
+                    "or by setting env variable `LHOTSE_AUDIO_CACHE_ENABLED=1`."
                 )
 
-            # Let's assume 'self.source' is command with a file,
+            # Let's assume 'self.source' is a pipe-command with unchangeable file,
             # never a microphone-stream or a live-stream.
             audio_bytes = AudioCache.try_cache(self.source)
             if not audio_bytes:
@@ -1528,7 +1439,6 @@ def audio_energy(audio: np.ndarray) -> float:
 FileObject = Any  # Alias for file-like objects
 
 
-@dynamic_lru_cache
 def read_audio(
     path_or_fd: Union[Pathlike, FileObject],
     offset: Seconds = 0.0,
