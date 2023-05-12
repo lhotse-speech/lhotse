@@ -191,8 +191,7 @@ class AudioSource:
                     "You requested a subset of a recording that is read from disk via a bash command. "
                     "Expect large I/O overhead if you are going to read many chunks like these, "
                     "since every time we will read the whole file rather than its subset."
-                    "You can enable caching by `AudioCache.enable()`, "
-                    "or by setting env variable `LHOTSE_AUDIO_CACHE_ENABLED=1`."
+                    "You can use `caching.set_caching_enabled(True)` to mitigate the overhead."
                 )
 
             # Let's assume 'self.source' is a pipe-command with unchangeable file,
@@ -207,21 +206,25 @@ class AudioSource:
             )
 
         elif self.type == "url":
-            if offset != 0.0 or duration is not None:
-                # TODO(pzelasko): How should we support chunking for URLs?
-                #                 We risk being very inefficient when reading many chunks from the same file
-                #                 without some caching scheme, because we'll be re-running commands.
+            if offset != 0.0 or duration is not None and not AudioCache.enabled():
                 warnings.warn(
                     "You requested a subset of a recording that is read from URL. "
                     "Expect large I/O overhead if you are going to read many chunks like these, "
                     "since every time we will download the whole file rather than its subset."
+                    "You can use `caching.set_caching_enabled(True)` to mitigate the overhead."
                 )
-            # Should AudioCache be used also for 'url' type ? (url never contains a live-stream ?)
-            with SmartOpen.open(self.source, "rb") as f:
-                source = BytesIO(f.read())
-                samples, sampling_rate = read_audio(
-                    source, offset=offset, duration=duration
-                )
+
+            # Let's assume 'self.source' is url to unchangeable file,
+            # never a microphone-stream or a live-stream.
+            audio_bytes = AudioCache.try_cache(self.source)
+            if not audio_bytes:
+                with SmartOpen.open(self.source, "rb") as f:
+                    audio_bytes = f.read()
+                AudioCache.add_to_cache(self.source, audio_bytes)
+
+            samples, sampling_rate = read_audio(
+                BytesIO(audio_bytes), offset=offset, duration=duration
+            )
 
         elif self.type == "memory":
             assert isinstance(self.source, bytes), (

@@ -121,36 +121,6 @@ def test_opus_torchaudio_vs_ffmpeg_with_resampling(path, force_opus_sampling_rat
     np.testing.assert_almost_equal(audio_ta, audio_ff, decimal=1)
 
 
-@pytest.mark.skip(reason="The audio caching by @lru_cache_optional was removed.")
-def test_audio_caching_enabled_works():
-    lhotse.set_caching_enabled(True)  # Enable caching.
-
-    np.random.seed(89)  # Reproducibility.
-
-    # Prepare two different waveforms.
-    noise1 = np.random.rand(1, 32000).astype(np.float32)
-    noise2 = np.random.rand(1, 32000).astype(np.float32)
-    # Sanity check -- the noises are different
-    assert np.abs(noise1 - noise2).sum() != 0
-
-    # Save the first waveform in a file.
-    with NamedTemporaryFile(suffix=".wav") as f:
-        torchaudio.save(f.name, torch.from_numpy(noise1), sample_rate=16000)
-        recording = Recording.from_file(f.name)
-
-        # Read the audio -- should be equal to noise1.
-        audio = recording.load_audio()
-        np.testing.assert_allclose(audio, noise1, atol=3e-5)
-
-        # Save noise2 to the same location.
-        torchaudio.save(f.name, torch.from_numpy(noise2), sample_rate=16000)
-
-        # Read the audio -- should *still* be equal to noise1,
-        # because reading from this path was cached before.
-        audio = recording.load_audio()
-        np.testing.assert_allclose(audio, noise1, atol=3e-5)
-
-
 def test_audio_caching_disabled_works():
     lhotse.set_caching_enabled(False)  # Disable caching.
 
