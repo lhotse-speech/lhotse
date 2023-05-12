@@ -211,7 +211,7 @@ class AudioSource:
                     "You requested a subset of a recording that is read from URL. "
                     "Expect large I/O overhead if you are going to read many chunks like these, "
                     "since every time we will download the whole file rather than its subset."
-                    "You can use `caching.set_caching_enabled(True)` to mitigate the overhead."
+                    "You can use `lhotse.set_caching_enabled(True)` to mitigate the overhead."
                 )
 
             # Let's assume 'self.source' is url to unchangeable file,
