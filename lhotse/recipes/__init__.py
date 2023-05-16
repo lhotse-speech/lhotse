@@ -57,6 +57,7 @@ from .switchboard import prepare_switchboard
 from .tedlium import download_tedlium, prepare_tedlium
 from .thchs_30 import download_thchs_30, prepare_thchs_30
 from .timit import download_timit, prepare_timit
+from .uwb_atcc import download_uwb_atcc, prepare_uwb_atcc
 from .vctk import download_vctk, prepare_vctk
 from .voxceleb import download_voxceleb1, download_voxceleb2, prepare_voxceleb
 from .wenet_speech import prepare_wenet_speech

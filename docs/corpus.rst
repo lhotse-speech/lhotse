@@ -153,6 +153,8 @@ a CLI tool that create the manifests given a corpus directory.
     - :func:`lhotse.recipes.prepare_tedlium`
   * - TIMIT
     - :func:`lhotse.recipes.prepare_timit`
+  * - UWB-ATCC
+    - :func:`lhotse.recipes.prepare_uwb_atcc`
   * - VCTK
     - :func:`lhotse.recipes.prepare_vctk`
   * - VoxCeleb
