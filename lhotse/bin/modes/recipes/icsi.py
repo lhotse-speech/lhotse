@@ -64,12 +64,13 @@ def icsi(
 )
 @click.option(
     "--normalize-text",
-    is_flag=True,
-    help="If set, convert all text annotations to upper case (similar to Kaldi)",
+    type=click.Choice(["none", "upper", "kaldi"], case_sensitive=False),
+    default="kaldi",
+    help="Type of text normalization to apply (kaldi style, by default)",
 )
 def icsi(
     audio_dir: Pathlike,
-    transcript_dir: Pathlike,
+    transcripts_dir: Pathlike,
     output_dir: Pathlike,
     mic: str,
     normalize_text: bool,
@@ -77,7 +78,7 @@ def icsi(
     """AMI data preparation."""
     prepare_icsi(
         audio_dir,
-        transcript_dir,
+        transcripts_dir,
         output_dir=output_dir,
         mic=mic,
         normalize_text=normalize_text,

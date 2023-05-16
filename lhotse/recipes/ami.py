@@ -276,7 +276,8 @@ class AmiSegmentAnnotation(NamedTuple):
 def parse_ami_annotations(
     annotations_dir: Pathlike,
     normalize: str = "upper",
-    max_words_per_segment: int = None,
+    max_words_per_segment: Optional[int] = None,
+    merge_consecutive: bool = False,
 ) -> Dict[str, List[SupervisionSegment]]:
 
     # Extract if zipped file
@@ -355,7 +356,9 @@ def parse_ami_annotations(
             seg_words = list(
                 filter(lambda w: w[0] >= seg_start and w[1] <= seg_end, spk_words)
             )
-            subsegments = split_segment(seg_words, max_words_per_segment)
+            subsegments = split_segment(
+                seg_words, max_words_per_segment, merge_consecutive
+            )
             for subseg in subsegments:
                 start, end, text = subseg
                 annotations[key].append(
@@ -372,26 +375,49 @@ def parse_ami_annotations(
 
 
 def split_segment(
-    words: List[Tuple[float, float, str]], max_words_per_segment: Optional[int]
+    words: List[Tuple[float, float, str]],
+    max_words_per_segment: Optional[int] = None,
+    merge_consecutive: bool = False,
 ):
     def split_(sequence, sep):
         chunk = []
         for val in sequence:
             if val[-1] == sep:
-                yield chunk
+                if len(chunk) > 0:
+                    yield chunk
                 chunk = []
             else:
                 chunk.append(val)
-        yield chunk
+        if len(chunk) > 0:
+            yield chunk
 
     def split_on_fullstop_(sequence):
-        return split_(sequence, ".")
+        subsegs = list(split_(sequence, "."))
+        if len(subsegs) < 2:
+            return subsegs
+        # Set a large default value for max_words_per_segment if not provided
+        max_segment_length = max_words_per_segment if max_words_per_segment else 100000
+        if merge_consecutive:
+            # Merge consecutive subsegments if their length is less than max_words_per_segment
+            merged_subsegs = [subsegs[0]]
+            for subseg in subsegs[1:]:
+                if (
+                    merged_subsegs[-1][-1][1] == subseg[0][0]
+                    and len(merged_subsegs[-1]) + len(subseg) <= max_segment_length
+                ):
+                    merged_subsegs[-1].extend(subseg)
+                else:
+                    merged_subsegs.append(subseg)
+            subsegs = merged_subsegs
+        return subsegs
 
-    def split_on_comma_(segment, max_words_per_segment):
+    def split_on_comma_(segment):
         # This function smartly splits a segment on commas such that the number of words
         # in each subsegment is as close to max_words_per_segment as possible.
         # First we create subsegments by splitting on commas
         subsegs = list(split_(segment, ","))
+        if len(subsegs) < 2:
+            return subsegs
         # Now we merge subsegments while ensuring that the number of words in each
         # subsegment is less than max_words_per_segment
         merged_subsegs = [subsegs[0]]
@@ -409,7 +435,7 @@ def split_segment(
         # Now we split each subsegment based on commas to get at most max_words_per_segment
         # words per subsegment.
         subsegments = [
-            list(split_on_comma_(subseg, max_words_per_segment))
+            list(split_on_comma_(subseg))
             if len(subseg) > max_words_per_segment
             else [subseg]
             for subseg in subsegments
@@ -614,6 +640,7 @@ def prepare_ami(
     partition: Optional[str] = "full-corpus",
     normalize_text: str = "kaldi",
     max_words_per_segment: Optional[int] = None,
+    merge_consecutive: bool = False,
 ) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet]]]:
     """
     Returns the manifests which consist of the Recordings and Supervisions
@@ -625,6 +652,9 @@ def prepare_ami(
     :param normalize_text: str {'none', 'upper', 'kaldi'} normalization of text
     :param max_words_per_segment: int, maximum number of words per segment. If not None, we will split
         longer segments similar to Kaldi's data prep scripts, i.e., split on full-stop and comma.
+    :param merge_consecutive: bool, if True, merge consecutive segments split on full-stop.
+        We will only merge segments if the number of words in the merged segment is less than
+        max_words_per_segment.
     :return: a Dict whose key is ('train', 'dev', 'eval'), and the values are dicts of manifests under keys
         'recordings' and 'supervisions'.
 
@@ -662,6 +692,7 @@ def prepare_ami(
         annotations_dir,
         normalize=normalize_text,
         max_words_per_segment=max_words_per_segment,
+        merge_consecutive=merge_consecutive,
     )
 
     # Audio

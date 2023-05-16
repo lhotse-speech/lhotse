@@ -234,7 +234,6 @@ def download_icsi(
 def parse_icsi_annotations(
     transcripts_dir: Pathlike, normalize: str = "upper"
 ) -> Tuple[Dict[str, List[SupervisionSegment]], Dict[str, Dict[str, int]]]:
-
     annotations = defaultdict(list)
     # In Lhotse, channels are integers, so we map channel ids to integers for each session
     channel_to_idx_map = defaultdict(dict)
@@ -299,7 +298,6 @@ def prepare_audio_grouped(
     audio_paths: List[Pathlike],
     channel_to_idx_map: Dict[str, Dict[str, int]] = None,
 ) -> RecordingSet:
-
     # Group together multiple channels from the same session.
     # We will use that to create a Recording with multiple sources (channels).
     from cytoolz import groupby
@@ -474,7 +472,7 @@ def prepare_supervision_other(
 
 def prepare_icsi(
     audio_dir: Pathlike,
-    transcripts_dir: Pathlike,
+    transcripts_dir: Optional[Pathlike] = None,
     output_dir: Optional[Pathlike] = None,
     mic: Optional[str] = "ihm",
     normalize_text: str = "kaldi",
@@ -490,7 +488,11 @@ def prepare_icsi(
         'recordings' and 'supervisions'.
     """
     audio_dir = Path(audio_dir)
-    transcripts_dir = Path(transcripts_dir)
+    transcripts_dir = (
+        Path(transcripts_dir)
+        if transcripts_dir is not None
+        else audio_dir / "transcripts"
+    )
 
     assert audio_dir.is_dir(), f"No such directory: {audio_dir}"
     assert transcripts_dir.is_dir(), f"No such directory: {transcripts_dir}"
@@ -539,15 +541,15 @@ def prepare_icsi(
             lambda x: x.recording_id in PARTITIONS[part]
         )
 
+        audio_part, supervision_part = fix_manifests(audio_part, supervision_part)
+        validate_recordings_and_supervisions(audio_part, supervision_part)
+
         # Write to output directory if a path is provided
         if output_dir is not None:
             audio_part.to_file(output_dir / f"icsi-{mic}_recordings_{part}.jsonl.gz")
             supervision_part.to_file(
                 output_dir / f"icsi-{mic}_supervisions_{part}.jsonl.gz"
             )
-
-        audio_part, supervision_part = fix_manifests(audio_part, supervision_part)
-        validate_recordings_and_supervisions(audio_part, supervision_part)
 
         # Combine all manifests into one dictionary
         manifests[part] = {"recordings": audio_part, "supervisions": supervision_part}
