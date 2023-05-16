@@ -59,6 +59,8 @@ a CLI tool that create the manifests given a corpus directory.
     - :func:`lhotse.recipes.prepare_ami`
   * - ASpIRE
     - :func:`lhotse.recipes.prepare_aspire`
+  * - ATCOSIM
+    - :func:`lhotse.recipes.prepare_atcosim`
   * - BABEL
     - :func:`lhotse.recipes.prepare_single_babel_language`
   * - BUT ReverbDB

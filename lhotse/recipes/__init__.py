@@ -5,6 +5,7 @@ from .aishell4 import download_aishell4, prepare_aishell4
 from .ali_meeting import download_ali_meeting, prepare_ali_meeting
 from .ami import download_ami, prepare_ami
 from .aspire import prepare_aspire
+from .atcosim import download_atcosim, prepare_atcosim
 from .babel import prepare_single_babel_language
 from .broadcast_news import prepare_broadcast_news
 from .but_reverb_db import download_but_reverb_db, prepare_but_reverb_db
