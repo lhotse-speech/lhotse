@@ -490,7 +490,7 @@ class Cut:
                     len(set(to_hashable(s.channel) for s in trimmed.supervisions)) == 1
                 ), (
                     "Trimmed cut has supervisions with different channels. Either set "
-                    "`ignore_channel=True` to keep original channels or `keep_overlapping=False` "
+                    "`keep_all_channels=True` to keep original channels or `keep_overlapping=False` "
                     "to retain only 1 supervision per trimmed cut."
                 )
                 trimmed.channel = trimmed.supervisions[0].channel
