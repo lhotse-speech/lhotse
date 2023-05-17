@@ -468,16 +468,17 @@ def resumable_download(
 
     # Open the file for writing in binary mode and seek to the end
     with open(filename, "ab") as f:
-        f.seek(file_size)
 
-        try:
+        def _download(rq, size):
+            f.seek(size)
+
             # Open the URL and read the contents in chunks
-            with urllib.request.urlopen(req) as response:
+            with urllib.request.urlopen(rq) as response:
                 chunk_size = 1024
-                total_size = int(response.headers.get("content-length", 0)) + file_size
+                total_size = int(response.headers.get("content-length", 0)) + size
                 with tqdm(
                     total=total_size,
-                    initial=file_size,
+                    initial=size,
                     unit="B",
                     unit_scale=True,
                     desc=str(filename),
@@ -489,11 +490,19 @@ def resumable_download(
                         f.write(chunk)
                         pbar.update(len(chunk))
 
+        try:
+            _download(req, file_size)
         except urllib.error.HTTPError as e:
             # "Request Range Not Satisfiable" means the requested range
-            # starts after the file ends, hence the file is already downloaded.
+            # starts after the file ends OR that the server does not support range requests.
             if e.code == 416:
-                logging.info(f"File already downloaded: {filename}")
+                if e.headers.get("Content-Range", "") == f"bytes */{file_size}":
+                    # If the content-range returned by server also matches the file size,
+                    # then the file is already downloaded
+                    logging.info(f"File already downloaded: {filename}")
+                else:
+                    logging.info("Server does not support range requests - attempting downloading from scratch")
+                    _download(urllib.request.Request(url), 0)
             else:
                 raise e
 
