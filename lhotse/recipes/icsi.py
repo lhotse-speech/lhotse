@@ -245,7 +245,9 @@ class IcsiSegmentAnnotation(NamedTuple):
 
 def parse_icsi_annotations(
     transcripts_dir: Pathlike, normalize: str = "upper"
-) -> Tuple[Dict[str, List[SupervisionSegment]], Dict[str, Dict[str, int]]]:
+) -> Tuple[
+    Dict[Tuple[str, str, str], List[SupervisionSegment]], Dict[str, Dict[str, int]]
+]:
     annotations = defaultdict(list)
     # In Lhotse, channels are integers, so we map channel ids to integers for each session
     channel_to_idx_map = defaultdict(dict)
@@ -329,12 +331,13 @@ def parse_icsi_annotations(
 
     # Now we create segment-level annotations by combining the word-level
     # annotations with the speaker segment times. We also normalize the text
-    # (if requested).
+    # (if requested). The annotations is a dict indexed by (meeting_id, spk_id, channel).
     annotations = defaultdict(list)
 
     for key, (spk_id, channel, spk_segments) in segments.items():
         # Get the words for this speaker
         _, _, spk_words = words[key]
+        new_key = (key[0], spk_id, channel)
         # Now iterate over the speaker segments and create segment annotations
         for seg_start, seg_end in spk_segments:
             seg_words = list(
@@ -355,7 +358,7 @@ def parse_icsi_annotations(
             # Filter out empty words
             word_alignments = [w for w in word_alignments if len(w.symbol) > 0]
             text = " ".join(w.symbol for w in word_alignments)
-            annotations[key].append(
+            annotations[new_key].append(
                 IcsiSegmentAnnotation(
                     text=text,
                     speaker=spk_id,
