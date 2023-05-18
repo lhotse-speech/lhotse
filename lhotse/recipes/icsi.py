@@ -106,8 +106,8 @@ from lhotse import validate_recordings_and_supervisions
 from lhotse.audio import AudioSource, Recording, RecordingSet, read_sph
 from lhotse.qa import fix_manifests
 from lhotse.recipes.utils import normalize_text_ami
-from lhotse.supervision import SupervisionSegment, SupervisionSet
-from lhotse.utils import Pathlike, Seconds, resumable_download
+from lhotse.supervision import AlignmentItem, SupervisionSegment, SupervisionSet
+from lhotse.utils import Pathlike, Seconds, add_durations, resumable_download
 
 # fmt:off
 PARTITIONS = {
@@ -133,15 +133,6 @@ MIC_TO_CHANNELS = {
     "ihm-mix": [],
 }
 # fmt:on
-
-
-class IcsiSegmentAnnotation(NamedTuple):
-    text: str
-    speaker: str
-    channel: str
-    gender: str
-    start_time: Seconds
-    end_time: Seconds
 
 
 def download_audio(
@@ -205,22 +196,30 @@ def download_icsi(
     download_audio(audio_dir, force_download, url, mic)
 
     # Annotations
-    logging.info("Downloading AMI annotations")
+    logging.info("Downloading ICSI annotations")
 
     if transcripts_dir.exists() and not force_download:
         logging.info(
             f"Skip downloading transcripts as they exist in: {transcripts_dir}"
         )
         return target_dir
-    annotations_url = f"{url}/ICSICorpusAnnotations/ICSI_original_transcripts.zip"
+
+    # We need the MRT transcripts for the speaker-to-channel mapping. The NXT transcripts
+    # are used for the actual annotations (since they contain word alignments)
+    annotations_url_mrt = f"{url}/ICSICorpusAnnotations/ICSI_original_transcripts.zip"
+    annotations_url_nxt = f"{url}/ICSICorpusAnnotations/ICSI_core_NXT.zip"
     resumable_download(
-        annotations_url,
+        annotations_url_mrt,
         filename=target_dir / "ICSI_original_transcripts.zip",
         force_download=force_download,
     )
+    resumable_download(
+        annotations_url_nxt,
+        filename=target_dir / "ICSI_core_NXT.zip",
+        force_download=force_download,
+    )
 
-    # Unzip annotations zip file
-    with zipfile.ZipFile(target_dir / "ICSI_original_transcripts.zip") as z:
+    with zipfile.ZipFile(target_dir / "ICSI_core_NXT.zip") as z:
         # Unzips transcripts to <target_dir>/'transcripts'
         # zip file also contains some documentation which will be unzipped to <target_dir>
         z.extractall(target_dir)
@@ -228,7 +227,20 @@ def download_icsi(
         if transcripts_dir:
             Path(target_dir / "transcripts").rename(transcripts_dir)
 
+    # From the MRT transcripts, we only need the transcripts/preambles.mrt file
+    with zipfile.ZipFile(target_dir / "ICSI_original_transcripts.zip") as z:
+        z.extract("transcripts/preambles.mrt", transcripts_dir)
+
     return target_dir
+
+
+class IcsiSegmentAnnotation(NamedTuple):
+    text: str
+    speaker: str
+    gender: str
+    start_time: Seconds
+    end_time: Seconds
+    words: List[AlignmentItem]
 
 
 def parse_icsi_annotations(
@@ -240,53 +252,119 @@ def parse_icsi_annotations(
     spk_to_channel_map = defaultdict(dict)
 
     # First we get global speaker ids and channels
-    for meeting_file in tqdm(
-        transcripts_dir.rglob("./*.mrt"), desc="Parsing ICSI mrt files"
-    ):
-        if meeting_file.stem == "preambles":
+    with open(transcripts_dir / "preambles.mrt") as f:
+        root = ET.parse(f).getroot()  # <Meetings>
+        for child in root:
+            if child.tag == "Meeting":
+                meeting_id = child.attrib["Session"]
+                for grandchild in child:
+                    if grandchild.tag == "Preamble":
+                        for greatgrandchild in grandchild:
+                            if greatgrandchild.tag == "Channels":
+                                channel_to_idx_map[meeting_id] = {
+                                    channel.attrib["Name"]: idx
+                                    for idx, channel in enumerate(greatgrandchild)
+                                }
+                            elif greatgrandchild.tag == "Participants":
+                                for speaker in greatgrandchild:
+                                    # some speakers may not have an associated channel in some meetings, so we
+                                    # assign them the SDM channel
+                                    spk_to_channel_map[meeting_id][
+                                        speaker.attrib["Name"]
+                                    ] = (
+                                        speaker.attrib["Channel"]
+                                        if "Channel" in speaker.attrib
+                                        else "chan6"
+                                    )
+
+    # Get the speaker segment times from the segments file
+    segments = {}
+    for file in (transcripts_dir / "Segments").glob("*.xml"):
+        meet_id, local_id, _ = file.stem.split(".")
+        spk_segments = []
+        spk_id = None
+        with open(file) as f:
+            tree = ET.parse(f)
+            for seg in tree.getroot():
+                if seg.tag != "segment":
+                    continue
+                if spk_id is None and "participant" in seg.attrib:
+                    spk_id = seg.attrib["participant"]
+                start_time = float(seg.attrib["starttime"])
+                end_time = float(seg.attrib["endtime"])
+                spk_segments.append((start_time, end_time))
+        if spk_id is None or len(spk_segments) == 0:
             continue
-        with open(meeting_file) as f:
-            meeting_id = meeting_file.stem
-            root = ET.parse(f).getroot()  # <Meeting>
-            for child in root:
-                if child.tag == "Preamble":
-                    for grandchild in child:
-                        if grandchild.tag == "Channels":
-                            channel_to_idx_map[meeting_id] = {
-                                channel.attrib["Name"]: idx
-                                for idx, channel in enumerate(grandchild)
-                            }
-                        elif grandchild.tag == "Participants":
-                            for speaker in grandchild:
-                                # some speakers may not have an associated channel in some meetings, so we
-                                # assign them the SDM channel
-                                spk_to_channel_map[meeting_id][
-                                    speaker.attrib["Name"]
-                                ] = (
-                                    speaker.attrib["Channel"]
-                                    if "Channel" in speaker.attrib
-                                    else "chan6"
-                                )
-                elif child.tag == "Transcript":
-                    for segment in child:
-                        if len(list(segment)) == 0 and "Participant" in segment.attrib:
-                            start_time = float(segment.attrib["StartTime"])
-                            end_time = float(segment.attrib["EndTime"])
-                            speaker = segment.attrib["Participant"]
-                            channel = spk_to_channel_map[meeting_id][speaker]
-                            text = normalize_text_ami(
-                                segment.text.strip(), normalize=normalize
-                            )
-                            annotations[(meeting_id, speaker, channel)].append(
-                                IcsiSegmentAnnotation(
-                                    text,
-                                    speaker,
-                                    channel,
-                                    speaker[0],
-                                    start_time,
-                                    end_time,
-                                )
-                            )
+        key = (meet_id, local_id)
+        channel = spk_to_channel_map[meet_id][spk_id]
+        segments[key] = (spk_id, channel, spk_segments)
+
+    # Now we go through each speaker's word-level annotations and store them
+    words = {}
+    for file in (transcripts_dir / "Words").glob("*.xml"):
+        meet_id, local_id, _ = file.stem.split(".")
+        key = (meet_id, local_id)
+        if key not in segments:
+            continue
+        else:
+            spk_id, channel, spk_segments = segments[key]
+
+        seg_words = []
+        combine_with_next = False
+        with open(file) as f:
+            tree = ET.parse(f)
+            for i, word in enumerate(tree.getroot()):
+                if (
+                    word.tag != "w"
+                    or "starttime" not in word.attrib
+                    or word.attrib["starttime"] == ""
+                    or "endtime" not in word.attrib
+                    or word.attrib["endtime"] == ""
+                ):
+                    continue
+                start_time = float(word.attrib["starttime"])
+                end_time = float(word.attrib["endtime"])
+                seg_words.append((start_time, end_time, word.text))
+        words[key] = (spk_id, channel, seg_words)
+
+    # Now we create segment-level annotations by combining the word-level
+    # annotations with the speaker segment times. We also normalize the text
+    # (if requested).
+    annotations = defaultdict(list)
+
+    for key, (spk_id, channel, spk_segments) in segments.items():
+        # Get the words for this speaker
+        _, _, spk_words = words[key]
+        # Now iterate over the speaker segments and create segment annotations
+        for seg_start, seg_end in spk_segments:
+            seg_words = list(
+                filter(lambda w: w[0] >= seg_start and w[1] <= seg_end, spk_words)
+            )
+            if len(seg_words) == 0:
+                continue
+            start = seg_words[0][0]
+            end = seg_words[-1][1]
+            word_alignments = [
+                AlignmentItem(
+                    start=round(w[0], ndigits=4),
+                    duration=add_durations(w[1], -w[0], sampling_rate=16000),
+                    symbol=normalize_text_ami(w[2], normalize=normalize),
+                )
+                for w in seg_words
+            ]
+            # Filter out empty words
+            word_alignments = [w for w in word_alignments if len(w.symbol) > 0]
+            text = " ".join(w.symbol for w in word_alignments)
+            annotations[key].append(
+                IcsiSegmentAnnotation(
+                    text=text,
+                    speaker=spk_id,
+                    gender=spk_id[0],
+                    start_time=start,
+                    end_time=end,
+                    words=word_alignments,
+                )
+            )
     return annotations, channel_to_idx_map
 
 
@@ -422,6 +500,7 @@ def prepare_supervision_ihm(
                             speaker=seg_info.speaker,
                             gender=seg_info.gender,
                             text=seg_info.text,
+                            alignment={"word": seg_info.words},
                         )
                     )
 
@@ -465,6 +544,7 @@ def prepare_supervision_other(
                         speaker=seg_info.speaker,
                         gender=seg_info.gender,
                         text=seg_info.text,
+                        alignment={"word": seg_info.words},
                     )
                 )
     return SupervisionSet.from_segments(segments)
