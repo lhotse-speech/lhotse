@@ -357,6 +357,14 @@ def parse_icsi_annotations(
             ]
             # Filter out empty words
             word_alignments = [w for w in word_alignments if len(w.symbol) > 0]
+            if any(w.duration <= 0 for w in word_alignments):
+                logging.warning(
+                    f"Segment {key[0]}.{spk_id}.{channel} at time {start}-{end} "
+                    f"has a word with zero or negative duration."
+                )
+                word_alignments = [
+                    w for w in word_alignments if w.duration > 0
+                ]  # type: ignore
             text = " ".join(w.symbol for w in word_alignments)
             annotations[new_key].append(
                 IcsiSegmentAnnotation(

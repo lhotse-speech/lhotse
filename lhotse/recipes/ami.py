@@ -370,8 +370,15 @@ def parse_ami_annotations(
                     )
                     for w in subseg
                 ]
-                # Filter out empty words
-                word_alignments = [w for w in word_alignments if w.symbol]
+                word_alignments = [w for w in word_alignments if len(w.symbol) > 0]
+                if any(w.duration <= 0 for w in word_alignments):
+                    logging.warning(
+                        f"Segment {key[0]}.{key[1]}.{key[2]} at time {start}-{end} "
+                        f"has a word with zero or negative duration."
+                    )
+                    word_alignments = [
+                        w for w in word_alignments if w.duration > 0
+                    ]  # type: ignore
                 text = " ".join(w.symbol for w in word_alignments)
                 annotations[key].append(
                     AmiSegmentAnnotation(
