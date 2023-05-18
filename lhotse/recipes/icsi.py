@@ -347,24 +347,23 @@ def parse_icsi_annotations(
                 continue
             start = seg_words[0][0]
             end = seg_words[-1][1]
-            word_alignments = [
-                AlignmentItem(
-                    start=round(w[0], ndigits=4),
-                    duration=add_durations(w[1], -w[0], sampling_rate=16000),
-                    symbol=normalize_text_ami(w[2], normalize=normalize),
+            word_alignments = []
+            for w in seg_words:
+                w_start = max(start, round(w[0], ndigits=4))
+                w_end = min(end, round(w[1], ndigits=4))
+                w_dur = add_durations(w_end, -w_start, sampling_rate=16000)
+                w_symbol = normalize_text_ami(w[2], normalize=normalize)
+                if len(w_symbol) == 0:
+                    continue
+                if w_dur <= 0:
+                    logging.warning(
+                        f"Segment {key[0]}.{spk_id}.{channel} at time {start}-{end} "
+                        f"has a word with zero or negative duration. Skipping."
+                    )
+                    continue
+                word_alignments.append(
+                    AlignmentItem(start=w_start, duration=w_dur, symbol=w_symbol)
                 )
-                for w in seg_words
-            ]
-            # Filter out empty words
-            word_alignments = [w for w in word_alignments if len(w.symbol) > 0]
-            if any(w.duration <= 0 for w in word_alignments):
-                logging.warning(
-                    f"Segment {key[0]}.{spk_id}.{channel} at time {start}-{end} "
-                    f"has a word with zero or negative duration."
-                )
-                word_alignments = [
-                    w for w in word_alignments if w.duration > 0
-                ]  # type: ignore
             text = " ".join(w.symbol for w in word_alignments)
             annotations[new_key].append(
                 IcsiSegmentAnnotation(
