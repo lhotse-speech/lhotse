@@ -35,6 +35,7 @@ def gigast(
     manifests_dir: Pathlike,
     output_dir: Pathlike,
     languages: List[str],
+    subset: List[str],
 ):
     """GigaST data preparation."""
     languages = language[0] if len(language) == 1 else language
