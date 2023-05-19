@@ -34,7 +34,7 @@ def gigast(
     corpus_dir: Pathlike,
     manifests_dir: Pathlike,
     output_dir: Pathlike,
-    languages: List[str],
+    language: List[str],
     subset: List[str],
 ):
     """GigaST data preparation."""
