@@ -64,7 +64,7 @@ def download_gigast(
     target_dir.mkdir(parents=True, exist_ok=True)
 
     if languages == "all":
-        langs = GIGAST_LANGS
+        languages = GIGAST_LANGS
     elif isinstance(languages, str):
         languages = [languages]
     else:
