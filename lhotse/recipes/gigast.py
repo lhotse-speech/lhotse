@@ -48,7 +48,7 @@ class GigaST:
 
 def download_gigast(
     target_dir: Pathlike = ".",
-    languages: Union[str, Iterable[str]] = "all",
+    languages: Union[str, Sequence[str]] = "all",
     force_download: bool = False,
 ) -> Path:
     """
