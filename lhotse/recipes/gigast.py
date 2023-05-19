@@ -13,8 +13,8 @@ We assure manifests_dir contains the following files:
   - gigaspeech_supervisions_TEST.jsonl.gz
   - gigaspeech_supervisions_XL.jsonl.gz
 """
-import logging
 import json
+import logging
 from collections import defaultdict
 from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
@@ -26,7 +26,7 @@ from lhotse import CutSet
 from lhotse.audio import AudioSource, Recording, RecordingSet
 from lhotse.recipes.utils import manifests_exist, read_manifests_if_cached
 from lhotse.supervision import SupervisionSegment, SupervisionSet
-from lhotse.utils import Pathlike, Seconds, is_module_available, resumable_download 
+from lhotse.utils import Pathlike, Seconds, is_module_available, resumable_download
 
 GIGASPEECH_PARTS = ("XL", "L", "M", "S", "XS", "DEV", "TEST")
 GIGAST_LANGS = ("de", "zh")
@@ -35,16 +35,16 @@ GIGAST_LANGS = ("de", "zh")
 class GigaST:
     def __init__(self, corpus_dir: Pathlike, lang: str):
         with open(corpus_dir / f"GigaST.{lang}.json") as f:
-            self.audio_generator = iter(json.load(f)['audios'])
-        self.segment_generator = iter(next(self.audio_generator)['segments'])
+            self.audio_generator = iter(json.load(f)["audios"])
+        self.segment_generator = iter(next(self.audio_generator)["segments"])
 
     def get_next_line(self):
         try:
             return next(self.segment_generator)
         except StopIteration:
-            self.segment_generator = iter(next(self.audio_generator)['segments'])
+            self.segment_generator = iter(next(self.audio_generator)["segments"])
             return next(self.segment_generator)
-            
+
 
 def download_gigast(
     target_dir: Pathlike = ".",
@@ -146,7 +146,7 @@ def prepare_gigast(
         assert lang in GIGAST_LANGS, (lang, GIGAST_LANGS)
         logging.info(f"Loading GigaST.{lang}.json")
         gigast = GigaST(corpus_dir, lang)
-        
+
         for partition, m in manifests.items():
             supervisions = []
             logging.info(f"Processing {partition}")
@@ -156,17 +156,24 @@ def prepare_gigast(
                 prefix="gigast-de",
                 suffix="jsonl.gz",
             ):
-                logging.info(f"GigaST {lang} subset: {partition} already prepared - skipping.")
+                logging.info(
+                    f"GigaST {lang} subset: {partition} already prepared - skipping."
+                )
                 continue
 
             cur_line = gigast.get_next_line()
-            for sup in tqdm(m["supervisions"], desc="Generate the extented supervisions"):
-                if cur_line['sid'] == sup.id:
+            for sup in tqdm(
+                m["supervisions"], desc="Generate the extented supervisions"
+            ):
+                if cur_line["sid"] == sup.id:
                     new_sup = sup
                     if partition != "TEST":
-                        new_sup.custom = {"text_raw": cur_line['text_raw'], 'extra': cur_line['extra']}
+                        new_sup.custom = {
+                            "text_raw": cur_line["text_raw"],
+                            "extra": cur_line["extra"],
+                        }
                     else:
-                        new_sup.custom = {"text_raw": cur_line['text_raw']}
+                        new_sup.custom = {"text_raw": cur_line["text_raw"]}
                     supervisions.append(new_sup)
                     try:
                         cur_line = gigast.get_next_line()
@@ -174,5 +181,7 @@ def prepare_gigast(
                         break
 
             logging.info(f"Saving GigaST {lang} subset: {partition}")
-            supervisionset = SupervisionSet.from_segments(supervisions) 
-            supervisionset.to_file(output_dir / f"gigast-{lang}_supervisions_{partition}.jsonl.gz")
+            supervisionset = SupervisionSet.from_segments(supervisions)
+            supervisionset.to_file(
+                output_dir / f"gigast-{lang}_supervisions_{partition}.jsonl.gz"
+            )
