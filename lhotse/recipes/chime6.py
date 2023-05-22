@@ -501,6 +501,7 @@ class Chime6ArraySynchronizer:
         session: str,
         frame_drops: Optional[Dict[str, Any]] = None,
     ) -> None:
+
         # For binaural recordings, we just create symbolic links to the original files
         session_binaural_wavs = sorted(
             (self.corpus_dir / "audio").rglob(f"{session}_P*.wav")
