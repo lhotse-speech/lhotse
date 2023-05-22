@@ -64,21 +64,30 @@ def icsi(
 )
 @click.option(
     "--normalize-text",
+    type=click.Choice(["none", "upper", "kaldi"], case_sensitive=False),
+    default="kaldi",
+    help="Type of text normalization to apply (kaldi style, by default)",
+)
+@click.option(
+    "--save-to-wav",
     is_flag=True,
-    help="If set, convert all text annotations to upper case (similar to Kaldi)",
+    default=False,
+    help="If True and `mic` is sdm/ihm/mdm, save the recordings as WAV for faster processing.",
 )
 def icsi(
     audio_dir: Pathlike,
-    transcript_dir: Pathlike,
+    transcripts_dir: Pathlike,
     output_dir: Pathlike,
     mic: str,
     normalize_text: bool,
+    save_to_wav: bool,
 ):
-    """AMI data preparation."""
+    """ICSI data preparation."""
     prepare_icsi(
         audio_dir,
-        transcript_dir,
+        transcripts_dir,
         output_dir=output_dir,
         mic=mic,
         normalize_text=normalize_text,
+        save_to_wav=save_to_wav,
     )
