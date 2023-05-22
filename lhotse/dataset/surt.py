@@ -209,8 +209,9 @@ class K2SurtDataset(torch.utils.data.Dataset):
                 invalid_cuts.append(cut.id)
                 continue
             supervisions[cut.id] = cut_sups
-            source_feats.append(cut_sources)
-            source_boundaries.append(cut_source_boundaries)
+            if self.return_sources:
+                source_feats.append(cut_sources)
+                source_boundaries.append(cut_source_boundaries)
 
         # Remove invalid cuts.
         if len(invalid_cuts) > 0:

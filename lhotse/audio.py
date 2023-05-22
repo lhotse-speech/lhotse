@@ -1767,7 +1767,6 @@ def info(
     force_opus_sampling_rate: Optional[int] = None,
     force_read_audio: bool = False,
 ) -> LibsndfileCompatibleAudioInfo:
-
     if force_read_audio:
         # This is a reliable fallback for situations when the user knows that audio files do not
         # have duration metadata in their headers.
@@ -1824,7 +1823,8 @@ def torchaudio_2_0_ffmpeg_enabled() -> bool:
     import torchaudio
     from packaging import version
 
-    ver = version.parse(torchaudio.__version__)
+    # Handle cases like '2.0.0+cu117'
+    ver = version.parse(version.parse(torchaudio.__version__).base_version)
     if ver == version.parse("2.0.0"):
         return os.environ.get("TORCHAUDIO_USE_BACKEND_DISPATCHER", "0") == "1"
     if ver >= version.parse("2.1.0"):
@@ -2376,12 +2376,45 @@ def read_sph(
     sph_path: Pathlike, offset: Seconds = 0.0, duration: Optional[Seconds] = None
 ) -> Tuple[np.ndarray, int]:
     """
+    Reads SPH files either using torchaudio or using sph2pipe in a shell subprocess.
+
+    :return: a tuple of audio samples and the sampling rate.
+    """
+    # try:
+    return read_sph_torchaudio(sph_path=sph_path, offset=offset, duration=duration)
+    # except:
+    #     return read_sph_sph2pipe(sph_path=sph_path, offset=offset, duration=duration)
+
+
+def read_sph_torchaudio(
+    sph_path: Pathlike, offset: Seconds = 0.0, duration: Optional[Seconds] = None
+) -> Tuple[np.ndarray, int]:
+    """
+    Reads SPH files using torchaudio.
+
+    :return: a tuple of audio samples and the sampling rate.
+    """
+    # Actual audio reading.
+    sph_path = str(sph_path)
+    try:
+        samples, sampling_rate = torchaudio_2_ffmpeg_load(sph_path, offset, duration)
+    except RuntimeError as e:
+        raise AudioLoadingError(
+            f"{e}\nThe torchaudio command for which the program failed is: "
+            f"torchaudio.load({sph_path}, frame_offset={int(offset * 100)}, num_frames={int(duration * 100)})"
+        )
+    return samples, sampling_rate
+
+
+def read_sph_sph2pipe(
+    sph_path: Pathlike, offset: Seconds = 0.0, duration: Optional[Seconds] = None
+) -> Tuple[np.ndarray, int]:
+    """
     Reads SPH files using sph2pipe in a shell subprocess.
     Unlike audioread, correctly supports offsets and durations for reading short chunks.
 
     :return: a tuple of audio samples and the sampling rate.
     """
-
     sph_path = Path(sph_path)
 
     # Construct the sph2pipe command depending on the arguments passed.

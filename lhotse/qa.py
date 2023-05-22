@@ -403,7 +403,13 @@ def validate_cut(c: Cut, read_data: bool = False) -> None:
                 f"MonoCut {c.id}: supervision {s.id} has a mismatched recording_id "
                 f"(expected {c.recording_id}, supervision has {s.recording_id})"
             )
-            assert s.channel == c.channel, (
+            # We want to ensure that the cut channel is same as supervision channel.
+            # But one or both of them can be a list.
+            # So we check that they are subsets of each other. This is a general way
+            # of checking set equality.
+            assert is_equal_or_contains(s.channel, c.channel) and is_equal_or_contains(
+                c.channel, s.channel
+            ), (
                 f"MonoCut {c.id}: supervision {s.id} has a mismatched channel "
                 f"(expected {c.channel}, supervision has {s.channel})"
             )

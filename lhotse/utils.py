@@ -502,7 +502,6 @@ def safe_extract(
     """
 
     def _is_within_directory(directory, target):
-
         abs_directory = directory.resolve()
         abs_target = target.resolve()
 
@@ -788,7 +787,6 @@ def deprecated(message):
 
         @functools.wraps(func)
         def wrapper(*args, **kwargs):
-
             frame = inspect.currentframe().f_back
 
             warnings.warn_explicit(
