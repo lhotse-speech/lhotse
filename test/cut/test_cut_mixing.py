@@ -324,6 +324,12 @@ def test_mix_cut_snr(libri_cut):
     assert E(feats) > E(feats_snr)
 
 
+def test_mix_cut_with_other_raises_error(libri_cut):
+    libri_cut = libri_cut.drop_features()
+    with pytest.raises(ValueError):
+        _ = libri_cut.mix(libri_cut.recording)
+
+
 def test_mix_cut_snr_truncate_snr_reference(libri_cut):
     mixed = libri_cut.pad(duration=20).mix(libri_cut, offset_other_by=10)
     mixed_snr = libri_cut.pad(duration=20).mix(libri_cut, offset_other_by=10, snr=10)
