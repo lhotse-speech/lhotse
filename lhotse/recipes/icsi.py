@@ -100,6 +100,7 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Dict, List, NamedTuple, Optional, Tuple, Union
 
+import soundfile as sf
 from tqdm.auto import tqdm
 
 from lhotse import validate_recordings_and_supervisions
@@ -385,6 +386,8 @@ def parse_icsi_annotations(
 def prepare_audio_grouped(
     audio_paths: List[Pathlike],
     channel_to_idx_map: Dict[str, Dict[str, int]] = None,
+    save_to_wav: bool = False,
+    output_dir: Pathlike = None,
 ) -> RecordingSet:
     # Group together multiple channels from the same session.
     # We will use that to create a Recording with multiple sources (channels).
@@ -403,6 +406,16 @@ def prepare_audio_grouped(
                 c: idx for idx, c in enumerate(["chanE", "chanF", "chan6", "chan7"])
             }
         audio_sf, samplerate = read_sph(channel_paths[0])
+
+        if save_to_wav:
+            session_dir = Path(output_dir) / "wavs" / session_name
+            session_dir.mkdir(parents=True, exist_ok=True)
+            for i, audio_path in enumerate(channel_paths):
+                audio, _ = read_sph(audio_path)
+                wav_path = session_dir / f"{audio_path.stem}.wav"
+                sf.write(wav_path, audio.T, samplerate)
+                # Replace the sph path with the wav path
+                channel_paths[i] = wav_path
 
         recordings.append(
             Recording(
@@ -436,7 +449,7 @@ def prepare_audio_single(
     for audio_path in tqdm(audio_paths, desc="Preparing audio"):
         session_name = audio_path.parts[-2]
         if audio_path.suffix == ".wav":
-            audio_sf = sf.SoundFile(str(audio_path))
+            audio_sf = sf.SoundFile(audio_path)
             num_frames = audio_sf.frames
             num_channels = audio_sf.channels
             samplerate = audio_sf.samplerate
@@ -566,6 +579,7 @@ def prepare_icsi(
     output_dir: Optional[Pathlike] = None,
     mic: Optional[str] = "ihm",
     normalize_text: str = "kaldi",
+    save_to_wav: bool = False,
 ) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet]]]:
     """
     Returns the manifests which consist of the Recordings and Supervisions
@@ -574,6 +588,7 @@ def prepare_icsi(
     :param output_dir: Pathlike, the path where to write the manifests - `None` means manifests aren't stored on disk.
     :param mic: str {'ihm','ihm-mix','sdm','mdm'}, type of mic to use.
     :param normalize_text: str {'none', 'upper', 'kaldi'} normalization of text
+    :param save_to_wav: bool, whether to save the sph audio to wav format
     :return: a Dict whose key is ('train', 'dev', 'test'), and the values are dicts of manifests under keys
         'recordings' and 'supervisions'.
     """
@@ -587,6 +602,9 @@ def prepare_icsi(
     assert audio_dir.is_dir(), f"No such directory: {audio_dir}"
     assert transcripts_dir.is_dir(), f"No such directory: {transcripts_dir}"
     assert mic in MIC_TO_CHANNELS.keys(), f"Mic {mic} not supported"
+
+    if save_to_wav:
+        assert output_dir is not None, "output_dir must be specified when saving to wav"
 
     if output_dir is not None:
         output_dir = Path(output_dir)
@@ -604,7 +622,10 @@ def prepare_icsi(
     if mic == "ihm" or mic == "mdm":
         audio_paths = audio_dir.rglob(f"chan[{channels}].sph")
         audio = prepare_audio_grouped(
-            list(audio_paths), channel_to_idx_map if mic == "ihm" else None
+            list(audio_paths),
+            channel_to_idx_map if mic == "ihm" else None,
+            save_to_wav,
+            output_dir,
         )
     elif mic == "sdm" or mic == "ihm-mix":
         audio_paths = (
@@ -612,7 +633,7 @@ def prepare_icsi(
             if len(channels)
             else audio_dir.rglob("*.wav")
         )
-        audio = prepare_audio_single(list(audio_paths))
+        audio = prepare_audio_single(list(audio_paths), save_to_wav, output_dir)
 
     # Supervisions
     logging.info("Preparing supervision manifests")
