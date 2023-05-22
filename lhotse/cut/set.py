@@ -2610,7 +2610,7 @@ def mix(
         )
         snr = None
 
-    if reference_cut.num_features is not None:
+    if reference_cut.num_features is not None and mixed_in_cut.num_features is not None:
         assert (
             reference_cut.num_features == mixed_in_cut.num_features
         ), "Cannot mix cuts with different feature dimensions."
