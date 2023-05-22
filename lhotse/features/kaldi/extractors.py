@@ -301,11 +301,6 @@ class Spectrogram(FeatureExtractor):
     def frame_shift(self) -> Seconds:
         return self.config.frame_shift
 
-    @property
-    def padding_value(self) -> float:
-        """Return the value that should be used to pad these features."""
-        return EPSILON
-
     def feature_dim(self, sampling_rate: int) -> int:
         return self.config.num_ceps
 

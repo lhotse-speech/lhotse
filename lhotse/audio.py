@@ -2380,10 +2380,10 @@ def read_sph(
 
     :return: a tuple of audio samples and the sampling rate.
     """
-    # try:
-    return read_sph_torchaudio(sph_path=sph_path, offset=offset, duration=duration)
-    # except:
-    #     return read_sph_sph2pipe(sph_path=sph_path, offset=offset, duration=duration)
+    try:
+        return read_sph_torchaudio(sph_path=sph_path, offset=offset, duration=duration)
+    except:
+        return read_sph_sph2pipe(sph_path=sph_path, offset=offset, duration=duration)
 
 
 def read_sph_torchaudio(

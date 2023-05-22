@@ -50,11 +50,7 @@ class FeatureMixer:
         self.num_channels = 1 if base_feats.ndim == 2 else base_feats.shape[-1]
         self.gains = []
         self.frame_shift = frame_shift
-        self.padding_value = (
-            feature_extractor.padding_value
-            if hasattr(feature_extractor, "padding_value")
-            else padding_value
-        )
+        self.padding_value = padding_value
         self.dtype = self.tracks[0].dtype
 
         # Keep a pre-computed energy value of the features that we initialize the Mixer with;
