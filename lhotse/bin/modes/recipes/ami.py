@@ -53,6 +53,13 @@ __all__ = ["ami"]
         " segmentation). If None, no segmentation is performed."
     ),
 )
+@click.option(
+    "--merge-consecutive",
+    type=bool,
+    is_flag=True,
+    default=False,
+    help="Merge consecutive segments from the same speaker.",
+)
 def ami(
     corpus_dir: Pathlike,
     output_dir: Pathlike,
@@ -61,6 +68,7 @@ def ami(
     partition: str,
     normalize_text: bool,
     max_words_per_segment: int,
+    merge_consecutive: bool,
 ):
     """AMI data preparation."""
     prepare_ami(
@@ -71,6 +79,7 @@ def ami(
         partition=partition,
         normalize_text=normalize_text,
         max_words_per_segment=max_words_per_segment,
+        merge_consecutive=merge_consecutive,
     )
 
 

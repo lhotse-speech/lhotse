@@ -146,7 +146,8 @@ def normalize_text_ami(text: str, normalize: str = "upper") -> str:
         text = re.sub(r"MM HMM", "MM-HMM", text)
         text = re.sub(r"UH HUH", "UH-HUH", text)
         text = re.sub(r"(\b)O K(\b)", r"\g<1>OK\g<2>", text)
-        return text
+        text = re.sub(r"(\b)O_K(\b)", r"\g<1>OK\g<2>", text)
+        return text.strip()
 
 
 def normalize_text_chime6(text: str, normalize: str = "upper") -> str:
