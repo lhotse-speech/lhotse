@@ -457,7 +457,7 @@ class DataCut(Cut, metaclass=ABCMeta):
         :return: a new ``MonoCut`` instance with a ``Features`` manifest attached to it.
         """
         features_info = extractor.extract_from_samples_and_store(
-            samples=self.load_audio(),
+            samples=self.load_audio(frame_shift=extractor.frame_shift),
             storage=storage,
             sampling_rate=self.sampling_rate,
             offset=self.start,

@@ -13,7 +13,9 @@ from lhotse.cut.data import DataCut
 from lhotse.features import Features
 from lhotse.supervision import SupervisionSegment
 from lhotse.utils import (
+    Seconds,
     add_durations,
+    compute_num_frames,
     fastcopy,
     hash_str_to_int,
     merge_items_with_delimiter,
@@ -65,7 +67,7 @@ class MonoCut(DataCut):
         return None
 
     @rich_exception_info
-    def load_audio(self) -> Optional[np.ndarray]:
+    def load_audio(self, frame_shift: Optional[Seconds] = None) -> Optional[np.ndarray]:
         """
         Load the audio by locating the appropriate recording in the supplied RecordingSet.
         The audio is trimmed to the [begin, end] range specified by the MonoCut.
@@ -73,16 +75,23 @@ class MonoCut(DataCut):
         :return: a numpy ndarray with audio samples, with shape (1 <channel>, N <samples>)
         """
         if self.has_recording:
-            return self.recording.load_audio(
-                channels=self.channel,
-                offset=self.start,
-                # set duration=None when cut covers the whole recording
-                # to let the audio loading code "know" to read everything
-                duration=self.duration
-                if not math.isclose(
-                    self.duration, self.recording.duration, abs_tol=1e-3
+            if frame_shift is not None and math.isclose(
+                self.duration, self.recording.duration, abs_tol=1e-3
+            ):
+                cut_frames = compute_num_frames(
+                    self.duration, frame_shift, self.recording.sampling_rate
                 )
-                else None,
+                rec_frames = compute_num_frames(
+                    self.recording.duration, frame_shift, self.recording.sampling_rate
+                )
+                if cut_frames == rec_frames:
+                    duration = None
+                else:
+                    duration = self.duration
+            else:
+                duration = self.duration
+            return self.recording.load_audio(
+                channels=self.channel, offset=self.start, duration=duration
             )
         return None
 
