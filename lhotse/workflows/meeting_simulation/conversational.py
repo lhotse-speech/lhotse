@@ -1,5 +1,6 @@
 import logging
 from collections import defaultdict
+from functools import partial
 from multiprocessing import Pool
 from typing import Any, List, Optional, Union
 
@@ -331,18 +332,15 @@ class ConversationalMeetingSimulator(BaseMeetingSimulator):
         )
         sampler_iter = iter(sampler)
 
-        global _simulate_worker
-
-        def _simulate_worker(utterances):
-            return self._create_mixture(
-                utterances, allow_3fold_overlap=allow_3fold_overlap
-            )
+        work = partial(
+            _simulate_worker, simulator=self, allow_3fold_overlap=allow_3fold_overlap
+        )
 
         mixtures = []
         if num_jobs == 1:
             # Don't use multiprocessing if num_jobs == 1.
             for mixture in tqdm(
-                map(_simulate_worker, sampler_iter),
+                map(work, sampler_iter),
                 total=num_meetings,
                 desc="Simulating meetings",
             ):
@@ -350,7 +348,7 @@ class ConversationalMeetingSimulator(BaseMeetingSimulator):
         else:
             for mixture in tqdm(
                 parallel_map(
-                    _simulate_worker,
+                    work,
                     sampler_iter,
                     num_jobs=num_jobs,
                     queue_size=num_jobs * MAX_TASKS_WAITING,
@@ -364,3 +362,11 @@ class ConversationalMeetingSimulator(BaseMeetingSimulator):
 
     def reverberate(self, cuts: CutSet, *rirs: RecordingSet) -> CutSet:
         return reverberate_cuts(cuts, *rirs)
+
+
+def _simulate_worker(
+    utterances, allow_3fold_overlap: bool, simulator: ConversationalMeetingSimulator
+):
+    return simulator._create_mixture(
+        utterances, allow_3fold_overlap=allow_3fold_overlap
+    )

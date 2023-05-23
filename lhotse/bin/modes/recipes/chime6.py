@@ -79,6 +79,12 @@ __all__ = ["chime6"]
     help="Text normalization method.",
     show_default=True,
 )
+@click.option(
+    "--use-chime7-split",
+    is_flag=True,
+    default=False,
+    help="If True, use the new splits from CHiME-7 challenge.",
+)
 def chime6(
     corpus_dir: Pathlike,
     output_dir: Pathlike,
@@ -91,6 +97,7 @@ def chime6(
     num_threads_per_job: int,
     sox_path: Pathlike,
     normalize_text: str,
+    use_chime7_split: bool,
 ):
     """CHiME-6 data preparation."""
     prepare_chime6(
@@ -105,6 +112,7 @@ def chime6(
         num_threads_per_job=num_threads_per_job,
         sox_path=sox_path,
         normalize_text=normalize_text,
+        use_chime7_split=use_chime7_split,
     )
 
 

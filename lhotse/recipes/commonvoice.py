@@ -30,12 +30,7 @@ from lhotse import (
 )
 from lhotse.audio import Recording, RecordingSet
 from lhotse.supervision import SupervisionSegment, SupervisionSet
-from lhotse.utils import (
-    Pathlike,
-    is_module_available,
-    safe_extract,
-    urlretrieve_progress,
-)
+from lhotse.utils import Pathlike, is_module_available, resumable_download, safe_extract
 
 DEFAULT_COMMONVOICE_URL = (
     "https://mozilla-common-voice-datasets.s3.dualstack.us-west-2.amazonaws.com"
@@ -106,8 +101,8 @@ def download_commonvoice(
             else:
                 # https://mozilla-common-voice-datasets.s3.dualstack.us-west-2.amazonaws.com/cv-corpus-13.0-2023-03-09/cv-corpus-13.0-2023-03-09-zh-CN.tar.gz
                 single_url = url + f"/{release}-{lang}.tar.gz"
-            urlretrieve_progress(
-                single_url, filename=tar_path, desc=f"Downloading {tar_name}"
+            resumable_download(
+                single_url, filename=tar_path, force_download=force_download
             )
             logging.info(f"Downloading finished: {lang}")
         # Remove partial unpacked files, if any, and unpack everything.

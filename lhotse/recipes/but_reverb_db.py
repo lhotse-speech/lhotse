@@ -53,7 +53,7 @@ from typing import Dict, Optional, Sequence, Union
 from tqdm import tqdm
 
 from lhotse import CutSet, Recording, RecordingSet
-from lhotse.utils import Pathlike, urlretrieve_progress
+from lhotse.utils import Pathlike, resumable_download
 
 BUT_REVERB_DB_URL = (
     "http://merlin.fit.vutbr.cz/ReverbDB/BUT_ReverbDB_rel_19_06_RIR-Only.tgz"
@@ -79,9 +79,7 @@ def download_but_reverb_db(
     tgz_path = target_dir / tgz_name
     if tgz_path.exists() and not force_download:
         logging.info(f"Skipping {tgz_name} because file exists.")
-    else:
-        urlretrieve_progress(url, tgz_path, desc=f"Downloading {tgz_name}")
-        logging.info(f"Downloaded {tgz_name}.")
+    resumable_download(url, tgz_path, force_download=force_download)
     tgz_dir = target_dir / "BUT_ReverbDB"
     if not tgz_dir.exists():
         logging.info(f"Untarring {tgz_name}.")

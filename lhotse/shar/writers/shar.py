@@ -125,7 +125,7 @@ class SharWriter:
         if "recording" in self.fields:
             if cut.has_recording:
                 data = cut.load_audio()
-                recording = to_shar_placeholder(cut.recording)
+                recording = to_shar_placeholder(cut.recording, cut)
                 self.writers["recording"].write(
                     cut.id, data, cut.sampling_rate, manifest=recording
                 )
@@ -141,7 +141,7 @@ class SharWriter:
         if "features" in self.fields:
             if cut.has_features:
                 data = cut.load_features()
-                features = to_shar_placeholder(cut.features)
+                features = to_shar_placeholder(cut.features, cut)
                 self.writers["features"].write(cut.id, data, manifest=features)
                 cut = fastcopy(cut, features=features)
             else:
@@ -168,7 +168,7 @@ class SharWriter:
                     self.writers[key].write({"cut_id": cut.id, key: val})
                 else:
                     data = cut.load_custom(key)
-                    placeholder_obj = to_shar_placeholder(val)
+                    placeholder_obj = to_shar_placeholder(val, cut)
                     kwargs = {}
                     if isinstance(val, Recording):
                         kwargs["sampling_rate"] = val.sampling_rate
@@ -190,6 +190,10 @@ class SharWriter:
                         f"Found cut with '{key}' field that is not specified for Shar writing."
                     )
                 continue
+
+        # We will write only the relevant subset of the binary data alongside cut,
+        # so we need to update the offset (start).
+        cut = fastcopy(cut, start=0)
 
         if "cuts" in self.writers:
             self.writers["cuts"].write(cut)

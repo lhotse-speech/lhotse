@@ -8,7 +8,7 @@ from zipfile import ZipFile
 from lhotse import validate_recordings_and_supervisions
 from lhotse.audio import AudioSource, Recording, RecordingSet
 from lhotse.supervision import SupervisionSegment, SupervisionSet
-from lhotse.utils import Pathlike, Seconds, urlretrieve_progress
+from lhotse.utils import Pathlike, Seconds, resumable_download
 
 
 def download_librimix(
@@ -24,8 +24,11 @@ def download_librimix(
     if completed_detector.is_file():
         logging.info(f"Skipping {zip_path} because {completed_detector} exists.")
         return unzipped_dir
-    if force_download or not zip_path.is_file():
-        urlretrieve_progress(url, filename=zip_path, desc="Downloading MiniLibriMix")
+    resumable_download(
+        url,
+        filename=zip_path,
+        force_download=force_download,
+    )
     shutil.rmtree(unzipped_dir, ignore_errors=True)
     with ZipFile(zip_path) as zf:
         zf.extractall(path=target_dir)

@@ -26,7 +26,7 @@ from lhotse import fix_manifests, validate_recordings_and_supervisions
 from lhotse.audio import AudioSource, Recording, RecordingSet
 from lhotse.recipes.utils import normalize_text_chime6
 from lhotse.supervision import SupervisionSegment, SupervisionSet
-from lhotse.utils import Pathlike, add_durations, safe_extract, urlretrieve_progress
+from lhotse.utils import Pathlike, add_durations, resumable_download, safe_extract
 
 CORPUS_URL = "https://s3.amazonaws.com/dipco/DiPCo.tgz"
 
@@ -49,14 +49,27 @@ def download_dipco(
     target_dir = Path(target_dir)
     target_dir.mkdir(parents=True, exist_ok=True)
     tar_path = target_dir / "DiPCo.tgz"
-    if force_download or not tar_path.is_file():
-        urlretrieve_progress(
-            CORPUS_URL, filename=tar_path, desc=f"Downloading {CORPUS_URL}"
-        )
+    resumable_download(CORPUS_URL, filename=tar_path, force_download=force_download)
     with tarfile.open(tar_path) as tar:
         safe_extract(tar, path=target_dir)
 
     return target_dir
+
+
+def get_session_id(session: str, use_chime7_offset: bool = False) -> str:
+    """
+    Returns the session ID
+    :param session: str, the session ID.
+    :param use_chime7_offset: bool, if True, offset session IDs (from CHiME-7 challenge).
+    :return: str, the session ID.
+    """
+    # CHiME-7 challenge offset DiPCo sessions by 24 since the first 24 sessions are
+    # used for CHiME-6 sessions.
+    if use_chime7_offset:
+        session_number = int(session[1:])
+        return f"S{24+session_number:02d}"
+    else:
+        return session
 
 
 def prepare_dipco(
@@ -64,6 +77,7 @@ def prepare_dipco(
     output_dir: Optional[Pathlike] = None,
     mic: Optional[str] = "mdm",
     normalize_text: Optional[str] = "kaldi",
+    use_chime7_offset: Optional[bool] = False,
 ) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet]]]:
     """
     Returns the manifests which consist of the Recordings and Supervisions
@@ -75,6 +89,7 @@ def prepare_dipco(
     :param normalize_text: str, the text normalization to apply. Choose from "none",
         "upper", or "kaldi". "kaldi" is the default and is the same normalization
         used in Kaldi's CHiME-6 recipe.
+    :param use_chime7_offset: bool, if True, offset session IDs (from CHiME-7 challenge).
     :return: a Dict whose key is the dataset part ("dev" and "eval"), and the value is
         Dicts with the keys 'recordings' and 'supervisions'.
     """
@@ -116,7 +131,7 @@ def prepare_dipco(
 
                 recordings.append(
                     Recording(
-                        id=session,
+                        id=get_session_id(session, use_chime7_offset),
                         sources=sources,
                         sampling_rate=int(audio_sf.samplerate),
                         num_samples=audio_sf.frames,
@@ -140,7 +155,7 @@ def prepare_dipco(
 
                 recordings.append(
                     Recording(
-                        id=session,
+                        id=get_session_id(session, use_chime7_offset),
                         sources=sources,
                         sampling_rate=int(audio_sf.samplerate),
                         num_samples=audio_sf.frames,
@@ -165,10 +180,11 @@ def prepare_dipco(
                     )
                     start = _get_time(segment["start_time"]["close-talk"])
                     end = _get_time(segment["end_time"]["close-talk"])
+                    session_id = get_session_id(session, use_chime7_offset)
                     supervisions.append(
                         SupervisionSegment(
-                            id=f"{session}-{idx}",
-                            recording_id=session,
+                            id=f"{session_id}-{idx}",
+                            recording_id=session_id,
                             start=start,
                             duration=add_durations(end, -start, sampling_rate=16000),
                             channel=channel,

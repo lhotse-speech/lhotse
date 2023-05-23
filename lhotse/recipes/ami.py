@@ -38,8 +38,8 @@ from lhotse import validate_recordings_and_supervisions
 from lhotse.audio import AudioSource, Recording, RecordingSet
 from lhotse.qa import fix_manifests
 from lhotse.recipes.utils import normalize_text_ami
-from lhotse.supervision import SupervisionSegment, SupervisionSet
-from lhotse.utils import Pathlike, Seconds, urlretrieve_progress
+from lhotse.supervision import AlignmentItem, SupervisionSegment, SupervisionSet
+from lhotse.utils import Pathlike, Seconds, add_durations, resumable_download
 
 # fmt: off
 MEETINGS = {
@@ -151,7 +151,7 @@ PARTITIONS = {
     }
 }
 
-MICS = ['ihm','ihm-mix','sdm','mdm']
+MICS = ['ihm','ihm-mix','sdm','mdm','mdm8-bf']
 MDM_ARRAYS = ['Array1','Array2']
 MDM_CHANNELS = ['01','02','03','04','05','06','07','08']
 # fmt: on
@@ -176,32 +176,29 @@ def download_audio(
                 wav_dir = target_dir / "wav_db" / item / "audio"
                 wav_dir.mkdir(parents=True, exist_ok=True)
                 wav_path = wav_dir / wav_name
-                if force_download or not wav_path.is_file():
-                    urlretrieve_progress(
-                        wav_url,
-                        filename=wav_path,
-                        desc=f"Downloading {wav_name}",
-                    )
+                resumable_download(
+                    wav_url,
+                    filename=wav_path,
+                    force_download=force_download,
+                )
         elif mic == "ihm-mix":
             wav_name = f"{item}.Mix-Headset.wav"
             wav_url = f"{url}/AMICorpusMirror/amicorpus/{item}/audio/{wav_name}"
             wav_dir = target_dir / "wav_db" / item / "audio"
             wav_dir.mkdir(parents=True, exist_ok=True)
             wav_path = wav_dir / wav_name
-            if force_download or not wav_path.is_file():
-                urlretrieve_progress(
-                    wav_url, filename=wav_path, desc=f"Downloading {wav_name}"
-                )
+            resumable_download(
+                wav_url, filename=wav_path, force_download=force_download
+            )
         elif mic == "sdm":
             wav_name = f"{item}.Array1-01.wav"
             wav_url = f"{url}/AMICorpusMirror/amicorpus/{item}/audio/{wav_name}"
             wav_dir = target_dir / "wav_db" / item / "audio"
             wav_dir.mkdir(parents=True, exist_ok=True)
             wav_path = wav_dir / wav_name
-            if force_download or not wav_path.is_file():
-                urlretrieve_progress(
-                    wav_url, filename=wav_path, desc=f"Downloading {wav_name}"
-                )
+            resumable_download(
+                wav_url, filename=wav_path, force_download=force_download
+            )
         elif mic == "mdm":
             for array in MDM_ARRAYS:
                 for channel in MDM_CHANNELS:
@@ -210,12 +207,18 @@ def download_audio(
                     wav_dir = target_dir / "wav_db" / item / "audio"
                     wav_dir.mkdir(parents=True, exist_ok=True)
                     wav_path = wav_dir / wav_name
-                    if force_download or not wav_path.is_file():
-                        urlretrieve_progress(
-                            wav_url,
-                            filename=wav_path,
-                            desc=f"Downloading {wav_name}",
-                        )
+                    resumable_download(
+                        wav_url, filename=wav_path, force_download=force_download
+                    )
+        elif mic == "mdm8-bf":
+            wav_name = f"{item}_MDM8.wav"
+            wav_url = f"{url}/AMICorpusMirror/amicorpus/beamformed/{item}/{wav_name}"
+            wav_dir = target_dir / "wav_db" / item / "audio"
+            wav_dir.mkdir(parents=True, exist_ok=True)
+            wav_path = wav_dir / wav_name
+            resumable_download(
+                wav_url, filename=wav_path, force_download=force_download
+            )
 
 
 def download_ami(
@@ -238,7 +241,7 @@ def download_ami(
     :param annotations: Pathlike (default = None), path to save annotations zip file
     :param force_download: bool (default = False), if True, download even if file is present.
     :param url: str (default = 'http://groups.inf.ed.ac.uk/ami'), AMI download URL.
-    :param mic: str {'ihm','ihm-mix','sdm','mdm'}, type of mic setting.
+    :param mic: str {'ihm','ihm-mix','sdm','mdm','mdm8-bf'}, type of mic setting.
     :return: the path to downloaded and extracted directory with data.
     """
     target_dir = Path(target_dir)
@@ -257,8 +260,7 @@ def download_ami(
         logging.info(f"Skip downloading annotations as they exist in: {annotations}")
         return target_dir
     annotations_url = f"{url}/AMICorpusAnnotations/ami_public_manual_1.6.2.zip"
-    if force_download or not annotations.is_file():
-        urllib.request.urlretrieve(annotations_url, filename=annotations)
+    resumable_download(annotations_url, annotations, force_download=force_download)
 
     return target_dir
 
@@ -269,14 +271,15 @@ class AmiSegmentAnnotation(NamedTuple):
     gender: str
     start_time: Seconds
     end_time: Seconds
+    words: List[AlignmentItem]
 
 
 def parse_ami_annotations(
     annotations_dir: Pathlike,
     normalize: str = "upper",
-    max_words_per_segment: int = None,
+    max_words_per_segment: Optional[int] = None,
+    merge_consecutive: bool = False,
 ) -> Dict[str, List[SupervisionSegment]]:
-
     # Extract if zipped file
     if str(annotations_dir).endswith(".zip"):
         import zipfile
@@ -353,16 +356,38 @@ def parse_ami_annotations(
             seg_words = list(
                 filter(lambda w: w[0] >= seg_start and w[1] <= seg_end, spk_words)
             )
-            subsegments = split_segment(seg_words, max_words_per_segment)
+            subsegments = split_segment(
+                seg_words, max_words_per_segment, merge_consecutive
+            )
             for subseg in subsegments:
-                start, end, text = subseg
+                start = subseg[0][0]
+                end = subseg[-1][1]
+                word_alignments = []
+                for w in subseg:
+                    w_start = max(start, round(w[0], ndigits=4))
+                    w_end = min(end, round(w[1], ndigits=4))
+                    w_dur = add_durations(w_end, -w_start, sampling_rate=16000)
+                    w_symbol = normalize_text_ami(w[2], normalize=normalize)
+                    if len(w_symbol) == 0:
+                        continue
+                    if w_dur <= 0:
+                        logging.warning(
+                            f"Segment {key[0]}.{key[1]}.{key[2]} at time {start}-{end} "
+                            f"has a word with zero or negative duration. Skipping."
+                        )
+                        continue
+                    word_alignments.append(
+                        AlignmentItem(start=w_start, duration=w_dur, symbol=w_symbol)
+                    )
+                text = " ".join(w.symbol for w in word_alignments)
                 annotations[key].append(
                     AmiSegmentAnnotation(
-                        text=normalize_text_ami(text, normalize=normalize),
+                        text=text,
                         speaker=key[1],
                         gender=key[1][0],
                         start_time=start,
                         end_time=end,
+                        words=word_alignments,
                     )
                 )
 
@@ -370,26 +395,56 @@ def parse_ami_annotations(
 
 
 def split_segment(
-    words: List[Tuple[float, float, str]], max_words_per_segment: Optional[int]
-):
+    words: List[Tuple[float, float, str]],
+    max_words_per_segment: Optional[int] = None,
+    merge_consecutive: bool = False,
+) -> List[List[Tuple[float, float, str]]]:
+    """
+    Given a list of words, return a list of segments (each segment is a list of words)
+    where each segment has at most max_words_per_segment words. If merge_consecutive
+    is True, then consecutive segments with less than max_words_per_segment words
+    will be merged together.
+    """
+
     def split_(sequence, sep):
         chunk = []
         for val in sequence:
             if val[-1] == sep:
-                yield chunk
+                if len(chunk) > 0:
+                    yield chunk
                 chunk = []
             else:
                 chunk.append(val)
-        yield chunk
+        if len(chunk) > 0:
+            yield chunk
 
     def split_on_fullstop_(sequence):
-        return split_(sequence, ".")
+        subsegs = list(split_(sequence, "."))
+        if len(subsegs) < 2:
+            return subsegs
+        # Set a large default value for max_words_per_segment if not provided
+        max_segment_length = max_words_per_segment if max_words_per_segment else 100000
+        if merge_consecutive:
+            # Merge consecutive subsegments if their length is less than max_words_per_segment
+            merged_subsegs = [subsegs[0]]
+            for subseg in subsegs[1:]:
+                if (
+                    merged_subsegs[-1][-1][1] == subseg[0][0]
+                    and len(merged_subsegs[-1]) + len(subseg) <= max_segment_length
+                ):
+                    merged_subsegs[-1].extend(subseg)
+                else:
+                    merged_subsegs.append(subseg)
+            subsegs = merged_subsegs
+        return subsegs
 
-    def split_on_comma_(segment, max_words_per_segment):
+    def split_on_comma_(segment):
         # This function smartly splits a segment on commas such that the number of words
         # in each subsegment is as close to max_words_per_segment as possible.
         # First we create subsegments by splitting on commas
         subsegs = list(split_(segment, ","))
+        if len(subsegs) < 2:
+            return subsegs
         # Now we merge subsegments while ensuring that the number of words in each
         # subsegment is less than max_words_per_segment
         merged_subsegs = [subsegs[0]]
@@ -407,7 +462,7 @@ def split_segment(
         # Now we split each subsegment based on commas to get at most max_words_per_segment
         # words per subsegment.
         subsegments = [
-            list(split_on_comma_(subseg, max_words_per_segment))
+            list(split_on_comma_(subseg))
             if len(subseg) > max_words_per_segment
             else [subseg]
             for subseg in subsegments
@@ -415,11 +470,8 @@ def split_segment(
         # flatten the list of lists
         subsegments = [item for sublist in subsegments for item in sublist]
 
-    # For each subsegment, we create a tuple of (start_time, end_time, text)
-    subsegments = [
-        (subseg[0][0], subseg[-1][1], " ".join([w[2] for w in subseg]))
-        for subseg in filter(lambda s: len(s) > 0, subsegments)
-    ]
+    # Filter out empty subsegments
+    subsegments = list(filter(lambda s: len(s) > 0, subsegments))
     return subsegments
 
 
@@ -474,17 +526,20 @@ def prepare_audio_grouped(
     return RecordingSet.from_recordings(recordings)
 
 
-# SDM and IHM-Mix settings do not require any grouping
+# SDM, IHM-Mix, and mdm8-bf settings do not require any grouping
 
 
 def prepare_audio_single(
     audio_paths: List[Pathlike],
+    mic: Optional[str] = "ihm-mix",
 ) -> RecordingSet:
     import soundfile as sf
 
     recordings = []
     for audio_path in tqdm(audio_paths, desc="Processing audio files"):
-        session_name = audio_path.parts[-3]
+        session_name = (
+            audio_path.parts[-3] if mic != "mdm8-bf" else audio_path.parts[-2]
+        )
         audio_sf = sf.SoundFile(str(audio_path))
         recordings.append(
             Recording(
@@ -532,7 +587,9 @@ def prepare_supervision_ihm(
                 continue
 
             for seg_idx, seg_info in enumerate(annotation):
-                duration = seg_info.end_time - seg_info.start_time
+                duration = add_durations(
+                    seg_info.end_time, -seg_info.start_time, sampling_rate=16000
+                )
                 # Some annotations in IHM setting exceed audio duration, so we
                 # ignore such segments
                 if seg_info.end_time > recording.duration:
@@ -546,13 +603,14 @@ def prepare_supervision_ihm(
                         SupervisionSegment(
                             id=f"{recording.id}-{channel}-{seg_idx}",
                             recording_id=recording.id,
-                            start=seg_info.start_time,
+                            start=round(seg_info.start_time, ndigits=4),
                             duration=duration,
                             channel=channel,
                             language="English",
                             speaker=seg_info.speaker,
                             gender=seg_info.gender,
                             text=seg_info.text,
+                            alignment={"word": seg_info.words},
                         )
                     )
 
@@ -569,7 +627,7 @@ def prepare_supervision_other(
     segments = []
     for recording in tqdm(audio, desc="Preparing supervisions"):
         annotation = annotation_by_id.get(recording.id)
-        # In these mic settings, all sources (1 for ihm-mix and sdm and 16 for mdm)
+        # In these mic settings, all sources (1 for ihm-mix, sdm, and mdm8-bf and 16 for mdm)
         # will share supervision.
         if annotation is None:
             logging.warning(f"No annotation found for recording {recording.id}")
@@ -596,6 +654,7 @@ def prepare_supervision_other(
                         speaker=seg_info.speaker,
                         gender=seg_info.gender,
                         text=seg_info.text,
+                        alignment={"word": seg_info.words},
                     )
                 )
     return SupervisionSet.from_segments(segments)
@@ -609,17 +668,21 @@ def prepare_ami(
     partition: Optional[str] = "full-corpus",
     normalize_text: str = "kaldi",
     max_words_per_segment: Optional[int] = None,
+    merge_consecutive: bool = False,
 ) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet]]]:
     """
     Returns the manifests which consist of the Recordings and Supervisions
     :param data_dir: Pathlike, the path of the data dir.
     :param annotations: Pathlike, the path of the annotations dir or zip file.
     :param output_dir: Pathlike, the path where to write the manifests.
-    :param mic: str {'ihm','ihm-mix','sdm','mdm'}, type of mic to use.
+    :param mic: str {'ihm','ihm-mix','sdm','mdm','mdm8-bf'}, type of mic to use.
     :param partition: str {'full-corpus','full-corpus-asr','scenario-only'}, AMI official data split
     :param normalize_text: str {'none', 'upper', 'kaldi'} normalization of text
     :param max_words_per_segment: int, maximum number of words per segment. If not None, we will split
         longer segments similar to Kaldi's data prep scripts, i.e., split on full-stop and comma.
+    :param merge_consecutive: bool, if True, merge consecutive segments split on full-stop.
+        We will only merge segments if the number of words in the merged segment is less than
+        max_words_per_segment.
     :return: a Dict whose key is ('train', 'dev', 'eval'), and the values are dicts of manifests under keys
         'recordings' and 'supervisions'.
 
@@ -649,11 +712,15 @@ def prepare_ami(
                 "No annotations directory specified and no zip file found in"
                 f" {data_dir}"
             )
+    else:
+        annotations_dir = Path(annotations_dir)
+
     # Prepare annotations which is a list of segment-level transcriptions
     annotations = parse_ami_annotations(
         annotations_dir,
         normalize=normalize_text,
         max_words_per_segment=max_words_per_segment,
+        merge_consecutive=merge_consecutive,
     )
 
     # Audio
@@ -667,13 +734,14 @@ def prepare_ami(
             else wav_dir.rglob("*Array?-0?.wav")
         )
         audio = prepare_audio_grouped(list(audio_paths))
-    elif mic in ["ihm-mix", "sdm"]:
-        audio_paths = (
-            wav_dir.rglob("*Mix-Headset.wav")
-            if mic == "ihm-mix"
-            else wav_dir.rglob("*Array1-01.wav")
-        )
-        audio = prepare_audio_single(list(audio_paths))
+    elif mic in ["ihm-mix", "sdm", "mdm8-bf"]:
+        if mic == "ihm-mix":
+            audio_paths = wav_dir.rglob("*Mix-Headset.wav")
+        elif mic == "sdm":
+            audio_paths = wav_dir.rglob("*Array1-01.wav")
+        elif mic == "mdm8-bf":
+            audio_paths = wav_dir.rglob("*MDM8.wav")
+        audio = prepare_audio_single(list(audio_paths), mic)
 
     # Supervisions
     logging.info("Preparing supervision manifests")

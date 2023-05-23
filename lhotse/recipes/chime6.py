@@ -50,7 +50,7 @@ from lhotse import fix_manifests, validate_recordings_and_supervisions
 from lhotse.audio import AudioSource, Recording, RecordingSet
 from lhotse.recipes.utils import TimeFormatConverter, normalize_text_chime6
 from lhotse.supervision import SupervisionSegment, SupervisionSet
-from lhotse.utils import Pathlike, add_durations, urlretrieve_progress
+from lhotse.utils import Pathlike, add_durations, resumable_download
 
 # fmt: off
 DATASET_PARTS = {
@@ -61,6 +61,16 @@ DATASET_PARTS = {
     "dev": ["S02", "S09"],
     "eval": ["S01", "S21"],
 }
+
+DATASET_PARTS_CHIME7 = {
+    "train": [
+        "S03", "S04", "S05", "S06", "S07", "S08", "S12", "S13",
+        "S16", "S17", "S18", "S22", "S23", "S24",
+    ],
+    "dev": ["S02", "S09"],
+    "eval": ["S01", "S19", "S20", "S21"],
+}
+
 # fmt: on
 CHIME6_AUDIO_EDITS_JSON = "https://raw.githubusercontent.com/chimechallenge/chime6-synchronisation/master/chime6_audio_edits.json"
 CHIME6_MD5SUM_FILE = "https://raw.githubusercontent.com/chimechallenge/chime6-synchronisation/master/audio_md5sums.txt"
@@ -96,6 +106,7 @@ def prepare_chime6(
     num_threads_per_job: int = 1,
     sox_path: Pathlike = "/usr/bin/sox",
     normalize_text: str = "kaldi",
+    use_chime7_split: bool = False,
 ) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet]]]:
     """
     Returns the manifests which consist of the Recordings and Supervisions
@@ -124,6 +135,7 @@ def prepare_chime6(
     :param verify_md5_checksums: bool, if True, verify the md5 checksums of the audio files.
         Note that this step is slow so we recommend only doing it once. It can be sped up
         by using the `num_jobs` argument.
+    :param use_chime7_split: bool, if True, use the new split for CHiME-7 challenge.
     :return: a Dict whose key is the dataset part ("train", "dev" and "eval"), and the
         value is Dicts with the keys 'recordings' and 'supervisions'.
 
@@ -140,13 +152,13 @@ def prepare_chime6(
         output_dir = Path(output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
 
-    if dataset_parts == "all":
-        dataset_parts = DATASET_PARTS.keys()
+    if "all" in dataset_parts:
+        dataset_parts = list(DATASET_PARTS.keys())
     elif isinstance(dataset_parts, str):
         dataset_parts = [dataset_parts]
     assert set(dataset_parts).issubset(
-        DATASET_PARTS.keys()
-    ), f"dataset_parts must be one of {DATASET_PARTS.keys()}."
+        set(DATASET_PARTS.keys())
+    ), f"dataset_parts must be one of {list(DATASET_PARTS.keys())}. Found {dataset_parts}"
 
     sessions = list(
         itertools.chain.from_iterable([DATASET_PARTS[part] for part in dataset_parts])
@@ -224,17 +236,27 @@ def prepare_chime6(
         recordings = []
         supervisions = []
 
+        # Since CHiME-7 uses a different split, we need to change the sessions
+        if use_chime7_split:
+            DATASET_PARTS[part] = DATASET_PARTS_CHIME7[part]
+        # Also, if the session is S19 or S20, we will look for its audio and transcriptions
+        # in the train set, since it was originally in train.
+
         # First we create the recordings
         if mic == "ihm":
             global_spk_channel_map = {}
             for session in DATASET_PARTS[part]:
+                part_ = (
+                    "train" if use_chime7_split and session in ["S19", "S20"] else part
+                )
+
                 audio_paths = [
-                    p for p in (chime6_dir / "audio" / part).rglob(f"{session}_P*.wav")
+                    p for p in (chime6_dir / "audio" / part_).rglob(f"{session}_P*.wav")
                 ]
 
                 if len(audio_paths) == 0:
                     raise FileNotFoundError(
-                        f"No audio found for session {session} in {part} set."
+                        f"No audio found for session {session} in {part_} set."
                     )
 
                 sources = []
@@ -264,8 +286,12 @@ def prepare_chime6(
 
         else:
             for session in DATASET_PARTS[part]:
+                part_ = (
+                    "train" if use_chime7_split and session in ["S19", "S20"] else part
+                )
+
                 audio_paths = [
-                    p for p in (chime6_dir / "audio" / part).rglob(f"{session}_U*.wav")
+                    p for p in (chime6_dir / "audio" / part_).rglob(f"{session}_U*.wav")
                 ]
 
                 sources = []
@@ -301,7 +327,9 @@ def prepare_chime6(
 
         # Then we create the supervisions
         for session in DATASET_PARTS[part]:
-            with open(chime6_dir / "transcriptions" / part / f"{session}.json") as f:
+            part_ = "train" if use_chime7_split and session in ["S19", "S20"] else part
+
+            with open(chime6_dir / "transcriptions" / part_ / f"{session}.json") as f:
                 transcript = json.load(f)
                 for idx, segment in enumerate(transcript):
                     spk_id = segment["speaker"]
@@ -331,7 +359,7 @@ def prepare_chime6(
                             custom={
                                 "location": segment["location"],
                             }
-                            if part != "train"
+                            if part != "train" and "location" in segment
                             else None,
                         )
                     )
@@ -369,7 +397,7 @@ def _verify_md5_checksums(
     # First download checksum file and read it into a dictionary
     temp_dir = Path(tempfile.mkdtemp())
     checksum_file = temp_dir / "md5sums.txt"
-    urlretrieve_progress(
+    resumable_download(
         CHIME6_MD5SUM_FILE, str(checksum_file), desc="Downloading checksum file"
     )
     checksums = {}
@@ -426,11 +454,7 @@ class Chime6ArraySynchronizer:
 
         # Download the audio edits JSON file
         audio_edits_json = self.output_dir / "audio_edits.json"
-        urlretrieve_progress(
-            CHIME6_AUDIO_EDITS_JSON,
-            str(audio_edits_json),
-            desc="Downloading audio edits",
-        )
+        resumable_download(CHIME6_AUDIO_EDITS_JSON, str(audio_edits_json))
         with open(audio_edits_json) as f:
             self.audio_edits = dict(json.load(f))
 

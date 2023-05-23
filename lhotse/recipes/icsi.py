@@ -100,14 +100,15 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Dict, List, NamedTuple, Optional, Tuple, Union
 
+import soundfile as sf
 from tqdm.auto import tqdm
 
 from lhotse import validate_recordings_and_supervisions
 from lhotse.audio import AudioSource, Recording, RecordingSet, read_sph
 from lhotse.qa import fix_manifests
 from lhotse.recipes.utils import normalize_text_ami
-from lhotse.supervision import SupervisionSegment, SupervisionSet
-from lhotse.utils import Pathlike, Seconds, urlretrieve_progress
+from lhotse.supervision import AlignmentItem, SupervisionSegment, SupervisionSet
+from lhotse.utils import Pathlike, Seconds, add_durations, resumable_download
 
 # fmt:off
 PARTITIONS = {
@@ -135,15 +136,6 @@ MIC_TO_CHANNELS = {
 # fmt:on
 
 
-class IcsiSegmentAnnotation(NamedTuple):
-    text: str
-    speaker: str
-    channel: str
-    gender: str
-    start_time: Seconds
-    end_time: Seconds
-
-
 def download_audio(
     target_dir: Path,
     force_download: Optional[bool] = False,
@@ -161,26 +153,20 @@ def download_audio(
                 wav_dir = target_dir / item
                 wav_dir.mkdir(parents=True, exist_ok=True)
                 wav_path = wav_dir / f"chan{channel}.sph"
-                if force_download or not wav_path.is_file():
-                    try:
-                        urlretrieve_progress(
-                            wav_url,
-                            filename=wav_path,
-                            desc=f"Downloading {item} chan{channel}.sph",
-                        )
-                    except urllib.error.HTTPError as e:
-                        pass
+                try:
+                    resumable_download(
+                        wav_url, filename=wav_path, force_download=force_download
+                    )
+                except urllib.error.HTTPError as e:
+                    logging.warning(f"Skipping failed download from {wav_url}")
         else:
             wav_url = f"{url}/ICSIsignals/NXT/{item}.interaction.wav"
             wav_dir = target_dir / item
             wav_dir.mkdir(parents=True, exist_ok=True)
             wav_path = wav_dir / f"Mix-Headset.wav"
-            if force_download or not wav_path.is_file():
-                urlretrieve_progress(
-                    wav_url,
-                    filename=wav_path,
-                    desc=f"Downloading {item} Mix-Headset.wav",
-                )
+            resumable_download(
+                wav_url, filename=wav_path, force_download=force_download
+            )
 
 
 def download_icsi(
@@ -211,23 +197,30 @@ def download_icsi(
     download_audio(audio_dir, force_download, url, mic)
 
     # Annotations
-    logging.info("Downloading AMI annotations")
+    logging.info("Downloading ICSI annotations")
 
-    if (transcripts_dir).exists() and not force_download:
+    if transcripts_dir.exists() and not force_download:
         logging.info(
             f"Skip downloading transcripts as they exist in: {transcripts_dir}"
         )
         return target_dir
-    annotations_url = f"{url}/ICSICorpusAnnotations/ICSI_original_transcripts.zip"
 
-    # The following is analogous to `wget --no-check-certificate``
-    context = ssl._create_unverified_context()
-    urllib.request.urlretrieve(
-        annotations_url, filename=target_dir / "ICSI_original_transcripts.zip"
+    # We need the MRT transcripts for the speaker-to-channel mapping. The NXT transcripts
+    # are used for the actual annotations (since they contain word alignments)
+    annotations_url_mrt = f"{url}/ICSICorpusAnnotations/ICSI_original_transcripts.zip"
+    annotations_url_nxt = f"{url}/ICSICorpusAnnotations/ICSI_core_NXT.zip"
+    resumable_download(
+        annotations_url_mrt,
+        filename=target_dir / "ICSI_original_transcripts.zip",
+        force_download=force_download,
+    )
+    resumable_download(
+        annotations_url_nxt,
+        filename=target_dir / "ICSI_core_NXT.zip",
+        force_download=force_download,
     )
 
-    # Unzip annotations zip file
-    with zipfile.ZipFile(target_dir / "ICSI_original_transcripts.zip") as z:
+    with zipfile.ZipFile(target_dir / "ICSI_core_NXT.zip") as z:
         # Unzips transcripts to <target_dir>/'transcripts'
         # zip file also contains some documentation which will be unzipped to <target_dir>
         z.extractall(target_dir)
@@ -235,66 +228,154 @@ def download_icsi(
         if transcripts_dir:
             Path(target_dir / "transcripts").rename(transcripts_dir)
 
+    # From the MRT transcripts, we only need the transcripts/preambles.mrt file
+    with zipfile.ZipFile(target_dir / "ICSI_original_transcripts.zip") as z:
+        z.extract("transcripts/preambles.mrt", transcripts_dir)
+
     return target_dir
+
+
+class IcsiSegmentAnnotation(NamedTuple):
+    text: str
+    speaker: str
+    gender: str
+    start_time: Seconds
+    end_time: Seconds
+    words: List[AlignmentItem]
 
 
 def parse_icsi_annotations(
     transcripts_dir: Pathlike, normalize: str = "upper"
-) -> Tuple[Dict[str, List[SupervisionSegment]], Dict[str, Dict[str, int]]]:
-
+) -> Tuple[
+    Dict[Tuple[str, str, str], List[SupervisionSegment]], Dict[str, Dict[str, int]]
+]:
     annotations = defaultdict(list)
     # In Lhotse, channels are integers, so we map channel ids to integers for each session
     channel_to_idx_map = defaultdict(dict)
     spk_to_channel_map = defaultdict(dict)
 
     # First we get global speaker ids and channels
-    for meeting_file in tqdm(
-        transcripts_dir.rglob("./*.mrt"), desc="Parsing ICSI mrt files"
-    ):
-        if meeting_file.stem == "preambles":
+    with open(transcripts_dir / "preambles.mrt") as f:
+        root = ET.parse(f).getroot()  # <Meetings>
+        for child in root:
+            if child.tag == "Meeting":
+                meeting_id = child.attrib["Session"]
+                for grandchild in child:
+                    if grandchild.tag == "Preamble":
+                        for greatgrandchild in grandchild:
+                            if greatgrandchild.tag == "Channels":
+                                channel_to_idx_map[meeting_id] = {
+                                    channel.attrib["Name"]: idx
+                                    for idx, channel in enumerate(greatgrandchild)
+                                }
+                            elif greatgrandchild.tag == "Participants":
+                                for speaker in greatgrandchild:
+                                    # some speakers may not have an associated channel in some meetings, so we
+                                    # assign them the SDM channel
+                                    spk_to_channel_map[meeting_id][
+                                        speaker.attrib["Name"]
+                                    ] = (
+                                        speaker.attrib["Channel"]
+                                        if "Channel" in speaker.attrib
+                                        else "chan6"
+                                    )
+
+    # Get the speaker segment times from the segments file
+    segments = {}
+    for file in (transcripts_dir / "Segments").glob("*.xml"):
+        meet_id, local_id, _ = file.stem.split(".")
+        spk_segments = []
+        spk_id = None
+        with open(file) as f:
+            tree = ET.parse(f)
+            for seg in tree.getroot():
+                if seg.tag != "segment":
+                    continue
+                if spk_id is None and "participant" in seg.attrib:
+                    spk_id = seg.attrib["participant"]
+                start_time = float(seg.attrib["starttime"])
+                end_time = float(seg.attrib["endtime"])
+                spk_segments.append((start_time, end_time))
+        if spk_id is None or len(spk_segments) == 0:
             continue
-        with open(meeting_file) as f:
-            meeting_id = meeting_file.stem
-            root = ET.parse(f).getroot()  # <Meeting>
-            for child in root:
-                if child.tag == "Preamble":
-                    for grandchild in child:
-                        if grandchild.tag == "Channels":
-                            channel_to_idx_map[meeting_id] = {
-                                channel.attrib["Name"]: idx
-                                for idx, channel in enumerate(grandchild)
-                            }
-                        elif grandchild.tag == "Participants":
-                            for speaker in grandchild:
-                                # some speakers may not have an associated channel in some meetings, so we
-                                # assign them the SDM channel
-                                spk_to_channel_map[meeting_id][
-                                    speaker.attrib["Name"]
-                                ] = (
-                                    speaker.attrib["Channel"]
-                                    if "Channel" in speaker.attrib
-                                    else "chan6"
-                                )
-                elif child.tag == "Transcript":
-                    for segment in child:
-                        if len(list(segment)) == 0 and "Participant" in segment.attrib:
-                            start_time = float(segment.attrib["StartTime"])
-                            end_time = float(segment.attrib["EndTime"])
-                            speaker = segment.attrib["Participant"]
-                            channel = spk_to_channel_map[meeting_id][speaker]
-                            text = normalize_text_ami(
-                                segment.text.strip(), normalize=normalize
-                            )
-                            annotations[(meeting_id, speaker, channel)].append(
-                                IcsiSegmentAnnotation(
-                                    text,
-                                    speaker,
-                                    channel,
-                                    speaker[0],
-                                    start_time,
-                                    end_time,
-                                )
-                            )
+        key = (meet_id, local_id)
+        channel = spk_to_channel_map[meet_id][spk_id]
+        segments[key] = (spk_id, channel, spk_segments)
+
+    # Now we go through each speaker's word-level annotations and store them
+    words = {}
+    for file in (transcripts_dir / "Words").glob("*.xml"):
+        meet_id, local_id, _ = file.stem.split(".")
+        key = (meet_id, local_id)
+        if key not in segments:
+            continue
+        else:
+            spk_id, channel, spk_segments = segments[key]
+
+        seg_words = []
+        combine_with_next = False
+        with open(file) as f:
+            tree = ET.parse(f)
+            for i, word in enumerate(tree.getroot()):
+                if (
+                    word.tag != "w"
+                    or "starttime" not in word.attrib
+                    or word.attrib["starttime"] == ""
+                    or "endtime" not in word.attrib
+                    or word.attrib["endtime"] == ""
+                ):
+                    continue
+                start_time = float(word.attrib["starttime"])
+                end_time = float(word.attrib["endtime"])
+                seg_words.append((start_time, end_time, word.text))
+        words[key] = (spk_id, channel, seg_words)
+
+    # Now we create segment-level annotations by combining the word-level
+    # annotations with the speaker segment times. We also normalize the text
+    # (if requested). The annotations is a dict indexed by (meeting_id, spk_id, channel).
+    annotations = defaultdict(list)
+
+    for key, (spk_id, channel, spk_segments) in segments.items():
+        # Get the words for this speaker
+        _, _, spk_words = words[key]
+        new_key = (key[0], spk_id, channel)
+        # Now iterate over the speaker segments and create segment annotations
+        for seg_start, seg_end in spk_segments:
+            seg_words = list(
+                filter(lambda w: w[0] >= seg_start and w[1] <= seg_end, spk_words)
+            )
+            if len(seg_words) == 0:
+                continue
+            start = seg_words[0][0]
+            end = seg_words[-1][1]
+            word_alignments = []
+            for w in seg_words:
+                w_start = max(start, round(w[0], ndigits=4))
+                w_end = min(end, round(w[1], ndigits=4))
+                w_dur = add_durations(w_end, -w_start, sampling_rate=16000)
+                w_symbol = normalize_text_ami(w[2], normalize=normalize)
+                if len(w_symbol) == 0:
+                    continue
+                if w_dur <= 0:
+                    logging.warning(
+                        f"Segment {key[0]}.{spk_id}.{channel} at time {start}-{end} "
+                        f"has a word with zero or negative duration. Skipping."
+                    )
+                    continue
+                word_alignments.append(
+                    AlignmentItem(start=w_start, duration=w_dur, symbol=w_symbol)
+                )
+            text = " ".join(w.symbol for w in word_alignments)
+            annotations[new_key].append(
+                IcsiSegmentAnnotation(
+                    text=text,
+                    speaker=spk_id,
+                    gender=spk_id[0],
+                    start_time=start,
+                    end_time=end,
+                    words=word_alignments,
+                )
+            )
     return annotations, channel_to_idx_map
 
 
@@ -305,8 +386,9 @@ def parse_icsi_annotations(
 def prepare_audio_grouped(
     audio_paths: List[Pathlike],
     channel_to_idx_map: Dict[str, Dict[str, int]] = None,
+    save_to_wav: bool = False,
+    output_dir: Pathlike = None,
 ) -> RecordingSet:
-
     # Group together multiple channels from the same session.
     # We will use that to create a Recording with multiple sources (channels).
     from cytoolz import groupby
@@ -324,6 +406,16 @@ def prepare_audio_grouped(
                 c: idx for idx, c in enumerate(["chanE", "chanF", "chan6", "chan7"])
             }
         audio_sf, samplerate = read_sph(channel_paths[0])
+
+        if save_to_wav:
+            session_dir = Path(output_dir) / "wavs" / session_name
+            session_dir.mkdir(parents=True, exist_ok=True)
+            for i, audio_path in enumerate(channel_paths):
+                audio, _ = read_sph(audio_path)
+                wav_path = session_dir / f"{audio_path.stem}.wav"
+                sf.write(wav_path, audio.T, samplerate)
+                # Replace the sph path with the wav path
+                channel_paths[i] = wav_path
 
         recordings.append(
             Recording(
@@ -357,7 +449,7 @@ def prepare_audio_single(
     for audio_path in tqdm(audio_paths, desc="Preparing audio"):
         session_name = audio_path.parts[-2]
         if audio_path.suffix == ".wav":
-            audio_sf = sf.SoundFile(str(audio_path))
+            audio_sf = sf.SoundFile(audio_path)
             num_frames = audio_sf.frames
             num_channels = audio_sf.channels
             samplerate = audio_sf.samplerate
@@ -431,6 +523,7 @@ def prepare_supervision_ihm(
                             speaker=seg_info.speaker,
                             gender=seg_info.gender,
                             text=seg_info.text,
+                            alignment={"word": seg_info.words},
                         )
                     )
 
@@ -474,6 +567,7 @@ def prepare_supervision_other(
                         speaker=seg_info.speaker,
                         gender=seg_info.gender,
                         text=seg_info.text,
+                        alignment={"word": seg_info.words},
                     )
                 )
     return SupervisionSet.from_segments(segments)
@@ -481,10 +575,11 @@ def prepare_supervision_other(
 
 def prepare_icsi(
     audio_dir: Pathlike,
-    transcripts_dir: Pathlike,
+    transcripts_dir: Optional[Pathlike] = None,
     output_dir: Optional[Pathlike] = None,
     mic: Optional[str] = "ihm",
     normalize_text: str = "kaldi",
+    save_to_wav: bool = False,
 ) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet]]]:
     """
     Returns the manifests which consist of the Recordings and Supervisions
@@ -493,15 +588,23 @@ def prepare_icsi(
     :param output_dir: Pathlike, the path where to write the manifests - `None` means manifests aren't stored on disk.
     :param mic: str {'ihm','ihm-mix','sdm','mdm'}, type of mic to use.
     :param normalize_text: str {'none', 'upper', 'kaldi'} normalization of text
+    :param save_to_wav: bool, whether to save the sph audio to wav format
     :return: a Dict whose key is ('train', 'dev', 'test'), and the values are dicts of manifests under keys
         'recordings' and 'supervisions'.
     """
     audio_dir = Path(audio_dir)
-    transcripts_dir = Path(transcripts_dir)
+    transcripts_dir = (
+        Path(transcripts_dir)
+        if transcripts_dir is not None
+        else audio_dir / "transcripts"
+    )
 
     assert audio_dir.is_dir(), f"No such directory: {audio_dir}"
     assert transcripts_dir.is_dir(), f"No such directory: {transcripts_dir}"
     assert mic in MIC_TO_CHANNELS.keys(), f"Mic {mic} not supported"
+
+    if save_to_wav:
+        assert output_dir is not None, "output_dir must be specified when saving to wav"
 
     if output_dir is not None:
         output_dir = Path(output_dir)
@@ -519,7 +622,10 @@ def prepare_icsi(
     if mic == "ihm" or mic == "mdm":
         audio_paths = audio_dir.rglob(f"chan[{channels}].sph")
         audio = prepare_audio_grouped(
-            list(audio_paths), channel_to_idx_map if mic == "ihm" else None
+            list(audio_paths),
+            channel_to_idx_map if mic == "ihm" else None,
+            save_to_wav,
+            output_dir,
         )
     elif mic == "sdm" or mic == "ihm-mix":
         audio_paths = (
@@ -527,7 +633,7 @@ def prepare_icsi(
             if len(channels)
             else audio_dir.rglob("*.wav")
         )
-        audio = prepare_audio_single(list(audio_paths))
+        audio = prepare_audio_single(list(audio_paths), save_to_wav, output_dir)
 
     # Supervisions
     logging.info("Preparing supervision manifests")
@@ -546,15 +652,15 @@ def prepare_icsi(
             lambda x: x.recording_id in PARTITIONS[part]
         )
 
+        audio_part, supervision_part = fix_manifests(audio_part, supervision_part)
+        validate_recordings_and_supervisions(audio_part, supervision_part)
+
         # Write to output directory if a path is provided
         if output_dir is not None:
             audio_part.to_file(output_dir / f"icsi-{mic}_recordings_{part}.jsonl.gz")
             supervision_part.to_file(
                 output_dir / f"icsi-{mic}_supervisions_{part}.jsonl.gz"
             )
-
-        audio_part, supervision_part = fix_manifests(audio_part, supervision_part)
-        validate_recordings_and_supervisions(audio_part, supervision_part)
 
         # Combine all manifests into one dictionary
         manifests[part] = {"recordings": audio_part, "supervisions": supervision_part}

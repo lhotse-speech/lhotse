@@ -23,7 +23,7 @@ from tqdm.auto import tqdm
 from lhotse import validate_recordings_and_supervisions
 from lhotse.audio import Recording, RecordingSet
 from lhotse.supervision import SupervisionSegment, SupervisionSet
-from lhotse.utils import Pathlike, safe_extract, urlretrieve_progress
+from lhotse.utils import Pathlike, resumable_download, safe_extract
 
 # HI_MIA contains train.tar.gz, dev.tar.gz, test.tar.gz and test_v2.tar.gz
 # According to https://www.openslr.org/85,
@@ -156,11 +156,9 @@ def download_himia(
                 f"Skipping download and extraction of {tar_name} because {completed_detector} exists."
             )
             continue
-        if force_download or not tar_path.is_file():
-            logging.info(f"Downloading {url}/{tar_name}")
-            urlretrieve_progress(
-                f"{url}/{tar_name}", filename=tar_path, desc=f"Downloading {tar_name}"
-            )
+        resumable_download(
+            f"{url}/{tar_name}", filename=tar_path, force_download=force_download
+        )
 
         logging.info(f"Extracting {tar_name}.")
         shutil.rmtree(completed_detector_dir, ignore_errors=True)

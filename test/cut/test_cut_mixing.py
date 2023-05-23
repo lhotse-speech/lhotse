@@ -14,6 +14,27 @@ from lhotse.utils import nullcontext as does_not_raise
 # standard Pytest fixtures located in test/cut/conftest.py
 
 
+@pytest.fixture
+def stereo_cut():
+    return MultiCut(
+        id="multi-cut-1",
+        start=0.0,
+        duration=1.0,
+        channel=[0, 1],
+        recording=Recording.from_file(
+            "test/fixtures/stereo.wav", recording_id="irrelevant"
+        ),
+        supervisions=[
+            SupervisionSegment(
+                id="sup-1", recording_id="irrelevant", start=0.1, duration=0.5
+            ),
+            SupervisionSegment(
+                id="sup-2", recording_id="irrelevant", start=0.7, duration=0.2
+            ),
+        ],
+    )
+
+
 def test_append_cut_duration_and_supervisions(cut1, cut2):
     appended_cut = cut1.append(cut2)
 
@@ -69,6 +90,22 @@ def test_append_mono_cut_with_multi_cut(cut1, multi_cut2):
         ),
         SupervisionSegment(
             id="sup-3", recording_id="irrelevant", start=13.0, duration=2.5
+        ),
+    ]
+
+
+def test_multi_cut_downmix(stereo_cut):
+    mono_cut = stereo_cut.to_mono(mono_downmix=True)
+    assert isinstance(mono_cut, MonoCut)
+    assert mono_cut.num_channels == 1
+    assert mono_cut.num_samples == 8000
+    assert mono_cut.duration == 1.0
+    assert mono_cut.supervisions == [
+        SupervisionSegment(
+            id="sup-1", recording_id="irrelevant", start=0.1, duration=0.5
+        ),
+        SupervisionSegment(
+            id="sup-2", recording_id="irrelevant", start=0.7, duration=0.2
         ),
     ]
 
@@ -285,6 +322,12 @@ def test_mix_cut_snr(libri_cut):
     # Cuts mixed without SNR specified should have a higher energy in feature and audio domains.
     assert E(audio) > E(audio_snr)
     assert E(feats) > E(feats_snr)
+
+
+def test_mix_cut_with_other_raises_error(libri_cut):
+    libri_cut = libri_cut.drop_features()
+    with pytest.raises(ValueError):
+        _ = libri_cut.mix(libri_cut.recording)
 
 
 def test_mix_cut_snr_truncate_snr_reference(libri_cut):
