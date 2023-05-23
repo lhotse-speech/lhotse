@@ -107,6 +107,8 @@ a CLI tool that create the manifests given a corpus directory.
     - :func:`lhotse.recipes.prepare_gale_mandarin`
   * - GigaSpeech
     - :func:`lhotse.recipes.prepare_gigaspeech`
+  * - GigaST
+    - :func:`lhotse.recipes.prepare_gigast`
   * - Heroico
     - :func:`lhotse.recipes.prepare_heroico`
   * - HiFiTTS
