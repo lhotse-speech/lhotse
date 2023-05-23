@@ -590,6 +590,7 @@ class CutSet(Serializable, AlgorithmMixin):
                 warn_unused_fields=warn_unused_fields,
                 include_cuts=include_cuts,
                 shard_suffix=None,
+                verbose=verbose,
             )
 
         progbar = partial(tqdm, desc="Shard progress") if verbose else lambda x: x
@@ -610,6 +611,7 @@ class CutSet(Serializable, AlgorithmMixin):
                         warn_unused_fields=warn_unused_fields,
                         include_cuts=True,
                         shard_suffix=f".{idx:06d}",
+                        verbose=False,
                     )
                 )
             for f in progbar(as_completed(futures)):
@@ -2608,7 +2610,7 @@ def mix(
         )
         snr = None
 
-    if reference_cut.num_features is not None:
+    if reference_cut.num_features is not None and mixed_in_cut.num_features is not None:
         assert (
             reference_cut.num_features == mixed_in_cut.num_features
         ), "Cannot mix cuts with different feature dimensions."
@@ -2706,7 +2708,7 @@ def mix(
     elif isinstance(mixed_in_cut, (DataCut, PaddingCut)):
         new_tracks = [MixTrack(cut=mixed_in_cut, offset=offset, snr=snr)]
     else:
-        raise ValueError(f"Unsupported type of cut in mix(): {type(reference_cut)}")
+        raise ValueError(f"Unsupported type of cut in mix(): {type(mixed_in_cut)}")
 
     return MixedCut(id=mixed_cut_id, tracks=old_tracks + new_tracks)
 
@@ -3386,8 +3388,11 @@ def _export_to_shar_single(
     warn_unused_fields: bool,
     include_cuts: bool,
     shard_suffix: Optional[str],
+    verbose: bool,
 ) -> Dict[str, List[str]]:
     from lhotse.shar import SharWriter
+
+    pbar = tqdm(desc="Exporting to SHAR", disable=not verbose)
 
     with SharWriter(
         output_dir=output_dir,
@@ -3399,5 +3404,7 @@ def _export_to_shar_single(
     ) as writer:
         for cut in cuts:
             writer.write(cut)
+            pbar.update()
 
+    # Finally, return the list of output files.
     return writer.output_paths
