@@ -5,6 +5,7 @@ from .aishell4 import download_aishell4, prepare_aishell4
 from .ali_meeting import download_ali_meeting, prepare_ali_meeting
 from .ami import download_ami, prepare_ami
 from .aspire import prepare_aspire
+from .atcosim import download_atcosim, prepare_atcosim
 from .babel import prepare_single_babel_language
 from .broadcast_news import prepare_broadcast_news
 from .but_reverb_db import download_but_reverb_db, prepare_but_reverb_db
@@ -58,6 +59,7 @@ from .switchboard import prepare_switchboard
 from .tedlium import download_tedlium, prepare_tedlium
 from .thchs_30 import download_thchs_30, prepare_thchs_30
 from .timit import download_timit, prepare_timit
+from .uwb_atcc import download_uwb_atcc, prepare_uwb_atcc
 from .vctk import download_vctk, prepare_vctk
 from .voxceleb import download_voxceleb1, download_voxceleb2, prepare_voxceleb
 from .wenet_speech import prepare_wenet_speech

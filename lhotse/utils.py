@@ -489,6 +489,14 @@ def resumable_download(
                     pbar.update(len(chunk))
 
 
+def _is_within_directory(directory: Path, target: Path):
+
+    abs_directory = directory.resolve()
+    abs_target = target.resolve()
+
+    return abs_directory in abs_target.parents
+
+
 def safe_extract(
     tar: Any,
     path: Pathlike = ".",
@@ -501,13 +509,6 @@ def safe_extract(
     See: https://github.com/lhotse-speech/lhotse/pull/872
     """
 
-    def _is_within_directory(directory, target):
-
-        abs_directory = directory.resolve()
-        abs_target = target.resolve()
-
-        return abs_directory in abs_target.parents
-
     path = Path(path)
 
     for member in tar.getmembers():
@@ -516,6 +517,25 @@ def safe_extract(
             raise Exception("Attempted Path Traversal in Tar File")
 
     tar.extractall(path, members, numeric_owner=numeric_owner)
+
+
+def safe_extract_rar(
+    rar: Any,
+    path: Pathlike = ".",
+    members: Optional[List[str]] = None,
+) -> None:
+    """
+    Extracts a rar file in a safe way, avoiding path traversal attacks.
+    """
+
+    path = Path(path)
+
+    for member in rar.infolist():
+        member_path = path / member.filename
+        if not _is_within_directory(path, member_path):
+            raise Exception("Attempted Path Traversal in Rar File")
+
+    rar.extractall(path, members)
 
 
 class nullcontext(AbstractContextManager):

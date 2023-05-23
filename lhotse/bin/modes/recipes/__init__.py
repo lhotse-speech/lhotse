@@ -7,6 +7,7 @@ from .aishell4 import *
 from .ali_meeting import *
 from .ami import *
 from .aspire import *
+from .atcosim import *
 from .babel import *
 from .broadcast_news import *
 from .but_reverb_db import *
@@ -62,6 +63,7 @@ from .tal_csasr import *
 from .tedlium import *
 from .thchs_30 import *
 from .timit import *
+from .uwb_atcc import *
 from .vctk import *
 from .voxceleb import *
 from .wenet_speech import *
