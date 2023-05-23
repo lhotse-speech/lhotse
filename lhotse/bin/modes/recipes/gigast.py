@@ -4,7 +4,7 @@ from typing import List
 import click
 
 from lhotse.bin.modes import download, prepare
-from lhotse.recipes.gigast import GIGASPEECH_PARTS, download_gigast, prepare_gigast
+from lhotse.recipes.gigast import GIGASPEECH_PARTS, GIGAST_LANGS, download_gigast, prepare_gigast
 from lhotse.utils import Pathlike
 
 
@@ -15,6 +15,7 @@ from lhotse.utils import Pathlike
 @click.option(
     "-l",
     "--language",
+    type=click.Choice(("auto",) + GIGAST_LANGS),
     default=["auto"],
     multiple=True,
     help="Languages to download. one of: 'all' (downloads all known languages); a single language code (e.g., 'en')",
