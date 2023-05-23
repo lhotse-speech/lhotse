@@ -38,8 +38,8 @@ from lhotse import validate_recordings_and_supervisions
 from lhotse.audio import AudioSource, Recording, RecordingSet
 from lhotse.qa import fix_manifests
 from lhotse.recipes.utils import normalize_text_ami
-from lhotse.supervision import SupervisionSegment, SupervisionSet
-from lhotse.utils import Pathlike, Seconds, resumable_download
+from lhotse.supervision import AlignmentItem, SupervisionSegment, SupervisionSet
+from lhotse.utils import Pathlike, Seconds, add_durations, resumable_download
 
 # fmt: off
 MEETINGS = {
@@ -271,14 +271,15 @@ class AmiSegmentAnnotation(NamedTuple):
     gender: str
     start_time: Seconds
     end_time: Seconds
+    words: List[AlignmentItem]
 
 
 def parse_ami_annotations(
     annotations_dir: Pathlike,
     normalize: str = "upper",
-    max_words_per_segment: int = None,
+    max_words_per_segment: Optional[int] = None,
+    merge_consecutive: bool = False,
 ) -> Dict[str, List[SupervisionSegment]]:
-
     # Extract if zipped file
     if str(annotations_dir).endswith(".zip"):
         import zipfile
@@ -355,16 +356,38 @@ def parse_ami_annotations(
             seg_words = list(
                 filter(lambda w: w[0] >= seg_start and w[1] <= seg_end, spk_words)
             )
-            subsegments = split_segment(seg_words, max_words_per_segment)
+            subsegments = split_segment(
+                seg_words, max_words_per_segment, merge_consecutive
+            )
             for subseg in subsegments:
-                start, end, text = subseg
+                start = subseg[0][0]
+                end = subseg[-1][1]
+                word_alignments = []
+                for w in subseg:
+                    w_start = max(start, round(w[0], ndigits=4))
+                    w_end = min(end, round(w[1], ndigits=4))
+                    w_dur = add_durations(w_end, -w_start, sampling_rate=16000)
+                    w_symbol = normalize_text_ami(w[2], normalize=normalize)
+                    if len(w_symbol) == 0:
+                        continue
+                    if w_dur <= 0:
+                        logging.warning(
+                            f"Segment {key[0]}.{key[1]}.{key[2]} at time {start}-{end} "
+                            f"has a word with zero or negative duration. Skipping."
+                        )
+                        continue
+                    word_alignments.append(
+                        AlignmentItem(start=w_start, duration=w_dur, symbol=w_symbol)
+                    )
+                text = " ".join(w.symbol for w in word_alignments)
                 annotations[key].append(
                     AmiSegmentAnnotation(
-                        text=normalize_text_ami(text, normalize=normalize),
+                        text=text,
                         speaker=key[1],
                         gender=key[1][0],
                         start_time=start,
                         end_time=end,
+                        words=word_alignments,
                     )
                 )
 
@@ -372,26 +395,56 @@ def parse_ami_annotations(
 
 
 def split_segment(
-    words: List[Tuple[float, float, str]], max_words_per_segment: Optional[int]
-):
+    words: List[Tuple[float, float, str]],
+    max_words_per_segment: Optional[int] = None,
+    merge_consecutive: bool = False,
+) -> List[List[Tuple[float, float, str]]]:
+    """
+    Given a list of words, return a list of segments (each segment is a list of words)
+    where each segment has at most max_words_per_segment words. If merge_consecutive
+    is True, then consecutive segments with less than max_words_per_segment words
+    will be merged together.
+    """
+
     def split_(sequence, sep):
         chunk = []
         for val in sequence:
             if val[-1] == sep:
-                yield chunk
+                if len(chunk) > 0:
+                    yield chunk
                 chunk = []
             else:
                 chunk.append(val)
-        yield chunk
+        if len(chunk) > 0:
+            yield chunk
 
     def split_on_fullstop_(sequence):
-        return split_(sequence, ".")
+        subsegs = list(split_(sequence, "."))
+        if len(subsegs) < 2:
+            return subsegs
+        # Set a large default value for max_words_per_segment if not provided
+        max_segment_length = max_words_per_segment if max_words_per_segment else 100000
+        if merge_consecutive:
+            # Merge consecutive subsegments if their length is less than max_words_per_segment
+            merged_subsegs = [subsegs[0]]
+            for subseg in subsegs[1:]:
+                if (
+                    merged_subsegs[-1][-1][1] == subseg[0][0]
+                    and len(merged_subsegs[-1]) + len(subseg) <= max_segment_length
+                ):
+                    merged_subsegs[-1].extend(subseg)
+                else:
+                    merged_subsegs.append(subseg)
+            subsegs = merged_subsegs
+        return subsegs
 
-    def split_on_comma_(segment, max_words_per_segment):
+    def split_on_comma_(segment):
         # This function smartly splits a segment on commas such that the number of words
         # in each subsegment is as close to max_words_per_segment as possible.
         # First we create subsegments by splitting on commas
         subsegs = list(split_(segment, ","))
+        if len(subsegs) < 2:
+            return subsegs
         # Now we merge subsegments while ensuring that the number of words in each
         # subsegment is less than max_words_per_segment
         merged_subsegs = [subsegs[0]]
@@ -409,7 +462,7 @@ def split_segment(
         # Now we split each subsegment based on commas to get at most max_words_per_segment
         # words per subsegment.
         subsegments = [
-            list(split_on_comma_(subseg, max_words_per_segment))
+            list(split_on_comma_(subseg))
             if len(subseg) > max_words_per_segment
             else [subseg]
             for subseg in subsegments
@@ -417,11 +470,8 @@ def split_segment(
         # flatten the list of lists
         subsegments = [item for sublist in subsegments for item in sublist]
 
-    # For each subsegment, we create a tuple of (start_time, end_time, text)
-    subsegments = [
-        (subseg[0][0], subseg[-1][1], " ".join([w[2] for w in subseg]))
-        for subseg in filter(lambda s: len(s) > 0, subsegments)
-    ]
+    # Filter out empty subsegments
+    subsegments = list(filter(lambda s: len(s) > 0, subsegments))
     return subsegments
 
 
@@ -537,7 +587,9 @@ def prepare_supervision_ihm(
                 continue
 
             for seg_idx, seg_info in enumerate(annotation):
-                duration = seg_info.end_time - seg_info.start_time
+                duration = add_durations(
+                    seg_info.end_time, -seg_info.start_time, sampling_rate=16000
+                )
                 # Some annotations in IHM setting exceed audio duration, so we
                 # ignore such segments
                 if seg_info.end_time > recording.duration:
@@ -551,13 +603,14 @@ def prepare_supervision_ihm(
                         SupervisionSegment(
                             id=f"{recording.id}-{channel}-{seg_idx}",
                             recording_id=recording.id,
-                            start=seg_info.start_time,
+                            start=round(seg_info.start_time, ndigits=4),
                             duration=duration,
                             channel=channel,
                             language="English",
                             speaker=seg_info.speaker,
                             gender=seg_info.gender,
                             text=seg_info.text,
+                            alignment={"word": seg_info.words},
                         )
                     )
 
@@ -601,6 +654,7 @@ def prepare_supervision_other(
                         speaker=seg_info.speaker,
                         gender=seg_info.gender,
                         text=seg_info.text,
+                        alignment={"word": seg_info.words},
                     )
                 )
     return SupervisionSet.from_segments(segments)
@@ -614,6 +668,7 @@ def prepare_ami(
     partition: Optional[str] = "full-corpus",
     normalize_text: str = "kaldi",
     max_words_per_segment: Optional[int] = None,
+    merge_consecutive: bool = False,
 ) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet]]]:
     """
     Returns the manifests which consist of the Recordings and Supervisions
@@ -625,6 +680,9 @@ def prepare_ami(
     :param normalize_text: str {'none', 'upper', 'kaldi'} normalization of text
     :param max_words_per_segment: int, maximum number of words per segment. If not None, we will split
         longer segments similar to Kaldi's data prep scripts, i.e., split on full-stop and comma.
+    :param merge_consecutive: bool, if True, merge consecutive segments split on full-stop.
+        We will only merge segments if the number of words in the merged segment is less than
+        max_words_per_segment.
     :return: a Dict whose key is ('train', 'dev', 'eval'), and the values are dicts of manifests under keys
         'recordings' and 'supervisions'.
 
@@ -662,6 +720,7 @@ def prepare_ami(
         annotations_dir,
         normalize=normalize_text,
         max_words_per_segment=max_words_per_segment,
+        merge_consecutive=merge_consecutive,
     )
 
     # Audio
