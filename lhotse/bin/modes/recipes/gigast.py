@@ -4,7 +4,12 @@ from typing import List
 import click
 
 from lhotse.bin.modes import download, prepare
-from lhotse.recipes.gigast import GIGASPEECH_PARTS, GIGAST_LANGS, download_gigast, prepare_gigast
+from lhotse.recipes.gigast import (
+    GIGASPEECH_PARTS,
+    GIGAST_LANGS,
+    download_gigast,
+    prepare_gigast,
+)
 from lhotse.utils import Pathlike
 
 
