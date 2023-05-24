@@ -19,7 +19,13 @@ from tqdm.auto import tqdm
 from lhotse import validate_recordings_and_supervisions
 from lhotse.audio import Recording, RecordingSet
 from lhotse.supervision import SupervisionSegment, SupervisionSet
-from lhotse.utils import Pathlike, is_module_available, resumable_download
+from lhotse.utils import (
+    Pathlike,
+    Seconds,
+    compute_num_samples,
+    is_module_available,
+    resumable_download,
+)
 
 
 # note: https://www2.spsc.tugraz.at/ does not support Range request header (2023-05-10)
@@ -127,6 +133,19 @@ def text_normalize(
     return text
 
 
+def fix_duration(duration: Seconds, sampling_rate: int) -> Seconds:
+    """
+    A handful of supervision durations do not compute to a round number of
+    samples at the original recording sampling rate.
+
+    This causes problem later using compute_num_frames(). Full description:
+    https://github.com/lhotse-speech/lhotse/issues/1064
+
+    Return: duration that computes to a round number of samples.
+    """
+    return compute_num_samples(duration, sampling_rate) / sampling_rate
+
+
 def prepare_atcosim(
     corpus_dir: Pathlike,
     output_dir: Optional[Pathlike] = None,
@@ -204,7 +223,7 @@ def prepare_atcosim(
                 id=f"atcosim_{row.filename}_{0:06d}_{length100:06d}",
                 recording_id=row.recording_id,
                 start=0.0,
-                duration=row.length_sec,
+                duration=fix_duration(row.length_sec, recording.sampling_rate),
                 channel=0,
                 language="English",
                 text=text,
