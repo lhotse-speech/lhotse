@@ -501,7 +501,9 @@ def resumable_download(
                     # then the file is already downloaded
                     logging.info(f"File already downloaded: {filename}")
                 else:
-                    logging.info("Server does not support range requests - attempting downloading from scratch")
+                    logging.info(
+                        "Server does not support range requests - attempting downloading from scratch"
+                    )
                     _download(urllib.request.Request(url), 0)
             else:
                 raise e
