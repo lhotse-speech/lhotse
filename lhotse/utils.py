@@ -447,7 +447,10 @@ def during_docs_build() -> bool:
 
 
 def resumable_download(
-    url: str, filename: Pathlike, force_download: bool = False
+    url: str,
+    filename: Pathlike,
+    force_download: bool = False,
+    completed_file_size: Optional[int] = None,
 ) -> None:
     # Check if the file exists and get its size
     if os.path.exists(filename):
@@ -457,6 +460,9 @@ def resumable_download(
             )
             os.unlink(filename)
         file_size = os.path.getsize(filename)
+
+        if completed_file_size and file_size == completed_file_size:
+            return
     else:
         file_size = 0
 
