@@ -48,6 +48,7 @@ def download_atcosim(
     resumable_download(
         f"https://www2.spsc.tugraz.at/databases/ATCOSIM/.ISO/{dataset_name}.iso",
         filename=iso_path,
+        completed_file_size=2597789696,
         force_download=force_download,
     )
     if (
