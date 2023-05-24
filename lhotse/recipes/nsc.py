@@ -150,7 +150,7 @@ def prepare_nsc(
         handler_map = part_handler_map[dataset_part]
         manifests = handler_map.handler(
             dataset_part,
-            handler_map.script_audio.relative_to(corpus_dir),
+            handler_map.script_audio,
             num_jobs,
         )
     else:
@@ -406,7 +406,6 @@ def prepare_textgrid_based_part(
             supervisions.extend(segments)
             recordings.append(recording)
         except Exception:
-            logger.exception("")
             with logging_redirect_tqdm():
                 logger.warning(f'Error when processing "{audio_path}" - skipping...')
     return {
@@ -415,40 +414,9 @@ def prepare_textgrid_based_part(
     }
 
 
-def _resolve_nsc_filepath(parent_dir: Path, lhotse_convenience_name: str) -> Path:
-    """NCS directory naming convention is to use <space> as word separator while lhose
-    use camel case. This function try to resolve that conflict to make it compatible
-    and respect NSC naming
-
-    Args:
-        parent_dir (Path):
-        lhotse_convenience_name (str):
-
-    Raises:
-        ValueError: if it is unable to find/resolve lhotse_convenience_name to NSC data
-
-    Returns:
-        Path: parent_dir/{lhotse_convenience_name} if it is existed
-        or corresponding one in NSC convenience
-    """
-    import re
-
-    if (parent_dir / lhotse_convenience_name).exists():
-        return parent_dir / lhotse_convenience_name
-    # AudioSeparateIVR -> ['Audio', 'Separate', 'IVR']
-    name_tokens = re.findall(
-        r"[A-Z](?:[a-z]+|[A-Z]*(?=[A-Z]|$))", lhotse_convenience_name
-    )
-    nsc_convenience_name = " ".join(name_tokens)
-    if (parent_dir / nsc_convenience_name).exists():
-        return parent_dir / nsc_convenience_name
-    else:
-        raise ValueError(f"Unable to resolve NCS filepath: {lhotse_convenience_name}")
-
-
 def _parse_part1_speaker(
-    speaker_zip_file: Path | str,
-    script_dir: Path | str,
+    speaker_zip_file: Pathlike,
+    script_dir: Pathlike,
     channel: int,
     extract_to_dir: Optional[Path] = None,
 ):
@@ -479,18 +447,18 @@ def _parse_part1_speaker(
 
 
 def _preprocess_part1_speaker(
-    speaker_zip_file: Path | str,
-    script_dir: Path | str,
+    speaker_zip_file: Pathlike,
+    script_dir: Pathlike,
     channel: int,
     extract_to_dir: Optional[Path] = None,
 ) -> Dict[Path, Path]:
     """Extract PART1/PART2 speaker audio
 
     Args:
-        speaker_zip_file (Path | str): Path to speaker zipped audio file
-        script_dir (Path | str): Path to script dir of the channel
+        speaker_zip_file (Pathlike): Path to speaker zipped audio file
+        script_dir (Pathlike): Path to script dir of the channel
         channel (int): Channel of the PART, we can parse from $script_dir but it is not necessary
-        extract_to_dir (Optional[Path], optional): Directory to extract zipped audio file, default to parent dir of $speaker_zip_file
+        extract_to_dir (Optional[Path]): Directory to extract zipped audio file, default to parent dir of $speaker_zip_file
 
     Returns:
         Dict[Path, Path]: Mapping of script file -> speaker's session dir
@@ -580,7 +548,7 @@ def _create_part1_single_record(
     return None, None
 
 
-def _detect_textgrid_encoding(textgrid_file: str | Path) -> Optional["str"]:
+def _detect_textgrid_encoding(textgrid_file: Pathlike) -> Optional["str"]:
     """_summary_
 
     Returns:
