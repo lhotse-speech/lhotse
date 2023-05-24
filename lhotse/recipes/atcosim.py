@@ -148,6 +148,8 @@ def prepare_atcosim(
     :param unknown_sym: str, unknown symbol
     :return: The RecordingSet and SupervisionSet with the keys 'audio' and 'supervisions'.
     """
+    if not is_module_available("pandas"):
+        raise ImportError("Please 'pip install pandas' first.")
     import pandas as pd
 
     corpus_dir = Path(corpus_dir)
