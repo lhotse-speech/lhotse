@@ -504,7 +504,7 @@ def prepare_uwb_atcc(
         output_dir = Path(output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
 
-    trs_files = list(corpus_dir.glob("*.trs"))
+    trs_files = sorted(corpus_dir.glob("*.trs"), key=lambda p: p.name)
     assert len(trs_files) == 2657
 
     recordings = []
