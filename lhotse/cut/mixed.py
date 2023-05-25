@@ -1058,6 +1058,7 @@ class MixedCut(Cut):
             self.tracks[0].cut.load_audio(),
             sampling_rate=self.tracks[0].cut.sampling_rate,
             reference_energy=reference_energy,
+            base_offset=self.tracks[0].offset,
         )
 
         for pos, track in enumerate(self.tracks[1:], start=1):
