@@ -15,7 +15,7 @@ from tqdm.auto import tqdm
 
 from lhotse import validate_recordings_and_supervisions
 from lhotse.audio import Recording, RecordingSet
-from lhotse.supervision import SupervisionSegment, SupervisionSet, AlignmentItem
+from lhotse.supervision import AlignmentItem, SupervisionSegment, SupervisionSet
 from lhotse.utils import Pathlike, resumable_download
 
 
@@ -100,12 +100,16 @@ def prepare_timit(
             wav_files = glob.glob(str(corpus_dir) + "/data/TEST/*/*/*.WAV")
             # filter the SA (dialect sentences)
             # wav_files = list(filter(lambda x: x.split("/")[-1][:2] != "SA", wav_files))
-            wav_files = list(filter(lambda x: x.split("/")[-2].lower() in dev_spks, wav_files))
+            wav_files = list(
+                filter(lambda x: x.split("/")[-2].lower() in dev_spks, wav_files)
+            )
         else:
             wav_files = glob.glob(str(corpus_dir) + "/data/TEST/*/*/*.WAV")
             # filter the SA (dialect sentences)
             # wav_files = list(filter(lambda x: x.split("/")[-1][:2] != "SA", wav_files))
-            wav_files = list(filter(lambda x: x.split("/")[-2].lower() in test_spks, wav_files))
+            wav_files = list(
+                filter(lambda x: x.split("/")[-2].lower() in test_spks, wav_files)
+            )
 
         logging.debug(f"{part} dataset manifest generation.")
         recordings = []
@@ -114,7 +118,9 @@ def prepare_timit(
         if num_jobs <= 1:
             for wav_file in tqdm(wav_files, f"Preparing {part} manifest"):
                 try:
-                    recording, supervision = prepare_recording(wav_file, num_phones, phones_dict)
+                    recording, supervision = prepare_recording(
+                        wav_file, num_phones, phones_dict
+                    )
                     recordings.append(recording)
                     supervisions.append(supervision)
                 except FileNotFoundError as e:
@@ -123,7 +129,9 @@ def prepare_timit(
             with ProcessPoolExecutor(num_jobs) as ex:
                 results = []
                 for wav_file in wav_files:
-                    results.append(ex.submit(prepare_recording, wav_file, num_phones, phones_dict))
+                    results.append(
+                        ex.submit(prepare_recording, wav_file, num_phones, phones_dict)
+                    )
 
                 for r in tqdm(results, f"Preparing {part} manifest"):
                     try:
@@ -193,10 +201,12 @@ def prepare_recording(wav_file, num_phones, phones_dict):
         channel=0,
         language="English",
         speaker=speaker,
-        gender="male" if speaker.lower().startswith('m') else "female",
+        gender="male" if speaker.lower().startswith("m") else "female",
         text=text.strip(),
     )
-    segment = segment.with_alignment("word", word_alignments).with_alignment("phone", phone_alignments)
+    segment = segment.with_alignment("word", word_alignments).with_alignment(
+        "phone", phone_alignments
+    )
 
     return recording, segment
 
