@@ -184,6 +184,7 @@ class Cut:
     perturb_speed: Callable
     perturb_tempo: Callable
     perturb_volume: Callable
+    phone: Callable
     reverb_rir: Callable
     map_supervisions: Callable
     merge_supervisions: Callable

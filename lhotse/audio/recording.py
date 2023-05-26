@@ -20,6 +20,7 @@ from lhotse.augmentation import (
     AudioTransform,
     DereverbWPE,
     LoudnessNormalization,
+    Narrowband,
     Resample,
     ReverbWithImpulseResponse,
     Speed,
@@ -719,6 +720,21 @@ class Recording:
         return fastcopy(
             self,
             id=f"{self.id}_vp{factor}" if affix_id else self.id,
+            transforms=transforms,
+        )
+
+    def narrowband(self, codec: str, affix_id: bool = True) -> "Recording":
+        """
+        Return a new ``Recording`` that will lazily apply narrowband effect while loading audio.
+            by affixing it with "_nb_{codec}".
+
+        :return: a modified copy of the current ``Recording``.
+        """
+        transforms = self.transforms.copy() if self.transforms is not None else []
+        transforms.append(Narrowband(codec=codec).to_dict())
+        return fastcopy(
+            self,
+            id=f"{self.id}_nb_{codec}" if affix_id else self.id,
             transforms=transforms,
         )
 

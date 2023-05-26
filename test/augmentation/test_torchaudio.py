@@ -12,6 +12,7 @@ torchaudio = pytest.importorskip("torchaudio", minversion="0.6")
 from lhotse import MonoCut, Recording, Seconds
 from lhotse.augmentation import (
     AudioTransform,
+    Narrowband,
     Resample,
     ReverbWithImpulseResponse,
     Speed,
@@ -266,3 +267,9 @@ def test_augmentation_chain_randomized(
         recording=recording_aug,
     )
     assert cut_aug.load_audio().shape[1] == cut_aug.num_samples
+
+
+def test_narrowband(mono_audio):
+    narrowband = Narrowband(codec="mulaw")
+    nb = narrowband(mono_audio, SAMPLING_RATE)
+    assert nb.shape == mono_audio.shape

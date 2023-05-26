@@ -852,6 +852,40 @@ class DataCut(Cut, CustomFieldMixin, metaclass=ABCMeta):
             supervisions=supervisions_vp,
         )
 
+    def narrowband(self, codec: str, affix_id: bool = True) -> "DataCut":
+        """
+        Return a new ``DataCut`` that will lazily apply narrowband effect.
+
+        :param codec: Codec name.
+        :param affix_id: When true, we will modify the ``DataCut.id`` field
+            by affixing it with "_nb_{codec}".
+        :return: a modified copy of the current ``DataCut``.
+        """
+        # Pre-conditions
+        assert (
+            self.has_recording
+        ), "Cannot apply narrowband effect on a DataCut without Recording."
+        if self.has_features:
+            logging.warning(
+                "Attempting to apply narrowband effect on a DataCut that references pre-computed features. "
+                "The feature manifest will be detached, as we do not support feature-domain "
+                "volume perturbation."
+            )
+            self.features = None
+        # Actual audio perturbation.
+        recording_nb = self.recording.narrowband(codec=codec, affix_id=affix_id)
+        # Match the supervision's id (and it's underlying recording id).
+        supervisions_nb = [
+            s.narrowband(codec=codec, affix_id=affix_id) for s in self.supervisions
+        ]
+
+        return fastcopy(
+            self,
+            id=f"{self.id}_nb_{codec}" if affix_id else self.id,
+            recording=recording_nb,
+            supervisions=supervisions_nb,
+        )
+
     def normalize_loudness(
         self, target: float, affix_id: bool = False, **kwargs
     ) -> "DataCut":
