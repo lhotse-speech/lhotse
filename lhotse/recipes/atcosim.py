@@ -133,6 +133,8 @@ def text_normalize(
     for unk in ("[FRAGMENT]", "[NONSENSE]", "[UNKNOWN]"):
         text = text.replace(unk, unknown_sym)
 
+    text = text.replace("AIR SPACE", "AIRSPACE")
+
     text = WHITESPACE_PATTERN.sub(" ", text)
     text = text.strip()
 
