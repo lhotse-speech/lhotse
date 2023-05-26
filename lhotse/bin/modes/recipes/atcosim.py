@@ -19,9 +19,9 @@ def atcosim(target_dir: Pathlike):
 @click.argument("output_dir", type=click.Path())
 @click.option("--silence-sym", type=str, default="")
 @click.option("--breath-sym", type=str, default="")
-@click.option("--foreign-sym", type=str, default="<UNK>")
-@click.option("--partial-sym", type=str, default="<UNK>")
-@click.option("--unknown-sym", type=str, default="<UNK>")
+@click.option("--foreign-sym", type=str, default="<unk>")
+@click.option("--partial-sym", type=str, default="<unk>")
+@click.option("--unknown-sym", type=str, default="<unk>")
 def atcosim(
     corpus_dir: Pathlike,
     output_dir: Pathlike,

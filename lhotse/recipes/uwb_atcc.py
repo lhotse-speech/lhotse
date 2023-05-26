@@ -483,10 +483,10 @@ def prepare_uwb_atcc(
     silence_sym: Optional[str] = "",
     breath_sym: Optional[str] = "",
     noise_sym: Optional[str] = "",
-    foreign_sym: Optional[str] = "<UNK>",
-    partial_sym: Optional[str] = "<UNK>",
-    unintelligble_sym: Optional[str] = "<UNK>",
-    unknown_sym: Optional[str] = "<UNK>",
+    foreign_sym: Optional[str] = "<unk>",
+    partial_sym: Optional[str] = "<unk>",
+    unintelligble_sym: Optional[str] = "<unk>",
+    unknown_sym: Optional[str] = "<unk>",
 ) -> Dict[str, Union[RecordingSet, SupervisionSet]]:
     """
     Returns the manifests which consist of the Recordings and Supervisions
