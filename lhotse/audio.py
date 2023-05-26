@@ -1308,6 +1308,7 @@ class AudioMixer:
         base_audio: np.ndarray,
         sampling_rate: int,
         reference_energy: Optional[float] = None,
+        base_offset: Seconds = 0.0,
     ):
         """
         AudioMixer's constructor.
@@ -1317,9 +1318,10 @@ class AudioMixer:
         :param sampling_rate: Sampling rate of the audio.
         :param reference_energy: Optionally pass a reference energy value to compute SNRs against.
             This might be required when ``base_audio`` corresponds to zero-padding.
+        :param base_offset: Optionally pass a time offset for the base signal.
         """
         self.tracks = [base_audio]
-        self.offsets = [0]
+        self.offsets = [compute_num_samples(base_offset, sampling_rate)]
         self.sampling_rate = sampling_rate
         self.num_channels = base_audio.shape[0]
         self.dtype = self.tracks[0].dtype
