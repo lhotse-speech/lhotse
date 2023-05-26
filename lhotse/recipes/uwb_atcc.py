@@ -340,12 +340,9 @@ COLLAPSE_WORDS = (
     ("STAND BYE", "STANDBY"),
 )
 
-BRACKET_PADDING_PATTERN1 = re.compile(r"([\w\.])(\[|\()")
-BRACKET_PADDING_PATTERN2 = re.compile(r"(\]|\))([\w])")
-NO_ENG_PATTERN = re.compile(r"\[no_eng_\|](.*?)\[\|_no_eng]")
-CZECH_PATTERN = re.compile(r"\[czech_\|](.*?)\[\|_czech]")
+BRACKET_PADDING_PATTERN1 = re.compile(r"([\w\.\+])(\[|\()")
+BRACKET_PADDING_PATTERN2 = re.compile(r"(\]|\))([\w\+])")
 COMMENT_PATTERN = re.compile(r"\[comment_\|].*?\[\|_comment]")
-UNINTELLIGBLE_PATTERN = re.compile(r"\[unintelligible_\|](.*?)\[\|_unintelligible]")
 BACKGROUND_SPEECH_PATTERN = re.compile(
     r"\[background_speech_\|](.*?)\[\|_background_speech]"
 )
@@ -360,6 +357,9 @@ INTERRUPTED_PATTERN2 = re.compile(r"(\+\w+)")
 ABBREVIATION_PATTERN = re.compile(r"\(((\w*|\s*|\+)*)\(((\w*|\s*)*)\)\)")
 SPLIT_NUMERIC_ALPHA = re.compile(r"([0-9])([A-Za-z])")
 SPLIT_ALPHA_NUMERIC = re.compile(r"([A-Za-z])([0-9])")
+NO_ENG_PATTERN = re.compile(r"\[NO_ENG_\|](.*?)\[\|_NO_ENG]")
+CZECH_PATTERN = re.compile(r"\[CZECH_\|](.*?)\[\|_CZECH]")
+UNINTELLIGIBLE_PATTERN = re.compile(r"\[UNINTELLIGIBLE_\|](.*?)\[\|_UNINTELLIGIBLE]")
 WHITESPACE_PATTERN = re.compile(r"  +")
 
 
@@ -382,33 +382,12 @@ def text_normalize(
     text = BRACKET_PADDING_PATTERN2.sub(r"\1 \2", text)
     text = text.replace("](", "] (")
 
-    for pair in [
-        ("[ehm_??]", breath_sym),
-        ("[noise]", noise_sym),
-        ("[unintelligible]", unknown_sym),
-        ("[background_speech]", noise_sym),
-        ("[speaker]", breath_sym),
-    ]:
-        text = text.replace(pair[0], pair[1])
-
     text = text.replace("°", "")
     text = text.replace("?", "")
-
-    if foreign_sym == None:
-        text = text.replace("[no_eng]", unknown_sym)
-        text = NO_ENG_PATTERN.sub(r"\1", text)
-        text = CZECH_PATTERN.sub(r"\1", text)
-    else:
-        text = text.replace("[no_eng]", foreign_sym)
-        text = NO_ENG_PATTERN.sub(foreign_sym, text)
-        text = CZECH_PATTERN.sub(foreign_sym, text)
+    text = text.replace("¨", "")
+    text = text.replace("´", "'")
 
     text = COMMENT_PATTERN.sub("", text)
-
-    if unintelligble_sym == None:
-        text = UNINTELLIGBLE_PATTERN.sub(r"\1", text)
-    else:
-        text = UNINTELLIGBLE_PATTERN.sub(unintelligble_sym, text)
 
     text = BACKGROUND_SPEECH_PATTERN.sub(r"\1", text)
     text = NOISE_PATTERN.sub(r"\1", text)
@@ -421,41 +400,65 @@ def text_normalize(
 
     text = ABBREVIATION_PATTERN.sub(r"\1", text)
 
-    if partial_sym != None:
-        text = INTERRUPTED_PATTERN1.sub(partial_sym, text)
-        text = INTERRUPTED_PATTERN2.sub(partial_sym, text)
-
-    text = text.replace("+", "")
-
     # apply this word fix before applying split numeric-alpha patterns
     text = text.replace("6raha", "praha")
 
     text = SPLIT_NUMERIC_ALPHA.sub(r"\1 \2", text)
     text = SPLIT_ALPHA_NUMERIC.sub(r"\1 \2", text)
 
+    text = strip_accents(text)
+
+    simple_replace = {
+        "[ehm_]": breath_sym,
+        "[noise]": noise_sym,
+        "[unintelligible]": unknown_sym,
+        "[background_speech]": noise_sym,
+        "[speaker]": breath_sym,
+    }
+
     result = []
     for w in text.split():
-        if w in UNKNOWN_ABBREVIATIONS:
+        if w in simple_replace:
+            result.append(simple_replace[w])
+        elif w in UNKNOWN_ABBREVIATIONS:
             result.append(unknown_sym)
         elif w in ABBREVIATIONS:
             result.append(ABBREVIATIONS[w])
         elif w in INDIVIDUALLY_PRONOUNCED:
-            result.append(" ".join([*w]))
+            result.append(" ".join([*w]).upper())
         elif w in PHONETIC_ALPHABET:
             result.append(PHONETIC_ALPHABET[w])
         elif w.isdigit():
-            result.append(num2words(w).replace("-", " ").replace(",", ""))
+            result.append(num2words(w).replace("-", " ").replace(",", "").upper())
         else:
-            result.append(w)
+            result.append(w.upper())
     text = " ".join(result)
 
-    text = text.replace("´", "'")
-    text = text.replace("¨", "")
+    # from here on, text, with the exception of inserted symbols, is all uppercase,
+    # therfore [no_eng], [czech] and [unintelligible] pattern matching must be done in uppercase.
+
+    if foreign_sym == None:
+        text = text.replace("[NO_ENG]", unknown_sym)
+        text = NO_ENG_PATTERN.sub(r"\1", text)
+        text = CZECH_PATTERN.sub(r"\1", text)
+    else:
+        text = text.replace("[NO_ENG]", foreign_sym)
+        text = NO_ENG_PATTERN.sub(foreign_sym, text)
+        text = CZECH_PATTERN.sub(foreign_sym, text)
+
+    if unintelligble_sym == None:
+        text = UNINTELLIGIBLE_PATTERN.sub(r"\1", text)
+    else:
+        text = UNINTELLIGIBLE_PATTERN.sub(unintelligble_sym, text)
+
+    if partial_sym != None:
+        text = INTERRUPTED_PATTERN1.sub(partial_sym, text)
+        text = INTERRUPTED_PATTERN2.sub(partial_sym, text)
+
+    text = text.replace("+", "")
 
     text = WHITESPACE_PATTERN.sub(" ", text)
     text = text.strip()
-    text = strip_accents(text)
-    text = text.upper()
 
     text = " ".join([FIX_TYPOS[w] if w in FIX_TYPOS else w for w in text.split()])
 
