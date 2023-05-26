@@ -212,3 +212,14 @@ def test_command_audio_caching_disabled_works():
         audio = audio_source.load_audio()
         audio = np.expand_dims(audio, axis=0)
         np.testing.assert_allclose(audio, noise2, atol=3e-5)
+
+
+def test_audio_loading_optimization_returns_expected_num_samples():
+    # This is a test for audio loading optimization
+    # that kicks in when cut is very minimally shorter than the recording
+    cut = Recording.from_file("test/fixtures/mono_c0.opus").to_cut()
+    orig_num_samples = cut.num_samples
+    reduced_num_samples = orig_num_samples - 1
+    cut.duration = reduced_num_samples / cut.sampling_rate
+    audio = cut.load_audio()
+    assert audio.shape[1] == reduced_num_samples

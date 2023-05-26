@@ -15,8 +15,29 @@ from lhotse.utils import Pathlike
     default="PART3_SameCloseMic",
     help="Which part of NSC should be prepared",
 )
-def nsc(corpus_dir: Pathlike, output_dir: Pathlike, dataset_part: str):
+@click.option(
+    "-j",
+    "--num-jobs",
+    type=int,
+    default=1,
+    help="How many threads to use (can give good speed-ups with slow disks).",
+)
+def nsc(corpus_dir: Pathlike, output_dir: Pathlike, dataset_part: str, num_jobs: int):
     """
+    \b
     This is a data preparation recipe for the National Corpus of Speech in Singaporean English.
+    CORPUS_DIR: root directory that contains all NSC shared folder. Eg.
+        ├── IMDA - National Speech Corpus
+        │   ├── LEXICON
+        │   ├── PART1
+        │   ├── PART2
+        │   └── PART3
+        ├── IMDA - National Speech Corpus - Additional
+        │   └── IMDA - National Speech Corpus (Additional)
+        │      ├── PART4
+        │      ├── PART5
+        │      └── PART6
     """
-    prepare_nsc(corpus_dir, dataset_part=dataset_part, output_dir=output_dir)
+    prepare_nsc(
+        corpus_dir, dataset_part=dataset_part, output_dir=output_dir, num_jobs=num_jobs
+    )

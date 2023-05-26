@@ -1,0 +1,83 @@
+[
+  {
+    "id": "mixed-cut-id",
+    "tracks": [
+      {
+        "cut": {
+          "channel": 0,
+          "id": "ab34ea6b-9d68-4113-8386-b4c585e596f5",
+          "duration": 11.66,
+          "recording": {
+            "duration": 11.66,
+            "id": "2412-153948-0000",
+            "num_samples": 186560,
+            "sampling_rate": 16000,
+            "sources": [
+              {
+                "channels": [
+                  0
+                ],
+                "source": "test/fixtures/mix_cut_test/audio/storage/2412-153948-0000.flac",
+                "type": "file"
+              }
+            ]
+          },
+          "start": 0,
+          "supervisions": [
+            {
+              "channel": 0,
+              "duration": 11.66,
+              "id": "2412-153948-0000",
+              "language": "English",
+              "recording_id": "2412-153948-0000",
+              "speaker": "2412",
+              "start": 0.0,
+              "text": "IF THE READER WILL EXCUSE ME I WILL SAY NOTHING OF MY ANTECEDENTS NOR OF THE CIRCUMSTANCES WHICH LED ME TO LEAVE MY NATIVE COUNTRY THE NARRATIVE WOULD BE TEDIOUS TO HIM AND PAINFUL TO MYSELF"
+            }
+          ]
+        },
+        "type": "MonoCut",
+        "offset": 5.0
+      },
+      {
+        "cut": {
+          "channel": 0,
+          "id": "07d009a9-e7a1-4611-aa21-32ff9b43dff0",
+          "duration": 10.51,
+          "recording": {
+            "duration": 10.51,
+            "id": "2412-153948-0001",
+            "num_samples": 168160,
+            "sampling_rate": 16000,
+            "sources": [
+              {
+                "channels": [
+                  0
+                ],
+                "source": "test/fixtures/mix_cut_test/audio/storage/2412-153948-0001.flac",
+                "type": "file"
+              }
+            ]
+          },
+          "start": 0,
+          "supervisions": [
+            {
+              "channel": 0,
+              "duration": 4.65,
+              "id": "174-168635-0001",
+              "language": "English",
+              "recording_id": "174-168635-0001",
+              "speaker": "174",
+              "start": 0.0,
+              "text": "THE HEART OF THAT EX CONVICT WAS FULL OF VIRGINITY"
+            }
+          ]
+        },
+        "type": "MonoCut",
+        "offset": 5.02,
+        "snr": 20.0
+      }
+    ],
+    "type": "MixedCut"
+  }
+]
