@@ -240,7 +240,7 @@ def prepare_part3(
     def textgrid_field_id_resolver(audio_file: Union[str, Path]) -> Tuple[Dict, str]:
         audio_file = Path(audio_file)
         script_dir = Path(script_audio_dir.script_dir)
-        if part_name == "Audio Separate IVR":
+        if part_name == "PART3_SeparateIVR":
             script_file_stem = audio_file.parent.name + "_" + audio_file.stem
             script_file = script_dir / f"{script_file_stem}.TextGrid"
             textgrid_key = script_file_stem
