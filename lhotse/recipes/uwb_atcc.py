@@ -530,7 +530,7 @@ def prepare_uwb_atcc(
         else:
             root = ET.parse(t).getroot()
 
-        audio_path = corpus_dir / root.attrib["audio_filename"].removeprefix("e2_")
+        audio_path = corpus_dir / root.attrib["audio_filename"][len("e2_") :]
         if not audio_path.is_file():
             logging.warning(f"No such file: {audio_path}")
             continue
