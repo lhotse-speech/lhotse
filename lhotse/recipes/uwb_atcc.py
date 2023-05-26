@@ -92,7 +92,7 @@ PHONETIC_ALPHABET = {
     "G": "GOLF",
     "H": "HOTEL",
     "I": "INDIA",
-    "J": "JULIET",
+    "J": "JULIETT",
     "K": "KILO",
     "L": "LIMA",
     "M": "MIKE",
