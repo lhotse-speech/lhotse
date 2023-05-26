@@ -45,6 +45,7 @@ def download_uwb_atcc(
     resumable_download(
         f"https://lindat.mff.cuni.cz/repository/xmlui/bitstream/handle/11858/00-097C-0000-0001-CCA1-0/{dataset_name}.rar",
         filename=rar_path,
+        completed_file_size=584245376,
         force_download=force_download,
     )
     if (
@@ -504,7 +505,7 @@ def prepare_uwb_atcc(
         output_dir = Path(output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
 
-    trs_files = list(corpus_dir.glob("*.trs"))
+    trs_files = sorted(corpus_dir.glob("*.trs"), key=lambda p: p.name)
     assert len(trs_files) == 2657
 
     recordings = []
