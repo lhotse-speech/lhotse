@@ -13,7 +13,7 @@ from decimal import ROUND_HALF_UP
 from functools import lru_cache, partial
 from io import BytesIO, IOBase
 from itertools import islice
-from math import ceil, sqrt
+from math import ceil, isclose, sqrt
 from pathlib import Path
 from subprocess import PIPE, CalledProcessError, run
 from typing import (
@@ -576,6 +576,13 @@ class Recording:
             f"is smaller than the requested offset {offset}s."
         )
 
+        # Micro-optimization for a number of audio loading cases:
+        # if duration is very close to full recording,
+        # just read everything, and we'll discard some samples at the end.
+        orig_duration = duration
+        if duration is not None and isclose(duration, self.duration, abs_tol=1e-3):
+            duration = None
+
         if channels is None:
             channels = SetContainingAnything()
         else:
@@ -632,7 +639,7 @@ class Recording:
         # Transformation chains can introduce small mismatches in the number of samples:
         # we'll fix them here, or raise an error if they exceeded a tolerance threshold.
         audio = assert_and_maybe_fix_num_samples(
-            audio, offset=offset, duration=duration, recording=self
+            audio, offset=offset, duration=orig_duration, recording=self
         )
 
         return audio
