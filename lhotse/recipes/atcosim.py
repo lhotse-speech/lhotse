@@ -96,6 +96,7 @@ FOREIGN_PATTERN = re.compile(r"<FL>\s*</FL>")
 OFF_TALK_PATTERN = re.compile(r"<OT>(.*?)</OT>")
 INTERRUPTED_PATTERN1 = re.compile(r"=(\w+)")
 INTERRUPTED_PATTERN2 = re.compile(r"(\w+)=")
+WHITESPACE_PATTERN = re.compile(r"  +")
 
 
 def text_normalize(
@@ -106,7 +107,19 @@ def text_normalize(
     partial_sym: str,  #  When None, will output partial words
     unknown_sym: str,
 ):
+
     text = OFF_TALK_PATTERN.sub(r"\1", text)
+
+    result = []
+    for w in text.split():
+        if w[0] == "@" or w[0] == "~":
+            result.append(w[1:])
+        elif w in FIX_TYPOS:
+            result.append(FIX_TYPOS[w])
+        else:
+            result.append(w)
+    text = " ".join(result).upper()
+
     text = text.replace("[EMPTY]", silence_sym)
     text = text.replace("[HNOISE]", breath_sym)
     text = FOREIGN_PATTERN.sub(foreign_sym, text)
@@ -120,17 +133,9 @@ def text_normalize(
     for unk in ("[FRAGMENT]", "[NONSENSE]", "[UNKNOWN]"):
         text = text.replace(unk, unknown_sym)
 
-    result = []
-    for w in text.split():
-        if w[0] == "@" or w[0] == "~":
-            result.append(w[1:])
-        elif w in FIX_TYPOS:
-            result.append(FIX_TYPOS[w])
-        else:
-            result.append(w)
-    text = " ".join(result)
+    text = WHITESPACE_PATTERN.sub(" ", text)
+    text = text.strip()
 
-    text = text.upper()
     return text
 
 
