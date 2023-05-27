@@ -4,7 +4,7 @@ from math import isclose
 import pytest
 
 from lhotse import RecordingSet
-from lhotse.cut import CutSet, MixedCut, MixTrack, MonoCut
+from lhotse.cut import CutSet, MixedCut, MixTrack, MonoCut, PaddingCut
 from lhotse.features import Features
 from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.testing.dummies import DummyManifest, dummy_cut, dummy_recording
@@ -139,6 +139,17 @@ def simple_mixed_cut():
     )
 
 
+@pytest.fixture
+def gapped_mixed_cut():
+    return MixedCut(
+        id="gapped-mixed-cut",
+        tracks=[
+            MixTrack(cut=dummy_cut(0, duration=10.0)),
+            MixTrack(cut=dummy_cut(1, duration=10.0), offset=15.0),
+        ],
+    )
+
+
 def test_truncate_mixed_cut_without_args(simple_mixed_cut):
     truncated_cut = simple_mixed_cut.truncate()
     assert truncated_cut.duration == 15.0
@@ -212,6 +223,14 @@ def test_truncate_mixed_cut_with_small_offset_and_duration(simple_mixed_cut):
     assert truncated_cut.tracks[1].cut.end == 9.0
 
     assert truncated_cut.duration == 13.0
+
+
+def test_truncate_mixed_cut_inside_gap(gapped_mixed_cut):
+    truncated_cut = gapped_mixed_cut.truncate(offset=11.0, duration=3.0)
+    assert isinstance(truncated_cut, PaddingCut)
+    assert truncated_cut.start == 0.0
+    assert truncated_cut.duration == 3.0
+    assert truncated_cut.end == 3.0
 
 
 def test_truncate_cut_set_offset_start(cut_set):
