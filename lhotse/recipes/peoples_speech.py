@@ -20,8 +20,8 @@ from typing import Dict, List, Optional, Sequence, Tuple, Union
 from tqdm.auto import tqdm
 
 from lhotse.audio import AudioSource, Recording, RecordingSet, info
-from lhotse.recipes.utils import manifests_exist
 from lhotse.qa import validate_recordings_and_supervisions
+from lhotse.recipes.utils import manifests_exist
 from lhotse.serialization import load_jsonl
 from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import Pathlike, compute_num_samples
@@ -50,9 +50,7 @@ def _parse_utterance(
     recording = Recording(
         id=full_path.stem,
         sampling_rate=audio_info.samplerate,
-        num_samples=compute_num_samples(
-            duration, audio_info.samplerate
-        ),
+        num_samples=compute_num_samples(duration, audio_info.samplerate),
         duration=duration,
         sources=[
             AudioSource(
@@ -99,19 +97,21 @@ def _prepare_subset(
         recordings = []
         supervisions = []
         for item in tqdm(
-            load_jsonl(part_dir / f"{part_name}.json"), 
+            load_jsonl(part_dir / f"{part_name}.json"),
             desc="Distributing tasks",
         ):
             # Note: People's Speech manifest.json is really a JSONL.
             for duration_ms, text, audio_path in zip(*item["training_data"].values()):
-                futures.append(ex.submit(
-                    _parse_utterance,
-                    audio_dir,
-                    duration_ms,
-                    text,
-                    audio_path,
-                    item["identifier"],
-                ))
+                futures.append(
+                    ex.submit(
+                        _parse_utterance,
+                        audio_dir,
+                        duration_ms,
+                        text,
+                        audio_path,
+                        item["identifier"],
+                    )
+                )
 
         for future in tqdm(futures, desc="Processing"):
             result = future.result()
@@ -160,16 +160,21 @@ def prepare_peoples_speech(
             prefix="peoples_speech",
             suffix="jsonl.gz",
         ):
-            logging.info(f"People's Speech subset: {part.split('/')[1]} already prepared - skipping.")
+            logging.info(
+                f"People's Speech subset: {part.split('/')[1]} already prepared - skipping."
+            )
             continue
 
         recording_set, supervision_set = _prepare_subset(part, corpus_dir, num_jobs)
 
         if output_dir is not None:
             supervision_set.to_file(
-                output_dir / f"peoples_speech_supervisions_{part.split('/')[1]}.jsonl.gz"
+                output_dir
+                / f"peoples_speech_supervisions_{part.split('/')[1]}.jsonl.gz"
             )
-            recording_set.to_file(output_dir / f"peoples_speech_recordings_{part.split('/')[1]}.jsonl.gz")
+            recording_set.to_file(
+                output_dir / f"peoples_speech_recordings_{part.split('/')[1]}.jsonl.gz"
+            )
 
         manifests[part] = {"recordings": recording_set, "supervisions": supervision_set}
 
