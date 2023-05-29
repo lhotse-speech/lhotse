@@ -179,3 +179,7 @@ def prepare_peoples_speech(
         manifests[part] = {"recordings": recording_set, "supervisions": supervision_set}
 
     return manifests
+
+
+if __name__ == "__main__":
+    prepare_peoples_speech("/star-data/yifan/peoples_speech", ".", num_jobs=32)
