@@ -71,8 +71,6 @@ def _parse_utterance(
         custom={"session_id": identifier},
     )
 
-    validate_recordings_and_supervisions(recordings=recording, supervisions=segment)
-
     return recording, segment
 
 
@@ -97,10 +95,10 @@ def _prepare_subset(
         recordings = []
         supervisions = []
         for item in tqdm(
+            # Note: People's Speech manifest.json is really a JSONL.
             load_jsonl(part_dir / f"{part_name}.json"),
             desc="Distributing tasks",
         ):
-            # Note: People's Speech manifest.json is really a JSONL.
             for duration_ms, text, audio_path in zip(*item["training_data"].values()):
                 futures.append(
                     ex.submit(
@@ -121,6 +119,10 @@ def _prepare_subset(
 
         recording_set = RecordingSet.from_recordings(recordings)
         supervision_set = SupervisionSet.from_segments(supervisions)
+
+        validate_recordings_and_supervisions(
+            recordings=recording_set, supervisions=supervision_set
+        )
 
     return recording_set, supervision_set
 
