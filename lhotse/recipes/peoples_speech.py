@@ -87,7 +87,7 @@ def _prepare_subset(
             load_jsonl(part_dir / f"{part_name}.json"),
             desc="Distributing tasks",
         ):
-            for _ , text, audio_path in zip(*item["training_data"].values()):
+            for _, text, audio_path in zip(*item["training_data"].values()):
                 futures.append(
                     ex.submit(
                         _parse_utterance,
