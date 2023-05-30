@@ -17,10 +17,8 @@ for downloading.
 
 If you have downloaded and extracted the dataset to the directory
 
-/ceph-data3/fangjun/data/must-c/v2.0
-    /en-de
-    /en-zh
-    ...
+/ceph-data3/fangjun/data/must-c/v2.0/en-de
+/ceph-data3/fangjun/data/must-c/v2.0/en-zh
 
 You can call lhotse with the following commands
 
@@ -30,7 +28,7 @@ You can call lhotse with the following commands
       --tgt-lang de \
       -j 10 \
       /ceph-data3/fangjun/data/must-c/v2.0/ \
-      ./data/manifests/
+      ./data/manifests/v2.0
 
 (2) When the target language is Chinese:
 
@@ -38,7 +36,7 @@ You can call lhotse with the following commands
       --tgt-lang zh \
       -j 10 \
       /ceph-data3/fangjun/data/must-c/v2.0/ \
-      ./data/manifests/
+      ./data/manifests/v2.0
 """
 
 import logging
@@ -60,41 +58,18 @@ def prepare_must_c(
     corpus_dir: Pathlike,
     output_dir: Pathlike,
     tgt_lang: str,
-    src_lang: str = "en",
     num_jobs: int = 1,
-    version: int = 2,
 ) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet]]]:
     """Prepare manifests for the MUST-C corpus.
 
-    :param corpus_dir: We assume there is a folder {src_lang}-{tgt_lang} inside
+    :param: corpus_dir: We assume there is a folder {src_lang}-{tgt_lang} inside
         this directory.
-    :param output_dir: Directory where the manifests should be written.
+    :param: output_dir: Directory where the manifests should be written.
     :param: tgt_lang: Target language, e.g., zh, de, etc.
     :param: src_lang: Source language, e.g., en.
     :param: num_jobs: Number of processes to use for parsing the data
-    :param: version: The version number of the dataset. Currently, only v2.0
-        is supported.
     """
-    if version == 2:
-        _prepare_must_c_v2_0(
-            corpus_dir=corpus_dir,
-            output_dir=output_dir,
-            src_lang=src_lang,
-            tgt_lang=tgt_lang,
-            num_jobs=num_jobs,
-        )
-    else:
-        raise ValueError(f"Only v2.0 is supported right now. Given: {version}")
-
-
-def _prepare_must_c_v2_0(
-    corpus_dir: Pathlike,
-    output_dir: Pathlike,
-    tgt_lang: str,
-    src_lang: str,
-    num_jobs: int,
-) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet]]]:
-    assert src_lang == "en", src_lang
+    src_lang = "en"
 
     in_data_dir = Path(corpus_dir) / f"{src_lang}-{tgt_lang}/data"
     assert in_data_dir.is_dir(), in_data_dir
@@ -108,7 +83,7 @@ def _prepare_must_c_v2_0(
         dataset_dir = in_data_dir / d
         # In the dataset_dir, we can find two directories: txt and wav
         # In the txt directory, we can find the following files:
-        #   {d}.{src_lang}, {d}.{tgt_lang}, {d}.{yaml}
+        #   {d}.{src_lang}, {d}.{tgt_lang}, {d}.yaml
         assert dataset_dir.is_dir(), dataset_dir / d
 
         with open(dataset_dir / "txt" / f"{d}.{tgt_lang}") as f:
@@ -159,13 +134,13 @@ def _prepare_must_c_v2_0(
         )
 
         with RecordingSet.open_writer(
-            output_dir / f"must_c_recordings_{d}.jsonl.gz"
+            output_dir / f"must_c_recordings_{src_lang}-{tgt_lang}_{d}.jsonl.gz"
         ) as rec_writer:
             for r in recordings:
                 rec_writer.write(r)
 
         with SupervisionSet.open_writer(
-            output_dir / f"must_c_supervisions_{d}.jsonl.gz"
+            output_dir / f"must_c_supervisions_{src_lang}-{tgt_lang}_{d}.jsonl.gz"
         ) as sup_writer:
             for sup in supervisions:
                 sup_writer.write(sup)

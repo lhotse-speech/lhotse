@@ -3,9 +3,7 @@ import logging
 import click
 
 from lhotse.bin.modes import prepare
-from lhotse.recipes.must_c import (
-    prepare_must_c,
-)
+from lhotse.recipes.must_c import prepare_must_c
 from lhotse.utils import Pathlike
 
 
