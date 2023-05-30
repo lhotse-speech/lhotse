@@ -45,25 +45,14 @@ def _parse_utterance(
 ) -> Optional[Tuple[Recording, SupervisionSegment]]:
     full_path = audio_dir / audio_path
 
-    audio_info = info(full_path)
-    duration = duration_ms / 1000
-    recording = Recording(
-        id=full_path.stem,
-        sampling_rate=audio_info.samplerate,
-        num_samples=compute_num_samples(duration, audio_info.samplerate),
-        duration=duration,
-        sources=[
-            AudioSource(
-                type="file",
-                channels=[0],
-                source=str(full_path),
-            )
-        ],
+    recording = Recording.from_file(
+        path=full_path,
+        recording_id=full_path.stem,
     )
     segment = SupervisionSegment(
         id=recording.id,
         recording_id=recording.id,
-        start=0,
+        start=0.0,
         duration=recording.duration,
         channel=0,
         text=text,
