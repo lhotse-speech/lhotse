@@ -38,7 +38,6 @@ PEOPLES_SPEECH = (
 
 def _parse_utterance(
     audio_dir: Pathlike,
-    duration_ms: int,
     text: str,
     audio_path: str,
     identifier: str,
@@ -88,12 +87,11 @@ def _prepare_subset(
             load_jsonl(part_dir / f"{part_name}.json"),
             desc="Distributing tasks",
         ):
-            for duration_ms, text, audio_path in zip(*item["training_data"].values()):
+            for _ , text, audio_path in zip(*item["training_data"].values()):
                 futures.append(
                     ex.submit(
                         _parse_utterance,
                         audio_dir,
-                        duration_ms,
                         text,
                         audio_path,
                         item["identifier"],
