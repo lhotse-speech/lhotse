@@ -1,4 +1,8 @@
 """
+This recipe supports two corpora: LibriTTS and LibriTTS-R.
+
+---
+
 LibriTTS is a multi-speaker English corpus of approximately 585 hours of read English speech at 24kHz sampling rate, prepared by Heiga Zen with the assistance of Google Speech and Google Brain team members. The LibriTTS corpus is designed for TTS research. It is derived from the original materials (mp3 audio files from LibriVox and text files from Project Gutenberg) of the LibriSpeech corpus. The main differences from the LibriSpeech corpus are listed below:
 The audio files are at 24kHz sampling rate.
 The speech is split at sentence breaks.
@@ -6,6 +10,18 @@ Both original and normalized texts are included.
 Contextual information (e.g., neighbouring sentences) can be extracted.
 Utterances with significant background noise are excluded.
 For more information, refer to the paper "LibriTTS: A Corpus Derived from LibriSpeech for Text-to-Speech", Heiga Zen, Viet Dang, Rob Clark, Yu Zhang, Ron J. Weiss, Ye Jia, Zhifeng Chen, and Yonghui Wu, arXiv, 2019. If you use the LibriTTS corpus in your work, please cite this paper where it was introduced.
+
+---
+
+LibriTTS-R [1] is a sound quality improved version of the LibriTTS corpus (http://www.openslr.org/60/) which is a multi-speaker English corpus of approximately 585 hours of read English speech at 24kHz sampling rate, published in 2019. The constituent samples of LibriTTS-R are identical to those of LibriTTS, with only the sound quality improved. To improve sound quality, a speech restoration model, Miipher proposed by Yuma Koizumi [2], was used.
+
+For more information, refer to the paper [1]. If you use the LibriTTS-R corpus in your work, please cite the dataset paper [1] where it was introduced.
+
+Audio samples of the ground-truth and TTS generated samples are available at the demo page: https://google.github.io/df-conformer/librittsr/
+
+[1] Yuma Koizumi, Heiga Zen, Shigeki Karita, Yifan Ding, Kohei Yatabe, Nobuyuki Morioka, Michiel Bacchiani, Yu Zhang, Wei Han, and Ankur Bapna, "LibriTTS-R: A Restored Multi-Speaker Text-to-Speech Corpus," arXiv, 2023.
+[2] Yuma Koizumi, Heiga Zen, Shigeki Karita, Yifan Ding, Kohei Yatabe, Nobuyuki Morioka, Yu Zhang, Wei Han, Ankur Bapna, and Michiel Bacchiani, "Miipher: A Robust Speech Restoration Model Integrating Self-Supervised Speech and Text Representations," arXiv, 2023.
+
 """
 import logging
 import shutil
@@ -35,16 +51,42 @@ LIBRITTS = (
 )
 
 
-def download_libritts(
+def download_librittsr(
     target_dir: Pathlike = ".",
     dataset_parts: Optional[Union[str, Sequence[str]]] = "all",
     force_download: Optional[bool] = False,
     base_url: Optional[str] = "http://www.openslr.org/resources",
 ) -> Path:
     """
-    Download and untar the dataset
+    Download and untar the LibriTTS-R dataset.
 
     :param target_dir: Pathlike, the path of the dir to storage the dataset.
+    :param dataset_parts: "all", or a list of splits (e.g. "dev-clean") to download.
+    :param force_download: Bool, if True, download the tars no matter if the tars exist.
+    :param base_url: str, the url of the OpenSLR resources.
+    :return: the path to downloaded and extracted directory with data.
+    """
+    return download_libritts(
+        target_dir=target_dir,
+        dataset_parts=dataset_parts,
+        force_download=force_download,
+        base_url=base_url,
+        use_librittsr=True,
+    )
+
+
+def download_libritts(
+    target_dir: Pathlike = ".",
+    use_librittsr: bool = False,
+    dataset_parts: Optional[Union[str, Sequence[str]]] = "all",
+    force_download: Optional[bool] = False,
+    base_url: Optional[str] = "http://www.openslr.org/resources",
+) -> Path:
+    """
+    Download and untar the LibriTTS dataset.
+
+    :param target_dir: Pathlike, the path of the dir to storage the dataset.
+    :param use_librittsr: Bool, if True, we'll download the LibriTTS-R dataset instead.
     :param dataset_parts: "all", or a list of splits (e.g. "dev-clean") to download.
     :param force_download: Bool, if True, download the tars no matter if the tars exist.
     :param base_url: str, the url of the OpenSLR resources.
@@ -58,13 +100,20 @@ def download_libritts(
     elif isinstance(dataset_parts, str):
         dataset_parts = [dataset_parts]
 
-    for part in tqdm(dataset_parts, desc="Downloading LibriTTS parts"):
+    if use_librittsr:
+        name = "LibriTTS-R"
+        openslr_corpus_id = "141"
+    else:
+        name = "LibriTTS"
+        openslr_corpus_id = "60"
+
+    for part in tqdm(dataset_parts, desc=f"Downloading {name} parts"):
         if part not in LIBRITTS:
             logging.warning(f"Skipping invalid dataset part name: {part}")
-        url = f"{base_url}/60"
+        url = f"{base_url}/{openslr_corpus_id}"
         tar_name = f"{part}.tar.gz"
         tar_path = target_dir / tar_name
-        part_dir = target_dir / f"LibriTTS/{part}"
+        part_dir = target_dir / f"{name}/{part}"
         completed_detector = part_dir / ".completed"
         if completed_detector.is_file():
             logging.info(f"Skipping {part} because {completed_detector} exists.")
@@ -214,3 +263,6 @@ def prepare_libritts(
         manifests[part] = {"recordings": recordings, "supervisions": supervisions}
 
     return manifests
+
+
+prepare_librittsr = prepare_libritts
