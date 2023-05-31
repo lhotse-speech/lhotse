@@ -50,6 +50,7 @@ from .mgb2 import *
 from .mls import *
 from .mtedx import *
 from .musan import *
+from .must_c import *
 from .nsc import *
 from .peoples_speech import *
 from .primewords import *
