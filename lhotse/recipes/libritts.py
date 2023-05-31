@@ -37,6 +37,7 @@ from lhotse import (
     SupervisionSegment,
     SupervisionSet,
     validate_recordings_and_supervisions,
+    fix_manifests,
 )
 from lhotse.recipes.utils import manifests_exist, read_manifests_if_cached
 from lhotse.utils import Pathlike, resumable_download, safe_extract
@@ -240,6 +241,9 @@ def prepare_libritts(
             prev_rec_id = None
             for line in trans_path.read_text().splitlines():
                 rec_id, orig_text, norm_text = line.split("\t")
+                if rec_id not in recordings:
+                    logging.warning(f"No recording exists for utterance id {rec_id}, skipping (in {trans_path})")
+                    continue
                 spk_id = rec_id.split("_")[0]
                 customd = {"orig_text": orig_text, "snr": utt2snr.get(rec_id)}
                 if link_previous_utt:
@@ -266,6 +270,7 @@ def prepare_libritts(
                 )
 
         supervisions = SupervisionSet.from_segments(supervisions)
+        recordings, supervisions = fix_manifests(recordings, supervisions)
         validate_recordings_and_supervisions(recordings, supervisions)
 
         if output_dir is not None:

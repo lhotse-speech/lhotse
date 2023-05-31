@@ -1039,7 +1039,7 @@ class RecordingSet(Serializable, AlgorithmMixin):
         it = Path(path).rglob(pattern)
         if exclude_pattern is not None:
             exclude_pattern = re.compile(exclude_pattern)
-            it = filter(lambda p: exclude_pattern.match(p.name) is not None, it)
+            it = filter(lambda p: exclude_pattern.match(p.name) is None, it)
 
         if num_jobs == 1:
             # Avoid spawning process for one job.
