@@ -36,8 +36,8 @@ from lhotse import (
     RecordingSet,
     SupervisionSegment,
     SupervisionSet,
-    validate_recordings_and_supervisions,
     fix_manifests,
+    validate_recordings_and_supervisions,
 )
 from lhotse.recipes.utils import manifests_exist, read_manifests_if_cached
 from lhotse.utils import Pathlike, resumable_download, safe_extract
@@ -199,7 +199,10 @@ def prepare_libritts(
         # Maybe LibriTTS-R will fix it in later distributions.
         # Also, the file 1092_134562_000013_000004.wav is corrupted as of May 31st.
         recordings = RecordingSet.from_dir(
-            part_path, "*.wav", num_jobs=num_jobs, exclude_pattern=r"^(\._.+|1092_134562_000013_000004\.wav)$"
+            part_path,
+            "*.wav",
+            num_jobs=num_jobs,
+            exclude_pattern=r"^(\._.+|1092_134562_000013_000004\.wav)$",
         )
         supervisions = []
         for trans_path in tqdm(
@@ -243,7 +246,9 @@ def prepare_libritts(
             for line in trans_path.read_text().splitlines():
                 rec_id, orig_text, norm_text = line.split("\t")
                 if rec_id not in recordings:
-                    logging.warning(f"No recording exists for utterance id {rec_id}, skipping (in {trans_path})")
+                    logging.warning(
+                        f"No recording exists for utterance id {rec_id}, skipping (in {trans_path})"
+                    )
                     continue
                 spk_id = rec_id.split("_")[0]
                 customd = {"orig_text": orig_text, "snr": utt2snr.get(rec_id)}
