@@ -24,6 +24,7 @@ Audio samples of the ground-truth and TTS generated samples are available at the
 
 """
 import logging
+import re
 import shutil
 import tarfile
 from pathlib import Path
@@ -101,7 +102,7 @@ def download_libritts(
         dataset_parts = [dataset_parts]
 
     if use_librittsr:
-        name = "LibriTTS-R"
+        name = "LibriTTS_R"
         openslr_corpus_id = "141"
     else:
         name = "LibriTTS"
@@ -109,7 +110,9 @@ def download_libritts(
 
     for part in tqdm(dataset_parts, desc=f"Downloading {name} parts"):
         if part not in LIBRITTS:
-            logging.warning(f"Skipping invalid dataset part name: {part}")
+            logging.warning(
+                f"Skipping invalid dataset part name: {part} (possible choices: {LIBRITTS})"
+            )
         url = f"{base_url}/{openslr_corpus_id}"
         tar_name = f"{part}.tar.gz"
         tar_path = target_dir / tar_name
@@ -118,9 +121,10 @@ def download_libritts(
         if completed_detector.is_file():
             logging.info(f"Skipping {part} because {completed_detector} exists.")
             continue
-        resumable_download(
-            f"{url}/{tar_name}", filename=tar_path, force_download=force_download
-        )
+        full_url = f"{url}/{tar_name}"
+        if use_librittsr:
+            full_url = full_url.replace("-", "_")
+        resumable_download(full_url, filename=tar_path, force_download=force_download)
         shutil.rmtree(part_dir, ignore_errors=True)
         with tarfile.open(tar_path) as tar:
             safe_extract(tar, path=target_dir)
@@ -174,27 +178,35 @@ def prepare_libritts(
     #   14   | F | train-clean-360  | 25.03 | ...
     #   16   | F | train-clean-360  | 25.11 | ...
     #   17   | M | train-clean-360  | 25.04 | ...
-    spk2gender = {
-        spk_id.strip(): gender.strip()
-        for spk_id, gender, *_ in (
-            line.split("|")
-            for line in (corpus_dir / "SPEAKERS.txt").read_text().splitlines()
-            if not line.startswith(";")
-        )
-    }
+    spk2gender = {}
+    if (corpus_dir / "SPEAKERS.txt").is_file():
+        spk2gender = {
+            spk_id.strip(): gender.strip()
+            for spk_id, gender, *_ in (
+                line.split("|")
+                for line in (corpus_dir / "SPEAKERS.txt").read_text().splitlines()
+                if not line.startswith(";")
+            )
+        }
 
     for part in tqdm(dataset_parts, desc="Preparing LibriTTS parts"):
         if manifests_exist(part=part, output_dir=output_dir, prefix="libritts"):
             logging.info(f"LibriTTS subset: {part} already prepared - skipping.")
             continue
         part_path = corpus_dir / part
-        recordings = RecordingSet.from_dir(part_path, "*.wav", num_jobs=num_jobs)
+        # We are ignoring weird files such as ._84_121550_000007_000000.wav
+        # Maybe LibriTTS-R will fix it in later distributions.
+        recordings = RecordingSet.from_dir(
+            part_path, "*.wav", num_jobs=num_jobs, exclude_pattern=r"^\._.+$"
+        )
         supervisions = []
         for trans_path in tqdm(
             part_path.rglob("*.trans.tsv"),
             desc="Scanning transcript files (progbar per speaker)",
             leave=False,
         ):
+            if re.match(r"^\._.+$", trans_path.name) is not None:
+                continue
             # The trans.tsv files contain only the recordings that were kept for LibriTTS.
             # Example path to a file:
             #   /export/corpora5/LibriTTS/dev-clean/84/121123/84_121123.trans.tsv
@@ -229,7 +241,7 @@ def prepare_libritts(
             for line in trans_path.read_text().splitlines():
                 rec_id, orig_text, norm_text = line.split("\t")
                 spk_id = rec_id.split("_")[0]
-                customd = {"orig_text": orig_text, "snr": utt2snr[rec_id]}
+                customd = {"orig_text": orig_text, "snr": utt2snr.get(rec_id)}
                 if link_previous_utt:
                     # all recordings ids should be in the book.csv
                     # but they are some missing e.g. 446_123502_000030_000003
@@ -248,7 +260,7 @@ def prepare_libritts(
                         text=norm_text,
                         language="English",
                         speaker=spk_id,
-                        gender=spk2gender[spk_id],
+                        gender=spk2gender.get(spk_id),
                         custom=customd,
                     )
                 )

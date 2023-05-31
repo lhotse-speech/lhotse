@@ -1002,6 +1002,7 @@ class RecordingSet(Serializable, AlgorithmMixin):
         num_jobs: int = 1,
         force_opus_sampling_rate: Optional[int] = None,
         recording_id: Optional[Callable[[Path], str]] = None,
+        exclude_pattern: Optional[str] = None,
     ):
         """
         Recursively scan a directory ``path`` for audio files that match the given ``pattern`` and create
@@ -1023,6 +1024,8 @@ class RecordingSet(Serializable, AlgorithmMixin):
             "under-the-hood". For non-OPUS files this input does nothing.
         :param recording_id: A function which takes the audio file path and returns the recording ID. If not
             specified, the filename will be used as the recording ID.
+        :param exclude_pattern: optional regex string for identifying file name patterns to exclude.
+            There has to be a full regex match to trigger exclusion.
         :return: a new ``Recording`` instance pointing to the audio file.
         """
         msg = f"Scanning audio files ({pattern})"
@@ -1033,15 +1036,20 @@ class RecordingSet(Serializable, AlgorithmMixin):
             recording_id=recording_id,
         )
 
+        it = Path(path).rglob(pattern)
+        if exclude_pattern is not None:
+            exclude_pattern = re.compile(exclude_pattern)
+            it = filter(lambda p: exclude_pattern.match(p.name) is not None, it)
+
         if num_jobs == 1:
             # Avoid spawning process for one job.
             return RecordingSet.from_recordings(
-                tqdm(map(file_read_worker, Path(path).rglob(pattern)), desc=msg)
+                tqdm(map(file_read_worker, it), desc=msg)
             )
         with ProcessPoolExecutor(num_jobs) as ex:
             return RecordingSet.from_recordings(
                 tqdm(
-                    ex.map(file_read_worker, Path(path).rglob(pattern)),
+                    ex.map(file_read_worker, it),
                     desc=msg,
                 )
             )
