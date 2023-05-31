@@ -197,8 +197,9 @@ def prepare_libritts(
         part_path = corpus_dir / part
         # We are ignoring weird files such as ._84_121550_000007_000000.wav
         # Maybe LibriTTS-R will fix it in later distributions.
+        # Also, the file 1092_134562_000013_000004.wav is corrupted as of May 31st.
         recordings = RecordingSet.from_dir(
-            part_path, "*.wav", num_jobs=num_jobs, exclude_pattern=r"^\._.+$"
+            part_path, "*.wav", num_jobs=num_jobs, exclude_pattern=r"^(\._.+|1092_134562_000013_000004\.wav)$"
         )
         supervisions = []
         for trans_path in tqdm(
