@@ -106,7 +106,6 @@ def prepare_gigast(
     """
     corpus_dir = Path(corpus_dir)
     manifests_dir = Path(manifests_dir)
-    output_dir = Path(output_dir) if output_dir is not None else None
 
     assert corpus_dir.is_dir(), f"No such directory: {corpus_dir}"
 
