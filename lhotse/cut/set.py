@@ -271,6 +271,34 @@ class CutSet(Serializable, AlgorithmMixin):
         )
 
     @staticmethod
+    def from_files(
+        paths: List[Pathlike], shuffle_iters: bool = True, seed: int = 0
+    ) -> "CutSet":
+        """
+        Constructor that creates a single CutSet out of many manifest files.
+        We will iterate sequentially over each of the files, and by default we
+        will randomize the file order every time CutSet is iterated.
+
+        This is intended primarily for large datasets which are split into many small manifests,
+        to ensure that the order in which data is seen during training can be properly randomized.
+
+        :param paths: a list of paths to cut manifests.
+        :param shuffle_iters: bool, should we shuffle `paths` each time we iterate the returned
+            CutSet (enabled by default).
+        :param seed: int, random seed controlling the shuffling RNG.
+        :return: a lazy CutSet instance.
+        """
+        from lhotse.lazy import LazyIteratorChain, LazyManifestIterator
+
+        return CutSet(
+            LazyIteratorChain(
+                *(LazyManifestIterator(p) for p in paths),
+                shuffle_iters=shuffle_iters,
+                seed=seed,
+            )
+        )
+
+    @staticmethod
     def from_cuts(cuts: Iterable[Cut]) -> "CutSet":
         return CutSet(cuts=index_by_id_and_check(cuts))
 
