@@ -1733,6 +1733,39 @@ def verbose_audio_loading_exceptions() -> bool:
     return os.environ.get("LHOTSE_AUDIO_LOADING_EXCEPTION_VERBOSE") == "1"
 
 
+_AVAILABLE_AUDIO_BACKENDS = [
+    # First handle special cases: OPUS and SPHERE (SPHERE may be encoded with shorten,
+    #   which can only be decoded by binaries "shorten" and "sph2pipe").
+    FfmpegSubprocessOpusBackend(),
+    Sph2pipeSubprocessBackend(),
+    # New FFMPEG backend available only in torchaudio 2.0.x+
+    TorchaudioFFMPEGBackend(),
+    # Prefer libsndfile for in-memory buffers only
+    LibsndfileBackend(),
+    # Torchaudio should be able to deal with most audio types...
+    TorchaudioDefaultBackend(),
+    # ... if not, try audioread...
+    AudioreadBackend(),
+    # ... oops. 
+]
+
+def set_default_audio_backend(backend: AudioBackend):
+    """
+    Set the default audio backend for Lhotse.
+
+    :param backend: An instance of :class:`~lhotse.audio.backend.AudioBackend`.
+                    The backend to be set as the default.
+    :raises AssertionError: If `backend` is not an instance of `AudioBackend`.
+    """
+    assert isinstance(backend, AudioBackend), f"Expected an instance of AudioBackend, got {backend}"
+    
+    global _AVAILABLE_AUDIO_BACKENDS
+    
+    if backend in _AVAILABLE_AUDIO_BACKENDS:
+        _AVAILABLE_AUDIO_BACKENDS.remove(backend)
+    
+    _AVAILABLE_AUDIO_BACKENDS.insert(0, backend)
+    
 @lru_cache(maxsize=1)
 def get_default_audio_backend():
     """
@@ -1745,23 +1778,7 @@ def get_default_audio_backend():
     Then, it tries to use several audio loading libraries (torchaudio, soundfile, audioread).
     In case the first fails, it tries the next one, and so on.
     """
-    return CompositeAudioBackend(
-        [
-            # First handle special cases: OPUS and SPHERE (SPHERE may be encoded with shorten,
-            #   which can only be decoded by binaries "shorten" and "sph2pipe").
-            FfmpegSubprocessOpusBackend(),
-            Sph2pipeSubprocessBackend(),
-            # New FFMPEG backend available only in torchaudio 2.0.x+
-            TorchaudioFFMPEGBackend(),
-            # Prefer libsndfile for in-memory buffers only
-            LibsndfileBackend(),
-            # Torchaudio should be able to deal with most audio types...
-            TorchaudioDefaultBackend(),
-            # ... if not, try audioread...
-            AudioreadBackend(),
-            # ... oops.
-        ]
-    )
+    return CompositeAudioBackend(_AVAILABLE_AUDIO_BACKENDS)
 
 
 class LibsndfileCompatibleAudioInfo(NamedTuple):
