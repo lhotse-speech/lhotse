@@ -272,7 +272,7 @@ class CutSet(Serializable, AlgorithmMixin):
 
     @staticmethod
     def from_files(
-        paths: List[Pathlike], shuffle_iters: bool = True, seed: int = 0
+        paths: List[Pathlike], shuffle_iters: bool = True, seed: Optional[int] = None
     ) -> "CutSet":
         """
         Constructor that creates a single CutSet out of many manifest files.
@@ -286,6 +286,8 @@ class CutSet(Serializable, AlgorithmMixin):
         :param shuffle_iters: bool, should we shuffle `paths` each time we iterate the returned
             CutSet (enabled by default).
         :param seed: int, random seed controlling the shuffling RNG.
+            By default, we'll use Python's global RNG so the order
+            will be different on each script execution.
         :return: a lazy CutSet instance.
         """
         from lhotse.lazy import LazyIteratorChain, LazyManifestIterator

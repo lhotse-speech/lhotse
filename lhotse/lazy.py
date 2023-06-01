@@ -237,7 +237,10 @@ class LazyIteratorChain(ImitatesDict):
     """
 
     def __init__(
-        self, *iterators: Iterable, shuffle_iters: bool = False, seed: int = 0
+        self,
+        *iterators: Iterable,
+        shuffle_iters: bool = False,
+        seed: Optional[int] = None,
     ) -> None:
         self.iterators = []
         self.shuffle_iters = shuffle_iters
@@ -254,7 +257,11 @@ class LazyIteratorChain(ImitatesDict):
     def __iter__(self):
         iterators = self.iterators
         if self.shuffle_iters:
-            random.Random(self.seed + self.num_iters).shuffle(iterators)
+            if self.seed is None:
+                rng = random  # global Python RNG
+            else:
+                rng = random.Random(self.seed + self.num_iters)
+            rng.shuffle(iterators)
             self.num_iters += 1
         for it in iterators:
             if isinstance(it, dict):
