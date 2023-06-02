@@ -71,7 +71,7 @@ def manifests_exist(
     output_dir: Optional[Pathlike],
     types: Iterable[str] = DEFAULT_DETECTED_MANIFEST_TYPES,
     prefix: str = "",
-    suffix: str = "json",
+    suffix: str = "jsonl.gz",
 ) -> bool:
     if output_dir is None:
         return False
