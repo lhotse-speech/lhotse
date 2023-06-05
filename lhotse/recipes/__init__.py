@@ -41,7 +41,12 @@ from .libricss import download_libricss, prepare_libricss
 from .librilight import prepare_librilight
 from .librimix import download_librimix, prepare_librimix
 from .librispeech import download_librispeech, prepare_librispeech
-from .libritts import download_libritts, prepare_libritts
+from .libritts import (
+    download_libritts,
+    download_librittsr,
+    prepare_libritts,
+    prepare_librittsr,
+)
 from .ljspeech import download_ljspeech, prepare_ljspeech
 from .magicdata import download_magicdata, prepare_magicdata
 from .mgb2 import prepare_mgb2
