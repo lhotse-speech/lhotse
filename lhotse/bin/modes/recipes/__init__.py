@@ -7,6 +7,7 @@ from .aishell4 import *
 from .ali_meeting import *
 from .ami import *
 from .aspire import *
+from .atcosim import *
 from .babel import *
 from .broadcast_news import *
 from .but_reverb_db import *
@@ -32,6 +33,7 @@ from .fisher_spanish import *
 from .gale_arabic import *
 from .gale_mandarin import *
 from .gigaspeech import *
+from .gigast import *
 from .heroico import *
 from .hifitts import *
 from .himia import *
@@ -48,6 +50,7 @@ from .mgb2 import *
 from .mls import *
 from .mtedx import *
 from .musan import *
+from .must_c import *
 from .nsc import *
 from .peoples_speech import *
 from .primewords import *
@@ -61,6 +64,7 @@ from .tal_csasr import *
 from .tedlium import *
 from .thchs_30 import *
 from .timit import *
+from .uwb_atcc import *
 from .vctk import *
 from .voxceleb import *
 from .wenet_speech import *

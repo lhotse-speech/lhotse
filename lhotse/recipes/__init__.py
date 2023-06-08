@@ -5,6 +5,7 @@ from .aishell4 import download_aishell4, prepare_aishell4
 from .ali_meeting import download_ali_meeting, prepare_ali_meeting
 from .ami import download_ami, prepare_ami
 from .aspire import prepare_aspire
+from .atcosim import download_atcosim, prepare_atcosim
 from .babel import prepare_single_babel_language
 from .broadcast_news import prepare_broadcast_news
 from .but_reverb_db import download_but_reverb_db, prepare_but_reverb_db
@@ -30,6 +31,7 @@ from .fisher_spanish import prepare_fisher_spanish
 from .gale_arabic import prepare_gale_arabic
 from .gale_mandarin import prepare_gale_mandarin
 from .gigaspeech import prepare_gigaspeech
+from .gigast import download_gigast, prepare_gigast
 from .heroico import download_heroico, prepare_heroico
 from .hifitts import download_hifitts, prepare_hifitts
 from .himia import download_himia, prepare_himia
@@ -39,7 +41,12 @@ from .libricss import download_libricss, prepare_libricss
 from .librilight import prepare_librilight
 from .librimix import download_librimix, prepare_librimix
 from .librispeech import download_librispeech, prepare_librispeech
-from .libritts import download_libritts, prepare_libritts
+from .libritts import (
+    download_libritts,
+    download_librittsr,
+    prepare_libritts,
+    prepare_librittsr,
+)
 from .ljspeech import download_ljspeech, prepare_ljspeech
 from .magicdata import download_magicdata, prepare_magicdata
 from .mgb2 import prepare_mgb2
@@ -57,6 +64,7 @@ from .switchboard import prepare_switchboard
 from .tedlium import download_tedlium, prepare_tedlium
 from .thchs_30 import download_thchs_30, prepare_thchs_30
 from .timit import download_timit, prepare_timit
+from .uwb_atcc import download_uwb_atcc, prepare_uwb_atcc
 from .vctk import download_vctk, prepare_vctk
 from .voxceleb import download_voxceleb1, download_voxceleb2, prepare_voxceleb
 from .wenet_speech import prepare_wenet_speech

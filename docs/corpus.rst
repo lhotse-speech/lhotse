@@ -59,6 +59,8 @@ a CLI tool that create the manifests given a corpus directory.
     - :func:`lhotse.recipes.prepare_ami`
   * - ASpIRE
     - :func:`lhotse.recipes.prepare_aspire`
+  * - ATCOSIM
+    - :func:`lhotse.recipes.prepare_atcosim`
   * - BABEL
     - :func:`lhotse.recipes.prepare_single_babel_language`
   * - BUT ReverbDB
@@ -107,6 +109,8 @@ a CLI tool that create the manifests given a corpus directory.
     - :func:`lhotse.recipes.prepare_gale_mandarin`
   * - GigaSpeech
     - :func:`lhotse.recipes.prepare_gigaspeech`
+  * - GigaST
+    - :func:`lhotse.recipes.prepare_gigast`
   * - Heroico
     - :func:`lhotse.recipes.prepare_heroico`
   * - HiFiTTS
@@ -125,6 +129,8 @@ a CLI tool that create the manifests given a corpus directory.
     - :func:`lhotse.recipes.prepare_librispeech`
   * - LibriTTS
     - :func:`lhotse.recipes.prepare_libritts`
+  * - LibriTTS-R
+    - :func:`lhotse.recipes.prepare_librittsr`
   * - LJ Speech
     - :func:`lhotse.recipes.prepare_ljspeech`
   * - MiniLibriMix
@@ -137,6 +143,8 @@ a CLI tool that create the manifests given a corpus directory.
     - :func:`lhotse.recipes.prepare_mls`
   * - MUSAN
     - :func:`lhotse.recipes.prepare_musan`
+  * - MuST-C
+    - :func:`lhotse.recipes.prepare_must_c`
   * - National Speech Corpus (Singaporean English)
     - :func:`lhotse.recipes.prepare_nsc`
   * - People's Speech
@@ -153,6 +161,8 @@ a CLI tool that create the manifests given a corpus directory.
     - :func:`lhotse.recipes.prepare_tedlium`
   * - TIMIT
     - :func:`lhotse.recipes.prepare_timit`
+  * - UWB-ATCC
+    - :func:`lhotse.recipes.prepare_uwb_atcc`
   * - VCTK
     - :func:`lhotse.recipes.prepare_vctk`
   * - VoxCeleb
