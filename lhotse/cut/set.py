@@ -2240,7 +2240,8 @@ class CutSet(Serializable, AlgorithmMixin):
                 if isinstance(cut, MixedCut):
                     # If this was a mixed cut, we will just discard its
                     # recordings and create a new mono cut that has just
-                    # the features attached.
+                    # the features attached. We will also set its `channel`
+                    # to 0, since we are creating a mono cut.
                     feat_manifest.recording_id = cut.id
                     cut = MonoCut(
                         id=cut.id,
@@ -2249,7 +2250,8 @@ class CutSet(Serializable, AlgorithmMixin):
                         channel=0,
                         # Update supervisions recording_id for consistency
                         supervisions=[
-                            fastcopy(s, recording_id=cut.id) for s in cut.supervisions
+                            fastcopy(s, recording_id=cut.id, channel=0)
+                            for s in cut.supervisions
                         ],
                         features=feat_manifest,
                         recording=None,
