@@ -14,8 +14,35 @@ from lhotse.workarounds import Hdf5MemoryIssueFix
 
 class K2SurtDataset(torch.utils.data.Dataset):
     """
-    The PyTorch Dataset for the multi-talker SURT task using k2 library.
+    The PyTorch Dataset for the multi-talker ASR task using k2 library.
+    We support the modeling framework known as Streaming Unmixing and Recognition
+    Transducer (SURT), as described in [1] and [2], but this dataset can also be
+    used for other multi-talker ASR approaches such as MT-RNNT [3] and SOT [4].
     See icefall recipe for usage.
+
+    We take a cut containing possibly overlapping speech and split the supervision
+    segments into one of N channels based on their start times (N is provided), known
+    as ``heuristic error assignment training`` (HEAT) [1]. The supervision segments
+    in each channel are then concatenated and used as the supervision for that channel.
+    If we have features for the source cuts, we can also return them for use in masking
+    losses, for instance.
+
+    [1] Lu, L., Kanda, N., Li, J., & Gong, Y. (2021). Streaming end-to-end multi-talker
+    speech recognition. IEEE Signal Processing Letters, 28, 803-807.
+
+    [2] Raj, D., Lu, L., Chen, Z., Gaur, Y., & Li, J. (2022, May). Continuous streaming
+    multi-talker asr with dual-path transducers. In ICASSP 2022-2022 IEEE International
+    Conference on Acoustics, Speech and Signal Processing (ICASSP) (pp. 7317-7321). IEEE.
+
+    [3] Sklyar, I., Piunova, A., Zheng, X., & Liu, Y. (2022, May). Multi-turn RNN-T for
+    streaming recognition of multi-party speech. In ICASSP 2022-2022 IEEE International
+    Conference on Acoustics, Speech and Signal Processing (ICASSP) (pp. 8402-8406). IEEE.
+
+    [4] Kanda, N., Gaur, Y., Wang, X., Meng, Z., & Yoshioka, T. (2020). Serialized output
+    training for end-to-end overlapped speech recognition. arXiv preprint arXiv:2003.12687.
+
+    .. hint:: Training mixtures can be simulated from single-speaker utterances using
+        :class:`~lhotse.workflows.MeetingSimulation` workflow.
 
     This dataset expects to be queried with lists of cut IDs,
     for which it loads features and automatically collates/batches them.
@@ -44,6 +71,34 @@ class K2SurtDataset(torch.utils.data.Dataset):
                     joined by the :attr:`text_delimiter`. Note that some channels may have no
                     supervision segments, so the corresponding text will be an empty string.
         }
+
+    If ``return_cuts`` is ``True``, each item will also contain a ``cuts`` field with the
+    :class:`~lhotse.cut.Cut` objects used to create the batch.
+
+    Additionally, if ``return_sources`` is ``True``, each item will contain:
+
+    .. code-block::
+
+        {
+            'source_feats': list of list of float tensors. The outer list is batch, and the inner
+                            list is number of segments in the mixture. Each element denotes
+                            the features of the source cut in the mixture.
+            'source_boundaries': list of list of tuples, where the outer list is batch, and the inner list
+                                is number of segments in the mixture. Each element denotes
+                                the start and end frame of the source cut in the mixture.
+        }
+
+    In order to return the source features and boundaries, we expect the cuts to contain
+    some additional fields:
+
+    - ``source_feats``: a float tensor representing the features of all the source segments,
+        concatenated together along T dimension, in order of their start times.
+    - ``source_feat_offsets``: a list of ints, where each element denotes the offset of the
+        source segments in the ``source_feats`` tensor.
+
+    See https://github.com/lhotse-speech/lhotse/discussions/1008#discussioncomment-5511746
+    for example code to create these fields.
+
 
     Dimension symbols legend:
     * ``B`` - batch size (number of Cuts)
