@@ -13,7 +13,7 @@ from decimal import ROUND_HALF_UP
 from functools import lru_cache, partial
 from io import BytesIO, IOBase
 from itertools import islice
-from math import ceil, sqrt
+from math import ceil, isclose, sqrt
 from pathlib import Path
 from subprocess import PIPE, CalledProcessError, run
 from typing import (
@@ -43,7 +43,7 @@ from lhotse.augmentation import (
     Tempo,
     Volume,
 )
-from lhotse.caching import dynamic_lru_cache
+from lhotse.caching import AudioCache
 from lhotse.lazy import AlgorithmMixin
 from lhotse.serialization import Serializable
 from lhotse.utils import (
@@ -186,35 +186,45 @@ class AudioSource:
         source = self.source
 
         if self.type == "command":
-            if offset != 0.0 or duration is not None:
-                # TODO(pzelasko): How should we support chunking for commands?
-                #                 We risk being very inefficient when reading many chunks from the same file
-                #                 without some caching scheme, because we'll be re-running commands.
+            if (offset != 0.0 or duration is not None) and not AudioCache.enabled():
                 warnings.warn(
                     "You requested a subset of a recording that is read from disk via a bash command. "
                     "Expect large I/O overhead if you are going to read many chunks like these, "
                     "since every time we will read the whole file rather than its subset."
+                    "You can use `lhotse.set_caching_enabled(True)` to mitigate the overhead."
                 )
-            source = BytesIO(run(self.source, shell=True, stdout=PIPE).stdout)
+
+            # Let's assume 'self.source' is a pipe-command with unchangeable file,
+            # never a microphone-stream or a live-stream.
+            audio_bytes = AudioCache.try_cache(self.source)
+            if not audio_bytes:
+                audio_bytes = run(self.source, shell=True, stdout=PIPE).stdout
+                AudioCache.add_to_cache(self.source, audio_bytes)
+
             samples, sampling_rate = read_audio(
-                source, offset=offset, duration=duration
+                BytesIO(audio_bytes), offset=offset, duration=duration
             )
 
         elif self.type == "url":
-            if offset != 0.0 or duration is not None:
-                # TODO(pzelasko): How should we support chunking for URLs?
-                #                 We risk being very inefficient when reading many chunks from the same file
-                #                 without some caching scheme, because we'll be re-running commands.
+            if offset != 0.0 or duration is not None and not AudioCache.enabled():
                 warnings.warn(
                     "You requested a subset of a recording that is read from URL. "
                     "Expect large I/O overhead if you are going to read many chunks like these, "
                     "since every time we will download the whole file rather than its subset."
+                    "You can use `lhotse.set_caching_enabled(True)` to mitigate the overhead."
                 )
-            with SmartOpen.open(self.source, "rb") as f:
-                source = BytesIO(f.read())
-                samples, sampling_rate = read_audio(
-                    source, offset=offset, duration=duration
-                )
+
+            # Let's assume 'self.source' is url to unchangeable file,
+            # never a microphone-stream or a live-stream.
+            audio_bytes = AudioCache.try_cache(self.source)
+            if not audio_bytes:
+                with SmartOpen.open(self.source, "rb") as f:
+                    audio_bytes = f.read()
+                AudioCache.add_to_cache(self.source, audio_bytes)
+
+            samples, sampling_rate = read_audio(
+                BytesIO(audio_bytes), offset=offset, duration=duration
+            )
 
         elif self.type == "memory":
             assert isinstance(self.source, bytes), (
@@ -566,6 +576,13 @@ class Recording:
             f"is smaller than the requested offset {offset}s."
         )
 
+        # Micro-optimization for a number of audio loading cases:
+        # if duration is very close to full recording,
+        # just read everything, and we'll discard some samples at the end.
+        orig_duration = duration
+        if duration is not None and isclose(duration, self.duration, abs_tol=1e-3):
+            duration = None
+
         if channels is None:
             channels = SetContainingAnything()
         else:
@@ -622,7 +639,7 @@ class Recording:
         # Transformation chains can introduce small mismatches in the number of samples:
         # we'll fix them here, or raise an error if they exceeded a tolerance threshold.
         audio = assert_and_maybe_fix_num_samples(
-            audio, offset=offset, duration=duration, recording=self
+            audio, offset=offset, duration=orig_duration, recording=self
         )
 
         return audio
@@ -985,6 +1002,7 @@ class RecordingSet(Serializable, AlgorithmMixin):
         num_jobs: int = 1,
         force_opus_sampling_rate: Optional[int] = None,
         recording_id: Optional[Callable[[Path], str]] = None,
+        exclude_pattern: Optional[str] = None,
     ):
         """
         Recursively scan a directory ``path`` for audio files that match the given ``pattern`` and create
@@ -1006,6 +1024,8 @@ class RecordingSet(Serializable, AlgorithmMixin):
             "under-the-hood". For non-OPUS files this input does nothing.
         :param recording_id: A function which takes the audio file path and returns the recording ID. If not
             specified, the filename will be used as the recording ID.
+        :param exclude_pattern: optional regex string for identifying file name patterns to exclude.
+            There has to be a full regex match to trigger exclusion.
         :return: a new ``Recording`` instance pointing to the audio file.
         """
         msg = f"Scanning audio files ({pattern})"
@@ -1016,15 +1036,20 @@ class RecordingSet(Serializable, AlgorithmMixin):
             recording_id=recording_id,
         )
 
+        it = Path(path).rglob(pattern)
+        if exclude_pattern is not None:
+            exclude_pattern = re.compile(exclude_pattern)
+            it = filter(lambda p: exclude_pattern.match(p.name) is None, it)
+
         if num_jobs == 1:
             # Avoid spawning process for one job.
             return RecordingSet.from_recordings(
-                tqdm(map(file_read_worker, Path(path).rglob(pattern)), desc=msg)
+                tqdm(map(file_read_worker, it), desc=msg)
             )
         with ProcessPoolExecutor(num_jobs) as ex:
             return RecordingSet.from_recordings(
                 tqdm(
-                    ex.map(file_read_worker, Path(path).rglob(pattern)),
+                    ex.map(file_read_worker, it),
                     desc=msg,
                 )
             )
@@ -1291,6 +1316,7 @@ class AudioMixer:
         base_audio: np.ndarray,
         sampling_rate: int,
         reference_energy: Optional[float] = None,
+        base_offset: Seconds = 0.0,
     ):
         """
         AudioMixer's constructor.
@@ -1300,9 +1326,10 @@ class AudioMixer:
         :param sampling_rate: Sampling rate of the audio.
         :param reference_energy: Optionally pass a reference energy value to compute SNRs against.
             This might be required when ``base_audio`` corresponds to zero-padding.
+        :param base_offset: Optionally pass a time offset for the base signal.
         """
         self.tracks = [base_audio]
-        self.offsets = [0]
+        self.offsets = [compute_num_samples(base_offset, sampling_rate)]
         self.sampling_rate = sampling_rate
         self.num_channels = base_audio.shape[0]
         self.dtype = self.tracks[0].dtype
@@ -1432,7 +1459,6 @@ def audio_energy(audio: np.ndarray) -> float:
 FileObject = Any  # Alias for file-like objects
 
 
-@dynamic_lru_cache
 def read_audio(
     path_or_fd: Union[Pathlike, FileObject],
     offset: Seconds = 0.0,
@@ -1758,7 +1784,6 @@ def info(
     force_opus_sampling_rate: Optional[int] = None,
     force_read_audio: bool = False,
 ) -> LibsndfileCompatibleAudioInfo:
-
     if force_read_audio:
         # This is a reliable fallback for situations when the user knows that audio files do not
         # have duration metadata in their headers.
