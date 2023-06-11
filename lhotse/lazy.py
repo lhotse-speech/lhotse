@@ -227,11 +227,25 @@ class LazyIteratorChain(ImitatesDict):
     A thin wrapper over multiple iterators that enables to combine lazy manifests
     in Lhotse. It iterates all underlying iterables sequentially.
 
+    It also supports shuffling the sub-iterators when it's iterated over.
+    This can be used to implement sharding (where each iterator is a shard)
+    with randomized shard order. Every iteration of this object will increment
+    an internal counter so that the next time it's iterated, the order of shards
+    is again randomized.
+
     .. note:: if any of the input iterables is a dict, we'll iterate only its values.
     """
 
-    def __init__(self, *iterators: Iterable) -> None:
+    def __init__(
+        self,
+        *iterators: Iterable,
+        shuffle_iters: bool = False,
+        seed: Optional[int] = None,
+    ) -> None:
         self.iterators = []
+        self.shuffle_iters = shuffle_iters
+        self.seed = seed
+        self.num_iters = 0
         for it in iterators:
             # Auto-flatten LazyIteratorChain instances if any are passed
             if isinstance(it, LazyIteratorChain):
@@ -241,7 +255,15 @@ class LazyIteratorChain(ImitatesDict):
                 self.iterators.append(it)
 
     def __iter__(self):
-        for it in self.iterators:
+        iterators = self.iterators
+        if self.shuffle_iters:
+            if self.seed is None:
+                rng = random  # global Python RNG
+            else:
+                rng = random.Random(self.seed + self.num_iters)
+            rng.shuffle(iterators)
+            self.num_iters += 1
+        for it in iterators:
             if isinstance(it, dict):
                 it = it.values()
             yield from it

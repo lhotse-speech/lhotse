@@ -129,6 +129,8 @@ a CLI tool that create the manifests given a corpus directory.
     - :func:`lhotse.recipes.prepare_librispeech`
   * - LibriTTS
     - :func:`lhotse.recipes.prepare_libritts`
+  * - LibriTTS-R
+    - :func:`lhotse.recipes.prepare_librittsr`
   * - LJ Speech
     - :func:`lhotse.recipes.prepare_ljspeech`
   * - MiniLibriMix
@@ -141,6 +143,8 @@ a CLI tool that create the manifests given a corpus directory.
     - :func:`lhotse.recipes.prepare_mls`
   * - MUSAN
     - :func:`lhotse.recipes.prepare_musan`
+  * - MuST-C
+    - :func:`lhotse.recipes.prepare_must_c`
   * - National Speech Corpus (Singaporean English)
     - :func:`lhotse.recipes.prepare_nsc`
   * - People's Speech

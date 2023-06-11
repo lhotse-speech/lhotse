@@ -667,3 +667,21 @@ def test_cut_set_decompose_output_dir_doesnt_duplicate_recording():
         # deduplicated recording
         assert len(recs) == 1
         assert recs[0].id == "dummy-recording-0000"
+
+
+def test_cut_set_from_files():
+    cs1 = DummyManifest(CutSet, begin_id=0, end_id=10)
+    cs2 = DummyManifest(CutSet, begin_id=10, end_id=20)
+    with NamedTemporaryFile(suffix=".jsonl.gz") as f1, NamedTemporaryFile(
+        suffix=".jsonl.gz"
+    ) as f2:
+        cs1.to_file(f1.name)
+        f1.flush()
+        cs2.to_file(f2.name)
+        f2.flush()
+
+        cs = CutSet.from_files([f1.name, f2.name], shuffle_iters=True, seed=0)
+        # __getitem__ with int index iterates lazy manifets
+        assert cs[0].id == "dummy-mono-cut-0000"
+        # On second iteration, we see a different order
+        assert cs[0].id == "dummy-mono-cut-0010"
