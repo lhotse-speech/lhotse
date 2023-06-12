@@ -24,9 +24,9 @@ from typing import Dict, Iterable, List, Optional, Sequence, Tuple, Union
 from tqdm.auto import tqdm
 
 from lhotse import (
+    get_ffmpeg_torchaudio_info_enabled,
     load_manifest,
     set_ffmpeg_torchaudio_info_enabled,
-    get_ffmpeg_torchaudio_info_enabled,
     validate_recordings_and_supervisions,
 )
 from lhotse.audio import Recording, RecordingSet
@@ -114,9 +114,8 @@ def download_commonvoice(
 
 @contextmanager
 def disable_ffmpeg_torchaudio_info() -> None:
-    enabled = get_ffmpeg_torchaudio_info_enabled(),
-    if enabled:
-        set_ffmpeg_torchaudio_info_enabled(False)
+    enabled = (get_ffmpeg_torchaudio_info_enabled(),)
+    set_ffmpeg_torchaudio_info_enabled(False)
     try:
         yield
     finally:
