@@ -24,6 +24,7 @@ from lhotse.utils import (
     overlaps,
     overspans,
     safe_extract,
+    safe_extract_rar,
     streaming_shuffle,
 )
 
@@ -224,6 +225,36 @@ def test_extract_unsafe_tar_file(unsafe_tar_file):
     with TemporaryDirectory() as tmpdir, tarfile.open(unsafe_tar_file) as tar:
         with pytest.raises(Exception):
             safe_extract(tar, tmpdir)
+
+
+# rarfile has no create archive implementation, so for testing purposes, present a TarFile as a RarFile
+class TarInfo2RarInfo:
+    def __init__(self, tarinfo):
+        self.tarinfo = tarinfo
+        self.filename = tarinfo.name
+
+
+class TarFile2RarFile:
+    def __init__(self, tar):
+        self.tar = tar
+
+    def infolist(self):
+        return [TarInfo2RarInfo(m) for m in self.tar.getmembers()]
+
+    def extractall(self, path, members):
+        return self.tar.extractall(path, members)
+
+
+def test_extract_safe_rar_file(safe_tar_file):
+    with TemporaryDirectory() as tmpdir, tarfile.open(safe_tar_file) as tar:
+        safe_extract_rar(TarFile2RarFile(tar), path=tmpdir)
+        assert (Path(tmpdir) / "test/fixtures/audio.json").is_file()
+
+
+def test_extract_unsafe_rar_file(unsafe_tar_file):
+    with TemporaryDirectory() as tmpdir, tarfile.open(unsafe_tar_file) as tar:
+        with pytest.raises(Exception):
+            safe_extract_rar(TarFile2RarFile(tar), tmpdir)
 
 
 @pytest.mark.parametrize(

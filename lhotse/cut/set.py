@@ -271,6 +271,36 @@ class CutSet(Serializable, AlgorithmMixin):
         )
 
     @staticmethod
+    def from_files(
+        paths: List[Pathlike], shuffle_iters: bool = True, seed: Optional[int] = None
+    ) -> "CutSet":
+        """
+        Constructor that creates a single CutSet out of many manifest files.
+        We will iterate sequentially over each of the files, and by default we
+        will randomize the file order every time CutSet is iterated.
+
+        This is intended primarily for large datasets which are split into many small manifests,
+        to ensure that the order in which data is seen during training can be properly randomized.
+
+        :param paths: a list of paths to cut manifests.
+        :param shuffle_iters: bool, should we shuffle `paths` each time we iterate the returned
+            CutSet (enabled by default).
+        :param seed: int, random seed controlling the shuffling RNG.
+            By default, we'll use Python's global RNG so the order
+            will be different on each script execution.
+        :return: a lazy CutSet instance.
+        """
+        from lhotse.lazy import LazyIteratorChain, LazyManifestIterator
+
+        return CutSet(
+            LazyIteratorChain(
+                *(LazyManifestIterator(p) for p in paths),
+                shuffle_iters=shuffle_iters,
+                seed=seed,
+            )
+        )
+
+    @staticmethod
     def from_cuts(cuts: Iterable[Cut]) -> "CutSet":
         return CutSet(cuts=index_by_id_and_check(cuts))
 
@@ -2212,7 +2242,8 @@ class CutSet(Serializable, AlgorithmMixin):
                 if isinstance(cut, MixedCut):
                     # If this was a mixed cut, we will just discard its
                     # recordings and create a new mono cut that has just
-                    # the features attached.
+                    # the features attached. We will also set its `channel`
+                    # to 0, since we are creating a mono cut.
                     feat_manifest.recording_id = cut.id
                     cut = MonoCut(
                         id=cut.id,
@@ -2221,7 +2252,8 @@ class CutSet(Serializable, AlgorithmMixin):
                         channel=0,
                         # Update supervisions recording_id for consistency
                         supervisions=[
-                            fastcopy(s, recording_id=cut.id) for s in cut.supervisions
+                            fastcopy(s, recording_id=cut.id, channel=0)
+                            for s in cut.supervisions
                         ],
                         features=feat_manifest,
                         recording=None,

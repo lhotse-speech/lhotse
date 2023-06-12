@@ -180,6 +180,16 @@ def mixed_audio_cut() -> MixedCut:
     return mixed_cut
 
 
+@pytest.fixture
+def offseted_mixed_audio_cut() -> MixedCut:
+    cut_set = CutSet.from_json(
+        "test/fixtures/mix_cut_test/offseted_audio_cut_manifest.json"
+    )
+    mixed_cut = cut_set["mixed-cut-id"]
+    assert isclose(mixed_cut.duration, 16.66)
+    return mixed_cut
+
+
 def test_mixed_cut_load_audio_mixed(mixed_audio_cut):
     audio = mixed_audio_cut.load_audio()
     assert audio.shape == (1, 230400)
@@ -191,6 +201,11 @@ def test_mixed_cut_load_audio_unmixed(mixed_audio_cut):
     assert len(audio) == 2
     assert audio[0].shape == (1, 230400)
     assert audio[1].shape == (1, 230400)
+
+
+def test_mixed_cut_load_offseted_mixed(offseted_mixed_audio_cut):
+    audio = offseted_mixed_audio_cut.load_audio()
+    assert audio.shape == (1, 266560)
 
 
 @pytest.mark.parametrize(
