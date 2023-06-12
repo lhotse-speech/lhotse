@@ -114,7 +114,7 @@ def download_commonvoice(
 
 @contextmanager
 def disable_ffmpeg_torchaudio_info() -> None:
-    enabled = (get_ffmpeg_torchaudio_info_enabled(),)
+    enabled = get_ffmpeg_torchaudio_info_enabled()
     set_ffmpeg_torchaudio_info_enabled(False)
     try:
         yield
