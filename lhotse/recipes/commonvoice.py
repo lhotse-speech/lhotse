@@ -26,6 +26,7 @@ from tqdm.auto import tqdm
 from lhotse import (
     load_manifest,
     set_ffmpeg_torchaudio_info_enabled,
+    get_ffmpeg_torchaudio_info_enabled,
     validate_recordings_and_supervisions,
 )
 from lhotse.audio import Recording, RecordingSet
@@ -113,11 +114,13 @@ def download_commonvoice(
 
 @contextmanager
 def disable_ffmpeg_torchaudio_info() -> None:
-    set_ffmpeg_torchaudio_info_enabled(False)
+    enabled = get_ffmpeg_torchaudio_info_enabled(),
+    if enabled:
+        set_ffmpeg_torchaudio_info_enabled(False)
     try:
         yield
     finally:
-        set_ffmpeg_torchaudio_info_enabled(True)
+        set_ffmpeg_torchaudio_info_enabled(enabled)
 
 
 def _read_cv_manifests_if_cached(
