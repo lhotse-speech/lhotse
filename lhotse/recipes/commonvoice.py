@@ -9,7 +9,6 @@ This project is an effort to bridge the digital speech divide. Voice recognition
 How does it work?
 We are crowdsourcing an open-source dataset of voices. Donate your voice, validate the accuracy of other people's clips, make the dataset better for everyone.
 """
-import csv
 import logging
 import math
 import numbers
@@ -17,7 +16,8 @@ import shutil
 import tarfile
 import warnings
 from collections import defaultdict
-from concurrent.futures.thread import ThreadPoolExecutor
+from concurrent.futures.process import ProcessPoolExecutor
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Sequence, Tuple, Union
 
@@ -39,9 +39,7 @@ DEFAULT_COMMONVOICE_URL = (
 
 COMMONVOICE_LANGS = "en de fr cy tt kab ca zh-TW it fa eu es ru tr nl eo zh-CN rw pt zh-HK cs pl uk".split()
 COMMONVOICE_SPLITS = ("train", "dev", "test", "validated", "invalidated", "other")
-COMMONVOICE_DEFAULT_SPLITS = ("train", "dev", "test")
-
-set_ffmpeg_torchaudio_info_enabled(False)
+COMMONVOICE_DEFAULT_SPLITS = ("test", "dev", "train")
 
 
 def download_commonvoice(
@@ -113,6 +111,15 @@ def download_commonvoice(
         completed_detector.touch()
 
 
+@contextmanager
+def disable_ffmpeg_torchaudio_info() -> None:
+    set_ffmpeg_torchaudio_info_enabled(False)
+    try:
+        yield
+    finally:
+        set_ffmpeg_torchaudio_info_enabled(True)
+
+
 def _read_cv_manifests_if_cached(
     output_dir: Optional[Pathlike],
     language: str,
@@ -136,8 +143,9 @@ def _read_cv_manifests_if_cached(
 def _parse_utterance(
     lang_path: Path,
     language: str,
-    audio_info: list,
+    audio_info: str,
 ) -> Optional[Tuple[Recording, SupervisionSegment]]:
+    audio_info = audio_info.split("\t", -1)
     audio_path = lang_path / "clips" / audio_info[1]
 
     if not audio_path.is_file():
@@ -186,32 +194,32 @@ def _prepare_part(
     lang_path = Path(lang_path)
     tsv_path = lang_path / f"{part}.tsv"
 
-    with ThreadPoolExecutor(num_jobs) as ex:
-        futures = []
-        recordings = []
-        supervisions = []
+    with disable_ffmpeg_torchaudio_info():
+        with ProcessPoolExecutor(num_jobs) as ex:
+            futures = []
+            recordings = []
+            supervisions = []
 
-        with open(tsv_path) as f:
-            tsvreader = csv.reader(f, delimiter="\t")
-            audio_infos = list(tsvreader)
+            with open(tsv_path) as f:
+                audio_infos = iter(f.readlines())
 
-        for audio_info in tqdm(audio_infos, desc="Distributing tasks"):
-            futures.append(
-                ex.submit(
-                    _parse_utterance,
-                    lang_path,
-                    lang,
-                    audio_info,
+            for audio_info in tqdm(audio_infos, desc="Distributing tasks"):
+                futures.append(
+                    ex.submit(
+                        _parse_utterance,
+                        lang_path,
+                        lang,
+                        audio_info,
+                    )
                 )
-            )
 
-        for future in tqdm(futures, desc="Processing"):
-            result = future.result()
-            if result is None:
-                continue
-            recording, segment = result
-            recordings.append(recording)
-            supervisions.append(segment)
+            for future in tqdm(futures, desc="Processing"):
+                result = future.result()
+                if result is None:
+                    continue
+                recording, segment = result
+                recordings.append(recording)
+                supervisions.append(segment)
 
     recording_set = RecordingSet.from_recordings(recordings)
     supervision_set = SupervisionSet.from_segments(supervisions)
