@@ -18,7 +18,7 @@ class K2SurtDataset(torch.utils.data.Dataset):
     We support the modeling framework known as Streaming Unmixing and Recognition
     Transducer (SURT), as described in [1] and [2], but this dataset can also be
     used for other multi-talker ASR approaches such as MT-RNNT [3] and SOT [4].
-    See icefall recipe for usage.
+    See icefall recipe for usage: https://github.com/k2-fsa/icefall/pull/1126.
 
     We take a cut containing possibly overlapping speech and split the supervision
     segments into one of N channels based on their start times (N is provided), known
