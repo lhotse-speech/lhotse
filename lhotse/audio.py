@@ -1784,7 +1784,6 @@ def info(
     force_opus_sampling_rate: Optional[int] = None,
     force_read_audio: bool = False,
 ) -> LibsndfileCompatibleAudioInfo:
-
     if force_read_audio:
         # This is a reliable fallback for situations when the user knows that audio files do not
         # have duration metadata in their headers.
