@@ -420,7 +420,7 @@ def test_mixed_cut_start01_reverb_rir_with_fast_random(
 ):
     mixed_rvb = cut_with_supervision_start01.append(
         cut_with_supervision_start01
-    ).reverb_rir()
+    ).reverb_rir(mix_first=False)
     assert mixed_rvb.start == 0  # MixedCut always starts at 0
     assert mixed_rvb.duration == cut_with_supervision_start01.duration * 2
     assert mixed_rvb.end == cut_with_supervision_start01.duration * 2

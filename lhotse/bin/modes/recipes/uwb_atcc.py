@@ -20,10 +20,10 @@ def uwb_atcc(target_dir: Pathlike):
 @click.option("--silence-sym", type=str, default="")
 @click.option("--breath-sym", type=str, default="")
 @click.option("--noise-sym", type=str, default="")
-@click.option("--foreign-sym", type=str, default="<UNK>")
-@click.option("--partial-sym", type=str, default="<UNK>")
-@click.option("--unintelligble-sym", type=str, default="<UNK>")
-@click.option("--unknown-sym", type=str, default="<UNK>")
+@click.option("--foreign-sym", type=str, default="<unk>")
+@click.option("--partial-sym", type=str, default="<unk>")
+@click.option("--unintelligble-sym", type=str, default="<unk>")
+@click.option("--unknown-sym", type=str, default="<unk>")
 def uwb_atcc(
     corpus_dir: Pathlike,
     output_dir: Pathlike,

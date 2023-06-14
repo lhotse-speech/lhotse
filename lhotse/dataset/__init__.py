@@ -13,6 +13,7 @@ from .source_separation import (
 )
 from .speech_recognition import K2SpeechRecognitionDataset
 from .speech_synthesis import SpeechSynthesisDataset
+from .surt import K2SurtDataset
 from .unsupervised import (
     DynamicUnsupervisedDataset,
     UnsupervisedDataset,
