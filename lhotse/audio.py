@@ -143,6 +143,19 @@ def set_ffmpeg_torchaudio_info_enabled(enabled: bool) -> None:
     FFMPEG_TORCHAUDIO_INFO_ENABLED = enabled
 
 
+def get_ffmpeg_torchaudio_info_enabled() -> bool:
+    """
+    Return FFMPEG_TORCHAUDIO_INFO_ENABLED, which is Lhotse's global setting for whether to
+    use ffmpeg-torchaudio to compute the duration of audio files.
+
+    Example::
+
+        >>> import lhotse
+        >>> lhotse.get_ffmpeg_torchaudio_info_enabled()
+    """
+    return FFMPEG_TORCHAUDIO_INFO_ENABLED
+
+
 # TODO: document the dataclasses like this:
 # https://stackoverflow.com/a/3051356/5285891
 

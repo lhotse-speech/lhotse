@@ -4,6 +4,7 @@ from .audio import (
     RecordingSet,
     set_audio_duration_mismatch_tolerance,
     set_ffmpeg_torchaudio_info_enabled,
+    get_ffmpeg_torchaudio_info_enabled,
 )
 from .caching import is_caching_enabled, set_caching_enabled
 from .cut import CutSet, MonoCut, MultiCut, create_cut_set_eager, create_cut_set_lazy
