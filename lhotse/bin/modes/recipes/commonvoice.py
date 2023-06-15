@@ -64,8 +64,8 @@ def commonvoice(
 @click.option(
     "-v",
     "--release",
-    default="cv-corpus-8.0-2022-01-19",
-    help="the name of the CommonVoice release (e.g., 'cv-corpus-8.0-2022-01-19').It is used as part of the download URL.",
+    default="cv-corpus-13.0-2023-03-09",
+    help="the name of the CommonVoice release (e.g., 'cv-corpus-13.0-2023-03-09').It is used as part of the download URL.",
 )
 def commonvoice(
     target_dir: Pathlike,
