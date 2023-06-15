@@ -1,7 +1,7 @@
 import bisect
 import math
 import random
-from typing import Dict, Optional, Sequence, Tuple, TypeVar, Union, Any
+from typing import Any, Dict, Optional, Sequence, Tuple, TypeVar, Union
 
 import numpy as np
 import torch
