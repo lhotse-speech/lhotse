@@ -53,7 +53,6 @@ def prepare_audio_mnist(
     for i in range(1, 61):
         assert f"{i:02}" in metadata, i
 
-    # read meta data
     recordings = RecordingSet.from_recordings(
         Recording.from_file(
             path=path,

@@ -11,7 +11,7 @@ from lhotse.utils import Pathlike
 @click.argument("corpus_dir", type=click.Path(exists=True, dir_okay=True))
 @click.argument("output_dir", type=click.Path())
 def audio_mnist(corpus_dir: Pathlike, output_dir: Pathlike):
-    """AudioMNIST speech translation data preparation."""
+    """AudioMNIST corpus data preparation."""
     logging.basicConfig(level=logging.INFO)
     prepare_audio_mnist(
         corpus_dir,
