@@ -14,6 +14,8 @@ from lhotse.features.kaldi.extractors import (
     MfccConfig,
     Spectrogram,
     SpectrogramConfig,
+    LogSpectrogram,
+    LogSpectrogramConfig,
 )
 from lhotse.features.kaldi.layers import Wav2LogFilterBank, Wav2MFCC, Wav2Spec
 
@@ -135,12 +137,23 @@ def test_kaldi_spectrogram_extractor_vs_torchaudio(recording):
     torch.testing.assert_allclose(feats[:, 1:], np.exp(feats_ta[:, 1:]))
 
 
+def test_kaldi_log_spectrogram_extractor_vs_torchaudio(recording):
+    audio = recording.load_audio()
+    spec = LogSpectrogram(LogSpectrogramConfig(use_energy=True))
+    spec_ta = TorchaudioSpectrogram()
+    feats = spec.extract(audio, recording.sampling_rate)
+    feats_ta = spec_ta.extract(audio, recording.sampling_rate)
+    torch.testing.assert_allclose(feats[:, 0], feats_ta[:, 0])
+    torch.testing.assert_allclose(feats[:, 1:], feats_ta[:, 1:])
+
+
 @pytest.mark.parametrize(
     "extractor_type",
     [
         lambda: Fbank(FbankConfig(snip_edges=True)),
         lambda: Mfcc(MfccConfig(snip_edges=True)),
         lambda: Spectrogram(SpectrogramConfig(snip_edges=True)),
+        lambda: LogSpectrogram(LogSpectrogramConfig(snip_edges=True)),
     ],
 )
 def test_kaldi_extractors_snip_edges_warning(extractor_type):
@@ -149,7 +162,7 @@ def test_kaldi_extractors_snip_edges_warning(extractor_type):
 
 
 @pytest.mark.parametrize(
-    "feature_type", ["kaldi-fbank", "kaldi-mfcc", "kaldi-spectrogram"]
+    "feature_type", ["kaldi-fbank", "kaldi-mfcc", "kaldi-spectrogram", "kaldi-log-spectrogram"]
 )
 def test_feature_extractor_serialization(feature_type):
     fe = create_default_feature_extractor(feature_type)

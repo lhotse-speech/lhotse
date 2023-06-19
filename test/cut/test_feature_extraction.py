@@ -22,6 +22,7 @@ from lhotse import (
     MonoCut,
     Recording,
     Spectrogram,
+    LogSpectrogram,
     SupervisionSegment,
     TorchaudioFbank,
     TorchaudioMfcc,
@@ -197,6 +198,7 @@ def is_python_311_or_higher() -> bool:
         Fbank,
         Mfcc,
         Spectrogram,
+        LogSpectrogram,
         TorchaudioFbank,
         TorchaudioMfcc,
         pytest.param(

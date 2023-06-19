@@ -34,6 +34,8 @@ from .kaldi.extractors import (
     MfccConfig,
     Spectrogram,
     SpectrogramConfig,
+    LogSpectrogram,
+    LogSpectrogramConfig,
 )
 from .kaldifeat import (
     KaldifeatFbank,
