@@ -6,7 +6,12 @@ import numpy as np
 import torch
 
 from lhotse.features.base import FeatureExtractor, register_extractor
-from lhotse.features.kaldi.layers import Wav2LogFilterBank, Wav2MFCC, Wav2Spec, Wav2LogSpec
+from lhotse.features.kaldi.layers import (
+    Wav2LogFilterBank,
+    Wav2LogSpec,
+    Wav2MFCC,
+    Wav2Spec,
+)
 from lhotse.utils import (
     EPSILON,
     Seconds,

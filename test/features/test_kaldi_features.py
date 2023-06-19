@@ -10,12 +10,12 @@ from lhotse.features import create_default_feature_extractor
 from lhotse.features.kaldi.extractors import (
     Fbank,
     FbankConfig,
+    LogSpectrogram,
+    LogSpectrogramConfig,
     Mfcc,
     MfccConfig,
     Spectrogram,
     SpectrogramConfig,
-    LogSpectrogram,
-    LogSpectrogramConfig,
 )
 from lhotse.features.kaldi.layers import Wav2LogFilterBank, Wav2MFCC, Wav2Spec
 
@@ -152,7 +152,8 @@ def test_kaldi_extractors_snip_edges_warning(extractor_type):
 
 
 @pytest.mark.parametrize(
-    "feature_type", ["kaldi-fbank", "kaldi-mfcc", "kaldi-spectrogram", "kaldi-log-spectrogram"]
+    "feature_type",
+    ["kaldi-fbank", "kaldi-mfcc", "kaldi-spectrogram", "kaldi-log-spectrogram"],
 )
 def test_feature_extractor_serialization(feature_type):
     fe = create_default_feature_extractor(feature_type)

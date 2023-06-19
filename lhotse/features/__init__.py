@@ -30,12 +30,12 @@ from .io import (
 from .kaldi.extractors import (
     Fbank,
     FbankConfig,
+    LogSpectrogram,
+    LogSpectrogramConfig,
     Mfcc,
     MfccConfig,
     Spectrogram,
     SpectrogramConfig,
-    LogSpectrogram,
-    LogSpectrogramConfig,
 )
 from .kaldifeat import (
     KaldifeatFbank,
