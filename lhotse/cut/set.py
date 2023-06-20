@@ -1818,6 +1818,7 @@ class CutSet(Serializable, AlgorithmMixin):
         preserve_id: Optional[str] = None,
         mix_prob: float = 1.0,
         seed: int = 42,
+        random_mix_offset: bool = False,
     ) -> "CutSet":
         """
         Mix cuts in this ``CutSet`` with randomly sampled cuts from another ``CutSet``.
@@ -1843,6 +1844,9 @@ class CutSet(Serializable, AlgorithmMixin):
         :param mix_prob: an optional float in range [0, 1].
             Specifies the probability of performing a mix.
             Values lower than 1.0 mean that some cuts in the output will be unchanged.
+        :param random_mix_offset: an optional bool.
+            When ``True`` and the duration of the to be mixed in cut in longer than the original cut,
+             select a random sub-region from the to be mixed in cut.
         :param seed: an optional int. Random seed for choosing the cuts to mix and the SNR.
         :return: a new ``CutSet`` with mixed cuts.
         """
@@ -1870,6 +1874,11 @@ class CutSet(Serializable, AlgorithmMixin):
             to_mix = cuts.sample()
             # Determine the SNR - either it's specified or we need to sample one.
             cut_snr = rng.uniform(*snr) if isinstance(snr, (list, tuple)) else snr
+            if random_mix_offset and to_mix.duration > cut.duration:
+                to_mix = to_mix.truncate(
+                    offset=rng.uniform(0, to_mix.duration - cut.duration),
+                    duration=cut.duration,
+                )
             # Actual mixing
             mixed = cut.mix(other=to_mix, snr=cut_snr, preserve_id=preserve_id)
             # Did the user specify a duration?
