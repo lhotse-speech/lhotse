@@ -6,7 +6,7 @@ import numpy as np
 import torch
 
 from lhotse.augmentation.transform import AudioTransform
-from lhotse.utils import Seconds, is_module_available
+from lhotse.utils import EPSILON, Seconds, is_module_available
 
 
 @dataclass
@@ -60,7 +60,7 @@ def normalize_loudness(
 
     # measure the loudness first
     meter = pyln.Meter(
-        sampling_rate, block_size=min(0.4, duration)
+        sampling_rate, block_size=min(0.4, duration - EPSILON)
     )  # create BS.1770 meter
     loudness = meter.integrated_loudness(audio.T)
 

@@ -1,7 +1,7 @@
 import bisect
 import math
 import random
-from typing import Dict, Optional, Sequence, Tuple, TypeVar, Union
+from typing import Any, Dict, Optional, Sequence, Tuple, TypeVar, Union
 
 import numpy as np
 import torch
@@ -259,7 +259,7 @@ class SpecAugment(torch.nn.Module):
 
         return features
 
-    def state_dict(self) -> Dict:
+    def state_dict(self, **kwargs) -> Dict[str, Any]:
         return dict(
             time_warp_factor=self.time_warp_factor,
             num_feature_masks=self.num_feature_masks,
@@ -270,7 +270,7 @@ class SpecAugment(torch.nn.Module):
             p=self.p,
         )
 
-    def load_state_dict(self, state_dict: Dict):
+    def load_state_dict(self, state_dict: Dict[str, Any]):
         self.time_warp_factor = state_dict.get(
             "time_warp_factor", self.time_warp_factor
         )
