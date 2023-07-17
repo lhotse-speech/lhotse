@@ -25,9 +25,9 @@ import string
 from concurrent.futures.thread import ThreadPoolExecutor
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Union
+
 import soundfile as sf
 import tqdm
-
 
 from lhotse import (
     AudioSource,
