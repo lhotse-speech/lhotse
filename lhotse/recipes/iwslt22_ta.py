@@ -78,7 +78,7 @@ def download_iwslt22_ta(
     :param target_dir: Pathlike, the path of the dir to storage the dataset.
     """
     logging.info(
-        """
+    """
         To obtaining this data your institution needs to have an LDC subscription.
         You also should download the predined splits with
         git clone https://github.com/kevinduh/iwslt22-dialect.git
@@ -91,7 +91,7 @@ def prepare_iwslt2022_ta(
     splits: Pathlike,
     output_dir: Optional[Pathlike] = None,
     clean: bool = False,
-    langs: Optional[List[str]] = ["ta", "eng"],
+    langs: Optional[List[str]] = ['ta', 'eng'],
     num_jobs: int = 1,
 ) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet]]]:
     """
@@ -125,12 +125,8 @@ def prepare_iwslt2022_ta(
     with ThreadPoolExecutor(num_jobs) as ex:
         for p in text_dir.glob("*.tsv"):
             if not p.stem.startswith("._"):
-                translations_path = (
-                    p.parent.parent.parent / "translations" / "ta" / p.name
-                )
-                translations_path = translations_path.with_name(
-                    p.stem.split(".")[0] + ".eng" + p.suffix
-                )
+                translations_path = p.parent.parent.parent / "translations" / 'ta' / p.name
+                translations_path = translations_path.with_name(p.stem.split('.')[0] + '.eng'+ p.suffix)
                 if translations_path.exists():
                     filename = p.with_suffix("").stem
                     audio_sf = sf.SoundFile(str(audio_dir / f"{filename}.sph"))
@@ -159,9 +155,7 @@ def prepare_iwslt2022_ta(
                         )
                     )
                 else:
-                    logging.warning(
-                        f"{translations_path.stem} does not exist, please make sure number of translations = transcriptions"
-                    )
+                    logging.warning(f"{translations_path.stem} does not exist, please make sure number of translations = transcriptions")
 
         for future in tqdm.tqdm(futures, desc="Processing text", leave=False):
             result = future.result()
@@ -182,7 +176,7 @@ def prepare_iwslt2022_ta(
         for split in ("train", "dev", "test1"):
             sups_ = supervisions.filter(lambda s: s.recording_id in split_files[split])
             recs_ = recordings.filter(lambda r: r.id in split_files[split])
-            manifests[split] = {"recordings": recs_, "supervisions": sups_}
+            manifests[split] = {"recordings": recs_ , "supervisions": sups_}
 
             if output_dir is not None:
                 output_dir = Path(output_dir)
@@ -209,28 +203,25 @@ def _filename_to_supervisions(
     sorted_translations = sorted(translations, key=lambda line: line.split("\t")[0])
     sorted_transcripts = sorted(transcripts, key=lambda line: line.split("\t")[0])
 
-    for src, tgt in zip(sorted_transcripts, sorted_translations):
-
+    for src,tgt in zip(sorted_transcripts, sorted_translations):  
+        
         start, end, sid, text = src.rstrip().split("\t")
         _, _, _, text_tgt = tgt.rstrip().split("\t")
         start = float(start)
         end = float(end)
 
+        
         # Following the IWSLT provided text normalization
-        text = normalize_text(text, "transcript")
-        text_tgt = normalize_text(text_tgt, "translation")
+        text = normalize_text(text, 'transcript')
+        text_tgt = normalize_text(text_tgt, 'translation')
 
         utt_id = f"{date}_{time}_{someid}_{channel}_{int(100*start):06}"
-        utt_id_tgt = (
-            f"{date_tgt}_{time_tgt}_{someid_tgt}_{channel_tgt}_{int(100*start):06}"
-        )
+        utt_id_tgt = f"{date_tgt}_{time_tgt}_{someid_tgt}_{channel_tgt}_{int(100*start):06}"
 
-        assert (
-            utt_id == utt_id_tgt
-        ), f"The loaded source and target files are not sorted properly: {utt_id} {utt_id_tgt}"
+        assert utt_id == utt_id_tgt, f"The loaded source and target files are not sorted properly: {utt_id} {utt_id_tgt}"
 
         if clean:
-            # Aggressive Tunisian text normalization and cleaning from https://aclanthology.org/2022.iwslt-1.29.pdf
+        # Aggressive Tunisian text normalization and cleaning from https://aclanthology.org/2022.iwslt-1.29.pdf
             text = data_cleaning(text)
             if text.strip() == "":
                 logging.warning(
@@ -250,7 +241,7 @@ def _filename_to_supervisions(
                 text=text,
                 language=langs[0],
                 speaker=sid,
-                custom={"tgt_lang": langs[1], "tgt_text": text_tgt},
+                custom={'tgt_lang': langs[1], 'tgt_text': text_tgt},
             )
         )
     return supervisions
@@ -368,11 +359,3 @@ def data_cleaning(text):
     text = normalize_arabic(text)
     text = normalize_text_(text)
     return text
-
-
-if __name__ == "__main__":
-
-    data_dir = Path("/export/common/data/corpora/LDC/LDC2022E01")
-    out_dir = Path("/exp/ahussein/espnet/scale23")
-    splits = Path("/home/hltcoe/ahussein/iwslt22-dialect")
-    manifest = prepare_iwslt2022_ta(data_dir, splits, out_dir, clean=True)
