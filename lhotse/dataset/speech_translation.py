@@ -4,7 +4,6 @@ from typing import Callable, Dict, List, Union
 
 import torch
 from torch.utils.data.dataloader import DataLoader, default_collate
-import pdb
 from lhotse import validate
 from lhotse.cut import CutSet
 from lhotse.dataset.input_strategies import BatchIO, PrecomputedFeatures
@@ -100,8 +99,6 @@ class K2Speech2textTranslationDataset(torch.utils.data.Dataset):
         of max_frames and max_cuts.
         """
         validate_for_asr(cuts)
-        # pdb.set_trace()
-        # print("here")
         self.hdf5_fix.update()
 
         # Sort the cuts by duration so that the first one determines the batch time dimensions.
@@ -142,7 +139,7 @@ class K2Speech2textTranslationDataset(torch.utils.data.Dataset):
                 [
                     {
                         "text": supervision.text,
-                        "tgt_text": supervision.custom["tgt_text"],
+                        "tgt_text": supervision.custom['tgt_text'],
                     }
                     for sequence_idx, cut in enumerate(cuts)
                     for supervision in cut.supervisions
@@ -207,7 +204,7 @@ class K2Speech2textTranslationDataset(torch.utils.data.Dataset):
 
 def validate_for_asr(cuts: CutSet) -> None:
     validate(cuts)
-    tol = 2e-3  # 2e-3  # 1ms
+    tol = 2e-3 #2e-3  # 1ms
     for cut in cuts:
         for supervision in cut.supervisions:
             assert supervision.start >= -tol, (
