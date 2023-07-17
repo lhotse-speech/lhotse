@@ -67,7 +67,7 @@ class DynamicCutSampler(CutSampler):
 
     def __init__(
         self,
-        *cuts: CutSet,
+        *cuts: Iterable[Cut],
         max_duration: Optional[float] = None,
         max_cuts: Optional[int] = None,
         shuffle: bool = False,
