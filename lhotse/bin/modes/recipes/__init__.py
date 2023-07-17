@@ -70,3 +70,4 @@ from .voxceleb import *
 from .wenet_speech import *
 from .xbmu_amdo31 import *
 from .yesno import *
+from .iwslt22_ta import *
