@@ -1,22 +1,15 @@
 # Copyright    2023  Johns Hopkins        (authors: Amir Hussein, Matthew Wiesner)
-#
-# See ../../../../LICENSE for clarification regarding multiple authors
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
 
 """
-IWSLT Tunisian is a 3-way parallel data includes 160 hours and 200k lines worth of aligned Audio, 
-Tunisian transcripts, and English translations.
+The IWSLT Tunisian dataset is a 3-way parallel dataset consisting of approximately 160 hours 
+and 200,000 lines of aligned audio, Tunisian transcripts, and English translations. This dataset 
+comprises conversational telephone speech recorded at a sampling rate of 8kHz. The train, dev, 
+and test1 splits of the iwslt2022 shared task correspond to catalog number LDC2022E01. Please 
+note that access to this data requires an LDC subscription from your institution.To obtain this 
+dataset, you should download the predefined splits by running the following command: 
+git clone https://github.com/kevinduh/iwslt22-dialect.git. For more detailed information about 
+the shared task, please refer to the task paper available at this link: 
+https://aclanthology.org/2022.iwslt-1.10/.
 """
 
 import logging
@@ -99,7 +92,8 @@ def prepare_iwslt2022_ta(
 
     :param corpus_dir: Path to ``LDC2022E01`` the path of the data dir.
     :param splits: Path to splits from https://github.com/kevinduh/iwslt22-dialect
-    :param clean: Bool, if True, Arabic text cleaning and normalization is performed.
+    :param clean: Bool, if True, Arabic text cleaning and normalization is performed
+        from https://aclanthology.org/2022.iwslt-1.29.pdf.
     :param output_dir: Directory where the manifests should be written. Can be omitted
         to avoid writing.
     :param langs: str, list of language abbreviations for source and target languages.
@@ -250,7 +244,7 @@ def _filename_to_supervisions(
                 text=text,
                 language=langs[0],
                 speaker=sid,
-                custom={"tgt_lang": langs[1], "tgt_text": text_tgt},
+                custom={"translated_text": {langs[1]: text_tgt}},
             )
         )
     return supervisions

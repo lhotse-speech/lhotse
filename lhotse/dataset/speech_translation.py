@@ -3,11 +3,11 @@
 from typing import Callable, Dict, List, Union
 
 import torch
-from torch.utils.data.dataloader import DataLoader, default_collate
+from torch.utils.data.dataloader import default_collate
 
-from lhotse import validate
 from lhotse.cut import CutSet
 from lhotse.dataset.input_strategies import BatchIO, PrecomputedFeatures
+from lhotse.dataset.speech_recognition import validate_for_asr
 from lhotse.utils import compute_num_frames, ifnone
 from lhotse.workarounds import Hdf5MemoryIssueFix
 
@@ -140,7 +140,7 @@ class K2Speech2textTranslationDataset(torch.utils.data.Dataset):
                 [
                     {
                         "text": supervision.text,
-                        "tgt_text": supervision.custom["tgt_text"],
+                        "tgt_text": supervision.custom["translated_text"],
                     }
                     for sequence_idx, cut in enumerate(cuts)
                     for supervision in cut.supervisions
@@ -201,24 +201,3 @@ class K2Speech2textTranslationDataset(torch.utils.data.Dataset):
             batch["supervisions"]["word_end"] = ends
 
         return batch
-
-
-def validate_for_asr(cuts: CutSet) -> None:
-    validate(cuts)
-    tol = 2e-3  # 2e-3  # 1ms
-    for cut in cuts:
-        for supervision in cut.supervisions:
-            assert supervision.start >= -tol, (
-                f"Supervisions starting before the cut are not supported for ASR"
-                f" (sup id: {supervision.id}, cut id: {cut.id})"
-            )
-
-            # Supervision start time is relative to Cut ...
-            # https://lhotse.readthedocs.io/en/v0.10_e/cuts.html
-            #
-            # 'supervision.end' is end of supervision inside the Cut
-            assert supervision.end <= cut.duration + tol, (
-                f"Supervisions ending after the cut "
-                f"are not supported for ASR"
-                f" (sup id: {supervision.id}, cut id: {cut.id})"
-            )

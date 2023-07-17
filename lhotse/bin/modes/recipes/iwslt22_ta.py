@@ -19,9 +19,9 @@ from lhotse.utils import Pathlike
     help="How many threads to use (can give good speed-ups with slow disks).",
 )
 @click.option(
-    "--clean",
+    "--normalize-text",
     default=False,
-    help="Whether to perform additional text cleaning.",
+    help="Whether to perform additional text cleaning and normalization from https://aclanthology.org/2022.iwslt-1.29.pdf.",
 )
 @click.option(
     "--langs",
@@ -32,7 +32,7 @@ def iwslt2022_ta(
     corpus_dir: Pathlike,
     splits: Pathlike,
     output_dir: Pathlike,
-    clean: bool,
+    normalize_text: bool,
     langs: list[str],
     num_jobs: int,
 ):
@@ -51,6 +51,6 @@ def iwslt2022_ta(
         splits,
         output_dir=output_dir,
         num_jobs=num_jobs,
-        clean=clean,
+        clean=normalize_text,
         langs=langs,
     )
