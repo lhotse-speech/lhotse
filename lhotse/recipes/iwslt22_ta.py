@@ -21,19 +21,20 @@ Tunisian transcripts, and English translations.
 
 import logging
 import re
-from typing import Dict, Iterable, List, Optional, Union
-from pathlib import Path
-from concurrent.futures.thread import ThreadPoolExecutor
-import tqdm
-import soundfile as sf
 import string
+from concurrent.futures.thread import ThreadPoolExecutor
+from pathlib import Path
+from typing import Dict, Iterable, List, Optional, Union
+import soundfile as sf
+import tqdm
+
 
 from lhotse import (
     AudioSource,
-    RecordingSet,
     Recording,
-    SupervisionSet,
+    RecordingSet,
     SupervisionSegment,
+    SupervisionSet,
     validate_recordings_and_supervisions,
 )
 from lhotse.qa import (
@@ -41,7 +42,6 @@ from lhotse.qa import (
     trim_supervisions_to_recordings,
 )
 from lhotse.utils import Pathlike
-
 
 # English annotation rules:
 # -------------------------------

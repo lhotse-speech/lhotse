@@ -3,9 +3,7 @@ from typing import Optional, Sequence, Union
 import click
 
 from lhotse.bin.modes import prepare
-from lhotse.recipes.iwslt2022_ta import (
-    prepare_iwslt22_ta,
-)
+from lhotse.recipes.iwslt2022_ta import prepare_iwslt22_ta
 from lhotse.utils import Pathlike
 
 

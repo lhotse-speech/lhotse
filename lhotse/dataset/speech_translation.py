@@ -4,6 +4,7 @@ from typing import Callable, Dict, List, Union
 
 import torch
 from torch.utils.data.dataloader import DataLoader, default_collate
+
 from lhotse import validate
 from lhotse.cut import CutSet
 from lhotse.dataset.input_strategies import BatchIO, PrecomputedFeatures
