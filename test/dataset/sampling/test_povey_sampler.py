@@ -66,6 +66,45 @@ def test_povey_sampler_multi_files(cuts_files: Tuple[Path]):
     assert cuts_files[1].with_suffix(".jsonl.idx").is_file()
 
 
+def test_povey_sampler_multi_files_with_scales(cuts_files: Tuple[Path]):
+    index_path = cuts_files[0].parent / "cuts.idx"
+
+    # Run this test 10 times to ensure cutset A is always more likely than B due to scale usage.
+    # Remember PoveySampler is non-deterministic.
+    for _ in range(10):
+
+        sampler = PoveySampler(
+            [
+                # cutset A is 100x more likely than cutset B given their sizes are equal
+                (cuts_files[0], 100),
+                (cuts_files[1], 1),
+            ],
+            index_path=index_path,
+            max_cuts=2,
+        )
+
+        cuts_A_seen = 0
+        cuts_B_seen = 0
+        for idx, batch in enumerate(sampler):
+            for cut in batch:
+                if int(cut.id.split("_")[0].split("-")[-1]) < 10:
+                    cuts_A_seen += 1
+                else:
+                    cuts_B_seen += 1
+
+            if idx == 4:
+                break  # the sampler is infinite
+
+        assert cuts_A_seen > cuts_B_seen  # oversampling works
+
+        assert sampler.diagnostics.total_batches == 5
+        assert sampler.diagnostics.total_cuts == 10
+
+        assert index_path.is_file()
+        assert cuts_files[0].with_suffix(".jsonl.idx").is_file()
+        assert cuts_files[1].with_suffix(".jsonl.idx").is_file()
+
+
 class _DummyDataset(torch.utils.data.Dataset):
     def __getitem__(self, cuts: CutSet) -> CutSet:
         return cuts

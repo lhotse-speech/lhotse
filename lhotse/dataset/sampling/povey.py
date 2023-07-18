@@ -15,6 +15,8 @@ from lhotse.lazy import Dillable
 from lhotse.serialization import decode_json_line
 from lhotse.utils import Pathlike
 
+PathlikeAndScale = Tuple[Pathlike, float]
+
 
 class PoveySampler(torch.utils.data.Sampler, Dillable):
     """
@@ -53,7 +55,7 @@ class PoveySampler(torch.utils.data.Sampler, Dillable):
 
     def __init__(
         self,
-        cuts_paths: Union[Pathlike, Iterable[Pathlike]],
+        cuts_paths: Union[Pathlike, Iterable[Pathlike], Iterable[PathlikeAndScale]],
         index_path: Pathlike,
         max_duration: Optional[Seconds] = None,
         max_cuts: Optional[int] = None,
@@ -61,11 +63,42 @@ class PoveySampler(torch.utils.data.Sampler, Dillable):
         quadratic_duration: Optional[Seconds] = None,
     ) -> None:
         super().__init__(data_source=None)
-        self.paths = (
-            [Path(cuts_paths)]
-            if isinstance(cuts_paths, (Path, str))
-            else list(map(Path, cuts_paths))
-        )
+
+        # Parse file paths and scales
+        self.paths = []
+        self.scales = []
+        if isinstance(cuts_paths, (Path, str)):
+            # Single path input
+            self.paths.append(Path(cuts_paths))
+            self.scales.append(1.0)
+        else:
+            # Multiple path input
+            self.paths = []
+            if isinstance(cuts_paths[0], (Path, str)):
+                # Without scales
+                for p in cuts_paths:
+                    assert isinstance(
+                        p, (Path, str)
+                    ), "Mixing paths with and without scales is not allowed."
+                    self.paths.append(Path(p))
+                    self.scales.append(1.0)
+            else:
+                for tpl in cuts_paths:
+                    # With scales
+                    assert len(tpl) == 2, (
+                        f"Expected (path, scale) but got: {tpl} "
+                        f"[note: mixing paths with and without scales is not allowed]"
+                    )
+                    p, scale = tpl
+                    assert isinstance(
+                        p, (Path, str)
+                    ), f"Path must be a string or Path, got: {p}"
+                    assert isinstance(
+                        scale, (int, float)
+                    ), f"Scale must be an int or float, got: {scale}"
+                    self.paths.append(Path(p))
+                    self.scales.append(scale)
+
         self.index_path = index_path
         self.max_duration = max_duration
         self.max_cuts = max_cuts
@@ -74,7 +107,10 @@ class PoveySampler(torch.utils.data.Sampler, Dillable):
 
         self.diagnostics = SamplingDiagnostics()
         self.index = ManifestIndex(self.paths, self.index_path)
-        self.line_counts = list(self.index.line_counts.values())
+        self.scaled_line_counts = [
+            lc * scale
+            for lc, scale in zip(self.index.line_counts.values(), self.scales)
+        ]
         self.ddp_rank = get_rank()
 
     def state_dict(self) -> Dict:
@@ -103,7 +139,7 @@ class PoveySampler(torch.utils.data.Sampler, Dillable):
             n = 0
             while True:
                 # Choose a file
-                path = rng.choices(self.paths, self.line_counts)[0]
+                path = rng.choices(self.paths, self.scaled_line_counts)[0]
                 # Choose a line
                 line_offsets = self.index.line_offsets[path]
                 begin_idx = rng.randrange(len(line_offsets) - 1)
