@@ -27,6 +27,7 @@ is assigned a unique global_spk_id.
 """
 
 import logging
+import re
 import tarfile
 from collections import defaultdict
 from pathlib import Path
@@ -36,6 +37,34 @@ from lhotse import validate_recordings_and_supervisions
 from lhotse.audio import Recording, RecordingSet
 from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import Pathlike, is_module_available, resumable_download, safe_extract
+
+
+def text_normalize(line: str) -> str:
+    line = line.replace("<sil>", "")
+    line = line.replace("<%>", "")
+    line = line.replace("<->", "")
+    line = line.replace("<$>", "")
+    line = line.replace("<#>", "")
+    line = line.replace("<$>", "")
+    line = line.replace("<_>", "")
+    line = line.replace("<space>", "")
+    line = line.replace("`", "")
+    line = line.replace("&", "")
+    line = line.replace(",", "")
+    if re.search("[a-zA-Z]", line):
+        line = line.upper()
+    line = line.replace("Ａ", "A")
+    line = line.replace("ａ", "A")
+    line = line.replace("ｂ", "B")
+    line = line.replace("ｃ", "C")
+    line = line.replace("ｋ", "K")
+    line = line.replace("ｔ", "T")
+    line = line.replace("，", "")
+    line = line.replace("丶", "")
+    line = line.replace("。", "")
+    line = line.replace("、", "")
+    line = line.replace("？", "")
+    return line
 
 
 def download_aishell4(
