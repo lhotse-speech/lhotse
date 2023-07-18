@@ -36,6 +36,7 @@ from .heroico import download_heroico, prepare_heroico
 from .hifitts import download_hifitts, prepare_hifitts
 from .himia import download_himia, prepare_himia
 from .icsi import download_icsi, prepare_icsi
+from .kespeech import prepare_kespeech
 from .l2_arctic import prepare_l2_arctic
 from .libricss import download_libricss, prepare_libricss
 from .librilight import prepare_librilight
