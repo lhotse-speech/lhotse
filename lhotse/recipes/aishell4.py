@@ -51,8 +51,8 @@ def text_normalize(line: str) -> str:
     line = line.replace("`", "")
     line = line.replace("&", "")
     line = line.replace(",", "")
-    line = line.replace("\\r", "")
-    line = line.replace("\\n", "")
+    line = line.replace("\r", "")
+    line = line.replace("\n", "")
     if re.search("[a-zA-Z]", line):
         line = line.upper()
     line = line.replace("Ａ", "A")
