@@ -51,7 +51,9 @@ def prepare_kespeech(
         output_dir = Path(output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
 
-    for part in KE_SPEECH_PARTS:
+    for part in tqdm(KE_SPEECH_PARTS):
+        logging.info(f"Processing KeSpeech subset: {part}")
+
         recordings = []
         supervisions = []
         with open(file=tasks_dir / part / "wav.scp") as wav_scp:
