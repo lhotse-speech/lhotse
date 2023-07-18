@@ -1,3 +1,4 @@
+import math
 import os
 import random
 from pathlib import Path
@@ -120,7 +121,7 @@ class PoveySampler(torch.utils.data.Sampler, Dillable):
                 n += 1
 
         if self.num_buckets is not None and self.num_buckets > 1:
-            yield from DynamicBucketingSampler(
+            inner_sampler = DynamicBucketingSampler(
                 _inner(),
                 max_duration=self.max_duration,
                 max_cuts=self.max_cuts,
@@ -132,7 +133,7 @@ class PoveySampler(torch.utils.data.Sampler, Dillable):
                 rank=0,
             )
         else:
-            yield from DynamicCutSampler(
+            inner_sampler = DynamicCutSampler(
                 _inner(),
                 max_duration=self.max_duration,
                 max_cuts=self.max_cuts,
@@ -141,6 +142,8 @@ class PoveySampler(torch.utils.data.Sampler, Dillable):
                 world_size=1,
                 rank=0,
             )
+        self.diagnostics = inner_sampler.diagnostics
+        yield from inner_sampler
 
     def get_report(self) -> str:
         """Returns a string describing the statistics of the sampling process so far."""

@@ -30,13 +30,16 @@ def test_povey_sampler_single_file(cuts_files: Tuple[Path]):
     sampler = PoveySampler(path, index_path=index_path, max_cuts=2)
 
     for idx, batch in enumerate(sampler):
-        if idx == 5:
-            break  # the sampler is infinite
         assert len(batch) == 2
         for cut in batch:
             # Assert the cut IDs do not go into two digit range
             # (because cuts_files[0] has only 0-9)
             assert re.match(r"dummy-mono-cut-000\d.*", cut.id) is not None, cut.id
+        if idx == 4:
+            break  # the sampler is infinite
+
+    assert sampler.diagnostics.total_batches == 5
+    assert sampler.diagnostics.total_cuts == 10
 
     assert index_path.is_file()
     assert cuts_files[0].with_suffix(".jsonl.idx").is_file()
@@ -47,13 +50,16 @@ def test_povey_sampler_multi_files(cuts_files: Tuple[Path]):
     sampler = PoveySampler(cuts_files, index_path=index_path, max_cuts=2)
 
     for idx, batch in enumerate(sampler):
-        if idx == 5:
-            break  # the sampler is infinite
         assert len(batch) == 2
         for cut in batch:
             # The cut IDs will be in range 0-19,
             # with first file having 0-9 and second 10-19.
             assert re.match(r"dummy-mono-cut-00[01]\d.*", cut.id) is not None, cut.id
+        if idx == 4:
+            break  # the sampler is infinite
+
+    assert sampler.diagnostics.total_batches == 5
+    assert sampler.diagnostics.total_cuts == 10
 
     assert index_path.is_file()
     assert cuts_files[0].with_suffix(".jsonl.idx").is_file()
@@ -76,20 +82,24 @@ def test_povey_sampler_in_dataloader(cuts_files: Tuple[Path], num_workers: int):
     cut_id_counts = Counter()
 
     for idx, batch in enumerate(dloader):
-        if idx == 50:
-            break  # the sampler is infinite
         assert len(batch) == 2
         for cut in batch:
             # The cut IDs will be in range 0-19,
             # with first file having 0-9 and second 10-19.
             assert re.match(r"dummy-mono-cut-00[01]\d.*", cut.id) is not None, cut.id
             cut_id_counts[cut.id.split("_")[0]] += 1
+        if idx == 49:
+            break  # the sampler is infinite
 
     # With small data and not enough iterations there will always be some duplication:
     # we leverage this property to test this class.
     # counts is a list of tuples like [("id1", 10), ("id2", 8), ("id3", 7), ...]
     counts = cut_id_counts.most_common()
     assert counts[0][1] - counts[-1][1] > 1, counts
+
+    assert sampler.diagnostics.total_batches == 50
+    assert sampler.diagnostics.total_cuts == 100
+    assert sampler.diagnostics.current_epoch == 0  # epoch is never incremented
 
 
 def test_povey_sampler_bucketing(cuts_files: Tuple[Path]):
@@ -99,8 +109,6 @@ def test_povey_sampler_bucketing(cuts_files: Tuple[Path]):
     )
 
     for idx, batch in enumerate(sampler):
-        if idx == 5:
-            break  # the sampler is infinite
         assert sum(c.duration for c in batch) <= 4
         num_cuts = len(batch)
         for cut in batch:
@@ -108,6 +116,11 @@ def test_povey_sampler_bucketing(cuts_files: Tuple[Path]):
                 assert cut.duration == 2
             else:  # == 4
                 assert cut.duration == 1
+        if idx == 4:
+            break  # the sampler is infinite
+
+    assert sampler.diagnostics.total_batches == 5
+    assert 10 <= sampler.diagnostics.total_cuts <= 20
 
 
 def test_povey_sampler_requires_uncompressed_manifest():
