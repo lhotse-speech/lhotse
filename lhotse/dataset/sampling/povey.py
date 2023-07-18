@@ -62,16 +62,17 @@ class PoveySampler(torch.utils.data.Sampler, Dillable):
         super().__init__(data_source=None)
         self.paths = (
             [Path(cuts_paths)]
-            if isinstance(cuts_paths, Pathlike)
+            if isinstance(cuts_paths, (Path, str))
             else list(map(Path, cuts_paths))
         )
+        self.index_path = index_path
         self.max_duration = max_duration
         self.max_cuts = max_cuts
         self.num_buckets = num_buckets
         self.quadratic_duration = quadratic_duration
 
         self.diagnostics = SamplingDiagnostics()
-        self.index = ManifestIndex(cuts_paths, index_path)
+        self.index = ManifestIndex(self.paths, self.index_path)
         self.line_counts = list(self.index.line_counts.values())
         self.ddp_rank = get_rank()
 
@@ -98,17 +99,25 @@ class PoveySampler(torch.utils.data.Sampler, Dillable):
             - first we select a cutset file, weighted by line count (num cuts)
             - then we randomly select a line from that file using uniform distribution
             """
+            n = 0
             while True:
+                # Choose a file
                 path = rng.choices(self.paths, self.line_counts)[0]
+                # Choose a line
                 line_offsets = self.index.line_offsets[path]
-                begin_idx = rng.randint(0, len(line_offsets) - 1)
+                begin_idx = rng.randrange(len(line_offsets) - 1)
                 begin, end = line_offsets[begin_idx], line_offsets[begin_idx + 1]
+                # Read JSON line and initialize a Cut object
                 with path.open() as f:
                     f.seek(begin)
                     line = f.read(end - begin)
                 data = decode_json_line(line)
                 cut = deserialize_cut(data)
+                # Update cut ID since the same item may land in a single mini-batch
+                # (note: CutSet prohibits two items sharing the same ID)
+                cut.id = f"{cut.id}_it{n}"
                 yield cut
+                n += 1
 
         if self.num_buckets is not None and self.num_buckets > 1:
             yield from DynamicBucketingSampler(
@@ -181,7 +190,7 @@ class ManifestIndex:
         # 572 data/cuts-part-0003.jsonl
         if not index_path.is_file() or force:
             with index_path.open("w") as index_f:
-                for p, lc in self.line_counts:
+                for p, lc in self.line_counts.items():
                     print(f"{lc} {p}", file=index_f)
 
     def _load(self, file_index: Path) -> Tuple[int]:
@@ -198,9 +207,11 @@ class ManifestIndex:
         offsets = [0]
         with manifest.open() as cuts_f, file_index.open("w") as index_f:
             print(0, file=index_f)
-            for _ in cuts_f:
+            line = cuts_f.readline()
+            while line:
                 offsets.append(cuts_f.tell())
                 print(offsets[-1], file=index_f)
+                line = cuts_f.readline()
         return tuple(offsets)
 
 
