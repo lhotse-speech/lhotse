@@ -1,6 +1,7 @@
-import math
+import logging
 import os
 import random
+import secrets
 from pathlib import Path
 from typing import Dict, Generator, Iterable, List, Optional, Sequence, Tuple, Union
 
@@ -18,7 +19,7 @@ from lhotse.utils import Pathlike
 PathlikeAndScale = Tuple[Pathlike, float]
 
 
-class PoveySampler(torch.utils.data.Sampler, Dillable):
+class StatelessSampler(torch.utils.data.Sampler, Dillable):
     """
     An infinite and stateless cut sampler that selects data at random from one or more cut manifests.
     The main idea is to make training resumption easy while guaranteeing the data seen each
@@ -27,12 +28,36 @@ class PoveySampler(torch.utils.data.Sampler, Dillable):
     It makes no strong guarantees about avoiding data duplication, but in practice you would
     rarely see duplicated data.
 
+    The recommended way to use this sampler is by placing it into a dataloader worker
+    subprocess with Lhotse's :class:``~lhotse.dataset.iterable_dataset.IterableDatasetWrapper``.
+    This will guarantee each worker uses a different random seed
+    (otherwise it will also be OK as long as your OS provides a TRNG)::
+
+        >>> import torch
+        >>> import lhotse
+        >>> dloader = torch.utils.data.DataLoader(
+        ...     lhotse.dataset.iterable_dataset.IterableDatasetWrapper(
+        ...         dataset=lhotse.dataset.K2SpeechRecognitionDataset(...),
+        ...         sampler=StatelessSampler(...),
+        ...     ),
+        ...     batch_size=None,
+        ...     num_workers=4,
+        ... )
+
     This sampler's design was originally proposed by Dan Povey. For details see:
     https://github.com/lhotse-speech/lhotse/issues/1096
 
-    Example 1: Get a bucketing :class:``.PoveySampler``::
+    Example 1: Get a non-bucketing :class:``.StatelessSampler``::
 
-        >>> sampler = PoveySampler(
+        >>> sampler = StatelessSampler(
+        ...     cuts_paths=["data/cuts_a.jsonl", "data/cuts_b.jsonl"],
+        ...     index_path="data/files.idx",
+        ...     max_duration=600.0,
+        ... )
+
+    Example 2: Get a bucketing :class:``.StatelessSampler``::
+
+        >>> sampler = StatelessSampler(
         ...     cuts_paths=["data/cuts_a.jsonl", "data/cuts_b.jsonl"],
         ...     index_path="data/files.idx",
         ...     max_duration=600.0,
@@ -40,17 +65,38 @@ class PoveySampler(torch.utils.data.Sampler, Dillable):
         ...     quadratic_duration=30.0,
         ... )
 
-    Example 1: Get a non-bucketing :class:``.PoveySampler``::
+    Example 3: Get a bucketing :class:``.StatelessSampler`` with scaled weights for each cutset::
 
-        >>> sampler = PoveySampler(
-        ...     cuts_paths=["data/cuts_a.jsonl", "data/cuts_b.jsonl"],
+        >>> sampler = StatelessSampler(
+        ...     cuts_paths=[
+        ...         ("data/cuts_a.jsonl", 2.0),
+        ...         ("data/cuts_b.jsonl", 1.0),
+        ...     ],
         ...     index_path="data/files.idx",
         ...     max_duration=600.0,
+        ...     num_buckets=50,
+        ...     quadratic_duration=30.0,
         ... )
 
-
-    .. note:: This sampler works only with uncompressed jsonl manifests, as it creates extra index files with line byte offsets to quickly find and sample JSON lines.
+    .. note:: This sampler works only with uncompressed jsonl manifests, as it creates extra index files
+     with line byte offsets to quickly find and sample JSON lines.
      This means this sampler will not work with Webdataset and Lhotse Shar data format.
+
+     .. warning:: If your OS doesn't provide TRNG, make sure to change the global Python seed when continuing
+     the training. You should see a warning log being emitted in these cases.
+
+    :param cuts_paths: Path, or list of paths, or list of tuples of (path, scale) to cutset files.
+    :param index_path: Path to a file that contains the index of all cutsets and their line count
+        (will be auto-created the first time this object is initialized).
+    :param max_duration: Maximum total number of audio seconds in a mini-batch (dynamic batch size).
+    :param max_cuts: Maximum number of examples in a mini-batch (static batch size).
+    :param num_buckets: If set, enables bucketing (each mini-batch has examples of a similar duration).
+    :param quadratic_duration: If set, adds a penalty term for longer duration cuts.
+        Works well with models that have quadratic time complexity to keep GPU utilization similar
+        when using bucketing. Suggested values are between 30 and 45.
+    :param base_seed: If set, can be used to force this sampler to become deterministic
+        (each node and worker are still going to produce different results).
+        Primarily useful in debugging.
     """
 
     def __init__(
@@ -61,6 +107,7 @@ class PoveySampler(torch.utils.data.Sampler, Dillable):
         max_cuts: Optional[int] = None,
         num_buckets: Optional[int] = None,
         quadratic_duration: Optional[Seconds] = None,
+        base_seed: Optional[int] = None,
     ) -> None:
         super().__init__(data_source=None)
 
@@ -73,6 +120,7 @@ class PoveySampler(torch.utils.data.Sampler, Dillable):
             self.scales.append(1.0)
         else:
             # Multiple path input
+            cuts_paths = list(cuts_paths)
             self.paths = []
             if isinstance(cuts_paths[0], (Path, str)):
                 # Without scales
@@ -104,6 +152,7 @@ class PoveySampler(torch.utils.data.Sampler, Dillable):
         self.max_cuts = max_cuts
         self.num_buckets = num_buckets
         self.quadratic_duration = quadratic_duration
+        self.base_seed = base_seed
 
         self.diagnostics = SamplingDiagnostics()
         self.index = ManifestIndex(self.paths, self.index_path)
@@ -123,11 +172,38 @@ class PoveySampler(torch.utils.data.Sampler, Dillable):
 
     def __iter__(self) -> Generator[CutSet, None, None]:
         worker_info = torch.utils.data.get_worker_info()
-        my_id = (0 if worker_info is None else worker_info.id) + 1000 * self.ddp_rank
+        worker_id = 0 if worker_info is None else worker_info.id
+        my_id = worker_id + 1000 * self.ddp_rank
         # The seed depends on the global random state, DDP node ID, and dataloader worker ID.
         # It will be different each time the script is launched.
-        seed = random.randint(0, 10000) + my_id
+        # If the OS supports it, we'll try to get a true random number for the seed
+        # so that we can guarantee this sampler is non-deterministic between runs.
+        # Note: we could use TRNG for each sampling in the loop below, but with enough
+        #       workers it might run into locking issues because of blocking syscalls.
+        if self.base_seed is not None:
+            # User requested deterministic results
+            base_seed = self.base_seed
+        else:
+            try:
+                # secrets uses TRNG provided by the OS; it doesn't depend on any seed
+                base_seed = secrets.randbelow(2**20)
+            except NotImplementedError:
+                logging.warning(
+                    "TRNG is not available on this system: make sure you changed Python's global random seed "
+                    "if you are resuming model training to avoid iterating over identical data. "
+                    "(hint: you may use lhotse.utils.fix_random_seed)"
+                )
+                base_seed = random.randint(0, 2**20)
+        seed = base_seed + my_id
         rng = random.Random(seed)
+        logging.info(
+            f"[{type(self).__name__}] Initialized sampler RNG with seed {seed} (== base_seed={base_seed} + my_id={my_id}) "
+            f"[ddp_rank={self.ddp_rank} worker_id={worker_id}]"
+        )
+        print(
+            f"[{type(self).__name__}] Initialized sampler RNG with seed {seed} (== base_seed={base_seed} + my_id={my_id}) "
+            f"[ddp_rank={self.ddp_rank} worker_id={worker_id}]"
+        )
 
         def _inner():
             """
