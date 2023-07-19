@@ -36,7 +36,7 @@ def text_normalize(line: str) -> str:
 def prepare_kespeech(
     corpus_dir: Pathlike,
     output_dir: Optional[Pathlike],
-    dataset_parts: Union[str, Sequence[str]] = "auto",
+    dataset_parts: Union[str, Sequence[str]] = "all",
     num_jobs: int = 1,
 ):
     corpus_dir = Path(corpus_dir)
@@ -51,29 +51,14 @@ def prepare_kespeech(
         output_dir = Path(output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
 
-    for part in tqdm(KE_SPEECH_PARTS):
+    parts = KE_SPEECH_PARTS if "all" in dataset_parts else dataset_parts
+
+    for part in tqdm(parts, desc="Processing KeSpeech", unit="subset"):
         logging.info(f"Processing KeSpeech subset: {part}")
 
         recordings = []
         supervisions = []
-        with open(file=tasks_dir / part / "wav.scp") as wav_scp:
-            for line in wav_scp:
-                wav_id, wav_path = line.strip().split(maxsplit=1)
-                recordings.append(
-                    Recording(
-                        id=wav_id,
-                        sources=[
-                            AudioSource(
-                                type="file",
-                                channels=[0],
-                                source=str(corpus_dir / wav_path),
-                            )
-                        ],
-                        sampling_rate=16000,
-                        num_samples=compute_num_samples(corpus_dir / wav_path),
-                        duration=info(corpus_dir / wav_path).duration,
-                    )
-                )
+
         with open(file=tasks_dir / part / "wav.scp") as wav_scp, open(
             file=tasks_dir / part / "text"
         ) as text, open(
@@ -84,7 +69,7 @@ def prepare_kespeech(
             for w_line, t_line, dialect_line, spk_line in zip(
                 wav_scp, text, utt2subdialect, utt2spk
             ):
-                wav_id, wav_path = line.strip().split(maxsplit=1)
+                wav_id, wav_path = w_line.strip().split(maxsplit=1)
                 t_wav_id, transcript = t_line.strip().split(maxsplit=1)
                 d_wav_id, dialect = dialect_line.strip().split(maxsplit=1)
                 s_wav_id, speaker = spk_line.strip().split(maxsplit=1)
