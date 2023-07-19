@@ -10,7 +10,6 @@ import torch.distributed as dist
 
 from lhotse import CutSet, Seconds
 from lhotse.cut.set import deserialize_cut
-from lhotse.dataset import DynamicBucketingSampler, DynamicCutSampler
 from lhotse.dataset.sampling.base import SamplingDiagnostics
 from lhotse.lazy import Dillable
 from lhotse.serialization import decode_json_line
@@ -171,6 +170,8 @@ class StatelessSampler(torch.utils.data.Sampler, Dillable):
         return
 
     def __iter__(self) -> Generator[CutSet, None, None]:
+        from lhotse.dataset import DynamicBucketingSampler, DynamicCutSampler
+
         worker_info = torch.utils.data.get_worker_info()
         worker_id = 0 if worker_info is None else worker_info.id
         my_id = worker_id + 1000 * self.ddp_rank
