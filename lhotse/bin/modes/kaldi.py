@@ -39,6 +39,13 @@ def kaldi():
     type=int,
     help="Number of jobs for computing recording durations.",
 )
+@click.options(
+    "-t",
+    "--feature-type",
+    default="kaldi-fbank",
+    type=str,
+    help="Feature type when importing precomputed features from feats.scp"
+)
 @click.option(
     "-d",
     "--compute-durations",
