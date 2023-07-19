@@ -162,7 +162,9 @@ class StatelessSampler(torch.utils.data.Sampler, Dillable):
             lc * scale
             for lc, scale in zip(self.index.line_counts.values(), self.scales)
         ]
-        self.ddp_rank = get_rank()
+        # DDP related info
+        self.rank = get_rank()
+        self.world_size = get_world_size()
 
     def state_dict(self) -> Dict:
         """Stub state_dict method that returns nothing - this sampler is stateless."""
@@ -177,7 +179,7 @@ class StatelessSampler(torch.utils.data.Sampler, Dillable):
 
         worker_info = torch.utils.data.get_worker_info()
         worker_id = 0 if worker_info is None else worker_info.id
-        my_id = worker_id + 1000 * self.ddp_rank
+        my_id = worker_id + 1000 * self.rank
         # The seed depends on the global random state, DDP node ID, and dataloader worker ID.
         # It will be different each time the script is launched.
         # If the OS supports it, we'll try to get a true random number for the seed
@@ -202,7 +204,7 @@ class StatelessSampler(torch.utils.data.Sampler, Dillable):
         rng = random.Random(seed)
         logging.info(
             f"[{type(self).__name__}] Initialized sampler RNG with seed {seed} (== base_seed={base_seed} + my_id={my_id}) "
-            f"[ddp_rank={self.ddp_rank} worker_id={worker_id}]"
+            f"[ddp_rank={self.rank} worker_id={worker_id}]"
         )
 
         def _inner():
