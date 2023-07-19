@@ -200,10 +200,6 @@ class StatelessSampler(torch.utils.data.Sampler, Dillable):
             f"[{type(self).__name__}] Initialized sampler RNG with seed {seed} (== base_seed={base_seed} + my_id={my_id}) "
             f"[ddp_rank={self.ddp_rank} worker_id={worker_id}]"
         )
-        print(
-            f"[{type(self).__name__}] Initialized sampler RNG with seed {seed} (== base_seed={base_seed} + my_id={my_id}) "
-            f"[ddp_rank={self.ddp_rank} worker_id={worker_id}]"
-        )
 
         def _inner():
             """
