@@ -18,6 +18,7 @@ from lhotse import (
     LibrosaFbank,
     LibrosaFbankConfig,
     LilcomChunkyWriter,
+    LogSpectrogram,
     Mfcc,
     MonoCut,
     Recording,
@@ -197,6 +198,7 @@ def is_python_311_or_higher() -> bool:
         Fbank,
         Mfcc,
         Spectrogram,
+        LogSpectrogram,
         TorchaudioFbank,
         TorchaudioMfcc,
         pytest.param(
