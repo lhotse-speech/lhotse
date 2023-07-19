@@ -104,6 +104,7 @@ def download_aishell4(
 def prepare_aishell4(
     corpus_dir: Pathlike,
     output_dir: Optional[Pathlike] = None,
+    normalize_text: bool = False,
 ) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet]]]:
     """
     Returns the manifests which consist of the Recordings and Supervisions
@@ -165,7 +166,9 @@ def prepare_aishell4(
                             channel=recording.channel_ids,
                             language="Chinese",
                             speaker=spk_id,
-                            text=text_normalize(text.strip()),
+                            text=text_normalize(text.strip())
+                            if normalize_text
+                            else text.strip(),
                         )
                         supervisions.append(segment)
 
