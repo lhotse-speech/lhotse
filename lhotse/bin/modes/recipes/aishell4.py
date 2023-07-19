@@ -16,9 +16,9 @@ __all__ = ["aishell4"]
     default=False,
     help="Conduct text normalization (remove punctuation, uppercase, etc.)",
 )
-def aishell4(corpus_dir: Pathlike, output_dir: Pathlike):
+def aishell4(corpus_dir: Pathlike, output_dir: Pathlike, normalize_text: bool):
     """AISHELL-4 data preparation."""
-    prepare_aishell4(corpus_dir, output_dir=output_dir)
+    prepare_aishell4(corpus_dir, output_dir=output_dir, normalize_text=normalize_text)
 
 
 @download.command(context_settings=dict(show_default=True))
