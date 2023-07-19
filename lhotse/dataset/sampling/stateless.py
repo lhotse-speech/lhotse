@@ -152,6 +152,9 @@ class StatelessSampler(torch.utils.data.Sampler, Dillable):
         self.num_buckets = num_buckets
         self.quadratic_duration = quadratic_duration
         self.base_seed = base_seed
+        assert any(
+            v is not None for v in (self.max_duration, self.max_cuts)
+        ), "At least one of max_duration or max_cuts has to be set."
 
         self.diagnostics = SamplingDiagnostics()
         self.index = ManifestIndex(self.paths, self.index_path)
