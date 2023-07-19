@@ -45,78 +45,112 @@ def prepare_kespeech(
     assert corpus_dir.is_dir(), f"No such directory: {corpus_dir}"
     assert tasks_dir.is_dir(), f"No such directory: {tasks_dir}"
 
-    manifests = defaultdict(dict)
-
     if output_dir is not None:
         output_dir = Path(output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
 
-    parts = KE_SPEECH_PARTS if "all" in dataset_parts else dataset_parts
+    subsets = KE_SPEECH_PARTS if "all" in dataset_parts else dataset_parts
+    manifests = defaultdict(dict)
+    for sub in subsets:
+        if sub not in KE_SPEECH_PARTS:
+            raise ValueError(f"No such part of dataset in KeSpeech : {sub}")
+        manifests[sub] = {"recordings": [], "supervisions": []}
 
-    for part in tqdm(parts, desc="Processing KeSpeech", unit="subset"):
-        logging.info(f"Processing KeSpeech subset: {part}")
+    with ThreadPoolExecutor(num_jobs) as ex:
+        for part in tqdm(subsets, desc="Processing KeSpeech", unit="subset"):
+            logging.info(f"Processing KeSpeech subset: {part}")
 
-        recordings = []
-        supervisions = []
+            if manifests_exist(part=part, output_dir=output_dir):
+                logging.info(f"KeSpeech subset: {part} already prepared - skipping.")
+                continue
 
-        with open(file=tasks_dir / part / "wav.scp") as wav_scp, open(
-            file=tasks_dir / part / "text"
-        ) as text, open(
-            file=tasks_dir / part / "utt2subdialect"
-        ) as utt2subdialect, open(
-            file=tasks_dir / part / "utt2spk"
-        ) as utt2spk:
-            for w_line, t_line, dialect_line, spk_line in zip(
-                wav_scp, text, utt2subdialect, utt2spk
-            ):
-                wav_id, wav_path = w_line.strip().split(maxsplit=1)
-                t_wav_id, transcript = t_line.strip().split(maxsplit=1)
-                d_wav_id, dialect = dialect_line.strip().split(maxsplit=1)
-                s_wav_id, speaker = spk_line.strip().split(maxsplit=1)
-                assert (
-                    wav_id == t_wav_id and t_wav_id == d_wav_id and d_wav_id == s_wav_id
-                )
-                sampling_rate = 16000
-                recording_info = info(corpus_dir / wav_path)
-                recording = Recording(
-                    id=wav_id,
-                    sources=[
-                        AudioSource(
-                            type="file",
-                            channels=[0],
-                            source=str(corpus_dir / wav_path),
+            recordings = []
+            supervisions = []
+            part_path = tasks_dir / part
+            futures = []
+
+            with open(file=part_path / "wav.scp") as wav_scp, open(
+                file=part_path / "text"
+            ) as text, open(file=part_path / "utt2subdialect") as utt2subdialect, open(
+                file=part_path / "utt2spk"
+            ) as utt2spk:
+                for wav_line, text_line, dialect_line, spk_line in zip(
+                    wav_scp, text, utt2subdialect, utt2spk
+                ):
+                    futures.append(
+                        ex.submit(
+                            parse_utterance,
+                            corpus_dir,
+                            wav_line,
+                            text_line,
+                            dialect_line,
+                            spk_line,
                         )
-                    ],
-                    sampling_rate=sampling_rate,
-                    num_samples=compute_num_samples(
-                        duration=recording_info.duration,
-                        sampling_rate=sampling_rate,
-                    ),
-                    duration=recording_info.duration,
-                )
-                recordings.append(recording)
-                supervisions.append(
-                    SupervisionSegment(
-                        id=wav_id,
-                        recording_id=wav_id,
-                        start=0.0,
-                        duration=recording_info.duration,
-                        text=text_normalize(transcript.strip()),
-                        language=dialect,
-                        speaker=speaker,
                     )
+            for future in tqdm(futures, desc="Processing", leave=False):
+                result = future.result()
+                if result is None:
+                    continue
+                recording, segment = result
+                recordings.append(recording)
+                supervisions.append(segment)
+
+            recording_set = RecordingSet.from_recordings(recordings)
+            supervision_set = SupervisionSet.from_segments(supervisions)
+            validate_recordings_and_supervisions(recording_set, supervision_set)
+
+            if output_dir is not None:
+                supervision_set.to_file(
+                    output_dir / f"kespeech-asr_supervisions_{part}.jsonl.gz"
                 )
-        recording_set = RecordingSet.from_recordings(recordings)
-        supervision_set = SupervisionSet.from_segments(supervisions)
-        validate_recordings_and_supervisions(recording_set, supervision_set)
+                recording_set.to_file(
+                    output_dir / f"kespeech-asr_recordings_{part}.jsonl.gz"
+                )
 
-        if output_dir is not None:
-            supervision_set.to_file(
-                output_dir / f"kespeech-asr_supervisions_{part}.jsonl.gz"
-            )
-            recording_set.to_file(
-                output_dir / f"kespeech-asr_recordings_{part}.jsonl.gz"
-            )
-
-        manifests[part] = {"recordings": recording_set, "supervisions": supervision_set}
+            manifests[part] = {
+                "recordings": recording_set,
+                "supervisions": supervision_set,
+            }
     return manifests
+
+
+def parse_utterance(
+    corpus_dir: Path,
+    wav_line: str,
+    text_line: str,
+    dialect_line: str,
+    spk_line: str,
+) -> Optional[Tuple[Recording, SupervisionSegment]]:
+    wav_id, wav_path = wav_line.strip().split(maxsplit=1)
+    t_wav_id, transcript = text_line.strip().split(maxsplit=1)
+    d_wav_id, dialect = dialect_line.strip().split(maxsplit=1)
+    s_wav_id, speaker = spk_line.strip().split(maxsplit=1)
+    assert wav_id == t_wav_id and t_wav_id == d_wav_id and d_wav_id == s_wav_id
+    sampling_rate = 16000
+    recording_info = info(corpus_dir / wav_path)
+    recording = Recording(
+        id=wav_id,
+        sources=[
+            AudioSource(
+                type="file",
+                channels=[0],
+                source=str(corpus_dir / wav_path),
+            )
+        ],
+        sampling_rate=sampling_rate,
+        num_samples=compute_num_samples(
+            duration=recording_info.duration,
+            sampling_rate=sampling_rate,
+        ),
+        duration=recording_info.duration,
+    )
+    supervision = SupervisionSegment(
+        id=wav_id,
+        recording_id=wav_id,
+        start=0.0,
+        duration=recording_info.duration,
+        text=text_normalize(transcript.strip()),
+        language=dialect,
+        speaker=speaker,
+    )
+    return recording, supervision
