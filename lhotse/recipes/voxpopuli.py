@@ -35,7 +35,6 @@ from typing import Dict, List, Optional, Tuple, Union
 import torch
 import torchaudio
 from torch.hub import download_url_to_file
-from torchaudio.datasets.utils import _extract_tar
 from tqdm import tqdm
 
 from lhotse import (
@@ -45,7 +44,7 @@ from lhotse import (
     validate_recordings_and_supervisions,
 )
 from lhotse.qa import fix_manifests, validate_recordings_and_supervisions
-from lhotse.utils import Pathlike
+from lhotse.utils import Pathlike, safe_extract
 
 # fmt: off
 LANGUAGES = [
@@ -123,7 +122,7 @@ def download_voxpopuli(
     for url in tqdm(url_list):
         tar_path = out_root / Path(url).name
         download_url_to_file(url, out_root.as_posix(), Path(url).name)
-        _extract_tar(tar_path.as_posix())
+        safe_extract(tar_path, out_root)
         tar_path.unlink()
 
     return target_dir
