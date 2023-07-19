@@ -76,6 +76,8 @@ def prepare_kespeech(
                 assert (
                     wav_id == t_wav_id and t_wav_id == d_wav_id and d_wav_id == s_wav_id
                 )
+                sampling_rate = 16000
+                recording_info = info(corpus_dir / wav_path)
                 recording = Recording(
                     id=wav_id,
                     sources=[
@@ -85,9 +87,12 @@ def prepare_kespeech(
                             source=str(corpus_dir / wav_path),
                         )
                     ],
-                    sampling_rate=16000,
-                    num_samples=compute_num_samples(corpus_dir / wav_path),
-                    duration=info(corpus_dir / wav_path).duration,
+                    sampling_rate=sampling_rate,
+                    num_samples=compute_num_samples(
+                        duration=recording_info.duration,
+                        sampling_rate=sampling_rate,
+                    ),
+                    duration=recording_info.duration,
                 )
                 recordings.append(recording)
                 supervisions.append(
@@ -95,7 +100,7 @@ def prepare_kespeech(
                         id=wav_id,
                         recording_id=wav_id,
                         start=0.0,
-                        duration=recording.duration,
+                        duration=recording_info.duration,
                         text=text_normalize(transcript.strip()),
                         language=dialect,
                         speaker=speaker,
