@@ -43,7 +43,8 @@ def kaldi():
     "-t",
     "--feature-type",
     default="kaldi-fbank",
-    type=str,
+    show_default=True,
+    type=click.Choice(["kaldi-fbank", "kaldi-mfcc"]),
     help="Feature type when importing precomputed features from feats.scp",
 )
 @click.option(
@@ -62,6 +63,7 @@ def import_(
     frame_shift: float,
     map_string_to_underscores: Optional[str],
     num_jobs: int,
+    feature_type: str,
     compute_durations: bool,
 ):
     """
@@ -77,6 +79,7 @@ def import_(
         map_string_to_underscores=map_string_to_underscores,
         num_jobs=num_jobs,
         use_reco2dur=not compute_durations,
+        feature_type=feature_type,
     )
     manifest_dir = Path(manifest_dir)
     manifest_dir.mkdir(parents=True, exist_ok=True)
