@@ -17,7 +17,7 @@ from lhotse.utils import Pathlike
     default=["all"],
     multiple=True,
     help="List of dataset parts to prepare. To prepare multiple parts,"
-    "pass each with `-p` Example: `-p M -p TEST_NET`",
+    "pass each with `-p` Example: `-p dev_phase1 -p dev_phase2`",
 )
 @click.option(
     "-j",
