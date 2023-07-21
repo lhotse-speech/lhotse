@@ -80,7 +80,7 @@ def load_kaldi_data_dir(
     map_string_to_underscores: Optional[str] = None,
     use_reco2dur: bool = True,
     num_jobs: int = 1,
-    feature_type: str = 'kaldi-fbank'
+    feature_type: str = "kaldi-fbank",
 ) -> Tuple[RecordingSet, Optional[SupervisionSet], Optional[FeatureSet]]:
     """
     Load a Kaldi data directory and convert it to a Lhotse RecordingSet and
