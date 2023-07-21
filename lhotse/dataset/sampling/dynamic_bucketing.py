@@ -62,7 +62,7 @@ class DynamicBucketingSampler(CutSampler):
 
     def __init__(
         self,
-        *cuts: CutSet,
+        *cuts: Iterable[Cut],
         max_duration: float,
         max_cuts: Optional[int] = None,
         num_buckets: int = 10,
@@ -132,6 +132,9 @@ class DynamicBucketingSampler(CutSampler):
         self.shuffle_buffer_size = shuffle_buffer_size
         self.quadratic_duration = quadratic_duration
         self.rng = None
+        assert any(
+            v is not None for v in (self.max_duration, self.max_cuts)
+        ), "At least one of max_duration or max_cuts has to be set."
 
         if strict is not None:
             warnings.warn(
