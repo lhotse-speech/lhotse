@@ -68,6 +68,7 @@ from .timit import *
 from .uwb_atcc import *
 from .vctk import *
 from .voxceleb import *
+from .voxpopuli import *
 from .wenet_speech import *
 from .xbmu_amdo31 import *
 from .yesno import *
