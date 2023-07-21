@@ -10,6 +10,8 @@ from lhotse.features import create_default_feature_extractor
 from lhotse.features.kaldi.extractors import (
     Fbank,
     FbankConfig,
+    LogSpectrogram,
+    LogSpectrogramConfig,
     Mfcc,
     MfccConfig,
     Spectrogram,
@@ -141,6 +143,7 @@ def test_kaldi_spectrogram_extractor_vs_torchaudio(recording):
         lambda: Fbank(FbankConfig(snip_edges=True)),
         lambda: Mfcc(MfccConfig(snip_edges=True)),
         lambda: Spectrogram(SpectrogramConfig(snip_edges=True)),
+        lambda: LogSpectrogram(LogSpectrogramConfig(snip_edges=True)),
     ],
 )
 def test_kaldi_extractors_snip_edges_warning(extractor_type):
@@ -149,7 +152,8 @@ def test_kaldi_extractors_snip_edges_warning(extractor_type):
 
 
 @pytest.mark.parametrize(
-    "feature_type", ["kaldi-fbank", "kaldi-mfcc", "kaldi-spectrogram"]
+    "feature_type",
+    ["kaldi-fbank", "kaldi-mfcc", "kaldi-spectrogram", "kaldi-log-spectrogram"],
 )
 def test_feature_extractor_serialization(feature_type):
     fe = create_default_feature_extractor(feature_type)
