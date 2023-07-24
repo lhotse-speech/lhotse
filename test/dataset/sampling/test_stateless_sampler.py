@@ -13,7 +13,7 @@ from lhotse.testing.dummies import DummyManifest, as_lazy
 
 
 @pytest.fixture()
-def cuts_files(tmp_path_factory) -> Tuple[Path]:
+def cuts_files(tmp_path_factory) -> Tuple[Path, Path]:
     tmp_dir = tmp_path_factory.getbasetemp()
     paths = (tmp_dir / "cuts_A.jsonl", tmp_dir / "cuts_B.jsonl")
     cs = DummyManifest(CutSet, begin_id=0, end_id=10)
@@ -28,7 +28,7 @@ def cuts_files(tmp_path_factory) -> Tuple[Path]:
 def test_stateless_sampler_single_file(cuts_files: Tuple[Path]):
     path = cuts_files[0]
     index_path = cuts_files[0].parent / "cuts.idx"
-    sampler = StatelessSampler(path, index_path=index_path, max_cuts=2)
+    sampler = StatelessSampler(path, index_path=index_path, max_cuts=2, base_seed=0)
 
     for idx, batch in enumerate(sampler):
         assert len(batch) == 2
@@ -48,7 +48,9 @@ def test_stateless_sampler_single_file(cuts_files: Tuple[Path]):
 
 def test_stateless_sampler_multi_files(cuts_files: Tuple[Path]):
     index_path = cuts_files[0].parent / "cuts.idx"
-    sampler = StatelessSampler(cuts_files, index_path=index_path, max_cuts=2)
+    sampler = StatelessSampler(
+        cuts_files, index_path=index_path, max_cuts=2, base_seed=0
+    )
 
     for idx, batch in enumerate(sampler):
         assert len(batch) == 2
@@ -82,6 +84,7 @@ def test_stateless_sampler_multi_files_with_scales(cuts_files: Tuple[Path]):
             ],
             index_path=index_path,
             max_cuts=2,
+            base_seed=0,
         )
 
         cuts_A_seen = 0
@@ -114,7 +117,9 @@ class _DummyDataset(torch.utils.data.Dataset):
 @pytest.mark.parametrize("num_workers", [0, 2])
 def test_stateless_sampler_in_dataloader(cuts_files: Tuple[Path], num_workers: int):
     index_path = cuts_files[0].parent / "cuts.idx"
-    sampler = StatelessSampler(cuts_files, index_path=index_path, max_cuts=2)
+    sampler = StatelessSampler(
+        cuts_files, index_path=index_path, max_cuts=2, base_seed=0
+    )
     dloader = torch.utils.data.DataLoader(
         # Note: map-dataset keeps the sampler in the main process,
         #       so each worker is going to see worker_id=0,
@@ -150,7 +155,9 @@ def test_stateless_sampler_in_dataloader_with_iterable_dataset(
     cuts_files: Tuple[Path], num_workers: int
 ):
     index_path = cuts_files[0].parent / "cuts.idx"
-    sampler = StatelessSampler(cuts_files, index_path=index_path, max_cuts=2)
+    sampler = StatelessSampler(
+        cuts_files, index_path=index_path, max_cuts=2, base_seed=0
+    )
     dloader = torch.utils.data.DataLoader(
         # Note: iterable dataset will move the sampler into worker subprocess,
         #       which will result in correctly assigning the worker_id
@@ -182,7 +189,7 @@ def test_stateless_sampler_in_dataloader_with_iterable_dataset(
 def test_stateless_sampler_bucketing(cuts_files: Tuple[Path]):
     index_path = cuts_files[0].parent / "cuts.idx"
     sampler = StatelessSampler(
-        cuts_files, index_path=index_path, num_buckets=2, max_duration=4
+        cuts_files, index_path=index_path, num_buckets=2, max_duration=4, base_seed=0
     )
 
     for idx, batch in enumerate(sampler):
@@ -210,7 +217,9 @@ def test_stateless_sampler_requires_uncompressed_manifest():
             path = Path(cuts.data.path)
             index_path = path.with_suffix(".idx")
             # Call below will raise due to gzip compression
-            sampler = StatelessSampler(path, index_path=index_path, max_cuts=2)
+            sampler = StatelessSampler(
+                path, index_path=index_path, max_cuts=2, base_seed=0
+            )
 
 
 def test_stateless_sampler_base_seed_is_deterministic(cuts_files: Tuple[Path]):
