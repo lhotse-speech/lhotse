@@ -202,7 +202,3 @@ def prepare_bengaliai_speech(
         manifests[part] = {"recordings": recording_set, "supervisions": supervision_set}
 
     return manifests
-
-
-if __name__ == "__main__":
-    prepare_bengaliai_speech("/star-data/kangwei/data/bengaliai", ".", 8)
