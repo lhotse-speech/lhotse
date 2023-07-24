@@ -119,6 +119,8 @@ a CLI tool that create the manifests given a corpus directory.
     - :func:`lhotse.recipes.prepare_himia`
   * - ICSI
     - :func:`lhotse.recipes.prepare_icsi`
+  * - KeSpeech
+    - :func:`lhotse.recipes.prepare_kespeech`
   * - L2 Arctic
     - :func:`lhotse.recipes.prepare_l2_arctic`
   * - LibriCSS
