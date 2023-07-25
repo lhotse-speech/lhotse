@@ -2,7 +2,7 @@ from typing import Dict, List, Optional, Tuple, Union
 
 import click
 
-from lhotse.bin.modes import download, prepare
+from lhotse.bin.modes import prepare
 from lhotse.recipes.bengaliai_speech import prepare_bengaliai_speech
 from lhotse.utils import Pathlike
 

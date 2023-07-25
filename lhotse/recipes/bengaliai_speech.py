@@ -178,18 +178,16 @@ def prepare_bengaliai_speech(
             )
             continue
 
-        if part == "train":
-            recording_set, supervision_set = _prepare_subset(
-                part, corpus_dir, train_info, num_jobs
-            )
-        elif part == "valid":
-            recording_set, supervision_set = _prepare_subset(
-                part, corpus_dir, valid_info, num_jobs
-            )
-        else:
-            recording_set, supervision_set = _prepare_subset(
-                part, corpus_dir, None, num_jobs
-            )
+        recording_set, supervision_set = _prepare_subset(
+            subset=part,
+            corpus_dir=corpus_dir,
+            audio_info=train_info
+            if part == "train"
+            else valid_info
+            if part == "valid"
+            else None,
+            num_jobs=num_jobs,
+        )
 
         if output_dir is not None:
             supervision_set.to_file(
