@@ -7,6 +7,7 @@ from .ami import download_ami, prepare_ami
 from .aspire import prepare_aspire
 from .atcosim import download_atcosim, prepare_atcosim
 from .babel import prepare_single_babel_language
+from .bengaliai_speech import prepare_bengaliai_speech
 from .broadcast_news import prepare_broadcast_news
 from .but_reverb_db import download_but_reverb_db, prepare_but_reverb_db
 from .bvcc import download_bvcc, prepare_bvcc

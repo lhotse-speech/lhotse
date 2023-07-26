@@ -9,6 +9,7 @@ from .ami import *
 from .aspire import *
 from .atcosim import *
 from .babel import *
+from .bengaliai_speech import *
 from .broadcast_news import *
 from .but_reverb_db import *
 from .bvcc import *

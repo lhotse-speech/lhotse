@@ -63,6 +63,8 @@ a CLI tool that create the manifests given a corpus directory.
     - :func:`lhotse.recipes.prepare_atcosim`
   * - BABEL
     - :func:`lhotse.recipes.prepare_single_babel_language`
+  * - Bengali.AI Speech
+    - :func:`lhotse.recipes.prepare_bengaliai_speech`
   * - BUT ReverbDB
     - :func:`lhotse.recipes.prepare_but_reverb_db`
   * - BVCC / VoiceMOS Challenge
