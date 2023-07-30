@@ -60,6 +60,7 @@ class TestCollationRandomized(RandomCutTestCase):
         sampler = SimpleCutSampler(
             mixed_cuts,
             shuffle=False,
+            max_cuts=10000,
         )
         dloader = DataLoader(dataset, batch_size=None, sampler=sampler)
         ### End of test data preparation ###
