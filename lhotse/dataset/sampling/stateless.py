@@ -1,7 +1,6 @@
 import logging
 import os
 import random
-import secrets
 from pathlib import Path
 from typing import Dict, Generator, Iterable, List, Optional, Sequence, Tuple, Union
 
@@ -28,9 +27,8 @@ class StatelessSampler(torch.utils.data.Sampler, Dillable):
     rarely see duplicated data.
 
     The recommended way to use this sampler is by placing it into a dataloader worker
-    subprocess with Lhotse's :class:``~lhotse.dataset.iterable_dataset.IterableDatasetWrapper``.
-    This will guarantee each worker uses a different random seed
-    (otherwise it will also be OK as long as your OS provides a TRNG)::
+    subprocess with Lhotse's :class:``~lhotse.dataset.iterable_dataset.IterableDatasetWrapper``,
+    so that each worker has its own sampler replica that uses a slightly different random seed::
 
         >>> import torch
         >>> import lhotse
@@ -81,32 +79,30 @@ class StatelessSampler(torch.utils.data.Sampler, Dillable):
      with line byte offsets to quickly find and sample JSON lines.
      This means this sampler will not work with Webdataset and Lhotse Shar data format.
 
-     .. warning:: If your OS doesn't provide TRNG, make sure to change the global Python seed when continuing
-     the training. You should see a warning log being emitted in these cases.
-
     :param cuts_paths: Path, or list of paths, or list of tuples of (path, scale) to cutset files.
     :param index_path: Path to a file that contains the index of all cutsets and their line count
         (will be auto-created the first time this object is initialized).
+    :param base_seed: Int, user-provided part of the seed used to initialize the RNG
+        for sampling (each node and worker are still going to produce different results).
+        When continuing the training it should be a function of the number of training steps
+        to ensure the model doesn't see identical mini-batches again.
     :param max_duration: Maximum total number of audio seconds in a mini-batch (dynamic batch size).
     :param max_cuts: Maximum number of examples in a mini-batch (static batch size).
     :param num_buckets: If set, enables bucketing (each mini-batch has examples of a similar duration).
     :param quadratic_duration: If set, adds a penalty term for longer duration cuts.
         Works well with models that have quadratic time complexity to keep GPU utilization similar
         when using bucketing. Suggested values are between 30 and 45.
-    :param base_seed: If set, can be used to force this sampler to become deterministic
-        (each node and worker are still going to produce different results).
-        Primarily useful in debugging.
     """
 
     def __init__(
         self,
         cuts_paths: Union[Pathlike, Iterable[Pathlike], Iterable[PathlikeAndScale]],
         index_path: Pathlike,
+        base_seed: int,
         max_duration: Optional[Seconds] = None,
         max_cuts: Optional[int] = None,
         num_buckets: Optional[int] = None,
         quadratic_duration: Optional[Seconds] = None,
-        base_seed: Optional[int] = None,
     ) -> None:
         super().__init__(data_source=None)
 
@@ -180,30 +176,10 @@ class StatelessSampler(torch.utils.data.Sampler, Dillable):
         worker_info = torch.utils.data.get_worker_info()
         worker_id = 0 if worker_info is None else worker_info.id
         my_id = worker_id + 1000 * self.rank
-        # The seed depends on the global random state, DDP node ID, and dataloader worker ID.
-        # It will be different each time the script is launched.
-        # If the OS supports it, we'll try to get a true random number for the seed
-        # so that we can guarantee this sampler is non-deterministic between runs.
-        # Note: we could use TRNG for each sampling in the loop below, but with enough
-        #       workers it might run into locking issues because of blocking syscalls.
-        if self.base_seed is not None:
-            # User requested deterministic results
-            base_seed = self.base_seed
-        else:
-            try:
-                # secrets uses TRNG provided by the OS; it doesn't depend on any seed
-                base_seed = secrets.randbelow(2**20)
-            except NotImplementedError:
-                logging.warning(
-                    "TRNG is not available on this system: make sure you changed Python's global random seed "
-                    "if you are resuming model training to avoid iterating over identical data. "
-                    "(hint: you may use lhotse.utils.fix_random_seed)"
-                )
-                base_seed = random.randint(0, 2**20)
-        seed = base_seed + my_id
+        seed = self.base_seed + my_id
         rng = random.Random(seed)
         logging.info(
-            f"[{type(self).__name__}] Initialized sampler RNG with seed {seed} (== base_seed={base_seed} + my_id={my_id}) "
+            f"[{type(self).__name__}] Initialized sampler RNG with seed {seed} (== base_seed={self.base_seed} + my_id={my_id}) "
             f"[ddp_rank={self.rank} worker_id={worker_id}]"
         )
 
