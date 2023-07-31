@@ -24,6 +24,10 @@ def text_normalize(line: str) -> str:
     line = line.replace("Ｔ", "T")
     line = line.replace("Ｍ", "M")
     line = line.replace("𫖯", "頫")
+    line = line.replace("，", "")
+    line = line.replace("?", "")
+    line = line.replace("-", " ")
+    line = line.upper()
     """
     The below code is to only remove "'" of mandarin.
     The "'" of english remains unchanged.

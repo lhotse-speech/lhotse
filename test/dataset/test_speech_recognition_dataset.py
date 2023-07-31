@@ -35,7 +35,7 @@ def k2_cut_set(libri_cut_set):
 @pytest.mark.parametrize("num_workers", [0, 1])
 def test_k2_speech_recognition_iterable_dataset(k2_cut_set, num_workers):
     dataset = K2SpeechRecognitionDataset(cut_transforms=[CutConcatenate()])
-    sampler = SimpleCutSampler(k2_cut_set, shuffle=False)
+    sampler = SimpleCutSampler(k2_cut_set, shuffle=False, max_cuts=1000)
     # Note: "batch_size=None" disables the automatic batching mechanism,
     #       which is required when Dataset takes care of the collation itself.
     dloader = DataLoader(
@@ -59,7 +59,7 @@ def test_k2_speech_recognition_iterable_dataset_multiple_workers(
 ):
     k2_cut_set = k2_cut_set.pad()
     dataset = K2SpeechRecognitionDataset(cut_transforms=[CutConcatenate()])
-    sampler = SimpleCutSampler(k2_cut_set, shuffle=False)
+    sampler = SimpleCutSampler(k2_cut_set, shuffle=False, max_cuts=1000)
     dloader = DataLoader(
         dataset, batch_size=None, sampler=sampler, num_workers=num_workers
     )
@@ -142,7 +142,7 @@ def test_k2_speech_recognition_augmentation(k2_cut_set, k2_noise_cut_set):
     dataset = K2SpeechRecognitionDataset(
         cut_transforms=[CutConcatenate(), CutMix(k2_noise_cut_set)]
     )
-    sampler = SimpleCutSampler(k2_cut_set, shuffle=False)
+    sampler = SimpleCutSampler(k2_cut_set, shuffle=False, max_cuts=1000)
     dloader = DataLoader(dataset, sampler=sampler, batch_size=None)
     # Check that it does not crash by just running all dataloader iterations
     batches = [item for item in dloader]
@@ -225,7 +225,7 @@ def test_k2_speech_recognition_audio_inputs(k2_cut_set):
         input_strategy=AudioSamples(),
     )
     # all cuts in one batch
-    sampler = SimpleCutSampler(k2_cut_set, shuffle=False)
+    sampler = SimpleCutSampler(k2_cut_set, shuffle=False, max_cuts=1000)
     cut_ids = next(iter(sampler))
     batch = on_the_fly_dataset[cut_ids]
     assert batch["inputs"].shape == (4, 320000)
