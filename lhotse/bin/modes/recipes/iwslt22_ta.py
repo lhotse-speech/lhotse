@@ -3,7 +3,7 @@ from typing import Optional, Sequence, Union
 import click
 
 from lhotse.bin.modes import prepare
-from lhotse.recipes.iwslt2022_ta import prepare_iwslt22_ta
+from lhotse.recipes.iwslt22_ta import prepare_iwslt22_ta
 from lhotse.utils import Pathlike
 
 
@@ -28,7 +28,7 @@ from lhotse.utils import Pathlike
     default=[],
     help="List of language abbreviations for source and target languages",
 )
-def iwslt2022_ta(
+def iwslt22_ta(
     corpus_dir: Pathlike,
     splits: Pathlike,
     output_dir: Pathlike,
