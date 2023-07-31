@@ -79,7 +79,7 @@ def download_iwslt22_ta(
     )
 
 
-def prepare_iwslt2022_ta(
+def prepare_iwslt22_ta(
     corpus_dir: Pathlike,
     splits: Pathlike,
     output_dir: Optional[Pathlike] = None,
