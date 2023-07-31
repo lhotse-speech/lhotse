@@ -25,15 +25,15 @@ from lhotse.utils import Pathlike
 )
 @click.option(
     "--langs",
-    default=[],
-    help="List of language abbreviations for source and target languages",
+    default="",
+    help="Comma-separated list of language abbreviations for source and target languages",
 )
 def iwslt22_ta(
     corpus_dir: Pathlike,
     splits: Pathlike,
     output_dir: Pathlike,
     normalize_text: bool,
-    langs: list[str],
+    langs: str,
     num_jobs: int,
 ):
     """
@@ -46,11 +46,12 @@ def iwslt22_ta(
     You also should download the predined splits with
     git clone https://github.com/kevinduh/iwslt22-dialect.git
     """
+    langs_list = langs.split(",")
     prepare_iwslt22_ta(
         corpus_dir,
         splits,
         output_dir=output_dir,
         num_jobs=num_jobs,
         clean=normalize_text,
-        langs=langs,
+        langs=langs_list,
     )
