@@ -53,3 +53,7 @@ class TorchaudioMfcc(TorchaudioFeatureExtractor):
 
     def feature_dim(self, sampling_rate: int) -> int:
         return self.config.num_ceps
+
+    @property
+    def padding_value(self) -> float:
+        return -1000.0

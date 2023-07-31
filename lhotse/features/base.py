@@ -52,6 +52,9 @@ class FeatureExtractor(metaclass=ABCMeta):
     * ``compute_energy``, and
     * ``mix``.
 
+    They should also implement the ``padding_value`` property, which will be used for padding features
+    during mixing. See :class:`~lhotse.features.FeatureMixer` for more details.
+
     By itself, the ``FeatureExtractor`` offers the following high-level methods
     that are not intended for overriding:
 
@@ -89,6 +92,10 @@ class FeatureExtractor(metaclass=ABCMeta):
     @abstractmethod
     def feature_dim(self, sampling_rate: int) -> int:
         ...
+
+    @property
+    def padding_value(self) -> Optional[float]:
+        return None
 
     @property
     def device(self) -> Union[str, torch.device]:

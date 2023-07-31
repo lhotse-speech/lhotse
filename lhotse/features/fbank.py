@@ -54,6 +54,10 @@ class TorchaudioFbank(TorchaudioFeatureExtractor):
     def feature_dim(self, sampling_rate: int) -> int:
         return self.config.num_mel_bins
 
+    @property
+    def padding_value(self) -> float:
+        return -1000.0
+
     @staticmethod
     def mix(
         features_a: np.ndarray, features_b: np.ndarray, energy_scaling_factor_b: float

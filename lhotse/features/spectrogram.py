@@ -53,6 +53,10 @@ class TorchaudioSpectrogram(TorchaudioFeatureExtractor):
             else window_size
         )
 
+    @property
+    def padding_value(self) -> float:
+        return EPSILON
+
     @staticmethod
     def mix(
         features_a: np.ndarray, features_b: np.ndarray, energy_scaling_factor_b: float

@@ -5,7 +5,7 @@ from typing import Any, Dict, List, Optional, Sequence, Union
 import numpy as np
 
 from lhotse.features.base import FeatureExtractor, register_extractor
-from lhotse.utils import Seconds, compute_num_frames, is_module_available
+from lhotse.utils import EPSILON, Seconds, compute_num_frames, is_module_available
 
 
 @dataclass
@@ -120,6 +120,10 @@ class OpenSmileExtractor(FeatureExtractor):
             raise NotImplementedError(
                 f"frame_shift is not defined for Functionals feature level or for non default feature set. Defined featureset: {self.config.feature_set}"
             )
+
+    @property
+    def padding_value(self) -> float:
+        return EPSILON
 
     def feature_dim(self, sampling_rate: int) -> int:
         return len(self.feature_names)

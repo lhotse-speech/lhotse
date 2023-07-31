@@ -193,6 +193,10 @@ class KaldifeatFbank(KaldifeatExtractor):
     def feature_dim(self, sampling_rate: int) -> int:
         return self.config.mel_opts.num_bins
 
+    @property
+    def padding_value(self) -> float:
+        return -1000.0 if self.config.use_log_fbank else EPSILON
+
     @staticmethod
     def mix(
         features_a: np.ndarray, features_b: np.ndarray, energy_scaling_factor_b: float
@@ -259,3 +263,7 @@ class KaldifeatMfcc(KaldifeatExtractor):
 
     def feature_dim(self, sampling_rate: int) -> int:
         return self.config.num_ceps
+
+    @property
+    def padding_value(self) -> float:
+        return -1000.0

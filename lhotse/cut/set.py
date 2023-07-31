@@ -41,7 +41,11 @@ from lhotse.cut.mono import MonoCut
 from lhotse.cut.multi import MultiCut
 from lhotse.cut.padding import PaddingCut
 from lhotse.features import FeatureExtractor, Features, FeatureSet
-from lhotse.features.base import StatsAccumulator, compute_global_stats
+from lhotse.features.base import (
+    StatsAccumulator,
+    compute_global_stats,
+    create_default_feature_extractor,
+)
 from lhotse.features.io import FeaturesWriter, LilcomChunkyWriter
 from lhotse.lazy import AlgorithmMixin
 from lhotse.serialization import Serializable
@@ -1445,7 +1449,7 @@ class CutSet(Serializable, AlgorithmMixin):
         duration: Seconds = None,
         num_frames: int = None,
         num_samples: int = None,
-        pad_feat_value: float = LOG_EPSILON,
+        pad_feat_value: Optional[float] = None,
         direction: str = "right",
         preserve_id: bool = False,
         pad_value_dict: Optional[Dict[str, Union[int, float]]] = None,
@@ -1464,7 +1468,8 @@ class CutSet(Serializable, AlgorithmMixin):
         :param num_frames: The cut's total number of frames after padding.
         :param num_samples: The cut's total number of samples after padding.
         :param pad_feat_value: A float value that's used for padding the features.
-            By default we assume a log-energy floor of approx. -23 (1e-10 after exp).
+            By default, we will use the value defined in the `FeatureExtractor.padding_value`
+            for the feature type.
         :param direction: string, 'left', 'right' or 'both'. Determines whether the padding is added
             before or after the cut.
         :param preserve_id: When ``True``, preserves the cut ID from before padding.
@@ -2750,7 +2755,7 @@ def pad(
     duration: Seconds = None,
     num_frames: int = None,
     num_samples: int = None,
-    pad_feat_value: float = LOG_EPSILON,
+    pad_feat_value: Optional[float] = None,
     direction: str = "right",
     preserve_id: bool = False,
     pad_value_dict: Optional[Dict[str, Union[int, float]]] = None,
@@ -2766,7 +2771,8 @@ def pad(
     :param num_frames: The cut's total number of frames after padding.
     :param num_samples: The cut's total number of samples after padding.
     :param pad_feat_value: A float value that's used for padding the features.
-        By default we assume a log-energy floor of approx. -23 (1e-10 after exp).
+        By default, we will use the value defined in the `FeatureExtractor.padding_value`
+        for the feature type.
     :param direction: string, 'left', 'right' or 'both'. Determines whether the padding is added before or after
         the cut.
     :param preserve_id: When ``True``, preserves the cut ID before padding.
@@ -2853,6 +2859,16 @@ def pad(
             if cut.has_features
             else None
         )
+
+    # If the user has not specified a feature value for padding, we will use the default value
+    # from the feature extractor.
+    if pad_feat_value is None and cut.has_features:
+        if isinstance(cut, PaddingCut):
+            pad_feat_value = cut.feat_value
+        else:
+            pad_feat_value = create_default_feature_extractor(
+                cut.features_type
+            ).padding_value
 
     padding_cut = PaddingCut(
         id=str(uuid4()),

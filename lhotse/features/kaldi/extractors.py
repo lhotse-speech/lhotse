@@ -85,6 +85,11 @@ class Fbank(FeatureExtractor):
         self.config.device = device
         self.extractor.to(device)
 
+    @property
+    def padding_value(self) -> float:
+        """Return the value that should be used to pad these features."""
+        return -1000.0
+
     def feature_dim(self, sampling_rate: int) -> int:
         return self.config.num_filters
 
@@ -210,6 +215,11 @@ class Mfcc(FeatureExtractor):
     def frame_shift(self) -> Seconds:
         return self.config.frame_shift
 
+    @property
+    def padding_value(self) -> float:
+        """Return the value that should be used to pad these features."""
+        return -1000.0
+
     def feature_dim(self, sampling_rate: int) -> int:
         return self.config.num_ceps
 
@@ -305,6 +315,11 @@ class Spectrogram(FeatureExtractor):
     @property
     def frame_shift(self) -> Seconds:
         return self.config.frame_shift
+
+    @property
+    def padding_value(self) -> float:
+        """Return the value that should be used to pad these features."""
+        return EPSILON
 
     def feature_dim(self, sampling_rate: int) -> int:
         return self.config.num_ceps
