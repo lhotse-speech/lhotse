@@ -31,7 +31,7 @@ SAMPLERS_TO_TEST = [
     # Differently initialized SingleCutSampler with the same CUTS
     lambda: (
         SingleCutSampler(CUTS, max_duration=10.0, shuffle=True, drop_last=True),
-        SingleCutSampler(CUTS),
+        SingleCutSampler(CUTS, max_duration=11.1),
     ),
     # Differently initialized CutPairsSampler with the same CUTS
     lambda: (
@@ -45,8 +45,8 @@ SAMPLERS_TO_TEST = [
             SingleCutSampler(CUTS_MOD, max_duration=10.0, shuffle=True, drop_last=True),
         ),
         ZipSampler(
-            SingleCutSampler(CUTS),
-            SingleCutSampler(CUTS_MOD),
+            SingleCutSampler(CUTS, max_duration=11.1),
+            SingleCutSampler(CUTS_MOD, max_duration=11.1),
         ),
     ),
     # Differently initialized ZipSampler with the same CUTS (cut pairs)
@@ -63,7 +63,7 @@ SAMPLERS_TO_TEST = [
     # Differently initialized BucketingSampler with the same CUTS
     lambda: (
         BucketingSampler(CUTS, max_duration=10.0, shuffle=True, drop_last=True, num_buckets=2),
-        BucketingSampler(CUTS, num_buckets=2),
+        BucketingSampler(CUTS, max_duration=11.1, num_buckets=2),
     ),
     # Differently initialized BucketingSampler (using CutPairsSampler) with the same CUTS
     lambda: (
@@ -86,8 +86,8 @@ SAMPLERS_TO_TEST = [
             SingleCutSampler(CUTS_MOD.subset(first=50), max_duration=10.0, shuffle=True, drop_last=True),
         ),
         RoundRobinSampler(
-            SingleCutSampler(CUTS.subset(first=50)),
-            SingleCutSampler(CUTS_MOD.subset(first=50)),
+            SingleCutSampler(CUTS.subset(first=50), max_duration=11.1),
+            SingleCutSampler(CUTS_MOD.subset(first=50), max_duration=11.1),
         ),
     ),
 ]

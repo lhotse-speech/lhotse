@@ -63,6 +63,8 @@ a CLI tool that create the manifests given a corpus directory.
     - :func:`lhotse.recipes.prepare_atcosim`
   * - BABEL
     - :func:`lhotse.recipes.prepare_single_babel_language`
+  * - Bengali.AI Speech
+    - :func:`lhotse.recipes.prepare_bengaliai_speech`
   * - BUT ReverbDB
     - :func:`lhotse.recipes.prepare_but_reverb_db`
   * - BVCC / VoiceMOS Challenge
@@ -119,6 +121,8 @@ a CLI tool that create the manifests given a corpus directory.
     - :func:`lhotse.recipes.prepare_himia`
   * - ICSI
     - :func:`lhotse.recipes.prepare_icsi`
+  * - KeSpeech
+    - :func:`lhotse.recipes.prepare_kespeech`
   * - L2 Arctic
     - :func:`lhotse.recipes.prepare_l2_arctic`
   * - LibriCSS
@@ -167,6 +171,8 @@ a CLI tool that create the manifests given a corpus directory.
     - :func:`lhotse.recipes.prepare_vctk`
   * - VoxCeleb
     - :func:`lhotse.recipes.prepare_voxceleb`
+  * - VoxPopuli
+    - :func:`lhotse.recipes.prepare_voxpopuli`
   * - WenetSpeech
     - :func:`lhotse.recipes.prepare_wenet_speech`
   * - YesNo
