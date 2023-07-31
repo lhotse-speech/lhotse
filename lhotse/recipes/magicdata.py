@@ -67,6 +67,7 @@ def text_normalize(line: str):
     line = line.replace("》", "")
     line = line.replace("FIL", "")
     line = line.replace("SPK", "")
+    line = line.replace("﻿", "")
     line = line.upper()
     return line
 

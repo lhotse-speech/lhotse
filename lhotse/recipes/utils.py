@@ -180,6 +180,30 @@ def normalize_text_chime6(text: str, normalize: str = "upper") -> str:
         return text
 
 
+def normalize_text_tedlium(text: str, normalize: str = "upper") -> str:
+    """
+    Text normalization similar to Kaldi's TEDLIUM-3 recipe.
+    """
+    if normalize == "none":
+        return text
+    elif normalize == "upper":
+        return text.upper()
+    elif normalize == "kaldi":
+        # Kaldi style text normalization
+        import re
+
+        # remove tokens such as "[NOISE]"
+        text = re.sub(r"\[[^\]]+\]", "", text)
+        # remove "<unk>"
+        text = re.sub(r"<unk>", "", text)
+        # join suffixes with words, e.g. they 're -> they're
+        text = re.sub(r"(\w+) '(\w+)", r"\1'\2", text)
+        # join dangling "'" with next word, e.g. ' 60s -> '60s, ' cause -> 'cause
+        text = re.sub(r"' (\w+)", r"'\1", text)
+
+        return text.strip()
+
+
 class TimeFormatConverter:
     @staticmethod
     def hms_to_seconds(time: str) -> float:

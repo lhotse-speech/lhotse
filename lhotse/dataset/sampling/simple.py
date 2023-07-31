@@ -61,6 +61,9 @@ class SimpleCutSampler(CutSampler):
             rank=rank,
             seed=seed,
         )
+        assert any(
+            v is not None for v in (max_duration, max_cuts)
+        ), "At least one of max_duration or max_cuts has to be set."
         self.data_source = DataSource(cuts)
         self.time_constraint = TimeConstraint(
             max_duration=max_duration,
