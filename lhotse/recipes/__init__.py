@@ -7,6 +7,7 @@ from .ami import download_ami, prepare_ami
 from .aspire import prepare_aspire
 from .atcosim import download_atcosim, prepare_atcosim
 from .babel import prepare_single_babel_language
+from .bengaliai_speech import prepare_bengaliai_speech
 from .broadcast_news import prepare_broadcast_news
 from .but_reverb_db import download_but_reverb_db, prepare_but_reverb_db
 from .bvcc import download_bvcc, prepare_bvcc
@@ -37,6 +38,7 @@ from .hifitts import download_hifitts, prepare_hifitts
 from .himia import download_himia, prepare_himia
 from .icsi import download_icsi, prepare_icsi
 from .iwslt22_ta import prepare_iwslt2022_ta
+from .kespeech import prepare_kespeech
 from .l2_arctic import prepare_l2_arctic
 from .libricss import download_libricss, prepare_libricss
 from .librilight import prepare_librilight
@@ -68,6 +70,7 @@ from .timit import download_timit, prepare_timit
 from .uwb_atcc import download_uwb_atcc, prepare_uwb_atcc
 from .vctk import download_vctk, prepare_vctk
 from .voxceleb import download_voxceleb1, download_voxceleb2, prepare_voxceleb
+from .voxpopuli import download_voxpopuli, prepare_voxpopuli
 from .wenet_speech import prepare_wenet_speech
 from .xbmu_amdo31 import download_xbmu_amdo31, prepare_xbmu_amdo31
 from .yesno import download_yesno, prepare_yesno

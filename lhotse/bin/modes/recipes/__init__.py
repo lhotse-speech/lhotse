@@ -9,6 +9,7 @@ from .ami import *
 from .aspire import *
 from .atcosim import *
 from .babel import *
+from .bengaliai_speech import *
 from .broadcast_news import *
 from .but_reverb_db import *
 from .bvcc import *
@@ -39,6 +40,7 @@ from .hifitts import *
 from .himia import *
 from .icsi import *
 from .iwslt22_ta import *
+from .kespeech import *
 from .l2_arctic import *
 from .libricss import *
 from .librilight import *
@@ -68,6 +70,7 @@ from .timit import *
 from .uwb_atcc import *
 from .vctk import *
 from .voxceleb import *
+from .voxpopuli import *
 from .wenet_speech import *
 from .xbmu_amdo31 import *
 from .yesno import *
