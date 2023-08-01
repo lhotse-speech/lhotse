@@ -2,9 +2,22 @@ import logging
 
 import click
 
-from lhotse.bin.modes import prepare
-from lhotse.recipes.audio_mnist import prepare_audio_mnist
+from lhotse.bin.modes import download, prepare
+from lhotse.recipes.audio_mnist import prepare_audio_mnist, download_audio_mnist
 from lhotse.utils import Pathlike
+
+
+@download.command(context_settings=dict(show_default=True))
+@click.argument("target_dir", type=click.Path())
+@click.option(
+    "--force-download",
+    type=bool,
+    default=False,
+    help="If True, download even if file is present.",
+)
+def audio_mnist(target_dir: Pathlike, force_download: bool):
+    """yes_no dataset download."""
+    download_audio_mnist(target_dir, force_download)
 
 
 @prepare.command(context_settings=dict(show_default=True))

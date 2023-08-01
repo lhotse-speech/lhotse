@@ -13,7 +13,6 @@ All speakers were informed about the intent of the data collection
 and have given written declarations of consent for their participation prior
 to their recording session.
 
-We don't provide download_audio_mnist().
 
 The data is publicly available at the following github repo:
 
@@ -21,18 +20,53 @@ The data is publicly available at the following github repo:
 """
 
 import logging
-from itertools import groupby, repeat
+import os
+import tarfile
 from pathlib import Path
-from typing import Dict, List, Tuple, Union
+from typing import Dict, Union
 
-from tqdm.auto import tqdm
-
-from lhotse import fix_manifests, validate_recordings_and_supervisions
+from lhotse import validate_recordings_and_supervisions
 from lhotse.audio import Recording, RecordingSet
-from lhotse.parallel import parallel_map
-from lhotse.serialization import load_json, load_yaml
+from lhotse.serialization import load_json
 from lhotse.supervision import SupervisionSegment, SupervisionSet
-from lhotse.utils import Pathlike, Seconds
+from lhotse.utils import Pathlike, resumable_download
+
+# The last update is 5 years ago so it is safe to use the master branch.
+AUDIO_MNIST_URL = "https://github.com/soerenab/AudioMNIST/archive/master.tar.gz"  # noqa
+
+
+def download_audio_mnist(
+    target_dir: Pathlike,
+    force_download: bool = False,
+) -> Path:
+    """
+    Download and untar the AudioMNIST dataset.
+
+    :param target_dir: Pathlike, the path of the dir to store the dataset.
+    :param force_download: bool, if True, download the archive even if it
+      already exists.
+    :return: Return the directory containing the extracted dataset.
+    """
+    target_dir = Path(target_dir)
+    target_dir.mkdir(parents=True, exist_ok=True)
+
+    tgz_name = "master.tar.gz"
+    tgz_path = target_dir / tgz_name
+    if tgz_path.exists() and not force_download:
+        logging.info(f"Skipping {tgz_name} because file exists.")
+
+    resumable_download(
+        AUDIO_MNIST_URL,
+        tgz_path,
+        force_download=force_download,
+    )
+    tgz_dir = target_dir / "AudioMNIST"
+    if not tgz_dir.exists():
+        logging.info(f"Untarring {tgz_name}.")
+        with tarfile.open(tgz_path) as tar:
+            tar.extractall(path=target_dir)
+        os.rename(str(target_dir / "AudioMNIST-master"), str(tgz_dir))
+    return tgz_dir
 
 
 def prepare_audio_mnist(
@@ -41,8 +75,8 @@ def prepare_audio_mnist(
 ) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet]]]:
     """Prepare manifests for the AudioMNIST corpus.
 
-    :param: corpus_dir: We assume it is the github repo directory and it contains
-      the following directories: data/{01,02,03,...,60}
+    :param: corpus_dir: We assume it is the github repo directory and it
+      contains the following directories: data/{01,02,03,...,60}
     :param: output_dir: Directory where the manifests should be written.
     """
     in_data_dir = Path(corpus_dir) / "data"
