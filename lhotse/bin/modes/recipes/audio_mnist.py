@@ -16,7 +16,7 @@ from lhotse.utils import Pathlike
     help="If True, download even if file is present.",
 )
 def audio_mnist(target_dir: Pathlike, force_download: bool):
-    """yes_no dataset download."""
+    """AudioMNIST dataset download."""
     download_audio_mnist(target_dir, force_download)
 
 
