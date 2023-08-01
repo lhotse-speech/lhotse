@@ -67,7 +67,7 @@ class DynamicCutSampler(CutSampler):
 
     def __init__(
         self,
-        *cuts: CutSet,
+        *cuts: Iterable[Cut],
         max_duration: Optional[float] = None,
         max_cuts: Optional[int] = None,
         shuffle: bool = False,
@@ -119,6 +119,9 @@ class DynamicCutSampler(CutSampler):
         self.consistent_ids = consistent_ids
         self.shuffle_buffer_size = shuffle_buffer_size
         self.rng = None
+        assert any(
+            v is not None for v in (self.max_duration, self.max_cuts)
+        ), "At least one of max_duration or max_cuts has to be set."
 
         if strict is not None:
             warnings.warn(

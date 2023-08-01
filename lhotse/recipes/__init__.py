@@ -7,6 +7,7 @@ from .ami import download_ami, prepare_ami
 from .aspire import prepare_aspire
 from .atcosim import download_atcosim, prepare_atcosim
 from .babel import prepare_single_babel_language
+from .bengaliai_speech import prepare_bengaliai_speech
 from .broadcast_news import prepare_broadcast_news
 from .but_reverb_db import download_but_reverb_db, prepare_but_reverb_db
 from .bvcc import download_bvcc, prepare_bvcc
@@ -36,6 +37,7 @@ from .heroico import download_heroico, prepare_heroico
 from .hifitts import download_hifitts, prepare_hifitts
 from .himia import download_himia, prepare_himia
 from .icsi import download_icsi, prepare_icsi
+from .kespeech import prepare_kespeech
 from .l2_arctic import prepare_l2_arctic
 from .libricss import download_libricss, prepare_libricss
 from .librilight import prepare_librilight

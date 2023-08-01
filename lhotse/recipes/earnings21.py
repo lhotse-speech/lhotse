@@ -82,7 +82,10 @@ def download_earnings21(
             if "earnings21" in f:
                 zip.extract(f, path=target_dir)
 
-    shutil.move(target_dir / "speech-datasets-main" / "earnings21", target_dir)
+    # For Python < 3.9, shutil.move() gives error with PosixPath
+    shutil.move(
+        str(target_dir / "speech-datasets-main" / "earnings21"), str(target_dir)
+    )
     shutil.rmtree(target_dir / "speech-datasets-main")
 
     completed_detector.touch()

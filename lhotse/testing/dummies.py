@@ -19,12 +19,12 @@ from lhotse.utils import fastcopy
 
 
 @contextlib.contextmanager
-def as_lazy(manifest):
+def as_lazy(manifest, suffix=".jsonl.gz"):
     """
     Context manager for converting eager manifests to lazy manifests.
     Intended for testing.
     """
-    with NamedTemporaryFile(suffix=".jsonl.gz") as f:
+    with NamedTemporaryFile(suffix=suffix) as f:
         manifest.to_file(f.name)
         f.flush()
         yield type(manifest).from_jsonl_lazy(f.name)
