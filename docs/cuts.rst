@@ -50,7 +50,7 @@ Some examples of how to perform manipulations in the terminal:
 .. code-block:: bash
 
     # Reject short segments
-    lhotse yaml filter 'duration>=3.0' cuts.jsonl cuts-3s.jsonl
+    lhotse filter 'duration>=3.0' cuts.jsonl cuts-3s.jsonl
     # Pad short segments to 5 seconds.
     lhotse cut pad --duration 5.0 cuts-3s.jsonl cuts-5s-pad.jsonl
     # Truncate longer segments to 5 seconds.
