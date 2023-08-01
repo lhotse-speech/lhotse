@@ -16,7 +16,12 @@ from lhotse import (
     validate,
 )
 from lhotse.serialization import deserialize_item
-from lhotse.testing.dummies import dummy_cut, dummy_recording
+from lhotse.testing.dummies import (
+    dummy_cut,
+    dummy_multi_cut,
+    dummy_recording,
+    dummy_supervision,
+)
 
 
 @pytest.mark.parametrize("cut", [dummy_cut(1), dummy_cut(2).pad(300)])
@@ -366,3 +371,32 @@ def test_cut_attach_tensor_temporal():
     cut = cut.attach_tensor("ivector", ivector)
     restored_ivector = cut.load_ivector()
     np.testing.assert_equal(ivector, restored_ivector)
+
+
+def test_del_attr_supervision():
+    sup = dummy_supervision(0)
+
+    with pytest.raises(AttributeError):
+        del sup.nonexistent_attribute
+
+    sup.extra_metadata = {"version": "0.1.1"}
+    assert "extra_metadata" in sup.custom
+    sup.extra_metadata  # does not raise
+    del sup.extra_metadata
+    with pytest.raises(AttributeError):
+        del sup.extra_metadata
+    assert "extra_metadata" not in sup.custom
+
+
+@pytest.mark.parametrize("cut", [dummy_cut(0), dummy_multi_cut(0)])
+def test_del_attr_mono_cut(cut):
+    with pytest.raises(AttributeError):
+        del cut.nonexistent_attribute
+
+    cut.extra_metadata = {"version": "0.1.1"}
+    assert "extra_metadata" in cut.custom
+    cut.extra_metadata  # does not raise
+    del cut.extra_metadata
+    with pytest.raises(AttributeError):
+        del cut.extra_metadata
+    assert "extra_metadata" not in cut.custom
