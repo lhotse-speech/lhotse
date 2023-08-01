@@ -3,7 +3,7 @@ import logging
 import click
 
 from lhotse.bin.modes import download, prepare
-from lhotse.recipes.audio_mnist import prepare_audio_mnist, download_audio_mnist
+from lhotse.recipes.audio_mnist import download_audio_mnist, prepare_audio_mnist
 from lhotse.utils import Pathlike
 
 
