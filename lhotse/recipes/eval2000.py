@@ -48,7 +48,13 @@ def prepare_eval2000(
     assert (
         audio_partition_dir_path.is_dir()
     ), f"No such directory:{audio_partition_dir_path}"
-    transcript_dir_path = corpus_dir / EVAL2000_TRANSCRIPT_DIR / "reference" / "english"
+    transcript_dir_path = (
+        corpus_dir
+        / EVAL2000_TRANSCRIPT_DIR
+        / "2000_hub5_eng_eval_tr"
+        / "reference"
+        / "english"
+    )
     assert transcript_dir_path.is_dir(), f"No such directory:{transcript_dir_path}"
     groups = []
     for path in (audio_partition_dir_path).rglob("*.sph"):
