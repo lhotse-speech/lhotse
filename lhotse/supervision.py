@@ -650,9 +650,17 @@ class SupervisionSet(Serializable, AlgorithmMixin):
         ctm_words = []
         with open(ctm_file) as f:
             for line in f:
-                reco_id, channel, start, duration, symbol = line.strip().split()
+                reco_id, channel, start, duration, symbol, *score = line.strip().split()
+                score = float(score[0]) if score else None
                 ctm_words.append(
-                    (reco_id, int(channel), float(start), float(duration), symbol)
+                    (
+                        reco_id,
+                        int(channel),
+                        float(start),
+                        float(duration),
+                        symbol,
+                        score,
+                    )
                 )
         ctm_words = sorted(ctm_words, key=lambda x: (x[0], x[2]))
         reco_to_ctm = defaultdict(
@@ -665,7 +673,12 @@ class SupervisionSet(Serializable, AlgorithmMixin):
             if reco_id in reco_to_ctm:
                 for seg in self.find(recording_id=reco_id):
                     alignment = [
-                        AlignmentItem(symbol=word[4], start=word[2], duration=word[3])
+                        AlignmentItem(
+                            symbol=word[4],
+                            start=word[2],
+                            duration=word[3],
+                            score=word[5],
+                        )
                         for word in reco_to_ctm[reco_id]
                         if overspans(seg, TimeSpan(word[2], word[2] + word[3]))
                         and (seg.channel == word[1] or not match_channel)
@@ -697,9 +710,14 @@ class SupervisionSet(Serializable, AlgorithmMixin):
                 if type in s.alignment:
                     for ali in s.alignment[type]:
                         c = s.channel[0] if isinstance(s.channel, list) else s.channel
-                        f.write(
-                            f"{s.recording_id} {c} {ali.start:.02f} {ali.duration:.02f} {ali.symbol}\n"
-                        )
+                        if ali.score is None:
+                            f.write(
+                                f"{s.recording_id} {c} {ali.start:.02f} {ali.duration:.02f} {ali.symbol}\n"
+                            )
+                        else:
+                            f.write(
+                                f"{s.recording_id} {c} {ali.start:.02f} {ali.duration:.02f} {ali.symbol} {ali.score:.02f}\n"
+                            )
 
     def to_dicts(self) -> Iterable[dict]:
         return (s.to_dict() for s in self)
