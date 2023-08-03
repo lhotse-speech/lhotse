@@ -651,7 +651,6 @@ class SupervisionSet(Serializable, AlgorithmMixin):
         with open(ctm_file) as f:
             for line in f:
                 reco_id, channel, start, duration, symbol, *score = line.strip().split()
-                score = float(score[0]) if score else None
                 ctm_words.append(
                     (
                         reco_id,
@@ -659,7 +658,7 @@ class SupervisionSet(Serializable, AlgorithmMixin):
                         float(start),
                         float(duration),
                         symbol,
-                        score,
+                        float(score[0]) if score else None,
                     )
                 )
         ctm_words = sorted(ctm_words, key=lambda x: (x[0], x[2]))
