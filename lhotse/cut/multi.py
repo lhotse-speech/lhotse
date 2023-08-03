@@ -1,7 +1,7 @@
 import logging
 import warnings
 from dataclasses import dataclass
-from functools import reduce
+from functools import partial, reduce
 from itertools import groupby
 from operator import add
 from typing import Any, Callable, Iterable, List, Optional, Union
@@ -211,6 +211,7 @@ class MultiCut(DataCut):
 
     def merge_supervisions(
         self,
+        merge_policy: str = "delimiter",
         merge_channels: bool = True,
         custom_merge_fn: Optional[Callable[[str, Iterable[Any]], Any]] = None,
     ) -> "MultiCut":
@@ -222,12 +223,13 @@ class MultiCut(DataCut):
         ``channel`` attribute will not change in this case.
 
         The new start is the start of the earliest superivion, and the new duration
-        is a minimum spanning duration for all the supervisions.
+        is a minimum spanning duration for all the supervisions. The text fields of
+        all segments are concatenated with a whitespace.
 
-        The text fields are concatenated with a whitespace, and all other string fields
-        (including IDs) are prefixed with "cat#" and concatenated with a hash symbol "#".
-        This is also applied to ``custom`` fields. Fields with a ``None`` value are omitted.
-
+        :param merge_policy: one of "keep_first" or "delimiter". If "keep_first", we
+            keep only the first segment's field value, otherwise all string fields
+            (including IDs) are prefixed with "cat#" and concatenated with a hash symbol "#".
+            This is also applied to ``custom`` fields. Fields with a ``None`` value are omitted.
         :param merge_channels: If true, we will merge all supervisions into a single segment.
             If false, we will merge supervisions per channel group. Default: True.
         :param custom_merge_fn: a function that will be called to merge custom fields values.
@@ -265,6 +267,12 @@ class MultiCut(DataCut):
                 )
             }
 
+        merge_func_ = partial(
+            merge_items_with_delimiter,
+            delimiter="#",
+            return_first=(merge_policy == "keep_first"),
+        )
+
         msups = []
         text_overlap_warning = False
         for channel, csups in sups_by_channel.items():
@@ -293,21 +301,15 @@ class MultiCut(DataCut):
 
             msups.append(
                 SupervisionSegment(
-                    id=merge_items_with_delimiter(s.id for s in csups),
+                    id=merge_func_(s.id for s in csups),
                     recording_id=csups[0].recording_id,
                     start=mstart,
                     duration=mduration,
                     channel=list(channel),
                     text=" ".join(s.text for s in csups if s.text),
-                    speaker=merge_items_with_delimiter(
-                        s.speaker for s in csups if s.speaker
-                    ),
-                    language=merge_items_with_delimiter(
-                        s.language for s in csups if s.language
-                    ),
-                    gender=merge_items_with_delimiter(
-                        s.gender for s in csups if s.gender
-                    ),
+                    speaker=merge_func_(s.speaker for s in csups if s.speaker),
+                    language=merge_func_(s.language for s in csups if s.language),
+                    gender=merge_func_(s.gender for s in csups if s.gender),
                     custom={
                         k: merge_custom(
                             k,

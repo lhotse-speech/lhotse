@@ -14,6 +14,8 @@ from typing import (
     Union,
 )
 
+from tqdm import tqdm
+
 from lhotse.lazy import AlgorithmMixin
 from lhotse.serialization import Serializable
 from lhotse.utils import (
@@ -637,7 +639,11 @@ class SupervisionSet(Serializable, AlgorithmMixin):
         return SupervisionSet.from_segments(segments)
 
     def with_alignment_from_ctm(
-        self, ctm_file: Pathlike, type: str = "word", match_channel: bool = False
+        self,
+        ctm_file: Pathlike,
+        type: str = "word",
+        match_channel: bool = False,
+        verbose: bool = False,
     ) -> "SupervisionSet":
         """
         Add alignments from CTM file to the supervision set.
@@ -645,14 +651,20 @@ class SupervisionSet(Serializable, AlgorithmMixin):
         :param ctm: Path to CTM file.
         :param type: Alignment type (optional, default = `word`).
         :param match_channel: if True, also match channel between CTM and SupervisionSegment
+        :param verbose: if True, show progress bar
         :return: A new SupervisionSet with AlignmentItem objects added to the segments.
         """
         ctm_words = []
+        # Sometimes the channels may not be integers, so we map them here.
+        channel_to_int = {}
         with open(ctm_file) as f:
+            f = tqdm(f, desc="Reading words from CTM file") if verbose else f
             for line in f:
                 reco_id, channel, start, duration, symbol = line.strip().split()
+                channel_to_int[channel] = len(channel_to_int)
+                channel = channel_to_int[channel]
                 ctm_words.append(
-                    (reco_id, int(channel), float(start), float(duration), symbol)
+                    (reco_id, channel, float(start), float(duration), symbol)
                 )
         ctm_words = sorted(ctm_words, key=lambda x: (x[0], x[2]))
         reco_to_ctm = defaultdict(
@@ -661,7 +673,11 @@ class SupervisionSet(Serializable, AlgorithmMixin):
         segments = []
         num_total = len(ctm_words)
         num_overspanned = 0
-        for reco_id in set([s.recording_id for s in self]):
+        recordings = set([s.recording_id for s in self])
+        recordings = (
+            tqdm(recordings, desc="Adding alignments") if verbose else recordings
+        )
+        for reco_id in recordings:
             if reco_id in reco_to_ctm:
                 for seg in self.find(recording_id=reco_id):
                     alignment = [
