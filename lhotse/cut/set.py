@@ -1588,7 +1588,6 @@ class CutSet(Serializable, AlgorithmMixin):
         duration: Seconds,
         hop: Optional[Seconds] = None,
         keep_excessive_supervisions: bool = True,
-        use_alignment_if_exists: Optional[str] = None,
         num_jobs: int = 1,
     ) -> "CutSet":
         """
@@ -1602,10 +1601,6 @@ class CutSet(Serializable, AlgorithmMixin):
         :param hop: Shift between the windows in the new cuts in seconds.
         :param keep_excessive_supervisions: bool. When a cut is truncated in the middle of a supervision segment,
             should the supervision be kept.
-        :param use_alignment_if_exists: Optional str. If provided, the corresponding alignments will
-            be used to cut the supervisions according to the time. This could mean that resulting
-            cut durations are slightly different than the requested ``duration``, since we will
-            try to align the supervisions to the alignment boundaries.
         :param num_jobs: The number of parallel workers.
         :return: a new CutSet with cuts made from shorter duration windows.
         """
@@ -1623,7 +1618,6 @@ class CutSet(Serializable, AlgorithmMixin):
                             duration=duration,
                             hop=hop,
                             keep_excessive_supervisions=keep_excessive_supervisions,
-                            use_alignment_if_exists=use_alignment_if_exists,
                         ),
                     )
                 )
@@ -1638,7 +1632,6 @@ class CutSet(Serializable, AlgorithmMixin):
             duration=duration,
             hop=hop,
             keep_excessive_supervisions=keep_excessive_supervisions,
-            use_alignment_if_exists=use_alignment_if_exists,
         )
         return result
 

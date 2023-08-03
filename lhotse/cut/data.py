@@ -493,10 +493,6 @@ class DataCut(Cut, metaclass=ABCMeta):
             By default, the duration is (end of the cut before truncation) - (offset).
         :param keep_excessive_supervisions: bool. Since trimming may happen inside a SupervisionSegment,
             the caller has an option to either keep or discard such supervisions.
-        :param use_alignment_if_exists: Optional str. If provided, the corresponding alignments will
-            be used to cut the supervisions according to the time. This could mean that resulting
-            cut durations are slightly different than the requested ``duration``, since we will
-            try to align the supervisions to the alignment boundaries.
         :param preserve_id: bool. Should the truncated cut keep the same ID or get a new, random one.
         :param _supervisions_index: an IntervalTree; when passed, allows to speed up processing of Cuts with a very
             large number of supervisions. Intended as an internal parameter.
