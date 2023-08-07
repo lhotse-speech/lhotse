@@ -518,8 +518,8 @@ class Cut:
         Splits the current :class:`.Cut` into its constituent alignment items (:class:`.AlignmentItem`).
         These cuts have identical start times and durations as the alignment item. Additionally,
         the `max_pause` option can be used to merge alignment items that are separated by a pause
-        shorter than `max_pause`. If `max_segment_duration` is specified, the merging will be
-        performed only if the resulting segment is shorter than `max_segment_duration`.
+        shorter than `max_pause`. If `max_segment_duration` is specified, we will keep merging
+        consecutive segments until the duration of the merged segment exceeds `max_segment_duration`.
 
         For the case of a multi-channel cut with multiple alignments, we can either trim
         while respecting the supervision channels (in which case output cut has the same channels

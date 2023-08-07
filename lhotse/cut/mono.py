@@ -216,6 +216,12 @@ class MonoCut(DataCut):
             It will be called roughly like:
             ``custom_merge_fn(custom_key, [s.custom[custom_key] for s in sups])``
         """
+        merge_func_ = partial(
+            merge_items_with_delimiter,
+            delimiter="#",
+            return_first=(merge_policy == "keep_first"),
+        )
+
         # "m" stands for merged in variable names below
 
         if custom_merge_fn is not None:
@@ -223,7 +229,7 @@ class MonoCut(DataCut):
             merge_custom = custom_merge_fn
         else:
             # Merge the string representations of custom fields.
-            merge_custom = lambda k, vs: merge_items_with_delimiter(map(str, vs))
+            merge_custom = lambda k, vs: merge_func_(map(str, vs))
 
         sups = sorted(self.supervisions, key=lambda s: s.start)
 
@@ -250,12 +256,6 @@ class MonoCut(DataCut):
                 "The result is likely to be unusable if you are going to train speech "
                 f"recognition models (cut id: {self.id})."
             )
-
-        merge_func_ = partial(
-            merge_items_with_delimiter,
-            delimiter="#",
-            return_first=(merge_policy == "keep_first"),
-        )
 
         msup = SupervisionSegment(
             id=merge_func_(s.id for s in sups),
