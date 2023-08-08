@@ -15,7 +15,7 @@ def cut_set():
 @pytest.mark.parametrize("return_sources", [True, False])
 def test_surt_iterable_dataset(cut_set, num_workers, return_sources):
     dataset = K2SurtDataset(return_sources=return_sources, return_cuts=True)
-    sampler = SimpleCutSampler(cut_set, shuffle=False)
+    sampler = SimpleCutSampler(cut_set, shuffle=False, max_cuts=10000)
     # Note: "batch_size=None" disables the automatic batching mechanism,
     #       which is required when Dataset takes care of the collation itself.
     dloader = DataLoader(

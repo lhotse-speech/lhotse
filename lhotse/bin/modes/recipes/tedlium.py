@@ -27,8 +27,19 @@ from lhotse.utils import Pathlike
     default=1,
     help="How many threads to use (can give good speed-ups with slow disks).",
 )
+@click.option(
+    "--normalize-text",
+    type=click.Choice(["none", "upper", "kaldi"], case_sensitive=False),
+    default="none",
+    help="Type of text normalization to apply (no normalization, by default). "
+    "Selecting `kaldi` will remove <unk> tokens and join suffixes.",
+)
 def tedlium(
-    tedlium_dir: Pathlike, output_dir: Pathlike, parts: List[str], num_jobs: int
+    tedlium_dir: Pathlike,
+    output_dir: Pathlike,
+    parts: List[str],
+    num_jobs: int,
+    normalize_text: str,
 ):
     """
     TED-LIUM v3 recording and supervision manifest preparation.
@@ -38,6 +49,7 @@ def tedlium(
         output_dir=output_dir,
         dataset_parts=parts,
         num_jobs=num_jobs,
+        normalize_text=normalize_text,
     )
 
 
