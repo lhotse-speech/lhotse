@@ -112,7 +112,8 @@ def make_segments(
             speaker=f"{recording.id}A",
         )
         for segment_id, start, end, *words in map(str.split, lines)
-        if words[0] != "[silence]" or not omit_silence
+        if (words[0] != "[silence]" or not omit_silence)
+        and segment_id != "sw4349B-ms98-a-0002"
     ]
 
 
