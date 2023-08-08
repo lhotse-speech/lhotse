@@ -100,6 +100,37 @@ def make_segments(
     transcript_path: Path, recording: Recording, channel: int, omit_silence: bool = True
 ):
     lines = transcript_path.read_text().splitlines()
+    empty_uttr = [
+        "sw4349B-ms98-a-0002",
+        "sw4770B-ms98-a-0001",
+        "sw4140B-ms98-a-0001",
+        "sw3075B-ms98-a-0038",
+        "sw2672A-ms98-a-0067",
+        "sw2953B-ms98-a-0053",
+        "sw2311A-ms98-a-0044",
+        "sw3849A-ms98-a-0045",
+        "sw4761A-ms98-a-0053",
+        "sw2471A-ms98-a-0001",
+        "sw3722B-ms98-a-0029",
+        "sw3693B-ms98-a-0021",
+        "sw2107A-ms98-a-0019",
+        "sw3459B-ms98-a-0021",
+        "sw3030A-ms98-a-0007",
+        "sw3064A-ms98-a-0022",
+        "sw2644B-ms98-a-0035",
+        "sw2614A-ms98-a-0054",
+        "sw4349B-ms98-a-0002",
+        "sw3543B-ms98-a-0022",
+        "sw4243B-ms98-a-0040",
+        "sw2810B-ms98-a-0069",
+        "sw2596A-ms98-a-0097",
+        "sw2832B-ms98-a-0074",
+        "sw3007B-ms98-a-0028",
+        "sw3701A-ms98-a-0044",
+        "sw4880B-ms98-a-0009",
+        "sw2926A-ms98-a-0123",
+        "sw3416A-ms98-a-0048",
+    ]
     return [
         SupervisionSegment(
             id=segment_id,
@@ -113,7 +144,7 @@ def make_segments(
         )
         for segment_id, start, end, *words in map(str.split, lines)
         if (words[0] != "[silence]" or not omit_silence)
-        and segment_id != "sw4349B-ms98-a-0002"
+        and segment_id not in empty_uttr
     ]
 
 
