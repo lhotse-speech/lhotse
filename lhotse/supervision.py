@@ -458,7 +458,7 @@ class SupervisionSegment:
 
         return SupervisionSegment(**data)
 
-    def __setattr__(self, key: str, value: Any):
+    def __setattr__(self, key: str, value: Any) -> None:
         """
         This magic function is called when the user tries to set an attribute.
         We use it as syntactic sugar to store custom attributes in ``self.custom``
@@ -468,8 +468,12 @@ class SupervisionSegment:
             super().__setattr__(key, value)
         else:
             custom = ifnone(self.custom, {})
-            custom[key] = value
-            self.custom = custom
+            if value is None:
+                custom.pop(key, None)
+            else:
+                custom[key] = value
+            if custom:
+                self.custom = custom
 
     def __getattr__(self, name: str) -> Any:
         """
@@ -493,6 +497,14 @@ class SupervisionSegment:
             return self.custom[name]
         except:
             raise AttributeError(f"No such attribute: {name}")
+
+    def __delattr__(self, key: str) -> None:
+        """Used to support ``del supervision.custom_attr`` syntax."""
+        if key in self.__dataclass_fields__:
+            super().__delattr__(key)
+        if self.custom is None or key not in self.custom:
+            raise AttributeError(f"No such member: '{key}'")
+        del self.custom[key]
 
 
 class SupervisionSet(Serializable, AlgorithmMixin):

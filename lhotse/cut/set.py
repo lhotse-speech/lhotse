@@ -313,6 +313,7 @@ class CutSet(Serializable, AlgorithmMixin):
         features: Optional[FeatureSet] = None,
         output_path: Optional[Pathlike] = None,
         random_ids: bool = False,
+        tolerance: Seconds = 0.001,
         lazy: bool = False,
     ) -> "CutSet":
         """
@@ -332,6 +333,9 @@ class CutSet(Serializable, AlgorithmMixin):
         :param output_path: an optional path where the :class:`.CutSet` is stored.
         :param random_ids: boolean, should the cut IDs be randomized. By default, use the recording ID
             with a loop index and a channel idx, i.e. "{recording_id}-{idx}-{channel}")
+        :param tolerance: float, tolerance for supervision and feature segment boundary comparison.
+            By default, it's 1ms. Increasing this value can be helpful when importing Kaldi data
+            directories with precomputed features (typically 0.02 - 0.1 should be sufficient).
         :param lazy: boolean, when ``True``, output_path must be provided
         :return: a new :class:`.CutSet` instance.
         """
@@ -342,6 +346,7 @@ class CutSet(Serializable, AlgorithmMixin):
                 features=features,
                 output_path=output_path,
                 random_ids=random_ids,
+                tolerance=tolerance,
             )
         else:
             return create_cut_set_eager(
@@ -350,6 +355,7 @@ class CutSet(Serializable, AlgorithmMixin):
                 features=features,
                 output_path=output_path,
                 random_ids=random_ids,
+                tolerance=tolerance,
             )
 
     @staticmethod
@@ -2983,6 +2989,7 @@ def create_cut_set_eager(
     features: Optional[FeatureSet] = None,
     output_path: Optional[Pathlike] = None,
     random_ids: bool = False,
+    tolerance: Seconds = 0.001,
 ) -> CutSet:
     """
     Create a :class:`.CutSet` from any combination of supervision, feature and recording manifests.
@@ -3001,6 +3008,9 @@ def create_cut_set_eager(
     :param output_path: an optional path where the :class:`.CutSet` is stored.
     :param random_ids: boolean, should the cut IDs be randomized. By default, use the recording ID
         with a loop index and a channel idx, i.e. "{recording_id}-{idx}-{channel}")
+    :param tolerance: float, tolerance for supervision and feature segment boundary comparison.
+        By default, it's 1ms. Increasing this value can be helpful when importing Kaldi data
+        directories with precomputed features.
     :return: a new :class:`.CutSet` instance.
     """
     assert (
@@ -3047,6 +3057,7 @@ def create_cut_set_eager(
                             start_after=feats.start,
                             end_before=feats.end,
                             adjust_offset=True,
+                            tolerance=tolerance,
                         )
                     )
                     if sup_ok
@@ -3071,11 +3082,7 @@ def create_cut_set_eager(
                     duration=recording.duration,
                     channel=channel,
                     recording=recording,
-                    supervisions=list(
-                        supervisions.find(
-                            recording_id=recording.id,
-                        )
-                    )
+                    supervisions=list(supervisions.find(recording_id=recording.id))
                     if sup_ok
                     else [],
                 )
@@ -3092,6 +3099,7 @@ def create_cut_set_lazy(
     supervisions: Optional[SupervisionSet] = None,
     features: Optional[FeatureSet] = None,
     random_ids: bool = False,
+    tolerance: Seconds = 0.001,
 ) -> CutSet:
     """
     Create a :class:`.CutSet` from any combination of supervision, feature and recording manifests.
@@ -3123,6 +3131,9 @@ def create_cut_set_lazy(
     :param features: an optional :class:`~lhotse.features.base.FeatureSet` manifest.
     :param random_ids: boolean, should the cut IDs be randomized. By default, use the recording ID
         with a loop index and a channel idx, i.e. "{recording_id}-{idx}-{channel}")
+    :param tolerance: float, tolerance for supervision and feature segment boundary comparison.
+        By default, it's 1ms. Increasing this value can be helpful when importing Kaldi data
+        directories with precomputed features.
     :return: a new :class:`.CutSet` instance.
     """
     assert (
@@ -3196,6 +3207,7 @@ def create_cut_set_lazy(
                             start_after=feats.start,
                             end_before=feats.end,
                             adjust_offset=True,
+                            tolerance=tolerance,
                         )
                     )
                     if sup_ok
