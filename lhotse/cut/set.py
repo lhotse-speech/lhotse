@@ -3376,13 +3376,11 @@ def _cut_into_windows_single(
     duration,
     hop,
     keep_excessive_supervisions,
-    use_alignment_if_exists,
 ) -> CutSet:
     return cuts.cut_into_windows(
         duration=duration,
         hop=hop,
         keep_excessive_supervisions=keep_excessive_supervisions,
-        use_alignment_if_exists=use_alignment_if_exists,
     ).to_eager()
 
 
