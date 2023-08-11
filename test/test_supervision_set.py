@@ -21,6 +21,13 @@ def external_supervision_set() -> SupervisionSet:
 
 
 @pytest.fixture
+def external_supervision_set_with_scores() -> SupervisionSet:
+    return SupervisionSet.from_json(
+        "test/fixtures/supervision.json"
+    ).with_alignment_from_ctm("test/fixtures/supervision_with_scores.ctm")
+
+
+@pytest.fixture
 def external_alignment() -> Dict[str, List[AlignmentItem]]:
     return {
         "word": [
@@ -29,6 +36,19 @@ def external_alignment() -> Dict[str, List[AlignmentItem]]:
             AlignmentItem("the", 0.2, 0.03),
             AlignmentItem("first", 0.23, 0.07),
             AlignmentItem("segment", 0.3, 0.1),
+        ]
+    }
+
+
+@pytest.fixture
+def external_alignment_with_scores() -> Dict[str, List[AlignmentItem]]:
+    return {
+        "word": [
+            AlignmentItem("transcript", 0.1, 0.08, 0.9),
+            AlignmentItem("of", 0.18, 0.02, 0.8),
+            AlignmentItem("the", 0.2, 0.03, 0.85),
+            AlignmentItem("first", 0.23, 0.07, 0.7),
+            AlignmentItem("segment", 0.3, 0.1, 0.98),
         ]
     }
 
@@ -183,6 +203,17 @@ def test_supervision_set_with_alignment_from_ctm(
     assert external_supervision_set["segment-2"].alignment == {"word": []}
     assert external_supervision_set["segment-3"].alignment == {"word": []}
     for seg in external_supervision_set:
+        assert type(seg) == SupervisionSegment
+
+
+def test_supervision_set_with_alignment_from_ctm_with_scores(
+    external_supervision_set_with_scores, external_alignment_with_scores
+):
+    segment = external_supervision_set_with_scores["segment-1"]
+    assert external_alignment_with_scores == segment.alignment
+    assert external_supervision_set_with_scores["segment-2"].alignment == {"word": []}
+    assert external_supervision_set_with_scores["segment-3"].alignment == {"word": []}
+    for seg in external_supervision_set_with_scores:
         assert type(seg) == SupervisionSegment
 
 

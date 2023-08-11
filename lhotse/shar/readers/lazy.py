@@ -268,7 +268,7 @@ class LazySharIterator(ImitatesDict):
                     if maybe_manifest is None:
                         continue  # No value available for the current field for this cut.
                     assert (
-                        data_path.stem == cut.id
+                        str(data_path.parent / data_path.stem) == cut.id
                     ), f"Mismatched IDs: cut ID is '{cut.id}' but found data with name '{data_path}' fsor field {field}"
                     setattr(cut, field, maybe_manifest)
 

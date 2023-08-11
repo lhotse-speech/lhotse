@@ -14,6 +14,8 @@ from typing import (
     Union,
 )
 
+from tqdm import tqdm
+
 from lhotse.lazy import AlgorithmMixin
 from lhotse.serialization import Serializable
 from lhotse.utils import (
@@ -456,7 +458,7 @@ class SupervisionSegment:
 
         return SupervisionSegment(**data)
 
-    def __setattr__(self, key: str, value: Any):
+    def __setattr__(self, key: str, value: Any) -> None:
         """
         This magic function is called when the user tries to set an attribute.
         We use it as syntactic sugar to store custom attributes in ``self.custom``
@@ -466,8 +468,12 @@ class SupervisionSegment:
             super().__setattr__(key, value)
         else:
             custom = ifnone(self.custom, {})
-            custom[key] = value
-            self.custom = custom
+            if value is None:
+                custom.pop(key, None)
+            else:
+                custom[key] = value
+            if custom:
+                self.custom = custom
 
     def __getattr__(self, name: str) -> Any:
         """
@@ -491,6 +497,14 @@ class SupervisionSegment:
             return self.custom[name]
         except:
             raise AttributeError(f"No such attribute: {name}")
+
+    def __delattr__(self, key: str) -> None:
+        """Used to support ``del supervision.custom_attr`` syntax."""
+        if key in self.__dataclass_fields__:
+            super().__delattr__(key)
+        if self.custom is None or key not in self.custom:
+            raise AttributeError(f"No such member: '{key}'")
+        del self.custom[key]
 
 
 class SupervisionSet(Serializable, AlgorithmMixin):
@@ -637,7 +651,11 @@ class SupervisionSet(Serializable, AlgorithmMixin):
         return SupervisionSet.from_segments(segments)
 
     def with_alignment_from_ctm(
-        self, ctm_file: Pathlike, type: str = "word", match_channel: bool = False
+        self,
+        ctm_file: Pathlike,
+        type: str = "word",
+        match_channel: bool = False,
+        verbose: bool = False,
     ) -> "SupervisionSet":
         """
         Add alignments from CTM file to the supervision set.
@@ -645,14 +663,25 @@ class SupervisionSet(Serializable, AlgorithmMixin):
         :param ctm: Path to CTM file.
         :param type: Alignment type (optional, default = `word`).
         :param match_channel: if True, also match channel between CTM and SupervisionSegment
+        :param verbose: if True, show progress bar
         :return: A new SupervisionSet with AlignmentItem objects added to the segments.
         """
         ctm_words = []
+        # Sometimes the channels may not be integers, so we map them here.
+        channel_to_int = {}
         with open(ctm_file) as f:
+            f = tqdm(f, desc="Reading words from CTM file") if verbose else f
             for line in f:
-                reco_id, channel, start, duration, symbol = line.strip().split()
+                reco_id, channel, start, duration, symbol, *score = line.strip().split()
                 ctm_words.append(
-                    (reco_id, int(channel), float(start), float(duration), symbol)
+                    (
+                        reco_id,
+                        int(channel),
+                        float(start),
+                        float(duration),
+                        symbol,
+                        float(score[0]) if score else None,
+                    )
                 )
         ctm_words = sorted(ctm_words, key=lambda x: (x[0], x[2]))
         reco_to_ctm = defaultdict(
@@ -661,11 +690,20 @@ class SupervisionSet(Serializable, AlgorithmMixin):
         segments = []
         num_total = len(ctm_words)
         num_overspanned = 0
-        for reco_id in set([s.recording_id for s in self]):
+        recordings = set([s.recording_id for s in self])
+        recordings = (
+            tqdm(recordings, desc="Adding alignments") if verbose else recordings
+        )
+        for reco_id in recordings:
             if reco_id in reco_to_ctm:
                 for seg in self.find(recording_id=reco_id):
                     alignment = [
-                        AlignmentItem(symbol=word[4], start=word[2], duration=word[3])
+                        AlignmentItem(
+                            symbol=word[4],
+                            start=word[2],
+                            duration=word[3],
+                            score=word[5],
+                        )
                         for word in reco_to_ctm[reco_id]
                         if overspans(seg, TimeSpan(word[2], word[2] + word[3]))
                         and (seg.channel == word[1] or not match_channel)
@@ -697,9 +735,14 @@ class SupervisionSet(Serializable, AlgorithmMixin):
                 if type in s.alignment:
                     for ali in s.alignment[type]:
                         c = s.channel[0] if isinstance(s.channel, list) else s.channel
-                        f.write(
-                            f"{s.recording_id} {c} {ali.start:.02f} {ali.duration:.02f} {ali.symbol}\n"
-                        )
+                        if ali.score is None:
+                            f.write(
+                                f"{s.recording_id} {c} {ali.start:.02f} {ali.duration:.02f} {ali.symbol}\n"
+                            )
+                        else:
+                            f.write(
+                                f"{s.recording_id} {c} {ali.start:.02f} {ali.duration:.02f} {ali.symbol} {ali.score:.02f}\n"
+                            )
 
     def to_dicts(self) -> Iterable[dict]:
         return (s.to_dict() for s in self)

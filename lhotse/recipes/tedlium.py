@@ -45,6 +45,7 @@ import logging
 import shutil
 import tarfile
 from concurrent.futures.thread import ThreadPoolExecutor
+from functools import partial
 from pathlib import Path
 from typing import Dict, Optional, Sequence, Union
 
@@ -55,6 +56,7 @@ from lhotse import (
     validate_recordings_and_supervisions,
 )
 from lhotse.qa import fix_manifests
+from lhotse.recipes.utils import normalize_text_tedlium
 from lhotse.utils import Pathlike, resumable_download, safe_extract
 
 TEDLIUM_PARTS = ("train", "dev", "test")
@@ -88,6 +90,7 @@ def prepare_tedlium(
     output_dir: Optional[Pathlike] = None,
     dataset_parts: Union[str, Sequence[str]] = TEDLIUM_PARTS,
     num_jobs: int = 1,
+    normalize_text: str = "none",
 ) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet]]]:
     """
     Prepare manifests for the TED-LIUM v3 corpus.
@@ -122,8 +125,9 @@ def prepare_tedlium(
                 f"You might be missing some parts of TEDLIUM..."
             )
             futures = []
+            _parse_stm_worker = partial(_parse_stm_file, normalize_text=normalize_text)
             for stm in stms:
-                futures.append(ex.submit(_parse_stm_file, stm))
+                futures.append(ex.submit(_parse_stm_worker, stm))
 
             segments = []
             for future in futures:
@@ -144,7 +148,7 @@ def prepare_tedlium(
     return corpus
 
 
-def _parse_stm_file(stm: str) -> SupervisionSegment:
+def _parse_stm_file(stm: str, normalize_text: str = "none") -> SupervisionSegment:
     """Helper function to parse a single STM file."""
     segments = []
     with stm.open() as f:
@@ -161,7 +165,7 @@ def _parse_stm_file(stm: str) -> SupervisionSegment:
                     start=start,
                     duration=round(end - start, ndigits=8),
                     channel=0,
-                    text=text,
+                    text=normalize_text_tedlium(text, normalize_text),
                     language="English",
                     speaker=rec_id,
                 )

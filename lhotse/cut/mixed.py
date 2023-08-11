@@ -1341,29 +1341,38 @@ class MixedCut(Cut):
         return new_mixed_cut
 
     def merge_supervisions(
-        self, custom_merge_fn: Optional[Callable[[str, Iterable[Any]], Any]] = None
+        self,
+        merge_policy: str = "delimiter",
+        custom_merge_fn: Optional[Callable[[str, Iterable[Any]], Any]] = None,
     ) -> "MixedCut":
         """
         Return a copy of the cut that has all of its supervisions merged into
         a single segment.
 
         The new start is the start of the earliest superivion, and the new duration
-        is a minimum spanning duration for all the supervisions.
-
-        The text fields are concatenated with a whitespace, and all other string fields
-        (including IDs) are prefixed with "cat#" and concatenated with a hash symbol "#".
-        This is also applied to ``custom`` fields. Fields with a ``None`` value are omitted.
+        is a minimum spanning duration for all the supervisions. The text fields are
+        concatenated with a whitespace.
 
         .. note:: If you're using individual tracks of a mixed cut, note that this transform
              drops all the supervisions in individual tracks and assigns the merged supervision
              in the first :class:`.DataCut` found in ``self.tracks``.
 
+        :param merge_policy: one of "keep_first" or "delimiter". If "keep_first", we
+            keep only the first segment's field value, otherwise all string fields
+            (including IDs) are prefixed with "cat#" and concatenated with a hash symbol "#".
+            This is also applied to ``custom`` fields. Fields with a ``None`` value are omitted.
         :param custom_merge_fn: a function that will be called to merge custom fields values.
             We expect ``custom_merge_fn`` to handle all possible custom keys.
             When not provided, we will treat all custom values as strings.
             It will be called roughly like:
             ``custom_merge_fn(custom_key, [s.custom[custom_key] for s in sups])``
         """
+        merge_func_ = partial(
+            merge_items_with_delimiter,
+            delimiter="#",
+            return_first=(merge_policy == "keep_first"),
+        )
+
         # "m" stands for merged in variable names below
 
         if custom_merge_fn is not None:
@@ -1371,7 +1380,7 @@ class MixedCut(Cut):
             merge_custom = custom_merge_fn
         else:
             # Merge the string representations of custom fields.
-            merge_custom = lambda k, vs: merge_items_with_delimiter(map(str, vs))
+            merge_custom = lambda k, vs: merge_func_(map(str, vs))
 
         sups = sorted(self.supervisions, key=lambda s: s.start)
 
@@ -1400,18 +1409,18 @@ class MixedCut(Cut):
             )
 
         msup = SupervisionSegment(
-            id=merge_items_with_delimiter(s.id for s in sups),
+            id=merge_func_(s.id for s in sups),
             # Make merged recording_id is a mix of recording_ids.
-            recording_id=merge_items_with_delimiter(s.recording_id for s in sups),
+            recording_id=merge_func_(s.recording_id for s in sups),
             start=mstart,
             duration=mduration,
             # Hardcode -1 to indicate no specific channel, as the supervisions might have
             # come from different channels in their original recordings.
             channel=-1,
             text=" ".join(s.text for s in sups if s.text),
-            speaker=merge_items_with_delimiter(s.speaker for s in sups if s.speaker),
-            language=merge_items_with_delimiter(s.language for s in sups if s.language),
-            gender=merge_items_with_delimiter(s.gender for s in sups if s.gender),
+            speaker=merge_func_(s.speaker for s in sups if s.speaker),
+            language=merge_func_(s.language for s in sups if s.language),
+            gender=merge_func_(s.gender for s in sups if s.gender),
             custom={
                 k: merge_custom(
                     k,
