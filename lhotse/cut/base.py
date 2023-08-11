@@ -510,6 +510,7 @@ class Cut:
         self,
         type: str,
         max_pause: Optional[Seconds] = None,
+        max_segment_duration: Optional[Seconds] = None,
         delimiter: str = " ",
         keep_all_channels: bool = False,
     ) -> "CutSet":  # noqa: F821
@@ -517,7 +518,8 @@ class Cut:
         Splits the current :class:`.Cut` into its constituent alignment items (:class:`.AlignmentItem`).
         These cuts have identical start times and durations as the alignment item. Additionally,
         the `max_pause` option can be used to merge alignment items that are separated by a pause
-        shorter than `max_pause`.
+        shorter than `max_pause`. If `max_segment_duration` is specified, we will keep merging
+        consecutive segments until the duration of the merged segment exceeds `max_segment_duration`.
 
         For the case of a multi-channel cut with multiple alignments, we can either trim
         while respecting the supervision channels (in which case output cut has the same channels
@@ -530,6 +532,21 @@ class Cut:
 
         .. hint:: If a MultiCut is trimmed and the resulting trimmed cut contains a single channel,
             we convert it to a MonoCut.
+
+        .. hint:: If you have a Cut with multiple supervision segments and you want to trim it to
+            the word-level alignment, you can use the :meth:`.Cut.merge_supervisions` method
+            first to merge the supervisions into a single one, followed by the
+            :meth:`.Cut.trim_to_alignments` method. For example::
+
+                >>> cut = cut.merge_supervisions(type='word', delimiter=' ')
+                >>> cut = cut.trim_to_alignments(type='word', max_pause=1.0)
+
+        .. hint:: The above technique can also be used to segment long cuts into roughly equal
+            duration segments, while respecting alignment boundaries. For example, to split a
+            Cut into 10s segments, you can do::
+
+                >>> cut = cut.merge_supervisions(type='word', delimiter=' ')
+                >>> cut = cut.trim_to_alignments(type='word', max_pause=10.0, max_segment_duration=10.0)
 
         :param type: The type of the alignment to trim to (e.g. "word").
         :param max_pause: The maximum pause allowed between the alignments to merge them. If ``None``,
@@ -546,6 +563,10 @@ class Cut:
             # Set to a negative value so that no merging is performed.
             max_pause = -1.0
 
+        if max_segment_duration is None:
+            # Set to the cut duration so that resulting segments are always smaller.
+            max_segment_duration = self.duration
+
         # For the implementation, we first create new supervisions for the cut, and then
         # use the `trim_to_supervisions` method to do the actual trimming.
         new_supervisions = []
@@ -561,6 +582,9 @@ class Cut:
             # Merge the alignments if needed. We also keep track of the indices of the
             # merged alignments in the original list. This is needed to create the
             # `alignment` field in the new supervisions.
+            # NOTE: We use the `AlignmentItem` class here for convenience --- the merged
+            # alignments are not actual alignment items, but rather just a way to keep
+            # track of merged segments.
             merged_alignments = [(alignments[0], [0])]
             for i, item in enumerate(alignments[1:]):
                 # If alignment item is blank, skip it. Sometimes, blank alignment items
@@ -568,7 +592,10 @@ class Cut:
                 if item.symbol.strip() == "":
                     continue
                 prev_item, prev_indices = merged_alignments[-1]
-                if item.start - prev_item.end <= max_pause:
+                if (
+                    item.start - prev_item.end <= max_pause
+                    and item.end - prev_item.start <= max_segment_duration
+                ):
                     new_item = AlignmentItem(
                         symbol=delimiter.join([prev_item.symbol, item.symbol]),
                         start=prev_item.start,

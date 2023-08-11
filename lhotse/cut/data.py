@@ -1050,6 +1050,7 @@ class DataCut(Cut, metaclass=ABCMeta):
     @abstractmethod
     def merge_supervisions(
         self,
+        merge_policy: str = "delimiter",
         custom_merge_fn: Optional[Callable[[str, Iterable[Any]], Any]] = None,
         **kwargs,
     ) -> "DataCut":
