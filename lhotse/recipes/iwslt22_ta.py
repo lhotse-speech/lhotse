@@ -88,7 +88,7 @@ def prepare_iwslt22_ta(
 
     :param corpus_dir: Path to ``LDC2022E01`` the path of the data dir.
     :param splits: Path to splits from https://github.com/kevinduh/iwslt22-dialect
-    :param clean: Bool, if True, Arabic text cleaning and normalization is performed
+    :param normalize_text: Bool, if True, Arabic text normalization is performed
         from https://aclanthology.org/2022.iwslt-1.29.pdf.
     :param output_dir: Directory where the manifests should be written. Can be omitted
         to avoid writing.
@@ -143,7 +143,7 @@ def prepare_iwslt22_ta(
                             _filename_to_supervisions,
                             p,
                             translations_path,
-                            clean,
+                            normalize_text,
                             exclude,
                             langs,
                         )
@@ -186,7 +186,7 @@ def prepare_iwslt22_ta(
 def _filename_to_supervisions(
     p: Path,
     translations_path: Path,
-    clean: bool,
+    normalize_text: bool,
     exclude: list,
     langs: list,
 ):
@@ -219,9 +219,9 @@ def _filename_to_supervisions(
             utt_id == utt_id_tgt
         ), f"The loaded source and target files are not sorted properly: {utt_id} {utt_id_tgt}"
 
-        if clean:
-            # Aggressive Tunisian text normalization and cleaning from https://aclanthology.org/2022.iwslt-1.29.pdf
-            text = data_cleaning(text)
+        if normalize_text:
+            # Aggressive Tunisian text normalization from https://aclanthology.org/2022.iwslt-1.29.pdf
+            text = text_cleaning(text)
             if text.strip() == "":
                 logging.warning(
                     f"Skipping {p.stem} {start} {end} {text} with empty cleaned transcript ..."
@@ -352,7 +352,7 @@ def east_to_west_num(text):
     return text.translate(trans_string)
 
 
-def data_cleaning(text):
+def text_cleaning(text):
     text = remove_punctuations(text)
     text = east_to_west_num(text)
     text = remove_diacritics(text)
