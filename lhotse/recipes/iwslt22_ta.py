@@ -55,10 +55,6 @@ from lhotse.utils import Pathlike
 # UO/ - uncertain + foreign
 
 
-arabic_filter = re.compile(r"[OUM]+/*|\u061F|\?|\!|\.")
-english_filter = re.compile(r"\(|\)|\#|\+|\=|\?|\!|\;|\.|\,|\"|\:")
-
-
 def download_iwslt22_ta(
     target_dir: Pathlike = ".",
 ) -> None:
@@ -72,8 +68,8 @@ def download_iwslt22_ta(
     """
     logging.info(
         """
-        To obtaining this data your institution needs to have an LDC subscription.
-        You also should download the predined splits with
+        To obtain this data your institution needs to have an LDC subscription.
+        You also should download the pre-defined splits with
         git clone https://github.com/kevinduh/iwslt22-dialect.git
     """
     )
@@ -83,7 +79,7 @@ def prepare_iwslt22_ta(
     corpus_dir: Pathlike,
     splits: Pathlike,
     output_dir: Optional[Pathlike] = None,
-    clean: bool = False,
+    normalize_text: bool = False,
     langs: Optional[List[str]] = ["ta", "eng"],
     num_jobs: int = 1,
 ) -> Dict[str, Dict[str, Union[RecordingSet, SupervisionSet]]]:
@@ -251,6 +247,8 @@ def _filename_to_supervisions(
 
 
 def normalize_text(utterance, language):
+    arabic_filter = re.compile(r"[OUM]+/*|\u061F|\?|\!|\.")
+    english_filter = re.compile(r"\(|\)|\#|\+|\=|\?|\!|\;|\.|\,|\"|\:")
     if language == "transcript":
         return re.subn(arabic_filter, "", utterance)[0]
     elif language == "translation":
