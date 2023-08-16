@@ -12,7 +12,7 @@ from lhotse.utils import compute_num_frames, ifnone
 from lhotse.workarounds import Hdf5MemoryIssueFix
 
 
-class K2Speech2textTranslationDataset(torch.utils.data.Dataset):
+class K2Speech2TextTranslationDataset(torch.utils.data.Dataset):
     """
     The PyTorch Dataset for the speech translation task using k2 library.
 
