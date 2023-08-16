@@ -69,7 +69,7 @@ class K2Speech2TextTranslationDataset(torch.utils.data.Dataset):
         input_strategy: BatchIO = PrecomputedFeatures(),
     ):
         """
-        k2 ASR IterableDataset constructor.
+        K2 Speech2TextTranslation IterableDataset constructor.
 
         :param return_cuts: When ``True``, will additionally return a "cut" field in each batch with the Cut
             objects used to create that batch.
