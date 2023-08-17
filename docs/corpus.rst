@@ -61,6 +61,8 @@ a CLI tool that create the manifests given a corpus directory.
     - :func:`lhotse.recipes.prepare_aspire`
   * - ATCOSIM
     - :func:`lhotse.recipes.prepare_atcosim`
+  * - AudioMNIST
+    - :func:`lhotse.recipes.prepare_audio_mnist`
   * - BABEL
     - :func:`lhotse.recipes.prepare_single_babel_language`
   * - Bengali.AI Speech

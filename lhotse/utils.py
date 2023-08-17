@@ -659,15 +659,19 @@ def compute_start_duration_for_extended_cut(
 
 
 def merge_items_with_delimiter(
-    values: Iterable[str], prefix: str = "cat", delimiter: str = "#"
+    values: Iterable[str],
+    prefix: str = "cat",
+    delimiter: str = "#",
+    return_first: bool = False,
 ) -> Optional[str]:
     # e.g.
     # values = ["1125-76840-0001", "1125-53670-0003"]
     # return "cat#1125-76840-0001#1125-53670-0003"
+    # if return_first is True, return "1125-76840-0001"
     values = list(values)
     if len(values) == 0:
         return None
-    if len(values) == 1:
+    if len(values) == 1 or return_first:
         return values[0]
     return delimiter.join(chain([prefix], values))
 

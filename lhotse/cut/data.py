@@ -70,7 +70,7 @@ class DataCut(Cut, metaclass=ABCMeta):
     # Store anything else the user might want.
     custom: Optional[Dict[str, Any]] = None
 
-    def __setattr__(self, key: str, value: Any):
+    def __setattr__(self, key: str, value: Any) -> None:
         """
         This magic function is called when the user tries to set an attribute.
         We use it as syntactic sugar to store custom attributes in ``self.custom``
@@ -122,6 +122,14 @@ class DataCut(Cut, metaclass=ABCMeta):
             attr_name = name[5:]
             return partial(self.load_custom, attr_name)
         raise AttributeError(f"No such attribute: {name}")
+
+    def __delattr__(self, key: str) -> None:
+        """Used to support ``del cut.custom_attr`` syntax."""
+        if key in self.__dataclass_fields__:
+            super().__delattr__(key)
+        if self.custom is None or key not in self.custom:
+            raise AttributeError(f"No such member: '{key}'")
+        del self.custom[key]
 
     def load_custom(self, name: str) -> np.ndarray:
         """
@@ -1042,6 +1050,7 @@ class DataCut(Cut, metaclass=ABCMeta):
     @abstractmethod
     def merge_supervisions(
         self,
+        merge_policy: str = "delimiter",
         custom_merge_fn: Optional[Callable[[str, Iterable[Any]], Any]] = None,
         **kwargs,
     ) -> "DataCut":

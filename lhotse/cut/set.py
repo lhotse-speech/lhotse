@@ -313,6 +313,7 @@ class CutSet(Serializable, AlgorithmMixin):
         features: Optional[FeatureSet] = None,
         output_path: Optional[Pathlike] = None,
         random_ids: bool = False,
+        tolerance: Seconds = 0.001,
         lazy: bool = False,
     ) -> "CutSet":
         """
@@ -332,6 +333,9 @@ class CutSet(Serializable, AlgorithmMixin):
         :param output_path: an optional path where the :class:`.CutSet` is stored.
         :param random_ids: boolean, should the cut IDs be randomized. By default, use the recording ID
             with a loop index and a channel idx, i.e. "{recording_id}-{idx}-{channel}")
+        :param tolerance: float, tolerance for supervision and feature segment boundary comparison.
+            By default, it's 1ms. Increasing this value can be helpful when importing Kaldi data
+            directories with precomputed features (typically 0.02 - 0.1 should be sufficient).
         :param lazy: boolean, when ``True``, output_path must be provided
         :return: a new :class:`.CutSet` instance.
         """
@@ -342,6 +346,7 @@ class CutSet(Serializable, AlgorithmMixin):
                 features=features,
                 output_path=output_path,
                 random_ids=random_ids,
+                tolerance=tolerance,
             )
         else:
             return create_cut_set_eager(
@@ -350,6 +355,7 @@ class CutSet(Serializable, AlgorithmMixin):
                 features=features,
                 output_path=output_path,
                 random_ids=random_ids,
+                tolerance=tolerance,
             )
 
     @staticmethod
@@ -1119,19 +1125,22 @@ class CutSet(Serializable, AlgorithmMixin):
         return self.map(lambda cut: cut.filter_supervisions(predicate))
 
     def merge_supervisions(
-        self, custom_merge_fn: Optional[Callable[[str, Iterable[Any]], Any]] = None
+        self,
+        merge_policy: str = "delimiter",
+        custom_merge_fn: Optional[Callable[[str, Iterable[Any]], Any]] = None,
     ) -> "CutSet":
         """
         Return a copy of the cut that has all of its supervisions merged into
         a single segment.
 
         The new start is the start of the earliest superivion, and the new duration
-        is a minimum spanning duration for all the supervisions.
+        is a minimum spanning duration for all the supervisions. The text fields of
+        all segments are concatenated with a whitespace.
 
-        The text fields are concatenated with a whitespace, and all other string fields
-        (including IDs) are prefixed with "cat#" and concatenated with a hash symbol "#".
-        This is also applied to ``custom`` fields. Fields with a ``None`` value are omitted.
-
+        :param merge_policy: one of "keep_first" or "delimiter". If "keep_first", we
+            keep only the first segment's field value, otherwise all string fields
+            (including IDs) are prefixed with "cat#" and concatenated with a hash symbol "#".
+            This is also applied to ``custom`` fields. Fields with a ``None`` value are omitted.
         :param custom_merge_fn: a function that will be called to merge custom fields values.
             We expect ``custom_merge_fn`` to handle all possible custom keys.
             When not provided, we will treat all custom values as strings.
@@ -1139,7 +1148,9 @@ class CutSet(Serializable, AlgorithmMixin):
             ``custom_merge_fn(custom_key, [s.custom[custom_key] for s in sups])``
         """
         return self.map(
-            lambda cut: cut.merge_supervisions(custom_merge_fn=custom_merge_fn)
+            lambda cut: cut.merge_supervisions(
+                merge_policy=merge_policy, custom_merge_fn=custom_merge_fn
+            )
         )
 
     def trim_to_supervisions(
@@ -1233,6 +1244,7 @@ class CutSet(Serializable, AlgorithmMixin):
         self,
         type: str,
         max_pause: Seconds = 0.0,
+        max_segment_duration: Optional[Seconds] = None,
         delimiter: str = " ",
         keep_all_channels: bool = False,
         num_jobs: int = 1,
@@ -1267,6 +1279,7 @@ class CutSet(Serializable, AlgorithmMixin):
                             _trim_to_alignments_single,
                             type=type,
                             max_pause=max_pause,
+                            max_segment_duration=max_segment_duration,
                             delimiter=delimiter,
                             keep_all_channels=keep_all_channels,
                         ),
@@ -1282,6 +1295,7 @@ class CutSet(Serializable, AlgorithmMixin):
             _trim_to_alignments_single,
             type=type,
             max_pause=max_pause,
+            max_segment_duration=max_segment_duration,
             delimiter=delimiter,
             keep_all_channels=keep_all_channels,
         )
@@ -2975,6 +2989,7 @@ def create_cut_set_eager(
     features: Optional[FeatureSet] = None,
     output_path: Optional[Pathlike] = None,
     random_ids: bool = False,
+    tolerance: Seconds = 0.001,
 ) -> CutSet:
     """
     Create a :class:`.CutSet` from any combination of supervision, feature and recording manifests.
@@ -2993,6 +3008,9 @@ def create_cut_set_eager(
     :param output_path: an optional path where the :class:`.CutSet` is stored.
     :param random_ids: boolean, should the cut IDs be randomized. By default, use the recording ID
         with a loop index and a channel idx, i.e. "{recording_id}-{idx}-{channel}")
+    :param tolerance: float, tolerance for supervision and feature segment boundary comparison.
+        By default, it's 1ms. Increasing this value can be helpful when importing Kaldi data
+        directories with precomputed features.
     :return: a new :class:`.CutSet` instance.
     """
     assert (
@@ -3039,6 +3057,7 @@ def create_cut_set_eager(
                             start_after=feats.start,
                             end_before=feats.end,
                             adjust_offset=True,
+                            tolerance=tolerance,
                         )
                     )
                     if sup_ok
@@ -3063,11 +3082,7 @@ def create_cut_set_eager(
                     duration=recording.duration,
                     channel=channel,
                     recording=recording,
-                    supervisions=list(
-                        supervisions.find(
-                            recording_id=recording.id,
-                        )
-                    )
+                    supervisions=list(supervisions.find(recording_id=recording.id))
                     if sup_ok
                     else [],
                 )
@@ -3084,6 +3099,7 @@ def create_cut_set_lazy(
     supervisions: Optional[SupervisionSet] = None,
     features: Optional[FeatureSet] = None,
     random_ids: bool = False,
+    tolerance: Seconds = 0.001,
 ) -> CutSet:
     """
     Create a :class:`.CutSet` from any combination of supervision, feature and recording manifests.
@@ -3115,6 +3131,9 @@ def create_cut_set_lazy(
     :param features: an optional :class:`~lhotse.features.base.FeatureSet` manifest.
     :param random_ids: boolean, should the cut IDs be randomized. By default, use the recording ID
         with a loop index and a channel idx, i.e. "{recording_id}-{idx}-{channel}")
+    :param tolerance: float, tolerance for supervision and feature segment boundary comparison.
+        By default, it's 1ms. Increasing this value can be helpful when importing Kaldi data
+        directories with precomputed features.
     :return: a new :class:`.CutSet` instance.
     """
     assert (
@@ -3188,6 +3207,7 @@ def create_cut_set_lazy(
                             start_after=feats.start,
                             end_before=feats.end,
                             adjust_offset=True,
+                            tolerance=tolerance,
                         )
                     )
                     if sup_ok
@@ -3352,7 +3372,10 @@ def find_segments_with_speaker_count(
 
 
 def _cut_into_windows_single(
-    cuts: CutSet, duration, hop, keep_excessive_supervisions
+    cuts: CutSet,
+    duration,
+    hop,
+    keep_excessive_supervisions,
 ) -> CutSet:
     return cuts.cut_into_windows(
         duration=duration,
@@ -3380,12 +3403,14 @@ def _trim_to_alignments_single(
     cuts: CutSet,
     type,
     max_pause,
+    max_segment_duration,
     delimiter,
     keep_all_channels,
 ) -> CutSet:
     return cuts.trim_to_alignments(
         type=type,
         max_pause=max_pause,
+        max_segment_duration=max_segment_duration,
         delimiter=delimiter,
         keep_all_channels=keep_all_channels,
     ).to_eager()

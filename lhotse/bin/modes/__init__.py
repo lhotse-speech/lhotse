@@ -6,5 +6,6 @@ from .kaldi import *
 from .manipulation import *
 from .recipes import *
 from .shar import *
+from .supervision import *
 from .validate import *
 from .workflows import *
