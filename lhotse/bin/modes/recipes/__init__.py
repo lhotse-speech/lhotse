@@ -40,6 +40,7 @@ from .heroico import *
 from .hifitts import *
 from .himia import *
 from .icsi import *
+from .iwslt22_ta import *
 from .kespeech import *
 from .l2_arctic import *
 from .libricss import *
