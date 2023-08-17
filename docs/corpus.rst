@@ -123,6 +123,8 @@ a CLI tool that create the manifests given a corpus directory.
     - :func:`lhotse.recipes.prepare_himia`
   * - ICSI
     - :func:`lhotse.recipes.prepare_icsi`
+  * - IWSLT22_Ta
+    - :func:`lhotse.recipes.prepare_iwslt22_ta`
   * - KeSpeech
     - :func:`lhotse.recipes.prepare_kespeech`
   * - L2 Arctic
@@ -185,8 +187,6 @@ a CLI tool that create the manifests given a corpus directory.
     - :func:`lhotse.recipes.prepare_mgb2`
   * - XBMU-AMDO31
     - :func:`lhotse.recipes.xbmu_amdo31`
-  * - IWSLT22_Ta
-    - :func:`lhotse.recipes.prepare_iwslt2022_ta`
 
 
 Adding new corpora
