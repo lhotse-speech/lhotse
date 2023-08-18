@@ -1,6 +1,7 @@
 import random
 from math import isclose
 
+import numpy as np
 import pytest
 
 from lhotse import CutSet
@@ -115,6 +116,15 @@ def test_cutmix(preserve_id: bool):
         assert all(
             cut.id != cut_noisy.id for cut, cut_noisy in zip(speech_cuts, tfnm_cuts)
         )
+
+
+def test_cutmix_random_mix_offset():
+    speech_cuts = CutSet.from_json("test/fixtures/ljspeech/cuts.json").resample(16000)
+    noise_cuts = CutSet.from_json("test/fixtures/libri/cuts.json")
+    normal_tfnm = CutMix(noise_cuts, p=1.0)
+    random_tfnm = CutMix(noise_cuts, p=1.0, random_mix_offset=True)
+    for a, b in zip(normal_tfnm(speech_cuts), random_tfnm(speech_cuts)):
+        assert not np.array_equal(a.load_audio(), b.load_audio())
 
 
 @pytest.mark.parametrize("randomized", [False, True])
