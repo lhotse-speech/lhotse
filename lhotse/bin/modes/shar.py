@@ -139,21 +139,28 @@ def compute_features(
     You can generate default feature extractor settings with:
     lhotse feat write-default-config --help
     """
-    shards = list(Path(shar_dir).glob("cuts.*.jsonl*"))
+    shards = [
+        {
+            "cuts": [p],
+            "recording": [p.with_name("".join(["recording", p.suffixes[0], ".tar"]))],
+        }
+        for p in Path(shar_dir).glob("cuts.*.jsonl*")
+    ]
     progbar = lambda x: x
     if verbose:
         click.echo(f"Computing features for {len(shards)} shards.")
-        progbar = partial(tqdm.tqdm, desc="Shard progress")
+        progbar = partial(tqdm.tqdm, desc="Shard progress", total=len(shards))
 
     futures = []
     with ProcessPoolExecutor(num_jobs) as ex:
         for shard in shards:
-            shard_idx = shard.name.split(".")[1]
-            output_path = shard.with_name(f"features.{shard_idx}.tar")
+            cuts_path = shard["cuts"][0]
+            shard_idx = cuts_path.name.split(".")[1]
+            output_path = cuts_path.with_name(f"features.{shard_idx}.tar")
             futures.append(
                 ex.submit(
                     compute_features_one_shard,
-                    cuts=CutSet.from_file(shard),
+                    cuts=CutSet.from_shar(shard),
                     feature_config=feature_config,
                     output_path=output_path,
                     compression=compression,
