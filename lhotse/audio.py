@@ -1892,11 +1892,11 @@ def torchaudio_info(
             duration=info.num_frames / info.sample_rate,
         )
 
-    is_mp3 = isinstance(path_or_fileobj, (str, Path)) and str(path_or_fileobj).endswith(
-        ".mp3"
+    is_mpeg = isinstance(path_or_fileobj, (str, Path)) and any(
+        str(path_or_fileobj).endswith(ext) for ext in (".mp3", ".m4a")
     )
     is_fileobj = isinstance(path_or_fileobj, BytesIO)
-    if (is_mp3 or is_fileobj) and torchaudio_supports_ffmpeg():
+    if (is_mpeg or is_fileobj) and torchaudio_supports_ffmpeg():
         # Torchaudio 0.12 has a new StreamReader API that uses ffmpeg.
         #
         # They dropped support for using sox bindings in torchaudio.info
@@ -1913,7 +1913,9 @@ def torchaudio_info(
         # - https://github.com/pytorch/audio/issues/2662
         from torchaudio.io import StreamReader
 
-        streamer = StreamReader(src=str(path_or_fileobj) if is_mp3 else path_or_fileobj)
+        streamer = StreamReader(
+            src=str(path_or_fileobj) if is_mpeg else path_or_fileobj
+        )
         assert streamer.num_src_streams == 1, (
             "Lhotse doesn't support files with more than one source stream yet "
             "(not to be confused with multi-channel)."
