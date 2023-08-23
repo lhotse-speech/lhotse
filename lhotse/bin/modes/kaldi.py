@@ -70,6 +70,7 @@ def import_(
     Convert a Kaldi data dir DATA_DIR into a directory MANIFEST_DIR of lhotse manifests. Ignores feats.scp.
     The SAMPLING_RATE has to be explicitly specified as it is not available to read from DATA_DIR.
     """
+    from lhotse import CutSet
     from lhotse.kaldi import load_kaldi_data_dir
 
     recording_set, maybe_supervision_set, maybe_feature_set = load_kaldi_data_dir(
@@ -88,6 +89,12 @@ def import_(
         maybe_supervision_set.to_file(manifest_dir / "supervisions.jsonl.gz")
     if maybe_feature_set is not None:
         maybe_feature_set.to_file(manifest_dir / "features.jsonl.gz")
+    CutSet.from_manifests(
+        recordings=recording_set,
+        supervisions=maybe_supervision_set,
+        features=maybe_feature_set,
+        tolerance=0.1,
+    ).to_file(manifest_dir / "cuts.jsonl.gz")
 
 
 @kaldi.command()
