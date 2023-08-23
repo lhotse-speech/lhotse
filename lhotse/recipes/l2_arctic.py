@@ -26,6 +26,7 @@ from lhotse import (
     SupervisionSet,
     validate_recordings_and_supervisions,
 )
+from lhotse.qa import fix_manifests
 from lhotse.utils import Pathlike
 
 SPEAKER_DESCRIPTION = """
@@ -164,6 +165,8 @@ def prepare_l2_arctic(
         )
     supervisions = SupervisionSet.from_segments(supervisions)
 
+    # Fix the manifests to make sure they are valid
+    recordings, supervisions = fix_manifests(recordings, supervisions)
     validate_recordings_and_supervisions(recordings, supervisions)
 
     splits = {

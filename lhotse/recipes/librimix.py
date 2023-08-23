@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Dict, Optional, Union
 from zipfile import ZipFile
 
-from lhotse import validate_recordings_and_supervisions
+from lhotse import fix_manifests, validate_recordings_and_supervisions
 from lhotse.audio import AudioSource, Recording, RecordingSet
 from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import Pathlike, Seconds, resumable_download
@@ -71,6 +71,11 @@ def prepare_librimix(
         if row["length"] / sampling_rate > min_segment_seconds
     )
     supervision_sources = make_corresponding_supervisions(audio_sources)
+
+    # Fix manifests and validate them
+    audio_sources, supervision_sources = fix_manifests(
+        audio_sources, supervision_sources
+    )
     validate_recordings_and_supervisions(audio_sources, supervision_sources)
     if output_dir is not None:
         audio_sources.to_file(output_dir / "librimix_recordings_sources.jsonl.gz")
@@ -100,6 +105,7 @@ def prepare_librimix(
             if row["length"] / sampling_rate > min_segment_seconds
         )
         supervision_mix = make_corresponding_supervisions(audio_mix)
+        audio_mix, supervision_mix = fix_manifests(audio_mix, supervision_mix)
         validate_recordings_and_supervisions(audio_mix, supervision_mix)
         if output_dir is not None:
             audio_mix.to_file(output_dir / "librimix_recordings_mix.jsonl.gz")
@@ -126,6 +132,7 @@ def prepare_librimix(
             if row["length"] / sampling_rate > min_segment_seconds
         )
         supervision_noise = make_corresponding_supervisions(audio_noise)
+        audio_noise, supervision_noise = fix_manifests(audio_noise, supervision_noise)
         validate_recordings_and_supervisions(audio_noise, supervision_noise)
         if output_dir is not None:
             audio_noise.to_file(output_dir / "librimix_recordings_noise.jsonl.gz")

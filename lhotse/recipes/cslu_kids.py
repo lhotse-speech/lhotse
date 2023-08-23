@@ -3,19 +3,19 @@ Data preparation recipe for CSLU Kids corpus (https://catalog.ldc.upenn.edu/LDC2
 
 Summary of corpus from LDC webpage:
 
-Collection of spontaneous and prompted speech from 1100 children between Kindergarten 
-and Grade 10 in the Forest Grove School District in Oregon. All children -- approximately 
-100 children at each grade level -- read approximately 60 items from a total list of 319 
-phonetically-balanced but simple words, sentences or digit strings. Each utterance of 
-spontaneous speech begins with a recitation of the alphabet and contains a monologue of 
-about one minute in duration. This release consists of 1017 files containing approximately 
+Collection of spontaneous and prompted speech from 1100 children between Kindergarten
+and Grade 10 in the Forest Grove School District in Oregon. All children -- approximately
+100 children at each grade level -- read approximately 60 items from a total list of 319
+phonetically-balanced but simple words, sentences or digit strings. Each utterance of
+spontaneous speech begins with a recitation of the alphabet and contains a monologue of
+about one minute in duration. This release consists of 1017 files containing approximately
 8-10 minutes of speech per speaker. Corresponding word-level transcriptions are also included.
 
 Prompted speech is verified and divided into following categories:
 
 1 Good: Only the target word is said.
 2 Maybe: Target word is present, but there's other junk in the file.
-3 Bad: Target word is not said. 
+3 Bad: Target word is not said.
 4 Puff: Same as good, but w/ an air puff.
 
 This data is not available for free - your institution needs to have an LDC subscription.
@@ -29,6 +29,7 @@ from tqdm import tqdm
 
 from lhotse import validate_recordings_and_supervisions
 from lhotse.audio import Recording, RecordingSet
+from lhotse.qa import fix_manifests
 from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import Pathlike, check_and_rglob
 
@@ -128,6 +129,7 @@ def prepare_cslu_kids(
     recordings = RecordingSet.from_recordings(recordings)
     supervisions = SupervisionSet.from_segments(supervisions)
 
+    recordings, supervisions = fix_manifests(recordings, supervisions)
     validate_recordings_and_supervisions(recordings, supervisions)
 
     manifests = {

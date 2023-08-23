@@ -5,7 +5,7 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Any, Dict, NamedTuple, Optional, Union
 
-from lhotse import validate_recordings_and_supervisions
+from lhotse import fix_manifests, validate_recordings_and_supervisions
 from lhotse.audio import AudioSource, Recording, RecordingSet
 from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import Pathlike, resumable_download, safe_extract
@@ -277,6 +277,7 @@ def prepare_heroico(
             for idx in audio.recordings
         )
 
+        audio, supervision = fix_manifests(audio, supervision)
         validate_recordings_and_supervisions(audio, supervision)
 
         if output_dir is not None:

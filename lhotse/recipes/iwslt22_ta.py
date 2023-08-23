@@ -1,14 +1,14 @@
 # Copyright    2023  Johns Hopkins        (authors: Amir Hussein, Matthew Wiesner)
 
 """
-The IWSLT Tunisian dataset is a 3-way parallel dataset consisting of approximately 160 hours 
-and 200,000 lines of aligned audio, Tunisian transcripts, and English translations. This dataset 
-comprises conversational telephone speech recorded at a sampling rate of 8kHz. The train, dev, 
-and test1 splits of the iwslt2022 shared task correspond to catalog number LDC2022E01. Please 
-note that access to this data requires an LDC subscription from your institution.To obtain this 
-dataset, you should download the predefined splits by running the following command: 
-git clone https://github.com/kevinduh/iwslt22-dialect.git. For more detailed information about 
-the shared task, please refer to the task paper available at this link: 
+The IWSLT Tunisian dataset is a 3-way parallel dataset consisting of approximately 160 hours
+and 200,000 lines of aligned audio, Tunisian transcripts, and English translations. This dataset
+comprises conversational telephone speech recorded at a sampling rate of 8kHz. The train, dev,
+and test1 splits of the iwslt2022 shared task correspond to catalog number LDC2022E01. Please
+note that access to this data requires an LDC subscription from your institution.To obtain this
+dataset, you should download the predefined splits by running the following command:
+git clone https://github.com/kevinduh/iwslt22-dialect.git. For more detailed information about
+the shared task, please refer to the task paper available at this link:
 https://aclanthology.org/2022.iwslt-1.10/.
 """
 
@@ -30,10 +30,7 @@ from lhotse import (
     SupervisionSet,
     validate_recordings_and_supervisions,
 )
-from lhotse.qa import (
-    remove_missing_recordings_and_supervisions,
-    trim_supervisions_to_recordings,
-)
+from lhotse.qa import fix_manifests
 from lhotse.utils import Pathlike
 
 # English annotation rules:
@@ -163,11 +160,7 @@ def prepare_iwslt22_ta(
         supervisions = deduplicate_supervisions(supervisions)
         supervisions = SupervisionSet.from_segments(supervisions)
         recordings = RecordingSet.from_recordings(recordings.values())
-        recordings, supervisions = remove_missing_recordings_and_supervisions(
-            recordings,
-            supervisions,
-        )
-        supervisions = trim_supervisions_to_recordings(recordings, supervisions)
+        recordings, supervisions = fix_manifests(recordings, supervisions)
         validate_recordings_and_supervisions(recordings, supervisions)
         for split in ("train", "dev", "test1"):
             sups_ = supervisions.filter(lambda s: s.recording_id in split_files[split])

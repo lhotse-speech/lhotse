@@ -34,6 +34,7 @@ from lhotse import (
     SupervisionSet,
     validate_recordings_and_supervisions,
 )
+from lhotse.qa import fix_manifests
 from lhotse.recipes.utils import manifests_exist, read_manifests_if_cached
 from lhotse.serialization import load_jsonl
 from lhotse.utils import Pathlike, resumable_download, safe_extract
@@ -203,6 +204,8 @@ def prepare_single_partition(
         )
     recordings = RecordingSet.from_recordings(recordings)
     supervisions = SupervisionSet.from_segments(supervisions)
+
+    recordings, supervisions = fix_manifests(recordings, supervisions)
     validate_recordings_and_supervisions(recordings, supervisions)
     return recordings, supervisions
 

@@ -20,7 +20,7 @@ from typing import Dict, List, Optional, Sequence, Tuple, Union
 from tqdm.auto import tqdm
 
 from lhotse.audio import AudioSource, Recording, RecordingSet, info
-from lhotse.qa import validate_recordings_and_supervisions
+from lhotse.qa import fix_manifests, validate_recordings_and_supervisions
 from lhotse.recipes.utils import manifests_exist
 from lhotse.serialization import load_jsonl
 from lhotse.supervision import SupervisionSegment, SupervisionSet
@@ -107,6 +107,7 @@ def _prepare_subset(
         recording_set = RecordingSet.from_recordings(recordings)
         supervision_set = SupervisionSet.from_segments(supervisions)
 
+        recording_set, supervision_set = fix_manifests(recording_set, supervision_set)
         validate_recordings_and_supervisions(
             recordings=recording_set, supervisions=supervision_set
         )

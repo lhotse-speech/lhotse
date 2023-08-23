@@ -9,6 +9,7 @@ from lhotse import (
     SupervisionSet,
     validate_recordings_and_supervisions,
 )
+from lhotse.qa import fix_manifests
 from lhotse.utils import Pathlike
 
 
@@ -76,6 +77,11 @@ def prepare_bvcc(
         )
     )
     main1_dev_recs = main1_recs.filter(lambda rec: rec.id in main1_dev_sup)
+
+    # Fix manifests
+    main1_dev_recs, main1_dev_sup = fix_manifests(main1_dev_recs, main1_dev_sup)
+    validate_recordings_and_supervisions(main1_dev_recs, main1_dev_sup)
+
     manifests["main1_dev"] = {
         "recordings": main1_dev_recs,
         "supervisions": main1_dev_sup,
@@ -90,6 +96,11 @@ def prepare_bvcc(
         )
     )
     main1_train_recs = main1_recs.filter(lambda rec: rec.id in main1_train_sup)
+
+    # Fix manifests
+    main1_train_recs, main1_train_sup = fix_manifests(main1_train_recs, main1_train_sup)
+    validate_recordings_and_supervisions(main1_train_recs, main1_train_sup)
+
     manifests["main1_train"] = {
         "recordings": main1_train_recs,
         "supervisions": main1_train_sup,
@@ -134,6 +145,11 @@ def prepare_bvcc(
         )
     )
     ood1_dev_recs = ood1_recs.filter(lambda rec: rec.id in ood1_dev_sup)
+
+    # Fix_manifests
+    ood1_dev_recs, ood1_dev_sup = fix_manifests(ood1_dev_recs, ood1_dev_sup)
+    validate_recordings_and_supervisions(ood1_dev_recs, ood1_dev_sup)
+
     manifests["ood1_dev"] = {
         "recordings": ood1_dev_recs,
         "supervisions": ood1_dev_sup,
@@ -148,6 +164,11 @@ def prepare_bvcc(
         )
     )
     ood1_train_recs = ood1_recs.filter(lambda rec: rec.id in ood1_train_sup)
+
+    # Fix manifests
+    ood1_train_recs, ood1_train_sup = fix_manifests(ood1_train_recs, ood1_train_sup)
+    validate_recordings_and_supervisions(ood1_train_recs, ood1_train_sup)
+
     manifests["ood1_train"] = {
         "recordings": ood1_train_recs,
         "supervisions": ood1_train_sup,

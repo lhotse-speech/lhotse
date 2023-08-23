@@ -4,13 +4,13 @@ The GALE Mandarin Broadcast news corpus consists of the following LDC corpora:
 Audio: LDC2013S08, LDC2013S04, LDC2014S09, LDC2015S06, LDC2015S13, LDC2016S03
 Text: LDC2013T20, LDC2013T08, LDC2014T28, LDC2015T09, LDC2015T25, LDC2016T12
 
-# Training:  Testing: 
+# Training:  Testing:
 
 The `S` corpora contain speech data and the `T` corpora contain the corresponding
 transcriptions. This recipe prepares any subset of these corpora provided as
 arguments, but pairs of speech and transcript corpora must be present. E.g.
-to only prepare phase 3 news speech, the arguments 
-`audio_dirs = ["/export/data/LDC2013S08","/export/data/LDC2014S09"]` and 
+to only prepare phase 3 news speech, the arguments
+`audio_dirs = ["/export/data/LDC2013S08","/export/data/LDC2014S09"]` and
 `transcript_dirs = ["/export/data/LDC2013T20","/export/data/LDC2014T28"]` must
 be provided to the `prepare_gale_mandarin` method.
 
@@ -26,7 +26,7 @@ from urllib.request import urlopen
 
 from lhotse import validate_recordings_and_supervisions
 from lhotse.audio import Recording, RecordingSet
-from lhotse.qa import trim_supervisions_to_recordings
+from lhotse.qa import fix_manifests
 from lhotse.recipes.nsc import check_dependencies
 from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import Pathlike, check_and_rglob, is_module_available
@@ -117,7 +117,7 @@ def prepare_gale_mandarin(
     ).filter(lambda s: s.recording_id in audio_paths)
 
     # Some supervisions exceed recording boundaries, so here we trim them
-    supervisions = trim_supervisions_to_recordings(recordings, supervisions)
+    recordings, supervisions = fix_manifests(recordings, supervisions)
     validate_recordings_and_supervisions(recordings, supervisions)
 
     TEST = [

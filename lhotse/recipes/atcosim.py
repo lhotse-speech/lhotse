@@ -18,6 +18,7 @@ from tqdm.auto import tqdm
 
 from lhotse import validate_recordings_and_supervisions
 from lhotse.audio import Recording, RecordingSet
+from lhotse.qa import fix_manifests
 from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import (
     Pathlike,
@@ -245,4 +246,9 @@ def prepare_atcosim(
 
     recordings = RecordingSet.from_jsonl_lazy(recs_writer.path)
     supervisions = SupervisionSet.from_jsonl_lazy(sups_writer.path)
+
+    logging.warning(
+        "Manifests are lazily materialized. You may want to call `lhotse.qa.fix_manifests()`"
+        " to ensure that all supervisions fall within the corresponding recordings."
+    )
     return recordings, supervisions
