@@ -12,6 +12,10 @@
 
 </div>
 
+# Interspeech 2023 tutorial example
+
+Interspeech 2023 tutorial attendants and other interested parties can find the ASR recipe Colab example under this link: [![Interspeech 2023 Tutorial](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/drive/1obZjUuVwks3A4oFX3gXFtPOM2LtrPQfL?usp=sharing)
+
 # Lhotse
 
 Lhotse is a Python library aiming to make speech and audio data preparation flexible and accessible to a wider community. Alongside [k2](https://github.com/k2-fsa/k2), it is a part of the next generation [Kaldi](https://github.com/kaldi-asr/kaldi) speech processing library.
