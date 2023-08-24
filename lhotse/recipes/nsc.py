@@ -39,6 +39,7 @@ from lhotse import (
     validate_recordings_and_supervisions,
 )
 from lhotse.parallel import parallel_map
+from lhotse.qa import fix_manifests
 from lhotse.utils import Pathlike
 
 logger = logging.getLogger(__name__)
@@ -156,17 +157,15 @@ def prepare_nsc(
     else:
         raise ValueError(f"Unknown dataset part: {dataset_part}")
 
-    validate_recordings_and_supervisions(**manifests)
+    # Fix the manifests to make sure they are valid
+    recordings, supervisions = fix_manifests(**manifests)
+    validate_recordings_and_supervisions(recordings, supervisions)
 
     if output_dir is not None:
         output_dir = Path(output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
-        manifests["supervisions"].to_file(
-            output_dir / f"nsc_supervisions_{dataset_part}.jsonl.gz"
-        )
-        manifests["recordings"].to_file(
-            output_dir / f"nsc_recordings_{dataset_part}.jsonl.gz"
-        )
+        supervisions.to_file(output_dir / f"nsc_supervisions_{dataset_part}.jsonl.gz")
+        recordings.to_file(output_dir / f"nsc_recordings_{dataset_part}.jsonl.gz")
 
     return manifests
 

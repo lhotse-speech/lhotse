@@ -30,6 +30,7 @@ from lhotse import (
     set_ffmpeg_torchaudio_info_enabled,
 )
 from lhotse.audio import Recording, RecordingSet
+from lhotse.qa import fix_manifests, validate_recordings_and_supervisions
 from lhotse.recipes.utils import manifests_exist
 from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import Pathlike
@@ -188,6 +189,10 @@ def prepare_bengaliai_speech(
             else None,
             num_jobs=num_jobs,
         )
+
+        # Fix manifests
+        recording_set, supervision_set = fix_manifests(recording_set, supervision_set)
+        validate_recordings_and_supervisions(recording_set, supervision_set)
 
         if output_dir is not None:
             supervision_set.to_file(

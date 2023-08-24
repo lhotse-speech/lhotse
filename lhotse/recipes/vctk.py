@@ -92,7 +92,7 @@ from lhotse import (
     SupervisionSet,
     validate_recordings_and_supervisions,
 )
-from lhotse.qa import remove_missing_recordings_and_supervisions
+from lhotse.qa import fix_manifests
 from lhotse.utils import Pathlike, resumable_download
 
 EDINBURGH_VCTK_URL = (
@@ -223,9 +223,7 @@ def prepare_vctk(
 
     # note(pzelasko): There were 172 recordings without supervisions when I ran it.
     #                 I am just removing them.
-    recordings, supervisions = remove_missing_recordings_and_supervisions(
-        recordings, supervisions
-    )
+    recordings, supervisions = fix_manifests(recordings, supervisions)
     validate_recordings_and_supervisions(recordings, supervisions)
 
     if output_dir is not None:

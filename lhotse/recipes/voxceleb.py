@@ -50,7 +50,7 @@ from lhotse import (
     SupervisionSet,
 )
 from lhotse.manipulation import combine
-from lhotse.qa import validate_recordings_and_supervisions
+from lhotse.qa import fix_manifests, validate_recordings_and_supervisions
 from lhotse.utils import Pathlike, resumable_download
 
 VOXCELEB1_PARTS_URL = [
@@ -264,7 +264,14 @@ def prepare_voxceleb(
             continue
         recordings = manifests[split]["recordings"]
         supervisions = manifests[split]["supervisions"]
+
+        # Fix manifests and validate
+        recordings, supervisions = fix_manifests(recordings, supervisions)
         validate_recordings_and_supervisions(recordings, supervisions)
+
+        # Write the manifests to the output directory
+        manifests[split]["recordings"] = recordings
+        manifests[split]["supervisions"] = supervisions
         if output_dir is not None:
             recordings.to_file(output_dir / f"voxceleb_recordings_{split}.jsonl.gz")
             supervisions.to_file(output_dir / f"voxceleb_supervisions_{split}.jsonl.gz")

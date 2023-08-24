@@ -4,7 +4,7 @@ About the librilight corpus
 Libri-light is a benchmark for the training of automatic speech recognition (ASR)
 systems with limited or no supervision.
 
-It contains a large dataset of 60K hours of unlabelled speech from audiobooks in 
+It contains a large dataset of 60K hours of unlabelled speech from audiobooks in
 English and a small labelled dataset (10h, 1h, and 10 min) plus metrics,
 trainable baseline models, and pretrained models that use these datasets.
 
@@ -23,6 +23,7 @@ from typing import Dict, List, Optional, Sequence, Tuple, Union
 from tqdm.auto import tqdm
 
 from lhotse.audio import Recording, RecordingSet
+from lhotse.qa import fix_manifests, validate_recordings_and_supervisions
 from lhotse.recipes.utils import manifests_exist
 from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import Pathlike
@@ -97,6 +98,10 @@ def _prepare_subset(
 
         recording_set = RecordingSet.from_recordings(recordings)
         supervision_set = SupervisionSet.from_segments(supervisions)
+
+        # Fix manifests
+        recording_set, supervision_set = fix_manifests(recording_set, supervision_set)
+        validate_recordings_and_supervisions(recording_set, supervision_set)
 
     return recording_set, supervision_set
 

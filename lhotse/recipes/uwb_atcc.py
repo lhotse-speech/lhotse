@@ -15,7 +15,7 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
-from lhotse import validate_recordings_and_supervisions
+from lhotse import fix_manifests, validate_recordings_and_supervisions
 from lhotse.audio import Recording, RecordingSet
 from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import (
@@ -342,28 +342,6 @@ COLLAPSE_WORDS = (
     ("STAND BYE", "STANDBY"),
 )
 
-BRACKET_PADDING_PATTERN1 = re.compile(r"([\w\.\+])(\[|\()")
-BRACKET_PADDING_PATTERN2 = re.compile(r"(\]|\))([\w\+])")
-COMMENT_PATTERN = re.compile(r"\[comment_\|].*?\[\|_comment]")
-BACKGROUND_SPEECH_PATTERN = re.compile(
-    r"\[background_speech_\|](.*?)\[\|_background_speech]"
-)
-NOISE_PATTERN = re.compile(r"\[noise_\|](.*?)\[\|_noise]")
-SPEAKER_PATTERN = re.compile(r"\[speaker_\|](.*?)\[\|_speaker]")
-DECIMAL_NUMBER_PATTERN = re.compile(r"\.([0-9])")
-NUMBER_DECIMAL_PATTERN = re.compile(r"([0-9])\.")
-PHONETIC_INTERRUPTED_PATTERN1 = re.compile(r"([A-Z]+\+)")
-PHONETIC_INTERRUPTED_PATTERN2 = re.compile(r"(\+[A-Z]+)")
-INTERRUPTED_PATTERN1 = re.compile(r"(\w+\+)")
-INTERRUPTED_PATTERN2 = re.compile(r"(\+\w+)")
-ABBREVIATION_PATTERN = re.compile(r"\(((\w*|\s*|\+)*)\(((\w*|\s*)*)\)\)")
-SPLIT_NUMERIC_ALPHA = re.compile(r"([0-9])([A-Za-z])")
-SPLIT_ALPHA_NUMERIC = re.compile(r"([A-Za-z])([0-9])")
-NO_ENG_PATTERN = re.compile(r"\[NO_ENG_\|](.*?)\[\|_NO_ENG]")
-CZECH_PATTERN = re.compile(r"\[CZECH_\|](.*?)\[\|_CZECH]")
-UNINTELLIGIBLE_PATTERN = re.compile(r"\[UNINTELLIGIBLE_\|](.*?)\[\|_UNINTELLIGIBLE]")
-WHITESPACE_PATTERN = re.compile(r"  +")
-
 
 def text_normalize(
     text: str,
@@ -375,10 +353,36 @@ def text_normalize(
     partial_sym: str,  # When None, will output partial words
     unknown_sym: str,
 ):
+
     assert is_module_available(
         "num2words"
     ), "Please run 'pip install num2words' for number to word normalization."
     from num2words import num2words
+
+    # regex patterns
+    BRACKET_PADDING_PATTERN1 = re.compile(r"([\w\.\+])(\[|\()")
+    BRACKET_PADDING_PATTERN2 = re.compile(r"(\]|\))([\w\+])")
+    COMMENT_PATTERN = re.compile(r"\[comment_\|].*?\[\|_comment]")
+    BACKGROUND_SPEECH_PATTERN = re.compile(
+        r"\[background_speech_\|](.*?)\[\|_background_speech]"
+    )
+    NOISE_PATTERN = re.compile(r"\[noise_\|](.*?)\[\|_noise]")
+    SPEAKER_PATTERN = re.compile(r"\[speaker_\|](.*?)\[\|_speaker]")
+    DECIMAL_NUMBER_PATTERN = re.compile(r"\.([0-9])")
+    NUMBER_DECIMAL_PATTERN = re.compile(r"([0-9])\.")
+    PHONETIC_INTERRUPTED_PATTERN1 = re.compile(r"([A-Z]+\+)")
+    PHONETIC_INTERRUPTED_PATTERN2 = re.compile(r"(\+[A-Z]+)")
+    INTERRUPTED_PATTERN1 = re.compile(r"(\w+\+)")
+    INTERRUPTED_PATTERN2 = re.compile(r"(\+\w+)")
+    ABBREVIATION_PATTERN = re.compile(r"\(((\w*|\s*|\+)*)\(((\w*|\s*)*)\)\)")
+    SPLIT_NUMERIC_ALPHA = re.compile(r"([0-9])([A-Za-z])")
+    SPLIT_ALPHA_NUMERIC = re.compile(r"([A-Za-z])([0-9])")
+    NO_ENG_PATTERN = re.compile(r"\[NO_ENG_\|](.*?)\[\|_NO_ENG]")
+    CZECH_PATTERN = re.compile(r"\[CZECH_\|](.*?)\[\|_CZECH]")
+    UNINTELLIGIBLE_PATTERN = re.compile(
+        r"\[UNINTELLIGIBLE_\|](.*?)\[\|_UNINTELLIGIBLE]"
+    )
+    WHITESPACE_PATTERN = re.compile(r"  +")
 
     text = BRACKET_PADDING_PATTERN1.sub(r"\1 \2", text)
     text = BRACKET_PADDING_PATTERN2.sub(r"\1 \2", text)
@@ -516,6 +520,9 @@ def prepare_uwb_atcc(
     recordings = []
     supervisions = []
 
+    # regex pattern for multiple whitespaces
+    WHITESPACE_PATTERN = re.compile(r"  +")
+
     from tqdm.auto import tqdm
 
     for t in tqdm(trs_files, desc="Preparing"):
@@ -625,6 +632,7 @@ def prepare_uwb_atcc(
     recording_set = RecordingSet.from_recordings(recordings)
     supervision_set = SupervisionSet.from_segments(supervisions)
 
+    recording_set, supervision_set = fix_manifests(recording_set, supervision_set)
     validate_recordings_and_supervisions(recording_set, supervision_set)
 
     if output_dir is not None:

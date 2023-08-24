@@ -34,6 +34,7 @@ from lhotse import (
     SupervisionSet,
     validate_recordings_and_supervisions,
 )
+from lhotse.qa import fix_manifests
 from lhotse.utils import Pathlike, resumable_download
 
 ADEPT_URL = "https://zenodo.org/record/5117102/files/ADEPT.zip"
@@ -140,6 +141,7 @@ def prepare_adept(
         )
 
     supervisions = SupervisionSet.from_segments(supervisions)
+    recordings, supervisions = fix_manifests(recordings, supervisions)
     validate_recordings_and_supervisions(recordings, supervisions)
 
     if output_dir is not None:
