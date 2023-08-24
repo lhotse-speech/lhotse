@@ -148,13 +148,18 @@ def load_kaldi_data_dir(
 
     # remove recordings with 'None' duration (i.e. there was a read error)
     for recording_id, dur_value in durations.items():
-        if dur_value == None:
+        if dur_value is None:
             logging.warning(
                 f"[{recording_id}] Could not get duration. "
                 f"Failed to read audio from `{recordings[recording_id]}`. "
-                f"Dropping the recording from manifest."
+                "Dropping the recording from manifest."
             )
             del recordings[recording_id]
+    # make sure not too many utterances were dropped
+    if len(recordings) < len(durations) * 0.8:
+        raise RuntimeError(
+            f'Failed to load more than 20% utterances of the dataset: "{path}"'
+        )
 
     # assemble the new RecordingSet
     recording_set = RecordingSet.from_recordings(
