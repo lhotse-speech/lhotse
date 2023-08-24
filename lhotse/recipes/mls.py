@@ -12,7 +12,8 @@ from typing import Dict, Optional, Union
 
 from tqdm.auto import tqdm
 
-from lhotse import *
+from lhotse import RecordingSet, SupervisionSegment, SupervisionSet
+from lhotse.qa import fix_manifests, validate_recordings_and_supervisions
 from lhotse.utils import Pathlike
 
 

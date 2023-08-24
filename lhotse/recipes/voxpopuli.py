@@ -37,12 +37,7 @@ import torchaudio
 from torch.hub import download_url_to_file
 from tqdm import tqdm
 
-from lhotse import (
-    RecordingSet,
-    SupervisionSegment,
-    SupervisionSet,
-    validate_recordings_and_supervisions,
-)
+from lhotse import RecordingSet, SupervisionSegment, SupervisionSet
 from lhotse.qa import fix_manifests, validate_recordings_and_supervisions
 from lhotse.utils import Pathlike, safe_extract
 

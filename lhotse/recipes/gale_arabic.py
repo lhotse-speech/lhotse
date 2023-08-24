@@ -41,8 +41,8 @@ There is no separate dev set provided with the corpus.
 The `S` corpora contain speech data and the `T` corpora contain the corresponding
 transcriptions. This recipe prepares any subset of these corpora provided as
 arguments, but pairs of speech and transcript corpora must be present. E.g.
-to only prepare phase 3 news speech, the arguments 
-`audio_dirs = ["/export/data/LDC2016S07","/export/data/LDC2017S02"]` and 
+to only prepare phase 3 news speech, the arguments
+`audio_dirs = ["/export/data/LDC2016S07","/export/data/LDC2017S02"]` and
 `transcript_dirs = ["/export/data/LDC2016T17","/export/data/LDC2017T04"]` must
 be provided to the `prepare_gale_arabic` method.
 
@@ -57,7 +57,7 @@ from typing import Dict, List, Optional, Union
 
 from lhotse import validate_recordings_and_supervisions
 from lhotse.audio import Recording, RecordingSet
-from lhotse.qa import trim_supervisions_to_recordings
+from lhotse.qa import fix_manifests
 from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import Pathlike, check_and_rglob, is_module_available
 
@@ -136,7 +136,7 @@ def prepare_gale_arabic(
     supervisions = SupervisionSet.from_segments(parse_transcripts(transcript_paths))
 
     # Some supervisions exceed recording boundaries, so here we trim them
-    supervisions = trim_supervisions_to_recordings(recordings, supervisions)
+    recordings, supervisions = fix_manifests(recordings, supervisions)
     validate_recordings_and_supervisions(recordings, supervisions)
 
     manifests = defaultdict(dict)

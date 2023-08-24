@@ -168,7 +168,8 @@ def prepare_mgb2(
 
             if text_cleaning is True:
                 supervisions = supervisions.transform_text(cleaning)
-            recordings, supervisions = fix_manifests(recordings, supervisions)
+
+        recordings, supervisions = fix_manifests(recordings, supervisions)
         validate_recordings_and_supervisions(recordings, supervisions)
 
         # saving recordings and supervisions

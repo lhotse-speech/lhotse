@@ -34,8 +34,9 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Dict, NamedTuple, Optional, Union
 
-from lhotse import fix_manifests, validate_recordings_and_supervisions
+from lhotse import validate_recordings_and_supervisions
 from lhotse.audio import AudioSource, Recording, RecordingSet
+from lhotse.qa import fix_manifests
 from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import Pathlike, Seconds
 

@@ -25,8 +25,9 @@ from typing import Dict, Optional, Union
 
 from tqdm import tqdm
 
-from lhotse import fix_manifests, validate_recordings_and_supervisions
+from lhotse import validate_recordings_and_supervisions
 from lhotse.audio import Recording, RecordingSet
+from lhotse.qa import fix_manifests
 from lhotse.recipes.utils import normalize_text_alimeeting
 from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import Pathlike, is_module_available, resumable_download, safe_extract
@@ -204,11 +205,11 @@ def prepare_ali_meeting(
                         )
                         supervisions.append(segment)
 
+        # Fix manifests
         recording_set, supervision_set = fix_manifests(
             RecordingSet.from_recordings(recordings),
             SupervisionSet.from_segments(supervisions),
         )
-        # Fix manifests
         validate_recordings_and_supervisions(recording_set, supervision_set)
 
         if output_dir is not None:

@@ -39,10 +39,7 @@ from lhotse import (
     SupervisionSet,
     validate_recordings_and_supervisions,
 )
-from lhotse.qa import (
-    remove_missing_recordings_and_supervisions,
-    trim_supervisions_to_recordings,
-)
+from lhotse.qa import fix_manifests
 from lhotse.utils import Pathlike, is_module_available, resumable_download, safe_extract
 
 # Keep Markings such as vowel signs, all letters, and decimal numbers
@@ -226,10 +223,7 @@ def prepare_single_mtedx_language(
                 logging.warning(f"No supervisions found in {text_dir}")
             supervisions = SupervisionSet.from_segments(supervisions)
 
-            recordings, supervisions = remove_missing_recordings_and_supervisions(
-                recordings, supervisions
-            )
-            supervisions = trim_supervisions_to_recordings(recordings, supervisions)
+            recordings, supervisions = fix_manifests(recordings, supervisions)
             validate_recordings_and_supervisions(recordings, supervisions)
 
             manifests[split] = {
