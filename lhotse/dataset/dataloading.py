@@ -39,9 +39,9 @@ def worker_init_fn(
     seed: Optional[int] = 42,
 ) -> None:
     if set_different_node_and_worker_seeds:
-        process_seed = seed + worker_id
+        process_seed = seed + 100 * worker_id
         if rank is not None:
-            process_seed += 1000 * rank
+            process_seed += 100000 * rank
         fix_random_seed(process_seed)
         os.environ[LHOTSE_PROCESS_SEED] = str(process_seed)
 
