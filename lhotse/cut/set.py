@@ -2500,6 +2500,91 @@ class CutSet(Serializable, AlgorithmMixin):
     def with_recording_path_prefix(self, path: Pathlike) -> "CutSet":
         return self.map(partial(_add_recording_path_prefix_single, path=path))
 
+    def copy_data(self, output_dir: Pathlike, verbose: bool = True) -> "CutSet":
+        """
+        Copies every data item referenced by this CutSet into a new directory.
+        The structure is as follows:
+
+        - output_dir
+        ├── audio
+        |   ├── rec1.flac
+        |   └── ...
+        ├── custom
+        |   ├── field1
+        |   |   ├── arr1-1.npy
+        |   |   └── ...
+        |   └── field2
+        |       ├── arr2-1.npy
+        |       └── ...
+        ├── features.lca
+        └── cuts.jsonl.gz
+
+        :param output_dir: The root directory where we'll store the copied data.
+        :param verbose: Show progress bar, enabled by default.
+        :return: CutSet manifest pointing to the new data.
+        """
+        from lhotse.array import Array, TemporalArray
+        from lhotse.features.io import NumpyHdf5Writer
+
+        output_dir = Path(output_dir)
+        audio_dir = output_dir / "audio"
+        audio_dir.mkdir(exist_ok=True, parents=True)
+        feature_file = output_dir / "features.lca"
+        custom_dir = output_dir / "custom"
+        custom_dir.mkdir(exist_ok=True, parents=True)
+
+        custom_writers = {}
+
+        progbar = partial(tqdm, desc="Copying CutSet data") if verbose else lambda x: x
+
+        with CutSet.open_writer(
+            output_dir / "cuts.jsonl.gz"
+        ) as manifest_writer, LilcomChunkyWriter(feature_file) as feature_writer:
+
+            def _copy_single(cut):
+                cut = fastcopy(cut)
+                if cut.has_features:
+                    cut.features = cut.features.copy_feats(writer=feature_writer)
+                if cut.has_recording:
+                    cut = cut.save_audio(
+                        (audio_dir / cut.recording_id).with_suffix(".flac"),
+                        bits_per_sample=16,
+                    )
+                if cut.custom is not None:
+                    for k, v in cut.custom.items():
+                        if isinstance(v, (Array, TemporalArray)):
+                            if k not in custom_writers:
+                                p = custom_dir / k
+                                p.mkdir(exist_ok=True, parents=True)
+                                custom_writers[k] = NumpyHdf5Writer(p)
+                            cust_writer = custom_writers[k]
+                            cust_writer.write(cut.id, v.load())
+                return cut
+
+            for item in progbar(self):
+                if isinstance(item, PaddingCut):
+                    manifest_writer.write(item)
+                    continue
+
+                if isinstance(item, MixedCut):
+                    cpy = fastcopy(item)
+                    for t in cpy.tracks:
+                        if isinstance(t.cut, DataCut):
+                            _copy_single(t.cut)
+                    manifest_writer.write(cpy)
+
+                elif isinstance(item, DataCut):
+                    cpy = _copy_single(item)
+                    manifest_writer.write(cpy)
+
+                else:
+                    raise RuntimeError(f"Unexpected manifest type: {type(item)}")
+
+        for w in custom_writers.values():
+            w.close()
+
+        return manifest_writer.open_manifest()
+
     def copy_feats(
         self, writer: FeaturesWriter, output_path: Optional[Pathlike] = None
     ) -> "CutSet":
