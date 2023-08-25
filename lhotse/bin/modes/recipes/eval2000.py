@@ -6,16 +6,28 @@ from lhotse.bin.modes import prepare
 from lhotse.recipes import prepare_eval2000
 from lhotse.utils import Pathlike
 
+EVAL2000_TRANSCRIPT_DIR = "LDC2002T43"
+
 
 @prepare.command(context_settings=dict(show_default=True))
 @click.argument("corpus-dir", type=click.Path(exists=True, file_okay=False))
 @click.argument("output-dir", type=click.Path())
+@click.argument(
+    "transcript-dir",
+    type=click.Path(exists=True, file_okay=False),
+    default=None,
+)
 @click.option(
     "--absolute-paths",
     default=False,
     help="Whether to return absolute or relative (to the corpus dir) paths for recordings.",
 )
-def eval2000(corpus_dir: Pathlike, output_dir: Pathlike, absolute_paths: bool):
+def eval2000(
+    corpus_dir: Pathlike,
+    output_dir: Pathlike,
+    absolute_paths: bool,
+    transcript_dir: Pathlike,
+):
     """
     The Eval2000 corpus preparation.
 
@@ -25,6 +37,14 @@ def eval2000(corpus_dir: Pathlike, output_dir: Pathlike, absolute_paths: bool):
 
     This data is not available for free - your institution needs to have an LDC subscription.
     """
+    transcript_dir = (
+        corpus_dir / EVAL2000_TRANSCRIPT_DIR / "reference" / "english"
+        if transcript_dir is None
+        else transcript_dir
+    )
     prepare_eval2000(
-        corpus_dir=corpus_dir, output_dir=output_dir, absolute_paths=absolute_paths
+        corpus_dir=corpus_dir,
+        output_dir=output_dir,
+        absolute_paths=absolute_paths,
+        transcript_path=transcript_dir,
     )

@@ -29,6 +29,7 @@ EVAL2000_TRANSCRIPT_DIR = "LDC2002T43"
 def prepare_eval2000(
     corpus_dir: Pathlike,
     output_dir: Pathlike,
+    transcript_path: Pathlike,
     absolute_paths: bool = False,
     num_jobs: int = 1,
 ) -> Dict[str, Union[RecordingSet, SupervisionSet]]:
@@ -48,13 +49,7 @@ def prepare_eval2000(
     assert (
         audio_partition_dir_path.is_dir()
     ), f"No such directory:{audio_partition_dir_path}"
-    transcript_dir_path = (
-        corpus_dir
-        / EVAL2000_TRANSCRIPT_DIR
-        / "2000_hub5_eng_eval_tr"
-        / "reference"
-        / "english"
-    )
+    transcript_dir_path = transcript_path
     assert transcript_dir_path.is_dir(), f"No such directory:{transcript_dir_path}"
     groups = []
     for path in (audio_partition_dir_path).rglob("*.sph"):
