@@ -1,13 +1,10 @@
-from typing import List, Optional
-from pathlib import Path
+from typing import Optional
 
 import click
 
 from lhotse.bin.modes import prepare
 from lhotse.recipes import prepare_eval2000
 from lhotse.utils import Pathlike
-
-EVAL2000_TRANSCRIPT_DIR = "LDC2002T43"
 
 
 @prepare.command(context_settings=dict(show_default=True))
@@ -39,12 +36,7 @@ def eval2000(
 
     This data is not available for free - your institution needs to have an LDC subscription.
     """
-    corpus_dir = Path(corpus_dir)
-    transcript_dir = (
-        corpus_dir / EVAL2000_TRANSCRIPT_DIR / "reference" / "english"
-        if transcript_dir is None
-        else transcript_dir
-    )
+
     prepare_eval2000(
         corpus_dir=corpus_dir,
         output_dir=output_dir,
