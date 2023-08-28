@@ -1,4 +1,5 @@
-from typing import List
+from typing import List, Optional
+from pathlib import Path
 
 import click
 
@@ -16,6 +17,7 @@ EVAL2000_TRANSCRIPT_DIR = "LDC2002T43"
     "transcript-dir",
     type=click.Path(exists=True, file_okay=False),
     default=None,
+    required=False,
 )
 @click.option(
     "--absolute-paths",
@@ -26,7 +28,7 @@ def eval2000(
     corpus_dir: Pathlike,
     output_dir: Pathlike,
     absolute_paths: bool,
-    transcript_dir: Pathlike,
+    transcript_dir: Optional[Pathlike] = None,
 ):
     """
     The Eval2000 corpus preparation.
@@ -37,6 +39,7 @@ def eval2000(
 
     This data is not available for free - your institution needs to have an LDC subscription.
     """
+    corpus_dir = Path(corpus_dir)
     transcript_dir = (
         corpus_dir / EVAL2000_TRANSCRIPT_DIR / "reference" / "english"
         if transcript_dir is None
