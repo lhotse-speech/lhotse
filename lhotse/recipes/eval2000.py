@@ -29,7 +29,7 @@ EVAL2000_TRANSCRIPT_DIR = "LDC2002T43"
 def prepare_eval2000(
     corpus_dir: Pathlike,
     output_dir: Pathlike,
-    transcript_path: Pathlike,
+    transcript_path: Optional[Pathlike] = None,
     absolute_paths: bool = False,
     num_jobs: int = 1,
 ) -> Dict[str, Union[RecordingSet, SupervisionSet]]:
