@@ -2368,6 +2368,8 @@ class CutSet(Serializable, AlgorithmMixin):
             https://lhotse.readthedocs.io/en/latest/parallelism.html
         :param progress_bar: Should a progress bar be displayed (automatically turned off
             for parallel computation).
+        :param shuffle_on_split: Shuffle the ``CutSet`` before splitting it for the parallel workers.
+            It is active only when `num_jobs > 1`. The default is True.
         :return: Returns a new ``CutSet``.
         """
         from cytoolz import identity
@@ -2386,11 +2388,6 @@ class CutSet(Serializable, AlgorithmMixin):
                 "we will ignore the executor and use non-parallel execution."
             )
             executor = None
-
-        logging.info(
-            f"Check the AudioCache state: "
-            f"is_caching_enabled = {is_caching_enabled()}"
-        )
 
         def file_storage_path(cut: Cut, storage_path: Pathlike) -> Path:
             # Introduce a sub-directory that starts with the first 3 characters of the cut's ID.
