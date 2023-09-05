@@ -34,6 +34,7 @@ from typing_extensions import Literal
 
 from lhotse.audio import RecordingSet, null_result_on_audio_loading_error
 from lhotse.augmentation import AugmentFn
+from lhotse.caching import is_caching_enabled
 from lhotse.cut.base import Cut
 from lhotse.cut.data import DataCut
 from lhotse.cut.mixed import MixedCut, MixTrack
@@ -1413,6 +1414,17 @@ class CutSet(Serializable, AlgorithmMixin):
         groups = groupby(lambda cut: (cut.recording.id, cut.start, cut.end), self)
         return CutSet.from_cuts(MultiCut.from_mono(*cuts) for cuts in groups.values())
 
+    def sort_by_recording_id(self, ascending: bool = True) -> "CutSet":
+        """
+        Sort the CutSet alphabetically according to 'recording_id'. Ascending by default.
+
+        This is advantageous before caling `save_audios()` on a `trim_to_supervision()`
+        processed `CutSet`, also make sure that `set_caching_enabled(True)` was called.
+        """
+        return CutSet.from_cuts(
+            sorted(self, key=(lambda cut: cut.recording.id), reverse=not ascending)
+        )
+
     def sort_by_duration(self, ascending: bool = False) -> "CutSet":
         """
         Sort the CutSet according to cuts duration and return the result. Descending by default.
@@ -2326,6 +2338,7 @@ class CutSet(Serializable, AlgorithmMixin):
         executor: Optional[Executor] = None,
         augment_fn: Optional[AugmentFn] = None,
         progress_bar: bool = True,
+        shuffle_on_split: bool = True,
     ) -> "CutSet":
         """
         Store waveforms of all cuts as audio recordings to disk.
@@ -2355,6 +2368,8 @@ class CutSet(Serializable, AlgorithmMixin):
             https://lhotse.readthedocs.io/en/latest/parallelism.html
         :param progress_bar: Should a progress bar be displayed (automatically turned off
             for parallel computation).
+        :param shuffle_on_split: Shuffle the ``CutSet`` before splitting it for the parallel workers.
+            It is active only when `num_jobs > 1`. The default is True.
         :return: Returns a new ``CutSet``.
         """
         from cytoolz import identity
@@ -2401,14 +2416,17 @@ class CutSet(Serializable, AlgorithmMixin):
             )
 
         # Parallel execution: prepare the CutSet splits
-        cut_sets = self.split(num_jobs, shuffle=True)
+        cut_sets = self.split(num_jobs, shuffle=shuffle_on_split)
 
         # Initialize the default executor if None was given
         if executor is None:
             import multiprocessing
 
+            # The `is_caching_enabled()` state gets transfered to
+            # the spawned sub-processes implictly (checked).
             executor = ProcessPoolExecutor(
-                num_jobs, mp_context=multiprocessing.get_context("spawn")
+                max_workers=num_jobs,
+                mp_context=multiprocessing.get_context("spawn"),
             )
 
         # Submit the chunked tasks to parallel workers.
@@ -2499,6 +2517,91 @@ class CutSet(Serializable, AlgorithmMixin):
 
     def with_recording_path_prefix(self, path: Pathlike) -> "CutSet":
         return self.map(partial(_add_recording_path_prefix_single, path=path))
+
+    def copy_data(self, output_dir: Pathlike, verbose: bool = True) -> "CutSet":
+        """
+        Copies every data item referenced by this CutSet into a new directory.
+        The structure is as follows:
+
+        - output_dir
+        ├── audio
+        |   ├── rec1.flac
+        |   └── ...
+        ├── custom
+        |   ├── field1
+        |   |   ├── arr1-1.npy
+        |   |   └── ...
+        |   └── field2
+        |       ├── arr2-1.npy
+        |       └── ...
+        ├── features.lca
+        └── cuts.jsonl.gz
+
+        :param output_dir: The root directory where we'll store the copied data.
+        :param verbose: Show progress bar, enabled by default.
+        :return: CutSet manifest pointing to the new data.
+        """
+        from lhotse.array import Array, TemporalArray
+        from lhotse.features.io import NumpyHdf5Writer
+
+        output_dir = Path(output_dir)
+        audio_dir = output_dir / "audio"
+        audio_dir.mkdir(exist_ok=True, parents=True)
+        feature_file = output_dir / "features.lca"
+        custom_dir = output_dir / "custom"
+        custom_dir.mkdir(exist_ok=True, parents=True)
+
+        custom_writers = {}
+
+        progbar = partial(tqdm, desc="Copying CutSet data") if verbose else lambda x: x
+
+        with CutSet.open_writer(
+            output_dir / "cuts.jsonl.gz"
+        ) as manifest_writer, LilcomChunkyWriter(feature_file) as feature_writer:
+
+            def _copy_single(cut):
+                cut = fastcopy(cut)
+                if cut.has_features:
+                    cut.features = cut.features.copy_feats(writer=feature_writer)
+                if cut.has_recording:
+                    cut = cut.save_audio(
+                        (audio_dir / cut.recording_id).with_suffix(".flac"),
+                        bits_per_sample=16,
+                    )
+                if cut.custom is not None:
+                    for k, v in cut.custom.items():
+                        if isinstance(v, (Array, TemporalArray)):
+                            if k not in custom_writers:
+                                p = custom_dir / k
+                                p.mkdir(exist_ok=True, parents=True)
+                                custom_writers[k] = NumpyHdf5Writer(p)
+                            cust_writer = custom_writers[k]
+                            cust_writer.write(cut.id, v.load())
+                return cut
+
+            for item in progbar(self):
+                if isinstance(item, PaddingCut):
+                    manifest_writer.write(item)
+                    continue
+
+                if isinstance(item, MixedCut):
+                    cpy = fastcopy(item)
+                    for t in cpy.tracks:
+                        if isinstance(t.cut, DataCut):
+                            _copy_single(t.cut)
+                    manifest_writer.write(cpy)
+
+                elif isinstance(item, DataCut):
+                    cpy = _copy_single(item)
+                    manifest_writer.write(cpy)
+
+                else:
+                    raise RuntimeError(f"Unexpected manifest type: {type(item)}")
+
+        for w in custom_writers.values():
+            w.close()
+
+        return manifest_writer.open_manifest()
 
     def copy_feats(
         self, writer: FeaturesWriter, output_path: Optional[Pathlike] = None

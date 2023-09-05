@@ -30,6 +30,7 @@ from lhotse import (
     validate_recordings_and_supervisions,
 )
 from lhotse.audio import Recording, RecordingSet
+from lhotse.qa import fix_manifests
 from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import Pathlike, is_module_available, resumable_download, safe_extract
 
@@ -304,6 +305,12 @@ def prepare_commonvoice(
                 lang_path=lang_path,
                 num_jobs=num_jobs,
             )
+
+            # Fix manifests
+            recording_set, supervision_set = fix_manifests(
+                recording_set, supervision_set
+            )
+            validate_recordings_and_supervisions(recording_set, supervision_set)
 
             supervision_set.to_file(
                 output_dir / f"cv-{lang}_supervisions_{part}.jsonl.gz"

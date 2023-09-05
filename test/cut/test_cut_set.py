@@ -31,6 +31,17 @@ from lhotse.utils import is_module_available
 
 
 @pytest.fixture
+def mini_librispeeh2_cut_set():
+    recordings = RecordingSet.from_file(
+        "test/fixtures/mini_librispeech2/lhotse/recordings.jsonl.gz"
+    )
+    supervisions = SupervisionSet.from_file(
+        "test/fixtures/mini_librispeech2/lhotse/supervisions.jsonl.gz"
+    )
+    return CutSet.from_manifests(recordings=recordings, supervisions=supervisions)
+
+
+@pytest.fixture
 def cut_set_with_mixed_cut(cut1, cut2):
     mixed_cut = MixedCut(
         id="mixed-cut-id",
@@ -49,6 +60,18 @@ def cut_set_with_mixed_cut(cut1, cut2):
 def test_cut_set_sort_by_duration(cut_set_with_mixed_cut, ascending, expected):
     cs = cut_set_with_mixed_cut.sort_by_duration(ascending=ascending)
     assert [c.duration for c in cs] == expected
+
+
+@pytest.mark.parametrize(
+    ["ascending", "expected"],
+    [
+        (True, ["lbi-3536-23268-0000", "lbi-6241-61943-0000", "lbi-8842-304647-0000"]),
+        (False, ["lbi-8842-304647-0000", "lbi-6241-61943-0000", "lbi-3536-23268-0000"]),
+    ],
+)
+def test_cut_set_sort_by_recording_id(mini_librispeeh2_cut_set, ascending, expected):
+    cs = mini_librispeeh2_cut_set.sort_by_recording_id(ascending)
+    assert [c.recording.id for c in cs] == expected
 
 
 def test_cut_set_iteration(cut_set_with_mixed_cut):

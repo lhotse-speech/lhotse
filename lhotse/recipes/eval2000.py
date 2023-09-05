@@ -66,15 +66,15 @@ def prepare_eval2000(
         )
         for group in groups
     )
-    segment_supervision = make_segments(transcript_dir_path)
-    supervision_set = SupervisionSet.from_segments(segment_supervision)
-    recordings, supervisions = fix_manifests(recordings, supervision_set)
+    segments = make_segments(transcript_dir_path)
+    supervisions = SupervisionSet.from_segments(segments)
+    recordings, supervisions = fix_manifests(recordings, supervisions)
     validate_recordings_and_supervisions(recordings, supervisions)
     if output_dir is not None:
         output_dir = Path(output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
         recordings.to_file(output_dir / "eval2000_recordings_all.jsonl.gz")
-        supervision_set.to_file(output_dir / "eval2000_supervisions_unnorm.jsonl.gz")
+        supervisions.to_file(output_dir / "eval2000_supervisions_unnorm.jsonl.gz")
     return {"recordings": recordings, "supervisions": supervisions}
 
 

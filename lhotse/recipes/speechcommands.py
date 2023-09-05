@@ -19,7 +19,7 @@ from typing import Dict, List, Optional, Sequence, Tuple, Union
 
 from tqdm.auto import tqdm
 
-from lhotse import validate_recordings_and_supervisions
+from lhotse import fix_manifests, validate_recordings_and_supervisions
 from lhotse.audio import Recording, RecordingSet
 from lhotse.recipes.utils import manifests_exist, read_manifests_if_cached
 from lhotse.supervision import SupervisionSegment, SupervisionSet
@@ -182,6 +182,12 @@ def _prepare_train(
     train_recording_set = RecordingSet.from_recordings(train_recordings)
     train_supervision_set = SupervisionSet.from_segments(train_supervisions)
 
+    # Fix manifests
+    train_recording_set, train_supervision_set = fix_manifests(
+        train_recording_set, train_supervision_set
+    )
+    validate_recordings_and_supervisions(train_recording_set, train_supervision_set)
+
     return train_recording_set, train_supervision_set
 
 
@@ -237,6 +243,12 @@ def _prepare_valid(
         valid_supervisions.append(valid_segment)
     valid_recording_set = RecordingSet.from_recordings(valid_recordings)
     valid_supervision_set = SupervisionSet.from_segments(valid_supervisions)
+
+    # Fix manifests
+    valid_recording_set, valid_supervision_set = fix_manifests(
+        valid_recording_set, valid_supervision_set
+    )
+    validate_recordings_and_supervisions(valid_recording_set, valid_supervision_set)
 
     return valid_recording_set, valid_supervision_set
 
@@ -306,6 +318,12 @@ def _prepare_test(
         test_supervisions.append(test_segment)
     test_recording_set = RecordingSet.from_recordings(test_recordings)
     test_supervision_set = SupervisionSet.from_segments(test_supervisions)
+
+    # Fix manifests
+    test_recording_set, test_supervision_set = fix_manifests(
+        test_recording_set, test_supervision_set
+    )
+    validate_recordings_and_supervisions(test_recording_set, test_supervision_set)
 
     return test_recording_set, test_supervision_set
 

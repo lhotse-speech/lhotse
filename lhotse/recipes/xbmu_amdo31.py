@@ -3,14 +3,14 @@ About the XBMU-AMDO31 corpus
 XBMU-AMDO31 is an open-source Amdo Tibetan speech corpus published by Northwest Minzu University.
 publicly available on https://huggingface.co/datasets/syzym/xbmu_amdo31
 
-XBMU-AMDO31 dataset is a speech recognition corpus of Amdo Tibetan dialect. 
-The open source corpus contains 31 hours of speech data and resources related 
-to build speech recognition systems,including transcribed texts and a Tibetan 
+XBMU-AMDO31 dataset is a speech recognition corpus of Amdo Tibetan dialect.
+The open source corpus contains 31 hours of speech data and resources related
+to build speech recognition systems,including transcribed texts and a Tibetan
 pronunciation lexicon.
-(The lexicon is a Tibetan lexicon of the Lhasa dialect, which has been reused 
+(The lexicon is a Tibetan lexicon of the Lhasa dialect, which has been reused
 for the Amdo dialect because of the uniformity of the Tibetan language)
-The dataset can be used to train a model for Amdo Tibetan Automatic Speech Recognition (ASR). 
-It was recorded by 66 native speakers of Amdo Tibetan, and the recorded audio was processed and manually inspected. 
+The dataset can be used to train a model for Amdo Tibetan Automatic Speech Recognition (ASR).
+It was recorded by 66 native speakers of Amdo Tibetan, and the recorded audio was processed and manually inspected.
 The dataset has three splits: train, evaluation (dev) and test.Each speaker had approximately 450 sentences,
 with a small number of individuals having fewer than 200 sen.
 
@@ -33,7 +33,7 @@ from typing import Dict, Optional, Union
 
 from tqdm.auto import tqdm
 
-from lhotse import validate_recordings_and_supervisions
+from lhotse import fix_manifests, validate_recordings_and_supervisions
 from lhotse.audio import Recording, RecordingSet
 from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import Pathlike, is_module_available, safe_extract
@@ -148,6 +148,9 @@ def prepare_xbmu_amdo31(
 
         recording_set = RecordingSet.from_recordings(recordings)
         supervision_set = SupervisionSet.from_segments(supervisions)
+
+        # Fix manifests and validate
+        recording_set, supervision_set = fix_manifests(recording_set, supervision_set)
         validate_recordings_and_supervisions(recording_set, supervision_set)
 
         if output_dir is not None:

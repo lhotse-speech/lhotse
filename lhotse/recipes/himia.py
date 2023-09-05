@@ -20,7 +20,7 @@ from typing import Dict, Optional, Sequence, Tuple, Union
 
 from tqdm.auto import tqdm
 
-from lhotse import validate_recordings_and_supervisions
+from lhotse import fix_manifests, validate_recordings_and_supervisions
 from lhotse.audio import Recording, RecordingSet
 from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import Pathlike, resumable_download, safe_extract
@@ -225,6 +225,7 @@ def _prepare_train_dev_test(
             supervisions.append(segment)
     recording_set = RecordingSet.from_recordings(recordings)
     supervision_set = SupervisionSet.from_segments(supervisions)
+    recording_set, supervision_set = fix_manifests(recording_set, supervision_set)
     validate_recordings_and_supervisions(recording_set, supervision_set)
     return recording_set, supervision_set
 
@@ -278,6 +279,7 @@ def _prepare_cw_test(corpus_path: Path) -> Tuple[RecordingSet, SupervisionSet]:
 
     recording_set = RecordingSet.from_recordings(recordings)
     supervision_set = SupervisionSet.from_segments(supervisions)
+    recording_set, supervision_set = fix_manifests(recording_set, supervision_set)
     validate_recordings_and_supervisions(recording_set, supervision_set)
     return recording_set, supervision_set
 

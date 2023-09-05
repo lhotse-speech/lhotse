@@ -167,4 +167,8 @@ def prepare_spgispeech(
             "supervisions": SupervisionSet.from_jsonl_lazy(sup_writer.path),
         }
 
+    logging.warning(
+        "Manifests are lazily materialized. You may want to call `lhotse.qa.fix_manifests()`"
+        " to ensure that all supervisions fall within the corresponding recordings."
+    )
     return manifests

@@ -28,7 +28,7 @@ import zipfile
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Union
 
-from lhotse import validate_recordings_and_supervisions
+from lhotse import fix_manifests, validate_recordings_and_supervisions
 from lhotse.audio import Recording, RecordingSet
 from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import Pathlike, resumable_download
@@ -166,6 +166,7 @@ def prepare_earnings21(
         supervision_segments.append(s)
     supervision_set = SupervisionSet.from_segments(supervision_segments)
 
+    recording_set, supervision_set = fix_manifests(recording_set, supervision_set)
     validate_recordings_and_supervisions(recording_set, supervision_set)
     if output_dir is not None:
         supervision_set.to_file(output_dir / "earnings21_supervisions_all.jsonl.gz")
