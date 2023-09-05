@@ -34,6 +34,7 @@ from typing_extensions import Literal
 
 from lhotse.audio import RecordingSet, null_result_on_audio_loading_error
 from lhotse.augmentation import AugmentFn
+from lhotse.caching import is_caching_enabled
 from lhotse.cut.base import Cut
 from lhotse.cut.data import DataCut
 from lhotse.cut.mixed import MixedCut, MixTrack
@@ -1413,6 +1414,17 @@ class CutSet(Serializable, AlgorithmMixin):
         groups = groupby(lambda cut: (cut.recording.id, cut.start, cut.end), self)
         return CutSet.from_cuts(MultiCut.from_mono(*cuts) for cuts in groups.values())
 
+    def sort_by_recording_id(self, ascending: bool = True) -> "CutSet":
+        """
+        Sort the CutSet alphabetically according to 'recording_id'. Ascending by default.
+
+        This is advantageous before caling `save_audios()` on a `trim_to_supervision()`
+        processed `CutSet`, also make sure that `set_caching_enabled(True)` was called.
+        """
+        return CutSet.from_cuts(
+            sorted(self, key=(lambda cut: cut.recording.id), reverse=not ascending)
+        )
+
     def sort_by_duration(self, ascending: bool = False) -> "CutSet":
         """
         Sort the CutSet according to cuts duration and return the result. Descending by default.
@@ -2326,6 +2338,7 @@ class CutSet(Serializable, AlgorithmMixin):
         executor: Optional[Executor] = None,
         augment_fn: Optional[AugmentFn] = None,
         progress_bar: bool = True,
+        shuffle_on_split: bool = True,
     ) -> "CutSet":
         """
         Store waveforms of all cuts as audio recordings to disk.
@@ -2355,6 +2368,8 @@ class CutSet(Serializable, AlgorithmMixin):
             https://lhotse.readthedocs.io/en/latest/parallelism.html
         :param progress_bar: Should a progress bar be displayed (automatically turned off
             for parallel computation).
+        :param shuffle_on_split: Shuffle the ``CutSet`` before splitting it for the parallel workers.
+            It is active only when `num_jobs > 1`. The default is True.
         :return: Returns a new ``CutSet``.
         """
         from cytoolz import identity
@@ -2401,14 +2416,17 @@ class CutSet(Serializable, AlgorithmMixin):
             )
 
         # Parallel execution: prepare the CutSet splits
-        cut_sets = self.split(num_jobs, shuffle=True)
+        cut_sets = self.split(num_jobs, shuffle=shuffle_on_split)
 
         # Initialize the default executor if None was given
         if executor is None:
             import multiprocessing
 
+            # The `is_caching_enabled()` state gets transfered to
+            # the spawned sub-processes implictly (checked).
             executor = ProcessPoolExecutor(
-                num_jobs, mp_context=multiprocessing.get_context("spawn")
+                max_workers=num_jobs,
+                mp_context=multiprocessing.get_context("spawn"),
             )
 
         # Submit the chunked tasks to parallel workers.

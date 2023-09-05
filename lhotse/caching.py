@@ -1,7 +1,7 @@
 import os
 from functools import lru_cache, wraps
 from threading import Lock
-from typing import Any, Callable, Dict, Union
+from typing import Any, Callable, Dict, Optional
 
 LHOTSE_CACHING_ENABLED = False
 
@@ -114,7 +114,7 @@ class AudioCache:
         return cls.__enabled
 
     @classmethod
-    def try_cache(cls, key: str) -> Union[bytes, None]:
+    def try_cache(cls, key: str) -> Optional[bytes]:
         """
         Test if 'key' is in the chache. If yes return the bytes array,
         otherwise return None.
