@@ -513,7 +513,7 @@ def resumable_download(
                     # sometimes, the server actually supports range requests
                     # but does not return the Content-Range header with 416 code
                     # This is out of spec, but let us check twice for pragmatic reasons.
-                    head_req = urllib.request.Request(url, method='HEAD')
+                    head_req = urllib.request.Request(url, method="HEAD")
                     head_res = urllib.request.urlopen(head_req)
                     if head_res.headers.get("Accept-Ranges", "none") != "none":
                         content_length = head_res.headers.get("Content-Length")
