@@ -473,10 +473,14 @@ def resumable_download(
     req = urllib.request.Request(url, headers=headers)
 
     # Open the file for writing in binary mode and seek to the end
-    with open(filename, "ab") as f:
+    # r+b is needed in order to allow seeking at the beginning of a file
+    # when downloading from scratch
+    with open(filename, "r+b") as f:
 
         def _download(rq, size):
-            f.seek(size)
+            f.seek(size, 0)
+            # just in case some garbage was written to the file, truncate it
+            f.truncate()
 
             # Open the URL and read the contents in chunks
             with urllib.request.urlopen(rq) as response:
@@ -502,7 +506,18 @@ def resumable_download(
             # "Request Range Not Satisfiable" means the requested range
             # starts after the file ends OR that the server does not support range requests.
             if e.code == 416:
-                if e.headers.get("Content-Range", "") == f"bytes */{file_size}":
+                content_range = e.headers.get("Content-Range", None)
+                if content_range is None:
+                    # sometimes, the server actually supports range requests
+                    # but does not return the Content-Range header with 416 code
+                    # This is out of spec, but let us check twice for pragmatic reasons.
+                    head_req = urllib.request.Request(url, method='HEAD')
+                    head_res = urllib.request.urlopen(head_req)
+                    if head_res.headers.get("Accept-Ranges", "none") != "none":
+                        content_length = head_res.headers.get("Content-Length")
+                        content_range = f"bytes */{content_length}"
+
+                if content_range == f"bytes */{file_size}":
                     # If the content-range returned by server also matches the file size,
                     # then the file is already downloaded
                     logging.info(f"File already downloaded: {filename}")
