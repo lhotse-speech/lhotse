@@ -453,7 +453,8 @@ def resumable_download(
     completed_file_size: Optional[int] = None,
 ) -> None:
     # Check if the file exists and get its size
-    if os.path.exists(filename):
+    file_exists = os.path.exists(filename)
+    if file_exists:
         if force_download:
             logging.info(
                 f"Removing existing file and downloading from scratch because force_download=True: {filename}"
@@ -475,7 +476,8 @@ def resumable_download(
     # Open the file for writing in binary mode and seek to the end
     # r+b is needed in order to allow seeking at the beginning of a file
     # when downloading from scratch
-    with open(filename, "r+b") as f:
+    mode = "r+b" if file_exists else "wb"
+    with open(filename, mode) as f:
 
         def _download(rq, size):
             f.seek(size, 0)
