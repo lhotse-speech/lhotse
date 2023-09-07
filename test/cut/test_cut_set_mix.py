@@ -1,6 +1,7 @@
+import numpy as np
 import pytest
 
-from lhotse.cut import MixedCut
+from lhotse.cut import CutSet, MixedCut
 from lhotse.testing.fixtures import random_cut_set
 
 
@@ -49,3 +50,12 @@ def test_cut_set_mixing_with_prob(speech_cuts, noise_cuts):
     mixed_cuts = speech_cuts.mix(noise_cuts, mix_prob=0.5, duration=1000)
     was_mixed = [c.duration == 1000 for c in mixed_cuts]
     assert any(was_mixed) and not all(was_mixed)
+
+
+def test_cut_set_mixing_with_random_mix_offset():
+    speech_cuts = CutSet.from_json("test/fixtures/ljspeech/cuts.json").resample(16000)
+    noise_cuts = CutSet.from_json("test/fixtures/libri/cuts.json")
+    normal_mix = speech_cuts.mix(noise_cuts)
+    offset_mix = speech_cuts.mix(noise_cuts, random_mix_offset=True)
+    for a, b in zip(normal_mix, offset_mix):
+        assert not np.array_equal(a.load_audio(), b.load_audio())

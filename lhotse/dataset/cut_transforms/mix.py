@@ -20,6 +20,7 @@ class CutMix:
         pad_to_longest: bool = True,
         preserve_id: bool = False,
         seed: int = 42,
+        random_mix_offset: bool = False,
     ) -> None:
         """
         CutMix's constructor.
@@ -36,6 +37,9 @@ class CutMix:
             to match the duration of the longest Cut in a batch.
         :param preserve_id: When ``True``, preserves the IDs the cuts had before augmentation.
             Otherwise, new random IDs are generated for the augmented cuts (default).
+        :param random_mix_offset: an optional bool.
+            When ``True`` and the duration of the to be mixed in cut in longer than the original cut,
+             select a random sub-region from the to be mixed in cut.
         """
         self.cuts = cuts
         if len(self.cuts) == 0:
@@ -53,6 +57,7 @@ class CutMix:
         self.pad_to_longest = pad_to_longest
         self.preserve_id = preserve_id
         self.seed = seed
+        self.random_mix_offset = random_mix_offset
 
     def __call__(self, cuts: CutSet) -> CutSet:
 
@@ -70,4 +75,5 @@ class CutMix:
             mix_prob=self.p,
             preserve_id="left" if self.preserve_id else None,
             seed=self.seed,
+            random_mix_offset=self.random_mix_offset,
         )
