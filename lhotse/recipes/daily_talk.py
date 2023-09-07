@@ -17,6 +17,7 @@ from lhotse import (
     SupervisionSet,
     validate_recordings_and_supervisions,
 )
+from lhotse.qa import fix_manifests
 from lhotse.serialization import load_json
 from lhotse.utils import Pathlike, is_module_available
 
@@ -104,6 +105,7 @@ def prepare_daily_talk(
                 )
             )
     supervisions = SupervisionSet.from_segments(supervisions)
+    recordings, supervisions = fix_manifests(recordings, supervisions)
     validate_recordings_and_supervisions(
         recordings=recordings, supervisions=supervisions
     )

@@ -27,6 +27,7 @@ from typing import Dict, Union
 
 from lhotse import validate_recordings_and_supervisions
 from lhotse.audio import Recording, RecordingSet
+from lhotse.qa import fix_manifests
 from lhotse.serialization import load_json
 from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import Pathlike, resumable_download
@@ -132,6 +133,7 @@ def prepare_audio_mnist(
         )
 
     supervisions = SupervisionSet.from_segments(supervisions)
+    recordings, supervisions = fix_manifests(recordings, supervisions)
     validate_recordings_and_supervisions(recordings, supervisions)
 
     if output_dir is not None:

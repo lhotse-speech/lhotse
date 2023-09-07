@@ -4,7 +4,7 @@ About the DIHARD III corpus
     The DIHARD III corpus consists of multi-domain data prepared to evaluate
     "hard" speaker diarization. It was used for evaluation in the Third DIHARD
     Challenge, organized by NIST and LDC in Winter 2020. It consists of monologues,
-    map task dialogues, broadcast interviews, sociolinguistic interviews, meeting 
+    map task dialogues, broadcast interviews, sociolinguistic interviews, meeting
     speech, speech in restaurants, clinical recordings, and YouTube videos.
     More details can be found at:
     https://dihardchallenge.github.io/dihard3/docs/third_dihard_eval_plan_v1.2.pdf
@@ -17,7 +17,7 @@ from typing import Dict, List, Optional, Union
 
 from tqdm.auto import tqdm
 
-from lhotse import validate_recordings_and_supervisions
+from lhotse import fix_manifests, validate_recordings_and_supervisions
 from lhotse.audio import Recording, RecordingSet
 from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import Pathlike, check_and_rglob
@@ -80,6 +80,7 @@ def prepare_dihard3(
                 )
             )
 
+        recordings, supervisions = fix_manifests(recordings, supervisions)
         validate_recordings_and_supervisions(recordings, supervisions)
 
         if output_dir is not None:
