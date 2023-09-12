@@ -1,10 +1,9 @@
-import logging
 from typing import Optional
 
 import numpy as np
 
 from lhotse.features.base import FeatureExtractor
-from lhotse.utils import Decibels, NonPositiveEnergyError, Seconds, compute_num_frames
+from lhotse.utils import Decibels, Seconds, compute_num_frames
 
 
 class FeatureMixer:

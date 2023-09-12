@@ -9,7 +9,7 @@ from torch.utils.data import Sampler
 
 from lhotse.cut import Cut, CutSet
 from lhotse.lazy import Dillable
-from lhotse.utils import Seconds, exactly_one_not_null, is_none_or_gt
+from lhotse.utils import Seconds, is_none_or_gt
 
 
 class CutSampler(Sampler, Dillable):

@@ -30,7 +30,6 @@ from lhotse.utils import (
     DEFAULT_PADDING_VALUE,
     LOG_EPSILON,
     Decibels,
-    NonPositiveEnergyError,
     Pathlike,
     Seconds,
     add_durations,

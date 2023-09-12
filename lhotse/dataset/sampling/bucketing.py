@@ -1,13 +1,10 @@
 import random
-import warnings
 from copy import deepcopy
 from functools import reduce
-from itertools import chain
 from operator import add
 from typing import Any, Callable, Dict, List, Optional, Tuple, Type, Union
 
 import numpy as np
-from typing_extensions import Literal
 
 from lhotse import CutSet
 from lhotse.cut import Cut

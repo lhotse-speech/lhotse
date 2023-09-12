@@ -5,7 +5,7 @@ a CutSet containing MonoCut objects.
 import abc
 import random
 from itertools import groupby
-from typing import Dict, List, Optional, Union
+from typing import List, Optional, Union
 
 import numpy as np
 from tqdm import tqdm
