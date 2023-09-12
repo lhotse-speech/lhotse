@@ -1,9 +1,11 @@
 import click
 
 from lhotse.bin.modes import download, prepare
-from lhotse.recipes.this_american_life import download_this_american_life, prepare_this_american_life
+from lhotse.recipes.this_american_life import (
+    download_this_american_life,
+    prepare_this_american_life,
+)
 from lhotse.utils import Pathlike
-
 
 __all__ = ["this_american_life"]
 
@@ -27,4 +29,3 @@ def this_american_life(target_dir: Pathlike, force_download: bool = False):
 def this_american_life(corpus_dir: Pathlike, output_dir: Pathlike):
     """This American Life data preparation."""
     prepare_this_american_life(corpus_dir, output_dir=output_dir)
-

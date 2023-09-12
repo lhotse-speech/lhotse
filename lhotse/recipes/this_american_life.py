@@ -5,30 +5,31 @@ We hope that this dataset can serve as a new benchmark for the difficult tasks o
 
 To learn more, please read our paper at: https://arxiv.org/pdf/2005.08072.pdf, and check the README.txt.
 """
-import json
-import re
 import glob
+import json
 import logging
+import re
 import zipfile
-from urllib.error import HTTPError
 from collections import defaultdict
 from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
-from typing import Dict, Optional, Union, Iterable
+from typing import Dict, Iterable, Optional, Union
+from urllib.error import HTTPError
 
 from tqdm.auto import tqdm
+
 from lhotse import fix_manifests, validate_recordings_and_supervisions
 from lhotse.audio import Recording, RecordingSet
 from lhotse.supervision import AlignmentItem, SupervisionSegment, SupervisionSet
-from lhotse.utils import Pathlike, resumable_download, is_module_available
+from lhotse.utils import Pathlike, is_module_available, resumable_download
 
 
 def scrape_urls(website_url, output_path, year_range=(1995, 2021)):
     if not is_module_available("bs4"):
         raise ImportError("Please 'pip install beautifulsoup4' first.")
-    
-    from bs4 import BeautifulSoup
+
     import requests
+    from bs4 import BeautifulSoup
 
     urls = {}
     for year in range(*year_range):
@@ -40,7 +41,7 @@ def scrape_urls(website_url, output_path, year_range=(1995, 2021)):
         for a in soup.find_all("a", href=True, class_="goto-episode"):
             if a["href"].startswith("/"):
                 page_urls.add(f"{website_url}{a['href']}")
-        
+
         print(f"Found {len(page_urls)} episodes in {year}.")
 
         for episode_url in tqdm(page_urls):
@@ -49,7 +50,7 @@ def scrape_urls(website_url, output_path, year_range=(1995, 2021)):
             soup = BeautifulSoup(response.text, "html.parser")
             for a in soup.find_all("a", href=True, download=True):
                 urls[f"ep-{episode_id}"] = a["href"]
-    
+
     print(f"Saving results ({len(urls)} episodes)...")
     with open(output_path, "w") as f:
         json.dump(urls, f)
@@ -65,8 +66,8 @@ def included_episodes(target_dir: Pathlike) -> Iterable[str]:
 def download_this_american_life(
     target_dir: Pathlike = ".",
     force_download: bool = False,
-    metadata_url = "https://ipfs.io/ipfs/bafybeidyt3ch6t4dtu2ehdriod3jvuh34qu4pwjyoba2jrjpmqwckkr6q4/this_american_life.zip",
-    website_url = "https://thisamericanlife.org",
+    metadata_url="https://ipfs.io/ipfs/bafybeidyt3ch6t4dtu2ehdriod3jvuh34qu4pwjyoba2jrjpmqwckkr6q4/this_american_life.zip",
+    website_url="https://thisamericanlife.org",
 ):
     target_dir = Path(target_dir)
     target_dir.mkdir(parents=True, exist_ok=True)
@@ -97,7 +98,9 @@ def download_this_american_life(
         print(f"Downloading episode {ep_id}... ({urls[ep_id]})")
 
         try:
-            resumable_download(urls[ep_id], audio_dir / f"{ep_id}.mp3", force_download=force_download)
+            resumable_download(
+                urls[ep_id], audio_dir / f"{ep_id}.mp3", force_download=force_download
+            )
         except HTTPError as e:
             # Some episodes are no longer available on the website (like removed for anonymity reason, ep-374).
             print(f"Failed to download {ep_id}: {e}. Skipping...")
@@ -117,7 +120,7 @@ def prepare_this_american_life(
             subset=subset,
             output_dir=output_dir,
         )
-    
+
     return manifests
 
 
@@ -128,7 +131,7 @@ def prepare_this_american_life_subset(
 ):
     if not is_module_available("nltk"):
         raise ImportError("Please 'pip install nltk' first.")
-    
+
     from nltk import word_tokenize
 
     file_subset = "valid" if subset == "dev" else subset
@@ -138,7 +141,7 @@ def prepare_this_american_life_subset(
     recordings = []
     supervisions = []
     for ep_id, transcript in (pbar := tqdm(transcripts.items())):
-        pbar.set_description(desc=f"Processing {subset} subset ({ep_id})")        
+        pbar.set_description(desc=f"Processing {subset} subset ({ep_id})")
         audio_path = Path(corpus_dir) / "audio" / f"{ep_id}.mp3"
         if not audio_path.is_file():
             logging.warning(f"File {audio_path} not found - skipping.")
@@ -150,8 +153,10 @@ def prepare_this_american_life_subset(
             text = utt["utterance"]
             words = word_tokenize(text)
             if len(words) != utt["n_words"]:
-                logging.warning(f"Transcript mismatch for {ep_id}-{utt_ix}: {utt['n_words']} words in the transcript, {len(words)} tokens in the text.")
-            
+                logging.warning(
+                    f"Transcript mismatch for {ep_id}-{utt_ix}: {utt['n_words']} words in the transcript, {len(words)} tokens in the text."
+                )
+
             alignments = [
                 AlignmentItem(words[int(ix)], start, end - start)
                 for start, end, ix in utt["alignments"]
@@ -178,10 +183,11 @@ def prepare_this_american_life_subset(
     if output_dir is not None:
         output_dir = Path(output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
-        recording_set.to_file(output_dir / f"this-american-life_recordings_{subset}.jsonl.gz")
-        supervision_set.to_file(output_dir / f"this-american-life_supervisions_{subset}.jsonl.gz")
+        recording_set.to_file(
+            output_dir / f"this-american-life_recordings_{subset}.jsonl.gz"
+        )
+        supervision_set.to_file(
+            output_dir / f"this-american-life_supervisions_{subset}.jsonl.gz"
+        )
 
-    return {
-        "recordings": recording_set,
-        "supervisions": supervision_set
-    }
+    return {"recordings": recording_set, "supervisions": supervision_set}
