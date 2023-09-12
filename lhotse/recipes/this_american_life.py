@@ -140,7 +140,8 @@ def prepare_this_american_life_subset(
 
     recordings = []
     supervisions = []
-    for ep_id, transcript in (pbar := tqdm(transcripts.items())):
+    pbar = tqdm(transcripts.items())
+    for ep_id, transcript in pbar:
         pbar.set_description(desc=f"Processing {subset} subset ({ep_id})")
         audio_path = Path(corpus_dir) / "audio" / f"{ep_id}.mp3"
         if not audio_path.is_file():
