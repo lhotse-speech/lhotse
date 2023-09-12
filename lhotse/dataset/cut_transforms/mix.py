@@ -16,7 +16,6 @@ class CutMix:
         cuts: CutSet,
         snr: Optional[Union[Decibels, Tuple[Decibels, Decibels]]] = (10, 20),
         p: float = 0.5,
-        prob: Optional[float] = None,
         pad_to_longest: bool = True,
         preserve_id: bool = False,
         seed: int = 42,
@@ -31,8 +30,6 @@ class CutMix:
             When a range is specified, we will uniformly sample SNR in that range.
             When it's ``None``, the noise will be mixed as-is -- i.e. without any level adjustment.
             Note that it's different from ``snr=0``, which will adjust the noise level so that the SNR is 0.
-        :param prob: a float probability in range [0, 1].
-            Specifies the probability with which we will mix augment the cuts.
         :param pad_to_longest: when `True`, each processed :class:`CutSet` will be padded with noise
             to match the duration of the longest Cut in a batch.
         :param preserve_id: When ``True``, preserves the IDs the cuts had before augmentation.
@@ -48,12 +45,6 @@ class CutMix:
             )
         self.snr = snr
         self.p = p
-        if prob is not None:
-            warnings.warn(
-                "CutMix: 'prob' argument is deprecated as of Lhotse v1.0. Please use 'p' instead.",
-                category=DeprecationWarning,
-            )
-            self.p = prob
         self.pad_to_longest = pad_to_longest
         self.preserve_id = preserve_id
         self.seed = seed

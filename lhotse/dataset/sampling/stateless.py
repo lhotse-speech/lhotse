@@ -2,7 +2,7 @@ import logging
 import os
 import random
 from pathlib import Path
-from typing import Dict, Generator, Iterable, List, Optional, Sequence, Tuple, Union
+from typing import Dict, Generator, Iterable, Optional, Sequence, Tuple, Union
 
 import torch
 import torch.distributed as dist

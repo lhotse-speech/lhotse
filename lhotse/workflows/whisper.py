@@ -1,16 +1,9 @@
 import logging
-from typing import Any, Generator, List, Optional, Union
+from typing import Generator, List, Optional, Union
 
 import torch
 
-from lhotse import (
-    CutSet,
-    MonoCut,
-    Recording,
-    RecordingSet,
-    SupervisionSegment,
-    add_durations,
-)
+from lhotse import CutSet, MonoCut, RecordingSet, SupervisionSegment, add_durations
 from lhotse.qa import trim_supervisions_to_recordings
 from lhotse.utils import fastcopy, is_module_available
 

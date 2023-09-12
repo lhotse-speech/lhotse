@@ -100,7 +100,7 @@ def test_cutmix(preserve_id: bool):
     for c in noise_cuts:
         c.duration = 1.5
 
-    tfnm = CutMix(noise_cuts, snr=None, prob=1.0, preserve_id=preserve_id)
+    tfnm = CutMix(noise_cuts, snr=None, p=1.0, preserve_id=preserve_id)
 
     tfnm_cuts = tfnm(speech_cuts)
     for c in tfnm_cuts:
