@@ -34,7 +34,6 @@ from typing_extensions import Literal
 
 from lhotse.audio import RecordingSet, null_result_on_audio_loading_error
 from lhotse.augmentation import AugmentFn
-from lhotse.caching import is_caching_enabled
 from lhotse.cut.base import Cut
 from lhotse.cut.data import DataCut
 from lhotse.cut.mixed import MixedCut, MixTrack
@@ -56,7 +55,6 @@ from lhotse.utils import (
     TimeSpan,
     compute_num_frames,
     compute_num_samples,
-    deprecated,
     exactly_one_not_null,
     fastcopy,
     ifnone,
