@@ -169,6 +169,7 @@ def test_command_audio_caching_enabled_works():
 
         # Read the audio -- should be equal to noise1.
         audio = audio_source.load_audio()
+        audio = np.atleast_2d(audio)
         np.testing.assert_allclose(audio, noise1, atol=3e-5)
 
         # Save noise2 to the same location.
@@ -177,6 +178,7 @@ def test_command_audio_caching_enabled_works():
         # Read the audio -- should *still* be equal to noise1,
         # because reading from this path was cached before.
         audio = audio_source.load_audio()
+        audio = np.atleast_2d(audio)
         np.testing.assert_allclose(audio, noise1, atol=3e-5)
 
 
@@ -199,6 +201,7 @@ def test_command_audio_caching_disabled_works():
 
         # Read the audio -- should be equal to noise1.
         audio = audio_source.load_audio()
+        audio = np.atleast_2d(audio)
         np.testing.assert_allclose(audio, noise1, atol=3e-5)
 
         # Save noise2 to the same location.
@@ -207,6 +210,7 @@ def test_command_audio_caching_disabled_works():
         # Read the audio -- should be equal to noise2,
         # and the caching is ignored (doesn't happen).
         audio = audio_source.load_audio()
+        audio = np.atleast_2d(audio)
         np.testing.assert_allclose(audio, noise2, atol=3e-5)
 
 

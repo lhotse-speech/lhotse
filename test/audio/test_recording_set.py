@@ -593,10 +593,10 @@ def test_opus_stereo_recording_from_file_force_sampling_rate():
     reason="Requires FFmpeg to be installed.",
 )
 def test_opus_stereo_recording_from_file_force_sampling_rate_read_chunk():
-    path = "test/fixtures/common_voice_en_651325_8khz.opus"
+    path = "test/fixtures/stereo.opus"
     recording = Recording.from_file(path, force_opus_sampling_rate=8000)
     assert recording.sampling_rate == 8000
-    assert isclose(recording.duration, 2.376)
+    assert isclose(recording.duration, 1.0055)
     all_samples = recording.load_audio()
     samples = recording.load_audio(offset=0.5, duration=0.25)
     num_channels, num_samples = samples.shape
