@@ -6,7 +6,7 @@ from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 
-from lhotse.audio import AudioSource, Recording, RecordingSet, audioread_info
+from lhotse.audio import AudioSource, Recording, RecordingSet, info
 from lhotse.features import Features, FeatureSet
 from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.utils import (
@@ -69,19 +69,8 @@ def get_duration(
         except:  # exception type from kaldi_native_io ? (std::runtime_error via pybind11)
             return None  # report a read error (recovery from C++ exception)
 
-    try:
-        # Try to parse the file using pysoundfile first.
-        import soundfile
-
-        info = soundfile.info(path)
-    except Exception:
-        # Try to parse the file using audioread as a fallback.
-        try:
-            info = audioread_info(path)
-        except:  # exception type ?
-            return None  # report a read error
-
-    return floor_duration_to_milliseconds(info.duration)
+    audio_info = info(path)
+    return floor_duration_to_milliseconds(audio_info.duration)
 
 
 def load_kaldi_data_dir(

@@ -6,14 +6,14 @@ import numpy as np
 import pytest
 from pytest import mark, raises
 
-from lhotse.audio import (
-    AudioMixer,
+from lhotse import (
     AudioSource,
-    DurationMismatchError,
     Recording,
     RecordingSet,
     set_audio_duration_mismatch_tolerance,
 )
+from lhotse.audio import DurationMismatchError
+from lhotse.audio.mixer import AudioMixer
 from lhotse.testing.dummies import DummyManifest
 from lhotse.utils import INT16MAX, fastcopy, is_module_available
 from lhotse.utils import nullcontext as does_not_raise
@@ -593,10 +593,10 @@ def test_opus_stereo_recording_from_file_force_sampling_rate():
     reason="Requires FFmpeg to be installed.",
 )
 def test_opus_stereo_recording_from_file_force_sampling_rate_read_chunk():
-    path = "test/fixtures/stereo.opus"
+    path = "test/fixtures/common_voice_en_651325_8khz.opus"
     recording = Recording.from_file(path, force_opus_sampling_rate=8000)
     assert recording.sampling_rate == 8000
-    assert isclose(recording.duration, 1.0055)
+    assert isclose(recording.duration, 2.376)
     all_samples = recording.load_audio()
     samples = recording.load_audio(offset=0.5, duration=0.25)
     num_channels, num_samples = samples.shape

@@ -4,8 +4,7 @@ import numpy as np
 import pytest
 import torch
 
-from lhotse import TorchaudioFbank, TorchaudioMfcc, TorchaudioSpectrogram
-from lhotse.audio import Recording
+from lhotse import Recording, TorchaudioFbank, TorchaudioMfcc, TorchaudioSpectrogram
 from lhotse.features import create_default_feature_extractor
 from lhotse.features.kaldi.extractors import (
     Fbank,
