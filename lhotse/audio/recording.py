@@ -12,6 +12,7 @@ from lhotse.audio.backend import info, torchaudio_info, torchaudio_save_flac_saf
 from lhotse.audio.source import AudioSource
 from lhotse.audio.utils import (
     DurationMismatchError,
+    VideoInfo,
     get_audio_duration_mismatch_tolerance,
 )
 from lhotse.augmentation import (
@@ -117,6 +118,7 @@ class Recording:
     duration: Seconds
     channel_ids: Optional[List[int]] = None
     transforms: Optional[List[Dict]] = None
+    video: Optional[VideoInfo] = None
 
     def __post_init__(self):
         if self.channel_ids is None:
@@ -125,7 +127,11 @@ class Recording:
             )
 
     @property
-    def num_channels(self):
+    def has_video(self) -> bool:
+        return self.video is not None
+
+    @property
+    def num_channels(self) -> int:
         return len(self.channel_ids)
 
     @staticmethod
@@ -187,6 +193,7 @@ class Recording:
                     ),
                 )
             ],
+            video=audio_info.video,
         )
 
     @staticmethod
@@ -396,6 +403,96 @@ class Recording:
         audio = assert_and_maybe_fix_num_samples(
             audio, offset=offset, duration=orig_duration, recording=self
         )
+
+        return audio
+
+    @rich_exception_info
+    def load_video(
+        self,
+        channels: Optional[Channels] = None,
+        offset: Seconds = 0.0,
+        duration: Optional[Seconds] = None,
+    ) -> np.ndarray:
+        """
+        Read the video frames from the underlying source (path, URL, unix pipe/command).
+
+        :param channels: int or iterable of ints, a subset of channel IDs to read (reads all by default).
+        :param offset: seconds, where to start reading the audio (at offset 0 by default).
+            Note that it is only efficient for local filesystem files, i.e. URLs and commands will read
+            all the samples first and discard the unneeded ones afterwards.
+        :param duration: seconds, indicates the total audio time to read (starting from ``offset``).
+        :return: a numpy array of audio samples with shape ``(num_channels, num_samples)``.
+        """
+
+        assert offset <= self.duration, (
+            f"Cannot load audio because the Recording's duration {self.duration}s "
+            f"is smaller than the requested offset {offset}s."
+        )
+
+        # Micro-optimization for a number of audio loading cases:
+        # if duration is very close to full recording,
+        # just read everything, and we'll discard some samples at the end.
+        orig_duration = duration
+        if duration is not None and isclose(duration, self.duration, abs_tol=1e-3):
+            duration = None
+
+        if channels is None:
+            channels = SetContainingAnything()
+        else:
+            channels = frozenset([channels] if isinstance(channels, int) else channels)
+            recording_channels = frozenset(self.channel_ids)
+            assert channels.issubset(recording_channels), (
+                "Requested to load audio from a channel "
+                "that does not exist in the recording: "
+                f"(recording channels: {recording_channels} -- "
+                f"requested channels: {channels})"
+            )
+
+        transforms = [
+            AudioTransform.from_dict(params) for params in self.transforms or []
+        ]
+
+        # Do a "backward pass" over data augmentation transforms to get the
+        # offset and duration for loading a piece of the original audio.
+        offset_aug, duration_aug = offset, duration
+        for tfn in reversed(transforms):
+            offset_aug, duration_aug = tfn.reverse_timestamps(
+                offset=offset_aug,
+                duration=duration_aug,
+                sampling_rate=self.sampling_rate,
+            )
+
+        samples_per_source = []
+        for source in self.sources:
+            # Case: source not requested
+            if not channels.intersection(source.channels):
+                continue
+            frames = source.load_video(
+                offset=offset_aug,
+                duration=duration_aug,
+            )
+
+            # Case: two-channel audio file but only one channel requested
+            #       it might not be optimal to load all channels, but IDK if there's anything we can do about it
+            channels_to_remove = [
+                idx for idx, cid in enumerate(source.channels) if cid not in channels
+            ]
+            if channels_to_remove:
+                frames = np.delete(frames, channels_to_remove, axis=0)
+            samples_per_source.append(frames)
+
+        # Stack all the samples from all the sources into a single array.
+        audio = samples_per_source[0]
+
+        # We'll apply the transforms now (if any).
+        for tfn in transforms:
+            audio = tfn(audio, self.sampling_rate)
+
+        # # Transformation chains can introduce small mismatches in the number of samples:
+        # # we'll fix them here, or raise an error if they exceeded a tolerance threshold.
+        # audio = assert_and_maybe_fix_num_samples(
+        #     audio, offset=offset, duration=orig_duration, recording=self
+        # )
 
         return audio
 

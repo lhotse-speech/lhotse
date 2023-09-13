@@ -6,6 +6,7 @@ from subprocess import PIPE, run
 from typing import List, Optional, Union
 
 import numpy as np
+import torch
 
 from lhotse.audio.backend import read_audio
 from lhotse.audio.utils import (
@@ -13,7 +14,14 @@ from lhotse.audio.utils import (
     get_audio_duration_mismatch_tolerance,
 )
 from lhotse.caching import AudioCache
-from lhotse.utils import Pathlike, Seconds, SmartOpen, asdict_nonull, fastcopy
+from lhotse.utils import (
+    Pathlike,
+    Seconds,
+    SmartOpen,
+    asdict_nonull,
+    compute_num_samples,
+    fastcopy,
+)
 
 PathOrFilelike = Union[str, BytesIO, FileIO]
 
@@ -86,6 +94,78 @@ class AudioSource:
                 )
 
         return samples.astype(np.float32)
+
+    def load_video(
+        self, offset: Seconds = 0.0, duration: Optional[Seconds] = None
+    ) -> torch.Tensor:
+        import torchaudio
+
+        # Open the video file for reading.
+        stream = torchaudio.io.StreamReader(self.source)
+
+        # Collect the information about available video and audio streams.
+        num_streams = stream.num_src_streams
+        audio_streams = {}
+        video_streams = {}
+        for stream_idx in range(num_streams):
+            info = stream.get_src_stream_info(stream_idx)
+            if info.media_type == "video":
+                video_streams[stream_idx] = info
+            elif info.media_type == "audio":
+                audio_streams[stream_idx] = info
+            else:
+                raise RuntimeError(f"Unexpected media_type: {info}")
+        assert (
+            len(video_streams) != 0
+        ), "The file does not seem to have any video streams."
+        assert (
+            len(video_streams) < 2
+        ), f"Lhotse currently does not support more than one video stream in a file (found {len(video_streams)})."
+
+        # Add an ffmpeg output video stream to perform reading in chunks.
+        ((video_stream_idx, video_stream),) = list(video_streams.items())
+        stream.add_basic_video_stream(
+            # TODO: check if this creates an issue with 29.97... etc fps, after long time it might desync the audio?
+            round(video_stream.frame_rate),
+            stream_index=video_stream_idx,
+        )
+
+        # # Pre-allocate the memory for output video to reduce the peak CPU mem usage
+        # output_video = torch.empty(
+        #     (video_stream.num_frames, 3, video_stream.height, video_stream.width),
+        #     dtype=torch.uint8,
+        # )
+
+        stream.seek(offset)
+        chunks = []
+        # frame_offset = 0
+        decoded_duration = 0.0
+        for (video_chunk,) in stream.stream():
+            if duration is not None and decoded_duration >= duration:
+                break
+
+            chunk_size = video_chunk.size(0)
+            chunk_duration = chunk_size / video_stream.frame_rate
+
+            if duration is not None and decoded_duration + chunk_duration > duration:
+                keep_frames = compute_num_samples(
+                    1.0 - chunk_duration, video_stream.frame_rate
+                )
+                video_chunk = video_chunk[:keep_frames]
+
+            # output_video[frame_offset : frame_offset + chunk_size] = video_chunk
+            chunks.append(video_chunk)
+            decoded_duration += chunk_duration
+            # frame_offset += chunk_size
+
+        if not chunks:
+            return torch.zeros(
+                0, 3, video_stream.height, video_stream.width, dtype=torch.uint8
+            )
+
+        output_video = torch.cat(chunks, dim=0)
+
+        return output_video
 
     def with_path_prefix(self, path: Pathlike) -> "AudioSource":
         if self.type != "file":
