@@ -70,6 +70,7 @@ from .timit import download_timit, prepare_timit
 from .uwb_atcc import download_uwb_atcc, prepare_uwb_atcc
 from .vctk import download_vctk, prepare_vctk
 from .voxceleb import download_voxceleb1, download_voxceleb2, prepare_voxceleb
+from .voxconverse import download_voxconverse, prepare_voxconverse
 from .voxpopuli import download_voxpopuli, prepare_voxpopuli
 from .wenet_speech import prepare_wenet_speech
 from .xbmu_amdo31 import download_xbmu_amdo31, prepare_xbmu_amdo31
