@@ -8,6 +8,7 @@ from lhotse.cut import CutSet, MixedCut, MixTrack, MonoCut, PaddingCut
 from lhotse.features import Features
 from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.testing.dummies import DummyManifest, dummy_cut, dummy_recording
+from lhotse.testing.random import deterministic_rng
 
 
 @pytest.fixture
@@ -255,7 +256,7 @@ def test_truncate_cut_set_offset_end(cut_set):
     assert isclose(cut2.duration, 5.0)
 
 
-def test_truncate_cut_set_offset_random(cut_set):
+def test_truncate_cut_set_offset_random(deterministic_rng, cut_set):
     truncated_cut_set = cut_set.truncate(max_duration=5, offset_type="random")
     cut1, cut2 = truncated_cut_set
     assert 0.0 <= cut1.start <= 5.0
@@ -270,7 +271,7 @@ def test_truncate_cut_set_offset_random(cut_set):
 
 
 @pytest.mark.parametrize("use_rng", [False, True])
-def test_truncate_cut_set_offset_random_rng(use_rng):
+def test_truncate_cut_set_offset_random_rng(deterministic_rng, use_rng):
     cuts1 = DummyManifest(CutSet, begin_id=0, end_id=30)
     cuts2 = DummyManifest(CutSet, begin_id=0, end_id=30)
 
