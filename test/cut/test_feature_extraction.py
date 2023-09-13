@@ -10,6 +10,7 @@ import torch
 
 from lhotse import (
     S3PRLSSL,
+    AudioSource,
     CutSet,
     Fbank,
     FbankConfig,
@@ -29,7 +30,6 @@ from lhotse import (
     load_manifest,
     validate,
 )
-from lhotse.audio import AudioSource
 from lhotse.cut import MixedCut
 from lhotse.features.io import LilcomFilesWriter
 from lhotse.serialization import InvalidPathExtension

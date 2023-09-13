@@ -468,7 +468,15 @@ def resumable_download(
         file_size = 0
 
     # Set the request headers to resume downloading
-    headers = {"Range": "bytes={}-".format(file_size)}
+    # Also set user-agent header to stop picky servers from complaining with 403
+    ua_headers = {
+        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_12_4) AppleWebKit/603.1.30 (KHTML, like Gecko) Version/10.1 Safari/603.1.30",
+    }
+
+    headers = {
+        "Range": "bytes={}-".format(file_size),
+        **ua_headers,
+    }
 
     # Create a request object with the URL and headers
     req = urllib.request.Request(url, headers=headers)
@@ -527,7 +535,7 @@ def resumable_download(
                     logging.info(
                         "Server does not support range requests - attempting downloading from scratch"
                     )
-                    _download(urllib.request.Request(url), 0)
+                    _download(urllib.request.Request(url, headers=ua_headers), 0)
             else:
                 raise e
 
