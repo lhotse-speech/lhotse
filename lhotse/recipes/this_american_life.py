@@ -134,6 +134,8 @@ def prepare_this_american_life_subset(
 
     from nltk import word_tokenize
 
+    corpus_dir = Path(corpus_dir).absolute()
+
     file_subset = "valid" if subset == "dev" else subset
     with open(Path(corpus_dir) / f"{file_subset}-transcripts-aligned.json") as f:
         transcripts = json.load(f)
@@ -143,7 +145,7 @@ def prepare_this_american_life_subset(
     pbar = tqdm(transcripts.items())
     for ep_id, transcript in pbar:
         pbar.set_description(desc=f"Processing {subset} subset ({ep_id})")
-        audio_path = Path(corpus_dir) / "audio" / f"{ep_id}.mp3"
+        audio_path = corpus_dir / "audio" / f"{ep_id}.mp3"
         if not audio_path.is_file():
             logging.warning(f"File {audio_path} not found - skipping.")
             continue
