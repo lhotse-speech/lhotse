@@ -290,9 +290,7 @@ def test_e2e_restore_with_dataloader(num_workers, create_sampler):
         dset, batch_size=None, sampler=restored_sampler, num_workers=num_workers
     )
     batches = []
-    print(restored_dloader.sampler.remaining_cuts)
     for b in restored_dloader:
-        print(restored_dloader.sampler.remaining_cuts)
         batches.append(b)
 
     # Check that the results are the same.

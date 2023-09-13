@@ -3,7 +3,7 @@ import torch
 from torch.utils.data import DataLoader
 
 from lhotse import RecordingSet, Seconds, compute_num_samples
-from lhotse.audio import torchaudio_supports_ffmpeg
+from lhotse.audio.backend import torchaudio_supports_ffmpeg
 from lhotse.dataset.unsupervised import (
     RecordingChunkIterableDataset,
     audio_chunk_collate,

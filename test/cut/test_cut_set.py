@@ -6,6 +6,7 @@ import numpy as np
 import pytest
 
 from lhotse import (
+    AudioSource,
     Fbank,
     FbankConfig,
     Features,
@@ -16,7 +17,6 @@ from lhotse import (
     SupervisionSet,
     load_manifest,
 )
-from lhotse.audio import AudioSource
 from lhotse.cut import CutSet, MixedCut, MixTrack, MonoCut, MultiCut
 from lhotse.serialization import load_jsonl
 from lhotse.testing.dummies import (
@@ -681,9 +681,6 @@ def test_cut_set_decompose_output_dir_doesnt_duplicate_recording():
     with TemporaryDirectory() as td:
         td = Path(td)
         cuts.decompose(output_dir=td)
-
-        text = load_jsonl(td / "recordings.jsonl.gz")
-        print(list(text))
 
         recs = load_manifest(td / "recordings.jsonl.gz")
         assert isinstance(recs, RecordingSet)
