@@ -1,6 +1,6 @@
 import warnings
 from dataclasses import dataclass
-from io import BytesIO
+from io import BytesIO, FileIO
 from pathlib import Path
 from subprocess import PIPE, run
 from typing import List, Optional, Union
@@ -14,6 +14,8 @@ from lhotse.audio.utils import (
 )
 from lhotse.caching import AudioCache
 from lhotse.utils import Pathlike, Seconds, SmartOpen, asdict_nonull, fastcopy
+
+PathOrFilelike = Union[str, BytesIO, FileIO]
 
 
 @dataclass
@@ -61,73 +63,14 @@ class AudioSource:
         :param force_opus_sampling_rate: This parameter is only used when we detect an OPUS file.
             It will tell ffmpeg to resample OPUS to this sampling rate.
         """
-        assert self.type in ("file", "command", "url", "memory", "shar")
+        source = self._prepare_for_reading(offset=offset, duration=duration)
 
-        source = self.source
-
-        if self.type == "command":
-            if (offset != 0.0 or duration is not None) and not AudioCache.enabled():
-                warnings.warn(
-                    "You requested a subset of a recording that is read from disk via a bash command. "
-                    "Expect large I/O overhead if you are going to read many chunks like these, "
-                    "since every time we will read the whole file rather than its subset."
-                    "You can use `lhotse.set_caching_enabled(True)` to mitigate the overhead."
-                )
-
-            # Let's assume 'self.source' is a pipe-command with unchangeable file,
-            # never a microphone-stream or a live-stream.
-            audio_bytes = AudioCache.try_cache(self.source)
-            if not audio_bytes:
-                audio_bytes = run(self.source, shell=True, stdout=PIPE).stdout
-                AudioCache.add_to_cache(self.source, audio_bytes)
-
-            samples, sampling_rate = read_audio(
-                BytesIO(audio_bytes), offset=offset, duration=duration
-            )
-
-        elif self.type == "url":
-            if offset != 0.0 or duration is not None and not AudioCache.enabled():
-                warnings.warn(
-                    "You requested a subset of a recording that is read from URL. "
-                    "Expect large I/O overhead if you are going to read many chunks like these, "
-                    "since every time we will download the whole file rather than its subset."
-                    "You can use `lhotse.set_caching_enabled(True)` to mitigate the overhead."
-                )
-
-            # Let's assume 'self.source' is url to unchangeable file,
-            # never a microphone-stream or a live-stream.
-            audio_bytes = AudioCache.try_cache(self.source)
-            if not audio_bytes:
-                with SmartOpen.open(self.source, "rb") as f:
-                    audio_bytes = f.read()
-                AudioCache.add_to_cache(self.source, audio_bytes)
-
-            samples, sampling_rate = read_audio(
-                BytesIO(audio_bytes), offset=offset, duration=duration
-            )
-
-        elif self.type == "memory":
-            assert isinstance(self.source, bytes), (
-                "Corrupted manifest: specified AudioSource type is 'memory', "
-                f"but 'self.source' attribute is not of type 'bytes' (found: '{type(self.source).__name__}')."
-            )
-            source = BytesIO(self.source)
-            samples, sampling_rate = read_audio(
-                source, offset=offset, duration=duration
-            )
-        elif self.type == "shar":
-            raise RuntimeError(
-                "Inconsistent state: found an AudioSource with Lhotse Shar placeholder "
-                "that was not filled during deserialization."
-            )
-
-        else:  # self.type == 'file'
-            samples, sampling_rate = read_audio(
-                source,
-                offset=offset,
-                duration=duration,
-                force_opus_sampling_rate=force_opus_sampling_rate,
-            )
+        samples, sampling_rate = read_audio(
+            source,
+            offset=offset,
+            duration=duration,
+            force_opus_sampling_rate=force_opus_sampling_rate,
+        )
 
         # explicit sanity check for duration as soundfile does not complain here
         if duration is not None:
@@ -161,3 +104,75 @@ class AudioSource:
             f"AudioSource(type='{self.type}', channels={self.channels}, "
             f"source='{self.source if isinstance(self.source, str) else '<binary-data>'}')"
         )
+
+    def _prepare_for_reading(
+        self, offset: Seconds, duration: Optional[Seconds]
+    ) -> PathOrFilelike:
+        """
+        Validates `self.type` and prepares the actual source for audio reading.
+        Returns either a path or a file-like object opened in binary mode,
+        that can be handled by :func:`lhotse.audio.backend.read_audio`.
+        """
+        assert self.type in (
+            "file",
+            "command",
+            "url",
+            "memory",
+            "shar",
+        ), f"Unexpected AudioSource type: '{self.type}'"
+
+        source = self.source
+
+        if self.type == "command":
+
+            if (offset != 0.0 or duration is not None) and not AudioCache.enabled():
+                warnings.warn(
+                    "You requested a subset of a recording that is read from disk via a bash command. "
+                    "Expect large I/O overhead if you are going to read many chunks like these, "
+                    "since every time we will read the whole file rather than its subset."
+                    "You can use `lhotse.set_caching_enabled(True)` to mitigate the overhead."
+                )
+
+            # Let's assume 'self.source' is a pipe-command with unchangeable file,
+            # never a microphone-stream or a live-stream.
+            audio_bytes = AudioCache.try_cache(self.source)
+            if not audio_bytes:
+                audio_bytes = run(self.source, shell=True, stdout=PIPE).stdout
+                AudioCache.add_to_cache(self.source, audio_bytes)
+            source = BytesIO(audio_bytes)
+
+        elif self.type == "url":
+
+            if offset != 0.0 or duration is not None and not AudioCache.enabled():
+                warnings.warn(
+                    "You requested a subset of a recording that is read from URL. "
+                    "Expect large I/O overhead if you are going to read many chunks like these, "
+                    "since every time we will download the whole file rather than its subset."
+                    "You can use `lhotse.set_caching_enabled(True)` to mitigate the overhead."
+                )
+
+            # Let's assume 'self.source' is url to unchangeable file,
+            # never a microphone-stream or a live-stream.
+            audio_bytes = AudioCache.try_cache(self.source)
+            if not audio_bytes:
+                with SmartOpen.open(self.source, "rb") as f:
+                    audio_bytes = f.read()
+                AudioCache.add_to_cache(self.source, audio_bytes)
+            source = BytesIO(audio_bytes)
+
+        elif self.type == "memory":
+
+            assert isinstance(self.source, bytes), (
+                "Corrupted manifest: specified AudioSource type is 'memory', "
+                f"but 'self.source' attribute is not of type 'bytes' (found: '{type(self.source).__name__}')."
+            )
+            source = BytesIO(self.source)
+
+        elif self.type == "shar":
+
+            raise RuntimeError(
+                "Inconsistent state: found an AudioSource with Lhotse Shar placeholder "
+                "that was not filled during deserialization."
+            )
+
+        return source
