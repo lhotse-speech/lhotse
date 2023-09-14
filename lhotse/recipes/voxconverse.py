@@ -83,7 +83,7 @@ def download_voxconverse(
 def prepare_voxconverse(
     corpus_dir: Pathlike,
     output_dir: Optional[Pathlike] = None,
-    split_test: bool = True,  # test part is larger than dev part - split it into dev and test by default
+    split_test: bool = False,  # test part is larger than dev part - split it into dev and test by default
 ):
     corpus_dir = Path(corpus_dir).absolute()
 

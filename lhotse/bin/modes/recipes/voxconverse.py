@@ -19,9 +19,9 @@ def voxconverse(target_dir: Pathlike, force_download=False):
 @click.option(
     "--split-test",
     is_flag=True,
-    default=True,
+    default=False,
     help="Split test part into dev and test parts",
 )
-def voxconverse(corpus_dir: Pathlike, output_dir: Pathlike, split_test: bool = True):
+def voxconverse(corpus_dir: Pathlike, output_dir: Pathlike, split_test: bool = False):
     """VoxConverse data preparation."""
     prepare_voxconverse(corpus_dir, output_dir=output_dir, split_test=split_test)
