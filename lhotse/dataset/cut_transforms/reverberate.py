@@ -1,5 +1,4 @@
 import random
-import warnings
 from typing import List, Optional
 
 from lhotse import CutSet, RecordingSet

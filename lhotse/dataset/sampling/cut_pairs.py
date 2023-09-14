@@ -30,7 +30,6 @@ class CutPairsSampler(CutSampler):
         world_size: Optional[int] = None,
         rank: Optional[int] = None,
         seed: int = 0,
-        strict=None,
     ):
         """
         CutPairsSampler's constructor.

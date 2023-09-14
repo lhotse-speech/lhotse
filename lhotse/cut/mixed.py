@@ -9,7 +9,9 @@ from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple, Union
 import numpy as np
 from intervaltree import IntervalTree
 
-from lhotse.audio import AudioMixer, Recording, audio_energy, torchaudio_save_flac_safe
+from lhotse.audio import Recording, get_audio_duration_mismatch_tolerance
+from lhotse.audio.backend import torchaudio_save_flac_safe
+from lhotse.audio.mixer import AudioMixer, audio_energy
 from lhotse.augmentation import (
     AudioTransform,
     AugmentFn,
@@ -30,7 +32,6 @@ from lhotse.utils import (
     DEFAULT_PADDING_VALUE,
     LOG_EPSILON,
     Decibels,
-    NonPositiveEnergyError,
     Pathlike,
     Seconds,
     add_durations,
@@ -1035,7 +1036,6 @@ class MixedCut(Cut):
             to a single channel. This down-mixing is done by summing the channels together.
         :return: A numpy ndarray with audio samples and with shape ``(num_channels, num_samples)``
         """
-        from lhotse.audio import LHOTSE_AUDIO_DURATION_MISMATCH_TOLERANCE
 
         if not self.has_recording:
             return None
@@ -1085,7 +1085,7 @@ class MixedCut(Cut):
             # we will fix them on-the-fly so that the manifest does not lie about the num_samples.
             audio = mixer.mixed_mono_audio if mono_downmix else mixer.mixed_audio
             tol_samples = compute_num_samples(
-                LHOTSE_AUDIO_DURATION_MISMATCH_TOLERANCE,
+                get_audio_duration_mismatch_tolerance(),
                 sampling_rate=self.sampling_rate,
             )
             num_samples_diff = audio.shape[1] - self.num_samples

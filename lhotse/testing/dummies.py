@@ -7,15 +7,14 @@ import numpy as np
 import torch
 import torchaudio.backend.no_backend
 
-from lhotse import AudioSource, compute_num_frames, compute_num_samples
 from lhotse.array import Array, TemporalArray
-from lhotse.audio import Recording, RecordingSet
+from lhotse.audio import AudioSource, Recording, RecordingSet
 from lhotse.cut import CutSet, MonoCut, MultiCut
 from lhotse.features import Features, FeatureSet
 from lhotse.features.io import MemoryRawWriter
 from lhotse.manipulation import Manifest
 from lhotse.supervision import AlignmentItem, SupervisionSegment, SupervisionSet
-from lhotse.utils import fastcopy
+from lhotse.utils import compute_num_frames, compute_num_samples, fastcopy
 
 
 @contextlib.contextmanager

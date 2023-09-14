@@ -5,13 +5,7 @@ import numpy as np
 import torch
 
 from lhotse.features.base import FeatureExtractor, register_extractor
-from lhotse.utils import (
-    EPSILON,
-    LOG_EPSILON,
-    Seconds,
-    compute_num_frames_from_samples,
-    is_module_available,
-)
+from lhotse.utils import Seconds, compute_num_frames_from_samples, is_module_available
 
 
 @dataclass

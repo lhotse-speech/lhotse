@@ -23,12 +23,12 @@ import sphinx_rtd_theme
 # -- Project information -----------------------------------------------------
 
 project = "lhotse"
-copyright = "2020-2021, Lhotse development team"
+copyright = "2020-2023, Lhotse development team"
 author = "Lhotse development team"
 
 # The full version, including alpha/beta/rc tags
 
-VERSION = open(Path(".").parent / "VERSION").read().strip()
+VERSION = open(Path(__file__).parent.parent.absolute() / "VERSION").read().strip()
 dev_marker = ""
 if not os.environ.get("LHOTSE_PREPARING_RELEASE", False):
     dev_marker = ".dev"

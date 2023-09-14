@@ -67,10 +67,12 @@ from .tal_asr import *
 from .tal_csasr import *
 from .tedlium import *
 from .thchs_30 import *
+from .this_american_life import *
 from .timit import *
 from .uwb_atcc import *
 from .vctk import *
 from .voxceleb import *
+from .voxconverse import *
 from .voxpopuli import *
 from .wenet_speech import *
 from .xbmu_amdo31 import *
