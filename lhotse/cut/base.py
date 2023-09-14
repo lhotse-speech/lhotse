@@ -850,7 +850,13 @@ class Cut:
                 )
             ],
         )
-        return fastcopy(self, recording=recording)
+        return fastcopy(
+            recording.to_cut(),
+            id=self.id,
+            supervisions=self.supervisions,
+            custom=self.custom if hasattr(self, "custom") else None,
+            features=self.features if self.has_features else None,
+        )
 
     def speakers_feature_mask(
         self,
