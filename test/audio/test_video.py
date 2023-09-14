@@ -50,9 +50,27 @@ def test_recording_load_video(video_path, with_audio):
 
     if with_audio:
         assert audio.dtype == torch.float32
+        assert audio.shape == (AUDIO_CHANNELS, 253440)
 
-        assert recording.num_samples == 254976
-        assert audio.shape == (AUDIO_CHANNELS, 254976)
+
+def test_recording_load_video_consistent_audio_duration(video_path):
+    recording = Recording.from_file(video_path)
+
+    assert recording.num_samples == 254976
+
+    # audio has full duration when loaded through load_audio
+    audio_full = recording.load_audio()
+    assert audio_full.shape[1] == 254976
+
+    video, audio = recording.load_video()
+    # we truncated the audio when loading through load_video
+    assert (
+        round(video.shape[0] / recording.video.fps * recording.sampling_rate) == 253440
+    )
+    # audio and video duration is the same when loading audio through load_video
+    assert audio.shape[1] / recording.sampling_rate == pytest.approx(
+        video.shape[0] / recording.video.fps
+    )
 
 
 @pytest.mark.parametrize("num_frames", [1, 2, 131, 132])

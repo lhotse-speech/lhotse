@@ -429,15 +429,20 @@ class Recording:
         offset: Seconds = 0.0,
         duration: Optional[Seconds] = None,
         with_audio: bool = True,
+        force_consistent_duration: bool = True,
     ) -> Tuple[torch.Tensor, Optional[torch.Tensor]]:
         """
-        Read the video frames from the underlying source (path, URL, unix pipe/command).
+        Read the video frames and audio samples from the underlying source (path, URL, unix pipe/command).
 
         :param channels: int or iterable of ints, a subset of channel IDs to read (reads all by default).
-        :param offset: seconds, where to start reading the audio (at offset 0 by default).
+        :param offset: seconds, where to start reading the video (at offset 0 by default).
             Note that it is only efficient for local filesystem files, i.e. URLs and commands will read
             all the samples first and discard the unneeded ones afterwards.
-        :param duration: seconds, indicates the total audio time to read (starting from ``offset``).
+        :param duration: seconds, indicates the total video time to read (starting from ``offset``).
+        :param with_audio: bool, whether to load and return audio alongside video. True by default.
+        :param force_consistent_duration: bool, if audio duration is different than video duration
+            (as counted by ``num_frames / fps``), we'll either truncate or pad the audio with zeros.
+            True by default.
         :return: a tuple of video tensor and optional audio tensor (or None).
         """
 
@@ -496,10 +501,6 @@ class Recording:
         samples_per_source = []
         video = None
         for source in self.sources:
-            # Case: source not requested
-            if not channels.intersection(source.channels):
-                continue
-
             if source.has_video:
                 video, samples = source.load_video(
                     offset=offset_aug,
@@ -507,6 +508,10 @@ class Recording:
                 )
             else:
                 samples = source.load_audio(offset=offset_aug, duration=duration_aug)
+
+            # Case: source not requested (for audio, but it might be the only one with video)
+            if not channels.intersection(source.channels):
+                continue
 
             # Case: two-channel audio file but only one channel requested
             #       it might not be optimal to load all channels, but IDK if there's anything we can do about it
@@ -517,6 +522,8 @@ class Recording:
                 samples = np.delete(samples, channels_to_remove, axis=0)
             samples_per_source.append(samples)
 
+        assert video is not None
+
         # Stack all the samples from all the sources into a single array.
         audio = self._stack_audio_channels(samples_per_source)
 
@@ -524,11 +531,27 @@ class Recording:
         for tfn in transforms:
             audio = tfn(audio, self.sampling_rate)
 
-        # Transformation chains can introduce small mismatches in the number of samples:
-        # we'll fix them here, or raise an error if they exceeded a tolerance threshold.
-        audio = assert_and_maybe_fix_num_samples(
-            audio, offset=offset, duration=orig_duration, recording=self
-        )
+        if force_consistent_duration:
+            # We want to keep audio and video duration identical by truncating/padding audio.
+            audio = assert_and_maybe_fix_num_samples(
+                audio,
+                offset=offset,
+                duration=video.shape[0] / self.video.fps,
+                recording=self,
+                # hack: "infinite" tolerance disables exceptions, i.e. 1min video and 1h audio => 1min audio
+                tolerance=1e6,
+                pad_mode="zero",
+            )
+        else:
+            # Transformation chains can introduce small mismatches in the number of samples:
+            # we'll fix them here, or raise an error if they exceeded a tolerance threshold.
+            audio = assert_and_maybe_fix_num_samples(
+                audio,
+                offset=offset,
+                duration=orig_duration,
+                recording=self,
+                pad_mode="reflect",
+            )
 
         return video, torch.from_numpy(audio)
 
@@ -805,12 +828,16 @@ def assert_and_maybe_fix_num_samples(
     offset: Seconds,
     duration: Optional[Seconds],
     recording: Recording,
+    tolerance: Optional[Seconds] = None,
+    pad_mode: str = "reflect",
 ) -> np.ndarray:
     # When resampling in high sampling rates (48k -> 44.1k)
     # it is difficult to estimate how sox will perform rounding;
     # we will just add/remove one sample to be consistent with
     # what we have estimated.
     # This effect is exacerbated by chaining multiple augmentations together.
+    if tolerance is None:  # use Lhotse's default
+        tolerance = get_audio_duration_mismatch_tolerance()
     expected_num_samples = compute_num_samples(
         duration=duration if duration is not None else recording.duration - offset,
         sampling_rate=recording.sampling_rate,
@@ -818,11 +845,9 @@ def assert_and_maybe_fix_num_samples(
     diff = expected_num_samples - audio.shape[1]
     if diff == 0:
         return audio  # this is normal condition
-    allowed_diff = int(
-        ceil(get_audio_duration_mismatch_tolerance() * recording.sampling_rate)
-    )
+    allowed_diff = int(ceil(tolerance * recording.sampling_rate))
     if 0 < diff <= allowed_diff:
-        audio = np.pad(audio, ((0, 0), (0, diff)), mode="reflect")
+        audio = np.pad(audio, ((0, 0), (0, diff)), mode=pad_mode)
         return audio
     elif -allowed_diff <= diff < 0:
         audio = audio[:, :diff]
