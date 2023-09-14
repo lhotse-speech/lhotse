@@ -2,7 +2,7 @@ from dataclasses import dataclass
 from io import BytesIO
 from math import ceil, isclose
 from pathlib import Path
-from typing import Callable, Dict, List, Optional, Union
+from typing import Callable, Dict, List, Optional, Tuple, Union
 
 import numpy as np
 import torch
@@ -118,17 +118,33 @@ class Recording:
     duration: Seconds
     channel_ids: Optional[List[int]] = None
     transforms: Optional[List[Dict]] = None
-    video: Optional[VideoInfo] = None
 
     def __post_init__(self):
         if self.channel_ids is None:
             self.channel_ids = sorted(
                 cid for source in self.sources for cid in source.channels
             )
+        assert (
+            sum(source.has_video for source in self.sources) < 2
+        ), "Lhotse does not currently support recordings with more than a single video stream."
+
+    @property
+    def video(self) -> Optional[VideoInfo]:
+        s = self._video_source
+        if s is None:
+            return None
+        return s.video
 
     @property
     def has_video(self) -> bool:
-        return self.video is not None
+        return self._video_source is not None
+
+    @property
+    def _video_source(self) -> Optional[AudioSource]:
+        for s in self.sources:
+            if s.has_video:
+                return s
+        return None
 
     @property
     def num_channels(self) -> int:
@@ -191,9 +207,9 @@ class Recording:
                         if relative_path_depth is not None and relative_path_depth > 0
                         else str(path)
                     ),
+                    video=audio_info.video,
                 )
             ],
-            video=audio_info.video,
         )
 
     @staticmethod
@@ -412,7 +428,8 @@ class Recording:
         channels: Optional[Channels] = None,
         offset: Seconds = 0.0,
         duration: Optional[Seconds] = None,
-    ) -> np.ndarray:
+        with_audio: bool = True,
+    ) -> Tuple[torch.Tensor, Optional[torch.Tensor]]:
         """
         Read the video frames from the underlying source (path, URL, unix pipe/command).
 
@@ -421,13 +438,27 @@ class Recording:
             Note that it is only efficient for local filesystem files, i.e. URLs and commands will read
             all the samples first and discard the unneeded ones afterwards.
         :param duration: seconds, indicates the total audio time to read (starting from ``offset``).
-        :return: a numpy array of audio samples with shape ``(num_channels, num_samples)``.
+        :return: a tuple of video tensor and optional audio tensor (or None).
         """
+
+        assert self.has_video, f"Recording {self.id} has no video to load."
 
         assert offset <= self.duration, (
             f"Cannot load audio because the Recording's duration {self.duration}s "
             f"is smaller than the requested offset {offset}s."
         )
+
+        for t in ifnone(self.transforms, ()):
+            assert t["name"] not in (
+                "Speed",
+                "Tempo",
+            ), "Recording.load_video() does not support speed/tempo perturbation."
+
+        if not with_audio:
+            video, _ = self._video_source.load_video(
+                offset=offset, duration=duration, with_audio=False
+            )
+            return video, None
 
         # Micro-optimization for a number of audio loading cases:
         # if duration is very close to full recording,
@@ -463,14 +494,19 @@ class Recording:
             )
 
         samples_per_source = []
+        video = None
         for source in self.sources:
             # Case: source not requested
             if not channels.intersection(source.channels):
                 continue
-            frames = source.load_video(
-                offset=offset_aug,
-                duration=duration_aug,
-            )
+
+            if source.has_video:
+                video, samples = source.load_video(
+                    offset=offset_aug,
+                    duration=duration_aug,
+                )
+            else:
+                samples = source.load_audio(offset=offset_aug, duration=duration_aug)
 
             # Case: two-channel audio file but only one channel requested
             #       it might not be optimal to load all channels, but IDK if there's anything we can do about it
@@ -478,23 +514,23 @@ class Recording:
                 idx for idx, cid in enumerate(source.channels) if cid not in channels
             ]
             if channels_to_remove:
-                frames = np.delete(frames, channels_to_remove, axis=0)
-            samples_per_source.append(frames)
+                samples = np.delete(samples, channels_to_remove, axis=0)
+            samples_per_source.append(samples)
 
         # Stack all the samples from all the sources into a single array.
-        audio = samples_per_source[0]
+        audio = self._stack_audio_channels(samples_per_source)
 
         # We'll apply the transforms now (if any).
         for tfn in transforms:
             audio = tfn(audio, self.sampling_rate)
 
-        # # Transformation chains can introduce small mismatches in the number of samples:
-        # # we'll fix them here, or raise an error if they exceeded a tolerance threshold.
-        # audio = assert_and_maybe_fix_num_samples(
-        #     audio, offset=offset, duration=orig_duration, recording=self
-        # )
+        # Transformation chains can introduce small mismatches in the number of samples:
+        # we'll fix them here, or raise an error if they exceeded a tolerance threshold.
+        audio = assert_and_maybe_fix_num_samples(
+            audio, offset=offset, duration=orig_duration, recording=self
+        )
 
-        return audio
+        return video, torch.from_numpy(audio)
 
     def _stack_audio_channels(self, samples_per_source: List[np.ndarray]) -> np.ndarray:
         # There may be a mismatch in the number of samples between different channels. We

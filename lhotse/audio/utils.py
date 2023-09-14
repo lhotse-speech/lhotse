@@ -36,6 +36,10 @@ class VideoInfo:
     def duration(self) -> Seconds:
         return self.num_frames / self.fps
 
+    @property
+    def frame_length(self) -> Seconds:
+        return 1.0 / self.fps
+
 
 def get_audio_duration_mismatch_tolerance() -> Seconds:
     """Retrieve the current audio duration mismatch tolerance in seconds."""
