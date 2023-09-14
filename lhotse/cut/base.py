@@ -747,12 +747,26 @@ class Cut:
             hop = duration
         new_cuts = []
         n_windows = compute_num_windows(self.duration, duration, hop)
+
+        # Operation without an Interval Tree is O(nm), where `n` is the number
+        # of resulting windows, and `m` is the number of supervisions in the cut.
+        # With an Interval Tree, we can do it in O(nlog(m) + m), but we have to pay
+        # the overhead of creating an IntervalTree.
+        #
+        # We will use an IntervalTree only if there are more than 10 supervisions and n > 5.
+        # (need to check via benchmarks)
+        if len(self.supervisions) > 10 and n_windows > 5:
+            supervisions_index = self.index_supervisions(index_mixed_tracks=True)
+        else:
+            supervisions_index = None
+
         for i in range(n_windows):
             new_cuts.append(
                 self.truncate(
                     offset=hop * i,
                     duration=duration,
                     keep_excessive_supervisions=keep_excessive_supervisions,
+                    _supervisions_index=supervisions_index,
                 ).with_id(f"{self.id}-{i}")
             )
         return CutSet.from_cuts(new_cuts)
