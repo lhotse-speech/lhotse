@@ -1156,7 +1156,7 @@ def info(
             return torchaudio_ffmpeg_streamer_info(path)
         else:  # hacky but easy way to proceed...
             raise Exception("Skipping - torchaudio ffmpeg streamer unavailable")
-    except Exception as exc1:
+    except:
         try:
             return torchaudio_info(path)
         except:

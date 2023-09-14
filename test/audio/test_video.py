@@ -5,10 +5,14 @@ import torch
 
 from lhotse import Recording
 
+COLOR = 3
+HEIGHT = 240
+WIDTH = 320
+
 
 @pytest.fixture
 def video_path() -> Path:
-    return Path("test/fixtures/big_buck_bunny_720p_1mb.mp4")
+    return Path("test/fixtures/big_buck_bunny_small.mp4")
 
 
 @pytest.fixture
@@ -28,8 +32,8 @@ def test_recording_from_video_file(video_path):
     assert recording.video.duration == 5.28
     assert recording.video.fps == 25.0
     assert recording.video.num_frames == 132
-    assert recording.video.height == 720
-    assert recording.video.width == 1280
+    assert recording.video.height == HEIGHT
+    assert recording.video.width == WIDTH
 
 
 def test_recording_load_video(video_path):
@@ -38,12 +42,7 @@ def test_recording_load_video(video_path):
 
     assert video.dtype == torch.uint8
 
-    expected_dims = (
-        132,  # num video frames
-        3,  # num colors
-        720,  # height
-        1280,  # width
-    )
+    expected_dims = (132, COLOR, HEIGHT, WIDTH)
     assert video.shape == expected_dims
 
 
@@ -56,12 +55,7 @@ def test_recording_load_video_offset(video_path, num_frames):
 
     assert video.dtype == torch.uint8
 
-    expected_dims = (
-        132 - num_frames,  # num video frames
-        3,  # num colors
-        720,  # height
-        1280,  # width
-    )
+    expected_dims = (132 - num_frames, COLOR, HEIGHT, WIDTH)
     assert video.shape == expected_dims
 
 
@@ -71,12 +65,7 @@ def test_recording_load_video_duration(video_path):
 
     assert video.dtype == torch.uint8
 
-    expected_dims = (
-        25 * 2,  # num video frames
-        3,  # num colors
-        720,  # height
-        1280,  # width
-    )
+    expected_dims = (25 * 2, COLOR, HEIGHT, WIDTH)
     assert video.shape == expected_dims
 
     full_video = recording.load_video()
@@ -90,12 +79,7 @@ def test_recording_load_video_over_duration(video_path):
 
     assert video.dtype == torch.uint8
 
-    expected_dims = (
-        132,  # num video frames
-        3,  # num colors
-        720,  # height
-        1280,  # width
-    )
+    expected_dims = (132, COLOR, HEIGHT, WIDTH)
     assert video.shape == expected_dims
 
     full_video = recording.load_video()
