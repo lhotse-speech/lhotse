@@ -146,6 +146,8 @@ class AudioSource:
         stream.add_basic_video_stream(
             frames_per_chunk,
             stream_index=video_stream_idx,
+            height=self.video.height,  # re-scale if requested via overriding self.video.height
+            width=self.video.width,  # re-scale if requested via overriding self.video.width
         )
 
         if with_audio and len(audio_streams) > 0:

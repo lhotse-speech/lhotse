@@ -53,6 +53,17 @@ def test_recording_load_video(video_path, with_audio):
         assert audio.shape == (AUDIO_CHANNELS, 253440)
 
 
+def test_recording_load_video_rescaled(video_path):
+    recording = Recording.from_file(video_path)
+
+    recording.video.set_resolution(width=1024, height=768)
+
+    video, audio = recording.load_video(with_audio=False)
+
+    expected_dims = (132, COLOR, 768, 1024)
+    assert video.shape == expected_dims
+
+
 def test_recording_load_video_consistent_audio_duration(video_path):
     recording = Recording.from_file(video_path)
 

@@ -32,6 +32,10 @@ class VideoInfo:
     width: int
     """Width in pixels."""
 
+    def set_resolution(self, width: int, height: int) -> None:
+        self.width = width
+        self.height = height
+
     @property
     def duration(self) -> Seconds:
         return self.num_frames / self.fps
