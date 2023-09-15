@@ -79,7 +79,7 @@ def test_video_mixed_cut_from_appending(video_cut):
     assert video_cut.video.fps == FPS
     assert video_cut.video.width == WIDTH
     assert video_cut.video.height == HEIGHT
-    # assert video_cut.video.num_frames == 132 * 2
+    assert video_cut.video.num_frames == 132 * 2
 
     # Load all audio channels with video
     video, audio = video_cut.load_video()
