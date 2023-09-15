@@ -7,9 +7,10 @@ from operator import add
 from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple, Union
 
 import numpy as np
+import torch
 from intervaltree import IntervalTree
 
-from lhotse.audio import Recording, get_audio_duration_mismatch_tolerance
+from lhotse.audio import Recording, VideoInfo, get_audio_duration_mismatch_tolerance
 from lhotse.audio.backend import torchaudio_save_flac_safe
 from lhotse.audio.mixer import AudioMixer, audio_energy
 from lhotse.augmentation import (
@@ -147,6 +148,10 @@ class MixedCut(Cut):
     @property
     def has_recording(self) -> bool:
         return self._first_non_padding_cut.has_recording
+
+    @property
+    def has_video(self) -> bool:
+        return self._first_non_padding_cut.has_video
 
     def has(self, field: str) -> bool:
         return self._first_non_padding_cut.has(field)
@@ -1110,6 +1115,31 @@ class MixedCut(Cut):
             audio = mixer.unmixed_audio
 
         return audio
+
+    @property
+    def video(self) -> Optional[VideoInfo]:
+        if self.has_video:
+            v = self._first_non_padding_cut.video
+            return v.copy_with(num_frames=compute_num_samples(self.duration, v.fps))
+        return None
+
+    @rich_exception_info
+    def load_video(
+        self,
+        with_audio: bool = True,
+        mixed: bool = True,
+        mono_downmix: bool = False,
+    ) -> Optional[Tuple[torch.Tensor, Optional[torch.Tensor]]]:
+        raise NotImplementedError()  # TODO: this would require a basic VideoMixer that supports pad and append only
+        # if not self.has_video:
+        #     return None
+        # video, audio = self._first_non_padding_cut.load_video(with_audio=False)
+        # if with_audio:
+        #     # TODO: For now load audio separately to re-use the complex logic of load_audio
+        #     #       This means the same video file is potentially opened twice, but given the
+        #     #       cost of video decoding, the extra file open cost could be negligible.
+        #     audio = self.load_audio(mixed=mixed, mono_downmix=mono_downmix)
+        # return video, audio
 
     def plot_tracks_features(self):
         """

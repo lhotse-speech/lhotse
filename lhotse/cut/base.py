@@ -6,7 +6,7 @@ import torch
 from intervaltree import Interval, IntervalTree
 from typing_extensions import Literal
 
-from lhotse.audio import AudioSource, Recording
+from lhotse.audio import AudioSource, Recording, VideoInfo
 from lhotse.augmentation import AugmentFn
 from lhotse.features import FeatureExtractor
 from lhotse.supervision import SupervisionSegment
@@ -164,12 +164,15 @@ class Cut:
     features_type: Optional[str]
     has_recording: bool
     has_features: bool
+    has_video: bool
+    video: Optional[VideoInfo]
 
     # The following is the list of methods implemented by the child classes.
     # They are not abstract methods because dataclasses do not work well with the "abc" module.
     # Check a specific child class for their documentation.
     from_dict: Callable[[Dict], "Cut"]
     load_audio: Callable[[], np.ndarray]
+    load_video: Callable[[], Tuple[torch.Tensor, Optional[torch.Tensor]]]
     load_features: Callable[[], np.ndarray]
     compute_and_store_features: Callable
     drop_features: Callable

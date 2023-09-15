@@ -213,6 +213,9 @@ class AudioSource:
 
         return output_video, output_audio
 
+    def with_video_resolution(self, width: int, height: int) -> "AudioSource":
+        return fastcopy(self, video=self.video.copy_with(width=width, height=height))
+
     def with_path_prefix(self, path: Pathlike) -> "AudioSource":
         if self.type != "file":
             return self

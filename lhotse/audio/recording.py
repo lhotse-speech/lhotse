@@ -598,6 +598,15 @@ class Recording:
     def with_path_prefix(self, path: Pathlike) -> "Recording":
         return fastcopy(self, sources=[s.with_path_prefix(path) for s in self.sources])
 
+    def with_video_resolution(self, width: int, height: int) -> "Recording":
+        return fastcopy(
+            self,
+            sources=[
+                s.with_video_resolution(width=width, height=height)
+                for s in self.sources
+            ],
+        )
+
     def perturb_speed(self, factor: float, affix_id: bool = True) -> "Recording":
         """
         Return a new ``Recording`` that will lazily perturb the speed while loading audio.

@@ -33,6 +33,7 @@ from tqdm.auto import tqdm
 from typing_extensions import Literal
 
 from lhotse.audio import RecordingSet, null_result_on_audio_loading_error
+from lhotse.audio.utils import VideoInfo
 from lhotse.augmentation import AugmentFn
 from lhotse.cut.base import Cut
 from lhotse.cut.data import DataCut
@@ -2978,9 +2979,18 @@ def pad(
             else None
         )
 
+    padding_duration = round(duration - cut.duration, ndigits=8)
+
+    video = None
+    if cut.has_video:
+        video = cut.video
+        video = video.copy_with(
+            num_frames=compute_num_samples(padding_duration, video.fps)
+        )
+
     padding_cut = PaddingCut(
         id=str(uuid4()),
-        duration=round(duration - cut.duration, ndigits=8),
+        duration=padding_duration,
         feat_value=pad_feat_value,
         num_features=cut.num_features,
         # The num_frames and sampling_rate fields are tricky, because it is possible to create a MixedCut
@@ -2992,6 +3002,7 @@ def pad(
         ),
         frame_shift=cut.frame_shift,
         sampling_rate=cut.sampling_rate,
+        video=video,
         custom=pad_value_dict,
     )
 

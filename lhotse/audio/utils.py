@@ -6,7 +6,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import Callable, Optional
 
-from lhotse.utils import NonPositiveEnergyError, Seconds, suppress_and_warn
+from lhotse.utils import NonPositiveEnergyError, Seconds, fastcopy, suppress_and_warn
 
 _DEFAULT_LHOTSE_AUDIO_DURATION_MISMATCH_TOLERANCE: Seconds = 0.025
 _LHOTSE_AUDIO_DURATION_MISMATCH_TOLERANCE: Seconds = (
@@ -32,10 +32,6 @@ class VideoInfo:
     width: int
     """Width in pixels."""
 
-    def set_resolution(self, width: int, height: int) -> None:
-        self.width = width
-        self.height = height
-
     @property
     def duration(self) -> Seconds:
         return self.num_frames / self.fps
@@ -43,6 +39,9 @@ class VideoInfo:
     @property
     def frame_length(self) -> Seconds:
         return 1.0 / self.fps
+
+    def copy_with(self, **kwargs) -> "VideoInfo":
+        return fastcopy(self, **kwargs)
 
 
 def get_audio_duration_mismatch_tolerance() -> Seconds:
