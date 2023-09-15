@@ -1132,7 +1132,6 @@ class MixedCut(Cut):
     ) -> Optional[Tuple[torch.Tensor, Optional[torch.Tensor]]]:
         if not self.has_video:
             return None
-        video, audio = self._first_non_padding_cut.load_video(with_audio=False)
 
         mixer = VideoMixer(
             self.tracks[0].cut.load_video(with_audio=False)[0],

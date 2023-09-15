@@ -193,11 +193,17 @@ class Recording:
             force_opus_sampling_rate=force_opus_sampling_rate,
             force_read_audio=force_read_audio,
         )
+        if audio_info.video is not None:
+            duration = audio_info.video.duration
+            num_samples = compute_num_samples(duration, audio_info.samplerate)
+        else:
+            duration = audio_info.duration
+            num_samples = audio_info.frames
         return Recording(
             id=recording_id,
             sampling_rate=audio_info.samplerate,
-            num_samples=audio_info.frames,
-            duration=audio_info.duration,
+            num_samples=num_samples,
+            duration=duration,
             sources=[
                 AudioSource(
                     type="file",
@@ -414,11 +420,24 @@ class Recording:
         for tfn in transforms:
             audio = tfn(audio, self.sampling_rate)
 
-        # Transformation chains can introduce small mismatches in the number of samples:
-        # we'll fix them here, or raise an error if they exceeded a tolerance threshold.
-        audio = assert_and_maybe_fix_num_samples(
-            audio, offset=offset, duration=orig_duration, recording=self
-        )
+        if self.has_video:
+            # It's possible the audio and video durations are quite mismatched.
+            # We'll pad audio with zeroes or truncate audio to accomodate the video,
+            # when it's available
+            audio = assert_and_maybe_fix_num_samples(
+                audio,
+                offset=offset,
+                duration=orig_duration,
+                recording=self,
+                tolerance=1e6,
+                pad_mode="constant",
+            )
+        else:
+            # Transformation chains can introduce small mismatches in the number of samples:
+            # we'll fix them here, or raise an error if they exceeded a tolerance threshold.
+            audio = assert_and_maybe_fix_num_samples(
+                audio, offset=offset, duration=orig_duration, recording=self
+            )
 
         return audio
 

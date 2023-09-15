@@ -23,9 +23,8 @@ def test_audio_recording_has_no_video(audio_path):
 
 
 def test_video_recording_from_video_file(video_path):
-    # Note: unfortunately audio and video *can* have a different duration.
     video_recording = Recording.from_file(video_path)
-    assert video_recording.duration == 5.312
+    assert video_recording.duration == 5.28
     assert video_recording.has_video
     assert video_recording.video.duration == 5.28
     assert video_recording.video.fps == FPS
@@ -70,11 +69,11 @@ def test_video_recording_move_to_memory(video_recording):
 
 
 def test_video_recording_load_video_consistent_audio_duration(video_recording):
-    assert video_recording.num_samples == 254976
+    assert video_recording.num_samples == 253440
 
-    # audio has full duration when loaded through load_audio
+    # audio would have 254976 in reality, but we truncated it to match the video duration
     audio_full = video_recording.load_audio()
-    assert audio_full.shape[1] == 254976
+    assert audio_full.shape[1] == 253440
 
     video, audio = video_recording.load_video()
     # we truncated the audio when loading through load_video
