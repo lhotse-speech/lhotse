@@ -574,6 +574,12 @@ class Recording:
 
         return video, torch.from_numpy(audio)
 
+    def play_video(self):
+        if self.has_video:
+            from IPython.display import Video
+
+            return Video(filename=self._video_source.source)
+
     def _stack_audio_channels(self, samples_per_source: List[np.ndarray]) -> np.ndarray:
         # There may be a mismatch in the number of samples between different channels. We
         # check if the mismatch is within a reasonable tolerance and if so, we pad

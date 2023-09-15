@@ -90,6 +90,10 @@ def set_audio_duration_mismatch_tolerance(delta: Seconds) -> None:
     _LHOTSE_AUDIO_DURATION_MISMATCH_TOLERANCE = delta
 
 
+class VideoLoadingError(Exception):
+    pass
+
+
 class AudioLoadingError(Exception):
     pass
 
@@ -105,6 +109,22 @@ def suppress_audio_loading_errors(enabled: bool = True):
     Emits warning to the console.
     """
     with suppress_and_warn(
+        AudioLoadingError,
+        DurationMismatchError,
+        NonPositiveEnergyError,
+        enabled=enabled,
+    ):
+        yield
+
+
+@contextmanager
+def suppress_video_loading_errors(enabled: bool = True):
+    """
+    Context manager that suppresses errors related to audio loading.
+    Emits warning to the console.
+    """
+    with suppress_and_warn(
+        VideoLoadingError,
         AudioLoadingError,
         DurationMismatchError,
         NonPositiveEnergyError,

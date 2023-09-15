@@ -12,6 +12,7 @@ from lhotse.audio.backend import read_audio
 from lhotse.audio.utils import (
     DurationMismatchError,
     VideoInfo,
+    VideoLoadingError,
     get_audio_duration_mismatch_tolerance,
 )
 from lhotse.caching import AudioCache
@@ -113,105 +114,115 @@ class AudioSource:
     ) -> Tuple[torch.Tensor, Optional[torch.Tensor]]:
         import torchaudio
 
-        # Open the video file for reading.
-        stream = torchaudio.io.StreamReader(self.source)
+        try:
 
-        # Collect the information about available video and audio streams.
-        num_streams = stream.num_src_streams
-        audio_streams = {}
-        video_streams = {}
-        for stream_idx in range(num_streams):
-            info = stream.get_src_stream_info(stream_idx)
-            if info.media_type == "video":
-                video_streams[stream_idx] = info
-            elif info.media_type == "audio":
-                audio_streams[stream_idx] = info
-            else:
-                raise RuntimeError(f"Unexpected media_type: {info}")
-        assert (
-            len(video_streams) != 0
-        ), "The file does not seem to have any video streams."
-        assert (
-            len(video_streams) < 2
-        ), f"Lhotse currently does not support more than one video stream in a file (found {len(video_streams)})."
-        assert len(audio_streams) < 2, (
-            f"Lhotse currently does not support more than one audio stream in a file (found {len(video_streams)})."
-            f" Note: it's different than multi-channel which is generally supported."
-        )
+            # Open the video file for reading.
+            stream = torchaudio.io.StreamReader(self.source)
 
-        # Add an ffmpeg output video stream to perform reading in chunks.
-        ((video_stream_idx, video_stream),) = list(video_streams.items())
-        frames_per_chunk = round(video_stream.frame_rate)
-        video_chunk_duration = frames_per_chunk * self.video.frame_length
-        stream.add_basic_video_stream(
-            frames_per_chunk,
-            stream_index=video_stream_idx,
-            height=self.video.height,  # re-scale if requested via overriding self.video.height
-            width=self.video.width,  # re-scale if requested via overriding self.video.width
-        )
-
-        if with_audio and len(audio_streams) > 0:
-            ((audio_stream_idx, audio_stream),) = list(audio_streams.items())
-            samples_per_chunk = round(audio_stream.sample_rate * video_chunk_duration)
-            stream.add_basic_audio_stream(
-                samples_per_chunk,
-                stream_index=audio_stream_idx,
+            # Collect the information about available video and audio streams.
+            num_streams = stream.num_src_streams
+            audio_streams = {}
+            video_streams = {}
+            for stream_idx in range(num_streams):
+                info = stream.get_src_stream_info(stream_idx)
+                if info.media_type == "video":
+                    video_streams[stream_idx] = info
+                elif info.media_type == "audio":
+                    audio_streams[stream_idx] = info
+                else:
+                    raise RuntimeError(f"Unexpected media_type: {info}")
+            assert (
+                len(video_streams) != 0
+            ), "The file does not seem to have any video streams."
+            assert (
+                len(video_streams) < 2
+            ), f"Lhotse currently does not support more than one video stream in a file (found {len(video_streams)})."
+            assert len(audio_streams) < 2, (
+                f"Lhotse currently does not support more than one audio stream in a file (found {len(video_streams)})."
+                f" Note: it's different than multi-channel which is generally supported."
             )
 
-        stream.seek(offset)
-        video_chunks = []
-        audio_chunks = []
-        decoded_duration = 0.0
-        for chunk in stream.stream():
+            # Add an ffmpeg output video stream to perform reading in chunks.
+            ((video_stream_idx, video_stream),) = list(video_streams.items())
+            frames_per_chunk = round(video_stream.frame_rate)
+            video_chunk_duration = frames_per_chunk * self.video.frame_length
+            stream.add_basic_video_stream(
+                frames_per_chunk,
+                stream_index=video_stream_idx,
+                height=self.video.height,  # re-scale if requested via overriding self.video.height
+                width=self.video.width,  # re-scale if requested via overriding self.video.width
+            )
 
-            if duration is not None and decoded_duration >= duration:
-                break
-
-            video_chunk = chunk[0]
-            chunk_size = video_chunk.size(0)
-            current_chunk_duration = chunk_size / video_stream.frame_rate
-
-            if (
-                duration is not None
-                and decoded_duration + current_chunk_duration > duration
-            ):
-                keep_frames = compute_num_samples(
-                    video_chunk_duration - current_chunk_duration,
-                    video_stream.frame_rate,
+            if with_audio and len(audio_streams) > 0:
+                ((audio_stream_idx, audio_stream),) = list(audio_streams.items())
+                samples_per_chunk = round(
+                    audio_stream.sample_rate * video_chunk_duration
                 )
-                video_chunk = video_chunk[:keep_frames]
+                stream.add_basic_audio_stream(
+                    samples_per_chunk,
+                    stream_index=audio_stream_idx,
+                )
 
-            video_chunks.append(video_chunk)
+            stream.seek(offset)
+            video_chunks = []
+            audio_chunks = []
+            decoded_duration = 0.0
+            for chunk in stream.stream():
 
-            if with_audio:
-                audio_chunk = chunk[1]
+                if duration is not None and decoded_duration >= duration:
+                    break
+
+                video_chunk = chunk[0]
+                chunk_size = video_chunk.size(0)
+                current_chunk_duration = chunk_size / video_stream.frame_rate
+
                 if (
                     duration is not None
                     and decoded_duration + current_chunk_duration > duration
                 ):
-                    keep_samples = compute_num_samples(
+                    keep_frames = compute_num_samples(
                         video_chunk_duration - current_chunk_duration,
-                        audio_stream.sample_rate,
+                        video_stream.frame_rate,
                     )
-                    audio_chunk = audio_chunk[:keep_samples]
-                audio_chunks.append(audio_chunk.T)
+                    video_chunk = video_chunk[:keep_frames]
 
-            decoded_duration += current_chunk_duration
+                video_chunks.append(video_chunk)
 
-        if not video_chunks:
-            return (
-                torch.zeros(
-                    0, 3, video_stream.height, video_stream.width, dtype=torch.uint8
-                ),
-                None,
+                if with_audio:
+                    audio_chunk = chunk[1]
+                    if (
+                        duration is not None
+                        and decoded_duration + current_chunk_duration > duration
+                    ):
+                        keep_samples = compute_num_samples(
+                            video_chunk_duration - current_chunk_duration,
+                            audio_stream.sample_rate,
+                        )
+                        audio_chunk = audio_chunk[:keep_samples]
+                    audio_chunks.append(audio_chunk.T)
+
+                decoded_duration += current_chunk_duration
+
+            if not video_chunks:
+                return (
+                    torch.zeros(
+                        0, 3, video_stream.height, video_stream.width, dtype=torch.uint8
+                    ),
+                    None,
+                )
+
+            output_video = torch.cat(video_chunks, dim=0)  # T x C x H x W
+            output_audio = None
+            if with_audio:
+                output_audio = torch.cat(audio_chunks, dim=1)  # C x T
+
+            return output_video, output_audio
+
+        except Exception as e:
+            raise VideoLoadingError(
+                f"Reading video from '{self.source if not isinstance(self.source, bytes) else 'memory'}' failed. "
+                f"Details: {type(e)}: {str(e)}"
             )
-
-        output_video = torch.cat(video_chunks, dim=0)  # T x C x H x W
-        output_audio = None
-        if with_audio:
-            output_audio = torch.cat(audio_chunks, dim=1)  # C x T
-
-        return output_video, output_audio
 
     def with_video_resolution(self, width: int, height: int) -> "AudioSource":
         return fastcopy(self, video=self.video.copy_with(width=width, height=height))

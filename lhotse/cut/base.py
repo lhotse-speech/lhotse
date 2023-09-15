@@ -748,6 +748,17 @@ class Cut:
 
         if not hop:
             hop = duration
+
+        if self.has_video:
+            assert (duration * self.video.fps).is_integer(), (
+                f"[cut.id={self.id}] Window duration must be defined to result in an integer number of video frames "
+                f"(duration={duration} * fps={self.video.fps} = {duration * self.video.fps})."
+            )
+            assert (hop * self.video.fps).is_integer(), (
+                "[cut.id={self.id}] Window hop must be defined to result in an integer number of video frames "
+                f"(hop={hop} * fps={self.video.fps} = {hop* self.video.fps})."
+            )
+
         new_cuts = []
         n_windows = compute_num_windows(self.duration, duration, hop)
         for i in range(n_windows):
