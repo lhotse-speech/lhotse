@@ -12,7 +12,7 @@ from intervaltree import IntervalTree
 
 from lhotse.audio import Recording, VideoInfo, get_audio_duration_mismatch_tolerance
 from lhotse.audio.backend import torchaudio_save_flac_safe
-from lhotse.audio.mixer import AudioMixer, audio_energy
+from lhotse.audio.mixer import AudioMixer, VideoMixer, audio_energy
 from lhotse.augmentation import (
     AudioTransform,
     AugmentFn,
@@ -1130,16 +1130,28 @@ class MixedCut(Cut):
         mixed: bool = True,
         mono_downmix: bool = False,
     ) -> Optional[Tuple[torch.Tensor, Optional[torch.Tensor]]]:
-        raise NotImplementedError()  # TODO: this would require a basic VideoMixer that supports pad and append only
-        # if not self.has_video:
-        #     return None
-        # video, audio = self._first_non_padding_cut.load_video(with_audio=False)
-        # if with_audio:
-        #     # TODO: For now load audio separately to re-use the complex logic of load_audio
-        #     #       This means the same video file is potentially opened twice, but given the
-        #     #       cost of video decoding, the extra file open cost could be negligible.
-        #     audio = self.load_audio(mixed=mixed, mono_downmix=mono_downmix)
-        # return video, audio
+        if not self.has_video:
+            return None
+        video, audio = self._first_non_padding_cut.load_video(with_audio=False)
+
+        mixer = VideoMixer(
+            self.tracks[0].cut.load_video(with_audio=False)[0],
+            fps=self.video.fps,
+            base_offset=self.tracks[0].offset,
+        )
+        for pos, track in enumerate(self.tracks[1:], start=1):
+            mixer.add_to_mix(
+                video=track.cut.load_video(with_audio=False)[0],
+                offset=track.offset,
+            )
+        video = mixer.mixed_video
+
+        if with_audio:
+            # For now load audio separately to re-use the complex logic of load_audio
+            # This means the same video file is potentially opened twice, but given the
+            # cost of video decoding, the extra file open cost could be negligible.
+            audio = self.load_audio(mixed=mixed, mono_downmix=mono_downmix)
+        return video, torch.from_numpy(audio)
 
     def plot_tracks_features(self):
         """
