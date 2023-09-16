@@ -750,15 +750,8 @@ class Cut:
 
         # Operation without an Interval Tree is O(nm), where `n` is the number
         # of resulting windows, and `m` is the number of supervisions in the cut.
-        # With an Interval Tree, we can do it in O(nlog(m) + m), but we have to pay
-        # the overhead of creating an IntervalTree.
-        #
-        # We will use an IntervalTree only if there are more than 10 supervisions and n > 5.
-        # (need to check via benchmarks)
-        if len(self.supervisions) > 10 and n_windows > 5:
-            supervisions_index = self.index_supervisions(index_mixed_tracks=True)
-        else:
-            supervisions_index = None
+        # With an Interval Tree, we can do it in O(nlog(m) + m)
+        supervisions_index = self.index_supervisions(index_mixed_tracks=True)
 
         for i in range(n_windows):
             new_cuts.append(
