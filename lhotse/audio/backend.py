@@ -559,11 +559,21 @@ def torchaudio_ffmpeg_streamer_info(
 
     if video_streams:
         ((video_stream_idx, video_stream),) = list(video_streams.items())
+        tot_frames = video_stream.num_frames
+
+        if tot_frames == 0:  # num frames not available in header/metadata
+            stream.add_basic_video_stream(
+                round(video_stream.frame_rate), stream_index=video_stream_idx
+            )
+            for (chunk,) in stream.stream():
+                tot_frames += chunk.shape[0]
+            stream.remove_stream(0)
+
         meta["video"] = VideoInfo(
             fps=video_stream.frame_rate,
             height=video_stream.height,
             width=video_stream.width,
-            num_frames=video_stream.num_frames,
+            num_frames=tot_frames,
         )
 
     if audio_streams:
