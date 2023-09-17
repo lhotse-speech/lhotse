@@ -50,8 +50,8 @@ def get_duration(
     :param path: Path to an audio file or a Kaldi-style pipe.
     :return: float duration of the recording, in seconds or `None` in case of read error.
     """
-    path = str(path)
-    if path.strip().endswith("|"):
+    path = Path(path)
+    if str(path).strip().endswith("|"):
         if not is_module_available("kaldi_native_io"):
             raise ValueError(
                 "To read Kaldi's data dir where wav.scp has 'pipe' inputs, "
@@ -60,7 +60,7 @@ def get_duration(
         import kaldi_native_io
 
         try:
-            wave = kaldi_native_io.read_wave(path)
+            wave = kaldi_native_io.read_wave(str(path))
             assert (
                 wave.data.shape[0] == 1
             ), f"Expect 1 channel. Given {wave.data.shape[0]}"
