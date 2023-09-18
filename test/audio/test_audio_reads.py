@@ -1,4 +1,7 @@
-from tempfile import NamedTemporaryFile
+import shutil
+from io import BytesIO
+from pathlib import Path
+from tempfile import NamedTemporaryFile, TemporaryDirectory
 
 import numpy as np
 import pytest
@@ -7,7 +10,12 @@ import torchaudio
 
 import lhotse
 from lhotse import AudioSource, Recording
-from lhotse.audio.backend import read_opus_ffmpeg, read_opus_torchaudio, torchaudio_load
+from lhotse.audio.backend import (
+    info,
+    read_opus_ffmpeg,
+    read_opus_torchaudio,
+    torchaudio_load,
+)
 
 
 @pytest.mark.parametrize(
@@ -76,6 +84,14 @@ def test_resample_opus():
     r.load_audio()
     r1 = r.resample(24000)
     r1.load_audio()
+
+
+def test_opus_name_with_whitespaces():
+    with TemporaryDirectory() as d:
+        path_with_ws = Path(d) / "white space.opus"
+        shutil.copy("test/fixtures/mono_c0.opus", path_with_ws)
+        r = Recording.from_file(path_with_ws)
+        r.load_audio()  # does not raise
 
 
 @pytest.mark.parametrize(
@@ -223,3 +239,17 @@ def test_audio_loading_optimization_returns_expected_num_samples():
     cut.duration = reduced_num_samples / cut.sampling_rate
     audio = cut.load_audio()
     assert audio.shape[1] == reduced_num_samples
+
+
+def test_audio_info_from_bytes_io():
+    audio_filelike = BytesIO(open("test/fixtures/mono_c0.wav", "rb").read())
+
+    meta = info(audio_filelike)
+    assert meta.duration == 0.5
+    assert meta.frames == 4000
+    assert meta.samplerate == 8000
+    assert meta.channels == 1
+
+    with pytest.raises(AssertionError):
+        # force_read_audio won't work with a filelike object
+        assert info(audio_filelike, force_read_audio=True)
