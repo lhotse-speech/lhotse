@@ -747,12 +747,19 @@ class Cut:
             hop = duration
         new_cuts = []
         n_windows = compute_num_windows(self.duration, duration, hop)
+
+        # Operation without an Interval Tree is O(nm), where `n` is the number
+        # of resulting windows, and `m` is the number of supervisions in the cut.
+        # With an Interval Tree, we can do it in O(nlog(m) + m)
+        supervisions_index = self.index_supervisions(index_mixed_tracks=True)
+
         for i in range(n_windows):
             new_cuts.append(
                 self.truncate(
                     offset=hop * i,
                     duration=duration,
                     keep_excessive_supervisions=keep_excessive_supervisions,
+                    _supervisions_index=supervisions_index,
                 ).with_id(f"{self.id}-{i}")
             )
         return CutSet.from_cuts(new_cuts)
@@ -850,7 +857,13 @@ class Cut:
                 )
             ],
         )
-        return fastcopy(self, recording=recording)
+        return fastcopy(
+            recording.to_cut(),
+            id=self.id,
+            supervisions=self.supervisions,
+            custom=self.custom if hasattr(self, "custom") else None,
+            features=self.features if self.has_features else None,
+        )
 
     def speakers_feature_mask(
         self,

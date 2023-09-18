@@ -10,9 +10,12 @@ Barcelona, Spain, 2020
 import json
 import logging
 import subprocess
+import zipfile
 from collections import defaultdict
 from pathlib import Path
 from typing import Dict, Union
+
+from tqdm import tqdm
 
 from lhotse import (
     CutSet,
@@ -120,7 +123,9 @@ def download_libricss(target_dir: Pathlike, force_download: bool = False) -> Pat
     # Extract the zipped file
     if not corpus_dir.exists() or force_download:
         logging.info(f"Extracting {corpus_zip} to {target_dir}")
-        corpus_zip.unzip(target_dir)
+        with zipfile.ZipFile(corpus_zip, "r") as corpus_zip:
+            for member in tqdm(corpus_zip.infolist(), desc="Extracting"):
+                corpus_zip.extract(member, target_dir)
 
     return target_dir
 
