@@ -984,7 +984,10 @@ class CutSet(Serializable, AlgorithmMixin):
         print(tabulate(speaker_stats, headers="firstrow", tablefmt="fancy_grid"))
 
     def split(
-        self, num_splits: int, shuffle: bool = False, drop_last: bool = False
+        self,
+        num_splits: int,
+        shuffle: bool = False,
+        drop_last: bool = False,
     ) -> List["CutSet"]:
         """
         Split the :class:`~lhotse.CutSet` into ``num_splits`` pieces of equal size.
@@ -1000,7 +1003,10 @@ class CutSet(Serializable, AlgorithmMixin):
         return [
             CutSet.from_cuts(subset)
             for subset in split_sequence(
-                self, num_splits=num_splits, shuffle=shuffle, drop_last=drop_last
+                self,
+                num_splits=num_splits,
+                shuffle=shuffle,
+                drop_last=drop_last,
             )
         ]
 
@@ -1010,6 +1016,7 @@ class CutSet(Serializable, AlgorithmMixin):
         chunk_size: int,
         prefix: str = "",
         num_digits: int = 8,
+        start_idx: int = 0,
     ) -> List["CutSet"]:
         """
         Splits a manifest (either lazily or eagerly opened) into chunks, each
@@ -1027,6 +1034,7 @@ class CutSet(Serializable, AlgorithmMixin):
         :param chunk_size: the number of items in each chunk.
         :param prefix: the prefix of each manifest.
         :param num_digits: the width of ``split_idx``, which will be left padded with zeros to achieve it.
+        :param start_idx: The split index to start counting from (default is ``0``).
         :return: a list of lazily opened chunk manifests.
         """
         return split_manifest_lazy(
@@ -1035,6 +1043,7 @@ class CutSet(Serializable, AlgorithmMixin):
             chunk_size=chunk_size,
             prefix=prefix,
             num_digits=num_digits,
+            start_idx=start_idx,
         )
 
     def subset(

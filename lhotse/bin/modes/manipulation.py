@@ -142,10 +142,22 @@ def copy_feats_worker(
 @click.option(
     "--pad/--no-pad",
     default=True,
-    help="Whether to pad the split output idx with zeros (e.g. 01, 02, .., 10).",
+    help="Whether to pad the split output idx with zeros (e.g. 00, 01, 02, .., 10).",
+)
+@click.option(
+    "-i",
+    "--start-idx",
+    type=int,
+    default=0,
+    help="Count splits starting from this index.",
 )
 def split(
-    num_splits: int, manifest: Pathlike, output_dir: Pathlike, shuffle: bool, pad: bool
+    num_splits: int,
+    manifest: Pathlike,
+    output_dir: Pathlike,
+    shuffle: bool,
+    pad: bool,
+    start_idx: int,
 ):
     """
     Load MANIFEST, split it into NUM_SPLITS equal parts and save as separate manifests in OUTPUT_DIR.
@@ -161,8 +173,8 @@ def split(
     parts = any_set.split(num_splits=num_splits, shuffle=shuffle)
     output_dir.mkdir(parents=True, exist_ok=True)
     num_digits = len(str(num_splits))
-    for idx, part in enumerate(parts):
-        idx = f"{idx + 1}".zfill(num_digits) if pad else str(idx + 1)
+    for idx, part in enumerate(parts, start=start_idx):
+        idx = f"{idx}".zfill(num_digits) if pad else str(idx)
         part.to_file((output_dir / manifest.stem).with_suffix(f".{idx}{suffix}"))
 
 
@@ -172,7 +184,16 @@ def split(
 )
 @click.argument("output_dir", type=click.Path(allow_dash=True))
 @click.argument("chunk_size", type=int)
-def split_lazy(manifest: Pathlike, output_dir: Pathlike, chunk_size: int):
+@click.option(
+    "-i",
+    "--start-idx",
+    type=int,
+    default=0,
+    help="Count splits starting from this index.",
+)
+def split_lazy(
+    manifest: Pathlike, output_dir: Pathlike, chunk_size: int, start_idx: int
+):
     """
     Load MANIFEST (lazily if in JSONL format) and split it into parts,
     each with CHUNK_SIZE items.
@@ -187,7 +208,10 @@ def split_lazy(manifest: Pathlike, output_dir: Pathlike, chunk_size: int):
     manifest = Path(manifest)
     any_set = load_manifest_lazy_or_eager(manifest)
     any_set.split_lazy(
-        output_dir=output_dir, chunk_size=chunk_size, prefix=manifest.stem
+        output_dir=output_dir,
+        chunk_size=chunk_size,
+        prefix=manifest.stem,
+        start_idx=start_idx,
     )
 
 
