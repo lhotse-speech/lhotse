@@ -1028,25 +1028,28 @@ def read_audio(
 
 
 def info(
-    path: Pathlike,
+    path: Union[Pathlike, BytesIO],
     force_opus_sampling_rate: Optional[int] = None,
     force_read_audio: bool = False,
 ) -> LibsndfileCompatibleAudioInfo:
+
+    is_path = isinstance(path, (Path, str))
+
     if force_read_audio:
         # This is a reliable fallback for situations when the user knows that audio files do not
         # have duration metadata in their headers.
         # We will use "audioread" backend that spawns an ffmpeg process, reads the audio,
         # and computes the duration.
-        assert isinstance(
-            path, Pathlike
+        assert (
+            is_path
         ), f"info(obj, force_read_audio=True) is not supported for object of type: {type(path)}"
         return audioread_info(str(path))
 
-    if isinstance(path, Pathlike) and Path(path).suffix.lower() == ".opus":
+    if is_path and Path(path).suffix.lower() == ".opus":
         # We handle OPUS as a special case because we might need to force a certain sampling rate.
         return opus_info(path, force_opus_sampling_rate=force_opus_sampling_rate)
 
-    if isinstance(path, Pathlike) and Path(path).suffix.lower() == ".sph":
+    if is_path and Path(path).suffix.lower() == ".sph":
         # We handle SPHERE as another special case because some old codecs (i.e. "shorten" codec)
         # can't be handled by neither pysoundfile nor pyaudioread.
         return sph_info(path)
