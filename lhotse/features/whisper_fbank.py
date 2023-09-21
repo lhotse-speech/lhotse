@@ -35,9 +35,6 @@ def log_mel_spectrogram(
     n_mels: int
         The number of Mel-frequency filters, only 80 is supported
 
-    padding: int
-        Number of zero samples to pad to the right
-
     device: Optional[Union[str, torch.device]]
         If given, the audio tensor is moved to this device before STFT
 
@@ -87,10 +84,6 @@ def log_mel_spectrogram(
 
 @dataclass
 class WhisperFbankConfig:
-    sampling_rate: int = 16000
-    num_filters: int = 80
-    hop_length: int = 160
-    n_fft: int = 400
     device: str = "cpu"
 
     def to_dict(self) -> Dict[str, Any]:
@@ -108,8 +101,9 @@ class WhisperFbank(FeatureExtractor):
 
     def __init__(self, config: Optional[WhisperFbankConfig] = None):
         super().__init__(config=config)
-        config_dict = self.config.to_dict()
-        config_dict.pop("device")
+        self.sampling_rate = 16000
+        self.num_filters = 80
+        self.hop_length = 160
 
     @property
     def device(self) -> Union[str, torch.device]:
@@ -117,20 +111,20 @@ class WhisperFbank(FeatureExtractor):
 
     @property
     def frame_shift(self) -> Seconds:
-        return self.config.hop_length / self.config.sampling_rate
+        return self.hop_length / self.sampling_rate
 
     def to(self, device: str):
         self.config.device = device
 
     def feature_dim(self, sampling_rate: int) -> int:
-        return self.config.num_filters
+        return self.num_filters
 
     def extract(
         self, samples: Union[np.ndarray, torch.Tensor], sampling_rate: int
     ) -> Union[np.ndarray, torch.Tensor]:
-        assert sampling_rate == self.config.sampling_rate, (
+        assert sampling_rate == self.sampling_rate, (
             f"Fbank was instantiated for sampling_rate "
-            f"{self.config.sampling_rate}, but "
+            f"{self.sampling_rate}, but "
             f"sampling_rate={sampling_rate} was passed to extract(). "
             "Note you can use CutSet/RecordingSet.resample() to change the audio sampling rate."
         )
@@ -142,10 +136,6 @@ class WhisperFbank(FeatureExtractor):
 
         feats = log_mel_spectrogram(
             samples,
-            n_mels=self.config.num_filters,
-            n_fft=self.config.n_fft,
-            hop_length=self.config.hop_length,
-            sampling_rate=self.config.sampling_rate,
             device=self.device,
         )
 
