@@ -13,6 +13,7 @@ from .source import AudioSource
 from .utils import (
     AudioLoadingError,
     DurationMismatchError,
+    VideoInfo,
     get_audio_duration_mismatch_tolerance,
     null_result_on_audio_loading_error,
     set_audio_duration_mismatch_tolerance,
