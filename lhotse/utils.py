@@ -280,6 +280,7 @@ def split_manifest_lazy(
     chunk_size: int,
     prefix: str = "",
     num_digits: int = 8,
+    start_idx: int = 0,
 ) -> List:
     """
     Splits a manifest (either lazily or eagerly opened) into chunks, each
@@ -297,6 +298,7 @@ def split_manifest_lazy(
     :param chunk_size: the number of items in each chunk.
     :param prefix: the prefix of each manifest.
     :param num_digits: the width of ``split_idx``, which will be left padded with zeros to achieve it.
+    :param start_idx: The split index to start counting from (default is ``0``).
     :return: a list of lazily opened chunk manifests.
     """
     from lhotse.serialization import SequentialJsonlWriter
@@ -308,7 +310,7 @@ def split_manifest_lazy(
         prefix = "split"
 
     items = iter(it)
-    split_idx = 0
+    split_idx = start_idx
     splits = []
     while True:
         try:
