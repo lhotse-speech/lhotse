@@ -654,9 +654,9 @@ def torchaudio_2_ffmpeg_load(
     if offset > 0 or duration is not None:
         audio_info = torchaudio.info(path_or_fd, backend="ffmpeg")
         if offset > 0:
-            frame_offset = compute_num_samples(offset, audio_info.samplerate)
+            frame_offset = compute_num_samples(offset, audio_info.sample_rate)
         if duration is not None:
-            num_frames = compute_num_samples(duration, audio_info.samplerate)
+            num_frames = compute_num_samples(duration, audio_info.sample_rate)
     if isinstance(path_or_fd, IOBase):
         # Set seek pointer to the beginning of the file as torchaudio.info
         # might have left it at the end of the header
