@@ -33,6 +33,7 @@ from .gale_arabic import prepare_gale_arabic
 from .gale_mandarin import prepare_gale_mandarin
 from .gigaspeech import prepare_gigaspeech
 from .gigast import download_gigast, prepare_gigast
+from .grid import download_grid, prepare_grid
 from .heroico import download_heroico, prepare_heroico
 from .hifitts import download_hifitts, prepare_hifitts
 from .himia import download_himia, prepare_himia

@@ -2,6 +2,7 @@ from math import sqrt
 from typing import List, Optional
 
 import numpy as np
+import torch
 
 from lhotse.utils import Decibels, Seconds, compute_num_samples
 
@@ -173,3 +174,104 @@ class AudioMixer:
 
 def audio_energy(audio: np.ndarray) -> float:
     return float(np.average(audio**2))
+
+
+class VideoMixer:
+    """
+    Simple video "mixing" class that actually does not mix anything but supports concatenation.
+    """
+
+    def __init__(
+        self,
+        base_video: torch.Tensor,
+        fps: float,
+        base_offset: Seconds = 0.0,
+    ):
+        from intervaltree import IntervalTree
+
+        self.tracks = [base_video]
+        self.offsets = [compute_num_samples(base_offset, fps)]
+        self.fps = fps
+        self.dtype = self.tracks[0].dtype
+        self.tree = IntervalTree()
+        self.tree.addi(self.offsets[0], self.offsets[0] + base_video.shape[0])
+
+    def _pad_track(
+        self, video: torch.Tensor, offset: int, total: Optional[int] = None
+    ) -> torch.Tensor:
+        if total is None:
+            total = video.shape[0] + offset
+        assert (
+            video.shape[0] + offset <= total
+        ), f"{video.shape[0]} + {offset} <= {total}"
+        return torch.nn.functional.pad(
+            video,
+            (0, 0, 0, 0, 0, 0, offset, total - video.shape[0] - offset),
+            mode="constant",
+            value=0,
+        )
+        # return torch.from_numpy(
+        #     np.pad(
+        #         video.numpy(),
+        #         pad_width=(
+        #             (offset, total - video.shape[0] - offset),
+        #             (0, 0),
+        #             (0, 0),
+        #             (0, 0),
+        #         ),
+        #     )
+        # )
+
+    @property
+    def num_frames_total(self) -> int:
+        longest = 0
+        for offset, video in zip(self.offsets, self.tracks):
+            longest = max(longest, offset + video.shape[0])
+        return longest
+
+    @property
+    def unmixed_video(self) -> List[torch.Tensor]:
+        """
+        Return a list of numpy arrays with the shape (C, num_samples), where each track is
+        zero padded and scaled adequately to the offsets and SNR used in ``add_to_mix`` call.
+        """
+        total = self.num_frames_total
+        return [
+            self._pad_track(track, offset=offset, total=total)
+            for offset, track in zip(self.offsets, self.tracks)
+        ]
+
+    @property
+    def mixed_video(self) -> torch.Tensor:
+        """
+        Return a numpy ndarray with the shape (num_channels, num_samples) - a mix of the tracks
+        supplied with ``add_to_mix`` calls.
+        """
+        total = self.num_frames_total
+        mixed = self.tracks[0].new_zeros((total,) + self.tracks[0].shape[1:])
+        for offset, track in zip(self.offsets, self.tracks):
+            mixed[offset : offset + track.shape[0]] = track
+        return mixed
+
+    def add_to_mix(
+        self,
+        video: torch.Tensor,
+        offset: Seconds = 0.0,
+    ):
+        if video.size == 0:
+            return  # do nothing for empty arrays
+
+        assert offset >= 0.0, "Negative offset in mixing is not supported."
+        frame_offset = compute_num_samples(offset, self.fps)
+
+        from intervaltree import Interval
+
+        interval = Interval(frame_offset, frame_offset + video.shape[0])
+        assert not self.tree.overlaps(interval), (
+            f"Cannot add an overlapping video. Got {interval} while we "
+            f"have the following intervals: {self.tree.all_intervals()}"
+        )
+
+        self.tracks.append(video)
+        self.offsets.append(frame_offset)
+        self.tree.add(interval)

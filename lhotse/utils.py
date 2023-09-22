@@ -623,7 +623,7 @@ def perturb_num_samples(num_samples: int, factor: float) -> int:
 
 
 def compute_num_samples(
-    duration: Seconds, sampling_rate: int, rounding=ROUND_HALF_UP
+    duration: Seconds, sampling_rate: Union[int, float], rounding=ROUND_HALF_UP
 ) -> int:
     """
     Convert a time quantity to the number of samples given a specific sampling rate.
