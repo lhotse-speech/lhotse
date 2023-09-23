@@ -416,3 +416,53 @@ def simulate_meetings(
 
     print("Saving the simulated meetings...")
     mixed_cuts.to_file(out_cuts)
+
+
+@workflows.command()
+@click.option(
+    "-r",
+    "--recordings-manifest",
+    type=click.Path(exists=True, dir_okay=False, allow_dash=True),
+    help="Path to an existing recording manifest.",
+)
+@click.option(
+    "-s",
+    "--supervisions-manifest",
+    type=click.Path(exists=True, dir_okay=False, allow_dash=True),
+    help="Path to an existing supervision manifest.",
+)
+@click.option(
+    "-m",
+    "--model-name",
+    default="silero-vad",
+    help="One of activity detector (silero-vad, etc.)",
+)
+@click.option(
+    "-d",
+    "--device",
+    default="cpu",
+    help="Device on which to run the inference.",
+)
+@click.option(
+    "-j",
+    "--jobs",
+    default=1,
+    help="Number of jobs for audio scanning.",
+)
+def activity_distillation(
+    recordings_manifest: Optional[str],
+    supervisions_manifest: Optional[str],
+    model_name: str,
+    device: str,
+    jobs: int,
+):
+    """
+    Use an activity detection method (e.g. Silero VAD) to detect specific activities in the audio data.
+    It selectively retains segments that align with the detection criteria,
+    discarding those that do not meet the filter conditions,
+    all while preserving speaker labels and supplementary attributes.
+
+    The outcome is a transformed dataset where all audio tracks are harmonized into a uniform format.
+    Segments that fail to satisfy the filter criteria are omitted from the dataset.
+    """
+    pass
