@@ -55,10 +55,12 @@ The Activity Detection module provides tools for detecting activity in audio rec
 
 ## Example usage in python code
 
+### Silero VAD for single Recording
+
 
 ```python
-from lhotse.workflows.activity_detection.silero_vad import SileroVAD16k
 from lhotse.audio import RecordingSet
+from lhotse.workflows.activity_detection import SileroVAD16k
 
 vad = SileroVAD16k(device="cpu") # or device="cuda"
 
@@ -78,3 +80,77 @@ Output (a list of SupervisionSegment objects indicating detected activities in t
  SupervisionSegment(id='6272-70171-0025-SileroVAD_16kHz-0-00004', recording_id='6272-70171-0025', start=9.122, duration=4.316, channel=0, text=None, language=None, speaker=None, gender=None, custom=None, alignment=None),
  SupervisionSegment(id='6272-70171-0025-SileroVAD_16kHz-0-00005', recording_id='6272-70171-0025', start=13.634, duration=3.006, channel=0, text=None, language=None, speaker=None, gender=None, custom=None, alignment=None)]
  ```
+
+### Silero VAD for a RecordingSet
+
+```python
+from lhotse.audio import RecordingSet
+from lhotse.cut import CutSet
+from lhotse.workflows.activity_detection import ActivityDetectionProcessor, SileroVAD16k
+
+
+recordings = RecordingSet.from_file("data/librispeech_recordings_train-clean-5.jsonl.gz")
+
+processor = ActivityDetectionProcessor(SileroVAD16k, num_jobs=2, device="cuda", verbose=True)
+supervisions = processor(recordings)
+
+cutset = CutSet.from_manifests(recordings=recordings, supervisions = supervisions)
+cutset[25]
+```
+
+Output (a Cut object with detected activities):
+
+```bash
+MonoCut(
+    id='6272-70171-0025-25',
+    start=0,
+    duration=16.64,
+    channel=0,
+    supervisions=[
+        SupervisionSegment(
+            id='6272-70171-0025-SileroVAD_16kHz-0-00000',
+            recording_id='6272-70171-0025',
+            start=0.194,
+            duration=2.396,
+            channel=0,
+            text=None,
+            language=None,
+            speaker=None,
+            gender=None,
+            custom=None,
+            alignment=None
+        ),
+        ...,
+        SupervisionSegment(
+            id='6272-70171-0025-SileroVAD_16kHz-0-00005',
+            recording_id='6272-70171-0025',
+            start=13.634,
+            duration=3.006,
+            channel=0,
+            text=None,
+            language=None,
+            speaker=None,
+            gender=None,
+            custom=None,
+            alignment=None
+        )
+    ],
+    features=None,
+    recording=Recording(
+        id='6272-70171-0025',
+        sources=[
+            AudioSource(
+                type='file',
+                channels=[0],
+                source='data/LibriSpeech/train-clean-5/6272/70171/6272-70171-0025.flac'
+            )
+        ],
+        sampling_rate=16000,
+        num_samples=266240,
+        duration=16.64,
+        channel_ids=[0],
+        transforms=None
+    ),
+    custom=None
+)
+```
