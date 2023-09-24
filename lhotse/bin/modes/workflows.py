@@ -428,8 +428,8 @@ def simulate_meetings(
 @click.option(
     "-o",
     "--output-supervisions-manifest",
-    type=click.Path(exists=False, dir_okay=False, allow_dash=True),
-    help="Path to the output supervisions manifest.",
+    type=click.Path(exists=False, dir_okay=True, allow_dash=True),
+    help="Path to the output supervisions manifest or a directory where it will be saved.",
 )
 @click.option(
     "-m",
@@ -459,7 +459,10 @@ def activity_detection(
     """
     Use activity detection methods (e.g., Silero VAD) to detect and annotate
     the segmentation of Lhotse RecordingSets and save the results
-    in the output directory in the form of a SupervisionSet manifest.
+    in the SupervisionSet manifest.
+    The output manifest will be saved in the path specified by OUTPUT_SUPERVISIONS_MANIFEST.
+    If OUTPUT_SUPERVISIONS_MANIFEST is not provided, the output manifest will be saved in the same directory as RECORDINGS_MANIFEST.
+
 
     Note: this is an experimental feature and it does not guarantee high-quality performance and data annotation.
     """
@@ -487,15 +490,19 @@ def activity_detection(
 
     # prepare paths
     reсs_path = Path(recordings_manifest).expanduser().absolute()
-    if output_supervisions_manifest is None:
+
+    sups_path = (
+        reсs_path.parent
+        if output_supervisions_manifest is None
+        else Path(output_supervisions_manifest).expanduser().absolute()
+    )
+    if sups_path.is_dir():
         name = Path(reсs_path).name
         for ext in [".gz", ".jsonl", ".json", ".yaml"]:
             if name.endswith(ext):  # .remove_suffix(ext) in Python 3.9
                 name = name[: -len(ext)]
         name += f"_supervisions_{model_name}.jsonl.gz"
-        sups_path = reсs_path.parent / name
-    else:
-        sups_path = Path(output_supervisions_manifest).expanduser().absolute()
+        sups_path = sups_path / name
 
     # run activity detection
     print(f"Loading recordings from {str(recordings_manifest)}...")
@@ -511,7 +518,7 @@ def activity_detection(
     print(f"Running activity detection using {model_name!r}...")
     supervisions = processor(recordings)
 
-    print(f"Saving {model_name} results ...")
+    print(f"Saving {model_name!r} results ...")
     supervisions.to_file(str(sups_path))
 
     print(f"Results saved to: \n{str(sups_path)}")
