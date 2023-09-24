@@ -427,15 +427,15 @@ def simulate_meetings(
 )
 @click.option(
     "-o",
-    "--output-dir",
-    type=click.Path(exists=True, dir_okay=True, allow_dash=True),
-    help="Path to an existing directory where the output will be stored.",
+    "--output-supervisions-manifest",
+    type=click.Path(exists=False, dir_okay=False, allow_dash=True),
+    help="Path to the output supervisions manifest.",
 )
 @click.option(
     "-m",
     "--model-name",
-    default="silero-vad",
-    help="One of activity detector (silero-vad, etc.)",
+    default="silero-vad-16k",
+    help="One of activity detector: silero-vad-16k, silero-vad-8k.",
 )
 @click.option(
     "-d",
@@ -450,7 +450,7 @@ def simulate_meetings(
     help="Number of jobs for audio scanning.",
 )
 def activity_detection(
-    recordings_manifest: Optional[str],
+    recordings_manifest: str,
     output_supervisions_manifest: Optional[str],
     model_name: str,
     device: str,
@@ -463,5 +463,52 @@ def activity_detection(
 
     Note: this is an experimental feature and it does not guarantee high-quality performance and data annotation.
     """
-    # from lhotse.workflows import
-    pass
+    from pathlib import Path
+
+    from lhotse.workflows.activity_detection import (
+        ActivityDetectionProcessor,
+        SileroVAD8k,
+        SileroVAD16k,
+    )
+
+    detectors = {
+        "silero-vad-8k": SileroVAD8k,
+        "silero-vad-16k": SileroVAD16k,
+    }
+
+    if model_name not in detectors:
+        raise ValueError(
+            f"Unknown activity detector: {model_name}. "
+            f"Supported detectors: {list(detectors)}"
+        )
+
+    # prepare paths
+    reсs_path = Path(recordings_manifest).expanduser().absolute()
+    if output_supervisions_manifest is None:
+        name = Path(reсs_path).name
+        for ext in [".gz", ".jsonl", ".json", ".yaml"]:
+            if name.endswith(ext):  # .remove_suffix(ext) in Python 3.9
+                name = name[: -len(ext)]
+        name += f"_supervisions_{model_name}.jsonl.gz"
+        sups_path = reсs_path.parent / name
+    else:
+        sups_path = Path(output_supervisions_manifest).expanduser().absolute()
+
+    # run activity detection
+    print(f"Loading recordings from {str(recordings_manifest)}...")
+    recordings = RecordingSet.from_file(str(recordings_manifest))
+
+    print(f"Making activity detection processor for {model_name}...")
+    processor = ActivityDetectionProcessor(
+        detector_kls=detectors[model_name],
+        num_jobs=jobs,
+        device=device,
+        verbose=True,
+    )
+    print(f"Running activity detection using {model_name}...")
+    supervisions = processor(recordings)
+
+    print(f"Saving {model_name} results ...")
+    supervisions.to_file(str(sups_path))
+
+    print(f"Results saved to: \n{str(sups_path)}")
