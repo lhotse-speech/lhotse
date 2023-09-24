@@ -43,13 +43,13 @@ def _dicts_to_supervision(
 ) -> List[SupervisionSegment]:
     return [
         SupervisionSegment(
-            id=f"{recording_id}-ch{channel}-silero_vad",
+            id=f"{recording_id}-ch{channel}-silero_vad-{i:05}",
             recording_id=recording_id,
             start=state["start"] / sampling_rate,
             duration=(state["end"] - state["start"]) / sampling_rate,
             channel=channel,
         )
-        for state in murkup
+        for i, state in enumerate(murkup)
     ]
 
 
