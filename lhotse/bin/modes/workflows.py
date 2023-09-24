@@ -449,12 +449,18 @@ def simulate_meetings(
     default=1,
     help="Number of jobs for audio scanning.",
 )
+@click.option(
+    "--chore",
+    is_flag=True,
+    help="Prepare the model for work",
+)
 def activity_detection(
     recordings_manifest: str,
     output_supervisions_manifest: Optional[str],
     model_name: str,
     device: str,
     jobs: int,
+    chore: bool,
 ):
     """
     Use activity detection methods (e.g., Silero VAD) to detect and annotate
@@ -475,8 +481,6 @@ def activity_detection(
         SileroVAD16k,
     )
 
-    warnings.filterwarnings("ignore")
-
     detectors = {
         "silero-vad-8k": SileroVAD8k,
         "silero-vad-16k": SileroVAD16k,
@@ -488,6 +492,13 @@ def activity_detection(
             f"Supported detectors: {list(detectors)}"
         )
 
+    if chore:
+        print("Preparing the model for work...")
+        detectors[model_name].chore()
+        print("Preparation is done.")
+        return
+
+    warnings.filterwarnings("ignore")
     # prepare paths
     reсs_path = Path(recordings_manifest).expanduser().absolute()
 

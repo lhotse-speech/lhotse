@@ -68,6 +68,11 @@ class ActivityDetector(abc.ABC):
     def forward(self, track: np.ndarray) -> List[Activity]:
         raise NotImplementedError()
 
+    @classmethod
+    def chore(cls):
+        """Do some work for preloading / resetting the model state."""
+        pass
+
 
 class ActivityDetectionProcessor:
     _detectors: Dict[Optional[int], ActivityDetector] = {}

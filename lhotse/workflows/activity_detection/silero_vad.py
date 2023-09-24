@@ -47,7 +47,12 @@ def _to_activity_maker(sampling_rate: int):
 class SileroVAD(ActivityDetector):
     """Silero Voice Activity Detector model wrapper"""
 
-    def __init__(self, sampling_rate: int = 16_000, device: str = "cpu"):
+    def __init__(
+        self,
+        sampling_rate: int = 16_000,
+        device: str = "cpu",
+        force_reload: bool = False,
+    ):
         if sampling_rate not in [8_000, 16_000]:
             msg = (
                 "Sampling rate must be either 8000 or 16000, ",
@@ -62,7 +67,8 @@ class SileroVAD(ActivityDetector):
         self._model, utils = torch.hub.load(  # type: ignore
             repo_or_dir="snakers4/silero-vad",
             model="silero_vad",
-            force_reload=False,
+            trust_repo=True,
+            force_reload=force_reload,
             onnx=False,
         )
         # utils[0] := get_speech_timestamps - function that returns speech timestamps
@@ -91,12 +97,39 @@ class SileroVAD(ActivityDetector):
 
         return list(map(self._to_activity, murkup))
 
+    @classmethod
+    def chore(cls):
+        import shutil
+        from pathlib import Path
+
+        print("Removing Silero VAD models from cache...")
+        cache_dirs = Path(torch.hub.get_dir()).glob("snakers4_silero-vad_*")
+        for directory in cache_dirs:
+            if directory.is_dir():
+                try:
+                    shutil.rmtree(directory)
+                except Exception as exc:
+                    print(f"Failed to remove {str(directory)}")
+                    continue
+
+        try:
+            print("Initializing Silero VAD...")
+            vad = cls(device="cpu", force_reload=True)
+            print()
+        except Exception as exc:
+            print("Failed to initialize Silero VAD.")
+            raise exc
+
+        print("Attempting to run Silero VAD on random data...")
+        vad.forward(np.random.randn(16000))
+        print("Success! Silero VAD is ready to use.")
+
 
 class SileroVAD8k(SileroVAD):
-    def __init__(self, device: str = "cpu"):
-        super().__init__(sampling_rate=8_000, device=device)
+    def __init__(self, device: str = "cpu", force_reload: bool = False):
+        super().__init__(sampling_rate=8_000, device=device, force_reload=force_reload)
 
 
 class SileroVAD16k(SileroVAD):
-    def __init__(self, device: str = "cpu"):
-        super().__init__(sampling_rate=16_000, device=device)
+    def __init__(self, device: str = "cpu", force_reload: bool = False):
+        super().__init__(sampling_rate=16_000, device=device, force_reload=force_reload)
