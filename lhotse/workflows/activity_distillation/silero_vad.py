@@ -25,23 +25,32 @@ Citations:
 Please cite Silero VAD when used in your projects. Details can be found in the repository.
 """
 
-from functools import partial
-from typing import List
+from typing import Dict, List
 
 import torch
 
 from lhotse.audio.recording import Recording
-from lhotse.supervision import AlignmentItem
+from lhotse.supervision import SupervisionSegment
 
 from .base import ActivityDetector
 
 
-def _dict_to_aligment(state: dict[str, int], sampling_rate: int) -> AlignmentItem:
-    return AlignmentItem(
-        symbol="",
-        start=state["start"] / sampling_rate,
-        duration=(state["end"] - state["start"]) / sampling_rate,
-    )
+def _dicts_to_supervision(
+    murkup: List[Dict[str, int]],
+    recording_id: str,
+    channel: int,
+    sampling_rate: int,
+) -> List[SupervisionSegment]:
+    return [
+        SupervisionSegment(
+            id=f"{recording_id}-ch{channel}-silero_vad",
+            recording_id=recording_id,
+            start=state["start"] / sampling_rate,
+            duration=(state["end"] - state["start"]) / sampling_rate,
+            channel=channel,
+        )
+        for state in murkup
+    ]
 
 
 class SileroVAD(ActivityDetector):
@@ -49,7 +58,7 @@ class SileroVAD(ActivityDetector):
 
     def __init__(self, device: str):
         super().__init__(device=device)
-        self._model, utils = torch.hub.load(
+        self._model, utils = torch.hub.load(  # type: ignore
             repo_or_dir="snakers4/silero-vad",
             model="silero_vad",
             force_reload=False,
@@ -59,26 +68,38 @@ class SileroVAD(ActivityDetector):
         self._predict = utils[0]
         self._model.to(self.device)
 
-    def __call__(self, recording: Recording) -> List[AlignmentItem]:
+    def __call__(self, recording: Recording) -> List[SupervisionSegment]:
         """Predict voice activity for audio"""
 
-        # TODO: convert to mono?
-        audio = torch.Tensor(recording.load_audio()).to(self.device)
         rate = recording.sampling_rate
+        # TODO: convert to 16000 Hz or 8000 Hz
+
+        audio_cpu = recording.load_audio()  # type: ignore
+        audio = torch.Tensor(audio_cpu).to(self.device)
+
+        result: List[SupervisionSegment] = []
 
         with torch.no_grad():
-            murkup = self._predict(
-                audio=audio,
-                model=self._model,
-                sampling_rate=rate,
-                min_speech_duration_ms=250,
-                max_speech_duration_s=float("inf"),
-                min_silence_duration_ms=100,
-                window_size_samples=512,
-                speech_pad_ms=30,
-                return_seconds=False,
-                visualize_probs=False,
-                progress_tracking_callback=None,
-            )
-        to_aligment = partial(_dict_to_aligment, sampling_rate=rate)
-        return list(map(to_aligment, murkup))
+            for channel, track in enumerate(audio):
+                murkup = self._predict(
+                    audio=track,
+                    model=self._model,
+                    sampling_rate=rate,
+                    min_speech_duration_ms=250,
+                    max_speech_duration_s=float("inf"),
+                    min_silence_duration_ms=100,
+                    window_size_samples=512,
+                    speech_pad_ms=30,
+                    return_seconds=False,
+                    visualize_probs=False,
+                    progress_tracking_callback=None,
+                )
+                supervisions = _dicts_to_supervision(
+                    murkup=murkup,
+                    recording_id=recording.id,
+                    channel=channel,
+                    sampling_rate=rate,
+                )
+                result.extend(supervisions)
+
+        return result

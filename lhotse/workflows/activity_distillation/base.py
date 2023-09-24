@@ -2,7 +2,7 @@ import abc
 from typing import List
 
 from lhotse.audio.recording import Recording
-from lhotse.supervision import AlignmentItem
+from lhotse.supervision import SupervisionSegment
 
 
 class ActivityDetector(abc.ABC):
@@ -14,5 +14,5 @@ class ActivityDetector(abc.ABC):
         return self._device
 
     @abc.abstractmethod
-    def __call__(self, recording: Recording) -> List[AlignmentItem]:
+    def __call__(self, recording: Recording) -> List[SupervisionSegment]:
         pass
