@@ -25,6 +25,9 @@ Citations:
 Please cite Silero VAD when used in your projects. Details can be found in the repository.
 """
 
+import shutil
+from contextlib import suppress
+from pathlib import Path
 from typing import Dict, List
 
 import numpy as np
@@ -99,18 +102,16 @@ class SileroVAD(ActivityDetector):
 
     @classmethod
     def chore(cls):
-        import shutil
-        from pathlib import Path
-
         print("Removing Silero VAD models from cache...")
-        cache_dirs = Path(torch.hub.get_dir()).glob("snakers4_silero-vad_*")
-        for directory in cache_dirs:
-            if directory.is_dir():
-                try:
-                    shutil.rmtree(directory)
-                except Exception as exc:
-                    print(f"Failed to remove {str(directory)}")
-                    continue
+        with suppress(Exception):
+            cache_dir = Path(torch.hub.get_dir())
+            for directory in cache_dir.glob("snakers4_silero-vad_*"):
+                if directory.is_dir():
+                    try:
+                        shutil.rmtree(directory)
+                    except Exception as exc:
+                        print(f"Failed to remove {str(directory)}")
+                        continue
 
         try:
             print("Initializing Silero VAD...")
