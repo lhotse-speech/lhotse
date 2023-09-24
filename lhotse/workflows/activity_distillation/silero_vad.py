@@ -27,79 +27,61 @@ Please cite Silero VAD when used in your projects. Details can be found in the r
 
 from typing import Dict, List
 
+import numpy as np
 import torch
 
-from lhotse.audio.recording import Recording
-from lhotse.supervision import SupervisionSegment
-
-from .base import ActivityDetector
+from .base import Activity, ActivityDetector
 
 
-def _dicts_to_supervision(
-    murkup: List[Dict[str, int]],
-    recording_id: str,
-    channel: int,
-    sampling_rate: int,
-) -> List[SupervisionSegment]:
-    return [
-        SupervisionSegment(
-            id=f"{recording_id}-ch{channel}-silero_vad-{i:05}",
-            recording_id=recording_id,
-            start=state["start"] / sampling_rate,
-            duration=(state["end"] - state["start"]) / sampling_rate,
-            channel=channel,
+def _to_activity_maker(sampling_rate: int):
+    def make_activity(state: Dict[str, float]) -> Activity:
+        start, end = state["start"], state["end"]
+        return Activity(
+            start=start / sampling_rate,
+            duration=(end - start) / sampling_rate,
         )
-        for i, state in enumerate(murkup)
-    ]
+
+    return make_activity
 
 
 class SileroVAD(ActivityDetector):
     """Silero Voice Activity Detector model wrapper"""
 
     def __init__(self, device: str):
-        super().__init__(device=device)
+        sampling_rate = 16000
+        super().__init__(
+            detector_name="silero_vad",
+            device=device,
+            sampling_rate=sampling_rate,
+        )
         self._model, utils = torch.hub.load(  # type: ignore
             repo_or_dir="snakers4/silero-vad",
             model="silero_vad",
             force_reload=False,
             onnx=False,
         )
-        # get_speech_timestamps - function that returns speech timestamps
+        # utils[0] := get_speech_timestamps - function that returns speech timestamps
         self._predict = utils[0]
         self._model.to(self.device)
+        self._to_activity = _to_activity_maker(sampling_rate)
 
-    def __call__(self, recording: Recording) -> List[SupervisionSegment]:
+    def forward(self, track: np.ndarray) -> List[Activity]:
         """Predict voice activity for audio"""
-
-        rate = recording.sampling_rate
-        # TODO: convert to 16000 Hz or 8000 Hz
-
-        audio_cpu = recording.load_audio()  # type: ignore
-        audio = torch.Tensor(audio_cpu).to(self.device)
-
-        result: List[SupervisionSegment] = []
+        audio = torch.Tensor(track).to(self.device)
 
         with torch.no_grad():
-            for channel, track in enumerate(audio):
-                murkup = self._predict(
-                    audio=track,
-                    model=self._model,
-                    sampling_rate=rate,
-                    min_speech_duration_ms=250,
-                    max_speech_duration_s=float("inf"),
-                    min_silence_duration_ms=100,
-                    window_size_samples=512,
-                    speech_pad_ms=30,
-                    return_seconds=False,
-                    visualize_probs=False,
-                    progress_tracking_callback=None,
-                )
-                supervisions = _dicts_to_supervision(
-                    murkup=murkup,
-                    recording_id=recording.id,
-                    channel=channel,
-                    sampling_rate=rate,
-                )
-                result.extend(supervisions)
+            murkup = self._predict(
+                audio=audio,
+                model=self._model,
+                sampling_rate=self._sampling_rate,
+                min_speech_duration_ms=250,
+                max_speech_duration_s=float("inf"),
+                min_silence_duration_ms=100,
+                window_size_samples=512,
+                speech_pad_ms=30,
+                return_seconds=False,
+                visualize_probs=False,
+                progress_tracking_callback=None,
+            )
 
-        return result
+        return list(map(self._to_activity, murkup))
