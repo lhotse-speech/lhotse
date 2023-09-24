@@ -47,30 +47,38 @@ def _dict_to_aligment(state: dict[str, int], sampling_rate: int) -> AlignmentIte
 class SileroVAD(ActivityDetector):
     """Silero Voice Activity Detector model wrapper"""
 
-    def __init__(self, device: str, onnx: bool = False, force_reload: bool = False):
+    def __init__(self, device: str):
         super().__init__(device=device)
-        self._model, (
-            get_speech_timestamps,
-            save_audio,
-            read_audio,
-            VADIterator,
-            collect_chunks,
-        ) = torch.hub.load(
+        self._model, utils = torch.hub.load(
             repo_or_dir="snakers4/silero-vad",
             model="silero_vad",
-            force_reload=force_reload,
-            onnx=onnx,
+            force_reload=False,
+            onnx=False,
         )
-
-        self._predict = get_speech_timestamps
+        # get_speech_timestamps - function that returns speech timestamps
+        self._predict = utils[0]
+        self._model.to(self.device)
 
     def __call__(self, recording: Recording) -> List[AlignmentItem]:
         """Predict voice activity for audio"""
 
         # TODO: convert to mono?
-        audio = recording.load_audio()
+        audio = torch.Tensor(recording.load_audio()).to(self.device)
         rate = recording.sampling_rate
 
-        murkup = self._predict(audio, self._model, sampling_rate=rate)
+        with torch.no_grad():
+            murkup = self._predict(
+                audio=audio,
+                model=self._model,
+                sampling_rate=rate,
+                min_speech_duration_ms=250,
+                max_speech_duration_s=float("inf"),
+                min_silence_duration_ms=100,
+                window_size_samples=512,
+                speech_pad_ms=30,
+                return_seconds=False,
+                visualize_probs=False,
+                progress_tracking_callback=None,
+            )
         to_aligment = partial(_dict_to_aligment, sampling_rate=rate)
         return list(map(to_aligment, murkup))
