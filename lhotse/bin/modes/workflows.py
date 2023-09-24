@@ -426,10 +426,10 @@ def simulate_meetings(
     help="Path to an existing recording manifest.",
 )
 @click.option(
-    "-s",
-    "--supervisions-manifest",
-    type=click.Path(exists=True, dir_okay=False, allow_dash=True),
-    help="Path to an existing supervision manifest.",
+    "-o",
+    "--output-dir",
+    type=click.Path(exists=True, dir_okay=True, allow_dash=True),
+    help="Path to an existing directory where the output will be stored.",
 )
 @click.option(
     "-m",
@@ -449,20 +449,19 @@ def simulate_meetings(
     default=1,
     help="Number of jobs for audio scanning.",
 )
-def activity_distillation(
+def activity_detection(
     recordings_manifest: Optional[str],
-    supervisions_manifest: Optional[str],
+    output_supervisions_manifest: Optional[str],
     model_name: str,
     device: str,
     jobs: int,
 ):
     """
-    Use an activity detection method (e.g. Silero VAD) to detect specific activities in the audio data.
-    It selectively retains segments that align with the detection criteria,
-    discarding those that do not meet the filter conditions,
-    all while preserving speaker labels and supplementary attributes.
+    Use activity detection methods (e.g., Silero VAD) to detect and annotate
+    the segmentation of Lhotse RecordingSets and save the results
+    in the output directory in the form of a SupervisionSet manifest.
 
-    The outcome is a transformed dataset where all audio tracks are harmonized into a uniform format.
-    Segments that fail to satisfy the filter criteria are omitted from the dataset.
+    Note: this is an experimental feature and it does not guarantee high-quality performance and data annotation.
     """
+    # from lhotse.workflows import
     pass
