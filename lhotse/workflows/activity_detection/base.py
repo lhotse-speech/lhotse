@@ -69,10 +69,9 @@ class ActivityDetector(abc.ABC):
         raise NotImplementedError()
 
 
-DETECTORS: Dict[Optional[int], ActivityDetector] = {}
-
-
 class ActivityDetectionProcessor:
+    _detectors: Dict[Optional[int], ActivityDetector] = {}
+
     def __init__(
         self,
         detector_kls: Type[ActivityDetector],
@@ -86,23 +85,45 @@ class ActivityDetectionProcessor:
 
     def _init_detector(self):
         pid = multiprocessing.current_process().pid
-        DETECTORS[pid] = self._make_detecor()
+        self._detectors[pid] = self._make_detecor()
 
     def _process_recording(self, record: Recording) -> List[SupervisionSegment]:
         pid = multiprocessing.current_process().pid
-        detector = DETECTORS[pid]
-        result = detector(record)
-        return result
+        detector = self._detectors[pid]
+        return detector(record)
 
     def __call__(self, recordings: RecordingSet) -> SupervisionSet:
+        start_method = multiprocessing.get_start_method()
+
         pool = ProcessPoolExecutor(
             max_workers=self._num_jobs,
             initializer=self._init_detector,
-            # mp_context=multiprocessing.get_context("spawn"),
+            mp_context=multiprocessing.get_context(start_method),
         )
 
         with pool as executor:
-            parts = executor.map(self._process_recording, recordings)
+            try:
+                parts = executor.map(self._process_recording, recordings)
+                if self._verbose:
+                    from tqdm.auto import tqdm
 
-        segments = chain.from_iterable(parts)
-        return SupervisionSet.from_segments(segments)
+                    parts = tqdm(
+                        parts,
+                        total=len(recordings),
+                        desc="Detecting activities",
+                        unit="rec",
+                    )
+                segments = chain.from_iterable(parts)
+                return SupervisionSet.from_segments(segments)
+            except KeyboardInterrupt as exc:
+                pool.shutdown(wait=False)
+                if self._verbose:
+                    print("Activity detection interrupted by the user.")
+                raise exc
+            except Exception as exc:
+                pool.shutdown(wait=False)
+                raise RuntimeError(
+                    "Activity detection failed. Please report this issue."
+                ) from exc
+            finally:
+                self._detectors.clear()

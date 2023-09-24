@@ -463,6 +463,7 @@ def activity_detection(
 
     Note: this is an experimental feature and it does not guarantee high-quality performance and data annotation.
     """
+    import warnings
     from pathlib import Path
 
     from lhotse.workflows.activity_detection import (
@@ -470,6 +471,8 @@ def activity_detection(
         SileroVAD8k,
         SileroVAD16k,
     )
+
+    warnings.filterwarnings("ignore")
 
     detectors = {
         "silero-vad-8k": SileroVAD8k,
@@ -498,14 +501,14 @@ def activity_detection(
     print(f"Loading recordings from {str(recordings_manifest)}...")
     recordings = RecordingSet.from_file(str(recordings_manifest))
 
-    print(f"Making activity detection processor for {model_name}...")
+    print(f"Making activity detection processor for {model_name!r}...")
     processor = ActivityDetectionProcessor(
         detector_kls=detectors[model_name],
         num_jobs=jobs,
         device=device,
         verbose=True,
     )
-    print(f"Running activity detection using {model_name}...")
+    print(f"Running activity detection using {model_name!r}...")
     supervisions = processor(recordings)
 
     print(f"Saving {model_name} results ...")
