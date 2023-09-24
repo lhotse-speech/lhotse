@@ -47,10 +47,15 @@ def _to_activity_maker(sampling_rate: int):
 class SileroVAD(ActivityDetector):
     """Silero Voice Activity Detector model wrapper"""
 
-    def __init__(self, device: str):
-        sampling_rate = 16000
+    def __init__(self, sampling_rate: int = 16_000, device: str = "cpu"):
+        if sampling_rate not in [8_000, 16_000]:
+            msg = (
+                "Sampling rate must be either 8000 or 16000, ",
+                f"but got {sampling_rate}",
+            )
+            raise ValueError(msg)
         super().__init__(
-            detector_name="silero_vad",
+            detector_name="SileroVAD",
             device=device,
             sampling_rate=sampling_rate,
         )
@@ -85,3 +90,13 @@ class SileroVAD(ActivityDetector):
             )
 
         return list(map(self._to_activity, murkup))
+
+
+class SileroVAD8(SileroVAD):
+    def __init__(self, device: str = "cpu"):
+        super().__init__(sampling_rate=8_000, device=device)
+
+
+class SileroVAD16(SileroVAD):
+    def __init__(self, device: str = "cpu"):
+        super().__init__(sampling_rate=16_000, device=device)
