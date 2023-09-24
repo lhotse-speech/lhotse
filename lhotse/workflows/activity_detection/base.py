@@ -98,12 +98,10 @@ class ActivityDetectionProcessor:
         return detector(record)
 
     def __call__(self, recordings: RecordingSet) -> SupervisionSet:
-        start_method = multiprocessing.get_start_method()
-
         pool = ProcessPoolExecutor(
             max_workers=self._num_jobs,
             initializer=self._init_detector,
-            mp_context=multiprocessing.get_context(start_method),
+            mp_context=multiprocessing.get_context("spawn"),
         )
 
         with pool as executor:
