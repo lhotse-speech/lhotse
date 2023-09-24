@@ -1,2 +1,2 @@
 from .base import Activity, ActivityDetectionProcessor, ActivityDetector
-from .silero_vad import SileroVAD8, SileroVAD16
+from .silero_vad import SileroVAD8k, SileroVAD16k

@@ -92,11 +92,11 @@ class SileroVAD(ActivityDetector):
         return list(map(self._to_activity, murkup))
 
 
-class SileroVAD8(SileroVAD):
+class SileroVAD8k(SileroVAD):
     def __init__(self, device: str = "cpu"):
         super().__init__(sampling_rate=8_000, device=device)
 
 
-class SileroVAD16(SileroVAD):
+class SileroVAD16k(SileroVAD):
     def __init__(self, device: str = "cpu"):
         super().__init__(sampling_rate=16_000, device=device)
