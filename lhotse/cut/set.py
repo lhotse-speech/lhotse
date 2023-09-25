@@ -33,6 +33,7 @@ from tqdm.auto import tqdm
 from typing_extensions import Literal
 
 from lhotse.audio import RecordingSet, null_result_on_audio_loading_error
+from lhotse.audio.utils import VideoInfo
 from lhotse.augmentation import AugmentFn
 from lhotse.cut.base import Cut
 from lhotse.cut.data import DataCut
@@ -984,7 +985,10 @@ class CutSet(Serializable, AlgorithmMixin):
         print(tabulate(speaker_stats, headers="firstrow", tablefmt="fancy_grid"))
 
     def split(
-        self, num_splits: int, shuffle: bool = False, drop_last: bool = False
+        self,
+        num_splits: int,
+        shuffle: bool = False,
+        drop_last: bool = False,
     ) -> List["CutSet"]:
         """
         Split the :class:`~lhotse.CutSet` into ``num_splits`` pieces of equal size.
@@ -1000,7 +1004,10 @@ class CutSet(Serializable, AlgorithmMixin):
         return [
             CutSet.from_cuts(subset)
             for subset in split_sequence(
-                self, num_splits=num_splits, shuffle=shuffle, drop_last=drop_last
+                self,
+                num_splits=num_splits,
+                shuffle=shuffle,
+                drop_last=drop_last,
             )
         ]
 
@@ -1010,6 +1017,7 @@ class CutSet(Serializable, AlgorithmMixin):
         chunk_size: int,
         prefix: str = "",
         num_digits: int = 8,
+        start_idx: int = 0,
     ) -> List["CutSet"]:
         """
         Splits a manifest (either lazily or eagerly opened) into chunks, each
@@ -1027,6 +1035,7 @@ class CutSet(Serializable, AlgorithmMixin):
         :param chunk_size: the number of items in each chunk.
         :param prefix: the prefix of each manifest.
         :param num_digits: the width of ``split_idx``, which will be left padded with zeros to achieve it.
+        :param start_idx: The split index to start counting from (default is ``0``).
         :return: a list of lazily opened chunk manifests.
         """
         return split_manifest_lazy(
@@ -1035,6 +1044,7 @@ class CutSet(Serializable, AlgorithmMixin):
             chunk_size=chunk_size,
             prefix=prefix,
             num_digits=num_digits,
+            start_idx=start_idx,
         )
 
     def subset(
@@ -2978,9 +2988,18 @@ def pad(
             else None
         )
 
+    padding_duration = round(duration - cut.duration, ndigits=8)
+
+    video = None
+    if cut.has_video:
+        video = cut.video
+        video = video.copy_with(
+            num_frames=compute_num_samples(padding_duration, video.fps)
+        )
+
     padding_cut = PaddingCut(
         id=str(uuid4()),
-        duration=round(duration - cut.duration, ndigits=8),
+        duration=padding_duration,
         feat_value=pad_feat_value,
         num_features=cut.num_features,
         # The num_frames and sampling_rate fields are tricky, because it is possible to create a MixedCut
@@ -2992,6 +3011,7 @@ def pad(
         ),
         frame_shift=cut.frame_shift,
         sampling_rate=cut.sampling_rate,
+        video=video,
         custom=pad_value_dict,
     )
 

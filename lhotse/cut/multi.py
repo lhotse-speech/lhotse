@@ -4,9 +4,10 @@ from dataclasses import dataclass
 from functools import partial, reduce
 from itertools import groupby
 from operator import add
-from typing import Any, Callable, Iterable, List, Optional, Union
+from typing import Any, Callable, Iterable, List, Optional, Tuple, Union
 
 import numpy as np
+import torch
 
 from lhotse.audio import Recording
 from lhotse.cut.data import DataCut
@@ -119,6 +120,7 @@ class MultiCut(DataCut):
         Load the audio by locating the appropriate recording in the supplied Recording.
         The audio is trimmed to the [begin, end] range specified by the MultiCut.
 
+        :param channel: optional int or list of int, the subset of channels to load (all by default).
         :return: a numpy ndarray with audio samples, with shape (C <channel>, N <samples>)
         """
         if self.has_recording:
@@ -126,6 +128,30 @@ class MultiCut(DataCut):
                 channels=self.channel if channel is None else channel,
                 offset=self.start,
                 duration=self.duration,
+            )
+        return None
+
+    @rich_exception_info
+    def load_video(
+        self,
+        channel: Optional[Union[int, List[int]]] = None,
+        with_audio: bool = True,
+    ) -> Optional[Tuple[torch.Tensor, Optional[torch.Tensor]]]:
+        """
+        Load the subset of video (and audio) from attached recording.
+        The data is trimmed to the [begin, end] range specified by the MonoCut.
+
+        :param channel: optional int or list of int, the subset of channels to load (all by default).
+        :param with_audio: bool, whether to load and return audio alongside video. True by default.
+        :return: a tuple of video tensor and optionally audio tensor (or ``None``),
+            or ``None`` if this cut has no video.
+        """
+        if self.has_video:
+            return self.recording.load_video(
+                channels=self.channel if channel is None else channel,
+                offset=self.start,
+                duration=self.duration,
+                with_audio=with_audio,
             )
         return None
 
