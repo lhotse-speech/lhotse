@@ -161,6 +161,32 @@ def test_multi_channel_recording(
         assert segments == multi_channel_kaldi_dir["segments"]
 
 
+def test_resample_recording(
+    tmp_path, multi_channel_recording, multi_channel_kaldi_dir
+):
+    with working_directory(tmp_path):
+        recording = Recording.from_file(
+            recording_id='mono_c0',
+            path=join('test/fixtures/mono_c0.wav')
+        ).resample(16000)
+        segment = SupervisionSegment(
+            id='Segment-c0',
+            recording_id=recording.id,
+            start=0, duration=recording.duration, channel=0,
+            text='SIL',
+        )
+        lhotse.kaldi.export_to_kaldi(
+            [recording],
+            [segment],
+            output_dir=".",
+            map_underscores_to=None,
+            prefix_spk_id=False,
+        )
+
+        wavs = open_and_load("wav.scp")
+        assert '16000' in wavs['mono_c0']
+
+
 @contextlib.contextmanager
 def working_directory(path):
     """Changes working directory and returns to previous on exit."""
