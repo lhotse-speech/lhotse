@@ -118,7 +118,7 @@ def download_voxpopuli(
     for url in tqdm(url_list):
         tar_path = out_root / Path(url).name
         download_url_to_file(url, tar_path)
-        with tarfile.open(tar_path, 'r') as tar_file:
+        with tarfile.open(tar_path, "r") as tar_file:
             safe_extract(tar_file, out_root)
         tar_path.unlink()
 
