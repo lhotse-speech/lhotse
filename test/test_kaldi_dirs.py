@@ -10,6 +10,8 @@ import lhotse.audio.recording_set
 import lhotse.audio.source
 import lhotse.audio.utils
 from lhotse.audio import get_audio_duration_mismatch_tolerance
+from lhotse import RecordingSet, Recording
+from lhotse import SupervisionSet, SupervisionSegment
 
 pytest.importorskip(
     "kaldi_native_io", reason="Kaldi tests require kaldi_native_io to be installed."
@@ -167,7 +169,9 @@ def test_resample_recording(
     with working_directory(tmp_path):
         recording = Recording.from_file(
             recording_id='mono_c0',
-            path=join('test/fixtures/mono_c0.wav')
+            path=os.path.join(
+                os.path.dirname(__file__), 'fixtures', 'mono_c0.wav'
+            ),
         ).resample(16000)
         segment = SupervisionSegment(
             id='Segment-c0',
@@ -176,8 +180,8 @@ def test_resample_recording(
             text='SIL',
         )
         lhotse.kaldi.export_to_kaldi(
-            [recording],
-            [segment],
+            RecordingSet.from_recordings([recording]),
+            SupervisionSet.from_segments([segment]),
             output_dir=".",
             map_underscores_to=None,
             prefix_spk_id=False,
