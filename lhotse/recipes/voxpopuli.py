@@ -26,6 +26,7 @@ import csv
 import gzip
 import logging
 import shutil
+import tarfile
 import tempfile
 from ast import literal_eval
 from collections import defaultdict
@@ -116,8 +117,9 @@ def download_voxpopuli(
     logging.info(f"{len(url_list)} files to download...")
     for url in tqdm(url_list):
         tar_path = out_root / Path(url).name
-        download_url_to_file(url, out_root.as_posix(), Path(url).name)
-        safe_extract(tar_path, out_root)
+        download_url_to_file(url, tar_path)
+        with tarfile.open(tar_path, 'r') as tar_file:
+            safe_extract(tar_file, out_root)
         tar_path.unlink()
 
     return target_dir
