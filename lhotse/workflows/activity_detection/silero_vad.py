@@ -63,7 +63,7 @@ class SileroVAD(ActivityDetector):
             )
             raise ValueError(msg)
         super().__init__(
-            detector_name="SileroVAD",
+            detector_name=f"silero_vad_{sampling_rate//1000}k",
             device=device,
             sampling_rate=sampling_rate,
         )

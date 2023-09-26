@@ -19,15 +19,9 @@ class Activity:
     duration: float
 
 
-def _format_sampling_rate(sampling_rate: int) -> str:
-    formatted_rate = str(round(sampling_rate / 1000, 1))
-    formatted_rate = formatted_rate.replace(".0", "")
-    return f"{formatted_rate}kHz"
-
-
 class ActivityDetector(abc.ABC):
     def __init__(self, detector_name: str, sampling_rate: int, device: str = "cpu"):
-        self._name = f"{detector_name}_{_format_sampling_rate(sampling_rate)}"
+        self._detector_name = detector_name
         self._sampling_rate = sampling_rate
         self._device = device
 
@@ -49,7 +43,7 @@ class ActivityDetector(abc.ABC):
             for i, activity in enumerate(activities):
                 uid = uid_template.format(
                     recording_id=recording.id,
-                    detector_name=self._name,
+                    detector_name=self._detector_name,
                     channel=channel,
                     number=i,
                 )

@@ -435,7 +435,7 @@ def simulate_meetings(
     "-m",
     "--model-name",
     default="silero-vad-16k",
-    help="One of activity detector: silero-vad-16k, silero-vad-8k.",
+    help="One of activity detector: silero_vad_16k, silero_vad_8k.",
 )
 @click.option(
     "-d",
@@ -482,8 +482,8 @@ def activity_detection(
     )
 
     detectors = {
-        "silero-vad-8k": SileroVAD8k,
-        "silero-vad-16k": SileroVAD16k,
+        "silero_vad_8k": SileroVAD8k,
+        "silero_vad_16k": SileroVAD16k,
     }
 
     if model_name not in detectors:
