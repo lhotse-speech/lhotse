@@ -9,9 +9,8 @@ import lhotse.audio.recording
 import lhotse.audio.recording_set
 import lhotse.audio.source
 import lhotse.audio.utils
+from lhotse import Recording, RecordingSet, SupervisionSegment, SupervisionSet
 from lhotse.audio import get_audio_duration_mismatch_tolerance
-from lhotse import RecordingSet, Recording
-from lhotse import SupervisionSet, SupervisionSegment
 
 pytest.importorskip(
     "kaldi_native_io", reason="Kaldi tests require kaldi_native_io to be installed."
