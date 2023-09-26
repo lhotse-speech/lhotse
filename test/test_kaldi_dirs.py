@@ -163,21 +163,19 @@ def test_multi_channel_recording(
         assert segments == multi_channel_kaldi_dir["segments"]
 
 
-def test_resample_recording(
-    tmp_path, multi_channel_recording, multi_channel_kaldi_dir
-):
+def test_resample_recording(tmp_path, multi_channel_recording, multi_channel_kaldi_dir):
     with working_directory(tmp_path):
         recording = Recording.from_file(
-            recording_id='mono_c0',
-            path=os.path.join(
-                os.path.dirname(__file__), 'fixtures', 'mono_c0.wav'
-            ),
+            recording_id="mono_c0",
+            path=os.path.join(os.path.dirname(__file__), "fixtures", "mono_c0.wav"),
         ).resample(16000)
         segment = SupervisionSegment(
-            id='Segment-c0',
+            id="Segment-c0",
             recording_id=recording.id,
-            start=0, duration=recording.duration, channel=0,
-            text='SIL',
+            start=0,
+            duration=recording.duration,
+            channel=0,
+            text="SIL",
         )
         lhotse.kaldi.export_to_kaldi(
             RecordingSet.from_recordings([recording]),
@@ -188,7 +186,7 @@ def test_resample_recording(
         )
 
         wavs = open_and_load("wav.scp")
-        assert '16000' in wavs['mono_c0']
+        assert "16000" in wavs["mono_c0"]
 
 
 @contextlib.contextmanager

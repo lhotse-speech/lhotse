@@ -346,8 +346,9 @@ def export_to_kaldi(
         save_kaldi_text_mapping(
             data={
                 recording.id: make_wavscp_channel_string_map(
-                    source, sampling_rate=recording.sampling_rate,
-                    transforms=recording.transforms
+                    source,
+                    sampling_rate=recording.sampling_rate,
+                    transforms=recording.transforms,
                 )[0]
                 for recording in recordings
                 for source in recording.sources
@@ -401,8 +402,9 @@ def export_to_kaldi(
         save_kaldi_text_mapping(
             data={
                 f"{recording.id}_{channel}": make_wavscp_channel_string_map(
-                    source, sampling_rate=recording.sampling_rate,
-                    transforms=recording.transforms
+                    source,
+                    sampling_rate=recording.sampling_rate,
+                    transforms=recording.transforms,
                 )[channel]
                 for recording in recordings
                 for source in recording.sources
@@ -552,7 +554,8 @@ def make_wavscp_channel_string_map(
         return {0: f"{source.source} |"}
     elif source.type == "file":
         if (
-            Path(source.source).suffix == ".wav" and len(source.channels) == 1
+            Path(source.source).suffix == ".wav"
+            and len(source.channels) == 1
             and transforms is None
         ):
             # Note: for single-channel waves, we don't need to invoke ffmpeg; but
