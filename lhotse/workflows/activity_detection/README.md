@@ -7,17 +7,24 @@ The Activity Detection module provides tools for detecting activity in audio rec
 - Two classes, `SileroVAD8k` and `SileroVAD16k`, which integrate the [Silero VAD](https://github.com/snakers4/silero-vad) model for activity detection.
 
 
-
 ## Example usage in command line interface (CLI)
 
-1. Prepare the model for work:
+1. Read the Help
+
+    ```bash
+    lhotse workflows activity-detection --help
+    ```
+
+2. Please note: if you are using the activity-detection script for the first time with any detection model, be sure to add the `--force_download` flag to preload the model state on your local machine from the appropriate source. Like this:
+
     ```bash
     lhotse workflows activity-detection \
     --model-name silero_vad_16k \
-    --chore
+    ...\
+    --force_download \
     ```
 
-2. Run activity detection using the Silero VAD model:
+3. Run activity detection using the Silero VAD model:
 
     ```bash
     lhotse workflows activity-detection \
@@ -56,7 +63,6 @@ The Activity Detection module provides tools for detecting activity in audio rec
 ## Example usage in python code
 
 ### Silero VAD for single Recording
-
 
 ```python
 from lhotse.audio import RecordingSet
