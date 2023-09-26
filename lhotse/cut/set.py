@@ -33,8 +33,8 @@ from tqdm.auto import tqdm
 from typing_extensions import Literal
 
 from lhotse.audio import RecordingSet, null_result_on_audio_loading_error
+from lhotse.audio.utils import VideoInfo
 from lhotse.augmentation import AugmentFn
-from lhotse.caching import is_caching_enabled
 from lhotse.cut.base import Cut
 from lhotse.cut.data import DataCut
 from lhotse.cut.mixed import MixedCut, MixTrack
@@ -56,7 +56,6 @@ from lhotse.utils import (
     TimeSpan,
     compute_num_frames,
     compute_num_samples,
-    deprecated,
     exactly_one_not_null,
     fastcopy,
     ifnone,
@@ -986,7 +985,10 @@ class CutSet(Serializable, AlgorithmMixin):
         print(tabulate(speaker_stats, headers="firstrow", tablefmt="fancy_grid"))
 
     def split(
-        self, num_splits: int, shuffle: bool = False, drop_last: bool = False
+        self,
+        num_splits: int,
+        shuffle: bool = False,
+        drop_last: bool = False,
     ) -> List["CutSet"]:
         """
         Split the :class:`~lhotse.CutSet` into ``num_splits`` pieces of equal size.
@@ -1002,7 +1004,10 @@ class CutSet(Serializable, AlgorithmMixin):
         return [
             CutSet.from_cuts(subset)
             for subset in split_sequence(
-                self, num_splits=num_splits, shuffle=shuffle, drop_last=drop_last
+                self,
+                num_splits=num_splits,
+                shuffle=shuffle,
+                drop_last=drop_last,
             )
         ]
 
@@ -1012,6 +1017,7 @@ class CutSet(Serializable, AlgorithmMixin):
         chunk_size: int,
         prefix: str = "",
         num_digits: int = 8,
+        start_idx: int = 0,
     ) -> List["CutSet"]:
         """
         Splits a manifest (either lazily or eagerly opened) into chunks, each
@@ -1029,6 +1035,7 @@ class CutSet(Serializable, AlgorithmMixin):
         :param chunk_size: the number of items in each chunk.
         :param prefix: the prefix of each manifest.
         :param num_digits: the width of ``split_idx``, which will be left padded with zeros to achieve it.
+        :param start_idx: The split index to start counting from (default is ``0``).
         :return: a list of lazily opened chunk manifests.
         """
         return split_manifest_lazy(
@@ -1037,6 +1044,7 @@ class CutSet(Serializable, AlgorithmMixin):
             chunk_size=chunk_size,
             prefix=prefix,
             num_digits=num_digits,
+            start_idx=start_idx,
         )
 
     def subset(
@@ -1830,6 +1838,7 @@ class CutSet(Serializable, AlgorithmMixin):
         preserve_id: Optional[str] = None,
         mix_prob: float = 1.0,
         seed: int = 42,
+        random_mix_offset: bool = False,
     ) -> "CutSet":
         """
         Mix cuts in this ``CutSet`` with randomly sampled cuts from another ``CutSet``.
@@ -1855,6 +1864,9 @@ class CutSet(Serializable, AlgorithmMixin):
         :param mix_prob: an optional float in range [0, 1].
             Specifies the probability of performing a mix.
             Values lower than 1.0 mean that some cuts in the output will be unchanged.
+        :param random_mix_offset: an optional bool.
+            When ``True`` and the duration of the to be mixed in cut in longer than the original cut,
+             select a random sub-region from the to be mixed in cut.
         :param seed: an optional int. Random seed for choosing the cuts to mix and the SNR.
         :return: a new ``CutSet`` with mixed cuts.
         """
@@ -1882,6 +1894,11 @@ class CutSet(Serializable, AlgorithmMixin):
             to_mix = cuts.sample()
             # Determine the SNR - either it's specified or we need to sample one.
             cut_snr = rng.uniform(*snr) if isinstance(snr, (list, tuple)) else snr
+            if random_mix_offset and to_mix.duration > cut.duration:
+                to_mix = to_mix.truncate(
+                    offset=rng.uniform(0, to_mix.duration - cut.duration),
+                    duration=cut.duration,
+                )
             # Actual mixing
             mixed = cut.mix(other=to_mix, snr=cut_snr, preserve_id=preserve_id)
             # Did the user specify a duration?
@@ -2971,9 +2988,18 @@ def pad(
             else None
         )
 
+    padding_duration = round(duration - cut.duration, ndigits=8)
+
+    video = None
+    if cut.has_video:
+        video = cut.video
+        video = video.copy_with(
+            num_frames=compute_num_samples(padding_duration, video.fps)
+        )
+
     padding_cut = PaddingCut(
         id=str(uuid4()),
-        duration=round(duration - cut.duration, ndigits=8),
+        duration=padding_duration,
         feat_value=pad_feat_value,
         num_features=cut.num_features,
         # The num_frames and sampling_rate fields are tricky, because it is possible to create a MixedCut
@@ -2985,6 +3011,7 @@ def pad(
         ),
         frame_shift=cut.frame_shift,
         sampling_rate=cut.sampling_rate,
+        video=video,
         custom=pad_value_dict,
     )
 

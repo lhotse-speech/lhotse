@@ -45,7 +45,7 @@ class RoundRobinSampler(CutSampler):
         :param samplers: The list of samplers from which we sample batches in turns.
         :param stop_early: Should we finish the epoch once any of the samplers becomes
             depleted.
-            By default, we will keep iterating until all of the samplers are exhausted.
+            By default, we will keep iterating until all the samplers are exhausted.
             This setting can be used to balance datasets of different sizes.
         :param randomize: Select the next sampler according to a distribution, instead of
             in order. If a list of floats is provided, it must contain the same number of
@@ -54,7 +54,7 @@ class RoundRobinSampler(CutSampler):
             the samplers will be selected in order.
         :param seed: Random seed used to select the next sampler (only used if ``randomize`` is True)
         """
-        super().__init__(rank=0, world_size=1)
+        super().__init__(rank=0, world_size=1, seed=seed)
         self.samplers = samplers
         self.stop_early = stop_early
         self.rng = None

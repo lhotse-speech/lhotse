@@ -1,5 +1,4 @@
 import random
-from typing import Sequence, Union
 
 from lhotse import CutSet
 

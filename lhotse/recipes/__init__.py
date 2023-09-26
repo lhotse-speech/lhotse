@@ -33,6 +33,7 @@ from .gale_arabic import prepare_gale_arabic
 from .gale_mandarin import prepare_gale_mandarin
 from .gigaspeech import prepare_gigaspeech
 from .gigast import download_gigast, prepare_gigast
+from .grid import download_grid, prepare_grid
 from .heroico import download_heroico, prepare_heroico
 from .hifitts import download_hifitts, prepare_hifitts
 from .himia import download_himia, prepare_himia
@@ -66,10 +67,12 @@ from .stcmds import download_stcmds, prepare_stcmds
 from .switchboard import prepare_switchboard
 from .tedlium import download_tedlium, prepare_tedlium
 from .thchs_30 import download_thchs_30, prepare_thchs_30
+from .this_american_life import download_this_american_life, prepare_this_american_life
 from .timit import download_timit, prepare_timit
 from .uwb_atcc import download_uwb_atcc, prepare_uwb_atcc
 from .vctk import download_vctk, prepare_vctk
 from .voxceleb import download_voxceleb1, download_voxceleb2, prepare_voxceleb
+from .voxconverse import download_voxconverse, prepare_voxconverse
 from .voxpopuli import download_voxpopuli, prepare_voxpopuli
 from .wenet_speech import prepare_wenet_speech
 from .xbmu_amdo31 import download_xbmu_amdo31, prepare_xbmu_amdo31

@@ -24,6 +24,7 @@ from lhotse.augmentation import (
     volume,
 )
 from lhotse.augmentation.utils import FastRandomRIRGenerator
+from lhotse.testing.random import deterministic_rng
 
 SAMPLING_RATE = 16000
 
@@ -34,7 +35,7 @@ def mono_audio():
 
 
 @pytest.fixture
-def multi_channel_audio():
+def multi_channel_audio(deterministic_rng):
     x = (
         torch.sin(2 * math.pi * torch.linspace(0, 1, 16000))
         .unsqueeze(0)

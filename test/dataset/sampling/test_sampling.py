@@ -19,7 +19,6 @@ from lhotse.dataset.sampling import (
     BucketingSampler,
     CutPairsSampler,
     SimpleCutSampler,
-    SingleCutSampler,
     ZipSampler,
 )
 from lhotse.dataset.sampling.base import SamplingDiagnostics, TimeConstraint
@@ -52,10 +51,7 @@ def test_dynamic_cut_sampler_max_cuts():
     assert tot == 4
 
 
-# Tests both aliases of SimpleCutSampler
-@pytest.mark.parametrize(
-    "sampler_cls", [SimpleCutSampler, SingleCutSampler, DynamicCutSampler]
-)
+@pytest.mark.parametrize("sampler_cls", [SimpleCutSampler, DynamicCutSampler])
 def test_single_cut_sampler_shuffling(sampler_cls):
     # The dummy cuts have a duration of 1 second each
     cut_set = DummyManifest(CutSet, begin_id=0, end_id=100)
@@ -965,7 +961,7 @@ def test_sampler_properties(sampler):
 
 
 def test_report_padding_ratio_estimate():
-    s = SingleCutSampler(DummyManifest(CutSet, begin_id=0, end_id=1000), max_cuts=1)
+    s = SimpleCutSampler(DummyManifest(CutSet, begin_id=0, end_id=1000), max_cuts=1)
     report_padding_ratio_estimate(s)  # just test that it runs
 
 

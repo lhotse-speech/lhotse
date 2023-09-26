@@ -37,7 +37,7 @@ Standard data preparation recipes
 We provide a number of standard data preparation recipes. By that, we mean a collection of a Python function +
 a CLI tool that create the manifests given a corpus directory.
 
-.. list-table:: Currently supported corpora
+.. list-table:: Currently supported audio corpora
   :widths: 30 50
   :header-rows: 1
 
@@ -169,12 +169,16 @@ a CLI tool that create the manifests given a corpus directory.
     - :func:`lhotse.recipes.prepare_tedlium`
   * - TIMIT
     - :func:`lhotse.recipes.prepare_timit`
+  * - This American Life
+    - :func:`lhotse.recipes.prepare_this_american_life`
   * - UWB-ATCC
     - :func:`lhotse.recipes.prepare_uwb_atcc`
   * - VCTK
     - :func:`lhotse.recipes.prepare_vctk`
   * - VoxCeleb
     - :func:`lhotse.recipes.prepare_voxceleb`
+  * - VoxConverse
+    - :func:`lhotse.recipes.prepare_voxconverse`
   * - VoxPopuli
     - :func:`lhotse.recipes.prepare_voxpopuli`
   * - WenetSpeech
@@ -188,6 +192,15 @@ a CLI tool that create the manifests given a corpus directory.
   * - XBMU-AMDO31
     - :func:`lhotse.recipes.xbmu_amdo31`
 
+
+.. list-table:: Currently supported video corpora
+  :widths: 30 50
+  :header-rows: 1
+
+  * - Corpus name
+    - Function
+  * - Grid Audio-Visual Speech Corpus
+    - :func:`lhotse.recipes.prepare_grid`
 
 Adding new corpora
 ------------------

@@ -7,9 +7,12 @@ from operator import add
 from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple, Union
 
 import numpy as np
+import torch
 from intervaltree import IntervalTree
 
-from lhotse.audio import AudioMixer, Recording, audio_energy, torchaudio_save_flac_safe
+from lhotse.audio import Recording, VideoInfo, get_audio_duration_mismatch_tolerance
+from lhotse.audio.backend import torchaudio_save_flac_safe
+from lhotse.audio.mixer import AudioMixer, VideoMixer, audio_energy
 from lhotse.augmentation import (
     AudioTransform,
     AugmentFn,
@@ -30,7 +33,6 @@ from lhotse.utils import (
     DEFAULT_PADDING_VALUE,
     LOG_EPSILON,
     Decibels,
-    NonPositiveEnergyError,
     Pathlike,
     Seconds,
     add_durations,
@@ -146,6 +148,10 @@ class MixedCut(Cut):
     @property
     def has_recording(self) -> bool:
         return self._first_non_padding_cut.has_recording
+
+    @property
+    def has_video(self) -> bool:
+        return self._first_non_padding_cut.has_video
 
     def has(self, field: str) -> bool:
         return self._first_non_padding_cut.has(field)
@@ -1035,7 +1041,6 @@ class MixedCut(Cut):
             to a single channel. This down-mixing is done by summing the channels together.
         :return: A numpy ndarray with audio samples and with shape ``(num_channels, num_samples)``
         """
-        from lhotse.audio import LHOTSE_AUDIO_DURATION_MISMATCH_TOLERANCE
 
         if not self.has_recording:
             return None
@@ -1085,7 +1090,7 @@ class MixedCut(Cut):
             # we will fix them on-the-fly so that the manifest does not lie about the num_samples.
             audio = mixer.mixed_mono_audio if mono_downmix else mixer.mixed_audio
             tol_samples = compute_num_samples(
-                LHOTSE_AUDIO_DURATION_MISMATCH_TOLERANCE,
+                get_audio_duration_mismatch_tolerance(),
                 sampling_rate=self.sampling_rate,
             )
             num_samples_diff = audio.shape[1] - self.num_samples
@@ -1110,6 +1115,42 @@ class MixedCut(Cut):
             audio = mixer.unmixed_audio
 
         return audio
+
+    @property
+    def video(self) -> Optional[VideoInfo]:
+        if self.has_video:
+            v = self._first_non_padding_cut.video
+            return v.copy_with(num_frames=compute_num_samples(self.duration, v.fps))
+        return None
+
+    @rich_exception_info
+    def load_video(
+        self,
+        with_audio: bool = True,
+        mixed: bool = True,
+        mono_downmix: bool = False,
+    ) -> Optional[Tuple[torch.Tensor, Optional[torch.Tensor]]]:
+        if not self.has_video:
+            return None
+
+        mixer = VideoMixer(
+            self.tracks[0].cut.load_video(with_audio=False)[0],
+            fps=self.video.fps,
+            base_offset=self.tracks[0].offset,
+        )
+        for pos, track in enumerate(self.tracks[1:], start=1):
+            mixer.add_to_mix(
+                video=track.cut.load_video(with_audio=False)[0],
+                offset=track.offset,
+            )
+        video = mixer.mixed_video
+
+        if with_audio:
+            # For now load audio separately to re-use the complex logic of load_audio
+            # This means the same video file is potentially opened twice, but given the
+            # cost of video decoding, the extra file open cost could be negligible.
+            audio = self.load_audio(mixed=mixed, mono_downmix=mono_downmix)
+        return video, torch.from_numpy(audio)
 
     def plot_tracks_features(self):
         """

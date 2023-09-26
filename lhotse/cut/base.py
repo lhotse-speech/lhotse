@@ -6,7 +6,7 @@ import torch
 from intervaltree import Interval, IntervalTree
 from typing_extensions import Literal
 
-from lhotse.audio import AudioSource, Recording
+from lhotse.audio import AudioSource, Recording, VideoInfo
 from lhotse.augmentation import AugmentFn
 from lhotse.features import FeatureExtractor
 from lhotse.supervision import SupervisionSegment
@@ -164,12 +164,15 @@ class Cut:
     features_type: Optional[str]
     has_recording: bool
     has_features: bool
+    has_video: bool
+    video: Optional[VideoInfo]
 
     # The following is the list of methods implemented by the child classes.
     # They are not abstract methods because dataclasses do not work well with the "abc" module.
     # Check a specific child class for their documentation.
     from_dict: Callable[[Dict], "Cut"]
     load_audio: Callable[[], np.ndarray]
+    load_video: Callable[[], Tuple[torch.Tensor, Optional[torch.Tensor]]]
     load_features: Callable[[], np.ndarray]
     compute_and_store_features: Callable
     drop_features: Callable
@@ -745,14 +748,32 @@ class Cut:
 
         if not hop:
             hop = duration
+
+        if self.has_video:
+            assert (duration * self.video.fps).is_integer(), (
+                f"[cut.id={self.id}] Window duration must be defined to result in an integer number of video frames "
+                f"(duration={duration} * fps={self.video.fps} = {duration * self.video.fps})."
+            )
+            assert (hop * self.video.fps).is_integer(), (
+                "[cut.id={self.id}] Window hop must be defined to result in an integer number of video frames "
+                f"(hop={hop} * fps={self.video.fps} = {hop* self.video.fps})."
+            )
+
         new_cuts = []
         n_windows = compute_num_windows(self.duration, duration, hop)
+
+        # Operation without an Interval Tree is O(nm), where `n` is the number
+        # of resulting windows, and `m` is the number of supervisions in the cut.
+        # With an Interval Tree, we can do it in O(nlog(m) + m)
+        supervisions_index = self.index_supervisions(index_mixed_tracks=True)
+
         for i in range(n_windows):
             new_cuts.append(
                 self.truncate(
                     offset=hop * i,
                     duration=duration,
                     keep_excessive_supervisions=keep_excessive_supervisions,
+                    _supervisions_index=supervisions_index,
                 ).with_id(f"{self.id}-{i}")
             )
         return CutSet.from_cuts(new_cuts)
@@ -850,7 +871,13 @@ class Cut:
                 )
             ],
         )
-        return fastcopy(self, recording=recording)
+        return fastcopy(
+            recording.to_cut(),
+            id=self.id,
+            supervisions=self.supervisions,
+            custom=self.custom if hasattr(self, "custom") else None,
+            features=self.features if self.has_features else None,
+        )
 
     def speakers_feature_mask(
         self,
