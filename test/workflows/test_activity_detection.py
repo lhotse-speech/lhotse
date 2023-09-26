@@ -1,8 +1,10 @@
 import json
 import tempfile
+from contextlib import suppress
 from pathlib import Path
 
 import pytest
+import torch
 from click.testing import CliRunner
 
 from lhotse import CutSet, RecordingSet, SupervisionSegment
@@ -14,7 +16,19 @@ from lhotse.workflows.activity_detection import (
 )
 
 
+def _check_torch_version(greater_than: str):
+    with suppress(Exception):
+        from pkg_resources import parse_version  # pylint: disable=C0415
+
+        if parse_version(torch.__version__) >= parse_version(greater_than):
+            return True
+    return False
+
+
 def test_silero_vad_init():
+    if not _check_torch_version("1.12"):
+        pytest.skip("torch >= 1.12 is required for this test")
+
     vad = SileroVAD16k(device="cpu")
     cuts = CutSet.from_file("test/fixtures/ljspeech/cuts.json")
     recording = cuts[0].recording
@@ -27,6 +41,9 @@ def test_silero_vad_init():
 
 
 def test_silero_vad_in_parallel():
+    if not _check_torch_version("1.12"):
+        pytest.skip("torch >= 1.12 is required for this test")
+
     cuts = CutSet.from_file("test/fixtures/ljspeech/cuts.json")
     recordings = RecordingSet.from_recordings([cut.recording for cut in cuts])
     processor = ActivityDetectionProcessor(SileroVAD8k, num_jobs=2, device="cpu")
@@ -49,6 +66,9 @@ def temporary_directory():
 
 
 def test_silero_vad_workflow_simple(temporary_directory: str):
+    if not _check_torch_version("1.12"):
+        pytest.skip("torch >= 1.12 is required for this test")
+
     output_manifest_path = Path(temporary_directory) / "temp_output.json"
 
     runner = CliRunner()
