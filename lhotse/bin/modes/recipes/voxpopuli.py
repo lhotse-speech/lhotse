@@ -79,6 +79,6 @@ def voxpopuli(
     type=click.Choice(["asr", "10k", "100k", "400k"] + LANGUAGES + LANGUAGES_V2),
     default="asr",
 )
-def voxpopuli(target_dir: Pathlike):
+def voxpopuli(target_dir: Pathlike, subset: str):
     """voxpopuli download."""
     download_voxpopuli(target_dir)
