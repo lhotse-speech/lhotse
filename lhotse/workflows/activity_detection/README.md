@@ -21,7 +21,7 @@ The Activity Detection module provides tools for detecting activity in audio rec
     lhotse workflows activity-detection \
     --model-name silero_vad_16k \
     ...\
-    --force_download \
+    --force_download
     ```
 
 3. Run activity detection using the Silero VAD model:
