@@ -1,4 +1,12 @@
+import json
+import tempfile
+from pathlib import Path
+
+import pytest
+from click.testing import CliRunner
+
 from lhotse import CutSet, RecordingSet, SupervisionSegment
+from lhotse.bin.modes.workflows import activity_detection
 from lhotse.workflows.activity_detection import (
     ActivityDetectionProcessor,
     SileroVAD8k,
@@ -32,3 +40,36 @@ def test_silero_vad_in_parallel():
         assert len(cut.supervisions) > 0
         for sup in cut.supervisions:
             assert sup.duration > 0
+
+
+@pytest.fixture
+def temporary_directory():
+    with tempfile.TemporaryDirectory() as temp_dir:
+        yield temp_dir
+
+
+def test_silero_vad_workflow_simple(temporary_directory: str):
+    output_manifest_path = Path(temporary_directory) / "temp_output.json"
+
+    runner = CliRunner()
+
+    result = runner.invoke(
+        activity_detection,
+        ["--recordings-manifest", "test/fixtures/libri/audio.json"]
+        + ["--output-supervisions-manifest", str(output_manifest_path)]
+        + ["--model-name", "silero_vad_16k"]
+        + ["--device", "cpu"]
+        + ["--jobs", "1"]
+        # "--force_download",
+    )
+
+    assert result.exit_code == 0
+    assert "Results saved to" in result.output
+    with open(output_manifest_path, encoding="utf-8") as file:
+        supervisions = json.load(file)
+    for i, segment in enumerate(supervisions):
+        assert segment["channel"] == 0
+        assert segment["start"] >= 0.1
+        assert segment["duration"] > 0
+        assert segment["recording_id"] == "recording-1"
+        assert segment["id"] == f"recording-1-silero_vad_16k-0-{i:05}"

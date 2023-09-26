@@ -1,4 +1,5 @@
 # pylint: disable=C0415,R0913,R0914
+import sys
 from pathlib import Path
 from typing import Optional
 
@@ -497,13 +498,13 @@ def activity_detection(
             f"Unknown activity detector: {model_name}. "
             f"Supported detectors: {list(detectors)}"
         )
-        return
+        sys.exit()
 
     # prepare paths and input data
     recs_path = Path(recordings_manifest).expanduser().absolute()
     if not recs_path.exists() or not recs_path.is_file():
         print(f"Recordings manifest not found: {str(recs_path)}")
-        return
+        sys.exit()
 
     sups_path = (
         recs_path.parent
@@ -520,7 +521,7 @@ def activity_detection(
 
     if not sups_path.parent.exists():
         print(f"Parent directory for output manifest does not exist: {str(sups_path)}")
-        return
+        sys.exit()
 
     print(f"Loading recordings from {str(recordings_manifest)}...")
     recordings = RecordingSet.from_file(str(recordings_manifest))
