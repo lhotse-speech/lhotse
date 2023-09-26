@@ -67,13 +67,20 @@ class SileroVAD(ActivityDetector):
             device=device,
             sampling_rate=sampling_rate,
         )
-        self._model, utils = torch.hub.load(  # type: ignore
-            repo_or_dir="snakers4/silero-vad",
-            model="silero_vad",
-            trust_repo=True,
-            force_reload=force_download,
-            onnx=False,
-        )
+        config = {
+            "repo_or_dir": "snakers4/silero-vad",
+            "model": "silero_vad",
+            "onnx": False,
+            "force_reload": force_download,
+        }
+        with suppress(Exception):
+            from pkg_resources import parse_version  # pylint: disable=C0415
+
+            # trust_repo is a new parameter in torch.hub.load and requires torch >= 2.0
+            if parse_version(torch.__version__) >= parse_version("1.12"):
+                config["trust_repo"] = True
+        self._model, utils = torch.hub.load(**config)  # type: ignore
+
         # utils[0] := get_speech_timestamps - function that returns speech timestamps
         self._predict = utils[0]
         self._model.to(self.device)
