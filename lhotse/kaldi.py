@@ -4,7 +4,7 @@ import warnings
 from collections import defaultdict
 from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 from lhotse.audio import AudioSource, Recording, RecordingSet, info
 from lhotse.features import Features, FeatureSet
@@ -346,7 +346,8 @@ def export_to_kaldi(
         save_kaldi_text_mapping(
             data={
                 recording.id: make_wavscp_channel_string_map(
-                    source, sampling_rate=recording.sampling_rate
+                    source, sampling_rate=recording.sampling_rate,
+                    transforms=recording.transforms
                 )[0]
                 for recording in recordings
                 for source in recording.sources
@@ -400,7 +401,8 @@ def export_to_kaldi(
         save_kaldi_text_mapping(
             data={
                 f"{recording.id}_{channel}": make_wavscp_channel_string_map(
-                    source, sampling_rate=recording.sampling_rate
+                    source, sampling_rate=recording.sampling_rate,
+                    transforms=recording.transforms
                 )[channel]
                 for recording in recordings
                 for source in recording.sources
@@ -538,7 +540,7 @@ def save_kaldi_text_mapping(data: Dict[str, Any], path: Path):
 
 
 def make_wavscp_channel_string_map(
-    source: AudioSource, sampling_rate: int
+    source: AudioSource, sampling_rate: int, transforms: Optional[List[Dict]] = None
 ) -> Dict[int, str]:
     if source.type == "url":
         raise ValueError("URL audio sources are not supported by Kaldi.")
@@ -549,14 +551,17 @@ def make_wavscp_channel_string_map(
             )
         return {0: f"{source.source} |"}
     elif source.type == "file":
-        if Path(source.source).suffix == ".wav" and len(source.channels) == 1:
+        if (
+            Path(source.source).suffix == ".wav" and len(source.channels) == 1
+            and transforms is None
+        ):
             # Note: for single-channel waves, we don't need to invoke ffmpeg; but
             #       for multi-channel waves, Kaldi is going to complain.
             audios = dict()
             for channel in source.channels:
                 audios[channel] = source.source
             return audios
-        elif Path(source.source).suffix == ".sph":
+        if Path(source.source).suffix == ".sph":
             # we will do this specifically using the sph2pipe because
             # ffmpeg does not support shorten compression, which is sometimes
             # used in the sph files
