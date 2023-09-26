@@ -54,7 +54,7 @@ class SileroVAD(ActivityDetector):
         self,
         sampling_rate: int = 16_000,
         device: str = "cpu",
-        force_reload: bool = False,
+        force_download: bool = False,
     ):
         if sampling_rate not in [8_000, 16_000]:
             msg = (
@@ -71,7 +71,7 @@ class SileroVAD(ActivityDetector):
             repo_or_dir="snakers4/silero-vad",
             model="silero_vad",
             trust_repo=True,
-            force_reload=force_reload,
+            force_reload=force_download,
             onnx=False,
         )
         # utils[0] := get_speech_timestamps - function that returns speech timestamps
@@ -101,36 +101,43 @@ class SileroVAD(ActivityDetector):
         return list(map(self._to_activity, murkup))
 
     @classmethod
-    def chore(cls):
+    def force_download(cls):
         print("Removing Silero VAD models from cache...")
         with suppress(Exception):
             cache_dir = Path(torch.hub.get_dir())
             for directory in cache_dir.glob("snakers4_silero-vad_*"):
-                if directory.is_dir():
-                    try:
-                        shutil.rmtree(directory)
-                    except Exception as exc:
-                        print(f"Failed to remove {str(directory)}")
-                        continue
+                if not directory.is_dir():
+                    continue
+                try:
+                    shutil.rmtree(directory)
+                except Exception:
+                    print(f"Failed to remove {str(directory)}")
+                    continue
 
         try:
             print("Initializing Silero VAD...")
-            vad = cls(device="cpu", force_reload=True)
-            print()
+            vad = cls(device="cpu", force_download=True)
+            print("Attempting to run Silero VAD on random data...")
+            vad.forward(np.random.randn(16000))
+            print("Success! Silero VAD is ready to use.")
         except Exception as exc:
             print("Failed to initialize Silero VAD.")
             raise exc
 
-        print("Attempting to run Silero VAD on random data...")
-        vad.forward(np.random.randn(16000))
-        print("Success! Silero VAD is ready to use.")
-
 
 class SileroVAD8k(SileroVAD):
-    def __init__(self, device: str = "cpu", force_reload: bool = False):
-        super().__init__(sampling_rate=8_000, device=device, force_reload=force_reload)
+    def __init__(self, device: str = "cpu", force_download: bool = False):
+        super().__init__(
+            sampling_rate=8_000,
+            device=device,
+            force_download=force_download,
+        )
 
 
 class SileroVAD16k(SileroVAD):
-    def __init__(self, device: str = "cpu", force_reload: bool = False):
-        super().__init__(sampling_rate=16_000, device=device, force_reload=force_reload)
+    def __init__(self, device: str = "cpu", force_download: bool = False):
+        super().__init__(
+            sampling_rate=16_000,
+            device=device,
+            force_download=force_download,
+        )

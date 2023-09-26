@@ -450,7 +450,7 @@ def simulate_meetings(
     help="Number of jobs for audio scanning.",
 )
 @click.option(
-    "--chore",
+    "--force_download",
     is_flag=True,
     help="Prepare the model for work",
 )
@@ -460,7 +460,7 @@ def activity_detection(
     model_name: str,
     device: str,
     jobs: int,
-    chore: bool,
+    force_download: bool,
 ):
     """
     Use activity detection methods (e.g., Silero VAD) to detect and annotate
@@ -492,11 +492,9 @@ def activity_detection(
             f"Supported detectors: {list(detectors)}"
         )
 
-    if chore:
-        print("Preparing the model for work...")
-        detectors[model_name].chore()
-        print("Preparation is done.")
-        return
+    if force_download:
+        print("Removing model state from cache...")
+        detectors[model_name].force_download()
 
     warnings.filterwarnings("ignore")
     # prepare paths

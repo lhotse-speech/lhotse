@@ -63,7 +63,7 @@ class ActivityDetector(abc.ABC):
         raise NotImplementedError()
 
     @classmethod
-    def chore(cls):
+    def force_download(cls):
         """Do some work for preloading / resetting the model state."""
         pass
 
