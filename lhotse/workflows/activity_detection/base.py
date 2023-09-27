@@ -26,8 +26,16 @@ class ActivityDetector(abc.ABC):
         self._device = device
 
     @property
+    def name(self) -> str:
+        return self._detector_name
+
+    @property
     def device(self) -> str:
         return self._device
+
+    @property
+    def sampling_rate(self) -> int:
+        return self._sampling_rate
 
     def __call__(self, recording: Recording) -> List[SupervisionSegment]:
         resampled = recording.resample(self._sampling_rate)
@@ -43,7 +51,7 @@ class ActivityDetector(abc.ABC):
             for i, activity in enumerate(activities):
                 uid = uid_template.format(
                     recording_id=recording.id,
-                    detector_name=self._detector_name,
+                    detector_name=self.name,
                     channel=channel,
                     number=i,
                 )
