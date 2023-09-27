@@ -1,3 +1,4 @@
+from functools import partial
 from typing import List, Optional, Union
 
 import click
@@ -55,6 +56,36 @@ def workflows():
 @click.option(
     "-d", "--device", default="cpu", help="Device on which to run the inference."
 )
+@click.option(
+    "--faster-whisper",
+    is_flag=True,
+    default=True,
+    help="If True, use faster-whisper's implementation based on CTranslate2.",
+)
+@click.option(
+    "--faster-whisper-use-vad",
+    is_flag=True,
+    default=True,
+    help="If True, use faster-whisper's built-in voice activity detection (SileroVAD)."
+    "Note: This requires onnxruntime to be installed.",
+)
+@click.option(
+    "--faster-whisper-add-alignments",
+    is_flag=True,
+    default=False,
+    help="If True, add word alignments using timestamps obtained using the cross-attention"
+    "pattern and dynamic time warping (Note: Less accurate than forced alignment).",
+)
+@click.option(
+    "--faster-whisper-compute-type",
+    default="float16",
+    help="Type to use for computation. See https://opennmt.net/CTranslate2/quantization.html.",
+)
+@click.option(
+    "--faster-whisper-num-workers",
+    default=1,
+    help="Number of workers for parallelization across multiple GPUs.",
+)
 @click.option("-j", "--jobs", default=1, help="Number of jobs for audio scanning.")
 @click.option(
     "--force-nonoverlapping/--keep-overlapping",
@@ -72,6 +103,11 @@ def annotate_with_whisper(
     device: str,
     jobs: int,
     force_nonoverlapping: bool,
+    faster_whisper: bool,
+    faster_whisper_use_vad: bool,
+    faster_whisper_compute_type: str,
+    faster_whisper_add_alignments: bool,
+    faster_whisper_num_workers: int,
 ):
     """
     Use OpenAI Whisper model to annotate either RECORDINGS_MANIFEST, RECORDINGS_DIR, or CUTS_MANIFEST.
@@ -83,7 +119,18 @@ def annotate_with_whisper(
     Note: this is an experimental feature of Lhotse, and is not guaranteed to yield
     high quality of data.
     """
-    from lhotse import annotate_with_whisper as annotate_with_whisper_
+    if faster_whisper:
+        from lhotse import annotate_with_faster_whisper
+
+        annotate_with_whisper_ = partial(
+            annotate_with_faster_whisper,
+            compute_type=faster_whisper_compute_type,
+            num_workers=faster_whisper_num_workers,
+            vad_filter=faster_whisper_use_vad,
+            add_alignments=faster_whisper_add_alignments,
+        )
+    else:
+        from lhotse import annotate_with_whisper as annotate_with_whisper_
 
     assert exactly_one_not_null(recordings_manifest, recordings_dir, cuts_manifest), (
         "Options RECORDINGS_MANIFEST, RECORDINGS_DIR, and CUTS_MANIFEST are mutually exclusive "
