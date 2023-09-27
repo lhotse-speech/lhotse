@@ -56,7 +56,7 @@ class SileroVAD(ActivityDetector):
         device: str = "cpu",
         force_download: bool = False,
     ):
-        if sampling_rate not in [8_000, 16_000]:
+        if sampling_rate not in [8_000, 16_000]:  # pragma: no cover
             msg = (
                 "Sampling rate must be either 8000 or 16000, ",
                 f"but got {sampling_rate}",
@@ -108,7 +108,7 @@ class SileroVAD(ActivityDetector):
         return list(map(self._to_activity, murkup))
 
     @classmethod
-    def force_download(cls):
+    def force_download(cls):  # pragma: no cover
         print("Removing Silero VAD models from cache...")
         with suppress(Exception):
             cache_dir = Path(torch.hub.get_dir())

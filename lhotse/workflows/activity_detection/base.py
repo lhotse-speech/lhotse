@@ -59,11 +59,11 @@ class ActivityDetector(abc.ABC):
         return result
 
     @abc.abstractmethod
-    def forward(self, track: np.ndarray) -> List[Activity]:
+    def forward(self, track: np.ndarray) -> List[Activity]:  # pragma: no cover
         raise NotImplementedError()
 
     @classmethod
-    def force_download(cls):
+    def force_download(cls):  # pragma: no cover
         """Do some work for preloading / resetting the model state."""
         pass
 
@@ -112,12 +112,12 @@ class ActivityDetectionProcessor:
                     )
                 segments = chain.from_iterable(parts)
                 return SupervisionSet.from_segments(segments)
-            except KeyboardInterrupt as exc:
+            except KeyboardInterrupt as exc:  # pragma: no cover
                 pool.shutdown(wait=False)
                 if self._verbose:
                     print("Activity detection interrupted by the user.")
                 raise exc
-            except Exception as exc:
+            except Exception as exc:  # pragma: no cover
                 pool.shutdown(wait=False)
                 raise RuntimeError(
                     "Activity detection failed. Please report this issue."
