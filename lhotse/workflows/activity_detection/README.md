@@ -15,16 +15,7 @@ The Activity Detection module provides tools for detecting activity in audio rec
     lhotse workflows activity-detection --help
     ```
 
-2. Please note: if you are using the activity-detection script for the first time with any detection model, be sure to add the `--force_download` flag to preload the model state on your local machine from the appropriate source. Like this:
-
-    ```bash
-    lhotse workflows activity-detection \
-    --model-name silero_vad_16k \
-    ...\
-    --force_download
-    ```
-
-3. Run activity detection using the Silero VAD model:
+2. Run activity detection using the Silero VAD model:
 
     ```bash
     lhotse workflows activity-detection \
@@ -59,6 +50,16 @@ The Activity Detection module provides tools for detecting activity in audio rec
     Results saved to:
     .../librispeech_recordings_train-clean-5.jsonl.gz
     ```
+
+## Trubleshooting
+
+If you encounter the following errors while running the activity detection.
+
+- **FileNotFoundError**: No such file or directory: /.../.cache/...
+- **ValueError**: The provided filename /.../.cache/... does not exist.
+
+Try to run the activity detection workflow with the `--force_download` flag. It will clear the cache and download the model again.
+
 
 ## Example usage in python code
 

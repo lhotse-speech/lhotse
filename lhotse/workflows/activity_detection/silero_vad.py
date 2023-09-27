@@ -52,8 +52,9 @@ class SileroVAD(ActivityDetector):
 
     def __init__(
         self,
-        sampling_rate: int = 16_000,
+        *,
         device: str = "cpu",
+        sampling_rate: int = 16_000,
         force_download: bool = False,
     ):
         if sampling_rate not in [8_000, 16_000]:  # pragma: no cover
@@ -67,6 +68,35 @@ class SileroVAD(ActivityDetector):
             device=device,
             sampling_rate=sampling_rate,
         )
+
+        self._model, utils = self._get_model(force_download=force_download)
+
+        # utils[0] := get_speech_timestamps - function that returns speech timestamps
+        self._predict = utils[0]
+        self._model.to(self.device)
+        self._to_activity = _to_activity_maker(sampling_rate)
+
+    @classmethod
+    def _cache_dirs(cls) -> List[Path]:
+        cache_dir = torch.hub.get_dir()  # type: ignore
+        if not isinstance(cache_dir, str):  # pragma: no cover
+            raise TypeError(f"Bad cache directory path. Got {cache_dir}")
+        return list(Path(cache_dir).glob("snakers4_silero-vad_*"))
+
+    @classmethod
+    def _clear_cache(cls):  # pragma: no cover
+        """Remove Silero VAD models from cache"""
+        for directory in cls._cache_dirs():
+            if directory.is_dir():
+                shutil.rmtree(directory)
+
+    @classmethod
+    def _get_model(cls, *, force_download: bool = False):
+        if force_download:  # pragma: no cover
+            cls._clear_cache()
+        if not cls._cache_dirs():  # pragma: no cover
+            force_download = True
+
         config = {
             "repo_or_dir": "snakers4/silero-vad",
             "model": "silero_vad",
@@ -79,12 +109,7 @@ class SileroVAD(ActivityDetector):
             # trust_repo is a new parameter in torch.hub.load and requires torch >= 2.0
             if parse_version(torch.__version__) >= parse_version("1.12"):
                 config["trust_repo"] = True
-        self._model, utils = torch.hub.load(**config)  # type: ignore
-
-        # utils[0] := get_speech_timestamps - function that returns speech timestamps
-        self._predict = utils[0]
-        self._model.to(self.device)
-        self._to_activity = _to_activity_maker(sampling_rate)
+        return torch.hub.load(**config)  # type: ignore
 
     def forward(self, track: np.ndarray) -> List[Activity]:
         """Predict voice activity for audio"""
@@ -109,31 +134,11 @@ class SileroVAD(ActivityDetector):
 
     @classmethod
     def force_download(cls):  # pragma: no cover
-        print("Removing Silero VAD models from cache...")
-        with suppress(Exception):
-            cache_dir = Path(torch.hub.get_dir())
-            for directory in cache_dir.glob("snakers4_silero-vad_*"):
-                if not directory.is_dir():
-                    continue
-                try:
-                    shutil.rmtree(directory)
-                except Exception:
-                    print(f"Failed to remove {str(directory)}")
-                    continue
-
-        try:
-            print("Initializing Silero VAD...")
-            vad = cls(device="cpu", force_download=True)
-            print("Attempting to run Silero VAD on random data...")
-            vad.forward(np.random.randn(16000))
-            print("Success! Silero VAD is ready to use.")
-        except Exception as exc:
-            print("Failed to initialize Silero VAD.")
-            raise exc
+        cls._get_model(force_download=True)
 
 
 class SileroVAD8k(SileroVAD):
-    def __init__(self, device: str = "cpu", force_download: bool = False):
+    def __init__(self, device: str = "cpu", *, force_download: bool = False):
         super().__init__(
             sampling_rate=8_000,
             device=device,
@@ -142,7 +147,7 @@ class SileroVAD8k(SileroVAD):
 
 
 class SileroVAD16k(SileroVAD):
-    def __init__(self, device: str = "cpu", force_download: bool = False):
+    def __init__(self, device: str = "cpu", *, force_download: bool = False):
         super().__init__(
             sampling_rate=16_000,
             device=device,
