@@ -178,6 +178,55 @@ def align_with_torchaudio(
 )
 @click.argument("out_cuts", type=click.Path(allow_dash=True))
 @click.option(
+    "-d", "--device", default="cpu", help="Device on which to run the inference."
+)
+@click.option(
+    "--num-speakers",
+    type=int,
+    default=None,
+    help="Number of clusters to use for speaker diarization. Will use threshold if not provided.",
+)
+@click.option(
+    "--threshold",
+    type=float,
+    default=None,
+    help="Threshold for speaker diarization. Will use num-speakers if not provided.",
+)
+def diarize_segments_with_speechbrain(
+    in_cuts: str,
+    out_cuts: str,
+    device: str = "cpu",
+    num_speakers: Optional[int] = None,
+    threshold: Optional[float] = None,
+):
+    """
+    This workflow uses SpeechBrain's pretrained speaker embedding model to compute speaker embeddings
+    for each cut in the CutSet. The cuts for the same recording are then clustered using
+    agglomerative hierarchical clustering, and the resulting cluster indices are used to create new cuts
+    with the speaker labels.
+
+    Please refer to https://huggingface.co/speechbrain/spkrec-xvect-voxceleb for more details
+    about the speaker embedding extractor.
+    """
+    from lhotse.workflows import diarize_segments_with_speechbrain
+
+    assert exactly_one_not_null(
+        num_speakers, threshold
+    ), "Exactly one of --num-speakers and --threshold must be provided."
+
+    cuts = load_manifest_lazy_or_eager(in_cuts)
+    cuts_with_spk_id = diarize_segments_with_speechbrain(
+        cuts, device=device, num_speakers=num_speakers, threshold=threshold
+    )
+    cuts_with_spk_id.to_file(out_cuts)
+
+
+@workflows.command()
+@click.argument(
+    "in_cuts", type=click.Path(exists=True, dir_okay=False, allow_dash=True)
+)
+@click.argument("out_cuts", type=click.Path(allow_dash=True))
+@click.option(
     "--method",
     type=click.Choice(["independent", "conversational"]),
     default="independent",
@@ -203,8 +252,6 @@ def align_with_torchaudio(
     show_default=True,
 )
 # Options used with the "conversational" method
-
-
 @click.option(
     "--same-spk-pause",
     type=float,

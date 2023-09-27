@@ -2,6 +2,7 @@ import logging
 from typing import Generator, List, Optional, Union
 
 import torch
+from tqdm import tqdm
 
 from lhotse import CutSet, MonoCut, RecordingSet, SupervisionSegment, add_durations
 from lhotse.qa import trim_supervisions_to_recordings
@@ -80,7 +81,7 @@ def _annotate_recordings(
 
     model = whisper.load_model(model_name, device=device, download_root=download_root)
 
-    for recording in recordings:
+    for recording in tqdm(recordings):
         if recording.num_channels > 1:
             logging.warning(
                 f"Skipping recording '{recording.id}'. It has {recording.num_channels} channels, "
@@ -134,7 +135,7 @@ def _annotate_cuts(
 
     model = whisper.load_model(model_name, device=device, download_root=download_root)
 
-    for cut in cuts:
+    for cut in tqdm(cuts):
         if cut.num_channels > 1:
             logging.warning(
                 f"Skipping cut '{cut.id}'. It has {cut.num_channels} channels, "
