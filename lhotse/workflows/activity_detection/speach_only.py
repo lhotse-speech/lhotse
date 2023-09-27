@@ -1,5 +1,7 @@
 from functools import partial
-from typing import Callable, List
+from typing import Callable, Iterable
+
+from intervaltree import IntervalTree
 
 from lhotse.audio import Recording
 from lhotse.cut import CutSet
@@ -15,7 +17,18 @@ def convert_recording_to_mono(recording: Recording, sampling_rate: int) -> Recor
     return resampled
 
 
-def make_activity_detector(device: str) -> Callable[[Recording], List[Activity]]:
+def to_activity_tree(activities: Iterable[Activity]) -> IntervalTree:
+    tree = IntervalTree()
+    for activity in activities:
+        tree.addi(  # type: ignore
+            begin=activity.start,
+            end=activity.start + activity.duration,
+        )
+    tree.merge_overlaps()  # type: ignore
+    return tree
+
+
+def make_activity_detector(device: str) -> Callable[[Recording], IntervalTree]:
     detector = SileroVAD16k(device=device)
     prepare = partial(convert_recording_to_mono, sampling_rate=detector.sampling_rate)
     # TODO: Need to normalise the sound before analysis?
@@ -23,11 +36,12 @@ def make_activity_detector(device: str) -> Callable[[Recording], List[Activity]]
     def get_detector() -> ActivityDetector:
         return detector  # TODO: Get detector from current scope
 
-    def detect_activity(recording: Recording) -> List[Activity]:
+    def detect_activity(recording: Recording) -> IntervalTree:
         """Detects activity timestamps in a recording"""
         detector = get_detector()
-        track = prepare(recording).load_audio()
-        return detector.forward(track)
+        track = prepare(recording).load_audio()  # type: ignore
+        activities = detector.forward(track)  # type: ignore
+        return to_activity_tree(activities)
 
     return detect_activity
 
