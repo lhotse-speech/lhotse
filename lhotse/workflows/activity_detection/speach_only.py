@@ -1,13 +1,25 @@
+from dataclasses import dataclass
 from functools import partial
-from typing import Callable, Iterable
+from pathlib import Path
+from time import time
+from typing import Callable, Iterable, List, Optional, Tuple, Union
 
-from intervaltree import IntervalTree
+from intervaltree import IntervalTree  # type: ignore
 
 from lhotse.audio import Recording
-from lhotse.cut import CutSet
+from lhotse.cut import Cut, CutSet
+from lhotse.cut.data import DataCut
+from lhotse.cut.mixed import MixedCut
+from lhotse.cut.mono import MonoCut
+from lhotse.cut.multi import MultiCut
+from lhotse.cut.padding import PaddingCut
+from lhotse.supervision import SupervisionSegment
 
 from .base import Activity, ActivityDetector
 from .silero_vad import SileroVAD16k
+
+ActivityTree = IntervalTree
+SpeachDetector = Callable[[Recording], ActivityTree]
 
 
 def to_mono(recording: Recording, sampling_rate: int) -> Recording:
@@ -17,7 +29,7 @@ def to_mono(recording: Recording, sampling_rate: int) -> Recording:
     return resampled
 
 
-def to_activity_tree(activities: Iterable[Activity]) -> IntervalTree:
+def to_activity_tree(activities: Iterable[Activity]) -> ActivityTree:
     tree = IntervalTree()
     for activity in activities:
         tree.addi(  # type: ignore
@@ -28,7 +40,7 @@ def to_activity_tree(activities: Iterable[Activity]) -> IntervalTree:
     return tree
 
 
-def make_activity_detector(device: str) -> Callable[[Recording], IntervalTree]:
+def make_activity_detector(device: str) -> SpeachDetector:
     detector = SileroVAD16k(device=device)
     prepare = partial(to_mono, sampling_rate=detector.sampling_rate)
     # TODO: Need to normalise the sound before analysis?
@@ -36,7 +48,7 @@ def make_activity_detector(device: str) -> Callable[[Recording], IntervalTree]:
     def get_detector() -> ActivityDetector:
         return detector  # TODO: Get detector from current scope
 
-    def detect_activity(recording: Recording) -> IntervalTree:
+    def detect_activity(recording: Recording) -> ActivityTree:
         """Detects activity timestamps in a recording"""
         detector = get_detector()
         track = prepare(recording).load_audio()  # type: ignore
@@ -46,32 +58,166 @@ def make_activity_detector(device: str) -> Callable[[Recording], IntervalTree]:
     return detect_activity
 
 
+def trim_recording(recording: Recording, tree: ActivityTree, root: Path) -> Recording:
+    # TODO: 1.3 Transform audio by removing silence according to selected fragments
+    # TODO: * Keep the original number of channels
+    # TODO: * Keep the original sampling rate
+
+    # TODO: 1.4 Save new audio to root
+    # TODO: * Make sure that the new audio is saved in the same format as the original audio
+    raise NotImplementedError()
+
+
+def trim_supervision_segment(
+    segment: SupervisionSegment, tree: ActivityTree
+) -> SupervisionSegment:
+    # TODO: 1.5 Transform supervision according to selected fragments
+    # TODO: * Keep the additional supervision information (e.g., speaker, language, etc.)
+    raise NotImplementedError()
+
+
+def trim_supervisions(
+    supervisions: Iterable[SupervisionSegment],
+    tree: ActivityTree,
+) -> List[SupervisionSegment]:
+    # TODO: * Drop supervisions that are not part of the new audio
+    raise NotImplementedError()
+
+
+def trim_mixed_cut(cut: MixedCut, *, root: Path, detector: SpeachDetector) -> MixedCut:
+    raise NotImplementedError()
+
+
+def trim_mono_cut(cut: MonoCut, *, root: Path, detector: SpeachDetector) -> MonoCut:
+    recording = cut.recording
+    if recording is None:
+        message = f"Cut {cut.id} does not have a recording"
+        raise ValueError(message)
+    activity_tree = detector(recording)
+
+    # Redefine Recording
+    trimmed = trim_recording(recording, activity_tree, root)
+
+    # TODO: deepcopy the cut and replace the recording
+    raise NotImplementedError()
+
+
+def trim_multi_cut(cut: MultiCut, *, root: Path, detector: SpeachDetector) -> MultiCut:
+    raise NotImplementedError()
+
+
+def trim_data_cut(cut: DataCut, *, root: Path, detector: SpeachDetector) -> DataCut:
+    if isinstance(cut, MonoCut):
+        return trim_mono_cut(cut, root, detector)
+    if isinstance(cut, MultiCut):
+        return trim_multi_cut(cut, root, detector)
+    raise NotImplementedError()
+
+
+def trim_padding_cut(
+    cut: PaddingCut, *, root: Path, detector: SpeachDetector
+) -> PaddingCut:
+    raise NotImplementedError()
+
+
+@dataclass
+class TrimmingDetails:
+    cut_id: str
+    error: bool
+    reason: Optional[str]
+    elapsed_time: float
+
+
+def trim_cut(
+    cut: Cut,
+    *,
+    root: Path,
+    detector: SpeachDetector,
+) -> Tuple[Optional[Cut], TrimmingDetails]:
+    start_triming_time = time()
+    try:
+        try:
+            if isinstance(Cut, MixedCut):
+                trimmer = trim_mixed_cut
+            elif isinstance(Cut, DataCut):
+                trimmer = trim_data_cut
+            elif isinstance(Cut, PaddingCut):
+                trimmer = trim_padding_cut
+            else:
+                raise NotImplementedError()
+
+            trim = trimmer(cut=cut, root=root, detector=detector)
+            completed_in = time() - start_triming_time
+            details = TrimmingDetails(
+                cut_id=cut.id,
+                error=False,
+                reason=None,
+                elapsed_time=completed_in,
+            )
+            return trim, details
+
+        except NotImplementedError as exc:
+            cut_type = f"{cut.__class__.__module__}.{cut.__class__.__name__}"
+            exc_string = f" {exc}" if str(exc) else ""
+            msg = f"Cut has an unsupported type {cut_type!r}.{exc_string}"
+            raise ValueError(msg) from exc
+
+    except Exception as exc:
+        completed_in = time() - start_triming_time
+        return None, TrimmingDetails(
+            cut_id=cut.id,
+            error=True,
+            reason=str(exc),
+            elapsed_time=completed_in,
+        )
+
+
+class TrimmingException(ValueError):
+    def __init__(self, details: TrimmingDetails):
+        self.details = details
+        reason = f"{details.reason}" if details.reason else "Unknown error."
+        msg = f"Failed to trim cut {details.cut_id!r}. Reason: {reason}"
+        super().__init__(msg)
+
+
 def speach_only(
     cutset: CutSet,
-    root: str,
+    root: Union[str, Path],
     *,
+    skip_exceptions: bool = False,
     device: str = "cpu",
     num_jobs: int = 1,
-) -> CutSet:
-    # TODO: 1. Act on cutset elements, for each cut:
-    detect_activity = make_activity_detector(device=device)
-    # TODO: 1.3 Transform audio by removing silence according to selected fragments
-    # TODO: 1.4 Save new audio to root
-    # TODO: 1.4 Redefine Recording
-    # TODO: 1.5 Transform supervision according to selected fragments
-    # TODO: 1.7 Form a new cutset element
-    # TODO: 2. Collect and return a new cutset
+    # TODO: save_report: bool = False,
+    # TODO: save_recordings_manifest: bool = True,
+    # TODO: save_supervisions_manifest: bool = True,
+    # TODO: inmemory: bool = True,
+) -> Tuple[CutSet, List[TrimmingDetails]]:
+    detect_activity: SpeachDetector = make_activity_detector(device=device)
+    root = Path(root).expanduser().resolve().absolute()
+
+    if not root.is_dir():
+        raise ValueError(f"Saving root '{root}' is not a directory.")
+    if not root.exists():
+        raise ValueError(f"Saving root '{root}' does not exist.")
+
+    cuts: List[Cut] = []
+    report: List[TrimmingDetails] = []
+
     # TODO: * Use multiprocessing to speed up the process
     # TODO: * Balance the load across processes
     # TODO: * Do not use more processes than the number of available CPUs
     # TODO: * Do not use more processes than the number of cuts
     # TODO: * Be careful not to overload the RAM
     # TODO: * Separate the cutset into chunks and process them separately?
-    # TODO: * Save the new audio to disk during processing
-    # TODO: * Make sure that the new audio is saved in the same format as the original audio
-    # TODO: * Keep the original number of channels
-    # TODO: * Keep the original sampling rate
-    # TODO: * Drop supervisions that are not part of the new audio
-    # TODO: * Keep the additional supervision information (e.g., speaker, language, etc.)
     # TODO: * Use tqdm to show progress
-    raise NotImplementedError()
+    for original in cutset:
+        cut, details = trim_cut(original, root=root, detector=detect_activity)
+        report.append(details)
+        if details.error:
+            if skip_exceptions:
+                continue
+            raise TrimmingException(details)
+        cuts.append(cut)
+
+    # return the new cutset and the report of trimming
+    return CutSet.from_cuts(cuts), report
