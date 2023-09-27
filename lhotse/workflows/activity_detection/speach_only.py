@@ -65,7 +65,7 @@ def trim_recording(recording: Recording, tree: ActivityTree, root: Path) -> Reco
 
     # TODO: 1.4 Save new audio to root
     # TODO: * Make sure that the new audio is saved in the same format as the original audio
-    raise NotImplementedError()
+    raise NotImplementedError("Trimming of recordings is not implemented yet.")
 
 
 def trim_supervision_segment(
@@ -73,7 +73,9 @@ def trim_supervision_segment(
 ) -> SupervisionSegment:
     # TODO: 1.5 Transform supervision according to selected fragments
     # TODO: * Keep the additional supervision information (e.g., speaker, language, etc.)
-    raise NotImplementedError()
+    raise NotImplementedError(
+        "Trimming of supervision segments is not implemented yet."
+    )
 
 
 def trim_supervisions(
@@ -81,11 +83,11 @@ def trim_supervisions(
     tree: ActivityTree,
 ) -> List[SupervisionSegment]:
     # TODO: * Drop supervisions that are not part of the new audio
-    raise NotImplementedError()
+    raise NotImplementedError("Trimming of supervisions is not implemented yet.")
 
 
 def trim_mixed_cut(cut: MixedCut, *, root: Path, detector: SpeachDetector) -> MixedCut:
-    raise NotImplementedError()
+    raise NotImplementedError("Trimming of mixed cuts is not implemented yet.")
 
 
 def trim_mono_cut(cut: MonoCut, *, root: Path, detector: SpeachDetector) -> MonoCut:
@@ -99,25 +101,25 @@ def trim_mono_cut(cut: MonoCut, *, root: Path, detector: SpeachDetector) -> Mono
     trimmed = trim_recording(recording, activity_tree, root)
 
     # TODO: deepcopy the cut and replace the recording
-    raise NotImplementedError()
+    raise NotImplementedError("Trimming of mono cuts is not implemented yet.")
 
 
 def trim_multi_cut(cut: MultiCut, *, root: Path, detector: SpeachDetector) -> MultiCut:
-    raise NotImplementedError()
+    raise NotImplementedError("Trimming of multi cuts is not implemented yet.")
 
 
 def trim_data_cut(cut: DataCut, *, root: Path, detector: SpeachDetector) -> DataCut:
     if isinstance(cut, MonoCut):
-        return trim_mono_cut(cut, root, detector)
+        return trim_mono_cut(cut, root=root, detector=detector)
     if isinstance(cut, MultiCut):
-        return trim_multi_cut(cut, root, detector)
-    raise NotImplementedError()
+        return trim_multi_cut(cut, root=root, detector=detector)
+    raise NotImplementedError("Trimming of this data cut is not implemented yet.")
 
 
 def trim_padding_cut(
     cut: PaddingCut, *, root: Path, detector: SpeachDetector
 ) -> PaddingCut:
-    raise NotImplementedError()
+    raise NotImplementedError("Trimming of padding cuts is not implemented yet.")
 
 
 @dataclass
@@ -137,16 +139,15 @@ def trim_cut(
     start_triming_time = time()
     try:
         try:
-            if isinstance(Cut, MixedCut):
-                trimmer = trim_mixed_cut
-            elif isinstance(Cut, DataCut):
-                trimmer = trim_data_cut
-            elif isinstance(Cut, PaddingCut):
-                trimmer = trim_padding_cut
+            if isinstance(cut, MixedCut):
+                trim = trim_mixed_cut(cut=cut, root=root, detector=detector)
+            elif isinstance(cut, DataCut):
+                trim = trim_data_cut(cut=cut, root=root, detector=detector)
+            elif isinstance(cut, PaddingCut):
+                trim = trim_padding_cut(cut=cut, root=root, detector=detector)
             else:
                 raise NotImplementedError()
 
-            trim = trimmer(cut=cut, root=root, detector=detector)
             completed_in = time() - start_triming_time
             details = TrimmingDetails(
                 cut_id=cut.id,
@@ -158,9 +159,9 @@ def trim_cut(
 
         except NotImplementedError as exc:
             cut_type = f"{cut.__class__.__module__}.{cut.__class__.__name__}"
-            exc_string = f" {exc}" if str(exc) else ""
+            exc_string = f" {exc}" if str(exc) != "" else ""
             msg = f"Cut has an unsupported type {cut_type!r}.{exc_string}"
-            raise ValueError(msg) from exc
+            raise NotImplementedError(msg) from exc
 
     except Exception as exc:
         completed_in = time() - start_triming_time
@@ -181,12 +182,13 @@ class TrimmingException(ValueError):
 
 
 def speach_only(
-    cutset: CutSet,
+    cutset: Iterable[Cut],
     root: Union[str, Path],
     *,
     skip_exceptions: bool = False,
     device: str = "cpu",
     num_jobs: int = 1,
+    verbose: bool = False,
     # TODO: save_report: bool = False,
     # TODO: save_recordings_manifest: bool = True,
     # TODO: save_supervisions_manifest: bool = True,
@@ -210,14 +212,34 @@ def speach_only(
     # TODO: * Be careful not to overload the RAM
     # TODO: * Separate the cutset into chunks and process them separately?
     # TODO: * Use tqdm to show progress
-    for original in cutset:
-        cut, details = trim_cut(original, root=root, detector=detect_activity)
-        report.append(details)
-        if details.error:
+
+    if verbose:
+        from tqdm.auto import tqdm  # pylint: disable=C0415
+
+        cutset = tqdm(cutset, desc="Trimming cuts", unit="cut")
+
+    for i, original in enumerate(cutset):
+        try:
+            if not isinstance(original, Cut):  # type: ignore
+                details = TrimmingDetails(
+                    cut_id=getattr(original, "id", None) or f"cut-{i}",
+                    error=True,
+                    reason=f"Cutset contains an object that is not a Cut: {original}",
+                    elapsed_time=0.0,
+                )
+                raise TrimmingException(details)
+
+            cut, details = trim_cut(original, root=root, detector=detect_activity)
+            if cut is None or details.error:
+                raise TrimmingException(details)
+
+            cuts.append(cut)
+
+        except TrimmingException as exc:
+            report.append(exc.details)
             if skip_exceptions:
                 continue
-            raise TrimmingException(details)
-        cuts.append(cut)
+            raise exc
 
     # return the new cutset and the report of trimming
     return CutSet.from_cuts(cuts), report
