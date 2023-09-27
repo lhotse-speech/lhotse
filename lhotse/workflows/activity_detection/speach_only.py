@@ -1,9 +1,19 @@
+from functools import partial
+
+from lhotse.audio import Recording
 from lhotse.cut import CutSet
+
+
+def convert_recording_to_mono(recording: Recording, sampling_rate: int) -> Recording:
+    """Converts a recording to mono and resamples it to the given sampling rate"""
+    mono = recording  # TODO: Convert the recording to mono
+    resampled = mono.resample(sampling_rate)
+    return resampled
 
 
 def speach_only(cutset: CutSet, root: str, num_jobs: int = 1) -> CutSet:
     # TODO: 1. Act on cutset elements, for each cut:
-    # TODO: 1.1 Prepare Recording for speech analysis
+    mono_for_vad = partial(convert_recording_to_mono, sampling_rate=16000)
     # TODO: 1.2 Analyze audio and select speech fragments
     # TODO: 1.3 Transform audio by removing silence according to selected fragments
     # TODO: 1.4 Save new audio to root
