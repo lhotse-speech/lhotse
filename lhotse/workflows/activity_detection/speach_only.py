@@ -10,7 +10,7 @@ from .base import Activity, ActivityDetector
 from .silero_vad import SileroVAD16k
 
 
-def convert_recording_to_mono(recording: Recording, sampling_rate: int) -> Recording:
+def to_mono(recording: Recording, sampling_rate: int) -> Recording:
     """Converts a recording to mono and resamples it to the given sampling rate"""
     mono = recording  # FIXME: Convert the recording to mono
     resampled = mono.resample(sampling_rate)
@@ -30,7 +30,7 @@ def to_activity_tree(activities: Iterable[Activity]) -> IntervalTree:
 
 def make_activity_detector(device: str) -> Callable[[Recording], IntervalTree]:
     detector = SileroVAD16k(device=device)
-    prepare = partial(convert_recording_to_mono, sampling_rate=detector.sampling_rate)
+    prepare = partial(to_mono, sampling_rate=detector.sampling_rate)
     # TODO: Need to normalise the sound before analysis?
 
     def get_detector() -> ActivityDetector:
