@@ -3,7 +3,7 @@ from functools import partial
 from io import BytesIO
 from pathlib import Path
 from time import time
-from typing import Callable, Iterable, List, Optional, Tuple, Union
+from typing import Callable, Iterable, List, Optional, Tuple, TypeVar, Union
 
 import numpy as np
 import torch
@@ -24,8 +24,7 @@ from lhotse.utils import fastcopy
 from .base import Activity, ActivityDetector
 from .silero_vad import SileroVAD16k
 
-ActivityTree = IntervalTree
-SpeachDetector = Callable[[Recording], ActivityTree]
+Detector = Callable[[Recording], IntervalTree]
 
 
 class TrimmingTree:
@@ -66,7 +65,7 @@ def to_mono(recording: Recording, sampling_rate: int) -> Recording:
     return resampled
 
 
-def to_activity_tree(activities: Iterable[Activity]) -> ActivityTree:
+def to_activity_tree(activities: Iterable[Activity]) -> IntervalTree:
     tree = IntervalTree()
     for activity in activities:
         tree.addi(  # type: ignore
@@ -77,14 +76,14 @@ def to_activity_tree(activities: Iterable[Activity]) -> ActivityTree:
     return tree
 
 
-def to_trimming_tree(activities: ActivityTree) -> TrimmingTree:
+def to_trimming_tree(activities: IntervalTree) -> TrimmingTree:
     tree = TrimmingTree(0.0)
     for interval in activities:  # type: ignore
         tree.protect_interval(interval.begin, interval.end)  # type: ignore
     return tree
 
 
-def make_activity_detector(device: str) -> SpeachDetector:
+def make_activity_detector(device: str) -> Detector:
     detector = SileroVAD16k(device=device)
     prepare = partial(to_mono, sampling_rate=detector.sampling_rate)
     # TODO: Need to normalise the sound before analysis?
@@ -92,7 +91,7 @@ def make_activity_detector(device: str) -> SpeachDetector:
     def get_detector() -> ActivityDetector:
         return detector  # TODO: Get detector from current scope
 
-    def detect_activity(recording: Recording) -> ActivityTree:
+    def detect_activity(recording: Recording) -> IntervalTree:
         """Detects activity timestamps in a recording"""
         detector = get_detector()
         track = prepare(recording).load_audio()  # type: ignore
@@ -121,7 +120,7 @@ def extract_action_intervals(
 
 def trim_recording(
     recording: Recording,
-    activity_tree: ActivityTree,
+    activity_tree: IntervalTree,
 ) -> Recording:
     if recording.has_video:  # pragma: no cover
         msg = "Trimming of video recordings is not implemented yet."
@@ -192,9 +191,10 @@ def trim_supervision_segment(
 
 def trim_supervisions(
     supervisions: Iterable[SupervisionSegment],
-    activity_tree: ActivityTree,
+    activity_tree: IntervalTree,
 ) -> List[SupervisionSegment]:
-    # TODO: * Drop supervisions that are not part of the new audio
+    # TODO: Drop supervisions that are not part of the new audio
+    # TODO: Drop supervisions that are have zero duration
     trimming_tree = to_trimming_tree(activity_tree)
     return [
         trim_supervision_segment(segment=segment, trimming_tree=trimming_tree)
@@ -202,41 +202,59 @@ def trim_supervisions(
     ]
 
 
-def trim_mixed_cut(cut: MixedCut, *, root: Path, detector: SpeachDetector) -> MixedCut:
-    raise NotImplementedError("Trimming of mixed cuts is not implemented yet.")
+CutT = TypeVar("CutT", bound=Cut)
 
 
-def trim_mono_cut(cut: MonoCut, *, root: Path, detector: SpeachDetector) -> MonoCut:
-    # TODO: deepcopy the cut and replace the recording
-
-    # redefine Recording
+# TODO: Make sure that the method works with non-data cuts
+def trim_cut_by_detector(cut: CutT, *, detector: Detector) -> CutT:
+    # analyse the recording and get the activity tree
     recording = cut.recording
     if recording is None:
-        message = f"Cut {cut.id} does not have a recording"
-        raise ValueError(message)
+        msg = f"Cut {cut.id} does not have a recording"
+        raise ValueError(msg)
+    if not isinstance(recording, Recording):
+        rec_type = type(recording)
+        rec_type_repr = f"{rec_type.__module__}.{rec_type.__name__}"
+        msg = f"Cut {cut.id} has an invalid recording type: {rec_type_repr!r}"
+        raise ValueError(msg)
     activity_tree = detector(recording)
+
+    # trim and redefine the recording
     recording = trim_recording(
         recording=recording,
         activity_tree=activity_tree,
-        root=root,
     )
-    # TODO: 1.4 Save new recording to root
 
-    # redefine Supervision
+    # trim and redefine the supervisions
     supervisions = trim_supervisions(
         supervisions=cut.supervisions,
         activity_tree=activity_tree,
     )
 
-    # TODO: redefine Cut
+    # copy the cut, but replace the recording and supervisions
+    return fastcopy(
+        cut,
+        recording=recording,
+        supervisions=supervisions,
+        duration=recording.duration,
+    )
+
+
+def trim_mixed_cut(cut: MixedCut, *, root: Path, detector: Detector) -> MixedCut:
+    raise NotImplementedError("Trimming of mixed cuts is not implemented yet.")
+
+
+def trim_mono_cut(cut: MonoCut, *, root: Path, detector: Detector) -> MonoCut:
+    cut = trim_cut_by_detector(cut=cut, detector=detector)
+    # TODO: 1.4 Save new recording to root?
     raise NotImplementedError("Trimming of mono cuts is not implemented yet.")
 
 
-def trim_multi_cut(cut: MultiCut, *, root: Path, detector: SpeachDetector) -> MultiCut:
+def trim_multi_cut(cut: MultiCut, *, root: Path, detector: Detector) -> MultiCut:
     raise NotImplementedError("Trimming of multi cuts is not implemented yet.")
 
 
-def trim_data_cut(cut: DataCut, *, root: Path, detector: SpeachDetector) -> DataCut:
+def trim_data_cut(cut: DataCut, *, root: Path, detector: Detector) -> DataCut:
     if isinstance(cut, MonoCut):
         return trim_mono_cut(cut, root=root, detector=detector)
     if isinstance(cut, MultiCut):
@@ -244,9 +262,7 @@ def trim_data_cut(cut: DataCut, *, root: Path, detector: SpeachDetector) -> Data
     raise NotImplementedError("Trimming of this data cut is not implemented yet.")
 
 
-def trim_padding_cut(
-    cut: PaddingCut, *, root: Path, detector: SpeachDetector
-) -> PaddingCut:
+def trim_padding_cut(cut: PaddingCut, *, root: Path, detector: Detector) -> PaddingCut:
     raise NotImplementedError("Trimming of padding cuts is not implemented yet.")
 
 
@@ -262,7 +278,7 @@ def trim_cut(
     cut: Cut,
     *,
     root: Path,
-    detector: SpeachDetector,
+    detector: Detector,
 ) -> Tuple[Optional[Cut], TrimmingDetails]:
     start_triming_time = time()
     try:
@@ -322,7 +338,7 @@ def speach_only(
     # TODO: save_supervisions_manifest: bool = True,
     # TODO: inmemory: bool = True,
 ) -> Tuple[CutSet, List[TrimmingDetails]]:
-    detect_activity: SpeachDetector = make_activity_detector(device=device)
+    detect_activity: Detector = make_activity_detector(device=device)
     root = Path(root).expanduser().resolve().absolute()
 
     if not root.is_dir():
