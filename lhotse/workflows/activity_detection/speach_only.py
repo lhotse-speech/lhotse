@@ -71,10 +71,10 @@ class Segmental(_Protocol):
 
 class TrimmingTree:
     def __init__(self, anchor: float = 0.0):
-        self._anchor = anchor
+        self.anchor = anchor
         self._tree = IntervalTree()
         self._tree.addi(-float("inf"), float("inf"))  # type: ignore
-        self._tree.slice(self._anchor)  # type: ignore
+        self._tree.slice(self.anchor)  # type: ignore
 
     def protect_interval(self, start: float, end: float) -> None:
         self._tree.slice(start)  # type: ignore
@@ -89,9 +89,9 @@ class TrimmingTree:
         """Trims a single `point` based on a reference `anchor`"""
         tree = self._tree.copy()
         tree.slice(point)  # type: ignore
-        overlap = tree.overlap(*sorted((point, self._anchor)))  # type: ignore
+        overlap = tree.overlap(*sorted((point, self.anchor)))  # type: ignore
         delta = sum(o.end - o.begin for o in overlap)  # type: ignore
-        if point >= self._anchor:
+        if point >= self.anchor:
             delta *= -1
         return point + delta
 
@@ -100,7 +100,7 @@ class TrimmingTree:
         return repr(self._tree).replace("IntervalTree", "TrimmingTree")
 
 
-def _to_mono(recording: Recording, sampling_rate: int) -> Recording:
+def _to_mono(recording: Recording, *, sampling_rate: int) -> Recording:
     """Converts a recording to mono and resamples it to the given sampling rate"""
     mono = recording  # FIXME: Convert the recording to mono
     resampled = mono.resample(sampling_rate)
@@ -118,10 +118,20 @@ def _to_activity_tree(activities: Iterable[Activity]) -> IntervalTree:
     return tree
 
 
-def to_trimming_tree(activities: IntervalTree) -> TrimmingTree:
-    tree = TrimmingTree(0.0)
+def to_trimming_tree(
+    activities: IntervalTree,
+    anchor: float = 0.0,
+    duration: Optional[float] = None,
+    protect_outside: bool = False,
+) -> TrimmingTree:
+    tree = TrimmingTree(anchor)
     for interval in activities:  # type: ignore
         tree.protect_interval(interval.begin, interval.end)  # type: ignore
+
+    if protect_outside:
+        tree.protect_interval(-float("inf"), anchor)
+        if duration is not None:
+            tree.protect_interval(anchor + duration, float("inf"))
     return tree
 
 
@@ -145,12 +155,13 @@ def make_activity_detector(device: str) -> Detector:
 
 def _extract_action_intervals(
     data: np.ndarray,
+    *,
     sampling_rate: int,
-    activity_tree: IntervalTree,
+    activities: IntervalTree,
 ) -> np.ndarray:
-    activity_tree = activity_tree.copy()
-    activity_tree.merge_overlaps()  # type: ignore
-    activity_time_stamps = np.array(sorted(activity_tree))[:, :2].astype(np.float64)
+    activities = activities.copy()
+    activities.merge_overlaps()  # type: ignore
+    activity_time_stamps = np.array(sorted(activities))[:, :2].astype(np.float64)
     activity_sample_stamps_raw = activity_time_stamps * sampling_rate
     activity_sample_stamps = activity_sample_stamps_raw.round().astype(np.int64)
     sliced_data = [
@@ -160,10 +171,7 @@ def _extract_action_intervals(
     return np.concatenate(sliced_data, axis=-1)
 
 
-def trim_recording(
-    recording: Recording,
-    activity_tree: IntervalTree,
-) -> Recording:
+def trim_recording(recording: Recording, activities: IntervalTree) -> Recording:
     if recording.has_video:  # pragma: no cover
         msg = "Trimming of video recordings is not implemented yet."
         raise NotImplementedError(msg)
@@ -183,7 +191,7 @@ def trim_recording(
     trimmed = _extract_action_intervals(
         data=audio,
         sampling_rate=sampling_rate,
-        activity_tree=activity_tree,
+        activities=activities,
     )
     num_samples = trimmed.shape[-1]
     duration = num_samples / sampling_rate
@@ -217,39 +225,31 @@ def trim_recording(
 SegmentalT = TypeVar("SegmentalT", bound=Segmental)
 
 
-def trim_segmental(
-    obj: SegmentalT,
-    tree: Union[TrimmingTree, IntervalTree],
-    **kwargs: Any,
-) -> SegmentalT:
-    if not isinstance(tree, TrimmingTree):
-        tree = to_trimming_tree(tree)
-    start = tree(obj.start)
-    duration = tree(obj.start + obj.duration) - start
+def trim_segmental(obj: SegmentalT, trimmer: TrimmingTree, **kwargs: Any) -> SegmentalT:
+    start = trimmer(obj.start)
+    duration_ = trimmer(obj.start + obj.duration) - start
     return fastcopy(
         obj,
         start=round(start, ndigits=8),
-        duration=round(duration, ndigits=8),
+        duration=round(duration_, ndigits=8),
         **kwargs,
     )
 
 
 def trim_supervision_segment(
     segment: SupervisionSegment,
-    tree: Union[TrimmingTree, IntervalTree],
+    trimmer: TrimmingTree,
 ) -> SupervisionSegment:
-    if not isinstance(tree, TrimmingTree):
-        tree = to_trimming_tree(tree)
     # keep the additional supervision information (e.g., speaker, language, etc.)
     new_segment = trim_segmental(
         obj=segment,
-        tree=tree,
+        trimmer=trimmer,
         alignment=None,
     )
 
     # transform alignment according to the trimming tree
     if segment.alignment is not None:
-        trimm = partial(trim_segmental, tree=tree)
+        trimm = partial(trim_segmental, trimmer=trimmer)
         new_segment.alignment = {
             key: list(map(trimm, alignment_items))
             for key, alignment_items in segment.alignment.items()
@@ -260,16 +260,15 @@ def trim_supervision_segment(
 
 def trim_supervisions(
     supervisions: Iterable[SupervisionSegment],
-    activity_tree: IntervalTree,
+    trimmer: TrimmingTree,
 ) -> List[SupervisionSegment]:
-    trimming_tree = to_trimming_tree(activity_tree)
     supervisions = map(
-        partial(trim_supervision_segment, tree=trimming_tree),
+        partial(trim_supervision_segment, trimmer=trimmer),
         supervisions,
     )
-    supervisions = (segment for segment in supervisions if segment.duration > 1e-8)
 
     # drop supervisions that are have zero duration
+    supervisions = (segment for segment in supervisions if segment.duration > 1e-8)
     return list(supervisions)
 
 
@@ -277,7 +276,7 @@ CutT = TypeVar("CutT", bound=Cut)
 
 
 # TODO: Make sure that the method works with non-data cuts
-def _trim_cut(cut: CutT, detector: Detector) -> CutT:
+def _trim_cut(cut: CutT, *, detector: Detector, protect_outside: bool) -> CutT:
     # analyse the recording and get the activity tree
     recording = cut.recording
     if recording is None:
@@ -293,13 +292,22 @@ def _trim_cut(cut: CutT, detector: Detector) -> CutT:
     # trim and redefine the recording
     recording = trim_recording(
         recording=recording,
-        activity_tree=activity_tree,
+        activities=activity_tree,
+    )
+
+    trimming_tree = to_trimming_tree(
+        activity_tree,
+        anchor=0.0,
+        # if supervisions have a duration that exceeds the recording duration, we need to protect it
+        duration=recording.duration,
+        # if supervisions have a negative start, we need to protect it
+        protect_outside=protect_outside,
     )
 
     # trim and redefine the supervisions
     supervisions = trim_supervisions(
         supervisions=cut.supervisions,
-        activity_tree=activity_tree,
+        trimmer=trimming_tree,
     )
     # TODO: Drop supervisions that are not part of the new audio
 
@@ -312,27 +320,41 @@ def _trim_cut(cut: CutT, detector: Detector) -> CutT:
     )
 
 
-def _trim_mixed_cut(cut: MixedCut, detector: Detector) -> MixedCut:
+def _trim_mixed_cut(
+    cut: MixedCut, *, detector: Detector, protect_outside: bool
+) -> MixedCut:
     raise NotImplementedError("Trimming of mixed cuts is not implemented yet.")
 
 
-def _trim_mono_cut(cut: MonoCut, detector: Detector) -> MonoCut:
-    return _trim_cut(cut=cut, detector=detector)
+def _trim_mono_cut(
+    cut: MonoCut, *, detector: Detector, protect_outside: bool
+) -> MonoCut:
+    return _trim_cut(cut=cut, detector=detector, protect_outside=protect_outside)
 
 
-def _trim_multi_cut(cut: MultiCut, detector: Detector) -> MultiCut:
+def _trim_multi_cut(
+    cut: MultiCut, *, detector: Detector, protect_outside: bool
+) -> MultiCut:
     raise NotImplementedError("Trimming of multi cuts is not implemented yet.")
 
 
-def _trim_data_cut(cut: DataCut, detector: Detector) -> DataCut:
+def _trim_data_cut(
+    cut: DataCut, *, detector: Detector, protect_outside: bool
+) -> DataCut:
     if isinstance(cut, MonoCut):
-        return _trim_mono_cut(cut, detector=detector)
+        return _trim_mono_cut(
+            cut=cut, detector=detector, protect_outside=protect_outside
+        )
     if isinstance(cut, MultiCut):
-        return _trim_multi_cut(cut, detector=detector)
+        return _trim_multi_cut(
+            cut=cut, detector=detector, protect_outside=protect_outside
+        )
     raise NotImplementedError("Trimming of this data cut is not implemented yet.")
 
 
-def _trim_padding_cut(cut: PaddingCut, detector: Detector) -> PaddingCut:
+def _trim_padding_cut(
+    cut: PaddingCut, *, detector: Detector, protect_outside: bool
+) -> PaddingCut:
     raise NotImplementedError("Trimming of padding cuts is not implemented yet.")
 
 
@@ -344,7 +366,12 @@ class TrimmingDetails:
     elapsed_time: float
 
 
-def trim_cut(cut: Cut, *, detector: Detector) -> Tuple[Optional[Cut], TrimmingDetails]:
+def trim_cut(
+    cut: Cut,
+    *,
+    detector: Detector,
+    protect_outside: bool = True,
+) -> Tuple[Optional[Cut], TrimmingDetails]:
     cut = cut.drop_features()
     if not isinstance(cut, Cut):  # type: ignore
         details = TrimmingDetails(
@@ -359,11 +386,17 @@ def trim_cut(cut: Cut, *, detector: Detector) -> Tuple[Optional[Cut], TrimmingDe
     try:
         try:
             if isinstance(cut, MixedCut):
-                trim = _trim_mixed_cut(cut=cut, detector=detector)
+                trim = _trim_mixed_cut(
+                    cut, detector=detector, protect_outside=protect_outside
+                )
             elif isinstance(cut, DataCut):
-                trim = _trim_data_cut(cut=cut, detector=detector)
+                trim = _trim_data_cut(
+                    cut, detector=detector, protect_outside=protect_outside
+                )
             elif isinstance(cut, PaddingCut):
-                trim = _trim_padding_cut(cut=cut, detector=detector)
+                trim = _trim_padding_cut(
+                    cut, detector=detector, protect_outside=protect_outside
+                )
             else:
                 raise NotImplementedError()
 
@@ -398,7 +431,8 @@ def move_recording_to_disc(
     extension: str = "flac",
     absolute: bool = False,
 ) -> Recording:
-    # TODO: 1.4 Save recording to root
+    # save recording to root
+
     if recording.has_video:  # pragma: no cover
         msg = "Saving of video recordings is not implemented yet."
         raise NotImplementedError(msg)
@@ -453,8 +487,13 @@ def trim_cut_and_save(
     memorise_recording: bool,
     save_with_extension: str = "flac",
     use_absolute_path: bool = False,
+    protect_outside: bool = True,
 ) -> Tuple[Optional[Cut], TrimmingDetails]:
-    trim, details = trim_cut(cut=cut, detector=detector)
+    trim, details = trim_cut(
+        cut=cut,
+        detector=detector,
+        protect_outside=protect_outside,
+    )
 
     if trim is not None and root is not None:
         # FIXME: trim may not have a recording
@@ -489,13 +528,12 @@ def speach_only(
     save_with_extension: str = "flac",
     memorise_recordings: bool = False,
     use_absolute_paths: bool = False,
+    protect_outside: bool = True,
     # TODO: save_report: bool = False,
     # TODO: save_recordings_manifest: bool = True,
     # TODO: save_supervisions_manifest: bool = True,
     # TODO: inmemory: bool = True,
 ) -> Tuple[CutSet, List[TrimmingDetails]]:
-    detect_activity: Detector = make_activity_detector(device=device)
-
     if root is not None:
         root = Path(root).expanduser().resolve().absolute()
         if not root.is_dir():
@@ -515,29 +553,27 @@ def speach_only(
 
         cutset = tqdm(cutset, desc="Trimming cuts", unit="cut")
 
+    detect_activity: Detector = make_activity_detector(device=device)
+    processor = partial(
+        trim_cut_and_save,
+        root=root,
+        detector=detect_activity,
+        memorise_recording=memorise_recordings,
+        save_with_extension=save_with_extension,
+        use_absolute_path=use_absolute_paths,
+        protect_outside=protect_outside,
+    )
+
     cuts: List[Cut] = []
     report: List[TrimmingDetails] = []
 
     for cut in cutset:
-        try:
-            cut, details = trim_cut_and_save(
-                cut,
-                root=root,
-                detector=detect_activity,
-                memorise_recording=memorise_recordings,
-                save_with_extension=save_with_extension,
-                use_absolute_path=use_absolute_paths,
-            )
-            if cut is None or details.error:
-                raise TrimmingException(details)
-
+        cut, details = processor(cut)
+        report.append(details)
+        if cut is not None:
             cuts.append(cut)
-
-        except TrimmingException as exc:
-            report.append(exc.details)
-            if skip_exceptions:
-                continue
-            raise exc
+        if not skip_exceptions and (details.error or cut is None):
+            raise TrimmingException(details)
 
     # return the new cutset and the report of trimming
     return CutSet.from_cuts(cuts), report
