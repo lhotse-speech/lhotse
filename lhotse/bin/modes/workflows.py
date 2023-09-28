@@ -548,3 +548,127 @@ def activity_detection(
     supervisions.to_file(str(sups_path))
 
     print("Results saved to:", str(sups_path), sep="\n")
+
+
+@workflows.command()
+@click.option(
+    "-c",
+    "--cuts-manifest",
+    type=click.Path(exists=True, dir_okay=False, file_okay=True, allow_dash=True),
+    help="Path to an existing cuts manifest.",
+)
+@click.option(
+    "-r",
+    "--recordings-manifest",
+    type=click.Path(exists=True, dir_okay=False, file_okay=True, allow_dash=True),
+    help="Path to an existing recording manifest.",
+)
+@click.option(
+    "-s",
+    "--supervisions-manifest",
+    type=click.Path(exists=True, dir_okay=False, file_okay=True, allow_dash=True),
+    help="Path to an existing supervisions manifest.",
+)
+@click.option(
+    "--recordings-path-prefix",
+    type=click.Path(exists=True, dir_okay=True, file_okay=False, allow_dash=True),
+    help="Directory with recordings.",
+)
+@click.option(
+    "-o",
+    "--output-dir",
+    type=click.Path(exists=True, dir_okay=True, file_okay=False, allow_dash=True),
+    help="Path to the output directory where results will be saved.",
+)
+@click.option(
+    "--output-supervisions-manifest",
+    type=click.Path(exists=False, dir_okay=False, file_okay=True, allow_dash=True),
+    help="Path to the output supervisions manifest.",
+)
+@click.option(
+    "--output-recordings-manifest",
+    type=click.Path(exists=False, dir_okay=False, file_okay=True, allow_dash=True),
+    help="Path to the output recordings manifest.",
+)
+@click.option(
+    "--output-cuts-manifest",
+    type=click.Path(exists=False, dir_okay=False, file_okay=True, allow_dash=True),
+    help="Path to the output cuts manifest.",
+)
+@click.option(
+    "--output-recordings-extension",
+    type=str,
+    default="flac",
+    help="Extension of the output recordings.",
+)
+@click.option(
+    "--use-absolute-paths/--use-relative-paths",
+    default=False,
+    is_flag=True,
+    help="Use absolute paths in the manifests.",
+)
+@click.option(
+    "--protect-outside/--dont-protect-outside",
+    default=True,
+    is_flag=True,
+    help="Protect supervision's start and end times that are outside of the recording's duration.",
+)
+@click.option(
+    "--skip-exceptions/--dont-skip-exceptions",
+    default=True,
+    is_flag=True,
+    help="Skip exceptions during processing.",
+)
+@click.option(
+    "-d",
+    "--device",
+    default="cpu",
+    help="Device on which to run the inference.",
+)
+@click.option(
+    "-j",
+    "--jobs",
+    default=1,
+    help="Number of jobs for audio scanning.",
+)
+@click.option(
+    "--force_download",
+    is_flag=True,
+    help="Forced cache clearing and model downloading",
+)
+def speach_only(
+    # input
+    cuts_manifest: str,
+    recordings_manifest: str,
+    supervisions_manifest: str,
+    recordings_path_prefix: str,
+    # output
+    output_dir: str,
+    output_supervisions_manifest: str,
+    output_recordings_manifest: str,
+    output_cuts_manifest: str,
+    output_recordings_extension: str,
+    # options
+    use_absolute_paths: str,
+    protect_outside: str,
+    skip_exceptions: bool,
+    # mode
+    device: str,
+    jobs: int,
+    force_download: bool,
+):
+    """
+    Trim the cutset to contain only speech segments. The speech segments are detected
+    using the Silero VAD model. All the recordings are scanned and the speech segments
+    are trimmed, merged, and saved to the output directory with the given extension.
+    All supervisions that are also trimmed to match the new recording boundaries.
+    The results are saved to the output directory or to the given paths.
+    The original data is not modified. Features are dropped.
+    """
+    import warnings
+
+    from lhotse.workflows.activity_detection.speach_only import (
+        speach_only as speach_only_,
+    )
+
+    warnings.filterwarnings("ignore")
