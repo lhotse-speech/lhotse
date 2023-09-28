@@ -1,3 +1,17 @@
+__all__ = (
+    "TrimmingTree",
+    "make_activity_detector",
+    "trim_recording",
+    "trim_segmental",
+    "trim_supervision_segment",
+    "trim_supervisions",
+    "TrimmingDetails",
+    "trim_cut",
+    "flush_cut_to_disc",
+    "trim_cut_and_save",
+    "TrimmingException",
+    "speach_only",
+)
 import sys
 from dataclasses import dataclass
 from functools import partial
@@ -84,14 +98,14 @@ class TrimmingTree:
         return repr(self._tree).replace("IntervalTree", "TrimmingTree")
 
 
-def to_mono(recording: Recording, sampling_rate: int) -> Recording:
+def _to_mono(recording: Recording, sampling_rate: int) -> Recording:
     """Converts a recording to mono and resamples it to the given sampling rate"""
     mono = recording  # FIXME: Convert the recording to mono
     resampled = mono.resample(sampling_rate)
     return resampled
 
 
-def to_activity_tree(activities: Iterable[Activity]) -> IntervalTree:
+def _to_activity_tree(activities: Iterable[Activity]) -> IntervalTree:
     tree = IntervalTree()
     for activity in activities:
         tree.addi(  # type: ignore
@@ -111,7 +125,7 @@ def to_trimming_tree(activities: IntervalTree) -> TrimmingTree:
 
 def make_activity_detector(device: str) -> Detector:
     detector = SileroVAD16k(device=device)
-    prepare = partial(to_mono, sampling_rate=detector.sampling_rate)
+    prepare = partial(_to_mono, sampling_rate=detector.sampling_rate)
     # TODO: Need to normalise the sound before analysis?
 
     def get_detector() -> ActivityDetector:
@@ -122,12 +136,12 @@ def make_activity_detector(device: str) -> Detector:
         detector = get_detector()
         track = prepare(recording).load_audio()  # type: ignore
         activities = detector.forward(track)  # type: ignore
-        return to_activity_tree(activities)
+        return _to_activity_tree(activities)
 
     return detect_activity
 
 
-def extract_action_intervals(
+def _extract_action_intervals(
     data: np.ndarray,
     sampling_rate: int,
     activity_tree: IntervalTree,
@@ -164,7 +178,7 @@ def trim_recording(
     channel_ids = tuple(channel_ids)
 
     # transform audio by removing silence according to activity tree
-    trimmed = extract_action_intervals(
+    trimmed = _extract_action_intervals(
         data=audio,
         sampling_rate=sampling_rate,
         activity_tree=activity_tree,
@@ -203,11 +217,13 @@ SegmentalT = TypeVar("SegmentalT", bound=Segmental)
 
 def trim_segmental(
     obj: SegmentalT,
-    trimming_tree: TrimmingTree,
+    tree: Union[TrimmingTree, IntervalTree],
     **kwargs: Any,
 ) -> SegmentalT:
-    start = trimming_tree(obj.start)
-    duration = trimming_tree(obj.start + obj.duration) - start
+    if not isinstance(tree, TrimmingTree):
+        tree = to_trimming_tree(tree)
+    start = tree(obj.start)
+    duration = tree(obj.start + obj.duration) - start
     return fastcopy(
         obj,
         start=round(start, ndigits=8),
@@ -218,18 +234,20 @@ def trim_segmental(
 
 def trim_supervision_segment(
     segment: SupervisionSegment,
-    trimming_tree: TrimmingTree,
+    tree: Union[TrimmingTree, IntervalTree],
 ) -> SupervisionSegment:
+    if not isinstance(tree, TrimmingTree):
+        tree = to_trimming_tree(tree)
     # keep the additional supervision information (e.g., speaker, language, etc.)
     new_segment = trim_segmental(
         obj=segment,
-        trimming_tree=trimming_tree,
+        tree=tree,
         alignment=None,
     )
 
     # transform alignment according to the trimming tree
     if segment.alignment is not None:
-        trimm = partial(trim_segmental, trimming_tree=trimming_tree)
+        trimm = partial(trim_segmental, tree=tree)
         new_segment.alignment = {
             key: list(map(trimm, alignment_items))
             for key, alignment_items in segment.alignment.items()
@@ -244,7 +262,7 @@ def trim_supervisions(
 ) -> List[SupervisionSegment]:
     trimming_tree = to_trimming_tree(activity_tree)
     supervisions = map(
-        partial(trim_supervision_segment, trimming_tree=trimming_tree),
+        partial(trim_supervision_segment, tree=trimming_tree),
         supervisions,
     )
     supervisions = (segment for segment in supervisions if segment.duration > 1e-8)
@@ -257,7 +275,7 @@ CutT = TypeVar("CutT", bound=Cut)
 
 
 # TODO: Make sure that the method works with non-data cuts
-def trim_cut_by_detector(cut: CutT, detector: Detector) -> CutT:
+def _trim_cut(cut: CutT, detector: Detector) -> CutT:
     # analyse the recording and get the activity tree
     recording = cut.recording
     if recording is None:
@@ -292,27 +310,27 @@ def trim_cut_by_detector(cut: CutT, detector: Detector) -> CutT:
     )
 
 
-def trim_mixed_cut(cut: MixedCut, detector: Detector) -> MixedCut:
+def _trim_mixed_cut(cut: MixedCut, detector: Detector) -> MixedCut:
     raise NotImplementedError("Trimming of mixed cuts is not implemented yet.")
 
 
-def trim_mono_cut(cut: MonoCut, detector: Detector) -> MonoCut:
-    return trim_cut_by_detector(cut=cut, detector=detector)
+def _trim_mono_cut(cut: MonoCut, detector: Detector) -> MonoCut:
+    return _trim_cut(cut=cut, detector=detector)
 
 
-def trim_multi_cut(cut: MultiCut, detector: Detector) -> MultiCut:
+def _trim_multi_cut(cut: MultiCut, detector: Detector) -> MultiCut:
     raise NotImplementedError("Trimming of multi cuts is not implemented yet.")
 
 
-def trim_data_cut(cut: DataCut, detector: Detector) -> DataCut:
+def _trim_data_cut(cut: DataCut, detector: Detector) -> DataCut:
     if isinstance(cut, MonoCut):
-        return trim_mono_cut(cut, detector=detector)
+        return _trim_mono_cut(cut, detector=detector)
     if isinstance(cut, MultiCut):
-        return trim_multi_cut(cut, detector=detector)
+        return _trim_multi_cut(cut, detector=detector)
     raise NotImplementedError("Trimming of this data cut is not implemented yet.")
 
 
-def trim_padding_cut(cut: PaddingCut, detector: Detector) -> PaddingCut:
+def _trim_padding_cut(cut: PaddingCut, detector: Detector) -> PaddingCut:
     raise NotImplementedError("Trimming of padding cuts is not implemented yet.")
 
 
@@ -324,20 +342,26 @@ class TrimmingDetails:
     elapsed_time: float
 
 
-def trim_cut(
-    cut: Cut,
-    *,
-    detector: Detector,
-) -> Tuple[Optional[Cut], TrimmingDetails]:
+def trim_cut(cut: Cut, *, detector: Detector) -> Tuple[Optional[Cut], TrimmingDetails]:
+    cut = cut.drop_features()
+    if not isinstance(cut, Cut):  # type: ignore
+        details = TrimmingDetails(
+            cut_id=getattr(cut, "id", "unknown"),
+            error=True,
+            reason=f"Cut is not an instance of {Cut.__name__!r}",
+            elapsed_time=0.0,
+        )
+        return None, details
+
     start_triming_time = time()
     try:
         try:
             if isinstance(cut, MixedCut):
-                trim = trim_mixed_cut(cut=cut, detector=detector)
+                trim = _trim_mixed_cut(cut=cut, detector=detector)
             elif isinstance(cut, DataCut):
-                trim = trim_data_cut(cut=cut, detector=detector)
+                trim = _trim_data_cut(cut=cut, detector=detector)
             elif isinstance(cut, PaddingCut):
-                trim = trim_padding_cut(cut=cut, detector=detector)
+                trim = _trim_padding_cut(cut=cut, detector=detector)
             else:
                 raise NotImplementedError()
 
@@ -414,14 +438,10 @@ def speach_only(
 
     if root is not None:
         root = Path(root).expanduser().resolve().absolute()
-
         if not root.is_dir():
             raise ValueError(f"Saving root '{root}' is not a directory.")
         if not root.exists():
             raise ValueError(f"Saving root '{root}' does not exist.")
-
-    cuts: List[Cut] = []
-    report: List[TrimmingDetails] = []
 
     # TODO: * Use multiprocessing to speed up the process
     # TODO: * Balance the load across processes
@@ -436,19 +456,13 @@ def speach_only(
 
         cutset = tqdm(cutset, desc="Trimming cuts", unit="cut")
 
-    for i, original in enumerate(cutset):
-        try:
-            if not isinstance(original, Cut):  # type: ignore
-                details = TrimmingDetails(
-                    cut_id=getattr(original, "id", None) or f"cut-{i}",
-                    error=True,
-                    reason=f"Cutset contains an object that is not a Cut: {original}",
-                    elapsed_time=0.0,
-                )
-                raise TrimmingException(details)
+    cuts: List[Cut] = []
+    report: List[TrimmingDetails] = []
 
+    for cut in cutset:
+        try:
             cut, details = trim_cut_and_save(
-                original,
+                cut,
                 root=root,
                 detector=detect_activity,
                 memorise=memorise,
