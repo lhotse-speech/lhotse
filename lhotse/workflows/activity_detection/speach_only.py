@@ -4,6 +4,7 @@ from pathlib import Path
 from time import time
 from typing import Callable, Iterable, List, Optional, Tuple, Union
 
+import numpy as np
 from intervaltree import IntervalTree  # type: ignore
 
 from lhotse.audio import Recording
@@ -96,11 +97,36 @@ def make_activity_detector(device: str) -> SpeachDetector:
     return detect_activity
 
 
+def extract_action_intervals(
+    data: np.ndarray,
+    sampling_rate: int,
+    activity_tree: IntervalTree,
+) -> np.ndarray:
+    activity_time_stamps = np.array(activity_tree)[:, :2].astype(np.float64)
+    activity_sample_stamps_raw = activity_time_stamps * sampling_rate
+    activity_sample_stamps = activity_sample_stamps_raw.round().astype(np.int64)
+    sliced_data = [
+        np.take(data, np.arange(start, end), axis=-1)
+        for start, end in activity_sample_stamps
+    ]
+    return np.concatenate(sliced_data, axis=-1)
+
+
 def trim_recording(
     recording: Recording,
     activity_tree: ActivityTree,
     root: Path,
 ) -> Recording:
+    if recording.has_video:
+        msg = "Trimming of video recordings is not implemented yet."
+        raise NotImplementedError(msg)
+    audio = recording.load_audio()
+    trimmed = extract_action_intervals(
+        data=audio,
+        sampling_rate=recording.sampling_rate,
+        activity_tree=activity_tree,
+    )
+
     # TODO: 1.3 Transform audio by removing silence according to selected fragments
     # TODO: * Keep the original number of channels
     # TODO: * Keep the original sampling rate
