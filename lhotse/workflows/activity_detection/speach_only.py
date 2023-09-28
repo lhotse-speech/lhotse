@@ -19,6 +19,7 @@ from lhotse.cut.mono import MonoCut
 from lhotse.cut.multi import MultiCut
 from lhotse.cut.padding import PaddingCut
 from lhotse.supervision import SupervisionSegment
+from lhotse.utils import fastcopy
 
 from .base import Activity, ActivityDetector
 from .silero_vad import SileroVAD16k
@@ -173,13 +174,20 @@ def trim_recording(
 
 
 def trim_supervision_segment(
-    segment: SupervisionSegment, trimming_tree: TrimmingTree
+    segment: SupervisionSegment,
+    trimming_tree: TrimmingTree,
 ) -> SupervisionSegment:
-    # TODO: 1.5 Transform supervision according to selected fragments
-    # TODO: * Keep the additional supervision information (e.g., speaker, language, etc.)
-    raise NotImplementedError(
-        "Trimming of supervision segments is not implemented yet."
-    )
+    # keep the additional supervision information (e.g., speaker, language, etc.)
+    segment = fastcopy(segment)
+    end = segment.end
+
+    # transform supervision according to the trimming tree
+    segment.start = round(trimming_tree(segment.start), ndigits=8)
+    segment.duration = round(trimming_tree(end) - segment.start, ndigits=8)
+    if segment.alignment is not None:
+        msg = "Trimming of supervision with alignment is not implemented yet."
+        raise NotImplementedError(msg)
+    return segment
 
 
 def trim_supervisions(
@@ -188,8 +196,10 @@ def trim_supervisions(
 ) -> List[SupervisionSegment]:
     # TODO: * Drop supervisions that are not part of the new audio
     trimming_tree = to_trimming_tree(activity_tree)
-
-    raise NotImplementedError("Trimming of supervisions is not implemented yet.")
+    return [
+        trim_supervision_segment(segment=segment, trimming_tree=trimming_tree)
+        for segment in supervisions
+    ]
 
 
 def trim_mixed_cut(cut: MixedCut, *, root: Path, detector: SpeachDetector) -> MixedCut:
