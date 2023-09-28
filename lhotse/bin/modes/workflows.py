@@ -498,13 +498,13 @@ def activity_detection(
             f"Unknown activity detector: {model_name}. "
             f"Supported detectors: {list(detectors)}"
         )
-        sys.exit()
+        sys.exit(1)
 
     # prepare paths and input data
     recs_path = Path(recordings_manifest).expanduser().absolute()
     if not recs_path.exists() or not recs_path.is_file():
         print(f"Recordings manifest not found: {str(recs_path)}")
-        sys.exit()
+        sys.exit(1)
 
     sups_path = (
         recs_path.parent
@@ -587,26 +587,6 @@ def activity_detection(
     help="Extension of the output recordings.",
 )
 @click.option(
-    "--output-supervisions-manifest",
-    type=click.Path(exists=False, dir_okay=False, file_okay=True, allow_dash=True),
-    help="Path to the output supervisions manifest.",
-)
-@click.option(
-    "--output-recordings-manifest",
-    type=click.Path(exists=False, dir_okay=False, file_okay=True, allow_dash=True),
-    help="Path to the output recordings manifest.",
-)
-@click.option(
-    "--output-cuts-manifest",
-    type=click.Path(exists=False, dir_okay=False, file_okay=True, allow_dash=True),
-    help="Path to the output cuts manifest.",
-)
-@click.option(
-    "--output-report",
-    type=click.Path(exists=False, dir_okay=False, file_okay=True, allow_dash=True),
-    help="Path to the output report.",
-)
-@click.option(
     "--use-absolute-paths/--use-relative-paths",
     default=False,
     is_flag=True,
@@ -650,10 +630,6 @@ def speach_only(
     # output
     output_dir: str,
     output_recordings_extension: str,
-    output_supervisions_manifest: str,
-    output_recordings_manifest: str,
-    output_cuts_manifest: str,
-    output_report: str,
     # options
     use_absolute_paths: bool,
     protect_outside: bool,
@@ -682,9 +658,10 @@ def speach_only(
 
     if not (cuts_manifest or recordings_manifest):
         print("At least one of --cuts-manifest or --recordings-manifest is required")
+        sys.exit(1)
     if not output_dir:
         print("--output-dir is required")
-        sys.exit()
+        sys.exit(1)
 
     if force_download:  # pragma: no cover
         print("Removing model state from cache...")
@@ -711,23 +688,26 @@ def speach_only(
     if recordings_path_prefix:
         cutset = cutset.with_recordings_path_prefix(recordings_path_prefix)
 
-    speach_only_(
-        # input
-        cutset=cutset,
-        # output
-        keep_in_memory=False,
-        output_dir=output_dir,
-        output_recordings_extension=output_recordings_extension,
-        output_cuts_manifest_path=output_cuts_manifest,
-        output_recordings_manifest_path=output_recordings_manifest,
-        output_supervisions_manifest_path=output_supervisions_manifest,
-        output_report_path=output_report,
-        # options
-        protect_outside=protect_outside,
-        use_absolute_paths=use_absolute_paths,
-        skip_exceptions=skip_exceptions,
-        # mode
-        device=device,
-        num_jobs=jobs,
-        verbose=True,
-    )
+    try:
+        speach_only_(
+            # input
+            cutset=cutset,
+            # output
+            keep_in_memory=False,
+            output_dir=output_dir,
+            output_recordings_extension=output_recordings_extension,
+            # options
+            protect_outside=protect_outside,
+            use_absolute_paths=use_absolute_paths,
+            skip_exceptions=skip_exceptions,
+            # mode
+            device=device,
+            num_jobs=jobs,
+            verbose=True,
+        )
+    except KeyboardInterrupt:
+        print("Interrupted by the user.")
+        sys.exit(1)
+    except Exception as exc:
+        print(f"An error occurred: {exc}")
+        sys.exit(1)

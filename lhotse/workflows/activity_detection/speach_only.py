@@ -46,6 +46,7 @@ if sys.version_info >= (3, 8):
 else:
     _Protocol = object
 
+import warnings
 from typing import Protocol as _Protocol
 
 Detector = Callable[[Recording], IntervalTree]
@@ -483,7 +484,7 @@ def move_recording_to_disc(
 def trim_cut_and_save(
     cut: Cut,
     *,
-    root: Optional[Path],
+    storage_dir: Optional[Path],
     detector: Detector,
     memorise_recording: bool,
     save_with_extension: str = "flac",
@@ -496,11 +497,11 @@ def trim_cut_and_save(
         protect_outside=protect_outside,
     )
 
-    if trim is not None and root is not None:
+    if trim is not None and storage_dir is not None:
         # FIXME: trim may not have a recording
         recording = move_recording_to_disc(
             recording=trim.recording,
-            root=root,
+            root=storage_dir,
             extension=save_with_extension,
             absolute=use_absolute_path,
         )
@@ -518,6 +519,28 @@ class TrimmingException(ValueError):
         super().__init__(msg)
 
 
+def _resolve_path(path: Optional[PathLike]) -> Optional[Path]:
+    if path is None or (isinstance(path, str) and path == ""):
+        return None
+    return Path(path).expanduser().resolve().absolute()
+
+
+def _assert_output_dir(path: Optional[PathLike], name: str) -> Optional[Path]:
+    path = _resolve_path(path)
+    if path is None:
+        return None
+    if path.is_file():
+        msg = f"Path {name}={path} is a file."
+        msg += " Please provide a directory path."
+        raise ValueError(msg)
+    if not path.exists():
+        msg = f"Directory {name}={path} does not exist."
+        msg += " Please create {path} first or provide a different path."
+        raise ValueError(msg)
+
+    return path
+
+
 def speach_only(
     cutset: Iterable[Cut],
     *,
@@ -525,10 +548,6 @@ def speach_only(
     keep_in_memory: bool = False,
     output_dir: Optional[PathLike] = None,
     output_recordings_extension: str = "flac",
-    output_cuts_manifest_path: Optional[PathLike] = None,
-    output_recordings_manifest_path: Optional[PathLike] = None,
-    output_supervisions_manifest_path: Optional[PathLike] = None,
-    output_report_path: Optional[PathLike] = None,
     # options
     use_absolute_paths: bool = False,
     protect_outside: bool = True,
@@ -538,12 +557,29 @@ def speach_only(
     num_jobs: int = 1,
     verbose: bool = False,
 ) -> Tuple[CutSet, List[TrimmingDetails]]:
+    output_dir = _assert_output_dir(output_dir, "output_dir")
+
+    if not (keep_in_memory or output_dir):
+        msg = "If the recordings are not kept in memory, they must be saved to disk."
+        msg += " Please provide a output_dir or set keep_in_memory=True."
+        raise ValueError(msg)
+
+    # if output_report_path is not None:
+    #     if output_report_path.suffix == "":
+    #         output_report_path = Path(str(output_report_path) + ".csv")
+    #     elif output_report_path.suffix not in [".csv", ".json", ".yaml"]:
+    #         msg = "Report file must have one of the following extensions: .csv, .json, .yaml"
+    #         raise ValueError(msg)
+
+    storage_dir = None
+    output_report_path = None
+    output_cuts_manifest_path = None
+
     if output_dir is not None:
-        output_dir = Path(output_dir).expanduser().resolve().absolute()
-        if not output_dir.is_dir():
-            raise ValueError(f"Saving root '{output_dir}' is not a directory.")
-        if not output_dir.exists():
-            raise ValueError(f"Saving root '{output_dir}' does not exist.")
+        storage_dir = output_dir / "storage"
+        storage_dir.mkdir(parents=False, exist_ok=True)
+        output_report_path = output_dir / "speach-only-report.csv"
+        output_cuts_manifest_path = output_dir / "cuts.json.gz"
 
     # TODO: * Use multiprocessing to speed up the process
     # TODO: * Balance the load across processes
@@ -560,7 +596,7 @@ def speach_only(
     detect_activity: Detector = make_activity_detector(device=device)
     processor = partial(
         trim_cut_and_save,
-        root=output_dir,
+        storage_dir=storage_dir,
         detector=detect_activity,
         memorise_recording=keep_in_memory,
         save_with_extension=output_recordings_extension,
@@ -579,5 +615,40 @@ def speach_only(
         if not skip_exceptions and (details.error or cut is None):
             raise TrimmingException(details)
 
+    result = CutSet.from_cuts(cuts)
+
+    if output_cuts_manifest_path is not None:
+        try:
+            result.to_file(output_cuts_manifest_path)
+        except Exception as exc:
+            if output_cuts_manifest_path.exists():
+                output_cuts_manifest_path.unlink()
+            if verbose:
+                print(
+                    f"Failed to save cut manifest to {output_cuts_manifest_path}: {exc}"
+                )
+
+    if output_dir is not None:
+        try:
+            result.decompose(str(output_dir), verbose=verbose)
+            features_path = output_dir / "features.jsonl.gz"
+            if features_path.exists():
+                features_path.unlink()
+        except Exception as exc:
+            if verbose:
+                print(f"Failed to save decomposed manifest to {output_dir}: {exc}")
+
+    if output_report_path is not None:
+        try:
+            import pandas as pd  # pylint: disable=C0415
+
+            pd.DataFrame(report).to_csv(output_report_path, index=False)
+
+        except Exception as exc:
+            if output_report_path.exists():
+                output_report_path.unlink()
+            if verbose:
+                print(f"Failed to save report to {output_report_path}: {exc}")
+
     # return the new cutset and the report of trimming
-    return CutSet.from_cuts(cuts), report
+    return result, report
