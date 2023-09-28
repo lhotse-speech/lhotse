@@ -455,7 +455,7 @@ def simulate_meetings(
 @click.option(
     "--force_download",
     is_flag=True,
-    help="Prepare the model for work",
+    help="Forced cache clearing and model downloading",
 )
 def activity_detection(
     recordings_manifest: str,
@@ -527,9 +527,12 @@ def activity_detection(
     recordings = RecordingSet.from_file(str(recordings_manifest))
 
     # run activity detection
-    if force_download:
+    if force_download:  # pragma: no cover
         print("Removing model state from cache...")
-        detectors[model_name].force_download()
+        detector_kls.force_download()
+    else:
+        print("Checking model state in cache...")
+        detector_kls("cpu")
 
     print(f"Making activity detection processor for {model_name!r}...")
     processor = ActivityDetectionProcessor(
