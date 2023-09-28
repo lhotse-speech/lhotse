@@ -1,9 +1,10 @@
+import sys
 from dataclasses import dataclass
 from functools import partial
 from io import BytesIO
 from pathlib import Path
 from time import time
-from typing import Callable, Iterable, List, Optional, Tuple, TypeVar, Union
+from typing import Any, Callable, Iterable, List, Optional, Tuple, TypeVar, Union
 
 import numpy as np
 import torch
@@ -24,7 +25,32 @@ from lhotse.utils import fastcopy
 from .base import Activity, ActivityDetector
 from .silero_vad import SileroVAD16k
 
+if sys.version_info >= (3, 8):
+    from typing import Protocol as _Protocol
+else:
+    _Protocol = object
+
+from typing import Protocol as _Protocol
+
 Detector = Callable[[Recording], IntervalTree]
+
+
+class Segmental(_Protocol):
+    @property
+    def start(self) -> float:
+        pass
+
+    @start.setter
+    def start(self, value: float) -> None:
+        pass
+
+    @property
+    def duration(self) -> float:
+        pass
+
+    @duration.setter
+    def duration(self, value: float) -> None:
+        pass
 
 
 class TrimmingTree:
@@ -172,34 +198,59 @@ def trim_recording(
     )
 
 
+SegmentalT = TypeVar("SegmentalT", bound=Segmental)
+
+
+def trim_segmental(
+    obj: SegmentalT,
+    trimming_tree: TrimmingTree,
+    **kwargs: Any,
+) -> SegmentalT:
+    start = trimming_tree(obj.start)
+    duration = trimming_tree(obj.start + obj.duration) - start
+    return fastcopy(
+        obj,
+        start=round(start, ndigits=8),
+        duration=round(duration, ndigits=8),
+        **kwargs,
+    )
+
+
 def trim_supervision_segment(
     segment: SupervisionSegment,
     trimming_tree: TrimmingTree,
 ) -> SupervisionSegment:
     # keep the additional supervision information (e.g., speaker, language, etc.)
-    segment = fastcopy(segment)
-    end = segment.end
+    new_segment = trim_segmental(
+        obj=segment,
+        trimming_tree=trimming_tree,
+        alignment=None,
+    )
 
-    # transform supervision according to the trimming tree
-    segment.start = round(trimming_tree(segment.start), ndigits=8)
-    segment.duration = round(trimming_tree(end) - segment.start, ndigits=8)
+    # transform alignment according to the trimming tree
     if segment.alignment is not None:
-        msg = "Trimming of supervision with alignment is not implemented yet."
-        raise NotImplementedError(msg)
-    return segment
+        trimm = partial(trim_segmental, trimming_tree=trimming_tree)
+        new_segment.alignment = {
+            key: list(map(trimm, alignment_items))
+            for key, alignment_items in segment.alignment.items()
+        }
+
+    return new_segment
 
 
 def trim_supervisions(
     supervisions: Iterable[SupervisionSegment],
     activity_tree: IntervalTree,
 ) -> List[SupervisionSegment]:
-    # TODO: Drop supervisions that are not part of the new audio
-    # TODO: Drop supervisions that are have zero duration
     trimming_tree = to_trimming_tree(activity_tree)
-    return [
-        trim_supervision_segment(segment=segment, trimming_tree=trimming_tree)
-        for segment in supervisions
-    ]
+    supervisions = map(
+        partial(trim_supervision_segment, trimming_tree=trimming_tree),
+        supervisions,
+    )
+    supervisions = (segment for segment in supervisions if segment.duration > 1e-8)
+
+    # drop supervisions that are have zero duration
+    return list(supervisions)
 
 
 CutT = TypeVar("CutT", bound=Cut)
@@ -215,7 +266,7 @@ def trim_cut_by_detector(cut: CutT, *, detector: Detector) -> CutT:
     if not isinstance(recording, Recording):
         rec_type = type(recording)
         rec_type_repr = f"{rec_type.__module__}.{rec_type.__name__}"
-        msg = f"Cut {cut.id} has an invalid recording type: {rec_type_repr!r}"
+        msg = f"Cut {cut.id!r} has an invalid recording type: {rec_type_repr!r}"
         raise ValueError(msg)
     activity_tree = detector(recording)
 
@@ -230,6 +281,7 @@ def trim_cut_by_detector(cut: CutT, *, detector: Detector) -> CutT:
         supervisions=cut.supervisions,
         activity_tree=activity_tree,
     )
+    # TODO: Drop supervisions that are not part of the new audio
 
     # copy the cut, but replace the recording and supervisions
     return fastcopy(
@@ -247,7 +299,7 @@ def trim_mixed_cut(cut: MixedCut, *, root: Path, detector: Detector) -> MixedCut
 def trim_mono_cut(cut: MonoCut, *, root: Path, detector: Detector) -> MonoCut:
     cut = trim_cut_by_detector(cut=cut, detector=detector)
     # TODO: 1.4 Save new recording to root?
-    raise NotImplementedError("Trimming of mono cuts is not implemented yet.")
+    return cut
 
 
 def trim_multi_cut(cut: MultiCut, *, root: Path, detector: Detector) -> MultiCut:
