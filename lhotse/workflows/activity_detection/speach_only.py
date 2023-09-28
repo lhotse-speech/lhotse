@@ -1,13 +1,17 @@
 from dataclasses import dataclass
 from functools import partial
+from io import BytesIO
 from pathlib import Path
 from time import time
 from typing import Callable, Iterable, List, Optional, Tuple, Union
 
 import numpy as np
+import torch
 from intervaltree import IntervalTree  # type: ignore
 
 from lhotse.audio import Recording
+from lhotse.audio.backend import torchaudio_save_flac_safe
+from lhotse.audio.source import AudioSource
 from lhotse.cut import Cut, CutSet
 from lhotse.cut.data import DataCut
 from lhotse.cut.mixed import MixedCut
@@ -74,8 +78,8 @@ def to_activity_tree(activities: Iterable[Activity]) -> ActivityTree:
 
 def to_trimming_tree(activities: ActivityTree) -> TrimmingTree:
     tree = TrimmingTree(0.0)
-    for interval in activities:
-        tree.protect_interval(interval.begin, interval.end)
+    for interval in activities:  # type: ignore
+        tree.protect_interval(interval.begin, interval.end)  # type: ignore
     return tree
 
 
@@ -102,7 +106,9 @@ def extract_action_intervals(
     sampling_rate: int,
     activity_tree: IntervalTree,
 ) -> np.ndarray:
-    activity_time_stamps = np.array(activity_tree)[:, :2].astype(np.float64)
+    activity_tree = activity_tree.copy()
+    activity_tree.merge_overlaps()  # type: ignore
+    activity_time_stamps = np.array(sorted(activity_tree))[:, :2].astype(np.float64)
     activity_sample_stamps_raw = activity_time_stamps * sampling_rate
     activity_sample_stamps = activity_sample_stamps_raw.round().astype(np.int64)
     sliced_data = [
@@ -115,25 +121,55 @@ def extract_action_intervals(
 def trim_recording(
     recording: Recording,
     activity_tree: ActivityTree,
-    root: Path,
 ) -> Recording:
-    if recording.has_video:
+    if recording.has_video:  # pragma: no cover
         msg = "Trimming of video recordings is not implemented yet."
         raise NotImplementedError(msg)
+
     audio = recording.load_audio()
+
+    # keep the original sampling rate
+    sampling_rate = recording.sampling_rate
+
+    # keep the original number of channels
+    channel_ids = recording.channel_ids
+    if isinstance(channel_ids, int):
+        channel_ids = [channel_ids]
+    channel_ids = tuple(channel_ids)
+
+    # transform audio by removing silence according to activity tree
     trimmed = extract_action_intervals(
         data=audio,
-        sampling_rate=recording.sampling_rate,
+        sampling_rate=sampling_rate,
         activity_tree=activity_tree,
     )
+    num_samples = trimmed.shape[-1]
+    duration = num_samples / sampling_rate
 
-    # TODO: 1.3 Transform audio by removing silence according to selected fragments
-    # TODO: * Keep the original number of channels
-    # TODO: * Keep the original sampling rate
+    # convert to flac and save to memory
+    stream = BytesIO()
+    torchaudio_save_flac_safe(
+        dest=stream,
+        src=torch.from_numpy(trimmed),
+        sample_rate=sampling_rate,
+        format="flac",
+    )
 
-    # TODO: 1.4 Save new audio to root
-    # TODO: * Make sure that the new audio is saved in the same format as the original audio
-    raise NotImplementedError("Trimming of recordings is not implemented yet.")
+    # make new recording storing the trimmed audio
+    memory_sources = [
+        AudioSource(
+            type="memory",
+            channels=channel_ids,
+            source=stream.getvalue(),
+        )
+    ]
+    return Recording(
+        id=recording.id,
+        sources=memory_sources,
+        sampling_rate=sampling_rate,
+        num_samples=num_samples,
+        duration=duration,
+    )
 
 
 def trim_supervision_segment(
@@ -174,6 +210,7 @@ def trim_mono_cut(cut: MonoCut, *, root: Path, detector: SpeachDetector) -> Mono
         activity_tree=activity_tree,
         root=root,
     )
+    # TODO: 1.4 Save new recording to root
 
     # redefine Supervision
     supervisions = trim_supervisions(
