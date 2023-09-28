@@ -22,6 +22,37 @@ ActivityTree = IntervalTree
 SpeachDetector = Callable[[Recording], ActivityTree]
 
 
+class TrimmingTree:
+    def __init__(self, anchor: float = 0.0):
+        self._anchor = anchor
+        self._tree = IntervalTree()
+        self._tree.addi(-float("inf"), float("inf"))  # type: ignore
+        self._tree.slice(self._anchor)  # type: ignore
+
+    def protect_interval(self, start: float, end: float) -> None:
+        self._tree.slice(start)  # type: ignore
+        self._tree.slice(end)  # type: ignore
+        for overlap in self._tree.overlap(start, end):  # type: ignore
+            self._tree.remove(overlap)  # type: ignore
+
+    def protect_segment(self, start: float, duration: float) -> None:
+        self.protect_interval(start, start + duration)
+
+    def __call__(self, point: float) -> float:
+        """Trims a single `point` based on a reference `anchor`"""
+        tree = self._tree.copy()
+        tree.slice(point)  # type: ignore
+        overlap = tree.overlap(*sorted((point, self._anchor)))  # type: ignore
+        delta = sum(o.end - o.begin for o in overlap)  # type: ignore
+        if point >= self._anchor:
+            delta *= -1
+        return point + delta
+
+    def __repr__(self):
+        """Representation of the trimmer tree"""
+        return repr(self._tree).replace("IntervalTree", "TrimmingTree")
+
+
 def to_mono(recording: Recording, sampling_rate: int) -> Recording:
     """Converts a recording to mono and resamples it to the given sampling rate"""
     mono = recording  # FIXME: Convert the recording to mono
@@ -37,6 +68,13 @@ def to_activity_tree(activities: Iterable[Activity]) -> ActivityTree:
             end=activity.start + activity.duration,
         )
     tree.merge_overlaps()  # type: ignore
+    return tree
+
+
+def to_trimming_tree(activities: ActivityTree) -> TrimmingTree:
+    tree = TrimmingTree(0.0)
+    for interval in activities:
+        tree.protect_interval(interval.begin, interval.end)
     return tree
 
 
@@ -58,7 +96,11 @@ def make_activity_detector(device: str) -> SpeachDetector:
     return detect_activity
 
 
-def trim_recording(recording: Recording, tree: ActivityTree, root: Path) -> Recording:
+def trim_recording(
+    recording: Recording,
+    activity_tree: ActivityTree,
+    root: Path,
+) -> Recording:
     # TODO: 1.3 Transform audio by removing silence according to selected fragments
     # TODO: * Keep the original number of channels
     # TODO: * Keep the original sampling rate
@@ -69,7 +111,7 @@ def trim_recording(recording: Recording, tree: ActivityTree, root: Path) -> Reco
 
 
 def trim_supervision_segment(
-    segment: SupervisionSegment, tree: ActivityTree
+    segment: SupervisionSegment, trimming_tree: TrimmingTree
 ) -> SupervisionSegment:
     # TODO: 1.5 Transform supervision according to selected fragments
     # TODO: * Keep the additional supervision information (e.g., speaker, language, etc.)
@@ -80,9 +122,11 @@ def trim_supervision_segment(
 
 def trim_supervisions(
     supervisions: Iterable[SupervisionSegment],
-    tree: ActivityTree,
+    activity_tree: ActivityTree,
 ) -> List[SupervisionSegment]:
     # TODO: * Drop supervisions that are not part of the new audio
+    trimming_tree = to_trimming_tree(activity_tree)
+
     raise NotImplementedError("Trimming of supervisions is not implemented yet.")
 
 
@@ -91,16 +135,27 @@ def trim_mixed_cut(cut: MixedCut, *, root: Path, detector: SpeachDetector) -> Mi
 
 
 def trim_mono_cut(cut: MonoCut, *, root: Path, detector: SpeachDetector) -> MonoCut:
+    # TODO: deepcopy the cut and replace the recording
+
+    # redefine Recording
     recording = cut.recording
     if recording is None:
         message = f"Cut {cut.id} does not have a recording"
         raise ValueError(message)
     activity_tree = detector(recording)
+    recording = trim_recording(
+        recording=recording,
+        activity_tree=activity_tree,
+        root=root,
+    )
 
-    # Redefine Recording
-    trimmed = trim_recording(recording, activity_tree, root)
+    # redefine Supervision
+    supervisions = trim_supervisions(
+        supervisions=cut.supervisions,
+        activity_tree=activity_tree,
+    )
 
-    # TODO: deepcopy the cut and replace the recording
+    # TODO: redefine Cut
     raise NotImplementedError("Trimming of mono cuts is not implemented yet.")
 
 
