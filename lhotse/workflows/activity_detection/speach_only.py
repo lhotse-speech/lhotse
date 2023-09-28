@@ -7,7 +7,7 @@ __all__ = (
     "trim_supervisions",
     "TrimmingDetails",
     "trim_cut",
-    "flush_cut_to_disc",
+    "move_recording_to_disc",
     "trim_cut_and_save",
     "TrimmingException",
     "speach_only",
@@ -23,6 +23,8 @@ from typing import Any, Callable, Iterable, List, Optional, Tuple, TypeVar, Unio
 import numpy as np
 import torch
 from intervaltree import IntervalTree  # type: ignore
+from torch import Tensor
+from torchaudio import save as torchaudio_save  # type: ignore
 
 from lhotse.audio import Recording
 from lhotse.audio.backend import torchaudio_save_flac_safe
@@ -390,9 +392,57 @@ def trim_cut(cut: Cut, *, detector: Detector) -> Tuple[Optional[Cut], TrimmingDe
         )
 
 
-def flush_cut_to_disc(cut: Cut, root: Path) -> Cut:
+def move_recording_to_disc(
+    recording: Recording,
+    root: Union[str, Path],
+    extension: str = "flac",
+    absolute: bool = False,
+) -> Recording:
     # TODO: 1.4 Save recording to root
-    return cut
+    if recording.has_video:  # pragma: no cover
+        msg = "Saving of video recordings is not implemented yet."
+        raise NotImplementedError(msg)
+    root = Path(root).expanduser().resolve().absolute()
+    if not root.is_dir():
+        raise ValueError(f"Saving root '{root}' is not a directory.")
+    path = root / f"{recording.id}.{extension}"
+    if path.exists():
+        raise ValueError(f"File {path} already exists.")
+
+    try:
+        # if ext == "flac":
+        #     recording = recording.move_to_memory(format=ext)
+        #     data = recording.sources[0].source
+        #     if not isinstance(data, bytes):
+        #         raise ValueError(f"Recording {recording.id} has invalid data type.")
+        #     with path.open("wb") as file:
+        #         file.write(data)
+        torchaudio_save(
+            path,
+            Tensor(recording.load_audio()),
+            sample_rate=recording.sampling_rate,
+            format=extension,
+            channels_first=True,
+        )
+
+        # use relative path to the root
+        source = AudioSource(
+            type="file",
+            channels=recording.channel_ids,
+            source=str(path if absolute else path.relative_to(Path.cwd())),
+        )
+        return Recording(
+            id=recording.id,
+            sources=[source],
+            sampling_rate=recording.sampling_rate,
+            num_samples=recording.num_samples,
+            duration=recording.duration,
+        )
+
+    except Exception as exc:
+        if path.exists():
+            path.unlink()
+        raise exc
 
 
 def trim_cut_and_save(
@@ -400,14 +450,22 @@ def trim_cut_and_save(
     *,
     root: Optional[Path],
     detector: Detector,
-    memorise: bool,
+    memorise_recording: bool,
+    save_with_extension: str = "flac",
+    use_absolute_path: bool = False,
 ) -> Tuple[Optional[Cut], TrimmingDetails]:
     trim, details = trim_cut(cut=cut, detector=detector)
 
     if trim is not None and root is not None:
-        flush = flush_cut_to_disc(cut=trim, root=root)
-        if not memorise:
-            trim = flush
+        # FIXME: trim may not have a recording
+        recording = move_recording_to_disc(
+            recording=trim.recording,
+            root=root,
+            extension=save_with_extension,
+            absolute=use_absolute_path,
+        )
+        if not memorise_recording:
+            trim.recording = recording
 
     return trim, details
 
@@ -428,7 +486,9 @@ def speach_only(
     device: str = "cpu",
     num_jobs: int = 1,
     verbose: bool = False,
-    memorise: bool = False,
+    save_with_extension: str = "flac",
+    memorise_recordings: bool = False,
+    use_absolute_paths: bool = False,
     # TODO: save_report: bool = False,
     # TODO: save_recordings_manifest: bool = True,
     # TODO: save_supervisions_manifest: bool = True,
@@ -449,7 +509,6 @@ def speach_only(
     # TODO: * Do not use more processes than the number of cuts
     # TODO: * Be careful not to overload the RAM
     # TODO: * Separate the cutset into chunks and process them separately?
-    # TODO: * Use tqdm to show progress
 
     if verbose:
         from tqdm.auto import tqdm  # pylint: disable=C0415
@@ -465,7 +524,9 @@ def speach_only(
                 cut,
                 root=root,
                 detector=detect_activity,
-                memorise=memorise,
+                memorise_recording=memorise_recordings,
+                save_with_extension=save_with_extension,
+                use_absolute_path=use_absolute_paths,
             )
             if cut is None or details.error:
                 raise TrimmingException(details)
