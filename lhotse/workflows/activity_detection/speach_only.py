@@ -49,6 +49,7 @@ else:
 from typing import Protocol as _Protocol
 
 Detector = Callable[[Recording], IntervalTree]
+PathLike = Union[str, Path]
 
 
 class Segmental(_Protocol):
@@ -519,27 +520,30 @@ class TrimmingException(ValueError):
 
 def speach_only(
     cutset: Iterable[Cut],
-    root: Optional[Union[str, Path]],
     *,
+    # output
+    keep_in_memory: bool = False,
+    output_dir: Optional[PathLike] = None,
+    output_recordings_extension: str = "flac",
+    output_cuts_manifest_path: Optional[PathLike] = None,
+    output_recordings_manifest_path: Optional[PathLike] = None,
+    output_supervisions_manifest_path: Optional[PathLike] = None,
+    output_report_path: Optional[PathLike] = None,
+    # options
+    use_absolute_paths: bool = False,
+    protect_outside: bool = True,
     skip_exceptions: bool = False,
+    # mode
     device: str = "cpu",
     num_jobs: int = 1,
     verbose: bool = False,
-    save_with_extension: str = "flac",
-    memorise_recordings: bool = False,
-    use_absolute_paths: bool = False,
-    protect_outside: bool = True,
-    # TODO: save_report: bool = False,
-    # TODO: save_recordings_manifest: bool = True,
-    # TODO: save_supervisions_manifest: bool = True,
-    # TODO: inmemory: bool = True,
 ) -> Tuple[CutSet, List[TrimmingDetails]]:
-    if root is not None:
-        root = Path(root).expanduser().resolve().absolute()
-        if not root.is_dir():
-            raise ValueError(f"Saving root '{root}' is not a directory.")
-        if not root.exists():
-            raise ValueError(f"Saving root '{root}' does not exist.")
+    if output_dir is not None:
+        output_dir = Path(output_dir).expanduser().resolve().absolute()
+        if not output_dir.is_dir():
+            raise ValueError(f"Saving root '{output_dir}' is not a directory.")
+        if not output_dir.exists():
+            raise ValueError(f"Saving root '{output_dir}' does not exist.")
 
     # TODO: * Use multiprocessing to speed up the process
     # TODO: * Balance the load across processes
@@ -556,10 +560,10 @@ def speach_only(
     detect_activity: Detector = make_activity_detector(device=device)
     processor = partial(
         trim_cut_and_save,
-        root=root,
+        root=output_dir,
         detector=detect_activity,
-        memorise_recording=memorise_recordings,
-        save_with_extension=save_with_extension,
+        memorise_recording=keep_in_memory,
+        save_with_extension=output_recordings_extension,
         use_absolute_path=use_absolute_paths,
         protect_outside=protect_outside,
     )

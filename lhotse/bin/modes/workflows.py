@@ -581,6 +581,12 @@ def activity_detection(
     help="Path to the output directory where results will be saved.",
 )
 @click.option(
+    "--output-recordings-extension",
+    type=str,
+    default="flac",
+    help="Extension of the output recordings.",
+)
+@click.option(
     "--output-supervisions-manifest",
     type=click.Path(exists=False, dir_okay=False, file_okay=True, allow_dash=True),
     help="Path to the output supervisions manifest.",
@@ -596,10 +602,9 @@ def activity_detection(
     help="Path to the output cuts manifest.",
 )
 @click.option(
-    "--output-recordings-extension",
-    type=str,
-    default="flac",
-    help="Extension of the output recordings.",
+    "--output-report",
+    type=click.Path(exists=False, dir_okay=False, file_okay=True, allow_dash=True),
+    help="Path to the output report.",
 )
 @click.option(
     "--use-absolute-paths/--use-relative-paths",
@@ -615,7 +620,7 @@ def activity_detection(
 )
 @click.option(
     "--skip-exceptions/--dont-skip-exceptions",
-    default=True,
+    default=False,
     is_flag=True,
     help="Skip exceptions during processing.",
 )
@@ -644,13 +649,14 @@ def speach_only(
     recordings_path_prefix: str,
     # output
     output_dir: str,
+    output_recordings_extension: str,
     output_supervisions_manifest: str,
     output_recordings_manifest: str,
     output_cuts_manifest: str,
-    output_recordings_extension: str,
+    output_report: str,
     # options
-    use_absolute_paths: str,
-    protect_outside: str,
+    use_absolute_paths: bool,
+    protect_outside: bool,
     skip_exceptions: bool,
     # mode
     device: str,
@@ -667,8 +673,61 @@ def speach_only(
     """
     import warnings
 
+    from lhotse.workflows.activity_detection import SileroVAD16k
     from lhotse.workflows.activity_detection.speach_only import (
         speach_only as speach_only_,
     )
 
     warnings.filterwarnings("ignore")
+
+    if not (cuts_manifest or recordings_manifest):
+        print("At least one of --cuts-manifest or --recordings-manifest is required")
+    if not output_dir:
+        print("--output-dir is required")
+        sys.exit()
+
+    if force_download:  # pragma: no cover
+        print("Removing model state from cache...")
+        SileroVAD16k.force_download()
+    else:
+        print("Checking model state in cache...")
+        SileroVAD16k("cpu")
+
+    cutset = None
+    recordings = None
+    supervisions = None
+
+    if cuts_manifest:
+        cutset = CutSet.from_file(cuts_manifest)
+    if recordings_manifest:
+        recordings = RecordingSet.from_file(recordings_manifest)
+    if supervisions_manifest:
+        supervisions = SupervisionSet.from_file(supervisions_manifest)
+
+    cutset = CutSet.from_manifests(
+        recordings=recordings if cutset is None else cutset.recordings,
+        supervisions=supervisions if cutset is None else cutset.supervisions,
+    )
+    if recordings_path_prefix:
+        cutset = cutset.with_recordings_path_prefix(recordings_path_prefix)
+
+    speach_only_(
+        # input
+        cutset=cutset,
+        # output
+        keep_in_memory=False,
+        output_dir=output_dir,
+        output_recordings_extension=output_recordings_extension,
+        output_cuts_manifest_path=output_cuts_manifest,
+        output_recordings_manifest_path=output_recordings_manifest,
+        output_supervisions_manifest_path=output_supervisions_manifest,
+        output_report_path=output_report,
+        # options
+        protect_outside=protect_outside,
+        use_absolute_paths=use_absolute_paths,
+        skip_exceptions=skip_exceptions,
+        # mode
+        device=device,
+        num_jobs=jobs,
+        verbose=True,
+    )
