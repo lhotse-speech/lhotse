@@ -257,7 +257,7 @@ CutT = TypeVar("CutT", bound=Cut)
 
 
 # TODO: Make sure that the method works with non-data cuts
-def trim_cut_by_detector(cut: CutT, *, detector: Detector) -> CutT:
+def trim_cut_by_detector(cut: CutT, detector: Detector) -> CutT:
     # analyse the recording and get the activity tree
     recording = cut.recording
     if recording is None:
@@ -292,29 +292,27 @@ def trim_cut_by_detector(cut: CutT, *, detector: Detector) -> CutT:
     )
 
 
-def trim_mixed_cut(cut: MixedCut, *, root: Path, detector: Detector) -> MixedCut:
+def trim_mixed_cut(cut: MixedCut, detector: Detector) -> MixedCut:
     raise NotImplementedError("Trimming of mixed cuts is not implemented yet.")
 
 
-def trim_mono_cut(cut: MonoCut, *, root: Path, detector: Detector) -> MonoCut:
-    cut = trim_cut_by_detector(cut=cut, detector=detector)
-    # TODO: 1.4 Save new recording to root?
-    return cut
+def trim_mono_cut(cut: MonoCut, detector: Detector) -> MonoCut:
+    return trim_cut_by_detector(cut=cut, detector=detector)
 
 
-def trim_multi_cut(cut: MultiCut, *, root: Path, detector: Detector) -> MultiCut:
+def trim_multi_cut(cut: MultiCut, detector: Detector) -> MultiCut:
     raise NotImplementedError("Trimming of multi cuts is not implemented yet.")
 
 
-def trim_data_cut(cut: DataCut, *, root: Path, detector: Detector) -> DataCut:
+def trim_data_cut(cut: DataCut, detector: Detector) -> DataCut:
     if isinstance(cut, MonoCut):
-        return trim_mono_cut(cut, root=root, detector=detector)
+        return trim_mono_cut(cut, detector=detector)
     if isinstance(cut, MultiCut):
-        return trim_multi_cut(cut, root=root, detector=detector)
+        return trim_multi_cut(cut, detector=detector)
     raise NotImplementedError("Trimming of this data cut is not implemented yet.")
 
 
-def trim_padding_cut(cut: PaddingCut, *, root: Path, detector: Detector) -> PaddingCut:
+def trim_padding_cut(cut: PaddingCut, detector: Detector) -> PaddingCut:
     raise NotImplementedError("Trimming of padding cuts is not implemented yet.")
 
 
@@ -329,18 +327,17 @@ class TrimmingDetails:
 def trim_cut(
     cut: Cut,
     *,
-    root: Path,
     detector: Detector,
 ) -> Tuple[Optional[Cut], TrimmingDetails]:
     start_triming_time = time()
     try:
         try:
             if isinstance(cut, MixedCut):
-                trim = trim_mixed_cut(cut=cut, root=root, detector=detector)
+                trim = trim_mixed_cut(cut=cut, detector=detector)
             elif isinstance(cut, DataCut):
-                trim = trim_data_cut(cut=cut, root=root, detector=detector)
+                trim = trim_data_cut(cut=cut, detector=detector)
             elif isinstance(cut, PaddingCut):
-                trim = trim_padding_cut(cut=cut, root=root, detector=detector)
+                trim = trim_padding_cut(cut=cut, detector=detector)
             else:
                 raise NotImplementedError()
 
@@ -369,6 +366,28 @@ def trim_cut(
         )
 
 
+def flush_cut_to_disc(cut: Cut, root: Path) -> Cut:
+    # TODO: 1.4 Save recording to root
+    return cut
+
+
+def trim_cut_and_save(
+    cut: Cut,
+    *,
+    root: Optional[Path],
+    detector: Detector,
+    memorise: bool,
+) -> Tuple[Optional[Cut], TrimmingDetails]:
+    trim, details = trim_cut(cut=cut, detector=detector)
+
+    if trim is not None and root is not None:
+        flush = flush_cut_to_disc(cut=trim, root=root)
+        if not memorise:
+            trim = flush
+
+    return trim, details
+
+
 class TrimmingException(ValueError):
     def __init__(self, details: TrimmingDetails):
         self.details = details
@@ -379,24 +398,27 @@ class TrimmingException(ValueError):
 
 def speach_only(
     cutset: Iterable[Cut],
-    root: Union[str, Path],
+    root: Optional[Union[str, Path]],
     *,
     skip_exceptions: bool = False,
     device: str = "cpu",
     num_jobs: int = 1,
     verbose: bool = False,
+    memorise: bool = False,
     # TODO: save_report: bool = False,
     # TODO: save_recordings_manifest: bool = True,
     # TODO: save_supervisions_manifest: bool = True,
     # TODO: inmemory: bool = True,
 ) -> Tuple[CutSet, List[TrimmingDetails]]:
     detect_activity: Detector = make_activity_detector(device=device)
-    root = Path(root).expanduser().resolve().absolute()
 
-    if not root.is_dir():
-        raise ValueError(f"Saving root '{root}' is not a directory.")
-    if not root.exists():
-        raise ValueError(f"Saving root '{root}' does not exist.")
+    if root is not None:
+        root = Path(root).expanduser().resolve().absolute()
+
+        if not root.is_dir():
+            raise ValueError(f"Saving root '{root}' is not a directory.")
+        if not root.exists():
+            raise ValueError(f"Saving root '{root}' does not exist.")
 
     cuts: List[Cut] = []
     report: List[TrimmingDetails] = []
@@ -425,7 +447,12 @@ def speach_only(
                 )
                 raise TrimmingException(details)
 
-            cut, details = trim_cut(original, root=root, detector=detect_activity)
+            cut, details = trim_cut_and_save(
+                original,
+                root=root,
+                detector=detect_activity,
+                memorise=memorise,
+            )
             if cut is None or details.error:
                 raise TrimmingException(details)
 
