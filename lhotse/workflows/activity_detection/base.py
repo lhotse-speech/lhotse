@@ -92,9 +92,9 @@ class ActivityDetector(abc.ABC):
         raise NotImplementedError()
 
     @classmethod
-    def force_download(cls):  # pragma: no cover
+    def force_download(cls) -> None:  # pragma: no cover
         """Do some work for preloading / resetting the model state."""
-        pass
+        return None
 
 
 class ActivityDetectionProcessor:
@@ -131,7 +131,7 @@ class ActivityDetectionProcessor:
             try:
                 parts = executor.map(self._process_recording, recordings)
                 if self._verbose:
-                    from tqdm.auto import tqdm
+                    from tqdm.auto import tqdm  # pylint: disable=C0415
 
                     parts = tqdm(
                         parts,
@@ -155,29 +155,29 @@ class ActivityDetectionProcessor:
                 self._detectors.clear()
 
 
-ModelT_co = TypeVar("ModelT_co", covariant=True)
-ModelT_contra = TypeVar("ModelT_contra", contravariant=True)
-PredictT_co = TypeVar("PredictT_co", covariant=True)
-CaseT_contra = TypeVar("CaseT_contra", contravariant=True)
+CaseT = TypeVar("CaseT")
+ResultT = TypeVar("ResultT")
 
 
-class DoWork(Protocol[CaseT_contra, ModelT_contra, PredictT_co]):
+class DoWork(Protocol[CaseT, ResultT]):
     def __call__(
         self,
-        object: CaseT_contra,
-        model: ModelT_contra,
+        obj: CaseT,
+        model: Callable[[CaseT], ResultT],
         **kwargs: Any,
-    ) -> PredictT_co:
+    ) -> ResultT:
         pass
 
 
-class ProcessWorker(Generic[CaseT_contra, ModelT_co, PredictT_co]):
-    models: Dict[Optional[int], ModelT_co] = {}
+class ProcessWorker(Generic[CaseT, ResultT]):
+    """A wrapper for a function that does the actual work in a multiprocessing context."""
+
+    models: Dict[Optional[int], Callable[[CaseT], ResultT]] = {}
 
     def __init__(
         self,
-        gen_model: Callable[[], ModelT_co],
-        do_work: DoWork[CaseT_contra, ModelT_co, PredictT_co],
+        gen_model: Callable[[], Callable[[CaseT], ResultT]],
+        do_work: DoWork[CaseT, ResultT],
         # "error", "ignore", "always", "default", "module", "once"
         warnings_mode: Optional[str] = None,
     ):
@@ -185,7 +185,7 @@ class ProcessWorker(Generic[CaseT_contra, ModelT_co, PredictT_co]):
         self._do_work = do_work
         self._warnings_mode = warnings_mode
 
-    def _get_model(self) -> ModelT_co:
+    def _get_model(self) -> Callable[[CaseT, Any], ResultT]:
         pid = multiprocessing.current_process().pid
         model = self.models.get(pid)
         if model is None:
@@ -193,19 +193,21 @@ class ProcessWorker(Generic[CaseT_contra, ModelT_co, PredictT_co]):
             self.models[pid] = model
         return model
 
-    def __call__(self, obj: CaseT_contra) -> PredictT_co:
+    def __call__(self, obj: CaseT, **kwargs: Any) -> ResultT:
         if self._warnings_mode is not None:
             warnings.simplefilter(self._warnings_mode)
-        return self._do_work(obj, model=self._get_model())
+        return self._do_work(obj, model=self._get_model(), **kwargs)
 
     def clear(self):
         self.models.clear()
 
 
-class Processor(Generic[CaseT_contra, ModelT_co, PredictT_co]):
+class Processor(Generic[CaseT, ResultT]):
+    """Multiprocessing wrapper for ProcessWorker."""
+
     def __init__(
         self,
-        worker: ProcessWorker[CaseT_contra, ModelT_co, PredictT_co],
+        worker: ProcessWorker[CaseT, ResultT],
         *,
         num_jobs: int,
         verbose: bool = False,
@@ -238,7 +240,12 @@ class Processor(Generic[CaseT_contra, ModelT_co, PredictT_co]):
             finally:
                 self._worker.clear()
 
-    def __call__(self, sequence: Sequence[CaseT_contra]) -> Iterable[PredictT_co]:
+    def __call__(
+        self,
+        sequence: Sequence[CaseT],
+        **kwargs: Any,
+    ) -> Iterable[ResultT]:
+        """Iterate over the results of processing the sequence with the worker."""
         pool = ProcessPoolExecutor(
             max_workers=self._num_jobs,
             # initializer=...,
@@ -246,7 +253,8 @@ class Processor(Generic[CaseT_contra, ModelT_co, PredictT_co]):
         )
 
         with self.handle_errors(pool) as executor:
-            results = executor.map(self._worker, sequence)
+            factory = partial(self._worker, **kwargs)
+            results = executor.map(factory, sequence)
 
             if self._verbose:
                 from tqdm.auto import tqdm  # pylint: disable=import-outside-toplevel
