@@ -111,7 +111,7 @@ class SileroVAD(ActivityDetector):
                 config["trust_repo"] = True
         return torch.hub.load(**config)  # type: ignore
 
-    def forward(self, track: np.ndarray) -> List[Activity]:
+    def __call__(self, track: np.ndarray) -> List[Activity]:
         """Predict voice activity for audio"""
         audio = torch.Tensor(track).to(self.device)
 

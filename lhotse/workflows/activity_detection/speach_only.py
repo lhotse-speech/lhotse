@@ -53,7 +53,7 @@ class SpeachDetector:
     def __call__(self, recording: Recording) -> IntervalTree:
         track = _to_mono(recording, sampling_rate=self._sampling_rate)
         audio = track.load_audio()  # type: ignore
-        activities = self.model.forward(audio)  # type: ignore
+        activities = self.model(audio)  # type: ignore
         return _to_activity_tree(activities)
 
 

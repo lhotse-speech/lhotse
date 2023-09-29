@@ -24,7 +24,7 @@ def detect_acitvity_segments(
     result: List[SupervisionSegment] = []
     for channel, track in enumerate(audio):
         track = np.squeeze(track)
-        activities = model.forward(track)
+        activities = model(track)
 
         for i, activity in enumerate(activities):
             uid = uid_template.format(

@@ -1,5 +1,4 @@
-import abc
-import sys
+from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import List
 
@@ -12,7 +11,7 @@ class Activity:
     duration: float
 
 
-class ActivityDetector(abc.ABC):
+class ActivityDetector(ABC):
     def __init__(self, detector_name: str, sampling_rate: int, device: str = "cpu"):
         self._detector_name = detector_name
         self._sampling_rate = sampling_rate
@@ -30,8 +29,8 @@ class ActivityDetector(abc.ABC):
     def sampling_rate(self) -> int:
         return self._sampling_rate
 
-    @abc.abstractmethod
-    def forward(self, track: np.ndarray) -> List[Activity]:  # pragma: no cover
+    @abstractmethod
+    def __call__(self, track: np.ndarray) -> List[Activity]:  # pragma: no cover
         raise NotImplementedError()
 
     @classmethod
