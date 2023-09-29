@@ -533,6 +533,7 @@ def activity_detection(
             output_supervisions_manifest=sups_path,
             num_jobs=jobs,
             verbose=True,
+            device=device,
         )
     except KeyboardInterrupt:
         print("Interrupted by the user.")

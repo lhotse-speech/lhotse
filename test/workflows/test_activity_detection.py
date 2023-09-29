@@ -9,10 +9,10 @@ from click.testing import CliRunner
 
 from lhotse import CutSet, RecordingSet, SupervisionSegment
 from lhotse.bin.modes.workflows import activity_detection
-from lhotse.workflows.activity_detection import (
-    ActivityDetectionProcessor,
-    SileroVAD8k,
-    SileroVAD16k,
+from lhotse.workflows.activity_detection import SileroVAD8k, SileroVAD16k
+from lhotse.workflows.activity_detection.activity_detection import (
+    detect_acitvity_segments,
+    detect_activity,
 )
 
 
@@ -32,7 +32,10 @@ def test_silero_vad_init():
     vad = SileroVAD16k(device="cpu")
     cuts = CutSet.from_file("test/fixtures/ljspeech/cuts.json")
     recording = cuts[0].recording
-    activity = vad(recording)
+
+    activity = detect_acitvity_segments(recording, model=vad)
+
+    # activity = vad(recording)
     assert activity != []
     assert isinstance(activity[0], SupervisionSegment)
     assert activity[0].start != 0
@@ -46,8 +49,15 @@ def test_silero_vad_in_parallel():
 
     cuts = CutSet.from_file("test/fixtures/ljspeech/cuts.json")
     recordings = RecordingSet.from_recordings([cut.recording for cut in cuts])
-    processor = ActivityDetectionProcessor(SileroVAD8k, num_jobs=2, device="cpu")
-    supervisions = processor(recordings)
+
+    supervisions = detect_activity(
+        recordings,
+        detector_kls=SileroVAD8k,
+        model_name="silero_vad_8k",
+        num_jobs=2,
+        device="cpu",
+    )
+
     newcuts = CutSet.from_manifests(
         recordings=recordings,
         supervisions=supervisions,
