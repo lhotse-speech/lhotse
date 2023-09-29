@@ -6,8 +6,9 @@ import numpy as np
 
 from lhotse.audio import Recording
 from lhotse.supervision import SupervisionSegment, SupervisionSet
+from lhotse.workflows.backend import Processor, ProcessWorker
 
-from .base import ActivityDetector, Processor, ProcessWorker
+from .base import ActivityDetector
 from .tools import PathLike, assert_output_file
 
 
