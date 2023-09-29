@@ -8,7 +8,7 @@ import torch
 from click.testing import CliRunner
 
 from lhotse import CutSet, RecordingSet, SupervisionSegment
-from lhotse.bin.modes.workflows import activity_detection
+from lhotse.bin.modes.workflows import detect_activity as detect_activity_cli
 from lhotse.workflows.activity_detection import (
     SileroVAD16k,
     detect_acitvity_segments,
@@ -82,7 +82,7 @@ def test_silero_vad_workflow_simple(temporary_directory: str):
     runner = CliRunner()
 
     result = runner.invoke(
-        activity_detection,
+        detect_activity_cli,
         ["--recordings-manifest", "test/fixtures/libri/audio.json"]
         + ["--output-supervisions-manifest", str(output_manifest_path)]
         + ["--model-name", "silero_vad_16k"]

@@ -1,5 +1,6 @@
 # pylint: disable=C0415,R0913,R0914
 import sys
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Optional
 
@@ -421,6 +422,18 @@ def simulate_meetings(
     mixed_cuts.to_file(out_cuts)
 
 
+@contextmanager
+def _catch_exceptions():
+    try:
+        yield
+    except KeyboardInterrupt:
+        print("Interrupted by the user.")
+        sys.exit(1)
+    except Exception as exc:
+        print(f"An error occurred: {exc}")
+        sys.exit(1)
+
+
 @workflows.command()
 @click.option(
     "-r",
@@ -437,7 +450,8 @@ def simulate_meetings(
 @click.option(
     "-m",
     "--model-name",
-    default="silero-vad-16k",
+    default="silero_vad_16k",
+    # TODO: auto detect available models
     help="One of activity detector: silero_vad_16k, silero_vad_8k.",
 )
 @click.option(
@@ -457,7 +471,7 @@ def simulate_meetings(
     is_flag=True,
     help="Forced cache clearing and model downloading",
 )
-def activity_detection(
+def detect_activity(
     recordings_manifest: str,
     output_supervisions_manifest: Optional[str],
     model_name: str,
@@ -477,7 +491,8 @@ def activity_detection(
     high-quality performance and data annotation.
     """
 
-    from lhotse.workflows.activity_detection import ActivityDetector, detect_activity
+    from lhotse.workflows.activity_detection import check_detetor
+    from lhotse.workflows.activity_detection import detect_activity as _detect_activity
 
     # prepare paths and input data
     recs_path = Path(recordings_manifest).expanduser().absolute()
@@ -499,17 +514,12 @@ def activity_detection(
         sups_path = sups_path / name
 
     # run activity detection
-    if force_download:  # pragma: no cover
-        print("Removing model state from cache...")
-        ActivityDetector.get_detector(model_name).hard_reset()
-    else:
-        print("Checking model state in cache...")
-        ActivityDetector.get_detector(model_name)(device=device)
+    check_detetor(model_name, force=force_download)
 
     print(f"Making activity detection processor for {model_name!r}...")
 
-    try:
-        detect_activity(
+    with _catch_exceptions():
+        _detect_activity(
             recordings=recordings_manifest,
             detector=model_name,
             output_supervisions_manifest=sups_path,
@@ -517,12 +527,6 @@ def activity_detection(
             verbose=True,
             device=device,
         )
-    except KeyboardInterrupt:
-        print("Interrupted by the user.")
-        sys.exit(1)
-    except Exception as exc:
-        print(f"An error occurred: {exc}")
-        sys.exit(1)
 
     print("Results saved to:", str(sups_path), sep="\n")
 
@@ -576,6 +580,13 @@ def activity_detection(
     help="Skip exceptions during processing.",
 )
 @click.option(
+    "-m",
+    "--model-name",
+    default="silero_vad_16k",
+    # TODO: auto detect available models
+    help="One of activity detector: silero_vad_16k, silero_vad_8k.",
+)
+@click.option(
     "-d",
     "--device",
     default="cpu",
@@ -606,6 +617,7 @@ def trim_inactivity(
     protect_outside: bool,
     skip_exceptions: bool,
     # mode
+    model_name: str,
     device: str,
     jobs: int,
     force_download: bool,
@@ -618,11 +630,9 @@ def trim_inactivity(
     The results are saved to the output directory or to the given paths.
     The original data is not modified. Features are dropped.
     """
-    import warnings
 
-    from lhotse.workflows.activity_detection import SileroVAD16k, trim_inactivity
-
-    warnings.filterwarnings("ignore")
+    from lhotse.workflows.activity_detection import check_detetor
+    from lhotse.workflows.activity_detection import trim_inactivity as _trim_inactivity
 
     if not (cuts_manifest or recordings_manifest):
         print("At least one of --cuts-manifest or --recordings-manifest is required")
@@ -631,12 +641,7 @@ def trim_inactivity(
         print("--output-dir is required")
         sys.exit(1)
 
-    if force_download:  # pragma: no cover
-        print("Removing model state from cache...")
-        SileroVAD16k.hard_reset()
-    else:
-        print("Checking model state in cache...")
-        SileroVAD16k("cpu")
+    check_detetor(model_name, force=force_download)
 
     cutset = None
     recordings = None
@@ -656,10 +661,11 @@ def trim_inactivity(
     if recordings_path_prefix:
         cutset = cutset.with_recording_path_prefix(recordings_path_prefix)
 
-    try:
-        trim_inactivity(
+    with _catch_exceptions():
+        _trim_inactivity(
             # input
             cutset=cutset,
+            detector=model_name,
             # output
             output_dir=output_dir,
             output_recordings_extension=output_recordings_extension,
@@ -670,10 +676,5 @@ def trim_inactivity(
             device=device,
             num_jobs=jobs,
             verbose=True,
+            warnings_mode="ignore",
         )
-    except KeyboardInterrupt:
-        print("Interrupted by the user.")
-        sys.exit(1)
-    except Exception as exc:
-        print(f"An error occurred: {exc}")
-        sys.exit(1)
