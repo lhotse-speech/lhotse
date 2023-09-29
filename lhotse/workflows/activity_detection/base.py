@@ -97,6 +97,7 @@ class ActivityDetector(abc.ABC):
         return None
 
 
+# FIXME: Get rid this class and use ProcessWorker instead.
 class ActivityDetectionProcessor:
     _detectors: Dict[Optional[int], ActivityDetector] = {}
 
@@ -156,28 +157,29 @@ class ActivityDetectionProcessor:
 
 
 CaseT = TypeVar("CaseT")
+PredictT = TypeVar("PredictT")
 ResultT = TypeVar("ResultT")
 
 
-class DoWork(Protocol[CaseT, ResultT]):
+class DoWork(Protocol[CaseT, PredictT, ResultT]):
     def __call__(
         self,
         obj: CaseT,
-        model: Callable[[CaseT], ResultT],
+        model: Callable[[CaseT], PredictT],
         **kwargs: Any,
     ) -> ResultT:
         pass
 
 
-class ProcessWorker(Generic[CaseT, ResultT]):
+class ProcessWorker(Generic[CaseT, PredictT, ResultT]):
     """A wrapper for a function that does the actual work in a multiprocessing context."""
 
-    models: Dict[Optional[int], Callable[[CaseT], ResultT]] = {}
+    models: Dict[Optional[int], Callable[[CaseT], PredictT]] = {}
 
     def __init__(
         self,
-        gen_model: Callable[[], Callable[[CaseT], ResultT]],
-        do_work: DoWork[CaseT, ResultT],
+        gen_model: Callable[[], Callable[[CaseT], PredictT]],
+        do_work: DoWork[CaseT, PredictT, ResultT],
         # "error", "ignore", "always", "default", "module", "once"
         warnings_mode: Optional[str] = None,
     ):
@@ -185,7 +187,7 @@ class ProcessWorker(Generic[CaseT, ResultT]):
         self._do_work = do_work
         self._warnings_mode = warnings_mode
 
-    def _get_model(self) -> Callable[[CaseT, Any], ResultT]:
+    def _get_model(self) -> Callable[[CaseT], PredictT]:
         pid = multiprocessing.current_process().pid
         model = self.models.get(pid)
         if model is None:
@@ -195,19 +197,19 @@ class ProcessWorker(Generic[CaseT, ResultT]):
 
     def __call__(self, obj: CaseT, **kwargs: Any) -> ResultT:
         if self._warnings_mode is not None:
-            warnings.simplefilter(self._warnings_mode)
+            warnings.simplefilter(self._warnings_mode)  # type: ignore
         return self._do_work(obj, model=self._get_model(), **kwargs)
 
     def clear(self):
         self.models.clear()
 
 
-class Processor(Generic[CaseT, ResultT]):
+class Processor(Generic[CaseT, PredictT, ResultT]):
     """Multiprocessing wrapper for ProcessWorker."""
 
     def __init__(
         self,
-        worker: ProcessWorker[CaseT, ResultT],
+        worker: ProcessWorker[CaseT, PredictT, ResultT],
         *,
         num_jobs: int,
         verbose: bool = False,

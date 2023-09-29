@@ -477,15 +477,11 @@ def activity_detection(
     high-quality performance and data annotation.
     """
 
-    import warnings
+    from itertools import chain
 
-    from lhotse.workflows.activity_detection import (
-        ActivityDetectionProcessor,
-        SileroVAD8k,
-        SileroVAD16k,
-    )
-
-    warnings.filterwarnings("ignore")
+    from lhotse.workflows.activity_detection import SileroVAD8k, SileroVAD16k
+    from lhotse.workflows.activity_detection.activity_detection import detect_activity
+    from lhotse.workflows.activity_detection.base import Processor, ProcessWorker
 
     detectors = {
         "silero_vad_8k": SileroVAD8k,
@@ -535,14 +531,15 @@ def activity_detection(
         detector_kls("cpu")
 
     print(f"Making activity detection processor for {model_name!r}...")
-    processor = ActivityDetectionProcessor(
-        detector_kls=detector_kls,
-        num_jobs=jobs,
-        device=device,
-        verbose=True,
+
+    worker = ProcessWorker(
+        gen_model=detector_kls,
+        do_work=detect_activity,
+        warnings_mode="ignore",
     )
-    print(f"Running activity detection using {model_name!r}...")
-    supervisions = processor(recordings)
+    processor = Processor(worker, num_jobs=jobs, verbose=True, mp_context="spawn")
+    segments = chain.from_iterable(processor(recordings))
+    supervisions = SupervisionSet.from_segments(segments)
 
     print(f"Saving {model_name!r} results ...")
     supervisions.to_file(str(sups_path))
