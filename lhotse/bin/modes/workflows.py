@@ -610,7 +610,8 @@ def activity_detection(
     is_flag=True,
     help="Forced cache clearing and model downloading",
 )
-def speach_only(
+# TODO: add model selector
+def trim_inactivity(
     # input
     cuts_manifest: str,
     recordings_manifest: str,
@@ -637,10 +638,7 @@ def speach_only(
     """
     import warnings
 
-    from lhotse.workflows.activity_detection import SileroVAD16k
-    from lhotse.workflows.activity_detection.speach_only import (
-        speach_only as speach_only_,
-    )
+    from lhotse.workflows.activity_detection import SileroVAD16k, trim_inactivity
 
     warnings.filterwarnings("ignore")
 
@@ -677,7 +675,7 @@ def speach_only(
         cutset = cutset.with_recording_path_prefix(recordings_path_prefix)
 
     try:
-        speach_only_(
+        trim_inactivity(
             # input
             cutset=cutset,
             # output

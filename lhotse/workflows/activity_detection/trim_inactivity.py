@@ -1,23 +1,23 @@
 __all__ = (
-    "SpeachDetector",
     "TrimmingTree",
+    "to_trimming_tree",
     "trim_recording",
     "trim_segmental",
     "trim_supervision_segment",
     "trim_supervisions",
     "TrimmingDetails",
-    "trim_cut",
+    "trim_inactivity_in_cut",
     "move_recording_to_disc",
-    "trim_cut_and_save",
+    "trim_inactivity_in_cut_and_save_audio",
     "TrimmingException",
-    "speach_only",
+    "trim_inactivity",
 )
 from dataclasses import dataclass
 from functools import partial
 from io import BytesIO
 from pathlib import Path
 from time import time
-from typing import Any, Callable, Iterable, List, Optional, Tuple, TypeVar, Union
+from typing import Any, Iterable, List, Optional, Tuple, TypeVar, Union
 
 import numpy as np
 import torch
@@ -38,23 +38,11 @@ from lhotse.supervision import SupervisionSegment
 from lhotse.utils import fastcopy
 from lhotse.workflows.backend import Processor, ProcessWorker, Protocol
 
-from .base import Activity
+from .base import Activity, ActivityDetector
 from .silero_vad import SileroVAD16k
 from .tools import PathLike, assert_output_dir
 
-Detector = Callable[[Recording], IntervalTree]
-
-
-class SpeachDetector:
-    def __init__(self, device: str = "cpu"):
-        self.model = SileroVAD16k(device=device)
-        self._sampling_rate = self.model.sampling_rate
-
-    def __call__(self, recording: Recording) -> IntervalTree:
-        track = _to_mono(recording, sampling_rate=self._sampling_rate)
-        audio = track.load_audio()  # type: ignore
-        activities = self.model(audio)  # type: ignore
-        return _to_activity_tree(activities)
+# Detector = Callable[[Recording], IntervalTree]
 
 
 class Segmental(Protocol):
@@ -264,7 +252,9 @@ CutT = TypeVar("CutT", bound=Cut)
 
 
 # TODO: Make sure that the method works with non-data cuts
-def _trim_cut(cut: CutT, *, model: Detector, protect_outside: bool) -> CutT:
+def _trim_inactivity_in_cut(
+    cut: CutT, *, model: ActivityDetector, protect_outside: bool
+) -> CutT:
     # analyse the recording and get the activity tree
     recording = cut.recording
     if recording is None:
@@ -275,7 +265,12 @@ def _trim_cut(cut: CutT, *, model: Detector, protect_outside: bool) -> CutT:
         rec_type_repr = f"{rec_type.__module__}.{rec_type.__name__}"
         msg = f"Cut {cut.id!r} has an invalid recording type: {rec_type_repr!r}"
         raise ValueError(msg)
-    activity_tree = model(recording)
+
+    # detect activities
+    track = _to_mono(recording, sampling_rate=model.sampling_rate)
+    audio = track.load_audio()  # type: ignore
+    activities = model(audio)
+    activity_tree = _to_activity_tree(activities)
 
     # trim and redefine the recording
     recording = trim_recording(
@@ -308,32 +303,42 @@ def _trim_cut(cut: CutT, *, model: Detector, protect_outside: bool) -> CutT:
     )
 
 
-def _trim_mixed_cut(
-    cut: MixedCut, *, model: Detector, protect_outside: bool
+def _trim_inactivity_in_mixedcut(
+    cut: MixedCut, *, model: ActivityDetector, protect_outside: bool
 ) -> MixedCut:
     raise NotImplementedError("Trimming of mixed cuts is not implemented yet.")
 
 
-def _trim_mono_cut(cut: MonoCut, *, model: Detector, protect_outside: bool) -> MonoCut:
-    return _trim_cut(cut=cut, model=model, protect_outside=protect_outside)
+def _trim_inactivity_in_monocut(
+    cut: MonoCut, *, model: ActivityDetector, protect_outside: bool
+) -> MonoCut:
+    return _trim_inactivity_in_cut(
+        cut=cut, model=model, protect_outside=protect_outside
+    )
 
 
-def _trim_multi_cut(
-    cut: MultiCut, *, model: Detector, protect_outside: bool
+def _trim_inactivity_in_multicut(
+    cut: MultiCut, *, model: ActivityDetector, protect_outside: bool
 ) -> MultiCut:
     raise NotImplementedError("Trimming of multi cuts is not implemented yet.")
 
 
-def _trim_data_cut(cut: DataCut, *, model: Detector, protect_outside: bool) -> DataCut:
+def _trim_inactivity_in_datacut(
+    cut: DataCut, *, model: ActivityDetector, protect_outside: bool
+) -> DataCut:
     if isinstance(cut, MonoCut):
-        return _trim_mono_cut(cut=cut, model=model, protect_outside=protect_outside)
+        return _trim_inactivity_in_monocut(
+            cut=cut, model=model, protect_outside=protect_outside
+        )
     if isinstance(cut, MultiCut):
-        return _trim_multi_cut(cut=cut, model=model, protect_outside=protect_outside)
+        return _trim_inactivity_in_multicut(
+            cut=cut, model=model, protect_outside=protect_outside
+        )
     raise NotImplementedError("Trimming of this data cut is not implemented yet.")
 
 
-def _trim_padding_cut(
-    cut: PaddingCut, *, detector: Detector, protect_outside: bool
+def _trim_inactivity_in_paddingcut(
+    cut: PaddingCut, *, detector: ActivityDetector, protect_outside: bool
 ) -> PaddingCut:
     raise NotImplementedError("Trimming of padding cuts is not implemented yet.")
 
@@ -346,10 +351,10 @@ class TrimmingDetails:
     elapsed_time: float
 
 
-def trim_cut(
+def trim_inactivity_in_cut(
     cut: Cut,
     *,
-    model: Detector,
+    model: ActivityDetector,
     protect_outside: bool = True,
 ) -> Tuple[Optional[Cut], TrimmingDetails]:
     cut = cut.drop_features()
@@ -366,13 +371,15 @@ def trim_cut(
     try:
         try:
             if isinstance(cut, MixedCut):
-                trim = _trim_mixed_cut(
+                trim = _trim_inactivity_in_mixedcut(
                     cut, model=model, protect_outside=protect_outside
                 )
             elif isinstance(cut, DataCut):
-                trim = _trim_data_cut(cut, model=model, protect_outside=protect_outside)
+                trim = _trim_inactivity_in_datacut(
+                    cut, model=model, protect_outside=protect_outside
+                )
             elif isinstance(cut, PaddingCut):
-                trim = _trim_padding_cut(
+                trim = _trim_inactivity_in_paddingcut(
                     cut, detector=model, protect_outside=protect_outside
                 )
             else:
@@ -456,15 +463,15 @@ def move_recording_to_disc(
         raise exc
 
 
-def trim_cut_and_save(
+def trim_inactivity_in_cut_and_save_audio(
     cut: Cut,
     *,
     storage_dir: Optional[Path] = None,
-    model: Detector,
+    model: ActivityDetector,
     save_with_extension: str = "flac",
     protect_outside: bool = True,
 ) -> Tuple[Optional[Cut], TrimmingDetails]:
-    trim, details = trim_cut(
+    trim, details = trim_inactivity_in_cut(
         cut=cut,
         model=model,
         protect_outside=protect_outside,
@@ -489,7 +496,7 @@ class TrimmingException(ValueError):
         super().__init__(msg)
 
 
-def speach_only(
+def trim_inactivity(
     cutset: Iterable[Cut],
     *,
     # output
@@ -529,8 +536,8 @@ def speach_only(
     }
 
     worker = ProcessWorker(
-        gen_model=partial(SpeachDetector, device=device),
-        do_work=trim_cut_and_save,
+        gen_model=partial(SileroVAD16k, device=device),
+        do_work=trim_inactivity_in_cut_and_save_audio,
         warnings_mode=warnings_mode,
     )
 
