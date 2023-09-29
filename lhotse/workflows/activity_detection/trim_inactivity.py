@@ -36,30 +36,10 @@ from lhotse.cut.multi import MultiCut
 from lhotse.cut.padding import PaddingCut
 from lhotse.supervision import SupervisionSegment
 from lhotse.utils import fastcopy
-from lhotse.workflows.backend import Processor, ProcessWorker, Protocol
+from lhotse.workflows.backend import Processor, ProcessWorker
 
 from ._tools import PathLike, assert_output_dir
 from .base import Activity, ActivityDetector
-
-# Detector = Callable[[Recording], IntervalTree]
-
-
-class Segmental(Protocol):
-    @property
-    def start(self) -> float:
-        pass
-
-    @start.setter
-    def start(self, value: float) -> None:
-        pass
-
-    @property
-    def duration(self) -> float:
-        pass
-
-    @duration.setter
-    def duration(self, value: float) -> None:
-        pass
 
 
 class TrimmingTree:
@@ -197,7 +177,7 @@ def trim_recording(recording: Recording, activities: IntervalTree) -> Recording:
     )
 
 
-SegmentalT = TypeVar("SegmentalT", bound=Segmental)
+SegmentalT = TypeVar("SegmentalT")
 
 
 def trim_segmental(obj: SegmentalT, trimmer: TrimmingTree, **kwargs: Any) -> SegmentalT:

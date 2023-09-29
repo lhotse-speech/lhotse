@@ -1,5 +1,4 @@
 import multiprocessing
-import sys
 import warnings
 from concurrent.futures import ProcessPoolExecutor
 from contextlib import contextmanager
@@ -17,25 +16,12 @@ from typing import (
     Union,
 )
 
-if sys.version_info >= (3, 8):
-    from typing import Protocol
-else:
-    Protocol = object
-
-
 CaseT = TypeVar("CaseT")
 PredictT = TypeVar("PredictT")
 ResultT = TypeVar("ResultT")
 
 
-class DoWork(Protocol[CaseT, PredictT, ResultT]):
-    def __call__(
-        self,
-        obj: CaseT,
-        model: Callable[[CaseT], PredictT],
-        **kwargs: Any,
-    ) -> ResultT:
-        pass
+DoWork = Callable[[CaseT, Callable[[CaseT], PredictT], Any], ResultT]
 
 
 class ProcessWorker(Generic[CaseT, PredictT, ResultT]):
