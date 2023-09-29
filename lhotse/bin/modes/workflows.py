@@ -587,12 +587,6 @@ def activity_detection(
     help="Extension of the output recordings.",
 )
 @click.option(
-    "--use-absolute-paths/--use-relative-paths",
-    default=False,
-    is_flag=True,
-    help="Use absolute paths in the manifests.",
-)
-@click.option(
     "--protect-outside/--dont-protect-outside",
     default=True,
     is_flag=True,
@@ -631,7 +625,6 @@ def speach_only(
     output_dir: str,
     output_recordings_extension: str,
     # options
-    use_absolute_paths: bool,
     protect_outside: bool,
     skip_exceptions: bool,
     # mode
@@ -686,19 +679,17 @@ def speach_only(
         supervisions=supervisions if cutset is None else cutset.supervisions,
     )
     if recordings_path_prefix:
-        cutset = cutset.with_recordings_path_prefix(recordings_path_prefix)
+        cutset = cutset.with_recording_path_prefix(recordings_path_prefix)
 
     try:
         speach_only_(
             # input
             cutset=cutset,
             # output
-            keep_in_memory=False,
             output_dir=output_dir,
             output_recordings_extension=output_recordings_extension,
             # options
             protect_outside=protect_outside,
-            use_absolute_paths=use_absolute_paths,
             skip_exceptions=skip_exceptions,
             # mode
             device=device,

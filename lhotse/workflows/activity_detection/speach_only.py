@@ -431,7 +431,6 @@ def move_recording_to_disc(
     recording: Recording,
     root: Union[str, Path],
     extension: str = "flac",
-    absolute: bool = False,
 ) -> Recording:
     # save recording to root
 
@@ -465,7 +464,7 @@ def move_recording_to_disc(
         source = AudioSource(
             type="file",
             channels=recording.channel_ids,
-            source=str(path if absolute else path.relative_to(Path.cwd())),
+            source=str(Path(path.parent.name) / path.name),
         )
         return Recording(
             id=recording.id,
@@ -484,11 +483,9 @@ def move_recording_to_disc(
 def trim_cut_and_save(
     cut: Cut,
     *,
-    storage_dir: Optional[Path],
+    storage_dir: Optional[Path] = None,
     detector: Detector,
-    memorise_recording: bool,
     save_with_extension: str = "flac",
-    use_absolute_path: bool = False,
     protect_outside: bool = True,
 ) -> Tuple[Optional[Cut], TrimmingDetails]:
     trim, details = trim_cut(
@@ -496,17 +493,14 @@ def trim_cut_and_save(
         detector=detector,
         protect_outside=protect_outside,
     )
-
     if trim is not None and storage_dir is not None:
         # FIXME: trim may not have a recording
         recording = move_recording_to_disc(
             recording=trim.recording,
             root=storage_dir,
             extension=save_with_extension,
-            absolute=use_absolute_path,
         )
-        if not memorise_recording:
-            trim.recording = recording
+        trim.recording = recording
 
     return trim, details
 
@@ -545,11 +539,9 @@ def speach_only(
     cutset: Iterable[Cut],
     *,
     # output
-    keep_in_memory: bool = False,
     output_dir: Optional[PathLike] = None,
     output_recordings_extension: str = "flac",
     # options
-    use_absolute_paths: bool = False,
     protect_outside: bool = True,
     skip_exceptions: bool = False,
     # mode
@@ -559,17 +551,11 @@ def speach_only(
 ) -> Tuple[CutSet, List[TrimmingDetails]]:
     output_dir = _assert_output_dir(output_dir, "output_dir")
 
-    if not (keep_in_memory or output_dir):
-        msg = "If the recordings are not kept in memory, they must be saved to disk."
-        msg += " Please provide a output_dir or set keep_in_memory=True."
-        raise ValueError(msg)
-
-    # if output_report_path is not None:
-    #     if output_report_path.suffix == "":
-    #         output_report_path = Path(str(output_report_path) + ".csv")
-    #     elif output_report_path.suffix not in [".csv", ".json", ".yaml"]:
-    #         msg = "Report file must have one of the following extensions: .csv, .json, .yaml"
-    #         raise ValueError(msg)
+    if output_dir is None:
+        if output_recordings_extension != "flac":
+            msg = "When keeping recordings in memory, only flac is supported."
+            msg += f" Please provide output_dir to save recordings as {output_recordings_extension}."
+            raise ValueError(msg)
 
     storage_dir = None
     output_report_path = None
@@ -583,10 +569,6 @@ def speach_only(
 
     # TODO: * Use multiprocessing to speed up the process
     # TODO: * Balance the load across processes
-    # TODO: * Do not use more processes than the number of available CPUs
-    # TODO: * Do not use more processes than the number of cuts
-    # TODO: * Be careful not to overload the RAM
-    # TODO: * Separate the cutset into chunks and process them separately?
 
     if verbose:
         from tqdm.auto import tqdm  # pylint: disable=C0415
@@ -598,9 +580,7 @@ def speach_only(
         trim_cut_and_save,
         storage_dir=storage_dir,
         detector=detect_activity,
-        memorise_recording=keep_in_memory,
         save_with_extension=output_recordings_extension,
-        use_absolute_path=use_absolute_paths,
         protect_outside=protect_outside,
     )
 
@@ -624,9 +604,8 @@ def speach_only(
             if output_cuts_manifest_path.exists():
                 output_cuts_manifest_path.unlink()
             if verbose:
-                print(
-                    f"Failed to save cut manifest to {output_cuts_manifest_path}: {exc}"
-                )
+                path = output_cuts_manifest_path
+                print(f"Failed to save cut manifest to {path}: {exc}")
 
     if output_dir is not None:
         try:
