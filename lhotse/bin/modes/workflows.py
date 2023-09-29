@@ -512,10 +512,6 @@ def activity_detection(
         name += f"_supervisions_{model_name}.jsonl.gz"
         sups_path = sups_path / name
 
-    if not sups_path.parent.exists():
-        print(f"Parent directory for output manifest does not exist: {str(sups_path)}")
-        sys.exit()
-
     print(f"Loading recordings from {str(recordings_manifest)}...")
     recordings = RecordingSet.from_file(str(recordings_manifest))
 
@@ -529,15 +525,21 @@ def activity_detection(
 
     print(f"Making activity detection processor for {model_name!r}...")
 
-    supervisions = detect_activity(
-        recordings,
-        detector_kls=detector_kls,
-        num_jobs=jobs,
-        verbose=True,
-    )
-
-    print(f"Saving {model_name!r} results ...")
-    supervisions.to_file(str(sups_path))
+    try:
+        detect_activity(
+            recordings,
+            detector_kls=detector_kls,
+            model_name=model_name,
+            output_supervisions_manifest=sups_path,
+            num_jobs=jobs,
+            verbose=True,
+        )
+    except KeyboardInterrupt:
+        print("Interrupted by the user.")
+        sys.exit(1)
+    except Exception as exc:
+        print(f"An error occurred: {exc}")
+        sys.exit(1)
 
     print("Results saved to:", str(sups_path), sep="\n")
 

@@ -39,9 +39,9 @@ from lhotse.utils import fastcopy
 
 from .base import Activity, Processor, ProcessWorker, Protocol
 from .silero_vad import SileroVAD16k
+from .tools import PathLike, assert_output_dir
 
 Detector = Callable[[Recording], IntervalTree]
-PathLike = Union[str, Path]
 
 
 class SpeachDetector:
@@ -488,28 +488,6 @@ class TrimmingException(ValueError):
         super().__init__(msg)
 
 
-def _resolve_path(path: Optional[PathLike]) -> Optional[Path]:
-    if path is None or (isinstance(path, str) and path == ""):
-        return None
-    return Path(path).expanduser().resolve().absolute()
-
-
-def _assert_output_dir(path: Optional[PathLike], name: str) -> Optional[Path]:
-    path = _resolve_path(path)
-    if path is None:
-        return None
-    if path.is_file():
-        msg = f"Path {name}={path} is a file."
-        msg += " Please provide a directory path."
-        raise ValueError(msg)
-    if not path.exists():
-        msg = f"Directory {name}={path} does not exist."
-        msg += " Please create {path} first or provide a different path."
-        raise ValueError(msg)
-
-    return path
-
-
 def speach_only(
     cutset: Iterable[Cut],
     *,
@@ -518,14 +496,14 @@ def speach_only(
     output_recordings_extension: str = "flac",
     # options
     protect_outside: bool = True,
-    skip_exceptions: bool = False,
     # mode
+    skip_exceptions: bool = False,
     device: str = "cpu",
     num_jobs: int = 1,
     verbose: bool = False,
     warnings_mode: Optional[str] = None,
 ) -> Tuple[CutSet, List[TrimmingDetails]]:
-    output_dir = _assert_output_dir(output_dir, "output_dir")
+    output_dir = assert_output_dir(output_dir, "output_dir")
 
     if output_dir is None:
         if output_recordings_extension != "flac":
