@@ -10,7 +10,6 @@ from click.testing import CliRunner
 from lhotse import CutSet, RecordingSet, SupervisionSegment
 from lhotse.bin.modes.workflows import activity_detection
 from lhotse.workflows.activity_detection import (
-    SileroVAD8k,
     SileroVAD16k,
     detect_acitvity_segments,
     detect_activity,
@@ -36,7 +35,6 @@ def test_silero_vad_init():
 
     activity = detect_acitvity_segments(recording, model=vad)
 
-    # activity = vad(recording)
     assert activity != []
     assert isinstance(activity[0], SupervisionSegment)
     assert activity[0].start != 0
@@ -53,8 +51,7 @@ def test_silero_vad_in_parallel():
 
     supervisions = detect_activity(
         recordings,
-        detector_kls=SileroVAD8k,
-        model_name="silero_vad_8k",
+        detector="silero_vad_8k",
         num_jobs=2,
         device="cpu",
     )

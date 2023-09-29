@@ -5,7 +5,7 @@ __all__ = (
 
 from functools import partial
 from itertools import chain
-from typing import Iterable, List, Optional, Union
+from typing import Iterable, List, Optional, Type, Union
 
 import numpy as np
 
@@ -52,8 +52,7 @@ def detect_acitvity_segments(
 
 def detect_activity(
     recordings: Union[Iterable[Recording], PathLike],
-    detector_kls,
-    model_name: str,
+    detector: Union[str, Type[ActivityDetector]],
     # output
     output_supervisions_manifest: Optional[PathLike] = None,
     # mode
@@ -70,6 +69,7 @@ def detect_activity(
         output_supervisions_manifest, "output_supervisions_manifest"
     )
 
+    detector_kls = ActivityDetector.get_detector(detector)
     worker = ProcessWorker(
         gen_model=partial(detector_kls, device=device),
         do_work=detect_acitvity_segments,
@@ -82,7 +82,7 @@ def detect_activity(
     supervisions = SupervisionSet.from_segments(segments)
 
     if verbose:
-        print(f"Saving {model_name!r} results ...")
+        print(f"Saving {detector_kls.name!r} results ...")
     if output_supervisions_manifest:
         supervisions.to_file(str(output_supervisions_manifest))
     return supervisions

@@ -477,24 +477,7 @@ def activity_detection(
     high-quality performance and data annotation.
     """
 
-    from lhotse.workflows.activity_detection import (
-        SileroVAD8k,
-        SileroVAD16k,
-        detect_activity,
-    )
-
-    detectors = {
-        "silero_vad_8k": SileroVAD8k,
-        "silero_vad_16k": SileroVAD16k,
-    }
-    detector_kls = detectors.get(model_name)
-
-    if detector_kls is None:
-        print(
-            f"Unknown activity detector: {model_name}. "
-            f"Supported detectors: {list(detectors)}"
-        )
-        sys.exit(1)
+    from lhotse.workflows.activity_detection import ActivityDetector, detect_activity
 
     # prepare paths and input data
     recs_path = Path(recordings_manifest).expanduser().absolute()
@@ -518,18 +501,17 @@ def activity_detection(
     # run activity detection
     if force_download:  # pragma: no cover
         print("Removing model state from cache...")
-        detector_kls.force_download()
+        ActivityDetector.get_detector(model_name).hard_reset()
     else:
         print("Checking model state in cache...")
-        detector_kls("cpu")
+        ActivityDetector.get_detector(model_name)(device=device)
 
     print(f"Making activity detection processor for {model_name!r}...")
 
     try:
         detect_activity(
             recordings=recordings_manifest,
-            detector_kls=detector_kls,
-            model_name=model_name,
+            detector=model_name,
             output_supervisions_manifest=sups_path,
             num_jobs=jobs,
             verbose=True,
@@ -651,7 +633,7 @@ def trim_inactivity(
 
     if force_download:  # pragma: no cover
         print("Removing model state from cache...")
-        SileroVAD16k.force_download()
+        SileroVAD16k.hard_reset()
     else:
         print("Checking model state in cache...")
         SileroVAD16k("cpu")

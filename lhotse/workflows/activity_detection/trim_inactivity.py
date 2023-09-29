@@ -17,7 +17,7 @@ from functools import partial
 from io import BytesIO
 from pathlib import Path
 from time import time
-from typing import Any, Iterable, List, Optional, Tuple, TypeVar, Union
+from typing import Any, Iterable, List, Optional, Tuple, Type, TypeVar, Union
 
 import numpy as np
 import torch
@@ -40,7 +40,6 @@ from lhotse.workflows.backend import Processor, ProcessWorker, Protocol
 
 from ._tools import PathLike, assert_output_dir
 from .base import Activity, ActivityDetector
-from .silero_vad import SileroVAD16k
 
 # Detector = Callable[[Recording], IntervalTree]
 
@@ -499,6 +498,7 @@ class TrimmingException(ValueError):
 def trim_inactivity(
     cutset: Iterable[Cut],
     *,
+    detector: Union[str, Type[ActivityDetector]],
     # output
     output_dir: Optional[PathLike] = None,
     output_recordings_extension: str = "flac",
@@ -535,8 +535,10 @@ def trim_inactivity(
         "protect_outside": protect_outside,
     }
 
+    detector_ = ActivityDetector.get_detector(detector)
+
     worker = ProcessWorker(
-        gen_model=partial(SileroVAD16k, device=device),
+        gen_model=partial(detector_, device=device),
         do_work=trim_inactivity_in_cut_and_save_audio,
         warnings_mode=warnings_mode,
     )
