@@ -1,6 +1,6 @@
 __all__ = (
+    "SpeachDetector",
     "TrimmingTree",
-    "make_activity_detector",
     "trim_recording",
     "trim_segmental",
     "trim_supervision_segment",
@@ -12,7 +12,6 @@ __all__ = (
     "TrimmingException",
     "speach_only",
 )
-import sys
 from dataclasses import dataclass
 from functools import partial
 from io import BytesIO
@@ -38,22 +37,26 @@ from lhotse.cut.padding import PaddingCut
 from lhotse.supervision import SupervisionSegment
 from lhotse.utils import fastcopy
 
-from .base import Activity, ActivityDetector
+from .base import Activity, Processor, ProcessWorker, Protocol
 from .silero_vad import SileroVAD16k
-
-if sys.version_info >= (3, 8):
-    from typing import Protocol as _Protocol
-else:
-    _Protocol = object
-
-import warnings
-from typing import Protocol as _Protocol
 
 Detector = Callable[[Recording], IntervalTree]
 PathLike = Union[str, Path]
 
 
-class Segmental(_Protocol):
+class SpeachDetector:
+    def __init__(self, device: str = "cpu"):
+        self.model = SileroVAD16k(device=device)
+        self._sampling_rate = self.model.sampling_rate
+
+    def __call__(self, recording: Recording) -> IntervalTree:
+        track = _to_mono(recording, sampling_rate=self._sampling_rate)
+        audio = track.load_audio()  # type: ignore
+        activities = self.model.forward(audio)  # type: ignore
+        return _to_activity_tree(activities)
+
+
+class Segmental(Protocol):
     @property
     def start(self) -> float:
         pass
@@ -135,24 +138,6 @@ def to_trimming_tree(
         if duration is not None:
             tree.protect_interval(anchor + duration, float("inf"))
     return tree
-
-
-def make_activity_detector(device: str) -> Detector:
-    detector = SileroVAD16k(device=device)
-    prepare = partial(_to_mono, sampling_rate=detector.sampling_rate)
-    # TODO: Need to normalise the sound before analysis?
-
-    def get_detector() -> ActivityDetector:
-        return detector  # TODO: Get detector from current scope
-
-    def detect_activity(recording: Recording) -> IntervalTree:
-        """Detects activity timestamps in a recording"""
-        detector = get_detector()
-        track = prepare(recording).load_audio()  # type: ignore
-        activities = detector.forward(track)  # type: ignore
-        return _to_activity_tree(activities)
-
-    return detect_activity
 
 
 def _extract_action_intervals(
@@ -278,7 +263,7 @@ CutT = TypeVar("CutT", bound=Cut)
 
 
 # TODO: Make sure that the method works with non-data cuts
-def _trim_cut(cut: CutT, *, detector: Detector, protect_outside: bool) -> CutT:
+def _trim_cut(cut: CutT, *, model: Detector, protect_outside: bool) -> CutT:
     # analyse the recording and get the activity tree
     recording = cut.recording
     if recording is None:
@@ -289,7 +274,7 @@ def _trim_cut(cut: CutT, *, detector: Detector, protect_outside: bool) -> CutT:
         rec_type_repr = f"{rec_type.__module__}.{rec_type.__name__}"
         msg = f"Cut {cut.id!r} has an invalid recording type: {rec_type_repr!r}"
         raise ValueError(msg)
-    activity_tree = detector(recording)
+    activity_tree = model(recording)
 
     # trim and redefine the recording
     recording = trim_recording(
@@ -323,34 +308,26 @@ def _trim_cut(cut: CutT, *, detector: Detector, protect_outside: bool) -> CutT:
 
 
 def _trim_mixed_cut(
-    cut: MixedCut, *, detector: Detector, protect_outside: bool
+    cut: MixedCut, *, model: Detector, protect_outside: bool
 ) -> MixedCut:
     raise NotImplementedError("Trimming of mixed cuts is not implemented yet.")
 
 
-def _trim_mono_cut(
-    cut: MonoCut, *, detector: Detector, protect_outside: bool
-) -> MonoCut:
-    return _trim_cut(cut=cut, detector=detector, protect_outside=protect_outside)
+def _trim_mono_cut(cut: MonoCut, *, model: Detector, protect_outside: bool) -> MonoCut:
+    return _trim_cut(cut=cut, model=model, protect_outside=protect_outside)
 
 
 def _trim_multi_cut(
-    cut: MultiCut, *, detector: Detector, protect_outside: bool
+    cut: MultiCut, *, model: Detector, protect_outside: bool
 ) -> MultiCut:
     raise NotImplementedError("Trimming of multi cuts is not implemented yet.")
 
 
-def _trim_data_cut(
-    cut: DataCut, *, detector: Detector, protect_outside: bool
-) -> DataCut:
+def _trim_data_cut(cut: DataCut, *, model: Detector, protect_outside: bool) -> DataCut:
     if isinstance(cut, MonoCut):
-        return _trim_mono_cut(
-            cut=cut, detector=detector, protect_outside=protect_outside
-        )
+        return _trim_mono_cut(cut=cut, model=model, protect_outside=protect_outside)
     if isinstance(cut, MultiCut):
-        return _trim_multi_cut(
-            cut=cut, detector=detector, protect_outside=protect_outside
-        )
+        return _trim_multi_cut(cut=cut, model=model, protect_outside=protect_outside)
     raise NotImplementedError("Trimming of this data cut is not implemented yet.")
 
 
@@ -371,7 +348,7 @@ class TrimmingDetails:
 def trim_cut(
     cut: Cut,
     *,
-    detector: Detector,
+    model: Detector,
     protect_outside: bool = True,
 ) -> Tuple[Optional[Cut], TrimmingDetails]:
     cut = cut.drop_features()
@@ -389,15 +366,13 @@ def trim_cut(
         try:
             if isinstance(cut, MixedCut):
                 trim = _trim_mixed_cut(
-                    cut, detector=detector, protect_outside=protect_outside
+                    cut, model=model, protect_outside=protect_outside
                 )
             elif isinstance(cut, DataCut):
-                trim = _trim_data_cut(
-                    cut, detector=detector, protect_outside=protect_outside
-                )
+                trim = _trim_data_cut(cut, model=model, protect_outside=protect_outside)
             elif isinstance(cut, PaddingCut):
                 trim = _trim_padding_cut(
-                    cut, detector=detector, protect_outside=protect_outside
+                    cut, detector=model, protect_outside=protect_outside
                 )
             else:
                 raise NotImplementedError()
@@ -484,13 +459,13 @@ def trim_cut_and_save(
     cut: Cut,
     *,
     storage_dir: Optional[Path] = None,
-    detector: Detector,
+    model: Detector,
     save_with_extension: str = "flac",
     protect_outside: bool = True,
 ) -> Tuple[Optional[Cut], TrimmingDetails]:
     trim, details = trim_cut(
         cut=cut,
-        detector=detector,
+        model=model,
         protect_outside=protect_outside,
     )
     if trim is not None and storage_dir is not None:
@@ -548,6 +523,7 @@ def speach_only(
     device: str = "cpu",
     num_jobs: int = 1,
     verbose: bool = False,
+    warnings_mode: Optional[str] = None,
 ) -> Tuple[CutSet, List[TrimmingDetails]]:
     output_dir = _assert_output_dir(output_dir, "output_dir")
 
@@ -567,28 +543,24 @@ def speach_only(
         output_report_path = output_dir / "speach-only-report.csv"
         output_cuts_manifest_path = output_dir / "cuts.json.gz"
 
-    # TODO: * Use multiprocessing to speed up the process
-    # TODO: * Balance the load across processes
+    options = {
+        "storage_dir": storage_dir,
+        "save_with_extension": output_recordings_extension,
+        "protect_outside": protect_outside,
+    }
 
-    if verbose:
-        from tqdm.auto import tqdm  # pylint: disable=C0415
-
-        cutset = tqdm(cutset, desc="Trimming cuts", unit="cut")
-
-    detect_activity: Detector = make_activity_detector(device=device)
-    processor = partial(
-        trim_cut_and_save,
-        storage_dir=storage_dir,
-        detector=detect_activity,
-        save_with_extension=output_recordings_extension,
-        protect_outside=protect_outside,
+    worker = ProcessWorker(
+        gen_model=partial(SpeachDetector, device=device),
+        do_work=trim_cut_and_save,
+        warnings_mode=warnings_mode,
     )
+
+    processor = Processor(worker, num_jobs=num_jobs, verbose=verbose)
 
     cuts: List[Cut] = []
     report: List[TrimmingDetails] = []
 
-    for cut in cutset:
-        cut, details = processor(cut)
+    for cut, details in processor(cutset, **options):
         report.append(details)
         if cut is not None:
             cuts.append(cut)
@@ -630,4 +602,6 @@ def speach_only(
                 print(f"Failed to save report to {output_report_path}: {exc}")
 
     # return the new cutset and the report of trimming
+    if output_dir is not None:
+        result = result.with_recording_path_prefix(str(output_dir))
     return result, report
