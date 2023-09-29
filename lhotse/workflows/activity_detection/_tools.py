@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import Optional, Union
+from typing import Any, Optional, Union
 
 PathLike = Union[str, Path]
 
@@ -40,3 +40,9 @@ def assert_output_file(path: Optional[PathLike], name: str) -> Optional[Path]:
         msg += " Please create {path.parent} first or provide a different path."
         raise ValueError(msg)
     return path
+
+
+def as_path(path: Any) -> Optional[Path]:
+    if isinstance(path, (str, Path)):
+        return resolve_path(path)
+    return None

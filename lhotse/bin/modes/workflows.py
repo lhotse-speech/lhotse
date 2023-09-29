@@ -477,8 +477,11 @@ def activity_detection(
     high-quality performance and data annotation.
     """
 
-    from lhotse.workflows.activity_detection import SileroVAD8k, SileroVAD16k
-    from lhotse.workflows.activity_detection.activity_detection import detect_activity
+    from lhotse.workflows.activity_detection import (
+        SileroVAD8k,
+        SileroVAD16k,
+        detect_activity,
+    )
 
     detectors = {
         "silero_vad_8k": SileroVAD8k,
@@ -512,9 +515,6 @@ def activity_detection(
         name += f"_supervisions_{model_name}.jsonl.gz"
         sups_path = sups_path / name
 
-    print(f"Loading recordings from {str(recordings_manifest)}...")
-    recordings = RecordingSet.from_file(str(recordings_manifest))
-
     # run activity detection
     if force_download:  # pragma: no cover
         print("Removing model state from cache...")
@@ -527,7 +527,7 @@ def activity_detection(
 
     try:
         detect_activity(
-            recordings,
+            recordings=recordings_manifest,
             detector_kls=detector_kls,
             model_name=model_name,
             output_supervisions_manifest=sups_path,

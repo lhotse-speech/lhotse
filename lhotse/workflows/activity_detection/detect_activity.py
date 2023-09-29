@@ -1,15 +1,20 @@
+__all__ = (
+    "detect_acitvity_segments",
+    "detect_activity",
+)
+
 from functools import partial
 from itertools import chain
-from typing import Iterable, List, Optional
+from typing import Iterable, List, Optional, Union
 
 import numpy as np
 
-from lhotse.audio import Recording
+from lhotse.audio import Recording, RecordingSet
 from lhotse.supervision import SupervisionSegment, SupervisionSet
 from lhotse.workflows.backend import Processor, ProcessWorker
 
+from ._tools import PathLike, as_path, assert_output_file
 from .base import ActivityDetector
-from .tools import PathLike, assert_output_file
 
 
 def detect_acitvity_segments(
@@ -46,7 +51,7 @@ def detect_acitvity_segments(
 
 
 def detect_activity(
-    recordings: Iterable[Recording],
+    recordings: Union[Iterable[Recording], PathLike],
     detector_kls,
     model_name: str,
     # output
@@ -56,6 +61,11 @@ def detect_activity(
     verbose: bool = False,
     device: str = "cpu",
 ) -> SupervisionSet:
+    if path := as_path(recordings):
+        if verbose:
+            print(f"Loading recordings from {path}...")
+        recordings = RecordingSet.from_json(str(path))
+
     output_supervisions_manifest = assert_output_file(
         output_supervisions_manifest, "output_supervisions_manifest"
     )

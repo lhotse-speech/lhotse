@@ -9,8 +9,9 @@ from click.testing import CliRunner
 
 from lhotse import CutSet, RecordingSet, SupervisionSegment
 from lhotse.bin.modes.workflows import activity_detection
-from lhotse.workflows.activity_detection import SileroVAD8k, SileroVAD16k
-from lhotse.workflows.activity_detection.activity_detection import (
+from lhotse.workflows.activity_detection import (
+    SileroVAD8k,
+    SileroVAD16k,
     detect_acitvity_segments,
     detect_activity,
 )

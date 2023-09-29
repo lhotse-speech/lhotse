@@ -38,9 +38,9 @@ from lhotse.supervision import SupervisionSegment
 from lhotse.utils import fastcopy
 from lhotse.workflows.backend import Processor, ProcessWorker, Protocol
 
+from ._tools import PathLike, assert_output_dir
 from .base import Activity, ActivityDetector
 from .silero_vad import SileroVAD16k
-from .tools import PathLike, assert_output_dir
 
 # Detector = Callable[[Recording], IntervalTree]
 
