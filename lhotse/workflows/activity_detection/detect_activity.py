@@ -63,7 +63,7 @@ def detect_activity(
     if path := as_path(recordings):
         if verbose:
             print(f"Loading recordings from {path}...")
-        recordings = RecordingSet.from_json(str(path))
+        recordings = RecordingSet.from_file(str(path))
 
     output_supervisions_manifest = assert_output_file(
         output_supervisions_manifest, "output_supervisions_manifest"
