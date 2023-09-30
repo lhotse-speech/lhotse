@@ -16,7 +16,6 @@ from typing import Any, Iterable, List, Optional, Tuple, Type, TypeVar, Union
 import numpy as np
 import torch
 from intervaltree import IntervalTree  # type: ignore
-from torch import Tensor
 from torchaudio import save as torchaudio_save  # type: ignore
 
 from lhotse.audio import Recording
@@ -65,13 +64,6 @@ class TrimmingTree:
     def __repr__(self):
         """Representation of the trimmer tree"""
         return repr(self._tree).replace("IntervalTree", "TrimmingTree")
-
-
-def _to_mono(recording: Recording, *, sampling_rate: int) -> Recording:
-    """Converts a recording to mono and resamples it to the given sampling rate"""
-    mono = recording  # FIXME: Convert the recording to mono
-    resampled = mono.resample(sampling_rate)
-    return resampled
 
 
 def _to_activity_tree(activities: Iterable[Activity]) -> IntervalTree:
@@ -205,7 +197,7 @@ class InactivityTrimmer:
             try:
                 torchaudio_save(
                     path,
-                    Tensor(trimmed),
+                    torch.from_numpy(trimmed),
                     sample_rate=recording.sampling_rate,
                     format=self._extension,
                     channels_first=True,
@@ -231,8 +223,10 @@ class InactivityTrimmer:
         )
 
     def _trim_recording(self, recording: Recording) -> Tuple[Recording, IntervalTree]:
-        track = _to_mono(recording, sampling_rate=self._detector.sampling_rate)
-        audio = track.load_audio()  # type: ignore
+        cut = recording.to_cut()
+        if isinstance(cut, MultiCut):
+            cut = cut.to_mono()
+        audio = cut.load_audio()
         activities = self._detector(audio)
         activity_tree = _to_activity_tree(activities)
         recording = self.__trim_recording(recording, activity_tree)
@@ -304,13 +298,11 @@ class InactivityTrimmer:
 
         return recording, supervisions
 
-    def _trim_mixedcut(self, cut: MixedCut) -> MixedCut:
-        raise NotImplementedError("Trimming of MixedCut is not implemented yet")
-
-    def _trim_monocut(self, cut: MonoCut) -> MonoCut:
+    def _trim_datacut(self, cut: DataCut) -> DataCut:
+        cut = cut.move_to_memory()
         recording = cut.recording
         if recording is None:
-            raise ValueError("Cannot trim a cut without a recording")
+            return cut
         recording, supervisions = self.trim(
             recording=recording,
             supervisions=cut.supervisions,
@@ -323,15 +315,8 @@ class InactivityTrimmer:
             duration=recording.duration,
         )
 
-    def _trim_multicut(self, cut: MultiCut) -> MultiCut:
-        raise NotImplementedError("Trimming of MultiCut is not implemented yet")
-
-    def _trim_datacut(self, cut: DataCut) -> DataCut:
-        if isinstance(cut, MonoCut):
-            return self._trim_monocut(cut=cut)
-        if isinstance(cut, MultiCut):
-            return self._trim_multicut(cut=cut)
-        raise NotImplementedError("Trimming of DataCut is not implemented yet")
+    def _trim_mixedcut(self, cut: MixedCut) -> MonoCut:
+        self._trim_datacut(cut=cut.to_mono())
 
     def _trim_paddingcut(self, cut: PaddingCut) -> PaddingCut:
         raise NotImplementedError("Trimming of PaddingCut is not implemented yet")
