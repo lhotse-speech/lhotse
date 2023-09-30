@@ -569,7 +569,7 @@ def detect_activity(
 )
 @click.option(
     "--protect-outside/--dont-protect-outside",
-    default=True,
+    default=False,
     is_flag=True,
     help="Protect supervision's start and end times that are outside of the recording's duration.",
 )

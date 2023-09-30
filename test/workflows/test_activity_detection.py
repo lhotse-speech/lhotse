@@ -133,7 +133,8 @@ def test_trim_inactivity_workflow_with_silero_vad(temporary_directory: str):
         + ["--output-dir", temporary_directory]
         + ["--model-name", "silero_vad_16k"]
         + ["--device", "cpu"]
-        + ["--jobs", "1"],
+        + ["--jobs", "1"]
+        + ["--protect-outside"],
     )
     assert result.exit_code == 0
 

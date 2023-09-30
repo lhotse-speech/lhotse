@@ -277,6 +277,7 @@ class InactivityTrimmer:
     ) -> Tuple[Recording, Optional[List[SupervisionSegment]]]:
         """Trims a recording and its supervisions based on the activity detector"""
         # trim and redefine the recording
+        duration = recording.duration
         recording, activity_tree = self._trim_recording(recording)
 
         # trim and redefine the supervisions
@@ -286,7 +287,7 @@ class InactivityTrimmer:
                 anchor=0.0,
                 # if supervisions have a duration that exceeds
                 # the recording duration, we need to protect it
-                duration=recording.duration,
+                duration=duration,
                 # if supervisions have a negative start, we need to protect it
                 protect_outside=self._protect_outside,
             )
