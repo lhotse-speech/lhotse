@@ -303,6 +303,7 @@ class InactivityTrimmer:
         recording = cut.recording
         if recording is None:
             return cut
+        recording.id = cut.id
         recording, supervisions = self.trim(
             recording=recording,
             supervisions=cut.supervisions,

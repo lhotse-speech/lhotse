@@ -143,11 +143,12 @@ def test_trim_inactivity_workflow_with_silero_vad(temporary_directory: str):
     assert "cuts.json.gz" in paths
     assert "recordings.jsonl.gz" in paths
     assert "supervisions.jsonl.gz" in paths
-    assert "storage/recording-1.flac" in paths
 
     original = CutSet.from_file(libri_cuts_path)
     trimmed = CutSet.from_file(temp / "cuts.json.gz")
     assert len(original) == len(trimmed)
+
+    assert f"storage/{original[0].id}.flac" in paths
 
     assert original[0].duration > trimmed[0].duration
     assert original[0].supervisions[0].duration > trimmed[0].supervisions[0].duration
